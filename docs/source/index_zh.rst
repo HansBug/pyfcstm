@@ -165,7 +165,7 @@ pyfcstm 遵循三阶段流水线：
 参考
 ----
 
-参考页用于查准事实。地图页放在第一项，自动生成 API 文档保持为参考区最后一项。
+参考页用于查准事实。地图页放在第一项，自动生成的应用程序接口（API）文档保持为参考区最后一项。
 
 .. toctree::
     :maxdepth: 2
@@ -177,22 +177,24 @@ pyfcstm 遵循三阶段流水线：
     reference/dsl/index_zh
     reference/inspect_report/index_zh
     reference/diagnostics_codes/index_zh
+    reference/simulation/index_zh
     reference/visualization_options/index_zh
     reference/template_config/index_zh
     reference/grammar_tooling/index_zh
     reference/builtin_templates/index_zh
-    API 文档 <api_doc_zh>
+    应用程序接口文档 <api_doc_zh>
 
 * :doc:`参考地图 <reference/index_zh>`
 * :doc:`reference/cli/index_zh`
 * :doc:`reference/dsl/index_zh`
 * :doc:`reference/inspect_report/index_zh`
 * :doc:`reference/diagnostics_codes/index_zh`
+* :doc:`reference/simulation/index_zh`
 * :doc:`reference/visualization_options/index_zh`
 * :doc:`reference/template_config/index_zh`
 * :doc:`reference/grammar_tooling/index_zh`
 * :doc:`reference/builtin_templates/index_zh`
-* :doc:`API 文档 <api_doc_zh>`
+* :doc:`应用程序接口文档 <api_doc_zh>`
 
 版本说明
 -------------------------

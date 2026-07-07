@@ -19,7 +19,8 @@ code.  In a simulation run:
 
 For full execution-order details, see
 :doc:`../../explanations/execution_semantics/index`.  For concrete simulator
-commands, see :doc:`../../how_to/simulation/index`.
+commands, see :doc:`../../how_to/simulation/index`.  For exact command, export
+and Python API facts, see :doc:`../../reference/simulation/index`.
 
 Run one batch transcript
 ------------------------
@@ -51,7 +52,10 @@ Try one Python runtime loop
 
 If you are embedding pyfcstm in Python tests or tools, the runtime API follows
 the same model: parse DSL, build the state-machine model, construct
-``SimulationRuntime``, and call ``cycle()``.
+``SimulationRuntime``, and call ``cycle()``.  Each call returns a
+``CycleResult``.  Its legacy ``value`` is currently ``None``, while
+``input_events``, ``consumed_events`` and ``unconsumed_events`` tell you which
+canonical event paths were supplied, used or left unused in that cycle.
 
 .. literalinclude:: basic_usage.demo.py
    :language: python
@@ -61,6 +65,10 @@ Output:
 
 .. literalinclude:: basic_usage.demo.py.txt
    :language: text
+
+The example only prints state and variables.  If you need the exact
+``CycleResult`` fields, event input forms, export formats or public runtime
+exceptions, use :doc:`../../reference/simulation/index`.
 
 Old topic map
 -------------
@@ -82,7 +90,7 @@ material.  The main topics now live here:
    * - Abstract handlers
      - :doc:`../../how_to/simulation/index`
    * - Configuration settings and command-line facts
-     - :doc:`../../how_to/simulation/index`
+     - :doc:`../../reference/simulation/index`
    * - Testing, debugging and best-practice notes
      - :doc:`../../how_to/simulation/index`
    * - Business examples and long semantic walkthroughs

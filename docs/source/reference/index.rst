@@ -62,6 +62,18 @@ severity, message meaning, and repair direction.
 * **Do not expect:** general modeling advice; use the DSL and diagnostics
   explanations for context.
 
+Simulation commands, runtime settings, and Python API facts
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Use :doc:`simulation/index` when you need simulator command forms, REPL command
+arguments, event input forms, settings, history/export shapes, Python runtime
+API facts, ``CycleResult`` fields, and public failure boundaries.
+
+* **Use after:** the simulation tutorial or task guide shows you the workflow
+  and you need exact values or edge cases.
+* **Do not expect:** execution-order rationale; use
+  :doc:`/explanations/execution_semantics/index` for the semantic reasoning.
+
 Visualization options
 ~~~~~~~~~~~~~~~~~~~~~
 
@@ -103,15 +115,6 @@ Use :doc:`API Documentation </api_doc_en>` when you need the complete generated
 Python API structure. The generated API map stays in the Reference area as the
 last entry, and API introductions should be changed through the generator rather
 than by editing generated output directly.
-
-Current reference boundaries
-----------------------------
-
-This map only links to pages that exist in the current documentation tree. For
-example, dedicated simulation reference material is not present yet; use the
-simulation tutorial, how-to guide, and execution-semantics explanation until a
-separate reference page exists. This map does not link to
-``reference/simulation/`` while that page is absent.
 
 If you need a different role
 ----------------------------

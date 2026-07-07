@@ -44,7 +44,7 @@ ActionBlock
 -----------------------------------------------------
 
 .. autoclass:: ActionBlock
-    :members: __post_init__,to_canonical,block_kind,runtime_role,owner_state_id,owner_state_path,operations,action_name,transition_label,is_abstract
+    :members: __post_init__,to_canonical,block_kind,runtime_role,owner_state_id,owner_state_path,operations,action_name,transition_label,is_abstract,active_leaf_path,execution_state_path,named_ref
 
 
 CycleCase

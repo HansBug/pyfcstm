@@ -28,7 +28,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable as IterableABC
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, Optional, Tuple
+from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
 
 import z3
 
@@ -78,6 +78,12 @@ def _require_core(core: object) -> BmcCoreFormula:
 def _require_bool(expr: z3.ExprRef, label: str) -> z3.BoolRef:
     if not z3.is_bool(expr):  # pragma: no cover - condition lowering is bool-typed.
         raise BmcBuildError("%s must lower to a Z3 Boolean expression." % label)
+    return expr
+
+
+def _require_arith(expr: z3.ExprRef, label: str) -> z3.ArithRef:
+    if not z3.is_arith(expr):
+        raise BmcBuildError("%s must lower to a Z3 arithmetic expression." % label)
     return expr
 
 
@@ -257,6 +263,9 @@ class BmcPropertyFormula:
 
 
 def _validate_num_context(expr: bmc_ast.BmcNumExpr, context: str, path: str) -> None:
+    if isinstance(expr, bmc_ast.CallCount):
+        _validate_call_filter_context(expr.filter, context, path + ".filter")
+        return
     if isinstance(
         expr,
         (
@@ -311,6 +320,8 @@ def _validate_condition_context(
         _validate_condition_context(expr.if_false, context, path + ".if_false")
         return
     if isinstance(expr, bmc_ast.Active):
+        if context == "call_where":
+            raise UnsupportedBmcQuery("%s call where cannot use active()." % path)
         if expr.frame != "current":
             raise UnsupportedBmcQuery(
                 "%s uses an explicit frame selector; property compiler "
@@ -318,6 +329,8 @@ def _validate_condition_context(
             )
         return
     if isinstance(expr, bmc_ast.Terminated):
+        if context == "call_where":
+            raise UnsupportedBmcQuery("%s call where cannot use terminated()." % path)
         if expr.frame != "current":
             raise UnsupportedBmcQuery(
                 "%s uses an explicit frame selector; property compiler "
@@ -342,10 +355,8 @@ def _validate_condition_context(
             % path
         )
     if isinstance(expr, bmc_ast.Called):
-        raise UnsupportedBmcQuery(  # pragma: no cover - binder rejects called() for now.
-            "%s uses called(), but abstract call trace properties are not supported yet."
-            % path
-        )
+        _validate_call_filter_context(expr.call_filter, context, path + ".filter")
+        return
     raise UnsupportedBmcQuery(  # pragma: no cover - public AST condition set is closed.
         "%s contains unsupported condition expression %s." % (path, type(expr).__name__)
     )
@@ -366,6 +377,9 @@ def _lower_predicate(
         core.symbols,
         frame_index=frame_index,
         step_index=step_index,
+        call_count_lowerer=lambda call_expr, call_frame, call_step: _lower_call_count(
+            core, call_expr, call_frame, call_step
+        ),
     )
     value = _require_bool(lowered.expr, path)
     definedness = _and(item.constraint for item in lowered.definedness_constraints)
@@ -387,6 +401,183 @@ def _polarity(kind: str) -> str:
     raise BmcBuildError(  # pragma: no cover - query validation owns property kinds.
         "Unsupported property kind: %r." % kind
     )
+
+
+def _validate_call_filter_context(
+    filter_node: bmc_ast.CallFilter, context: str, path: str
+) -> None:
+    if not isinstance(filter_node, bmc_ast.CallFilter):
+        raise UnsupportedBmcQuery("%s must be a call filter." % path)
+    if context not in {"frame", "response_trigger"}:
+        raise UnsupportedBmcQuery(
+            "%s uses an abstract-call predicate outside property context." % path
+        )
+    if filter_node.where is not None:
+        _validate_condition_context(filter_node.where, "call_where", path + ".where")
+
+
+def _eval_call_step_point(point: bmc_ast.CallStepPoint, anchor: int) -> int:
+    return point.value if point.kind == "absolute" else anchor + point.value
+
+
+def _effective_call_steps(
+    selector: bmc_ast.CallStepSelector, anchor: int, bound: int
+) -> Tuple[int, ...]:
+    valid = set(range(bound))
+    if selector.kind == "omitted":
+        raw = {anchor}
+    elif selector.kind == "all":
+        raw = valid
+    elif selector.kind == "point":
+        if selector.start is None:  # pragma: no cover - AST validates this.
+            raise BmcBuildError("point call selector is missing its point.")
+        if selector.start.kind == "absolute" and not (
+            0 <= selector.start.value < bound
+        ):
+            raise InvalidBmcQuery("absolute call step selector is out of range.")
+        raw = {_eval_call_step_point(selector.start, anchor)}
+    else:
+        start_point = selector.start
+        end_point = selector.end
+        start = (
+            anchor
+            if start_point is None
+            else _eval_call_step_point(start_point, anchor)
+        )
+        end = anchor if end_point is None else _eval_call_step_point(end_point, anchor)
+        for point in (start_point, end_point):
+            if (
+                point is not None
+                and point.kind == "absolute"
+                and not (0 <= point.value < bound)
+            ):
+                raise InvalidBmcQuery(
+                    "absolute call step range endpoint is out of range."
+                )
+        if start > end:
+            return ()
+        raw = set(range(start, end + 1))
+    return tuple(sorted(raw & valid))
+
+
+@dataclass(frozen=True)
+class _CallSnapshotSymbols:
+    """Minimal symbol adapter for lowering call-time ``where`` predicates.
+
+    :param snapshot: Call-time persistent-variable symbols.
+    :type snapshot: Mapping[str, z3.ArithRef]
+
+    Example::
+
+        >>> import z3
+        >>> symbols = _CallSnapshotSymbols({"x": z3.Int("x")})
+        >>> symbols.frame_var(0, "x").sort().name()
+        'Int'
+    """
+
+    snapshot: Mapping[str, z3.ArithRef]
+
+    def frame_var(self, frame_index: int, name: str) -> z3.ArithRef:
+        """Return a call-time variable from the snapshot.
+
+        ``frame_index`` is intentionally ignored: call ``where`` predicates are
+        evaluated against the captured abstract-call snapshot, not a trace frame.
+
+        :param frame_index: Ignored frame index supplied by the shared lowerer.
+        :type frame_index: int
+        :param name: Persistent variable name.
+        :type name: str
+        :return: Snapshot variable expression.
+        :rtype: z3.ArithRef
+        :raises pyfcstm.bmc.errors.InvalidBmcQuery: If the snapshot does not
+            contain ``name``.
+
+        Example::
+
+            >>> import z3
+            >>> _CallSnapshotSymbols({"x": z3.Int("x")}).frame_var(3, "x").decl().name()
+            'x'
+        """
+        try:
+            return self.snapshot[name]
+        except KeyError as err:
+            # KeyError: forged query/core combinations can reference a variable
+            # absent from the captured call snapshot even after normal binding.
+            raise InvalidBmcQuery(
+                "call where references unknown snapshot variable %r." % name
+            ) from err
+
+
+def _snapshot_cond_expr(
+    expr: bmc_ast.BmcCondExpr,
+    snapshot: Mapping[str, z3.ArithRef],
+    label: str,
+    step_index: int,
+) -> z3.BoolRef:
+    lowered = _lower_bmc_cond_expr(
+        expr,
+        _CallSnapshotSymbols(snapshot),
+        frame_index=step_index,
+        step_index=step_index,
+    )
+    definedness = _and(item.constraint for item in lowered.definedness_constraints)
+    return z3.And(_require_bool(lowered.expr, label), definedness)
+
+
+def _call_match_expr(
+    relation,
+    record,
+    filter_node: bmc_ast.CallFilter,
+    step_index: int,
+) -> z3.BoolRef:
+    terms = [relation.selector]
+    if filter_node.action is not None:
+        terms.append(z3.BoolVal(record.action_name == filter_node.action))
+    if filter_node.stage is not None:
+        terms.append(z3.BoolVal(record.stage == filter_node.stage))
+    if filter_node.role is not None:
+        terms.append(z3.BoolVal(record.role == filter_node.role))
+    if filter_node.state is not None:
+        terms.append(z3.BoolVal(record.state_path == filter_node.state))
+    if filter_node.active_leaf is not None:
+        terms.append(z3.BoolVal(record.active_leaf_path == filter_node.active_leaf))
+    if filter_node.named_ref_is_null:
+        terms.append(z3.BoolVal(record.named_ref is None))
+    elif filter_node.named_ref is not None:
+        terms.append(z3.BoolVal(record.named_ref == filter_node.named_ref))
+    if filter_node.where is not None:
+        terms.append(
+            _snapshot_cond_expr(
+                filter_node.where, record.snapshot, "call where", step_index
+            )
+        )
+    return _and(terms)
+
+
+def _lower_call_count(
+    core: BmcCoreFormula,
+    expr: bmc_ast.CallCount,
+    frame_index: int,
+    step_index: Optional[int],
+) -> z3.ArithRef:
+    anchor = step_index if step_index is not None else frame_index
+    selected_steps = _effective_call_steps(
+        expr.filter.effective_step, anchor, core.context.bound
+    )
+    items = []
+    for selected_step in selected_steps:
+        for relation in core.steps[selected_step].case_relations:
+            for record in relation.call_records:
+                items.append(
+                    z3.If(
+                        _call_match_expr(relation, record, expr.filter, selected_step),
+                        z3.IntVal(1),
+                        z3.IntVal(0),
+                    )
+                )
+    if not items:
+        return z3.IntVal(0)
+    return z3.Sum(*items)
 
 
 def _single_predicate(prop: BmcProperty) -> bmc_ast.BmcCondExpr:
@@ -555,7 +746,8 @@ def compile_bmc_property(core: BmcCoreFormula) -> BmcPropertyFormula:
     :raises pyfcstm.bmc.errors.InvalidBmcQuery: If a query-level cover label or
         property shape is invalid for property compilation.
     :raises pyfcstm.bmc.errors.UnsupportedBmcQuery: If the property uses a
-        parsed but unsupported BMC atom such as ``called(...)``.
+        parsed but unsupported expression shape or unsupported arithmetic
+        operation.
 
     Example::
 

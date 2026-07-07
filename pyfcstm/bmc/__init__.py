@@ -65,9 +65,11 @@ Public module structure:
      - Represent the current FCSTM ``cond_expression`` shape.
    * - BMC-only query atoms
      - :class:`FrameVar`, :class:`Cycle`, :class:`Active`,
-       :class:`Terminated`, :class:`Event`, :class:`Case`, :class:`Called`
+       :class:`Terminated`, :class:`Event`, :class:`Case`,
+       :class:`CallCount`, :class:`Called`
      - Represent frame variables, cycle counters, active state, selected event,
-       selected macro-step case, termination, and future abstract-call atoms.
+       selected macro-step case, termination, and abstract-call count/existence
+       predicates.
    * - BMC domain model
      - :class:`StateDomainEntry`, :class:`EventDomainEntry`,
        :class:`VarDomainEntry`, :class:`FrameRef`, :class:`StepRef`,
@@ -139,6 +141,10 @@ from pyfcstm.bmc.ast import (
     BmcExpr,
     BmcNumExpr,
     BoolLiteral,
+    CallCount,
+    CallFilter,
+    CallStepPoint,
+    CallStepSelector,
     Called,
     Case,
     CondBinaryOp,
@@ -363,6 +369,10 @@ __all__ = [
     "CondConditionalOp",
     "FrameVar",
     "Cycle",
+    "CallStepPoint",
+    "CallStepSelector",
+    "CallFilter",
+    "CallCount",
     "Active",
     "Terminated",
     "Event",

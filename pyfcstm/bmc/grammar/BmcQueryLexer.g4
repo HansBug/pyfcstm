@@ -37,8 +37,16 @@ VAR: 'var';
 CYCLE: 'cycle';
 ACTIVE: 'active';
 CASE: 'case';
+CALL_COUNT: 'call_count';
 CALLED: 'called';
 CURRENT: 'current';
+NULL: 'null';
+ACTION: 'action';
+STEP: 'step';
+STAGE: 'stage';
+ROLE: 'role';
+ACTIVE_LEAF: 'active_leaf';
+NAMED_REF: 'named_ref';
 
 PI_CONST: 'pi';
 E_CONST: 'E';
@@ -71,6 +79,7 @@ RBRACE: '}';
 LPAREN: '(';
 RPAREN: ')';
 QUESTION: '?';
+ASSIGN: '=';
 COLON: ':';
 DOT: '.';
 SLASH: '/';
@@ -86,7 +95,7 @@ LT: '<';
 GT: '>';
 
 FLOAT
-    : [0-9]+ '.' [0-9]* ([eE][+-]?[0-9]+)?
+    : [0-9]+ '.' {self._input.LA(1) != ord('.')}? [0-9]* ([eE][+-]?[0-9]+)?
     | '.' [0-9]+ ([eE][+-]?[0-9]+)?
     | [0-9]+ [eE][+-]?[0-9]+
     ;

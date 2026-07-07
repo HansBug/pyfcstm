@@ -44,6 +44,54 @@ state Root {
 """
 
 
+_ABSTRACT_DSL = """
+state Root {
+    state A {
+        during abstract Hook;
+    }
+    [*] -> A;
+}
+"""
+
+
+_SNAPSHOT_CALL_DSL = """
+def int x = 0;
+state Root {
+    state A {
+        during abstract Before;
+        during { x = x + 1; }
+        during abstract After;
+    }
+    [*] -> A;
+}
+"""
+
+
+_NAMED_REF_CALL_DSL = """
+state Root {
+    state Library {
+        enter abstract Shared;
+    }
+
+    state A {
+        enter FirstRef ref /Library.Shared;
+        enter SecondRef ref /Library.Shared;
+    }
+
+    [*] -> A;
+}
+"""
+
+
+_ASPECT_CALL_DSL = """
+state Root {
+    >> during before abstract Observe;
+    state A;
+    [*] -> A;
+}
+"""
+
+
 @pytest.mark.unittest
 def test_compile_property_supports_nested_numeric_and_condition_predicates() -> None:
     """Property predicates reuse the core numeric and condition expression lowerer."""
@@ -460,10 +508,102 @@ def test_compile_property_rejects_step_atoms_outside_allowed_contexts() -> None:
         BmcEngine(load_state_machine_from_text(_EVENT_DSL)).prepare(
             'check cover <= 1: case("Root::transition::Root::0") && true;'
         )
-    with pytest.raises(InvalidBmcQuery, match="unsupported_called_atom"):
+    with pytest.raises(InvalidBmcQuery, match="cover_predicate"):
+        BmcEngine(load_state_machine_from_text(_EVENT_DSL)).prepare(
+            'check cover <= 1: called("Hook");'
+        )
+    with pytest.raises(InvalidBmcQuery, match="unknown_call_action"):
         BmcEngine(load_state_machine_from_text(_EVENT_DSL)).prepare(
             'check reach <= 1: called("Hook");'
         )
+    with pytest.raises(InvalidBmcQuery, match="called_not_allowed"):
+        BmcEngine(load_state_machine_from_text(_ABSTRACT_DSL)).prepare(
+            'assume always: called("Root.A.Hook"); check reach <= 1: true;'
+        )
+    with pytest.raises(InvalidBmcQuery, match="call_step_out_of_range"):
+        BmcEngine(load_state_machine_from_text(_ABSTRACT_DSL)).prepare(
+            'check reach <= 1: called("Root.A.Hook", step=1);'
+        )
+
+
+@pytest.mark.unittest
+def test_compile_call_count_filters_use_call_time_snapshots() -> None:
+    """Call filters count occurrences and evaluate ``where`` at call time."""
+    matched = compile_bmc_property(
+        _core(
+            _SNAPSHOT_CALL_DSL,
+            'check reach <= 1: call_count("Root.A.Before", step=*) == 1 '
+            '&& call_count("Root.A.Before", step=*, where x == 0) == 1 '
+            '&& call_count("Root.A.After", step=*, where x == 1) == 1 '
+            '&& call_count("Root.A.After", step=*, where x == 0) == 0;',
+        )
+    )
+    impossible = compile_bmc_property(
+        _core(
+            _SNAPSHOT_CALL_DSL,
+            'check reach <= 1: call_count("Root.A.After", step=*, where x == 0) >= 1;',
+        )
+    )
+
+    assert _solver(matched.solve_formula).check() == z3.sat
+    assert _solver(impossible.solve_formula).check() == z3.unsat
+
+
+@pytest.mark.unittest
+def test_compile_call_count_filters_named_refs_and_runtime_metadata() -> None:
+    """Call filters can distinguish duplicate calls by named-ref metadata."""
+    formula = compile_bmc_property(
+        _core(
+            _NAMED_REF_CALL_DSL,
+            'check reach <= 1: call_count("Root.Library.Shared", step=0) == 2 '
+            '&& call_count("Root.Library.Shared", state="Root.A", active_leaf="Root.A") == 2 '
+            '&& call_count("Root.Library.Shared", stage="enter", role="state_enter") == 2 '
+            '&& call_count("Root.Library.Shared", named_ref="Root.A.FirstRef") == 1 '
+            '&& call_count("Root.Library.Shared", named_ref="Root.A.SecondRef") == 1 '
+            '&& call_count("Root.Library.Shared", named_ref=null) == 0;',
+        )
+    )
+
+    assert _solver(formula.solve_formula).check() == z3.sat
+
+
+@pytest.mark.unittest
+def test_compile_called_is_existential_call_count_with_step_windows() -> None:
+    """``called`` shares call_count selectors and clips relative windows."""
+    formula = compile_bmc_property(
+        _core(
+            _ASPECT_CALL_DSL,
+            'check reach <= 1: called("Root.Observe", step=+0) '
+            '&& called("Root.Observe", step=0..0) '
+            '&& !called("Root.Observe", step=-1) '
+            '&& !called("Root.Observe", step=+1) '
+            '&& call_count("Root.Observe", role="aspect_during_before") == 1;',
+        )
+    )
+
+    assert _solver(formula.solve_formula).check() == z3.sat
+
+
+@pytest.mark.unittest
+def test_compile_response_trigger_accepts_called_current_step() -> None:
+    """Response triggers may use same-step abstract-call predicates."""
+    satisfied = compile_bmc_property(
+        _core(
+            _SNAPSHOT_CALL_DSL,
+            'check response <= 1: trigger called("Root.A.Before") '
+            '-> within 1 active("Root.A");',
+        )
+    )
+    violation = compile_bmc_property(
+        _core(
+            _SNAPSHOT_CALL_DSL,
+            'check response <= 1: trigger called("Root.A.Before") '
+            "-> within 1 terminated();",
+        )
+    )
+
+    assert _solver(satisfied.solve_formula).check() == z3.unsat
+    assert _solver(violation.solve_formula).check() == z3.sat
 
 
 @pytest.mark.unittest
@@ -476,8 +616,8 @@ def test_compile_property_rechecks_case_atom_context_for_forged_core() -> None:
         compile_bmc_property(_replace_core_property(base, bad_property))
 
     called_property = BmcProperty("reach", 1, predicate=Called("Hook"))
-    with pytest.raises(UnsupportedBmcQuery, match="abstract call trace"):
-        compile_bmc_property(_replace_core_property(base, called_property))
+    formula = compile_bmc_property(_replace_core_property(base, called_property))
+    assert formula.objective_formula.sort().name() == "Bool"
 
 
 @pytest.mark.unittest

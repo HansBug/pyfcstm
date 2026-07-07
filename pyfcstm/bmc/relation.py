@@ -42,6 +42,7 @@ import re
 from dataclasses import dataclass, field
 from typing import (
     Any,
+    Callable,
     Dict,
     Iterable,
     List,
@@ -86,6 +87,7 @@ from pyfcstm.solver.operation import execute_operations_domain
 
 _CanonicalDict = Dict[str, Any]
 _Z3Expr = Union[z3.ArithRef, z3.BoolRef]
+_CallCountLowerer = Callable[[bmc_ast.CallCount, int, Optional[int]], _Z3Expr]
 _EVENT_ATOM_PREFIX = "event:"
 _GUARD_ATOM_PREFIX = "guard:"
 _ACCEPTED_ATOM_PREFIX = "accepted:"
@@ -96,6 +98,94 @@ _ISSUE_URL = "https://github.com/HansBug/pyfcstm/issues"
 class _RelationFrameDomain:
     frame0_state_ids: Tuple[int, ...]
     recurrence_state_ids: Tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class BmcAbstractCallRecord:
+    """Lowered abstract-call occurrence with call-time symbolic snapshot.
+
+    :param ordinal: Zero-based call order within the lowered case.
+    :type ordinal: int
+    :param action_name: Resolved abstract action name.
+    :type action_name: str
+    :param stage: Public lifecycle stage, one of ``enter``, ``during``, or
+        ``exit`` when it can be inferred from the runtime role.
+    :type stage: str
+    :param role: Runtime role that produced the call.
+    :type role: str
+    :param state_path: Runtime public state path approximation.
+    :type state_path: str
+    :param active_leaf_path: Runtime active leaf approximation.
+    :type active_leaf_path: str
+    :param named_ref: Named reference callsite, defaults to ``None``.
+    :type named_ref: str, optional
+    :param snapshot: Mapping from persistent variable names to call-time Z3
+        expressions.
+    :type snapshot: Mapping[str, z3.ArithRef]
+
+    Example::
+
+        >>> import z3
+        >>> BmcAbstractCallRecord(0, 'A', 'during', 'leaf_during', 'Root', 'Root', None, {'x': z3.Int('x')}).to_canonical()['action_name']
+        'A'
+    """
+
+    ordinal: int
+    action_name: str
+    stage: str
+    role: str
+    state_path: str
+    active_leaf_path: str
+    named_ref: Optional[str]
+    snapshot: Mapping[str, z3.ArithRef]
+
+    def __post_init__(self) -> None:
+        if isinstance(self.ordinal, bool) or not isinstance(self.ordinal, int):
+            raise BmcBuildError("call record ordinal must be an integer.")
+        if self.ordinal < 0:
+            raise BmcBuildError("call record ordinal must be non-negative.")
+        for field_name in (
+            "action_name",
+            "stage",
+            "role",
+            "state_path",
+            "active_leaf_path",
+        ):
+            value = getattr(self, field_name)
+            if not isinstance(value, str) or not value:
+                raise BmcBuildError("%s must be a non-empty string." % field_name)
+        if self.named_ref is not None and (
+            not isinstance(self.named_ref, str) or not self.named_ref
+        ):
+            raise BmcBuildError("named_ref must be None or a non-empty string.")
+        snapshot = dict(self.snapshot)
+        if not all(isinstance(name, str) and name for name in snapshot):
+            raise BmcBuildError("call snapshot keys must be non-empty strings.")
+        if not all(z3.is_arith(value) for value in snapshot.values()):
+            raise BmcBuildError(
+                "call snapshot values must be arithmetic Z3 expressions."
+            )
+        object.__setattr__(self, "snapshot", snapshot)
+
+    def to_canonical(self) -> _CanonicalDict:
+        """Return a JSON-stable call-record summary.
+
+        :return: Canonical call record.
+        :rtype: Dict[str, object]
+        """
+        return {
+            "node": "bmc_abstract_call_record",
+            "ordinal": self.ordinal,
+            "action_name": self.action_name,
+            "stage": self.stage,
+            "role": self.role,
+            "state_path": self.state_path,
+            "active_leaf_path": self.active_leaf_path,
+            "named_ref": self.named_ref,
+            "snapshot": {
+                name: _z3_text(expr) for name, expr in sorted(self.snapshot.items())
+            },
+        }
 
 
 def _internal_bmc_error(detail: str) -> BmcBuildError:
@@ -646,6 +736,7 @@ class BmcCaseRelation:
     post_var_exprs: Mapping[str, z3.ArithRef]
     guard_terms: Mapping[str, z3.BoolRef]
     definedness_constraints: Tuple[DomainConstraint, ...] = ()
+    call_records: Tuple[BmcAbstractCallRecord, ...] = ()
 
     def __post_init__(self) -> None:
         if isinstance(self.step_index, bool) or not isinstance(self.step_index, int):
@@ -677,11 +768,18 @@ class BmcCaseRelation:
             raise BmcBuildError(
                 "definedness_constraints must contain DomainConstraint objects."
             )
+        if not all(
+            isinstance(item, BmcAbstractCallRecord) for item in self.call_records
+        ):
+            raise BmcBuildError(
+                "call_records must contain BmcAbstractCallRecord objects."
+            )
         object.__setattr__(self, "post_var_exprs", post_vars)
         object.__setattr__(self, "guard_terms", guard_terms)
         object.__setattr__(
             self, "definedness_constraints", tuple(self.definedness_constraints)
         )
+        object.__setattr__(self, "call_records", tuple(self.call_records))
 
     @property
     def formula(self) -> z3.BoolRef:
@@ -738,6 +836,7 @@ class BmcCaseRelation:
             "definedness_constraints": [
                 _z3_text(item.constraint) for item in self.definedness_constraints
             ],
+            "call_records": [item.to_canonical() for item in self.call_records],
         }
 
 
@@ -1109,6 +1208,7 @@ def _lower_bmc_num_expr(
     *,
     frame_index: int,
     step_index: Optional[int] = None,
+    call_count_lowerer: Optional[_CallCountLowerer] = None,
 ) -> _LoweredValue:
     label = "BMC numeric expression %s" % expr
     if isinstance(expr, bmc_ast.IntLiteral):
@@ -1121,6 +1221,12 @@ def _lower_bmc_num_expr(
         return _LoweredValue(symbols.frame_var(frame_index, expr.name))
     if isinstance(expr, bmc_ast.Cycle):
         return _LoweredValue(z3.IntVal(frame_index))
+    if isinstance(expr, bmc_ast.CallCount):
+        if call_count_lowerer is None:
+            raise UnsupportedBmcQuery(
+                "call_count() needs property call-record context."
+            )
+        return _LoweredValue(call_count_lowerer(expr, frame_index, step_index))
     if isinstance(expr, bmc_ast.MathConst):
         constants = {"pi": math.pi, "E": math.e, "tau": math.tau}
         return _LoweredValue(z3.RealVal(str(constants[expr.name])))
@@ -1130,6 +1236,7 @@ def _lower_bmc_num_expr(
             symbols,
             frame_index=frame_index,
             step_index=step_index,
+            call_count_lowerer=call_count_lowerer,
         )
         value = _expect_arith(operand.expr, label)
         if expr.op == "+":
@@ -1141,10 +1248,18 @@ def _lower_bmc_num_expr(
         )
     if isinstance(expr, bmc_ast.NumBinaryOp):
         left = _lower_bmc_num_expr(
-            expr.left, symbols, frame_index=frame_index, step_index=step_index
+            expr.left,
+            symbols,
+            frame_index=frame_index,
+            step_index=step_index,
+            call_count_lowerer=call_count_lowerer,
         )
         right = _lower_bmc_num_expr(
-            expr.right, symbols, frame_index=frame_index, step_index=step_index
+            expr.right,
+            symbols,
+            frame_index=frame_index,
+            step_index=step_index,
+            call_count_lowerer=call_count_lowerer,
         )
         left_expr = _expect_arith(left.expr, label)
         right_expr = _expect_arith(right.expr, label)
@@ -1159,12 +1274,20 @@ def _lower_bmc_num_expr(
         )
     if isinstance(expr, bmc_ast.NumConditionalOp):
         condition = _lower_bmc_cond_expr(
-            expr.condition, symbols, frame_index=frame_index, step_index=step_index
+            expr.condition,
+            symbols,
+            frame_index=frame_index,
+            step_index=step_index,
+            call_count_lowerer=call_count_lowerer,
         )
         condition_expr = _expect_bool(condition.expr, label)
         if z3.is_true(condition_expr):
             if_true = _lower_bmc_num_expr(
-                expr.if_true, symbols, frame_index=frame_index, step_index=step_index
+                expr.if_true,
+                symbols,
+                frame_index=frame_index,
+                step_index=step_index,
+                call_count_lowerer=call_count_lowerer,
             )
             return _LoweredValue(
                 _expect_arith(if_true.expr, label),
@@ -1172,7 +1295,11 @@ def _lower_bmc_num_expr(
             )
         if z3.is_false(condition_expr):
             if_false = _lower_bmc_num_expr(
-                expr.if_false, symbols, frame_index=frame_index, step_index=step_index
+                expr.if_false,
+                symbols,
+                frame_index=frame_index,
+                step_index=step_index,
+                call_count_lowerer=call_count_lowerer,
             )
             return _LoweredValue(
                 _expect_arith(if_false.expr, label),
@@ -1182,10 +1309,18 @@ def _lower_bmc_num_expr(
                 ),
             )
         if_true = _lower_bmc_num_expr(
-            expr.if_true, symbols, frame_index=frame_index, step_index=step_index
+            expr.if_true,
+            symbols,
+            frame_index=frame_index,
+            step_index=step_index,
+            call_count_lowerer=call_count_lowerer,
         )
         if_false = _lower_bmc_num_expr(
-            expr.if_false, symbols, frame_index=frame_index, step_index=step_index
+            expr.if_false,
+            symbols,
+            frame_index=frame_index,
+            step_index=step_index,
+            call_count_lowerer=call_count_lowerer,
         )
         return _LoweredValue(
             z3.If(
@@ -1205,7 +1340,11 @@ def _lower_bmc_num_expr(
         )
     if isinstance(expr, bmc_ast.UFuncCall):
         operand = _lower_bmc_num_expr(
-            expr.operand, symbols, frame_index=frame_index, step_index=step_index
+            expr.operand,
+            symbols,
+            frame_index=frame_index,
+            step_index=step_index,
+            call_count_lowerer=call_count_lowerer,
         )
         result = _z3_ufunc(expr.func, _expect_arith(operand.expr, label), label)
         return _LoweredValue(
@@ -1223,16 +1362,25 @@ def _lower_bmc_cond_expr(
     *,
     frame_index: int,
     step_index: Optional[int] = None,
+    call_count_lowerer: Optional[_CallCountLowerer] = None,
 ) -> _LoweredValue:
     label = "BMC condition expression %s" % expr
     if isinstance(expr, bmc_ast.BoolLiteral):
         return _LoweredValue(z3.BoolVal(expr.value))
     if isinstance(expr, bmc_ast.NumericComparison):
         left = _lower_bmc_num_expr(
-            expr.left, symbols, frame_index=frame_index, step_index=step_index
+            expr.left,
+            symbols,
+            frame_index=frame_index,
+            step_index=step_index,
+            call_count_lowerer=call_count_lowerer,
         )
         right = _lower_bmc_num_expr(
-            expr.right, symbols, frame_index=frame_index, step_index=step_index
+            expr.right,
+            symbols,
+            frame_index=frame_index,
+            step_index=step_index,
+            call_count_lowerer=call_count_lowerer,
         )
         return _LoweredValue(
             _z3_comparison(
@@ -1245,7 +1393,11 @@ def _lower_bmc_cond_expr(
         )
     if isinstance(expr, bmc_ast.CondUnaryOp):
         operand = _lower_bmc_cond_expr(
-            expr.operand, symbols, frame_index=frame_index, step_index=step_index
+            expr.operand,
+            symbols,
+            frame_index=frame_index,
+            step_index=step_index,
+            call_count_lowerer=call_count_lowerer,
         )
         if expr.op == "!":
             return _LoweredValue(
@@ -1257,7 +1409,11 @@ def _lower_bmc_cond_expr(
         )
     if isinstance(expr, bmc_ast.CondBinaryOp):
         left = _lower_bmc_cond_expr(
-            expr.left, symbols, frame_index=frame_index, step_index=step_index
+            expr.left,
+            symbols,
+            frame_index=frame_index,
+            step_index=step_index,
+            call_count_lowerer=call_count_lowerer,
         )
         left_expr = _expect_bool(left.expr, label)
         if expr.op == "&&" and z3.is_false(left_expr):
@@ -1265,7 +1421,11 @@ def _lower_bmc_cond_expr(
         if expr.op == "||" and z3.is_true(left_expr):
             return _LoweredValue(z3.BoolVal(True), left.definedness_constraints)
         right = _lower_bmc_cond_expr(
-            expr.right, symbols, frame_index=frame_index, step_index=step_index
+            expr.right,
+            symbols,
+            frame_index=frame_index,
+            step_index=step_index,
+            call_count_lowerer=call_count_lowerer,
         )
         right_expr = _expect_bool(right.expr, label)
         if expr.op == "&&":
@@ -1313,12 +1473,20 @@ def _lower_bmc_cond_expr(
         return _LoweredValue(value, definedness_constraints)
     if isinstance(expr, bmc_ast.CondConditionalOp):
         condition = _lower_bmc_cond_expr(
-            expr.condition, symbols, frame_index=frame_index, step_index=step_index
+            expr.condition,
+            symbols,
+            frame_index=frame_index,
+            step_index=step_index,
+            call_count_lowerer=call_count_lowerer,
         )
         condition_expr = _expect_bool(condition.expr, label)
         if z3.is_true(condition_expr):
             if_true = _lower_bmc_cond_expr(
-                expr.if_true, symbols, frame_index=frame_index, step_index=step_index
+                expr.if_true,
+                symbols,
+                frame_index=frame_index,
+                step_index=step_index,
+                call_count_lowerer=call_count_lowerer,
             )
             return _LoweredValue(
                 _expect_bool(if_true.expr, label),
@@ -1326,7 +1494,11 @@ def _lower_bmc_cond_expr(
             )
         if z3.is_false(condition_expr):
             if_false = _lower_bmc_cond_expr(
-                expr.if_false, symbols, frame_index=frame_index, step_index=step_index
+                expr.if_false,
+                symbols,
+                frame_index=frame_index,
+                step_index=step_index,
+                call_count_lowerer=call_count_lowerer,
             )
             return _LoweredValue(
                 _expect_bool(if_false.expr, label),
@@ -1336,10 +1508,18 @@ def _lower_bmc_cond_expr(
                 ),
             )
         if_true = _lower_bmc_cond_expr(
-            expr.if_true, symbols, frame_index=frame_index, step_index=step_index
+            expr.if_true,
+            symbols,
+            frame_index=frame_index,
+            step_index=step_index,
+            call_count_lowerer=call_count_lowerer,
         )
         if_false = _lower_bmc_cond_expr(
-            expr.if_false, symbols, frame_index=frame_index, step_index=step_index
+            expr.if_false,
+            symbols,
+            frame_index=frame_index,
+            step_index=step_index,
+            call_count_lowerer=call_count_lowerer,
         )
         return _LoweredValue(
             z3.If(
@@ -1376,12 +1556,13 @@ def _lower_bmc_cond_expr(
     ):  # pragma: no cover - objective compiler owns case atoms.
         step = _resolve_step(expr.frame, step_index, symbols.domain.bound)
         return _LoweredValue(symbols.case_selector(step, expr.label))
-    if isinstance(
-        expr, bmc_ast.Called
-    ):  # pragma: no cover - binder rejects called() until call semantics exist.
-        raise UnsupportedBmcQuery(
-            "called() atoms are not lowered by the relation builder."
+    if isinstance(expr, bmc_ast.Called):
+        if call_count_lowerer is None:
+            raise UnsupportedBmcQuery("called() needs property call-record context.")
+        count_expr = call_count_lowerer(
+            bmc_ast.CallCount(expr.call_filter), frame_index, step_index
         )
+        return _LoweredValue(_expect_arith(count_expr, label) >= z3.IntVal(1))
     raise UnsupportedBmcQuery(  # pragma: no cover - current AST class set is closed.
         "Unsupported BMC condition expression: %s." % type(expr).__name__
     )
@@ -1409,6 +1590,7 @@ class _CaseLowering:
     guard_definedness: Mapping[str, Tuple[DomainConstraint, ...]]
     final_env: Mapping[str, z3.ArithRef]
     definedness_constraints: Tuple[DomainConstraint, ...]
+    call_records: Tuple[BmcAbstractCallRecord, ...] = ()
 
 
 def _guarded_domain_constraints(
@@ -1451,13 +1633,45 @@ def _lower_guard_requirement(
     return guard_expr, (*constraints, *result.definedness_constraints)
 
 
+def _stage_from_runtime_role(role: str) -> str:
+    if "enter" in role:
+        return "enter"
+    if "exit" in role:
+        return "exit"
+    return "during"
+
+
 def _execute_action_block(
     block: ActionBlock,
     env: Mapping[str, _Z3Expr],
     case_label: str,
-) -> Tuple[Mapping[str, z3.ArithRef], Tuple[DomainConstraint, ...]]:
+) -> Tuple[
+    Mapping[str, z3.ArithRef],
+    Tuple[DomainConstraint, ...],
+    Tuple[BmcAbstractCallRecord, ...],
+]:
     if block.is_abstract:
-        return dict(env), ()
+        action_name = block.action_name
+        if action_name is None:
+            return dict(env), (), ()
+        stage = _stage_from_runtime_role(block.runtime_role)
+        snapshot = {
+            name: _expect_arith(
+                value, "call snapshot %s in case %s" % (name, case_label)
+            )
+            for name, value in env.items()
+        }
+        record = BmcAbstractCallRecord(
+            0,
+            action_name,
+            stage,
+            block.runtime_role,
+            block.execution_state_path or block.owner_state_path,
+            block.active_leaf_path or block.owner_state_path,
+            block.named_ref,
+            snapshot,
+        )
+        return dict(env), (), (record,)
     execution = execute_operations_domain(
         list(block.operations),
         dict(env),
@@ -1474,7 +1688,7 @@ def _execute_action_block(
             "action block %s in case %s" % (block.runtime_role, case_label),
         )
         raise UnsupportedBmcQuery(message)
-    return dict(execution.env), tuple(execution.definedness_constraints)
+    return dict(execution.env), tuple(execution.definedness_constraints), ()
 
 
 def _prepare_case_lowering(
@@ -1487,6 +1701,7 @@ def _prepare_case_lowering(
     guard_terms: Dict[str, z3.BoolRef] = {}
     guard_definedness: Dict[str, Tuple[DomainConstraint, ...]] = {}
     definedness: List[DomainConstraint] = []
+    call_records: List[BmcAbstractCallRecord] = []
     for anchor in range(len(case.action_blocks) + 1):
         for guard in sorted(
             guards_by_anchor.get(anchor, ()), key=lambda item: item.requirement_id
@@ -1498,16 +1713,30 @@ def _prepare_case_lowering(
             guard_definedness[guard.requirement_id] = tuple(new_definedness)
             definedness = list(new_definedness)
         if anchor < len(case.action_blocks):
-            env, block_definedness = _execute_action_block(
+            env, block_definedness, block_call_records = _execute_action_block(
                 case.action_blocks[anchor], env, case.label
             )
             definedness.extend(block_definedness)
+            for record in block_call_records:
+                call_records.append(
+                    BmcAbstractCallRecord(
+                        len(call_records),
+                        record.action_name,
+                        record.stage,
+                        record.role,
+                        record.state_path,
+                        record.active_leaf_path,
+                        record.named_ref,
+                        record.snapshot,
+                    )
+                )
     return _CaseLowering(
         case=case,
         guard_terms=guard_terms,
         guard_definedness=guard_definedness,
         final_env=env,
         definedness_constraints=tuple(definedness),
+        call_records=tuple(call_records),
     )
 
 
@@ -1654,6 +1883,7 @@ def _build_case_relation(
         post_var_exprs=post_var_exprs,
         guard_terms=lowering.guard_terms,
         definedness_constraints=definedness_constraints,
+        call_records=lowering.call_records,
     )
 
 

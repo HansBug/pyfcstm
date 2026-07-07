@@ -97,6 +97,36 @@ def test_bmc_query_lexer_highlights_cover_case_tokens():
 
 
 @pytest.mark.unittest
+def test_bmc_query_lexer_highlights_abstract_call_query_tokens():
+    """Abstract-call query helpers and filters receive stable token classes."""
+    tokens = _token_pairs(
+        dedent(
+            """\
+            init cold;
+
+            check reach <= 4:
+                call_count(
+                    action="Root.Hook",
+                    step=*,
+                    stage="during",
+                    role="plain_during",
+                    active_leaf="Root.System.A",
+                    named_ref=null,
+                    where var("x") >= 0
+                ) >= 1 && called("Root.Hook", step=+0);
+            """
+        )
+    )
+
+    assert (Name.Builtin, "call_count") in tokens
+    assert (Name.Builtin, "called") in tokens
+    for expected in ("action", "step", "stage", "role", "active_leaf", "named_ref"):
+        assert (Keyword.Reserved, expected) in tokens
+    assert (Keyword.Reserved, "null") in tokens
+    assert (Keyword.Reserved, "where") in tokens
+
+
+@pytest.mark.unittest
 def test_bmc_query_lexer_disambiguates_dual_role_keywords():
     """Dual-role query words stay stable in clause and atom-call contexts."""
     tokens = _token_pairs(
@@ -164,3 +194,23 @@ def test_bmc_query_analyse_text_is_string_based(monkeypatch):
     assert 0.0 <= score <= 1.0
     assert score >= 0.80
     assert sys.modules["pyfcstm.bmc.parse"] is sentinel
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "source, expected",
+    [
+        pytest.param("", 0.0, id="empty"),
+        pytest.param("plain unrelated prose", 0.0, id="no-query-hint"),
+        pytest.param("assume always: true;", 0.25, id="assumption-only"),
+        pytest.param("init cold;", 0.20, id="init-only"),
+        pytest.param(
+            "state Root { [*] -> A; } check reach <= 1: called();",
+            0.40,
+            id="fcstm-state-penalty",
+        ),
+    ],
+)
+def test_bmc_query_analyse_text_scores_hint_combinations(source, expected):
+    """String-based language detection scores independent query hints."""
+    assert FcstmBmcQueryLexer.analyse_text(source) == pytest.approx(expected)

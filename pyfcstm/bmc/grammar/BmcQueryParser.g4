@@ -129,6 +129,8 @@ bmc_num_expression
         # frameVarExprNum
     | CYCLE
         # cycleExprNum
+    | CALL_COUNT LPAREN call_arguments? RPAREN
+        # callCountExprNum
     | op=(PLUS | MINUS) bmc_num_expression
         # unaryExprNum
     | <assoc=right> bmc_num_expression op=POW bmc_num_expression
@@ -183,7 +185,37 @@ bmc_boolean_atom
     | TERMINATED LPAREN frame_selector? RPAREN
     | EVENT LPAREN string_literal COMMA event_cycle_selector RPAREN
     | CASE LPAREN string_literal (COMMA frame_selector)? RPAREN
-    | CALLED LPAREN string_literal (COMMA frame_selector)? RPAREN
+    | CALLED LPAREN call_arguments? RPAREN
+    ;
+
+call_arguments
+    : call_argument (COMMA call_argument)*
+    ;
+
+call_argument
+    : string_literal
+    | call_step_selector
+    | ACTION ASSIGN string_literal
+    | STEP ASSIGN call_step_selector
+    | STAGE ASSIGN string_literal
+    | ROLE ASSIGN string_literal
+    | STATE ASSIGN string_literal
+    | ACTIVE_LEAF ASSIGN string_literal
+    | NAMED_REF ASSIGN (string_literal | NULL)
+    | WHERE bmc_cond_expression
+    ;
+
+call_step_selector
+    : STAR
+    | RANGE_INT
+    | call_step_point
+    | call_step_point? DOTDOT call_step_point?
+    ;
+
+call_step_point
+    : integer_literal
+    | PLUS integer_literal
+    | MINUS integer_literal
     ;
 
 num_literal

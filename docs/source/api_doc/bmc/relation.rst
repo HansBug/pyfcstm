@@ -12,6 +12,13 @@ pyfcstm.bmc.relation
 .. autodata:: __all__
 
 
+BmcAbstractCallRecord
+-----------------------------------------------------
+
+.. autoclass:: BmcAbstractCallRecord
+    :members: __post_init__,to_canonical,ordinal,action_name,stage,role,state_path,active_leaf_path,named_ref,snapshot
+
+
 BmcTraceSymbols
 -----------------------------------------------------
 
@@ -23,7 +30,7 @@ BmcCaseRelation
 -----------------------------------------------------
 
 .. autoclass:: BmcCaseRelation
-    :members: __post_init__,formula,to_canonical,step_index,case,selector,antecedent,consequent,implication,selector_constraint,post_var_exprs,guard_terms,definedness_constraints
+    :members: __post_init__,formula,to_canonical,step_index,case,selector,antecedent,consequent,implication,selector_constraint,post_var_exprs,guard_terms,definedness_constraints,call_records
 
 
 BmcStepRelation

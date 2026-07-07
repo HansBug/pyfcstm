@@ -334,8 +334,16 @@ def test_all_fcstm_unary_functions_parse(func_name):
         pytest.param('case("label", current)', id="case-explicit-current"),
         pytest.param('case("label", 4)', id="case-frame"),
         pytest.param('called("hook")', id="called-current"),
-        pytest.param('called("hook", current)', id="called-explicit-current"),
+        pytest.param('called("hook", +0)', id="called-explicit-current-relative"),
         pytest.param('called("hook", 5)', id="called-frame"),
+        pytest.param('call_count("hook") >= 1', id="call-count-comparison"),
+        pytest.param('call_count("hook", step=*) >= 1', id="call-count-all-steps"),
+        pytest.param('call_count("hook", step=0..2) >= 1', id="call-count-range-int"),
+        pytest.param(
+            'called(action="hook", step=-2..+0, role="leaf_during", '
+            'state="Root.A", active_leaf="Root.A", named_ref=null, where x >= 0)',
+            id="called-rich-filter",
+        ),
         pytest.param('!active("Root.A")', id="bang"),
         pytest.param("not false", id="not-keyword"),
         pytest.param("x < y", id="lt"),
@@ -473,6 +481,14 @@ def test_later_binding_or_normalization_queries_parse(query_text):
         pytest.param(
             'check reach <= 1: event("Root.E");',
             id="event-atom-missing-selector",
+        ),
+        pytest.param(
+            'check reach <= 5: called("hook", current);',
+            id="call-current-keyword-not-supported",
+        ),
+        pytest.param(
+            "check reach <= 5: call_count(step=current) >= 1;",
+            id="call-count-current-keyword-not-supported",
         ),
         pytest.param(
             'init state("A") with { x = 7 }; check reach <= 1: true;',

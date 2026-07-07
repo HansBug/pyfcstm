@@ -33,6 +33,10 @@ from typing import Any, Dict, List, cast
 from pyfcstm.bmc.ast import (
     Active,
     BoolLiteral,
+    CallCount,
+    CallFilter,
+    CallStepPoint,
+    CallStepSelector,
     Called,
     Case,
     CondBinaryOp,
@@ -479,6 +483,13 @@ class BmcQueryParseListener(BmcQueryParserListener):
         """Build the built-in ``cycle`` numeric atom."""
         self.nodes[ctx] = Cycle()
 
+    def exitCallCountExprNum(self, ctx: BmcQueryParser.CallCountExprNumContext) -> None:
+        """Build a ``call_count(...)`` numeric expression."""
+        call_filter = (
+            self.nodes[ctx.call_arguments()] if ctx.call_arguments() else CallFilter()
+        )
+        self.nodes[ctx] = CallCount(call_filter)
+
     def exitUnaryExprNum(self, ctx: BmcQueryParser.UnaryExprNumContext) -> None:
         """Build a numeric unary expression."""
         self.nodes[ctx] = NumUnaryOp(
@@ -584,13 +595,129 @@ class BmcQueryParseListener(BmcQueryParserListener):
                 self._string_value(ctx.string_literal()), frame=frame
             )
         elif ctx.CALLED():
-            self.nodes[ctx] = Called(
-                self._string_value(ctx.string_literal()), frame=frame
+            call_filter = (
+                self.nodes[ctx.call_arguments()]
+                if ctx.call_arguments()
+                else CallFilter()
             )
+            self.nodes[ctx] = Called(filter=call_filter)
         else:
             raise AssertionError(
                 "Unknown BMC boolean atom: %s" % ctx.getText()
             )  # pragma: no cover
+
+    def exitCall_arguments(self, ctx: BmcQueryParser.Call_argumentsContext) -> None:
+        """Build a call filter from positional and named call arguments."""
+        updates: Dict[str, Any] = {}
+        seen = set()
+        saw_named = False
+        saw_where = False
+        positional_index = 0
+        for index, item in enumerate(ctx.call_argument()):
+            key, value = self.nodes[item]
+            path = "call argument %d" % index
+            if saw_where:
+                raise InvalidBmcQuery("call where argument must be last.")
+            if key == "where":
+                saw_where = True
+            if key.startswith("positional_"):
+                if saw_named:
+                    raise InvalidBmcQuery(
+                        "positional call arguments must appear before named arguments."
+                    )
+                if positional_index == 0 and key == "positional_action":
+                    key = "action"
+                elif positional_index <= 1 and key == "positional_step":
+                    key = "step"
+                else:
+                    raise InvalidBmcQuery(
+                        "unsupported positional call argument at %s." % path
+                    )
+                positional_index += 1
+            else:
+                saw_named = True
+            if key in seen:
+                raise InvalidBmcQuery("duplicate call argument %r." % key)
+            seen.add(key)
+            updates[key] = value
+        self.nodes[ctx] = CallFilter(**updates)
+
+    def exitCall_argument(self, ctx: BmcQueryParser.Call_argumentContext) -> None:
+        """Build one call argument pair consumed by ``exitCall_arguments``."""
+        if ctx.WHERE():
+            self.nodes[ctx] = ("where", self.nodes[ctx.bmc_cond_expression()])
+            return
+        if ctx.ACTION():
+            self.nodes[ctx] = ("action", self.nodes[ctx.string_literal()])
+            return
+        if ctx.STEP():
+            self.nodes[ctx] = ("step", self.nodes[ctx.call_step_selector()])
+            return
+        if ctx.STAGE():
+            self.nodes[ctx] = ("stage", self.nodes[ctx.string_literal()])
+            return
+        if ctx.ROLE():
+            self.nodes[ctx] = ("role", self.nodes[ctx.string_literal()])
+            return
+        if ctx.STATE():
+            self.nodes[ctx] = ("state", self.nodes[ctx.string_literal()])
+            return
+        if ctx.ACTIVE_LEAF():
+            self.nodes[ctx] = ("active_leaf", self.nodes[ctx.string_literal()])
+            return
+        if ctx.NAMED_REF():
+            if ctx.NULL():
+                self.nodes[ctx] = ("named_ref_is_null", True)
+            else:
+                self.nodes[ctx] = ("named_ref", self.nodes[ctx.string_literal()])
+            return
+        if ctx.call_step_selector():
+            self.nodes[ctx] = (
+                "positional_step",
+                self.nodes[ctx.call_step_selector()],
+            )
+            return
+        self.nodes[ctx] = ("positional_action", self.nodes[ctx.string_literal()])
+
+    def exitCall_step_selector(
+        self, ctx: BmcQueryParser.Call_step_selectorContext
+    ) -> None:
+        """Build a call step selector."""
+        if ctx.STAR():
+            self.nodes[ctx] = CallStepSelector.all()
+            return
+        if ctx.RANGE_INT():
+            start_text, end_text = "".join(
+                cast(Any, ctx.RANGE_INT()).getText().split()
+            ).split("..", 1)
+            self.nodes[ctx] = CallStepSelector.range(
+                CallStepPoint.absolute(int(start_text)),
+                CallStepPoint.absolute(int(end_text)),
+            )
+            return
+        points = [self.nodes[item] for item in ctx.call_step_point()]
+        if not ctx.DOTDOT():
+            self.nodes[ctx] = CallStepSelector.point(points[0])
+            return
+        start = (
+            points[0] if points and ctx.getChild(0) is ctx.call_step_point(0) else None
+        )
+        end = None
+        if len(points) == 2:
+            end = points[1]
+        elif len(points) == 1 and ctx.getChild(0) is not ctx.call_step_point(0):
+            end = points[0]
+        self.nodes[ctx] = CallStepSelector.range(start, end)
+
+    def exitCall_step_point(self, ctx: BmcQueryParser.Call_step_pointContext) -> None:
+        """Build a call step point."""
+        value = self.nodes[ctx.integer_literal()]
+        if ctx.PLUS():
+            self.nodes[ctx] = CallStepPoint.relative(value)
+        elif ctx.MINUS():
+            self.nodes[ctx] = CallStepPoint.relative(-value)
+        else:
+            self.nodes[ctx] = CallStepPoint.absolute(value)
 
     def exitNum_literal(self, ctx: BmcQueryParser.Num_literalContext) -> None:
         """Build an integer or floating-point literal expression node."""

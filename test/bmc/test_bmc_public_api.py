@@ -107,6 +107,8 @@ def test_bmc_public_api_exports_exact_names():
         "BmcStepRelation",
         "BmcCoreFormula",
         "build_bmc_core_formula",
+        "BmcPropertyFormula",
+        "compile_bmc_property",
     }
 
     assert set(bmc.__all__) == expected
@@ -154,6 +156,8 @@ def test_bmc_public_api_exports_exact_names():
         "BmcStepRelation",
         "BmcCoreFormula",
         "build_bmc_core_formula",
+        "BmcPropertyFormula",
+        "compile_bmc_property",
     }
     function_names = {
         "parse_bmc_query",
@@ -176,6 +180,7 @@ def test_bmc_public_api_exports_exact_names():
         "expand_macro_step_cases",
         "prepare_bmc_query",
         "build_bmc_core_formula",
+        "compile_bmc_property",
     }
     for name in expected - lazy_names - function_names:
         assert getattr(bmc, name).__name__ == name
@@ -208,6 +213,7 @@ def test_submodule_all_exports_are_exact():
     expand = importlib.import_module("pyfcstm.bmc.expand")
     engine = importlib.import_module("pyfcstm.bmc.engine")
     relation = importlib.import_module("pyfcstm.bmc.relation")
+    properties = importlib.import_module("pyfcstm.bmc.properties")
 
     assert set(errors.__all__) == {
         "BmcError",
@@ -324,6 +330,10 @@ def test_submodule_all_exports_are_exact():
         "BmcStepRelation",
         "BmcCoreFormula",
         "build_bmc_core_formula",
+    }
+    assert set(properties.__all__) == {
+        "BmcPropertyFormula",
+        "compile_bmc_property",
     }
 
 

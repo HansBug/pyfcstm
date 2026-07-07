@@ -8,6 +8,8 @@ categories:
 - runtime
 - template_alignment
 - hot_start
+exclude_runners:
+- bmc_core
 initial:
   state: Root.Safe
   vars:

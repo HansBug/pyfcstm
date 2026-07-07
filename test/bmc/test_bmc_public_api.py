@@ -102,6 +102,11 @@ def test_bmc_public_api_exports_exact_names():
         "BmcPreparedContext",
         "BmcEngine",
         "prepare_bmc_query",
+        "BmcTraceSymbols",
+        "BmcCaseRelation",
+        "BmcStepRelation",
+        "BmcCoreFormula",
+        "build_bmc_core_formula",
     }
 
     assert set(bmc.__all__) == expected
@@ -145,6 +150,11 @@ def test_bmc_public_api_exports_exact_names():
         "BmcPreparedContext",
         "BmcEngine",
         "prepare_bmc_query",
+        "BmcTraceSymbols",
+        "BmcCaseRelation",
+        "BmcStepRelation",
+        "BmcCoreFormula",
+        "build_bmc_core_formula",
     }
     function_names = {
         "parse_bmc_query",
@@ -167,6 +177,7 @@ def test_bmc_public_api_exports_exact_names():
         "build_bmc_domain",
         "expand_macro_step_cases",
         "prepare_bmc_query",
+        "build_bmc_core_formula",
     }
     for name in expected - lazy_names - function_names:
         assert getattr(bmc, name).__name__ == name
@@ -198,6 +209,7 @@ def test_submodule_all_exports_are_exact():
     macro = importlib.import_module("pyfcstm.bmc.macro")
     expand = importlib.import_module("pyfcstm.bmc.expand")
     engine = importlib.import_module("pyfcstm.bmc.engine")
+    relation = importlib.import_module("pyfcstm.bmc.relation")
 
     assert set(errors.__all__) == {
         "BmcError",
@@ -307,6 +319,13 @@ def test_submodule_all_exports_are_exact():
         "BmcPreparedContext",
         "BmcEngine",
         "prepare_bmc_query",
+    }
+    assert set(relation.__all__) == {
+        "BmcTraceSymbols",
+        "BmcCaseRelation",
+        "BmcStepRelation",
+        "BmcCoreFormula",
+        "build_bmc_core_formula",
     }
 
 

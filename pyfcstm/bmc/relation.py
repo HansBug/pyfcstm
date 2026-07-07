@@ -1,0 +1,1824 @@
+"""Build solver-level BMC core trace relations.
+
+This module lowers the solver-independent BMC preparation and macro-step
+handoff objects into the first SMT formula layer.  The public entry point
+:func:`build_bmc_core_formula` consumes a
+:class:`pyfcstm.bmc.engine.BmcPreparedContext`, allocates bounded frame / step
+symbols, expands macro-step cases, and constructs the core formula
+``Core_N = D_N ∧ I_0 ∧ T_N ∧ ENV_N``.
+
+The relation builder deliberately stops before property compilation.  It does
+not decide whether a query is reachable, forbidden, covered, or healthy; later
+layers add ``InitHealthy_0`` / ``NoDiag_N`` gates and objective constraints on
+top of the returned core formula.
+
+Public concepts:
+
+* :class:`BmcTraceSymbols` - Z3 symbols for frames, event inputs, and case
+  selectors.
+* :class:`BmcCaseRelation` - One lowered macro-step case implication.
+* :class:`BmcStepRelation` - All case implications for one symbolic step.
+* :class:`BmcCoreFormula` - The complete ``D_N`` / ``I_0`` / ``T_N`` /
+  ``ENV_N`` bundle.
+
+Example::
+
+    >>> from pyfcstm.bmc import BmcEngine, build_bmc_core_formula
+    >>> from pyfcstm.model import load_state_machine_from_text
+    >>> model = load_state_machine_from_text('state Root;')
+    >>> context = BmcEngine(model).prepare('check reach <= 1: terminated();')
+    >>> core = build_bmc_core_formula(context)
+    >>> core.to_canonical()['node']
+    'bmc_core_formula'
+"""
+
+from __future__ import annotations
+
+import hashlib
+import math
+import re
+from dataclasses import dataclass, field
+from typing import (
+    Any,
+    Dict,
+    Iterable,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Set,
+    Tuple,
+    Union,
+)
+
+import z3
+
+from pyfcstm.bmc import ast as bmc_ast
+from pyfcstm.bmc.binding import BoundAssumption
+from pyfcstm.bmc.domain import (
+    STATE_DIAGNOSTIC_ID,
+    STATE_TERMINATE_ID,
+    BmcDomain,
+)
+from pyfcstm.bmc.engine import BmcPreparedContext
+from pyfcstm.bmc.errors import BmcBuildError, UnsupportedBmcQuery
+from pyfcstm.bmc.expand import expand_macro_step_cases
+from pyfcstm.bmc.macro import (
+    ActionBlock,
+    BoolTemplate,
+    CycleCase,
+    GuardRequirement,
+    MacroStepFormal,
+)
+from pyfcstm.bmc.query import EventCardinalityAssumption, FrameAssumption
+from pyfcstm.bmc.source import (
+    diagnostic_source,
+    source_from_initial_spec,
+    stable_leaf_source,
+    terminated_source,
+)
+from pyfcstm.model import Expr
+from pyfcstm.solver.domain import DomainConstraint, DomainSource, translate_expr_domain
+from pyfcstm.solver.operation import execute_operations_domain
+
+_CanonicalDict = Dict[str, Any]
+_Z3Expr = Union[z3.ArithRef, z3.BoolRef]
+_EVENT_ATOM_PREFIX = "event:"
+_GUARD_ATOM_PREFIX = "guard:"
+_ACCEPTED_ATOM_PREFIX = "accepted:"
+_ISSUE_URL = "https://github.com/HansBug/pyfcstm/issues"
+
+
+def _internal_bmc_error(detail: str) -> BmcBuildError:
+    return BmcBuildError(
+        "internal BMC bug: %s This indicates that pyfcstm's BMC relation "
+        "builder received an inconsistent internal object or missed a required "
+        "precondition; please report this with the FCSTM input, .fbmcq query, "
+        "and traceback at %s." % (detail, _ISSUE_URL)
+    )
+
+
+def _require_context(context: object) -> BmcPreparedContext:
+    if not isinstance(context, BmcPreparedContext):
+        raise BmcBuildError("context must be BmcPreparedContext.")
+    if context.domain.model is not context.model:
+        raise BmcBuildError(
+            "context.domain must be built from context.model for relation building."
+        )
+    return context
+
+
+def _z3_text(expr: z3.ExprRef) -> str:
+    return str(expr)
+
+
+def _and(items: Iterable[z3.ExprRef]) -> z3.BoolRef:
+    values = tuple(items)
+    if not values:
+        return z3.BoolVal(True)
+    if len(values) == 1:
+        return values[0]
+    return z3.And(*values)
+
+
+def _or(items: Iterable[z3.ExprRef]) -> z3.BoolRef:
+    values = tuple(items)
+    if not values:  # pragma: no cover - relation callers pass non-empty domains.
+        return z3.BoolVal(False)
+    if len(values) == 1:  # pragma: no cover - current state domains include sentinels.
+        return values[0]
+    return z3.Or(*values)
+
+
+def _state_in(symbol: z3.ArithRef, state_ids: Sequence[int]) -> z3.BoolRef:
+    ids = tuple(state_ids)
+    if not ids:  # pragma: no cover - BmcDomain validates allowed state sets.
+        raise _internal_bmc_error("state domain set is empty while building D_N.")
+    return _or(symbol == z3.IntVal(state_id) for state_id in ids)
+
+
+def _safe_symbol_fragment(value: str) -> str:
+    body = re.sub(r"[^0-9A-Za-z_]+", "_", value).strip("_") or "item"
+    digest = hashlib.sha1(value.encode("utf-8")).hexdigest()[:10]
+    return "%s_%s" % (body[:80], digest)
+
+
+def _domain_constraints_exprs(
+    items: Sequence[DomainConstraint],
+) -> Tuple[z3.ExprRef, ...]:
+    return tuple(item.constraint for item in items)
+
+
+def _failure_message(kind: str, reason: str, label: str) -> str:
+    return "unsupported_bmc_core: %s failed while lowering %s: %s" % (
+        kind,
+        label,
+        reason,
+    )
+
+
+def _raise_expr_failure(result, label: str) -> None:
+    failure = getattr(result, "failure", None)
+    if failure is None:
+        return
+    message = _failure_message(failure.kind, failure.reason, label)
+    if failure.kind in {"not_implemented", "z3_error", "type_error", "value_error"}:
+        raise UnsupportedBmcQuery(message)
+    raise BmcBuildError(
+        message
+    )  # pragma: no cover - current translators use known failure kinds.
+
+
+def _expect_bool(expr: _Z3Expr, label: str) -> z3.BoolRef:
+    if not z3.is_bool(expr):  # pragma: no cover - binder/model typing prevents this.
+        raise UnsupportedBmcQuery("%s must lower to a Boolean expression." % label)
+    return expr
+
+
+def _expect_arith(expr: _Z3Expr, label: str) -> z3.ArithRef:
+    if not z3.is_arith(expr):  # pragma: no cover - binder/model typing prevents this.
+        raise UnsupportedBmcQuery("%s must lower to a numeric expression." % label)
+    return expr
+
+
+@dataclass(frozen=True)
+class _LoweredValue:
+    expr: _Z3Expr
+    definedness_constraints: Tuple[DomainConstraint, ...] = ()
+
+
+@dataclass(frozen=True)
+class _LoweredBoolTemplate:
+    expr: z3.BoolRef
+    definedness_constraints: Tuple[DomainConstraint, ...] = ()
+
+
+@dataclass(frozen=True)
+class BmcTraceSymbols:
+    """Z3 symbols for one bounded BMC trace.
+
+    :param domain: Domain snapshot that owns the symbols.
+    :type domain: pyfcstm.bmc.domain.BmcDomain
+    :param frame_states: State-id symbols for ``F_0..F_N``.
+    :type frame_states: Tuple[z3.ArithRef, ...]
+    :param frame_vars: Per-frame persistent-variable symbols.
+    :type frame_vars: Tuple[Mapping[str, z3.ArithRef], ...]
+    :param event_inputs: Per-step event-input symbols.
+    :type event_inputs: Tuple[Mapping[str, z3.BoolRef], ...]
+    :param case_selectors: Per-step case-selector symbols.
+    :type case_selectors: Tuple[Mapping[str, z3.BoolRef], ...]
+
+    Example::
+
+        >>> from pyfcstm.bmc.domain import build_bmc_domain
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> domain = build_bmc_domain(load_state_machine_from_text('state Root;'), 1)
+        >>> symbols = BmcTraceSymbols.allocate(domain, {0: ('case0',)})
+        >>> symbols.frame_state(0).sort().name()
+        'Int'
+        >>> 'case0' in symbols.case_selectors[0]
+        True
+    """
+
+    domain: BmcDomain
+    frame_states: Tuple[z3.ArithRef, ...]
+    frame_vars: Tuple[Mapping[str, z3.ArithRef], ...]
+    event_inputs: Tuple[Mapping[str, z3.BoolRef], ...]
+    case_selectors: Tuple[Mapping[str, z3.BoolRef], ...] = field(default_factory=tuple)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.domain, BmcDomain):
+            raise BmcBuildError("domain must be BmcDomain.")
+        if len(self.frame_states) != self.domain.bound + 1:
+            raise BmcBuildError("frame_states must contain bound + 1 symbols.")
+        if len(self.frame_vars) != self.domain.bound + 1:
+            raise BmcBuildError("frame_vars must contain bound + 1 mappings.")
+        if len(self.event_inputs) != self.domain.bound:
+            raise BmcBuildError("event_inputs must contain bound mappings.")
+        if len(self.case_selectors) != self.domain.bound:
+            raise BmcBuildError("case_selectors must contain bound mappings.")
+        object.__setattr__(
+            self,
+            "frame_vars",
+            tuple(
+                {key: value for key, value in mapping.items()}
+                for mapping in self.frame_vars
+            ),
+        )
+        object.__setattr__(
+            self,
+            "event_inputs",
+            tuple(
+                {key: value for key, value in mapping.items()}
+                for mapping in self.event_inputs
+            ),
+        )
+        object.__setattr__(
+            self,
+            "case_selectors",
+            tuple(
+                {key: value for key, value in mapping.items()}
+                for mapping in self.case_selectors
+            ),
+        )
+
+    @classmethod
+    def allocate(
+        cls,
+        domain: BmcDomain,
+        case_labels_by_step: Optional[Mapping[int, Sequence[str]]] = None,
+    ) -> "BmcTraceSymbols":
+        """Allocate trace symbols for ``domain``.
+
+        :param domain: Domain snapshot to allocate for.
+        :type domain: pyfcstm.bmc.domain.BmcDomain
+        :param case_labels_by_step: Optional mapping from step index to case
+            labels that need selector symbols, defaults to ``None``.
+        :type case_labels_by_step: Optional[Mapping[int, Sequence[str]]], optional
+        :return: Allocated symbol bundle.
+        :rtype: BmcTraceSymbols
+        :raises pyfcstm.bmc.errors.BmcBuildError: If the domain is malformed.
+
+        Example::
+
+            >>> from pyfcstm.bmc.domain import build_bmc_domain
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> domain = build_bmc_domain(load_state_machine_from_text('state Root;'), 1)
+            >>> BmcTraceSymbols.allocate(domain).to_canonical()['node']
+            'bmc_trace_symbols'
+        """
+        if not isinstance(domain, BmcDomain):
+            raise BmcBuildError("domain must be BmcDomain.")
+        labels_by_step = case_labels_by_step or {}
+        frame_states = tuple(
+            z3.Int("F_%d_state" % frame.index) for frame in domain.frames
+        )
+        frame_vars = []
+        for frame in domain.frames:
+            mapping = {}
+            for var in domain.variables:
+                symbol_name = "F_%d_%s" % (frame.index, _safe_symbol_fragment(var.name))
+                if var.declared_type == "int":
+                    mapping[var.name] = z3.Int(symbol_name)
+                elif var.declared_type == "float":
+                    mapping[var.name] = z3.Real(symbol_name)
+                else:  # pragma: no cover - BmcDomain only admits int/float vars.
+                    raise BmcBuildError(
+                        "Unsupported persistent variable type for BMC relation: %r."
+                        % var.declared_type
+                    )
+            frame_vars.append(mapping)
+        event_inputs = []
+        for step in domain.steps:
+            mapping = {}
+            for event in domain.events:
+                mapping[event.path] = z3.Bool(
+                    "E_%d_event_%d_%s"
+                    % (step.index, event.id, _safe_symbol_fragment(event.path))
+                )
+            event_inputs.append(mapping)
+        case_selectors = []
+        for step in domain.steps:
+            labels = tuple(labels_by_step.get(step.index, ()))
+            if len(set(labels)) != len(labels):
+                raise _internal_bmc_error(
+                    "duplicate case labels supplied for step %d." % step.index
+                )
+            case_selectors.append(
+                {
+                    label: z3.Bool(
+                        "C_%d_%s" % (step.index, _safe_symbol_fragment(label))
+                    )
+                    for label in labels
+                }
+            )
+        return cls(
+            domain=domain,
+            frame_states=frame_states,
+            frame_vars=tuple(frame_vars),
+            event_inputs=tuple(event_inputs),
+            case_selectors=tuple(case_selectors),
+        )
+
+    def frame_state(self, frame_index: int) -> z3.ArithRef:
+        """Return the state symbol for a frame.
+
+        :param frame_index: Frame index in ``0..N``.
+        :type frame_index: int
+        :return: State-id symbol.
+        :rtype: z3.ArithRef
+        :raises pyfcstm.bmc.errors.BmcBuildError: If ``frame_index`` is invalid.
+
+        Example::
+
+            >>> from pyfcstm.bmc.domain import build_bmc_domain
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> domain = build_bmc_domain(load_state_machine_from_text('state Root;'), 1)
+            >>> BmcTraceSymbols.allocate(domain).frame_state(0).decl().name()
+            'F_0_state'
+        """
+        if frame_index < 0 or frame_index >= len(self.frame_states):
+            raise BmcBuildError("frame index out of range: %r." % frame_index)
+        return self.frame_states[frame_index]
+
+    def frame_var(self, frame_index: int, name: str) -> z3.ArithRef:
+        """Return a persistent-variable symbol for a frame.
+
+        :param frame_index: Frame index in ``0..N``.
+        :type frame_index: int
+        :param name: Persistent variable name.
+        :type name: str
+        :return: Variable symbol.
+        :rtype: z3.ArithRef
+        :raises pyfcstm.bmc.errors.BmcBuildError: If the frame or variable is
+            unknown.
+
+        Example::
+
+            >>> from pyfcstm.bmc.domain import build_bmc_domain
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> domain = build_bmc_domain(load_state_machine_from_text('def int x = 0; state Root;'), 1)
+            >>> BmcTraceSymbols.allocate(domain).frame_var(0, 'x').sort().name()
+            'Int'
+        """
+        if frame_index < 0 or frame_index >= len(self.frame_vars):
+            raise BmcBuildError("frame index out of range: %r." % frame_index)
+        try:
+            return self.frame_vars[frame_index][name]
+        except KeyError as err:
+            # KeyError: the requested variable name is absent from this domain's
+            # persistent-variable symbol mapping.
+            raise BmcBuildError("Unknown frame variable: %r." % name) from err
+
+    def event_input(self, step_index: int, event_path: str) -> z3.BoolRef:
+        """Return an event-input symbol for a step.
+
+        :param step_index: Step index in ``0..N-1``.
+        :type step_index: int
+        :param event_path: Fully resolved event path.
+        :type event_path: str
+        :return: Event-input symbol.
+        :rtype: z3.BoolRef
+        :raises pyfcstm.bmc.errors.BmcBuildError: If the step or event is
+            unknown.
+
+        Example::
+
+            >>> from pyfcstm.bmc.domain import build_bmc_domain
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('state Root { event Go; state A; [*] -> A; }')
+            >>> domain = build_bmc_domain(model, 1)
+            >>> BmcTraceSymbols.allocate(domain).event_input(0, 'Root.Go').sort().name()
+            'Bool'
+        """
+        if step_index < 0 or step_index >= len(self.event_inputs):
+            raise BmcBuildError("step index out of range: %r." % step_index)
+        try:
+            return self.event_inputs[step_index][event_path]
+        except KeyError as err:
+            # KeyError: the requested event path is absent from this domain's
+            # per-step event-input mapping.
+            raise BmcBuildError("Unknown event input: %r." % event_path) from err
+
+    def case_selector(self, step_index: int, label: str) -> z3.BoolRef:
+        """Return a case-selector symbol for a step.
+
+        :param step_index: Step index in ``0..N-1``.
+        :type step_index: int
+        :param label: Macro-step case label.
+        :type label: str
+        :return: Case-selector symbol.
+        :rtype: z3.BoolRef
+        :raises pyfcstm.bmc.errors.BmcBuildError: If the selector is unknown.
+
+        Example::
+
+            >>> from pyfcstm.bmc.domain import build_bmc_domain
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> domain = build_bmc_domain(load_state_machine_from_text('state Root;'), 1)
+            >>> symbols = BmcTraceSymbols.allocate(domain, {0: ('Root::fallback::Root::0',)})
+            >>> symbols.case_selector(0, 'Root::fallback::Root::0').sort().name()
+            'Bool'
+        """
+        if step_index < 0 or step_index >= len(self.case_selectors):
+            raise BmcBuildError("step index out of range: %r." % step_index)
+        try:
+            return self.case_selectors[step_index][label]
+        except KeyError as err:
+            # KeyError: the requested case label is absent from this step's
+            # selector mapping.
+            raise BmcBuildError("Unknown case selector: %r." % label) from err
+
+    def to_canonical(self) -> _CanonicalDict:
+        """Return a JSON-stable symbol summary.
+
+        :return: Canonical symbol dictionary.
+        :rtype: Dict[str, object]
+
+        Example::
+
+            >>> from pyfcstm.bmc.domain import build_bmc_domain
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> domain = build_bmc_domain(load_state_machine_from_text('state Root;'), 1)
+            >>> BmcTraceSymbols.allocate(domain).to_canonical()['frame_states'][0]
+            'F_0_state'
+        """
+        return {
+            "node": "bmc_trace_symbols",
+            "bound": self.domain.bound,
+            "frame_states": [_z3_text(item) for item in self.frame_states],
+            "frame_vars": [
+                {name: _z3_text(expr) for name, expr in sorted(mapping.items())}
+                for mapping in self.frame_vars
+            ],
+            "event_inputs": [
+                {name: _z3_text(expr) for name, expr in sorted(mapping.items())}
+                for mapping in self.event_inputs
+            ],
+            "case_selectors": [
+                {name: _z3_text(expr) for name, expr in sorted(mapping.items())}
+                for mapping in self.case_selectors
+            ],
+        }
+
+
+@dataclass(frozen=True)
+class BmcCaseRelation:
+    """Lowered relation for one macro-step case.
+
+    :param step_index: Step index owning this case.
+    :type step_index: int
+    :param case: Macro-step case that was lowered.
+    :type case: pyfcstm.bmc.macro.CycleCase
+    :param selector: Case-selector symbol bound to ``antecedent``.  The
+        relation builder treats macro-step partition validity as an upstream
+        contract: selector equality exposes selected cases but does not
+        independently diagnose malformed partitions.
+    :type selector: z3.BoolRef
+    :param antecedent: Source guard and lowered case condition.
+    :type antecedent: z3.BoolRef
+    :param consequent: Target-state, post-var, and definedness constraints.
+    :type consequent: z3.BoolRef
+    :param implication: ``z3.Implies(antecedent, consequent)``.
+    :type implication: z3.BoolRef
+    :param selector_constraint: Equality between selector and antecedent.
+    :type selector_constraint: z3.BoolRef
+    :param post_var_exprs: Final expression for every persistent variable.
+    :type post_var_exprs: Mapping[str, z3.ArithRef]
+    :param guard_terms: Lowered guard terms keyed by requirement id.
+    :type guard_terms: Mapping[str, z3.BoolRef]
+    :param definedness_constraints: Runtime-definedness constraints in source
+        order.
+    :type definedness_constraints: Tuple[pyfcstm.solver.domain.DomainConstraint, ...]
+
+    Example::
+
+        >>> import z3
+        >>> from pyfcstm.bmc.macro import BoolTemplate, CycleCase
+        >>> case = CycleCase('fallback', 0, 'Root', 0, 'Root', 'Root::fallback::Root::0', BoolTemplate.true(), ())
+        >>> rel = BmcCaseRelation(0, case, z3.Bool('c'), z3.BoolVal(True), z3.BoolVal(True), z3.BoolVal(True), z3.BoolVal(True), {}, {}, ())
+        >>> rel.to_canonical()['case_label']
+        'Root::fallback::Root::0'
+    """
+
+    step_index: int
+    case: CycleCase
+    selector: z3.BoolRef
+    antecedent: z3.BoolRef
+    consequent: z3.BoolRef
+    implication: z3.BoolRef
+    selector_constraint: z3.BoolRef
+    post_var_exprs: Mapping[str, z3.ArithRef]
+    guard_terms: Mapping[str, z3.BoolRef]
+    definedness_constraints: Tuple[DomainConstraint, ...] = ()
+
+    def __post_init__(self) -> None:
+        if isinstance(self.step_index, bool) or not isinstance(self.step_index, int):
+            raise BmcBuildError("step_index must be an integer.")
+        if self.step_index < 0:
+            raise BmcBuildError("step_index must be non-negative.")
+        if not isinstance(self.case, CycleCase):
+            raise BmcBuildError("case must be CycleCase.")
+        for name in (
+            "selector",
+            "antecedent",
+            "consequent",
+            "implication",
+            "selector_constraint",
+        ):
+            if not z3.is_bool(getattr(self, name)):
+                raise BmcBuildError("%s must be a Z3 Boolean expression." % name)
+        post_vars = {key: value for key, value in self.post_var_exprs.items()}
+        if not all(z3.is_arith(value) for value in post_vars.values()):
+            raise BmcBuildError(
+                "post_var_exprs must contain Z3 arithmetic expressions."
+            )
+        guard_terms = {key: value for key, value in self.guard_terms.items()}
+        if not all(z3.is_bool(value) for value in guard_terms.values()):
+            raise BmcBuildError("guard_terms must contain Z3 Boolean expressions.")
+        if not all(
+            isinstance(item, DomainConstraint) for item in self.definedness_constraints
+        ):
+            raise BmcBuildError(
+                "definedness_constraints must contain DomainConstraint objects."
+            )
+        object.__setattr__(self, "post_var_exprs", post_vars)
+        object.__setattr__(self, "guard_terms", guard_terms)
+        object.__setattr__(
+            self, "definedness_constraints", tuple(self.definedness_constraints)
+        )
+
+    @property
+    def formula(self) -> z3.BoolRef:
+        """Return selector binding and implication for this case.
+
+        :return: Case formula.
+        :rtype: z3.BoolRef
+
+        Example::
+
+            >>> import z3
+            >>> from pyfcstm.bmc.macro import BoolTemplate, CycleCase
+            >>> case = CycleCase('fallback', 0, 'Root', 0, 'Root', 'Root::fallback::Root::0', BoolTemplate.true(), ())
+            >>> rel = BmcCaseRelation(0, case, z3.Bool('c'), z3.BoolVal(True), z3.BoolVal(True), z3.BoolVal(True), z3.BoolVal(True), {}, {}, ())
+            >>> rel.formula.sort().name()
+            'Bool'
+        """
+        return _and((self.selector_constraint, self.implication))
+
+    def to_canonical(self) -> _CanonicalDict:
+        """Return a JSON-stable case-relation dictionary.
+
+        :return: Canonical case relation.
+        :rtype: Dict[str, object]
+
+        Example::
+
+            >>> import z3
+            >>> from pyfcstm.bmc.macro import BoolTemplate, CycleCase
+            >>> case = CycleCase('fallback', 0, 'Root', 0, 'Root', 'Root::fallback::Root::0', BoolTemplate.true(), ())
+            >>> rel = BmcCaseRelation(0, case, z3.Bool('c'), z3.BoolVal(True), z3.BoolVal(True), z3.BoolVal(True), z3.BoolVal(True), {}, {}, ())
+            >>> rel.to_canonical()['node']
+            'bmc_case_relation'
+        """
+        return {
+            "node": "bmc_case_relation",
+            "step_index": self.step_index,
+            "case_label": self.case.label,
+            "case_kind": self.case.kind,
+            "source_state_id": self.case.source_state_id,
+            "target_state_id": self.case.target_state_id,
+            "is_diagnostic": self.case.is_diagnostic,
+            "selector": _z3_text(self.selector),
+            "antecedent": _z3_text(self.antecedent),
+            "consequent": _z3_text(self.consequent),
+            "implication": _z3_text(self.implication),
+            "selector_constraint": _z3_text(self.selector_constraint),
+            "post_var_exprs": {
+                name: _z3_text(expr)
+                for name, expr in sorted(self.post_var_exprs.items())
+            },
+            "guard_terms": {
+                name: _z3_text(expr) for name, expr in sorted(self.guard_terms.items())
+            },
+            "definedness_constraints": [
+                _z3_text(item.constraint) for item in self.definedness_constraints
+            ],
+        }
+
+
+@dataclass(frozen=True)
+class BmcStepRelation:
+    """Lowered relation for one symbolic BMC step.
+
+    :param step_index: Step index in ``0..N-1``.
+    :type step_index: int
+    :param formals: Macro-step formals consumed by this step.
+    :type formals: Tuple[pyfcstm.bmc.macro.MacroStepFormal, ...]
+    :param case_relations: Lowered case relations.
+    :type case_relations: Tuple[BmcCaseRelation, ...]
+    :param formula: Conjunction of selector bindings and implications.
+    :type formula: z3.BoolRef
+
+    Example::
+
+        >>> import z3
+        >>> step = BmcStepRelation(0, (), (), z3.BoolVal(True))
+        >>> step.to_canonical()['step_index']
+        0
+    """
+
+    step_index: int
+    formals: Tuple[MacroStepFormal, ...]
+    case_relations: Tuple[BmcCaseRelation, ...]
+    formula: z3.BoolRef
+
+    def __post_init__(self) -> None:
+        if isinstance(self.step_index, bool) or not isinstance(self.step_index, int):
+            raise BmcBuildError("step_index must be an integer.")
+        if self.step_index < 0:
+            raise BmcBuildError("step_index must be non-negative.")
+        if not all(isinstance(item, MacroStepFormal) for item in self.formals):
+            raise BmcBuildError("formals must contain MacroStepFormal objects.")
+        if not all(isinstance(item, BmcCaseRelation) for item in self.case_relations):
+            raise BmcBuildError("case_relations must contain BmcCaseRelation objects.")
+        if not z3.is_bool(self.formula):
+            raise BmcBuildError("formula must be a Z3 Boolean expression.")
+        object.__setattr__(self, "formals", tuple(self.formals))
+        object.__setattr__(self, "case_relations", tuple(self.case_relations))
+
+    @property
+    def case_registry(self) -> Mapping[str, BmcCaseRelation]:
+        """Return lowered cases keyed by label for this step.
+
+        :return: Case-label mapping.
+        :rtype: Mapping[str, BmcCaseRelation]
+
+        Example::
+
+            >>> import z3
+            >>> BmcStepRelation(0, (), (), z3.BoolVal(True)).case_registry
+            {}
+        """
+        return {item.case.label: item for item in self.case_relations}
+
+    def to_canonical(self) -> _CanonicalDict:
+        """Return a JSON-stable step-relation dictionary.
+
+        :return: Canonical step relation.
+        :rtype: Dict[str, object]
+
+        Example::
+
+            >>> import z3
+            >>> BmcStepRelation(0, (), (), z3.BoolVal(True)).to_canonical()['node']
+            'bmc_step_relation'
+        """
+        return {
+            "node": "bmc_step_relation",
+            "step_index": self.step_index,
+            "source_count": len(self.formals),
+            "case_count": len(self.case_relations),
+            "formula": _z3_text(self.formula),
+            "cases": [item.to_canonical() for item in self.case_relations],
+        }
+
+
+@dataclass(frozen=True)
+class BmcCoreFormula:
+    """Complete solver-level core formula for a bounded trace.
+
+    :param context: Prepared BMC context consumed by the builder.
+    :type context: pyfcstm.bmc.engine.BmcPreparedContext
+    :param symbols: Trace symbols used by the formulas.
+    :type symbols: BmcTraceSymbols
+    :param domain_formula: ``D_N`` domain constraints.
+    :type domain_formula: z3.BoolRef
+    :param initial_formula: ``I_0`` initial-frame constraints.
+    :type initial_formula: z3.BoolRef
+    :param transition_formula: ``T_N`` transition relation.
+    :type transition_formula: z3.BoolRef
+    :param environment_formula: ``ENV_N`` environment assumptions.
+    :type environment_formula: z3.BoolRef
+    :param core: ``D_N ∧ I_0 ∧ T_N ∧ ENV_N``.
+    :type core: z3.BoolRef
+    :param steps: Lowered step relations.
+    :type steps: Tuple[BmcStepRelation, ...]
+    :param diagnostics: Reserved build-time diagnostics, defaults to ``()``.
+        Relation-level semantic-delta information is currently exposed through
+        case metadata, so this tuple is empty in the initial core-relation
+        builder.
+    :type diagnostics: Tuple[str, ...], optional
+
+    Example::
+
+        >>> from pyfcstm.bmc import BmcEngine, build_bmc_core_formula
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> model = load_state_machine_from_text('state Root;')
+        >>> context = BmcEngine(model).prepare('check reach <= 1: terminated();')
+        >>> build_bmc_core_formula(context).to_canonical()['bound']
+        1
+    """
+
+    context: BmcPreparedContext
+    symbols: BmcTraceSymbols
+    domain_formula: z3.BoolRef
+    initial_formula: z3.BoolRef
+    transition_formula: z3.BoolRef
+    environment_formula: z3.BoolRef
+    core: z3.BoolRef
+    steps: Tuple[BmcStepRelation, ...]
+    diagnostics: Tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        _require_context(self.context)
+        if not isinstance(self.symbols, BmcTraceSymbols):
+            raise BmcBuildError("symbols must be BmcTraceSymbols.")
+        for name in (
+            "domain_formula",
+            "initial_formula",
+            "transition_formula",
+            "environment_formula",
+            "core",
+        ):
+            if not z3.is_bool(getattr(self, name)):
+                raise BmcBuildError("%s must be a Z3 Boolean expression." % name)
+        if not all(isinstance(item, BmcStepRelation) for item in self.steps):
+            raise BmcBuildError("steps must contain BmcStepRelation objects.")
+        if not all(isinstance(item, str) for item in self.diagnostics):
+            raise BmcBuildError("diagnostics must contain strings.")
+        object.__setattr__(self, "steps", tuple(self.steps))
+        object.__setattr__(self, "diagnostics", tuple(self.diagnostics))
+
+    def to_canonical(self) -> _CanonicalDict:
+        """Return a JSON-stable core-formula summary.
+
+        :return: Canonical core formula.
+        :rtype: Dict[str, object]
+
+        Example::
+
+            >>> from pyfcstm.bmc import BmcEngine, build_bmc_core_formula
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('state Root;')
+            >>> core = build_bmc_core_formula(BmcEngine(model).prepare('check reach <= 1: terminated();'))
+            >>> core.to_canonical()['node']
+            'bmc_core_formula'
+        """
+        return {
+            "node": "bmc_core_formula",
+            "bound": self.context.bound,
+            "formulas": {
+                "D_N": _z3_text(self.domain_formula),
+                "I_0": _z3_text(self.initial_formula),
+                "T_N": _z3_text(self.transition_formula),
+                "ENV_N": _z3_text(self.environment_formula),
+                "Core_N": _z3_text(self.core),
+            },
+            "symbols": self.symbols.to_canonical(),
+            "steps": [item.to_canonical() for item in self.steps],
+            "diagnostics": list(self.diagnostics),
+        }
+
+
+def _z3_arith_binary(
+    op: str, left: z3.ArithRef, right: z3.ArithRef, label: str
+) -> _Z3Expr:
+    try:
+        if op == "+":
+            return left + right
+        if op == "-":
+            return left - right
+        if op == "*":
+            return left * right
+        if op == "/":
+            return left / right
+        if op == "%":
+            return left % right
+        if op == "**":
+            return left**right
+        if op == "&":  # pragma: no cover - reserved for future BitVec profile.
+            return left & right
+        if op == "|":  # pragma: no cover - reserved for future BitVec profile.
+            return left | right
+        if op == "^":  # pragma: no cover - reserved for future BitVec profile.
+            return left ^ right
+        if op == "<<":  # pragma: no cover - reserved for future BitVec profile.
+            return left << right
+        if op == ">>":  # pragma: no cover - reserved for future BitVec profile.
+            return left >> right
+    except TypeError as err:
+        # TypeError: Python or Z3 operator overloads reject unsupported operand
+        # sort combinations, such as bitwise operators on Real expressions.
+        raise UnsupportedBmcQuery(
+            "%s is unsupported for operator %s: %s" % (label, op, err)
+        ) from err
+    except (
+        z3.Z3Exception
+    ) as err:  # pragma: no cover - TypeError covers current sort failures.
+        # Z3Exception: Z3 rejects malformed arithmetic expressions or sort
+        # combinations after overload dispatch.
+        raise UnsupportedBmcQuery(
+            "%s is unsupported for operator %s: %s" % (label, op, err)
+        ) from err
+    raise UnsupportedBmcQuery(  # pragma: no cover - AST validates operator names.
+        "%s uses unsupported numeric operator %r." % (label, op)
+    )
+
+
+def _z3_comparison(
+    op: str, left: z3.ArithRef, right: z3.ArithRef, label: str
+) -> z3.BoolRef:
+    try:
+        if op == "<":
+            return left < right
+        if op == "<=":
+            return left <= right
+        if op == ">":
+            return left > right
+        if op == ">=":
+            return left >= right
+        if op == "==":
+            return left == right
+        if op == "!=":
+            return left != right
+    except (
+        TypeError
+    ) as err:  # pragma: no cover - current AST/binder keeps comparisons well typed.
+        # TypeError: Python/Z3 comparison overloads reject unsupported operand
+        # shapes before Z3 creates an expression.
+        raise UnsupportedBmcQuery(
+            "%s comparison %s is unsupported: %s" % (label, op, err)
+        ) from err
+    except (
+        z3.Z3Exception
+    ) as err:  # pragma: no cover - current AST/binder keeps comparisons well typed.
+        # Z3Exception: Z3 rejects malformed comparison sort combinations.
+        raise UnsupportedBmcQuery(
+            "%s comparison %s is unsupported: %s" % (label, op, err)
+        ) from err
+    raise UnsupportedBmcQuery(  # pragma: no cover - AST validates operator names.
+        "%s uses unsupported comparison operator %r." % (label, op)
+    )
+
+
+def _z3_ufunc(func: str, operand: z3.ArithRef, label: str) -> _LoweredValue:
+    constraints = []
+    try:
+        if func == "abs":
+            return _LoweredValue(z3.If(operand >= 0, operand, -operand))
+        if func == "sign":
+            zero = z3.IntVal(0) if z3.is_int(operand) else z3.RealVal(0)
+            one = z3.IntVal(1) if z3.is_int(operand) else z3.RealVal(1)
+            minus_one = z3.IntVal(-1) if z3.is_int(operand) else z3.RealVal(-1)
+            return _LoweredValue(
+                z3.If(operand == zero, zero, z3.If(operand > zero, one, minus_one))
+            )
+        if func == "floor":
+            return _LoweredValue(operand if z3.is_int(operand) else z3.ToInt(operand))
+        if func == "ceil":
+            return _LoweredValue(operand if z3.is_int(operand) else -z3.ToInt(-operand))
+        if func == "trunc":
+            if z3.is_int(operand):
+                return _LoweredValue(operand)
+            return _LoweredValue(
+                z3.If(operand >= 0, z3.ToInt(operand), -z3.ToInt(-operand))
+            )
+        if func == "round":
+            from pyfcstm.solver.expr import python_round_to_z3
+
+            return _LoweredValue(python_round_to_z3(operand))
+        if func == "sqrt":
+            constraints.append(
+                DomainConstraint(operand >= 0, DomainSource(label=label))
+            )
+            root = z3.Sqrt(operand if z3.is_real(operand) else z3.ToReal(operand))
+            return _LoweredValue(root, tuple(constraints))
+    except TypeError as err:  # pragma: no cover - current ufunc calls are arith-sorted.
+        # TypeError: Python/Z3 overloads reject unsupported function operands.
+        raise UnsupportedBmcQuery(
+            "%s function %s is unsupported: %s" % (label, func, err)
+        ) from err
+    except (
+        z3.Z3Exception
+    ) as err:  # pragma: no cover - current ufunc calls are arith-sorted.
+        # Z3Exception: Z3 rejects unsupported function operand sorts.
+        raise UnsupportedBmcQuery(
+            "%s function %s is unsupported: %s" % (label, func, err)
+        ) from err
+    raise UnsupportedBmcQuery("%s uses unsupported function %r." % (label, func))
+
+
+def _resolve_frame(frame_selector: object, current_frame: int, bound: int) -> int:
+    if frame_selector == "current":
+        return current_frame
+    if isinstance(frame_selector, bool) or not isinstance(
+        frame_selector, int
+    ):  # pragma: no cover - binder validates selectors.
+        raise BmcBuildError("Invalid frame selector: %r." % (frame_selector,))
+    if (
+        frame_selector < 0 or frame_selector > bound
+    ):  # pragma: no cover - binder validates selectors.
+        raise BmcBuildError("Frame selector out of range: %r." % frame_selector)
+    return frame_selector  # pragma: no cover - binder disallows explicit frame selectors here.
+
+
+def _resolve_step(selector: object, current_step: Optional[int], bound: int) -> int:
+    if (
+        selector == "current"
+    ):  # pragma: no cover - relation callers currently use frame predicates.
+        if (
+            current_step is None
+        ):  # pragma: no cover - frame-only callers have no step context.
+            raise UnsupportedBmcQuery(
+                "event(..., current) needs a transition step context."
+            )
+        return current_step
+    if isinstance(selector, bool) or not isinstance(
+        selector, int
+    ):  # pragma: no cover - binder validates selectors.
+        raise BmcBuildError("Invalid step selector: %r." % (selector,))
+    if (
+        selector < 0 or selector >= bound
+    ):  # pragma: no cover - binder validates selectors.
+        raise BmcBuildError("Step selector out of range: %r." % selector)
+    return (
+        selector  # pragma: no cover - relation callers currently use frame predicates.
+    )
+
+
+def _lower_bmc_num_expr(
+    expr: bmc_ast.BmcNumExpr,
+    symbols: BmcTraceSymbols,
+    *,
+    frame_index: int,
+    step_index: Optional[int] = None,
+) -> _LoweredValue:
+    label = "BMC numeric expression %s" % expr
+    if isinstance(expr, bmc_ast.IntLiteral):
+        return _LoweredValue(z3.IntVal(expr.value))
+    if isinstance(expr, bmc_ast.FloatLiteral):
+        return _LoweredValue(z3.RealVal(str(expr.value)))
+    if isinstance(expr, bmc_ast.NameRef):
+        return _LoweredValue(symbols.frame_var(frame_index, expr.name))
+    if isinstance(expr, bmc_ast.FrameVar):
+        return _LoweredValue(symbols.frame_var(frame_index, expr.name))
+    if isinstance(expr, bmc_ast.Cycle):
+        return _LoweredValue(z3.IntVal(frame_index))
+    if isinstance(expr, bmc_ast.MathConst):
+        constants = {"pi": math.pi, "E": math.e, "tau": math.tau}
+        return _LoweredValue(z3.RealVal(str(constants[expr.name])))
+    if isinstance(expr, bmc_ast.NumUnaryOp):
+        operand = _lower_bmc_num_expr(
+            expr.operand,
+            symbols,
+            frame_index=frame_index,
+            step_index=step_index,
+        )
+        value = _expect_arith(operand.expr, label)
+        if expr.op == "+":
+            return _LoweredValue(value, operand.definedness_constraints)
+        if expr.op == "-":
+            return _LoweredValue(-value, operand.definedness_constraints)
+        raise UnsupportedBmcQuery(  # pragma: no cover - AST validates operator names.
+            "%s uses unsupported unary operator %r." % (label, expr.op)
+        )
+    if isinstance(expr, bmc_ast.NumBinaryOp):
+        left = _lower_bmc_num_expr(
+            expr.left, symbols, frame_index=frame_index, step_index=step_index
+        )
+        right = _lower_bmc_num_expr(
+            expr.right, symbols, frame_index=frame_index, step_index=step_index
+        )
+        left_expr = _expect_arith(left.expr, label)
+        right_expr = _expect_arith(right.expr, label)
+        constraints = [*left.definedness_constraints, *right.definedness_constraints]
+        if expr.op in ("/", "%"):
+            constraints.append(
+                DomainConstraint(right_expr != 0, DomainSource(label=label))
+            )
+        return _LoweredValue(
+            _z3_arith_binary(expr.op, left_expr, right_expr, label),
+            tuple(constraints),
+        )
+    if isinstance(expr, bmc_ast.NumConditionalOp):
+        condition = _lower_bmc_cond_expr(
+            expr.condition, symbols, frame_index=frame_index, step_index=step_index
+        )
+        condition_expr = _expect_bool(condition.expr, label)
+        if z3.is_true(condition_expr):
+            if_true = _lower_bmc_num_expr(
+                expr.if_true, symbols, frame_index=frame_index, step_index=step_index
+            )
+            return _LoweredValue(
+                _expect_arith(if_true.expr, label),
+                (*condition.definedness_constraints, *if_true.definedness_constraints),
+            )
+        if z3.is_false(condition_expr):
+            if_false = _lower_bmc_num_expr(
+                expr.if_false, symbols, frame_index=frame_index, step_index=step_index
+            )
+            return _LoweredValue(
+                _expect_arith(if_false.expr, label),
+                (
+                    *condition.definedness_constraints,
+                    *if_false.definedness_constraints,
+                ),
+            )
+        if_true = _lower_bmc_num_expr(
+            expr.if_true, symbols, frame_index=frame_index, step_index=step_index
+        )
+        if_false = _lower_bmc_num_expr(
+            expr.if_false, symbols, frame_index=frame_index, step_index=step_index
+        )
+        return _LoweredValue(
+            z3.If(
+                condition_expr,
+                _expect_arith(if_true.expr, label),
+                _expect_arith(if_false.expr, label),
+            ),
+            (
+                *condition.definedness_constraints,
+                *_guarded_domain_constraints(
+                    condition_expr, if_true.definedness_constraints
+                ),
+                *_guarded_domain_constraints(
+                    z3.Not(condition_expr), if_false.definedness_constraints
+                ),
+            ),
+        )
+    if isinstance(expr, bmc_ast.UFuncCall):
+        operand = _lower_bmc_num_expr(
+            expr.operand, symbols, frame_index=frame_index, step_index=step_index
+        )
+        result = _z3_ufunc(expr.func, _expect_arith(operand.expr, label), label)
+        return _LoweredValue(
+            result.expr,
+            (*operand.definedness_constraints, *result.definedness_constraints),
+        )
+    raise UnsupportedBmcQuery(  # pragma: no cover - current AST class set is closed.
+        "Unsupported BMC numeric expression: %s." % type(expr).__name__
+    )
+
+
+def _lower_bmc_cond_expr(
+    expr: bmc_ast.BmcCondExpr,
+    symbols: BmcTraceSymbols,
+    *,
+    frame_index: int,
+    step_index: Optional[int] = None,
+) -> _LoweredValue:
+    label = "BMC condition expression %s" % expr
+    if isinstance(expr, bmc_ast.BoolLiteral):
+        return _LoweredValue(z3.BoolVal(expr.value))
+    if isinstance(expr, bmc_ast.NumericComparison):
+        left = _lower_bmc_num_expr(
+            expr.left, symbols, frame_index=frame_index, step_index=step_index
+        )
+        right = _lower_bmc_num_expr(
+            expr.right, symbols, frame_index=frame_index, step_index=step_index
+        )
+        return _LoweredValue(
+            _z3_comparison(
+                expr.op,
+                _expect_arith(left.expr, label),
+                _expect_arith(right.expr, label),
+                label,
+            ),
+            (*left.definedness_constraints, *right.definedness_constraints),
+        )
+    if isinstance(expr, bmc_ast.CondUnaryOp):
+        operand = _lower_bmc_cond_expr(
+            expr.operand, symbols, frame_index=frame_index, step_index=step_index
+        )
+        if expr.op == "!":
+            return _LoweredValue(
+                z3.Not(_expect_bool(operand.expr, label)),
+                operand.definedness_constraints,
+            )
+        raise UnsupportedBmcQuery(  # pragma: no cover - AST validates operator names.
+            "%s uses unsupported condition unary operator %r." % (label, expr.op)
+        )
+    if isinstance(expr, bmc_ast.CondBinaryOp):
+        left = _lower_bmc_cond_expr(
+            expr.left, symbols, frame_index=frame_index, step_index=step_index
+        )
+        left_expr = _expect_bool(left.expr, label)
+        if expr.op == "&&" and z3.is_false(left_expr):
+            return _LoweredValue(z3.BoolVal(False), left.definedness_constraints)
+        if expr.op == "||" and z3.is_true(left_expr):
+            return _LoweredValue(z3.BoolVal(True), left.definedness_constraints)
+        right = _lower_bmc_cond_expr(
+            expr.right, symbols, frame_index=frame_index, step_index=step_index
+        )
+        right_expr = _expect_bool(right.expr, label)
+        if expr.op == "&&":
+            value = z3.And(left_expr, right_expr)
+            definedness_constraints = (
+                *left.definedness_constraints,
+                *_guarded_domain_constraints(left_expr, right.definedness_constraints),
+            )
+        elif expr.op == "||":
+            value = z3.Or(left_expr, right_expr)
+            definedness_constraints = (
+                *left.definedness_constraints,
+                *_guarded_domain_constraints(
+                    z3.Not(left_expr), right.definedness_constraints
+                ),
+            )
+        elif expr.op == "=>":
+            value = z3.Implies(left_expr, right_expr)
+            definedness_constraints = (
+                *left.definedness_constraints,
+                *right.definedness_constraints,
+            )
+        elif expr.op == "xor":
+            value = z3.Xor(left_expr, right_expr)
+            definedness_constraints = (
+                *left.definedness_constraints,
+                *right.definedness_constraints,
+            )
+        elif expr.op in {"iff", "=="}:
+            value = left_expr == right_expr
+            definedness_constraints = (
+                *left.definedness_constraints,
+                *right.definedness_constraints,
+            )
+        elif expr.op == "!=":
+            value = left_expr != right_expr
+            definedness_constraints = (
+                *left.definedness_constraints,
+                *right.definedness_constraints,
+            )
+        else:
+            raise UnsupportedBmcQuery(  # pragma: no cover - AST validates operator names.
+                "%s uses unsupported condition operator %r." % (label, expr.op)
+            )
+        return _LoweredValue(value, definedness_constraints)
+    if isinstance(expr, bmc_ast.CondConditionalOp):
+        condition = _lower_bmc_cond_expr(
+            expr.condition, symbols, frame_index=frame_index, step_index=step_index
+        )
+        condition_expr = _expect_bool(condition.expr, label)
+        if z3.is_true(condition_expr):
+            if_true = _lower_bmc_cond_expr(
+                expr.if_true, symbols, frame_index=frame_index, step_index=step_index
+            )
+            return _LoweredValue(
+                _expect_bool(if_true.expr, label),
+                (*condition.definedness_constraints, *if_true.definedness_constraints),
+            )
+        if z3.is_false(condition_expr):
+            if_false = _lower_bmc_cond_expr(
+                expr.if_false, symbols, frame_index=frame_index, step_index=step_index
+            )
+            return _LoweredValue(
+                _expect_bool(if_false.expr, label),
+                (
+                    *condition.definedness_constraints,
+                    *if_false.definedness_constraints,
+                ),
+            )
+        if_true = _lower_bmc_cond_expr(
+            expr.if_true, symbols, frame_index=frame_index, step_index=step_index
+        )
+        if_false = _lower_bmc_cond_expr(
+            expr.if_false, symbols, frame_index=frame_index, step_index=step_index
+        )
+        return _LoweredValue(
+            z3.If(
+                condition_expr,
+                _expect_bool(if_true.expr, label),
+                _expect_bool(if_false.expr, label),
+            ),
+            (
+                *condition.definedness_constraints,
+                *_guarded_domain_constraints(
+                    condition_expr, if_true.definedness_constraints
+                ),
+                *_guarded_domain_constraints(
+                    z3.Not(condition_expr), if_false.definedness_constraints
+                ),
+            ),
+        )
+    if isinstance(expr, bmc_ast.Active):
+        frame = _resolve_frame(expr.frame, frame_index, symbols.domain.bound)
+        state_id = symbols.domain.state_path_to_id(expr.state_path)
+        return _LoweredValue(symbols.frame_state(frame) == z3.IntVal(state_id))
+    if isinstance(expr, bmc_ast.Terminated):
+        frame = _resolve_frame(expr.frame, frame_index, symbols.domain.bound)
+        return _LoweredValue(
+            symbols.frame_state(frame) == z3.IntVal(STATE_TERMINATE_ID)
+        )
+    if isinstance(
+        expr, bmc_ast.Event
+    ):  # pragma: no cover - environment assumptions lower event atoms separately.
+        step = _resolve_step(expr.selector, step_index, symbols.domain.bound)
+        event = symbols.domain.event_by_path(expr.event_path)
+        return _LoweredValue(symbols.event_input(step, event.path))
+    if isinstance(
+        expr, bmc_ast.Case
+    ):  # pragma: no cover - objective compiler owns case atoms.
+        step = _resolve_step(expr.frame, step_index, symbols.domain.bound)
+        return _LoweredValue(symbols.case_selector(step, expr.label))
+    if isinstance(
+        expr, bmc_ast.Called
+    ):  # pragma: no cover - binder rejects called() until call semantics exist.
+        raise UnsupportedBmcQuery(
+            "called() atoms are not lowered by the relation builder."
+        )
+    raise UnsupportedBmcQuery(  # pragma: no cover - current AST class set is closed.
+        "Unsupported BMC condition expression: %s." % type(expr).__name__
+    )
+
+
+def _translate_model_expr(expr: Expr, env: Mapping[str, _Z3Expr], label: str):
+    result = translate_expr_domain(
+        expr,
+        dict(env),
+        source=DomainSource(label=label),
+        prune_unreachable=True,
+    )
+    _raise_expr_failure(result, label)
+    if (
+        result.z3_expr is None
+    ):  # pragma: no cover - failures return through _raise_expr_failure.
+        raise _internal_bmc_error("expression %s translated without a value." % label)
+    return result
+
+
+@dataclass(frozen=True)
+class _CaseLowering:
+    case: CycleCase
+    guard_terms: Mapping[str, z3.BoolRef]
+    guard_definedness: Mapping[str, Tuple[DomainConstraint, ...]]
+    final_env: Mapping[str, z3.ArithRef]
+    definedness_constraints: Tuple[DomainConstraint, ...]
+
+
+def _guarded_domain_constraints(
+    guard: z3.BoolRef,
+    constraints: Sequence[DomainConstraint],
+) -> Tuple[DomainConstraint, ...]:
+    if z3.is_true(guard):
+        return tuple(constraints)
+    return tuple(
+        DomainConstraint(z3.Implies(guard, item.constraint), item.source)
+        for item in constraints
+    )
+
+
+def _append_guarded_constraints(
+    target: List[DomainConstraint],
+    guard: z3.BoolRef,
+    constraints: Sequence[DomainConstraint],
+) -> None:
+    target.extend(_guarded_domain_constraints(guard, constraints))
+
+
+def _lower_guard_requirement(
+    guard: GuardRequirement,
+    env: Mapping[str, _Z3Expr],
+    constraints: Sequence[DomainConstraint],
+    case_label: str,
+) -> Tuple[z3.BoolRef, Tuple[DomainConstraint, ...]]:
+    label = "guard %s in case %s" % (guard.requirement_id, case_label)
+    result = _translate_model_expr(guard.expr, env, label)
+    guard_expr = _expect_bool(result.z3_expr, label)
+    if (
+        guard.polarity == "negative"
+    ):  # pragma: no cover - current expander emits positive guard requirements.
+        guard_expr = z3.Not(guard_expr)
+    elif (
+        guard.polarity != "positive"
+    ):  # pragma: no cover - GuardRequirement validates polarity.
+        raise _internal_bmc_error("unknown guard polarity %r." % guard.polarity)
+    return guard_expr, (*constraints, *result.definedness_constraints)
+
+
+def _execute_action_block(
+    block: ActionBlock,
+    env: Mapping[str, _Z3Expr],
+    case_label: str,
+) -> Tuple[Mapping[str, z3.ArithRef], Tuple[DomainConstraint, ...]]:
+    if block.is_abstract:
+        return dict(env), ()
+    execution = execute_operations_domain(
+        list(block.operations),
+        dict(env),
+        source=DomainSource(
+            label="action block %s in case %s" % (block.runtime_role, case_label)
+        ),
+        prune_unreachable=True,
+    )
+    if execution.failure is not None:
+        failure = execution.failure
+        message = _failure_message(
+            failure.kind,
+            failure.reason,
+            "action block %s in case %s" % (block.runtime_role, case_label),
+        )
+        raise UnsupportedBmcQuery(message)
+    return dict(execution.env), tuple(execution.definedness_constraints)
+
+
+def _prepare_case_lowering(
+    case: CycleCase, pre_env: Mapping[str, _Z3Expr]
+) -> _CaseLowering:
+    guards_by_anchor: Dict[int, List[GuardRequirement]] = {}
+    for guard in case.guard_requirements:
+        guards_by_anchor.setdefault(guard.after_action_block_index, []).append(guard)
+    env = dict(pre_env)
+    guard_terms: Dict[str, z3.BoolRef] = {}
+    guard_definedness: Dict[str, Tuple[DomainConstraint, ...]] = {}
+    definedness: List[DomainConstraint] = []
+    for anchor in range(len(case.action_blocks) + 1):
+        for guard in sorted(
+            guards_by_anchor.get(anchor, ()), key=lambda item: item.requirement_id
+        ):
+            term, new_definedness = _lower_guard_requirement(
+                guard, env, definedness, case.label
+            )
+            guard_terms[guard.requirement_id] = term
+            guard_definedness[guard.requirement_id] = tuple(new_definedness)
+            definedness = list(new_definedness)
+        if anchor < len(case.action_blocks):
+            env, block_definedness = _execute_action_block(
+                case.action_blocks[anchor], env, case.label
+            )
+            definedness.extend(block_definedness)
+    return _CaseLowering(
+        case=case,
+        guard_terms=guard_terms,
+        guard_definedness=guard_definedness,
+        final_env=env,
+        definedness_constraints=tuple(definedness),
+    )
+
+
+def _lower_bool_template(
+    template: BoolTemplate,
+    lowering: _CaseLowering,
+    accepted_lookup,
+    active: Set[str],
+    symbols: BmcTraceSymbols,
+    step_index: int,
+) -> _LoweredBoolTemplate:
+    if template.kind == "true":
+        return _LoweredBoolTemplate(z3.BoolVal(True))
+    if (
+        template.kind == "false"
+    ):  # pragma: no cover - false macro paths are pruned before lowering.
+        return _LoweredBoolTemplate(z3.BoolVal(False))
+    if template.kind == "not":
+        operand = _lower_bool_template(
+            template.operands[0],
+            lowering,
+            accepted_lookup,
+            active,
+            symbols,
+            step_index,
+        )
+        return _LoweredBoolTemplate(
+            z3.Not(operand.expr), operand.definedness_constraints
+        )
+    if template.kind == "and":
+        expr = z3.BoolVal(True)
+        definedness: List[DomainConstraint] = []
+        for item in template.operands:
+            lowered = _lower_bool_template(
+                item,
+                lowering,
+                accepted_lookup,
+                active,
+                symbols,
+                step_index,
+            )
+            _append_guarded_constraints(
+                definedness, expr, lowered.definedness_constraints
+            )
+            expr = z3.And(expr, lowered.expr)
+        return _LoweredBoolTemplate(expr, tuple(definedness))
+    if template.kind == "or":
+        expr = z3.BoolVal(False)
+        definedness = []
+        for item in template.operands:
+            lowered = _lower_bool_template(
+                item,
+                lowering,
+                accepted_lookup,
+                active,
+                symbols,
+                step_index,
+            )
+            _append_guarded_constraints(
+                definedness, z3.Not(expr), lowered.definedness_constraints
+            )
+            expr = z3.Or(expr, lowered.expr)
+        return _LoweredBoolTemplate(expr, tuple(definedness))
+    if template.kind == "atom":
+        atom = template.name
+        if atom is None:  # pragma: no cover - BoolTemplate validates atom names.
+            raise _internal_bmc_error("BoolTemplate atom has no name.")
+        if atom.startswith(_EVENT_ATOM_PREFIX):
+            return _LoweredBoolTemplate(
+                symbols.event_input(step_index, atom[len(_EVENT_ATOM_PREFIX) :])
+            )
+        if atom.startswith(_GUARD_ATOM_PREFIX):
+            guard_id = atom[len(_GUARD_ATOM_PREFIX) :]
+            try:
+                return _LoweredBoolTemplate(
+                    lowering.guard_terms[guard_id],
+                    lowering.guard_definedness[guard_id],
+                )
+            except KeyError as err:  # pragma: no cover - macro validation pairs guard atoms and requirements.
+                # KeyError: macro validation should have guaranteed that guard
+                # atoms have matching guard requirements.
+                raise _internal_bmc_error("missing guard term %r." % guard_id) from err
+        if atom.startswith(_ACCEPTED_ATOM_PREFIX):
+            label = atom[len(_ACCEPTED_ATOM_PREFIX) :]
+            return accepted_lookup(label, active)
+        raise BmcBuildError(  # pragma: no cover - BoolTemplate atom namespace is validated by macro contract.
+            "Unsupported macro condition atom namespace: %r." % atom
+        )
+    raise _internal_bmc_error(  # pragma: no cover - BoolTemplate validates kinds.
+        "unsupported BoolTemplate kind %r." % template.kind
+    )
+
+
+def _build_case_relation(
+    step_index: int,
+    symbols: BmcTraceSymbols,
+    lowering: _CaseLowering,
+    antecedents: Mapping[str, _LoweredBoolTemplate],
+) -> BmcCaseRelation:
+    case = lowering.case
+    selector = symbols.case_selector(step_index, case.label)
+    source_guard = symbols.frame_state(step_index) == z3.IntVal(case.source_state_id)
+    condition = antecedents[case.label].expr
+    antecedent = _and((source_guard, condition))
+    post_constraints: List[z3.ExprRef] = [
+        symbols.frame_state(step_index + 1) == z3.IntVal(case.target_state_id)
+    ]
+    post_var_exprs = {}
+    for var in symbols.domain.variables:
+        try:
+            value = lowering.final_env[var.name]
+        except (
+            KeyError
+        ) as err:  # pragma: no cover - operation executor preserves visible names.
+            # KeyError: execute_operations_domain must preserve every variable
+            # visible in the incoming persistent environment.
+            raise _internal_bmc_error(
+                "case %s did not produce a post expression for %s."
+                % (case.label, var.name)
+            ) from err
+        arith_value = _expect_arith(
+            value, "post variable %s for case %s" % (var.name, case.label)
+        )
+        post_var_exprs[var.name] = arith_value
+        post_constraints.append(
+            symbols.frame_var(step_index + 1, var.name) == arith_value
+        )
+    definedness_constraints = (
+        *antecedents[case.label].definedness_constraints,
+        *lowering.definedness_constraints,
+    )
+    post_constraints.extend(_domain_constraints_exprs(definedness_constraints))
+    consequent = _and(post_constraints)
+    implication = z3.Implies(antecedent, consequent)
+    selector_constraint = selector == antecedent
+    return BmcCaseRelation(
+        step_index=step_index,
+        case=case,
+        selector=selector,
+        antecedent=antecedent,
+        consequent=consequent,
+        implication=implication,
+        selector_constraint=selector_constraint,
+        post_var_exprs=post_var_exprs,
+        guard_terms=lowering.guard_terms,
+        definedness_constraints=definedness_constraints,
+    )
+
+
+def _build_step_relation(
+    step_index: int,
+    symbols: BmcTraceSymbols,
+    formals: Sequence[MacroStepFormal],
+) -> BmcStepRelation:
+    case_list = [case for formal in formals for case in formal.cases]
+    if len({case.label for case in case_list}) != len(
+        case_list
+    ):  # pragma: no cover - macro labels are unique.
+        raise _internal_bmc_error("duplicate case labels in step %d." % step_index)
+    pre_env = {
+        var.name: symbols.frame_var(step_index, var.name)
+        for var in symbols.domain.variables
+    }
+    lowerings = {
+        case.label: _prepare_case_lowering(case, pre_env) for case in case_list
+    }
+    condition_cache: Dict[str, _LoweredBoolTemplate] = {}
+
+    def accepted_lookup(label: str, active: Set[str]) -> _LoweredBoolTemplate:
+        if (
+            label not in lowerings
+        ):  # pragma: no cover - macro validation keeps accepted labels local.
+            raise _internal_bmc_error(
+                "accepted atom references unknown case label %r in step %d."
+                % (label, step_index)
+            )
+        accepted_case = lowerings[label].case
+        source_guard = symbols.frame_state(step_index) == z3.IntVal(
+            accepted_case.source_state_id
+        )
+        condition = condition_for(label, active)
+        return _LoweredBoolTemplate(
+            _and((source_guard, condition.expr)),
+            _guarded_domain_constraints(
+                source_guard, condition.definedness_constraints
+            ),
+        )
+
+    def condition_for(label: str, active: Set[str]) -> _LoweredBoolTemplate:
+        if label in condition_cache:
+            return condition_cache[label]
+        if (
+            label in active
+        ):  # pragma: no cover - macro validation rejects recursive accepted dependencies.
+            raise _internal_bmc_error(
+                "recursive accepted-case dependency while lowering %r." % label
+            )
+        active.add(label)
+        lowering = lowerings[label]
+        value = _lower_bool_template(
+            lowering.case.condition,
+            lowering,
+            accepted_lookup,
+            active,
+            symbols,
+            step_index,
+        )
+        active.remove(label)
+        condition_cache[label] = value
+        return value
+
+    for case in case_list:
+        condition_for(case.label, set())
+
+    relations = tuple(
+        _build_case_relation(
+            step_index, symbols, lowerings[case.label], condition_cache
+        )
+        for case in case_list
+    )
+    return BmcStepRelation(
+        step_index=step_index,
+        formals=tuple(formals),
+        case_relations=relations,
+        formula=_and(item.formula for item in relations),
+    )
+
+
+def _initial_source(context: BmcPreparedContext):
+    source = source_from_initial_spec(
+        context.domain, context.bound_query.initial.source
+    )
+    if context.bound_query.initial.mode == "state":
+        if (
+            context.bound_query.initial.resolved_state_id != source.source_state_id
+        ):  # pragma: no cover - binder/source helpers share one domain.
+            raise _internal_bmc_error(
+                "bound initial state id does not match initial source id."
+            )
+    return source
+
+
+def _recurrence_formals(domain: BmcDomain) -> Tuple[MacroStepFormal, ...]:
+    formals = []
+    for state_id in domain.recurrence_state_ids:
+        if state_id == STATE_TERMINATE_ID:
+            source = terminated_source(domain, origin="recurrence")
+        elif state_id == STATE_DIAGNOSTIC_ID:
+            source = diagnostic_source(domain, origin="recurrence")
+        else:
+            source = stable_leaf_source(domain, state_id, origin="recurrence")
+        formals.append(expand_macro_step_cases(source))
+    return tuple(formals)
+
+
+def _formals_by_step(
+    context: BmcPreparedContext,
+) -> Tuple[Tuple[MacroStepFormal, ...], ...]:
+    initial = (expand_macro_step_cases(_initial_source(context)),)
+    if context.bound == 1:
+        return (initial,)
+    recurrence = _recurrence_formals(context.domain)
+    # Recurrence formals are step-invariant immutable macro contracts, so the
+    # same tuple can be shared safely across recurrence steps.
+    return (initial,) + tuple(recurrence for _ in range(1, context.bound))
+
+
+def _build_domain_formula(symbols: BmcTraceSymbols) -> z3.BoolRef:
+    constraints = [_state_in(symbols.frame_state(0), symbols.domain.frame0_state_ids)]
+    for frame_index in range(1, symbols.domain.bound + 1):
+        constraints.append(
+            _state_in(
+                symbols.frame_state(frame_index), symbols.domain.recurrence_state_ids
+            )
+        )
+    return _and(constraints)
+
+
+def _build_initial_formula(
+    context: BmcPreparedContext, symbols: BmcTraceSymbols
+) -> z3.BoolRef:
+    source = _initial_source(context)
+    constraints: List[z3.ExprRef] = [
+        symbols.frame_state(0) == z3.IntVal(source.source_state_id)
+    ]
+    env: Dict[str, _Z3Expr] = {}
+    for var in context.domain.variables:
+        define = context.model.defines[var.name]
+        result = _translate_model_expr(
+            define.init, env, "initializer for %s" % var.name
+        )
+        value = _expect_arith(result.z3_expr, "initializer for %s" % var.name)
+        constraints.extend(_domain_constraints_exprs(result.definedness_constraints))
+        constraints.append(symbols.frame_var(0, var.name) == value)
+        env[var.name] = symbols.frame_var(0, var.name)
+    predicate = context.bound_query.initial.predicate
+    if predicate is not None:
+        lowered = _lower_bmc_cond_expr(predicate, symbols, frame_index=0)
+        constraints.extend(_domain_constraints_exprs(lowered.definedness_constraints))
+        constraints.append(_expect_bool(lowered.expr, "initial where predicate"))
+    return _and(constraints)
+
+
+def _build_environment_formula(
+    context: BmcPreparedContext, symbols: BmcTraceSymbols
+) -> z3.BoolRef:
+    constraints: List[z3.ExprRef] = []
+    for assumption in context.bound_query.assumptions:
+        if not isinstance(
+            assumption, BoundAssumption
+        ):  # pragma: no cover - BoundBmcQuery validates assumptions.
+            raise _internal_bmc_error(
+                "bound assumptions contain a non-BoundAssumption object."
+            )
+        if assumption.kind == "frame":
+            source = assumption.source
+            if not isinstance(
+                source, FrameAssumption
+            ):  # pragma: no cover - binder preserves source type.
+                raise _internal_bmc_error(
+                    "frame bound assumption has wrong source type."
+                )
+            frames = (
+                range(context.bound + 1)
+                if source.kind == "always"
+                else (assumption.frame,)
+            )
+            for frame in frames:
+                if (
+                    frame is None
+                ):  # pragma: no cover - binder sets frame for at-assumptions.
+                    raise _internal_bmc_error("frame assumption has no frame index.")
+                lowered = _lower_bmc_cond_expr(
+                    source.predicate, symbols, frame_index=frame
+                )
+                constraints.extend(
+                    _domain_constraints_exprs(lowered.definedness_constraints)
+                )
+                constraints.append(_expect_bool(lowered.expr, "frame assumption"))
+            continue
+        if assumption.kind == "event":
+            if (
+                len(assumption.resolved_event_ids) != 1
+            ):  # pragma: no cover - binder resolves one event per event assumption.
+                raise _internal_bmc_error(
+                    "event assumption must resolve exactly one event id."
+                )
+            event = context.domain.event_by_id(assumption.resolved_event_ids[0])
+            expected = bool(getattr(assumption.source, "expected"))
+            for cycle in assumption.cycles:
+                event_expr = symbols.event_input(cycle, event.path)
+                constraints.append(event_expr if expected else z3.Not(event_expr))
+            continue
+        if assumption.kind == "event_cardinality":
+            source = assumption.source
+            if not isinstance(
+                source, EventCardinalityAssumption
+            ):  # pragma: no cover - binder preserves source type.
+                raise _internal_bmc_error(
+                    "event-cardinality assumption has wrong source type."
+                )
+            if source.kind == "any":
+                continue
+            if (
+                source.kind != "at_most_one"
+            ):  # pragma: no cover - query model validates cardinality kinds.
+                raise UnsupportedBmcQuery(
+                    "Unsupported event cardinality kind: %r." % source.kind
+                )
+            events = [
+                context.domain.event_by_id(event_id)
+                for event_id in assumption.resolved_event_ids
+            ]
+            for step in range(context.bound):
+                constraints.append(
+                    z3.AtMost(
+                        *[symbols.event_input(step, event.path) for event in events], 1
+                    )
+                )
+            continue
+        raise _internal_bmc_error(  # pragma: no cover - BoundAssumption validates known kinds.
+            "unknown bound assumption kind %r." % assumption.kind
+        )
+    return _and(constraints)
+
+
+def build_bmc_core_formula(context: BmcPreparedContext) -> BmcCoreFormula:
+    """Build ``Core_N`` for a prepared BMC context.
+
+    The returned formula is exactly the core relation layer:
+    ``D_N ∧ I_0 ∧ T_N ∧ ENV_N``.  Health gates, objective predicates,
+    solving, and witness replay are intentionally left to later layers.
+
+    :param context: Prepared BMC context from :class:`pyfcstm.bmc.BmcEngine`.
+    :type context: pyfcstm.bmc.engine.BmcPreparedContext
+    :return: Solver-level core formula bundle.
+    :rtype: BmcCoreFormula
+    :raises pyfcstm.bmc.errors.BmcBuildError: If the prepared context or macro
+        handoff data is internally inconsistent.
+    :raises pyfcstm.bmc.errors.UnsupportedBmcQuery: If a well-formed query or
+        action uses a solver feature not supported by this relation builder.
+
+    Example::
+
+        >>> from pyfcstm.bmc import BmcEngine, build_bmc_core_formula
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> model = load_state_machine_from_text('state Root;')
+        >>> context = BmcEngine(model).prepare('check reach <= 1: terminated();')
+        >>> build_bmc_core_formula(context).core.sort().name()
+        'Bool'
+    """
+    prepared = _require_context(context)
+    formals_by_step = _formals_by_step(prepared)
+    case_labels_by_step = {
+        step_index: tuple(case.label for formal in formals for case in formal.cases)
+        for step_index, formals in enumerate(formals_by_step)
+    }
+    symbols = BmcTraceSymbols.allocate(prepared.domain, case_labels_by_step)
+    steps = tuple(
+        _build_step_relation(step_index, symbols, formals)
+        for step_index, formals in enumerate(formals_by_step)
+    )
+    domain_formula = _build_domain_formula(symbols)
+    initial_formula = _build_initial_formula(prepared, symbols)
+    transition_formula = _and(step.formula for step in steps)
+    environment_formula = _build_environment_formula(prepared, symbols)
+    core = _and(
+        (domain_formula, initial_formula, transition_formula, environment_formula)
+    )
+    return BmcCoreFormula(
+        context=prepared,
+        symbols=symbols,
+        domain_formula=domain_formula,
+        initial_formula=initial_formula,
+        transition_formula=transition_formula,
+        environment_formula=environment_formula,
+        core=core,
+        steps=steps,
+        diagnostics=(),
+    )
+
+
+__all__ = [
+    "BmcTraceSymbols",
+    "BmcCaseRelation",
+    "BmcStepRelation",
+    "BmcCoreFormula",
+    "build_bmc_core_formula",
+]

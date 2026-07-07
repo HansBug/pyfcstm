@@ -13,6 +13,8 @@ The module contains:
 * :class:`SemanticCaseError` - Schema and fixture-shape diagnostics.
 * :func:`load_semantic_case` - Load one fixture by id or YAML path.
 * :func:`iter_semantic_cases` - Enumerate fixture cases with optional filters.
+* :func:`is_runner_excluded` - Check non-default runner exclusions without
+  adding them to the default fixture runner set.
 * :func:`validate_shared_fixture_contract` - Check the shared public
   observation contract.
 * :func:`run_simulation_case` - Execute one case against
@@ -76,7 +78,8 @@ _ALLOWED_CATEGORIES = {
     "lifecycle",
 }
 _DEFAULT_SHARED_RUNNERS = ("simulation", "generated_python_alignment")
-_ALLOWED_EXCLUDE_RUNNERS = set(_DEFAULT_SHARED_RUNNERS)
+BMC_CORE_RUNNER = "bmc_core"
+_ALLOWED_EXCLUDE_RUNNERS = set(_DEFAULT_SHARED_RUNNERS) | {BMC_CORE_RUNNER}
 _ALLOWED_EXPECT_FIELDS = {
     "state",
     "vars",
@@ -194,6 +197,38 @@ class SemanticCase:
     @property
     def runners(self) -> Sequence[str]:
         return _effective_runners_from_data(self.data, self.id, self.yaml_path)
+
+
+def is_runner_excluded(case: SemanticCase, runner: str) -> bool:
+    """
+    Return whether a fixture excludes a non-default runner.
+
+    The shared fixture schema remains exclude-only.  Default simulation and
+    generated-runtime runners use :attr:`SemanticCase.runners`; additional
+    maintenance runners such as ``"bmc_core"`` are checked directly from
+    ``exclude_runners`` so they do not become default simulation coverage.
+
+    :param case: Loaded semantic fixture.
+    :type case: SemanticCase
+    :param runner: Runner name to check.
+    :type runner: str
+    :return: Whether ``runner`` appears in ``case.data['exclude_runners']``.
+    :rtype: bool
+    :raises SemanticCaseError: If ``runner`` is not a known exclude runner.
+
+    Example::
+
+        >>> case = load_semantic_case("design_basic_simple_transition")
+        >>> is_runner_excluded(case, BMC_CORE_RUNNER)
+        False
+    """
+    if runner not in _ALLOWED_EXCLUDE_RUNNERS:
+        raise _case_error(
+            case.id,
+            case.yaml_path,
+            "unknown runner for exclusion check: %r" % runner,
+        )
+    return runner in set(case.data.get("exclude_runners") or ())
 
 
 def _case_error(case_id: str, yaml_path: str, message: str) -> SemanticCaseError:

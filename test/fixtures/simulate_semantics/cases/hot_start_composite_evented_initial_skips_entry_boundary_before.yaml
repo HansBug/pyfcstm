@@ -18,6 +18,8 @@ categories:
 - hot_start
 - lifecycle
 - abstract
+exclude_runners:
+- bmc_core
 initial:
   state: Root.Gate
   vars:

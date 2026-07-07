@@ -4,6 +4,7 @@ import pytest
 import yaml
 
 from test.testings.simulate_semantics import (
+    BMC_CORE_RUNNER,
     SemanticCaseError,
     iter_semantic_cases,
     load_semantic_case,
@@ -970,7 +971,10 @@ def test_shared_fixture_corpus_satisfies_current_contract():
     assert all(
         case.runners == ("simulation", "generated_python_alignment") for case in cases
     )
-    assert all("exclude_runners" not in case.data for case in cases)
+    assert all(
+        set(case.data.get("exclude_runners") or ()) <= {BMC_CORE_RUNNER}
+        for case in cases
+    )
 
 
 @pytest.mark.unittest

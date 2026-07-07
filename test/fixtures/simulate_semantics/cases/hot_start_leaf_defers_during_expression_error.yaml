@@ -10,6 +10,8 @@ categories:
 - hot_start
 - validation
 - template_alignment
+exclude_runners:
+- bmc_core
 initial:
   state: Root.A
   vars:

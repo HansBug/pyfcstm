@@ -1,6 +1,7 @@
 """Data model tests for FCSTM BMC query objects."""
 
 import json
+from collections import namedtuple
 
 import pytest
 from typing import Any, cast
@@ -29,6 +30,7 @@ from pyfcstm.bmc import (
     FloatLiteral,
     FrameAssumption,
     FrameVar,
+    InitialVariablePolicy,
     InitialSpec,
     IntLiteral,
     InvalidBmcEncoding,
@@ -724,6 +726,11 @@ def test_initial_spec_and_property_skeletons():
         "mode": "cold",
         "state_path": None,
         "predicate": None,
+        "variable_policy": {
+            "node": "initial_variable_policy",
+            "havoc_all": False,
+            "havoc_variables": [],
+        },
     }
     assert (
         frame_assumption.to_canonical()["predicate"]
@@ -749,6 +756,45 @@ def test_initial_spec_and_property_skeletons():
         cover.to_canonical()["predicate"]
         == Case("Root.Idle::transition::Root.Done::0").to_canonical()
     )
+
+
+@pytest.mark.unittest
+def test_initial_variable_policy_contracts_and_dsl_spelling():
+    """Initial ``havoc`` policies validate shape and render stable text."""
+    assert InitialVariablePolicy().is_empty is True
+    assert str(InitialVariablePolicy()) == ""
+    assert str(InitialVariablePolicy(havoc_all=True)) == "havoc *"
+    assert (
+        str(InitialVariablePolicy(havoc_variables=("x", "cycle", "event")))
+        == 'havoc { x, "cycle", "event" }'
+    )
+    assert InitialVariablePolicy(havoc_variables=("x",)).havoc_names(("x", "y")) == (
+        "x",
+    )
+    assert InitialVariablePolicy(havoc_all=True).havoc_names(("x", "y")) == (
+        "x",
+        "y",
+    )
+    Var = namedtuple("Var", ["name"])
+    Domain = namedtuple("Domain", ["variables"])
+    assert InitialVariablePolicy(havoc_all=True).havoc_names(
+        Domain((Var("x"), Var("y")))
+    ) == ("x", "y")
+    with pytest.raises(InvalidBmcQuery, match="havoc_names"):
+        InitialVariablePolicy(havoc_all=True).havoc_names(object())
+    with pytest.raises(InvalidBmcQuery, match="non-empty"):
+        InitialVariablePolicy(havoc_all=True).havoc_names((1,))
+
+    for factory in [
+        lambda: InitialVariablePolicy(havoc_all=1),
+        lambda: InitialVariablePolicy(havoc_variables="x"),
+        lambda: InitialVariablePolicy(havoc_variables=("",)),
+        lambda: InitialVariablePolicy(havoc_variables=("x", "x")),
+        lambda: InitialVariablePolicy(havoc_all=True, havoc_variables=("x",)),
+        lambda: InitialSpec(variable_policy=object()),
+    ]:
+        with pytest.raises(InvalidBmcQuery):
+            factory()
 
 
 @pytest.mark.unittest

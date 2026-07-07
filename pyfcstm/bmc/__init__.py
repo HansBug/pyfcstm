@@ -113,12 +113,13 @@ Public module structure:
        leaving health gates, objectives, solving, and witness replay to later
        modules.
    * - Query root model
-     - :class:`InitialSpec`, :class:`BmcAssumption`,
-       :class:`FrameAssumption`, :class:`EventAssumption`,
+     - :class:`InitialVariablePolicy`, :class:`InitialSpec`,
+       :class:`BmcAssumption`, :class:`FrameAssumption`, :class:`EventAssumption`,
        :class:`EventCardinalityAssumption`, :class:`BmcProperty`,
        :class:`BmcQuery`
-     - Capture top-level ``*.fbmcq`` query structure before parser, binder, or
-       solver-specific phases.
+     - Capture top-level ``*.fbmcq`` query structure, including initial
+       variable initializer policy, before parser, binder, or solver-specific
+       phases.
 
 Example::
 
@@ -176,6 +177,7 @@ from pyfcstm.bmc.query import (
     EventAssumption,
     EventCardinalityAssumption,
     FrameAssumption,
+    InitialVariablePolicy,
     InitialSpec,
 )
 
@@ -355,6 +357,7 @@ __all__ = [
     "Event",
     "Case",
     "Called",
+    "InitialVariablePolicy",
     "InitialSpec",
     "BmcAssumption",
     "FrameAssumption",

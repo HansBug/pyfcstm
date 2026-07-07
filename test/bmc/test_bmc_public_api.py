@@ -48,6 +48,7 @@ def test_bmc_public_api_exports_exact_names():
         "Event",
         "Case",
         "Called",
+        "InitialVariablePolicy",
         "InitialSpec",
         "BmcAssumption",
         "FrameAssumption",
@@ -243,6 +244,7 @@ def test_submodule_all_exports_are_exact():
         "Called",
     }
     assert set(query.__all__) == {
+        "InitialVariablePolicy",
         "InitialSpec",
         "BmcAssumption",
         "FrameAssumption",

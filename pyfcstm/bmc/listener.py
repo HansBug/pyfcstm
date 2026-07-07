@@ -61,6 +61,7 @@ from pyfcstm.bmc.query import (
     EventAssumption,
     EventCardinalityAssumption,
     FrameAssumption,
+    InitialVariablePolicy,
     InitialSpec,
 )
 
@@ -187,10 +188,18 @@ class BmcQueryParseListener(BmcQueryParserListener):
         """
         target = self.nodes[ctx.init_target()]
         predicate = self.nodes[ctx.bmc_cond_expression()] if ctx.WHERE() else None
+        variable_policy = (
+            self.nodes[ctx.init_havoc_clause()]
+            if ctx.init_havoc_clause()
+            else InitialVariablePolicy()
+        )
         mode = target[0]
         state_path = target[1] if mode == "state" else None
         self.nodes[ctx] = InitialSpec(
-            mode=mode, state_path=state_path, predicate=predicate
+            mode=mode,
+            state_path=state_path,
+            predicate=predicate,
+            variable_policy=variable_policy,
         )
 
     def exitInit_target(self, ctx: BmcQueryParser.Init_targetContext) -> None:
@@ -207,6 +216,35 @@ class BmcQueryParseListener(BmcQueryParserListener):
             self.nodes[ctx] = ("terminated", None)
         else:
             self.nodes[ctx] = ("state", self.nodes[ctx.string_literal()])
+
+    def exitInit_havoc_clause(
+        self, ctx: BmcQueryParser.Init_havoc_clauseContext
+    ) -> None:
+        """Build an initial variable policy from a ``havoc`` clause.
+
+        :param ctx: Initial ``havoc`` clause parse context.
+        :type ctx: BmcQueryParser.Init_havoc_clauseContext
+        :return: ``None``.
+        :rtype: None
+        """
+        if ctx.STAR():
+            self.nodes[ctx] = InitialVariablePolicy(havoc_all=True)
+            return
+        refs = tuple(self.nodes[item] for item in ctx.init_var_ref())
+        self.nodes[ctx] = InitialVariablePolicy(havoc_variables=refs)
+
+    def exitInit_var_ref(self, ctx: BmcQueryParser.Init_var_refContext) -> None:
+        """Build a variable name used inside an initial ``havoc`` clause.
+
+        :param ctx: Initial variable reference parse context.
+        :type ctx: BmcQueryParser.Init_var_refContext
+        :return: ``None``.
+        :rtype: None
+        """
+        if ctx.ID():
+            self.nodes[ctx] = ctx.ID().getText()
+        else:
+            self.nodes[ctx] = self.nodes[ctx.string_literal()]
 
     def exitAssume_clause(self, ctx: BmcQueryParser.Assume_clauseContext) -> None:
         """Bind an assumption wrapper to its concrete assumption node.

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any, Iterable, List, Mapping, Sequence, Tuple
 
 import pytest
@@ -50,6 +51,54 @@ _SUPPORTED_POLICY_MODES = {
     "temporary_exclude",
     "long_term_exclude",
 }
+_SAFE_BARE_VAR_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_FBMCQ_RESERVED_VAR_NAMES = {
+    "init",
+    "cold",
+    "terminated",
+    "state",
+    "where",
+    "havoc",
+    "assume",
+    "always",
+    "at",
+    "event",
+    "events",
+    "cardinality",
+    "any",
+    "at_most_one",
+    "check",
+    "reach",
+    "forbid",
+    "invariant",
+    "must_reach",
+    "exists_always",
+    "response",
+    "cover",
+    "trigger",
+    "within",
+    "var",
+    "cycle",
+    "active",
+    "case",
+    "called",
+    "current",
+    "pi",
+    "E",
+    "tau",
+    "and",
+    "or",
+    "not",
+    "implies",
+    "iff",
+    "xor",
+    "true",
+    "false",
+    "True",
+    "False",
+    "TRUE",
+    "FALSE",
+}
 
 
 class _StaticFalseExpectation(Exception):
@@ -71,26 +120,51 @@ def _value_literal(value: Any) -> str:
     return repr(value)
 
 
+def _var_reference(name: str) -> str:
+    if _SAFE_BARE_VAR_RE.fullmatch(name) and name not in _FBMCQ_RESERVED_VAR_NAMES:
+        return name
+    return "var(%s)" % json.dumps(name, ensure_ascii=False)
+
+
+def _havoc_reference(name: str) -> str:
+    if _SAFE_BARE_VAR_RE.fullmatch(name) and name not in _FBMCQ_RESERVED_VAR_NAMES:
+        return name
+    return json.dumps(name, ensure_ascii=False)
+
+
 def _initial_predicate(initial_vars: Mapping[str, Any]) -> str:
     return " && ".join(
-        "%s == %s" % (name, _value_literal(value))
+        "%s == %s" % (_var_reference(name), _value_literal(value))
         for name, value in sorted(initial_vars.items())
     )
 
 
-def _query_text_for_case(case, bound: int) -> str:
+def _initial_havoc_clause(model, initial_vars: Mapping[str, Any]) -> str:
+    if not initial_vars:
+        return ""
+    model_variables = set(model.defines)
+    initial_variable_names = set(initial_vars)
+    if initial_variable_names == model_variables:
+        return " havoc *"
+    refs = ", ".join(_havoc_reference(name) for name in sorted(initial_variable_names))
+    return " havoc { %s }" % refs
+
+
+def _query_text_for_case(case, model, bound: int) -> str:
     initial = case.data.get("initial") or {}
     lines = []
     initial_vars = initial.get("vars") or {}
     where = _initial_predicate(initial_vars) if initial_vars else ""
+    havoc = _initial_havoc_clause(model, initial_vars)
     if initial.get("state") is not None:
         target = json.dumps(initial["state"], ensure_ascii=False)
         line = "init state(%s)" % target
+        line += havoc
         if where:
             line += " where " + where
         lines.append(line + ";")
     elif where:
-        lines.append("init cold where %s;" % where)
+        lines.append("init cold%s where %s;" % (havoc, where))
     lines.append("check reach <= %d: terminated();" % max(1, bound))
     return "\n".join(lines)
 
@@ -237,7 +311,7 @@ def _expectation_expr(core, case, ignored_fields: Sequence[str]) -> z3.BoolRef:
 def _assert_semantic_fixture_matches_bmc_core(case, ignored_fields: Sequence[str]):
     bound, selected_events_by_step = _collect_runtime_trace(case)
     model = build_state_machine_from_case(case)
-    query_text = _query_text_for_case(case, bound)
+    query_text = _query_text_for_case(case, model, bound)
     core = build_bmc_core_formula(BmcEngine(model).prepare(query_text))
     event_constraints = []
     for step_index, selected_events in enumerate(selected_events_by_step):
@@ -257,7 +331,7 @@ def _assert_expected_unsupported(case) -> None:
         for index, step in enumerate(case.data.get("steps") or [])
     )
     model = build_state_machine_from_case(case)
-    query_text = _query_text_for_case(case, bound)
+    query_text = _query_text_for_case(case, model, bound)
     with pytest.raises(UnsupportedBmcQuery, match="unsupported_bmc_core"):
         build_bmc_core_formula(BmcEngine(model).prepare(query_text))
 
@@ -267,7 +341,7 @@ def test_bmc_semantic_fixture_policy_covers_known_gap_inventory() -> None:
     cases = {case.id: case for case in iter_semantic_cases()}
     assert len(cases) >= 165
     assert BMC_CORE_FIXTURE_LEDGER_CASES <= set(cases)
-    assert len(BMC_CORE_FIXTURE_LEDGER_CASES) == 43
+    assert len(BMC_CORE_FIXTURE_LEDGER_CASES) == 40
 
     excluded_in_yaml = {
         case.id for case in cases.values() if is_runner_excluded(case, BMC_CORE_RUNNER)

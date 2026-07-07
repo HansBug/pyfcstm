@@ -89,6 +89,7 @@ class FcstmBmcQueryLexer(RegexLexer):
         "cold",
         "terminated",
         "where",
+        "havoc",
         "always",
         "at",
         "cardinality",

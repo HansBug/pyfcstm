@@ -40,6 +40,7 @@ Example::
 from __future__ import annotations
 
 import json
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, ClassVar, Dict, Optional, Tuple, Union
@@ -66,6 +67,54 @@ _PROPERTY_KINDS = {
     "exists_always",
     "response",
     "cover",
+}
+_ID_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_FBMCQ_BARE_VAR_RESERVED = {
+    "init",
+    "cold",
+    "terminated",
+    "state",
+    "where",
+    "havoc",
+    "assume",
+    "always",
+    "at",
+    "event",
+    "events",
+    "cardinality",
+    "any",
+    "at_most_one",
+    "check",
+    "reach",
+    "forbid",
+    "invariant",
+    "must_reach",
+    "exists_always",
+    "response",
+    "cover",
+    "trigger",
+    "within",
+    "var",
+    "cycle",
+    "active",
+    "case",
+    "called",
+    "current",
+    "pi",
+    "E",
+    "tau",
+    "and",
+    "or",
+    "not",
+    "implies",
+    "iff",
+    "xor",
+    "true",
+    "false",
+    "True",
+    "False",
+    "TRUE",
+    "FALSE",
 }
 
 
@@ -163,6 +212,147 @@ def _format_block(lines: Tuple[str, ...]) -> str:
     return "\n".join("    %s" % line for line in lines)
 
 
+def _is_safe_bare_init_var_ref(name: str) -> bool:
+    return bool(_ID_RE.fullmatch(name)) and name not in _FBMCQ_BARE_VAR_RESERVED
+
+
+def _init_var_ref_to_dsl(name: str) -> str:
+    if _is_safe_bare_init_var_ref(name):
+        return name
+    return _quote_string(name)
+
+
+@dataclass(frozen=True)
+class InitialVariablePolicy:
+    """Initial-frame persistent-variable initializer policy.
+
+    The policy controls which FCSTM declaration initializers are skipped while
+    constructing ``F_0``.  A skipped variable remains a free initial-frame
+    symbol that can still be constrained by the surrounding initial ``where``
+    predicate.
+
+    :param havoc_all: Whether ``havoc *`` skips every persistent-variable
+        initializer, defaults to ``False``.
+    :type havoc_all: bool, optional
+    :param havoc_variables: Specific variable names skipped by
+        ``havoc { ... }``, defaults to ``()``.
+    :type havoc_variables: Tuple[str, ...], optional
+
+    Example::
+
+        >>> InitialVariablePolicy(havoc_variables=("x",)).to_canonical()["havoc_variables"]
+        ['x']
+        >>> str(InitialVariablePolicy(havoc_all=True))
+        'havoc *'
+    """
+
+    _node_name: ClassVar[str] = "initial_variable_policy"
+
+    havoc_all: bool = False
+    havoc_variables: Tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.havoc_all, bool):
+            raise InvalidBmcQuery("havoc_all must be a boolean value.")
+        if isinstance(self.havoc_variables, str) or not isinstance(
+            self.havoc_variables, (list, tuple)
+        ):
+            raise InvalidBmcQuery("havoc_variables must be a sequence of strings.")
+        variables = tuple(self.havoc_variables)
+        if not all(isinstance(name, str) and name for name in variables):
+            raise InvalidBmcQuery("havoc_variables must contain non-empty strings.")
+        if len(set(variables)) != len(variables):
+            raise InvalidBmcQuery("havoc_variables must not contain duplicate names.")
+        if self.havoc_all and variables:
+            raise InvalidBmcQuery("havoc_all cannot be combined with havoc_variables.")
+        object.__setattr__(self, "havoc_variables", variables)
+
+    @property
+    def is_empty(self) -> bool:
+        """Return whether the policy leaves all declaration initializers intact.
+
+        :return: ``True`` when no ``havoc`` clause is present.
+        :rtype: bool
+
+        Example::
+
+            >>> InitialVariablePolicy().is_empty
+            True
+        """
+        return not self.havoc_all and not self.havoc_variables
+
+    def havoc_names(self, domain_or_names: object) -> Tuple[str, ...]:
+        """Return variable names skipped by this policy.
+
+        :param domain_or_names: Either a BMC domain-like object with a
+            ``variables`` attribute or an iterable of variable names.
+        :type domain_or_names: object
+        :return: Names whose declaration initializers are skipped.
+        :rtype: Tuple[str, ...]
+        :raises pyfcstm.bmc.errors.InvalidBmcQuery: If ``domain_or_names`` does
+            not provide names needed by ``havoc *``.
+
+        Example::
+
+            >>> InitialVariablePolicy(havoc_variables=("x",)).havoc_names(("x", "y"))
+            ('x',)
+        """
+        if not self.havoc_all:
+            return self.havoc_variables
+        if hasattr(domain_or_names, "variables"):
+            return tuple(item.name for item in domain_or_names.variables)
+        try:
+            names = tuple(domain_or_names)  # type: ignore[arg-type]
+        except TypeError as err:
+            # TypeError: non-iterable domain_or_names cannot expand wildcard
+            # havoc; this is a public API misuse rather than a solver failure.
+            raise InvalidBmcQuery(
+                "havoc_names needs a domain or variable-name iterable for havoc *."
+            ) from err
+        if not all(isinstance(name, str) and name for name in names):
+            raise InvalidBmcQuery(
+                "havoc_names variable-name iterable must contain non-empty strings."
+            )
+        return names
+
+    def to_canonical(self) -> _CanonicalDict:
+        """Return a stable canonical initial-variable-policy dictionary.
+
+        :return: Canonical policy dictionary.
+        :rtype: Dict[str, object]
+
+        Example::
+
+            >>> InitialVariablePolicy(havoc_all=True).to_canonical()["havoc_all"]
+            True
+        """
+        return {
+            "node": self._node_name,
+            "havoc_all": self.havoc_all,
+            "havoc_variables": list(self.havoc_variables),
+        }
+
+    def __str__(self) -> str:
+        """Return the canonical ``havoc`` clause text.
+
+        :return: ``havoc`` clause text, or ``""`` for the empty policy.
+        :rtype: str
+
+        Example::
+
+            >>> str(InitialVariablePolicy())
+            ''
+            >>> str(InitialVariablePolicy(havoc_variables=("x", "event")))
+            'havoc { x, "event" }'
+        """
+        if self.havoc_all:
+            return "havoc *"
+        if not self.havoc_variables:
+            return ""
+        refs = ", ".join(_init_var_ref_to_dsl(name) for name in self.havoc_variables)
+        return "havoc { %s }" % refs
+
+
 @dataclass(frozen=True)
 class InitialSpec:
     """Initial BMC frame specification.
@@ -177,6 +367,9 @@ class InitialSpec:
         for all modes and renders as a ``where`` clause, for example
         ``init cold where active("Root.A");``.
     :type predicate: Optional[BmcCondExpr], optional
+    :param variable_policy: Initial-frame variable initializer policy, defaults
+        to an empty policy that keeps all declaration initializers.
+    :type variable_policy: InitialVariablePolicy, optional
 
     Example::
 
@@ -191,6 +384,9 @@ class InitialSpec:
     mode: str = "cold"
     state_path: Optional[str] = None
     predicate: Optional[BmcCondExpr] = None
+    variable_policy: InitialVariablePolicy = field(
+        default_factory=InitialVariablePolicy
+    )
 
     def __post_init__(self) -> None:
         _validate_choice(self.mode, _INITIAL_MODES, "initial mode")
@@ -202,6 +398,8 @@ class InitialSpec:
             )
         if self.predicate is not None:
             _require_condition(self.predicate, "predicate")
+        if not isinstance(self.variable_policy, InitialVariablePolicy):
+            raise InvalidBmcQuery("variable_policy must be InitialVariablePolicy.")
 
     def to_canonical(self) -> _CanonicalDict:
         """Return a stable canonical initial-spec dictionary.
@@ -219,6 +417,7 @@ class InitialSpec:
             "mode": self.mode,
             "state_path": self.state_path,
             "predicate": _canonical_condition(self.predicate),
+            "variable_policy": self.variable_policy.to_canonical(),
         }
 
     def __str__(self) -> str:
@@ -236,9 +435,13 @@ class InitialSpec:
             target = "state(%s)" % _quote_string(self.state_path or "")
         else:
             target = self.mode
-        if self.predicate is None:
-            return "init %s;" % target
-        return "init %s where %s;" % (target, self.predicate)
+        clauses = ["init", target]
+        policy_text = str(self.variable_policy)
+        if policy_text:
+            clauses.append(policy_text)
+        if self.predicate is not None:
+            clauses.extend(("where", str(self.predicate)))
+        return "%s;" % " ".join(clauses)
 
 
 class BmcAssumption(ABC):
@@ -642,6 +845,7 @@ class BmcQuery:
 
 
 __all__ = [
+    "InitialVariablePolicy",
     "InitialSpec",
     "BmcAssumption",
     "FrameAssumption",

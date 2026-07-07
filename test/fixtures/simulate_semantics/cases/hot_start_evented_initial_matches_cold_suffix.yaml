@@ -17,8 +17,6 @@ categories:
 - hot_start
 - validation
 - lifecycle
-exclude_runners:
-- bmc_core
 initial:
   state: Root.Gate
   vars:

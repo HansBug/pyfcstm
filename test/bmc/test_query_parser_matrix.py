@@ -128,6 +128,7 @@ _REQUIRED_STANDALONE_NODES = (
     "Event",
     "Case",
     "Called",
+    "InitialVariablePolicy",
     "InitialSpec",
     "FrameAssumption",
     "EventAssumption",
@@ -263,6 +264,24 @@ def _query_initial(value: bmc_query_nodes.BmcQuery) -> bmc_query_nodes.InitialSp
         'cold'
     """
     return value.initial
+
+
+def _query_initial_variable_policy(
+    value: bmc_query_nodes.BmcQuery,
+) -> bmc_query_nodes.InitialVariablePolicy:
+    """Select the initial variable policy from a parsed query.
+
+    :param value: Parsed query object.
+    :type value: pyfcstm.bmc.query.BmcQuery
+    :return: Query initial variable policy.
+    :rtype: pyfcstm.bmc.query.InitialVariablePolicy
+
+    Example::
+
+        >>> _query_initial_variable_policy(parse_bmc_query('check reach <= 1: true;')).is_empty
+        True
+    """
+    return value.initial.variable_policy
 
 
 def _query_first_assumption(
@@ -638,6 +657,42 @@ def _initial_specs() -> List[bmc_query_nodes.InitialSpec]:
             )
         specs.append(spec)
     return specs
+
+
+def _initial_variable_policies() -> List[bmc_query_nodes.InitialVariablePolicy]:
+    """Return at least forty initial variable policy cases.
+
+    :return: Initial variable policies.
+    :rtype: list
+
+    Example::
+
+        >>> len(_initial_variable_policies()) >= 40
+        True
+    """
+    policies = []
+    names = (
+        ("x",),
+        ("x", "y"),
+        ("counter_1",),
+        ("cycle",),
+        ("event",),
+        ("state", "where"),
+        ("变量",),
+        ("x", "cycle", "event"),
+    )
+    for index in range(40):
+        mode = index % 5
+        if mode == 0:
+            policy = bmc_query_nodes.InitialVariablePolicy()
+        elif mode == 1:
+            policy = bmc_query_nodes.InitialVariablePolicy(havoc_all=True)
+        else:
+            policy = bmc_query_nodes.InitialVariablePolicy(
+                havoc_variables=names[index % len(names)]
+            )
+        policies.append(policy)
+    return policies
 
 
 def _frame_assumptions() -> List[bmc_query_nodes.FrameAssumption]:
@@ -1026,6 +1081,18 @@ def _query_node_cases() -> List[NodeParseCase]:
     for index, initial in enumerate(_initial_specs()):
         query = _query_with_initial(initial, index)
         cases.append(_query_case("InitialSpec", str(query), initial, _query_initial))
+
+    for index, policy in enumerate(_initial_variable_policies()):
+        initial = bmc_query_nodes.InitialSpec(variable_policy=policy)
+        query = _query_with_initial(initial, index)
+        cases.append(
+            _query_case(
+                "InitialVariablePolicy",
+                str(query),
+                policy,
+                _query_initial_variable_policy,
+            )
+        )
 
     for index, assumption in enumerate(_frame_assumptions()):
         query = _query_with_assumption(assumption, index)

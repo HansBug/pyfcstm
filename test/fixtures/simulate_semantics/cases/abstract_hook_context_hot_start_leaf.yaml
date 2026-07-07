@@ -11,8 +11,6 @@ categories:
 - abstract
 - lifecycle
 - hot_start
-exclude_runners:
-- bmc_core
 initial:
   state: Root.A
   vars:

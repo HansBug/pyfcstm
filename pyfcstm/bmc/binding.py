@@ -75,6 +75,7 @@ from pyfcstm.bmc.query import (
     EventAssumption,
     EventCardinalityAssumption,
     FrameAssumption,
+    InitialVariablePolicy,
     InitialSpec,
 )
 
@@ -249,6 +250,10 @@ class BoundInitialSpec:
     :param resolved_state_id: Domain state id for ``mode="state"`` when
         resolved, defaults to ``None``.
     :type resolved_state_id: int, optional
+    :param resolved_havoc_variables: Domain-order variable names whose
+        declaration initializers are skipped, or ``None`` when no domain was
+        supplied, defaults to ``None``.
+    :type resolved_havoc_variables: Tuple[str, ...], optional
 
     Example::
 
@@ -258,6 +263,7 @@ class BoundInitialSpec:
 
     source: InitialSpec
     resolved_state_id: Optional[int] = None
+    resolved_havoc_variables: Optional[Tuple[str, ...]] = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.source, InitialSpec):
@@ -267,6 +273,23 @@ class BoundInitialSpec:
             or not isinstance(self.resolved_state_id, int)
         ):
             raise InvalidBmcQuery("resolved_state_id must be an integer or None.")
+        if self.resolved_havoc_variables is not None:
+            if isinstance(self.resolved_havoc_variables, str) or not isinstance(
+                self.resolved_havoc_variables, (list, tuple)
+            ):
+                raise InvalidBmcQuery(
+                    "resolved_havoc_variables must be a sequence or None."
+                )
+            names = tuple(self.resolved_havoc_variables)
+            if not all(isinstance(name, str) and name for name in names):
+                raise InvalidBmcQuery(
+                    "resolved_havoc_variables must contain non-empty strings."
+                )
+            if len(set(names)) != len(names):
+                raise InvalidBmcQuery(
+                    "resolved_havoc_variables must not contain duplicate names."
+                )
+            object.__setattr__(self, "resolved_havoc_variables", names)
 
     @property
     def mode(self) -> str:
@@ -286,6 +309,32 @@ class BoundInitialSpec:
         """
         return self.source.predicate
 
+    @property
+    def variable_policy(self) -> InitialVariablePolicy:
+        """Return the source initial variable policy.
+
+        :return: Initial variable policy.
+        :rtype: pyfcstm.bmc.query.InitialVariablePolicy
+        """
+        return self.source.variable_policy
+
+    def havoc_names(self, domain: object) -> Tuple[str, ...]:
+        """Return domain-resolved initial ``havoc`` variable names.
+
+        :param domain: BMC domain used when a wildcard policy must be expanded.
+        :type domain: object
+        :return: Variable names skipped by the initial variable policy.
+        :rtype: Tuple[str, ...]
+
+        Example::
+
+            >>> BoundInitialSpec(InitialSpec()).havoc_names(())
+            ()
+        """
+        if self.resolved_havoc_variables is not None:
+            return self.resolved_havoc_variables
+        return self.source.variable_policy.havoc_names(domain)
+
     def to_canonical(self) -> _CanonicalDict:
         """Return a JSON-stable bound initial-spec dictionary.
 
@@ -302,6 +351,11 @@ class BoundInitialSpec:
             {
                 "node": "bound_initial_spec",
                 "resolved_state_id": self.resolved_state_id,
+                "resolved_havoc_variables": (
+                    None
+                    if self.resolved_havoc_variables is None
+                    else list(self.resolved_havoc_variables)
+                ),
             }
         )
         return result
@@ -621,6 +675,49 @@ def _validate_initial_shape(initial: object) -> None:
         _require_condition_field(
             initial.predicate, "initial.predicate", "initial predicate"
         )
+    policy = initial.variable_policy
+    if not isinstance(policy, InitialVariablePolicy):
+        _raise_binding_error(
+            "query_shape",
+            "initial.variable_policy",
+            "variable_policy must be InitialVariablePolicy.",
+        )
+    if not isinstance(policy.havoc_all, bool):
+        _raise_binding_error(
+            "query_shape",
+            "initial.variable_policy.havoc_all",
+            "havoc_all must be a boolean value.",
+        )
+    if isinstance(policy.havoc_variables, str) or not isinstance(
+        policy.havoc_variables, (list, tuple)
+    ):
+        _raise_binding_error(
+            "query_shape",
+            "initial.variable_policy.havoc_variables",
+            "havoc_variables must be a sequence of strings.",
+        )
+    havoc_variables = tuple(policy.havoc_variables)
+    if policy.havoc_all and havoc_variables:
+        _raise_binding_error(
+            "query_shape",
+            "initial.variable_policy",
+            "havoc_all cannot be combined with havoc_variables.",
+        )
+    seen = set()
+    for index, name in enumerate(havoc_variables):
+        if not _is_non_empty_text(name):
+            _raise_binding_error(
+                "query_shape",
+                f"initial.variable_policy.havoc_variables[{index}]",
+                "havoc variable name must be a non-empty string.",
+            )
+        if name in seen:
+            _raise_binding_error(
+                "duplicate_havoc_variable",
+                f"initial.variable_policy.havoc_variables[{index}]",
+                "initial havoc variables must not contain duplicate names.",
+            )
+        seen.add(name)
 
 
 def _validate_frame_assumption_shape(assumption: FrameAssumption, path: str) -> None:
@@ -1028,12 +1125,58 @@ def _bind_condition_expr(
     )
 
 
+def _domain_variable_names(ctx: _BindingContext) -> Tuple[str, ...]:
+    if not ctx.has_domain:
+        return ()
+    return tuple(var.name for var in ctx.domain.variables)
+
+
+def _bind_initial_variable_policy(
+    ctx: _BindingContext, policy: InitialVariablePolicy
+) -> Optional[Tuple[str, ...]]:
+    if policy.havoc_all:
+        if not ctx.has_domain:
+            return None
+        names = _domain_variable_names(ctx)
+        for index, name in enumerate(names):
+            _resolve_variable(
+                ctx,
+                name,
+                "initial.variable_policy.havoc_all[%d]" % index,
+                "havoc",
+            )
+        return names
+
+    resolved = []
+    seen = set()
+    for index, name in enumerate(policy.havoc_variables):
+        path = "initial.variable_policy.havoc_variables[%d]" % index
+        if name in seen:
+            _raise_binding_error(
+                "duplicate_havoc_variable",
+                path,
+                "initial havoc variables must not contain duplicate names.",
+            )
+        seen.add(name)
+        _resolve_variable(ctx, name, path, "havoc")
+        resolved.append(name)
+    if not ctx.has_domain:
+        return tuple(resolved)
+    domain_order = {
+        name: index for index, name in enumerate(_domain_variable_names(ctx))
+    }
+    return tuple(sorted(resolved, key=lambda name: domain_order[name]))
+
+
 def _bind_initial(ctx: _BindingContext, initial: InitialSpec) -> BoundInitialSpec:
     resolved_state_id = None
     if initial.mode == "state":
         resolved_state_id = _resolve_state(
             ctx, initial.state_path or "", "initial.state_path", "state_path"
         )
+    resolved_havoc_variables = _bind_initial_variable_policy(
+        ctx, initial.variable_policy
+    )
     if initial.predicate is not None:
         _bind_condition_expr(
             ctx,
@@ -1041,7 +1184,7 @@ def _bind_initial(ctx: _BindingContext, initial: InitialSpec) -> BoundInitialSpe
             "initial.predicate",
             _ConditionRules.frame_local(allow_cycle=False),
         )
-    return BoundInitialSpec(initial, resolved_state_id)
+    return BoundInitialSpec(initial, resolved_state_id, resolved_havoc_variables)
 
 
 def _bind_frame_assumption(

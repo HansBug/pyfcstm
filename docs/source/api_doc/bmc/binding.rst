@@ -30,7 +30,7 @@ BoundInitialSpec
 -----------------------------------------------------
 
 .. autoclass:: BoundInitialSpec
-    :members: __post_init__,mode,predicate,to_canonical,source,resolved_state_id
+    :members: __post_init__,mode,predicate,variable_policy,havoc_names,to_canonical,source,resolved_state_id,resolved_havoc_variables
 
 
 BoundAssumption

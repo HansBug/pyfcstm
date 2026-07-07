@@ -1833,8 +1833,13 @@ def _build_initial_formula(
     constraints: List[z3.ExprRef] = [
         symbols.frame_state(0) == z3.IntVal(source.source_state_id)
     ]
-    env: Dict[str, _Z3Expr] = {}
+    env: Dict[str, _Z3Expr] = {
+        var.name: symbols.frame_var(0, var.name) for var in context.domain.variables
+    }
+    havoc_names = set(context.bound_query.initial.havoc_names(context.domain))
     for var in context.domain.variables:
+        if var.name in havoc_names:
+            continue
         define = context.model.defines[var.name]
         result = _translate_model_expr(
             define.init, env, "initializer for %s" % var.name
@@ -1842,7 +1847,6 @@ def _build_initial_formula(
         value = _expect_arith(result.z3_expr, "initializer for %s" % var.name)
         constraints.extend(_domain_constraints_exprs(result.definedness_constraints))
         constraints.append(symbols.frame_var(0, var.name) == value)
-        env[var.name] = symbols.frame_var(0, var.name)
     predicate = context.bound_query.initial.predicate
     if predicate is not None:
         lowered = _lower_bmc_cond_expr(predicate, symbols, frame_index=0)

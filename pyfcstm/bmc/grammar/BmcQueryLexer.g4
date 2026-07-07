@@ -14,6 +14,7 @@ COLD: 'cold';
 TERMINATED: 'terminated';
 STATE: 'state';
 WHERE: 'where';
+HAVOC: 'havoc';
 ASSUME: 'assume';
 ALWAYS: 'always';
 AT: 'at';

@@ -12,7 +12,7 @@ from pyfcstm.highlight import FcstmBmcQueryLexer
 
 QUERY_SAMPLE = dedent(
     """\
-    init state("Root.System.A") where x >= 0 and active("Root.System.A");
+    init state("Root.System.A") havoc { x } where x >= 0 and active("Root.System.A");
 
     assume always: var("x") <= 1000;
     assume at 0: x == var("x");
@@ -64,6 +64,7 @@ def test_bmc_query_lexer_highlights_top_level_query_tokens():
 
     assert (Keyword.Declaration, "init") in tokens
     assert (Keyword.Declaration, "state") in tokens
+    assert (Keyword.Reserved, "havoc") in tokens
     assert (Keyword.Reserved, "where") in tokens
     assert (Keyword.Declaration, "assume") in tokens
     assert (Keyword.Reserved, "always") in tokens

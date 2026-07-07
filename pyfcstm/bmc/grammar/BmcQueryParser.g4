@@ -26,13 +26,23 @@ bmc_cond_expression_entry
     ;
 
 init_clause
-    : INIT init_target (WHERE bmc_cond_expression)? SEMI
+    : INIT init_target init_havoc_clause? (WHERE bmc_cond_expression)? SEMI
     ;
 
 init_target
     : COLD
     | TERMINATED
     | STATE LPAREN string_literal RPAREN
+    ;
+
+init_havoc_clause
+    : HAVOC STAR
+    | HAVOC LBRACE init_var_ref (COMMA init_var_ref)* RBRACE
+    ;
+
+init_var_ref
+    : ID
+    | string_literal
     ;
 
 assume_clause

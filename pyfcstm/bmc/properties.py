@@ -310,7 +310,19 @@ def _validate_condition_context(
         _validate_condition_context(expr.if_true, context, path + ".if_true")
         _validate_condition_context(expr.if_false, context, path + ".if_false")
         return
-    if isinstance(expr, (bmc_ast.Active, bmc_ast.Terminated)):
+    if isinstance(expr, bmc_ast.Active):
+        if expr.frame != "current":
+            raise UnsupportedBmcQuery(
+                "%s uses an explicit frame selector; property compiler "
+                "predicates must use the current frame." % path
+            )
+        return
+    if isinstance(expr, bmc_ast.Terminated):
+        if expr.frame != "current":
+            raise UnsupportedBmcQuery(
+                "%s uses an explicit frame selector; property compiler "
+                "predicates must use the current frame." % path
+            )
         return
     if isinstance(expr, bmc_ast.Event):
         if context == "response_trigger" and expr.selector == "current":

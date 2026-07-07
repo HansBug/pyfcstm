@@ -7,7 +7,7 @@ from dataclasses import replace
 import pytest
 import z3
 
-from pyfcstm.bmc.ast import Called, Case
+from pyfcstm.bmc.ast import Active, Called, Case, Terminated
 from pyfcstm.bmc.binding import BoundBmcQuery, BoundProperty
 from pyfcstm.bmc import (
     BmcBuildError,
@@ -249,6 +249,24 @@ def _case_label(dsl: str, query: str, kind: str) -> str:
     )
 
 
+def _replace_core_property(core, prop):
+    query = BmcQuery(
+        property=prop,
+        initial=core.context.query.initial,
+        assumptions=core.context.query.assumptions,
+    )
+    bound_query = BoundBmcQuery(
+        query,
+        core.context.bound_query.initial,
+        core.context.bound_query.assumptions,
+        BoundProperty(prop),
+        core.context.bound_query.references,
+    )
+    return replace(
+        core, context=replace(core.context, query=query, bound_query=bound_query)
+    )
+
+
 @pytest.mark.unittest
 def test_compile_cover_accepts_transition_and_fallback_but_not_internal_cases() -> None:
     """Cover targets public macro cases and rejects diagnostic/internal labels."""
@@ -453,41 +471,45 @@ def test_compile_property_rechecks_case_atom_context_for_forged_core() -> None:
     """Compiler-level validation rejects non-frame atoms in forged objectives."""
     base = _core("state Root;", 'check reach <= 1: active("Root");')
     bad_property = BmcProperty("reach", 1, predicate=Case("Root::transition::Root::0"))
-    bad_query = BmcQuery(
-        property=bad_property,
-        initial=base.context.query.initial,
-        assumptions=base.context.query.assumptions,
-    )
-    bad_bound_query = BoundBmcQuery(
-        bad_query,
-        base.context.bound_query.initial,
-        base.context.bound_query.assumptions,
-        BoundProperty(bad_property),
-        base.context.bound_query.references,
-    )
-    bad_context = replace(base.context, query=bad_query, bound_query=bad_bound_query)
 
     with pytest.raises(UnsupportedBmcQuery, match="case atoms"):
-        compile_bmc_property(replace(base, context=bad_context))
+        compile_bmc_property(_replace_core_property(base, bad_property))
 
     called_property = BmcProperty("reach", 1, predicate=Called("Hook"))
-    called_query = BmcQuery(
-        property=called_property,
-        initial=base.context.query.initial,
-        assumptions=base.context.query.assumptions,
-    )
-    called_bound_query = BoundBmcQuery(
-        called_query,
-        base.context.bound_query.initial,
-        base.context.bound_query.assumptions,
-        BoundProperty(called_property),
-        base.context.bound_query.references,
-    )
-    called_context = replace(
-        base.context, query=called_query, bound_query=called_bound_query
-    )
     with pytest.raises(UnsupportedBmcQuery, match="abstract call trace"):
-        compile_bmc_property(replace(base, context=called_context))
+        compile_bmc_property(_replace_core_property(base, called_property))
+
+
+@pytest.mark.unittest
+def test_compile_property_rechecks_frame_selectors_for_forged_core() -> None:
+    """Forged property atoms cannot pin predicates to an explicit frame."""
+    base = _core(
+        _EVENT_DSL,
+        'init state("Root.A"); assume event("Root.Go", 0) == true; '
+        'check reach <= 1: active("Root.B");',
+    )
+    forged_properties = (
+        BmcProperty("reach", 1, predicate=Active("Root.B", frame=0)),
+        BmcProperty("reach", 1, predicate=Terminated(frame=0)),
+        BmcProperty(
+            "response",
+            1,
+            trigger=Active("Root.A", frame=0),
+            response=Active("Root.B"),
+            within=1,
+        ),
+        BmcProperty(
+            "response",
+            1,
+            trigger=Active("Root.A"),
+            response=Terminated(frame=0),
+            within=1,
+        ),
+    )
+
+    for forged_property in forged_properties:
+        with pytest.raises(UnsupportedBmcQuery, match="explicit frame selector"):
+            compile_bmc_property(_replace_core_property(base, forged_property))
 
 
 @pytest.mark.unittest

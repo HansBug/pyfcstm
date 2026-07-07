@@ -1177,6 +1177,18 @@ Core ([requirements.txt](requirements.txt)): `antlr4-python3-runtime==4.9.3`, `j
 
 **CRITICAL RULE**: Always edit source files only. Never edit generated files directly—they will be overwritten.
 
+#### Documentation Authoring Discipline
+
+Before adding, restructuring, or substantially expanding user-facing documentation, read
+[docs/documentation_authoring.md](docs/documentation_authoring.md). That file is repository-maintainer guidance, not a
+Sphinx toctree page; it is intentionally made discoverable through this `CLAUDE.md` entry.
+
+Documentation changes must start from a concrete coverage inventory and must preserve the separation between Tutorials,
+How-to Guides, Explanations, and Reference material. Use real commands, real outputs, explicit failure boundaries,
+traceable generated resources, synchronized language variants where applicable, and the Chinese terminology discipline
+below. Review documentation PRs with the C/I/M criteria in that guide, in addition to the reST, generated-file, and
+multilingual rules in this section.
+
 #### Documentation Structure
 
 Files in [docs/source/](docs/source/):
@@ -1279,7 +1291,9 @@ make doc_clean  # Clean Sphinx build output only
 - `*.ipynb` for notebooks (with outputs cleared)
 - `*.rst`, `*.md` for documentation text
 
-Run `make contents` before committing documentation changes.
+Run `make contents` before committing Sphinx source or documentation resource changes that may refresh generated
+outputs. For policy-only files outside the Sphinx tree, or prose-only changes that do not affect generated resources,
+record why `make contents` is not applicable; otherwise run it and commit any intentional generated updates.
 
 #### Example Workflow
 

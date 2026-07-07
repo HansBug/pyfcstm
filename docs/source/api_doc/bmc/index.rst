@@ -19,6 +19,7 @@ pyfcstm.bmc
     listener
     macro
     parse
+    properties
     query
     relation
     source

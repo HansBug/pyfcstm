@@ -16,6 +16,7 @@ from pyfcstm.bmc import (
     STATE_TERMINATE_ID,
     UnsupportedBmcQuery,
     build_bmc_core_formula,
+    compile_bmc_property,
 )
 from pyfcstm.simulate import SimulationRuntime
 from test.bmc.semantic_fixture_policy import (
@@ -150,7 +151,9 @@ def _initial_havoc_clause(model, initial_vars: Mapping[str, Any]) -> str:
     return " havoc { %s }" % refs
 
 
-def _query_text_for_case(case, model, bound: int) -> str:
+def _query_text_for_case(
+    case, model, bound: int, check_clause: str = "check reach <= {bound}: terminated();"
+) -> str:
     initial = case.data.get("initial") or {}
     lines = []
     initial_vars = initial.get("vars") or {}
@@ -165,7 +168,7 @@ def _query_text_for_case(case, model, bound: int) -> str:
         lines.append(line + ";")
     elif where:
         lines.append("init cold%s where %s;" % (havoc, where))
-    lines.append("check reach <= %d: terminated();" % max(1, bound))
+    lines.append(check_clause.format(bound=max(1, bound)))
     return "\n".join(lines)
 
 
@@ -308,6 +311,63 @@ def _expectation_expr(core, case, ignored_fields: Sequence[str]) -> z3.BoolRef:
     return z3.And(*constraints) if constraints else z3.BoolVal(True)
 
 
+def _expect_state_query(state_path: Any) -> str:
+    if state_path is None:
+        return "true"
+    return "active(%s)" % json.dumps(state_path, ensure_ascii=False)
+
+
+def _expect_ended_query(ended: bool) -> str:
+    return "terminated()" if ended else "!terminated()"
+
+
+def _expect_vars_query(values: Mapping[str, Any]) -> str:
+    items = [
+        "%s == %s" % (_var_reference(name), _value_literal(value))
+        for name, value in sorted(values.items())
+    ]
+    return " && ".join(items) if items else "true"
+
+
+def _expectation_query_predicate(case, ignored_fields: Sequence[str]) -> str:
+    ignored = set(ignored_fields)
+    frame_index = 0
+    frame_clauses = []
+    observed_public_fields = 0
+    for index, step in enumerate(case.data.get("steps") or []):
+        field_path = "steps[%d]" % index
+        expect = step.get("expect") or {}
+        frame_index += _effective_cycle_count(step, case.id, case.yaml_path, field_path)
+        terms = []
+        if "state" in expect:
+            observed_public_fields += 1
+            terms.append(_expect_state_query(expect["state"]))
+        if "ended" in expect:
+            observed_public_fields += 1
+            terms.append(_expect_ended_query(expect["ended"]))
+        if "vars" in expect:
+            observed_public_fields += 1
+            terms.append(_expect_vars_query(expect["vars"]))
+        if "vars_exact" in expect:
+            observed_public_fields += 1
+            terms.append(_expect_vars_query(expect["vars_exact"]))
+        if "handler_calls" in expect and "handler_calls" not in ignored:
+            raise BmcBuildError(
+                "%s %s handler_calls need an explicit partial BMC policy."
+                % (case.id, field_path)
+            )
+        if terms:
+            frame_clauses.append(
+                "(cycle != %d || (%s))" % (frame_index, " && ".join(terms))
+            )
+    if observed_public_fields == 0:
+        raise BmcBuildError(
+            "%s has no public state/ended/vars expectation for BMC property alignment."
+            % case.id
+        )
+    return " && ".join(frame_clauses) if frame_clauses else "true"
+
+
 def _assert_semantic_fixture_matches_bmc_core(case, ignored_fields: Sequence[str]):
     bound, selected_events_by_step = _collect_runtime_trace(case)
     model = build_state_machine_from_case(case)
@@ -322,6 +382,27 @@ def _assert_semantic_fixture_matches_bmc_core(case, ignored_fields: Sequence[str
     assert _solver(core.core, *event_constraints, expectation).check() == z3.sat
     assert (
         _solver(core.core, *event_constraints, z3.Not(expectation)).check() == z3.unsat
+    )
+
+    property_predicate = _expectation_query_predicate(case, ignored_fields)
+    property_query_text = _query_text_for_case(
+        case,
+        model,
+        bound,
+        check_clause="check invariant <= {bound}: %s;" % property_predicate,
+    )
+    property_core = build_bmc_core_formula(
+        BmcEngine(model).prepare(property_query_text)
+    )
+    property_event_constraints = []
+    for step_index, selected_events in enumerate(selected_events_by_step):
+        property_event_constraints.extend(
+            _event_constraints(property_core, step_index, selected_events)
+        )
+    objective = compile_bmc_property(property_core)
+    assert (
+        _solver(objective.solve_formula, *property_event_constraints).check()
+        == z3.unsat
     )
 
 

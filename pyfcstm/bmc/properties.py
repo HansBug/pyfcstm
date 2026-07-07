@@ -26,6 +26,7 @@ Example::
 
 from __future__ import annotations
 
+from collections.abc import Iterable as IterableABC
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, Optional, Tuple
 
@@ -47,7 +48,7 @@ _COUNTEREXAMPLE_KINDS = {"forbid", "invariant", "must_reach", "response"}
 
 
 def _z3_text(expr: z3.ExprRef) -> str:
-    return str(expr)
+    return expr.sexpr()
 
 
 def _and(items: Iterable[z3.ExprRef]) -> z3.BoolRef:
@@ -152,8 +153,15 @@ class BmcPropertyFormula:
         _require_core(self.core)
         if not isinstance(self.kind, str) or not self.kind:
             raise BmcBuildError("kind must be a non-empty string.")
+        if self.kind not in _WITNESS_KINDS | _COUNTEREXAMPLE_KINDS:
+            raise BmcBuildError("Unsupported property kind: %r." % self.kind)
         if self.polarity not in {"witness", "counterexample"}:
             raise BmcBuildError("polarity must be 'witness' or 'counterexample'.")
+        if self.polarity != _polarity(self.kind):
+            raise BmcBuildError(
+                "polarity %r does not match property kind %r."
+                % (self.polarity, self.kind)
+            )
         for field_name in (
             "objective_formula",
             "solve_formula",
@@ -162,17 +170,38 @@ class BmcPropertyFormula:
         ):
             if not z3.is_bool(getattr(self, field_name)):
                 raise BmcBuildError("%s must be a Z3 Boolean expression." % field_name)
-        if not all(isinstance(item, str) for item in self.diagnostics):
+        if isinstance(self.diagnostics, str) or not isinstance(
+            self.diagnostics, IterableABC
+        ):
+            raise BmcBuildError("diagnostics must be an iterable of strings.")
+        diagnostics = tuple(self.diagnostics)
+        if not all(isinstance(item, str) for item in diagnostics):
             raise BmcBuildError("diagnostics must contain strings.")
         if self.case_label is not None and not isinstance(self.case_label, str):
             raise BmcBuildError("case_label must be None or str.")
+        if self.kind == "cover":
+            if not self.case_label:
+                raise BmcBuildError(
+                    "case_label must be a non-empty string for cover properties."
+                )
+        elif self.case_label is not None:
+            raise BmcBuildError("case_label is only valid for cover properties.")
         if self.response_window is not None and (
             isinstance(self.response_window, bool)
             or not isinstance(self.response_window, int)
             or self.response_window <= 0
         ):
             raise BmcBuildError("response_window must be None or a positive integer.")
-        object.__setattr__(self, "diagnostics", tuple(self.diagnostics))
+        if self.kind == "response":
+            if self.response_window is None:
+                raise BmcBuildError(
+                    "response_window must be a positive integer for response properties."
+                )
+        elif self.response_window is not None:
+            raise BmcBuildError(
+                "response_window is only valid for response properties."
+            )
+        object.__setattr__(self, "diagnostics", diagnostics)
 
     @property
     def bound(self) -> int:
@@ -194,6 +223,9 @@ class BmcPropertyFormula:
 
     def to_canonical(self) -> _CanonicalDict:
         """Return a JSON-stable compiled-property summary.
+
+        Formula fields use Z3 ``sexpr()`` text so downstream snapshots receive
+        SMT-LIB-style expressions instead of Python pretty-printer output.
 
         :return: Canonical property formula summary.
         :rtype: Dict[str, object]

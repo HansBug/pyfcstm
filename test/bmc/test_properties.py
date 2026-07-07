@@ -88,18 +88,34 @@ def test_property_formula_public_validation_rejects_bad_constructor_shapes() -> 
         compile_bmc_property(object())
     with pytest.raises(BmcBuildError, match="kind must be a non-empty string"):
         BmcPropertyFormula(**dict(kwargs, kind=""))
+    with pytest.raises(BmcBuildError, match="Unsupported property kind"):
+        BmcPropertyFormula(**dict(kwargs, kind="proof"))
     with pytest.raises(BmcBuildError, match="polarity"):
         BmcPropertyFormula(**dict(kwargs, polarity="proof"))
+    with pytest.raises(BmcBuildError, match="does not match property kind"):
+        BmcPropertyFormula(**dict(kwargs, polarity="counterexample"))
     with pytest.raises(BmcBuildError, match="objective_formula"):
         BmcPropertyFormula(**dict(kwargs, objective_formula=z3.IntVal(1)))
     with pytest.raises(BmcBuildError, match="diagnostics"):
         BmcPropertyFormula(**dict(kwargs, diagnostics=("ok", 1)))
+    with pytest.raises(BmcBuildError, match="diagnostics"):
+        BmcPropertyFormula(**dict(kwargs, diagnostics="oops"))
+    with pytest.raises(BmcBuildError, match="diagnostics"):
+        BmcPropertyFormula(**dict(kwargs, diagnostics=None))
     with pytest.raises(BmcBuildError, match="case_label"):
         BmcPropertyFormula(**dict(kwargs, case_label=1))
+    with pytest.raises(BmcBuildError, match="case_label is only valid"):
+        BmcPropertyFormula(**dict(kwargs, case_label="Root::transition::Root::0"))
+    with pytest.raises(BmcBuildError, match="case_label must be a non-empty"):
+        BmcPropertyFormula(**dict(kwargs, kind="cover", case_label=None))
     with pytest.raises(BmcBuildError, match="response_window"):
         BmcPropertyFormula(**dict(kwargs, response_window=True))
     with pytest.raises(BmcBuildError, match="response_window"):
         BmcPropertyFormula(**dict(kwargs, response_window=0))
+    with pytest.raises(BmcBuildError, match="response_window is only valid"):
+        BmcPropertyFormula(**dict(kwargs, response_window=1))
+    with pytest.raises(BmcBuildError, match="response_window must be a positive"):
+        BmcPropertyFormula(**dict(kwargs, kind="response", polarity="counterexample"))
 
 
 @pytest.mark.unittest
@@ -167,6 +183,25 @@ def test_compile_definedness_failures_are_safety_counterexamples() -> None:
 
     assert _solver(invariant.solve_formula).check() == z3.sat
     assert _solver(forbid.solve_formula).check() == z3.sat
+
+
+@pytest.mark.unittest
+def test_compile_liveness_definedness_failures_are_not_witnesses() -> None:
+    """Undefined liveness predicates do not become successful witnesses."""
+    dsl = """
+    def int x = 1;
+    def int y = 0;
+    state Root;
+    """
+    reach = compile_bmc_property(_core(dsl, "check reach <= 1: x / y > 0;"))
+    exists_always = compile_bmc_property(
+        _core(dsl, "check exists_always <= 1: x / y > 0;")
+    )
+    must_reach = compile_bmc_property(_core(dsl, "check must_reach <= 1: x / y > 0;"))
+
+    assert _solver(reach.solve_formula).check() == z3.unsat
+    assert _solver(exists_always.solve_formula).check() == z3.unsat
+    assert _solver(must_reach.solve_formula).check() == z3.sat
 
 
 @pytest.mark.unittest
@@ -342,6 +377,42 @@ def test_compile_response_strict_successor_and_incomplete_suffix() -> None:
 
 
 @pytest.mark.unittest
+def test_compile_response_honors_strict_successor_window_boundaries() -> None:
+    """Response excludes the trigger frame and includes the last window frame."""
+    dsl = """
+    state Root {
+        event Go;
+        state A;
+        state B;
+        state C;
+        [*] -> A;
+        A -> B : Go;
+        B -> C : if [true];
+    }
+    """
+    trigger_frame_not_enough = compile_bmc_property(
+        _core(
+            dsl,
+            'init state("Root.A"); assume event("Root.Go", 0) == true; '
+            "check response <= 2: "
+            'trigger event("Root.Go", current) -> within 2 active("Root.A");',
+        )
+    )
+    last_window_frame = compile_bmc_property(
+        _core(
+            dsl,
+            'init state("Root.A"); assume event("Root.Go", 0) == true; '
+            "check response <= 2: "
+            'trigger event("Root.Go", current) -> within 2 active("Root.C");',
+        )
+    )
+
+    assert _solver(trigger_frame_not_enough.solve_formula).check() == z3.sat
+    assert _solver(last_window_frame.solve_formula).check() == z3.unsat
+    assert _solver(last_window_frame.incomplete_solve_formula).check() == z3.unsat
+
+
+@pytest.mark.unittest
 def test_compile_response_treats_trigger_undefined_as_counterexample() -> None:
     """An undefined response trigger is a violation, not a vacuous pass."""
     dsl = """
@@ -437,5 +508,12 @@ def test_property_formula_canonical_schema_is_stable() -> None:
         "incomplete",
         "incomplete_solve",
     }
+    assert canonical["formulas"]["objective"] == formula.objective_formula.sexpr()
+    assert canonical["formulas"]["solve"] == formula.solve_formula.sexpr()
+    assert canonical["formulas"]["incomplete"] == formula.incomplete_formula.sexpr()
+    assert (
+        canonical["formulas"]["incomplete_solve"]
+        == formula.incomplete_solve_formula.sexpr()
+    )
     assert canonical["case_label"] is None
     assert canonical["response_window"] is None

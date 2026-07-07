@@ -78,6 +78,185 @@ This example shows the minimum specificity expected for a non-DSL module.
 | Migration and landing pages | If old generation tutorial sections move to how-to or reference pages, keep a landing page or migration table that answers where each old heading went. |
 | Verification | `git diff --check`; CLI help comparison if options are documented; focused docs build if Sphinx pages changed; template tests or `make tpl` only when template assets or template docs are materially changed. |
 
+## Module-specific coverage floors
+
+"DSL-level" documentation quality does not mean every module must have the same line count as the DSL pages. It means
+the documentation is complete enough that a reader can learn the first successful path, perform common tasks, understand
+the design boundaries, and look up exact facts without guessing from source code. For every capability family in scope:
+
+- each public capability must have a landing point in at least one role page: tutorial, how-to, explanation, or
+  reference;
+- every command-heavy or schema-heavy capability must include legal forms, illegal forms, error behavior, and repair
+  guidance;
+- every runnable path must state its input, command or code, expected output or success signal, and verification source;
+- every reference table must be traceable to implementation facts, schema files, generated assets, or tests;
+- every split across multiple pages must name which page owns the tutorial, task recipe, explanation, and reference
+  responsibilities so that gaps are not hidden by overlap;
+- every bilingual module must teach the same capabilities, examples, warnings, and boundaries in both languages.
+
+The checklists below are current minimum floors for high-traffic modules. They are not a replacement for the inventory
+template above; they make the inventory concrete enough for a no-context reviewer to judge whether a page is too thin.
+
+### Generation, rendering, and templates
+
+Generation and template documentation must separate three audiences:
+
+| Audience | Primary pages | Boundary |
+|---|---|---|
+| Generated-code users | `tutorials/generation/`, `how_to/generation/`, generated `README` files | They need to choose a built-in template, run generation, and integrate generated output. |
+| Template authors | `how_to/templates/`, `reference/template_config/`, `explanations/template_rendering/` | They need to write or debug a trusted template directory. |
+| Template maintainers | `templates/README*.md`, `templates/*/README*.md`, template tests | They need source-template packaging, formatter, native, and semantic-alignment maintenance rules. |
+
+Required source-fact checklist:
+
+- `pyfcstm/entry/generate.py`;
+- `pyfcstm/render/render.py`, `pyfcstm/render/env.py`, `pyfcstm/render/func.py`,
+  `pyfcstm/render/expr.py`, and `pyfcstm/render/statement.py`;
+- `pyfcstm/template/__init__.py` and `pyfcstm/template/index.json`;
+- `templates/README*.md`, `templates/*/README*.md`, `templates/*/README*.j2`,
+  `templates/*/config.yaml`, and `templates/*/template.json`;
+- `tools/package_templates.py` when documenting built-in template packaging or maintainer workflows;
+- `test/render/*` and `test/template/*` when documenting renderer validation, generated-runtime behavior, or built-in
+  template guarantees.
+
+Minimum capability checklist:
+
+- `pyfcstm generate` with exactly one of `--template` or `--template-dir` / `-t`;
+- `--clear` behavior and data-loss boundary;
+- built-in template names, metadata, generated files, entry points, experimental status, and generated README contract;
+- custom template directory structure, required `config.yaml`, `.j2` output path rules, static-copy rules, `.git` skip,
+  and `ignores`;
+- renderer config top-level keys, defaults, section types, `base_lang`, item loading forms
+  (`type: template`, `type: import`, `type: value`), and validation errors;
+- expression and statement style use, including the distinction between runtime statement rendering and DSL echo
+  rendering;
+- built-in packaging flow through `make tpl` and packaged-template extraction;
+- target-specific boundaries for Python, C, C polling, C++ wrapper, and C++ polling templates;
+- formatter, compiler, smoke-test, native-toolchain, and simulator-alignment evidence for claims that mention those
+  guarantees.
+
+Reference floors:
+
+- `reference/template_config/` must cover every renderer config validation branch that is already protected by
+  `test/render/*`, including invalid root objects, unknown top-level keys, invalid section types, missing `base_lang`,
+  invalid `ignores`, and invalid object-loading items.
+- `reference/builtin_templates/` must cover every current entry in `pyfcstm/template/index.json` and each template's
+  user-visible generated-file and entry-point contract. A matrix of names alone is too thin.
+- Generation-related CLI reference must include the missing-template, both-template-options, unknown-template, invalid
+  config, and template render failure classes that are visible to users.
+
+### Inspect and diagnostics
+
+Inspect and diagnostics documentation must treat report shape and diagnostic codes as reference-grade API facts, not as
+examples that can be summarized loosely.
+
+Required source-fact checklist:
+
+- `pyfcstm/entry/inspect.py`;
+- `pyfcstm/diagnostics/schema.json`;
+- `pyfcstm/diagnostics/inspect_llm_report_schema.json`;
+- `pyfcstm/diagnostics/codes.yaml`;
+- `test/entry/test_inspect.py`, `test/diagnostics/`, and `test/verify/test_inspect_adapter.py`.
+
+Minimum capability checklist:
+
+- inspect CLI options, output formats, output file behavior, ANSI/color policy, suffix warning, and invalid-input
+  boundaries;
+- `ModelInspect` top-level fields, metrics, diagnostics, summary sections, source metadata, and schema-version facts;
+- LLM-oriented report fields and their intended repair-guidance boundary;
+- diagnostic-code registry counts or distribution, severity levels, capability tiers, and code ownership;
+- verify-policy rejection examples where inspect output is consumed by verification tooling.
+
+Reference floors:
+
+- `reference/inspect_report/` must contain enough field-level detail for a user to parse the JSON without reading the
+  Python implementation.
+- `reference/diagnostics_codes/` must explain the complete registry shape and cannot document only the most common
+  codes unless the omitted groups are explicitly linked or deferred with a reason.
+- Verification must include at least one human-output check, one JSON parse check, one LLM-report check when that report
+  is in scope, and one invalid-input or policy-rejection example when failure behavior is documented.
+
+### Simulation and execution semantics
+
+Simulation documentation must preserve the exact execution-order contract. A thin command tutorial is not enough when a
+page claims to explain runtime behavior.
+
+Required source-fact checklist:
+
+- `pyfcstm/simulate/runtime.py`, `pyfcstm/simulate/context.py`, and `pyfcstm/simulate/decorators.py`;
+- `pyfcstm/entry/simulate/` command modules;
+- semantic fixture cases under `test/fixtures/simulate_semantics/cases/`;
+- `test/testings/simulate_semantics.py` and simulation/runtime tests that define rollback, hot-start, and handler
+  behavior.
+
+Minimum capability checklist:
+
+- CLI batch mode, REPL commands, event input forms, settings defaults, output/export shapes, and common errors;
+- runtime constructor and cycle contract for Python API users;
+- abstract handler registration and context-read boundaries;
+- cold entry, composite initial entry, leaf `during`, transition guard/effect, source exit, target entry, aspect
+  `during before` / `during after`, pseudo/combo routing, post-exit continuation, hot start, terminal/end handling, and
+  speculative validation rollback;
+- which examples are verified through an installed CLI, `PYTHONPATH=. python -m pyfcstm`, `CliRunner`, direct runtime
+  tests, or docs demo generation.
+
+Reference floors:
+
+- A simulation reference page or section must exist when public simulation commands or API facts are documented; leaving
+  all exact facts in tutorials and explanations is too thin.
+- Execution-order explanations must include an ordering matrix or trace examples for the semantic cases they claim to
+  cover. If a scenario is intentionally omitted, say which fixture or behavior family owns it.
+
+### CLI workflows, installation, and visualization
+
+Command and environment documentation must be verified against actual entry points instead of copied from memory.
+
+Required source-fact checklist:
+
+- `pyfcstm/entry/cli.py`, `pyfcstm/entry/dispatch.py`, and the subcommand modules under `pyfcstm/entry/`;
+- `setup.py`, `requirements.txt`, `requirements-test.txt`, `requirements-doc.txt`, and relevant Makefile targets when
+  documenting installation or environment facts;
+- `pyfcstm/model/plantuml.py`, visualization option objects, and visualization entry points when documenting PlantUML
+  or image rendering;
+- `test/entry/*`, `test/model/test_plantuml.py`, visualization tests, and docs `.demo.*` resources when documenting
+  command behavior.
+
+Minimum CLI workflow checklist:
+
+- top-level `pyfcstm --help` / `python -m pyfcstm --help` and every documented subcommand's `--help`;
+- stdout, stderr, exit status, input-file requirements, output-file defaults, overwrite behavior, and file side effects;
+- missing input, unknown option, invalid config, and invalid command examples where users are likely to see them;
+- a short expected output or success signal for every command-heavy how-to step, or an explicit note that the command is
+  schematic.
+
+Minimum installation checklist:
+
+- ordinary package installation, source-checkout usage, editable/developer usage when documented, and `python -m pyfcstm`
+  fallback when console scripts are unavailable;
+- Python version support, core dependencies, test dependencies, documentation dependencies, and feature-specific external
+  dependencies as separate rows;
+- common failures such as `pyfcstm: command not found`, mismatched `pip` and Python interpreter, unsupported Python
+  version, missing PlantUML backend, and missing native toolchain;
+- release-artifact claims only when they are traceable to a current release workflow or release page. Otherwise write a
+  conditional link instead of a platform or checksum promise.
+
+Minimum visualization checklist:
+
+- distinction between `plantuml` source export and `visualize` rendered-image export;
+- renderer selection, `--check`, `--no-open`, output suffix behavior, cache behavior, and headless/CI behavior;
+- local PlantUML jar versus remote server setup, including network and privacy boundaries for remote rendering;
+- `-c key=value` parser facts, legal value forms, illegal examples, unknown keys, and options that must be set through
+  dedicated flags rather than generic config;
+- `PlantUMLOptions` fields, defaults, presets, and resolution order when those facts appear in reference pages.
+
+Reference floors:
+
+- `reference/cli/` must stay aligned with actual Click help for every public subcommand.
+- Installation reference material must distinguish core package requirements from optional docs, rendering, and native
+  generated-runtime tooling.
+- `reference/visualization_options/` must cover the option dataclass, CLI parser value forms, environment variables,
+  and failure boundaries instead of listing only friendly presets.
+
 ## Page contracts and failure boundaries
 
 ### Tutorial contract
@@ -296,12 +475,12 @@ This section records how the guide satisfies its own rules. Keep it updated when
 | Inventory field | This guide's answer |
 |---|---|
 | Scope | Maintainer and agent discipline for writing, restructuring, and reviewing pyfcstm documentation. |
-| Source facts | `CLAUDE.md` documentation rules, the current Diátaxis documentation tree under `docs/source/`, PR review patterns from the tutorials overhaul, and repository commands listed in maintainer guidance. |
-| Capability list | Define page roles, require coverage inventory, set example and diagram rules, preserve bilingual terminology discipline, protect navigation/migration structure, define verification expectations, and classify review findings. |
+| Source facts | `CLAUDE.md` documentation rules, the current Diátaxis documentation tree under `docs/source/`, PR review patterns from the tutorials overhaul, no-context reviewer experiments over non-DSL modules, and repository commands listed in maintainer guidance. |
+| Capability list | Define page roles, require coverage inventory, set module-specific coverage floors, set example and diagram rules, preserve bilingual terminology discipline, protect navigation/migration structure, define verification expectations, and classify review findings. |
 | Tutorial path | Not applicable: this is a maintainer policy file, not a user tutorial. The guide explicitly stays outside the Sphinx toctree. |
 | How-to tasks | Decide page role, fill module inventory, write acceptable pages, reject unacceptable pages, verify documentation changes, and review with C/I/M levels. |
 | Explanation topics | Why documentation needs role separation, traceable examples, explicit boundaries, bilingual synchronization, and proportional verification. |
-| Reference facts | Required inventory fields, page contract tables, migration record fields, verification commands, and C/I/M examples. |
+| Reference facts | Required inventory fields, module-specific source-fact checklists and coverage floors, page contract tables, migration record fields, verification commands, and C/I/M examples. |
 | Boundaries and counterexamples | The guide names unacceptable page shapes, zero-verification PRs, false implementation claims, untraceable migrations, broken navigation, and wrong risk scope. |
 | Diagnostics and errors | Documentation review defects are classified as Critical, Important, or Minor; product diagnostic codes are referenced only when target documentation needs them. |
 | Examples and resources | The generation-module inventory is the worked non-DSL example; command snippets are short and tied to repository guidance. |

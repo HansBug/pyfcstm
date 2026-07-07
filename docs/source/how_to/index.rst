@@ -62,7 +62,8 @@ cycles, events, hot starts, or state-history-oriented checks.
 * **Success signal:** the simulated state path matches the behavior you expected
   from the model.
 * **If it fails:** use :doc:`/explanations/execution_semantics/index` for
-  lifecycle ordering and later simulation reference material as it is added.
+  lifecycle ordering, then return to the simulation tutorial or task guide for
+  runnable troubleshooting.
 
 Inspect and diagnose a model
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~

@@ -45,7 +45,7 @@
 
 * **输出：** 可见的活跃状态和变量演化。
 * **成功信号：** 仿真得到的状态路径符合你从模型中预期的行为。
-* **失败后：** 到 :doc:`/explanations/execution_semantics/index_zh` 理解生命周期顺序；后续仿真参考补齐后再查精确事实。
+* **失败后：** 到 :doc:`/explanations/execution_semantics/index_zh` 理解生命周期顺序；再回到仿真教程或任务指南做可运行排查。
 
 检查和诊断模型
 ~~~~~~~~~~~~~~

@@ -749,7 +749,8 @@ class CallFilter:
 
     Omitted filter fields mean ``true`` for that dimension.  ``where`` is a
     filter over the matched call-time snapshot, not a global assertion over all
-    calls.
+    calls.  :func:`str` returns the canonical argument fragment without the
+    surrounding ``called`` or ``call_count`` function name.
 
     :param action: Resolved abstract action path filter, defaults to ``None``.
     :type action: str, optional

@@ -195,14 +195,15 @@ call_arguments
 call_argument
     : string_literal
     | call_step_selector
-    | ACTION ASSIGN string_literal
-    | STEP ASSIGN call_step_selector
-    | STAGE ASSIGN string_literal
-    | ROLE ASSIGN string_literal
+    | ID ASSIGN call_argument_value
     | STATE ASSIGN string_literal
-    | ACTIVE_LEAF ASSIGN string_literal
-    | NAMED_REF ASSIGN (string_literal | NULL)
     | WHERE bmc_cond_expression
+    ;
+
+call_argument_value
+    : string_literal
+    | call_step_selector
+    | ID
     ;
 
 call_step_selector

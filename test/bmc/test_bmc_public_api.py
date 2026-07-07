@@ -106,6 +106,7 @@ def test_bmc_public_api_exports_exact_names():
         "BmcPreparedContext",
         "BmcEngine",
         "prepare_bmc_query",
+        "BmcAbstractCallRecord",
         "BmcTraceSymbols",
         "BmcCaseRelation",
         "BmcStepRelation",
@@ -155,6 +156,7 @@ def test_bmc_public_api_exports_exact_names():
         "BmcPreparedContext",
         "BmcEngine",
         "prepare_bmc_query",
+        "BmcAbstractCallRecord",
         "BmcTraceSymbols",
         "BmcCaseRelation",
         "BmcStepRelation",
@@ -333,6 +335,7 @@ def test_submodule_all_exports_are_exact():
         "prepare_bmc_query",
     }
     assert set(relation.__all__) == {
+        "BmcAbstractCallRecord",
         "BmcTraceSymbols",
         "BmcCaseRelation",
         "BmcStepRelation",

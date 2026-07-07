@@ -70,6 +70,16 @@ from pyfcstm.bmc.query import (
 )
 
 
+_CALL_ARGUMENT_KEYS = {
+    "action",
+    "step",
+    "stage",
+    "role",
+    "active_leaf",
+    "named_ref",
+}
+
+
 def _decode_string_literal(raw_text: str) -> str:
     """Decode a grammar-accepted string literal token.
 
@@ -642,34 +652,55 @@ class BmcQueryParseListener(BmcQueryParserListener):
             updates[key] = value
         self.nodes[ctx] = CallFilter(**updates)
 
+    def exitCall_argument_value(
+        self, ctx: BmcQueryParser.Call_argument_valueContext
+    ) -> None:
+        """Build one named call-argument value without reserving key names.
+
+        Call-filter keys such as ``action`` and ``step`` intentionally remain
+        normal identifiers at the lexer level so model variables with the same
+        names can still be used in ordinary FCSTM-aligned expressions. The
+        listener validates the key/value pairing after parsing the generic
+        ``ID = value`` shape.
+        """
+        if ctx.string_literal():
+            self.nodes[ctx] = ("string", self.nodes[ctx.string_literal()])
+        elif ctx.call_step_selector():
+            self.nodes[ctx] = ("step", self.nodes[ctx.call_step_selector()])
+        else:
+            self.nodes[ctx] = ("identifier", ctx.ID().getText())
+
     def exitCall_argument(self, ctx: BmcQueryParser.Call_argumentContext) -> None:
         """Build one call argument pair consumed by ``exitCall_arguments``."""
         if ctx.WHERE():
             self.nodes[ctx] = ("where", self.nodes[ctx.bmc_cond_expression()])
             return
-        if ctx.ACTION():
-            self.nodes[ctx] = ("action", self.nodes[ctx.string_literal()])
-            return
-        if ctx.STEP():
-            self.nodes[ctx] = ("step", self.nodes[ctx.call_step_selector()])
-            return
-        if ctx.STAGE():
-            self.nodes[ctx] = ("stage", self.nodes[ctx.string_literal()])
-            return
-        if ctx.ROLE():
-            self.nodes[ctx] = ("role", self.nodes[ctx.string_literal()])
-            return
         if ctx.STATE():
             self.nodes[ctx] = ("state", self.nodes[ctx.string_literal()])
             return
-        if ctx.ACTIVE_LEAF():
-            self.nodes[ctx] = ("active_leaf", self.nodes[ctx.string_literal()])
-            return
-        if ctx.NAMED_REF():
-            if ctx.NULL():
-                self.nodes[ctx] = ("named_ref_is_null", True)
-            else:
-                self.nodes[ctx] = ("named_ref", self.nodes[ctx.string_literal()])
+        if ctx.ID():
+            key = ctx.ID().getText()
+            value_kind, value = self.nodes[ctx.call_argument_value()]
+            if key not in _CALL_ARGUMENT_KEYS:
+                raise InvalidBmcQuery("unsupported call argument %r." % key)
+            if key == "step":
+                if value_kind != "step":
+                    raise InvalidBmcQuery("call step argument must be a step selector.")
+                self.nodes[ctx] = ("step", value)
+                return
+            if key == "named_ref":
+                if value_kind == "identifier" and value == "null":
+                    self.nodes[ctx] = ("named_ref_is_null", True)
+                    return
+                if value_kind == "string":
+                    self.nodes[ctx] = ("named_ref", value)
+                    return
+                raise InvalidBmcQuery(
+                    "call named_ref argument must be a string or null."
+                )
+            if value_kind != "string":
+                raise InvalidBmcQuery("call %s argument must be a string." % key)
+            self.nodes[ctx] = (key, value)
             return
         if ctx.call_step_selector():
             self.nodes[ctx] = (

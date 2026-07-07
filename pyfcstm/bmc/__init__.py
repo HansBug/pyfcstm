@@ -108,12 +108,12 @@ Public module structure:
      - Prepare ``StateMachine + .fbmcq`` inputs into bound query and domain
        context without solver, witness, CLI, or verify-registry coupling.
    * - BMC relation builder
-     - :class:`BmcTraceSymbols`, :class:`BmcCaseRelation`,
-       :class:`BmcStepRelation`, :class:`BmcCoreFormula`,
+     - :class:`BmcAbstractCallRecord`, :class:`BmcTraceSymbols`,
+       :class:`BmcCaseRelation`, :class:`BmcStepRelation`, :class:`BmcCoreFormula`,
        :func:`build_bmc_core_formula`
      - Lower prepared contexts and macro-step cases into ``Core_N`` while
-       leaving health gates, objectives, solving, and witness replay to later
-       modules.
+       exposing selected-case abstract-call records and leaving health gates,
+       objectives, solving, and witness replay to later modules.
    * - BMC property compiler
      - :class:`BmcPropertyFormula`, :func:`compile_bmc_property`
      - Compile the bound query ``check`` clause into a solver objective layered
@@ -256,6 +256,7 @@ _ENGINE_EXPORTS = {
 }
 
 _RELATION_EXPORTS = {
+    "BmcAbstractCallRecord",
     "BmcTraceSymbols",
     "BmcCaseRelation",
     "BmcStepRelation",
@@ -432,6 +433,7 @@ __all__ = [
     "BmcPreparedContext",
     "BmcEngine",
     "prepare_bmc_query",
+    "BmcAbstractCallRecord",
     "BmcTraceSymbols",
     "BmcCaseRelation",
     "BmcStepRelation",

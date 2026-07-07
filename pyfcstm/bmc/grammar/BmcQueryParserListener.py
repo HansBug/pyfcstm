@@ -385,6 +385,14 @@ class BmcQueryParserListener(ParseTreeListener):
     def exitCall_argument(self, ctx: BmcQueryParser.Call_argumentContext):
         pass
 
+    # Enter a parse tree produced by BmcQueryParser#call_argument_value.
+    def enterCall_argument_value(self, ctx: BmcQueryParser.Call_argument_valueContext):
+        pass
+
+    # Exit a parse tree produced by BmcQueryParser#call_argument_value.
+    def exitCall_argument_value(self, ctx: BmcQueryParser.Call_argument_valueContext):
+        pass
+
     # Enter a parse tree produced by BmcQueryParser#call_step_selector.
     def enterCall_step_selector(self, ctx: BmcQueryParser.Call_step_selectorContext):
         pass

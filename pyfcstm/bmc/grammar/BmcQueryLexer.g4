@@ -40,13 +40,6 @@ CASE: 'case';
 CALL_COUNT: 'call_count';
 CALLED: 'called';
 CURRENT: 'current';
-NULL: 'null';
-ACTION: 'action';
-STEP: 'step';
-STAGE: 'stage';
-ROLE: 'role';
-ACTIVE_LEAF: 'active_leaf';
-NAMED_REF: 'named_ref';
 
 PI_CONST: 'pi';
 E_CONST: 'E';

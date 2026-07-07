@@ -271,6 +271,55 @@ def test_call_argument_listener_rejects_invalid_argument_order(expression):
 
 @pytest.mark.unittest
 @pytest.mark.parametrize(
+    "expression, message",
+    [
+        pytest.param('called(foo="Hook")', "unsupported", id="unknown-key"),
+        pytest.param("called(action=0)", "must be a string", id="action-not-string"),
+        pytest.param('called(step="0")', "step", id="step-not-selector"),
+        pytest.param(
+            "called(named_ref=0)", "named_ref", id="named-ref-not-string-or-null"
+        ),
+    ],
+)
+def test_call_argument_listener_rejects_invalid_named_argument_shapes(
+    expression, message
+):
+    """Listener validates generic ``ID = value`` call-filter arguments."""
+    with pytest.raises(InvalidBmcQuery, match=message):
+        parse_bmc_cond_expression(expression)
+
+
+@pytest.mark.unittest
+def test_call_filter_keys_do_not_reserve_model_variable_names():
+    """Call-filter key names stay usable as ordinary model variables."""
+    model = load_state_machine_from_text(
+        """
+        def int action = 0;
+        def int step = 0;
+        def int stage = 0;
+        def int role = 0;
+        def int active_leaf = 0;
+        def int named_ref = 0;
+        def int null = 0;
+        state Root;
+        """
+    )
+    domain = build_bmc_domain(model, 1)
+    query = parse_bmc_query(
+        """
+        init cold;
+        check reach <= 1:
+            action + step + stage + role + active_leaf + named_ref + var("null") >= 0;
+        """
+    )
+
+    bound = binding_module.bind_bmc_query(query, domain=domain)
+
+    assert bound.property.kind == "reach"
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
     "expression, expected",
     [
         pytest.param("called(step=..+0)", "called(..+0)", id="open-start-range"),

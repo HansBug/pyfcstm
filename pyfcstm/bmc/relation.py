@@ -2241,6 +2241,7 @@ def build_bmc_core_formula(context: BmcPreparedContext) -> BmcCoreFormula:
 
 
 __all__ = [
+    "BmcAbstractCallRecord",
     "BmcTraceSymbols",
     "BmcCaseRelation",
     "BmcStepRelation",

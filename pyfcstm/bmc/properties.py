@@ -426,6 +426,32 @@ def _eval_call_step_point(point: bmc_ast.CallStepPoint, anchor: int) -> int:
 def _effective_call_steps(
     selector: bmc_ast.CallStepSelector, anchor: int, bound: int
 ) -> Tuple[int, ...]:
+    """Return in-bounds symbolic steps selected around an anchor step.
+
+    Omitted selectors mean the current property anchor.  ``*`` spans every
+    executable macro step ``0 <= i < bound``.  Range endpoints are interpreted
+    relative to the property anchor only when an explicit relative point is
+    present; a missing range endpoint also defaults to the anchor rather than
+    to the trace boundary.  For example, ``..+0`` and ``+0..`` both select only
+    the current anchor step.
+
+    :param selector: Call-step selector AST node.
+    :type selector: pyfcstm.bmc.ast.CallStepSelector
+    :param anchor: Current property frame anchor.
+    :type anchor: int
+    :param bound: Number of executable macro steps in the query bound.
+    :type bound: int
+    :return: Sorted selected step indexes that fall inside ``[0, bound)``.
+    :rtype: tuple[int, ...]
+    :raises pyfcstm.bmc.errors.InvalidBmcQuery: If an absolute selector is
+        outside the query bound.
+
+    Example::
+
+        >>> selector = bmc_ast.CallStepSelector.point(bmc_ast.CallStepPoint.relative(-1))
+        >>> _effective_call_steps(selector, anchor=2, bound=4)
+        (1,)
+    """
     valid = set(range(bound))
     if selector.kind == "omitted":
         raw = {anchor}

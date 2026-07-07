@@ -25,6 +25,7 @@ from pyfcstm.bmc.ast import (
     CallFilter,
     CallStepPoint,
     CallStepSelector,
+    Cycle,
     FrameVar,
     IntLiteral,
     NumericComparison,
@@ -99,6 +100,21 @@ def _minimal_case_relation(**overrides):
     )
     kwargs.update(overrides)
     return BmcCaseRelation(**kwargs)
+
+
+@pytest.mark.unittest
+def test_stage_from_runtime_role_uses_exact_role_mapping():
+    """Runtime-role stage inference is exact and documents transition effects."""
+    assert relation_module._stage_from_runtime_role("state_enter") == "enter"
+    assert relation_module._stage_from_runtime_role("state_exit") == "exit"
+    assert relation_module._stage_from_runtime_role("leaf_during") == "during"
+    assert relation_module._stage_from_runtime_role("plain_during_before") == "during"
+    assert relation_module._stage_from_runtime_role("plain_during_after") == "during"
+    assert relation_module._stage_from_runtime_role("aspect_during_before") == "during"
+    assert relation_module._stage_from_runtime_role("aspect_during_after") == "during"
+    assert relation_module._stage_from_runtime_role("transition_effect") == "during"
+    with pytest.raises(BmcBuildError, match="unknown action runtime role"):
+        relation_module._stage_from_runtime_role("reenter")
 
 
 @pytest.mark.unittest
@@ -296,6 +312,11 @@ def test_call_where_binding_traverses_snapshot_expression_shapes():
             id="active-atom",
         ),
         pytest.param(
+            'check reach <= 3: called("Hook", where cycle == 0);',
+            "cycle_not_allowed",
+            id="cycle-not-snapshot",
+        ),
+        pytest.param(
             'check reach <= 3: called("Hook", stage="middle");',
             "call_stage",
             id="stage",
@@ -393,6 +414,7 @@ def test_property_call_context_validation_rejects_forged_call_where_atoms():
     for where_expr, message in (
         (Active("Root.A"), "active"),
         (Terminated(), "terminated"),
+        (NumericComparison(Cycle(), "==", IntLiteral("0")), "cycle"),
     ):
         forged = BmcProperty(
             "reach",

@@ -266,6 +266,10 @@ def _validate_num_context(expr: bmc_ast.BmcNumExpr, context: str, path: str) -> 
     if isinstance(expr, bmc_ast.CallCount):
         _validate_call_filter_context(expr.filter, context, path + ".filter")
         return
+    if isinstance(expr, bmc_ast.Cycle):
+        if context == "call_where":
+            raise UnsupportedBmcQuery("%s call where cannot use cycle." % path)
+        return
     if isinstance(
         expr,
         (
@@ -274,7 +278,6 @@ def _validate_num_context(expr: bmc_ast.BmcNumExpr, context: str, path: str) -> 
             bmc_ast.NameRef,
             bmc_ast.MathConst,
             bmc_ast.FrameVar,
-            bmc_ast.Cycle,
         ),
     ):
         return

@@ -1127,7 +1127,14 @@ def _bind_call_where_num_expr(
     if isinstance(expr, FrameVar):
         _resolve_variable(ctx, expr.name, path, "call_where_var_call")
         return
-    if isinstance(expr, (Cycle, IntLiteral, FloatLiteral, MathConst)):
+    if isinstance(expr, Cycle):
+        _raise_binding_error(
+            "cycle_not_allowed",
+            path,
+            "bare cycle is not a call-time snapshot variable and is not allowed "
+            "inside call where filters.",
+        )
+    if isinstance(expr, (IntLiteral, FloatLiteral, MathConst)):
         return
     if isinstance(expr, CallCount):
         _raise_binding_error(
@@ -1182,7 +1189,7 @@ def _bind_call_where_condition(
         _raise_binding_error(
             "call_where_atom_not_allowed",
             path,
-            "call where filters may only use snapshot variables, cycle, literals, "
+            "call where filters may only use snapshot variables, literals, "
             "numeric operators, comparisons, and logical operators.",
         )
     _raise_binding_error(

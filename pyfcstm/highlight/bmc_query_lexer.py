@@ -267,7 +267,10 @@ class FcstmBmcQueryLexer(RegexLexer):
             score += 0.25
         if FcstmBmcQueryLexer._INIT_RE.search(text):
             score += 0.20
-        if re.search(r"(?is)\b(?:active|event|case|called|var|terminated)\s*\(", text):
+        if re.search(
+            r"(?is)\b(?:active|event|case|call_count|called|var|terminated)\s*\(",
+            text,
+        ):
             score += 0.10
         if re.search(r"(?is)\bstate\s+\w+\b|\[\s*\*\s*\]\s*->", text):
             score -= 0.30

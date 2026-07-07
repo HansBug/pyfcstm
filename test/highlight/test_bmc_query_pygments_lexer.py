@@ -204,10 +204,16 @@ def test_bmc_query_analyse_text_is_string_based(monkeypatch):
         pytest.param("plain unrelated prose", 0.0, id="no-query-hint"),
         pytest.param("assume always: true;", 0.25, id="assumption-only"),
         pytest.param("init cold;", 0.20, id="init-only"),
+        pytest.param('call_count("Hook")', 0.10, id="call-count-atom-only"),
         pytest.param(
             "state Root { [*] -> A; } check reach <= 1: called();",
             0.40,
             id="fcstm-state-penalty",
+        ),
+        pytest.param(
+            "state Root { [*] -> A; } check reach <= 1: call_count() >= 1;",
+            0.40,
+            id="fcstm-state-penalty-call-count",
         ),
     ],
 )

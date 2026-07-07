@@ -108,8 +108,10 @@ class BmcAbstractCallRecord:
     :type ordinal: int
     :param action_name: Resolved abstract action name.
     :type action_name: str
-    :param stage: Public lifecycle stage, one of ``enter``, ``during``, or
-        ``exit`` when it can be inferred from the runtime role.
+    :param stage: Coarse public call stage, one of ``enter``, ``during``, or
+        ``exit``.  Transition effects are intentionally grouped under
+        ``during`` at this coarse layer; use ``role`` for exact runtime-role
+        filtering.
     :type stage: str
     :param role: Runtime role that produced the call.
     :type role: str
@@ -1633,12 +1635,25 @@ def _lower_guard_requirement(
     return guard_expr, (*constraints, *result.definedness_constraints)
 
 
+_RUNTIME_ROLE_TO_STAGE = {
+    "state_enter": "enter",
+    "state_exit": "exit",
+    "leaf_during": "during",
+    "plain_during_before": "during",
+    "plain_during_after": "during",
+    "aspect_during_before": "during",
+    "aspect_during_after": "during",
+    "transition_effect": "during",
+}
+
+
 def _stage_from_runtime_role(role: str) -> str:
-    if "enter" in role:
-        return "enter"
-    if "exit" in role:
-        return "exit"
-    return "during"
+    try:
+        return _RUNTIME_ROLE_TO_STAGE[role]
+    except KeyError as err:
+        # KeyError: forged ActionBlock-like inputs can bypass the public
+        # ActionBlock runtime-role validation and reach this private helper.
+        raise BmcBuildError("unknown action runtime role %r." % role) from err
 
 
 def _execute_action_block(

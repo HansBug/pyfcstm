@@ -25,6 +25,44 @@ variable map.  The high-level phases are:
 The simulator uses speculative validation so a transition that cannot reach a
 stoppable state does not partially mutate the real runtime.
 
+Execution-order matrix
+----------------------
+
+.. list-table:: Common runtime boundaries
+   :header-rows: 1
+
+   * - Scenario
+     - Ordering guarantee
+     - Evidence family
+   * - Cold entry
+     - Root/composite entry happens first, then initial transitions choose a
+       leaf, and only then can later active cycles run leaf ``during``.
+     - ``cold_initial_*`` and ``composite_initial_*`` fixtures.
+   * - Ordinary leaf cycle
+     - Ancestor aspect ``during before`` runs before leaf ``during``; aspect
+       ``during after`` runs afterward.
+     - ``design_aspect_*`` and ``aspect_context_*`` fixtures.
+   * - Leaf transition
+     - Source ``exit`` runs, then transition ``effect``, then target ``enter``.
+       If no transition commits, the leaf ``during`` path runs instead.
+     - ``design_basic_*`` and transition-effect fixtures.
+   * - Composite initial transition
+     - Composite entry chooses the initial transition, runs its effect, runs
+       plain composite ``during before``, then enters the selected child.
+     - ``composite_initial_*`` fixtures.
+   * - Pseudo or combo routing
+     - Intermediate pseudo states route automatically and are not stoppable
+       leaf cycles; the whole candidate chain is validated before commit.
+     - ``design_pseudo_chain_*`` and ``combo_transition_trigger_*`` fixtures.
+   * - Hot start
+     - The stack is constructed as already entered; enter actions on that path
+       and plain composite ``during before`` are not replayed.
+     - ``abstract_hook_context_hot_start_*`` and ``design_multi_level_non_stoppable_*`` fixtures.
+   * - Terminal/end handling
+     - Exiting to the machine end empties the stack.  Later ``cycle()`` calls
+       are no-ops, and ``current_state`` is no longer terminal-safe.
+     - ``*_terminal_*`` and ``design_explicit_exit_to_root_*`` fixtures.
+
 .. _exec-composite-entry-order:
 
 Initial entry through composites
@@ -80,6 +118,11 @@ states, and ancestor aspect during actions do not execute for the pseudo states
 inside a pseudo/combo routing chain.  The semantic effect of the whole chain is
 validated as part of the surrounding transition path.
 
+In a chain such as ``S1 -> P1 -> P2 -> S2``, ``P1`` and ``P2`` are routing
+boundaries.  Their guard/effect decisions can affect which candidate path is
+valid, but they do not create ordinary leaf ``during`` cycles and do not receive
+ancestor aspect ``during`` actions as if they were real leaves.
+
 .. _exec-combo-order:
 
 Transition priority and validation
@@ -114,6 +157,50 @@ After each committed cycle, the runtime records the cycle number, active state
 and variables in history.  The REPL ``history`` command formats that in the
 terminal, while ``export <path>`` writes the retained history to a file.  Export
 is an observation feature; it does not change the runtime state.
+
+Fixture evidence matrix
+-----------------------
+
+The semantic fixture suite is the executable evidence behind this page.  The
+table intentionally names fixture families instead of individual assertions so
+the explanation remains stable while tests add more focused cases.
+
+.. list-table:: Fixture families and covered behavior
+   :header-rows: 1
+
+   * - Behavior family
+     - Representative fixture pattern
+     - What the family protects
+   * - Lifecycle ordering
+     - ``design_basic_*``, ``composite_initial_*``, ``cold_initial_*``
+     - Cold entry, state entry, leaf ``during``, source ``exit``, target
+       ``enter`` and composite initial transition order.
+   * - Aspect actions
+     - ``design_aspect_*``, ``design_multi_layer_aspect_*``, ``aspect_context_*``
+     - Ancestor aspect before/after actions and the active-leaf metadata seen
+       by handlers.
+   * - Pseudo chains
+     - ``design_pseudo_chain_*``, ``design_evented_pseudo_chain_*``
+     - Automatic routing through pseudo states and recovery from invalid
+       candidates.
+   * - Combo routing
+     - ``combo_transition_trigger_*``, ``combo_initial_*``
+     - Expanded combo relay paths, guard/effect order, rollback, terminal
+       validation, and aspect boundaries.
+   * - Rollback
+     - ``*_rollback_*``, ``composite_initial_skips_unstable_*``
+     - Variable and stack rollback when speculative validation rejects a path.
+   * - Hot start
+     - ``abstract_hook_context_hot_start_*``, ``design_multi_level_non_stoppable_*``
+     - Already-entered stack construction, variable requirements, and
+       non-stoppable path rejection.
+   * - Terminal/end handling
+     - ``*_terminal_*``, ``design_explicit_exit_to_root_*``
+     - End-state transitions, runtime termination, and terminal-safe queries.
+   * - Abstract-handler context
+     - ``abstract_handler_context_*``, ``abstract_hook_ref_context_*``
+     - Read-only variable snapshots, callsite metadata, named references and
+       active-leaf reporting.
 
 Boundary with generated runtimes
 --------------------------------

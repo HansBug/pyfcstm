@@ -1605,3 +1605,50 @@ Verification log
 * English and Chinese Sphinx HTML builds must pass with no ``class="problematic"`` markup leaks.
 * Inline full FCSTM blocks must be enumerated and verified; fragments must be marked partial.
 * Third-round PR body reviews are recorded on PR #338 and found no C/I blockers before implementation.
+
+PR-N simulation hardening record
+================================
+
+PR-N is an additive hardening pass on the simulation pages created by PR-H. It
+keeps existing tutorial, how-to and execution-semantics URLs stable, creates the
+new reference owner for exact simulator facts, and records that no legacy
+simulation resource is moved by this pass.
+
+.. list-table:: PR-N affected-page record
+   :header-rows: 1
+
+   * - Page or resource
+     - PR-H state
+     - PR-N action
+     - URL/resource movement
+   * - ``tutorials/simulation/index*.rst``
+     - First-run tutorial already exists with checked batch and Python output.
+     - Add minimal ``CycleResult`` pointer and link exact facts to
+       ``reference/simulation/``.
+     - No URL move.
+   * - ``how_to/simulation/index*.rst``
+     - Batch, REPL, events, hot start, handlers, export, settings and debugging
+       recipes already exist.
+     - Keep task recipes and point full command/setting/export facts to
+       ``reference/simulation/``.
+     - No URL move.
+   * - ``explanations/execution_semantics/index*.rst``
+     - Core cycle, lifecycle, aspect, validation and hot-start explanations
+       already exist.
+     - Add ordering and fixture-family evidence matrices, plus pseudo/combo and
+       terminal-boundary strengthening.
+     - No URL move.
+   * - ``reference/simulation/index*.rst``
+     - Missing before PR-N; ``reference/index*`` explicitly said no dedicated
+       simulation reference existed.
+     - New exact-fact owner for CLI, REPL, settings, event input, history/export,
+       Python API, ``CycleResult`` and public failures.
+     - New URL added.
+   * - ``docs/source/tutorials/simulation/*.demo.*``
+     - Existing checked source-output pairs.
+     - Reused as evidence without changing output in this pass.
+     - No resource move and no generated-output refresh.
+
+Verification note: this pass is prose and index hardening only. Existing demo
+outputs are referenced unchanged; if a later PR modifies any ``*.demo.*`` source
+or output, that PR must record the exact source-output regeneration command.

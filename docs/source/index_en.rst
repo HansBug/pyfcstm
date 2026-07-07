@@ -184,6 +184,7 @@ generated API documentation remains the last item in this reference area.
     reference/dsl/index
     reference/inspect_report/index
     reference/diagnostics_codes/index
+    reference/simulation/index
     reference/visualization_options/index
     reference/template_config/index
     reference/grammar_tooling/index
@@ -195,6 +196,7 @@ generated API documentation remains the last item in this reference area.
 * :doc:`reference/dsl/index`
 * :doc:`reference/inspect_report/index`
 * :doc:`reference/diagnostics_codes/index`
+* :doc:`reference/simulation/index`
 * :doc:`reference/visualization_options/index`
 * :doc:`reference/template_config/index`
 * :doc:`reference/grammar_tooling/index`

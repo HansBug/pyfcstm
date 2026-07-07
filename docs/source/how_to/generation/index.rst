@@ -3,130 +3,207 @@
 Generation tasks
 ================
 
-Use this guide when you want to generate and smoke-check built-in template
-outputs. For compact template facts, see :doc:`/reference/builtin_templates/index`.
+Use this guide when the job is to run ``pyfcstm generate`` and smoke-check the
+result. It is for generated-code users. Template authors should use
+:doc:`../templates/index`; exact template contracts live in
+:doc:`../../reference/builtin_templates/index`.
+
+Current built-in status
+-----------------------
+
+pyfcstm currently packages five built-in templates: ``python``, ``c``,
+``c_poll``, ``cpp``, and ``cpp_poll``. Each current built-in template has
+``experimental: true`` in packaged metadata. That flag does not mean the
+template is a stub; it means the output is an engineering baseline with the
+current test evidence, not a production certification or every-platform native
+compiler guarantee.
+
+Choose the generation entry point
+---------------------------------
+
+``pyfcstm generate`` requires exactly one template source:
+
+.. list-table:: Template source choice
+   :header-rows: 1
+
+   * - Use this option
+     - When to use it
+     - Boundary
+   * - ``--template <name>``
+     - You want an installed built-in template.
+     - This is the stable user path for built-ins.
+   * - ``-t <dir>`` / ``--template-dir <dir>``
+     - You are authoring or testing a custom template directory.
+     - Do not teach ordinary users to point this at repository ``templates/``.
+
+Passing both options is a usage error. Passing neither is also a usage error.
+Passing an unknown built-in name is rejected by Click before rendering starts.
 
 Prepare an input model
 ----------------------
 
-The checked-in examples use this model:
+The examples use the same small model as the first tutorial:
 
 .. literalinclude:: ../../tutorials/generation/simple_machine.fcstm
    :language: fcstm
 
-Generate Python output and run it
----------------------------------
+Generate each built-in template
+-------------------------------
+
+Use one short command per target:
 
 .. code-block:: bash
 
    pyfcstm generate -i simple_machine.fcstm --template python -o generated/python --clear
+   pyfcstm generate -i simple_machine.fcstm --template c -o generated/c --clear
+   pyfcstm generate -i simple_machine.fcstm --template c_poll -o generated/c_poll --clear
+   pyfcstm generate -i simple_machine.fcstm --template cpp -o generated/cpp --clear
+   pyfcstm generate -i simple_machine.fcstm --template cpp_poll -o generated/cpp_poll --clear
 
-The ``--clear`` option is useful for repeatable examples because it removes any
-previous contents in the output directory before rendering. Omit it when the
-output directory contains files that pyfcstm should preserve.
+The ``--clear`` option deletes the previous contents of the output directory
+before rendering. Use it for repeatable examples and CI scratch directories.
+Do not use it on a directory that contains files you want to keep.
 
-A minimal Python consumer imports the generated class from ``machine.py``:
+Read the generated README first
+-------------------------------
+
+Every built-in template emits ``README.md`` and ``README_zh.md`` into the
+output directory. Those files are generated from your model and are the
+machine-specific integration guide. The reference pages document the general
+contract; the generated README tells you the actual class names, event ids,
+hook names, state ids, hot-start examples, and build snippets for that model.
+
+The generated top-level files are:
+
+.. list-table:: Generated file summary
+   :header-rows: 1
+
+   * - Template
+     - Files
+     - Main user entry point
+   * - ``python``
+     - ``machine.py``, ``README.md``, ``README_zh.md``
+     - Import the generated machine class from ``machine.py``.
+   * - ``c``
+     - ``machine.h``, ``machine.c``, generated README files
+     - Include ``machine.h`` and pass event-id arrays to ``..._cycle``.
+   * - ``c_poll``
+     - ``machine.h``, ``machine.c``, generated README files
+     - Install ``EventChecks`` and call the zero-argument event-polling cycle.
+   * - ``cpp``
+     - C core files plus ``machine.hpp`` / ``machine.cpp`` and README files
+     - Include ``machine.hpp`` and use ``MachineWrapper``.
+   * - ``cpp_poll``
+     - C polling core files plus ``machine.hpp`` / ``machine.cpp`` and README files
+     - Include ``machine.hpp``, install wrapper event checks, and use ``MachineWrapper``.
+
+Smoke-check Python output
+-------------------------
+
+A minimal Python consumer imports ``machine.py`` and advances through a few
+events:
 
 .. literalinclude:: ../../tutorials/generation/python_runtime.demo.py
    :language: python
    :lines: 47-60
 
-Expected smoke output:
+The checked-in demo prints:
 
 .. literalinclude:: ../../tutorials/generation/python_runtime.demo.py.txt
    :language: text
 
-Generate C or C++ output
-------------------------
+This evidence means the generated Python runtime is importable and can execute
+the shown event sequence. Broader simulator alignment is covered by template
+unit tests, not by this one tutorial smoke check.
 
-Use the packaged template names:
+Smoke-check C and C++ outputs
+-----------------------------
 
-.. code-block:: bash
-
-   pyfcstm generate -i simple_machine.fcstm --template c -o generated/c --clear
-   pyfcstm generate -i simple_machine.fcstm --template cpp -o generated/cpp --clear
-
-The generated directory contains ``README.md`` and ``README_zh.md``. Treat those
-README files as the concrete integration guide for the generated machine,
-including CMake skeletons and no-heap profile notes.
-
-The docs native smoke script proves the public entry points for all native
-families when ``cc``, ``c++``, and ``cmake`` are available:
+The native demonstration in the documentation tree generates ``c``,
+``c_poll``, ``cpp``, and ``cpp_poll`` outputs and builds small drivers when
+``cc``, ``c++``, and ``cmake`` are available. Its output starts with the local
+toolchain snapshot and then prints one section per template:
 
 .. literalinclude:: ../../tutorials/generation/native_runtime.demo.sh.txt
    :language: text
-   :lines: 1-43
+   :lines: 1-28
 
-Generate polling outputs
-------------------------
+This is a local smoke check. It proves that the generated files compiled and ran
+on the displayed toolchain. It is not a claim that every embedded compiler,
+industrial profile, sanitizer profile, or certification environment has been
+validated.
 
-Polling templates move event detection into callbacks installed by the
-integration layer:
+Choose explicit events or polling
+---------------------------------
 
-.. code-block:: bash
+The non-polling templates expect the application to submit events for each
+cycle:
 
-   pyfcstm generate -i simple_machine.fcstm --template c_poll -o generated/c_poll --clear
-   pyfcstm generate -i simple_machine.fcstm --template cpp_poll -o generated/cpp_poll --clear
-
-Use ``c_poll`` when C integration code should install an ``EventChecks`` table
-and let the runtime call event probes during ``cycle``. Use ``cpp_poll`` when
-C++ application code should enter through ``machine.hpp`` and wrapper methods
-while still installing wrapper-level ``EventChecks``.
-
-Validation summary
-------------------
-
-The examples on this page are backed by checked-in demo scripts and driver
-source files under ``docs/source/tutorials/generation/``. Resource builds can
-regenerate their outputs through ``make -C docs contents``.
-
-.. list-table:: Generation validation matrix
+.. list-table:: Event input model
    :header-rows: 1
 
-   * - Template
-     - Generated by demo
-     - Runtime smoke checked by demo
-     - Entry discipline
+   * - Template family
+     - Event model
+     - Use when
    * - ``python``
-     - yes, through ``python_runtime.demo.py``
-     - yes, import plus four cycles
-     - generated class from ``machine.py``
-   * - ``c``
-     - yes, through ``native_runtime.demo.sh``
-     - yes, when ``cc`` is available
-     - C driver includes ``machine.h``
-   * - ``c_poll``
-     - yes, through ``native_runtime.demo.sh``
-     - yes, when ``cc`` is available
-     - C driver installs a complete ``EventChecks`` table
-   * - ``cpp``
-     - yes, through ``native_runtime.demo.sh``
-     - yes, when ``cc`` and ``c++`` are available
-     - C++ driver includes ``machine.hpp`` and uses ``MachineWrapper``
-   * - ``cpp_poll``
-     - yes, through ``native_runtime.demo.sh``
-     - yes, when ``cc`` and ``c++`` are available
-     - C++ driver includes ``machine.hpp`` and installs wrapper ``EventChecks``
+     - ``cycle(events=None)`` accepts no event, one event string, or a collection.
+     - Python application code already knows which event paths are active.
+   * - ``c`` / ``cpp``
+     - The cycle call receives generated integer event ids.
+     - Your integration layer collects events before calling the runtime.
+   * - ``c_poll`` / ``cpp_poll``
+     - The runtime calls installed event-check callbacks during a cycle.
+     - Your host reads event truth from callbacks, device probes, or application state.
 
-The native output records the local OS, C compiler, C++ compiler, and CMake
-version. That record is evidence for the docs smoke run, not a promise that
-every industrial or embedded compiler accepts the same flags.
+Use ``c_poll`` or ``cpp_poll`` only when the polling shape is the desired
+integration surface. Do not treat it as a semantic fork of FCSTM execution; it
+is the event input mechanism that changes.
 
-Find generated README and extension points
-------------------------------------------
+Troubleshoot common generation failures
+---------------------------------------
 
-Every built-in template writes generated README files next to the generated
-runtime. Before integrating a generated machine into a real control loop, read
-those files for:
+.. list-table:: Failure checklist
+   :header-rows: 1
 
-* public entry points and hook names;
-* event-check or event-id discipline;
-* hot-start and lifecycle notes;
-* target-language build guidance.
+   * - Symptom
+     - Likely cause
+     - Repair
+   * - ``Invalid value for '--template'``
+     - The built-in template name is not in the installed package.
+     - Run ``pyfcstm generate --help`` or use ``pyfcstm.template.list_templates()``.
+   * - ``Exactly one of --template-dir/-t or --template must be provided.``
+     - Both template options were passed, or neither was passed.
+     - Pick the built-in path or the custom-template path, not both.
+   * - YAML / config validation error
+     - A custom template ``config.yaml`` has an invalid root, section, style, or ignore rule.
+     - Use :doc:`../../reference/template_config/index` to find the failing shape.
+   * - Template rendering error
+     - A Jinja expression, helper import, model attribute, or custom filter failed.
+     - Reduce to a small model and template file; then check helper registration.
+   * - Generated native code does not compile
+     - The output contract, compiler, flags, or integration driver do not match.
+     - Start from the generated README and the smallest driver before adding application code.
 
-Do not use ``-t`` for built-in templates
-----------------------------------------
+Verify a documentation or template change
+-----------------------------------------
 
-Use ``-t`` / ``--template-dir`` only when you intentionally provide a custom
-template directory. Built-in templates should use ``--template`` so the packaged
-assets are extracted through pyfcstm's template system.
+Use the smallest evidence that matches the claim:
+
+.. list-table:: Evidence levels
+   :header-rows: 1
+
+   * - Claim
+     - Useful check
+     - Boundary
+   * - Generation command works
+     - Run ``pyfcstm generate`` on a small ``.fcstm`` file.
+     - Does not prove runtime semantics.
+   * - Python output is usable
+     - Import ``machine.py`` and run a few cycles.
+     - Does not prove every semantic fixture.
+   * - Native output compiles locally
+     - Configure/build/run a small CMake or driver smoke check.
+     - Toolchain-specific evidence only.
+   * - Template claims simulator parity
+     - Run the semantic-alignment tests for that template family.
+     - Must state event-model exclusions and fixture coverage.

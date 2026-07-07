@@ -3,120 +3,411 @@
 模板配置参考
 ============
 
-本页是模板 ``config.yaml`` 的查准事实表。维护模板目录时，用它确认 renderer 会读取哪些字段、每个字段表示什么、允许什么值形状。任务式流程见 :doc:`../../how_to/templates/index_zh`；设计解释见 :doc:`../../explanations/template_rendering/index_zh`。
+本页是模板 ``config.yaml`` 和渲染器侧模板目录行为的查准规格。维护模板目录或诊断渲染失败时使用它。任务流程见 :doc:`../../how_to/templates/index_zh`；设计理由见 :doc:`../../explanations/template_rendering/index_zh`。
+
+
+.. template-config-marker: top-level-key expr_styles
+.. template-config-marker: top-level-key stmt_styles
+.. template-config-marker: top-level-key globals
+.. template-config-marker: top-level-key filters
+.. template-config-marker: top-level-key tests
+.. template-config-marker: top-level-key ignores
+.. template-config-marker: validation yaml-parse-error
+.. template-config-marker: validation empty-file
+.. template-config-marker: validation root-not-mapping
+.. template-config-marker: validation unknown-top-level-key
+.. template-config-marker: validation expr-styles-not-mapping
+.. template-config-marker: validation stmt-styles-not-mapping
+.. template-config-marker: validation globals-not-mapping
+.. template-config-marker: validation filters-not-mapping
+.. template-config-marker: validation tests-not-mapping
+.. template-config-marker: validation expr-style-not-mapping
+.. template-config-marker: validation expr-style-missing-base-lang
+.. template-config-marker: validation stmt-style-not-mapping
+.. template-config-marker: validation stmt-style-missing-base-lang
+.. template-config-marker: validation ignores-not-list
+.. template-config-marker: validation ignores-item-not-string
+.. template-config-marker: validation object-template-missing-template
+.. template-config-marker: validation object-import-missing-from
+.. template-config-marker: validation object-value-missing-value
+.. template-config-marker: validation object-import-target-failure
+.. template-config-marker: style-name dsl
+.. template-config-marker: style-name c
+.. template-config-marker: style-name cpp
+.. template-config-marker: style-name python
+.. template-config-marker: style-name java
+.. template-config-marker: style-name js
+.. template-config-marker: style-name ts
+.. template-config-marker: style-name rust
+.. template-config-marker: style-name go
+.. template-config-marker: style-alias py=python
+.. template-config-marker: style-alias python3=python
+.. template-config-marker: style-alias c++=cpp
+.. template-config-marker: style-alias cxx=cpp
+.. template-config-marker: style-alias cc=cpp
+.. template-config-marker: style-alias javascript=js
+.. template-config-marker: style-alias node=js
+.. template-config-marker: style-alias nodejs=js
+.. template-config-marker: style-alias typescript=ts
+.. template-config-marker: style-alias rustlang=rust
+.. template-config-marker: style-alias rs=rust
+.. template-config-marker: style-alias golang=go
+.. template-config-marker: stmt-field base_lang
+.. template-config-marker: stmt-field expr_lang
+.. template-config-marker: stmt-field expr_templates
+.. template-config-marker: stmt-field state_var_target
+.. template-config-marker: stmt-field temp_var_target
+.. template-config-marker: stmt-field assign
+.. template-config-marker: stmt-field declare_temp
+.. template-config-marker: stmt-field temp_type_aliases
+.. template-config-marker: stmt-field temp_type_fallback
+.. template-config-marker: stmt-field if
+.. template-config-marker: stmt-field elif
+.. template-config-marker: stmt-field else
+.. template-config-marker: stmt-field block_end
+.. template-config-marker: stmt-field pass
+.. template-config-marker: helper INIT_STATE
+.. template-config-marker: helper EXIT_STATE
+.. template-config-marker: helper expr_render
+.. template-config-marker: helper stmt_render
+.. template-config-marker: helper stmts_render
+.. template-config-marker: helper operation_stmt_render
+.. template-config-marker: helper operation_stmts_render
+.. template-config-marker: helper normalize
+.. template-config-marker: helper to_identifier
+.. template-config-marker: helper indent
+.. template-config-marker: helper builtins
+.. template-config-marker: helper environment-variables
+.. template-config-marker: helper render_c_action_body
+.. template-config-marker: helper render_c_condition_body
+.. template-config-marker: helper render_c_reset_vars_body
+.. template-config-marker: helper to_c_identifier
+.. template-config-marker: helper to_c_path_identifier
+.. template-config-marker: helper to_c_public_identifier
+.. template-config-marker: helper to_c_public_macro_identifier
+.. template-config-marker: helper is_c_public_identifier_reserved
+.. template-config-marker: object-form template-with-params
+.. template-config-marker: object-form template-without-params
+.. template-config-marker: object-form import
+.. template-config-marker: object-form value
+.. template-config-marker: object-form unknown-type
+.. template-config-marker: object-form no-type
+.. template-config-marker: object-form non-dict
+.. template-config-marker: file-mapping j2-render
+.. template-config-marker: file-mapping static-copy
+.. template-config-marker: file-mapping config-samefile-skip
+.. template-config-marker: file-mapping git-ignore-input-only
+.. template-config-marker: file-mapping ignores-gitwildmatch
+.. template-config-marker: file-mapping nested-output-dirs
+.. template-config-marker: file-mapping utf8-lf-render
+.. template-config-marker: file-mapping static-copy-bytes
+.. template-config-marker: file-mapping clear-symlink-unlink
+.. template-config-marker: file-mapping clear-file-remove
+.. template-config-marker: file-mapping clear-directory-rmtree
+.. template-config-marker: file-mapping clear-other-warning
 
 文件契约
 --------
 
-模板目录可以包含 ``config.yaml``。空文件会按空 mapping 处理；如果没有 ``expr_styles.default``，renderer 会自动创建默认表达式样式。未知顶层键会 fail fast。
+模板目录可以包含 ``config.yaml``。渲染器会先读取它，再遍历文件。空文件和只有注释的文件会按空映射（mapping） 处理。若没有提供 ``expr_styles.default`` 或 ``stmt_styles.default``，渲染器会创建默认 DSL 样式。
 
-允许的顶层键如下：
+只接受这些顶层键：
 
 .. list-table:: ``config.yaml`` 顶层键
    :header-rows: 1
 
    * - 键
      - 类型
-     - 作用
+     - 含义
    * - ``expr_styles``
-     - mapping
+     - 映射
      - 注册 ``expr_render`` 使用的表达式渲染样式。
    * - ``stmt_styles``
-     - mapping
+     - 映射
      - 注册 ``stmt_render`` 和 ``stmts_render`` 使用的操作语句渲染样式。
    * - ``globals``
-     - mapping
-     - 通过 ``pyfcstm.render.func.process_item_to_object`` 添加 Jinja2 globals。
+     - 映射
+     - 通过 ``process_item_to_object`` 添加 Jinja2 全局变量。
    * - ``filters``
-     - mapping
-     - 通过同一对象加载机制添加 Jinja2 filters。
+     - 映射
+     - 通过同一对象加载机制添加 Jinja2 过滤器。
    * - ``tests``
-     - mapping
-     - 通过同一对象加载机制添加 Jinja2 tests。
+     - 映射
+     - 通过同一对象加载机制添加 Jinja2 测试器。
    * - ``ignores``
      - string list
-     - gitignore 风格的模板目录忽略规则。
+     - 用 GitWildMatch 风格模式排除输入模板文件。
+
+校验失败
+--------
+
+非法配置会快速失败。错误信息会尽量包含配置文件路径和失败键形状。
+
+.. list-table:: 校验分支
+   :header-rows: 1
+
+   * - 标记
+     - 非法形状
+     - 最小反例
+   * - ``yaml-parse-error``
+     - YAML 语法无法解析。
+     - ``expr_styles: [``
+   * - ``empty-file``
+     - 空文件或只有注释的文件。
+     - 按 ``{}`` 接受；不是失败。
+   * - ``root-not-mapping``
+     - 根值不是映射。
+     - ``[]``
+   * - ``unknown-top-level-key``
+     - 根中有不在允许集合内的键。
+     - ``unknown: true``
+   * - ``expr-styles-not-mapping``
+     - ``expr_styles`` 不是映射。
+     - ``expr_styles: []``
+   * - ``stmt-styles-not-mapping``
+     - ``stmt_styles`` 不是映射。
+     - ``stmt_styles: []``
+   * - ``globals-not-mapping``
+     - ``globals`` 不是映射。
+     - ``globals: []``
+   * - ``filters-not-mapping``
+     - ``filters`` 不是映射。
+     - ``filters: []``
+   * - ``tests-not-mapping``
+     - ``tests`` 不是映射。
+     - ``tests: []``
+   * - ``expr-style-not-mapping``
+     - 某个表达式样式条目不是映射。
+     - ``expr_styles: {py: python}``
+   * - ``expr-style-missing-base-lang``
+     - 某个表达式样式缺 ``base_lang``。
+     - ``expr_styles: {py: {Name: x}}``
+   * - ``stmt-style-not-mapping``
+     - 某个语句样式条目不是映射。
+     - ``stmt_styles: {py: python}``
+   * - ``stmt-style-missing-base-lang``
+     - 某个语句样式缺 ``base_lang``。
+     - ``stmt_styles: {py: {assign: x}}``
+   * - ``ignores-not-list``
+     - ``ignores`` 是字符串或其他非 list 值。
+     - ``ignores: '*.tmp'``
+   * - ``ignores-item-not-string``
+     - 某个忽略项不是字符串。
+     - ``ignores: [123]``
+
+当对象加载形式不完整或无法导入时，也会失败：
+
+.. list-table:: 对象加载失败形状
+   :header-rows: 1
+
+   * - 标记
+     - 非法形状
+     - 结果
+   * - ``object-template-missing-template``
+     - ``type: template`` 缺 ``template``。
+     - 加载器抛出 ``KeyError``。
+   * - ``object-import-missing-from``
+     - ``type: import`` 缺 ``from``。
+     - 加载器抛出 ``KeyError``。
+   * - ``object-value-missing-value``
+     - ``type: value`` 缺 ``value``。
+     - 加载器抛出 ``KeyError``。
+   * - ``object-import-target-failure``
+     - ``from`` 指向不可用对象。
+     - ``quick_import_object`` 抛出导入失败。
 
 表达式样式
 ----------
 
-``expr_styles`` 下每个条目都是 mapping，必须包含 ``base_lang``，并可为该语言样式提供模板覆盖。
+表达式样式把模板本地样式名映射到规范表达式渲染器。每个样式条目都必须包含 ``base_lang``。额外键会为该样式覆盖或扩展节点模板。
 
 .. code-block:: yaml
 
-    expr_styles:
-      python:
-        base_lang: python
-      c:
-        base_lang: c
+   expr_styles:
+     c_scope_expr:
+       base_lang: c
+       Name: "scope->{{ node.name | to_c_identifier }}"
 
 模板中这样使用：
 
 .. code-block:: jinja
 
-    {{ transition.guard | expr_render(style='python') }}
-    {{ operation.value | expr_render(style='c') }}
+   {{ transition.guard | expr_render(style='c_scope_expr') }}
 
-已知表达式样式族包括 ``dsl``、``c``、``cpp``、``python``、``java``、``js``、``ts``、``rust`` 和 ``go``。
+规范样式名和别名是精确集合：
+
+.. list-table:: 样式名和别名
+   :header-rows: 1
+
+   * - 规范名
+     - 别名
+   * - ``dsl``
+     - 无
+   * - ``c``
+     - 无
+   * - ``cpp``
+     - ``c++``、``cxx``、``cc``
+   * - ``python``
+     - ``py``、``python3``
+   * - ``java``
+     - 无
+   * - ``js``
+     - ``javascript``、``node``、``nodejs``
+   * - ``ts``
+     - ``typescript``
+   * - ``rust``
+     - ``rustlang``、``rs``
+   * - ``go``
+     - ``golang``
 
 语句样式
 --------
 
-``stmt_styles`` 面向操作语句。静态语言模板可补充临时变量和类型别名设置。
+语句样式渲染操作块中的赋值和 ``if`` 块。它同样需要 ``base_lang``，并可以设置这些字段：
 
-.. code-block:: yaml
+.. list-table:: ``stmt_styles`` 字段
+   :header-rows: 1
 
-    stmt_styles:
-      python:
-        base_lang: python
-      c:
-        base_lang: c
-        temp_type_aliases:
-          int: int32_t
-          float: double
+   * - 字段
+     - 含义
+   * - ``base_lang``
+     - 起点规范语句语言。
+   * - ``expr_lang``
+     - 语句内部使用的表达式渲染器。
+   * - ``expr_templates``
+     - 限定在语句渲染中的表达式模板覆盖。
+   * - ``state_var_target``
+     - 持久变量读写目标的 Jinja 模板。
+   * - ``temp_var_target``
+     - 块内临时变量名的 Jinja 模板。
+   * - ``assign``
+     - 赋值语句模板。
+   * - ``declare_temp``
+     - 临时变量首次出现时可选的声明模板。
+   * - ``temp_type_aliases``
+     - 把 ``int`` / ``float`` 等推断 DSL 类型映射到目标类型。
+   * - ``temp_type_fallback``
+     - 无法推断时使用的兜底类型。
+   * - ``if`` / ``elif`` / ``else`` / ``block_end`` / ``pass``
+     - 条件块和空分支模板。
 
-生成 runtime 代码时使用：
+渲染器提供这些辅助签名：
+
+.. code-block:: text
+
+   stmt_render(node, style='default', state_vars=None, var_types=None,
+               visible_names=None, visible_var_types=None,
+               indent='    ', level=0)
+
+   stmts_render(nodes, style='default', state_vars=None, var_types=None,
+                visible_names=None, visible_var_types=None,
+                indent='    ', level=0, sep='\n')
+
+完整 ``StateMachine`` 渲染期间，``state_vars`` 和 ``var_types`` 默认来自渲染器注入的模型变量。``visible_names`` 和 ``visible_var_types`` 描述当前可见的临时变量。``sep`` 控制多条语句的拼接方式：
 
 .. code-block:: jinja
 
-    {{ action.operations | stmts_render(style='python') }}
-    {{ operation | stmt_render(style='c') }}
+   {{ action.operations | stmts_render(style='python_runtime', sep='\n') }}
 
-不要把 ``operation_stmt_render`` 或 ``operation_stmts_render`` 用作目标语言 runtime 代码生成；它们用于 DSL echo 文本。
+运行时语句渲染器与 DSL 回显渲染器
+----------------------------------
 
-对象加载字段
+.. list-table:: 语句辅助函数区别
+   :header-rows: 1
+
+   * - 辅助函数
+     - 契约
+     - 不要用于
+   * - ``stmt_render`` / ``stmts_render``
+     - 渲染目标语言可执行语句。
+     - 原始 DSL 回显片段。
+   * - ``operation_stmt_render`` / ``operation_stmts_render``
+     - 从操作语句渲染 DSL 形状文本。
+     - 必须在 Python、C 或其他目标语言中执行的运行时源码。
+
+反例：DSL effect ``counter = counter + 1;`` 用 ``operation_stmt_render`` 渲染后仍是 ``counter = counter + 1;``。Python 运行时样式可能需要 ``scope['counter'] = scope['counter'] + 1``；C 运行时样式可能需要 ``scope->counter = scope->counter + 1;``。
+
+对象加载形式
 ------------
 
-``globals``、``filters`` 和 ``tests`` 使用同一对象加载约定。它们适合放 renderer 侧命名、格式化或小型辅助逻辑。目标 runtime 语义应留在生成代码或模板宏中，不应隐藏在 Python callback 里。
+``globals``、``filters`` 和 ``tests`` 都通过 ``process_item_to_object`` 处理值。
 
-忽略规则
---------
+.. list-table:: 对象加载形式
+   :header-rows: 1
 
-``ignores`` 通过 ``pathspec`` 使用 gitignore 风格规则。renderer 总会忽略 ``.git``。作者笔记、草稿、fixtures 等不应进入生成输出的文件可放在这里。
+   * - 形式
+     - YAML 形状
+     - 注册对象
+   * - ``template-with-params``
+     - ``type: template`` 加 ``params`` 和 ``template``。
+     - callable，把位置参数映射到 ``params`` 并合并关键字参数。
+   * - ``template-without-params``
+     - ``type: template`` 加 ``template``。
+     - Jinja 模板 ``render`` callable。
+   * - ``import``
+     - ``type: import`` 加 ``from``。
+     - 导入的 Python 对象。
+   * - ``value``
+     - ``type: value`` 加 ``value``。
+     - 字面值。
+   * - ``unknown-type`` / ``no-type``
+     - 带未知或缺失 ``type`` 的 mapping。
+     - ``type`` 被弹出后的剩余映射，或原映射。
+   * - ``non-dict``
+     - 配置分节下的任意标量或 list。
+     - 原样返回。
 
-.. code-block:: yaml
+C 家族模板使用 ``type: import`` 注册 ``render_c_action_body``、``render_c_condition_body``、``render_c_reset_vars_body``、``to_c_identifier``、``to_c_path_identifier``、``to_c_public_identifier``、``to_c_public_macro_identifier`` 和 ``is_c_public_identifier_reserved``。
 
-    ignores:
-      - README.template-notes.md
-      - testdata/
-      - '*.draft'
+Jinja 环境辅助对象
+-----------------------
 
-最小配置
---------
+默认环境包含：
 
-一个最小自定义模板可以从空 mapping 开始：
+* 状态常量：``INIT_STATE`` 和 ``EXIT_STATE``；
+* 渲染辅助：``expr_render``、``stmt_render``、``stmts_render``、``operation_stmt_render`` 和 ``operation_stmts_render``；
+* 文本辅助：``normalize``、``to_identifier`` 和 ``indent``；
+* 常用 Python 内置对象（builtins），它们会注册为过滤器、测试器或全局变量，包括 ``str``、``set``、``dict``、``keys``、``values``、``enumerate``、``reversed`` 和 ``filter``；
+* 选定操作系统环境变量，作为全局变量注入。
 
-.. code-block:: yaml
+环境变量是受控构建环境中的便利项。可移植模板不应依赖主机特定值，除非使用该自定义模板的项目明确记录了这种契约。
 
-    {}
+文件映射、忽略和清理语义
+------------------------
 
-只有在需要目标语言表达式或语句渲染时，再逐步加入样式。
+.. list-table:: 渲染器文件行为
+   :header-rows: 1
 
-验证清单
---------
+   * - 行为
+     - 契约
+   * - ``j2-render``
+     - ``*.j2`` 文件渲染到相同相对路径，并去掉最后后缀。
+   * - ``static-copy``
+     - 非模板文件通过 ``shutil.copyfile`` 复制，保留字节。
+   * - ``config-samefile-skip``
+     - ``config.yaml`` 通过 ``os.path.samefile(current_file, self.config_file)`` 跳过。
+   * - ``git-ignore-input-only``
+     - 扫描模板输入时总是忽略 ``.git``。
+   * - ``ignores-gitwildmatch``
+     - ``ignores`` 通过 ``pathspec`` 使用 GitWildMatch 风格模式。
+   * - ``nested-output-dirs``
+     - 嵌套输出路径会创建父目录。
+   * - ``utf8-lf-render``
+     - 渲染文本以 UTF-8 和 ``newline='\n'`` 写出。
+   * - ``static-copy-bytes``
+     - 静态资产按字节复制。
+   * - ``clear-symlink-unlink`` / ``clear-file-remove`` / ``clear-directory-rmtree``
+     - 输出清理会 unlink 符号链接、删除文件、递归删除目录。
+   * - ``clear-other-warning``
+     - 其他文件类型走防御性 warning 路径。
 
-* 根值必须是 mapping。
-* 只使用允许的顶层键。
-* 每个自定义 style 都要有 ``base_lang``。
-* 目标语言源码片段优先放在模板或宏中。
-* 配置变化应配套一个小型 render 测试或生成产物检查。
+``.git`` 输入忽略不会保护输出目录。如果 ``--clear`` 指向某个工作树，渲染器会按输出清理规则处理该目录。
+
+内置配置例子
+------------
+
+内置模板也使用同一套契约：
+
+* ``python`` 定义 Python 表达式和语句样式，以及生成钩子命名辅助。
+* ``c`` 和 ``c_poll`` 定义 C 作用域表达式渲染、C 运行时语句渲染、C 标识符过滤器和 C 运行时代码体辅助。
+* ``cpp`` 和 ``cpp_poll`` 复用 C 家族辅助层，同时增加包装层文件；它们的 ``ignores`` 还冗余列出 ``config.yaml``，这是无害的，因为渲染器已经跳过实际配置文件。

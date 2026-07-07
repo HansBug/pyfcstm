@@ -184,7 +184,7 @@ def test_stable_a_cases_select_same_target_and_actions_as_runtime(
     [
         ({"x": 0, "y": 0}, "initial", "Root.System.B"),
         ({"x": 13, "y": 8}, "initial", "Root.Done"),
-        ({"x": 13, "y": 0}, "delta", "__diagnostic__"),
+        ({"x": 13, "y": 0}, "delta", "Root.System.Route"),
     ],
 )
 def test_hot_route_entry_cases_use_runtime_guard_anchors(

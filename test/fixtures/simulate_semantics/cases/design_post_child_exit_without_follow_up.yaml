@@ -7,8 +7,6 @@ categories:
 - design_example
 - runtime
 - template_alignment
-exclude_runners:
-- bmc_core
 steps:
 - cycle: []
   expect:

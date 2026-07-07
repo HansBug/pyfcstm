@@ -50,6 +50,13 @@ PLAIN_BEFORE_ALIGNMENT_CASES = {
     "manual_initial_pseudo_lifecycle_plain_before_deferred",
 }
 
+INITIAL_DELTA_ALIGNMENT_CASES = {
+    "design_composite_stuck_in_init_wait",
+    "failed_initial_cycle_preserves_root_entry_lifecycle",
+    "hot_start_deep_evented_initial_waits_for_event",
+    "design_post_child_exit_without_follow_up",
+}
+
 NUMERIC_UNSUPPORTED_CASES = {
     "persistent_default_int_initializer_normalizes_integer_float",
     "persistent_effect_writeback_normalizes_integer_float",
@@ -64,6 +71,8 @@ HANDLER_CALL_PARTIAL_CASES = {
     "composite_initial_handler_log_after_transition_uses_selected_child",
     "composite_initial_handler_log_keeps_stable_branch_before_exit_branch",
     "composite_initial_handler_log_uses_enter_selected_child",
+    "failed_initial_cycle_skips_abstract_handler_callbacks",
+    "hot_start_composite_evented_initial_skips_entry_boundary_before",
     "lifecycle_ref_chain_resolves_long_acyclic_chain",
     "named_ref_context_reports_callsite",
     "ref_abstract_handler_reports_calling_state",
@@ -71,13 +80,6 @@ HANDLER_CALL_PARTIAL_CASES = {
 }
 
 TEMPORARY_BMC_CORE_EXCLUDE_CASES = {
-    # Follow-up: init sentinel, stutter flags, and non-stoppable recurrence.
-    "design_composite_stuck_in_init_wait",
-    "failed_initial_cycle_preserves_root_entry_lifecycle",
-    "failed_initial_cycle_skips_abstract_handler_callbacks",
-    "hot_start_deep_evented_initial_waits_for_event",
-    "design_post_child_exit_without_follow_up",
-    "hot_start_composite_evented_initial_skips_entry_boundary_before",
     # Follow-up: .fbmcq initial variable override / havoc policy.
     "hot_start_evented_initial_matches_cold_suffix",
     "hot_start_initial_vars_override_skips_int_initializer",
@@ -107,6 +109,7 @@ CONSTRUCTOR_DIAGNOSTIC_EXCLUDE_CASES = {
 
 BMC_CORE_FIXTURE_LEDGER_CASES = (
     PLAIN_BEFORE_ALIGNMENT_CASES
+    | INITIAL_DELTA_ALIGNMENT_CASES
     | NUMERIC_UNSUPPORTED_CASES
     | HANDLER_CALL_PARTIAL_CASES
     | TEMPORARY_BMC_CORE_EXCLUDE_CASES
@@ -116,16 +119,6 @@ BMC_CORE_FIXTURE_LEDGER_CASES = (
 
 def _temporary_policy(case_id: str) -> BmcSemanticFixturePolicy:
     if case_id in {
-        "design_composite_stuck_in_init_wait",
-        "failed_initial_cycle_preserves_root_entry_lifecycle",
-        "failed_initial_cycle_skips_abstract_handler_callbacks",
-        "hot_start_deep_evented_initial_waits_for_event",
-        "design_post_child_exit_without_follow_up",
-        "hot_start_composite_evented_initial_skips_entry_boundary_before",
-    }:
-        bucket = "initialization_delta"
-        reason = "STATE_INIT, delta/stutter, or non-stoppable recurrence is scheduled for follow-up initialization work."
-    elif case_id in {
         "hot_start_evented_initial_matches_cold_suffix",
         "hot_start_initial_vars_override_skips_int_initializer",
         "persistent_initial_vars_override_skips_initializer",
@@ -163,6 +156,12 @@ def policy_for_case(case_id: str) -> BmcSemanticFixturePolicy:
             mode="hard_pass",
             bucket="initial_plain_before",
             reason="Initial pseudo/combo plain-before ordering is covered by the current BMC relation.",
+        )
+    if case_id in INITIAL_DELTA_ALIGNMENT_CASES:
+        return BmcSemanticFixturePolicy(
+            mode="hard_pass",
+            bucket="initialization_delta",
+            reason="STATE_INIT and delta/gamma no-progress semantics are covered by the current BMC relation.",
         )
     if case_id in NUMERIC_UNSUPPORTED_CASES:
         return BmcSemanticFixturePolicy(

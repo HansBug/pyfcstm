@@ -77,10 +77,11 @@ Public module structure:
        sentinel states, and event-input slots before solver lowering.
    * - Macro-step sources
      - :class:`MacroStepSource`, :func:`source_from_initial_spec`,
-       :func:`entry_source`, :func:`stable_leaf_source`,
-       :func:`terminated_source`, :func:`diagnostic_source`
-     - Describe initial and recurrence source profiles without reading
-       initial ``where`` predicates or building solver relations.
+       :func:`init_source`, :func:`entry_source`,
+       :func:`stable_leaf_source`, :func:`terminated_source`
+     - Describe cold-init, hot-entry, stable-leaf, and terminated source
+       profiles without reading initial ``where`` predicates or building
+       solver relations.
    * - Macro-step case data
      - :class:`BoolTemplate`, :class:`EventUse`,
        :class:`GuardRequirement`, :class:`PriorityExclusion`,
@@ -91,11 +92,10 @@ Public module structure:
        summaries.
    * - Macro-step case helpers
      - :func:`case_path_condition`, :func:`terminated_absorb_case`,
-       :func:`diagnostic_absorb_case`,
        :func:`build_fallback_case`, :func:`build_semantic_delta_case`,
        :func:`verify_boolean_partition`, :func:`verify_source_partition`
-     - Construct absorb, fallback, and semantic-delta cases while keeping
-       partition self-checks outside formal trace formulas.
+     - Construct terminated absorb, fallback, and semantic-delta cases while
+       keeping partition self-checks outside formal trace formulas.
    * - Macro-step expansion
      - :class:`MacroExpansionOptions`, :func:`expand_macro_step_cases`
      - Expand source profiles into runtime-aligned, solver-independent macro-step
@@ -191,8 +191,8 @@ _BINDING_EXPORTS = {
 }
 
 _DOMAIN_EXPORTS = {
+    "STATE_INIT_ID",
     "STATE_TERMINATE_ID",
-    "STATE_DIAGNOSTIC_ID",
     "StateDomainEntry",
     "EventDomainEntry",
     "VarDomainEntry",
@@ -204,13 +204,13 @@ _DOMAIN_EXPORTS = {
 }
 
 _SOURCE_EXPORTS = {
+    "INIT_CASE_PATH",
     "TERMINATE_CASE_PATH",
-    "DIAGNOSTIC_CASE_PATH",
     "MacroStepSource",
+    "init_source",
     "entry_source",
     "stable_leaf_source",
     "terminated_source",
-    "diagnostic_source",
     "source_from_initial_spec",
 }
 
@@ -230,7 +230,6 @@ _MACRO_EXPORTS = {
     "MacroStepFormal",
     "case_path_condition",
     "terminated_absorb_case",
-    "diagnostic_absorb_case",
     "build_fallback_case",
     "build_semantic_delta_case",
     "verify_boolean_partition",
@@ -371,8 +370,8 @@ __all__ = [
     "BoundBmcQuery",
     "bind_bmc_query_structure",
     "bind_bmc_query",
+    "STATE_INIT_ID",
     "STATE_TERMINATE_ID",
-    "STATE_DIAGNOSTIC_ID",
     "StateDomainEntry",
     "EventDomainEntry",
     "VarDomainEntry",
@@ -381,13 +380,13 @@ __all__ = [
     "EventInputRef",
     "BmcDomain",
     "build_bmc_domain",
+    "INIT_CASE_PATH",
     "TERMINATE_CASE_PATH",
-    "DIAGNOSTIC_CASE_PATH",
     "MacroStepSource",
+    "init_source",
     "entry_source",
     "stable_leaf_source",
     "terminated_source",
-    "diagnostic_source",
     "source_from_initial_spec",
     "MacroExpansionOptions",
     "expand_macro_step_cases",
@@ -401,7 +400,6 @@ __all__ = [
     "MacroStepFormal",
     "case_path_condition",
     "terminated_absorb_case",
-    "diagnostic_absorb_case",
     "build_fallback_case",
     "build_semantic_delta_case",
     "verify_boolean_partition",

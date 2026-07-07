@@ -9,8 +9,6 @@ categories:
 - template_alignment
 - validation
 - lifecycle
-exclude_runners:
-- bmc_core
 steps:
 - cycle: []
   expect:

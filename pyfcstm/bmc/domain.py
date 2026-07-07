@@ -9,7 +9,7 @@ particular query.
 
 Design contracts:
 
-* Normal model states use non-negative ids, while the terminal and diagnostic
+* Normal model states use non-negative ids, while the terminal and cold-init
   sentinel states use fixed negative ids.
 * Frame references cover ``F_0..F_N`` and step references cover
   ``E_0..E_{N-1}`` for a positive bound ``N``.
@@ -22,7 +22,7 @@ Design contracts:
 
 The module contains:
 
-* :data:`STATE_TERMINATE_ID` and :data:`STATE_DIAGNOSTIC_ID` - Fixed sentinel
+* :data:`STATE_INIT_ID` and :data:`STATE_TERMINATE_ID` - Fixed sentinel
   state identifiers.
 * :class:`StateDomainEntry` - Stable state id metadata.
 * :class:`EventDomainEntry` - Stable event id metadata.
@@ -51,10 +51,12 @@ from typing import Any, Dict, Iterable, Optional, Sequence, Tuple
 from pyfcstm.bmc.errors import InvalidBmcDomain
 from pyfcstm.model import Event, State, StateMachine
 
+STATE_INIT_ID = -3
+# The retired -2 slot is intentionally never reused, so old diagnostic traces
+# cannot be confused with the cold-init sentinel.
 STATE_TERMINATE_ID = -1
-STATE_DIAGNOSTIC_ID = -2
+_STATE_INIT_PATH = "$STATE_INIT"
 _STATE_TERMINATE_PATH = "$STATE_TERMINATE"
-_STATE_DIAGNOSTIC_PATH = "$STATE_DIAGNOSTIC"
 
 _CanonicalDict = Dict[str, Any]
 _STATE_ENTRY_FIELDS = (
@@ -74,7 +76,7 @@ _STATE_ENTRY_BOOL_FIELDS = (
     "is_sentinel",
     "is_generated_combo_pseudo",
 )
-_STATE_SENTINEL_IDS = {STATE_TERMINATE_ID, STATE_DIAGNOSTIC_ID}
+_STATE_SENTINEL_IDS = {STATE_INIT_ID, STATE_TERMINATE_ID}
 _EVENT_ENTRY_FIELDS = (
     "id",
     "path",
@@ -791,11 +793,11 @@ class BmcDomain:
     def _validate_sentinel_entries(self) -> None:
         entries_by_id = {entry.id: entry for entry in self.states}
         terminate = entries_by_id.get(STATE_TERMINATE_ID)
-        diagnostic = entries_by_id.get(STATE_DIAGNOSTIC_ID)
+        init = entries_by_id.get(STATE_INIT_ID)
+        if init is None:
+            raise InvalidBmcDomain("Domain must contain the init sentinel.")
         if terminate is None:
             raise InvalidBmcDomain("Domain must contain the terminate sentinel.")
-        if diagnostic is None:
-            raise InvalidBmcDomain("Domain must contain the diagnostic sentinel.")
         if (
             terminate.path != _STATE_TERMINATE_PATH
             or terminate.name != "STATE_TERMINATE"
@@ -804,12 +806,12 @@ class BmcDomain:
         ):
             raise InvalidBmcDomain("Terminate sentinel entry is malformed.")
         if (
-            diagnostic.path != _STATE_DIAGNOSTIC_PATH
-            or diagnostic.name != "STATE_DIAGNOSTIC"
-            or diagnostic.kind != "sentinel"
-            or not diagnostic.is_sentinel
+            init.path != _STATE_INIT_PATH
+            or init.name != "STATE_INIT"
+            or init.kind != "sentinel"
+            or not init.is_sentinel
         ):
-            raise InvalidBmcDomain("Diagnostic sentinel entry is malformed.")
+            raise InvalidBmcDomain("Init sentinel entry is malformed.")
 
     def _validate_state_topology(self) -> None:
         """Validate model-state parent and root topology.
@@ -935,13 +937,13 @@ class BmcDomain:
         expected_initial = tuple(
             sorted(
                 [entry.id for entry in self.states if not entry.is_sentinel]
-                + [STATE_TERMINATE_ID]
+                + [STATE_INIT_ID, STATE_TERMINATE_ID]
             )
         )
         if self.initial_state_ids != expected_initial:
             raise InvalidBmcDomain(
-                "initial_state_ids must contain every model state id and the "
-                "terminate sentinel only."
+                "initial_state_ids must contain every model state id plus "
+                "the init and terminate sentinels only."
             )
 
         expected_stable = tuple(
@@ -951,13 +953,13 @@ class BmcDomain:
                     for entry in self.states
                     if entry.kind == "leaf" and entry.is_stoppable
                 ]
-                + [STATE_DIAGNOSTIC_ID, STATE_TERMINATE_ID]
+                + [STATE_TERMINATE_ID]
             )
         )
         if self.stable_state_ids != expected_stable:
             raise InvalidBmcDomain(
                 "stable_state_ids must contain stoppable model state ids plus "
-                "terminate and diagnostic sentinels only."
+                "the terminate sentinel only."
             )
 
     @staticmethod
@@ -1017,7 +1019,7 @@ class BmcDomain:
         """Return the id for a state path.
 
         :param path: Dot-separated state path.  Sentinel states use reserved
-            ``$``-prefixed paths such as ``"$STATE_DIAGNOSTIC"``.
+            ``$``-prefixed paths such as ``"$STATE_TERMINATE"``.
         :type path: str
         :return: State id.
         :rtype: int
@@ -1027,8 +1029,8 @@ class BmcDomain:
 
             >>> from pyfcstm.model import load_state_machine_from_text
             >>> domain = build_bmc_domain(load_state_machine_from_text('state Root;'), 1)
-            >>> domain.state_path_to_id('$STATE_DIAGNOSTIC')
-            -2
+            >>> domain.state_path_to_id('$STATE_INIT')
+            -3
         """
         return self.state_by_path(path).id
 
@@ -1271,8 +1273,8 @@ class BmcDomain:
             "stable_state_ids": list(self.stable_state_ids),
             "recurrence_state_ids": list(self.recurrence_state_ids),
             "sentinels": {
+                "init": STATE_INIT_ID,
                 "terminate": STATE_TERMINATE_ID,
-                "diagnostic": STATE_DIAGNOSTIC_ID,
             },
         }
 
@@ -1280,9 +1282,9 @@ class BmcDomain:
 def _sentinel_entries() -> Tuple[StateDomainEntry, StateDomainEntry]:
     return (
         StateDomainEntry(
-            id=STATE_DIAGNOSTIC_ID,
-            path=_STATE_DIAGNOSTIC_PATH,
-            name="STATE_DIAGNOSTIC",
+            id=STATE_INIT_ID,
+            path=_STATE_INIT_PATH,
+            name="STATE_INIT",
             kind="sentinel",
             is_sentinel=True,
         ),
@@ -1406,11 +1408,13 @@ def build_bmc_domain(model: StateMachine, bound: int) -> BmcDomain:
     )
 
     normal_state_ids = tuple(entry.id for entry in model_state_entries)
-    initial_state_ids = tuple(sorted(normal_state_ids + (STATE_TERMINATE_ID,)))
+    initial_state_ids = tuple(
+        sorted(normal_state_ids + (STATE_INIT_ID, STATE_TERMINATE_ID))
+    )
     stable_state_ids = tuple(
         sorted(
             tuple(entry.id for entry in model_state_entries if entry.is_stoppable)
-            + (STATE_DIAGNOSTIC_ID, STATE_TERMINATE_ID)
+            + (STATE_TERMINATE_ID,)
         )
     )
 
@@ -1429,8 +1433,8 @@ def build_bmc_domain(model: StateMachine, bound: int) -> BmcDomain:
 
 
 __all__ = [
+    "STATE_INIT_ID",
     "STATE_TERMINATE_ID",
-    "STATE_DIAGNOSTIC_ID",
     "StateDomainEntry",
     "EventDomainEntry",
     "VarDomainEntry",

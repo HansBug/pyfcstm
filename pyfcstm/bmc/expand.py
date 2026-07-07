@@ -42,7 +42,6 @@ from pyfcstm.bmc.macro import (
     MacroStepFormal,
     PriorityExclusion,
     build_semantic_delta_case,
-    diagnostic_absorb_case,
     terminated_absorb_case,
 )
 from pyfcstm.bmc.source import TERMINATE_CASE_PATH, MacroStepSource
@@ -246,8 +245,6 @@ class _MacroExpander:
         """Return the expanded macro-step formal."""
         if self.source.kind == "terminated":
             return MacroStepFormal(self.source, (terminated_absorb_case(self.domain),))
-        if self.source.kind == "diagnostic":
-            return MacroStepFormal(self.source, (diagnostic_absorb_case(self.domain),))
 
         expansion = self._merge_expansions(
             self._expand_frontier(frontier)
@@ -293,6 +290,18 @@ class _MacroExpander:
         return _Expansion(tuple(outcomes), tuple(failed), tuple(diagnostics))
 
     def _frontiers_from_source(self) -> Tuple[_MacroFrontier, ...]:
+        if self.source.kind == "init":
+            base = _MacroFrontier(
+                (),
+                BoolTemplate.true(),
+                (),
+                (),
+                (),
+                (),
+                _CASE_KIND_INITIAL,
+            )
+            return self._enter_state(base, self.model.root_state)
+
         state = self._source_state()
         if self.source.kind == "stable_leaf":
             stack = tuple(
@@ -315,17 +324,6 @@ class _MacroExpander:
                 "unsupported source kind reached macro expansion: %r."
                 % self.source.kind
             )
-        if state.is_root_state:
-            base = _MacroFrontier(
-                (),
-                BoolTemplate.true(),
-                (),
-                (),
-                (),
-                (),
-                _CASE_KIND_INITIAL,
-            )
-            return self._enter_state(base, state)
         stack = []
         path = _path_to_root(state)
         for index, item in enumerate(path):

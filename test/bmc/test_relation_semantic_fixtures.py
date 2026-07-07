@@ -11,6 +11,7 @@ import z3
 from pyfcstm.bmc import (
     BmcBuildError,
     BmcEngine,
+    STATE_INIT_ID,
     STATE_TERMINATE_ID,
     UnsupportedBmcQuery,
     build_bmc_core_formula,
@@ -131,6 +132,11 @@ def _expect_state(core, frame_index: int, state_path: Any) -> z3.BoolRef:
     if state_path is None:
         return z3.BoolVal(True)
     state_id = core.context.domain.state_path_to_id(state_path)
+    if state_path == ".".join(core.context.model.root_state.path):
+        return z3.Or(
+            core.symbols.frame_state(frame_index) == z3.IntVal(state_id),
+            core.symbols.frame_state(frame_index) == z3.IntVal(STATE_INIT_ID),
+        )
     return core.symbols.frame_state(frame_index) == z3.IntVal(state_id)
 
 

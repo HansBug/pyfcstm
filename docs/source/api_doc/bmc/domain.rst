@@ -6,16 +6,16 @@ pyfcstm.bmc.domain
 .. automodule:: pyfcstm.bmc.domain
 
 
+STATE\_INIT\_ID
+-----------------------------------------------------
+
+.. autodata:: STATE_INIT_ID
+
+
 STATE\_TERMINATE\_ID
 -----------------------------------------------------
 
 .. autodata:: STATE_TERMINATE_ID
-
-
-STATE\_DIAGNOSTIC\_ID
------------------------------------------------------
-
-.. autodata:: STATE_DIAGNOSTIC_ID
 
 
 \_\_all\_\_

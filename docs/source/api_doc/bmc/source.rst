@@ -6,16 +6,16 @@ pyfcstm.bmc.source
 .. automodule:: pyfcstm.bmc.source
 
 
+INIT\_CASE\_PATH
+-----------------------------------------------------
+
+.. autodata:: INIT_CASE_PATH
+
+
 TERMINATE\_CASE\_PATH
 -----------------------------------------------------
 
 .. autodata:: TERMINATE_CASE_PATH
-
-
-DIAGNOSTIC\_CASE\_PATH
------------------------------------------------------
-
-.. autodata:: DIAGNOSTIC_CASE_PATH
 
 
 \_\_all\_\_
@@ -29,6 +29,12 @@ MacroStepSource
 
 .. autoclass:: MacroStepSource
     :members: __post_init__,allows_semantic_delta,uses_stable_fallback,to_canonical,to_semantic_canonical,kind,origin,source_state_id,source_state_path,domain
+
+
+init\_source
+-----------------------------------------------------
+
+.. autofunction:: init_source
 
 
 entry\_source
@@ -47,12 +53,6 @@ terminated\_source
 -----------------------------------------------------
 
 .. autofunction:: terminated_source
-
-
-diagnostic\_source
------------------------------------------------------
-
-.. autofunction:: diagnostic_source
 
 
 source\_from\_initial\_spec

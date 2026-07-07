@@ -11,7 +11,7 @@ import pytest
 import pyfcstm.bmc.expand as expand_module
 import pyfcstm.bmc.macro as macro_module
 from pyfcstm.bmc import (
-    STATE_DIAGNOSTIC_ID,
+    STATE_INIT_ID,
     STATE_TERMINATE_ID,
     BmcBuildError,
     InvalidBmcEncoding,
@@ -29,16 +29,15 @@ from pyfcstm.bmc.macro import (
     build_fallback_case,
     build_semantic_delta_case,
     case_path_condition,
-    diagnostic_absorb_case,
     terminated_absorb_case,
     verify_boolean_partition,
     verify_source_partition,
 )
 from pyfcstm.bmc.source import (
-    DIAGNOSTIC_CASE_PATH,
+    INIT_CASE_PATH,
     MacroStepSource,
     TERMINATE_CASE_PATH,
-    diagnostic_source,
+    init_source,
     entry_source,
     stable_leaf_source,
     terminated_source,
@@ -57,7 +56,7 @@ def _bad_object() -> Any:
 
 
 def _assert_internal_bug_message(error: BmcBuildError) -> None:
-    """Assert that internal bug diagnostics route users to the issue tracker."""
+    """Assert that internal bug reports route users to the issue tracker."""
     message = str(error)
     assert "internal error" in message
     assert "pyfcstm BMC bug" in message
@@ -100,7 +99,7 @@ def macro_domain(macro_model):
 
 @pytest.mark.unittest
 def test_internal_bug_messages_link_issue_tracker():
-    """Internal BMC bug diagnostics include actionable reporting guidance."""
+    """Internal BMC bug reports include actionable reporting guidance."""
     _assert_internal_bug_message(macro_module._internal_bmc_error("synthetic bug."))
     _assert_internal_bug_message(
         expand_module._internal_expansion_error("synthetic expansion bug.")
@@ -535,13 +534,13 @@ def test_cycle_case_public_validation_rejects_invalid_local_shapes(macro_domain)
             "absorb",
             STATE_TERMINATE_ID,
             TERMINATE_CASE_PATH,
-            STATE_DIAGNOSTIC_ID,
-            DIAGNOSTIC_CASE_PATH,
-            "%s::absorb::%s::0" % (TERMINATE_CASE_PATH, DIAGNOSTIC_CASE_PATH),
+            STATE_INIT_ID,
+            INIT_CASE_PATH,
+            "%s::absorb::%s::0" % (TERMINATE_CASE_PATH, INIT_CASE_PATH),
             BoolTemplate.true(),
             (),
         )
-    with pytest.raises(InvalidBmcEncoding, match="absorb cases must use sentinel"):
+    with pytest.raises(InvalidBmcEncoding, match="terminate sentinel"):
         CycleCase(
             "absorb",
             source.source_state_id,
@@ -552,16 +551,14 @@ def test_cycle_case_public_validation_rejects_invalid_local_shapes(macro_domain)
             BoolTemplate.true(),
             (),
         )
-    with pytest.raises(
-        InvalidBmcEncoding, match="diagnostic and delta cases target diagnostic"
-    ):
+    with pytest.raises(InvalidBmcEncoding, match="case kind"):
         CycleCase(
-            "diagnostic",
+            "init",
             source.source_state_id,
             source.source_state_path,
             target_id,
             target_path,
-            "%s::diagnostic::%s::0" % (source.source_state_path, target_path),
+            "%s::init::%s::0" % (source.source_state_path, target_path),
             BoolTemplate.true(),
             (),
         )
@@ -669,17 +666,8 @@ def test_macro_step_formal_public_validation_rejects_invalid_bucket_shapes(
     stable = stable_leaf_source(macro_domain, "Root.Plant.Idle")
     fallback = build_fallback_case(macro_domain, stable, ())
     transition = make_case(macro_domain, stable, target_path="Root.Plant.Busy")
-    delta = CycleCase(
-        "delta",
-        stable.source_state_id,
-        stable.source_state_path,
-        STATE_DIAGNOSTIC_ID,
-        DIAGNOSTIC_CASE_PATH,
-        "%s::delta::%s::0" % (stable.source_state_path, DIAGNOSTIC_CASE_PATH),
-        BoolTemplate.true(),
-        (),
-    )
-
+    entry = entry_source(macro_domain, "Root.Plant")
+    entry_delta = build_semantic_delta_case(macro_domain, entry, ())
     with pytest.raises(InvalidBmcEncoding, match="source must be MacroStepSource"):
         MacroStepFormal(_bad_object(), (fallback,))
     with pytest.raises(InvalidBmcEncoding, match="success_cases must be a sequence"):
@@ -708,7 +696,7 @@ def test_macro_step_formal_public_validation_rejects_invalid_bucket_shapes(
     with pytest.raises(
         InvalidBmcEncoding, match="success_cases must not contain delta"
     ):
-        MacroStepFormal(stable, (delta,))
+        MacroStepFormal(entry, (entry_delta,))
     with pytest.raises(
         InvalidBmcEncoding, match="stable leaf formal requires a fallback"
     ):
@@ -733,9 +721,9 @@ def test_macro_step_formal_public_validation_rejects_invalid_bucket_shapes(
         "transition",
         stable.source_state_id,
         stable.source_state_path,
-        STATE_DIAGNOSTIC_ID,
-        DIAGNOSTIC_CASE_PATH,
-        "%s::transition::%s::0" % (stable.source_state_path, DIAGNOSTIC_CASE_PATH),
+        STATE_INIT_ID,
+        INIT_CASE_PATH,
+        "%s::transition::%s::0" % (stable.source_state_path, INIT_CASE_PATH),
         BoolTemplate.true(),
         (),
     )
@@ -767,9 +755,9 @@ def test_macro_step_formal_public_validation_rejects_invalid_bucket_shapes(
         "initial",
         entry.source_state_id,
         entry.source_state_path,
-        STATE_DIAGNOSTIC_ID,
-        DIAGNOSTIC_CASE_PATH,
-        "%s::initial::%s::0" % (entry.source_state_path, DIAGNOSTIC_CASE_PATH),
+        STATE_INIT_ID,
+        INIT_CASE_PATH,
+        "%s::initial::%s::0" % (entry.source_state_path, INIT_CASE_PATH),
         BoolTemplate.true(),
         (),
     )
@@ -808,9 +796,9 @@ def test_macro_step_formal_public_validation_rejects_invalid_bucket_shapes(
         "delta",
         terminate.source_state_id,
         terminate.source_state_path,
-        STATE_DIAGNOSTIC_ID,
-        DIAGNOSTIC_CASE_PATH,
-        "%s::delta::%s::0" % (terminate.source_state_path, DIAGNOSTIC_CASE_PATH),
+        terminate.source_state_id,
+        terminate.source_state_path,
+        "%s::delta::%s::0" % (terminate.source_state_path, terminate.source_state_path),
         BoolTemplate.true(),
         (),
     )
@@ -858,18 +846,18 @@ def test_macro_step_formal_public_validation_rejects_invalid_bucket_shapes(
     raw_terminate = MacroStepSource(
         "terminated", "recurrence", STATE_TERMINATE_ID, TERMINATE_CASE_PATH
     )
-    absorb_to_diagnostic = CycleCase(
+    absorb_to_init = CycleCase(
         "absorb",
         raw_terminate.source_state_id,
         raw_terminate.source_state_path,
         raw_terminate.source_state_id,
-        DIAGNOSTIC_CASE_PATH,
-        "%s::absorb::%s::0" % (raw_terminate.source_state_path, DIAGNOSTIC_CASE_PATH),
+        INIT_CASE_PATH,
+        "%s::absorb::%s::0" % (raw_terminate.source_state_path, INIT_CASE_PATH),
         BoolTemplate.true(),
         (),
     )
     with pytest.raises(InvalidBmcEncoding, match="self-loop"):
-        MacroStepFormal(raw_terminate, (absorb_to_diagnostic,))
+        MacroStepFormal(raw_terminate, (absorb_to_init,))
     absorb_with_action = CycleCase(
         "absorb",
         terminate.source_state_id,
@@ -1115,10 +1103,53 @@ def test_action_block_preserves_if_block_without_condition_split(
 
 
 @pytest.mark.unittest
+def test_failed_condition_guard_metadata_allows_external_anchor(macro_domain):
+    """Diagnostic failed-condition guards may describe a rejected path prefix."""
+    source = entry_source(macro_domain, "Root.Plant")
+    guard = GuardRequirement(
+        "g0",
+        source.source_state_id,
+        source.source_state_path,
+        "[*] -> Idle",
+        Boolean(True),
+        "positive",
+        "initial_guard",
+        1,
+    )
+
+    with pytest.raises(InvalidBmcEncoding, match="guard anchor exceeds"):
+        CycleCase(
+            "delta",
+            source.source_state_id,
+            source.source_state_path,
+            source.source_state_id,
+            source.source_state_path,
+            "%s::delta::%s::0" % (source.source_state_path, source.source_state_path),
+            BoolTemplate.atom("guard:g0"),
+            (),
+            guard_requirements=(guard,),
+        )
+
+    case = CycleCase(
+        "delta",
+        source.source_state_id,
+        source.source_state_path,
+        source.source_state_id,
+        source.source_state_path,
+        "%s::delta::%s::1" % (source.source_state_path, source.source_state_path),
+        BoolTemplate.true(),
+        (),
+        guard_requirements=(guard,),
+        failed_conditions=(BoolTemplate.atom("guard:g0"),),
+    )
+
+    assert case.failed_conditions[0].variables == ("guard:g0",)
+
+
+@pytest.mark.unittest
 def test_absorb_cases_are_regular_cases_with_true_condition(macro_domain):
-    """Terminated and diagnostic absorbs are ordinary CycleCase objects."""
+    """Terminated absorb remains an ordinary CycleCase object."""
     terminate = terminated_absorb_case(macro_domain)
-    diagnostic = diagnostic_absorb_case(macro_domain)
 
     assert terminate.source_state_id == STATE_TERMINATE_ID
     assert terminate.target_state_id == STATE_TERMINATE_ID
@@ -1126,15 +1157,7 @@ def test_absorb_cases_are_regular_cases_with_true_condition(macro_domain):
     assert terminate.label == "__terminate__::absorb::__terminate__::0"
     assert terminate.condition.evaluate({}) is True
     assert terminate.action_blocks == ()
-    assert terminate.is_diagnostic is False
-
-    assert diagnostic.source_state_id == STATE_DIAGNOSTIC_ID
-    assert diagnostic.target_state_id == STATE_DIAGNOSTIC_ID
-    assert diagnostic.source_state_path == DIAGNOSTIC_CASE_PATH
-    assert diagnostic.label == "__diagnostic__::absorb::__diagnostic__::0"
-    assert diagnostic.condition.evaluate({}) is True
-    assert diagnostic.action_blocks == ()
-    assert diagnostic.is_diagnostic is True
+    assert "is_diagnostic" not in terminate.to_canonical()
 
 
 @pytest.mark.unittest
@@ -1162,10 +1185,43 @@ def test_fallback_condition_negates_accepted_labels_not_raw_conditions(macro_dom
 
 
 @pytest.mark.unittest
+def test_delta_case_validation_requires_exact_source_self_loop():
+    """Delta cases cannot silently move to a different target id or path."""
+    source = MacroStepSource("entry", "initial", 0, "Root")
+
+    with pytest.raises(
+        InvalidBmcEncoding, match="delta cases must self-loop source state"
+    ):
+        CycleCase(
+            "delta",
+            source.source_state_id,
+            source.source_state_path,
+            1,
+            source.source_state_path,
+            "Root::delta::Root::0",
+            BoolTemplate.true(),
+            (),
+        )
+    with pytest.raises(
+        InvalidBmcEncoding, match="delta cases must self-loop source path"
+    ):
+        CycleCase(
+            "delta",
+            source.source_state_id,
+            source.source_state_path,
+            source.source_state_id,
+            "Other",
+            "Root::delta::Other::0",
+            BoolTemplate.true(),
+            (),
+        )
+
+
+@pytest.mark.unittest
 def test_semantic_delta_condition_excludes_success_labels_and_build_diag(
     macro_domain,
 ):
-    """Entry delta leaves failed candidate conditions as diagnostics only."""
+    """Entry delta self-loops and excludes success plus build diagnostics."""
     source = entry_source(macro_domain, "Root.Plant")
     accepted = make_case(
         macro_domain,
@@ -1186,7 +1242,7 @@ def test_semantic_delta_condition_excludes_success_labels_and_build_diag(
             ),
         ),
     )
-    build_diag = BoolTemplate.atom("event:Root.Go")
+    build_diagnostic = BoolTemplate.atom("event:Root.Go")
     root_go = macro_domain.event_by_path("Root.Go")
     failed = BoolTemplate.atom("event:Root.Plant.Ping")
 
@@ -1194,12 +1250,13 @@ def test_semantic_delta_condition_excludes_success_labels_and_build_diag(
         macro_domain,
         source,
         (accepted,),
-        (build_diag,),
+        (build_diagnostic,),
         (failed,),
     )
 
     assert delta.kind == "delta"
-    assert delta.target_state_id == STATE_DIAGNOSTIC_ID
+    assert delta.target_state_id == source.source_state_id
+    assert delta.target_state_path == source.source_state_path
     assert delta.condition.variables == (
         "accepted:%s" % accepted.label,
         "event:Root.Go",
@@ -1259,18 +1316,18 @@ def test_build_case_helpers_reject_invalid_public_arguments(macro_domain):
     )
     with pytest.raises(InvalidBmcEncoding, match="accepted case source path"):
         build_fallback_case(macro_domain, stable, (bad_path,))
-    diagnostic = CycleCase(
+    init = CycleCase(
         "transition",
         stable.source_state_id,
         stable.source_state_path,
-        STATE_DIAGNOSTIC_ID,
-        DIAGNOSTIC_CASE_PATH,
-        "%s::transition::%s::0" % (stable.source_state_path, DIAGNOSTIC_CASE_PATH),
+        STATE_INIT_ID,
+        INIT_CASE_PATH,
+        "%s::transition::%s::0" % (stable.source_state_path, INIT_CASE_PATH),
         BoolTemplate.true(),
         (),
     )
     with pytest.raises(InvalidBmcEncoding, match="target model states or terminate"):
-        build_fallback_case(macro_domain, stable, (diagnostic,))
+        build_fallback_case(macro_domain, stable, (init,))
     with pytest.raises(InvalidBmcEncoding, match="Unknown event path"):
         build_fallback_case(
             macro_domain,
@@ -1338,7 +1395,7 @@ def test_partition_resolves_accepted_atoms_through_case_registry(macro_domain):
 
 @pytest.mark.unittest
 def test_partition_handles_sentinel_delta_and_accepted_atom_failures(macro_domain):
-    """Source partition checks cover sentinel, delta, diagnostic, and atom cycles."""
+    """Source partition checks cover sentinel, delta, init, and atom cycles."""
     terminate = terminated_source(macro_domain)
     terminated = verify_source_partition(
         terminate,
@@ -1348,18 +1405,10 @@ def test_partition_handles_sentinel_delta_and_accepted_atom_failures(macro_domai
     assert terminated.assignment_count == 0
     assert terminated.bucket_count == 1
 
-    with pytest.raises(InvalidBmcEncoding, match="cannot have build diagnostics"):
+    with pytest.raises(InvalidBmcEncoding, match="build diagnostics"):
         verify_source_partition(
             terminate,
             (terminated_absorb_case(macro_domain),),
-            build_diagnostic_conditions=(BoolTemplate.true(),),
-            max_assignments=1,
-        )
-    diagnostic = diagnostic_source(macro_domain)
-    with pytest.raises(InvalidBmcEncoding, match="cannot have build diagnostics"):
-        verify_source_partition(
-            diagnostic,
-            (diagnostic_absorb_case(macro_domain),),
             build_diagnostic_conditions=(BoolTemplate.true(),),
             max_assignments=1,
         )
@@ -1367,13 +1416,13 @@ def test_partition_handles_sentinel_delta_and_accepted_atom_failures(macro_domai
         "delta",
         terminate.source_state_id,
         terminate.source_state_path,
-        STATE_DIAGNOSTIC_ID,
-        DIAGNOSTIC_CASE_PATH,
-        "%s::delta::%s::0" % (terminate.source_state_path, DIAGNOSTIC_CASE_PATH),
+        terminate.source_state_id,
+        terminate.source_state_path,
+        "%s::delta::%s::0" % (terminate.source_state_path, terminate.source_state_path),
         BoolTemplate.true(),
         (),
     )
-    with pytest.raises(InvalidBmcEncoding, match="cannot have delta cases"):
+    with pytest.raises(InvalidBmcEncoding, match="delta cases"):
         verify_source_partition(
             terminate,
             (terminated_absorb_case(macro_domain),),
@@ -1398,20 +1447,18 @@ def test_partition_handles_sentinel_delta_and_accepted_atom_failures(macro_domai
     raw_terminate = MacroStepSource(
         "terminated", "recurrence", STATE_TERMINATE_ID, TERMINATE_CASE_PATH
     )
-    absorb_to_diagnostic = CycleCase(
+    absorb_to_init = CycleCase(
         "absorb",
         raw_terminate.source_state_id,
         raw_terminate.source_state_path,
         raw_terminate.source_state_id,
-        DIAGNOSTIC_CASE_PATH,
-        "%s::absorb::%s::0" % (raw_terminate.source_state_path, DIAGNOSTIC_CASE_PATH),
+        INIT_CASE_PATH,
+        "%s::absorb::%s::0" % (raw_terminate.source_state_path, INIT_CASE_PATH),
         BoolTemplate.true(),
         (),
     )
     with pytest.raises(InvalidBmcEncoding, match="self-loop"):
-        verify_source_partition(
-            raw_terminate, (absorb_to_diagnostic,), max_assignments=1
-        )
+        verify_source_partition(raw_terminate, (absorb_to_init,), max_assignments=1)
 
     absorb_with_action = CycleCase(
         "absorb",
@@ -1597,9 +1644,9 @@ def test_structural_partition_negative_shapes_fall_back_to_truth_table_budget(
         "delta",
         entry.source_state_id,
         entry.source_state_path,
-        STATE_DIAGNOSTIC_ID,
-        DIAGNOSTIC_CASE_PATH,
-        "%s::delta::%s::20" % (entry.source_state_path, DIAGNOSTIC_CASE_PATH),
+        entry.source_state_id,
+        entry.source_state_path,
+        "%s::delta::%s::20" % (entry.source_state_path, entry.source_state_path),
         BoolTemplate.true(),
         (),
     )
@@ -1611,19 +1658,19 @@ def test_structural_partition_negative_shapes_fall_back_to_truth_table_budget(
         verify_source_partition(
             entry, (accepted_entry,), (bad_delta,), max_assignments=8
         )
-    diagnostic_terminal = CycleCase(
-        "diagnostic",
+    initial_terminal = CycleCase(
+        "initial",
         entry.source_state_id,
         entry.source_state_path,
-        STATE_DIAGNOSTIC_ID,
-        DIAGNOSTIC_CASE_PATH,
-        "%s::diagnostic::%s::22" % (entry.source_state_path, DIAGNOSTIC_CASE_PATH),
+        macro_domain.state_path_to_id("Root.Plant.Idle"),
+        "Root.Plant.Idle",
+        "%s::initial::Root.Plant.Idle::22" % entry.source_state_path,
         BoolTemplate.true(),
         (),
     )
     with pytest.raises(BmcBuildError, match="assignment budget"):
         verify_source_partition(
-            entry, (accepted_entry, diagnostic_terminal), max_assignments=1
+            entry, (accepted_entry, initial_terminal), max_assignments=1
         )
 
 
@@ -1753,13 +1800,13 @@ def test_macro_step_formal_rejects_illegal_delta_buckets_and_label_collisions(
     """Formal buckets enforce source-local shape before solver lowering."""
     stable = stable_leaf_source(macro_domain, "Root.Plant.Idle")
     fallback = build_fallback_case(macro_domain, stable, ())
-    delta = CycleCase(
+    stable_delta = CycleCase(
         "delta",
         stable.source_state_id,
         stable.source_state_path,
-        STATE_DIAGNOSTIC_ID,
-        DIAGNOSTIC_CASE_PATH,
-        "%s::delta::%s::0" % (stable.source_state_path, DIAGNOSTIC_CASE_PATH),
+        stable.source_state_id,
+        stable.source_state_path,
+        "%s::delta::%s::0" % (stable.source_state_path, stable.source_state_path),
         BoolTemplate.true(),
         (),
         domain=macro_domain,
@@ -1767,7 +1814,7 @@ def test_macro_step_formal_rejects_illegal_delta_buckets_and_label_collisions(
 
     assert MacroStepFormal(stable, (fallback,)).cases == (fallback,)
     with pytest.raises(InvalidBmcEncoding, match="delta_cases require"):
-        MacroStepFormal(stable, (fallback,), (delta,))
+        MacroStepFormal(stable, (fallback,), (stable_delta,))
     with pytest.raises(InvalidBmcEncoding, match="Duplicate cycle case label"):
         MacroStepFormal(stable, (fallback, fallback))
     wrong_source = make_case(macro_domain, entry_source(macro_domain, "Root.Plant"))
@@ -1788,12 +1835,10 @@ def test_macro_step_formal_accepts_entry_delta_and_sentinel_absorb_buckets(
         terminated_source(macro_domain),
         (terminated_absorb_case(macro_domain),),
     )
-    diagnostic = MacroStepFormal(
-        diagnostic_source(macro_domain),
-        (diagnostic_absorb_case(macro_domain),),
-    )
+    init_delta = build_semantic_delta_case(macro_domain, init_source(macro_domain), ())
+    init = MacroStepFormal(init_source(macro_domain), (), (init_delta,))
     assert terminate.cases[0].target_state_id == STATE_TERMINATE_ID
-    assert diagnostic.cases[0].target_state_id == STATE_DIAGNOSTIC_ID
+    assert init.cases[0].target_state_id == STATE_INIT_ID
 
 
 @pytest.mark.unittest
@@ -1859,8 +1904,8 @@ def test_structural_partition_checker_rejects_extra_accepted_atoms():
 
 
 @pytest.mark.unittest
-def test_sentinel_diagnostics_fail_closed_under_optimized_python():
-    """Sentinel partition validation must not depend on assert statements."""
+def test_sentinel_inits_fail_closed_under_optimized_python():
+    """Sentinel diagnostic validation must not depend on assert statements."""
     code = """
 from pyfcstm.bmc import build_bmc_domain, terminated_source
 from pyfcstm.bmc.errors import InvalidBmcEncoding

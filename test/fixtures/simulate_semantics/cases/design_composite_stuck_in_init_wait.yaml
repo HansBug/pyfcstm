@@ -8,8 +8,6 @@ categories:
 - runtime
 - template_alignment
 - validation
-exclude_runners:
-- bmc_core
 steps:
 - cycle: []
   expect:

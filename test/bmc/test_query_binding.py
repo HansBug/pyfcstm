@@ -514,7 +514,7 @@ def test_bind_bmc_query_model_resolution_records_references(binding_model):
         ('check reach <= 1: active("Root.Missing");', "unknown_state"),
         ('check reach <= 1: active("$STATE_TERMINATE");', "reserved_state_path"),
         (
-            'init state("$STATE_DIAGNOSTIC"); check reach <= 1: true;',
+            'init state("$STATE_INIT"); check reach <= 1: true;',
             "reserved_state_path",
         ),
         (

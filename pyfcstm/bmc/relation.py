@@ -9,8 +9,10 @@ symbols, expands macro-step cases, and constructs the core formula
 
 The relation builder deliberately stops before property compilation.  It does
 not decide whether a query is reachable, forbidden, covered, or healthy; later
-layers add ``InitHealthy_0`` / ``NoDiag_N`` gates and objective constraints on
-top of the returned core formula.
+layers can add objective predicates, witness decoding, and optional health or
+runtime-error observations on top of the returned core formula.  Semantic
+no-progress observations that are part of the core transition relation are
+exposed directly as ``Delta_i`` and ``Gamma_i`` symbols.
 
 Public concepts:
 
@@ -56,7 +58,7 @@ import z3
 from pyfcstm.bmc import ast as bmc_ast
 from pyfcstm.bmc.binding import BoundAssumption
 from pyfcstm.bmc.domain import (
-    STATE_DIAGNOSTIC_ID,
+    STATE_INIT_ID,
     STATE_TERMINATE_ID,
     BmcDomain,
 )
@@ -72,7 +74,8 @@ from pyfcstm.bmc.macro import (
 )
 from pyfcstm.bmc.query import EventCardinalityAssumption, FrameAssumption
 from pyfcstm.bmc.source import (
-    diagnostic_source,
+    entry_source,
+    init_source,
     source_from_initial_spec,
     stable_leaf_source,
     terminated_source,
@@ -87,6 +90,12 @@ _EVENT_ATOM_PREFIX = "event:"
 _GUARD_ATOM_PREFIX = "guard:"
 _ACCEPTED_ATOM_PREFIX = "accepted:"
 _ISSUE_URL = "https://github.com/HansBug/pyfcstm/issues"
+
+
+@dataclass(frozen=True)
+class _RelationFrameDomain:
+    frame0_state_ids: Tuple[int, ...]
+    recurrence_state_ids: Tuple[int, ...]
 
 
 def _internal_bmc_error(detail: str) -> BmcBuildError:
@@ -205,6 +214,10 @@ class BmcTraceSymbols:
     :type frame_vars: Tuple[Mapping[str, z3.ArithRef], ...]
     :param event_inputs: Per-step event-input symbols.
     :type event_inputs: Tuple[Mapping[str, z3.BoolRef], ...]
+    :param delta_flags: Per-step semantic-delta observation symbols.
+    :type delta_flags: Tuple[z3.BoolRef, ...]
+    :param gamma_flags: Per-step fallback observation symbols.
+    :type gamma_flags: Tuple[z3.BoolRef, ...]
     :param case_selectors: Per-step case-selector symbols.
     :type case_selectors: Tuple[Mapping[str, z3.BoolRef], ...]
 
@@ -224,6 +237,8 @@ class BmcTraceSymbols:
     frame_states: Tuple[z3.ArithRef, ...]
     frame_vars: Tuple[Mapping[str, z3.ArithRef], ...]
     event_inputs: Tuple[Mapping[str, z3.BoolRef], ...]
+    delta_flags: Tuple[z3.BoolRef, ...]
+    gamma_flags: Tuple[z3.BoolRef, ...]
     case_selectors: Tuple[Mapping[str, z3.BoolRef], ...] = field(default_factory=tuple)
 
     def __post_init__(self) -> None:
@@ -235,6 +250,14 @@ class BmcTraceSymbols:
             raise BmcBuildError("frame_vars must contain bound + 1 mappings.")
         if len(self.event_inputs) != self.domain.bound:
             raise BmcBuildError("event_inputs must contain bound mappings.")
+        if len(self.delta_flags) != self.domain.bound:
+            raise BmcBuildError("delta_flags must contain bound symbols.")
+        if len(self.gamma_flags) != self.domain.bound:
+            raise BmcBuildError("gamma_flags must contain bound symbols.")
+        if not all(z3.is_bool(item) for item in self.delta_flags):
+            raise BmcBuildError("delta_flags must contain Z3 Boolean expressions.")
+        if not all(z3.is_bool(item) for item in self.gamma_flags):
+            raise BmcBuildError("gamma_flags must contain Z3 Boolean expressions.")
         if len(self.case_selectors) != self.domain.bound:
             raise BmcBuildError("case_selectors must contain bound mappings.")
         object.__setattr__(
@@ -317,6 +340,8 @@ class BmcTraceSymbols:
                     % (step.index, event.id, _safe_symbol_fragment(event.path))
                 )
             event_inputs.append(mapping)
+        delta_flags = tuple(z3.Bool("Delta_%d" % step.index) for step in domain.steps)
+        gamma_flags = tuple(z3.Bool("Gamma_%d" % step.index) for step in domain.steps)
         case_selectors = []
         for step in domain.steps:
             labels = tuple(labels_by_step.get(step.index, ()))
@@ -337,6 +362,8 @@ class BmcTraceSymbols:
             frame_states=frame_states,
             frame_vars=tuple(frame_vars),
             event_inputs=tuple(event_inputs),
+            delta_flags=delta_flags,
+            gamma_flags=gamma_flags,
             case_selectors=tuple(case_selectors),
         )
 
@@ -420,6 +447,92 @@ class BmcTraceSymbols:
             # per-step event-input mapping.
             raise BmcBuildError("Unknown event input: %r." % event_path) from err
 
+    def delta_flag(self, step_index: int) -> z3.BoolRef:
+        """Return the semantic-delta observation symbol for a step.
+
+        :param step_index: Step index in ``0..N-1``.
+        :type step_index: int
+        :return: ``Delta_i`` observation symbol.
+        :rtype: z3.BoolRef
+        :raises pyfcstm.bmc.errors.BmcBuildError: If ``step_index`` is invalid.
+
+        Example::
+
+            >>> from pyfcstm.bmc.domain import build_bmc_domain
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> domain = build_bmc_domain(load_state_machine_from_text('state Root;'), 1)
+            >>> BmcTraceSymbols.allocate(domain).delta_flag(0).sort().name()
+            'Bool'
+        """
+        if step_index < 0 or step_index >= len(self.delta_flags):
+            raise BmcBuildError("step index out of range: %r." % step_index)
+        return self.delta_flags[step_index]
+
+    def gamma_flag(self, step_index: int) -> z3.BoolRef:
+        """Return the fallback observation symbol for a step.
+
+        :param step_index: Step index in ``0..N-1``.
+        :type step_index: int
+        :return: ``Gamma_i`` observation symbol.
+        :rtype: z3.BoolRef
+        :raises pyfcstm.bmc.errors.BmcBuildError: If ``step_index`` is invalid.
+
+        Example::
+
+            >>> from pyfcstm.bmc.domain import build_bmc_domain
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> domain = build_bmc_domain(load_state_machine_from_text('state Root;'), 1)
+            >>> BmcTraceSymbols.allocate(domain).gamma_flag(0).sort().name()
+            'Bool'
+        """
+        if step_index < 0 or step_index >= len(self.gamma_flags):
+            raise BmcBuildError("step index out of range: %r." % step_index)
+        return self.gamma_flags[step_index]
+
+    def active_state(self, frame_index: int, state_path: str) -> z3.BoolRef:
+        """Return the ancestor-or-self active predicate for ``state_path``.
+
+        :param frame_index: Frame index in ``0..N``.
+        :type frame_index: int
+        :param state_path: Model state path queried by ``active(...)``.
+        :type state_path: str
+        :return: Z3 predicate for public active-path observation.
+        :rtype: z3.BoolRef
+        :raises pyfcstm.bmc.errors.BmcBuildError: If the frame is invalid.
+        :raises pyfcstm.bmc.errors.InvalidBmcDomain: If ``state_path`` is unknown.
+
+        Example::
+
+            >>> from pyfcstm.bmc.domain import build_bmc_domain
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> domain = build_bmc_domain(load_state_machine_from_text('state Root;'), 1)
+            >>> BmcTraceSymbols.allocate(domain).active_state(0, 'Root').sort().name()
+            'Bool'
+        """
+        frame = self.frame_state(frame_index)
+        target = self.domain.state_by_path(state_path)
+        if target.is_sentinel:
+            return z3.BoolVal(False)
+        target_path = target.path
+        active_ids: List[int] = []
+        for entry in self.domain.states:
+            if entry.id == STATE_INIT_ID:
+                if target.is_root:
+                    active_ids.append(entry.id)
+                continue
+            if entry.id == STATE_TERMINATE_ID or entry.is_sentinel:
+                continue
+            current = entry.path
+            while True:
+                if current == target_path:
+                    active_ids.append(entry.id)
+                    break
+                parent = self.domain.state_by_path(current).parent_path
+                if parent is None:
+                    break
+                current = parent
+        return _or(frame == z3.IntVal(state_id) for state_id in active_ids)
+
     def case_selector(self, step_index: int, label: str) -> z3.BoolRef:
         """Return a case-selector symbol for a step.
 
@@ -475,6 +588,8 @@ class BmcTraceSymbols:
                 {name: _z3_text(expr) for name, expr in sorted(mapping.items())}
                 for mapping in self.event_inputs
             ],
+            "delta_flags": [_z3_text(item) for item in self.delta_flags],
+            "gamma_flags": [_z3_text(item) for item in self.gamma_flags],
             "case_selectors": [
                 {name: _z3_text(expr) for name, expr in sorted(mapping.items())}
                 for mapping in self.case_selectors
@@ -608,7 +723,6 @@ class BmcCaseRelation:
             "case_kind": self.case.kind,
             "source_state_id": self.case.source_state_id,
             "target_state_id": self.case.target_state_id,
-            "is_diagnostic": self.case.is_diagnostic,
             "selector": _z3_text(self.selector),
             "antecedent": _z3_text(self.antecedent),
             "consequent": _z3_text(self.consequent),
@@ -637,8 +751,15 @@ class BmcStepRelation:
     :type formals: Tuple[pyfcstm.bmc.macro.MacroStepFormal, ...]
     :param case_relations: Lowered case relations.
     :type case_relations: Tuple[BmcCaseRelation, ...]
-    :param formula: Conjunction of selector bindings and implications.
+    :param formula: Conjunction of selector bindings, implications, and step
+        observation constraints.
     :type formula: z3.BoolRef
+    :param delta_constraint: Equality tying ``Delta_i`` to delta antecedents.
+    :type delta_constraint: z3.BoolRef
+    :param gamma_constraint: Equality tying ``Gamma_i`` to fallback antecedents.
+    :type gamma_constraint: z3.BoolRef
+    :param progress_mutex_constraint: Mutual exclusion of delta and gamma.
+    :type progress_mutex_constraint: z3.BoolRef
 
     Example::
 
@@ -652,6 +773,11 @@ class BmcStepRelation:
     formals: Tuple[MacroStepFormal, ...]
     case_relations: Tuple[BmcCaseRelation, ...]
     formula: z3.BoolRef
+    delta_constraint: z3.BoolRef = field(default_factory=lambda: z3.BoolVal(True))
+    gamma_constraint: z3.BoolRef = field(default_factory=lambda: z3.BoolVal(True))
+    progress_mutex_constraint: z3.BoolRef = field(
+        default_factory=lambda: z3.BoolVal(True)
+    )
 
     def __post_init__(self) -> None:
         if isinstance(self.step_index, bool) or not isinstance(self.step_index, int):
@@ -664,6 +790,13 @@ class BmcStepRelation:
             raise BmcBuildError("case_relations must contain BmcCaseRelation objects.")
         if not z3.is_bool(self.formula):
             raise BmcBuildError("formula must be a Z3 Boolean expression.")
+        for name in (
+            "delta_constraint",
+            "gamma_constraint",
+            "progress_mutex_constraint",
+        ):
+            if not z3.is_bool(getattr(self, name)):
+                raise BmcBuildError("%s must be a Z3 Boolean expression." % name)
         object.__setattr__(self, "formals", tuple(self.formals))
         object.__setattr__(self, "case_relations", tuple(self.case_relations))
 
@@ -700,6 +833,9 @@ class BmcStepRelation:
             "source_count": len(self.formals),
             "case_count": len(self.case_relations),
             "formula": _z3_text(self.formula),
+            "delta_constraint": _z3_text(self.delta_constraint),
+            "gamma_constraint": _z3_text(self.gamma_constraint),
+            "progress_mutex_constraint": _z3_text(self.progress_mutex_constraint),
             "cases": [item.to_canonical() for item in self.case_relations],
         }
 
@@ -1223,8 +1359,7 @@ def _lower_bmc_cond_expr(
         )
     if isinstance(expr, bmc_ast.Active):
         frame = _resolve_frame(expr.frame, frame_index, symbols.domain.bound)
-        state_id = symbols.domain.state_path_to_id(expr.state_path)
-        return _LoweredValue(symbols.frame_state(frame) == z3.IntVal(state_id))
+        return _LoweredValue(symbols.active_state(frame, expr.state_path))
     if isinstance(expr, bmc_ast.Terminated):
         frame = _resolve_frame(expr.frame, frame_index, symbols.domain.bound)
         return _LoweredValue(
@@ -1593,11 +1728,29 @@ def _build_step_relation(
         )
         for case in case_list
     )
+    delta_flag = symbols.delta_flag(step_index)
+    gamma_flag = symbols.gamma_flag(step_index)
+    delta_constraint = delta_flag == _or(
+        relation.antecedent for relation in relations if relation.case.kind == "delta"
+    )
+    gamma_constraint = gamma_flag == _or(
+        relation.antecedent
+        for relation in relations
+        if relation.case.kind == "fallback"
+    )
+    progress_mutex_constraint = z3.Not(z3.And(delta_flag, gamma_flag))
+    formula = _and(
+        tuple(item.formula for item in relations)
+        + (delta_constraint, gamma_constraint, progress_mutex_constraint)
+    )
     return BmcStepRelation(
         step_index=step_index,
         formals=tuple(formals),
         case_relations=relations,
-        formula=_and(item.formula for item in relations),
+        formula=formula,
+        delta_constraint=delta_constraint,
+        gamma_constraint=gamma_constraint,
+        progress_mutex_constraint=progress_mutex_constraint,
     )
 
 
@@ -1615,37 +1768,59 @@ def _initial_source(context: BmcPreparedContext):
     return source
 
 
-def _recurrence_formals(domain: BmcDomain) -> Tuple[MacroStepFormal, ...]:
+def _relation_frame_domain(context: BmcPreparedContext) -> _RelationFrameDomain:
+    source = _initial_source(context)
+    recurrence_ids = set(context.domain.stable_state_ids)
+    if source.allows_semantic_delta:
+        recurrence_ids.add(source.source_state_id)
+    return _RelationFrameDomain(
+        frame0_state_ids=tuple(context.domain.frame0_state_ids),
+        recurrence_state_ids=tuple(sorted(recurrence_ids)),
+    )
+
+
+def _recurrence_formals(
+    domain: BmcDomain,
+    frame_domain: _RelationFrameDomain,
+) -> Tuple[MacroStepFormal, ...]:
     formals = []
-    for state_id in domain.recurrence_state_ids:
-        if state_id == STATE_TERMINATE_ID:
+    for state_id in frame_domain.recurrence_state_ids:
+        if state_id == STATE_INIT_ID:
+            source = init_source(domain, origin="recurrence")
+        elif state_id == STATE_TERMINATE_ID:
             source = terminated_source(domain, origin="recurrence")
-        elif state_id == STATE_DIAGNOSTIC_ID:
-            source = diagnostic_source(domain, origin="recurrence")
         else:
-            source = stable_leaf_source(domain, state_id, origin="recurrence")
+            entry = domain.state_by_id(state_id)
+            if entry.is_stoppable:
+                source = stable_leaf_source(domain, state_id, origin="recurrence")
+            else:
+                source = entry_source(domain, state_id, origin="recurrence")
         formals.append(expand_macro_step_cases(source))
     return tuple(formals)
 
 
 def _formals_by_step(
     context: BmcPreparedContext,
+    frame_domain: _RelationFrameDomain,
 ) -> Tuple[Tuple[MacroStepFormal, ...], ...]:
     initial = (expand_macro_step_cases(_initial_source(context)),)
     if context.bound == 1:
         return (initial,)
-    recurrence = _recurrence_formals(context.domain)
+    recurrence = _recurrence_formals(context.domain, frame_domain)
     # Recurrence formals are step-invariant immutable macro contracts, so the
     # same tuple can be shared safely across recurrence steps.
     return (initial,) + tuple(recurrence for _ in range(1, context.bound))
 
 
-def _build_domain_formula(symbols: BmcTraceSymbols) -> z3.BoolRef:
-    constraints = [_state_in(symbols.frame_state(0), symbols.domain.frame0_state_ids)]
+def _build_domain_formula(
+    symbols: BmcTraceSymbols,
+    frame_domain: _RelationFrameDomain,
+) -> z3.BoolRef:
+    constraints = [_state_in(symbols.frame_state(0), frame_domain.frame0_state_ids)]
     for frame_index in range(1, symbols.domain.bound + 1):
         constraints.append(
             _state_in(
-                symbols.frame_state(frame_index), symbols.domain.recurrence_state_ids
+                symbols.frame_state(frame_index), frame_domain.recurrence_state_ids
             )
         )
     return _and(constraints)
@@ -1785,7 +1960,8 @@ def build_bmc_core_formula(context: BmcPreparedContext) -> BmcCoreFormula:
         'Bool'
     """
     prepared = _require_context(context)
-    formals_by_step = _formals_by_step(prepared)
+    frame_domain = _relation_frame_domain(prepared)
+    formals_by_step = _formals_by_step(prepared, frame_domain)
     case_labels_by_step = {
         step_index: tuple(case.label for formal in formals for case in formal.cases)
         for step_index, formals in enumerate(formals_by_step)
@@ -1795,7 +1971,7 @@ def build_bmc_core_formula(context: BmcPreparedContext) -> BmcCoreFormula:
         _build_step_relation(step_index, symbols, formals)
         for step_index, formals in enumerate(formals_by_step)
     )
-    domain_formula = _build_domain_formula(symbols)
+    domain_formula = _build_domain_formula(symbols, frame_domain)
     initial_formula = _build_initial_formula(prepared, symbols)
     transition_formula = _and(step.formula for step in steps)
     environment_formula = _build_environment_formula(prepared, symbols)

@@ -1,50 +1,86 @@
 .. _sec-how-to-inspect-zh:
 
 Inspect 任务指南
-================
+========================================
 
-当你想自动运行 ``pyfcstm inspect``，或把输出交给其他工具时，使用本指南。
+当你已经知道要让 inspect 完成什么任务时，使用这些做法。
 
 为 CI 写出 JSON 报告
-------------------------------
+----------------------------------------
 
 .. code-block:: bash
 
-   pyfcstm inspect -i machine.fcstm --format json -o machine.inspect.json
+   pyfcstm inspect -i machine.fcstm --format json -o inspect.json
 
-在 CI 中，parse/model-load failure 应作为命令失败处理。有效模型上的 diagnostics 再按 ``severity`` 和 ``code`` 分流。
+最小 CI 门禁通常解析文件并统计严重级别，而不是匹配人类可读信息：
 
-写出 LLM repair report
-----------------------
+.. code-block:: python
 
-.. code-block:: bash
+   import json
+   from pathlib import Path
 
-   pyfcstm inspect -i machine.fcstm --format llm-md -o machine.inspect.md
-   pyfcstm inspect -i machine.fcstm --format llm-json -o machine.inspect.llm.json
+   report = json.loads(Path('inspect.json').read_text())
+   errors = [item for item in report['diagnostics'] if item['severity'] == 'error']
+   if errors:
+       raise SystemExit('inspect reported blocking diagnostics')
 
-一个实用 LLM 循环是：
-
-1. 运行 inspect，并保留报告作为证据。
-2. 要求给出保持意图的最小源码修改。
-3. 应用修改。
-4. 重新运行 inspect 和相关测试。
-
-LLM report 是指导，不是证明。它可能同时包含启发式设计 warning、deployment-profile warning 和强度不同的 verify-backed 结果。
-
-启用有界 verify 检查
---------------------
-
-默认 inspect 只运行静态检查。只有当 job 能承担成本时才启用 verify：
+写出 LLM 修复报告
+----------------------------------------
 
 .. code-block:: bash
 
-   pyfcstm inspect -i machine.fcstm --format json --enable-verify \
-     --max-complexity-tier smt_linear --smt-timeout-ms 1000 \
-     -o machine.verify.inspect.json
+   pyfcstm inspect -i machine.fcstm --format llm-json -o inspect.llm.json
+   pyfcstm inspect -i machine.fcstm --format llm-md -o inspect.llm.md
 
-Inspect 会拒绝需要单独 proof budget 审查的选项，例如 bounded-model checking depth policy。
+当消费方需要修复指导、源码摘录和禁止做法时，使用 LLM 格式。当消费方需要状态、转换、指标和派生图的完整结构时，使用完整 JSON。
 
-保持目标风险措辞精确
---------------------
+启用有界验证检查
+----------------------------------------
 
-提到固定宽度生成整数存储的数值部署 warning 是 C/C++ target-profile warning。它们适用于 ``c``\ 、``c_poll``\ 、``cpp`` 和 ``cpp_poll`` 部署审查。它们不是 Python generated runtime 具有同一固定宽度整数承载风险的证据。
+默认 inspect 是静态检查。需要验证支持的诊断时显式启用：
+
+.. code-block:: bash
+
+   pyfcstm inspect -i machine.fcstm --enable-verify --format human --color never
+
+保持策略有界。``bmc_search`` 和 ``k_unrollings`` 相关标签只是为了让 inspect 能报告受控策略错误而被 Click 接受。
+
+控制输出文件和颜色
+----------------------------------------
+
+.. code-block:: bash
+
+   pyfcstm inspect -i machine.fcstm --format human --color never
+   pyfcstm inspect -i machine.fcstm --format json -o inspect.json
+   pyfcstm inspect -i machine.fcstm --format llm-json -o repair.json
+
+颜色只作用于 ``human``。机器可读格式会忽略 ``--color``。如果输出文件后缀看起来和格式不匹配，inspect 可以向 stderr 输出警告，同时仍写出请求的文件。
+
+处理无效输入和策略错误
+----------------------------------------
+
+下面这些是命令行失败，不是成功检查报告：
+
+.. list-table:: 失败边界
+   :header-rows: 1
+   :widths: 32 68
+
+   * - 失败
+     - 含义
+   * - 文件缺失或不可读
+     - 检查命令无法读取输入字节。
+   * - 解码失败
+     - 输入无法被支持的编码路径解码。
+   * - 语法解析错误
+     - 文本不是合法 FCSTM DSL。
+   * - 模型校验错误
+     - 已解析 DSL 违反模型层契约。
+   * - 被禁止的验证策略
+     - 请求的自动验证策略超出 inspect 的有界范围。
+
+如果无效输入也需要机器可读失败报告，应在进程层包装 CLI；不要期待 ``diagnostics`` 数组。
+
+保持目标措辞精确
+----------------------------------------
+
+有些警告是目标配置警告，不是所有运行时都会失败。例如 C 系列整数范围警告适用于生成的 ``c``、``c_poll``、``cpp`` 和 ``cpp_poll`` 部署审查。除非存在 Python 专属诊断，否则不要把它描述为 Python 运行时溢出发现。

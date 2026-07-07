@@ -3,48 +3,73 @@
 Diagnostics explanation
 =======================
 
-Inspect diagnostics are model-review evidence. They are designed to tell a
-human, CI job, editor, or LLM what the current FCSTM model looks like and which
-places deserve attention.
+Inspect diagnostics are designed to answer three questions:
+
+1. What does the current model contain?
+2. Which parts look invalid, risky, unused, unreachable, or target-sensitive?
+3. What structured context should a human, CI job, IDE, or LLM repair loop use
+   next?
 
 What inspect can do
 -------------------
 
-Inspect can report:
+Default inspect is a static analysis pass over the parsed model. It can see
+state hierarchy, transitions, events, variables, actions, derived reachability,
+event emission, variable data flow, aspect impact, action references, combo
+provenance, and registry-backed diagnostics.
 
-* structural metrics and derived graph facts;
-* source-level diagnostics with spans and structured refs;
-* combo-trigger provenance that links generated pseudo-state chains back to the
-  authored trigger terms;
-* LLM-oriented repair guidance that keeps source context near suggested actions;
-* optional verify-backed diagnostics when explicitly enabled.
+This is why many diagnostics include ``span`` and ``refs``. The span points back
+to source; refs name the variable, state, event, action, guard, target profile,
+or provenance object that a repair loop should inspect.
 
-What inspect cannot prove
--------------------------
+What inspect cannot prove by default
+------------------------------------
 
-Inspect is not a replacement for simulation, target hardware tests, or a full
-formal-verification workflow. Static warnings can be conservative. LLM-oriented
-reports are good prompts and evidence, but edits still need to be checked by
-rerunning tools.
+Default inspect is not a complete model checker. It does not explore every
+runtime trace, every external event source, every abstract handler, or every
+possible target-language deployment. It also does not run unbounded verification
+algorithms automatically.
 
-Invalid DSL remains a CLI failure
----------------------------------
+When you need bounded verify-backed diagnostics, opt in with ``--enable-verify``.
+Even then, solver-backed checks can be affected by timeout, solver unknown
+results, and the inspect policy envelope.
 
-If parsing or model construction fails, inspect exits with a non-zero status.
-That is different from a successful report containing warning diagnostics for a
-valid model.
+Severity is not the same as risk
+--------------------------------
 
-Target-specific warnings need target-specific wording
-----------------------------------------------------------
+``error`` means pyfcstm cannot safely build or use the model as requested.
+``warning`` means the model remains inspectable but a fact is suspicious,
+risky, dead, redundant, or target-sensitive. ``info`` means the analyzer found a
+non-blocking fact that often helps a reader decide whether a model is intentional.
 
-Numeric deployment-profile warnings that mention the C-family fixed-width
-integer profile should be explained as C/C++ deployment risks. If the generated
-target is Python, the same fixed-width integer carrying risk usually does not
-apply, even though other model design warnings may still matter.
+A warning is not automatically a release blocker, but it must be explained when
+it appears in checked tutorial or regression fixtures.
+
+Why emit tier matters
+---------------------
+
+The registry contains more than default CLI output:
+
+* ``static_pipeline`` codes can appear in ordinary inspect output.
+* ``verify_pipeline`` codes need optional verify integration.
+* ``lookup_api`` codes describe resolver API failures, not default static output.
+* ``partial_static_pipeline`` codes may be emitted on one implementation side but not another.
+* ``catalog_only`` codes preserve compatibility contracts even when current normal paths should not emit them.
+
+A reference page that ignores this distinction will mislead CI filters and LLM
+repair loops.
 
 Why diagnostics help LLMs
 -------------------------
 
-Good LLM repair prompts need exact source spans, provenance, and do-not notes.
-Inspect's LLM formats package those details so the assistant can propose a
-small edit instead of guessing from a vague error message.
+LLM repair prompts are much safer when they can consume structured facts instead
+of guessing from prose. A useful diagnostic tells the model:
+
+* the stable ``code`` to look up;
+* the ``severity`` to prioritize;
+* the exact source span to edit or inspect;
+* the ``refs`` payload to branch on;
+* recommended actions and forbidden anti-patterns from the registry.
+
+The LLM report formats expose those facts directly, but they still rely on the
+same registry as full JSON diagnostics.

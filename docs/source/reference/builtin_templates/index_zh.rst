@@ -5,7 +5,7 @@
 
 这些名称用于 ``pyfcstm generate --template <name>``。不要把仓库 ``templates/`` 路径当成普通内置模板入口；那是维护者源码。
 
-当前所有内置模板都在打包元数据中标记为 ``experimental: true``。在本参考里，**实验状态** 表示生成输出具有当前仓库测试和冒烟证据，但它不是生产认证或所有平台保证。
+当前所有内置模板（built-in template）都在打包元数据中标记为 ``experimental: true``。在本参考里，**实验状态** 表示生成输出具有当前仓库测试和冒烟证据，但它不是生产认证或所有平台保证。
 
 .. template-ref-meta: name=python title=Python language=python archive=python.zip root_dir=python experimental=true description="Native Python built-in template with embedded runtime logic."
 .. template-ref-meta: name=c title=C99 language=c archive=c.zip root_dir=c experimental=true description="Native C99 built-in template with embedded runtime logic and abstract hook callbacks."
@@ -24,6 +24,8 @@
 .. template-ref-profile: name=c_poll event_input=event_checks wrapper=false core=c99 native_evidence=true semantic_alignment=true formatter=clang-format poll=true
 .. template-ref-profile: name=cpp event_input=explicit_event_ids wrapper=true core=c99 native_evidence=true semantic_alignment=true formatter=clang-format poll=false
 .. template-ref-profile: name=cpp_poll event_input=event_checks wrapper=true core=c_poll native_evidence=true semantic_alignment=true formatter=clang-format poll=true
+
+上面的隐藏 ``template-ref-profile`` 标记包含 ``core`` 值，它只供文档漂移检查使用。这个值是从生成文件和模板测试推导出的文档内部字段，不是 ``template.json`` 或 ``index.json`` 的公开元数据键。
 
 元数据矩阵
 ----------
@@ -150,9 +152,9 @@
 ~~~~~~~~~~~~
 
 * 生成文件：``machine.h``、``machine.c``、``machine.hpp``、``machine.cpp``、``README.md`` 和 ``README_zh.md``。
-* 入口：include ``machine.hpp``，构造 ``MachineWrapper``，安装包装层钩子和事件检查，然后调用 ``cycle()``。
-* 事件模型：复用的 C 轮询核心调用已安装事件检查函数；C++ 包装层提供别名和 setter。
-* 扩展点：抽象钩子和事件检查都通过包装层接口 安装。
+* 入口：include ``machine.hpp``，构造 ``pyfcstm_generated::<Machine>_cpp::MachineWrapper``，安装包装层钩子和事件检查，然后调用 ``cycle()``。
+* 事件模型：复用的 C 轮询核心调用已安装事件检查函数；C++ 包装层提供别名和设置方法。
+* 扩展点：抽象钩子和事件检查都通过包装层接口安装。
 * 生命周期概念：包装层构造、钩子/事件检查安装、周期、变量/状态读取、按文档通过底层公开接口热启动，以及包装层持有的初始化。
 * 目标边界：C 轮询核心加 C++98 兼容包装层；不是完全独立的 C++ 运行时。
 * 证据边界：冒烟和对齐测试必须覆盖包装层和轮询事件模型，而不只是复用的 C 核心。
@@ -160,6 +162,6 @@
 目标配置说明
 ------------
 
-C 家族模板在默认配置中使用固定宽度生成整数存储。因此数值部署 warning 适用于 ``c``、``c_poll``、``cpp`` 和 ``cpp_poll`` 目标。不要把它表述成 Python 生成运行时也有同样的固定宽度整数承载风险。
+C 家族模板在默认配置中使用固定宽度生成整数存储。因此数值部署警告适用于 ``c``、``c_poll``、``cpp`` 和 ``cpp_poll`` 目标。不要把它表述成 Python 生成运行时也有同样的固定宽度整数承载风险。
 
 C++ 模板按设计复用 C 核心。``cpp`` 复用 C99 核心；``cpp_poll`` 复用 C 轮询核心。它们的 C++ 价值是包装层集成面，不是另一套执行语义实现。

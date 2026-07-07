@@ -30,6 +30,11 @@ production certification or every-platform guarantee.
 .. template-ref-profile: name=cpp event_input=explicit_event_ids wrapper=true core=c99 native_evidence=true semantic_alignment=true formatter=clang-format poll=false
 .. template-ref-profile: name=cpp_poll event_input=event_checks wrapper=true core=c_poll native_evidence=true semantic_alignment=true formatter=clang-format poll=true
 
+The hidden ``template-ref-profile`` markers above include a ``core`` value used
+only by the documentation drift checker. It is a docs-internal derived field
+from generated files and template tests, not a public metadata key in
+``template.json`` or ``index.json``.
+
 Metadata matrix
 ---------------
 
@@ -196,8 +201,9 @@ Template contracts
 
 * Generated files: ``machine.h``, ``machine.c``, ``machine.hpp``,
   ``machine.cpp``, ``README.md``, and ``README_zh.md``.
-* Entry point: include ``machine.hpp``, construct ``MachineWrapper``, install
-  wrapper hooks and wrapper event checks, then call ``cycle()``.
+* Entry point: include ``machine.hpp`` and construct
+  ``pyfcstm_generated::<Machine>_cpp::MachineWrapper``; install wrapper hooks
+  and wrapper event checks, then call ``cycle()``.
 * Event model: the reused C polling core calls installed event-check functions;
   the C++ wrapper exposes aliases and setter methods for those checks.
 * Extension point: abstract hooks and event checks are both installed through

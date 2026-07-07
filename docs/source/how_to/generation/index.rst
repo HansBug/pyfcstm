@@ -89,7 +89,7 @@ The generated top-level files are:
      - Include ``machine.h`` and pass event-id arrays to ``..._cycle``.
    * - ``c_poll``
      - ``machine.h``, ``machine.c``, generated README files
-     - Install ``EventChecks`` and call the zero-argument event-polling cycle.
+     - Install ``EventChecks`` and call the machine-argument polling cycle without an event-id array.
    * - ``cpp``
      - C core files plus ``machine.hpp`` / ``machine.cpp`` and README files
      - Include ``machine.hpp`` and use ``MachineWrapper``.

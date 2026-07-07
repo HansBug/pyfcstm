@@ -6,6 +6,9 @@ source-template metadata, then verifies that English and Chinese reference pages
 carry the synchronization markers required by the documentation-authoring
 contract.
 
+Markers prove that the reference pages carry the required synchronized facts.
+They do not replace human review of the surrounding prose depth or examples.
+
 Example::
 
     $ python tools/check_template_reference_docs.py --check
@@ -149,6 +152,8 @@ HELPER_MARKERS = {
     "expr_render",
     "stmt_render",
     "stmts_render",
+    "_stmt_default_state_vars",
+    "_stmt_default_var_types",
     "operation_stmt_render",
     "operation_stmts_render",
     "normalize",
@@ -318,10 +323,12 @@ def _check_builtin_reference_page(
                 )
 
         profile, _ = _find_marker(profile_markers, name)
-        expected_profile = TEMPLATE_PROFILE_EXPECTATIONS[name]
+        expected_profile = TEMPLATE_PROFILE_EXPECTATIONS.get(name)
+        if expected_profile is None:
+            _add_missing(missing, path, "template-ref-profile expectation", name)
         if not profile:
             _add_missing(missing, path, "template-ref-profile", name)
-        else:
+        elif expected_profile is not None:
             for key, value in expected_profile.items():
                 if profile.get(key) != value:
                     missing.append(
@@ -476,9 +483,10 @@ def run_checks() -> None:
         missing.extend(_check_config_reference_page(path))
 
     if missing:
-        for item in missing:
-            print(item, file=sys.stderr)
-        raise CheckFailure("Template reference documentation drift check failed.")
+        raise CheckFailure(
+            "Template reference documentation drift check failed.\n"
+            + "\n".join(missing)
+        )
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -492,7 +500,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if not args.check:
         parser.print_help()
         return 0
-    run_checks()
+    try:
+        run_checks()
+    except CheckFailure as err:
+        # CheckFailure: malformed metadata or synchronized reference markers
+        # drifted from repository facts.
+        print(str(err), file=sys.stderr)
+        return 1
     print("Template reference documentation markers are up to date.")
     return 0
 

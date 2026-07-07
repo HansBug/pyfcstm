@@ -3,7 +3,7 @@
 模板配置参考
 ============
 
-本页是模板 ``config.yaml`` 和渲染器侧模板目录行为的查准规格。维护模板目录或诊断渲染失败时使用它。任务流程见 :doc:`../../how_to/templates/index_zh`；设计理由见 :doc:`../../explanations/template_rendering/index_zh`。
+本页是模板（template） ``config.yaml`` 和渲染器（renderer）侧模板目录行为的查准规格。维护模板目录或诊断渲染失败时使用它。任务流程见 :doc:`../../how_to/templates/index_zh`；设计理由见 :doc:`../../explanations/template_rendering/index_zh`。
 
 
 .. template-config-marker: top-level-key expr_styles
@@ -71,6 +71,8 @@
 .. template-config-marker: helper expr_render
 .. template-config-marker: helper stmt_render
 .. template-config-marker: helper stmts_render
+.. template-config-marker: helper _stmt_default_state_vars
+.. template-config-marker: helper _stmt_default_var_types
 .. template-config-marker: helper operation_stmt_render
 .. template-config-marker: helper operation_stmts_render
 .. template-config-marker: helper normalize
@@ -109,7 +111,7 @@
 文件契约
 --------
 
-模板目录可以包含 ``config.yaml``。渲染器会先读取它，再遍历文件。空文件和只有注释的文件会按空映射（mapping） 处理。若没有提供 ``expr_styles.default`` 或 ``stmt_styles.default``，渲染器会创建默认 DSL 样式。
+模板目录可以包含 ``config.yaml``。渲染器会先读取它，再遍历文件。空文件和只有注释的文件会按空映射（mapping）处理。若没有提供 ``expr_styles.default`` 或 ``stmt_styles.default``，渲染器会创建默认 DSL 样式。
 
 只接受这些顶层键：
 
@@ -135,7 +137,7 @@
      - 映射
      - 通过同一对象加载机制添加 Jinja2 测试器。
    * - ``ignores``
-     - string list
+     - 字符串列表
      - 用 GitWildMatch 风格模式排除输入模板文件。
 
 校验失败
@@ -189,7 +191,7 @@
      - 某个语句样式缺 ``base_lang``。
      - ``stmt_styles: {py: {assign: x}}``
    * - ``ignores-not-list``
-     - ``ignores`` 是字符串或其他非 list 值。
+     - ``ignores`` 是字符串或其他非列表值。
      - ``ignores: '*.tmp'``
    * - ``ignores-item-not-string``
      - 某个忽略项不是字符串。
@@ -340,10 +342,10 @@
      - 注册对象
    * - ``template-with-params``
      - ``type: template`` 加 ``params`` 和 ``template``。
-     - callable，把位置参数映射到 ``params`` 并合并关键字参数。
+     - 可调用对象（callable），把位置参数映射到 ``params`` 并合并关键字参数。
    * - ``template-without-params``
      - ``type: template`` 加 ``template``。
-     - Jinja 模板 ``render`` callable。
+     - Jinja 模板 ``render`` 可调用对象。
    * - ``import``
      - ``type: import`` 加 ``from``。
      - 导入的 Python 对象。
@@ -351,10 +353,10 @@
      - ``type: value`` 加 ``value``。
      - 字面值。
    * - ``unknown-type`` / ``no-type``
-     - 带未知或缺失 ``type`` 的 mapping。
+     - 带未知或缺失 ``type`` 的映射。
      - ``type`` 被弹出后的剩余映射，或原映射。
    * - ``non-dict``
-     - 配置分节下的任意标量或 list。
+     - 配置分节下的任意非映射值，包括标量、列表和 ``null``。
      - 原样返回。
 
 C 家族模板使用 ``type: import`` 注册 ``render_c_action_body``、``render_c_condition_body``、``render_c_reset_vars_body``、``to_c_identifier``、``to_c_path_identifier``、``to_c_public_identifier``、``to_c_public_macro_identifier`` 和 ``is_c_public_identifier_reserved``。
@@ -366,11 +368,12 @@ Jinja 环境辅助对象
 
 * 状态常量：``INIT_STATE`` 和 ``EXIT_STATE``；
 * 渲染辅助：``expr_render``、``stmt_render``、``stmts_render``、``operation_stmt_render`` 和 ``operation_stmts_render``；
-* 文本辅助：``normalize``、``to_identifier`` 和 ``indent``；
+* 文本辅助：``normalize``、``to_identifier`` 和 ``indent``；``normalize`` 使用 ``unidecode`` 先转写 Unicode 文本再清理标识符，所以接收非 ASCII 机器名的模板应测试生成标识符；
+* 渲染期语句默认值：``_stmt_default_state_vars`` 和 ``_stmt_default_var_types`` 只在完整 ``StateMachine`` 渲染期间注入，分别提供持久变量名和变量类型；当 ``stmt_render`` / ``stmts_render`` 省略 ``state_vars`` / ``var_types`` 参数时会使用它们；
 * 常用 Python 内置对象（builtins），它们会注册为过滤器、测试器或全局变量，包括 ``str``、``set``、``dict``、``keys``、``values``、``enumerate``、``reversed`` 和 ``filter``；
-* 选定操作系统环境变量，作为全局变量注入。
+* ``os.environ`` 中所有不与现有 Jinja 全局变量冲突的操作系统环境变量，作为全局变量注入。
 
-环境变量是受控构建环境中的便利项。可移植模板不应依赖主机特定值，除非使用该自定义模板的项目明确记录了这种契约。
+环境变量是受控构建环境中的便利项，不是秘密边界：受信任模板可以读取生成进程可见的任意非冲突环境变量。可移植模板不应依赖主机特定值，除非使用该自定义模板的项目明确记录了这种契约。
 
 文件映射、忽略和清理语义
 ------------------------
@@ -399,7 +402,7 @@ Jinja 环境辅助对象
    * - ``clear-symlink-unlink`` / ``clear-file-remove`` / ``clear-directory-rmtree``
      - 输出清理会 unlink 符号链接、删除文件、递归删除目录。
    * - ``clear-other-warning``
-     - 其他文件类型走防御性 warning 路径。
+     - 其他文件类型走防御性警告路径。
 
 ``.git`` 输入忽略不会保护输出目录。如果 ``--clear`` 指向某个工作树，渲染器会按输出清理规则处理该目录。
 

@@ -75,6 +75,8 @@ directory or diagnosing a rendering failure. For a task flow, see
 .. template-config-marker: helper expr_render
 .. template-config-marker: helper stmt_render
 .. template-config-marker: helper stmts_render
+.. template-config-marker: helper _stmt_default_state_vars
+.. template-config-marker: helper _stmt_default_var_types
 .. template-config-marker: helper operation_stmt_render
 .. template-config-marker: helper operation_stmts_render
 .. template-config-marker: helper normalize
@@ -373,7 +375,7 @@ Object-loading forms
      - A mapping with an unrecognized or missing ``type``.
      - Remaining mapping after ``type`` is popped, or the original mapping.
    * - ``non-dict``
-     - Any scalar/list already under a config section.
+     - Any non-mapping value under a config section, including scalars, lists, and ``null``.
      - Returned unchanged.
 
 C-family templates use ``type: import`` for ``render_c_action_body``,
@@ -390,14 +392,25 @@ The default environment includes:
 * render helpers: ``expr_render``, ``stmt_render``, ``stmts_render``,
   ``operation_stmt_render``, and ``operation_stmts_render``;
 * text helpers: ``normalize``, ``to_identifier``, and ``indent``;
+  ``normalize`` uses ``unidecode`` to transliterate Unicode text before
+  identifier cleanup, so templates that accept non-ASCII machine names should
+  test their emitted identifiers;
+* render-time statement defaults: ``_stmt_default_state_vars`` and
+  ``_stmt_default_var_types`` are injected only while rendering a full
+  ``StateMachine`` and supply default persistent variable names and types for
+  ``stmt_render`` / ``stmts_render`` when their ``state_vars`` / ``var_types``
+  arguments are omitted;
 * common Python builtins registered as filters, tests, or globals, including
   ``str``, ``set``, ``dict``, ``keys``, ``values``, ``enumerate``, ``reversed``,
   and ``filter``;
-* selected operating-system environment variables as globals.
+* operating-system environment variables from ``os.environ`` as globals when
+  their names do not conflict with existing Jinja globals.
 
-Environment variables are a convenience for controlled build environments. A
-portable template should not depend on host-specific values unless that
-contract is documented by the project using the custom template.
+Environment variables are a convenience for controlled build environments. They
+are not a secret boundary: a trusted template can read any non-conflicting
+process environment variable visible to the generator process. A portable
+template should not depend on host-specific values unless that contract is
+documented by the project using the custom template.
 
 File mapping, ignore, and clear semantics
 -----------------------------------------

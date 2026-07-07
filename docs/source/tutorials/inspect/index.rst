@@ -1,71 +1,88 @@
 First inspect report
 ====================
 
-``pyfcstm inspect`` answers "what did this FCSTM model become?" It builds the
-same state-machine model used by simulation, visualization, and code
-generation, then reports structure, metrics, derived graphs, combo provenance,
-and diagnostics.
-
-This tutorial keeps one diagnostic-heavy first run. For CI and LLM tasks, see
-:doc:`/how_to/inspect/index`. For report fields and diagnostic codes, see
-:doc:`/reference/inspect_report/index` and
-:doc:`/reference/diagnostics_codes/index`.
+This tutorial runs ``pyfcstm inspect`` on one small but diagnostic-heavy FCSTM
+file. The goal is not to learn every report field; the goal is to see the three
+main output styles and know where to go next.
 
 Use a diagnostic-heavy example
 ------------------------------
 
+The checked tutorial input is:
+
 .. literalinclude:: inspect_diagnostics.fcstm
    :language: fcstm
-   :caption: inspect_diagnostics.fcstm
+
+It is valid DSL. The warnings are intentional teaching signals, not parser
+failures.
 
 Run human output first
 ----------------------
 
-Human output is the default:
+.. code-block:: bash
+
+   pyfcstm inspect -i docs/source/tutorials/inspect/inspect_diagnostics.fcstm --color never
+
+Expected excerpt:
+
+.. code-block:: text
+
+   FCSTM Inspect Report
+   Root state: InspectDiagnostics
+   Diagnostics:
+
+The human renderer is for reading. It includes the diagnostic code, severity,
+message, source excerpt when available, and selected structured ``refs``.
+
+Export full JSON
+----------------
+
+Use full JSON when a script needs structural facts:
 
 .. code-block:: bash
 
-   pyfcstm inspect -i inspect_diagnostics.fcstm
+   pyfcstm inspect -i docs/source/tutorials/inspect/inspect_diagnostics.fcstm --format json -o /tmp/inspect.json
+   python - <<'PY'
+   import json
+   from pathlib import Path
 
-The report starts with model identity and metrics, then prints diagnostics with
-source context, provenance, suggested actions, and do-not notes:
+   report = json.loads(Path('/tmp/inspect.json').read_text())
+   print(report['root_state_path'])
+   print(len(report['states']))
+   print([item['code'] for item in report['diagnostics']])
+   PY
 
-.. literalinclude:: inspect_human.demo.sh.txt
-   :language: text
-   :caption: Human inspect output excerpt
-   :lines: 1-40
+This format is the complete ``ModelInspect`` contract. Its fields are described
+in :doc:`../../reference/inspect_report/index`.
 
-Export structured JSON
-----------------------
+Export an LLM repair report
+---------------------------
 
-Use ``--format json`` when a script needs the full report:
+Use ``llm-json`` when a repair loop needs compact guidance rather than the full
+structural inventory:
 
 .. code-block:: bash
 
-   pyfcstm inspect -i inspect_diagnostics.fcstm --format json -o report.json
+   pyfcstm inspect -i docs/source/tutorials/inspect/inspect_diagnostics.fcstm --format llm-json -o /tmp/inspect.llm.json
 
-The generated demo summarizes the shape:
-
-.. literalinclude:: inspect_formats.demo.sh.txt
-   :language: text
-   :caption: JSON report summary
-   :lines: 1-12
+The LLM report includes a repair protocol, source excerpts, ``refs``, registry
+summaries, recommended actions, and ``do_not`` guidance. It is intentionally
+smaller than full JSON.
 
 Remember the invalid-input boundary
 -----------------------------------
 
-Syntax errors and model-load failures are CLI failures. Even if you requested
-``--format json``, inspect does not invent a successful ``diagnostics[]``
-payload for input that could not be parsed or loaded:
+Inspect reports are produced after the file can be read, parsed, and converted
+to a model. A syntax error is a CLI failure, not a successful report with a
+``diagnostics`` array. Try the invalid fixture to see the boundary:
 
-.. literalinclude:: inspect_invalid.demo.sh.txt
-   :language: text
-   :caption: Invalid input boundary
+.. code-block:: bash
 
-Where to go next
-----------------
+   pyfcstm inspect -i docs/source/tutorials/inspect/does-not-exist.fcstm
 
-* :doc:`/how_to/inspect/index` shows CI and LLM-oriented inspect tasks.
-* :doc:`/reference/inspect_report/index` lists report fields and formats.
-* :doc:`/reference/diagnostics_codes/index` lists common diagnostic codes.
-* :doc:`/explanations/diagnostics/index` explains diagnostic boundaries.
+Next steps
+----------
+
+* Use :doc:`../../how_to/inspect/index` for CI, LLM, and verify-backed recipes.
+* Use :doc:`../../explanations/diagnostics/index` to understand what inspect can and cannot prove.
+* Use :doc:`../../reference/diagnostics_codes/index` when you have a specific diagnostic code.

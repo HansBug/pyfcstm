@@ -208,6 +208,14 @@ def test_case_relation_uses_implication_not_global_and_and_carries_vars() -> Non
         _solver(
             core.core,
             go,
+            z3.Or(core.symbols.delta_flag(0), core.symbols.gamma_flag(0)),
+        ).check()
+        == z3.unsat
+    )
+    assert (
+        _solver(
+            core.core,
+            go,
             core.symbols.case_selector(0, relations["fallback"].case.label),
         ).check()
         == z3.unsat
@@ -216,6 +224,33 @@ def test_case_relation_uses_implication_not_global_and_and_carries_vars() -> Non
         _solver(core.core, z3.Not(go), core.symbols.frame_state(1) != state_a).check()
         == z3.unsat
     )
+
+
+@pytest.mark.unittest
+def test_step_relation_canonical_exposes_progress_observation_constraints() -> None:
+    """Canonical step dumps include Delta_i, Gamma_i, and mutual exclusion."""
+    model = load_state_machine_from_text(
+        """
+        def int x = 0;
+        state Root {
+            state A {
+                during { x = x + 1; }
+            }
+            [*] -> A;
+        }
+        """
+    )
+    context = BmcEngine(model).prepare(
+        'init state("Root.A");\ncheck reach <= 1: active("Root.A");'
+    )
+    step = build_bmc_core_formula(context).steps[0].to_canonical()
+
+    assert "delta_constraint" in step
+    assert "gamma_constraint" in step
+    assert "progress_mutex_constraint" in step
+    assert "Delta_0" in step["delta_constraint"]
+    assert "Gamma_0" in step["gamma_constraint"]
+    assert "Not(And(Delta_0, Gamma_0))" in step["progress_mutex_constraint"]
 
 
 @pytest.mark.unittest
@@ -255,6 +290,138 @@ def test_cold_no_progress_delta_stutters_state_and_vars() -> None:
     assert (
         _solver(
             core.core, core.symbols.delta_flag(0), core.symbols.gamma_flag(0)
+        ).check()
+        == z3.unsat
+    )
+
+
+@pytest.mark.unittest
+def test_cold_init_later_event_executes_root_entry_and_reaches_leaf() -> None:
+    """Cold init can stutter first, then consume an event and run root entry."""
+    model = load_state_machine_from_text(
+        """
+        def int x = 0;
+        state Root {
+            event Start;
+            enter { x = x + 7; }
+            state A;
+            [*] -> A :: Start;
+        }
+        """
+    )
+    context = BmcEngine(model).prepare('check reach <= 2: active("Root.A");')
+    core = build_bmc_core_formula(context)
+    state_a = context.domain.state_path_to_id("Root.A")
+    no_start_0 = z3.Not(core.symbols.event_input(0, "Root.Start"))
+    start_1 = core.symbols.event_input(1, "Root.Start")
+
+    assert _solver(core.core, no_start_0, start_1).check() == z3.sat
+    assert (
+        _solver(
+            core.core, no_start_0, start_1, z3.Not(core.symbols.delta_flag(0))
+        ).check()
+        == z3.unsat
+    )
+    assert (
+        _solver(core.core, no_start_0, start_1, core.symbols.gamma_flag(0)).check()
+        == z3.unsat
+    )
+    assert (
+        _solver(
+            core.core, no_start_0, start_1, core.symbols.frame_state(1) != STATE_INIT_ID
+        ).check()
+        == z3.unsat
+    )
+    assert (
+        _solver(
+            core.core,
+            no_start_0,
+            start_1,
+            z3.Or(core.symbols.delta_flag(1), core.symbols.gamma_flag(1)),
+        ).check()
+        == z3.unsat
+    )
+    assert (
+        _solver(
+            core.core, no_start_0, start_1, core.symbols.frame_state(2) != state_a
+        ).check()
+        == z3.unsat
+    )
+    assert (
+        _solver(
+            core.core, no_start_0, start_1, core.symbols.frame_var(2, "x") != 7
+        ).check()
+        == z3.unsat
+    )
+
+
+@pytest.mark.unittest
+def test_hot_composite_delta_then_event_unlocks_without_replaying_entry() -> None:
+    """Hot composite recurrence can stutter, then descend without enter replay."""
+    model = load_state_machine_from_text(
+        """
+        def int x = 0;
+        state Root {
+            state Gate {
+                event Open;
+                enter { x = x + 100; }
+                state Leaf;
+                [*] -> Leaf :: Open;
+            }
+            [*] -> Gate;
+        }
+        """
+    )
+    context = BmcEngine(model).prepare(
+        'init state("Root.Gate");\ncheck reach <= 2: active("Root.Gate.Leaf");'
+    )
+    core = build_bmc_core_formula(context)
+    state_gate = context.domain.state_path_to_id("Root.Gate")
+    state_leaf = context.domain.state_path_to_id("Root.Gate.Leaf")
+    no_open_0 = z3.Not(core.symbols.event_input(0, "Root.Gate.Open"))
+    open_1 = core.symbols.event_input(1, "Root.Gate.Open")
+
+    assert _solver(core.core, no_open_0, open_1).check() == z3.sat
+    assert (
+        _solver(
+            core.core, no_open_0, open_1, z3.Not(core.symbols.delta_flag(0))
+        ).check()
+        == z3.unsat
+    )
+    assert (
+        _solver(core.core, no_open_0, open_1, core.symbols.gamma_flag(0)).check()
+        == z3.unsat
+    )
+    assert (
+        _solver(
+            core.core, no_open_0, open_1, core.symbols.frame_state(1) != state_gate
+        ).check()
+        == z3.unsat
+    )
+    assert (
+        _solver(
+            core.core, no_open_0, open_1, core.symbols.frame_var(1, "x") != 0
+        ).check()
+        == z3.unsat
+    )
+    assert (
+        _solver(
+            core.core,
+            no_open_0,
+            open_1,
+            z3.Or(core.symbols.delta_flag(1), core.symbols.gamma_flag(1)),
+        ).check()
+        == z3.unsat
+    )
+    assert (
+        _solver(
+            core.core, no_open_0, open_1, core.symbols.frame_state(2) != state_leaf
+        ).check()
+        == z3.unsat
+    )
+    assert (
+        _solver(
+            core.core, no_open_0, open_1, core.symbols.frame_var(2, "x") != 0
         ).check()
         == z3.unsat
     )
@@ -306,8 +473,30 @@ def test_active_state_uses_ancestor_or_self_and_init_root_projection() -> None:
     )
     context = BmcEngine(model).prepare('check reach <= 1: active("Root");')
     core = build_bmc_core_formula(context)
+    parent_id = context.domain.state_path_to_id("Root.Parent")
     child_id = context.domain.state_path_to_id("Root.Parent.Child")
 
+    assert (
+        _solver(
+            core.symbols.frame_state(0) == parent_id,
+            z3.Not(core.symbols.active_state(0, "Root")),
+        ).check()
+        == z3.unsat
+    )
+    assert (
+        _solver(
+            core.symbols.frame_state(0) == parent_id,
+            z3.Not(core.symbols.active_state(0, "Root.Parent")),
+        ).check()
+        == z3.unsat
+    )
+    assert (
+        _solver(
+            core.symbols.frame_state(0) == parent_id,
+            core.symbols.active_state(0, "Root.Sibling"),
+        ).check()
+        == z3.unsat
+    )
     assert (
         _solver(
             core.symbols.frame_state(0) == child_id,

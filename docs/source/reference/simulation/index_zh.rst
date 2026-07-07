@@ -133,6 +133,12 @@
 
 未知设置会报告 ``Error: 'Unknown setting: <key>'``。非法值会报告设置校验器给出的 ``Error: ...`` 信息。
 
+.. note::
+   ``history_size=0``\ 是命令层约定。设置同步时，命令层会把它映射为
+   ``SimulationRuntime.history_size = None``\ 。直接使用 Python 应用程序接口时语义不同：
+   ``SimulationRuntime(history_size=None)``\ 表示历史不设上限，而
+   ``SimulationRuntime(history_size=0)``\ 表示不保留历史记录。
+
 历史和导出格式
 --------------
 
@@ -167,6 +173,7 @@ Python 运行时应用程序接口
      - 用途和边界
    * - ``SimulationRuntime(state_machine, abstract_error_mode='raise', history_size=None, initial_state=None, initial_vars=None)``
      - 创建运行时。默认启动模式可接受部分 ``initial_vars``；热启动要求提供每个声明过的持久变量。
+       ``history_size=None``\ 表示历史不设上限，而 ``history_size=0``\ 表示不保留历史记录。
    * - ``cycle(events=None) -> CycleResult``
      - 执行一个周期，验证候选路径，提交或回滚，并记录历史。
    * - ``CycleResult.value``
@@ -178,7 +185,8 @@ Python 运行时应用程序接口
    * - ``CycleResult.unconsumed_events``
      - 已提供但没有对应已执行事件转换的规范事件路径。
    * - ``vars`` / ``cycle_count`` / ``history`` / ``history_size``
-     - 命令显示、测试和工具使用的公开运行时状态。
+     - 命令显示、测试和工具使用的公开运行时状态。命令层 ``history_size`` 设置会把 ``0`` 映射为运行时
+       ``None``；直接编写运行时代码时，需要传入 ``None`` 来表示历史不设上限。
    * - ``current_state``
      - 当前活动状态。可能已经结束时先检查 ``is_ended``；结束后访问会抛出 :class:`pyfcstm.simulate.SimulationRuntimeTerminalStateError`。
    * - ``brief_stack``

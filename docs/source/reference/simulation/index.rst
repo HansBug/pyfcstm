@@ -157,6 +157,13 @@ Settings are command-layer session settings.  ``--no-color`` initializes
 Unknown settings report ``Error: 'Unknown setting: <key>'``.  Invalid values
 report an ``Error: ...`` message from the setting validator.
 
+.. note::
+   The ``history_size=0`` setting is a command-layer convention.  During
+   setting synchronization, the command layer maps it to
+   ``SimulationRuntime.history_size = None``.  Direct Python API use is
+   different: ``SimulationRuntime(history_size=None)`` means unlimited history,
+   while ``SimulationRuntime(history_size=0)`` keeps no entries.
+
 History and export formats
 --------------------------
 
@@ -194,6 +201,8 @@ Python runtime API
    * - ``SimulationRuntime(state_machine, abstract_error_mode='raise', history_size=None, initial_state=None, initial_vars=None)``
      - Creates a runtime.  Default-start mode may accept partial
        ``initial_vars``; hot start requires every declared persistent variable.
+       ``history_size=None`` keeps unlimited history, while ``history_size=0``
+       keeps no entries.
    * - ``cycle(events=None) -> CycleResult``
      - Executes one cycle, validates candidate paths, commits or rolls back, and
        records history.
@@ -207,7 +216,10 @@ Python runtime API
      - Canonical supplied event paths that did not correspond to executed
        evented transitions.
    * - ``vars`` / ``cycle_count`` / ``history`` / ``history_size``
-     - Public runtime state used by command display, tests, and tooling.
+     - Public runtime state used by command display, tests, and tooling.  The
+       command-layer ``history_size`` setting remaps ``0`` to runtime ``None``;
+       direct runtime code should pass ``None`` when it wants unlimited
+       history.
    * - ``current_state``
      - Current active state.  Check ``is_ended`` first; after termination this
        raises :class:`pyfcstm.simulate.SimulationRuntimeTerminalStateError`.

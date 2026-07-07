@@ -74,6 +74,14 @@ _BOUNDARY_RE = re.compile(
     r"^\.\. diagnostics-boundary (?P<code>\S+) kind=(?P<kind>\S+)$",
     re.MULTILINE,
 )
+_GENERIC_ZH_REF_DESCRIPTION_RE = re.compile(
+    r"字段含义：字段 ``(?P<field>[^`]+)`` 的稳定载荷；"
+    r"具体含义由本诊断的含义、类型和枚举共同限定。"
+)
+_OLD_ZH_INFO_REPAIR_PREFIX = (
+    "这是非阻塞的信息性观察。 修复时先根据 ``refs`` 定位对象，"
+    "再做最小、可解释、保留模型意图的修改。"
+)
 
 
 def _format_optional_values(values: Optional[Sequence[str]]) -> str:
@@ -243,15 +251,19 @@ def _compare_code_sets(
     missing = sorted(expected - actual)
     extra = sorted(actual - expected)
     if missing:
-        problems.append("{lang}: missing code metadata markers: {codes}".format(
-            lang=language,
-            codes=", ".join(missing),
-        ))
+        problems.append(
+            "{lang}: missing code metadata markers: {codes}".format(
+                lang=language,
+                codes=", ".join(missing),
+            )
+        )
     if extra:
-        problems.append("{lang}: unknown code metadata markers: {codes}".format(
-            lang=language,
-            codes=", ".join(extra),
-        ))
+        problems.append(
+            "{lang}: unknown code metadata markers: {codes}".format(
+                lang=language,
+                codes=", ".join(extra),
+            )
+        )
 
 
 def _check_metadata_fields(
@@ -333,17 +345,21 @@ def _check_refs(
         missing = sorted(expected_fields - actual_names)
         extra = sorted(actual_names - expected_fields)
         if missing:
-            problems.append("{lang}: {code} missing refs markers: {fields}".format(
-                lang=language,
-                code=code,
-                fields=", ".join(missing),
-            ))
+            problems.append(
+                "{lang}: {code} missing refs markers: {fields}".format(
+                    lang=language,
+                    code=code,
+                    fields=", ".join(missing),
+                )
+            )
         if extra:
-            problems.append("{lang}: {code} has unknown refs markers: {fields}".format(
-                lang=language,
-                code=code,
-                fields=", ".join(extra),
-            ))
+            problems.append(
+                "{lang}: {code} has unknown refs markers: {fields}".format(
+                    lang=language,
+                    code=code,
+                    fields=", ".join(extra),
+                )
+            )
         for field_name, field in spec.refs_schema.items():
             actual = actual_fields.get(field_name)
             if actual is None:
@@ -382,28 +398,34 @@ def _check_examples(
     for code in CODE_REGISTRY:
         markers = list(examples.get(code, ()))
         if len(markers) < 3:
-            problems.append("{lang}: {code} has {count} example markers, expected at least 3".format(
-                lang=language,
-                code=code,
-                count=len(markers),
-            ))
+            problems.append(
+                "{lang}: {code} has {count} example markers, expected at least 3".format(
+                    lang=language,
+                    code=code,
+                    count=len(markers),
+                )
+            )
         seen_indices: Set[str] = set()
         for marker in markers:
             index = marker["index"]
             kind = marker["kind"]
             if index in seen_indices:
-                problems.append("{lang}: {code} repeats example marker index {index}".format(
-                    lang=language,
-                    code=code,
-                    index=index,
-                ))
+                problems.append(
+                    "{lang}: {code} repeats example marker index {index}".format(
+                        lang=language,
+                        code=code,
+                        index=index,
+                    )
+                )
             seen_indices.add(index)
             if kind not in _ALLOWED_EXAMPLE_KINDS:
-                problems.append("{lang}: {code} has unsupported example kind {kind!r}".format(
-                    lang=language,
-                    code=code,
-                    kind=kind,
-                ))
+                problems.append(
+                    "{lang}: {code} has unsupported example kind {kind!r}".format(
+                        lang=language,
+                        code=code,
+                        kind=kind,
+                    )
+                )
 
 
 def _check_boundaries(
@@ -427,26 +449,32 @@ def _check_boundaries(
     missing = sorted(expected_codes - actual_codes)
     extra = sorted(actual_codes - expected_codes)
     if missing:
-        problems.append("{lang}: missing boundary markers: {codes}".format(
-            lang=language,
-            codes=", ".join(missing),
-        ))
+        problems.append(
+            "{lang}: missing boundary markers: {codes}".format(
+                lang=language,
+                codes=", ".join(missing),
+            )
+        )
     if extra:
-        problems.append("{lang}: unknown boundary markers: {codes}".format(
-            lang=language,
-            codes=", ".join(extra),
-        ))
+        problems.append(
+            "{lang}: unknown boundary markers: {codes}".format(
+                lang=language,
+                codes=", ".join(extra),
+            )
+        )
     for code, spec in CODE_REGISTRY.items():
         marker = boundaries.get(code)
         if marker is None:
             continue
         kind = marker["kind"]
         if kind not in _ALLOWED_BOUNDARY_KINDS:
-            problems.append("{lang}: {code} has unsupported boundary kind {kind!r}".format(
-                lang=language,
-                code=code,
-                kind=kind,
-            ))
+            problems.append(
+                "{lang}: {code} has unsupported boundary kind {kind!r}".format(
+                    lang=language,
+                    code=code,
+                    kind=kind,
+                )
+            )
         expected_kind = _expected_boundary_kind(spec)
         if kind != expected_kind:
             problems.append(
@@ -480,11 +508,50 @@ def _check_duplicate_markers(language: str, text: str, problems: List[str]) -> N
     for label, pattern, key_names in duplicate_groups:
         duplicates = _collect_marker_duplicates(text, pattern, key_names)
         if duplicates:
-            problems.append("{lang}: duplicate {label} markers: {items}".format(
+            problems.append(
+                "{lang}: duplicate {label} markers: {items}".format(
+                    lang=language,
+                    label=label,
+                    items=", ".join(duplicates),
+                )
+            )
+
+
+def _check_localized_prose_placeholders(
+    language: str, text: str, problems: List[str]
+) -> None:
+    """Reject placeholder Chinese reference prose.
+
+    :param language: Language label for diagnostics.
+    :type language: str
+    :param text: Concatenated reference source text.
+    :type text: str
+    :param problems: Mutable list that receives problem strings.
+    :type problems: List[str]
+    :return: ``None``.
+    :rtype: None
+    """
+    if language != "zh":
+        return
+    generic_fields = sorted(
+        set(
+            match.group("field")
+            for match in _GENERIC_ZH_REF_DESCRIPTION_RE.finditer(text)
+        )
+    )
+    if generic_fields:
+        problems.append(
+            "{lang}: generic refs field descriptions must be replaced with concrete Chinese prose: {fields}".format(
                 lang=language,
-                label=label,
-                items=", ".join(duplicates),
-            ))
+                fields=", ".join(generic_fields),
+            )
+        )
+    if _OLD_ZH_INFO_REPAIR_PREFIX in text:
+        problems.append(
+            "{lang}: info-level LLM summaries must use neutral lookup wording, not repair-first wording".format(
+                lang=language,
+            )
+        )
 
 
 def _check_language(language: str, paths: Sequence[Path]) -> List[str]:
@@ -500,6 +567,7 @@ def _check_language(language: str, paths: Sequence[Path]) -> List[str]:
     problems: List[str] = []
     text = _load_language_text(paths)
     _check_duplicate_markers(language, text, problems)
+    _check_localized_prose_placeholders(language, text, problems)
     metadata = _collect_metadata(text)
     refs = _collect_refs(text)
     examples = _collect_examples(text)

@@ -180,7 +180,9 @@ Reference floors:
 - `reference/diagnostics_codes/` must explain the complete registry shape and cannot document only the most common
   codes unless the omitted groups are explicitly linked or deferred with a reason. The minimum acceptable shape is a
   complete one-row-per-code table or an equivalent generated appendix that lists every current code from `codes.yaml`,
-  its severity, short meaning, and documented trigger context.
+  its severity, short meaning, and documented trigger context. If the complete table is maintained by hand instead of
+  generated from `codes.yaml`, the PR must include or point to a drift check that compares the documented code set,
+  severities, and trigger-context fields with the registry; otherwise the reference is not auditable.
 - Verification must include at least one human-output check, one JSON parse check, one LLM-report check when that report
   is in scope, and one invalid-input or policy-rejection example when failure behavior is documented.
 - Diagnostics references must distinguish default static checks from diagnostics that require `--enable-verify`,
@@ -188,7 +190,11 @@ Reference floors:
   the source registry does not expose a machine-readable trigger field, the documentation must state how the trigger was
   inferred or explicitly defer the trigger-detail table.
 - When LLM-oriented inspect output is documented, `inspect_llm_report_schema.json` needs its own field-level coverage or
-  a clearly linked subsection under `reference/inspect_report/`; it should not be reduced to a tutorial excerpt.
+  a clearly linked subsection under `reference/inspect_report/`; it should not be reduced to a tutorial excerpt. The
+  coverage must account for every top-level field and nested schema object that is part of the public report contract,
+  including type, required/optional status, diagnostic linkage, and any repair-guidance semantics. If the schema table is
+  hand-maintained, the PR must include or point to a drift check or generated-table workflow that keeps it aligned with
+  the JSON schema.
 
 ### Simulation and execution semantics
 
@@ -514,7 +520,7 @@ This section records how the guide satisfies its own rules. Keep it updated when
 | Diagnostics and errors | Documentation review defects are classified as Critical, Important, or Minor; product diagnostic codes are referenced only when target documentation needs them. |
 | Examples and resources | The generation-module inventory is the worked non-DSL example; command snippets are short and tied to repository guidance. |
 | Migration and landing pages | The guide does not move user-facing pages; it adds a `CLAUDE.md` entry so the non-Sphinx policy file remains discoverable. |
-| Verification | `git diff --check`, `make rst_auto`, and reviewer C/I/M checks are the relevant verification path for this policy-only change; Sphinx HTML and `make contents` checks are required when Sphinx source pages or generated documentation resources change. |
+| Verification | `git diff --check` and reviewer C/I/M checks are the relevant verification path for this policy-only change; `make contents`, Sphinx HTML, and `make rst_auto` checks become required when the corresponding Sphinx source, generated documentation resource, public Python API, or generated API index changes are in scope. |
 
 Applied to this guide itself:
 

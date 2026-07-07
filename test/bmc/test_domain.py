@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from pyfcstm.bmc import (
-    STATE_DIAGNOSTIC_ID,
+    STATE_INIT_ID,
     STATE_TERMINATE_ID,
     BmcDomain,
     EventInputRef,
@@ -85,17 +85,17 @@ def test_domain_builds_stable_state_and_sentinel_indexes(adversarial_model):
     assert isinstance(domain, BmcDomain)
     assert domain.bound == 2
     assert STATE_TERMINATE_ID == -1
-    assert STATE_DIAGNOSTIC_ID == -2
+    assert STATE_INIT_ID == -3
     assert domain.state_by_path("$STATE_TERMINATE").id == STATE_TERMINATE_ID
-    assert domain.state_by_path("$STATE_DIAGNOSTIC").id == STATE_DIAGNOSTIC_ID
+    assert domain.state_by_path("$STATE_INIT").id == STATE_INIT_ID
     assert domain.state_id_to_path(STATE_TERMINATE_ID) == "$STATE_TERMINATE"
-    assert domain.state_id_to_path(STATE_DIAGNOSTIC_ID) == "$STATE_DIAGNOSTIC"
+    assert domain.state_id_to_path(STATE_INIT_ID) == "$STATE_INIT"
 
     user_terminate_id = domain.state_path_to_id("Root.STATE_TERMINATE")
     assert domain.state_by_id(STATE_TERMINATE_ID).name == "STATE_TERMINATE"
-    assert domain.state_by_id(STATE_DIAGNOSTIC_ID).name == "STATE_DIAGNOSTIC"
+    assert domain.state_by_id(STATE_INIT_ID).name == "STATE_INIT"
     assert user_terminate_id >= 0
-    assert user_terminate_id not in {STATE_TERMINATE_ID, STATE_DIAGNOSTIC_ID}
+    assert user_terminate_id not in {STATE_TERMINATE_ID, STATE_INIT_ID}
 
     root_id = domain.state_path_to_id("Root")
     composite_id = domain.state_path_to_id("Root.Plant")
@@ -110,11 +110,11 @@ def test_domain_builds_stable_state_and_sentinel_indexes(adversarial_model):
     assert leaf_id in domain.initial_state_ids
     assert user_pseudo_id in domain.initial_state_ids
     assert STATE_TERMINATE_ID in domain.initial_state_ids
-    assert STATE_DIAGNOSTIC_ID not in domain.initial_state_ids
+    assert STATE_INIT_ID in domain.initial_state_ids
 
     assert leaf_id in domain.stable_state_ids
     assert STATE_TERMINATE_ID in domain.stable_state_ids
-    assert STATE_DIAGNOSTIC_ID in domain.stable_state_ids
+    assert STATE_INIT_ID not in domain.stable_state_ids
     assert root_id not in domain.stable_state_ids
     assert composite_id not in domain.stable_state_ids
     assert user_pseudo_id not in domain.stable_state_ids
@@ -224,7 +224,7 @@ def test_domain_canonical_dump_is_json_stable(adversarial_model):
     assert dump["bound"] == 1
     assert dump["sentinels"] == {
         "terminate": STATE_TERMINATE_ID,
-        "diagnostic": STATE_DIAGNOSTIC_ID,
+        "init": STATE_INIT_ID,
     }
     assert all(isinstance(item["id"], int) for item in dump["states"])
     assert all(isinstance(item["id"], int) for item in dump["events"])
@@ -263,10 +263,10 @@ def test_domain_public_constructor_normalizes_canonical_sequence_order():
         "sentinel",
         is_sentinel=True,
     )
-    diagnostic = StateDomainEntry(
-        STATE_DIAGNOSTIC_ID,
-        "$STATE_DIAGNOSTIC",
-        "STATE_DIAGNOSTIC",
+    init = StateDomainEntry(
+        STATE_INIT_ID,
+        "$STATE_INIT",
+        "STATE_INIT",
         "sentinel",
         is_sentinel=True,
     )
@@ -277,7 +277,7 @@ def test_domain_public_constructor_normalizes_canonical_sequence_order():
 
     canonical = BmcDomain(
         bound=2,
-        states=(diagnostic, terminate, root, leaf),
+        states=(init, terminate, root, leaf),
         events=(go, stop),
         variables=(counter, pressure),
         frames=(FrameRef(0, 2), FrameRef(1, 2), FrameRef(2, 2)),
@@ -288,12 +288,12 @@ def test_domain_public_constructor_normalizes_canonical_sequence_order():
             EventInputRef(1, 0, "Root.Go"),
             EventInputRef(1, 1, "Root.Leaf.Stop"),
         ),
-        initial_state_ids=(STATE_TERMINATE_ID, 0, 1),
-        stable_state_ids=(STATE_DIAGNOSTIC_ID, STATE_TERMINATE_ID, 1),
+        initial_state_ids=(STATE_INIT_ID, STATE_TERMINATE_ID, 0, 1),
+        stable_state_ids=(STATE_TERMINATE_ID, 1),
     )
     shuffled = BmcDomain(
         bound=2,
-        states=(leaf, root, terminate, diagnostic),
+        states=(leaf, root, terminate, init),
         events=(stop, go),
         variables=(pressure, counter),
         frames=(FrameRef(2, 2), FrameRef(0, 2), FrameRef(1, 2)),
@@ -304,12 +304,12 @@ def test_domain_public_constructor_normalizes_canonical_sequence_order():
             EventInputRef(1, 0, "Root.Go"),
             EventInputRef(0, 0, "Root.Go"),
         ),
-        initial_state_ids=(1, 0, STATE_TERMINATE_ID),
-        stable_state_ids=(1, STATE_TERMINATE_ID, STATE_DIAGNOSTIC_ID),
+        initial_state_ids=(1, 0, STATE_TERMINATE_ID, STATE_INIT_ID),
+        stable_state_ids=(1, STATE_TERMINATE_ID),
     )
 
     assert [entry.id for entry in shuffled.states] == [
-        STATE_DIAGNOSTIC_ID,
+        STATE_INIT_ID,
         STATE_TERMINATE_ID,
         0,
         1,
@@ -521,10 +521,10 @@ def test_domain_snapshot_validation_rejects_bad_trace_and_input_metadata():
         "sentinel",
         is_sentinel=True,
     )
-    diagnostic = StateDomainEntry(
-        STATE_DIAGNOSTIC_ID,
-        "$STATE_DIAGNOSTIC",
-        "STATE_DIAGNOSTIC",
+    init = StateDomainEntry(
+        STATE_INIT_ID,
+        "$STATE_INIT",
+        "STATE_INIT",
         "sentinel",
         is_sentinel=True,
     )
@@ -570,14 +570,14 @@ def test_domain_snapshot_validation_rejects_bad_trace_and_input_metadata():
 
     valid_kwargs = dict(
         bound=1,
-        states=(diagnostic, terminate, leaf),
+        states=(init, terminate, leaf),
         events=(event,),
         variables=(),
         frames=frames,
         steps=steps,
         event_inputs=inputs,
-        initial_state_ids=(STATE_TERMINATE_ID, 0),
-        stable_state_ids=(STATE_DIAGNOSTIC_ID, STATE_TERMINATE_ID, 0),
+        initial_state_ids=(STATE_INIT_ID, STATE_TERMINATE_ID, 0),
+        stable_state_ids=(STATE_TERMINATE_ID, 0),
     )
     assert (
         BmcDomain(**valid_kwargs).event_input(StepRef(0, 1), 0).event_path == "Root.Go"
@@ -585,23 +585,19 @@ def test_domain_snapshot_validation_rejects_bad_trace_and_input_metadata():
     unsorted_domain = BmcDomain(
         **dict(
             valid_kwargs,
-            initial_state_ids=(0, STATE_TERMINATE_ID),
-            stable_state_ids=(0, STATE_TERMINATE_ID, STATE_DIAGNOSTIC_ID),
+            initial_state_ids=(0, STATE_TERMINATE_ID, STATE_INIT_ID),
+            stable_state_ids=(0, STATE_TERMINATE_ID),
         )
     )
-    assert unsorted_domain.initial_state_ids == (STATE_TERMINATE_ID, 0)
-    assert unsorted_domain.stable_state_ids == (
-        STATE_DIAGNOSTIC_ID,
-        STATE_TERMINATE_ID,
-        0,
-    )
+    assert unsorted_domain.initial_state_ids == (STATE_INIT_ID, STATE_TERMINATE_ID, 0)
+    assert unsorted_domain.stable_state_ids == (STATE_TERMINATE_ID, 0)
 
     bad_cases = [
         dict(states=(terminate, leaf)),
-        dict(states=(diagnostic, leaf)),
+        dict(states=(init, leaf)),
         dict(
             states=(
-                diagnostic,
+                init,
                 StateDomainEntry(
                     STATE_TERMINATE_ID,
                     "$bad",
@@ -615,9 +611,9 @@ def test_domain_snapshot_validation_rejects_bad_trace_and_input_metadata():
         dict(
             states=(
                 StateDomainEntry(
-                    STATE_DIAGNOSTIC_ID,
+                    STATE_INIT_ID,
                     "$bad",
-                    "STATE_DIAGNOSTIC",
+                    "STATE_INIT",
                     "sentinel",
                     is_sentinel=True,
                 ),
@@ -626,16 +622,16 @@ def test_domain_snapshot_validation_rejects_bad_trace_and_input_metadata():
             )
         ),
         dict(
-            states=(diagnostic, terminate, leaf, other_root),
-            initial_state_ids=(STATE_TERMINATE_ID, 0, 1),
+            states=(init, terminate, leaf, other_root),
+            initial_state_ids=(STATE_INIT_ID, STATE_TERMINATE_ID, 0, 1),
         ),
         dict(
-            states=(diagnostic, terminate, leaf, orphan),
-            initial_state_ids=(STATE_TERMINATE_ID, 0, 1),
+            states=(init, terminate, leaf, orphan),
+            initial_state_ids=(STATE_INIT_ID, STATE_TERMINATE_ID, 0, 1),
         ),
         dict(
-            states=(diagnostic, terminate, leaf, unknown_parent),
-            initial_state_ids=(STATE_TERMINATE_ID, 0, 1),
+            states=(init, terminate, leaf, unknown_parent),
+            initial_state_ids=(STATE_INIT_ID, STATE_TERMINATE_ID, 0, 1),
         ),
         dict(frames=(FrameRef(0, 1),)),
         dict(steps=()),
@@ -660,8 +656,8 @@ def test_domain_snapshot_validation_rejects_bad_trace_and_input_metadata():
         dict(stable_state_ids=(0, 0)),
         dict(initial_state_ids=(999,)),
         dict(stable_state_ids=(999,)),
-        dict(initial_state_ids=(STATE_DIAGNOSTIC_ID, STATE_TERMINATE_ID, 0)),
-        dict(stable_state_ids=(STATE_TERMINATE_ID, 0)),
+        dict(initial_state_ids=(STATE_TERMINATE_ID, 0)),
+        dict(stable_state_ids=(STATE_INIT_ID, STATE_TERMINATE_ID, 0)),
     ]
 
     for overrides in bad_cases:
@@ -875,11 +871,7 @@ def test_domain_snapshot_validation_rejects_wrong_allowed_state_sets():
     composite_id = domain.state_path_to_id("Root.Composite")
     pseudo_id = domain.state_path_to_id("Root.Choice")
     leaf_id = domain.state_path_to_id("Root.Composite.A")
-    assert domain.stable_state_ids == (
-        STATE_DIAGNOSTIC_ID,
-        STATE_TERMINATE_ID,
-        leaf_id,
-    )
+    assert domain.stable_state_ids == (STATE_TERMINATE_ID, leaf_id)
 
     for forbidden_id in (root_id, composite_id, pseudo_id):
         with pytest.raises(InvalidBmcDomain):
@@ -921,7 +913,7 @@ def test_domain_snapshot_validation_rejects_wrong_allowed_state_sets():
             frames=domain.frames,
             steps=domain.steps,
             event_inputs=domain.event_inputs,
-            initial_state_ids=domain.initial_state_ids + (STATE_DIAGNOSTIC_ID,),
+            initial_state_ids=domain.initial_state_ids + (-2,),
             stable_state_ids=domain.stable_state_ids,
         )
 

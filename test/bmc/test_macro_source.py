@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from pyfcstm.bmc import (
-    STATE_DIAGNOSTIC_ID,
+    STATE_INIT_ID,
     STATE_TERMINATE_ID,
     BoolLiteral,
     BmcDomain,
@@ -15,10 +15,10 @@ from pyfcstm.bmc import (
     build_bmc_domain,
 )
 from pyfcstm.bmc.source import (
-    DIAGNOSTIC_CASE_PATH,
+    INIT_CASE_PATH,
     TERMINATE_CASE_PATH,
     MacroStepSource,
-    diagnostic_source,
+    init_source,
     entry_source,
     source_from_initial_spec,
     stable_leaf_source,
@@ -77,7 +77,7 @@ def source_domain():
     model = load_state_machine_from_text(
         """
         state Root {
-            state STATE_DIAGNOSTIC;
+            state STATE_INIT;
             pseudo state Choice;
             state Composite {
                 state Leaf;
@@ -91,19 +91,19 @@ def source_domain():
 
 
 @pytest.mark.unittest
-def test_cold_root_entry_source_uses_initial_entry_even_when_root_is_leaf():
-    """Cold starts always enter through an initial-only entry source."""
+def test_cold_source_uses_internal_init_sentinel_even_when_root_is_leaf():
+    """Cold starts enter through the internal init sentinel source."""
     domain = build_bmc_domain(load_state_machine_from_text("state Root;"), bound=1)
 
     source = source_from_initial_spec(domain, InitialSpec())
 
-    assert source == entry_source(domain)
+    assert source == init_source(domain)
     assert source.to_canonical() == {
         "node": "macro_step_source",
-        "kind": "entry",
+        "kind": "init",
         "origin": "initial",
-        "source_state_id": domain.state_path_to_id("Root"),
-        "source_state_path": "Root",
+        "source_state_id": STATE_INIT_ID,
+        "source_state_path": INIT_CASE_PATH,
         "allows_semantic_delta": True,
         "uses_stable_fallback": False,
     }
@@ -133,8 +133,10 @@ def test_initial_hot_stable_leaf_matches_recurrence_stable_leaf_except_origin(
 
 
 @pytest.mark.unittest
-def test_hot_composite_and_pseudo_are_initial_only_entry_sources(source_domain):
-    """Initial state sources dispatch non-stoppable composite and pseudo states to entry."""
+def test_hot_composite_and_pseudo_are_entry_sources_for_initial_and_recurrence(
+    source_domain,
+):
+    """Non-stoppable model states use entry sources in both initial and recurrence steps."""
     composite = source_from_initial_spec(
         source_domain,
         InitialSpec(mode="state", state_path="Root.Composite"),
@@ -151,8 +153,10 @@ def test_hot_composite_and_pseudo_are_initial_only_entry_sources(source_domain):
     assert pseudo.origin == "initial"
     assert pseudo.source_state_path == "Root.Choice"
 
-    with pytest.raises(InvalidBmcEncoding, match="initial-only"):
-        entry_source(source_domain, "Root.Composite", origin="recurrence")
+    recurrence = entry_source(source_domain, "Root.Composite", origin="recurrence")
+    assert recurrence.kind == "entry"
+    assert recurrence.origin == "recurrence"
+    assert recurrence.source_state_path == "Root.Composite"
 
 
 @pytest.mark.unittest
@@ -165,30 +169,30 @@ def test_non_stoppable_state_cannot_be_stable_leaf_source(source_domain):
     with pytest.raises(InvalidBmcEncoding, match="stable_leaf"):
         stable_leaf_source(source_domain, STATE_TERMINATE_ID)
     with pytest.raises(InvalidBmcEncoding, match="stable_leaf"):
-        stable_leaf_source(source_domain, STATE_DIAGNOSTIC_ID)
+        stable_leaf_source(source_domain, STATE_INIT_ID)
 
 
 @pytest.mark.unittest
 def test_sentinel_sources_use_fixed_ids_and_reserved_paths(source_domain):
     """Sentinel sources cannot be impersonated by model states with similar names."""
     terminate = terminated_source(source_domain, origin="initial")
-    diagnostic = diagnostic_source(source_domain)
+    init = init_source(source_domain)
 
     assert terminate.source_state_id == STATE_TERMINATE_ID
     assert terminate.source_state_path == TERMINATE_CASE_PATH
     assert terminate.kind == "terminated"
-    assert diagnostic.source_state_id == STATE_DIAGNOSTIC_ID
-    assert diagnostic.source_state_path == DIAGNOSTIC_CASE_PATH
-    assert diagnostic.kind == "diagnostic"
+    assert init.source_state_id == STATE_INIT_ID
+    assert init.source_state_path == INIT_CASE_PATH
+    assert init.kind == "init"
 
-    user_diagnostic = source_domain.state_path_to_id("Root.STATE_DIAGNOSTIC")
-    assert user_diagnostic >= 0
+    user_init = source_domain.state_path_to_id("Root.STATE_INIT")
+    assert user_init >= 0
     with pytest.raises(InvalidBmcEncoding, match="fixed sentinel id"):
         MacroStepSource(
-            "diagnostic",
+            "init",
             "recurrence",
-            user_diagnostic,
-            DIAGNOSTIC_CASE_PATH,
+            user_init,
+            INIT_CASE_PATH,
             domain=source_domain,
         )
     with pytest.raises(InvalidBmcEncoding, match="reserved macro-step path"):
@@ -237,26 +241,24 @@ def test_source_constructors_reject_wrong_structural_values(source_domain):
         MacroStepSource("unknown", "initial", 0, "Root")
     with pytest.raises(InvalidBmcEncoding, match="source origin"):
         MacroStepSource("entry", "later", 0, "Root")
-    with pytest.raises(InvalidBmcEncoding, match="initial-only"):
-        MacroStepSource("entry", "recurrence", 0, "Root")
+    recurrence_entry = MacroStepSource("entry", "recurrence", 0, "Root")
+    assert recurrence_entry.origin == "recurrence"
+    with pytest.raises(InvalidBmcEncoding, match="source kind"):
+        # Private malformed-object check: the retired diagnostic source kind is
+        # no longer a supported public constructor path.
+        MacroStepSource("diagnostic", "recurrence", STATE_INIT_ID, INIT_CASE_PATH)
     with pytest.raises(InvalidBmcEncoding, match="model state id"):
         MacroStepSource("entry", "initial", STATE_TERMINATE_ID, TERMINATE_CASE_PATH)
     with pytest.raises(InvalidBmcEncoding, match="reserved macro-step paths"):
         MacroStepSource("entry", "initial", 0, TERMINATE_CASE_PATH)
     with pytest.raises(InvalidBmcEncoding, match="model state id"):
-        MacroStepSource(
-            "stable_leaf", "recurrence", STATE_DIAGNOSTIC_ID, DIAGNOSTIC_CASE_PATH
-        )
+        MacroStepSource("stable_leaf", "recurrence", STATE_INIT_ID, INIT_CASE_PATH)
     with pytest.raises(InvalidBmcEncoding, match="reserved macro-step paths"):
-        MacroStepSource("stable_leaf", "recurrence", 0, DIAGNOSTIC_CASE_PATH)
+        MacroStepSource("stable_leaf", "recurrence", 0, INIT_CASE_PATH)
     with pytest.raises(InvalidBmcEncoding, match="fixed sentinel id"):
-        MacroStepSource(
-            "terminated", "recurrence", STATE_DIAGNOSTIC_ID, TERMINATE_CASE_PATH
-        )
+        MacroStepSource("terminated", "recurrence", STATE_INIT_ID, TERMINATE_CASE_PATH)
     with pytest.raises(InvalidBmcEncoding, match="reserved macro-step path"):
-        MacroStepSource(
-            "diagnostic", "recurrence", STATE_DIAGNOSTIC_ID, TERMINATE_CASE_PATH
-        )
+        MacroStepSource("init", "recurrence", STATE_INIT_ID, TERMINATE_CASE_PATH)
     with pytest.raises(InvalidBmcEncoding, match="source_state_id"):
         MacroStepSource("entry", "initial", True, "Root")
     with pytest.raises(InvalidBmcEncoding, match="domain"):
@@ -318,7 +320,7 @@ def test_source_validation_rejects_reserved_model_paths(
             "entry",
             "initial",
             0,
-            DIAGNOSTIC_CASE_PATH,
+            INIT_CASE_PATH,
             domain=source_domain,
         )
 
@@ -361,8 +363,7 @@ def test_source_validation_rejects_forged_domain_root_and_state_metadata(
     object.__setattr__(recurrence_entry, "origin", "recurrence")
     object.__setattr__(recurrence_entry, "source_state_id", root.id)
     object.__setattr__(recurrence_entry, "source_state_path", root.path)
-    with pytest.raises(InvalidBmcEncoding, match="initial-only"):
-        recurrence_entry._validate_against_domain(source_domain)
+    recurrence_entry._validate_against_domain(source_domain)
 
     unstable_stable_domain = _unsafe_clone_domain(
         source_domain,
@@ -410,6 +411,15 @@ def test_source_validation_rejects_forged_domain_root_and_state_metadata(
     )
     with pytest.raises(InvalidBmcEncoding, match="Unknown state id"):
         terminated_source(missing_terminate_domain)
+
+    missing_init_domain = _unsafe_clone_domain(
+        source_domain,
+        states=tuple(
+            entry for entry in source_domain.states if entry.id != STATE_INIT_ID
+        ),
+    )
+    with pytest.raises(InvalidBmcEncoding, match="Unknown state id"):
+        init_source(missing_init_domain)
 
     forged_terminated = object.__new__(MacroStepSource)
     object.__setattr__(forged_terminated, "source_state_id", root.id)

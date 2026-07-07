@@ -51,7 +51,7 @@ CycleCase
 -----------------------------------------------------
 
 .. autoclass:: CycleCase
-    :members: __post_init__,to_canonical,kind,source_state_id,source_state_path,target_state_id,target_state_path,label,condition,action_blocks,used_events,guard_requirements,priority_exclusions,failed_conditions,domain,is_diagnostic
+    :members: __post_init__,to_canonical,kind,source_state_id,source_state_path,target_state_id,target_state_path,label,condition,action_blocks,used_events,guard_requirements,priority_exclusions,failed_conditions,domain
 
 
 PartitionCheckResult
@@ -78,12 +78,6 @@ terminated\_absorb\_case
 -----------------------------------------------------
 
 .. autofunction:: terminated_absorb_case
-
-
-diagnostic\_absorb\_case
------------------------------------------------------
-
-.. autofunction:: diagnostic_absorb_case
 
 
 build\_fallback\_case

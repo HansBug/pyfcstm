@@ -56,10 +56,10 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
-from pyfcstm.bmc.domain import STATE_DIAGNOSTIC_ID, STATE_TERMINATE_ID, BmcDomain
+from pyfcstm.bmc.domain import STATE_INIT_ID, STATE_TERMINATE_ID, BmcDomain
 from pyfcstm.bmc.errors import BmcBuildError, InvalidBmcDomain, InvalidBmcEncoding
 from pyfcstm.bmc.source import (
-    DIAGNOSTIC_CASE_PATH,
+    INIT_CASE_PATH,
     TERMINATE_CASE_PATH,
     MacroStepSource,
 )
@@ -67,7 +67,7 @@ from pyfcstm.model import Expr, IfBlock, Operation, OperationStatement
 
 _CanonicalDict = Dict[str, Any]
 _BOOL_KINDS = {"true", "false", "atom", "not", "and", "or"}
-_CASE_KINDS = {"transition", "fallback", "initial", "absorb", "diagnostic", "delta"}
+_CASE_KINDS = {"transition", "fallback", "initial", "absorb", "delta"}
 _ACCEPTED_CASE_KINDS = {"transition", "initial"}
 _EVENT_POLARITIES = {"positive", "negative"}
 _EVENT_REASONS = {"trigger", "priority", "fallback", "descent", "assumption"}
@@ -93,7 +93,7 @@ _ACTION_RUNTIME_ROLES = {
     "aspect_during_after",
     "transition_effect",
 }
-_RESERVED_CASE_PATHS = {TERMINATE_CASE_PATH, DIAGNOSTIC_CASE_PATH}
+_RESERVED_CASE_PATHS = {INIT_CASE_PATH, TERMINATE_CASE_PATH}
 _SOURCE_STATE_ATOM_PREFIX = "__source_state__:"
 _EVENT_ATOM_PREFIX = "event:"
 _GUARD_ATOM_PREFIX = "guard:"
@@ -839,12 +839,12 @@ def _statement_to_canonical(statement: OperationStatement) -> _CanonicalDict:
 
 def _expected_case_path(domain: BmcDomain, state_id: int) -> str:
     try:
+        if state_id == STATE_INIT_ID:
+            domain.state_by_id(STATE_INIT_ID)
+            return INIT_CASE_PATH
         if state_id == STATE_TERMINATE_ID:
             domain.state_by_id(STATE_TERMINATE_ID)
             return TERMINATE_CASE_PATH
-        if state_id == STATE_DIAGNOSTIC_ID:
-            domain.state_by_id(STATE_DIAGNOSTIC_ID)
-            return DIAGNOSTIC_CASE_PATH
         entry = domain.state_by_id(state_id)
         if entry.path in _RESERVED_CASE_PATHS:
             raise InvalidBmcEncoding(
@@ -863,12 +863,6 @@ def _validate_case_state(
     expected = _expected_case_path(domain, state_id)
     if path != expected:
         raise InvalidBmcEncoding("%s path does not match %s id." % (role, role))
-
-
-def _derive_is_diagnostic(kind: str, target_state_id: int) -> bool:
-    return kind in {"diagnostic", "delta"} or (
-        kind == "absorb" and target_state_id == STATE_DIAGNOSTIC_ID
-    )
 
 
 def _condition_atoms(condition: BoolTemplate) -> Tuple[str, ...]:
@@ -1104,7 +1098,6 @@ class CycleCase:
     priority_exclusions: Tuple[PriorityExclusion, ...] = ()
     failed_conditions: Tuple[BoolTemplate, ...] = ()
     domain: Optional[BmcDomain] = field(default=None, repr=False, compare=False)
-    is_diagnostic: bool = field(init=False)
 
     def __post_init__(self) -> None:
         kind = _validate_choice(self.kind, _CASE_KINDS, "case kind")
@@ -1172,10 +1165,6 @@ class CycleCase:
             "failed_conditions",
             tuple(sorted(failed_conditions, key=_canonical_key)),
         )
-        object.__setattr__(
-            self, "is_diagnostic", _derive_is_diagnostic(kind, target_id)
-        )
-
         self._validate_label()
         self._validate_kind_shape()
         self._validate_local_atom_links()
@@ -1202,13 +1191,15 @@ class CycleCase:
         if self.kind == "absorb":
             if self.source_state_id != self.target_state_id:
                 raise InvalidBmcEncoding("absorb cases must self-loop.")
-            if self.source_state_id not in {STATE_TERMINATE_ID, STATE_DIAGNOSTIC_ID}:
-                raise InvalidBmcEncoding("absorb cases must use sentinel states.")
-        if (
-            self.kind in {"delta", "diagnostic"}
-            and self.target_state_id != STATE_DIAGNOSTIC_ID
-        ):
-            raise InvalidBmcEncoding("diagnostic and delta cases target diagnostic.")
+            if self.source_state_id != STATE_TERMINATE_ID:
+                raise InvalidBmcEncoding(
+                    "absorb cases must use the terminate sentinel."
+                )
+        if self.kind == "delta":
+            if self.target_state_id != self.source_state_id:
+                raise InvalidBmcEncoding("delta cases must self-loop source state.")
+            if self.target_state_path != self.source_state_path:
+                raise InvalidBmcEncoding("delta cases must self-loop source path.")
 
     def _validate_local_atom_links(self) -> None:
         condition_guard_ids = set(_guard_atom_ids(self.condition))
@@ -1222,8 +1213,10 @@ class CycleCase:
             )
         if len(declared_guard_ids) != len(self.guard_requirements):
             raise InvalidBmcEncoding("Duplicate guard requirement id.")
+        condition_guard_ids = set(_guard_atom_ids(self.condition))
         if any(
-            item.after_action_block_index > len(self.action_blocks)
+            item.requirement_id in condition_guard_ids
+            and item.after_action_block_index > len(self.action_blocks)
             for item in self.guard_requirements
         ):
             raise InvalidBmcEncoding("guard anchor exceeds action block count.")
@@ -1277,8 +1270,8 @@ class CycleCase:
         Example::
 
             >>> case = CycleCase('transition', 0, 'Root', 0, 'Root', 'Root::transition::Root::0', BoolTemplate.true(), ())
-            >>> case.to_canonical()['is_diagnostic']
-            False
+            >>> case.to_canonical()['kind']
+            'transition'
         """
         return {
             "node": "cycle_case",
@@ -1288,7 +1281,6 @@ class CycleCase:
             "target_state_id": self.target_state_id,
             "target_state_path": self.target_state_path,
             "label": self.label,
-            "is_diagnostic": self.is_diagnostic,
             "used_events": [item.to_canonical() for item in self.used_events],
             "guard_requirements": [
                 item.to_canonical() for item in self.guard_requirements
@@ -1423,7 +1415,7 @@ class MacroStepFormal:
         Example::
 
             >>> source = MacroStepSource('entry', 'initial', 0, 'Root')
-            >>> case = CycleCase('delta', 0, 'Root', -2, '__diagnostic__', 'Root::delta::__diagnostic__::0', BoolTemplate.true(), ())
+            >>> case = CycleCase('delta', 0, 'Root', 0, 'Root', 'Root::delta::Root::0', BoolTemplate.true(), ())
             >>> MacroStepFormal(source, (), (case,)).cases[0].kind
             'delta'
         """
@@ -1450,18 +1442,16 @@ class MacroStepFormal:
                 raise InvalidBmcEncoding("success_cases must not contain delta cases.")
             self._validate_success_case_shape(case)
         if self.delta_cases and not self.source.allows_semantic_delta:
-            raise InvalidBmcEncoding("delta_cases require an entry source.")
-        if self.source.kind != "entry" and self.build_diagnostic_conditions:
+            raise InvalidBmcEncoding("delta_cases require a delta-capable source.")
+        if not self.source.allows_semantic_delta and self.build_diagnostic_conditions:
             raise InvalidBmcEncoding(
-                "build diagnostics are only recorded on entry source formals."
+                "build diagnostics are only recorded on delta-capable source formals."
             )
         if self.source.kind == "stable_leaf":
             if not any(case.kind == "fallback" for case in self.success_cases):
                 raise InvalidBmcEncoding("stable leaf formal requires a fallback case.")
         if self.source.kind == "terminated":
             self._validate_sentinel_absorb(STATE_TERMINATE_ID)
-        if self.source.kind == "diagnostic":
-            self._validate_sentinel_absorb(STATE_DIAGNOSTIC_ID)
         for case in self.delta_cases:
             if case.kind != "delta":
                 raise InvalidBmcEncoding("delta_cases may only contain delta cases.")
@@ -1501,29 +1491,23 @@ class MacroStepFormal:
                 raise InvalidBmcEncoding(
                     "stable leaf transitions must target model states or terminate."
                 )
-        elif self.source.kind == "entry":
-            if case.kind not in {"transition", "initial", "diagnostic"}:
+        elif self.source.kind in {"init", "entry"}:
+            if case.kind not in {"transition", "initial"}:
                 raise InvalidBmcEncoding(
-                    "entry success cases may only be transition, initial, or diagnostic."
+                    "entry success cases may only be transition or initial."
                 )
-            if case.kind in {
-                "transition",
-                "initial",
-            } and not _is_model_or_terminate_target(case):
+            if not _is_model_or_terminate_target(case):
                 raise InvalidBmcEncoding(
                     "entry transition and initial cases must target model states or terminate."
                 )
 
     def _validate_sentinel_absorb(self, sentinel_id: int) -> None:
-        expected_path = (
-            TERMINATE_CASE_PATH
-            if sentinel_id == STATE_TERMINATE_ID
-            else DIAGNOSTIC_CASE_PATH
-        )
+        if sentinel_id != STATE_TERMINATE_ID:  # pragma: no cover - private guard.
+            raise InvalidBmcEncoding("only terminate sentinel absorb is supported.")
         _validate_sentinel_absorb_partition(
             self.success_cases,
             sentinel_id,
-            expected_path,
+            TERMINATE_CASE_PATH,
         )
 
     def verify_partition(self, max_assignments: int = 4096) -> PartitionCheckResult:
@@ -1540,7 +1524,7 @@ class MacroStepFormal:
         Example::
 
             >>> source = MacroStepSource('entry', 'initial', 0, 'Root')
-            >>> case = CycleCase('delta', 0, 'Root', -2, '__diagnostic__', 'Root::delta::__diagnostic__::0', BoolTemplate.true(), ())
+            >>> case = CycleCase('delta', 0, 'Root', 0, 'Root', 'Root::delta::Root::0', BoolTemplate.true(), ())
             >>> MacroStepFormal(source, (), (case,)).verify_partition().bucket_count
             1
         """
@@ -1561,7 +1545,7 @@ class MacroStepFormal:
         Example::
 
             >>> source = MacroStepSource('entry', 'initial', 0, 'Root')
-            >>> case = CycleCase('delta', 0, 'Root', -2, '__diagnostic__', 'Root::delta::__diagnostic__::0', BoolTemplate.true(), ())
+            >>> case = CycleCase('delta', 0, 'Root', 0, 'Root', 'Root::delta::Root::0', BoolTemplate.true(), ())
             >>> MacroStepFormal(source, (), (case,)).to_canonical()['source']['kind']
             'entry'
         """
@@ -1613,8 +1597,8 @@ def terminated_absorb_case(domain: BmcDomain) -> CycleCase:
         >>> from pyfcstm.bmc.domain import build_bmc_domain
         >>> from pyfcstm.model import load_state_machine_from_text
         >>> domain = build_bmc_domain(load_state_machine_from_text('state Root;'), 1)
-        >>> terminated_absorb_case(domain).is_diagnostic
-        False
+        >>> terminated_absorb_case(domain).kind
+        'absorb'
     """
     return CycleCase(
         "absorb",
@@ -1623,35 +1607,6 @@ def terminated_absorb_case(domain: BmcDomain) -> CycleCase:
         STATE_TERMINATE_ID,
         TERMINATE_CASE_PATH,
         "%s::absorb::%s::0" % (TERMINATE_CASE_PATH, TERMINATE_CASE_PATH),
-        BoolTemplate.true(),
-        (),
-        domain=domain,
-    )
-
-
-def diagnostic_absorb_case(domain: BmcDomain) -> CycleCase:
-    """Build the diagnostic sentinel absorb case.
-
-    :param domain: Domain snapshot whose sentinel entries are used.
-    :type domain: BmcDomain
-    :return: Diagnostic self-loop absorb case.
-    :rtype: CycleCase
-
-    Example::
-
-        >>> from pyfcstm.bmc.domain import build_bmc_domain
-        >>> from pyfcstm.model import load_state_machine_from_text
-        >>> domain = build_bmc_domain(load_state_machine_from_text('state Root;'), 1)
-        >>> diagnostic_absorb_case(domain).is_diagnostic
-        True
-    """
-    return CycleCase(
-        "absorb",
-        STATE_DIAGNOSTIC_ID,
-        DIAGNOSTIC_CASE_PATH,
-        STATE_DIAGNOSTIC_ID,
-        DIAGNOSTIC_CASE_PATH,
-        "%s::absorb::%s::0" % (DIAGNOSTIC_CASE_PATH, DIAGNOSTIC_CASE_PATH),
         BoolTemplate.true(),
         (),
         domain=domain,
@@ -1822,7 +1777,7 @@ def build_semantic_delta_case(
     :param guard_requirements: Guard metadata for atoms referenced by failed
         diagnostic conditions, defaults to ``()``.
     :type guard_requirements: Sequence[GuardRequirement], optional
-    :return: Semantic delta case targeting the diagnostic sentinel.
+    :return: Semantic delta case that self-loops the source.
     :rtype: CycleCase
     :raises InvalidBmcEncoding: If ``source`` does not allow semantic delta.
 
@@ -1833,11 +1788,11 @@ def build_semantic_delta_case(
         >>> from pyfcstm.model import load_state_machine_from_text
         >>> domain = build_bmc_domain(load_state_machine_from_text('state Root;'), 1)
         >>> case = build_semantic_delta_case(domain, entry_source(domain), ())
-        >>> case.target_state_id
-        -2
+        >>> case.target_state_id == case.source_state_id
+        True
     """
     if not isinstance(source, MacroStepSource) or not source.allows_semantic_delta:
-        raise InvalidBmcEncoding("semantic delta case requires an entry source.")
+        raise InvalidBmcEncoding("semantic delta case requires a delta-capable source.")
     ordinal = _validate_index(ordinal, "ordinal")
     if ordinal < 0:
         raise InvalidBmcEncoding("ordinal must be non-negative.")
@@ -1887,9 +1842,11 @@ def build_semantic_delta_case(
         "delta",
         source.source_state_id,
         source.source_state_path,
-        STATE_DIAGNOSTIC_ID,
-        DIAGNOSTIC_CASE_PATH,
-        _case_label(source.source_state_path, "delta", DIAGNOSTIC_CASE_PATH, ordinal),
+        source.source_state_id,
+        source.source_state_path,
+        _case_label(
+            source.source_state_path, "delta", source.source_state_path, ordinal
+        ),
         condition,
         (),
         used_events=used_events,
@@ -2013,13 +1970,9 @@ def _structural_partition_result(
     diagnostics: Sequence[BoolTemplate],
     variables: Sequence[str],
 ) -> Optional[PartitionCheckResult]:
-    if source.kind in {"terminated", "diagnostic"}:
-        sentinel_id = (
-            STATE_TERMINATE_ID if source.kind == "terminated" else STATE_DIAGNOSTIC_ID
-        )
-        sentinel_path = (
-            TERMINATE_CASE_PATH if source.kind == "terminated" else DIAGNOSTIC_CASE_PATH
-        )
+    if source.kind == "terminated":
+        sentinel_id = STATE_TERMINATE_ID
+        sentinel_path = TERMINATE_CASE_PATH
         if delta or diagnostics:
             raise _internal_bmc_error(  # pragma: no cover
                 "sentinel structural partition received delta or diagnostic buckets "
@@ -2056,8 +2009,8 @@ def _structural_partition_result(
         ):
             return None
     elif terminal.kind == "delta":
-        if source.kind != "entry":
-            # Public verify_source_partition() rejects non-entry delta buckets
+        if not source.allows_semantic_delta:
+            # Public verify_source_partition() rejects non-delta-capable delta buckets
             # before structural recognition; reaching this branch means an
             # internal caller bypassed that preflight.
             raise _internal_bmc_error(  # pragma: no cover
@@ -2068,16 +2021,16 @@ def _structural_partition_result(
             terminal.condition, accepted_labels, diagnostics
         ):
             return None
-    else:
+    else:  # pragma: no cover - public preflight admits only fallback/delta here.
         return None
 
-    if diagnostics and (source.kind != "entry" or not delta):
-        # The fallback branch rejects diagnostics above, public preflight rejects
-        # non-entry delta buckets, and the only accepted diagnostic shape has a
-        # delta bucket.  Keep this as a loud structural guard for corrupted
-        # internal callers.
+    if diagnostics and (not source.allows_semantic_delta or not delta):
+        # The fallback branch rejects build-time buckets above, public preflight
+        # rejects non-delta-capable sources, and the only accepted diagnostic
+        # shape has a delta bucket. Keep this as a loud structural guard for
+        # corrupted internal callers.
         raise _internal_bmc_error(  # pragma: no cover
-            "diagnostic structural partition reached an unsupported source or "
+            "build-condition structural partition reached an unsupported source or "
             "missing delta bucket after public preflight."
         )
     bucket_count = len(cases) + (1 if diagnostics else 0)
@@ -2197,7 +2150,7 @@ def verify_source_partition(
     Example::
 
         >>> source = MacroStepSource('entry', 'initial', 0, 'Root')
-        >>> case = CycleCase('delta', 0, 'Root', -2, '__diagnostic__', 'Root::delta::__diagnostic__::0', BoolTemplate.true(), ())
+        >>> case = CycleCase('delta', 0, 'Root', 0, 'Root', 'Root::delta::Root::0', BoolTemplate.true(), ())
         >>> verify_source_partition(source, (), (case,)).bucket_count
         1
     """
@@ -2212,7 +2165,7 @@ def verify_source_partition(
     success = tuple(success_cases)
     delta = tuple(delta_cases)
     diagnostics = tuple(build_diagnostic_conditions)
-    if source.kind in {"terminated", "diagnostic"}:
+    if source.kind == "terminated":
         if delta:
             raise InvalidBmcEncoding("sentinel absorb formal cannot have delta cases.")
         if diagnostics:
@@ -2239,7 +2192,7 @@ def verify_source_partition(
             "build_diagnostic_conditions must contain BoolTemplate objects."
         )
 
-    if source.kind in {"terminated", "diagnostic"}:
+    if source.kind == "terminated":
         structural = _structural_partition_result(
             source, success, delta, diagnostics, ()
         )
@@ -2277,7 +2230,6 @@ __all__ = [
     "MacroStepFormal",
     "case_path_condition",
     "terminated_absorb_case",
-    "diagnostic_absorb_case",
     "build_fallback_case",
     "build_semantic_delta_case",
     "verify_boolean_partition",

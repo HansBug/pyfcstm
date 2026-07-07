@@ -10,12 +10,13 @@ initial-frame formula by later query/binder layers.
 
 Design contracts:
 
-* ``entry`` sources are initial-only and model cold entry or hot non-stoppable
-  states whose uncovered branch may become semantic diagnostic delta.
+* ``init`` sources model cold entry through the internal cold-start sentinel.
+* ``entry`` sources model hot non-stoppable states whose uncovered branch may
+  become semantic delta.
 * ``stable_leaf`` sources point at non-sentinel stoppable leaves and use the
   same macro-step semantics for initial hot starts and recurrence frames.
-* ``terminated`` and ``diagnostic`` sources use fixed sentinel ids and reserved
-  case-label paths so user states with similar names cannot impersonate them.
+* ``terminated`` sources use a fixed sentinel id and reserved case-label path
+  so user states with similar names cannot impersonate it.
 * Constructors validate against :class:`pyfcstm.bmc.domain.BmcDomain` eagerly;
   direct dataclass construction remains possible for tests but still performs
   the same validation when a domain is supplied.
@@ -24,9 +25,8 @@ The module contains:
 
 * :class:`MacroStepSource` - Immutable source profile consumed by macro-step
   case expansion.
-* :func:`entry_source`, :func:`stable_leaf_source`,
-  :func:`terminated_source`, and :func:`diagnostic_source` - Validated source
-  constructors.
+* :func:`init_source`, :func:`entry_source`, :func:`stable_leaf_source`,
+  and :func:`terminated_source` - Validated source constructors.
 * :func:`source_from_initial_spec` - Convert query initial specifications into
   source profiles without reading the initial predicate.
 
@@ -39,7 +39,7 @@ Example::
     >>> domain = build_bmc_domain(load_state_machine_from_text('state Root;'), 1)
     >>> source = source_from_initial_spec(domain, InitialSpec())
     >>> source.kind
-    'entry'
+    'init'
 """
 
 from __future__ import annotations
@@ -48,7 +48,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Union
 
 from pyfcstm.bmc.domain import (
-    STATE_DIAGNOSTIC_ID,
+    STATE_INIT_ID,
     STATE_TERMINATE_ID,
     BmcDomain,
     StateDomainEntry,
@@ -56,14 +56,14 @@ from pyfcstm.bmc.domain import (
 from pyfcstm.bmc.errors import InvalidBmcDomain, InvalidBmcEncoding, InvalidBmcQuery
 from pyfcstm.bmc.query import InitialSpec
 
+INIT_CASE_PATH = "__init__"
 TERMINATE_CASE_PATH = "__terminate__"
-DIAGNOSTIC_CASE_PATH = "__diagnostic__"
 
 _CanonicalDict = Dict[str, Any]
 _StateRef = Union[int, str, StateDomainEntry]
-_SOURCE_KINDS = {"entry", "stable_leaf", "terminated", "diagnostic"}
+_SOURCE_KINDS = {"init", "entry", "stable_leaf", "terminated"}
 _SOURCE_ORIGINS = {"initial", "recurrence"}
-_RESERVED_CASE_PATHS = {TERMINATE_CASE_PATH, DIAGNOSTIC_CASE_PATH}
+_RESERVED_CASE_PATHS = {INIT_CASE_PATH, TERMINATE_CASE_PATH}
 
 
 def _validate_choice(value: object, choices: set, field_name: str) -> str:
@@ -114,8 +114,8 @@ def _root_state_entry(domain: BmcDomain) -> StateDomainEntry:
 class MacroStepSource:
     """Source profile for one symbolic macro-step.
 
-    :param kind: Source kind: ``"entry"``, ``"stable_leaf"``,
-        ``"terminated"``, or ``"diagnostic"``.
+    :param kind: Source kind: ``"init"``, ``"entry"``,
+        ``"stable_leaf"``, or ``"terminated"``.
     :type kind: str
     :param origin: ``"initial"`` for the ``F_0 -> F_1`` source, or
         ``"recurrence"`` for recurrence-frame sources.
@@ -175,9 +175,14 @@ class MacroStepSource:
             self._validate_against_domain(self.domain)
 
     def _validate_intrinsic_shape(self) -> None:
-        if self.kind == "entry":
-            if self.origin != "initial":
-                raise InvalidBmcEncoding("entry source is initial-only.")
+        if self.kind == "init":
+            if self.source_state_id != STATE_INIT_ID:
+                raise InvalidBmcEncoding("init source must use the fixed sentinel id.")
+            if self.source_state_path != INIT_CASE_PATH:
+                raise InvalidBmcEncoding(
+                    "init source must use the reserved macro-step path."
+                )
+        elif self.kind == "entry":
             if self.source_state_id < 0:
                 raise InvalidBmcEncoding("entry source must use a model state id.")
             if self.source_state_path in _RESERVED_CASE_PATHS:
@@ -202,31 +207,22 @@ class MacroStepSource:
                 raise InvalidBmcEncoding(
                     "terminated source must use the reserved macro-step path."
                 )
-        elif self.kind == "diagnostic":
-            if self.source_state_id != STATE_DIAGNOSTIC_ID:
-                raise InvalidBmcEncoding(
-                    "diagnostic source must use the fixed sentinel id."
-                )
-            if self.source_state_path != DIAGNOSTIC_CASE_PATH:
-                raise InvalidBmcEncoding(
-                    "diagnostic source must use the reserved macro-step path."
-                )
 
     def _validate_against_domain(self, domain: BmcDomain) -> None:
+        if self.kind == "init":
+            self._validate_sentinel_source(
+                domain,
+                STATE_INIT_ID,
+                INIT_CASE_PATH,
+                "init",
+            )
+            return
         if self.kind == "terminated":
             self._validate_sentinel_source(
                 domain,
                 STATE_TERMINATE_ID,
                 TERMINATE_CASE_PATH,
                 "terminated",
-            )
-            return
-        if self.kind == "diagnostic":
-            self._validate_sentinel_source(
-                domain,
-                STATE_DIAGNOSTIC_ID,
-                DIAGNOSTIC_CASE_PATH,
-                "diagnostic",
             )
             return
 
@@ -247,8 +243,6 @@ class MacroStepSource:
                 raise InvalidBmcEncoding(
                     "Model source kind cannot use sentinel states."
                 )
-            if self.origin != "initial":
-                raise InvalidBmcEncoding("entry source is initial-only.")
             if entry.is_stoppable and not entry.is_root:
                 raise InvalidBmcEncoding(
                     "entry source must be root or non-stoppable model state."
@@ -289,15 +283,15 @@ class MacroStepSource:
     def allows_semantic_delta(self) -> bool:
         """Return whether this source may emit semantic delta cases.
 
-        :return: ``True`` only for initial entry sources.
+        :return: ``True`` for cold-init and entry sources.
         :rtype: bool
 
         Example::
 
-            >>> MacroStepSource('entry', 'initial', 0, 'Root').allows_semantic_delta
+            >>> MacroStepSource('entry', 'recurrence', 0, 'Root').allows_semantic_delta
             True
         """
-        return self.kind == "entry"
+        return self.kind in {"init", "entry"}
 
     @property
     def uses_stable_fallback(self) -> bool:
@@ -356,16 +350,48 @@ class MacroStepSource:
         return result
 
 
+def init_source(
+    domain: BmcDomain,
+    origin: str = "initial",
+) -> MacroStepSource:
+    """Construct the internal cold-start source.
+
+    :param domain: Domain snapshot containing the fixed init sentinel.
+    :type domain: BmcDomain
+    :param origin: Source origin, defaults to ``"initial"``.
+    :type origin: str, optional
+    :return: Validated init source.
+    :rtype: MacroStepSource
+    :raises InvalidBmcEncoding: If the domain sentinel metadata is missing.
+
+    Example::
+
+        >>> from pyfcstm.bmc.domain import build_bmc_domain, STATE_INIT_ID
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> domain = build_bmc_domain(load_state_machine_from_text('state Root;'), 1)
+        >>> init_source(domain).source_state_id == STATE_INIT_ID
+        True
+    """
+    return MacroStepSource(
+        "init",
+        origin,
+        STATE_INIT_ID,
+        INIT_CASE_PATH,
+        domain=domain,
+    )
+
+
 def entry_source(
     domain: BmcDomain,
     state: Optional[_StateRef] = None,
     origin: str = "initial",
 ) -> MacroStepSource:
-    """Construct an initial-only entry source.
+    """Construct a hot-entry source for a root or non-stoppable model state.
 
-    ``state`` defaults to the model root, which represents cold entry even when
-    the root is also a leaf.  Explicit non-root stoppable leaves should be
-    constructed through :func:`stable_leaf_source` instead.
+    ``state`` defaults to the model root for callers that need an already-entered
+    root boundary, such as recurrence from a query-local non-stoppable source.
+    Cold starts use :func:`init_source` instead.  Explicit non-root stoppable
+    leaves should be constructed through :func:`stable_leaf_source`.
 
     :param domain: Domain snapshot that owns the source state.
     :type domain: BmcDomain
@@ -375,7 +401,8 @@ def entry_source(
     :type origin: str, optional
     :return: Validated entry source.
     :rtype: MacroStepSource
-    :raises InvalidBmcEncoding: If the source is not an initial entry source.
+    :raises InvalidBmcEncoding: If the source is not the root or a
+        non-stoppable model state in ``domain``.
 
     Example::
 
@@ -454,41 +481,6 @@ def terminated_source(
     )
 
 
-def diagnostic_source(
-    domain: BmcDomain,
-    origin: str = "recurrence",
-) -> MacroStepSource:
-    """Construct a diagnostic sentinel absorb source.
-
-    This source starts at the diagnostic sentinel and is distinct from a
-    semantic ``delta`` case that targets the diagnostic sentinel from an entry
-    source.
-
-    :param domain: Domain snapshot containing the fixed diagnostic sentinel.
-    :type domain: BmcDomain
-    :param origin: Source origin, defaults to ``"recurrence"``.
-    :type origin: str, optional
-    :return: Validated diagnostic source.
-    :rtype: MacroStepSource
-    :raises InvalidBmcEncoding: If the domain sentinel metadata is missing.
-
-    Example::
-
-        >>> from pyfcstm.bmc.domain import build_bmc_domain, STATE_DIAGNOSTIC_ID
-        >>> from pyfcstm.model import load_state_machine_from_text
-        >>> domain = build_bmc_domain(load_state_machine_from_text('state Root;'), 1)
-        >>> diagnostic_source(domain).source_state_id == STATE_DIAGNOSTIC_ID
-        True
-    """
-    return MacroStepSource(
-        "diagnostic",
-        origin,
-        STATE_DIAGNOSTIC_ID,
-        DIAGNOSTIC_CASE_PATH,
-        domain=domain,
-    )
-
-
 def source_from_initial_spec(
     domain: BmcDomain,
     initial_spec: InitialSpec,
@@ -524,7 +516,7 @@ def source_from_initial_spec(
     if not isinstance(initial_spec, InitialSpec):
         raise InvalidBmcQuery("initial_spec must be InitialSpec.")
     if initial_spec.mode == "cold":
-        return entry_source(domain, origin="initial")
+        return init_source(domain, origin="initial")
     if initial_spec.mode == "terminated":
         return terminated_source(domain, origin="initial")
     if initial_spec.mode == "state":
@@ -536,12 +528,12 @@ def source_from_initial_spec(
 
 
 __all__ = [
+    "INIT_CASE_PATH",
     "TERMINATE_CASE_PATH",
-    "DIAGNOSTIC_CASE_PATH",
     "MacroStepSource",
+    "init_source",
     "entry_source",
     "stable_leaf_source",
     "terminated_source",
-    "diagnostic_source",
     "source_from_initial_spec",
 ]

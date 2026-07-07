@@ -63,8 +63,8 @@ def test_bmc_public_api_exports_exact_names():
         "BoundBmcQuery",
         "bind_bmc_query_structure",
         "bind_bmc_query",
+        "STATE_INIT_ID",
         "STATE_TERMINATE_ID",
-        "STATE_DIAGNOSTIC_ID",
         "StateDomainEntry",
         "EventDomainEntry",
         "VarDomainEntry",
@@ -73,13 +73,13 @@ def test_bmc_public_api_exports_exact_names():
         "EventInputRef",
         "BmcDomain",
         "build_bmc_domain",
+        "INIT_CASE_PATH",
         "TERMINATE_CASE_PATH",
-        "DIAGNOSTIC_CASE_PATH",
         "MacroStepSource",
+        "init_source",
         "entry_source",
         "stable_leaf_source",
         "terminated_source",
-        "diagnostic_source",
         "source_from_initial_spec",
         "BoolTemplate",
         "EventUse",
@@ -91,7 +91,6 @@ def test_bmc_public_api_exports_exact_names():
         "MacroStepFormal",
         "case_path_condition",
         "terminated_absorb_case",
-        "diagnostic_absorb_case",
         "build_fallback_case",
         "build_semantic_delta_case",
         "verify_boolean_partition",
@@ -111,8 +110,8 @@ def test_bmc_public_api_exports_exact_names():
 
     assert set(bmc.__all__) == expected
     lazy_names = {
+        "STATE_INIT_ID",
         "STATE_TERMINATE_ID",
-        "STATE_DIAGNOSTIC_ID",
         "StateDomainEntry",
         "EventDomainEntry",
         "VarDomainEntry",
@@ -121,13 +120,13 @@ def test_bmc_public_api_exports_exact_names():
         "EventInputRef",
         "BmcDomain",
         "build_bmc_domain",
+        "INIT_CASE_PATH",
         "TERMINATE_CASE_PATH",
-        "DIAGNOSTIC_CASE_PATH",
         "MacroStepSource",
+        "init_source",
         "entry_source",
         "stable_leaf_source",
         "terminated_source",
-        "diagnostic_source",
         "source_from_initial_spec",
         "BoolTemplate",
         "EventUse",
@@ -139,7 +138,6 @@ def test_bmc_public_api_exports_exact_names():
         "MacroStepFormal",
         "case_path_condition",
         "terminated_absorb_case",
-        "diagnostic_absorb_case",
         "build_fallback_case",
         "build_semantic_delta_case",
         "verify_boolean_partition",
@@ -162,14 +160,13 @@ def test_bmc_public_api_exports_exact_names():
         "parse_bmc_cond_expression",
         "parse_with_bmc_grammar_entry",
         "build_bmc_ast_from_parse_tree",
+        "init_source",
         "entry_source",
         "stable_leaf_source",
         "terminated_source",
-        "diagnostic_source",
         "source_from_initial_spec",
         "case_path_condition",
         "terminated_absorb_case",
-        "diagnostic_absorb_case",
         "build_fallback_case",
         "build_semantic_delta_case",
         "verify_boolean_partition",
@@ -183,9 +180,9 @@ def test_bmc_public_api_exports_exact_names():
         assert getattr(bmc, name).__name__ == name
     for name in function_names:
         assert callable(getattr(bmc, name))
+    assert bmc.STATE_INIT_ID == -3
     assert bmc.STATE_TERMINATE_ID == -1
-    assert bmc.STATE_DIAGNOSTIC_ID == -2
-    assert bmc.DIAGNOSTIC_CASE_PATH == "__diagnostic__"
+    assert bmc.INIT_CASE_PATH == "__init__"
     assert bmc.TERMINATE_CASE_PATH == "__terminate__"
     assert bmc.BmcEngine.__name__ == "BmcEngine"
     assert bmc.BmcOptions().__class__.__name__ == "BmcOptions"
@@ -262,8 +259,8 @@ def test_submodule_all_exports_are_exact():
         "build_bmc_ast_from_parse_tree",
     }
     assert set(domain.__all__) == {
+        "STATE_INIT_ID",
         "STATE_TERMINATE_ID",
-        "STATE_DIAGNOSTIC_ID",
         "StateDomainEntry",
         "EventDomainEntry",
         "VarDomainEntry",
@@ -284,13 +281,13 @@ def test_submodule_all_exports_are_exact():
         "bind_bmc_query",
     }
     assert set(source.__all__) == {
+        "INIT_CASE_PATH",
         "TERMINATE_CASE_PATH",
-        "DIAGNOSTIC_CASE_PATH",
         "MacroStepSource",
+        "init_source",
         "entry_source",
         "stable_leaf_source",
         "terminated_source",
-        "diagnostic_source",
         "source_from_initial_spec",
     }
     assert set(macro.__all__) == {
@@ -304,7 +301,6 @@ def test_submodule_all_exports_are_exact():
         "MacroStepFormal",
         "case_path_condition",
         "terminated_absorb_case",
-        "diagnostic_absorb_case",
         "build_fallback_case",
         "build_semantic_delta_case",
         "verify_boolean_partition",

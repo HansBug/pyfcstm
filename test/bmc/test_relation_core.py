@@ -7,6 +7,7 @@ import pytest
 
 from pyfcstm.bmc import (
     BmcEngine,
+    STATE_INIT_ID,
     STATE_TERMINATE_ID,
     UnsupportedBmcQuery,
     build_bmc_core_formula,
@@ -215,3 +216,139 @@ def test_case_relation_uses_implication_not_global_and_and_carries_vars() -> Non
         _solver(core.core, z3.Not(go), core.symbols.frame_state(1) != state_a).check()
         == z3.unsat
     )
+
+
+@pytest.mark.unittest
+def test_cold_no_progress_delta_stutters_state_and_vars() -> None:
+    """Failed cold entry exposes Delta_i and keeps the init frame unchanged."""
+    model = load_state_machine_from_text(
+        """
+        def int x = 0;
+        state Root {
+            event Start;
+            enter { x = x + 100; }
+            state A;
+            [*] -> A :: Start;
+        }
+        """
+    )
+    context = BmcEngine(model).prepare('check reach <= 1: active("Root");')
+    core = build_bmc_core_formula(context)
+    no_start = z3.Not(core.symbols.event_input(0, "Root.Start"))
+
+    assert _solver(core.core, no_start).check() == z3.sat
+    assert (
+        _solver(core.core, no_start, z3.Not(core.symbols.delta_flag(0))).check()
+        == z3.unsat
+    )
+    assert _solver(core.core, no_start, core.symbols.gamma_flag(0)).check() == z3.unsat
+    assert (
+        _solver(
+            core.core, no_start, core.symbols.frame_state(1) != STATE_INIT_ID
+        ).check()
+        == z3.unsat
+    )
+    assert (
+        _solver(core.core, no_start, core.symbols.frame_var(1, "x") != 0).check()
+        == z3.unsat
+    )
+    assert (
+        _solver(
+            core.core, core.symbols.delta_flag(0), core.symbols.gamma_flag(0)
+        ).check()
+        == z3.unsat
+    )
+
+
+@pytest.mark.unittest
+def test_stable_leaf_fallback_gamma_commits_during_actions() -> None:
+    """Stable fallback exposes Gamma_i while committing during-only actions."""
+    model = load_state_machine_from_text(
+        """
+        def int x = 0;
+        state Root {
+            state A {
+                during { x = x + 1; }
+            }
+            [*] -> A;
+        }
+        """
+    )
+    context = BmcEngine(model).prepare(
+        'init state("Root.A");\ncheck reach <= 1: active("Root.A");'
+    )
+    core = build_bmc_core_formula(context)
+    state_a = context.domain.state_path_to_id("Root.A")
+
+    assert _solver(core.core).check() == z3.sat
+    assert _solver(core.core, z3.Not(core.symbols.gamma_flag(0))).check() == z3.unsat
+    assert _solver(core.core, core.symbols.delta_flag(0)).check() == z3.unsat
+    assert (
+        _solver(core.core, core.symbols.frame_state(1) != state_a).check() == z3.unsat
+    )
+    assert _solver(core.core, core.symbols.frame_var(1, "x") != 1).check() == z3.unsat
+
+
+@pytest.mark.unittest
+def test_active_state_uses_ancestor_or_self_and_init_root_projection() -> None:
+    """Public active(...) observes ancestors and maps STATE_INIT to root only."""
+    model = load_state_machine_from_text(
+        """
+        state Root {
+            state Parent {
+                state Child;
+                [*] -> Child;
+            }
+            state Sibling;
+            [*] -> Parent;
+        }
+        """
+    )
+    context = BmcEngine(model).prepare('check reach <= 1: active("Root");')
+    core = build_bmc_core_formula(context)
+    child_id = context.domain.state_path_to_id("Root.Parent.Child")
+
+    assert (
+        _solver(
+            core.symbols.frame_state(0) == child_id,
+            z3.Not(core.symbols.active_state(0, "Root")),
+        ).check()
+        == z3.unsat
+    )
+    assert (
+        _solver(
+            core.symbols.frame_state(0) == child_id,
+            z3.Not(core.symbols.active_state(0, "Root.Parent")),
+        ).check()
+        == z3.unsat
+    )
+    assert (
+        _solver(
+            core.symbols.frame_state(0) == child_id,
+            z3.Not(core.symbols.active_state(0, "Root.Parent.Child")),
+        ).check()
+        == z3.unsat
+    )
+    assert (
+        _solver(
+            core.symbols.frame_state(0) == child_id,
+            core.symbols.active_state(0, "Root.Sibling"),
+        ).check()
+        == z3.unsat
+    )
+    assert (
+        _solver(
+            core.symbols.frame_state(0) == STATE_INIT_ID,
+            z3.Not(core.symbols.active_state(0, "Root")),
+        ).check()
+        == z3.unsat
+    )
+    assert (
+        _solver(
+            core.symbols.frame_state(0) == STATE_INIT_ID,
+            core.symbols.active_state(0, "Root.Parent"),
+        ).check()
+        == z3.unsat
+    )
+    terminate_path = context.domain.state_by_id(STATE_TERMINATE_ID).path
+    assert z3.is_false(core.symbols.active_state(0, terminate_path))

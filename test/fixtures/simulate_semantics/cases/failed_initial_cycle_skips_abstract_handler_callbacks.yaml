@@ -9,8 +9,6 @@ categories:
 - template_alignment
 - validation
 - abstract
-exclude_runners:
-- bmc_core
 handlers:
 - action: Root.RootInit
   behavior: record_call

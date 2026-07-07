@@ -110,6 +110,10 @@ def test_trace_symbols_reject_invalid_public_lookups() -> None:
         symbols.event_input(0, "Root.Missing")
     with pytest.raises(BmcBuildError, match="step index out of range"):
         symbols.event_input(1, "Root.Go")
+    with pytest.raises(BmcBuildError, match="step index out of range"):
+        symbols.delta_flag(1)
+    with pytest.raises(BmcBuildError, match="step index out of range"):
+        symbols.gamma_flag(1)
     with pytest.raises(BmcBuildError, match="Unknown case selector"):
         symbols.case_selector(0, "missing")
     with pytest.raises(BmcBuildError, match="step index out of range"):
@@ -130,20 +134,94 @@ def test_trace_symbols_dataclass_validates_public_payload_shape() -> None:
     frame_states = (z3.Int("s0"), z3.Int("s1"))
     frame_vars = ({}, {})
     event_inputs = ({},)
+    delta_flags = (z3.Bool("delta0"),)
+    gamma_flags = (z3.Bool("gamma0"),)
     case_selectors = ({},)
 
     with pytest.raises(BmcBuildError, match="domain must be BmcDomain"):
         BmcTraceSymbols(
-            object(), frame_states, frame_vars, event_inputs, case_selectors
+            object(),
+            frame_states,
+            frame_vars,
+            event_inputs,
+            delta_flags,
+            gamma_flags,
+            case_selectors,
         )
     with pytest.raises(BmcBuildError, match="frame_states must contain"):
-        BmcTraceSymbols(domain, (), frame_vars, event_inputs, case_selectors)
+        BmcTraceSymbols(
+            domain,
+            (),
+            frame_vars,
+            event_inputs,
+            delta_flags,
+            gamma_flags,
+            case_selectors,
+        )
     with pytest.raises(BmcBuildError, match="frame_vars must contain"):
-        BmcTraceSymbols(domain, frame_states, (), event_inputs, case_selectors)
+        BmcTraceSymbols(
+            domain,
+            frame_states,
+            (),
+            event_inputs,
+            delta_flags,
+            gamma_flags,
+            case_selectors,
+        )
     with pytest.raises(BmcBuildError, match="event_inputs must contain"):
-        BmcTraceSymbols(domain, frame_states, frame_vars, (), case_selectors)
+        BmcTraceSymbols(
+            domain,
+            frame_states,
+            frame_vars,
+            (),
+            delta_flags,
+            gamma_flags,
+            case_selectors,
+        )
+    with pytest.raises(BmcBuildError, match="delta_flags must contain"):
+        BmcTraceSymbols(
+            domain,
+            frame_states,
+            frame_vars,
+            event_inputs,
+            (),
+            gamma_flags,
+            case_selectors,
+        )
+    with pytest.raises(BmcBuildError, match="gamma_flags must contain"):
+        BmcTraceSymbols(
+            domain,
+            frame_states,
+            frame_vars,
+            event_inputs,
+            delta_flags,
+            (),
+            case_selectors,
+        )
+    with pytest.raises(BmcBuildError, match="delta_flags must contain Z3 Boolean"):
+        BmcTraceSymbols(
+            domain,
+            frame_states,
+            frame_vars,
+            event_inputs,
+            (z3.Int("not_delta_bool"),),
+            gamma_flags,
+            case_selectors,
+        )
+    with pytest.raises(BmcBuildError, match="gamma_flags must contain Z3 Boolean"):
+        BmcTraceSymbols(
+            domain,
+            frame_states,
+            frame_vars,
+            event_inputs,
+            delta_flags,
+            (z3.Int("not_gamma_bool"),),
+            case_selectors,
+        )
     with pytest.raises(BmcBuildError, match="case_selectors must contain"):
-        BmcTraceSymbols(domain, frame_states, frame_vars, event_inputs, ())
+        BmcTraceSymbols(
+            domain, frame_states, frame_vars, event_inputs, delta_flags, gamma_flags, ()
+        )
 
 
 @pytest.mark.unittest
@@ -272,6 +350,27 @@ def test_relation_dataclasses_validate_public_payload_shape() -> None:
         BmcStepRelation(0, (object(),), (), z3.BoolVal(True))
     with pytest.raises(BmcBuildError, match="formula must be a Z3 Boolean"):
         BmcStepRelation(0, (), (), z3.Int("bad"))
+    with pytest.raises(BmcBuildError, match="delta_constraint must be"):
+        BmcStepRelation(0, (), (), z3.BoolVal(True), z3.Int("bad_delta"))
+    with pytest.raises(BmcBuildError, match="gamma_constraint must be"):
+        BmcStepRelation(
+            0,
+            (),
+            (),
+            z3.BoolVal(True),
+            z3.BoolVal(True),
+            z3.Int("bad_gamma"),
+        )
+    with pytest.raises(BmcBuildError, match="progress_mutex_constraint must be"):
+        BmcStepRelation(
+            0,
+            (),
+            (),
+            z3.BoolVal(True),
+            z3.BoolVal(True),
+            z3.BoolVal(True),
+            z3.Int("bad_mutex"),
+        )
     assert BmcStepRelation(0, (), (), z3.BoolVal(True)).case_registry == {}
 
 

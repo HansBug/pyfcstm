@@ -11,7 +11,7 @@ from pyfcstm.bmc import (
     BmcBuildError,
     BmcDomain,
     MacroExpansionOptions,
-    diagnostic_source,
+    init_source,
     build_bmc_domain,
     entry_source,
     terminated_source,
@@ -219,7 +219,7 @@ def test_internal_frontier_helpers_prune_false_and_clear_pending_pseudo_exit():
         """
     )
     domain = build_bmc_domain(model, bound=1)
-    expander = _MacroExpander(entry_source(domain), MacroExpansionOptions())
+    expander = _MacroExpander(init_source(domain), MacroExpansionOptions())
     root = model.root_state
     parent = root.substates["Parent"]
     route = parent.substates["Route"]
@@ -273,7 +273,7 @@ def test_expansion_safety_limits_fail_closed():
 
     with pytest.raises(BmcBuildError, match="micro-step"):
         expand_macro_step_cases(
-            entry_source(domain),
+            init_source(domain),
             MacroExpansionOptions(max_micro_steps=1),
         )
     with pytest.raises(BmcBuildError, match="stack-depth"):
@@ -284,13 +284,13 @@ def test_expansion_safety_limits_fail_closed():
 
 
 @pytest.mark.unittest
-def test_sentinel_sources_expand_to_absorb_cases():
-    """Terminated and diagnostic macro sources are explicit absorb formals."""
+def test_sentinel_and_init_sources_expand_with_dedicated_cases():
+    """Terminated absorbs and init cold-entry cases keep dedicated source paths."""
     model = load_state_machine_from_text("state Root;")
     domain = build_bmc_domain(model, bound=1)
 
     terminated = expand_macro_step_cases(terminated_source(domain))
-    diagnostic = expand_macro_step_cases(diagnostic_source(domain))
+    init = expand_macro_step_cases(init_source(domain))
 
     assert [
         (case.kind, case.source_state_path, case.target_state_path)
@@ -298,10 +298,11 @@ def test_sentinel_sources_expand_to_absorb_cases():
     ] == [("absorb", "__terminate__", "__terminate__")]
     assert [
         (case.kind, case.source_state_path, case.target_state_path)
-        for case in diagnostic.cases
-    ] == [("absorb", "__diagnostic__", "__diagnostic__")]
+        for case in init.cases
+    ] == [("initial", "__init__", "Root"), ("delta", "__init__", "__init__")]
     assert terminated.cases[0].condition.evaluate({}) is True
-    assert diagnostic.cases[0].condition.evaluate({}) is True
+    assert init.cases[0].condition.evaluate({}) is True
+    assert init.cases[1].condition.variables == ("accepted:__init__::initial::Root::0",)
 
 
 @pytest.mark.unittest
@@ -318,7 +319,7 @@ def test_root_entry_expands_initial_descent_actions():
         """
     )
     domain = build_bmc_domain(model, bound=1)
-    formal = expand_macro_step_cases(entry_source(domain))
+    formal = expand_macro_step_cases(init_source(domain))
     initial = _case_by_kind_target(formal, "initial", "Root.A")
 
     assert initial.condition.evaluate({}) is True
@@ -378,7 +379,7 @@ def test_non_pseudo_initial_transition_consumes_plain_before_actions():
         """
     )
     domain = build_bmc_domain(model, bound=1)
-    formal = expand_macro_step_cases(entry_source(domain))
+    formal = expand_macro_step_cases(init_source(domain))
     initial = _case_by_kind_target(formal, "initial", "Root.Parent.Child")
 
     assert [block.runtime_role for block in initial.action_blocks] == [
@@ -432,7 +433,7 @@ def test_failed_initial_candidate_becomes_entry_delta_with_initial_guard_metadat
     )
     domain = build_bmc_domain(model, bound=1)
     formal = expand_macro_step_cases(entry_source(domain, "Root.Parent"))
-    delta = _case_by_kind_target(formal, "delta", "__diagnostic__")
+    delta = _case_by_kind_target(formal, "delta", "Root.Parent")
 
     assert delta.condition.evaluate({}) is True
     assert {item.name for item in delta.failed_conditions if item.kind == "atom"} == {
@@ -446,7 +447,7 @@ def test_failed_initial_candidate_becomes_entry_delta_with_initial_guard_metadat
 
 @pytest.mark.unittest
 def test_failed_parent_continuation_falls_back_with_parent_guard_metadata():
-    """Rejected parent continuation is carried into stable fallback diagnostics."""
+    """Rejected parent continuation is carried into stable fallback inits."""
     model = load_state_machine_from_text(
         """
         def int x = 0;
@@ -548,7 +549,7 @@ def test_lifecycle_ref_actions_record_referenced_action_owner_and_name():
         """
     )
     domain = build_bmc_domain(model, bound=1)
-    formal = expand_macro_step_cases(entry_source(domain))
+    formal = expand_macro_step_cases(init_source(domain))
     selected = _case_by_kind_target(formal, "initial", "Root.A")
 
     assert [
@@ -575,7 +576,7 @@ def test_empty_concrete_actions_do_not_create_action_blocks():
         """
     )
     domain = build_bmc_domain(model, bound=1)
-    formal = expand_macro_step_cases(entry_source(domain))
+    formal = expand_macro_step_cases(init_source(domain))
     selected = _case_by_kind_target(formal, "initial", "Root.A")
 
     assert selected.action_blocks == ()
@@ -715,7 +716,7 @@ def test_hot_pseudo_entry_uses_guard_anchor_zero_for_first_route_guard():
 
     to_b = _case_by_kind_target(formal, "initial", "Root.System.B")
     to_done = _case_by_kind_target(formal, "initial", "Root.Done")
-    delta = _case_by_kind_target(formal, "delta", "__diagnostic__")
+    delta = _case_by_kind_target(formal, "delta", "Root.System.Route")
 
     assert [
         (str(g.expr.to_ast_node()), g.after_action_block_index, g.reason)

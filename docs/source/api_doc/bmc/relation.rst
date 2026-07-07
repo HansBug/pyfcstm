@@ -16,7 +16,7 @@ BmcTraceSymbols
 -----------------------------------------------------
 
 .. autoclass:: BmcTraceSymbols
-    :members: __post_init__,allocate,frame_state,frame_var,event_input,case_selector,to_canonical,domain,frame_states,frame_vars,event_inputs,case_selectors
+    :members: __post_init__,allocate,frame_state,frame_var,event_input,delta_flag,gamma_flag,active_state,case_selector,to_canonical,domain,frame_states,frame_vars,event_inputs,delta_flags,gamma_flags,case_selectors
 
 
 BmcCaseRelation
@@ -30,7 +30,7 @@ BmcStepRelation
 -----------------------------------------------------
 
 .. autoclass:: BmcStepRelation
-    :members: __post_init__,case_registry,to_canonical,step_index,formals,case_relations,formula
+    :members: __post_init__,case_registry,to_canonical,step_index,formals,case_relations,formula,delta_constraint,gamma_constraint,progress_mutex_constraint
 
 
 BmcCoreFormula

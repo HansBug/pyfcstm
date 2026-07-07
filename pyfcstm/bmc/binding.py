@@ -91,7 +91,7 @@ _PROPERTY_KINDS = {
     "response",
     "cover",
 }
-_RESERVED_STATE_PATHS = {"$STATE_TERMINATE", "$STATE_DIAGNOSTIC"}
+_RESERVED_STATE_PATHS = {"$STATE_INIT", "$STATE_TERMINATE"}
 
 
 def _is_non_empty_text(value: object) -> bool:

@@ -12,11 +12,18 @@ pyfcstm.bmc.query
 .. autodata:: __all__
 
 
+InitialVariablePolicy
+-----------------------------------------------------
+
+.. autoclass:: InitialVariablePolicy
+    :members: __post_init__,is_empty,havoc_names,to_canonical,__str__,havoc_all,havoc_variables
+
+
 InitialSpec
 -----------------------------------------------------
 
 .. autoclass:: InitialSpec
-    :members: __post_init__,to_canonical,__str__,mode,state_path,predicate
+    :members: __post_init__,to_canonical,__str__,mode,state_path,predicate,variable_policy
 
 
 BmcAssumption

@@ -66,6 +66,7 @@ NUMERIC_UNSUPPORTED_CASES = {
 HANDLER_CALL_PARTIAL_CASES = {
     "abstract_handler_context_metadata",
     "abstract_handler_context_vars_are_read_only",
+    "abstract_hook_context_hot_start_leaf",
     "abstract_hook_ref_context_reports_callsite_metadata",
     "aspect_context_reports_active_leaf",
     "composite_initial_handler_log_after_transition_uses_selected_child",
@@ -80,11 +81,6 @@ HANDLER_CALL_PARTIAL_CASES = {
 }
 
 TEMPORARY_BMC_CORE_EXCLUDE_CASES = {
-    # Follow-up: .fbmcq initial variable override / havoc policy.
-    "hot_start_evented_initial_matches_cold_suffix",
-    "hot_start_initial_vars_override_skips_int_initializer",
-    "persistent_initial_vars_override_skips_initializer",
-    "abstract_hook_context_hot_start_leaf",
     # Future runtime-error relation work.
     "design_speculative_dfs_safety_limit",
     "expression_error_preserves_runtime_snapshot",
@@ -118,21 +114,10 @@ BMC_CORE_FIXTURE_LEDGER_CASES = (
 
 
 def _temporary_policy(case_id: str) -> BmcSemanticFixturePolicy:
-    if case_id in {
-        "hot_start_evented_initial_matches_cold_suffix",
-        "hot_start_initial_vars_override_skips_int_initializer",
-        "persistent_initial_vars_override_skips_initializer",
-        "abstract_hook_context_hot_start_leaf",
-    }:
-        bucket = "initial_variable_policy"
-        reason = ".fbmcq initial variable override / havoc support is scheduled for follow-up query-policy work."
-    else:
-        bucket = "runtime_step_error"
-        reason = "Runtime step-error semantics are scheduled for later BMC diagnostic research."
     return BmcSemanticFixturePolicy(
         mode="temporary_exclude",
-        bucket=bucket,
-        reason=reason,
+        bucket="runtime_step_error",
+        reason="Runtime step-error semantics are scheduled for later BMC diagnostic research.",
     )
 
 

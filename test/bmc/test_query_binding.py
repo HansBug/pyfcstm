@@ -36,6 +36,7 @@ from pyfcstm.bmc.query import (
     EventAssumption,
     EventCardinalityAssumption,
     FrameAssumption,
+    InitialVariablePolicy,
     InitialSpec,
 )
 from pyfcstm.model import load_state_machine_from_text
@@ -101,9 +102,21 @@ def binding_model():
             id="state-where-bare-var",
         ),
         pytest.param(
+            'init state("Root.Idle") havoc { x, "cycle" } where x >= 0; '
+            "check invariant <= 3: x >= 0;",
+            {"mode": "state", "kind": "invariant", "assumptions": 0},
+            id="state-havoc-where-bare-var",
+        ),
+        pytest.param(
             'init terminated where var("cycle") == 1; check must_reach <= 4: terminated();',
             {"mode": "terminated", "kind": "must_reach", "assumptions": 0},
             id="terminated-where-model-cycle-var",
+        ),
+        pytest.param(
+            'init terminated havoc * where var("cycle") == 1; '
+            "check must_reach <= 4: terminated();",
+            {"mode": "terminated", "kind": "must_reach", "assumptions": 0},
+            id="terminated-havoc-all-where-model-cycle-var",
         ),
         pytest.param(
             'assume always: cycle <= 5; assume at 2: active("Root.Idle"); '
@@ -154,6 +167,11 @@ def test_bind_bmc_query_structure_accepts_positive_queries(source, expected):
         pytest.param(
             'init state("Root.Idle") where x >= 0; check invariant <= 3: x >= 0;',
             id="hot-state-bare-variable",
+        ),
+        pytest.param(
+            'init state("Root.Idle") havoc { x, "cycle" } where x >= 0; '
+            "check invariant <= 3: x >= 0;",
+            id="hot-state-havoc-policy",
         ),
         pytest.param(
             'init terminated where var("cycle") == 1; '
@@ -483,7 +501,7 @@ def test_event_assumption_selectors_expand_to_cycle_tuples(source, expected_cycl
 def test_bind_bmc_query_model_resolution_records_references(binding_model):
     """Model-aware binding resolves state, event, and variable references."""
     query = _query(
-        'init state("Root.Idle") where x == var("x"); '
+        'init state("Root.Idle") havoc { "cycle", x } where x == var("x"); '
         'assume event("Root.Tick", 0) == true; '
         'assume events cardinality at_most_one {"Root.Tick", "Root.Reset"}; '
         'check reach <= 2: active("Root.Done") && var("cycle") >= cycle;'
@@ -496,6 +514,7 @@ def test_bind_bmc_query_model_resolution_records_references(binding_model):
     }
 
     assert bound.initial.resolved_state_id is not None
+    assert bound.initial.resolved_havoc_variables == ("x", "cycle")
     assert by_key[("state", "Root.Idle", "state_path")]["resolved_id"] is not None
     assert by_key[("state", "Root.Done", "active")]["resolved_id"] is not None
     assert by_key[("event", "Root.Tick", "event_assumption")]["resolved_id"] is not None
@@ -504,7 +523,18 @@ def test_bind_bmc_query_model_resolution_records_references(binding_model):
     )
     assert by_key[("variable", "x", "bare")]["declared_type"] == "int"
     assert by_key[("variable", "x", "var_call")]["declared_type"] == "int"
+    assert by_key[("variable", "x", "havoc")]["declared_type"] == "int"
     assert by_key[("variable", "cycle", "var_call")]["declared_type"] == "int"
+    assert by_key[("variable", "cycle", "havoc")]["declared_type"] == "int"
+
+
+@pytest.mark.unittest
+def test_bound_initial_spec_exposes_havoc_names_without_domain():
+    """Bound initial specs expose direct public-policy names before resolution."""
+    initial = InitialSpec(variable_policy=InitialVariablePolicy(havoc_variables=("x",)))
+    bound = BoundInitialSpec(initial)
+
+    assert bound.havoc_names(("x", "y")) == ("x",)
 
 
 @pytest.mark.unittest
@@ -520,6 +550,10 @@ def test_bind_bmc_query_model_resolution_records_references(binding_model):
         (
             'assume event("Root.Missing", 0) == true; check reach <= 1: true;',
             "unknown_event",
+        ),
+        (
+            'init state("Root.Idle") havoc { missing }; check reach <= 1: true;',
+            "unknown_variable",
         ),
         ("check reach <= 1: missing >= 0;", "unknown_variable"),
     ],
@@ -673,6 +707,22 @@ def test_binding_imports_remain_layered():
             id="initial-resolved-bool",
         ),
         pytest.param(
+            lambda: BoundInitialSpec(InitialSpec(), resolved_havoc_variables="x"),
+            id="initial-resolved-havoc-string",
+        ),
+        pytest.param(
+            lambda: BoundInitialSpec(
+                InitialSpec(), resolved_havoc_variables=("x", "x")
+            ),
+            id="initial-resolved-havoc-duplicate",
+        ),
+        pytest.param(
+            lambda: BoundInitialSpec(
+                InitialSpec(), resolved_havoc_variables=("x", "")
+            ),
+            id="initial-resolved-havoc-empty-name",
+        ),
+        pytest.param(
             lambda: BoundAssumption(object(), "frame"), id="assumption-source"
         ),
         pytest.param(
@@ -813,6 +863,7 @@ def test_bound_initial_properties_and_sequence_normalization():
 
     assert initial.mode == "cold"
     assert initial.predicate == BoolLiteral("true")
+    assert initial.variable_policy == InitialVariablePolicy()
     assert assumption.cycles == (0, 1)
     assert assumption.resolved_event_ids == (2,)
     assert isinstance(bound.assumptions, tuple)
@@ -960,6 +1011,34 @@ def test_internal_assumption_dispatch_remains_defensive_when_shape_check_is_bypa
 
 
 @pytest.mark.unittest
+def test_internal_initial_policy_duplicate_guard_remains_defensive_when_shape_check_is_bypassed(
+    monkeypatch,
+):
+    """The binder rechecks duplicate initial havoc names after prechecks."""
+    monkeypatch.setattr(binding_module, "_validate_query_shape", lambda query: None)
+    policy = InitialVariablePolicy(havoc_variables=("x",))
+    object.__setattr__(policy, "havoc_variables", ("x", "x"))
+    initial = InitialSpec(variable_policy=policy)
+    query = BmcQuery(
+        initial=initial,
+        property=BmcProperty("reach", 1, predicate=BoolLiteral("true")),
+    )
+
+    with pytest.raises(InvalidBmcQuery) as excinfo:
+        bind_bmc_query_structure(query)
+
+    diagnostic = _diagnostic(excinfo)
+    assert diagnostic.code == "duplicate_havoc_variable"
+    assert diagnostic.path == "initial.variable_policy.havoc_variables[1]"
+
+
+@pytest.mark.unittest
+def test_internal_domain_variable_names_handles_domainless_context():
+    """Domain-name extraction stays safe before model-aware binding."""
+    assert binding_module._domain_variable_names(binding_module._BindingContext(1)) == ()
+
+
+@pytest.mark.unittest
 def test_bind_bmc_query_converts_invalid_model_to_query_diagnostic():
     """Model/domain entry converts invalid model objects into binding errors."""
     with pytest.raises(InvalidBmcQuery) as excinfo:
@@ -1061,6 +1140,57 @@ def test_internal_frame_assumption_guard_rejects_forged_frame_values(forged_fram
             "initial.predicate",
             "query_shape",
             id="initial-predicate-wrong-type",
+        ),
+        pytest.param(
+            lambda query: object.__setattr__(
+                query.initial, "variable_policy", object()
+            ),
+            "initial.variable_policy",
+            "query_shape",
+            id="initial-variable-policy-wrong-type",
+        ),
+        pytest.param(
+            lambda query: object.__setattr__(
+                query.initial.variable_policy, "havoc_all", 1
+            ),
+            "initial.variable_policy.havoc_all",
+            "query_shape",
+            id="initial-variable-policy-havoc-all-non-bool",
+        ),
+        pytest.param(
+            lambda query: object.__setattr__(
+                query.initial.variable_policy, "havoc_variables", "x"
+            ),
+            "initial.variable_policy.havoc_variables",
+            "query_shape",
+            id="initial-variable-policy-havoc-variables-string",
+        ),
+        pytest.param(
+            lambda query: object.__setattr__(
+                query.initial.variable_policy, "havoc_variables", ("",)
+            ),
+            "initial.variable_policy.havoc_variables[0]",
+            "query_shape",
+            id="initial-variable-policy-havoc-variable-empty",
+        ),
+        pytest.param(
+            lambda query: (
+                object.__setattr__(query.initial.variable_policy, "havoc_all", True),
+                object.__setattr__(
+                    query.initial.variable_policy, "havoc_variables", ("x",)
+                ),
+            ),
+            "initial.variable_policy",
+            "query_shape",
+            id="initial-variable-policy-havoc-all-with-names",
+        ),
+        pytest.param(
+            lambda query: object.__setattr__(
+                query.initial.variable_policy, "havoc_variables", ("x", "x")
+            ),
+            "initial.variable_policy.havoc_variables[1]",
+            "duplicate_havoc_variable",
+            id="initial-variable-policy-havoc-variable-duplicate",
         ),
         pytest.param(
             lambda query: object.__setattr__(query, "assumptions", "bad"),

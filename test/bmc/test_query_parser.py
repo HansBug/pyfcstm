@@ -109,6 +109,52 @@ from pyfcstm.bmc.query import BmcProperty, BmcQuery
             id="state-where-must-reach",
         ),
         pytest.param(
+            'init state("Root.A") havoc { x, "cycle" } where x >= 0; '
+            'check reach <= 1: active("Root.A");',
+            {
+                "initial": {
+                    "mode": "state",
+                    "state_path": "Root.A",
+                    "predicate": {
+                        "node": "numeric_comparison",
+                        "op": ">=",
+                    },
+                    "variable_policy": {
+                        "havoc_all": False,
+                        "havoc_variables": ["x", "cycle"],
+                    },
+                },
+                "assumption_count": 0,
+                "property": {
+                    "kind": "reach",
+                    "bound": 1,
+                    "predicate": {
+                        "node": "active",
+                        "state_path": "Root.A",
+                        "frame": "current",
+                    },
+                },
+            },
+            id="state-havoc-vars-where-reach",
+        ),
+        pytest.param(
+            "init terminated havoc *; check invariant <= 1: terminated();",
+            {
+                "initial": {
+                    "mode": "terminated",
+                    "predicate": None,
+                    "variable_policy": {"havoc_all": True, "havoc_variables": []},
+                },
+                "assumption_count": 0,
+                "property": {
+                    "kind": "invariant",
+                    "bound": 1,
+                    "predicate": {"node": "terminated", "frame": "current"},
+                },
+            },
+            id="terminated-havoc-all-invariant",
+        ),
+        pytest.param(
             'assume always: var("x") <= 10; '
             'assume at 2: active("Root.Ready", 2); '
             'assume event("Root.Tick", *) == false; '
@@ -180,6 +226,9 @@ def test_parse_bmc_query_builds_expected_canonical_shape(query_text, expected):
     assert canonical["initial"].get("state_path") == expected["initial"].get(
         "state_path"
     )
+    if "variable_policy" in expected["initial"]:
+        for key, value in expected["initial"]["variable_policy"].items():
+            assert canonical["initial"]["variable_policy"][key] == value
     if expected["initial"]["predicate"] is None:
         assert canonical["initial"]["predicate"] is None
     else:

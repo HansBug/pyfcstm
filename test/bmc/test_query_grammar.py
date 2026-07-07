@@ -413,6 +413,14 @@ def test_fcstm_compatible_condition_expressions_and_bmc_atoms_parse(expression):
             "check response <= 001: trigger true -> within 01 true;",
             id="leading-zero-response-bound-and-window",
         ),
+        pytest.param(
+            'init state("Root.A") havoc { x } where x == 1; check reach <= 1: true;',
+            id="init-havoc-before-where",
+        ),
+        pytest.param(
+            'init cold havoc * where active("Root"); check reach <= 1: true;',
+            id="init-havoc-all-before-where",
+        ),
     ],
 )
 def test_later_binding_or_normalization_queries_parse(query_text):
@@ -465,6 +473,22 @@ def test_later_binding_or_normalization_queries_parse(query_text):
         pytest.param(
             'check reach <= 1: event("Root.E");',
             id="event-atom-missing-selector",
+        ),
+        pytest.param(
+            'init state("A") with { x = 7 }; check reach <= 1: true;',
+            id="init-with-not-supported",
+        ),
+        pytest.param(
+            'init state("A") havoc {}; check reach <= 1: true;',
+            id="empty-havoc-variable-set",
+        ),
+        pytest.param(
+            'init state("A") where x == 7 havoc { x }; check reach <= 1: true;',
+            id="havoc-after-where",
+        ),
+        pytest.param(
+            'init state("A") where x == 1 where x == 2; check reach <= 1: true;',
+            id="multiple-initial-where-clauses",
         ),
     ],
 )

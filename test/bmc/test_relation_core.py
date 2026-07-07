@@ -50,6 +50,116 @@ def test_core_formula_constrains_initial_state_and_variable_initializers() -> No
 
 
 @pytest.mark.unittest
+def test_initial_havoc_variable_skips_initializer_but_where_constrains_frame0() -> None:
+    """``havoc { x }`` removes only ``x``'s initializer from ``I_0``."""
+    model = load_state_machine_from_text(
+        """
+        def int x = 0;
+        def int keep = 5;
+        state Root {
+            state A;
+            [*] -> A;
+        }
+        """
+    )
+    context = BmcEngine(model).prepare(
+        'init state("Root.A") havoc { x } where x == 7; '
+        'check reach <= 1: active("Root.A");'
+    )
+    core = build_bmc_core_formula(context)
+
+    assert _solver(core.core).check() == z3.sat
+    assert _solver(core.core, core.symbols.frame_var(0, "x") != 7).check() == z3.unsat
+    assert (
+        _solver(core.core, core.symbols.frame_var(0, "keep") != 5).check() == z3.unsat
+    )
+
+
+@pytest.mark.unittest
+def test_initial_where_without_havoc_keeps_initializer_and_can_be_unsat() -> None:
+    """Initial ``where`` remains a relation and never overrides initializers."""
+    model = load_state_machine_from_text(
+        """
+        def int x = 0;
+        state Root {
+            state A;
+            [*] -> A;
+        }
+        """
+    )
+    context = BmcEngine(model).prepare(
+        'init state("Root.A") where x == 7; check reach <= 1: active("Root.A");'
+    )
+    core = build_bmc_core_formula(context)
+
+    assert _solver(core.core).check() == z3.unsat
+
+
+@pytest.mark.unittest
+def test_initial_havoc_all_skips_failing_initializer_definedness() -> None:
+    """``havoc *`` skips both initializer value and definedness constraints."""
+    model = load_state_machine_from_text(
+        """
+        def int bad = 1 / 0;
+        state Root {
+            state Safe;
+            [*] -> Safe;
+        }
+        """
+    )
+    no_havoc = build_bmc_core_formula(
+        BmcEngine(model).prepare(
+            'init state("Root.Safe"); check reach <= 1: active("Root.Safe");'
+        )
+    )
+    with_havoc = build_bmc_core_formula(
+        BmcEngine(model).prepare(
+            'init state("Root.Safe") havoc * where bad == 7; '
+            'check reach <= 1: active("Root.Safe");'
+        )
+    )
+
+    assert _solver(no_havoc.core).check() == z3.unsat
+    assert _solver(with_havoc.core).check() == z3.sat
+    assert (
+        _solver(with_havoc.core, with_havoc.symbols.frame_var(0, "bad") != 7).check()
+        == z3.unsat
+    )
+
+
+@pytest.mark.unittest
+def test_terminated_initial_havoc_policy_constrains_and_carries_vars() -> None:
+    """Terminated initial policy constrains ``F_0`` vars before absorb carries."""
+    model = load_state_machine_from_text(
+        """
+        def int x = 0;
+        state Root;
+        """
+    )
+    context = BmcEngine(model).prepare(
+        "init terminated havoc * where x == 3; check reach <= 1: terminated();"
+    )
+    core = build_bmc_core_formula(context)
+
+    assert _solver(core.core).check() == z3.sat
+    assert _solver(core.core, core.symbols.frame_var(0, "x") != 3).check() == z3.unsat
+    assert _solver(core.core, core.symbols.frame_var(1, "x") != 3).check() == z3.unsat
+
+
+@pytest.mark.unittest
+def test_initial_havoc_all_is_valid_for_empty_variable_domain() -> None:
+    """Wildcard initial ``havoc`` is a no-op when the model has no variables."""
+    model = load_state_machine_from_text("state Root;")
+    context = BmcEngine(model).prepare(
+        'init cold havoc * where active("Root"); check reach <= 1: active("Root");'
+    )
+    core = build_bmc_core_formula(context)
+
+    assert _solver(core.core).check() == z3.sat
+    assert core.context.bound == 1
+
+
+@pytest.mark.unittest
 def test_terminated_initial_uses_terminate_source_and_absorb_case() -> None:
     """Initial terminated mode constrains F_0 and produces an absorb relation."""
     model = load_state_machine_from_text("state Root;")

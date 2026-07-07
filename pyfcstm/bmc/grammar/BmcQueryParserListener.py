@@ -57,6 +57,22 @@ class BmcQueryParserListener(ParseTreeListener):
     def exitInit_target(self, ctx: BmcQueryParser.Init_targetContext):
         pass
 
+    # Enter a parse tree produced by BmcQueryParser#init_havoc_clause.
+    def enterInit_havoc_clause(self, ctx: BmcQueryParser.Init_havoc_clauseContext):
+        pass
+
+    # Exit a parse tree produced by BmcQueryParser#init_havoc_clause.
+    def exitInit_havoc_clause(self, ctx: BmcQueryParser.Init_havoc_clauseContext):
+        pass
+
+    # Enter a parse tree produced by BmcQueryParser#init_var_ref.
+    def enterInit_var_ref(self, ctx: BmcQueryParser.Init_var_refContext):
+        pass
+
+    # Exit a parse tree produced by BmcQueryParser#init_var_ref.
+    def exitInit_var_ref(self, ctx: BmcQueryParser.Init_var_refContext):
+        pass
+
     # Enter a parse tree produced by BmcQueryParser#assume_clause.
     def enterAssume_clause(self, ctx: BmcQueryParser.Assume_clauseContext):
         pass

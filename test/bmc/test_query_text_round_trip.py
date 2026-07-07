@@ -268,6 +268,16 @@ QUERY_TEXT_ROUND_TRIP_CASES: List[TextRoundTripCase] = [
     ),
     TextRoundTripCase(
         "query",
+        'init state("Root.A") havoc { x, "cycle" } where x == 7; check reach <= 1: active("Root.A");',
+        'init state("Root.A") havoc { x, "cycle" } where x == 7;\n\ncheck reach <= 1: active("Root.A");',
+    ),
+    TextRoundTripCase(
+        "query",
+        "init terminated havoc *; check invariant <= 1: terminated();",
+        "init terminated havoc *;\n\ncheck invariant <= 1: terminated();",
+    ),
+    TextRoundTripCase(
+        "query",
         'assume always: cycle <= 10; check reach <= 10: active("Done");',
         'init cold;\n\nassume always: cycle <= 10;\n\ncheck reach <= 10: active("Done");',
     ),

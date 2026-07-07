@@ -393,11 +393,14 @@ E_UNDEFINED_VAR
 .. diagnostics-ref E_UNDEFINED_VAR expr_text type=str_or_null required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_UNDEFINED_VAR is_temporary type=bool required=false enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary E_UNDEFINED_VAR kind=cli_error
+
 **注册表事实。** 严重级别 ``error``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``expression``。
 
-**含义。** 该诊断的注册表描述为：A guard, effect, or lifecycle-action block references a name that was never declared with a top-level `def` statement.
+**含义。** 某个守卫、效果或生命周期动作块读取了未在文件顶层用 ``def`` 声明、也未在当前块内提前赋值的变量名。
 
-**面向 LLM 的修复摘要。** A variable identifier appears in an expression (guard, effect, or action block) but has not been declared with ``def`` at the file top, has not been assigned earlier in the same block (so the block-local temporary path doesn't apply), and is not a known function name. The model refuses to bind unknown identifiers because the generated code would not compile.
+**面向 LLM 的修复摘要。** 这是会阻塞模型构建或目标 API 解析的错误。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。某个守卫、效果或生命周期动作块读取了未在文件顶层用 ``def`` 声明、也未在当前块内提前赋值的变量名。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -410,28 +413,28 @@ E_UNDEFINED_VAR
    * - ``var_name``
      - ``str``
      - 是
-     - 注册表字段：The undeclared identifier as it appeared in the source.
+     - 字段含义：相关变量名或变量标识。
    * - ``referenced_in``
      - ``str``
      - 是
-     - 注册表字段：Which kind of block contained the reference.（枚举：``guard``, ``effect``, ``enter``, ``during``, ``exit``, ``during_aspect``, ``init``）
+     - 字段含义：引用发生的块类型。
    * - ``state_path``
      - ``str_or_null``
      - 否
-     - 注册表字段：Dotted path of the state that owns the offending block, when the reference is inside a state body (not a guard/effect on a transition).
+     - 字段含义：相关状态的点分路径。
    * - ``expr_text``
      - ``str_or_null``
      - 否
-     - 注册表字段：Original expression text containing the reference.
+     - 字段含义：相关表达式的源码文本。
    * - ``is_temporary``
      - ``bool``
      - 否
-     - 注册表字段：``True`` when the identifier looked like a block-local temporary (the read occurred before the variable was assigned within the same ``enter`` / ``during`` / ``exit`` / ``effect`` block). Layer 2 merges what jsfcstm previously emitted as ``fcstm.readBeforeAssignTemporary`` into this single ``E_*`` code plus this flag. Defaults to ``False`` / absent for "real" undefined variables that have no matching ``def`` declaration anywhere.
+     - 字段含义：字段 ``is_temporary`` 的稳定载荷；具体含义由本诊断的含义、类型和枚举共同限定。
 
-.. diagnostics-example E_UNDEFINED_VAR 1 repro_cli
+.. diagnostics-example E_UNDEFINED_VAR 1 cli_error
 
-**示例 1**\ （``repro_cli``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``cli_error``）——复现边界。
+这个源码形状会通过 ``pyfcstm inspect`` 复现受控的模型校验失败。当前命令行会在成功生成检查 JSON 前以非零状态退出，因此应断言错误文本和退出状态，不应期待在 ``diagnostics[]`` 中读到该码。
 
 .. code-block:: fcstm
 
@@ -440,13 +443,13 @@ E_UNDEFINED_VAR
 
 .. diagnostics-example E_UNDEFINED_VAR 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``file_top`` 执行 ``add_definition``：If the variable is genuinely program state, declare it with ``def <type> <name> = <initial>;`` at the file top so the generated runtime allocates storage for it.
+**示例 2**\ （``boundary_only``）——针对 ``E_UNDEFINED_VAR`` 的修复方向。
+典型修复是对 ``file_top`` 执行 ``add_definition``：针对“某个守卫、效果或生命周期动作块读取了未在文件顶层用 ``def`` 声明、也未在当前块内提前赋值的变量名。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example E_UNDEFINED_VAR 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not declare the variable inside an action block expecting it to leak out — block-local temps are discarded at block exit.
+**示例 3**\ （``boundary_only``）——针对 ``E_UNDEFINED_VAR`` 的反例边界。
+不要这样处理：针对“某个守卫、效果或生命周期动作块读取了未在文件顶层用 ``def`` 声明、也未在当前块内提前赋值的变量名。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-e-duplicate-var-zh:
 
@@ -457,11 +460,14 @@ E_DUPLICATE_VAR
 .. diagnostics-ref E_DUPLICATE_VAR var_name type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_DUPLICATE_VAR previous_span type=Span required=false enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary E_DUPLICATE_VAR kind=cli_error
+
 **注册表事实。** 严重级别 ``error``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``variable_declaration``。
 
-**含义。** 该诊断的注册表描述为：A top-level `def` statement re-declares an identifier that was already defined earlier in the file.
+**含义。** 文件顶层出现重复的 ``def`` 变量声明，同一个变量名会对应多个初始化来源。
 
-**面向 LLM 的修复摘要。** Two ``def`` declarations at the file top use the same variable name. The model allocates one storage slot per name, so a duplicate definition is ambiguous.
+**面向 LLM 的修复摘要。** 这是会阻塞模型构建或目标 API 解析的错误。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。文件顶层出现重复的 ``def`` 变量声明，同一个变量名会对应多个初始化来源。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -474,16 +480,16 @@ E_DUPLICATE_VAR
    * - ``var_name``
      - ``str``
      - 是
-     - 注册表字段：The duplicated identifier.
+     - 字段含义：相关变量名或变量标识。
    * - ``previous_span``
      - ``Span``
      - 否
-     - 注册表字段：Source position of the first declaration.
+     - 字段含义：第一次声明的源码位置。
 
-.. diagnostics-example E_DUPLICATE_VAR 1 repro_cli
+.. diagnostics-example E_DUPLICATE_VAR 1 cli_error
 
-**示例 1**\ （``repro_cli``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``cli_error``）——复现边界。
+这个源码形状会通过 ``pyfcstm inspect`` 复现受控的模型校验失败。当前命令行会在成功生成检查 JSON 前以非零状态退出，因此应断言错误文本和退出状态，不应期待在 ``diagnostics[]`` 中读到该码。
 
 .. code-block:: fcstm
 
@@ -493,13 +499,13 @@ E_DUPLICATE_VAR
 
 .. diagnostics-example E_DUPLICATE_VAR 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``variable_definition`` 执行 ``drop_duplicate``：If both definitions are meant to declare the same logical variable, keep the first one and delete the second.
+**示例 2**\ （``boundary_only``）——针对 ``E_DUPLICATE_VAR`` 的修复方向。
+典型修复是对 ``variable_definition`` 执行 ``drop_duplicate``：针对“文件顶层出现重复的 ``def`` 变量声明，同一个变量名会对应多个初始化来源。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example E_DUPLICATE_VAR 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not assume the second ``def`` overrides the first — the generated runtime treats this as an error and refuses to compile.
+**示例 3**\ （``boundary_only``）——针对 ``E_DUPLICATE_VAR`` 的反例边界。
+不要这样处理：针对“文件顶层出现重复的 ``def`` 变量声明，同一个变量名会对应多个初始化来源。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-e-type-mismatch-zh:
 
@@ -511,11 +517,14 @@ E_TYPE_MISMATCH
 .. diagnostics-ref E_TYPE_MISMATCH actual type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_TYPE_MISMATCH expr_text type=str required=true enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary E_TYPE_MISMATCH kind=partial_static_boundary
+
 **注册表事实。** 严重级别 ``error``；发射层级 ``partial_static_pipeline``；能力层级 ``pure_static``；源码对象 ``expression``。
 
-**含义。** 该诊断的注册表描述为：A guard, effect, or assignment uses an expression whose type does not match the expected category (arithmetic vs boolean).
+**含义。** 守卫、效果或赋值表达式使用了不匹配的表达式类别，例如把数值表达式和条件表达式混用。
 
-**面向 LLM 的修复摘要。** An expression mixes an arithmetic and a boolean subexpression in a way the grammar does not allow. ``num_expression`` and ``cond_expression`` are strictly separated; comparison operators bridge them, ternary ``? :`` converts boolean → arithmetic.
+**面向 LLM 的修复摘要。** 这是会阻塞模型构建或目标 API 解析的错误。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。守卫、效果或赋值表达式使用了不匹配的表达式类别，例如把数值表达式和条件表达式混用。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -528,20 +537,20 @@ E_TYPE_MISMATCH
    * - ``expected``
      - ``str``
      - 是
-     - 注册表字段：Expected category. One of: 'numeric', 'boolean'.
+     - 字段含义：期望的表达式类别。
    * - ``actual``
      - ``str``
      - 是
-     - 注册表字段：Actual category produced by the expression.
+     - 字段含义：实际观测到的类别、数量或度量值。
    * - ``expr_text``
      - ``str``
      - 是
-     - 注册表字段：Original expression text.
+     - 字段含义：相关表达式的源码文本。
 
 .. diagnostics-example E_TYPE_MISMATCH 1 boundary_only
 
-**示例 1**\ （``boundary_only``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``boundary_only``）——复现边界。
+这个注册表契约有意先于所有前端和后端的完整发射一致性。应把示例视为支持的边界形状，并在承诺默认命令行 JSON 前确认当前发射器。
 
 .. code-block:: fcstm
 
@@ -550,13 +559,13 @@ E_TYPE_MISMATCH
 
 .. diagnostics-example E_TYPE_MISMATCH 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``expression`` 执行 ``wrap_in_ternary``：If you wanted to assign a boolean test, wrap it as ``(cond) ? 1 : 0`` so the right-hand side is arithmetic.
+**示例 2**\ （``boundary_only``）——针对 ``E_TYPE_MISMATCH`` 的修复方向。
+典型修复是对 ``expression`` 执行 ``wrap_in_ternary``：针对“守卫、效果或赋值表达式使用了不匹配的表达式类别，例如把数值表达式和条件表达式混用。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example E_TYPE_MISMATCH 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not rely on numeric → boolean implicit coercion; the generated runtimes treat the two domains as distinct.
+**示例 3**\ （``boundary_only``）——针对 ``E_TYPE_MISMATCH`` 的反例边界。
+不要这样处理：针对“守卫、效果或赋值表达式使用了不匹配的表达式类别，例如把数值表达式和条件表达式混用。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-e-duplicate-function-name-zh:
 
@@ -568,11 +577,14 @@ E_DUPLICATE_FUNCTION_NAME
 .. diagnostics-ref E_DUPLICATE_FUNCTION_NAME state_path type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_DUPLICATE_FUNCTION_NAME stage type=str required=true enum=enter|during|exit|during_aspect item_enum=- exact_values=-
 
+
+.. diagnostics-boundary E_DUPLICATE_FUNCTION_NAME kind=cli_error
+
 **注册表事实。** 严重级别 ``error``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``named_action_declaration``。
 
-**含义。** 该诊断的注册表描述为：Two named lifecycle actions (enter / during / exit / during-aspect) within the same state share the same name. Named actions are referenced via `ref <name>` and must be uniquely identifiable.
+**含义。** 同一状态内两个命名生命周期动作使用了相同名称，导致 ``ref`` 无法唯一定位。
 
-**面向 LLM 的修复摘要。** Two named action / function blocks share the same name within the same scope. Named blocks must be uniquely identifiable so ``ref`` lookups can bind to a single definition.
+**面向 LLM 的修复摘要。** 这是会阻塞模型构建或目标 API 解析的错误。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。同一状态内两个命名生命周期动作使用了相同名称，导致 ``ref`` 无法唯一定位。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -585,20 +597,20 @@ E_DUPLICATE_FUNCTION_NAME
    * - ``function_name``
      - ``str``
      - 是
-     - 注册表字段：The duplicated named-action name.
+     - 字段含义：相关命名动作名称。
    * - ``state_path``
      - ``str``
      - 是
-     - 注册表字段：Dotted path of the state declaring the duplicates.
+     - 字段含义：相关状态的点分路径。
    * - ``stage``
      - ``str``
      - 是
-     - 注册表字段：Lifecycle stage where the duplicate appears.（枚举：``enter``, ``during``, ``exit``, ``during_aspect``）
+     - 字段含义：生命周期阶段。
 
-.. diagnostics-example E_DUPLICATE_FUNCTION_NAME 1 repro_cli
+.. diagnostics-example E_DUPLICATE_FUNCTION_NAME 1 cli_error
 
-**示例 1**\ （``repro_cli``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``cli_error``）——复现边界。
+这个源码形状会通过 ``pyfcstm inspect`` 复现受控的模型校验失败。当前命令行会在成功生成检查 JSON 前以非零状态退出，因此应断言错误文本和退出状态，不应期待在 ``diagnostics[]`` 中读到该码。
 
 .. code-block:: fcstm
 
@@ -611,13 +623,13 @@ E_DUPLICATE_FUNCTION_NAME
 
 .. diagnostics-example E_DUPLICATE_FUNCTION_NAME 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``named_action`` 执行 ``rename_one``：Give one of the named blocks a distinct identifier so ``ref <name>`` calls resolve unambiguously.
+**示例 2**\ （``boundary_only``）——针对 ``E_DUPLICATE_FUNCTION_NAME`` 的修复方向。
+典型修复是对 ``named_action`` 执行 ``rename_one``：针对“同一状态内两个命名生命周期动作使用了相同名称，导致 ``ref`` 无法唯一定位。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example E_DUPLICATE_FUNCTION_NAME 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not assume the second declaration shadows the first — the resolver treats this as a hard error.
+**示例 3**\ （``boundary_only``）——针对 ``E_DUPLICATE_FUNCTION_NAME`` 的反例边界。
+不要这样处理：针对“同一状态内两个命名生命周期动作使用了相同名称，导致 ``ref`` 无法唯一定位。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-e-named-function-ref-cycle-zh:
 
@@ -629,11 +641,14 @@ E_NAMED_FUNCTION_REF_CYCLE
 .. diagnostics-ref E_NAMED_FUNCTION_REF_CYCLE cycle_path type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_NAMED_FUNCTION_REF_CYCLE reason type=str required=true enum=action_ref_cycle item_enum=- exact_values=-
 
+
+.. diagnostics-boundary E_NAMED_FUNCTION_REF_CYCLE kind=cli_error
+
 **注册表事实。** 严重级别 ``error``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``named_action_declaration``。
 
-**含义。** 该诊断的注册表描述为：A lifecycle action `ref` chain forms a cycle and therefore never reaches a concrete or abstract action implementation.
+**含义。** 生命周期动作 ``ref`` 链形成循环，永远到不了具体或抽象动作实现。
 
-**面向 LLM 的修复摘要。** An ``enter ref ...`` / ``exit ref ...`` / ``during ref ...`` clause ultimately points back to itself through one or more named actions.
+**面向 LLM 的修复摘要。** 这是会阻塞模型构建或目标 API 解析的错误。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。生命周期动作 ``ref`` 链形成循环，永远到不了具体或抽象动作实现。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -646,20 +661,20 @@ E_NAMED_FUNCTION_REF_CYCLE
    * - ``ref_path``
      - ``str``
      - 是
-     - 注册表字段：Dot-separated action path where cycle validation started.
+     - 字段含义：相关动作引用路径。
    * - ``cycle_path``
      - ``str``
      - 是
-     - 注册表字段：Dot-separated action path chain that closes the cycle.
+     - 字段含义：形成循环的动作路径链。
    * - ``reason``
      - ``str``
      - 是
-     - 注册表字段：Short tag describing the failure.（枚举：``action_ref_cycle``）
+     - 字段含义：原因分类标签。
 
-.. diagnostics-example E_NAMED_FUNCTION_REF_CYCLE 1 repro_cli
+.. diagnostics-example E_NAMED_FUNCTION_REF_CYCLE 1 cli_error
 
-**示例 1**\ （``repro_cli``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``cli_error``）——复现边界。
+这个源码形状会通过 ``pyfcstm inspect`` 复现受控的模型校验失败。当前命令行会在成功生成检查 JSON 前以非零状态退出，因此应断言错误文本和退出状态，不应期待在 ``diagnostics[]`` 中读到该码。
 
 .. code-block:: fcstm
 
@@ -673,13 +688,13 @@ E_NAMED_FUNCTION_REF_CYCLE
 
 .. diagnostics-example E_NAMED_FUNCTION_REF_CYCLE 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``action_ref`` 执行 ``break_ref_cycle``：Replace one link in the cycle with a concrete action block or an abstract action declaration so the reference chain terminates.
+**示例 2**\ （``boundary_only``）——针对 ``E_NAMED_FUNCTION_REF_CYCLE`` 的修复方向。
+典型修复是对 ``action_ref`` 执行 ``break_ref_cycle``：针对“生命周期动作 ``ref`` 链形成循环，永远到不了具体或抽象动作实现。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example E_NAMED_FUNCTION_REF_CYCLE 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not execute or render cyclic lifecycle references; reject the model before runtime execution.
+**示例 3**\ （``boundary_only``）——针对 ``E_NAMED_FUNCTION_REF_CYCLE`` 的反例边界。
+不要这样处理：针对“生命周期动作 ``ref`` 链形成循环，永远到不了具体或抽象动作实现。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-e-named-function-ref-not-found-zh:
 
@@ -691,11 +706,14 @@ E_NAMED_FUNCTION_REF_NOT_FOUND
 .. diagnostics-ref E_NAMED_FUNCTION_REF_NOT_FOUND reason type=str required=true enum=state_not_found|named_function_not_found item_enum=- exact_values=-
 .. diagnostics-ref E_NAMED_FUNCTION_REF_NOT_FOUND missing_segment type=str_or_null required=false enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary E_NAMED_FUNCTION_REF_NOT_FOUND kind=cli_error
+
 **注册表事实。** 严重级别 ``error``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``named_action_declaration``。
 
-**含义。** 该诊断的注册表描述为：A `ref` lifecycle action could not resolve its target named action. Either the path walks through a state that does not exist, or the final segment is not a named action defined inside the resolved state.
+**含义。** 生命周期动作 ``ref`` 无法解析到目标命名动作。
 
-**面向 LLM 的修复摘要。** An ``enter ref ...`` / ``exit ref ...`` / ``during ref ...`` clause points at a named action that does not exist. The resolver could not find a matching named block in the indicated scope.
+**面向 LLM 的修复摘要。** 这是会阻塞模型构建或目标 API 解析的错误。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。生命周期动作 ``ref`` 无法解析到目标命名动作。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -708,20 +726,20 @@ E_NAMED_FUNCTION_REF_NOT_FOUND
    * - ``ref_path``
      - ``str``
      - 是
-     - 注册表字段：Dotted path of the unresolved reference.
+     - 字段含义：相关动作引用路径。
    * - ``reason``
      - ``str``
      - 是
-     - 注册表字段：Short tag describing the resolution failure.（枚举：``state_not_found``, ``named_function_not_found``）
+     - 字段含义：原因分类标签。
    * - ``missing_segment``
      - ``str_or_null``
      - 否
-     - 注册表字段：The path segment that failed to resolve. For 'state_not_found' this is the state name that does not exist under the parent path; for 'named_function_not_found' this is the action name searched for in the resolved state.
+     - 字段含义：解析失败的路径片段。
 
-.. diagnostics-example E_NAMED_FUNCTION_REF_NOT_FOUND 1 repro_cli
+.. diagnostics-example E_NAMED_FUNCTION_REF_NOT_FOUND 1 cli_error
 
-**示例 1**\ （``repro_cli``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``cli_error``）——复现边界。
+这个源码形状会通过 ``pyfcstm inspect`` 复现受控的模型校验失败。当前命令行会在成功生成检查 JSON 前以非零状态退出，因此应断言错误文本和退出状态，不应期待在 ``diagnostics[]`` 中读到该码。
 
 .. code-block:: fcstm
 
@@ -733,13 +751,13 @@ E_NAMED_FUNCTION_REF_NOT_FOUND
 
 .. diagnostics-example E_NAMED_FUNCTION_REF_NOT_FOUND 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``action_ref`` 执行 ``fix_ref_path``：Confirm the dotted ref path matches a real named action. Use ``/`` to anchor at the root, or a relative name for the current state.
+**示例 2**\ （``boundary_only``）——针对 ``E_NAMED_FUNCTION_REF_NOT_FOUND`` 的修复方向。
+典型修复是对 ``action_ref`` 执行 ``fix_ref_path``：针对“生命周期动作 ``ref`` 无法解析到目标命名动作。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example E_NAMED_FUNCTION_REF_NOT_FOUND 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not silently swap ``ref`` with an inline block — that loses the deduplication that ``ref`` was meant to provide.
+**示例 3**\ （``boundary_only``）——针对 ``E_NAMED_FUNCTION_REF_NOT_FOUND`` 的反例边界。
+不要这样处理：针对“生命周期动作 ``ref`` 无法解析到目标命名动作。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-e-import-not-found-zh:
 
@@ -752,11 +770,14 @@ E_IMPORT_NOT_FOUND
 .. diagnostics-ref E_IMPORT_NOT_FOUND host_state_path type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_IMPORT_NOT_FOUND reason type=str required=true enum=file_not_found|read_error|parse_error|no_root_state item_enum=- exact_values=-
 
+
+.. diagnostics-boundary E_IMPORT_NOT_FOUND kind=cli_error
+
 **注册表事实。** 严重级别 ``error``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``import_statement``。
 
-**含义。** 该诊断的注册表描述为：An ``import`` statement points at a source file that cannot be found, cannot be read, or fails to parse.
+**含义。** ``import`` 指向的源文件不存在、不可读或无法解析。
 
-**面向 LLM 的修复摘要。** An import target could not be resolved. Inspect ``refs.reason`` to branch the fix: ``file_not_found`` means the path is wrong or the file does not exist; ``read_error`` means the file exists but the I/O layer rejected it (permissions / encoding); ``parse_error`` means the file was loaded but is not valid FCSTM DSL; ``no_root_state`` means the file parses but declares no ``state Root { ... }`` block. The four reasons need different fixes — do not collapse them. Cross-end note (I2 from PR #115 final review): jsfcstm currently only distinguishes ``file_not_found`` and ``no_root_state``; its workspace index treats I/O failures and parse failures alike as ``missing`` and emits ``file_not_found`` for both. When consuming jsfcstm-side diagnostics, treat ``file_not_found`` as "any pre-no_root_state failure" and inspect the imported file directly to disambiguate read vs parse failures.
+**面向 LLM 的修复摘要。** 这是会阻塞模型构建或目标 API 解析的错误。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。``import`` 指向的源文件不存在、不可读或无法解析。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -769,24 +790,24 @@ E_IMPORT_NOT_FOUND
    * - ``source_path``
      - ``str``
      - 是
-     - 注册表字段：The source-path token from the import statement, exactly as it appeared in the DSL.
+     - 字段含义：导入语句中的源路径文本。
    * - ``alias``
      - ``str``
      - 是
-     - 注册表字段：The alias under which the import was declared.
+     - 字段含义：导入别名。
    * - ``host_state_path``
      - ``str``
      - 是
-     - 注册表字段：Dotted path of the composite state hosting the import statement.
+     - 字段含义：承载导入语句或导入别名的组合状态路径。
    * - ``reason``
      - ``str``
      - 是
-     - 注册表字段：Why resolution failed.（枚举：``file_not_found``, ``read_error``, ``parse_error``, ``no_root_state``）
+     - 字段含义：原因分类标签。
 
-.. diagnostics-example E_IMPORT_NOT_FOUND 1 repro_cli
+.. diagnostics-example E_IMPORT_NOT_FOUND 1 cli_error
 
-**示例 1**\ （``repro_cli``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``cli_error``）——复现边界。
+这个源码形状会通过 ``pyfcstm inspect`` 复现受控的模型校验失败。当前命令行会在成功生成检查 JSON 前以非零状态退出，因此应断言错误文本和退出状态，不应期待在 ``diagnostics[]`` 中读到该码。
 
 .. code-block:: fcstm
 
@@ -796,13 +817,13 @@ E_IMPORT_NOT_FOUND
 
 .. diagnostics-example E_IMPORT_NOT_FOUND 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``import_statement`` 执行 ``fix_path``：For ``file_not_found``, adjust the source_path to a real file relative to the host file, or remove the import if the sub-machine is no longer required.
+**示例 2**\ （``boundary_only``）——针对 ``E_IMPORT_NOT_FOUND`` 的修复方向。
+典型修复是对 ``import_statement`` 执行 ``fix_path``：针对“``import`` 指向的源文件不存在、不可读或无法解析。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example E_IMPORT_NOT_FOUND 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not silently rename the alias to dodge the missing file.
+**示例 3**\ （``boundary_only``）——针对 ``E_IMPORT_NOT_FOUND`` 的反例边界。
+不要这样处理：针对“``import`` 指向的源文件不存在、不可读或无法解析。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-e-import-circular-zh:
 
@@ -815,11 +836,14 @@ E_IMPORT_CIRCULAR
 .. diagnostics-ref E_IMPORT_CIRCULAR host_state_path type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_IMPORT_CIRCULAR cycle_chain type=list[str] required=true enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary E_IMPORT_CIRCULAR kind=cli_error
+
 **注册表事实。** 严重级别 ``error``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``import_statement``。
 
-**含义。** 该诊断的注册表描述为：A cycle was detected while resolving ``import`` statements between two or more state-machine source files.
+**含义。** 多个状态机源文件之间的 ``import`` 关系形成循环。
 
-**面向 LLM 的修复摘要。** Two or more state-machine files import each other transitively. The compiler refuses to resolve cycles to keep the merged hierarchy tractable.
+**面向 LLM 的修复摘要。** 这是会阻塞模型构建或目标 API 解析的错误。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。多个状态机源文件之间的 ``import`` 关系形成循环。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -832,24 +856,24 @@ E_IMPORT_CIRCULAR
    * - ``source_path``
      - ``str``
      - 是
-     - 注册表字段：The source-path token that closed the cycle.
+     - 字段含义：导入语句中的源路径文本。
    * - ``alias``
      - ``str``
      - 是
-     - 注册表字段：The alias under which the cyclic import was declared.
+     - 字段含义：导入别名。
    * - ``host_state_path``
      - ``str``
      - 是
-     - 注册表字段：Dotted path of the composite state hosting the import.
+     - 字段含义：承载导入语句或导入别名的组合状态路径。
    * - ``cycle_chain``
      - ``list[str]``
      - 是
-     - 注册表字段：Ordered list of file paths that participate in the cycle, starting and ending at the same file.
+     - 字段含义：参与导入循环的文件路径序列。
 
-.. diagnostics-example E_IMPORT_CIRCULAR 1 repro_cli
+.. diagnostics-example E_IMPORT_CIRCULAR 1 cli_error
 
-**示例 1**\ （``repro_cli``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``cli_error``）——复现边界。
+这个源码形状会通过 ``pyfcstm inspect`` 复现受控的模型校验失败。当前命令行会在成功生成检查 JSON 前以非零状态退出，因此应断言错误文本和退出状态，不应期待在 ``diagnostics[]`` 中读到该码。
 
 .. code-block:: fcstm
 
@@ -860,13 +884,13 @@ E_IMPORT_CIRCULAR
 
 .. diagnostics-example E_IMPORT_CIRCULAR 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``import_statement`` 执行 ``refactor``：Break the cycle by extracting the shared state(s) into a third file that both ends import without depending on each other.
+**示例 2**\ （``boundary_only``）——针对 ``E_IMPORT_CIRCULAR`` 的修复方向。
+典型修复是对 ``import_statement`` 执行 ``refactor``：针对“多个状态机源文件之间的 ``import`` 关系形成循环。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example E_IMPORT_CIRCULAR 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not duplicate the imported states inline to break the cycle — that defeats the purpose of imports.
+**示例 3**\ （``boundary_only``）——针对 ``E_IMPORT_CIRCULAR`` 的反例边界。
+不要这样处理：针对“多个状态机源文件之间的 ``import`` 关系形成循环。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-e-import-alias-conflict-zh:
 
@@ -878,11 +902,14 @@ E_IMPORT_ALIAS_CONFLICT
 .. diagnostics-ref E_IMPORT_ALIAS_CONFLICT host_state_path type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_IMPORT_ALIAS_CONFLICT conflicting_kind type=str required=true enum=existing_substate|previous_import_alias item_enum=- exact_values=-
 
+
+.. diagnostics-boundary E_IMPORT_ALIAS_CONFLICT kind=cli_error
+
 **注册表事实。** 严重级别 ``error``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``import_statement``。
 
-**含义。** 该诊断的注册表描述为：An ``import`` alias clashes with an existing child state (or with another import alias) under the same composite state.
+**含义。** ``import`` 别名与同一组合状态下的已有子状态或其他导入别名冲突。
 
-**面向 LLM 的修复摘要。** The import alias collides with an already-defined name in the same composite scope. The merged hierarchy cannot have two children sharing a name.
+**面向 LLM 的修复摘要。** 这是会阻塞模型构建或目标 API 解析的错误。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。``import`` 别名与同一组合状态下的已有子状态或其他导入别名冲突。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -895,20 +922,20 @@ E_IMPORT_ALIAS_CONFLICT
    * - ``alias``
      - ``str``
      - 是
-     - 注册表字段：The conflicting alias name.
+     - 字段含义：导入别名。
    * - ``host_state_path``
      - ``str``
      - 是
-     - 注册表字段：Dotted path of the composite state hosting the import.
+     - 字段含义：承载导入语句或导入别名的组合状态路径。
    * - ``conflicting_kind``
      - ``str``
      - 是
-     - 注册表字段：What the alias clashed with.（枚举：``existing_substate``, ``previous_import_alias``）
+     - 字段含义：别名冲突对象类型。
 
-.. diagnostics-example E_IMPORT_ALIAS_CONFLICT 1 repro_cli
+.. diagnostics-example E_IMPORT_ALIAS_CONFLICT 1 cli_error
 
-**示例 1**\ （``repro_cli``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``cli_error``）——复现边界。
+这个源码形状会通过 ``pyfcstm inspect`` 复现受控的模型校验失败。当前命令行会在成功生成检查 JSON 前以非零状态退出，因此应断言错误文本和退出状态，不应期待在 ``diagnostics[]`` 中读到该码。
 
 .. code-block:: fcstm
 
@@ -919,13 +946,13 @@ E_IMPORT_ALIAS_CONFLICT
 
 .. diagnostics-example E_IMPORT_ALIAS_CONFLICT 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``import_statement`` 执行 ``rename_alias``：Pick a unique alias for the import; references to the imported machine elsewhere in the file must follow the new alias.
+**示例 2**\ （``boundary_only``）——针对 ``E_IMPORT_ALIAS_CONFLICT`` 的修复方向。
+典型修复是对 ``import_statement`` 执行 ``rename_alias``：针对“``import`` 别名与同一组合状态下的已有子状态或其他导入别名冲突。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example E_IMPORT_ALIAS_CONFLICT 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not silently drop one of the conflicting definitions.
+**示例 3**\ （``boundary_only``）——针对 ``E_IMPORT_ALIAS_CONFLICT`` 的反例边界。
+不要这样处理：针对“``import`` 别名与同一组合状态下的已有子状态或其他导入别名冲突。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-e-import-duplicate-mapping-zh:
 
@@ -939,11 +966,14 @@ E_IMPORT_DUPLICATE_MAPPING
 .. diagnostics-ref E_IMPORT_DUPLICATE_MAPPING direction type=str required=true enum=source_duplicated|target_duplicated item_enum=- exact_values=-
 .. diagnostics-ref E_IMPORT_DUPLICATE_MAPPING host_state_path type=str required=true enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary E_IMPORT_DUPLICATE_MAPPING kind=cli_error
+
 **注册表事实。** 严重级别 ``error``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``import_statement``。
 
-**含义。** 该诊断的注册表描述为：Two or more mapping clauses under the same ``import { ... }`` block target the same source name (event or variable), or two source names target the same host name.
+**含义。** 同一个 ``import { ... }`` 映射块里存在重复源名或重复宿主名。
 
-**面向 LLM 的修复摘要。** An import-mapping block contains a duplicate source or target name. Each source identifier can be mapped at most once; each target host slot can receive at most one source.
+**面向 LLM 的修复摘要。** 这是会阻塞模型构建或目标 API 解析的错误。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。同一个 ``import { ... }`` 映射块里存在重复源名或重复宿主名。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -956,28 +986,28 @@ E_IMPORT_DUPLICATE_MAPPING
    * - ``alias``
      - ``str``
      - 是
-     - 注册表字段：The import alias whose mapping is duplicated.
+     - 字段含义：导入别名。
    * - ``mapping_kind``
      - ``str``
      - 是
-     - 注册表字段：Which mapping flavor was duplicated.（枚举：``event``, ``variable``）
+     - 字段含义：导入映射类型。
    * - ``duplicated_name``
      - ``str``
      - 是
-     - 注册表字段：The source-side or target-side name that appears more than once.
+     - 字段含义：重复出现的源名或目标名。
    * - ``direction``
      - ``str``
      - 是
-     - 注册表字段：Which side of the mapping was duplicated.（枚举：``source_duplicated``, ``target_duplicated``）
+     - 字段含义：相关方向或重复侧。
    * - ``host_state_path``
      - ``str``
      - 是
-     - 注册表字段：Dotted path of the composite state hosting the import.
+     - 字段含义：承载导入语句或导入别名的组合状态路径。
 
-.. diagnostics-example E_IMPORT_DUPLICATE_MAPPING 1 repro_cli
+.. diagnostics-example E_IMPORT_DUPLICATE_MAPPING 1 cli_error
 
-**示例 1**\ （``repro_cli``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``cli_error``）——复现边界。
+这个源码形状会通过 ``pyfcstm inspect`` 复现受控的模型校验失败。当前命令行会在成功生成检查 JSON 前以非零状态退出，因此应断言错误文本和退出状态，不应期待在 ``diagnostics[]`` 中读到该码。
 
 .. code-block:: fcstm
 
@@ -990,13 +1020,13 @@ E_IMPORT_DUPLICATE_MAPPING
 
 .. diagnostics-example E_IMPORT_DUPLICATE_MAPPING 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``mapping_clause`` 执行 ``drop_duplicate``：Delete the duplicated mapping line — keep the intended one.
+**示例 2**\ （``boundary_only``）——针对 ``E_IMPORT_DUPLICATE_MAPPING`` 的修复方向。
+典型修复是对 ``mapping_clause`` 执行 ``drop_duplicate``：针对“同一个 ``import { ... }`` 映射块里存在重复源名或重复宿主名。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example E_IMPORT_DUPLICATE_MAPPING 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not merge mappings by concatenating their values.
+**示例 3**\ （``boundary_only``）——针对 ``E_IMPORT_DUPLICATE_MAPPING`` 的反例边界。
+不要这样处理：针对“同一个 ``import { ... }`` 映射块里存在重复源名或重复宿主名。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-e-import-mapping-invalid-zh:
 
@@ -1010,11 +1040,14 @@ E_IMPORT_MAPPING_INVALID
 .. diagnostics-ref E_IMPORT_MAPPING_INVALID reason type=str required=true enum=source_not_found|target_invalid|selector_invalid|template_invalid|empty_path|host_root_mismatch item_enum=- exact_values=-
 .. diagnostics-ref E_IMPORT_MAPPING_INVALID detail type=str required=true enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary E_IMPORT_MAPPING_INVALID kind=cli_error
+
 **注册表事实。** 严重级别 ``error``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``import_statement``。
 
-**含义。** 该诊断的注册表描述为：An import-mapping clause refers to a source name that does not exist in the imported machine, uses an invalid selector / template, or points at a host target that cannot host the mapped element.
+**含义。** 导入映射子句引用了不存在的源名、非法选择器或无法承载映射的宿主目标。
 
-**面向 LLM 的修复摘要。** An ``import { ... }`` mapping clause is malformed or points at a non-existent element on the source side / a non-receivable element on the host side.
+**面向 LLM 的修复摘要。** 这是会阻塞模型构建或目标 API 解析的错误。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。导入映射子句引用了不存在的源名、非法选择器或无法承载映射的宿主目标。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -1027,28 +1060,28 @@ E_IMPORT_MAPPING_INVALID
    * - ``alias``
      - ``str``
      - 是
-     - 注册表字段：The import alias whose mapping is malformed.
+     - 字段含义：导入别名。
    * - ``mapping_kind``
      - ``str``
      - 是
-     - 注册表字段：Mapping flavor.（枚举：``event``, ``variable``）
+     - 字段含义：导入映射类型。
    * - ``host_state_path``
      - ``str``
      - 是
-     - 注册表字段：Dotted path of the composite state hosting the import.
+     - 字段含义：承载导入语句或导入别名的组合状态路径。
    * - ``reason``
      - ``str``
      - 是
-     - 注册表字段：Short tag describing the failure mode.（枚举：``source_not_found``, ``target_invalid``, ``selector_invalid``, ``template_invalid``, ``empty_path``, ``host_root_mismatch``）
+     - 字段含义：原因分类标签。
    * - ``detail``
      - ``str``
      - 是
-     - 注册表字段：Human-readable specifics of the mapping failure (mapping text, selector / template literal, or path that failed to resolve).
+     - 字段含义：映射失败的可读细节。
 
-.. diagnostics-example E_IMPORT_MAPPING_INVALID 1 repro_cli
+.. diagnostics-example E_IMPORT_MAPPING_INVALID 1 cli_error
 
-**示例 1**\ （``repro_cli``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``cli_error``）——复现边界。
+这个源码形状会通过 ``pyfcstm inspect`` 复现受控的模型校验失败。当前命令行会在成功生成检查 JSON 前以非零状态退出，因此应断言错误文本和退出状态，不应期待在 ``diagnostics[]`` 中读到该码。
 
 .. code-block:: fcstm
 
@@ -1060,13 +1093,13 @@ E_IMPORT_MAPPING_INVALID
 
 .. diagnostics-example E_IMPORT_MAPPING_INVALID 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``mapping_clause`` 执行 ``fix_source``：Update the source-side name to match a real def / event in the imported file.
+**示例 2**\ （``boundary_only``）——针对 ``E_IMPORT_MAPPING_INVALID`` 的修复方向。
+典型修复是对 ``mapping_clause`` 执行 ``fix_source``：针对“导入映射子句引用了不存在的源名、非法选择器或无法承载映射的宿主目标。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example E_IMPORT_MAPPING_INVALID 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not invent fake source names to make the selector match.
+**示例 3**\ （``boundary_only``）——针对 ``E_IMPORT_MAPPING_INVALID`` 的反例边界。
+不要这样处理：针对“导入映射子句引用了不存在的源名、非法选择器或无法承载映射的宿主目标。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 状态和转换
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1081,11 +1114,14 @@ E_MISSING_STATE
 .. diagnostics-ref E_MISSING_STATE referenced_from type=str_or_null required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_MISSING_STATE reason type=str required=false enum=not_found|parent_missing|ambiguous|event_path_not_found item_enum=- exact_values=-
 
+
+.. diagnostics-boundary E_MISSING_STATE kind=cli_error
+
 **注册表事实。** 严重级别 ``error``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``state_identifier``。
 
-**含义。** 该诊断的注册表描述为：A transition target references a state path that cannot be resolved in the surrounding hierarchy.
+**含义。** 转换引用的目标状态路径无法在当前层级或外围层级中解析。
 
-**面向 LLM 的修复摘要。** A transition references a state name that does not exist in the machine. The transition target / source must resolve to a state declared in this file or imported.
+**面向 LLM 的修复摘要。** 这是会阻塞模型构建或目标 API 解析的错误。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。转换引用的目标状态路径无法在当前层级或外围层级中解析。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -1098,20 +1134,20 @@ E_MISSING_STATE
    * - ``state_path``
      - ``str``
      - 是
-     - 注册表字段：The unresolved dotted state path.
+     - 字段含义：相关状态的点分路径。
    * - ``referenced_from``
      - ``str_or_null``
      - 否
-     - 注册表字段：Dotted path of the state from which the reference was made.
+     - 字段含义：发起引用的状态点分路径。
    * - ``reason``
      - ``str``
      - 否
-     - 注册表字段：Short tag describing the resolution failure mode.（枚举：``not_found``, ``parent_missing``, ``ambiguous``, ``event_path_not_found``）
+     - 字段含义：原因分类标签。
 
-.. diagnostics-example E_MISSING_STATE 1 repro_cli
+.. diagnostics-example E_MISSING_STATE 1 cli_error
 
-**示例 1**\ （``repro_cli``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``cli_error``）——复现边界。
+这个源码形状会通过 ``pyfcstm inspect`` 复现受控的模型校验失败。当前命令行会在成功生成检查 JSON 前以非零状态退出，因此应断言错误文本和退出状态，不应期待在 ``diagnostics[]`` 中读到该码。
 
 .. code-block:: fcstm
 
@@ -1119,13 +1155,13 @@ E_MISSING_STATE
 
 .. diagnostics-example E_MISSING_STATE 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``transition`` 执行 ``fix_typo``：If the name was meant to refer to an existing state, correct the spelling. ``refs.state_name`` carries the missing token.
+**示例 2**\ （``boundary_only``）——针对 ``E_MISSING_STATE`` 的修复方向。
+典型修复是对 ``transition`` 执行 ``fix_typo``：针对“转换引用的目标状态路径无法在当前层级或外围层级中解析。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example E_MISSING_STATE 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not silently delete the transition; the original intent of the missing state is lost.
+**示例 3**\ （``boundary_only``）——针对 ``E_MISSING_STATE`` 的反例边界。
+不要这样处理：针对“转换引用的目标状态路径无法在当前层级或外围层级中解析。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-e-duplicate-state-zh:
 
@@ -1137,11 +1173,14 @@ E_DUPLICATE_STATE
 .. diagnostics-ref E_DUPLICATE_STATE parent_path type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_DUPLICATE_STATE previous_span type=Span required=false enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary E_DUPLICATE_STATE kind=cli_error
+
 **注册表事实。** 严重级别 ``error``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``state_identifier``。
 
-**含义。** 该诊断的注册表描述为：Two states share the same name within the same parent scope.
+**含义。** 同一个父状态作用域内存在两个同名子状态。
 
-**面向 LLM 的修复摘要。** Two state declarations under the same composite parent use the same name. State names must be unique inside their immediate composite scope.
+**面向 LLM 的修复摘要。** 这是会阻塞模型构建或目标 API 解析的错误。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。同一个父状态作用域内存在两个同名子状态。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -1154,20 +1193,20 @@ E_DUPLICATE_STATE
    * - ``state_name``
      - ``str``
      - 是
-     - 注册表字段：The duplicated state name.
+     - 字段含义：相关状态名。
    * - ``parent_path``
      - ``str``
      - 是
-     - 注册表字段：Dotted path of the parent that contains both states.
+     - 字段含义：父状态的点分路径。
    * - ``previous_span``
      - ``Span``
      - 否
-     - 注册表字段：Source position of the first declaration.
+     - 字段含义：第一次声明的源码位置。
 
-.. diagnostics-example E_DUPLICATE_STATE 1 repro_cli
+.. diagnostics-example E_DUPLICATE_STATE 1 cli_error
 
-**示例 1**\ （``repro_cli``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``cli_error``）——复现边界。
+这个源码形状会通过 ``pyfcstm inspect`` 复现受控的模型校验失败。当前命令行会在成功生成检查 JSON 前以非零状态退出，因此应断言错误文本和退出状态，不应期待在 ``diagnostics[]`` 中读到该码。
 
 .. code-block:: fcstm
 
@@ -1175,13 +1214,13 @@ E_DUPLICATE_STATE
 
 .. diagnostics-example E_DUPLICATE_STATE 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``state_definition`` 执行 ``drop_duplicate``：If both declarations describe the same logical state, keep one and remove the other (merge any actions/transitions onto the survivor).
+**示例 2**\ （``boundary_only``）——针对 ``E_DUPLICATE_STATE`` 的修复方向。
+典型修复是对 ``state_definition`` 执行 ``drop_duplicate``：针对“同一个父状态作用域内存在两个同名子状态。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example E_DUPLICATE_STATE 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not assume the second declaration overrides the first — duplicate state names produce a hard error.
+**示例 3**\ （``boundary_only``）——针对 ``E_DUPLICATE_STATE`` 的反例边界。
+不要这样处理：针对“同一个父状态作用域内存在两个同名子状态。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-e-dangling-transition-zh:
 
@@ -1193,11 +1232,14 @@ E_DANGLING_TRANSITION
 .. diagnostics-ref E_DANGLING_TRANSITION tgt type=str_or_null required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_DANGLING_TRANSITION reason type=str required=true enum=src_not_found|tgt_not_found|both_not_found item_enum=- exact_values=-
 
+
+.. diagnostics-boundary E_DANGLING_TRANSITION kind=cli_error
+
 **注册表事实。** 严重级别 ``error``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``transition``。
 
-**含义。** 该诊断的注册表描述为：A transition cannot resolve either its source or its target.
+**含义。** 转换的源状态或目标状态至少一端无法解析，无法接入调度图。
 
-**面向 LLM 的修复摘要。** A transition's source or target points at a state that exists neither in the local composite scope nor in any ancestor scope. The transition cannot be wired into the dispatch graph.
+**面向 LLM 的修复摘要。** 这是会阻塞模型构建或目标 API 解析的错误。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。转换的源状态或目标状态至少一端无法解析，无法接入调度图。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -1210,20 +1252,20 @@ E_DANGLING_TRANSITION
    * - ``src``
      - ``str_or_null``
      - 否
-     - 注册表字段：Raw source state expression as written in the DSL.
+     - 字段含义：DSL 中写出的原始源状态表达式。
    * - ``tgt``
      - ``str_or_null``
      - 否
-     - 注册表字段：Raw target state expression as written in the DSL.
+     - 字段含义：DSL 中写出的原始目标状态表达式。
    * - ``reason``
      - ``str``
      - 是
-     - 注册表字段：Short tag describing the dangling reason.（枚举：``src_not_found``, ``tgt_not_found``, ``both_not_found``）
+     - 字段含义：原因分类标签。
 
-.. diagnostics-example E_DANGLING_TRANSITION 1 repro_cli
+.. diagnostics-example E_DANGLING_TRANSITION 1 cli_error
 
-**示例 1**\ （``repro_cli``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``cli_error``）——复现边界。
+这个源码形状会通过 ``pyfcstm inspect`` 复现受控的模型校验失败。当前命令行会在成功生成检查 JSON 前以非零状态退出，因此应断言错误文本和退出状态，不应期待在 ``diagnostics[]`` 中读到该码。
 
 .. code-block:: fcstm
 
@@ -1231,13 +1273,13 @@ E_DANGLING_TRANSITION
 
 .. diagnostics-example E_DANGLING_TRANSITION 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``transition`` 执行 ``fix_typo``：If the dangling name is misspelled, correct it. ``refs.state_path`` carries the location of the offending transition.
+**示例 2**\ （``boundary_only``）——针对 ``E_DANGLING_TRANSITION`` 的修复方向。
+典型修复是对 ``transition`` 执行 ``fix_typo``：针对“转换的源状态或目标状态至少一端无法解析，无法接入调度图。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example E_DANGLING_TRANSITION 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not pretend the transition resolves to ``[*]`` — that has a specific entry/exit semantics.
+**示例 3**\ （``boundary_only``）——针对 ``E_DANGLING_TRANSITION`` 的反例边界。
+不要这样处理：针对“转换的源状态或目标状态至少一端无法解析，无法接入调度图。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-e-initial-transition-invalid-zh:
 
@@ -1248,11 +1290,14 @@ E_INITIAL_TRANSITION_INVALID
 .. diagnostics-ref E_INITIAL_TRANSITION_INVALID composite_path type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_INITIAL_TRANSITION_INVALID reason type=str required=true enum=missing_entry|target_not_child item_enum=- exact_values=-
 
+
+.. diagnostics-boundary E_INITIAL_TRANSITION_INVALID kind=cli_error
+
 **注册表事实。** 严重级别 ``error``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``transition``。
 
-**含义。** 该诊断的注册表描述为：A composite state either lacks an entry transition (`[*] -> child`) or declares one whose target is not a direct child of the composite.
+**含义。** 组合状态缺少入口转换，或者入口转换目标不是该组合状态的直接子状态。
 
-**面向 LLM 的修复摘要。** A composite state lacks a valid ``[*] -> Child`` initial transition, or its declared initial target is not actually a child of this composite. The runtime cannot decide which child to enter when this composite is activated.
+**面向 LLM 的修复摘要。** 这是会阻塞模型构建或目标 API 解析的错误。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。组合状态缺少入口转换，或者入口转换目标不是该组合状态的直接子状态。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -1265,16 +1310,16 @@ E_INITIAL_TRANSITION_INVALID
    * - ``composite_path``
      - ``str``
      - 是
-     - 注册表字段：Dotted path of the offending composite state.
+     - 字段含义：相关组合状态的点分路径。
    * - ``reason``
      - ``str``
      - 是
-     - 注册表字段：Short tag describing the failure.（枚举：``missing_entry``, ``target_not_child``）
+     - 字段含义：原因分类标签。
 
-.. diagnostics-example E_INITIAL_TRANSITION_INVALID 1 repro_cli
+.. diagnostics-example E_INITIAL_TRANSITION_INVALID 1 cli_error
 
-**示例 1**\ （``repro_cli``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``cli_error``）——复现边界。
+这个源码形状会通过 ``pyfcstm inspect`` 复现受控的模型校验失败。当前命令行会在成功生成检查 JSON 前以非零状态退出，因此应断言错误文本和退出状态，不应期待在 ``diagnostics[]`` 中读到该码。
 
 .. code-block:: fcstm
 
@@ -1282,13 +1327,13 @@ E_INITIAL_TRANSITION_INVALID
 
 .. diagnostics-example E_INITIAL_TRANSITION_INVALID 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``composite_state`` 执行 ``add_initial_transition``：Add ``[*] -> <ChildName>;`` inside the composite, picking a direct substate as the entry point.
+**示例 2**\ （``boundary_only``）——针对 ``E_INITIAL_TRANSITION_INVALID`` 的修复方向。
+典型修复是对 ``composite_state`` 执行 ``add_initial_transition``：针对“组合状态缺少入口转换，或者入口转换目标不是该组合状态的直接子状态。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example E_INITIAL_TRANSITION_INVALID 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not rely on a default ordering of substates; the runtime requires an explicit initial transition.
+**示例 3**\ （``boundary_only``）——针对 ``E_INITIAL_TRANSITION_INVALID`` 的反例边界。
+不要这样处理：针对“组合状态缺少入口转换，或者入口转换目标不是该组合状态的直接子状态。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-w-redundant-transition-zh:
 
@@ -1301,11 +1346,14 @@ W_REDUNDANT_TRANSITION
 .. diagnostics-ref W_REDUNDANT_TRANSITION duplicate_spans type=list[Span] required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_REDUNDANT_TRANSITION transition_index type=int required=false enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary W_REDUNDANT_TRANSITION kind=inspect_json
+
 **注册表事实。** 严重级别 ``warning``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``transition``。
 
-**含义。** 该诊断的注册表描述为：Multiple transitions share the same source, target, event, guard, and effect. Forced and normal transitions with the same behavioral key are counted here as redundant and may also emit W_FORCED_OVERRIDES_NORMAL.
+**含义。** 多个转换拥有相同的源、目标、事件、守卫和效果，行为上重复。
 
-**面向 LLM 的修复摘要。** These transitions are indistinguishable by source, target, event, guard, and effect, so later copies do not add behavior.
+**面向 LLM 的修复摘要。** 这是提示设计风险或可疑结构的警告。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。多个转换拥有相同的源、目标、事件、守卫和效果，行为上重复。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -1318,24 +1366,24 @@ W_REDUNDANT_TRANSITION
    * - ``from_path``
      - ``str``
      - 是
-     - 注册表字段：Dotted source state path.
+     - 字段含义：转换源状态路径；入口标记可写作 ``[*]``。
    * - ``to_path``
      - ``str``
      - 是
-     - 注册表字段：Dotted target state path.
+     - 字段含义：转换目标状态路径；退出标记可写作 ``[*]``。
    * - ``duplicate_spans``
      - ``list[Span]``
      - 是
-     - 注册表字段：Source spans for the duplicate transition declarations, using null for declarations whose span is unavailable.
+     - 字段含义：重复转换声明的源码范围列表。
    * - ``transition_index``
      - ``int``
      - 否
-     - 注册表字段：Zero-based index in parent-first model transition order, including expanded forced transitions at their declaring state before ordinary transitions and descendant-state transitions. This is used only as a source-range disambiguation hint when spans are unavailable.
+     - 字段含义：父优先转换顺序中的从零开始索引。
 
 .. diagnostics-example W_REDUNDANT_TRANSITION 1 repro_cli
 
-**示例 1**\ （``repro_cli``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``repro_cli``）——复现边界。
+这个诊断可以出现在成功构建模型后的检查报告中。可用 ``pyfcstm inspect -i <file> --format json`` 复现，并读取 ``diagnostics[]`` 数组。
 
 .. code-block:: fcstm
 
@@ -1349,13 +1397,13 @@ W_REDUNDANT_TRANSITION
 
 .. diagnostics-example W_REDUNDANT_TRANSITION 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``transition`` 执行 ``remove_duplicate``：Keep one transition and remove redundant copies.
+**示例 2**\ （``boundary_only``）——针对 ``W_REDUNDANT_TRANSITION`` 的修复方向。
+典型修复是对 ``transition`` 执行 ``remove_duplicate``：针对“多个转换拥有相同的源、目标、事件、守卫和效果，行为上重复。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example W_REDUNDANT_TRANSITION 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not keep duplicate transitions as comments.
+**示例 3**\ （``boundary_only``）——针对 ``W_REDUNDANT_TRANSITION`` 的反例边界。
+不要这样处理：针对“多个转换拥有相同的源、目标、事件、守卫和效果，行为上重复。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-w-self-transition-nop-zh:
 
@@ -1369,11 +1417,14 @@ W_SELF_TRANSITION_NOP
 .. diagnostics-ref W_SELF_TRANSITION_NOP transition_span type=Span required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_SELF_TRANSITION_NOP transition_index type=int required=false enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary W_SELF_TRANSITION_NOP kind=inspect_json
+
 **注册表事实。** 严重级别 ``warning``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``transition``。
 
-**含义。** 该诊断的注册表描述为：A leaf self transition has no event, guard, effect, own lifecycle action, or ancestor aspect action.
+**含义。** 叶状态自转换没有事件、守卫、效果、自己的生命周期动作或祖先切面动作。
 
-**面向 LLM 的修复摘要。** The transition points from a state to itself and has no trigger, guard, effect, or re-entry lifecycle behavior, so it does not model useful behavior.
+**面向 LLM 的修复摘要。** 这是提示设计风险或可疑结构的警告。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。叶状态自转换没有事件、守卫、效果、自己的生命周期动作或祖先切面动作。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -1386,28 +1437,28 @@ W_SELF_TRANSITION_NOP
    * - ``state_path``
      - ``str``
      - 是
-     - 注册表字段：Dotted path of the state with the no-op self transition.
+     - 字段含义：相关状态的点分路径。
    * - ``from_path``
      - ``str``
      - 否
-     - 注册表字段：Dotted source state path.
+     - 字段含义：转换源状态路径；入口标记可写作 ``[*]``。
    * - ``to_path``
      - ``str``
      - 否
-     - 注册表字段：Dotted target state path.
+     - 字段含义：转换目标状态路径；退出标记可写作 ``[*]``。
    * - ``transition_span``
      - ``Span``
      - 否
-     - 注册表字段：Source span of the no-op self transition when available.
+     - 字段含义：相关转换声明的源码范围。
    * - ``transition_index``
      - ``int``
      - 否
-     - 注册表字段：Zero-based index in parent-first model transition order, including expanded forced transitions at their declaring state before ordinary transitions and descendant-state transitions. This is used only as a source-range disambiguation hint when spans are unavailable.
+     - 字段含义：父优先转换顺序中的从零开始索引。
 
 .. diagnostics-example W_SELF_TRANSITION_NOP 1 repro_cli
 
-**示例 1**\ （``repro_cli``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``repro_cli``）——复现边界。
+这个诊断可以出现在成功构建模型后的检查报告中。可用 ``pyfcstm inspect -i <file> --format json`` 复现，并读取 ``diagnostics[]`` 数组。
 
 .. code-block:: fcstm
 
@@ -1419,13 +1470,13 @@ W_SELF_TRANSITION_NOP
 
 .. diagnostics-example W_SELF_TRANSITION_NOP 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``transition`` 执行 ``remove_transition``：Remove the no-op transition.
+**示例 2**\ （``boundary_only``）——针对 ``W_SELF_TRANSITION_NOP`` 的修复方向。
+典型修复是对 ``transition`` 执行 ``remove_transition``：针对“叶状态自转换没有事件、守卫、效果、自己的生命周期动作或祖先切面动作。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example W_SELF_TRANSITION_NOP 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not apply this warning to self transitions whose re-entry would run enter, during, exit, or ancestor aspect actions.
+**示例 3**\ （``boundary_only``）——针对 ``W_SELF_TRANSITION_NOP`` 的反例边界。
+不要这样处理：针对“叶状态自转换没有事件、守卫、效果、自己的生命周期动作或祖先切面动作。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-i-transition-to-self-via-parent-zh:
 
@@ -1436,11 +1487,14 @@ I_TRANSITION_TO_SELF_VIA_PARENT
 .. diagnostics-ref I_TRANSITION_TO_SELF_VIA_PARENT state_path type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref I_TRANSITION_TO_SELF_VIA_PARENT crosses_composite type=bool required=true enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary I_TRANSITION_TO_SELF_VIA_PARENT kind=inspect_json
+
 **注册表事实。** 严重级别 ``info``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``transition``。
 
-**含义。** 该诊断的注册表描述为：A composite state transitions to itself, which can intentionally force a re-entry path through child initialization and lifecycle actions.
+**含义。** 组合状态转换到自身，可能是有意强制重新进入子初始化和生命周期动作。
 
-**面向 LLM 的修复摘要。** This is an informational observation rather than a defect: a composite self-transition may be a deliberate reinitialization pattern.
+**面向 LLM 的修复摘要。** 这是非阻塞的信息性观察。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。组合状态转换到自身，可能是有意强制重新进入子初始化和生命周期动作。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -1453,16 +1507,16 @@ I_TRANSITION_TO_SELF_VIA_PARENT
    * - ``state_path``
      - ``str``
      - 是
-     - 注册表字段：Dotted path of the self-transitioning composite state.
+     - 字段含义：相关状态的点分路径。
    * - ``crosses_composite``
      - ``bool``
      - 是
-     - 注册表字段：Always ``True`` for this info because the state is composite.
+     - 字段含义：该信息固定为真，表示转换跨越组合状态边界。
 
 .. diagnostics-example I_TRANSITION_TO_SELF_VIA_PARENT 1 repro_cli
 
-**示例 1**\ （``repro_cli``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``repro_cli``）——复现边界。
+这个诊断可以出现在成功构建模型后的检查报告中。可用 ``pyfcstm inspect -i <file> --format json`` 复现，并读取 ``diagnostics[]`` 数组。
 
 .. code-block:: fcstm
 
@@ -1474,13 +1528,13 @@ I_TRANSITION_TO_SELF_VIA_PARENT
 
 .. diagnostics-example I_TRANSITION_TO_SELF_VIA_PARENT 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``transition`` 执行 ``preserve_if_intentional``：Keep the transition when the model should re-run composite entry semantics.
+**示例 2**\ （``boundary_only``）——针对 ``I_TRANSITION_TO_SELF_VIA_PARENT`` 的修复方向。
+典型修复是对 ``transition`` 执行 ``preserve_if_intentional``：针对“组合状态转换到自身，可能是有意强制重新进入子初始化和生命周期动作。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example I_TRANSITION_TO_SELF_VIA_PARENT 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not delete this transition automatically; it may be the intended reset path.
+**示例 3**\ （``boundary_only``）——针对 ``I_TRANSITION_TO_SELF_VIA_PARENT`` 的反例边界。
+不要这样处理：针对“组合状态转换到自身，可能是有意强制重新进入子初始化和生命周期动作。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-w-transition-shadowed-zh:
 
@@ -1497,11 +1551,14 @@ W_TRANSITION_SHADOWED
 .. diagnostics-ref W_TRANSITION_SHADOWED shadowed_by_count type=int required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_TRANSITION_SHADOWED shadowed_by type=list[str] required=true enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary W_TRANSITION_SHADOWED kind=verify_smt_linear
+
 **注册表事实。** 严重级别 ``warning``；发射层级 ``verify_pipeline``；能力层级 ``requires_solver``；源码对象 ``transition``。
 
-**含义。** 该诊断的注册表描述为：A later outgoing transition is fully covered by earlier same-source triggers and therefore cannot be selected.
+**含义。** 后面的同源出边转换被前面的触发条件完全覆盖，因此不会被选择。
 
-**面向 LLM 的修复摘要。** Transition ordering means an earlier same-source transition consumes all cases that could have reached this later transition.
+**面向 LLM 的修复摘要。** 这是提示设计风险或可疑结构的警告。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。后面的同源出边转换被前面的触发条件完全覆盖，因此不会被选择。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -1514,40 +1571,40 @@ W_TRANSITION_SHADOWED
    * - ``algorithm_name``
      - ``str``
      - 是
-     - 注册表字段：Verify registry algorithm that produced the raw finding.
+     - 字段含义：产生原始发现的验证算法名称。
    * - ``verification_scope``
      - ``str``
      - 是
-     - 注册表字段：Verify scope for this finding.（枚举：``smt_local``）
+     - 字段含义：验证发现所属的作用域。
    * - ``transition``
      - ``dict``
      - 是
-     - 注册表字段：Raw verify transition payload for the shadowed transition.
+     - 字段含义：原始验证转换载荷。
    * - ``transition_summary``
      - ``str``
      - 是
-     - 注册表字段：Stable human-readable transition summary derived from the raw payload.
+     - 字段含义：由原始载荷派生的稳定转换摘要。
    * - ``source_state_path``
      - ``str``
      - 是
-     - 注册表字段：Dotted source state path whose outgoing order creates the shadowing.
+     - 字段含义：产生该诊断的源状态点分路径。
    * - ``reason``
      - ``str``
      - 是
-     - 注册表字段：Shadowing reason classification.（枚举：``guard_shadow``, ``duplicate_event``, ``unconditional_catchall``, ``prior_trigger_cover``）
+     - 字段含义：原因分类标签。
    * - ``shadowed_by_count``
      - ``int``
      - 是
-     - 注册表字段：Number of earlier transitions covering this transition.
+     - 字段含义：覆盖当前转换的前序转换数量。
    * - ``shadowed_by``
      - ``list[str]``
      - 是
-     - 注册表字段：Stable summaries of earlier transitions that shadow this transition.
+     - 字段含义：覆盖当前转换的前序转换摘要列表。
 
 .. diagnostics-example W_TRANSITION_SHADOWED 1 verify_opt_in
 
-**示例 1**\ （``verify_opt_in``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``verify_opt_in``）——复现边界。
+这个诊断需要显式开启验证集成。复现时应使用 ``pyfcstm inspect -i <file> --enable-verify --max-complexity-tier smt_linear --format json``；默认结构验证预算不会运行发射它的求解器局部算法。
 
 .. code-block:: fcstm
 
@@ -1562,13 +1619,13 @@ W_TRANSITION_SHADOWED
 
 .. diagnostics-example W_TRANSITION_SHADOWED 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``transition_list`` 执行 ``reorder_transitions``：Move the more specific transition before the broader predecessor if both are needed.
+**示例 2**\ （``boundary_only``）——针对 ``W_TRANSITION_SHADOWED`` 的修复方向。
+典型修复是对 ``transition_list`` 执行 ``reorder_transitions``：针对“后面的同源出边转换被前面的触发条件完全覆盖，因此不会被选择。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example W_TRANSITION_SHADOWED 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not reorder transitions without checking FCSTM first-match semantics.
+**示例 3**\ （``boundary_only``）——针对 ``W_TRANSITION_SHADOWED`` 的反例边界。
+不要这样处理：针对“后面的同源出边转换被前面的触发条件完全覆盖，因此不会被选择。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 事件和作用域
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1582,11 +1639,14 @@ E_EVENT_REF_INVALID
 .. diagnostics-ref E_EVENT_REF_INVALID event_ref type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_EVENT_REF_INVALID reason type=str required=true enum=empty|bare_slash|invalid_absolute|invalid_relative|trailing_dots|beyond_root item_enum=- exact_values=-
 
+
+.. diagnostics-boundary E_EVENT_REF_INVALID kind=api_only
+
 **注册表事实。** 严重级别 ``error``；发射层级 ``lookup_api``；能力层级 ``pure_static``；源码对象 ``event_declaration``。
 
-**含义。** 该诊断的注册表描述为：The textual form of an event reference is syntactically invalid (e.g. bare '/', trailing dots, going beyond the root state).
+**含义。** 事件引用的文本形式不合法，例如空引用、裸 ``/``、末尾多余点号或越过根状态。
 
-**面向 LLM 的修复摘要。** An event reference (``::``, ``:``, or ``/`` scoped) cannot resolve to a known event under the indicated scope. The grammar accepts the syntactic form, but the resolver cannot bind it to a real event object.
+**面向 LLM 的修复摘要。** 这是会阻塞模型构建或目标 API 解析的错误。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。事件引用的文本形式不合法，例如空引用、裸 ``/``、末尾多余点号或越过根状态。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -1599,16 +1659,16 @@ E_EVENT_REF_INVALID
    * - ``event_ref``
      - ``str``
      - 是
-     - 注册表字段：The raw event reference text.
+     - 字段含义：原始事件引用文本。
    * - ``reason``
      - ``str``
      - 是
-     - 注册表字段：Short tag describing why the reference is invalid.（枚举：``empty``, ``bare_slash``, ``invalid_absolute``, ``invalid_relative``, ``trailing_dots``, ``beyond_root``）
+     - 字段含义：原因分类标签。
 
 .. diagnostics-example E_EVENT_REF_INVALID 1 repro_api
 
-**示例 1**\ （``repro_api``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``repro_api``）——复现边界。
+这个诊断由显式解析 API 发射。默认 ``pyfcstm inspect`` 通常不会以报告该码的方式调用对应 API，因此应按 API 边界复现，而不是期待默认命令行 JSON。
 
 .. code-block:: fcstm
 
@@ -1616,13 +1676,13 @@ E_EVENT_REF_INVALID
 
 .. diagnostics-example E_EVENT_REF_INVALID 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``transition`` 执行 ``fix_scope_operator``：The three scope operators do not interchange freely. ``::`` is source-local, ``:`` is parent-chain, ``/`` is root-absolute. Pick the one that matches where the event is actually declared.
+**示例 2**\ （``boundary_only``）——针对 ``E_EVENT_REF_INVALID`` 的修复方向。
+典型修复是对 ``transition`` 执行 ``fix_scope_operator``：针对“事件引用的文本形式不合法，例如空引用、裸 ``/``、末尾多余点号或越过根状态。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example E_EVENT_REF_INVALID 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not invent a new event by silently aliasing — the dispatcher won't fire on an undeclared name.
+**示例 3**\ （``boundary_only``）——针对 ``E_EVENT_REF_INVALID`` 的反例边界。
+不要这样处理：针对“事件引用的文本形式不合法，例如空引用、裸 ``/``、末尾多余点号或越过根状态。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-e-event-not-found-zh:
 
@@ -1634,11 +1694,14 @@ E_EVENT_NOT_FOUND
 .. diagnostics-ref E_EVENT_NOT_FOUND scope type=str required=true enum=local|chain|absolute item_enum=- exact_values=-
 .. diagnostics-ref E_EVENT_NOT_FOUND searched_from type=str_or_null required=false enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary E_EVENT_NOT_FOUND kind=api_only
+
 **注册表事实。** 严重级别 ``error``；发射层级 ``lookup_api``；能力层级 ``pure_static``；源码对象 ``event_declaration``。
 
-**含义。** 该诊断的注册表描述为：An event reference parses correctly but does not resolve to any event defined in the targeted scope.
+**含义。** 事件引用的语法合法，但在目标作用域里找不到对应事件声明。
 
-**面向 LLM 的修复摘要。** A dotted event path could not be resolved against the assembled state hierarchy. The path syntax was valid but no event with that name exists at the resolved state.
+**面向 LLM 的修复摘要。** 这是会阻塞模型构建或目标 API 解析的错误。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。事件引用的语法合法，但在目标作用域里找不到对应事件声明。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -1651,20 +1714,20 @@ E_EVENT_NOT_FOUND
    * - ``event_ref``
      - ``str``
      - 是
-     - 注册表字段：The raw event reference text.
+     - 字段含义：原始事件引用文本。
    * - ``scope``
      - ``str``
      - 是
-     - 注册表字段：Resolution scope used.（枚举：``local``, ``chain``, ``absolute``）
+     - 字段含义：解析或验证使用的作用域。
    * - ``searched_from``
      - ``str_or_null``
      - 否
-     - 注册表字段：Dotted state path of the **caller** that initiated the lookup (i.e. the state on which `.resolve_event()` was invoked, or, for `StateMachine.resolve_event`, the state machine's root). This is the originating location of the bad reference in source — not the effective search root, which is always the model root for absolute references.
+     - 字段含义：发起解析调用的状态点分路径。
 
 .. diagnostics-example E_EVENT_NOT_FOUND 1 repro_api
 
-**示例 1**\ （``repro_api``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``repro_api``）——复现边界。
+这个诊断由显式解析 API 发射。默认 ``pyfcstm inspect`` 通常不会以报告该码的方式调用对应 API，因此应按 API 边界复现，而不是期待默认命令行 JSON。
 
 .. code-block:: fcstm
 
@@ -1672,13 +1735,13 @@ E_EVENT_NOT_FOUND
 
 .. diagnostics-example E_EVENT_NOT_FOUND 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``transition`` 执行 ``fix_event_path``：Confirm the dotted path matches the state hierarchy that actually exists after imports have been merged.
+**示例 2**\ （``boundary_only``）——针对 ``E_EVENT_NOT_FOUND`` 的修复方向。
+典型修复是对 ``transition`` 执行 ``fix_event_path``：针对“事件引用的语法合法，但在目标作用域里找不到对应事件声明。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example E_EVENT_NOT_FOUND 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not paper over the error by introducing a wildcard alias — events are uniquely bound by their scope.
+**示例 3**\ （``boundary_only``）——针对 ``E_EVENT_NOT_FOUND`` 的反例边界。
+不要这样处理：针对“事件引用的语法合法，但在目标作用域里找不到对应事件声明。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-w-combo-duplicate-event-zh:
 
@@ -1697,11 +1760,14 @@ W_COMBO_DUPLICATE_EVENT
 .. diagnostics-ref W_COMBO_DUPLICATE_EVENT term_span type=Span required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_COMBO_DUPLICATE_EVENT first_term_span type=Span required=false enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary W_COMBO_DUPLICATE_EVENT kind=inspect_json
+
 **注册表事实。** 严重级别 ``warning``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``transition``。
 
-**含义。** 该诊断的注册表描述为：A combo transition trigger repeats the same canonical event term. The model still executes the two generated hops, but the second event term is usually redundant or a typo.
+**含义。** 组合转换触发器重复写入了同一个规范化事件项；通常是冗余或笔误。
 
-**面向 LLM 的修复摘要。** The combo trigger contains the same resolved event twice, for example ``E1 + E1``. This is legal but normally redundant because one cycle's input event set already contains ``E1``.
+**面向 LLM 的修复摘要。** 这是提示设计风险或可疑结构的警告。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。组合转换触发器重复写入了同一个规范化事件项；通常是冗余或笔误。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -1714,48 +1780,48 @@ W_COMBO_DUPLICATE_EVENT
    * - ``origin_id``
      - ``str``
      - 是
-     - 注册表字段：Stable identifier of the original combo transition.
+     - 字段含义：原始组合转换的稳定标识。
    * - ``event_name``
      - ``str``
      - 是
-     - 注册表字段：Canonical qualified event name that appears more than once.
+     - 字段含义：相关事件的规范化限定名。
    * - ``term_index``
      - ``int``
      - 是
-     - 注册表字段：Zero-based index of the repeated event term.
+     - 字段含义：相关组合触发项的从零开始索引。
    * - ``first_term_index``
      - ``int``
      - 是
-     - 注册表字段：Zero-based index of the first matching event term.
+     - 字段含义：首次匹配触发项的从零开始索引。
    * - ``term_text``
      - ``str``
      - 是
-     - 注册表字段：Canonical source text of the repeated event term.
+     - 字段含义：相关触发项的规范化源码文本。
    * - ``first_term_text``
      - ``str``
      - 是
-     - 注册表字段：Canonical source text of the first matching event term.
+     - 字段含义：首次匹配触发项的规范化源码文本。
    * - ``transition_span``
      - ``Span``
      - 否
-     - 注册表字段：Source span of the original combo transition.
+     - 字段含义：相关转换声明的源码范围。
    * - ``trigger_span``
      - ``Span``
      - 否
-     - 注册表字段：Source span of the combo trigger suffix.
+     - 字段含义：组合触发后缀的源码范围。
    * - ``term_span``
      - ``Span``
      - 否
-     - 注册表字段：Source span of the repeated event term.
+     - 字段含义：相关触发项的源码范围。
    * - ``first_term_span``
      - ``Span``
      - 否
-     - 注册表字段：Source span of the first matching event term.
+     - 字段含义：首次匹配触发项的源码范围。
 
 .. diagnostics-example W_COMBO_DUPLICATE_EVENT 1 repro_cli
 
-**示例 1**\ （``repro_cli``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``repro_cli``）——复现边界。
+这个诊断可以出现在成功构建模型后的检查报告中。可用 ``pyfcstm inspect -i <file> --format json`` 复现，并读取 ``diagnostics[]`` 数组。
 
 .. code-block:: fcstm
 
@@ -1769,13 +1835,13 @@ W_COMBO_DUPLICATE_EVENT
 
 .. diagnostics-example W_COMBO_DUPLICATE_EVENT 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``transition`` 执行 ``inspect_terms``：Check whether the second event was meant to be a different event.
+**示例 2**\ （``boundary_only``）——针对 ``W_COMBO_DUPLICATE_EVENT`` 的修复方向。
+典型修复是对 ``transition`` 执行 ``inspect_terms``：针对“组合转换触发器重复写入了同一个规范化事件项；通常是冗余或笔误。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example W_COMBO_DUPLICATE_EVENT 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not silently delete the repeated event; the explicit pseudo-chain shape may be intentional.
+**示例 3**\ （``boundary_only``）——针对 ``W_COMBO_DUPLICATE_EVENT`` 的反例边界。
+不要这样处理：针对“组合转换触发器重复写入了同一个规范化事件项；通常是冗余或笔误。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-w-unused-event-zh:
 
@@ -1786,11 +1852,14 @@ W_UNUSED_EVENT
 .. diagnostics-ref W_UNUSED_EVENT event_qualified_name type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_UNUSED_EVENT scope type=str required=true enum=local|chain|absolute item_enum=- exact_values=-
 
+
+.. diagnostics-boundary W_UNUSED_EVENT kind=inspect_json
+
 **注册表事实。** 严重级别 ``warning``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``event_declaration``。
 
-**含义。** 该诊断的注册表描述为：An ``event`` declaration is never referenced by any transition.
+**含义。** 某个 ``event`` 声明没有被任何转换引用。
 
-**面向 LLM 的修复摘要。** An event is declared but never triggers any transition, so it is unused from the machine's perspective.
+**面向 LLM 的修复摘要。** 这是提示设计风险或可疑结构的警告。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。某个 ``event`` 声明没有被任何转换引用。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -1803,16 +1872,16 @@ W_UNUSED_EVENT
    * - ``event_qualified_name``
      - ``str``
      - 是
-     - 注册表字段：Fully qualified event name (e.g. ``Root.SubA.Pause``).
+     - 字段含义：字段 ``event_qualified_name`` 的稳定载荷；具体含义由本诊断的含义、类型和枚举共同限定。
    * - ``scope``
      - ``str``
      - 是
-     - 注册表字段：Scope at which the event is declared.（枚举：``local``, ``chain``, ``absolute``）
+     - 字段含义：解析或验证使用的作用域。
 
 .. diagnostics-example W_UNUSED_EVENT 1 repro_cli
 
-**示例 1**\ （``repro_cli``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``repro_cli``）——复现边界。
+这个诊断可以出现在成功构建模型后的检查报告中。可用 ``pyfcstm inspect -i <file> --format json`` 复现，并读取 ``diagnostics[]`` 数组。
 
 .. code-block:: fcstm
 
@@ -1826,13 +1895,13 @@ W_UNUSED_EVENT
 
 .. diagnostics-example W_UNUSED_EVENT 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``transition`` 执行 ``wire_event``：Add a transition that uses the event if it was meant to be emitted.
+**示例 2**\ （``boundary_only``）——针对 ``W_UNUSED_EVENT`` 的修复方向。
+典型修复是对 ``transition`` 执行 ``wire_event``：针对“某个 ``event`` 声明没有被任何转换引用。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example W_UNUSED_EVENT 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not rename the event to dodge the warning — that just shifts the problem.
+**示例 3**\ （``boundary_only``）——针对 ``W_UNUSED_EVENT`` 的反例边界。
+不要这样处理：针对“某个 ``event`` 声明没有被任何转换引用。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-w-shadowed-event-zh:
 
@@ -1844,11 +1913,14 @@ W_SHADOWED_EVENT
 .. diagnostics-ref W_SHADOWED_EVENT local_path type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_SHADOWED_EVENT chain_path type=str required=true enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary W_SHADOWED_EVENT kind=inspect_json
+
 **注册表事实。** 严重级别 ``warning``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``event_declaration``。
 
-**含义。** 该诊断的注册表描述为：A local event name shadows a chain or absolute event with the same leaf name.
+**含义。** 本地事件名遮蔽了同叶名的链式或绝对事件。
 
-**面向 LLM 的修复摘要。** The same event leaf name exists in local and broader scopes, which can make transition triggers easy to misread.
+**面向 LLM 的修复摘要。** 这是提示设计风险或可疑结构的警告。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。本地事件名遮蔽了同叶名的链式或绝对事件。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -1861,20 +1933,20 @@ W_SHADOWED_EVENT
    * - ``event_name``
      - ``str``
      - 是
-     - 注册表字段：Shared event leaf name.
+     - 字段含义：相关事件的规范化限定名。
    * - ``local_path``
      - ``str``
      - 是
-     - 注册表字段：Qualified local event path.
+     - 字段含义：本地事件限定路径。
    * - ``chain_path``
      - ``str``
      - 是
-     - 注册表字段：Qualified chain or absolute event path.
+     - 字段含义：链式或绝对事件限定路径。
 
 .. diagnostics-example W_SHADOWED_EVENT 1 repro_cli
 
-**示例 1**\ （``repro_cli``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``repro_cli``）——复现边界。
+这个诊断可以出现在成功构建模型后的检查报告中。可用 ``pyfcstm inspect -i <file> --format json`` 复现，并读取 ``diagnostics[]`` 数组。
 
 .. code-block:: fcstm
 
@@ -1889,13 +1961,13 @@ W_SHADOWED_EVENT
 
 .. diagnostics-example W_SHADOWED_EVENT 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``event`` 执行 ``rename_event``：Use distinct event names for different scopes.
+**示例 2**\ （``boundary_only``）——针对 ``W_SHADOWED_EVENT`` 的修复方向。
+典型修复是对 ``event`` 执行 ``rename_event``：针对“本地事件名遮蔽了同叶名的链式或绝对事件。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example W_SHADOWED_EVENT 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not rename only one trigger without checking all emitters.
+**示例 3**\ （``boundary_only``）——针对 ``W_SHADOWED_EVENT`` 的反例边界。
+不要这样处理：针对“本地事件名遮蔽了同叶名的链式或绝对事件。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-i-transition-never-event-triggered-zh:
 
@@ -1908,11 +1980,14 @@ I_TRANSITION_NEVER_EVENT_TRIGGERED
 .. diagnostics-ref I_TRANSITION_NEVER_EVENT_TRIGGERED transition_span type=Span required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref I_TRANSITION_NEVER_EVENT_TRIGGERED transition_index type=int required=false enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary I_TRANSITION_NEVER_EVENT_TRIGGERED kind=inspect_json
+
 **注册表事实。** 严重级别 ``info``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``transition``。
 
-**含义。** 该诊断的注册表描述为：A normal transition has no event and no guard, so it is an unconditional fall-through candidate.
+**含义。** 普通转换没有事件也没有守卫，是一个无条件下落候选。
 
-**面向 LLM 的修复摘要。** The transition is not event-triggered and has no guard. This may be a deliberate unconditional fall-through, so treat it as context rather than a fix target.
+**面向 LLM 的修复摘要。** 这是非阻塞的信息性观察。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。普通转换没有事件也没有守卫，是一个无条件下落候选。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -1925,24 +2000,24 @@ I_TRANSITION_NEVER_EVENT_TRIGGERED
    * - ``from_path``
      - ``str``
      - 是
-     - 注册表字段：Dotted source state path.
+     - 字段含义：转换源状态路径；入口标记可写作 ``[*]``。
    * - ``to_path``
      - ``str``
      - 是
-     - 注册表字段：Dotted target state path.
+     - 字段含义：转换目标状态路径；退出标记可写作 ``[*]``。
    * - ``transition_span``
      - ``Span``
      - 否
-     - 注册表字段：Source span of the transition when available.
+     - 字段含义：相关转换声明的源码范围。
    * - ``transition_index``
      - ``int``
      - 否
-     - 注册表字段：Zero-based index in parent-first model transition order, including expanded forced transitions at their declaring state before ordinary transitions and descendant-state transitions. This is used only as a source-range disambiguation hint when spans are unavailable.
+     - 字段含义：父优先转换顺序中的从零开始索引。
 
 .. diagnostics-example I_TRANSITION_NEVER_EVENT_TRIGGERED 1 repro_cli
 
-**示例 1**\ （``repro_cli``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``repro_cli``）——复现边界。
+这个诊断可以出现在成功构建模型后的检查报告中。可用 ``pyfcstm inspect -i <file> --format json`` 复现，并读取 ``diagnostics[]`` 数组。
 
 .. code-block:: fcstm
 
@@ -1955,13 +2030,13 @@ I_TRANSITION_NEVER_EVENT_TRIGGERED
 
 .. diagnostics-example I_TRANSITION_NEVER_EVENT_TRIGGERED 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``transition`` 执行 ``keep_if_fallthrough``：Keep it when the state should immediately advance.
+**示例 2**\ （``boundary_only``）——针对 ``I_TRANSITION_NEVER_EVENT_TRIGGERED`` 的修复方向。
+典型修复是对 ``transition`` 执行 ``keep_if_fallthrough``：针对“普通转换没有事件也没有守卫，是一个无条件下落候选。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example I_TRANSITION_NEVER_EVENT_TRIGGERED 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not add a meaningless event just to silence this info.
+**示例 3**\ （``boundary_only``）——针对 ``I_TRANSITION_NEVER_EVENT_TRIGGERED`` 的反例边界。
+不要这样处理：针对“普通转换没有事件也没有守卫，是一个无条件下落候选。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-w-event-unreachable-emit-zh:
 
@@ -1974,11 +2049,14 @@ W_EVENT_UNREACHABLE_EMIT
 .. diagnostics-ref W_EVENT_UNREACHABLE_EMIT event_name type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_EVENT_UNREACHABLE_EMIT consumer_count type=int required=true enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary W_EVENT_UNREACHABLE_EMIT kind=verify_smt_linear
+
 **注册表事实。** 严重级别 ``warning``；发射层级 ``verify_pipeline``；能力层级 ``pure_static``；源码对象 ``event_declaration``。
 
-**含义。** 该诊断的注册表描述为：A used event has no consumer source that is reachable in the guard-agnostic topology graph.
+**含义。** 某个已使用事件没有任何在守卫无关拓扑中可达的消费源。
 
-**面向 LLM 的修复摘要。** The event is used by transitions, but those transition sources are not reachable from the root entry topology.
+**面向 LLM 的修复摘要。** 这是提示设计风险或可疑结构的警告。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。某个已使用事件没有任何在守卫无关拓扑中可达的消费源。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -1991,24 +2069,24 @@ W_EVENT_UNREACHABLE_EMIT
    * - ``algorithm_name``
      - ``str``
      - 是
-     - 注册表字段：Verify registry algorithm that produced the raw finding.
+     - 字段含义：产生原始发现的验证算法名称。
    * - ``verification_scope``
      - ``str``
      - 是
-     - 注册表字段：Verify scope for this finding.（枚举：``topological_only``）
+     - 字段含义：验证发现所属的作用域。
    * - ``event_name``
      - ``str``
      - 是
-     - 注册表字段：Qualified event name whose consumers are unreachable.
+     - 字段含义：相关事件的规范化限定名。
    * - ``consumer_count``
      - ``int``
      - 是
-     - 注册表字段：Number of unreachable consumer transitions represented by this finding.
+     - 字段含义：该发现代表的不可达消费转换数量。
 
 .. diagnostics-example W_EVENT_UNREACHABLE_EMIT 1 verify_opt_in
 
-**示例 1**\ （``verify_opt_in``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``verify_opt_in``）——复现边界。
+这个诊断需要显式开启验证集成。复现时应使用 ``pyfcstm inspect -i <file> --enable-verify --max-complexity-tier smt_linear --format json``；默认结构验证预算不会运行发射它的求解器局部算法。
 
 .. code-block:: fcstm
 
@@ -2024,13 +2102,13 @@ W_EVENT_UNREACHABLE_EMIT
 
 .. diagnostics-example W_EVENT_UNREACHABLE_EMIT 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``transition_source`` 执行 ``connect_consumer``：Add a topology path that reaches the state consuming the event.
+**示例 2**\ （``boundary_only``）——针对 ``W_EVENT_UNREACHABLE_EMIT`` 的修复方向。
+典型修复是对 ``transition_source`` 执行 ``connect_consumer``：针对“某个已使用事件没有任何在守卫无关拓扑中可达的消费源。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example W_EVENT_UNREACHABLE_EMIT 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not add an emitter for this event if no reachable state can consume it.
+**示例 3**\ （``boundary_only``）——针对 ``W_EVENT_UNREACHABLE_EMIT`` 的反例边界。
+不要这样处理：针对“某个已使用事件没有任何在守卫无关拓扑中可达的消费源。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 组合与中继诊断
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -2044,11 +2122,14 @@ E_COMBO_TRIGGER_NOT_EXPANDED
 .. diagnostics-ref E_COMBO_TRIGGER_NOT_EXPANDED state_path type=str_or_null required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_COMBO_TRIGGER_NOT_EXPANDED trigger type=str required=true enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary E_COMBO_TRIGGER_NOT_EXPANDED kind=compatibility_only
+
 **注册表事实。** 严重级别 ``error``；发射层级 ``catalog_only``；能力层级 ``pure_static``；源码对象 ``transition``。
 
-**含义。** 该诊断的注册表描述为：A legacy fail-closed compatibility code for implementations that parse combo trigger syntax before model expansion support is available.
+**含义。** 兼容旧实现的失败关闭诊断；旧实现可能能解析组合触发，却还不能展开组合中继状态。
 
-**面向 LLM 的修复摘要。** Older pyfcstm/jsfcstm builds may accept a transition trigger such as ``:: E1 + E2`` or ``: E1 + [x > 0]`` but stop before pseudo-state expansion support. Current pyfcstm expands combo triggers instead of emitting this code; the catalog entry remains for cross-version consumers.
+**面向 LLM 的修复摘要。** 这是会阻塞模型构建或目标 API 解析的错误。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。兼容旧实现的失败关闭诊断；旧实现可能能解析组合触发，却还不能展开组合中继状态。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -2061,16 +2142,16 @@ E_COMBO_TRIGGER_NOT_EXPANDED
    * - ``state_path``
      - ``str_or_null``
      - 否
-     - 注册表字段：Dotted path of the state that owns the combo transition.
+     - 字段含义：相关状态的点分路径。
    * - ``trigger``
      - ``str``
      - 是
-     - 注册表字段：Canonical text of the combo trigger suffix.
+     - 字段含义：组合触发后缀的规范化文本。
 
 .. diagnostics-example E_COMBO_TRIGGER_NOT_EXPANDED 1 compatibility_only
 
-**示例 1**\ （``compatibility_only``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``compatibility_only``）——复现边界。
+这个诊断保留兼容或历史失败关闭契约。当前 pyfcstm 正常路径不应发射它；保留该项是为了让旧工具输出仍可被解释。
 
 .. code-block:: fcstm
 
@@ -2078,13 +2159,13 @@ E_COMBO_TRIGGER_NOT_EXPANDED
 
 .. diagnostics-example E_COMBO_TRIGGER_NOT_EXPANDED 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``transition`` 执行 ``wait_for_expansion_support``：Keep the DSL syntax if you are testing parser/provenance support; wait for model-expansion support before running simulation, verification, or code generation on combo triggers.
+**示例 2**\ （``boundary_only``）——针对 ``E_COMBO_TRIGGER_NOT_EXPANDED`` 的修复方向。
+典型修复是对 ``transition`` 执行 ``wait_for_expansion_support``：针对“兼容旧实现的失败关闭诊断；旧实现可能能解析组合触发，却还不能展开组合中继状态。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example E_COMBO_TRIGGER_NOT_EXPANDED 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not treat the first event term as the whole transition; that would silently change model semantics.
+**示例 3**\ （``boundary_only``）——针对 ``E_COMBO_TRIGGER_NOT_EXPANDED`` 的反例边界。
+不要这样处理：针对“兼容旧实现的失败关闭诊断；旧实现可能能解析组合触发，却还不能展开组合中继状态。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-w-combo-reserved-prefix-state-kind-zh:
 
@@ -2097,11 +2178,14 @@ W_COMBO_RESERVED_PREFIX_STATE_KIND
 .. diagnostics-ref W_COMBO_RESERVED_PREFIX_STATE_KIND reserved_prefix type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_COMBO_RESERVED_PREFIX_STATE_KIND state_kind type=str required=true enum=state|composite item_enum=- exact_values=-
 
+
+.. diagnostics-boundary W_COMBO_RESERVED_PREFIX_STATE_KIND kind=partial_static_boundary
+
 **注册表事实。** 严重级别 ``warning``；发射层级 ``partial_static_pipeline``；能力层级 ``pure_static``；源码对象 ``state_identifier``。
 
-**含义。** 该诊断的注册表描述为：A non-pseudo state name starts with the automatic combo relay prefix.
+**含义。** 普通叶状态或组合状态使用了自动组合中继状态保留的 ``__combo_`` 前缀。
 
-**面向 LLM 的修复摘要。** A normal leaf or composite state uses the ``__combo_`` prefix reserved for combo relay pseudo states. The model can still build, but the name is visually ambiguous with generated relay nodes.
+**面向 LLM 的修复摘要。** 这是提示设计风险或可疑结构的警告。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。普通叶状态或组合状态使用了自动组合中继状态保留的 ``__combo_`` 前缀。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -2114,24 +2198,24 @@ W_COMBO_RESERVED_PREFIX_STATE_KIND
    * - ``state_name``
      - ``str``
      - 是
-     - 注册表字段：State name using the combo relay reserved prefix.
+     - 字段含义：相关状态名。
    * - ``state_path``
      - ``str``
      - 是
-     - 注册表字段：Dotted path of the offending state.
+     - 字段含义：相关状态的点分路径。
    * - ``reserved_prefix``
      - ``str``
      - 是
-     - 注册表字段：Reserved prefix used by generated combo pseudo states.
+     - 字段含义：组合中继伪状态保留前缀。
    * - ``state_kind``
      - ``str``
      - 是
-     - 注册表字段：Kind of user-authored state that used the reserved prefix.（枚举：``state``, ``composite``）
+     - 字段含义：触发诊断的状态类型。
 
 .. diagnostics-example W_COMBO_RESERVED_PREFIX_STATE_KIND 1 boundary_only
 
-**示例 1**\ （``boundary_only``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``boundary_only``）——复现边界。
+这个注册表契约有意先于所有前端和后端的完整发射一致性。应把示例视为支持的边界形状，并在承诺默认命令行 JSON 前确认当前发射器。
 
 .. code-block:: fcstm
 
@@ -2139,13 +2223,13 @@ W_COMBO_RESERVED_PREFIX_STATE_KIND
 
 .. diagnostics-example W_COMBO_RESERVED_PREFIX_STATE_KIND 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``state_identifier`` 执行 ``rename_state``：Rename the user-authored state so readers and generated artifacts do not confuse it with an expanded combo relay.
+**示例 2**\ （``boundary_only``）——针对 ``W_COMBO_RESERVED_PREFIX_STATE_KIND`` 的修复方向。
+典型修复是对 ``state_identifier`` 执行 ``rename_state``：针对“普通叶状态或组合状态使用了自动组合中继状态保留的 ``__combo_`` 前缀。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example W_COMBO_RESERVED_PREFIX_STATE_KIND 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not fix this by declaring a business state as pseudo unless it is truly only a relay.
+**示例 3**\ （``boundary_only``）——针对 ``W_COMBO_RESERVED_PREFIX_STATE_KIND`` 的反例边界。
+不要这样处理：针对“普通叶状态或组合状态使用了自动组合中继状态保留的 ``__combo_`` 前缀。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-w-combo-relay-pseudo-has-actions-zh:
 
@@ -2158,11 +2242,14 @@ W_COMBO_RELAY_PSEUDO_HAS_ACTIONS
 .. diagnostics-ref W_COMBO_RELAY_PSEUDO_HAS_ACTIONS reserved_prefix type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_COMBO_RELAY_PSEUDO_HAS_ACTIONS action_kinds type=list[str] required=true enum=- item_enum=enter|during|exit|during_aspect exact_values=-
 
+
+.. diagnostics-boundary W_COMBO_RELAY_PSEUDO_HAS_ACTIONS kind=partial_static_boundary
+
 **注册表事实。** 严重级别 ``warning``；发射层级 ``partial_static_pipeline``；能力层级 ``pure_static``；源码对象 ``state_identifier``。
 
-**含义。** 该诊断的注册表描述为：A pseudo state in the combo relay namespace contains lifecycle or aspect actions, so it is not a pure relay.
+**含义。** 组合中继命名空间里的伪状态包含生命周期动作或切面动作，因此不再是纯中继节点。
 
-**面向 LLM 的修复摘要。** A ``pseudo state __combo_*`` node is allowed so expanded combo DSL can be reimported, but relay pseudo states should stay pure. Lifecycle or aspect actions make the relay observable and may surprise readers.
+**面向 LLM 的修复摘要。** 这是提示设计风险或可疑结构的警告。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。组合中继命名空间里的伪状态包含生命周期动作或切面动作，因此不再是纯中继节点。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -2175,24 +2262,24 @@ W_COMBO_RELAY_PSEUDO_HAS_ACTIONS
    * - ``state_name``
      - ``str``
      - 是
-     - 注册表字段：Pseudo-state name using the combo relay reserved prefix.
+     - 字段含义：相关状态名。
    * - ``state_path``
      - ``str``
      - 是
-     - 注册表字段：Dotted path of the pseudo state.
+     - 字段含义：相关状态的点分路径。
    * - ``reserved_prefix``
      - ``str``
      - 是
-     - 注册表字段：Reserved prefix used by combo relay pseudo states.
+     - 字段含义：组合中继伪状态保留前缀。
    * - ``action_kinds``
      - ``list[str]``
      - 是
-     - 注册表字段：Lifecycle or aspect action kinds present on the pseudo state.（元素枚举：``enter``, ``during``, ``exit``, ``during_aspect``）
+     - 字段含义：该伪状态上出现的生命周期或切面动作类型。
 
 .. diagnostics-example W_COMBO_RELAY_PSEUDO_HAS_ACTIONS 1 boundary_only
 
-**示例 1**\ （``boundary_only``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``boundary_only``）——复现边界。
+这个注册表契约有意先于所有前端和后端的完整发射一致性。应把示例视为支持的边界形状，并在承诺默认命令行 JSON 前确认当前发射器。
 
 .. code-block:: fcstm
 
@@ -2200,13 +2287,13 @@ W_COMBO_RELAY_PSEUDO_HAS_ACTIONS
 
 .. diagnostics-example W_COMBO_RELAY_PSEUDO_HAS_ACTIONS 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``lifecycle_action`` 执行 ``move_action``：Move the action to the authored source or target state if it is business behavior rather than routing metadata.
+**示例 2**\ （``boundary_only``）——针对 ``W_COMBO_RELAY_PSEUDO_HAS_ACTIONS`` 的修复方向。
+典型修复是对 ``lifecycle_action`` 执行 ``move_action``：针对“组合中继命名空间里的伪状态包含生命周期动作或切面动作，因此不再是纯中继节点。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example W_COMBO_RELAY_PSEUDO_HAS_ACTIONS 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not add business logic to generated combo relay pseudo states.
+**示例 3**\ （``boundary_only``）——针对 ``W_COMBO_RELAY_PSEUDO_HAS_ACTIONS`` 的反例边界。
+不要这样处理：针对“组合中继命名空间里的伪状态包含生命周期动作或切面动作，因此不再是纯中继节点。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-i-combo-pseudo-name-extended-zh:
 
@@ -2220,11 +2307,14 @@ I_COMBO_PSEUDO_NAME_EXTENDED
 .. diagnostics-ref I_COMBO_PSEUDO_NAME_EXTENDED default_digest_size type=int required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref I_COMBO_PSEUDO_NAME_EXTENDED final_digest_size type=int required=true enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary I_COMBO_PSEUDO_NAME_EXTENDED kind=partial_static_boundary
+
 **注册表事实。** 严重级别 ``info``；发射层级 ``partial_static_pipeline``；能力层级 ``pure_static``；源码对象 ``state_identifier``。
 
-**含义。** 该诊断的注册表描述为：Combo trigger expansion extended a generated relay name's digest prefix to avoid a same-scope name collision.
+**含义。** 组合展开为了避开同作用域命名冲突，自动延长了生成中继名里的摘要前缀。
 
-**面向 LLM 的修复摘要。** The combo expander found a same-scope name collision at the default digest length and deterministically used a longer digest prefix. This is informational and does not mean the model is invalid.
+**面向 LLM 的修复摘要。** 这是非阻塞的信息性观察。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。组合展开为了避开同作用域命名冲突，自动延长了生成中继名里的摘要前缀。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -2237,28 +2327,28 @@ I_COMBO_PSEUDO_NAME_EXTENDED
    * - ``state_path``
      - ``str``
      - 是
-     - 注册表字段：Dotted path of the state where expansion allocated the relay.
+     - 字段含义：相关状态的点分路径。
    * - ``pseudo_name``
      - ``str``
      - 是
-     - 注册表字段：Final generated pseudo-state name after digest extension.
+     - 字段含义：生成或冲突的伪状态名。
    * - ``payload_digest``
      - ``str``
      - 是
-     - 注册表字段：Full digest of the semantic payload that owns the relay.
+     - 字段含义：拥有该中继语义载荷的完整摘要。
    * - ``default_digest_size``
      - ``int``
      - 是
-     - 注册表字段：Default visible digest length before extension.
+     - 字段含义：字段 ``default_digest_size`` 的稳定载荷；具体含义由本诊断的含义、类型和枚举共同限定。
    * - ``final_digest_size``
      - ``int``
      - 是
-     - 注册表字段：Visible digest length used by the final generated name.
+     - 字段含义：字段 ``final_digest_size`` 的稳定载荷；具体含义由本诊断的含义、类型和枚举共同限定。
 
 .. diagnostics-example I_COMBO_PSEUDO_NAME_EXTENDED 1 boundary_only
 
-**示例 1**\ （``boundary_only``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``boundary_only``）——复现边界。
+这个注册表契约有意先于所有前端和后端的完整发射一致性。应把示例视为支持的边界形状，并在承诺默认命令行 JSON 前确认当前发射器。
 
 .. code-block:: fcstm
 
@@ -2272,13 +2362,13 @@ I_COMBO_PSEUDO_NAME_EXTENDED
 
 .. diagnostics-example I_COMBO_PSEUDO_NAME_EXTENDED 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``pseudo_state`` 执行 ``keep_generated_name``：Leave the extended generated name as-is unless you are manually rewriting the expanded relay chain.
+**示例 2**\ （``boundary_only``）——针对 ``I_COMBO_PSEUDO_NAME_EXTENDED`` 的修复方向。
+典型修复是对 ``pseudo_state`` 执行 ``keep_generated_name``：针对“组合展开为了避开同作用域命名冲突，自动延长了生成中继名里的摘要前缀。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example I_COMBO_PSEUDO_NAME_EXTENDED 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not shorten the digest manually; that can reintroduce the collision.
+**示例 3**\ （``boundary_only``）——针对 ``I_COMBO_PSEUDO_NAME_EXTENDED`` 的反例边界。
+不要这样处理：针对“组合展开为了避开同作用域命名冲突，自动延长了生成中继名里的摘要前缀。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-e-combo-pseudo-name-collision-zh:
 
@@ -2290,11 +2380,14 @@ E_COMBO_PSEUDO_NAME_COLLISION
 .. diagnostics-ref E_COMBO_PSEUDO_NAME_COLLISION pseudo_name type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_COMBO_PSEUDO_NAME_COLLISION payload_digest type=str required=true enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary E_COMBO_PSEUDO_NAME_COLLISION kind=cli_error
+
 **注册表事实。** 严重级别 ``error``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``state_identifier``。
 
-**含义。** 该诊断的注册表描述为：Combo trigger expansion could not allocate a safe pseudo-state name even after extending to the full payload digest.
+**含义。** 组合展开即使使用完整语义摘要也无法分配安全伪状态名，因此拒绝展开。
 
-**面向 LLM 的修复摘要。** The combo expander first uses a short digest prefix and then lengthens it deterministically on collision. If the full digest still cannot identify a safe relay name in the owning scope, expansion fails rather than silently reusing the wrong pseudo state.
+**面向 LLM 的修复摘要。** 这是会阻塞模型构建或目标 API 解析的错误。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。组合展开即使使用完整语义摘要也无法分配安全伪状态名，因此拒绝展开。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -2307,20 +2400,20 @@ E_COMBO_PSEUDO_NAME_COLLISION
    * - ``state_path``
      - ``str``
      - 是
-     - 注册表字段：Dotted path of the state where expansion attempted to add the pseudo state.
+     - 字段含义：相关状态的点分路径。
    * - ``pseudo_name``
      - ``str``
      - 是
-     - 注册表字段：Generated pseudo-state name that collided.
+     - 字段含义：生成或冲突的伪状态名。
    * - ``payload_digest``
      - ``str``
      - 是
-     - 注册表字段：Full digest of the semantic payload that attempted to claim the name.
+     - 字段含义：拥有该中继语义载荷的完整摘要。
 
-.. diagnostics-example E_COMBO_PSEUDO_NAME_COLLISION 1 repro_cli
+.. diagnostics-example E_COMBO_PSEUDO_NAME_COLLISION 1 cli_error
 
-**示例 1**\ （``repro_cli``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``cli_error``）——复现边界。
+这个源码形状会通过 ``pyfcstm inspect`` 复现受控的模型校验失败。当前命令行会在成功生成检查 JSON 前以非零状态退出，因此应断言错误文本和退出状态，不应期待在 ``diagnostics[]`` 中读到该码。
 
 .. code-block:: fcstm
 
@@ -2328,13 +2421,13 @@ E_COMBO_PSEUDO_NAME_COLLISION
 
 .. diagnostics-example E_COMBO_PSEUDO_NAME_COLLISION 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``transition`` 执行 ``report_internal_collision``：This is an internal collision guard. Keep the model unchanged and report the diagnostic, including ``refs.payload_digest``.
+**示例 2**\ （``boundary_only``）——针对 ``E_COMBO_PSEUDO_NAME_COLLISION`` 的修复方向。
+典型修复是对 ``transition`` 执行 ``report_internal_collision``：针对“组合展开即使使用完整语义摘要也无法分配安全伪状态名，因此拒绝展开。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example E_COMBO_PSEUDO_NAME_COLLISION 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not append an ad-hoc sequence number; user-visible combo names must remain deterministic.
+**示例 3**\ （``boundary_only``）——针对 ``E_COMBO_PSEUDO_NAME_COLLISION`` 的反例边界。
+不要这样处理：针对“组合展开即使使用完整语义摘要也无法分配安全伪状态名，因此拒绝展开。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-w-combo-guard-const-true-zh:
 
@@ -2351,11 +2444,14 @@ W_COMBO_GUARD_CONST_TRUE
 .. diagnostics-ref W_COMBO_GUARD_CONST_TRUE term_span type=Span required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_COMBO_GUARD_CONST_TRUE value_span type=Span required=false enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary W_COMBO_GUARD_CONST_TRUE kind=inspect_json
+
 **注册表事实。** 严重级别 ``warning``；发射层级 ``static_pipeline``；能力层级 ``requires_solver``；源码对象 ``guard_expression``。
 
-**含义。** 该诊断的注册表描述为：SMT proves that a guard term inside a combo trigger is always ``true``. The term is redundant for the generated pseudo chain, and the primary span points at the original bracketed guard term.
+**含义。** 组合触发器中的某个守卫项被证明恒为真，对生成的中继链没有约束作用。
 
-**面向 LLM 的修复摘要。** SMT proves that a combo guard term is always true and does not constrain the combo chain.
+**面向 LLM 的修复摘要。** 这是提示设计风险或可疑结构的警告。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。组合触发器中的某个守卫项被证明恒为真，对生成的中继链没有约束作用。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -2368,40 +2464,40 @@ W_COMBO_GUARD_CONST_TRUE
    * - ``origin_id``
      - ``str``
      - 是
-     - 注册表字段：Stable identifier of the original combo transition.
+     - 字段含义：原始组合转换的稳定标识。
    * - ``term_index``
      - ``int``
      - 是
-     - 注册表字段：Zero-based index of the constant guard term.
+     - 字段含义：相关组合触发项的从零开始索引。
    * - ``term_text``
      - ``str``
      - 是
-     - 注册表字段：Canonical source text of the guard term.
+     - 字段含义：相关触发项的规范化源码文本。
    * - ``folded_value``
      - ``bool``
      - 是
-     - 注册表字段：Solver-proven guard value, always ``true`` for this code.
+     - 字段含义：常量折叠或求解器证明得到的布尔值。
    * - ``transition_span``
      - ``Span``
      - 否
-     - 注册表字段：Source span of the original combo transition.
+     - 字段含义：相关转换声明的源码范围。
    * - ``trigger_span``
      - ``Span``
      - 否
-     - 注册表字段：Source span of the combo trigger suffix.
+     - 字段含义：组合触发后缀的源码范围。
    * - ``term_span``
      - ``Span``
      - 否
-     - 注册表字段：Source span of the bracketed guard term.
+     - 字段含义：相关触发项的源码范围。
    * - ``value_span``
      - ``Span``
      - 否
-     - 注册表字段：Source span of the guard expression inside the brackets.
+     - 字段含义：方括号内守卫表达式的源码范围。
 
 .. diagnostics-example W_COMBO_GUARD_CONST_TRUE 1 repro_cli
 
-**示例 1**\ （``repro_cli``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``repro_cli``）——复现边界。
+这个诊断可以出现在成功构建模型后的检查报告中。可用 ``pyfcstm inspect -i <file> --format json`` 复现，并读取 ``diagnostics[]`` 数组。
 
 .. code-block:: fcstm
 
@@ -2415,13 +2511,13 @@ W_COMBO_GUARD_CONST_TRUE
 
 .. diagnostics-example W_COMBO_GUARD_CONST_TRUE 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``transition`` 执行 ``remove_guard_term``：Remove the guard term if it was only a placeholder.
+**示例 2**\ （``boundary_only``）——针对 ``W_COMBO_GUARD_CONST_TRUE`` 的修复方向。
+典型修复是对 ``transition`` 执行 ``remove_guard_term``：针对“组合触发器中的某个守卫项被证明恒为真，对生成的中继链没有约束作用。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example W_COMBO_GUARD_CONST_TRUE 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not add a dummy variable dependency only to silence the diagnostic.
+**示例 3**\ （``boundary_only``）——针对 ``W_COMBO_GUARD_CONST_TRUE`` 的反例边界。
+不要这样处理：针对“组合触发器中的某个守卫项被证明恒为真，对生成的中继链没有约束作用。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-w-combo-guard-const-false-zh:
 
@@ -2438,11 +2534,14 @@ W_COMBO_GUARD_CONST_FALSE
 .. diagnostics-ref W_COMBO_GUARD_CONST_FALSE term_span type=Span required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_COMBO_GUARD_CONST_FALSE value_span type=Span required=false enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary W_COMBO_GUARD_CONST_FALSE kind=inspect_json
+
 **注册表事实。** 严重级别 ``warning``；发射层级 ``static_pipeline``；能力层级 ``requires_solver``；源码对象 ``guard_expression``。
 
-**含义。** 该诊断的注册表描述为：SMT proves that a guard term inside a combo trigger is always ``false``. Any combo branch that must pass through this term can never complete.
+**含义。** 组合触发器中的某个守卫项被证明恒为假，经过该项的组合分支无法完成。
 
-**面向 LLM 的修复摘要。** SMT proves that a combo guard term is always false, so the generated combo branch cannot complete past that term.
+**面向 LLM 的修复摘要。** 这是提示设计风险或可疑结构的警告。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。组合触发器中的某个守卫项被证明恒为假，经过该项的组合分支无法完成。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -2455,40 +2554,40 @@ W_COMBO_GUARD_CONST_FALSE
    * - ``origin_id``
      - ``str``
      - 是
-     - 注册表字段：Stable identifier of the original combo transition.
+     - 字段含义：原始组合转换的稳定标识。
    * - ``term_index``
      - ``int``
      - 是
-     - 注册表字段：Zero-based index of the constant guard term.
+     - 字段含义：相关组合触发项的从零开始索引。
    * - ``term_text``
      - ``str``
      - 是
-     - 注册表字段：Canonical source text of the guard term.
+     - 字段含义：相关触发项的规范化源码文本。
    * - ``folded_value``
      - ``bool``
      - 是
-     - 注册表字段：Solver-proven guard value, always ``false`` for this code.
+     - 字段含义：常量折叠或求解器证明得到的布尔值。
    * - ``transition_span``
      - ``Span``
      - 否
-     - 注册表字段：Source span of the original combo transition.
+     - 字段含义：相关转换声明的源码范围。
    * - ``trigger_span``
      - ``Span``
      - 否
-     - 注册表字段：Source span of the combo trigger suffix.
+     - 字段含义：组合触发后缀的源码范围。
    * - ``term_span``
      - ``Span``
      - 否
-     - 注册表字段：Source span of the bracketed guard term.
+     - 字段含义：相关触发项的源码范围。
    * - ``value_span``
      - ``Span``
      - 否
-     - 注册表字段：Source span of the guard expression inside the brackets.
+     - 字段含义：方括号内守卫表达式的源码范围。
 
 .. diagnostics-example W_COMBO_GUARD_CONST_FALSE 1 repro_cli
 
-**示例 1**\ （``repro_cli``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``repro_cli``）——复现边界。
+这个诊断可以出现在成功构建模型后的检查报告中。可用 ``pyfcstm inspect -i <file> --format json`` 复现，并读取 ``diagnostics[]`` 数组。
 
 .. code-block:: fcstm
 
@@ -2502,13 +2601,13 @@ W_COMBO_GUARD_CONST_FALSE
 
 .. diagnostics-example W_COMBO_GUARD_CONST_FALSE 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``transition`` 执行 ``fix_guard_term``：Rewrite the guard so it can become true under some valid state.
+**示例 2**\ （``boundary_only``）——针对 ``W_COMBO_GUARD_CONST_FALSE`` 的修复方向。
+典型修复是对 ``transition`` 执行 ``fix_guard_term``：针对“组合触发器中的某个守卫项被证明恒为假，经过该项的组合分支无法完成。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example W_COMBO_GUARD_CONST_FALSE 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not silently remove the guard term — that would change the combo semantics.
+**示例 3**\ （``boundary_only``）——针对 ``W_COMBO_GUARD_CONST_FALSE`` 的反例边界。
+不要这样处理：针对“组合触发器中的某个守卫项被证明恒为假，经过该项的组合分支无法完成。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-w-combo-guard-prefix-implied-zh:
 
@@ -2528,11 +2627,14 @@ W_COMBO_GUARD_PREFIX_IMPLIED
 .. diagnostics-ref W_COMBO_GUARD_PREFIX_IMPLIED prior_term_span type=Span required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_COMBO_GUARD_PREFIX_IMPLIED prior_value_span type=Span required=false enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary W_COMBO_GUARD_PREFIX_IMPLIED kind=inspect_json
+
 **注册表事实。** 严重级别 ``warning``；发射层级 ``static_pipeline``；能力层级 ``requires_solver``；源码对象 ``guard_expression``。
 
-**含义。** 该诊断的注册表描述为：In a side-effect-free combo prefix, prior guard terms imply a later guard term. The later guard is redundant under the current static approximation.
+**含义。** 在无副作用的组合前缀中，前面的守卫项已经蕴含后面的守卫项。
 
-**面向 LLM 的修复摘要。** Earlier guard terms in the combo prefix already guarantee this later guard term when no relevant side effects can occur between them.
+**面向 LLM 的修复摘要。** 这是提示设计风险或可疑结构的警告。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。在无副作用的组合前缀中，前面的守卫项已经蕴含后面的守卫项。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -2545,52 +2647,52 @@ W_COMBO_GUARD_PREFIX_IMPLIED
    * - ``origin_id``
      - ``str``
      - 是
-     - 注册表字段：Stable identifier of the original combo transition.
+     - 字段含义：原始组合转换的稳定标识。
    * - ``term_index``
      - ``int``
      - 是
-     - 注册表字段：Zero-based index of the implied guard term.
+     - 字段含义：相关组合触发项的从零开始索引。
    * - ``prior_term_index``
      - ``int``
      - 是
-     - 注册表字段：Zero-based index of the earliest prior guard term that makes the prefix implication or contradiction decisive.
+     - 字段含义：字段 ``prior_term_index`` 的稳定载荷；具体含义由本诊断的含义、类型和枚举共同限定。
    * - ``term_text``
      - ``str``
      - 是
-     - 注册表字段：Canonical source text of the implied guard term.
+     - 字段含义：相关触发项的规范化源码文本。
    * - ``prior_term_text``
      - ``str``
      - 是
-     - 注册表字段：Canonical source text of the prior guard term.
+     - 字段含义：字段 ``prior_term_text`` 的稳定载荷；具体含义由本诊断的含义、类型和枚举共同限定。
    * - ``transition_span``
      - ``Span``
      - 否
-     - 注册表字段：Source span of the original combo transition.
+     - 字段含义：相关转换声明的源码范围。
    * - ``trigger_span``
      - ``Span``
      - 否
-     - 注册表字段：Source span of the combo trigger suffix.
+     - 字段含义：组合触发后缀的源码范围。
    * - ``term_span``
      - ``Span``
      - 否
-     - 注册表字段：Source span of the implied guard term.
+     - 字段含义：相关触发项的源码范围。
    * - ``value_span``
      - ``Span``
      - 否
-     - 注册表字段：Source span of the implied guard expression inside brackets.
+     - 字段含义：方括号内守卫表达式的源码范围。
    * - ``prior_term_span``
      - ``Span``
      - 否
-     - 注册表字段：Source span of the prior guard term.
+     - 字段含义：字段 ``prior_term_span`` 的稳定载荷；具体含义由本诊断的含义、类型和枚举共同限定。
    * - ``prior_value_span``
      - ``Span``
      - 否
-     - 注册表字段：Source span of the prior guard expression inside brackets.
+     - 字段含义：字段 ``prior_value_span`` 的稳定载荷；具体含义由本诊断的含义、类型和枚举共同限定。
 
 .. diagnostics-example W_COMBO_GUARD_PREFIX_IMPLIED 1 repro_cli
 
-**示例 1**\ （``repro_cli``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``repro_cli``）——复现边界。
+这个诊断可以出现在成功构建模型后的检查报告中。可用 ``pyfcstm inspect -i <file> --format json`` 复现，并读取 ``diagnostics[]`` 数组。
 
 .. code-block:: fcstm
 
@@ -2604,13 +2706,13 @@ W_COMBO_GUARD_PREFIX_IMPLIED
 
 .. diagnostics-example W_COMBO_GUARD_PREFIX_IMPLIED 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``transition`` 执行 ``remove_guard_term``：Remove the later guard if it is intentionally redundant.
+**示例 2**\ （``boundary_only``）——针对 ``W_COMBO_GUARD_PREFIX_IMPLIED`` 的修复方向。
+典型修复是对 ``transition`` 执行 ``remove_guard_term``：针对“在无副作用的组合前缀中，前面的守卫项已经蕴含后面的守卫项。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example W_COMBO_GUARD_PREFIX_IMPLIED 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not apply this reasoning across abstract/ref or unknown side-effect boundaries.
+**示例 3**\ （``boundary_only``）——针对 ``W_COMBO_GUARD_PREFIX_IMPLIED`` 的反例边界。
+不要这样处理：针对“在无副作用的组合前缀中，前面的守卫项已经蕴含后面的守卫项。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-w-combo-guard-prefix-contradicts-zh:
 
@@ -2630,11 +2732,14 @@ W_COMBO_GUARD_PREFIX_CONTRADICTS
 .. diagnostics-ref W_COMBO_GUARD_PREFIX_CONTRADICTS prior_term_span type=Span required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_COMBO_GUARD_PREFIX_CONTRADICTS prior_value_span type=Span required=false enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary W_COMBO_GUARD_PREFIX_CONTRADICTS kind=inspect_json
+
 **注册表事实。** 严重级别 ``warning``；发射层级 ``static_pipeline``；能力层级 ``requires_solver``；源码对象 ``guard_expression``。
 
-**含义。** 该诊断的注册表描述为：In a side-effect-free combo prefix, prior guard terms contradict a later guard term. The generated combo branch cannot complete through that term under the current static approximation.
+**含义。** 在无副作用的组合前缀中，前面的守卫项与后面的守卫项矛盾。
 
-**面向 LLM 的修复摘要。** Earlier guard terms in the combo prefix make this later guard impossible when no relevant side effects can occur between them.
+**面向 LLM 的修复摘要。** 这是提示设计风险或可疑结构的警告。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。在无副作用的组合前缀中，前面的守卫项与后面的守卫项矛盾。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -2647,52 +2752,52 @@ W_COMBO_GUARD_PREFIX_CONTRADICTS
    * - ``origin_id``
      - ``str``
      - 是
-     - 注册表字段：Stable identifier of the original combo transition.
+     - 字段含义：原始组合转换的稳定标识。
    * - ``term_index``
      - ``int``
      - 是
-     - 注册表字段：Zero-based index of the contradictory guard term.
+     - 字段含义：相关组合触发项的从零开始索引。
    * - ``prior_term_index``
      - ``int``
      - 是
-     - 注册表字段：Zero-based index of the earliest prior guard term that makes the prefix implication or contradiction decisive.
+     - 字段含义：字段 ``prior_term_index`` 的稳定载荷；具体含义由本诊断的含义、类型和枚举共同限定。
    * - ``term_text``
      - ``str``
      - 是
-     - 注册表字段：Canonical source text of the contradictory guard term.
+     - 字段含义：相关触发项的规范化源码文本。
    * - ``prior_term_text``
      - ``str``
      - 是
-     - 注册表字段：Canonical source text of the prior guard term.
+     - 字段含义：字段 ``prior_term_text`` 的稳定载荷；具体含义由本诊断的含义、类型和枚举共同限定。
    * - ``transition_span``
      - ``Span``
      - 否
-     - 注册表字段：Source span of the original combo transition.
+     - 字段含义：相关转换声明的源码范围。
    * - ``trigger_span``
      - ``Span``
      - 否
-     - 注册表字段：Source span of the combo trigger suffix.
+     - 字段含义：组合触发后缀的源码范围。
    * - ``term_span``
      - ``Span``
      - 否
-     - 注册表字段：Source span of the contradictory guard term.
+     - 字段含义：相关触发项的源码范围。
    * - ``value_span``
      - ``Span``
      - 否
-     - 注册表字段：Source span of the contradictory guard expression inside brackets.
+     - 字段含义：方括号内守卫表达式的源码范围。
    * - ``prior_term_span``
      - ``Span``
      - 否
-     - 注册表字段：Source span of the prior guard term.
+     - 字段含义：字段 ``prior_term_span`` 的稳定载荷；具体含义由本诊断的含义、类型和枚举共同限定。
    * - ``prior_value_span``
      - ``Span``
      - 否
-     - 注册表字段：Source span of the prior guard expression inside brackets.
+     - 字段含义：字段 ``prior_value_span`` 的稳定载荷；具体含义由本诊断的含义、类型和枚举共同限定。
 
 .. diagnostics-example W_COMBO_GUARD_PREFIX_CONTRADICTS 1 repro_cli
 
-**示例 1**\ （``repro_cli``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``repro_cli``）——复现边界。
+这个诊断可以出现在成功构建模型后的检查报告中。可用 ``pyfcstm inspect -i <file> --format json`` 复现，并读取 ``diagnostics[]`` 数组。
 
 .. code-block:: fcstm
 
@@ -2706,13 +2811,13 @@ W_COMBO_GUARD_PREFIX_CONTRADICTS
 
 .. diagnostics-example W_COMBO_GUARD_PREFIX_CONTRADICTS 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``transition`` 执行 ``fix_guard_term``：Rewrite the later guard if it was meant to describe a reachable branch.
+**示例 2**\ （``boundary_only``）——针对 ``W_COMBO_GUARD_PREFIX_CONTRADICTS`` 的修复方向。
+典型修复是对 ``transition`` 执行 ``fix_guard_term``：针对“在无副作用的组合前缀中，前面的守卫项与后面的守卫项矛盾。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example W_COMBO_GUARD_PREFIX_CONTRADICTS 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not apply this reasoning across abstract/ref or unknown side-effect boundaries.
+**示例 3**\ （``boundary_only``）——针对 ``W_COMBO_GUARD_PREFIX_CONTRADICTS`` 的反例边界。
+不要这样处理：针对“在无副作用的组合前缀中，前面的守卫项与后面的守卫项矛盾。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 强制转换诊断
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -2726,11 +2831,14 @@ E_FORCED_TRANSITION_EXPANSION
 .. diagnostics-ref E_FORCED_TRANSITION_EXPANSION original_raw type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_FORCED_TRANSITION_EXPANSION reason type=str required=true enum=src_not_found|tgt_not_found|src_is_root|wildcard_no_descendants item_enum=- exact_values=-
 
+
+.. diagnostics-boundary E_FORCED_TRANSITION_EXPANSION kind=cli_error
+
 **注册表事实。** 严重级别 ``error``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``transition``。
 
-**含义。** 该诊断的注册表描述为：A forced transition (`!State -> ...` or `!*`) cannot be expanded because the source or target reference is invalid.
+**含义。** 强制转换因为源或目标引用非法而无法展开成具体转换。
 
-**面向 LLM 的修复摘要。** A forced transition (``!Source -> Target`` or ``!* -> Target``) failed to expand cleanly — typically because the source name cannot be found, or because the expansion would create an empty/inconsistent fan-out under the current scope.
+**面向 LLM 的修复摘要。** 这是会阻塞模型构建或目标 API 解析的错误。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。强制转换因为源或目标引用非法而无法展开成具体转换。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -2743,16 +2851,16 @@ E_FORCED_TRANSITION_EXPANSION
    * - ``original_raw``
      - ``str``
      - 是
-     - 注册表字段：Raw forced-transition text as written.
+     - 字段含义：原始强制转换文本。
    * - ``reason``
      - ``str``
      - 是
-     - 注册表字段：Short tag describing why expansion failed.（枚举：``src_not_found``, ``tgt_not_found``, ``src_is_root``, ``wildcard_no_descendants``）
+     - 字段含义：原因分类标签。
 
-.. diagnostics-example E_FORCED_TRANSITION_EXPANSION 1 repro_cli
+.. diagnostics-example E_FORCED_TRANSITION_EXPANSION 1 cli_error
 
-**示例 1**\ （``repro_cli``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``cli_error``）——复现边界。
+这个源码形状会通过 ``pyfcstm inspect`` 复现受控的模型校验失败。当前命令行会在成功生成检查 JSON 前以非零状态退出，因此应断言错误文本和退出状态，不应期待在 ``diagnostics[]`` 中读到该码。
 
 .. code-block:: fcstm
 
@@ -2760,13 +2868,13 @@ E_FORCED_TRANSITION_EXPANSION
 
 .. diagnostics-example E_FORCED_TRANSITION_EXPANSION 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``forced_transition`` 执行 ``fix_source``：Confirm the ``!Name`` source is a real state inside the current composite scope. ``!*`` only matches direct substates; deeper descendants need explicit names.
+**示例 2**\ （``boundary_only``）——针对 ``E_FORCED_TRANSITION_EXPANSION`` 的修复方向。
+典型修复是对 ``forced_transition`` 执行 ``fix_source``：针对“强制转换因为源或目标引用非法而无法展开成具体转换。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example E_FORCED_TRANSITION_EXPANSION 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not add an ``effect { ... }`` block to a forced transition — forced transitions cannot carry effects and the expansion would fail anyway.
+**示例 3**\ （``boundary_only``）——针对 ``E_FORCED_TRANSITION_EXPANSION`` 的反例边界。
+不要这样处理：针对“强制转换因为源或目标引用非法而无法展开成具体转换。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-w-forced-never-expands-zh:
 
@@ -2777,11 +2885,14 @@ W_FORCED_NEVER_EXPANDS
 .. diagnostics-ref W_FORCED_NEVER_EXPANDS state_path type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_FORCED_NEVER_EXPANDS original_raw type=str required=true enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary W_FORCED_NEVER_EXPANDS kind=inspect_json
+
 **注册表事实。** 严重级别 ``warning``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``transition``。
 
-**含义。** 该诊断的注册表描述为：A forced transition declaration has no concrete child state in its declaration scope to expand from.
+**含义。** 强制转换声明所在作用域没有可用于展开的具体子状态。
 
-**面向 LLM 的修复摘要。** The forced transition declaration expands to zero concrete transitions, so it has no runtime effect.
+**面向 LLM 的修复摘要。** 这是提示设计风险或可疑结构的警告。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。强制转换声明所在作用域没有可用于展开的具体子状态。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -2794,16 +2905,16 @@ W_FORCED_NEVER_EXPANDS
    * - ``state_path``
      - ``str``
      - 是
-     - 注册表字段：Dotted path of the state containing the forced transition.
+     - 字段含义：相关状态的点分路径。
    * - ``original_raw``
      - ``str``
      - 是
-     - 注册表字段：Original forced transition DSL text.
+     - 字段含义：原始强制转换文本。
 
 .. diagnostics-example W_FORCED_NEVER_EXPANDS 1 repro_cli
 
-**示例 1**\ （``repro_cli``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``repro_cli``）——复现边界。
+这个诊断可以出现在成功构建模型后的检查报告中。可用 ``pyfcstm inspect -i <file> --format json`` 复现，并读取 ``diagnostics[]`` 数组。
 
 .. code-block:: fcstm
 
@@ -2816,13 +2927,13 @@ W_FORCED_NEVER_EXPANDS
 
 .. diagnostics-example W_FORCED_NEVER_EXPANDS 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``forced_transition`` 执行 ``move_transition``：Move the forced transition to a composite scope that owns matching children.
+**示例 2**\ （``boundary_only``）——针对 ``W_FORCED_NEVER_EXPANDS`` 的修复方向。
+典型修复是对 ``forced_transition`` 执行 ``move_transition``：针对“强制转换声明所在作用域没有可用于展开的具体子状态。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example W_FORCED_NEVER_EXPANDS 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not leave a zero-expansion forced transition as documentation.
+**示例 3**\ （``boundary_only``）——针对 ``W_FORCED_NEVER_EXPANDS`` 的反例边界。
+不要这样处理：针对“强制转换声明所在作用域没有可用于展开的具体子状态。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-w-forced-overrides-normal-zh:
 
@@ -2835,11 +2946,14 @@ W_FORCED_OVERRIDES_NORMAL
 .. diagnostics-ref W_FORCED_OVERRIDES_NORMAL forced_declaration_span type=Span required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_FORCED_OVERRIDES_NORMAL normal_transition_span type=Span required=false enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary W_FORCED_OVERRIDES_NORMAL kind=inspect_json
+
 **注册表事实。** 严重级别 ``warning``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``transition``。
 
-**含义。** 该诊断的注册表描述为：A forced transition expands to the same source, target, event, and guard as a normal transition.
+**含义。** 强制转换展开后与某个普通转换的源、目标、事件和守卫相同。
 
-**面向 LLM 的修复摘要。** The forced transition duplicates a normal transition, which can make the forced declaration misleading or redundant.
+**面向 LLM 的修复摘要。** 这是提示设计风险或可疑结构的警告。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。强制转换展开后与某个普通转换的源、目标、事件和守卫相同。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -2852,24 +2966,24 @@ W_FORCED_OVERRIDES_NORMAL
    * - ``from_path``
      - ``str``
      - 是
-     - 注册表字段：Dotted source state path.
+     - 字段含义：转换源状态路径；入口标记可写作 ``[*]``。
    * - ``to_path``
      - ``str``
      - 是
-     - 注册表字段：Dotted target state path.
+     - 字段含义：转换目标状态路径；退出标记可写作 ``[*]``。
    * - ``forced_declaration_span``
      - ``Span``
      - 否
-     - 注册表字段：Source span of the forced transition when available.
+     - 字段含义：强制转换声明的源码范围。
    * - ``normal_transition_span``
      - ``Span``
      - 否
-     - 注册表字段：Source span of the normal transition when available.
+     - 字段含义：普通转换声明的源码范围。
 
 .. diagnostics-example W_FORCED_OVERRIDES_NORMAL 1 repro_cli
 
-**示例 1**\ （``repro_cli``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``repro_cli``）——复现边界。
+这个诊断可以出现在成功构建模型后的检查报告中。可用 ``pyfcstm inspect -i <file> --format json`` 复现，并读取 ``diagnostics[]`` 数组。
 
 .. code-block:: fcstm
 
@@ -2883,13 +2997,13 @@ W_FORCED_OVERRIDES_NORMAL
 
 .. diagnostics-example W_FORCED_OVERRIDES_NORMAL 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``forced_transition`` 执行 ``remove_duplicate``：Remove the forced transition if the normal one already covers it.
+**示例 2**\ （``boundary_only``）——针对 ``W_FORCED_OVERRIDES_NORMAL`` 的修复方向。
+典型修复是对 ``forced_transition`` 执行 ``remove_duplicate``：针对“强制转换展开后与某个普通转换的源、目标、事件和守卫相同。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example W_FORCED_OVERRIDES_NORMAL 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not keep both unless the generated runtime intentionally treats forced metadata differently.
+**示例 3**\ （``boundary_only``）——针对 ``W_FORCED_OVERRIDES_NORMAL`` 的反例边界。
+不要这样处理：针对“强制转换展开后与某个普通转换的源、目标、事件和守卫相同。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-w-forced-guard-unsat-zh:
 
@@ -2903,11 +3017,14 @@ W_FORCED_GUARD_UNSAT
 .. diagnostics-ref W_FORCED_GUARD_UNSAT transition_summary type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_FORCED_GUARD_UNSAT scope type=str required=true enum=dsl_def_init_only item_enum=- exact_values=-
 
+
+.. diagnostics-boundary W_FORCED_GUARD_UNSAT kind=verify_smt_linear
+
 **注册表事实。** 严重级别 ``warning``；发射层级 ``verify_pipeline``；能力层级 ``requires_solver``；源码对象 ``guard_expression``。
 
-**含义。** 该诊断的注册表描述为：A forced-transition guard cannot be satisfied under declaration initializer values.
+**含义。** 强制转换守卫在声明初始化值下不可满足。
 
-**面向 LLM 的修复摘要。** The forced transition expands structurally, but its guard is false under top-level declaration initializers.
+**面向 LLM 的修复摘要。** 这是提示设计风险或可疑结构的警告。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。强制转换守卫在声明初始化值下不可满足。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -2920,28 +3037,28 @@ W_FORCED_GUARD_UNSAT
    * - ``algorithm_name``
      - ``str``
      - 是
-     - 注册表字段：Verify registry algorithm that produced the raw finding.
+     - 字段含义：产生原始发现的验证算法名称。
    * - ``verification_scope``
      - ``str``
      - 是
-     - 注册表字段：Verify scope for this finding.（枚举：``smt_local``）
+     - 字段含义：验证发现所属的作用域。
    * - ``transition``
      - ``dict``
      - 是
-     - 注册表字段：Raw verify transition payload for the forced transition.
+     - 字段含义：原始验证转换载荷。
    * - ``transition_summary``
      - ``str``
      - 是
-     - 注册表字段：Stable human-readable transition summary derived from the raw payload.
+     - 字段含义：由原始载荷派生的稳定转换摘要。
    * - ``scope``
      - ``str``
      - 是
-     - 注册表字段：Initial-value scope used by the verify algorithm.（枚举：``dsl_def_init_only``）
+     - 字段含义：解析或验证使用的作用域。
 
 .. diagnostics-example W_FORCED_GUARD_UNSAT 1 verify_opt_in
 
-**示例 1**\ （``verify_opt_in``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``verify_opt_in``）——复现边界。
+这个诊断需要显式开启验证集成。复现时应使用 ``pyfcstm inspect -i <file> --enable-verify --max-complexity-tier smt_linear --format json``；默认结构验证预算不会运行发射它的求解器局部算法。
 
 .. code-block:: fcstm
 
@@ -2955,13 +3072,13 @@ W_FORCED_GUARD_UNSAT
 
 .. diagnostics-example W_FORCED_GUARD_UNSAT 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``variable_definition`` 执行 ``adjust_initializer``：Change the initializer if the forced transition must be possible at startup.
+**示例 2**\ （``boundary_only``）——针对 ``W_FORCED_GUARD_UNSAT`` 的修复方向。
+典型修复是对 ``variable_definition`` 执行 ``adjust_initializer``：针对“强制转换守卫在声明初始化值下不可满足。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example W_FORCED_GUARD_UNSAT 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not delete the forced transition solely because it is impossible at declaration time; later runtime values may still matter for normal guards.
+**示例 3**\ （``boundary_only``）——针对 ``W_FORCED_GUARD_UNSAT`` 的反例边界。
+不要这样处理：针对“强制转换守卫在声明初始化值下不可满足。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 守卫、效果动作与求解器诊断
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -2979,11 +3096,14 @@ W_GUARD_CONST_FALSE
 .. diagnostics-ref W_GUARD_CONST_FALSE guard_text type=str required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_GUARD_CONST_FALSE transition_index type=int required=false enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary W_GUARD_CONST_FALSE kind=inspect_json
+
 **注册表事实。** 严重级别 ``warning``；发射层级 ``static_pipeline``；能力层级 ``const_fold``；源码对象 ``guard_expression``。
 
-**含义。** 该诊断的注册表描述为：A transition's guard condition folds to the boolean literal ``false`` using the built-in constant folder, so the transition can never fire. The folder is intentionally side-effect free: it handles literal-only boolean, comparison, arithmetic, bitwise, unary, and ternary expressions, but does not evaluate variables, functions, solvers, or runtime state.
+**含义。** 转换守卫可由轻量常量折叠器判定恒为假，因此该转换永远不会触发。
 
-**面向 LLM 的修复摘要。** The transition's guard is statically known to be ``false`` and the transition is effectively dead code.
+**面向 LLM 的修复摘要。** 这是提示设计风险或可疑结构的警告。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。转换守卫可由轻量常量折叠器判定恒为假，因此该转换永远不会触发。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -2996,32 +3116,32 @@ W_GUARD_CONST_FALSE
    * - ``transition_span``
      - ``Span``
      - 否
-     - 注册表字段：Source span of the transition declaration.
+     - 字段含义：相关转换声明的源码范围。
    * - ``folded_value``
      - ``bool``
      - 是
-     - 注册表字段：Constant-folded guard value (always ``false``).
+     - 字段含义：常量折叠或求解器证明得到的布尔值。
    * - ``from_path``
      - ``str``
      - 否
-     - 注册表字段：Source state path of the transition, or ``[*]`` for an initial transition.
+     - 字段含义：转换源状态路径；入口标记可写作 ``[*]``。
    * - ``to_path``
      - ``str``
      - 否
-     - 注册表字段：Target state path of the transition, or ``[*]`` for an exit transition.
+     - 字段含义：转换目标状态路径；退出标记可写作 ``[*]``。
    * - ``guard_text``
      - ``str``
      - 否
-     - 注册表字段：Normalized guard expression text used to disambiguate spanless inspect diagnostics. Pyfcstm and jsfcstm both render this with the shared inspect expression format: canonical boolean/operator spelling, decimal integer literals, and normalized spacing.
+     - 字段含义：规范化后的守卫表达式文本。
    * - ``transition_index``
      - ``int``
      - 否
-     - 注册表字段：Zero-based index in parent-first model transition order, including expanded forced transitions at their declaring state before ordinary transitions and descendant-state transitions. This is used only as a source-range disambiguation hint when spans are unavailable.
+     - 字段含义：父优先转换顺序中的从零开始索引。
 
 .. diagnostics-example W_GUARD_CONST_FALSE 1 repro_cli
 
-**示例 1**\ （``repro_cli``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``repro_cli``）——复现边界。
+这个诊断可以出现在成功构建模型后的检查报告中。可用 ``pyfcstm inspect -i <file> --format json`` 复现，并读取 ``diagnostics[]`` 数组。
 
 .. code-block:: fcstm
 
@@ -3034,13 +3154,13 @@ W_GUARD_CONST_FALSE
 
 .. diagnostics-example W_GUARD_CONST_FALSE 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``transition`` 执行 ``fix_guard``：Rewrite the guard so it can become true under some valid state.
+**示例 2**\ （``boundary_only``）——针对 ``W_GUARD_CONST_FALSE`` 的修复方向。
+典型修复是对 ``transition`` 执行 ``fix_guard``：针对“转换守卫可由轻量常量折叠器判定恒为假，因此该转换永远不会触发。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example W_GUARD_CONST_FALSE 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not silently remove the guard — that would change the semantics.
+**示例 3**\ （``boundary_only``）——针对 ``W_GUARD_CONST_FALSE`` 的反例边界。
+不要这样处理：针对“转换守卫可由轻量常量折叠器判定恒为假，因此该转换永远不会触发。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-w-guard-const-true-zh:
 
@@ -3056,11 +3176,14 @@ W_GUARD_CONST_TRUE
 .. diagnostics-ref W_GUARD_CONST_TRUE guard_text type=str required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_GUARD_CONST_TRUE transition_index type=int required=false enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary W_GUARD_CONST_TRUE kind=inspect_json
+
 **注册表事实。** 严重级别 ``warning``；发射层级 ``static_pipeline``；能力层级 ``const_fold``；源码对象 ``guard_expression``。
 
-**含义。** 该诊断的注册表描述为：A transition's guard condition folds to the boolean literal ``true`` using the built-in constant folder, so the guard is redundant for all runtime states covered by that literal-only expression.
+**含义。** 转换守卫可由轻量常量折叠器判定恒为真，因此该守卫对运行时状态没有实际过滤作用。
 
-**面向 LLM 的修复摘要。** The transition's guard is statically known to be ``true`` and does not constrain the transition.
+**面向 LLM 的修复摘要。** 这是提示设计风险或可疑结构的警告。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。转换守卫可由轻量常量折叠器判定恒为真，因此该守卫对运行时状态没有实际过滤作用。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -3073,36 +3196,36 @@ W_GUARD_CONST_TRUE
    * - ``transition_span``
      - ``Span``
      - 否
-     - 注册表字段：Source span of the transition declaration.
+     - 字段含义：相关转换声明的源码范围。
    * - ``guard_span``
      - ``Span``
      - 否
-     - 注册表字段：Source span of the removable guard suffix, including the leading trigger separator when needed. This is reserved for future emitters that can provide a stable guard-only span; the current inspect emitters intentionally omit it.
+     - 字段含义：可删除守卫后缀的源码范围。
    * - ``folded_value``
      - ``bool``
      - 是
-     - 注册表字段：Constant-folded guard value (always ``true``).
+     - 字段含义：常量折叠或求解器证明得到的布尔值。
    * - ``from_path``
      - ``str``
      - 否
-     - 注册表字段：Source state path of the transition, or ``[*]`` for an initial transition.
+     - 字段含义：转换源状态路径；入口标记可写作 ``[*]``。
    * - ``to_path``
      - ``str``
      - 否
-     - 注册表字段：Target state path of the transition, or ``[*]`` for an exit transition.
+     - 字段含义：转换目标状态路径；退出标记可写作 ``[*]``。
    * - ``guard_text``
      - ``str``
      - 否
-     - 注册表字段：Normalized guard expression text used to disambiguate spanless inspect diagnostics. Pyfcstm and jsfcstm both render this with the shared inspect expression format: canonical boolean/operator spelling, decimal integer literals, and normalized spacing.
+     - 字段含义：规范化后的守卫表达式文本。
    * - ``transition_index``
      - ``int``
      - 否
-     - 注册表字段：Zero-based index in parent-first model transition order, including expanded forced transitions at their declaring state before ordinary transitions and descendant-state transitions. This is used only as a source-range disambiguation hint when spans are unavailable.
+     - 字段含义：父优先转换顺序中的从零开始索引。
 
 .. diagnostics-example W_GUARD_CONST_TRUE 1 repro_cli
 
-**示例 1**\ （``repro_cli``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``repro_cli``）——复现边界。
+这个诊断可以出现在成功构建模型后的检查报告中。可用 ``pyfcstm inspect -i <file> --format json`` 复现，并读取 ``diagnostics[]`` 数组。
 
 .. code-block:: fcstm
 
@@ -3115,13 +3238,13 @@ W_GUARD_CONST_TRUE
 
 .. diagnostics-example W_GUARD_CONST_TRUE 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``transition`` 执行 ``remove_guard``：Remove the guard if the transition is meant to be unconditional.
+**示例 2**\ （``boundary_only``）——针对 ``W_GUARD_CONST_TRUE`` 的修复方向。
+典型修复是对 ``transition`` 执行 ``remove_guard``：针对“转换守卫可由轻量常量折叠器判定恒为真，因此该守卫对运行时状态没有实际过滤作用。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example W_GUARD_CONST_TRUE 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not add a dummy variable dependency only to silence the diagnostic.
+**示例 3**\ （``boundary_only``）——针对 ``W_GUARD_CONST_TRUE`` 的反例边界。
+不要这样处理：针对“转换守卫可由轻量常量折叠器判定恒为真，因此该守卫对运行时状态没有实际过滤作用。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-w-guard-vars-never-change-zh:
 
@@ -3133,11 +3256,14 @@ W_GUARD_VARS_NEVER_CHANGE
 .. diagnostics-ref W_GUARD_VARS_NEVER_CHANGE to_path type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_GUARD_VARS_NEVER_CHANGE guard_vars type=list[str] required=true enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary W_GUARD_VARS_NEVER_CHANGE kind=inspect_json
+
 **注册表事实。** 严重级别 ``warning``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``guard_expression``。
 
-**含义。** 该诊断的注册表描述为：A transition guard reads variables that are never changed by any lifecycle action or transition effect, so the guard only depends on initial values.
+**含义。** 转换守卫读取的变量从未被生命周期动作或转换效果修改，因此只依赖初始值。
 
-**面向 LLM 的修复摘要。** This guard is controlled only by initial variable values. If those values never change, the transition condition is effectively fixed.
+**面向 LLM 的修复摘要。** 这是提示设计风险或可疑结构的警告。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。转换守卫读取的变量从未被生命周期动作或转换效果修改，因此只依赖初始值。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -3150,20 +3276,20 @@ W_GUARD_VARS_NEVER_CHANGE
    * - ``from_path``
      - ``str``
      - 是
-     - 注册表字段：Source state path of the transition, or [*] for an entry marker.
+     - 字段含义：转换源状态路径；入口标记可写作 ``[*]``。
    * - ``to_path``
      - ``str``
      - 是
-     - 注册表字段：Target state path of the transition, or [*] for an exit marker.
+     - 字段含义：转换目标状态路径；退出标记可写作 ``[*]``。
    * - ``guard_vars``
      - ``list[str]``
      - 是
-     - 注册表字段：Guard variables that never change.
+     - 字段含义：不会变化但被守卫读取的变量列表。
 
 .. diagnostics-example W_GUARD_VARS_NEVER_CHANGE 1 repro_cli
 
-**示例 1**\ （``repro_cli``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``repro_cli``）——复现边界。
+这个诊断可以出现在成功构建模型后的检查报告中。可用 ``pyfcstm inspect -i <file> --format json`` 复现，并读取 ``diagnostics[]`` 数组。
 
 .. code-block:: fcstm
 
@@ -3177,13 +3303,13 @@ W_GUARD_VARS_NEVER_CHANGE
 
 .. diagnostics-example W_GUARD_VARS_NEVER_CHANGE 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``action_or_effect`` 执行 ``add_write``：Add the missing state update if the guard should evolve at runtime.
+**示例 2**\ （``boundary_only``）——针对 ``W_GUARD_VARS_NEVER_CHANGE`` 的修复方向。
+典型修复是对 ``action_or_effect`` 执行 ``add_write``：针对“转换守卫读取的变量从未被生命周期动作或转换效果修改，因此只依赖初始值。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example W_GUARD_VARS_NEVER_CHANGE 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not add a meaningless self-assignment; it does not model a real change.
+**示例 3**\ （``boundary_only``）——针对 ``W_GUARD_VARS_NEVER_CHANGE`` 的反例边界。
+不要这样处理：针对“转换守卫读取的变量从未被生命周期动作或转换效果修改，因此只依赖初始值。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-w-effect-self-assign-zh:
 
@@ -3204,11 +3330,14 @@ W_EFFECT_SELF_ASSIGN
 .. diagnostics-ref W_EFFECT_SELF_ASSIGN suggested_fix type=dict required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_EFFECT_SELF_ASSIGN transition_index type=int required=false enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary W_EFFECT_SELF_ASSIGN kind=inspect_json
+
 **注册表事实。** 严重级别 ``warning``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``effect_statement``。
 
-**含义。** 该诊断的注册表描述为：An effect statement assigns a variable directly to itself.
+**含义。** 转换效果把变量直接赋值给它自己。
 
-**面向 LLM 的修复摘要。** The assignment does not change model state and is likely dead code.
+**面向 LLM 的修复摘要。** 这是提示设计风险或可疑结构的警告。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。转换效果把变量直接赋值给它自己。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -3221,56 +3350,56 @@ W_EFFECT_SELF_ASSIGN
    * - ``state_path``
      - ``str``
      - 是
-     - 注册表字段：Source state path when known.
+     - 字段含义：相关状态的点分路径。
    * - ``from_path``
      - ``str``
      - 否
-     - 注册表字段：Public source path for combo terminal effect diagnostics after authored-subject remapping. Ordinary self-assignment diagnostics may omit this field and use ``state_path`` only.
+     - 字段含义：转换源状态路径；入口标记可写作 ``[*]``。
    * - ``generated_state_path``
      - ``str``
      - 否
-     - 注册表字段：Generated combo pseudo state path kept only as secondary debug provenance after the public subject is remapped.
+     - 字段含义：生成组合伪状态路径，仅作辅助溯源。
    * - ``generated_from_path``
      - ``str``
      - 否
-     - 注册表字段：Generated transition source path kept as secondary debug provenance.
+     - 字段含义：生成转换源路径，仅作辅助溯源。
    * - ``generated_to_path``
      - ``str``
      - 否
-     - 注册表字段：Generated transition target path kept as secondary debug provenance.
+     - 字段含义：生成转换目标路径，仅作辅助溯源。
    * - ``combo_origin_id``
      - ``str``
      - 否
-     - 注册表字段：Original combo transition identifier for a generated terminal effect.
+     - 字段含义：生成终端效果对应的原始组合转换标识。
    * - ``combo_owner_path``
      - ``str``
      - 否
-     - 注册表字段：Owner composite path for entry combo diagnostics whose public subject is the initial marker ``[*]``.
+     - 字段含义：入口组合诊断的拥有组合状态路径。
    * - ``transition_span``
      - ``Span``
      - 否
-     - 注册表字段：Source span of the transition containing the effect.
+     - 字段含义：相关转换声明的源码范围。
    * - ``var_name``
      - ``str``
      - 是
-     - 注册表字段：Variable assigned to itself.
+     - 字段含义：相关变量名或变量标识。
    * - ``effect_self_assign_anchor``
      - ``str``
      - 否
-     - 注册表字段：Variable name repeated only when the self-assignment occurrence can be uniquely mapped back to a non-initial effect statement for the same source state and variable.
+     - 字段含义：可唯一定位自赋值效果语句时使用的变量锚点。
    * - ``suggested_fix``
      - ``dict``
      - 否
-     - 注册表字段：Structured quick-fix payload for removing the no-op effect statement.
+     - 字段含义：可选的结构化快速修复载荷。
    * - ``transition_index``
      - ``int``
      - 否
-     - 注册表字段：Zero-based index in parent-first model transition order, including expanded forced transitions at their declaring state before ordinary transitions and descendant-state transitions. This is used only as a source-range disambiguation hint when spans are unavailable.
+     - 字段含义：父优先转换顺序中的从零开始索引。
 
 .. diagnostics-example W_EFFECT_SELF_ASSIGN 1 repro_cli
 
-**示例 1**\ （``repro_cli``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``repro_cli``）——复现边界。
+这个诊断可以出现在成功构建模型后的检查报告中。可用 ``pyfcstm inspect -i <file> --format json`` 复现，并读取 ``diagnostics[]`` 数组。
 
 .. code-block:: fcstm
 
@@ -3284,13 +3413,13 @@ W_EFFECT_SELF_ASSIGN
 
 .. diagnostics-example W_EFFECT_SELF_ASSIGN 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``effect_statement`` 执行 ``remove_statement``：Delete the self-assignment.
+**示例 2**\ （``boundary_only``）——针对 ``W_EFFECT_SELF_ASSIGN`` 的修复方向。
+典型修复是对 ``effect_statement`` 执行 ``remove_statement``：针对“转换效果把变量直接赋值给它自己。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example W_EFFECT_SELF_ASSIGN 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not replace it with another no-op expression.
+**示例 3**\ （``boundary_only``）——针对 ``W_EFFECT_SELF_ASSIGN`` 的反例边界。
+不要这样处理：针对“转换效果把变量直接赋值给它自己。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-w-dead-guard-zh:
 
@@ -3303,11 +3432,14 @@ W_DEAD_GUARD
 .. diagnostics-ref W_DEAD_GUARD transition type=dict required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_DEAD_GUARD transition_summary type=str required=true enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary W_DEAD_GUARD kind=verify_smt_linear
+
 **注册表事实。** 严重级别 ``warning``；发射层级 ``verify_pipeline``；能力层级 ``requires_solver``；源码对象 ``guard_expression``。
 
-**含义。** 该诊断的注册表描述为：A transition guard is unsatisfiable under model variable type and runtime-definedness constraints.
+**含义。** 在模型变量类型和运行时已定义性约束下，转换守卫不可满足。
 
-**面向 LLM 的修复摘要。** SMT proves the guard cannot become true for any valid variable valuation. This differs from W_GUARD_CONST_FALSE, which only reports literal-only guards folded syntactically to false.
+**面向 LLM 的修复摘要。** 这是提示设计风险或可疑结构的警告。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。在模型变量类型和运行时已定义性约束下，转换守卫不可满足。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -3320,24 +3452,24 @@ W_DEAD_GUARD
    * - ``algorithm_name``
      - ``str``
      - 是
-     - 注册表字段：Verify registry algorithm that produced the raw finding.
+     - 字段含义：产生原始发现的验证算法名称。
    * - ``verification_scope``
      - ``str``
      - 是
-     - 注册表字段：Verify scope for this finding.（枚举：``smt_local``）
+     - 字段含义：验证发现所属的作用域。
    * - ``transition``
      - ``dict``
      - 是
-     - 注册表字段：Raw verify transition payload for the guarded transition.
+     - 字段含义：原始验证转换载荷。
    * - ``transition_summary``
      - ``str``
      - 是
-     - 注册表字段：Stable human-readable transition summary derived from the raw payload.
+     - 字段含义：由原始载荷派生的稳定转换摘要。
 
 .. diagnostics-example W_DEAD_GUARD 1 verify_opt_in
 
-**示例 1**\ （``verify_opt_in``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``verify_opt_in``）——复现边界。
+这个诊断需要显式开启验证集成。复现时应使用 ``pyfcstm inspect -i <file> --enable-verify --max-complexity-tier smt_linear --format json``；默认结构验证预算不会运行发射它的求解器局部算法。
 
 .. code-block:: fcstm
 
@@ -3351,13 +3483,13 @@ W_DEAD_GUARD
 
 .. diagnostics-example W_DEAD_GUARD 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``transition`` 执行 ``fix_guard``：Relax or correct the contradictory guard condition.
+**示例 2**\ （``boundary_only``）——针对 ``W_DEAD_GUARD`` 的修复方向。
+典型修复是对 ``transition`` 执行 ``fix_guard``：针对“在模型变量类型和运行时已定义性约束下，转换守卫不可满足。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example W_DEAD_GUARD 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not replace the guard with true unless the transition really should become unconditional.
+**示例 3**\ （``boundary_only``）——针对 ``W_DEAD_GUARD`` 的反例边界。
+不要这样处理：针对“在模型变量类型和运行时已定义性约束下，转换守卫不可满足。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-w-guard-tautology-zh:
 
@@ -3370,11 +3502,14 @@ W_GUARD_TAUTOLOGY
 .. diagnostics-ref W_GUARD_TAUTOLOGY transition type=dict required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_GUARD_TAUTOLOGY transition_summary type=str required=true enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary W_GUARD_TAUTOLOGY kind=verify_smt_linear
+
 **注册表事实。** 严重级别 ``warning``；发射层级 ``verify_pipeline``；能力层级 ``requires_solver``；源码对象 ``guard_expression``。
 
-**含义。** 该诊断的注册表描述为：A transition guard is true for every variable valuation that satisfies model type and runtime-definedness constraints.
+**含义。** 在模型变量类型和运行时已定义性约束下，转换守卫对所有取值都为真。
 
-**面向 LLM 的修复摘要。** SMT proves the guard is always true under the modeled variable constraints. This differs from W_GUARD_CONST_TRUE, which only reports literal-only guards folded syntactically to true.
+**面向 LLM 的修复摘要。** 这是提示设计风险或可疑结构的警告。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。在模型变量类型和运行时已定义性约束下，转换守卫对所有取值都为真。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -3387,24 +3522,24 @@ W_GUARD_TAUTOLOGY
    * - ``algorithm_name``
      - ``str``
      - 是
-     - 注册表字段：Verify registry algorithm that produced the raw finding.
+     - 字段含义：产生原始发现的验证算法名称。
    * - ``verification_scope``
      - ``str``
      - 是
-     - 注册表字段：Verify scope for this finding.（枚举：``smt_local``）
+     - 字段含义：验证发现所属的作用域。
    * - ``transition``
      - ``dict``
      - 是
-     - 注册表字段：Raw verify transition payload for the guarded transition.
+     - 字段含义：原始验证转换载荷。
    * - ``transition_summary``
      - ``str``
      - 是
-     - 注册表字段：Stable human-readable transition summary derived from the raw payload.
+     - 字段含义：由原始载荷派生的稳定转换摘要。
 
 .. diagnostics-example W_GUARD_TAUTOLOGY 1 verify_opt_in
 
-**示例 1**\ （``verify_opt_in``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``verify_opt_in``）——复现边界。
+这个诊断需要显式开启验证集成。复现时应使用 ``pyfcstm inspect -i <file> --enable-verify --max-complexity-tier smt_linear --format json``；默认结构验证预算不会运行发射它的求解器局部算法。
 
 .. code-block:: fcstm
 
@@ -3418,13 +3553,13 @@ W_GUARD_TAUTOLOGY
 
 .. diagnostics-example W_GUARD_TAUTOLOGY 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``transition`` 执行 ``remove_redundant_guard``：Remove the guard if the transition should be unconditional.
+**示例 2**\ （``boundary_only``）——针对 ``W_GUARD_TAUTOLOGY`` 的修复方向。
+典型修复是对 ``transition`` 执行 ``remove_redundant_guard``：针对“在模型变量类型和运行时已定义性约束下，转换守卫对所有取值都为真。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example W_GUARD_TAUTOLOGY 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not assume every tautological guard is wrong; it may document intent.
+**示例 3**\ （``boundary_only``）——针对 ``W_GUARD_TAUTOLOGY`` 的反例边界。
+不要这样处理：针对“在模型变量类型和运行时已定义性约束下，转换守卫对所有取值都为真。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-w-effect-smt-no-op-zh:
 
@@ -3437,11 +3572,14 @@ W_EFFECT_SMT_NO_OP
 .. diagnostics-ref W_EFFECT_SMT_NO_OP transition type=dict required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_EFFECT_SMT_NO_OP transition_summary type=str required=true enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary W_EFFECT_SMT_NO_OP kind=verify_smt_linear
+
 **注册表事实。** 严重级别 ``warning``；发射层级 ``verify_pipeline``；能力层级 ``requires_solver``；源码对象 ``effect_statement``。
 
-**含义。** 该诊断的注册表描述为：A transition effect leaves all model variables unchanged for every guarded, runtime-defined execution.
+**含义。** 在所有满足守卫且运行时定义良好的执行中，转换效果不会改变任何模型变量。
 
-**面向 LLM 的修复摘要。** Symbolic execution proves the effect does not change any persistent model variable when its guard is enabled.
+**面向 LLM 的修复摘要。** 这是提示设计风险或可疑结构的警告。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。在所有满足守卫且运行时定义良好的执行中，转换效果不会改变任何模型变量。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -3454,24 +3592,24 @@ W_EFFECT_SMT_NO_OP
    * - ``algorithm_name``
      - ``str``
      - 是
-     - 注册表字段：Verify registry algorithm that produced the raw finding.
+     - 字段含义：产生原始发现的验证算法名称。
    * - ``verification_scope``
      - ``str``
      - 是
-     - 注册表字段：Verify scope for this finding.（枚举：``smt_local``）
+     - 字段含义：验证发现所属的作用域。
    * - ``transition``
      - ``dict``
      - 是
-     - 注册表字段：Raw verify transition payload for the transition with the effect.
+     - 字段含义：原始验证转换载荷。
    * - ``transition_summary``
      - ``str``
      - 是
-     - 注册表字段：Stable human-readable transition summary derived from the raw payload.
+     - 字段含义：由原始载荷派生的稳定转换摘要。
 
 .. diagnostics-example W_EFFECT_SMT_NO_OP 1 verify_opt_in
 
-**示例 1**\ （``verify_opt_in``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``verify_opt_in``）——复现边界。
+这个诊断需要显式开启验证集成。复现时应使用 ``pyfcstm inspect -i <file> --enable-verify --max-complexity-tier smt_linear --format json``；默认结构验证预算不会运行发射它的求解器局部算法。
 
 .. code-block:: fcstm
 
@@ -3485,13 +3623,13 @@ W_EFFECT_SMT_NO_OP
 
 .. diagnostics-example W_EFFECT_SMT_NO_OP 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``effect_block`` 执行 ``remove_effect``：Remove the effect if it is dead or only placeholder logic.
+**示例 2**\ （``boundary_only``）——针对 ``W_EFFECT_SMT_NO_OP`` 的修复方向。
+典型修复是对 ``effect_block`` 执行 ``remove_effect``：针对“在所有满足守卫且运行时定义良好的执行中，转换效果不会改变任何模型变量。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example W_EFFECT_SMT_NO_OP 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not report block-local temporary-only changes as state changes; they disappear after the effect block.
+**示例 3**\ （``boundary_only``）——针对 ``W_EFFECT_SMT_NO_OP`` 的反例边界。
+不要这样处理：针对“在所有满足守卫且运行时定义良好的执行中，转换效果不会改变任何模型变量。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-i-effect-guard-contradict-zh:
 
@@ -3504,11 +3642,14 @@ I_EFFECT_GUARD_CONTRADICT
 .. diagnostics-ref I_EFFECT_GUARD_CONTRADICT transition type=dict required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref I_EFFECT_GUARD_CONTRADICT transition_summary type=str required=true enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary I_EFFECT_GUARD_CONTRADICT kind=verify_smt_linear
+
 **注册表事实。** 严重级别 ``info``；发射层级 ``verify_pipeline``；能力层级 ``requires_solver``；源码对象 ``effect_statement``。
 
-**含义。** 该诊断的注册表描述为：A transition effect makes the same transition guard false after every guarded, runtime-defined execution.
+**含义。** 转换效果执行后会让同一转换守卫变为假。
 
-**面向 LLM 的修复摘要。** The effect immediately invalidates the guard that enabled the transition. This may be a deliberate one-shot or latch reset pattern.
+**面向 LLM 的修复摘要。** 这是非阻塞的信息性观察。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。转换效果执行后会让同一转换守卫变为假。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -3521,24 +3662,24 @@ I_EFFECT_GUARD_CONTRADICT
    * - ``algorithm_name``
      - ``str``
      - 是
-     - 注册表字段：Verify registry algorithm that produced the raw finding.
+     - 字段含义：产生原始发现的验证算法名称。
    * - ``verification_scope``
      - ``str``
      - 是
-     - 注册表字段：Verify scope for this finding.（枚举：``smt_local``）
+     - 字段含义：验证发现所属的作用域。
    * - ``transition``
      - ``dict``
      - 是
-     - 注册表字段：Raw verify transition payload for the transition with the effect.
+     - 字段含义：原始验证转换载荷。
    * - ``transition_summary``
      - ``str``
      - 是
-     - 注册表字段：Stable human-readable transition summary derived from the raw payload.
+     - 字段含义：由原始载荷派生的稳定转换摘要。
 
 .. diagnostics-example I_EFFECT_GUARD_CONTRADICT 1 verify_opt_in
 
-**示例 1**\ （``verify_opt_in``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``verify_opt_in``）——复现边界。
+这个诊断需要显式开启验证集成。复现时应使用 ``pyfcstm inspect -i <file> --enable-verify --max-complexity-tier smt_linear --format json``；默认结构验证预算不会运行发射它的求解器局部算法。
 
 .. code-block:: fcstm
 
@@ -3552,13 +3693,13 @@ I_EFFECT_GUARD_CONTRADICT
 
 .. diagnostics-example I_EFFECT_GUARD_CONTRADICT 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``transition`` 执行 ``review_one_shot``：Confirm the effect is meant to falsify the enabling guard.
+**示例 2**\ （``boundary_only``）——针对 ``I_EFFECT_GUARD_CONTRADICT`` 的修复方向。
+典型修复是对 ``transition`` 执行 ``review_one_shot``：针对“转换效果执行后会让同一转换守卫变为假。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example I_EFFECT_GUARD_CONTRADICT 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not treat this info as an automatic defect; guard-reset effects are often intentional.
+**示例 3**\ （``boundary_only``）——针对 ``I_EFFECT_GUARD_CONTRADICT`` 的反例边界。
+不要这样处理：针对“转换效果执行后会让同一转换守卫变为假。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 生命周期、切面和组合状态诊断
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -3573,11 +3714,14 @@ E_DURING_ASPECT_INVALID
 .. diagnostics-ref E_DURING_ASPECT_INVALID state_kind type=str required=true enum=leaf|composite item_enum=- exact_values=-
 .. diagnostics-ref E_DURING_ASPECT_INVALID aspect type=str_or_null required=false enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary E_DURING_ASPECT_INVALID kind=cli_error
+
 **注册表事实。** 严重级别 ``error``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``lifecycle_action``。
 
-**含义。** 该诊断的注册表描述为：A `during` block is declared inconsistently with the host state's leaf/composite kind. Leaf states must use `during { ... }` without an aspect modifier; composite states must use `during before { ... }` or `during after { ... }` (the aspect is mandatory on composites). The global ``>> during before/after`` aspect form is **also** invalid on a leaf state — aspect actions fan out to every descendant leaf, and a leaf has nothing to fan into.
+**含义。** ``during`` 块的写法与宿主状态类型不一致；叶状态和组合状态对普通 ``during`` 与切面 ``during`` 的要求不同。
 
-**面向 LLM 的修复摘要。** A ``during before`` / ``during after`` or ``>> during ...`` aspect declaration was placed on a state that cannot legally receive it (typically a leaf state with no descendant for the aspect to fan out to).
+**面向 LLM 的修复摘要。** 这是会阻塞模型构建或目标 API 解析的错误。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。``during`` 块的写法与宿主状态类型不一致；叶状态和组合状态对普通 ``during`` 与切面 ``during`` 的要求不同。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -3590,20 +3734,20 @@ E_DURING_ASPECT_INVALID
    * - ``state_path``
      - ``str``
      - 是
-     - 注册表字段：Dotted path of the offending state.
+     - 字段含义：相关状态的点分路径。
    * - ``state_kind``
      - ``str``
      - 是
-     - 注册表字段：Kind of the host state.（枚举：``leaf``, ``composite``）
+     - 字段含义：触发诊断的状态类型。
    * - ``aspect``
      - ``str_or_null``
      - 否
-     - 注册表字段：The aspect token that was actually used. ``'before'`` or ``'after'`` for ``during before`` / ``during after`` and ``>> during before/after``; ``null`` when the user wrote a bare ``during`` on a composite state. ``null`` is intentional — the consumer should branch on the bare-during case rather than treat it as an enum value.
+     - 字段含义：实际使用的切面方向。
 
-.. diagnostics-example E_DURING_ASPECT_INVALID 1 repro_cli
+.. diagnostics-example E_DURING_ASPECT_INVALID 1 cli_error
 
-**示例 1**\ （``repro_cli``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``cli_error``）——复现边界。
+这个源码形状会通过 ``pyfcstm inspect`` 复现受控的模型校验失败。当前命令行会在成功生成检查 JSON 前以非零状态退出，因此应断言错误文本和退出状态，不应期待在 ``diagnostics[]`` 中读到该码。
 
 .. code-block:: fcstm
 
@@ -3615,13 +3759,13 @@ E_DURING_ASPECT_INVALID
 
 .. diagnostics-example E_DURING_ASPECT_INVALID 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``aspect_declaration`` 执行 ``move_to_composite``：Aspect actions only make sense on composite states. Move the declaration to a composite ancestor whose descendants should receive the aspect.
+**示例 2**\ （``boundary_only``）——针对 ``E_DURING_ASPECT_INVALID`` 的修复方向。
+典型修复是对 ``aspect_declaration`` 执行 ``move_to_composite``：针对“``during`` 块的写法与宿主状态类型不一致；叶状态和组合状态对普通 ``during`` 与切面 ``during`` 的要求不同。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example E_DURING_ASPECT_INVALID 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not convert the leaf into a composite just to host the aspect — that changes the runtime entry/exit semantics.
+**示例 3**\ （``boundary_only``）——针对 ``E_DURING_ASPECT_INVALID`` 的反例边界。
+不要这样处理：针对“``during`` 块的写法与宿主状态类型不一致；叶状态和组合状态对普通 ``during`` 与切面 ``during`` 的要求不同。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-e-pseudo-not-leaf-zh:
 
@@ -3631,11 +3775,14 @@ E_PSEUDO_NOT_LEAF
 .. diagnostics-meta E_PSEUDO_NOT_LEAF severity=error emit_tier=static_pipeline capability=pure_static span_object=state_identifier
 .. diagnostics-ref E_PSEUDO_NOT_LEAF state_path type=str required=true enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary E_PSEUDO_NOT_LEAF kind=cli_error
+
 **注册表事实。** 严重级别 ``error``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``state_identifier``。
 
-**含义。** 该诊断的注册表描述为：A state was declared with the `pseudo` keyword but has nested substates. Pseudo states must be leaves: they skip ancestor `>> during` aspects and only make sense without inner structure.
+**含义。** 带 ``pseudo`` 关键字的状态仍然声明了子状态；伪状态必须是叶节点。
 
-**面向 LLM 的修复摘要。** A ``pseudo state`` declaration was given a composite body (or otherwise treated as if it had descendants). Pseudo states must be leaves: they cannot host substates because their semantics explicitly skip ancestor ``>> during`` aspects.
+**面向 LLM 的修复摘要。** 这是会阻塞模型构建或目标 API 解析的错误。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。带 ``pseudo`` 关键字的状态仍然声明了子状态；伪状态必须是叶节点。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -3648,12 +3795,12 @@ E_PSEUDO_NOT_LEAF
    * - ``state_path``
      - ``str``
      - 是
-     - 注册表字段：Dotted path of the offending pseudo state.
+     - 字段含义：相关状态的点分路径。
 
-.. diagnostics-example E_PSEUDO_NOT_LEAF 1 repro_cli
+.. diagnostics-example E_PSEUDO_NOT_LEAF 1 cli_error
 
-**示例 1**\ （``repro_cli``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``cli_error``）——复现边界。
+这个源码形状会通过 ``pyfcstm inspect`` 复现受控的模型校验失败。当前命令行会在成功生成检查 JSON 前以非零状态退出，因此应断言错误文本和退出状态，不应期待在 ``diagnostics[]`` 中读到该码。
 
 .. code-block:: fcstm
 
@@ -3666,13 +3813,13 @@ E_PSEUDO_NOT_LEAF
 
 .. diagnostics-example E_PSEUDO_NOT_LEAF 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``state_definition`` 执行 ``drop_pseudo_marker``：If the state genuinely needs substates, remove the ``pseudo`` keyword and treat it as a normal composite.
+**示例 2**\ （``boundary_only``）——针对 ``E_PSEUDO_NOT_LEAF`` 的修复方向。
+典型修复是对 ``state_definition`` 执行 ``drop_pseudo_marker``：针对“带 ``pseudo`` 关键字的状态仍然声明了子状态；伪状态必须是叶节点。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example E_PSEUDO_NOT_LEAF 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not rely on pseudo states for normal hierarchy modeling — they exist solely to bypass ``>> during`` aspect application.
+**示例 3**\ （``boundary_only``）——针对 ``E_PSEUDO_NOT_LEAF`` 的反例边界。
+不要这样处理：针对“带 ``pseudo`` 关键字的状态仍然声明了子状态；伪状态必须是叶节点。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-w-during-const-assign-zh:
 
@@ -3684,11 +3831,14 @@ W_DURING_CONST_ASSIGN
 .. diagnostics-ref W_DURING_CONST_ASSIGN var_name type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_DURING_CONST_ASSIGN value type=number required=true enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary W_DURING_CONST_ASSIGN kind=inspect_json
+
 **注册表事实。** 严重级别 ``warning``；发射层级 ``static_pipeline``；能力层级 ``const_fold``；源码对象 ``lifecycle_action``。
 
-**含义。** 该诊断的注册表描述为：A concrete ``during`` action assigns a variable to the same literal-only numeric value every cycle. The analyzer only checks the direct statements in ordinary ``during { ... }`` blocks; it skips abstract actions, refs, composite ``during before`` / ``during after`` actions, aspect actions, functions, variables, and nested control flow.
+**含义。** 普通 ``during`` 动作每个周期都把变量写成同一个字面量数值。
 
-**面向 LLM 的修复摘要。** The during block writes the same constant numeric value on every cycle, which often indicates initialization logic was placed in ``during`` instead of ``enter``.
+**面向 LLM 的修复摘要。** 这是提示设计风险或可疑结构的警告。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。普通 ``during`` 动作每个周期都把变量写成同一个字面量数值。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -3701,20 +3851,20 @@ W_DURING_CONST_ASSIGN
    * - ``state_path``
      - ``str``
      - 是
-     - 注册表字段：Dotted path of the state that owns the during action.
+     - 字段含义：相关状态的点分路径。
    * - ``var_name``
      - ``str``
      - 是
-     - 注册表字段：Variable assigned by the constant during statement.
+     - 字段含义：相关变量名或变量标识。
    * - ``value``
      - ``number``
      - 是
-     - 注册表字段：JSON-stable numeric value assigned on every cycle.
+     - 字段含义：字段 ``value`` 的稳定载荷；具体含义由本诊断的含义、类型和枚举共同限定。
 
 .. diagnostics-example W_DURING_CONST_ASSIGN 1 repro_cli
 
-**示例 1**\ （``repro_cli``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``repro_cli``）——复现边界。
+这个诊断可以出现在成功构建模型后的检查报告中。可用 ``pyfcstm inspect -i <file> --format json`` 复现，并读取 ``diagnostics[]`` 数组。
 
 .. code-block:: fcstm
 
@@ -3728,13 +3878,13 @@ W_DURING_CONST_ASSIGN
 
 .. diagnostics-example W_DURING_CONST_ASSIGN 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``action`` 执行 ``move_to_enter``：Move the assignment to ``enter`` if it should run once on state entry.
+**示例 2**\ （``boundary_only``）——针对 ``W_DURING_CONST_ASSIGN`` 的修复方向。
+典型修复是对 ``action`` 执行 ``move_to_enter``：针对“普通 ``during`` 动作每个周期都把变量写成同一个字面量数值。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example W_DURING_CONST_ASSIGN 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not suppress the warning by adding a meaningless arithmetic no-op.
+**示例 3**\ （``boundary_only``）——针对 ``W_DURING_CONST_ASSIGN`` 的反例边界。
+不要这样处理：针对“普通 ``during`` 动作每个周期都把变量写成同一个字面量数值。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-w-aspect-no-descendant-leaf-zh:
 
@@ -3745,11 +3895,14 @@ W_ASPECT_NO_DESCENDANT_LEAF
 .. diagnostics-ref W_ASPECT_NO_DESCENDANT_LEAF composite_path type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_ASPECT_NO_DESCENDANT_LEAF aspect type=str required=true enum=before|after item_enum=- exact_values=-
 
+
+.. diagnostics-boundary W_ASPECT_NO_DESCENDANT_LEAF kind=inspect_json
+
 **注册表事实。** 严重级别 ``warning``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``lifecycle_action``。
 
-**含义。** 该诊断的注册表描述为：A ``>> during`` aspect is attached to a state with no descendant non-pseudo leaf states, so the aspect cannot affect any leaf cycle.
+**含义。** ``>> during`` 切面挂在没有非伪叶子后代的状态上，因此不会影响任何叶周期。
 
-**面向 LLM 的修复摘要。** The aspect action has no descendant leaf state to wrap, so it has no modeled runtime target.
+**面向 LLM 的修复摘要。** 这是提示设计风险或可疑结构的警告。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。``>> during`` 切面挂在没有非伪叶子后代的状态上，因此不会影响任何叶周期。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -3762,16 +3915,16 @@ W_ASPECT_NO_DESCENDANT_LEAF
    * - ``composite_path``
      - ``str``
      - 是
-     - 注册表字段：Dotted path of the state declaring the aspect.
+     - 字段含义：相关组合状态的点分路径。
    * - ``aspect``
      - ``str``
      - 是
-     - 注册表字段：Aspect direction.（枚举：``before``, ``after``）
+     - 字段含义：实际使用的切面方向。
 
 .. diagnostics-example W_ASPECT_NO_DESCENDANT_LEAF 1 repro_cli
 
-**示例 1**\ （``repro_cli``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``repro_cli``）——复现边界。
+这个诊断可以出现在成功构建模型后的检查报告中。可用 ``pyfcstm inspect -i <file> --format json`` 复现，并读取 ``diagnostics[]`` 数组。
 
 .. code-block:: fcstm
 
@@ -3783,13 +3936,13 @@ W_ASPECT_NO_DESCENDANT_LEAF
 
 .. diagnostics-example W_ASPECT_NO_DESCENDANT_LEAF 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``composite_state`` 执行 ``add_leaf``：Add the intended descendant leaf state under this composite.
+**示例 2**\ （``boundary_only``）——针对 ``W_ASPECT_NO_DESCENDANT_LEAF`` 的修复方向。
+典型修复是对 ``composite_state`` 执行 ``add_leaf``：针对“``>> during`` 切面挂在没有非伪叶子后代的状态上，因此不会影响任何叶周期。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example W_ASPECT_NO_DESCENDANT_LEAF 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not replace it with a normal during action unless the execution semantics really should change.
+**示例 3**\ （``boundary_only``）——针对 ``W_ASPECT_NO_DESCENDANT_LEAF`` 的反例边界。
+不要这样处理：针对“``>> during`` 切面挂在没有非伪叶子后代的状态上，因此不会影响任何叶周期。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-i-enter-during-contradict-zh:
 
@@ -3804,11 +3957,14 @@ I_ENTER_DURING_CONTRADICT
 .. diagnostics-ref I_ENTER_DURING_CONTRADICT condition_source type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref I_ENTER_DURING_CONTRADICT branch_taken type=str required=true enum=true|false item_enum=- exact_values=-
 
+
+.. diagnostics-boundary I_ENTER_DURING_CONTRADICT kind=verify_smt_linear
+
 **注册表事实。** 严重级别 ``info``；发射层级 ``verify_pipeline``；能力层级 ``requires_solver``；源码对象 ``lifecycle_action``。
 
-**含义。** 该诊断的注册表描述为：Entry-time assignments make a first-cycle during branch condition predetermined; the enter postcondition does not leave both during branches feasible.
+**含义。** 进入时赋值会让首个周期的 ``during`` 分支条件预先确定。
 
-**面向 LLM 的修复摘要。** After entering the leaf, the first during cycle already has a fixed branch decision. This may be intentional initialization logic, but the branch is not genuinely conditional on the first cycle.
+**面向 LLM 的修复摘要。** 这是非阻塞的信息性观察。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。进入时赋值会让首个周期的 ``during`` 分支条件预先确定。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -3821,32 +3977,32 @@ I_ENTER_DURING_CONTRADICT
    * - ``algorithm_name``
      - ``str``
      - 是
-     - 注册表字段：Verify registry algorithm that produced the raw finding.
+     - 字段含义：产生原始发现的验证算法名称。
    * - ``verification_scope``
      - ``str``
      - 是
-     - 注册表字段：Verify scope for this finding.（枚举：``smt_local``）
+     - 字段含义：验证发现所属的作用域。
    * - ``state_path``
      - ``str``
      - 是
-     - 注册表字段：Dotted leaf state path inspected by the lifecycle algorithm.
+     - 字段含义：相关状态的点分路径。
    * - ``condition``
      - ``str``
      - 是
-     - 注册表字段：First-cycle during condition proven predetermined.
+     - 字段含义：被证明预先确定的首周期 ``during`` 条件。
    * - ``condition_source``
      - ``str``
      - 是
-     - 注册表字段：Source label for the condition inside the during operation block.
+     - 字段含义：``during`` 操作块内该条件的来源标签。
    * - ``branch_taken``
      - ``str``
      - 是
-     - 注册表字段：Branch direction forced after entry.（枚举：``true``, ``false``）
+     - 字段含义：进入后被强制选择的分支方向。
 
 .. diagnostics-example I_ENTER_DURING_CONTRADICT 1 verify_opt_in
 
-**示例 1**\ （``verify_opt_in``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``verify_opt_in``）——复现边界。
+这个诊断需要显式开启验证集成。复现时应使用 ``pyfcstm inspect -i <file> --enable-verify --max-complexity-tier smt_linear --format json``；默认结构验证预算不会运行发射它的求解器局部算法。
 
 .. code-block:: fcstm
 
@@ -3863,13 +4019,13 @@ I_ENTER_DURING_CONTRADICT
 
 .. diagnostics-example I_ENTER_DURING_CONTRADICT 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``lifecycle_action`` 执行 ``review_enter_during_relation``：Check whether enter assignments intentionally force the first during branch.
+**示例 2**\ （``boundary_only``）——针对 ``I_ENTER_DURING_CONTRADICT`` 的修复方向。
+典型修复是对 ``lifecycle_action`` 执行 ``review_enter_during_relation``：针对“进入时赋值会让首个周期的 ``during`` 分支条件预先确定。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example I_ENTER_DURING_CONTRADICT 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not remove the enter action just to make the first-cycle branch variable; entry side effects may be required.
+**示例 3**\ （``boundary_only``）——针对 ``I_ENTER_DURING_CONTRADICT`` 的反例边界。
+不要这样处理：针对“进入时赋值会让首个周期的 ``during`` 分支条件预先确定。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-w-composite-init-incomplete-zh:
 
@@ -3884,11 +4040,14 @@ W_COMPOSITE_INIT_INCOMPLETE
 .. diagnostics-ref W_COMPOSITE_INIT_INCOMPLETE init_transitions type=list[str] required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_COMPOSITE_INIT_INCOMPLETE witness type=str_or_null required=false enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary W_COMPOSITE_INIT_INCOMPLETE kind=verify_smt_linear
+
 **注册表事实。** 严重级别 ``warning``；发射层级 ``verify_pipeline``；能力层级 ``requires_solver``；源码对象 ``composite_block``。
 
-**含义。** 该诊断的注册表描述为：A composite state's initial transitions do not jointly cover all variable and event inputs.
+**含义。** 组合状态的入口转换不能共同覆盖所有变量和事件输入。
 
-**面向 LLM 的修复摘要。** There is a variable/event assignment for which none of the composite initial transitions can fire, so entry can get stuck at the composite.
+**面向 LLM 的修复摘要。** 这是提示设计风险或可疑结构的警告。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。组合状态的入口转换不能共同覆盖所有变量和事件输入。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -3901,32 +4060,32 @@ W_COMPOSITE_INIT_INCOMPLETE
    * - ``algorithm_name``
      - ``str``
      - 是
-     - 注册表字段：Verify registry algorithm that produced the raw finding.
+     - 字段含义：产生原始发现的验证算法名称。
    * - ``verification_scope``
      - ``str``
      - 是
-     - 注册表字段：Verify scope for this finding.（枚举：``smt_local``）
+     - 字段含义：验证发现所属的作用域。
    * - ``composite_path``
      - ``str``
      - 是
-     - 注册表字段：Dotted composite state path whose initial transitions have a coverage gap.
+     - 字段含义：相关组合状态的点分路径。
    * - ``init_transition_count``
      - ``int``
      - 是
-     - 注册表字段：Number of initial transitions considered for the composite.
+     - 字段含义：纳入分析的入口转换数量。
    * - ``init_transitions``
      - ``list[str]``
      - 是
-     - 注册表字段：Stable summaries of the initial transitions considered.
+     - 字段含义：纳入分析的入口转换稳定摘要。
    * - ``witness``
      - ``str_or_null``
      - 否
-     - 注册表字段：Solver model demonstrating an uncovered input valuation, when available.
+     - 字段含义：可选求解器模型，用于展示未覆盖输入取值。
 
 .. diagnostics-example W_COMPOSITE_INIT_INCOMPLETE 1 verify_opt_in
 
-**示例 1**\ （``verify_opt_in``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``verify_opt_in``）——复现边界。
+这个诊断需要显式开启验证集成。复现时应使用 ``pyfcstm inspect -i <file> --enable-verify --max-complexity-tier smt_linear --format json``；默认结构验证预算不会运行发射它的求解器局部算法。
 
 .. code-block:: fcstm
 
@@ -3940,13 +4099,13 @@ W_COMPOSITE_INIT_INCOMPLETE
 
 .. diagnostics-example W_COMPOSITE_INIT_INCOMPLETE 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``composite_state`` 执行 ``add_catch_all_initial``：Add an unconditional fallback initial transition if one child should be the default.
+**示例 2**\ （``boundary_only``）——针对 ``W_COMPOSITE_INIT_INCOMPLETE`` 的修复方向。
+典型修复是对 ``composite_state`` 执行 ``add_catch_all_initial``：针对“组合状态的入口转换不能共同覆盖所有变量和事件输入。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example W_COMPOSITE_INIT_INCOMPLETE 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not add overlapping initial transitions without reviewing declaration order and guard intent.
+**示例 3**\ （``boundary_only``）——针对 ``W_COMPOSITE_INIT_INCOMPLETE`` 的反例边界。
+不要这样处理：针对“组合状态的入口转换不能共同覆盖所有变量和事件输入。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 数据流诊断
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -3962,11 +4121,14 @@ W_UNREFERENCED_VAR
 .. diagnostics-ref W_UNREFERENCED_VAR definition_delete_anchor type=str required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_UNREFERENCED_VAR suggested_fix type=dict required=false enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary W_UNREFERENCED_VAR kind=inspect_json
+
 **注册表事实。** 严重级别 ``warning``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``variable_declaration``。
 
-**含义。** 该诊断的注册表描述为：A variable cannot affect any transition guard either directly or through the action/effect use-def graph, and no abstract action is visible that might use it outside the DSL.
+**含义。** 变量无法通过 DSL 数据流影响任何转换守卫，且没有可见抽象动作可能在 DSL 外使用它。
 
-**面向 LLM 的修复摘要。** This variable does not participate in model decisions. It is dead from the DSL's guard-affect data-flow perspective.
+**面向 LLM 的修复摘要。** 这是提示设计风险或可疑结构的警告。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。变量无法通过 DSL 数据流影响任何转换守卫，且没有可见抽象动作可能在 DSL 外使用它。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -3979,24 +4141,24 @@ W_UNREFERENCED_VAR
    * - ``var_name``
      - ``str``
      - 是
-     - 注册表字段：Variable name.
+     - 字段含义：相关变量名或变量标识。
    * - ``init_value``
      - ``str``
      - 是
-     - 注册表字段：Source text of the initial value.
+     - 字段含义：初始值源码文本。
    * - ``definition_delete_anchor``
      - ``str``
      - 否
-     - 注册表字段：Variable name repeated only when the declaration has no DSL reads or writes, so deleting the declaration alone is a safe quick-fix.
+     - 字段含义：可安全删除变量声明时使用的定位锚点。
    * - ``suggested_fix``
      - ``dict``
      - 否
-     - 注册表字段：Structured quick-fix payload for removing the variable definition.
+     - 字段含义：可选的结构化快速修复载荷。
 
 .. diagnostics-example W_UNREFERENCED_VAR 1 repro_cli
 
-**示例 1**\ （``repro_cli``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``repro_cli``）——复现边界。
+这个诊断可以出现在成功构建模型后的检查报告中。可用 ``pyfcstm inspect -i <file> --format json`` 复现，并读取 ``diagnostics[]`` 数组。
 
 .. code-block:: fcstm
 
@@ -4011,13 +4173,13 @@ W_UNREFERENCED_VAR
 
 .. diagnostics-example W_UNREFERENCED_VAR 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``variable_definition`` 执行 ``remove_variable``：Remove the variable and related writes if it was speculative scaffolding.
+**示例 2**\ （``boundary_only``）——针对 ``W_UNREFERENCED_VAR`` 的修复方向。
+典型修复是对 ``variable_definition`` 执行 ``remove_variable``：针对“变量无法通过 DSL 数据流影响任何转换守卫，且没有可见抽象动作可能在 DSL 外使用它。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example W_UNREFERENCED_VAR 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not add a dummy guard reference only to silence the diagnostic.
+**示例 3**\ （``boundary_only``）——针对 ``W_UNREFERENCED_VAR`` 的反例边界。
+不要这样处理：针对“变量无法通过 DSL 数据流影响任何转换守卫，且没有可见抽象动作可能在 DSL 外使用它。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-i-unreferenced-var-maybe-abstract-zh:
 
@@ -4028,11 +4190,14 @@ I_UNREFERENCED_VAR_MAYBE_ABSTRACT
 .. diagnostics-ref I_UNREFERENCED_VAR_MAYBE_ABSTRACT var_name type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref I_UNREFERENCED_VAR_MAYBE_ABSTRACT abstract_actions_in_scope type=list[str] required=true enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary I_UNREFERENCED_VAR_MAYBE_ABSTRACT kind=inspect_json
+
 **注册表事实。** 严重级别 ``info``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``variable_declaration``。
 
-**含义。** 该诊断的注册表描述为：A variable cannot affect any transition guard through DSL data-flow, but at least one visible abstract action may use it outside the DSL.
+**含义。** 变量无法通过 DSL 数据流影响守卫，但至少一个可见抽象动作可能在 DSL 外使用它。
 
-**面向 LLM 的修复摘要。** This variable is unused by DSL guard-affect data-flow, but abstract action implementations may still use it.
+**面向 LLM 的修复摘要。** 这是非阻塞的信息性观察。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。变量无法通过 DSL 数据流影响守卫，但至少一个可见抽象动作可能在 DSL 外使用它。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -4045,16 +4210,16 @@ I_UNREFERENCED_VAR_MAYBE_ABSTRACT
    * - ``var_name``
      - ``str``
      - 是
-     - 注册表字段：Variable name.
+     - 字段含义：相关变量名或变量标识。
    * - ``abstract_actions_in_scope``
      - ``list[str]``
      - 是
-     - 注册表字段：Abstract action owners that may access the variable. FCSTM variables are global, so this is the full machine abstract-action inventory.
+     - 字段含义：可能在 DSL 外访问变量的抽象动作拥有者。
 
 .. diagnostics-example I_UNREFERENCED_VAR_MAYBE_ABSTRACT 1 repro_cli
 
-**示例 1**\ （``repro_cli``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``repro_cli``）——复现边界。
+这个诊断可以出现在成功构建模型后的检查报告中。可用 ``pyfcstm inspect -i <file> --format json`` 复现，并读取 ``diagnostics[]`` 数组。
 
 .. code-block:: fcstm
 
@@ -4069,13 +4234,13 @@ I_UNREFERENCED_VAR_MAYBE_ABSTRACT
 
 .. diagnostics-example I_UNREFERENCED_VAR_MAYBE_ABSTRACT 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``abstract_action`` 执行 ``inspect_abstract_action``：Check the external implementation before removing the variable.
+**示例 2**\ （``boundary_only``）——针对 ``I_UNREFERENCED_VAR_MAYBE_ABSTRACT`` 的修复方向。
+典型修复是对 ``abstract_action`` 执行 ``inspect_abstract_action``：针对“变量无法通过 DSL 数据流影响守卫，但至少一个可见抽象动作可能在 DSL 外使用它。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example I_UNREFERENCED_VAR_MAYBE_ABSTRACT 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not remove the variable without checking the abstract implementation.
+**示例 3**\ （``boundary_only``）——针对 ``I_UNREFERENCED_VAR_MAYBE_ABSTRACT`` 的反例边界。
+不要这样处理：针对“变量无法通过 DSL 数据流影响守卫，但至少一个可见抽象动作可能在 DSL 外使用它。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-w-unwritten-read-var-zh:
 
@@ -4087,11 +4252,14 @@ W_UNWRITTEN_READ_VAR
 .. diagnostics-ref W_UNWRITTEN_READ_VAR read_states type=list[str] required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_UNWRITTEN_READ_VAR init_value type=str required=true enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary W_UNWRITTEN_READ_VAR kind=inspect_json
+
 **注册表事实。** 严重级别 ``warning``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``variable_declaration``。
 
-**含义。** 该诊断的注册表描述为：A variable is read in guards or actions but is never written by any lifecycle action or transition effect.
+**含义。** 变量被守卫或动作读取，但从未被生命周期动作或转换效果写入。
 
-**面向 LLM 的修复摘要。** The variable is used as input but never updated after its initial definition, so model behavior may be accidentally constant.
+**面向 LLM 的修复摘要。** 这是提示设计风险或可疑结构的警告。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。变量被守卫或动作读取，但从未被生命周期动作或转换效果写入。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -4104,20 +4272,20 @@ W_UNWRITTEN_READ_VAR
    * - ``var_name``
      - ``str``
      - 是
-     - 注册表字段：Variable name.
+     - 字段含义：相关变量名或变量标识。
    * - ``read_states``
      - ``list[str]``
      - 是
-     - 注册表字段：State paths where the variable is read.
+     - 字段含义：读取变量的状态路径列表。
    * - ``init_value``
      - ``str``
      - 是
-     - 注册表字段：Source text of the initial value.
+     - 字段含义：初始值源码文本。
 
 .. diagnostics-example W_UNWRITTEN_READ_VAR 1 repro_cli
 
-**示例 1**\ （``repro_cli``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``repro_cli``）——复现边界。
+这个诊断可以出现在成功构建模型后的检查报告中。可用 ``pyfcstm inspect -i <file> --format json`` 复现，并读取 ``diagnostics[]`` 数组。
 
 .. code-block:: fcstm
 
@@ -4131,13 +4299,13 @@ W_UNWRITTEN_READ_VAR
 
 .. diagnostics-example W_UNWRITTEN_READ_VAR 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``action_or_effect`` 执行 ``add_write``：Add the intended update if the variable should change.
+**示例 2**\ （``boundary_only``）——针对 ``W_UNWRITTEN_READ_VAR`` 的修复方向。
+典型修复是对 ``action_or_effect`` 执行 ``add_write``：针对“变量被守卫或动作读取，但从未被生命周期动作或转换效果写入。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example W_UNWRITTEN_READ_VAR 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not add a meaningless self-assignment.
+**示例 3**\ （``boundary_only``）——针对 ``W_UNWRITTEN_READ_VAR`` 的反例边界。
+不要这样处理：针对“变量被守卫或动作读取，但从未被生命周期动作或转换效果写入。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-w-write-only-var-zh:
 
@@ -4148,11 +4316,14 @@ W_WRITE_ONLY_VAR
 .. diagnostics-ref W_WRITE_ONLY_VAR var_name type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_WRITE_ONLY_VAR written_states type=list[str] required=true enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary W_WRITE_ONLY_VAR kind=inspect_json
+
 **注册表事实。** 严重级别 ``warning``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``variable_declaration``。
 
-**含义。** 该诊断的注册表描述为：A variable is written by actions or effects but is never read by any guard, action, or transition effect expression.
+**含义。** 变量被动作或效果写入，但从未被守卫、动作或转换效果读取。
 
-**面向 LLM 的修复摘要。** The variable is updated but never influences model behavior.
+**面向 LLM 的修复摘要。** 这是提示设计风险或可疑结构的警告。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。变量被动作或效果写入，但从未被守卫、动作或转换效果读取。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -4165,16 +4336,16 @@ W_WRITE_ONLY_VAR
    * - ``var_name``
      - ``str``
      - 是
-     - 注册表字段：Variable name.
+     - 字段含义：相关变量名或变量标识。
    * - ``written_states``
      - ``list[str]``
      - 是
-     - 注册表字段：State paths where the variable is written.
+     - 字段含义：写入变量的状态路径列表。
 
 .. diagnostics-example W_WRITE_ONLY_VAR 1 repro_cli
 
-**示例 1**\ （``repro_cli``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``repro_cli``）——复现边界。
+这个诊断可以出现在成功构建模型后的检查报告中。可用 ``pyfcstm inspect -i <file> --format json`` 复现，并读取 ``diagnostics[]`` 数组。
 
 .. code-block:: fcstm
 
@@ -4186,13 +4357,13 @@ W_WRITE_ONLY_VAR
 
 .. diagnostics-example W_WRITE_ONLY_VAR 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``guard_or_action`` 执行 ``add_read``：Read the variable where it should affect behavior.
+**示例 2**\ （``boundary_only``）——针对 ``W_WRITE_ONLY_VAR`` 的修复方向。
+典型修复是对 ``guard_or_action`` 执行 ``add_read``：针对“变量被动作或效果写入，但从未被守卫、动作或转换效果读取。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example W_WRITE_ONLY_VAR 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not add an unused read just to silence the warning.
+**示例 3**\ （``boundary_only``）——针对 ``W_WRITE_ONLY_VAR`` 的反例边界。
+不要这样处理：针对“变量被动作或效果写入，但从未被守卫、动作或转换效果读取。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 数值和目标配置诊断
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -4207,11 +4378,14 @@ W_LITERAL_TYPE_NARROWING
 .. diagnostics-ref W_LITERAL_TYPE_NARROWING target_type type=str required=true enum=int item_enum=- exact_values=-
 .. diagnostics-ref W_LITERAL_TYPE_NARROWING source_expr type=str required=true enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary W_LITERAL_TYPE_NARROWING kind=inspect_json
+
 **注册表事实。** 严重级别 ``warning``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``expression``。
 
-**含义。** 该诊断的注册表描述为：An ``int`` variable is initialized or assigned directly from a floating-point literal, which can imply silent narrowing in generated code. Compound expressions containing floating-point literals are out of scope for this warning.
+**含义。** ``int`` 变量直接从浮点字面量初始化或赋值，生成代码可能发生静默收窄。
 
-**面向 LLM 的修复摘要。** A direct float literal value flows into an ``int`` variable. The model may truncate or generate target-language code with a narrowing conversion; compound expressions such as ``3.0 + 0.5`` are intentionally outside this warning's scope.
+**面向 LLM 的修复摘要。** 这是提示设计风险或可疑结构的警告。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。``int`` 变量直接从浮点字面量初始化或赋值，生成代码可能发生静默收窄。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -4224,20 +4398,20 @@ W_LITERAL_TYPE_NARROWING
    * - ``var_name``
      - ``str``
      - 是
-     - 注册表字段：Target variable name.
+     - 字段含义：相关变量名或变量标识。
    * - ``target_type``
      - ``str``
      - 是
-     - 注册表字段：Declared target variable type.（枚举：``int``）
+     - 字段含义：目标变量声明类型。
    * - ``source_expr``
      - ``str``
      - 是
-     - 注册表字段：Source text of the direct float literal.
+     - 字段含义：直接浮点字面量的源码文本。
 
 .. diagnostics-example W_LITERAL_TYPE_NARROWING 1 repro_cli
 
-**示例 1**\ （``repro_cli``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``repro_cli``）——复现边界。
+这个诊断可以出现在成功构建模型后的检查报告中。可用 ``pyfcstm inspect -i <file> --format json`` 复现，并读取 ``diagnostics[]`` 数组。
 
 .. code-block:: fcstm
 
@@ -4246,13 +4420,13 @@ W_LITERAL_TYPE_NARROWING
 
 .. diagnostics-example W_LITERAL_TYPE_NARROWING 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``variable_definition`` 执行 ``change_type``：Use ``def float`` when fractional values are intended.
+**示例 2**\ （``boundary_only``）——针对 ``W_LITERAL_TYPE_NARROWING`` 的修复方向。
+典型修复是对 ``variable_definition`` 执行 ``change_type``：针对“``int`` 变量直接从浮点字面量初始化或赋值，生成代码可能发生静默收窄。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example W_LITERAL_TYPE_NARROWING 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not silently rely on target-language truncation rules.
+**示例 3**\ （``boundary_only``）——针对 ``W_LITERAL_TYPE_NARROWING`` 的反例边界。
+不要这样处理：针对“``int`` 变量直接从浮点字面量初始化或赋值，生成代码可能发生静默收窄。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-w-numeric-literal-out-of-target-range-zh:
 
@@ -4273,11 +4447,14 @@ W_NUMERIC_LITERAL_OUT_OF_TARGET_RANGE
 .. diagnostics-ref W_NUMERIC_LITERAL_OUT_OF_TARGET_RANGE max_value_text type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_NUMERIC_LITERAL_OUT_OF_TARGET_RANGE var_name type=str required=false enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary W_NUMERIC_LITERAL_OUT_OF_TARGET_RANGE kind=inspect_json
+
 **注册表事实。** 严重级别 ``warning``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``expression``。
 
-**含义。** 该诊断的注册表描述为：An integer literal that would be rendered into a C/C++ family template falls outside the default ``PYFCSTM_GENERATED_INT64`` signed range. This warning is target-profile-specific: Python generated runtimes may not have the same fixed-width integer carrying risk.
+**含义。** 面向 C/C++ 系模板渲染的整数字面量超出默认有符号 64 位范围。
 
-**面向 LLM 的修复摘要。** A literal intended for C/C++ generated code exceeds the default 64-bit signed integer profile. Treat this as a C/C++ deployment-profile warning, not as proof that Python generated code is invalid.
+**面向 LLM 的修复摘要。** 这是提示设计风险或可疑结构的警告。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。面向 C/C++ 系模板渲染的整数字面量超出默认有符号 64 位范围。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -4290,56 +4467,56 @@ W_NUMERIC_LITERAL_OUT_OF_TARGET_RANGE
    * - ``target_family``
      - ``str``
      - 是
-     - 注册表字段：Target family whose default deployment profile owns this risk.（枚举：``c_family``）
+     - 字段含义：拥有该风险的目标模板家族。
    * - ``target_templates``
      - ``list[str]``
      - 是
-     - 注册表字段：Ordered target templates covered by this default C/C++ profile: ``c``, ``c_poll``, ``cpp``, ``cpp_poll``.（元素枚举：``c``, ``c_poll``, ``cpp``, ``cpp_poll``；精确值：``c``, ``c_poll``, ``cpp``, ``cpp_poll``）
+     - 字段含义：该目标档案覆盖的模板列表。
    * - ``runtime_note``
      - ``str``
      - 是
-     - 注册表字段：Human-readable note that this is a C/C++ deployment-profile risk and that Python generated runtimes may not have the same risk.
+     - 字段含义：关于目标运行时差异的说明。
    * - ``context``
      - ``str``
      - 是
-     - 注册表字段：Expression location where the literal appears.（枚举：``var_initializer``, ``guard``, ``transition_effect``, ``lifecycle_action``）
+     - 字段含义：表达式出现的位置。
    * - ``statement_kind``
      - ``str``
      - 否
-     - 注册表字段：Statement shape when the expression is an operation assignment RHS.（枚举：``operation_assignment``）
+     - 字段含义：表达式所在语句形状。
    * - ``expr_text``
      - ``str``
      - 是
-     - 注册表字段：Source text of the expression containing the literal.
+     - 字段含义：相关表达式的源码文本。
    * - ``literal_text``
      - ``str``
      - 是
-     - 注册表字段：Source text of the integer literal after applying a unary sign when present.
+     - 字段含义：应用一元符号后的整数字面量文本。
    * - ``target_bits``
      - ``int``
      - 是
-     - 注册表字段：Target integer width in bits.
+     - 字段含义：目标整数宽度。
    * - ``signed``
      - ``bool``
      - 是
-     - 注册表字段：Whether the target integer profile is signed.
+     - 字段含义：目标整数档案是否有符号。
    * - ``min_value_text``
      - ``str``
      - 是
-     - 注册表字段：Decimal text of the minimum representable target value.
+     - 字段含义：目标范围最小值的十进制文本。
    * - ``max_value_text``
      - ``str``
      - 是
-     - 注册表字段：Decimal text of the maximum representable target value.
+     - 字段含义：目标范围最大值的十进制文本。
    * - ``var_name``
      - ``str``
      - 否
-     - 注册表字段：Variable receiving the literal when the location can be named.
+     - 字段含义：相关变量名或变量标识。
 
 .. diagnostics-example W_NUMERIC_LITERAL_OUT_OF_TARGET_RANGE 1 repro_cli
 
-**示例 1**\ （``repro_cli``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``repro_cli``）——复现边界。
+这个诊断可以出现在成功构建模型后的检查报告中。可用 ``pyfcstm inspect -i <file> --format json`` 复现，并读取 ``diagnostics[]`` 数组。
 
 .. code-block:: fcstm
 
@@ -4348,13 +4525,13 @@ W_NUMERIC_LITERAL_OUT_OF_TARGET_RANGE
 
 .. diagnostics-example W_NUMERIC_LITERAL_OUT_OF_TARGET_RANGE 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``expression`` 执行 ``reduce_literal``：Keep integer literals within the documented C/C++ target range when deploying to C-family templates.
+**示例 2**\ （``boundary_only``）——针对 ``W_NUMERIC_LITERAL_OUT_OF_TARGET_RANGE`` 的修复方向。
+典型修复是对 ``expression`` 执行 ``reduce_literal``：针对“面向 C/C++ 系模板渲染的整数字面量超出默认有符号 64 位范围。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example W_NUMERIC_LITERAL_OUT_OF_TARGET_RANGE 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not describe this as a target-independent FCSTM model error; the risk is tied to the C/C++ default integer profile.
+**示例 3**\ （``boundary_only``）——针对 ``W_NUMERIC_LITERAL_OUT_OF_TARGET_RANGE`` 的反例边界。
+不要这样处理：针对“面向 C/C++ 系模板渲染的整数字面量超出默认有符号 64 位范围。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-w-numeric-constant-division-by-zero-zh:
 
@@ -4371,11 +4548,14 @@ W_NUMERIC_CONSTANT_DIVISION_BY_ZERO
 .. diagnostics-ref W_NUMERIC_CONSTANT_DIVISION_BY_ZERO operator type=str required=true enum=/|% item_enum=- exact_values=-
 .. diagnostics-ref W_NUMERIC_CONSTANT_DIVISION_BY_ZERO rhs_text type=str required=true enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary W_NUMERIC_CONSTANT_DIVISION_BY_ZERO kind=inspect_json
+
 **注册表事实。** 严重级别 ``warning``；发射层级 ``static_pipeline``；能力层级 ``const_fold``；源码对象 ``expression``。
 
-**含义。** 该诊断的注册表描述为：A ``/`` or ``%`` operation has a right-hand side that the lightweight literal-only constant folder can classify as zero. This is reported as a C/C++ deployment-profile risk because generated C/C++ code needs an explicit definition or failure channel; Python runtime exception semantics are different.
+**含义。** ``/`` 或 ``%`` 运算右侧可由轻量常量折叠判定为零。
 
-**面向 LLM 的修复摘要。** A division or modulo RHS is statically zero under the lightweight literal-only folder. For C/C++ generated code this needs a design fix or explicit failure policy; do not conflate it with Python's exception model.
+**面向 LLM 的修复摘要。** 这是提示设计风险或可疑结构的警告。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。``/`` 或 ``%`` 运算右侧可由轻量常量折叠判定为零。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -4388,40 +4568,40 @@ W_NUMERIC_CONSTANT_DIVISION_BY_ZERO
    * - ``target_family``
      - ``str``
      - 是
-     - 注册表字段：Target family whose default deployment profile owns this risk.（枚举：``c_family``）
+     - 字段含义：拥有该风险的目标模板家族。
    * - ``target_templates``
      - ``list[str]``
      - 是
-     - 注册表字段：Ordered target templates covered by this default C/C++ profile: ``c``, ``c_poll``, ``cpp``, ``cpp_poll``.（元素枚举：``c``, ``c_poll``, ``cpp``, ``cpp_poll``；精确值：``c``, ``c_poll``, ``cpp``, ``cpp_poll``）
+     - 字段含义：该目标档案覆盖的模板列表。
    * - ``runtime_note``
      - ``str``
      - 是
-     - 注册表字段：Human-readable note that this is a C/C++ deployment-profile risk and that Python generated runtimes may not have the same failure contract.
+     - 字段含义：关于目标运行时差异的说明。
    * - ``context``
      - ``str``
      - 是
-     - 注册表字段：Expression location where the operator appears.（枚举：``var_initializer``, ``guard``, ``transition_effect``, ``lifecycle_action``）
+     - 字段含义：表达式出现的位置。
    * - ``statement_kind``
      - ``str``
      - 否
-     - 注册表字段：Statement shape when the expression is an operation assignment RHS.（枚举：``operation_assignment``）
+     - 字段含义：表达式所在语句形状。
    * - ``expr_text``
      - ``str``
      - 是
-     - 注册表字段：Source text of the expression containing the operation.
+     - 字段含义：相关表达式的源码文本。
    * - ``operator``
      - ``str``
      - 是
-     - 注册表字段：Operator whose right-hand side folded to zero.（枚举：``/``, ``%``）
+     - 字段含义：相关运算符。
    * - ``rhs_text``
      - ``str``
      - 是
-     - 注册表字段：Source text of the right-hand side that folded to zero.
+     - 字段含义：折叠后为零的右侧表达式文本。
 
 .. diagnostics-example W_NUMERIC_CONSTANT_DIVISION_BY_ZERO 1 repro_cli
 
-**示例 1**\ （``repro_cli``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``repro_cli``）——复现边界。
+这个诊断可以出现在成功构建模型后的检查报告中。可用 ``pyfcstm inspect -i <file> --format json`` 复现，并读取 ``diagnostics[]`` 数组。
 
 .. code-block:: fcstm
 
@@ -4436,13 +4616,13 @@ W_NUMERIC_CONSTANT_DIVISION_BY_ZERO
 
 .. diagnostics-example W_NUMERIC_CONSTANT_DIVISION_BY_ZERO 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``expression`` 执行 ``fix_denominator``：Replace the zero RHS with a non-zero expression or guard the operation before C/C++ deployment.
+**示例 2**\ （``boundary_only``）——针对 ``W_NUMERIC_CONSTANT_DIVISION_BY_ZERO`` 的修复方向。
+典型修复是对 ``expression`` 执行 ``fix_denominator``：针对“``/`` 或 ``%`` 运算右侧可由轻量常量折叠判定为零。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example W_NUMERIC_CONSTANT_DIVISION_BY_ZERO 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not require the whole expression to be literal-only; only the RHS of ``/`` or ``%`` needs to fold to zero.
+**示例 3**\ （``boundary_only``）——针对 ``W_NUMERIC_CONSTANT_DIVISION_BY_ZERO`` 的反例边界。
+不要这样处理：针对“``/`` 或 ``%`` 运算右侧可由轻量常量折叠判定为零。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-w-numeric-shift-count-out-of-target-range-zh:
 
@@ -4460,11 +4640,14 @@ W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE
 .. diagnostics-ref W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE target_bits type=int required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE shift_count_text type=str required=true enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE kind=inspect_json
+
 **注册表事实。** 严重级别 ``warning``；发射层级 ``static_pipeline``；能力层级 ``const_fold``；源码对象 ``expression``。
 
-**含义。** 该诊断的注册表描述为：A shift count folds to a constant below zero or not less than the default C/C++ target integer width. This is a C/C++ 64-bit deployment-profile portability risk; Python big-integer shifting is not the same target contract.
+**含义。** 移位次数折叠为负数，或不小于默认 C/C++ 目标整数宽度。
 
-**面向 LLM 的修复摘要。** A shift count is statically outside the C/C++ default 64-bit profile. Treat this as a target-profile portability warning, not as a Python generated-runtime error.
+**面向 LLM 的修复摘要。** 这是提示设计风险或可疑结构的警告。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。移位次数折叠为负数，或不小于默认 C/C++ 目标整数宽度。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -4477,44 +4660,44 @@ W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE
    * - ``target_family``
      - ``str``
      - 是
-     - 注册表字段：Target family whose default deployment profile owns this risk.（枚举：``c_family``）
+     - 字段含义：拥有该风险的目标模板家族。
    * - ``target_templates``
      - ``list[str]``
      - 是
-     - 注册表字段：Ordered target templates covered by this default C/C++ profile: ``c``, ``c_poll``, ``cpp``, ``cpp_poll``.（元素枚举：``c``, ``c_poll``, ``cpp``, ``cpp_poll``；精确值：``c``, ``c_poll``, ``cpp``, ``cpp_poll``）
+     - 字段含义：该目标档案覆盖的模板列表。
    * - ``runtime_note``
      - ``str``
      - 是
-     - 注册表字段：Human-readable note that this is a C/C++ deployment-profile risk and that Python generated runtimes may not have the same fixed-width shift risk.
+     - 字段含义：关于目标运行时差异的说明。
    * - ``context``
      - ``str``
      - 是
-     - 注册表字段：Expression location where the shift appears.（枚举：``var_initializer``, ``guard``, ``transition_effect``, ``lifecycle_action``）
+     - 字段含义：表达式出现的位置。
    * - ``statement_kind``
      - ``str``
      - 否
-     - 注册表字段：Statement shape when the expression is an operation assignment RHS.（枚举：``operation_assignment``）
+     - 字段含义：表达式所在语句形状。
    * - ``expr_text``
      - ``str``
      - 是
-     - 注册表字段：Source text of the shift expression.
+     - 字段含义：相关表达式的源码文本。
    * - ``operator``
      - ``str``
      - 是
-     - 注册表字段：Shift operator.（枚举：``<<``, ``>>``）
+     - 字段含义：相关运算符。
    * - ``target_bits``
      - ``int``
      - 是
-     - 注册表字段：Target integer width in bits.
+     - 字段含义：目标整数宽度。
    * - ``shift_count_text``
      - ``str``
      - 是
-     - 注册表字段：Source text of the shift count after lightweight folding.
+     - 字段含义：折叠后的移位次数文本。
 
 .. diagnostics-example W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE 1 repro_cli
 
-**示例 1**\ （``repro_cli``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``repro_cli``）——复现边界。
+这个诊断可以出现在成功构建模型后的检查报告中。可用 ``pyfcstm inspect -i <file> --format json`` 复现，并读取 ``diagnostics[]`` 数组。
 
 .. code-block:: fcstm
 
@@ -4528,13 +4711,13 @@ W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE
 
 .. diagnostics-example W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``expression`` 执行 ``bound_shift_count``：Keep constant shift counts within ``0 <= count < 64`` for the default C/C++ profile.
+**示例 2**\ （``boundary_only``）——针对 ``W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE`` 的修复方向。
+典型修复是对 ``expression`` 执行 ``bound_shift_count``：针对“移位次数折叠为负数，或不小于默认 C/C++ 目标整数宽度。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not report dynamic shift counts as proven unsafe from this catalog-only rule.
+**示例 3**\ （``boundary_only``）——针对 ``W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE`` 的反例边界。
+不要这样处理：针对“移位次数折叠为负数，或不小于默认 C/C++ 目标整数宽度。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-w-numeric-float-bitwise-zh:
 
@@ -4552,11 +4735,14 @@ W_NUMERIC_FLOAT_BITWISE
 .. diagnostics-ref W_NUMERIC_FLOAT_BITWISE operand_types type=list[str] required=true enum=- item_enum=int|float|unknown exact_values=-
 .. diagnostics-ref W_NUMERIC_FLOAT_BITWISE operand_type_sources type=list[str] required=true enum=- item_enum=literal|declared_var|local_expression exact_values=-
 
+
+.. diagnostics-boundary W_NUMERIC_FLOAT_BITWISE kind=inspect_json
+
 **注册表事实。** 严重级别 ``warning``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``expression``。
 
-**含义。** 该诊断的注册表描述为：A value known to be ``float`` participates in a bitwise or shift operator that belongs to the C/C++ integer operation profile. The warning is target-profile-specific even when other runtimes may also reject some float-bitwise shapes for different reasons.
+**含义。** 已知为 ``float`` 的值参与了 C/C++ 整数运算档案里的位运算或移位运算。
 
-**面向 LLM 的修复摘要。** A float-shaped operand reaches a C/C++ integer bitwise operation. Keep the diagnostic target-specific and use the operand type refs to explain why the expression is considered risky.
+**面向 LLM 的修复摘要。** 这是提示设计风险或可疑结构的警告。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。已知为 ``float`` 的值参与了 C/C++ 整数运算档案里的位运算或移位运算。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -4569,44 +4755,44 @@ W_NUMERIC_FLOAT_BITWISE
    * - ``target_family``
      - ``str``
      - 是
-     - 注册表字段：Target family whose default deployment profile owns this risk.（枚举：``c_family``）
+     - 字段含义：拥有该风险的目标模板家族。
    * - ``target_templates``
      - ``list[str]``
      - 是
-     - 注册表字段：Ordered target templates covered by this default C/C++ profile: ``c``, ``c_poll``, ``cpp``, ``cpp_poll``.（元素枚举：``c``, ``c_poll``, ``cpp``, ``cpp_poll``；精确值：``c``, ``c_poll``, ``cpp``, ``cpp_poll``）
+     - 字段含义：该目标档案覆盖的模板列表。
    * - ``runtime_note``
      - ``str``
      - 是
-     - 注册表字段：Human-readable note that this is a C/C++ integer-operation profile risk and that other runtimes may fail for different reasons.
+     - 字段含义：关于目标运行时差异的说明。
    * - ``context``
      - ``str``
      - 是
-     - 注册表字段：Expression location where the bitwise operation appears.（枚举：``var_initializer``, ``guard``, ``transition_effect``, ``lifecycle_action``）
+     - 字段含义：表达式出现的位置。
    * - ``statement_kind``
      - ``str``
      - 否
-     - 注册表字段：Statement shape when the expression is an operation assignment RHS.（枚举：``operation_assignment``）
+     - 字段含义：表达式所在语句形状。
    * - ``expr_text``
      - ``str``
      - 是
-     - 注册表字段：Source text of the bitwise expression.
+     - 字段含义：相关表达式的源码文本。
    * - ``operator``
      - ``str``
      - 是
-     - 注册表字段：Bitwise or shift operator involving a float-shaped operand.（枚举：``&``, ``^``, ``|``, ``<<``, ``>>``）
+     - 字段含义：相关运算符。
    * - ``operand_types``
      - ``list[str]``
      - 是
-     - 注册表字段：Operand type tags in expression order. Allowed members are ``int``, ``float``, and ``unknown``.（元素枚举：``int``, ``float``, ``unknown``）
+     - 字段含义：操作数类型标签列表。
    * - ``operand_type_sources``
      - ``list[str]``
      - 是
-     - 注册表字段：Evidence source for each operand type tag. Allowed members are ``literal``, ``declared_var``, and ``local_expression``.（元素枚举：``literal``, ``declared_var``, ``local_expression``）
+     - 字段含义：操作数类型标签的证据来源。
 
 .. diagnostics-example W_NUMERIC_FLOAT_BITWISE 1 repro_cli
 
-**示例 1**\ （``repro_cli``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``repro_cli``）——复现边界。
+这个诊断可以出现在成功构建模型后的检查报告中。可用 ``pyfcstm inspect -i <file> --format json`` 复现，并读取 ``diagnostics[]`` 数组。
 
 .. code-block:: fcstm
 
@@ -4621,13 +4807,13 @@ W_NUMERIC_FLOAT_BITWISE
 
 .. diagnostics-example W_NUMERIC_FLOAT_BITWISE 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``expression`` 执行 ``use_integer_operand``：Replace the float operand with an integer flag/mask value when deploying to C/C++ templates.
+**示例 2**\ （``boundary_only``）——针对 ``W_NUMERIC_FLOAT_BITWISE`` 的修复方向。
+典型修复是对 ``expression`` 执行 ``use_integer_operand``：针对“已知为 ``float`` 的值参与了 C/C++ 整数运算档案里的位运算或移位运算。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example W_NUMERIC_FLOAT_BITWISE 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not describe this only as a generic Python TypeError; the shared contract is about the C/C++ integer-operation profile.
+**示例 3**\ （``boundary_only``）——针对 ``W_NUMERIC_FLOAT_BITWISE`` 的反例边界。
+不要这样处理：针对“已知为 ``float`` 的值参与了 C/C++ 整数运算档案里的位运算或移位运算。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 拓扑和设计健康诊断
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -4640,11 +4826,14 @@ W_UNREACHABLE_STATE
 .. diagnostics-meta W_UNREACHABLE_STATE severity=warning emit_tier=static_pipeline capability=pure_static span_object=state_identifier
 .. diagnostics-ref W_UNREACHABLE_STATE state_path type=str required=true enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary W_UNREACHABLE_STATE kind=inspect_json
+
 **注册表事实。** 严重级别 ``warning``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``state_identifier``。
 
-**含义。** 该诊断的注册表描述为：A state is not reachable from the model's root entry path via any sequence of normal or forced transitions.
+**含义。** 从根入口路径出发，无法通过普通或强制转换到达某个状态。
 
-**面向 LLM 的修复摘要。** This state cannot be entered at runtime; the surrounding transitions never lead to it. It is dead from the machine's perspective.
+**面向 LLM 的修复摘要。** 这是提示设计风险或可疑结构的警告。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。从根入口路径出发，无法通过普通或强制转换到达某个状态。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -4657,12 +4846,12 @@ W_UNREACHABLE_STATE
    * - ``state_path``
      - ``str``
      - 是
-     - 注册表字段：Dotted path of the unreachable state.
+     - 字段含义：相关状态的点分路径。
 
 .. diagnostics-example W_UNREACHABLE_STATE 1 repro_cli
 
-**示例 1**\ （``repro_cli``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``repro_cli``）——复现边界。
+这个诊断可以出现在成功构建模型后的检查报告中。可用 ``pyfcstm inspect -i <file> --format json`` 复现，并读取 ``diagnostics[]`` 数组。
 
 .. code-block:: fcstm
 
@@ -4674,13 +4863,13 @@ W_UNREACHABLE_STATE
 
 .. diagnostics-example W_UNREACHABLE_STATE 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``state`` 执行 ``add_inbound_transition``：Add a transition that reaches the state if it was meant to be used.
+**示例 2**\ （``boundary_only``）——针对 ``W_UNREACHABLE_STATE`` 的修复方向。
+典型修复是对 ``state`` 执行 ``add_inbound_transition``：针对“从根入口路径出发，无法通过普通或强制转换到达某个状态。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example W_UNREACHABLE_STATE 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not add a self-loop to mask the unreachability.
+**示例 3**\ （``boundary_only``）——针对 ``W_UNREACHABLE_STATE`` 的反例边界。
+不要这样处理：针对“从根入口路径出发，无法通过普通或强制转换到达某个状态。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-w-deadlock-leaf-zh:
 
@@ -4693,11 +4882,14 @@ W_DEADLOCK_LEAF
 .. diagnostics-ref W_DEADLOCK_LEAF reason type=str required=true enum=no_outgoing_transition item_enum=- exact_values=-
 .. diagnostics-ref W_DEADLOCK_LEAF suggested_fix type=dict required=false enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary W_DEADLOCK_LEAF kind=inspect_json
+
 **注册表事实。** 严重级别 ``warning``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``state_identifier``。
 
-**含义。** 该诊断的注册表描述为：A non-pseudo leaf state has no outgoing transition.
+**含义。** 非伪叶状态没有任何出边转换，进入后无法离开。
 
-**面向 LLM 的修复摘要。** This leaf state has no outgoing transition, so once the machine enters it there is no modeled way to leave.
+**面向 LLM 的修复摘要。** 这是提示设计风险或可疑结构的警告。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。非伪叶状态没有任何出边转换，进入后无法离开。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -4710,24 +4902,24 @@ W_DEADLOCK_LEAF
    * - ``state_path``
      - ``str``
      - 是
-     - 注册表字段：Dotted path of the deadlocking leaf state.
+     - 字段含义：相关状态的点分路径。
    * - ``parent_path``
      - ``str``
      - 否
-     - 注册表字段：Dotted path of the leaf state's parent. Present only when an exit-transition quick-fix can be inserted inside a parent state.
+     - 字段含义：父状态的点分路径。
    * - ``reason``
      - ``str``
      - 是
-     - 注册表字段：Why the leaf is considered a deadlock.（枚举：``no_outgoing_transition``）
+     - 字段含义：原因分类标签。
    * - ``suggested_fix``
      - ``dict``
      - 否
-     - 注册表字段：Structured quick-fix payload for adding a parent exit transition.
+     - 字段含义：可选的结构化快速修复载荷。
 
 .. diagnostics-example W_DEADLOCK_LEAF 1 repro_cli
 
-**示例 1**\ （``repro_cli``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``repro_cli``）——复现边界。
+这个诊断可以出现在成功构建模型后的检查报告中。可用 ``pyfcstm inspect -i <file> --format json`` 复现，并读取 ``diagnostics[]`` 数组。
 
 .. code-block:: fcstm
 
@@ -4738,13 +4930,13 @@ W_DEADLOCK_LEAF
 
 .. diagnostics-example W_DEADLOCK_LEAF 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``state`` 执行 ``add_transition``：Add a modeled transition to the next intended state.
+**示例 2**\ （``boundary_only``）——针对 ``W_DEADLOCK_LEAF`` 的修复方向。
+典型修复是对 ``state`` 执行 ``add_transition``：针对“非伪叶状态没有任何出边转换，进入后无法离开。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example W_DEADLOCK_LEAF 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not add a self-loop just to silence the warning.
+**示例 3**\ （``boundary_only``）——针对 ``W_DEADLOCK_LEAF`` 的反例边界。
+不要这样处理：针对“非伪叶状态没有任何出边转换，进入后无法离开。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-w-high-var-to-leaf-ratio-zh:
 
@@ -4757,11 +4949,14 @@ W_HIGH_VAR_TO_LEAF_RATIO
 .. diagnostics-ref W_HIGH_VAR_TO_LEAF_RATIO actual type=number required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_HIGH_VAR_TO_LEAF_RATIO threshold type=number required=true enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary W_HIGH_VAR_TO_LEAF_RATIO kind=inspect_json
+
 **注册表事实。** 严重级别 ``warning``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``composite_block``。
 
-**含义。** 该诊断的注册表描述为：The number of variables is high relative to the number of non-pseudo leaf states.
+**含义。** 变量数量相对于非伪叶状态数量偏高，常见于标志位膨胀或职责分配不清。
 
-**面向 LLM 的修复摘要。** The model has many variables for its number of leaf states, which often indicates flag bloat or speculative state that does not belong in the DSL.
+**面向 LLM 的修复摘要。** 这是提示设计风险或可疑结构的警告。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。变量数量相对于非伪叶状态数量偏高，常见于标志位膨胀或职责分配不清。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -4774,24 +4969,24 @@ W_HIGH_VAR_TO_LEAF_RATIO
    * - ``n_vars``
      - ``int``
      - 是
-     - 注册表字段：Number of top-level variable definitions.
+     - 字段含义：文件顶层变量定义数量。
    * - ``n_leaf_states``
      - ``int``
      - 是
-     - 注册表字段：Number of non-pseudo leaf states.
+     - 字段含义：非伪叶状态数量。
    * - ``actual``
      - ``number``
      - 是
-     - 注册表字段：Actual ``n_vars / max(n_leaf_states, 1)`` ratio.
+     - 字段含义：实际观测到的类别、数量或度量值。
    * - ``threshold``
      - ``number``
      - 是
-     - 注册表字段：Effective threshold used for this inspection call.
+     - 字段含义：本次检查使用的阈值。
 
 .. diagnostics-example W_HIGH_VAR_TO_LEAF_RATIO 1 repro_cli
 
-**示例 1**\ （``repro_cli``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``repro_cli``）——复现边界。
+这个诊断可以出现在成功构建模型后的检查报告中。可用 ``pyfcstm inspect -i <file> --format json`` 复现，并读取 ``diagnostics[]`` 数组。
 
 .. code-block:: fcstm
 
@@ -4802,13 +4997,13 @@ W_HIGH_VAR_TO_LEAF_RATIO
 
 .. diagnostics-example W_HIGH_VAR_TO_LEAF_RATIO 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``variable_definitions`` 执行 ``audit_variables``：Remove or consolidate variables that do not represent durable machine state.
+**示例 2**\ （``boundary_only``）——针对 ``W_HIGH_VAR_TO_LEAF_RATIO`` 的修复方向。
+典型修复是对 ``variable_definitions`` 执行 ``audit_variables``：针对“变量数量相对于非伪叶状态数量偏高，常见于标志位膨胀或职责分配不清。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example W_HIGH_VAR_TO_LEAF_RATIO 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not raise the threshold without checking whether the variables influence behavior.
+**示例 3**\ （``boundary_only``）——针对 ``W_HIGH_VAR_TO_LEAF_RATIO`` 的反例边界。
+不要这样处理：针对“变量数量相对于非伪叶状态数量偏高，常见于标志位膨胀或职责分配不清。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-w-deep-hierarchy-zh:
 
@@ -4821,11 +5016,14 @@ W_DEEP_HIERARCHY
 .. diagnostics-ref W_DEEP_HIERARCHY actual type=int required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_DEEP_HIERARCHY threshold type=int required=true enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary W_DEEP_HIERARCHY kind=inspect_json
+
 **注册表事实。** 严重级别 ``warning``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``state_identifier``。
 
-**含义。** 该诊断的注册表描述为：The state hierarchy exceeds the configured maximum depth.
+**含义。** 状态层级深度超过配置阈值。
 
-**面向 LLM 的修复摘要。** The hierarchy is deeper than the configured readability threshold, making lifecycle order and transition scope harder to reason about.
+**面向 LLM 的修复摘要。** 这是提示设计风险或可疑结构的警告。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。状态层级深度超过配置阈值。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -4838,24 +5036,24 @@ W_DEEP_HIERARCHY
    * - ``max_depth``
      - ``int``
      - 是
-     - 注册表字段：Maximum hierarchy depth found in the model.
+     - 字段含义：观察到或配置的最大层级深度。
    * - ``deepest_path``
      - ``str``
      - 是
-     - 注册表字段：One deepest state path that triggered the warning.
+     - 字段含义：触发深度诊断的一个最深状态路径。
    * - ``actual``
      - ``int``
      - 是
-     - 注册表字段：Actual maximum hierarchy depth.
+     - 字段含义：实际观测到的类别、数量或度量值。
    * - ``threshold``
      - ``int``
      - 是
-     - 注册表字段：Effective threshold used for this inspection call.
+     - 字段含义：本次检查使用的阈值。
 
 .. diagnostics-example W_DEEP_HIERARCHY 1 repro_cli
 
-**示例 1**\ （``repro_cli``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``repro_cli``）——复现边界。
+这个诊断可以出现在成功构建模型后的检查报告中。可用 ``pyfcstm inspect -i <file> --format json`` 复现，并读取 ``diagnostics[]`` 数组。
 
 .. code-block:: fcstm
 
@@ -4863,13 +5061,13 @@ W_DEEP_HIERARCHY
 
 .. diagnostics-example W_DEEP_HIERARCHY 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``state_tree`` 执行 ``flatten_hierarchy``：Collapse levels that do not add lifecycle or transition semantics.
+**示例 2**\ （``boundary_only``）——针对 ``W_DEEP_HIERARCHY`` 的修复方向。
+典型修复是对 ``state_tree`` 执行 ``flatten_hierarchy``：针对“状态层级深度超过配置阈值。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example W_DEEP_HIERARCHY 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not flatten a level that carries required enter, exit, during, or aspect semantics.
+**示例 3**\ （``boundary_only``）——针对 ``W_DEEP_HIERARCHY`` 的反例边界。
+不要这样处理：针对“状态层级深度超过配置阈值。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-w-large-composite-zh:
 
@@ -4882,11 +5080,14 @@ W_LARGE_COMPOSITE
 .. diagnostics-ref W_LARGE_COMPOSITE actual type=int required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_LARGE_COMPOSITE threshold type=int required=true enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary W_LARGE_COMPOSITE kind=inspect_json
+
 **注册表事实。** 严重级别 ``warning``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``composite_block``。
 
-**含义。** 该诊断的注册表描述为：A composite state has more direct children than the configured threshold.
+**含义。** 组合状态的直接子状态数量超过配置阈值。
 
-**面向 LLM 的修复摘要。** A single composite state owns many direct children, which can make transition review and initial-state reasoning difficult.
+**面向 LLM 的修复摘要。** 这是提示设计风险或可疑结构的警告。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。组合状态的直接子状态数量超过配置阈值。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -4899,24 +5100,24 @@ W_LARGE_COMPOSITE
    * - ``composite_path``
      - ``str``
      - 是
-     - 注册表字段：Dotted path of the large composite state.
+     - 字段含义：相关组合状态的点分路径。
    * - ``n_children``
      - ``int``
      - 是
-     - 注册表字段：Number of direct child states.
+     - 字段含义：直接子状态数量。
    * - ``actual``
      - ``int``
      - 是
-     - 注册表字段：Actual direct child count.
+     - 字段含义：实际观测到的类别、数量或度量值。
    * - ``threshold``
      - ``int``
      - 是
-     - 注册表字段：Effective threshold used for this inspection call.
+     - 字段含义：本次检查使用的阈值。
 
 .. diagnostics-example W_LARGE_COMPOSITE 1 repro_cli
 
-**示例 1**\ （``repro_cli``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``repro_cli``）——复现边界。
+这个诊断可以出现在成功构建模型后的检查报告中。可用 ``pyfcstm inspect -i <file> --format json`` 复现，并读取 ``diagnostics[]`` 数组。
 
 .. code-block:: fcstm
 
@@ -4924,13 +5125,13 @@ W_LARGE_COMPOSITE
 
 .. diagnostics-example W_LARGE_COMPOSITE 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``composite_state`` 执行 ``group_children``：Introduce meaningful nested composites to group related child states.
+**示例 2**\ （``boundary_only``）——针对 ``W_LARGE_COMPOSITE`` 的修复方向。
+典型修复是对 ``composite_state`` 执行 ``group_children``：针对“组合状态的直接子状态数量超过配置阈值。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example W_LARGE_COMPOSITE 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not add arbitrary grouping states that have no semantic meaning.
+**示例 3**\ （``boundary_only``）——针对 ``W_LARGE_COMPOSITE`` 的反例边界。
+不要这样处理：针对“组合状态的直接子状态数量超过配置阈值。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-i-nontrivial-scc-zh:
 
@@ -4943,11 +5144,14 @@ I_NONTRIVIAL_SCC
 .. diagnostics-ref I_NONTRIVIAL_SCC representative_state_path type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref I_NONTRIVIAL_SCC scc type=list[str] required=true enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary I_NONTRIVIAL_SCC kind=verify_smt_linear
+
 **注册表事实。** 严重级别 ``info``；发射层级 ``verify_pipeline``；能力层级 ``pure_static``；源码对象 ``state_identifier``。
 
-**含义。** 该诊断的注册表描述为：A non-trivial strongly connected component exists in the guard-agnostic leaf-level topology graph.
+**含义。** 守卫无关的叶级拓扑图中存在非平凡强连通分量。
 
-**面向 LLM 的修复摘要。** The topology contains a cycle. This is often intentional in state machines, so treat it as a review prompt rather than a direct defect.
+**面向 LLM 的修复摘要。** 这是非阻塞的信息性观察。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。守卫无关的叶级拓扑图中存在非平凡强连通分量。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -4960,24 +5164,24 @@ I_NONTRIVIAL_SCC
    * - ``algorithm_name``
      - ``str``
      - 是
-     - 注册表字段：Verify registry algorithm that produced the raw finding.
+     - 字段含义：产生原始发现的验证算法名称。
    * - ``verification_scope``
      - ``str``
      - 是
-     - 注册表字段：Verify scope for this finding.（枚举：``topological_only``）
+     - 字段含义：验证发现所属的作用域。
    * - ``representative_state_path``
      - ``str``
      - 是
-     - 注册表字段：One state path from the reported strongly connected component.
+     - 字段含义：报告对象中的一个代表状态路径。
    * - ``scc``
      - ``list[str]``
      - 是
-     - 注册表字段：State paths in the non-trivial strongly connected component.
+     - 字段含义：强连通分量或陷阱循环路径列表。
 
 .. diagnostics-example I_NONTRIVIAL_SCC 1 verify_opt_in
 
-**示例 1**\ （``verify_opt_in``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``verify_opt_in``）——复现边界。
+这个诊断需要显式开启验证集成。复现时应使用 ``pyfcstm inspect -i <file> --enable-verify --max-complexity-tier smt_linear --format json``；默认结构验证预算不会运行发射它的求解器局部算法。
 
 .. code-block:: fcstm
 
@@ -4991,13 +5195,13 @@ I_NONTRIVIAL_SCC
 
 .. diagnostics-example I_NONTRIVIAL_SCC 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``topology`` 执行 ``review_cycle``：Confirm the cycle has a deliberate runtime exit or event-driven purpose.
+**示例 2**\ （``boundary_only``）——针对 ``I_NONTRIVIAL_SCC`` 的修复方向。
+典型修复是对 ``topology`` 执行 ``review_cycle``：针对“守卫无关的叶级拓扑图中存在非平凡强连通分量。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example I_NONTRIVIAL_SCC 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not delete cyclic transitions automatically; cyclic control flow can be valid FCSTM behavior.
+**示例 3**\ （``boundary_only``）——针对 ``I_NONTRIVIAL_SCC`` 的反例边界。
+不要这样处理：针对“守卫无关的叶级拓扑图中存在非平凡强连通分量。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-w-topological-noexit-zh:
 
@@ -5011,11 +5215,14 @@ W_TOPOLOGICAL_NOEXIT
 .. diagnostics-ref W_TOPOLOGICAL_NOEXIT counterexample_kind type=str required=true enum=trap_cycle|deadlock item_enum=- exact_values=-
 .. diagnostics-ref W_TOPOLOGICAL_NOEXIT scc type=list[str] required=true enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary W_TOPOLOGICAL_NOEXIT kind=verify_smt_linear
+
 **注册表事实。** 严重级别 ``warning``；发射层级 ``verify_pipeline``；能力层级 ``pure_static``；源码对象 ``state_identifier``。
 
-**含义。** 该诊断的注册表描述为：A root-reachable leaf or cycle has no guard-agnostic route to the root exit sink.
+**含义。** 根可达的叶状态或循环没有守卫无关路径通向根退出汇点。
 
-**面向 LLM 的修复摘要。** From the current topology, execution can enter a region that has no structural path to terminate at the root exit.
+**面向 LLM 的修复摘要。** 这是提示设计风险或可疑结构的警告。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。根可达的叶状态或循环没有守卫无关路径通向根退出汇点。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -5028,28 +5235,28 @@ W_TOPOLOGICAL_NOEXIT
    * - ``algorithm_name``
      - ``str``
      - 是
-     - 注册表字段：Verify registry algorithm that produced the raw finding.
+     - 字段含义：产生原始发现的验证算法名称。
    * - ``verification_scope``
      - ``str``
      - 是
-     - 注册表字段：Verify scope for this finding.（枚举：``topological_only``）
+     - 字段含义：验证发现所属的作用域。
    * - ``representative_state_path``
      - ``str``
      - 是
-     - 注册表字段：One state path from the no-exit counterexample.
+     - 字段含义：报告对象中的一个代表状态路径。
    * - ``counterexample_kind``
      - ``str``
      - 是
-     - 注册表字段：Shape of the topological counterexample.（枚举：``trap_cycle``, ``deadlock``）
+     - 字段含义：拓扑反例形状。
    * - ``scc``
      - ``list[str]``
      - 是
-     - 注册表字段：Trap-cycle component paths, or an empty list for a deadlock leaf.
+     - 字段含义：强连通分量或陷阱循环路径列表。
 
 .. diagnostics-example W_TOPOLOGICAL_NOEXIT 1 verify_opt_in
 
-**示例 1**\ （``verify_opt_in``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``verify_opt_in``）——复现边界。
+这个诊断需要显式开启验证集成。复现时应使用 ``pyfcstm inspect -i <file> --enable-verify --max-complexity-tier smt_linear --format json``；默认结构验证预算不会运行发射它的求解器局部算法。
 
 .. code-block:: fcstm
 
@@ -5062,13 +5269,13 @@ W_TOPOLOGICAL_NOEXIT
 
 .. diagnostics-example W_TOPOLOGICAL_NOEXIT 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``topology`` 执行 ``add_exit_transition``：Add a route from the stuck state or cycle to an exit-capable path.
+**示例 2**\ （``boundary_only``）——针对 ``W_TOPOLOGICAL_NOEXIT`` 的修复方向。
+典型修复是对 ``topology`` 执行 ``add_exit_transition``：针对“根可达的叶状态或循环没有守卫无关路径通向根退出汇点。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example W_TOPOLOGICAL_NOEXIT 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not add an unconditional exit without checking lifecycle and event semantics.
+**示例 3**\ （``boundary_only``）——针对 ``W_TOPOLOGICAL_NOEXIT`` 的反例边界。
+不要这样处理：针对“根可达的叶状态或循环没有守卫无关路径通向根退出汇点。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-i-topological-non-terminating-zh:
 
@@ -5081,11 +5288,14 @@ I_TOPOLOGICAL_NON_TERMINATING
 .. diagnostics-ref I_TOPOLOGICAL_NON_TERMINATING representative_state_path type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref I_TOPOLOGICAL_NON_TERMINATING counterexample_path type=list[str] required=true enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary I_TOPOLOGICAL_NON_TERMINATING kind=verify_smt_linear
+
 **注册表事实。** 严重级别 ``info``；发射层级 ``verify_pipeline``；能力层级 ``pure_static``；源码对象 ``state_identifier``。
 
-**含义。** 该诊断的注册表描述为：The topology does not force all root-reachable executions to eventually reach the root terminator.
+**含义。** 拓扑结构不能保证所有根可达执行最终到达根终止点。
 
-**面向 LLM 的修复摘要。** The structural graph allows a path that can avoid termination forever. This may be a valid service loop, but it should be reviewed explicitly.
+**面向 LLM 的修复摘要。** 这是非阻塞的信息性观察。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。拓扑结构不能保证所有根可达执行最终到达根终止点。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -5098,24 +5308,24 @@ I_TOPOLOGICAL_NON_TERMINATING
    * - ``algorithm_name``
      - ``str``
      - 是
-     - 注册表字段：Verify registry algorithm that produced the raw finding.
+     - 字段含义：产生原始发现的验证算法名称。
    * - ``verification_scope``
      - ``str``
      - 是
-     - 注册表字段：Verify scope for this finding.（枚举：``topological_only``）
+     - 字段含义：验证发现所属的作用域。
    * - ``representative_state_path``
      - ``str``
      - 是
-     - 注册表字段：One state path from the non-terminating counterexample.
+     - 字段含义：报告对象中的一个代表状态路径。
    * - ``counterexample_path``
      - ``list[str]``
      - 是
-     - 注册表字段：Representative cycle or deadlock path reported by topology verify.
+     - 字段含义：拓扑验证报告的代表性循环或死锁路径。
 
 .. diagnostics-example I_TOPOLOGICAL_NON_TERMINATING 1 verify_opt_in
 
-**示例 1**\ （``verify_opt_in``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``verify_opt_in``）——复现边界。
+这个诊断需要显式开启验证集成。复现时应使用 ``pyfcstm inspect -i <file> --enable-verify --max-complexity-tier smt_linear --format json``；默认结构验证预算不会运行发射它的求解器局部算法。
 
 .. code-block:: fcstm
 
@@ -5128,13 +5338,13 @@ I_TOPOLOGICAL_NON_TERMINATING
 
 .. diagnostics-example I_TOPOLOGICAL_NON_TERMINATING 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``topology`` 执行 ``review_nontermination``：Decide whether the non-terminating path is intended.
+**示例 2**\ （``boundary_only``）——针对 ``I_TOPOLOGICAL_NON_TERMINATING`` 的修复方向。
+典型修复是对 ``topology`` 执行 ``review_nontermination``：针对“拓扑结构不能保证所有根可达执行最终到达根终止点。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example I_TOPOLOGICAL_NON_TERMINATING 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not treat every loop as a bug; long-running control loops are common state-machine behavior.
+**示例 3**\ （``boundary_only``）——针对 ``I_TOPOLOGICAL_NON_TERMINATING`` 的反例边界。
+不要这样处理：针对“拓扑结构不能保证所有根可达执行最终到达根终止点。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 兼容边界和其他诊断
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -5150,11 +5360,14 @@ W_INITIAL_UNCONDITIONAL_MISSING
 .. diagnostics-ref W_INITIAL_UNCONDITIONAL_MISSING first_child_name type=str required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_INITIAL_UNCONDITIONAL_MISSING suggested_fix type=dict required=false enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary W_INITIAL_UNCONDITIONAL_MISSING kind=inspect_json
+
 **注册表事实。** 严重级别 ``warning``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``composite_block``。
 
-**含义。** 该诊断的注册表描述为：A composite state has no unconditional ``[*] -> child`` entry transition. Guarded or event-triggered entry transitions do not provide a guaranteed initial child.
+**含义。** 组合状态没有无条件 ``[*] -> child`` 入口转换；带守卫或事件的入口转换不能保证初始子状态。
 
-**面向 LLM 的修复摘要。** The composite state can fail to choose an initial child because no unconditional entry transition is declared.
+**面向 LLM 的修复摘要。** 这是提示设计风险或可疑结构的警告。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。组合状态没有无条件 ``[*] -> child`` 入口转换；带守卫或事件的入口转换不能保证初始子状态。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -5167,24 +5380,24 @@ W_INITIAL_UNCONDITIONAL_MISSING
    * - ``composite_path``
      - ``str``
      - 是
-     - 注册表字段：Dotted path of the composite state.
+     - 字段含义：相关组合状态的点分路径。
    * - ``existing_conditional_count``
      - ``int``
      - 是
-     - 注册表字段：Number of existing initial transitions that are not unconditional.
+     - 字段含义：已有条件入口转换数量。
    * - ``first_child_name``
      - ``str``
      - 否
-     - 注册表字段：First declared non-pseudo child state name used as the fallback insertion target.
+     - 字段含义：用于插入默认入口转换的第一个非伪子状态名。
    * - ``suggested_fix``
      - ``dict``
      - 否
-     - 注册表字段：Structured quick-fix payload for inserting an unconditional entry transition.
+     - 字段含义：可选的结构化快速修复载荷。
 
 .. diagnostics-example W_INITIAL_UNCONDITIONAL_MISSING 1 repro_cli
 
-**示例 1**\ （``repro_cli``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``repro_cli``）——复现边界。
+这个诊断可以出现在成功构建模型后的检查报告中。可用 ``pyfcstm inspect -i <file> --format json`` 复现，并读取 ``diagnostics[]`` 数组。
 
 .. code-block:: fcstm
 
@@ -5196,13 +5409,13 @@ W_INITIAL_UNCONDITIONAL_MISSING
 
 .. diagnostics-example W_INITIAL_UNCONDITIONAL_MISSING 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``composite_state`` 执行 ``add_unconditional_initial``：Add a fallback ``[*] -> Child;`` entry transition.
+**示例 2**\ （``boundary_only``）——针对 ``W_INITIAL_UNCONDITIONAL_MISSING`` 的修复方向。
+典型修复是对 ``composite_state`` 执行 ``add_unconditional_initial``：针对“组合状态没有无条件 ``[*] -> child`` 入口转换；带守卫或事件的入口转换不能保证初始子状态。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example W_INITIAL_UNCONDITIONAL_MISSING 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not assume a guarded initial transition always fires without proving the guard.
+**示例 3**\ （``boundary_only``）——针对 ``W_INITIAL_UNCONDITIONAL_MISSING`` 的反例边界。
+不要这样处理：针对“组合状态没有无条件 ``[*] -> child`` 入口转换；带守卫或事件的入口转换不能保证初始子状态。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-w-dead-named-action-zh:
 
@@ -5213,11 +5426,14 @@ W_DEAD_NAMED_ACTION
 .. diagnostics-ref W_DEAD_NAMED_ACTION function_name type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_DEAD_NAMED_ACTION defined_in type=str required=true enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary W_DEAD_NAMED_ACTION kind=inspect_json
+
 **注册表事实。** 严重级别 ``warning``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``named_action_declaration``。
 
-**含义。** 该诊断的注册表描述为：A named action belongs to an unreachable state and is not referenced by any reachable action ref.
+**含义。** 命名动作位于不可达状态内，并且没有被任何可达动作引用。
 
-**面向 LLM 的修复摘要。** This named action cannot run through the reachable state graph and is not referenced from elsewhere.
+**面向 LLM 的修复摘要。** 这是提示设计风险或可疑结构的警告。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。命名动作位于不可达状态内，并且没有被任何可达动作引用。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -5230,16 +5446,16 @@ W_DEAD_NAMED_ACTION
    * - ``function_name``
      - ``str``
      - 是
-     - 注册表字段：Named action identifier.
+     - 字段含义：相关命名动作名称。
    * - ``defined_in``
      - ``str``
      - 是
-     - 注册表字段：Dotted path of the state where the action is defined.
+     - 字段含义：动作定义所在状态路径。
 
 .. diagnostics-example W_DEAD_NAMED_ACTION 1 repro_cli
 
-**示例 1**\ （``repro_cli``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``repro_cli``）——复现边界。
+这个诊断可以出现在成功构建模型后的检查报告中。可用 ``pyfcstm inspect -i <file> --format json`` 复现，并读取 ``diagnostics[]`` 数组。
 
 .. code-block:: fcstm
 
@@ -5251,13 +5467,13 @@ W_DEAD_NAMED_ACTION
 
 .. diagnostics-example W_DEAD_NAMED_ACTION 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``state`` 执行 ``connect_state``：Add a transition path to the owning state if the action matters.
+**示例 2**\ （``boundary_only``）——针对 ``W_DEAD_NAMED_ACTION`` 的修复方向。
+典型修复是对 ``state`` 执行 ``connect_state``：针对“命名动作位于不可达状态内，并且没有被任何可达动作引用。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example W_DEAD_NAMED_ACTION 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not add an unrelated ref just to silence the warning.
+**示例 3**\ （``boundary_only``）——针对 ``W_DEAD_NAMED_ACTION`` 的反例边界。
+不要这样处理：针对“命名动作位于不可达状态内，并且没有被任何可达动作引用。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-w-named-action-shadows-ancestor-zh:
 
@@ -5269,11 +5485,14 @@ W_NAMED_ACTION_SHADOWS_ANCESTOR
 .. diagnostics-ref W_NAMED_ACTION_SHADOWS_ANCESTOR inner_state_path type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_NAMED_ACTION_SHADOWS_ANCESTOR outer_state_path type=str required=true enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary W_NAMED_ACTION_SHADOWS_ANCESTOR kind=inspect_json
+
 **注册表事实。** 严重级别 ``warning``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``named_action_declaration``。
 
-**含义。** 该诊断的注册表描述为：A named lifecycle action reuses the same function name as an ancestor-scoped named action.
+**含义。** 命名生命周期动作复用了祖先作用域里的命名动作名称。
 
-**面向 LLM 的修复摘要。** A nested state defines a named action with the same name as an ancestor action. Relative action refs can become hard to audit because the same leaf name means different functions at different hierarchy levels.
+**面向 LLM 的修复摘要。** 这是提示设计风险或可疑结构的警告。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。命名生命周期动作复用了祖先作用域里的命名动作名称。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -5286,20 +5505,20 @@ W_NAMED_ACTION_SHADOWS_ANCESTOR
    * - ``function_name``
      - ``str``
      - 是
-     - 注册表字段：Reused named action identifier.
+     - 字段含义：相关命名动作名称。
    * - ``inner_state_path``
      - ``str``
      - 是
-     - 注册表字段：Dotted path of the state containing the shadowing action.
+     - 字段含义：包含遮蔽动作的内部状态路径。
    * - ``outer_state_path``
      - ``str``
      - 是
-     - 注册表字段：Dotted path of the ancestor state containing the shadowed action.
+     - 字段含义：包含被遮蔽动作的祖先状态路径。
 
 .. diagnostics-example W_NAMED_ACTION_SHADOWS_ANCESTOR 1 repro_cli
 
-**示例 1**\ （``repro_cli``）——触发形状。
-使用这个注册表触发片段理解该诊断的最小源码形状。若发射层级不是 ``static_pipeline``，应按示例类型标注的路径复现，不要当作默认命令行输出。
+**示例 1**\ （``repro_cli``）——复现边界。
+这个诊断可以出现在成功构建模型后的检查报告中。可用 ``pyfcstm inspect -i <file> --format json`` 复现，并读取 ``diagnostics[]`` 数组。
 
 .. code-block:: fcstm
 
@@ -5311,10 +5530,10 @@ W_NAMED_ACTION_SHADOWS_ANCESTOR
 
 .. diagnostics-example W_NAMED_ACTION_SHADOWS_ANCESTOR 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——修复方向。
-典型修复是对 ``named_action`` 执行 ``rename_inner_action``：Give the nested action a distinct name when it implements different behavior.
+**示例 2**\ （``boundary_only``）——针对 ``W_NAMED_ACTION_SHADOWS_ANCESTOR`` 的修复方向。
+典型修复是对 ``named_action`` 执行 ``rename_inner_action``：针对“命名生命周期动作复用了祖先作用域里的命名动作名称。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example W_NAMED_ACTION_SHADOWS_ANCESTOR 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——反例边界。
-不要这样处理：Do not leave the shadowing name in place unless the scope distinction is intentional and documented outside the DSL.
+**示例 3**\ （``boundary_only``）——针对 ``W_NAMED_ACTION_SHADOWS_ANCESTOR`` 的反例边界。
+不要这样处理：针对“命名生命周期动作复用了祖先作用域里的命名动作名称。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。

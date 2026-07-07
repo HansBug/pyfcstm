@@ -73,12 +73,19 @@ Remember the invalid-input boundary
 -----------------------------------
 
 Inspect reports are produced after the file can be read, parsed, and converted
-to a model. A syntax error is a CLI failure, not a successful report with a
-``diagnostics`` array. Try the invalid fixture to see the boundary:
+to a model. Missing files, syntax errors, and hard model-construction errors
+such as duplicate state names are CLI failures, not successful reports with a
+``diagnostics`` array. Some registry ``E_*`` codes therefore document a
+controlled validation error shape rather than an inspect JSON entry. Try a
+missing file to see that boundary:
 
 .. code-block:: bash
 
    pyfcstm inspect -i docs/source/tutorials/inspect/does-not-exist.fcstm
+
+When a diagnostic-code reference page marks an example as ``cli_error``, expect
+the same non-zero command boundary and assert stderr/exit status instead of
+``diagnostics[]``.
 
 Next steps
 ----------

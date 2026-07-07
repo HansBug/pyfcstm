@@ -72,7 +72,12 @@ source also carries hidden ``diagnostics-example`` markers so
    * - Kind
      - Meaning
    * - ``repro_cli``
-     - Intended to be reproducible through current CLI/model-building paths.
+     - Intended to be reproducible as a successful inspect report; use
+       ``pyfcstm inspect -i <file> --format json`` and read ``diagnostics[]``.
+   * - ``cli_error``
+     - Intended to be reproducible as a controlled CLI/model-validation error.
+       Current inspect formats exit non-zero before producing a successful JSON
+       report, so assert stderr and exit status rather than ``diagnostics[]``.
    * - ``repro_api``
      - Intended to be reproducible through an explicit Python API call.
    * - ``verify_opt_in``
@@ -93,8 +98,8 @@ registry:
    python tools/check_diagnostics_reference_docs.py --check
 
 The check verifies code-set, severity, emit tier, capability, span object,
-``refs`` schema, bilingual coverage, and per-code example-marker counts. It does
-not prove that examples are semantically distinct; reviewer sampling remains part
-of the PR acceptance gate.
+``refs`` schema, bilingual coverage, per-code reproduction-boundary markers, and
+per-code example-marker counts. It does not prove that examples are semantically
+distinct; reviewer sampling remains part of the PR acceptance gate.
 
 .. include:: _code_catalog_en.rst.inc

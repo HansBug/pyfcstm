@@ -393,6 +393,9 @@ E_UNDEFINED_VAR
 .. diagnostics-ref E_UNDEFINED_VAR expr_text type=str_or_null required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_UNDEFINED_VAR is_temporary type=bool required=false enum=- item_enum=- exact_values=-
 
+
+.. diagnostics-boundary E_UNDEFINED_VAR kind=cli_error
+
 **Registry facts.** Severity ``error``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``expression``.
 
 **Meaning.** A guard, effect, or lifecycle-action block references a name that was never declared with a top-level `def` statement.
@@ -428,10 +431,10 @@ E_UNDEFINED_VAR
      - no
      - ``True`` when the identifier looked like a block-local temporary (the read occurred before the variable was assigned within the same ``enter`` / ``during`` / ``exit`` / ``effect`` block). Layer 2 merges what jsfcstm previously emitted as ``fcstm.readBeforeAssignTemporary`` into this single ``E_*`` code plus this flag. Defaults to ``False`` / absent for "real" undefined variables that have no matching ``def`` declaration anywhere.
 
-.. diagnostics-example E_UNDEFINED_VAR 1 repro_cli
+.. diagnostics-example E_UNDEFINED_VAR 1 cli_error
 
-**Example 1** (``repro_cli``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``cli_error``) — reproduction boundary.
+This source shape reproduces a controlled model-validation failure through ``pyfcstm inspect``. Current CLI formats exit non-zero before a successful inspect JSON report is produced, so assert the stderr/exit status rather than expecting this code inside ``diagnostics[]``.
 
 .. code-block:: fcstm
 
@@ -440,12 +443,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example E_UNDEFINED_VAR 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``E_UNDEFINED_VAR``.
 A typical repair is ``add_definition`` on ``file_top``: If the variable is genuinely program state, declare it with ``def <type> <name> = <initial>;`` at the file top so the generated runtime allocates storage for it.
 
 .. diagnostics-example E_UNDEFINED_VAR 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``E_UNDEFINED_VAR``.
 Do not declare the variable inside an action block expecting it to leak out — block-local temps are discarded at block exit.
 
 .. _diag-code-e-duplicate-var:
@@ -456,6 +459,9 @@ E_DUPLICATE_VAR
 .. diagnostics-meta E_DUPLICATE_VAR severity=error emit_tier=static_pipeline capability=pure_static span_object=variable_declaration
 .. diagnostics-ref E_DUPLICATE_VAR var_name type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_DUPLICATE_VAR previous_span type=Span required=false enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary E_DUPLICATE_VAR kind=cli_error
 
 **Registry facts.** Severity ``error``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``variable_declaration``.
 
@@ -480,10 +486,10 @@ E_DUPLICATE_VAR
      - no
      - Source position of the first declaration.
 
-.. diagnostics-example E_DUPLICATE_VAR 1 repro_cli
+.. diagnostics-example E_DUPLICATE_VAR 1 cli_error
 
-**Example 1** (``repro_cli``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``cli_error``) — reproduction boundary.
+This source shape reproduces a controlled model-validation failure through ``pyfcstm inspect``. Current CLI formats exit non-zero before a successful inspect JSON report is produced, so assert the stderr/exit status rather than expecting this code inside ``diagnostics[]``.
 
 .. code-block:: fcstm
 
@@ -493,12 +499,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example E_DUPLICATE_VAR 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``E_DUPLICATE_VAR``.
 A typical repair is ``drop_duplicate`` on ``variable_definition``: If both definitions are meant to declare the same logical variable, keep the first one and delete the second.
 
 .. diagnostics-example E_DUPLICATE_VAR 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``E_DUPLICATE_VAR``.
 Do not assume the second ``def`` overrides the first — the generated runtime treats this as an error and refuses to compile.
 
 .. _diag-code-e-type-mismatch:
@@ -510,6 +516,9 @@ E_TYPE_MISMATCH
 .. diagnostics-ref E_TYPE_MISMATCH expected type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_TYPE_MISMATCH actual type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_TYPE_MISMATCH expr_text type=str required=true enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary E_TYPE_MISMATCH kind=partial_static_boundary
 
 **Registry facts.** Severity ``error``; emit tier ``partial_static_pipeline``; capability ``pure_static``; span object ``expression``.
 
@@ -540,8 +549,8 @@ E_TYPE_MISMATCH
 
 .. diagnostics-example E_TYPE_MISMATCH 1 boundary_only
 
-**Example 1** (``boundary_only``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``boundary_only``) — reproduction boundary.
+This registry contract is intentionally ahead of full frontend/backend emission parity. Treat the source as the supported boundary shape and confirm the current emitter before promising default CLI JSON output.
 
 .. code-block:: fcstm
 
@@ -550,12 +559,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example E_TYPE_MISMATCH 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``E_TYPE_MISMATCH``.
 A typical repair is ``wrap_in_ternary`` on ``expression``: If you wanted to assign a boolean test, wrap it as ``(cond) ? 1 : 0`` so the right-hand side is arithmetic.
 
 .. diagnostics-example E_TYPE_MISMATCH 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``E_TYPE_MISMATCH``.
 Do not rely on numeric → boolean implicit coercion; the generated runtimes treat the two domains as distinct.
 
 .. _diag-code-e-duplicate-function-name:
@@ -567,6 +576,9 @@ E_DUPLICATE_FUNCTION_NAME
 .. diagnostics-ref E_DUPLICATE_FUNCTION_NAME function_name type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_DUPLICATE_FUNCTION_NAME state_path type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_DUPLICATE_FUNCTION_NAME stage type=str required=true enum=enter|during|exit|during_aspect item_enum=- exact_values=-
+
+
+.. diagnostics-boundary E_DUPLICATE_FUNCTION_NAME kind=cli_error
 
 **Registry facts.** Severity ``error``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``named_action_declaration``.
 
@@ -595,10 +607,10 @@ E_DUPLICATE_FUNCTION_NAME
      - yes
      - Lifecycle stage where the duplicate appears. (enum: ``enter``, ``during``, ``exit``, ``during_aspect``)
 
-.. diagnostics-example E_DUPLICATE_FUNCTION_NAME 1 repro_cli
+.. diagnostics-example E_DUPLICATE_FUNCTION_NAME 1 cli_error
 
-**Example 1** (``repro_cli``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``cli_error``) — reproduction boundary.
+This source shape reproduces a controlled model-validation failure through ``pyfcstm inspect``. Current CLI formats exit non-zero before a successful inspect JSON report is produced, so assert the stderr/exit status rather than expecting this code inside ``diagnostics[]``.
 
 .. code-block:: fcstm
 
@@ -611,12 +623,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example E_DUPLICATE_FUNCTION_NAME 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``E_DUPLICATE_FUNCTION_NAME``.
 A typical repair is ``rename_one`` on ``named_action``: Give one of the named blocks a distinct identifier so ``ref <name>`` calls resolve unambiguously.
 
 .. diagnostics-example E_DUPLICATE_FUNCTION_NAME 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``E_DUPLICATE_FUNCTION_NAME``.
 Do not assume the second declaration shadows the first — the resolver treats this as a hard error.
 
 .. _diag-code-e-named-function-ref-cycle:
@@ -628,6 +640,9 @@ E_NAMED_FUNCTION_REF_CYCLE
 .. diagnostics-ref E_NAMED_FUNCTION_REF_CYCLE ref_path type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_NAMED_FUNCTION_REF_CYCLE cycle_path type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_NAMED_FUNCTION_REF_CYCLE reason type=str required=true enum=action_ref_cycle item_enum=- exact_values=-
+
+
+.. diagnostics-boundary E_NAMED_FUNCTION_REF_CYCLE kind=cli_error
 
 **Registry facts.** Severity ``error``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``named_action_declaration``.
 
@@ -656,10 +671,10 @@ E_NAMED_FUNCTION_REF_CYCLE
      - yes
      - Short tag describing the failure. (enum: ``action_ref_cycle``)
 
-.. diagnostics-example E_NAMED_FUNCTION_REF_CYCLE 1 repro_cli
+.. diagnostics-example E_NAMED_FUNCTION_REF_CYCLE 1 cli_error
 
-**Example 1** (``repro_cli``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``cli_error``) — reproduction boundary.
+This source shape reproduces a controlled model-validation failure through ``pyfcstm inspect``. Current CLI formats exit non-zero before a successful inspect JSON report is produced, so assert the stderr/exit status rather than expecting this code inside ``diagnostics[]``.
 
 .. code-block:: fcstm
 
@@ -673,12 +688,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example E_NAMED_FUNCTION_REF_CYCLE 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``E_NAMED_FUNCTION_REF_CYCLE``.
 A typical repair is ``break_ref_cycle`` on ``action_ref``: Replace one link in the cycle with a concrete action block or an abstract action declaration so the reference chain terminates.
 
 .. diagnostics-example E_NAMED_FUNCTION_REF_CYCLE 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``E_NAMED_FUNCTION_REF_CYCLE``.
 Do not execute or render cyclic lifecycle references; reject the model before runtime execution.
 
 .. _diag-code-e-named-function-ref-not-found:
@@ -690,6 +705,9 @@ E_NAMED_FUNCTION_REF_NOT_FOUND
 .. diagnostics-ref E_NAMED_FUNCTION_REF_NOT_FOUND ref_path type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_NAMED_FUNCTION_REF_NOT_FOUND reason type=str required=true enum=state_not_found|named_function_not_found item_enum=- exact_values=-
 .. diagnostics-ref E_NAMED_FUNCTION_REF_NOT_FOUND missing_segment type=str_or_null required=false enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary E_NAMED_FUNCTION_REF_NOT_FOUND kind=cli_error
 
 **Registry facts.** Severity ``error``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``named_action_declaration``.
 
@@ -718,10 +736,10 @@ E_NAMED_FUNCTION_REF_NOT_FOUND
      - no
      - The path segment that failed to resolve. For 'state_not_found' this is the state name that does not exist under the parent path; for 'named_function_not_found' this is the action name searched for in the resolved state.
 
-.. diagnostics-example E_NAMED_FUNCTION_REF_NOT_FOUND 1 repro_cli
+.. diagnostics-example E_NAMED_FUNCTION_REF_NOT_FOUND 1 cli_error
 
-**Example 1** (``repro_cli``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``cli_error``) — reproduction boundary.
+This source shape reproduces a controlled model-validation failure through ``pyfcstm inspect``. Current CLI formats exit non-zero before a successful inspect JSON report is produced, so assert the stderr/exit status rather than expecting this code inside ``diagnostics[]``.
 
 .. code-block:: fcstm
 
@@ -733,12 +751,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example E_NAMED_FUNCTION_REF_NOT_FOUND 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``E_NAMED_FUNCTION_REF_NOT_FOUND``.
 A typical repair is ``fix_ref_path`` on ``action_ref``: Confirm the dotted ref path matches a real named action. Use ``/`` to anchor at the root, or a relative name for the current state.
 
 .. diagnostics-example E_NAMED_FUNCTION_REF_NOT_FOUND 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``E_NAMED_FUNCTION_REF_NOT_FOUND``.
 Do not silently swap ``ref`` with an inline block — that loses the deduplication that ``ref`` was meant to provide.
 
 .. _diag-code-e-import-not-found:
@@ -751,6 +769,9 @@ E_IMPORT_NOT_FOUND
 .. diagnostics-ref E_IMPORT_NOT_FOUND alias type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_IMPORT_NOT_FOUND host_state_path type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_IMPORT_NOT_FOUND reason type=str required=true enum=file_not_found|read_error|parse_error|no_root_state item_enum=- exact_values=-
+
+
+.. diagnostics-boundary E_IMPORT_NOT_FOUND kind=cli_error
 
 **Registry facts.** Severity ``error``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``import_statement``.
 
@@ -783,10 +804,10 @@ E_IMPORT_NOT_FOUND
      - yes
      - Why resolution failed. (enum: ``file_not_found``, ``read_error``, ``parse_error``, ``no_root_state``)
 
-.. diagnostics-example E_IMPORT_NOT_FOUND 1 repro_cli
+.. diagnostics-example E_IMPORT_NOT_FOUND 1 cli_error
 
-**Example 1** (``repro_cli``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``cli_error``) — reproduction boundary.
+This source shape reproduces a controlled model-validation failure through ``pyfcstm inspect``. Current CLI formats exit non-zero before a successful inspect JSON report is produced, so assert the stderr/exit status rather than expecting this code inside ``diagnostics[]``.
 
 .. code-block:: fcstm
 
@@ -796,12 +817,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example E_IMPORT_NOT_FOUND 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``E_IMPORT_NOT_FOUND``.
 A typical repair is ``fix_path`` on ``import_statement``: For ``file_not_found``, adjust the source_path to a real file relative to the host file, or remove the import if the sub-machine is no longer required.
 
 .. diagnostics-example E_IMPORT_NOT_FOUND 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``E_IMPORT_NOT_FOUND``.
 Do not silently rename the alias to dodge the missing file.
 
 .. _diag-code-e-import-circular:
@@ -814,6 +835,9 @@ E_IMPORT_CIRCULAR
 .. diagnostics-ref E_IMPORT_CIRCULAR alias type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_IMPORT_CIRCULAR host_state_path type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_IMPORT_CIRCULAR cycle_chain type=list[str] required=true enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary E_IMPORT_CIRCULAR kind=cli_error
 
 **Registry facts.** Severity ``error``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``import_statement``.
 
@@ -846,10 +870,10 @@ E_IMPORT_CIRCULAR
      - yes
      - Ordered list of file paths that participate in the cycle, starting and ending at the same file.
 
-.. diagnostics-example E_IMPORT_CIRCULAR 1 repro_cli
+.. diagnostics-example E_IMPORT_CIRCULAR 1 cli_error
 
-**Example 1** (``repro_cli``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``cli_error``) — reproduction boundary.
+This source shape reproduces a controlled model-validation failure through ``pyfcstm inspect``. Current CLI formats exit non-zero before a successful inspect JSON report is produced, so assert the stderr/exit status rather than expecting this code inside ``diagnostics[]``.
 
 .. code-block:: fcstm
 
@@ -860,12 +884,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example E_IMPORT_CIRCULAR 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``E_IMPORT_CIRCULAR``.
 A typical repair is ``refactor`` on ``import_statement``: Break the cycle by extracting the shared state(s) into a third file that both ends import without depending on each other.
 
 .. diagnostics-example E_IMPORT_CIRCULAR 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``E_IMPORT_CIRCULAR``.
 Do not duplicate the imported states inline to break the cycle — that defeats the purpose of imports.
 
 .. _diag-code-e-import-alias-conflict:
@@ -877,6 +901,9 @@ E_IMPORT_ALIAS_CONFLICT
 .. diagnostics-ref E_IMPORT_ALIAS_CONFLICT alias type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_IMPORT_ALIAS_CONFLICT host_state_path type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_IMPORT_ALIAS_CONFLICT conflicting_kind type=str required=true enum=existing_substate|previous_import_alias item_enum=- exact_values=-
+
+
+.. diagnostics-boundary E_IMPORT_ALIAS_CONFLICT kind=cli_error
 
 **Registry facts.** Severity ``error``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``import_statement``.
 
@@ -905,10 +932,10 @@ E_IMPORT_ALIAS_CONFLICT
      - yes
      - What the alias clashed with. (enum: ``existing_substate``, ``previous_import_alias``)
 
-.. diagnostics-example E_IMPORT_ALIAS_CONFLICT 1 repro_cli
+.. diagnostics-example E_IMPORT_ALIAS_CONFLICT 1 cli_error
 
-**Example 1** (``repro_cli``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``cli_error``) — reproduction boundary.
+This source shape reproduces a controlled model-validation failure through ``pyfcstm inspect``. Current CLI formats exit non-zero before a successful inspect JSON report is produced, so assert the stderr/exit status rather than expecting this code inside ``diagnostics[]``.
 
 .. code-block:: fcstm
 
@@ -919,12 +946,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example E_IMPORT_ALIAS_CONFLICT 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``E_IMPORT_ALIAS_CONFLICT``.
 A typical repair is ``rename_alias`` on ``import_statement``: Pick a unique alias for the import; references to the imported machine elsewhere in the file must follow the new alias.
 
 .. diagnostics-example E_IMPORT_ALIAS_CONFLICT 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``E_IMPORT_ALIAS_CONFLICT``.
 Do not silently drop one of the conflicting definitions.
 
 .. _diag-code-e-import-duplicate-mapping:
@@ -938,6 +965,9 @@ E_IMPORT_DUPLICATE_MAPPING
 .. diagnostics-ref E_IMPORT_DUPLICATE_MAPPING duplicated_name type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_IMPORT_DUPLICATE_MAPPING direction type=str required=true enum=source_duplicated|target_duplicated item_enum=- exact_values=-
 .. diagnostics-ref E_IMPORT_DUPLICATE_MAPPING host_state_path type=str required=true enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary E_IMPORT_DUPLICATE_MAPPING kind=cli_error
 
 **Registry facts.** Severity ``error``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``import_statement``.
 
@@ -974,10 +1004,10 @@ E_IMPORT_DUPLICATE_MAPPING
      - yes
      - Dotted path of the composite state hosting the import.
 
-.. diagnostics-example E_IMPORT_DUPLICATE_MAPPING 1 repro_cli
+.. diagnostics-example E_IMPORT_DUPLICATE_MAPPING 1 cli_error
 
-**Example 1** (``repro_cli``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``cli_error``) — reproduction boundary.
+This source shape reproduces a controlled model-validation failure through ``pyfcstm inspect``. Current CLI formats exit non-zero before a successful inspect JSON report is produced, so assert the stderr/exit status rather than expecting this code inside ``diagnostics[]``.
 
 .. code-block:: fcstm
 
@@ -990,12 +1020,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example E_IMPORT_DUPLICATE_MAPPING 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``E_IMPORT_DUPLICATE_MAPPING``.
 A typical repair is ``drop_duplicate`` on ``mapping_clause``: Delete the duplicated mapping line — keep the intended one.
 
 .. diagnostics-example E_IMPORT_DUPLICATE_MAPPING 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``E_IMPORT_DUPLICATE_MAPPING``.
 Do not merge mappings by concatenating their values.
 
 .. _diag-code-e-import-mapping-invalid:
@@ -1009,6 +1039,9 @@ E_IMPORT_MAPPING_INVALID
 .. diagnostics-ref E_IMPORT_MAPPING_INVALID host_state_path type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_IMPORT_MAPPING_INVALID reason type=str required=true enum=source_not_found|target_invalid|selector_invalid|template_invalid|empty_path|host_root_mismatch item_enum=- exact_values=-
 .. diagnostics-ref E_IMPORT_MAPPING_INVALID detail type=str required=true enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary E_IMPORT_MAPPING_INVALID kind=cli_error
 
 **Registry facts.** Severity ``error``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``import_statement``.
 
@@ -1045,10 +1078,10 @@ E_IMPORT_MAPPING_INVALID
      - yes
      - Human-readable specifics of the mapping failure (mapping text, selector / template literal, or path that failed to resolve).
 
-.. diagnostics-example E_IMPORT_MAPPING_INVALID 1 repro_cli
+.. diagnostics-example E_IMPORT_MAPPING_INVALID 1 cli_error
 
-**Example 1** (``repro_cli``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``cli_error``) — reproduction boundary.
+This source shape reproduces a controlled model-validation failure through ``pyfcstm inspect``. Current CLI formats exit non-zero before a successful inspect JSON report is produced, so assert the stderr/exit status rather than expecting this code inside ``diagnostics[]``.
 
 .. code-block:: fcstm
 
@@ -1060,12 +1093,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example E_IMPORT_MAPPING_INVALID 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``E_IMPORT_MAPPING_INVALID``.
 A typical repair is ``fix_source`` on ``mapping_clause``: Update the source-side name to match a real def / event in the imported file.
 
 .. diagnostics-example E_IMPORT_MAPPING_INVALID 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``E_IMPORT_MAPPING_INVALID``.
 Do not invent fake source names to make the selector match.
 
 States and transitions
@@ -1080,6 +1113,9 @@ E_MISSING_STATE
 .. diagnostics-ref E_MISSING_STATE state_path type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_MISSING_STATE referenced_from type=str_or_null required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_MISSING_STATE reason type=str required=false enum=not_found|parent_missing|ambiguous|event_path_not_found item_enum=- exact_values=-
+
+
+.. diagnostics-boundary E_MISSING_STATE kind=cli_error
 
 **Registry facts.** Severity ``error``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``state_identifier``.
 
@@ -1108,10 +1144,10 @@ E_MISSING_STATE
      - no
      - Short tag describing the resolution failure mode. (enum: ``not_found``, ``parent_missing``, ``ambiguous``, ``event_path_not_found``)
 
-.. diagnostics-example E_MISSING_STATE 1 repro_cli
+.. diagnostics-example E_MISSING_STATE 1 cli_error
 
-**Example 1** (``repro_cli``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``cli_error``) — reproduction boundary.
+This source shape reproduces a controlled model-validation failure through ``pyfcstm inspect``. Current CLI formats exit non-zero before a successful inspect JSON report is produced, so assert the stderr/exit status rather than expecting this code inside ``diagnostics[]``.
 
 .. code-block:: fcstm
 
@@ -1119,12 +1155,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example E_MISSING_STATE 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``E_MISSING_STATE``.
 A typical repair is ``fix_typo`` on ``transition``: If the name was meant to refer to an existing state, correct the spelling. ``refs.state_name`` carries the missing token.
 
 .. diagnostics-example E_MISSING_STATE 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``E_MISSING_STATE``.
 Do not silently delete the transition; the original intent of the missing state is lost.
 
 .. _diag-code-e-duplicate-state:
@@ -1136,6 +1172,9 @@ E_DUPLICATE_STATE
 .. diagnostics-ref E_DUPLICATE_STATE state_name type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_DUPLICATE_STATE parent_path type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_DUPLICATE_STATE previous_span type=Span required=false enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary E_DUPLICATE_STATE kind=cli_error
 
 **Registry facts.** Severity ``error``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``state_identifier``.
 
@@ -1164,10 +1203,10 @@ E_DUPLICATE_STATE
      - no
      - Source position of the first declaration.
 
-.. diagnostics-example E_DUPLICATE_STATE 1 repro_cli
+.. diagnostics-example E_DUPLICATE_STATE 1 cli_error
 
-**Example 1** (``repro_cli``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``cli_error``) — reproduction boundary.
+This source shape reproduces a controlled model-validation failure through ``pyfcstm inspect``. Current CLI formats exit non-zero before a successful inspect JSON report is produced, so assert the stderr/exit status rather than expecting this code inside ``diagnostics[]``.
 
 .. code-block:: fcstm
 
@@ -1175,12 +1214,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example E_DUPLICATE_STATE 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``E_DUPLICATE_STATE``.
 A typical repair is ``drop_duplicate`` on ``state_definition``: If both declarations describe the same logical state, keep one and remove the other (merge any actions/transitions onto the survivor).
 
 .. diagnostics-example E_DUPLICATE_STATE 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``E_DUPLICATE_STATE``.
 Do not assume the second declaration overrides the first — duplicate state names produce a hard error.
 
 .. _diag-code-e-dangling-transition:
@@ -1192,6 +1231,9 @@ E_DANGLING_TRANSITION
 .. diagnostics-ref E_DANGLING_TRANSITION src type=str_or_null required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_DANGLING_TRANSITION tgt type=str_or_null required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_DANGLING_TRANSITION reason type=str required=true enum=src_not_found|tgt_not_found|both_not_found item_enum=- exact_values=-
+
+
+.. diagnostics-boundary E_DANGLING_TRANSITION kind=cli_error
 
 **Registry facts.** Severity ``error``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``transition``.
 
@@ -1220,10 +1262,10 @@ E_DANGLING_TRANSITION
      - yes
      - Short tag describing the dangling reason. (enum: ``src_not_found``, ``tgt_not_found``, ``both_not_found``)
 
-.. diagnostics-example E_DANGLING_TRANSITION 1 repro_cli
+.. diagnostics-example E_DANGLING_TRANSITION 1 cli_error
 
-**Example 1** (``repro_cli``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``cli_error``) — reproduction boundary.
+This source shape reproduces a controlled model-validation failure through ``pyfcstm inspect``. Current CLI formats exit non-zero before a successful inspect JSON report is produced, so assert the stderr/exit status rather than expecting this code inside ``diagnostics[]``.
 
 .. code-block:: fcstm
 
@@ -1231,12 +1273,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example E_DANGLING_TRANSITION 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``E_DANGLING_TRANSITION``.
 A typical repair is ``fix_typo`` on ``transition``: If the dangling name is misspelled, correct it. ``refs.state_path`` carries the location of the offending transition.
 
 .. diagnostics-example E_DANGLING_TRANSITION 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``E_DANGLING_TRANSITION``.
 Do not pretend the transition resolves to ``[*]`` — that has a specific entry/exit semantics.
 
 .. _diag-code-e-initial-transition-invalid:
@@ -1247,6 +1289,9 @@ E_INITIAL_TRANSITION_INVALID
 .. diagnostics-meta E_INITIAL_TRANSITION_INVALID severity=error emit_tier=static_pipeline capability=pure_static span_object=transition
 .. diagnostics-ref E_INITIAL_TRANSITION_INVALID composite_path type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_INITIAL_TRANSITION_INVALID reason type=str required=true enum=missing_entry|target_not_child item_enum=- exact_values=-
+
+
+.. diagnostics-boundary E_INITIAL_TRANSITION_INVALID kind=cli_error
 
 **Registry facts.** Severity ``error``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``transition``.
 
@@ -1271,10 +1316,10 @@ E_INITIAL_TRANSITION_INVALID
      - yes
      - Short tag describing the failure. (enum: ``missing_entry``, ``target_not_child``)
 
-.. diagnostics-example E_INITIAL_TRANSITION_INVALID 1 repro_cli
+.. diagnostics-example E_INITIAL_TRANSITION_INVALID 1 cli_error
 
-**Example 1** (``repro_cli``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``cli_error``) — reproduction boundary.
+This source shape reproduces a controlled model-validation failure through ``pyfcstm inspect``. Current CLI formats exit non-zero before a successful inspect JSON report is produced, so assert the stderr/exit status rather than expecting this code inside ``diagnostics[]``.
 
 .. code-block:: fcstm
 
@@ -1282,12 +1327,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example E_INITIAL_TRANSITION_INVALID 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``E_INITIAL_TRANSITION_INVALID``.
 A typical repair is ``add_initial_transition`` on ``composite_state``: Add ``[*] -> <ChildName>;`` inside the composite, picking a direct substate as the entry point.
 
 .. diagnostics-example E_INITIAL_TRANSITION_INVALID 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``E_INITIAL_TRANSITION_INVALID``.
 Do not rely on a default ordering of substates; the runtime requires an explicit initial transition.
 
 .. _diag-code-w-redundant-transition:
@@ -1300,6 +1345,9 @@ W_REDUNDANT_TRANSITION
 .. diagnostics-ref W_REDUNDANT_TRANSITION to_path type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_REDUNDANT_TRANSITION duplicate_spans type=list[Span] required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_REDUNDANT_TRANSITION transition_index type=int required=false enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary W_REDUNDANT_TRANSITION kind=inspect_json
 
 **Registry facts.** Severity ``warning``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``transition``.
 
@@ -1334,8 +1382,8 @@ W_REDUNDANT_TRANSITION
 
 .. diagnostics-example W_REDUNDANT_TRANSITION 1 repro_cli
 
-**Example 1** (``repro_cli``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``repro_cli``) — reproduction boundary.
+This diagnostic can appear in a successful inspect report. Reproduce it with ``pyfcstm inspect -i <file> --format json`` and read the ``diagnostics[]`` array.
 
 .. code-block:: fcstm
 
@@ -1349,12 +1397,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example W_REDUNDANT_TRANSITION 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``W_REDUNDANT_TRANSITION``.
 A typical repair is ``remove_duplicate`` on ``transition``: Keep one transition and remove redundant copies.
 
 .. diagnostics-example W_REDUNDANT_TRANSITION 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``W_REDUNDANT_TRANSITION``.
 Do not keep duplicate transitions as comments.
 
 .. _diag-code-w-self-transition-nop:
@@ -1368,6 +1416,9 @@ W_SELF_TRANSITION_NOP
 .. diagnostics-ref W_SELF_TRANSITION_NOP to_path type=str required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_SELF_TRANSITION_NOP transition_span type=Span required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_SELF_TRANSITION_NOP transition_index type=int required=false enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary W_SELF_TRANSITION_NOP kind=inspect_json
 
 **Registry facts.** Severity ``warning``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``transition``.
 
@@ -1406,8 +1457,8 @@ W_SELF_TRANSITION_NOP
 
 .. diagnostics-example W_SELF_TRANSITION_NOP 1 repro_cli
 
-**Example 1** (``repro_cli``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``repro_cli``) — reproduction boundary.
+This diagnostic can appear in a successful inspect report. Reproduce it with ``pyfcstm inspect -i <file> --format json`` and read the ``diagnostics[]`` array.
 
 .. code-block:: fcstm
 
@@ -1419,12 +1470,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example W_SELF_TRANSITION_NOP 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``W_SELF_TRANSITION_NOP``.
 A typical repair is ``remove_transition`` on ``transition``: Remove the no-op transition.
 
 .. diagnostics-example W_SELF_TRANSITION_NOP 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``W_SELF_TRANSITION_NOP``.
 Do not apply this warning to self transitions whose re-entry would run enter, during, exit, or ancestor aspect actions.
 
 .. _diag-code-i-transition-to-self-via-parent:
@@ -1435,6 +1486,9 @@ I_TRANSITION_TO_SELF_VIA_PARENT
 .. diagnostics-meta I_TRANSITION_TO_SELF_VIA_PARENT severity=info emit_tier=static_pipeline capability=pure_static span_object=transition
 .. diagnostics-ref I_TRANSITION_TO_SELF_VIA_PARENT state_path type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref I_TRANSITION_TO_SELF_VIA_PARENT crosses_composite type=bool required=true enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary I_TRANSITION_TO_SELF_VIA_PARENT kind=inspect_json
 
 **Registry facts.** Severity ``info``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``transition``.
 
@@ -1461,8 +1515,8 @@ I_TRANSITION_TO_SELF_VIA_PARENT
 
 .. diagnostics-example I_TRANSITION_TO_SELF_VIA_PARENT 1 repro_cli
 
-**Example 1** (``repro_cli``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``repro_cli``) — reproduction boundary.
+This diagnostic can appear in a successful inspect report. Reproduce it with ``pyfcstm inspect -i <file> --format json`` and read the ``diagnostics[]`` array.
 
 .. code-block:: fcstm
 
@@ -1474,12 +1528,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example I_TRANSITION_TO_SELF_VIA_PARENT 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``I_TRANSITION_TO_SELF_VIA_PARENT``.
 A typical repair is ``preserve_if_intentional`` on ``transition``: Keep the transition when the model should re-run composite entry semantics.
 
 .. diagnostics-example I_TRANSITION_TO_SELF_VIA_PARENT 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``I_TRANSITION_TO_SELF_VIA_PARENT``.
 Do not delete this transition automatically; it may be the intended reset path.
 
 .. _diag-code-w-transition-shadowed:
@@ -1496,6 +1550,9 @@ W_TRANSITION_SHADOWED
 .. diagnostics-ref W_TRANSITION_SHADOWED reason type=str required=true enum=guard_shadow|duplicate_event|unconditional_catchall|prior_trigger_cover item_enum=- exact_values=-
 .. diagnostics-ref W_TRANSITION_SHADOWED shadowed_by_count type=int required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_TRANSITION_SHADOWED shadowed_by type=list[str] required=true enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary W_TRANSITION_SHADOWED kind=verify_smt_linear
 
 **Registry facts.** Severity ``warning``; emit tier ``verify_pipeline``; capability ``requires_solver``; span object ``transition``.
 
@@ -1546,8 +1603,8 @@ W_TRANSITION_SHADOWED
 
 .. diagnostics-example W_TRANSITION_SHADOWED 1 verify_opt_in
 
-**Example 1** (``verify_opt_in``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``verify_opt_in``) — reproduction boundary.
+This diagnostic requires optional verify integration. Reproduce it with ``pyfcstm inspect -i <file> --enable-verify --max-complexity-tier smt_linear --format json``; the default structural verify budget does not run the solver-local algorithm that emits it.
 
 .. code-block:: fcstm
 
@@ -1562,12 +1619,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example W_TRANSITION_SHADOWED 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``W_TRANSITION_SHADOWED``.
 A typical repair is ``reorder_transitions`` on ``transition_list``: Move the more specific transition before the broader predecessor if both are needed.
 
 .. diagnostics-example W_TRANSITION_SHADOWED 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``W_TRANSITION_SHADOWED``.
 Do not reorder transitions without checking FCSTM first-match semantics.
 
 Events and scopes
@@ -1581,6 +1638,9 @@ E_EVENT_REF_INVALID
 .. diagnostics-meta E_EVENT_REF_INVALID severity=error emit_tier=lookup_api capability=pure_static span_object=event_declaration
 .. diagnostics-ref E_EVENT_REF_INVALID event_ref type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_EVENT_REF_INVALID reason type=str required=true enum=empty|bare_slash|invalid_absolute|invalid_relative|trailing_dots|beyond_root item_enum=- exact_values=-
+
+
+.. diagnostics-boundary E_EVENT_REF_INVALID kind=api_only
 
 **Registry facts.** Severity ``error``; emit tier ``lookup_api``; capability ``pure_static``; span object ``event_declaration``.
 
@@ -1607,8 +1667,8 @@ E_EVENT_REF_INVALID
 
 .. diagnostics-example E_EVENT_REF_INVALID 1 repro_api
 
-**Example 1** (``repro_api``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``repro_api``) — reproduction boundary.
+This diagnostic is emitted by explicit resolver API calls. Default ``pyfcstm inspect`` normally does not call that API in a way that reports this code, so use the referenced API boundary rather than a default CLI JSON expectation.
 
 .. code-block:: fcstm
 
@@ -1616,12 +1676,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example E_EVENT_REF_INVALID 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``E_EVENT_REF_INVALID``.
 A typical repair is ``fix_scope_operator`` on ``transition``: The three scope operators do not interchange freely. ``::`` is source-local, ``:`` is parent-chain, ``/`` is root-absolute. Pick the one that matches where the event is actually declared.
 
 .. diagnostics-example E_EVENT_REF_INVALID 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``E_EVENT_REF_INVALID``.
 Do not invent a new event by silently aliasing — the dispatcher won't fire on an undeclared name.
 
 .. _diag-code-e-event-not-found:
@@ -1633,6 +1693,9 @@ E_EVENT_NOT_FOUND
 .. diagnostics-ref E_EVENT_NOT_FOUND event_ref type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_EVENT_NOT_FOUND scope type=str required=true enum=local|chain|absolute item_enum=- exact_values=-
 .. diagnostics-ref E_EVENT_NOT_FOUND searched_from type=str_or_null required=false enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary E_EVENT_NOT_FOUND kind=api_only
 
 **Registry facts.** Severity ``error``; emit tier ``lookup_api``; capability ``pure_static``; span object ``event_declaration``.
 
@@ -1663,8 +1726,8 @@ E_EVENT_NOT_FOUND
 
 .. diagnostics-example E_EVENT_NOT_FOUND 1 repro_api
 
-**Example 1** (``repro_api``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``repro_api``) — reproduction boundary.
+This diagnostic is emitted by explicit resolver API calls. Default ``pyfcstm inspect`` normally does not call that API in a way that reports this code, so use the referenced API boundary rather than a default CLI JSON expectation.
 
 .. code-block:: fcstm
 
@@ -1672,12 +1735,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example E_EVENT_NOT_FOUND 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``E_EVENT_NOT_FOUND``.
 A typical repair is ``fix_event_path`` on ``transition``: Confirm the dotted path matches the state hierarchy that actually exists after imports have been merged.
 
 .. diagnostics-example E_EVENT_NOT_FOUND 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``E_EVENT_NOT_FOUND``.
 Do not paper over the error by introducing a wildcard alias — events are uniquely bound by their scope.
 
 .. _diag-code-w-combo-duplicate-event:
@@ -1696,6 +1759,9 @@ W_COMBO_DUPLICATE_EVENT
 .. diagnostics-ref W_COMBO_DUPLICATE_EVENT trigger_span type=Span required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_COMBO_DUPLICATE_EVENT term_span type=Span required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_COMBO_DUPLICATE_EVENT first_term_span type=Span required=false enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary W_COMBO_DUPLICATE_EVENT kind=inspect_json
 
 **Registry facts.** Severity ``warning``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``transition``.
 
@@ -1754,8 +1820,8 @@ W_COMBO_DUPLICATE_EVENT
 
 .. diagnostics-example W_COMBO_DUPLICATE_EVENT 1 repro_cli
 
-**Example 1** (``repro_cli``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``repro_cli``) — reproduction boundary.
+This diagnostic can appear in a successful inspect report. Reproduce it with ``pyfcstm inspect -i <file> --format json`` and read the ``diagnostics[]`` array.
 
 .. code-block:: fcstm
 
@@ -1769,12 +1835,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example W_COMBO_DUPLICATE_EVENT 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``W_COMBO_DUPLICATE_EVENT``.
 A typical repair is ``inspect_terms`` on ``transition``: Check whether the second event was meant to be a different event.
 
 .. diagnostics-example W_COMBO_DUPLICATE_EVENT 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``W_COMBO_DUPLICATE_EVENT``.
 Do not silently delete the repeated event; the explicit pseudo-chain shape may be intentional.
 
 .. _diag-code-w-unused-event:
@@ -1785,6 +1851,9 @@ W_UNUSED_EVENT
 .. diagnostics-meta W_UNUSED_EVENT severity=warning emit_tier=static_pipeline capability=pure_static span_object=event_declaration
 .. diagnostics-ref W_UNUSED_EVENT event_qualified_name type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_UNUSED_EVENT scope type=str required=true enum=local|chain|absolute item_enum=- exact_values=-
+
+
+.. diagnostics-boundary W_UNUSED_EVENT kind=inspect_json
 
 **Registry facts.** Severity ``warning``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``event_declaration``.
 
@@ -1811,8 +1880,8 @@ W_UNUSED_EVENT
 
 .. diagnostics-example W_UNUSED_EVENT 1 repro_cli
 
-**Example 1** (``repro_cli``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``repro_cli``) — reproduction boundary.
+This diagnostic can appear in a successful inspect report. Reproduce it with ``pyfcstm inspect -i <file> --format json`` and read the ``diagnostics[]`` array.
 
 .. code-block:: fcstm
 
@@ -1826,12 +1895,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example W_UNUSED_EVENT 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``W_UNUSED_EVENT``.
 A typical repair is ``wire_event`` on ``transition``: Add a transition that uses the event if it was meant to be emitted.
 
 .. diagnostics-example W_UNUSED_EVENT 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``W_UNUSED_EVENT``.
 Do not rename the event to dodge the warning — that just shifts the problem.
 
 .. _diag-code-w-shadowed-event:
@@ -1843,6 +1912,9 @@ W_SHADOWED_EVENT
 .. diagnostics-ref W_SHADOWED_EVENT event_name type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_SHADOWED_EVENT local_path type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_SHADOWED_EVENT chain_path type=str required=true enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary W_SHADOWED_EVENT kind=inspect_json
 
 **Registry facts.** Severity ``warning``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``event_declaration``.
 
@@ -1873,8 +1945,8 @@ W_SHADOWED_EVENT
 
 .. diagnostics-example W_SHADOWED_EVENT 1 repro_cli
 
-**Example 1** (``repro_cli``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``repro_cli``) — reproduction boundary.
+This diagnostic can appear in a successful inspect report. Reproduce it with ``pyfcstm inspect -i <file> --format json`` and read the ``diagnostics[]`` array.
 
 .. code-block:: fcstm
 
@@ -1889,12 +1961,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example W_SHADOWED_EVENT 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``W_SHADOWED_EVENT``.
 A typical repair is ``rename_event`` on ``event``: Use distinct event names for different scopes.
 
 .. diagnostics-example W_SHADOWED_EVENT 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``W_SHADOWED_EVENT``.
 Do not rename only one trigger without checking all emitters.
 
 .. _diag-code-i-transition-never-event-triggered:
@@ -1907,6 +1979,9 @@ I_TRANSITION_NEVER_EVENT_TRIGGERED
 .. diagnostics-ref I_TRANSITION_NEVER_EVENT_TRIGGERED to_path type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref I_TRANSITION_NEVER_EVENT_TRIGGERED transition_span type=Span required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref I_TRANSITION_NEVER_EVENT_TRIGGERED transition_index type=int required=false enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary I_TRANSITION_NEVER_EVENT_TRIGGERED kind=inspect_json
 
 **Registry facts.** Severity ``info``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``transition``.
 
@@ -1941,8 +2016,8 @@ I_TRANSITION_NEVER_EVENT_TRIGGERED
 
 .. diagnostics-example I_TRANSITION_NEVER_EVENT_TRIGGERED 1 repro_cli
 
-**Example 1** (``repro_cli``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``repro_cli``) — reproduction boundary.
+This diagnostic can appear in a successful inspect report. Reproduce it with ``pyfcstm inspect -i <file> --format json`` and read the ``diagnostics[]`` array.
 
 .. code-block:: fcstm
 
@@ -1955,12 +2030,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example I_TRANSITION_NEVER_EVENT_TRIGGERED 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``I_TRANSITION_NEVER_EVENT_TRIGGERED``.
 A typical repair is ``keep_if_fallthrough`` on ``transition``: Keep it when the state should immediately advance.
 
 .. diagnostics-example I_TRANSITION_NEVER_EVENT_TRIGGERED 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``I_TRANSITION_NEVER_EVENT_TRIGGERED``.
 Do not add a meaningless event just to silence this info.
 
 .. _diag-code-w-event-unreachable-emit:
@@ -1973,6 +2048,9 @@ W_EVENT_UNREACHABLE_EMIT
 .. diagnostics-ref W_EVENT_UNREACHABLE_EMIT verification_scope type=str required=true enum=topological_only item_enum=- exact_values=-
 .. diagnostics-ref W_EVENT_UNREACHABLE_EMIT event_name type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_EVENT_UNREACHABLE_EMIT consumer_count type=int required=true enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary W_EVENT_UNREACHABLE_EMIT kind=verify_smt_linear
 
 **Registry facts.** Severity ``warning``; emit tier ``verify_pipeline``; capability ``pure_static``; span object ``event_declaration``.
 
@@ -2007,8 +2085,8 @@ W_EVENT_UNREACHABLE_EMIT
 
 .. diagnostics-example W_EVENT_UNREACHABLE_EMIT 1 verify_opt_in
 
-**Example 1** (``verify_opt_in``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``verify_opt_in``) — reproduction boundary.
+This diagnostic requires optional verify integration. Reproduce it with ``pyfcstm inspect -i <file> --enable-verify --max-complexity-tier smt_linear --format json``; the default structural verify budget does not run the solver-local algorithm that emits it.
 
 .. code-block:: fcstm
 
@@ -2024,12 +2102,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example W_EVENT_UNREACHABLE_EMIT 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``W_EVENT_UNREACHABLE_EMIT``.
 A typical repair is ``connect_consumer`` on ``transition_source``: Add a topology path that reaches the state consuming the event.
 
 .. diagnostics-example W_EVENT_UNREACHABLE_EMIT 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``W_EVENT_UNREACHABLE_EMIT``.
 Do not add an emitter for this event if no reachable state can consume it.
 
 Combo and relay diagnostics
@@ -2043,6 +2121,9 @@ E_COMBO_TRIGGER_NOT_EXPANDED
 .. diagnostics-meta E_COMBO_TRIGGER_NOT_EXPANDED severity=error emit_tier=catalog_only capability=pure_static span_object=transition
 .. diagnostics-ref E_COMBO_TRIGGER_NOT_EXPANDED state_path type=str_or_null required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_COMBO_TRIGGER_NOT_EXPANDED trigger type=str required=true enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary E_COMBO_TRIGGER_NOT_EXPANDED kind=compatibility_only
 
 **Registry facts.** Severity ``error``; emit tier ``catalog_only``; capability ``pure_static``; span object ``transition``.
 
@@ -2069,8 +2150,8 @@ E_COMBO_TRIGGER_NOT_EXPANDED
 
 .. diagnostics-example E_COMBO_TRIGGER_NOT_EXPANDED 1 compatibility_only
 
-**Example 1** (``compatibility_only``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``compatibility_only``) — reproduction boundary.
+This code documents a compatibility or historical fail-closed contract. Current normal pyfcstm paths should not emit it; consumers keep it so older tools can be explained safely.
 
 .. code-block:: fcstm
 
@@ -2078,12 +2159,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example E_COMBO_TRIGGER_NOT_EXPANDED 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``E_COMBO_TRIGGER_NOT_EXPANDED``.
 A typical repair is ``wait_for_expansion_support`` on ``transition``: Keep the DSL syntax if you are testing parser/provenance support; wait for model-expansion support before running simulation, verification, or code generation on combo triggers.
 
 .. diagnostics-example E_COMBO_TRIGGER_NOT_EXPANDED 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``E_COMBO_TRIGGER_NOT_EXPANDED``.
 Do not treat the first event term as the whole transition; that would silently change model semantics.
 
 .. _diag-code-w-combo-reserved-prefix-state-kind:
@@ -2096,6 +2177,9 @@ W_COMBO_RESERVED_PREFIX_STATE_KIND
 .. diagnostics-ref W_COMBO_RESERVED_PREFIX_STATE_KIND state_path type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_COMBO_RESERVED_PREFIX_STATE_KIND reserved_prefix type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_COMBO_RESERVED_PREFIX_STATE_KIND state_kind type=str required=true enum=state|composite item_enum=- exact_values=-
+
+
+.. diagnostics-boundary W_COMBO_RESERVED_PREFIX_STATE_KIND kind=partial_static_boundary
 
 **Registry facts.** Severity ``warning``; emit tier ``partial_static_pipeline``; capability ``pure_static``; span object ``state_identifier``.
 
@@ -2130,8 +2214,8 @@ W_COMBO_RESERVED_PREFIX_STATE_KIND
 
 .. diagnostics-example W_COMBO_RESERVED_PREFIX_STATE_KIND 1 boundary_only
 
-**Example 1** (``boundary_only``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``boundary_only``) — reproduction boundary.
+This registry contract is intentionally ahead of full frontend/backend emission parity. Treat the source as the supported boundary shape and confirm the current emitter before promising default CLI JSON output.
 
 .. code-block:: fcstm
 
@@ -2139,12 +2223,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example W_COMBO_RESERVED_PREFIX_STATE_KIND 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``W_COMBO_RESERVED_PREFIX_STATE_KIND``.
 A typical repair is ``rename_state`` on ``state_identifier``: Rename the user-authored state so readers and generated artifacts do not confuse it with an expanded combo relay.
 
 .. diagnostics-example W_COMBO_RESERVED_PREFIX_STATE_KIND 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``W_COMBO_RESERVED_PREFIX_STATE_KIND``.
 Do not fix this by declaring a business state as pseudo unless it is truly only a relay.
 
 .. _diag-code-w-combo-relay-pseudo-has-actions:
@@ -2157,6 +2241,9 @@ W_COMBO_RELAY_PSEUDO_HAS_ACTIONS
 .. diagnostics-ref W_COMBO_RELAY_PSEUDO_HAS_ACTIONS state_path type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_COMBO_RELAY_PSEUDO_HAS_ACTIONS reserved_prefix type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_COMBO_RELAY_PSEUDO_HAS_ACTIONS action_kinds type=list[str] required=true enum=- item_enum=enter|during|exit|during_aspect exact_values=-
+
+
+.. diagnostics-boundary W_COMBO_RELAY_PSEUDO_HAS_ACTIONS kind=partial_static_boundary
 
 **Registry facts.** Severity ``warning``; emit tier ``partial_static_pipeline``; capability ``pure_static``; span object ``state_identifier``.
 
@@ -2191,8 +2278,8 @@ W_COMBO_RELAY_PSEUDO_HAS_ACTIONS
 
 .. diagnostics-example W_COMBO_RELAY_PSEUDO_HAS_ACTIONS 1 boundary_only
 
-**Example 1** (``boundary_only``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``boundary_only``) — reproduction boundary.
+This registry contract is intentionally ahead of full frontend/backend emission parity. Treat the source as the supported boundary shape and confirm the current emitter before promising default CLI JSON output.
 
 .. code-block:: fcstm
 
@@ -2200,12 +2287,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example W_COMBO_RELAY_PSEUDO_HAS_ACTIONS 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``W_COMBO_RELAY_PSEUDO_HAS_ACTIONS``.
 A typical repair is ``move_action`` on ``lifecycle_action``: Move the action to the authored source or target state if it is business behavior rather than routing metadata.
 
 .. diagnostics-example W_COMBO_RELAY_PSEUDO_HAS_ACTIONS 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``W_COMBO_RELAY_PSEUDO_HAS_ACTIONS``.
 Do not add business logic to generated combo relay pseudo states.
 
 .. _diag-code-i-combo-pseudo-name-extended:
@@ -2219,6 +2306,9 @@ I_COMBO_PSEUDO_NAME_EXTENDED
 .. diagnostics-ref I_COMBO_PSEUDO_NAME_EXTENDED payload_digest type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref I_COMBO_PSEUDO_NAME_EXTENDED default_digest_size type=int required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref I_COMBO_PSEUDO_NAME_EXTENDED final_digest_size type=int required=true enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary I_COMBO_PSEUDO_NAME_EXTENDED kind=partial_static_boundary
 
 **Registry facts.** Severity ``info``; emit tier ``partial_static_pipeline``; capability ``pure_static``; span object ``state_identifier``.
 
@@ -2257,8 +2347,8 @@ I_COMBO_PSEUDO_NAME_EXTENDED
 
 .. diagnostics-example I_COMBO_PSEUDO_NAME_EXTENDED 1 boundary_only
 
-**Example 1** (``boundary_only``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``boundary_only``) — reproduction boundary.
+This registry contract is intentionally ahead of full frontend/backend emission parity. Treat the source as the supported boundary shape and confirm the current emitter before promising default CLI JSON output.
 
 .. code-block:: fcstm
 
@@ -2272,12 +2362,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example I_COMBO_PSEUDO_NAME_EXTENDED 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``I_COMBO_PSEUDO_NAME_EXTENDED``.
 A typical repair is ``keep_generated_name`` on ``pseudo_state``: Leave the extended generated name as-is unless you are manually rewriting the expanded relay chain.
 
 .. diagnostics-example I_COMBO_PSEUDO_NAME_EXTENDED 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``I_COMBO_PSEUDO_NAME_EXTENDED``.
 Do not shorten the digest manually; that can reintroduce the collision.
 
 .. _diag-code-e-combo-pseudo-name-collision:
@@ -2289,6 +2379,9 @@ E_COMBO_PSEUDO_NAME_COLLISION
 .. diagnostics-ref E_COMBO_PSEUDO_NAME_COLLISION state_path type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_COMBO_PSEUDO_NAME_COLLISION pseudo_name type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_COMBO_PSEUDO_NAME_COLLISION payload_digest type=str required=true enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary E_COMBO_PSEUDO_NAME_COLLISION kind=cli_error
 
 **Registry facts.** Severity ``error``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``state_identifier``.
 
@@ -2317,10 +2410,10 @@ E_COMBO_PSEUDO_NAME_COLLISION
      - yes
      - Full digest of the semantic payload that attempted to claim the name.
 
-.. diagnostics-example E_COMBO_PSEUDO_NAME_COLLISION 1 repro_cli
+.. diagnostics-example E_COMBO_PSEUDO_NAME_COLLISION 1 cli_error
 
-**Example 1** (``repro_cli``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``cli_error``) — reproduction boundary.
+This source shape reproduces a controlled model-validation failure through ``pyfcstm inspect``. Current CLI formats exit non-zero before a successful inspect JSON report is produced, so assert the stderr/exit status rather than expecting this code inside ``diagnostics[]``.
 
 .. code-block:: fcstm
 
@@ -2328,12 +2421,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example E_COMBO_PSEUDO_NAME_COLLISION 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``E_COMBO_PSEUDO_NAME_COLLISION``.
 A typical repair is ``report_internal_collision`` on ``transition``: This is an internal collision guard. Keep the model unchanged and report the diagnostic, including ``refs.payload_digest``.
 
 .. diagnostics-example E_COMBO_PSEUDO_NAME_COLLISION 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``E_COMBO_PSEUDO_NAME_COLLISION``.
 Do not append an ad-hoc sequence number; user-visible combo names must remain deterministic.
 
 .. _diag-code-w-combo-guard-const-true:
@@ -2350,6 +2443,9 @@ W_COMBO_GUARD_CONST_TRUE
 .. diagnostics-ref W_COMBO_GUARD_CONST_TRUE trigger_span type=Span required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_COMBO_GUARD_CONST_TRUE term_span type=Span required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_COMBO_GUARD_CONST_TRUE value_span type=Span required=false enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary W_COMBO_GUARD_CONST_TRUE kind=inspect_json
 
 **Registry facts.** Severity ``warning``; emit tier ``static_pipeline``; capability ``requires_solver``; span object ``guard_expression``.
 
@@ -2400,8 +2496,8 @@ W_COMBO_GUARD_CONST_TRUE
 
 .. diagnostics-example W_COMBO_GUARD_CONST_TRUE 1 repro_cli
 
-**Example 1** (``repro_cli``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``repro_cli``) — reproduction boundary.
+This diagnostic can appear in a successful inspect report. Reproduce it with ``pyfcstm inspect -i <file> --format json`` and read the ``diagnostics[]`` array.
 
 .. code-block:: fcstm
 
@@ -2415,12 +2511,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example W_COMBO_GUARD_CONST_TRUE 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``W_COMBO_GUARD_CONST_TRUE``.
 A typical repair is ``remove_guard_term`` on ``transition``: Remove the guard term if it was only a placeholder.
 
 .. diagnostics-example W_COMBO_GUARD_CONST_TRUE 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``W_COMBO_GUARD_CONST_TRUE``.
 Do not add a dummy variable dependency only to silence the diagnostic.
 
 .. _diag-code-w-combo-guard-const-false:
@@ -2437,6 +2533,9 @@ W_COMBO_GUARD_CONST_FALSE
 .. diagnostics-ref W_COMBO_GUARD_CONST_FALSE trigger_span type=Span required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_COMBO_GUARD_CONST_FALSE term_span type=Span required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_COMBO_GUARD_CONST_FALSE value_span type=Span required=false enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary W_COMBO_GUARD_CONST_FALSE kind=inspect_json
 
 **Registry facts.** Severity ``warning``; emit tier ``static_pipeline``; capability ``requires_solver``; span object ``guard_expression``.
 
@@ -2487,8 +2586,8 @@ W_COMBO_GUARD_CONST_FALSE
 
 .. diagnostics-example W_COMBO_GUARD_CONST_FALSE 1 repro_cli
 
-**Example 1** (``repro_cli``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``repro_cli``) — reproduction boundary.
+This diagnostic can appear in a successful inspect report. Reproduce it with ``pyfcstm inspect -i <file> --format json`` and read the ``diagnostics[]`` array.
 
 .. code-block:: fcstm
 
@@ -2502,12 +2601,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example W_COMBO_GUARD_CONST_FALSE 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``W_COMBO_GUARD_CONST_FALSE``.
 A typical repair is ``fix_guard_term`` on ``transition``: Rewrite the guard so it can become true under some valid state.
 
 .. diagnostics-example W_COMBO_GUARD_CONST_FALSE 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``W_COMBO_GUARD_CONST_FALSE``.
 Do not silently remove the guard term — that would change the combo semantics.
 
 .. _diag-code-w-combo-guard-prefix-implied:
@@ -2527,6 +2626,9 @@ W_COMBO_GUARD_PREFIX_IMPLIED
 .. diagnostics-ref W_COMBO_GUARD_PREFIX_IMPLIED value_span type=Span required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_COMBO_GUARD_PREFIX_IMPLIED prior_term_span type=Span required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_COMBO_GUARD_PREFIX_IMPLIED prior_value_span type=Span required=false enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary W_COMBO_GUARD_PREFIX_IMPLIED kind=inspect_json
 
 **Registry facts.** Severity ``warning``; emit tier ``static_pipeline``; capability ``requires_solver``; span object ``guard_expression``.
 
@@ -2589,8 +2691,8 @@ W_COMBO_GUARD_PREFIX_IMPLIED
 
 .. diagnostics-example W_COMBO_GUARD_PREFIX_IMPLIED 1 repro_cli
 
-**Example 1** (``repro_cli``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``repro_cli``) — reproduction boundary.
+This diagnostic can appear in a successful inspect report. Reproduce it with ``pyfcstm inspect -i <file> --format json`` and read the ``diagnostics[]`` array.
 
 .. code-block:: fcstm
 
@@ -2604,12 +2706,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example W_COMBO_GUARD_PREFIX_IMPLIED 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``W_COMBO_GUARD_PREFIX_IMPLIED``.
 A typical repair is ``remove_guard_term`` on ``transition``: Remove the later guard if it is intentionally redundant.
 
 .. diagnostics-example W_COMBO_GUARD_PREFIX_IMPLIED 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``W_COMBO_GUARD_PREFIX_IMPLIED``.
 Do not apply this reasoning across abstract/ref or unknown side-effect boundaries.
 
 .. _diag-code-w-combo-guard-prefix-contradicts:
@@ -2629,6 +2731,9 @@ W_COMBO_GUARD_PREFIX_CONTRADICTS
 .. diagnostics-ref W_COMBO_GUARD_PREFIX_CONTRADICTS value_span type=Span required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_COMBO_GUARD_PREFIX_CONTRADICTS prior_term_span type=Span required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_COMBO_GUARD_PREFIX_CONTRADICTS prior_value_span type=Span required=false enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary W_COMBO_GUARD_PREFIX_CONTRADICTS kind=inspect_json
 
 **Registry facts.** Severity ``warning``; emit tier ``static_pipeline``; capability ``requires_solver``; span object ``guard_expression``.
 
@@ -2691,8 +2796,8 @@ W_COMBO_GUARD_PREFIX_CONTRADICTS
 
 .. diagnostics-example W_COMBO_GUARD_PREFIX_CONTRADICTS 1 repro_cli
 
-**Example 1** (``repro_cli``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``repro_cli``) — reproduction boundary.
+This diagnostic can appear in a successful inspect report. Reproduce it with ``pyfcstm inspect -i <file> --format json`` and read the ``diagnostics[]`` array.
 
 .. code-block:: fcstm
 
@@ -2706,12 +2811,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example W_COMBO_GUARD_PREFIX_CONTRADICTS 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``W_COMBO_GUARD_PREFIX_CONTRADICTS``.
 A typical repair is ``fix_guard_term`` on ``transition``: Rewrite the later guard if it was meant to describe a reachable branch.
 
 .. diagnostics-example W_COMBO_GUARD_PREFIX_CONTRADICTS 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``W_COMBO_GUARD_PREFIX_CONTRADICTS``.
 Do not apply this reasoning across abstract/ref or unknown side-effect boundaries.
 
 Forced transition diagnostics
@@ -2725,6 +2830,9 @@ E_FORCED_TRANSITION_EXPANSION
 .. diagnostics-meta E_FORCED_TRANSITION_EXPANSION severity=error emit_tier=static_pipeline capability=pure_static span_object=transition
 .. diagnostics-ref E_FORCED_TRANSITION_EXPANSION original_raw type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_FORCED_TRANSITION_EXPANSION reason type=str required=true enum=src_not_found|tgt_not_found|src_is_root|wildcard_no_descendants item_enum=- exact_values=-
+
+
+.. diagnostics-boundary E_FORCED_TRANSITION_EXPANSION kind=cli_error
 
 **Registry facts.** Severity ``error``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``transition``.
 
@@ -2749,10 +2857,10 @@ E_FORCED_TRANSITION_EXPANSION
      - yes
      - Short tag describing why expansion failed. (enum: ``src_not_found``, ``tgt_not_found``, ``src_is_root``, ``wildcard_no_descendants``)
 
-.. diagnostics-example E_FORCED_TRANSITION_EXPANSION 1 repro_cli
+.. diagnostics-example E_FORCED_TRANSITION_EXPANSION 1 cli_error
 
-**Example 1** (``repro_cli``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``cli_error``) — reproduction boundary.
+This source shape reproduces a controlled model-validation failure through ``pyfcstm inspect``. Current CLI formats exit non-zero before a successful inspect JSON report is produced, so assert the stderr/exit status rather than expecting this code inside ``diagnostics[]``.
 
 .. code-block:: fcstm
 
@@ -2760,12 +2868,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example E_FORCED_TRANSITION_EXPANSION 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``E_FORCED_TRANSITION_EXPANSION``.
 A typical repair is ``fix_source`` on ``forced_transition``: Confirm the ``!Name`` source is a real state inside the current composite scope. ``!*`` only matches direct substates; deeper descendants need explicit names.
 
 .. diagnostics-example E_FORCED_TRANSITION_EXPANSION 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``E_FORCED_TRANSITION_EXPANSION``.
 Do not add an ``effect { ... }`` block to a forced transition — forced transitions cannot carry effects and the expansion would fail anyway.
 
 .. _diag-code-w-forced-never-expands:
@@ -2776,6 +2884,9 @@ W_FORCED_NEVER_EXPANDS
 .. diagnostics-meta W_FORCED_NEVER_EXPANDS severity=warning emit_tier=static_pipeline capability=pure_static span_object=transition
 .. diagnostics-ref W_FORCED_NEVER_EXPANDS state_path type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_FORCED_NEVER_EXPANDS original_raw type=str required=true enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary W_FORCED_NEVER_EXPANDS kind=inspect_json
 
 **Registry facts.** Severity ``warning``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``transition``.
 
@@ -2802,8 +2913,8 @@ W_FORCED_NEVER_EXPANDS
 
 .. diagnostics-example W_FORCED_NEVER_EXPANDS 1 repro_cli
 
-**Example 1** (``repro_cli``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``repro_cli``) — reproduction boundary.
+This diagnostic can appear in a successful inspect report. Reproduce it with ``pyfcstm inspect -i <file> --format json`` and read the ``diagnostics[]`` array.
 
 .. code-block:: fcstm
 
@@ -2816,12 +2927,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example W_FORCED_NEVER_EXPANDS 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``W_FORCED_NEVER_EXPANDS``.
 A typical repair is ``move_transition`` on ``forced_transition``: Move the forced transition to a composite scope that owns matching children.
 
 .. diagnostics-example W_FORCED_NEVER_EXPANDS 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``W_FORCED_NEVER_EXPANDS``.
 Do not leave a zero-expansion forced transition as documentation.
 
 .. _diag-code-w-forced-overrides-normal:
@@ -2834,6 +2945,9 @@ W_FORCED_OVERRIDES_NORMAL
 .. diagnostics-ref W_FORCED_OVERRIDES_NORMAL to_path type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_FORCED_OVERRIDES_NORMAL forced_declaration_span type=Span required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_FORCED_OVERRIDES_NORMAL normal_transition_span type=Span required=false enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary W_FORCED_OVERRIDES_NORMAL kind=inspect_json
 
 **Registry facts.** Severity ``warning``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``transition``.
 
@@ -2868,8 +2982,8 @@ W_FORCED_OVERRIDES_NORMAL
 
 .. diagnostics-example W_FORCED_OVERRIDES_NORMAL 1 repro_cli
 
-**Example 1** (``repro_cli``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``repro_cli``) — reproduction boundary.
+This diagnostic can appear in a successful inspect report. Reproduce it with ``pyfcstm inspect -i <file> --format json`` and read the ``diagnostics[]`` array.
 
 .. code-block:: fcstm
 
@@ -2883,12 +2997,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example W_FORCED_OVERRIDES_NORMAL 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``W_FORCED_OVERRIDES_NORMAL``.
 A typical repair is ``remove_duplicate`` on ``forced_transition``: Remove the forced transition if the normal one already covers it.
 
 .. diagnostics-example W_FORCED_OVERRIDES_NORMAL 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``W_FORCED_OVERRIDES_NORMAL``.
 Do not keep both unless the generated runtime intentionally treats forced metadata differently.
 
 .. _diag-code-w-forced-guard-unsat:
@@ -2902,6 +3016,9 @@ W_FORCED_GUARD_UNSAT
 .. diagnostics-ref W_FORCED_GUARD_UNSAT transition type=dict required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_FORCED_GUARD_UNSAT transition_summary type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_FORCED_GUARD_UNSAT scope type=str required=true enum=dsl_def_init_only item_enum=- exact_values=-
+
+
+.. diagnostics-boundary W_FORCED_GUARD_UNSAT kind=verify_smt_linear
 
 **Registry facts.** Severity ``warning``; emit tier ``verify_pipeline``; capability ``requires_solver``; span object ``guard_expression``.
 
@@ -2940,8 +3057,8 @@ W_FORCED_GUARD_UNSAT
 
 .. diagnostics-example W_FORCED_GUARD_UNSAT 1 verify_opt_in
 
-**Example 1** (``verify_opt_in``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``verify_opt_in``) — reproduction boundary.
+This diagnostic requires optional verify integration. Reproduce it with ``pyfcstm inspect -i <file> --enable-verify --max-complexity-tier smt_linear --format json``; the default structural verify budget does not run the solver-local algorithm that emits it.
 
 .. code-block:: fcstm
 
@@ -2955,12 +3072,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example W_FORCED_GUARD_UNSAT 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``W_FORCED_GUARD_UNSAT``.
 A typical repair is ``adjust_initializer`` on ``variable_definition``: Change the initializer if the forced transition must be possible at startup.
 
 .. diagnostics-example W_FORCED_GUARD_UNSAT 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``W_FORCED_GUARD_UNSAT``.
 Do not delete the forced transition solely because it is impossible at declaration time; later runtime values may still matter for normal guards.
 
 Guard, effect, and solver diagnostics
@@ -2978,6 +3095,9 @@ W_GUARD_CONST_FALSE
 .. diagnostics-ref W_GUARD_CONST_FALSE to_path type=str required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_GUARD_CONST_FALSE guard_text type=str required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_GUARD_CONST_FALSE transition_index type=int required=false enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary W_GUARD_CONST_FALSE kind=inspect_json
 
 **Registry facts.** Severity ``warning``; emit tier ``static_pipeline``; capability ``const_fold``; span object ``guard_expression``.
 
@@ -3020,8 +3140,8 @@ W_GUARD_CONST_FALSE
 
 .. diagnostics-example W_GUARD_CONST_FALSE 1 repro_cli
 
-**Example 1** (``repro_cli``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``repro_cli``) — reproduction boundary.
+This diagnostic can appear in a successful inspect report. Reproduce it with ``pyfcstm inspect -i <file> --format json`` and read the ``diagnostics[]`` array.
 
 .. code-block:: fcstm
 
@@ -3034,12 +3154,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example W_GUARD_CONST_FALSE 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``W_GUARD_CONST_FALSE``.
 A typical repair is ``fix_guard`` on ``transition``: Rewrite the guard so it can become true under some valid state.
 
 .. diagnostics-example W_GUARD_CONST_FALSE 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``W_GUARD_CONST_FALSE``.
 Do not silently remove the guard — that would change the semantics.
 
 .. _diag-code-w-guard-const-true:
@@ -3055,6 +3175,9 @@ W_GUARD_CONST_TRUE
 .. diagnostics-ref W_GUARD_CONST_TRUE to_path type=str required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_GUARD_CONST_TRUE guard_text type=str required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_GUARD_CONST_TRUE transition_index type=int required=false enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary W_GUARD_CONST_TRUE kind=inspect_json
 
 **Registry facts.** Severity ``warning``; emit tier ``static_pipeline``; capability ``const_fold``; span object ``guard_expression``.
 
@@ -3101,8 +3224,8 @@ W_GUARD_CONST_TRUE
 
 .. diagnostics-example W_GUARD_CONST_TRUE 1 repro_cli
 
-**Example 1** (``repro_cli``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``repro_cli``) — reproduction boundary.
+This diagnostic can appear in a successful inspect report. Reproduce it with ``pyfcstm inspect -i <file> --format json`` and read the ``diagnostics[]`` array.
 
 .. code-block:: fcstm
 
@@ -3115,12 +3238,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example W_GUARD_CONST_TRUE 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``W_GUARD_CONST_TRUE``.
 A typical repair is ``remove_guard`` on ``transition``: Remove the guard if the transition is meant to be unconditional.
 
 .. diagnostics-example W_GUARD_CONST_TRUE 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``W_GUARD_CONST_TRUE``.
 Do not add a dummy variable dependency only to silence the diagnostic.
 
 .. _diag-code-w-guard-vars-never-change:
@@ -3132,6 +3255,9 @@ W_GUARD_VARS_NEVER_CHANGE
 .. diagnostics-ref W_GUARD_VARS_NEVER_CHANGE from_path type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_GUARD_VARS_NEVER_CHANGE to_path type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_GUARD_VARS_NEVER_CHANGE guard_vars type=list[str] required=true enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary W_GUARD_VARS_NEVER_CHANGE kind=inspect_json
 
 **Registry facts.** Severity ``warning``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``guard_expression``.
 
@@ -3162,8 +3288,8 @@ W_GUARD_VARS_NEVER_CHANGE
 
 .. diagnostics-example W_GUARD_VARS_NEVER_CHANGE 1 repro_cli
 
-**Example 1** (``repro_cli``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``repro_cli``) — reproduction boundary.
+This diagnostic can appear in a successful inspect report. Reproduce it with ``pyfcstm inspect -i <file> --format json`` and read the ``diagnostics[]`` array.
 
 .. code-block:: fcstm
 
@@ -3177,12 +3303,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example W_GUARD_VARS_NEVER_CHANGE 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``W_GUARD_VARS_NEVER_CHANGE``.
 A typical repair is ``add_write`` on ``action_or_effect``: Add the missing state update if the guard should evolve at runtime.
 
 .. diagnostics-example W_GUARD_VARS_NEVER_CHANGE 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``W_GUARD_VARS_NEVER_CHANGE``.
 Do not add a meaningless self-assignment; it does not model a real change.
 
 .. _diag-code-w-effect-self-assign:
@@ -3203,6 +3329,9 @@ W_EFFECT_SELF_ASSIGN
 .. diagnostics-ref W_EFFECT_SELF_ASSIGN effect_self_assign_anchor type=str required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_EFFECT_SELF_ASSIGN suggested_fix type=dict required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_EFFECT_SELF_ASSIGN transition_index type=int required=false enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary W_EFFECT_SELF_ASSIGN kind=inspect_json
 
 **Registry facts.** Severity ``warning``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``effect_statement``.
 
@@ -3269,8 +3398,8 @@ W_EFFECT_SELF_ASSIGN
 
 .. diagnostics-example W_EFFECT_SELF_ASSIGN 1 repro_cli
 
-**Example 1** (``repro_cli``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``repro_cli``) — reproduction boundary.
+This diagnostic can appear in a successful inspect report. Reproduce it with ``pyfcstm inspect -i <file> --format json`` and read the ``diagnostics[]`` array.
 
 .. code-block:: fcstm
 
@@ -3284,12 +3413,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example W_EFFECT_SELF_ASSIGN 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``W_EFFECT_SELF_ASSIGN``.
 A typical repair is ``remove_statement`` on ``effect_statement``: Delete the self-assignment.
 
 .. diagnostics-example W_EFFECT_SELF_ASSIGN 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``W_EFFECT_SELF_ASSIGN``.
 Do not replace it with another no-op expression.
 
 .. _diag-code-w-dead-guard:
@@ -3302,6 +3431,9 @@ W_DEAD_GUARD
 .. diagnostics-ref W_DEAD_GUARD verification_scope type=str required=true enum=smt_local item_enum=- exact_values=-
 .. diagnostics-ref W_DEAD_GUARD transition type=dict required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_DEAD_GUARD transition_summary type=str required=true enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary W_DEAD_GUARD kind=verify_smt_linear
 
 **Registry facts.** Severity ``warning``; emit tier ``verify_pipeline``; capability ``requires_solver``; span object ``guard_expression``.
 
@@ -3336,8 +3468,8 @@ W_DEAD_GUARD
 
 .. diagnostics-example W_DEAD_GUARD 1 verify_opt_in
 
-**Example 1** (``verify_opt_in``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``verify_opt_in``) — reproduction boundary.
+This diagnostic requires optional verify integration. Reproduce it with ``pyfcstm inspect -i <file> --enable-verify --max-complexity-tier smt_linear --format json``; the default structural verify budget does not run the solver-local algorithm that emits it.
 
 .. code-block:: fcstm
 
@@ -3351,12 +3483,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example W_DEAD_GUARD 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``W_DEAD_GUARD``.
 A typical repair is ``fix_guard`` on ``transition``: Relax or correct the contradictory guard condition.
 
 .. diagnostics-example W_DEAD_GUARD 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``W_DEAD_GUARD``.
 Do not replace the guard with true unless the transition really should become unconditional.
 
 .. _diag-code-w-guard-tautology:
@@ -3369,6 +3501,9 @@ W_GUARD_TAUTOLOGY
 .. diagnostics-ref W_GUARD_TAUTOLOGY verification_scope type=str required=true enum=smt_local item_enum=- exact_values=-
 .. diagnostics-ref W_GUARD_TAUTOLOGY transition type=dict required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_GUARD_TAUTOLOGY transition_summary type=str required=true enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary W_GUARD_TAUTOLOGY kind=verify_smt_linear
 
 **Registry facts.** Severity ``warning``; emit tier ``verify_pipeline``; capability ``requires_solver``; span object ``guard_expression``.
 
@@ -3403,8 +3538,8 @@ W_GUARD_TAUTOLOGY
 
 .. diagnostics-example W_GUARD_TAUTOLOGY 1 verify_opt_in
 
-**Example 1** (``verify_opt_in``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``verify_opt_in``) — reproduction boundary.
+This diagnostic requires optional verify integration. Reproduce it with ``pyfcstm inspect -i <file> --enable-verify --max-complexity-tier smt_linear --format json``; the default structural verify budget does not run the solver-local algorithm that emits it.
 
 .. code-block:: fcstm
 
@@ -3418,12 +3553,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example W_GUARD_TAUTOLOGY 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``W_GUARD_TAUTOLOGY``.
 A typical repair is ``remove_redundant_guard`` on ``transition``: Remove the guard if the transition should be unconditional.
 
 .. diagnostics-example W_GUARD_TAUTOLOGY 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``W_GUARD_TAUTOLOGY``.
 Do not assume every tautological guard is wrong; it may document intent.
 
 .. _diag-code-w-effect-smt-no-op:
@@ -3436,6 +3571,9 @@ W_EFFECT_SMT_NO_OP
 .. diagnostics-ref W_EFFECT_SMT_NO_OP verification_scope type=str required=true enum=smt_local item_enum=- exact_values=-
 .. diagnostics-ref W_EFFECT_SMT_NO_OP transition type=dict required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_EFFECT_SMT_NO_OP transition_summary type=str required=true enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary W_EFFECT_SMT_NO_OP kind=verify_smt_linear
 
 **Registry facts.** Severity ``warning``; emit tier ``verify_pipeline``; capability ``requires_solver``; span object ``effect_statement``.
 
@@ -3470,8 +3608,8 @@ W_EFFECT_SMT_NO_OP
 
 .. diagnostics-example W_EFFECT_SMT_NO_OP 1 verify_opt_in
 
-**Example 1** (``verify_opt_in``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``verify_opt_in``) — reproduction boundary.
+This diagnostic requires optional verify integration. Reproduce it with ``pyfcstm inspect -i <file> --enable-verify --max-complexity-tier smt_linear --format json``; the default structural verify budget does not run the solver-local algorithm that emits it.
 
 .. code-block:: fcstm
 
@@ -3485,12 +3623,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example W_EFFECT_SMT_NO_OP 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``W_EFFECT_SMT_NO_OP``.
 A typical repair is ``remove_effect`` on ``effect_block``: Remove the effect if it is dead or only placeholder logic.
 
 .. diagnostics-example W_EFFECT_SMT_NO_OP 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``W_EFFECT_SMT_NO_OP``.
 Do not report block-local temporary-only changes as state changes; they disappear after the effect block.
 
 .. _diag-code-i-effect-guard-contradict:
@@ -3503,6 +3641,9 @@ I_EFFECT_GUARD_CONTRADICT
 .. diagnostics-ref I_EFFECT_GUARD_CONTRADICT verification_scope type=str required=true enum=smt_local item_enum=- exact_values=-
 .. diagnostics-ref I_EFFECT_GUARD_CONTRADICT transition type=dict required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref I_EFFECT_GUARD_CONTRADICT transition_summary type=str required=true enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary I_EFFECT_GUARD_CONTRADICT kind=verify_smt_linear
 
 **Registry facts.** Severity ``info``; emit tier ``verify_pipeline``; capability ``requires_solver``; span object ``effect_statement``.
 
@@ -3537,8 +3678,8 @@ I_EFFECT_GUARD_CONTRADICT
 
 .. diagnostics-example I_EFFECT_GUARD_CONTRADICT 1 verify_opt_in
 
-**Example 1** (``verify_opt_in``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``verify_opt_in``) — reproduction boundary.
+This diagnostic requires optional verify integration. Reproduce it with ``pyfcstm inspect -i <file> --enable-verify --max-complexity-tier smt_linear --format json``; the default structural verify budget does not run the solver-local algorithm that emits it.
 
 .. code-block:: fcstm
 
@@ -3552,12 +3693,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example I_EFFECT_GUARD_CONTRADICT 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``I_EFFECT_GUARD_CONTRADICT``.
 A typical repair is ``review_one_shot`` on ``transition``: Confirm the effect is meant to falsify the enabling guard.
 
 .. diagnostics-example I_EFFECT_GUARD_CONTRADICT 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``I_EFFECT_GUARD_CONTRADICT``.
 Do not treat this info as an automatic defect; guard-reset effects are often intentional.
 
 Lifecycle, aspect, and composite diagnostics
@@ -3572,6 +3713,9 @@ E_DURING_ASPECT_INVALID
 .. diagnostics-ref E_DURING_ASPECT_INVALID state_path type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_DURING_ASPECT_INVALID state_kind type=str required=true enum=leaf|composite item_enum=- exact_values=-
 .. diagnostics-ref E_DURING_ASPECT_INVALID aspect type=str_or_null required=false enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary E_DURING_ASPECT_INVALID kind=cli_error
 
 **Registry facts.** Severity ``error``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``lifecycle_action``.
 
@@ -3600,10 +3744,10 @@ E_DURING_ASPECT_INVALID
      - no
      - The aspect token that was actually used. ``'before'`` or ``'after'`` for ``during before`` / ``during after`` and ``>> during before/after``; ``null`` when the user wrote a bare ``during`` on a composite state. ``null`` is intentional — the consumer should branch on the bare-during case rather than treat it as an enum value.
 
-.. diagnostics-example E_DURING_ASPECT_INVALID 1 repro_cli
+.. diagnostics-example E_DURING_ASPECT_INVALID 1 cli_error
 
-**Example 1** (``repro_cli``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``cli_error``) — reproduction boundary.
+This source shape reproduces a controlled model-validation failure through ``pyfcstm inspect``. Current CLI formats exit non-zero before a successful inspect JSON report is produced, so assert the stderr/exit status rather than expecting this code inside ``diagnostics[]``.
 
 .. code-block:: fcstm
 
@@ -3615,12 +3759,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example E_DURING_ASPECT_INVALID 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``E_DURING_ASPECT_INVALID``.
 A typical repair is ``move_to_composite`` on ``aspect_declaration``: Aspect actions only make sense on composite states. Move the declaration to a composite ancestor whose descendants should receive the aspect.
 
 .. diagnostics-example E_DURING_ASPECT_INVALID 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``E_DURING_ASPECT_INVALID``.
 Do not convert the leaf into a composite just to host the aspect — that changes the runtime entry/exit semantics.
 
 .. _diag-code-e-pseudo-not-leaf:
@@ -3630,6 +3774,9 @@ E_PSEUDO_NOT_LEAF
 
 .. diagnostics-meta E_PSEUDO_NOT_LEAF severity=error emit_tier=static_pipeline capability=pure_static span_object=state_identifier
 .. diagnostics-ref E_PSEUDO_NOT_LEAF state_path type=str required=true enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary E_PSEUDO_NOT_LEAF kind=cli_error
 
 **Registry facts.** Severity ``error``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``state_identifier``.
 
@@ -3650,10 +3797,10 @@ E_PSEUDO_NOT_LEAF
      - yes
      - Dotted path of the offending pseudo state.
 
-.. diagnostics-example E_PSEUDO_NOT_LEAF 1 repro_cli
+.. diagnostics-example E_PSEUDO_NOT_LEAF 1 cli_error
 
-**Example 1** (``repro_cli``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``cli_error``) — reproduction boundary.
+This source shape reproduces a controlled model-validation failure through ``pyfcstm inspect``. Current CLI formats exit non-zero before a successful inspect JSON report is produced, so assert the stderr/exit status rather than expecting this code inside ``diagnostics[]``.
 
 .. code-block:: fcstm
 
@@ -3666,12 +3813,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example E_PSEUDO_NOT_LEAF 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``E_PSEUDO_NOT_LEAF``.
 A typical repair is ``drop_pseudo_marker`` on ``state_definition``: If the state genuinely needs substates, remove the ``pseudo`` keyword and treat it as a normal composite.
 
 .. diagnostics-example E_PSEUDO_NOT_LEAF 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``E_PSEUDO_NOT_LEAF``.
 Do not rely on pseudo states for normal hierarchy modeling — they exist solely to bypass ``>> during`` aspect application.
 
 .. _diag-code-w-during-const-assign:
@@ -3683,6 +3830,9 @@ W_DURING_CONST_ASSIGN
 .. diagnostics-ref W_DURING_CONST_ASSIGN state_path type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_DURING_CONST_ASSIGN var_name type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_DURING_CONST_ASSIGN value type=number required=true enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary W_DURING_CONST_ASSIGN kind=inspect_json
 
 **Registry facts.** Severity ``warning``; emit tier ``static_pipeline``; capability ``const_fold``; span object ``lifecycle_action``.
 
@@ -3713,8 +3863,8 @@ W_DURING_CONST_ASSIGN
 
 .. diagnostics-example W_DURING_CONST_ASSIGN 1 repro_cli
 
-**Example 1** (``repro_cli``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``repro_cli``) — reproduction boundary.
+This diagnostic can appear in a successful inspect report. Reproduce it with ``pyfcstm inspect -i <file> --format json`` and read the ``diagnostics[]`` array.
 
 .. code-block:: fcstm
 
@@ -3728,12 +3878,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example W_DURING_CONST_ASSIGN 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``W_DURING_CONST_ASSIGN``.
 A typical repair is ``move_to_enter`` on ``action``: Move the assignment to ``enter`` if it should run once on state entry.
 
 .. diagnostics-example W_DURING_CONST_ASSIGN 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``W_DURING_CONST_ASSIGN``.
 Do not suppress the warning by adding a meaningless arithmetic no-op.
 
 .. _diag-code-w-aspect-no-descendant-leaf:
@@ -3744,6 +3894,9 @@ W_ASPECT_NO_DESCENDANT_LEAF
 .. diagnostics-meta W_ASPECT_NO_DESCENDANT_LEAF severity=warning emit_tier=static_pipeline capability=pure_static span_object=lifecycle_action
 .. diagnostics-ref W_ASPECT_NO_DESCENDANT_LEAF composite_path type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_ASPECT_NO_DESCENDANT_LEAF aspect type=str required=true enum=before|after item_enum=- exact_values=-
+
+
+.. diagnostics-boundary W_ASPECT_NO_DESCENDANT_LEAF kind=inspect_json
 
 **Registry facts.** Severity ``warning``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``lifecycle_action``.
 
@@ -3770,8 +3923,8 @@ W_ASPECT_NO_DESCENDANT_LEAF
 
 .. diagnostics-example W_ASPECT_NO_DESCENDANT_LEAF 1 repro_cli
 
-**Example 1** (``repro_cli``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``repro_cli``) — reproduction boundary.
+This diagnostic can appear in a successful inspect report. Reproduce it with ``pyfcstm inspect -i <file> --format json`` and read the ``diagnostics[]`` array.
 
 .. code-block:: fcstm
 
@@ -3783,12 +3936,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example W_ASPECT_NO_DESCENDANT_LEAF 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``W_ASPECT_NO_DESCENDANT_LEAF``.
 A typical repair is ``add_leaf`` on ``composite_state``: Add the intended descendant leaf state under this composite.
 
 .. diagnostics-example W_ASPECT_NO_DESCENDANT_LEAF 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``W_ASPECT_NO_DESCENDANT_LEAF``.
 Do not replace it with a normal during action unless the execution semantics really should change.
 
 .. _diag-code-i-enter-during-contradict:
@@ -3803,6 +3956,9 @@ I_ENTER_DURING_CONTRADICT
 .. diagnostics-ref I_ENTER_DURING_CONTRADICT condition type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref I_ENTER_DURING_CONTRADICT condition_source type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref I_ENTER_DURING_CONTRADICT branch_taken type=str required=true enum=true|false item_enum=- exact_values=-
+
+
+.. diagnostics-boundary I_ENTER_DURING_CONTRADICT kind=verify_smt_linear
 
 **Registry facts.** Severity ``info``; emit tier ``verify_pipeline``; capability ``requires_solver``; span object ``lifecycle_action``.
 
@@ -3845,8 +4001,8 @@ I_ENTER_DURING_CONTRADICT
 
 .. diagnostics-example I_ENTER_DURING_CONTRADICT 1 verify_opt_in
 
-**Example 1** (``verify_opt_in``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``verify_opt_in``) — reproduction boundary.
+This diagnostic requires optional verify integration. Reproduce it with ``pyfcstm inspect -i <file> --enable-verify --max-complexity-tier smt_linear --format json``; the default structural verify budget does not run the solver-local algorithm that emits it.
 
 .. code-block:: fcstm
 
@@ -3863,12 +4019,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example I_ENTER_DURING_CONTRADICT 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``I_ENTER_DURING_CONTRADICT``.
 A typical repair is ``review_enter_during_relation`` on ``lifecycle_action``: Check whether enter assignments intentionally force the first during branch.
 
 .. diagnostics-example I_ENTER_DURING_CONTRADICT 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``I_ENTER_DURING_CONTRADICT``.
 Do not remove the enter action just to make the first-cycle branch variable; entry side effects may be required.
 
 .. _diag-code-w-composite-init-incomplete:
@@ -3883,6 +4039,9 @@ W_COMPOSITE_INIT_INCOMPLETE
 .. diagnostics-ref W_COMPOSITE_INIT_INCOMPLETE init_transition_count type=int required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_COMPOSITE_INIT_INCOMPLETE init_transitions type=list[str] required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_COMPOSITE_INIT_INCOMPLETE witness type=str_or_null required=false enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary W_COMPOSITE_INIT_INCOMPLETE kind=verify_smt_linear
 
 **Registry facts.** Severity ``warning``; emit tier ``verify_pipeline``; capability ``requires_solver``; span object ``composite_block``.
 
@@ -3925,8 +4084,8 @@ W_COMPOSITE_INIT_INCOMPLETE
 
 .. diagnostics-example W_COMPOSITE_INIT_INCOMPLETE 1 verify_opt_in
 
-**Example 1** (``verify_opt_in``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``verify_opt_in``) — reproduction boundary.
+This diagnostic requires optional verify integration. Reproduce it with ``pyfcstm inspect -i <file> --enable-verify --max-complexity-tier smt_linear --format json``; the default structural verify budget does not run the solver-local algorithm that emits it.
 
 .. code-block:: fcstm
 
@@ -3940,12 +4099,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example W_COMPOSITE_INIT_INCOMPLETE 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``W_COMPOSITE_INIT_INCOMPLETE``.
 A typical repair is ``add_catch_all_initial`` on ``composite_state``: Add an unconditional fallback initial transition if one child should be the default.
 
 .. diagnostics-example W_COMPOSITE_INIT_INCOMPLETE 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``W_COMPOSITE_INIT_INCOMPLETE``.
 Do not add overlapping initial transitions without reviewing declaration order and guard intent.
 
 Data-flow diagnostics
@@ -3961,6 +4120,9 @@ W_UNREFERENCED_VAR
 .. diagnostics-ref W_UNREFERENCED_VAR init_value type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_UNREFERENCED_VAR definition_delete_anchor type=str required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_UNREFERENCED_VAR suggested_fix type=dict required=false enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary W_UNREFERENCED_VAR kind=inspect_json
 
 **Registry facts.** Severity ``warning``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``variable_declaration``.
 
@@ -3995,8 +4157,8 @@ W_UNREFERENCED_VAR
 
 .. diagnostics-example W_UNREFERENCED_VAR 1 repro_cli
 
-**Example 1** (``repro_cli``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``repro_cli``) — reproduction boundary.
+This diagnostic can appear in a successful inspect report. Reproduce it with ``pyfcstm inspect -i <file> --format json`` and read the ``diagnostics[]`` array.
 
 .. code-block:: fcstm
 
@@ -4011,12 +4173,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example W_UNREFERENCED_VAR 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``W_UNREFERENCED_VAR``.
 A typical repair is ``remove_variable`` on ``variable_definition``: Remove the variable and related writes if it was speculative scaffolding.
 
 .. diagnostics-example W_UNREFERENCED_VAR 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``W_UNREFERENCED_VAR``.
 Do not add a dummy guard reference only to silence the diagnostic.
 
 .. _diag-code-i-unreferenced-var-maybe-abstract:
@@ -4027,6 +4189,9 @@ I_UNREFERENCED_VAR_MAYBE_ABSTRACT
 .. diagnostics-meta I_UNREFERENCED_VAR_MAYBE_ABSTRACT severity=info emit_tier=static_pipeline capability=pure_static span_object=variable_declaration
 .. diagnostics-ref I_UNREFERENCED_VAR_MAYBE_ABSTRACT var_name type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref I_UNREFERENCED_VAR_MAYBE_ABSTRACT abstract_actions_in_scope type=list[str] required=true enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary I_UNREFERENCED_VAR_MAYBE_ABSTRACT kind=inspect_json
 
 **Registry facts.** Severity ``info``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``variable_declaration``.
 
@@ -4053,8 +4218,8 @@ I_UNREFERENCED_VAR_MAYBE_ABSTRACT
 
 .. diagnostics-example I_UNREFERENCED_VAR_MAYBE_ABSTRACT 1 repro_cli
 
-**Example 1** (``repro_cli``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``repro_cli``) — reproduction boundary.
+This diagnostic can appear in a successful inspect report. Reproduce it with ``pyfcstm inspect -i <file> --format json`` and read the ``diagnostics[]`` array.
 
 .. code-block:: fcstm
 
@@ -4069,12 +4234,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example I_UNREFERENCED_VAR_MAYBE_ABSTRACT 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``I_UNREFERENCED_VAR_MAYBE_ABSTRACT``.
 A typical repair is ``inspect_abstract_action`` on ``abstract_action``: Check the external implementation before removing the variable.
 
 .. diagnostics-example I_UNREFERENCED_VAR_MAYBE_ABSTRACT 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``I_UNREFERENCED_VAR_MAYBE_ABSTRACT``.
 Do not remove the variable without checking the abstract implementation.
 
 .. _diag-code-w-unwritten-read-var:
@@ -4086,6 +4251,9 @@ W_UNWRITTEN_READ_VAR
 .. diagnostics-ref W_UNWRITTEN_READ_VAR var_name type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_UNWRITTEN_READ_VAR read_states type=list[str] required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_UNWRITTEN_READ_VAR init_value type=str required=true enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary W_UNWRITTEN_READ_VAR kind=inspect_json
 
 **Registry facts.** Severity ``warning``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``variable_declaration``.
 
@@ -4116,8 +4284,8 @@ W_UNWRITTEN_READ_VAR
 
 .. diagnostics-example W_UNWRITTEN_READ_VAR 1 repro_cli
 
-**Example 1** (``repro_cli``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``repro_cli``) — reproduction boundary.
+This diagnostic can appear in a successful inspect report. Reproduce it with ``pyfcstm inspect -i <file> --format json`` and read the ``diagnostics[]`` array.
 
 .. code-block:: fcstm
 
@@ -4131,12 +4299,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example W_UNWRITTEN_READ_VAR 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``W_UNWRITTEN_READ_VAR``.
 A typical repair is ``add_write`` on ``action_or_effect``: Add the intended update if the variable should change.
 
 .. diagnostics-example W_UNWRITTEN_READ_VAR 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``W_UNWRITTEN_READ_VAR``.
 Do not add a meaningless self-assignment.
 
 .. _diag-code-w-write-only-var:
@@ -4147,6 +4315,9 @@ W_WRITE_ONLY_VAR
 .. diagnostics-meta W_WRITE_ONLY_VAR severity=warning emit_tier=static_pipeline capability=pure_static span_object=variable_declaration
 .. diagnostics-ref W_WRITE_ONLY_VAR var_name type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_WRITE_ONLY_VAR written_states type=list[str] required=true enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary W_WRITE_ONLY_VAR kind=inspect_json
 
 **Registry facts.** Severity ``warning``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``variable_declaration``.
 
@@ -4173,8 +4344,8 @@ W_WRITE_ONLY_VAR
 
 .. diagnostics-example W_WRITE_ONLY_VAR 1 repro_cli
 
-**Example 1** (``repro_cli``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``repro_cli``) — reproduction boundary.
+This diagnostic can appear in a successful inspect report. Reproduce it with ``pyfcstm inspect -i <file> --format json`` and read the ``diagnostics[]`` array.
 
 .. code-block:: fcstm
 
@@ -4186,12 +4357,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example W_WRITE_ONLY_VAR 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``W_WRITE_ONLY_VAR``.
 A typical repair is ``add_read`` on ``guard_or_action``: Read the variable where it should affect behavior.
 
 .. diagnostics-example W_WRITE_ONLY_VAR 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``W_WRITE_ONLY_VAR``.
 Do not add an unused read just to silence the warning.
 
 Numeric and target-profile diagnostics
@@ -4206,6 +4377,9 @@ W_LITERAL_TYPE_NARROWING
 .. diagnostics-ref W_LITERAL_TYPE_NARROWING var_name type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_LITERAL_TYPE_NARROWING target_type type=str required=true enum=int item_enum=- exact_values=-
 .. diagnostics-ref W_LITERAL_TYPE_NARROWING source_expr type=str required=true enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary W_LITERAL_TYPE_NARROWING kind=inspect_json
 
 **Registry facts.** Severity ``warning``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``expression``.
 
@@ -4236,8 +4410,8 @@ W_LITERAL_TYPE_NARROWING
 
 .. diagnostics-example W_LITERAL_TYPE_NARROWING 1 repro_cli
 
-**Example 1** (``repro_cli``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``repro_cli``) — reproduction boundary.
+This diagnostic can appear in a successful inspect report. Reproduce it with ``pyfcstm inspect -i <file> --format json`` and read the ``diagnostics[]`` array.
 
 .. code-block:: fcstm
 
@@ -4246,12 +4420,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example W_LITERAL_TYPE_NARROWING 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``W_LITERAL_TYPE_NARROWING``.
 A typical repair is ``change_type`` on ``variable_definition``: Use ``def float`` when fractional values are intended.
 
 .. diagnostics-example W_LITERAL_TYPE_NARROWING 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``W_LITERAL_TYPE_NARROWING``.
 Do not silently rely on target-language truncation rules.
 
 .. _diag-code-w-numeric-literal-out-of-target-range:
@@ -4272,6 +4446,9 @@ W_NUMERIC_LITERAL_OUT_OF_TARGET_RANGE
 .. diagnostics-ref W_NUMERIC_LITERAL_OUT_OF_TARGET_RANGE min_value_text type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_NUMERIC_LITERAL_OUT_OF_TARGET_RANGE max_value_text type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_NUMERIC_LITERAL_OUT_OF_TARGET_RANGE var_name type=str required=false enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary W_NUMERIC_LITERAL_OUT_OF_TARGET_RANGE kind=inspect_json
 
 **Registry facts.** Severity ``warning``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``expression``.
 
@@ -4338,8 +4515,8 @@ W_NUMERIC_LITERAL_OUT_OF_TARGET_RANGE
 
 .. diagnostics-example W_NUMERIC_LITERAL_OUT_OF_TARGET_RANGE 1 repro_cli
 
-**Example 1** (``repro_cli``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``repro_cli``) — reproduction boundary.
+This diagnostic can appear in a successful inspect report. Reproduce it with ``pyfcstm inspect -i <file> --format json`` and read the ``diagnostics[]`` array.
 
 .. code-block:: fcstm
 
@@ -4348,12 +4525,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example W_NUMERIC_LITERAL_OUT_OF_TARGET_RANGE 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``W_NUMERIC_LITERAL_OUT_OF_TARGET_RANGE``.
 A typical repair is ``reduce_literal`` on ``expression``: Keep integer literals within the documented C/C++ target range when deploying to C-family templates.
 
 .. diagnostics-example W_NUMERIC_LITERAL_OUT_OF_TARGET_RANGE 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``W_NUMERIC_LITERAL_OUT_OF_TARGET_RANGE``.
 Do not describe this as a target-independent FCSTM model error; the risk is tied to the C/C++ default integer profile.
 
 .. _diag-code-w-numeric-constant-division-by-zero:
@@ -4370,6 +4547,9 @@ W_NUMERIC_CONSTANT_DIVISION_BY_ZERO
 .. diagnostics-ref W_NUMERIC_CONSTANT_DIVISION_BY_ZERO expr_text type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_NUMERIC_CONSTANT_DIVISION_BY_ZERO operator type=str required=true enum=/|% item_enum=- exact_values=-
 .. diagnostics-ref W_NUMERIC_CONSTANT_DIVISION_BY_ZERO rhs_text type=str required=true enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary W_NUMERIC_CONSTANT_DIVISION_BY_ZERO kind=inspect_json
 
 **Registry facts.** Severity ``warning``; emit tier ``static_pipeline``; capability ``const_fold``; span object ``expression``.
 
@@ -4420,8 +4600,8 @@ W_NUMERIC_CONSTANT_DIVISION_BY_ZERO
 
 .. diagnostics-example W_NUMERIC_CONSTANT_DIVISION_BY_ZERO 1 repro_cli
 
-**Example 1** (``repro_cli``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``repro_cli``) — reproduction boundary.
+This diagnostic can appear in a successful inspect report. Reproduce it with ``pyfcstm inspect -i <file> --format json`` and read the ``diagnostics[]`` array.
 
 .. code-block:: fcstm
 
@@ -4436,12 +4616,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example W_NUMERIC_CONSTANT_DIVISION_BY_ZERO 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``W_NUMERIC_CONSTANT_DIVISION_BY_ZERO``.
 A typical repair is ``fix_denominator`` on ``expression``: Replace the zero RHS with a non-zero expression or guard the operation before C/C++ deployment.
 
 .. diagnostics-example W_NUMERIC_CONSTANT_DIVISION_BY_ZERO 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``W_NUMERIC_CONSTANT_DIVISION_BY_ZERO``.
 Do not require the whole expression to be literal-only; only the RHS of ``/`` or ``%`` needs to fold to zero.
 
 .. _diag-code-w-numeric-shift-count-out-of-target-range:
@@ -4459,6 +4639,9 @@ W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE
 .. diagnostics-ref W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE operator type=str required=true enum=<<|>> item_enum=- exact_values=-
 .. diagnostics-ref W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE target_bits type=int required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE shift_count_text type=str required=true enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE kind=inspect_json
 
 **Registry facts.** Severity ``warning``; emit tier ``static_pipeline``; capability ``const_fold``; span object ``expression``.
 
@@ -4513,8 +4696,8 @@ W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE
 
 .. diagnostics-example W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE 1 repro_cli
 
-**Example 1** (``repro_cli``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``repro_cli``) — reproduction boundary.
+This diagnostic can appear in a successful inspect report. Reproduce it with ``pyfcstm inspect -i <file> --format json`` and read the ``diagnostics[]`` array.
 
 .. code-block:: fcstm
 
@@ -4528,12 +4711,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE``.
 A typical repair is ``bound_shift_count`` on ``expression``: Keep constant shift counts within ``0 <= count < 64`` for the default C/C++ profile.
 
 .. diagnostics-example W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE``.
 Do not report dynamic shift counts as proven unsafe from this catalog-only rule.
 
 .. _diag-code-w-numeric-float-bitwise:
@@ -4551,6 +4734,9 @@ W_NUMERIC_FLOAT_BITWISE
 .. diagnostics-ref W_NUMERIC_FLOAT_BITWISE operator type=str required=true enum=&|^|||<<|>> item_enum=- exact_values=-
 .. diagnostics-ref W_NUMERIC_FLOAT_BITWISE operand_types type=list[str] required=true enum=- item_enum=int|float|unknown exact_values=-
 .. diagnostics-ref W_NUMERIC_FLOAT_BITWISE operand_type_sources type=list[str] required=true enum=- item_enum=literal|declared_var|local_expression exact_values=-
+
+
+.. diagnostics-boundary W_NUMERIC_FLOAT_BITWISE kind=inspect_json
 
 **Registry facts.** Severity ``warning``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``expression``.
 
@@ -4605,8 +4791,8 @@ W_NUMERIC_FLOAT_BITWISE
 
 .. diagnostics-example W_NUMERIC_FLOAT_BITWISE 1 repro_cli
 
-**Example 1** (``repro_cli``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``repro_cli``) — reproduction boundary.
+This diagnostic can appear in a successful inspect report. Reproduce it with ``pyfcstm inspect -i <file> --format json`` and read the ``diagnostics[]`` array.
 
 .. code-block:: fcstm
 
@@ -4621,12 +4807,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example W_NUMERIC_FLOAT_BITWISE 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``W_NUMERIC_FLOAT_BITWISE``.
 A typical repair is ``use_integer_operand`` on ``expression``: Replace the float operand with an integer flag/mask value when deploying to C/C++ templates.
 
 .. diagnostics-example W_NUMERIC_FLOAT_BITWISE 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``W_NUMERIC_FLOAT_BITWISE``.
 Do not describe this only as a generic Python TypeError; the shared contract is about the C/C++ integer-operation profile.
 
 Topology and design-health diagnostics
@@ -4639,6 +4825,9 @@ W_UNREACHABLE_STATE
 
 .. diagnostics-meta W_UNREACHABLE_STATE severity=warning emit_tier=static_pipeline capability=pure_static span_object=state_identifier
 .. diagnostics-ref W_UNREACHABLE_STATE state_path type=str required=true enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary W_UNREACHABLE_STATE kind=inspect_json
 
 **Registry facts.** Severity ``warning``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``state_identifier``.
 
@@ -4661,8 +4850,8 @@ W_UNREACHABLE_STATE
 
 .. diagnostics-example W_UNREACHABLE_STATE 1 repro_cli
 
-**Example 1** (``repro_cli``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``repro_cli``) — reproduction boundary.
+This diagnostic can appear in a successful inspect report. Reproduce it with ``pyfcstm inspect -i <file> --format json`` and read the ``diagnostics[]`` array.
 
 .. code-block:: fcstm
 
@@ -4674,12 +4863,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example W_UNREACHABLE_STATE 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``W_UNREACHABLE_STATE``.
 A typical repair is ``add_inbound_transition`` on ``state``: Add a transition that reaches the state if it was meant to be used.
 
 .. diagnostics-example W_UNREACHABLE_STATE 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``W_UNREACHABLE_STATE``.
 Do not add a self-loop to mask the unreachability.
 
 .. _diag-code-w-deadlock-leaf:
@@ -4692,6 +4881,9 @@ W_DEADLOCK_LEAF
 .. diagnostics-ref W_DEADLOCK_LEAF parent_path type=str required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_DEADLOCK_LEAF reason type=str required=true enum=no_outgoing_transition item_enum=- exact_values=-
 .. diagnostics-ref W_DEADLOCK_LEAF suggested_fix type=dict required=false enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary W_DEADLOCK_LEAF kind=inspect_json
 
 **Registry facts.** Severity ``warning``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``state_identifier``.
 
@@ -4726,8 +4918,8 @@ W_DEADLOCK_LEAF
 
 .. diagnostics-example W_DEADLOCK_LEAF 1 repro_cli
 
-**Example 1** (``repro_cli``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``repro_cli``) — reproduction boundary.
+This diagnostic can appear in a successful inspect report. Reproduce it with ``pyfcstm inspect -i <file> --format json`` and read the ``diagnostics[]`` array.
 
 .. code-block:: fcstm
 
@@ -4738,12 +4930,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example W_DEADLOCK_LEAF 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``W_DEADLOCK_LEAF``.
 A typical repair is ``add_transition`` on ``state``: Add a modeled transition to the next intended state.
 
 .. diagnostics-example W_DEADLOCK_LEAF 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``W_DEADLOCK_LEAF``.
 Do not add a self-loop just to silence the warning.
 
 .. _diag-code-w-high-var-to-leaf-ratio:
@@ -4756,6 +4948,9 @@ W_HIGH_VAR_TO_LEAF_RATIO
 .. diagnostics-ref W_HIGH_VAR_TO_LEAF_RATIO n_leaf_states type=int required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_HIGH_VAR_TO_LEAF_RATIO actual type=number required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_HIGH_VAR_TO_LEAF_RATIO threshold type=number required=true enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary W_HIGH_VAR_TO_LEAF_RATIO kind=inspect_json
 
 **Registry facts.** Severity ``warning``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``composite_block``.
 
@@ -4790,8 +4985,8 @@ W_HIGH_VAR_TO_LEAF_RATIO
 
 .. diagnostics-example W_HIGH_VAR_TO_LEAF_RATIO 1 repro_cli
 
-**Example 1** (``repro_cli``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``repro_cli``) — reproduction boundary.
+This diagnostic can appear in a successful inspect report. Reproduce it with ``pyfcstm inspect -i <file> --format json`` and read the ``diagnostics[]`` array.
 
 .. code-block:: fcstm
 
@@ -4802,12 +4997,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example W_HIGH_VAR_TO_LEAF_RATIO 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``W_HIGH_VAR_TO_LEAF_RATIO``.
 A typical repair is ``audit_variables`` on ``variable_definitions``: Remove or consolidate variables that do not represent durable machine state.
 
 .. diagnostics-example W_HIGH_VAR_TO_LEAF_RATIO 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``W_HIGH_VAR_TO_LEAF_RATIO``.
 Do not raise the threshold without checking whether the variables influence behavior.
 
 .. _diag-code-w-deep-hierarchy:
@@ -4820,6 +5015,9 @@ W_DEEP_HIERARCHY
 .. diagnostics-ref W_DEEP_HIERARCHY deepest_path type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_DEEP_HIERARCHY actual type=int required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_DEEP_HIERARCHY threshold type=int required=true enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary W_DEEP_HIERARCHY kind=inspect_json
 
 **Registry facts.** Severity ``warning``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``state_identifier``.
 
@@ -4854,8 +5052,8 @@ W_DEEP_HIERARCHY
 
 .. diagnostics-example W_DEEP_HIERARCHY 1 repro_cli
 
-**Example 1** (``repro_cli``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``repro_cli``) — reproduction boundary.
+This diagnostic can appear in a successful inspect report. Reproduce it with ``pyfcstm inspect -i <file> --format json`` and read the ``diagnostics[]`` array.
 
 .. code-block:: fcstm
 
@@ -4863,12 +5061,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example W_DEEP_HIERARCHY 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``W_DEEP_HIERARCHY``.
 A typical repair is ``flatten_hierarchy`` on ``state_tree``: Collapse levels that do not add lifecycle or transition semantics.
 
 .. diagnostics-example W_DEEP_HIERARCHY 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``W_DEEP_HIERARCHY``.
 Do not flatten a level that carries required enter, exit, during, or aspect semantics.
 
 .. _diag-code-w-large-composite:
@@ -4881,6 +5079,9 @@ W_LARGE_COMPOSITE
 .. diagnostics-ref W_LARGE_COMPOSITE n_children type=int required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_LARGE_COMPOSITE actual type=int required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_LARGE_COMPOSITE threshold type=int required=true enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary W_LARGE_COMPOSITE kind=inspect_json
 
 **Registry facts.** Severity ``warning``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``composite_block``.
 
@@ -4915,8 +5116,8 @@ W_LARGE_COMPOSITE
 
 .. diagnostics-example W_LARGE_COMPOSITE 1 repro_cli
 
-**Example 1** (``repro_cli``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``repro_cli``) — reproduction boundary.
+This diagnostic can appear in a successful inspect report. Reproduce it with ``pyfcstm inspect -i <file> --format json`` and read the ``diagnostics[]`` array.
 
 .. code-block:: fcstm
 
@@ -4924,12 +5125,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example W_LARGE_COMPOSITE 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``W_LARGE_COMPOSITE``.
 A typical repair is ``group_children`` on ``composite_state``: Introduce meaningful nested composites to group related child states.
 
 .. diagnostics-example W_LARGE_COMPOSITE 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``W_LARGE_COMPOSITE``.
 Do not add arbitrary grouping states that have no semantic meaning.
 
 .. _diag-code-i-nontrivial-scc:
@@ -4942,6 +5143,9 @@ I_NONTRIVIAL_SCC
 .. diagnostics-ref I_NONTRIVIAL_SCC verification_scope type=str required=true enum=topological_only item_enum=- exact_values=-
 .. diagnostics-ref I_NONTRIVIAL_SCC representative_state_path type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref I_NONTRIVIAL_SCC scc type=list[str] required=true enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary I_NONTRIVIAL_SCC kind=verify_smt_linear
 
 **Registry facts.** Severity ``info``; emit tier ``verify_pipeline``; capability ``pure_static``; span object ``state_identifier``.
 
@@ -4976,8 +5180,8 @@ I_NONTRIVIAL_SCC
 
 .. diagnostics-example I_NONTRIVIAL_SCC 1 verify_opt_in
 
-**Example 1** (``verify_opt_in``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``verify_opt_in``) — reproduction boundary.
+This diagnostic requires optional verify integration. Reproduce it with ``pyfcstm inspect -i <file> --enable-verify --max-complexity-tier smt_linear --format json``; the default structural verify budget does not run the solver-local algorithm that emits it.
 
 .. code-block:: fcstm
 
@@ -4991,12 +5195,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example I_NONTRIVIAL_SCC 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``I_NONTRIVIAL_SCC``.
 A typical repair is ``review_cycle`` on ``topology``: Confirm the cycle has a deliberate runtime exit or event-driven purpose.
 
 .. diagnostics-example I_NONTRIVIAL_SCC 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``I_NONTRIVIAL_SCC``.
 Do not delete cyclic transitions automatically; cyclic control flow can be valid FCSTM behavior.
 
 .. _diag-code-w-topological-noexit:
@@ -5010,6 +5214,9 @@ W_TOPOLOGICAL_NOEXIT
 .. diagnostics-ref W_TOPOLOGICAL_NOEXIT representative_state_path type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_TOPOLOGICAL_NOEXIT counterexample_kind type=str required=true enum=trap_cycle|deadlock item_enum=- exact_values=-
 .. diagnostics-ref W_TOPOLOGICAL_NOEXIT scc type=list[str] required=true enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary W_TOPOLOGICAL_NOEXIT kind=verify_smt_linear
 
 **Registry facts.** Severity ``warning``; emit tier ``verify_pipeline``; capability ``pure_static``; span object ``state_identifier``.
 
@@ -5048,8 +5255,8 @@ W_TOPOLOGICAL_NOEXIT
 
 .. diagnostics-example W_TOPOLOGICAL_NOEXIT 1 verify_opt_in
 
-**Example 1** (``verify_opt_in``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``verify_opt_in``) — reproduction boundary.
+This diagnostic requires optional verify integration. Reproduce it with ``pyfcstm inspect -i <file> --enable-verify --max-complexity-tier smt_linear --format json``; the default structural verify budget does not run the solver-local algorithm that emits it.
 
 .. code-block:: fcstm
 
@@ -5062,12 +5269,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example W_TOPOLOGICAL_NOEXIT 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``W_TOPOLOGICAL_NOEXIT``.
 A typical repair is ``add_exit_transition`` on ``topology``: Add a route from the stuck state or cycle to an exit-capable path.
 
 .. diagnostics-example W_TOPOLOGICAL_NOEXIT 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``W_TOPOLOGICAL_NOEXIT``.
 Do not add an unconditional exit without checking lifecycle and event semantics.
 
 .. _diag-code-i-topological-non-terminating:
@@ -5080,6 +5287,9 @@ I_TOPOLOGICAL_NON_TERMINATING
 .. diagnostics-ref I_TOPOLOGICAL_NON_TERMINATING verification_scope type=str required=true enum=topological_only item_enum=- exact_values=-
 .. diagnostics-ref I_TOPOLOGICAL_NON_TERMINATING representative_state_path type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref I_TOPOLOGICAL_NON_TERMINATING counterexample_path type=list[str] required=true enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary I_TOPOLOGICAL_NON_TERMINATING kind=verify_smt_linear
 
 **Registry facts.** Severity ``info``; emit tier ``verify_pipeline``; capability ``pure_static``; span object ``state_identifier``.
 
@@ -5114,8 +5324,8 @@ I_TOPOLOGICAL_NON_TERMINATING
 
 .. diagnostics-example I_TOPOLOGICAL_NON_TERMINATING 1 verify_opt_in
 
-**Example 1** (``verify_opt_in``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``verify_opt_in``) — reproduction boundary.
+This diagnostic requires optional verify integration. Reproduce it with ``pyfcstm inspect -i <file> --enable-verify --max-complexity-tier smt_linear --format json``; the default structural verify budget does not run the solver-local algorithm that emits it.
 
 .. code-block:: fcstm
 
@@ -5128,12 +5338,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example I_TOPOLOGICAL_NON_TERMINATING 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``I_TOPOLOGICAL_NON_TERMINATING``.
 A typical repair is ``review_nontermination`` on ``topology``: Decide whether the non-terminating path is intended.
 
 .. diagnostics-example I_TOPOLOGICAL_NON_TERMINATING 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``I_TOPOLOGICAL_NON_TERMINATING``.
 Do not treat every loop as a bug; long-running control loops are common state-machine behavior.
 
 Compatibility-only and miscellaneous diagnostics
@@ -5149,6 +5359,9 @@ W_INITIAL_UNCONDITIONAL_MISSING
 .. diagnostics-ref W_INITIAL_UNCONDITIONAL_MISSING existing_conditional_count type=int required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_INITIAL_UNCONDITIONAL_MISSING first_child_name type=str required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_INITIAL_UNCONDITIONAL_MISSING suggested_fix type=dict required=false enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary W_INITIAL_UNCONDITIONAL_MISSING kind=inspect_json
 
 **Registry facts.** Severity ``warning``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``composite_block``.
 
@@ -5183,8 +5396,8 @@ W_INITIAL_UNCONDITIONAL_MISSING
 
 .. diagnostics-example W_INITIAL_UNCONDITIONAL_MISSING 1 repro_cli
 
-**Example 1** (``repro_cli``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``repro_cli``) — reproduction boundary.
+This diagnostic can appear in a successful inspect report. Reproduce it with ``pyfcstm inspect -i <file> --format json`` and read the ``diagnostics[]`` array.
 
 .. code-block:: fcstm
 
@@ -5196,12 +5409,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example W_INITIAL_UNCONDITIONAL_MISSING 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``W_INITIAL_UNCONDITIONAL_MISSING``.
 A typical repair is ``add_unconditional_initial`` on ``composite_state``: Add a fallback ``[*] -> Child;`` entry transition.
 
 .. diagnostics-example W_INITIAL_UNCONDITIONAL_MISSING 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``W_INITIAL_UNCONDITIONAL_MISSING``.
 Do not assume a guarded initial transition always fires without proving the guard.
 
 .. _diag-code-w-dead-named-action:
@@ -5212,6 +5425,9 @@ W_DEAD_NAMED_ACTION
 .. diagnostics-meta W_DEAD_NAMED_ACTION severity=warning emit_tier=static_pipeline capability=pure_static span_object=named_action_declaration
 .. diagnostics-ref W_DEAD_NAMED_ACTION function_name type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_DEAD_NAMED_ACTION defined_in type=str required=true enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary W_DEAD_NAMED_ACTION kind=inspect_json
 
 **Registry facts.** Severity ``warning``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``named_action_declaration``.
 
@@ -5238,8 +5454,8 @@ W_DEAD_NAMED_ACTION
 
 .. diagnostics-example W_DEAD_NAMED_ACTION 1 repro_cli
 
-**Example 1** (``repro_cli``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``repro_cli``) — reproduction boundary.
+This diagnostic can appear in a successful inspect report. Reproduce it with ``pyfcstm inspect -i <file> --format json`` and read the ``diagnostics[]`` array.
 
 .. code-block:: fcstm
 
@@ -5251,12 +5467,12 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example W_DEAD_NAMED_ACTION 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``W_DEAD_NAMED_ACTION``.
 A typical repair is ``connect_state`` on ``state``: Add a transition path to the owning state if the action matters.
 
 .. diagnostics-example W_DEAD_NAMED_ACTION 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``W_DEAD_NAMED_ACTION``.
 Do not add an unrelated ref just to silence the warning.
 
 .. _diag-code-w-named-action-shadows-ancestor:
@@ -5268,6 +5484,9 @@ W_NAMED_ACTION_SHADOWS_ANCESTOR
 .. diagnostics-ref W_NAMED_ACTION_SHADOWS_ANCESTOR function_name type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_NAMED_ACTION_SHADOWS_ANCESTOR inner_state_path type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_NAMED_ACTION_SHADOWS_ANCESTOR outer_state_path type=str required=true enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary W_NAMED_ACTION_SHADOWS_ANCESTOR kind=inspect_json
 
 **Registry facts.** Severity ``warning``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``named_action_declaration``.
 
@@ -5298,8 +5517,8 @@ W_NAMED_ACTION_SHADOWS_ANCESTOR
 
 .. diagnostics-example W_NAMED_ACTION_SHADOWS_ANCESTOR 1 repro_cli
 
-**Example 1** (``repro_cli``) — trigger shape.
-Use this registry trigger as the smallest source shape to discuss the code. If the emit tier is not ``static_pipeline``, run it through the path named by the example kind rather than assuming default CLI output.
+**Example 1** (``repro_cli``) — reproduction boundary.
+This diagnostic can appear in a successful inspect report. Reproduce it with ``pyfcstm inspect -i <file> --format json`` and read the ``diagnostics[]`` array.
 
 .. code-block:: fcstm
 
@@ -5311,10 +5530,10 @@ Use this registry trigger as the smallest source shape to discuss the code. If t
 
 .. diagnostics-example W_NAMED_ACTION_SHADOWS_ANCESTOR 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction.
+**Example 2** (``boundary_only``) — repair direction for ``W_NAMED_ACTION_SHADOWS_ANCESTOR``.
 A typical repair is ``rename_inner_action`` on ``named_action``: Give the nested action a distinct name when it implements different behavior.
 
 .. diagnostics-example W_NAMED_ACTION_SHADOWS_ANCESTOR 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``W_NAMED_ACTION_SHADOWS_ANCESTOR``.
 Do not leave the shadowing name in place unless the scope distinction is intentional and documented outside the DSL.

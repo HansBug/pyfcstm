@@ -35,11 +35,22 @@ _LANG_FILES = {
 
 _ALLOWED_EXAMPLE_KINDS = frozenset(
     (
+        "cli_error",
         "repro_cli",
         "repro_api",
         "verify_opt_in",
         "boundary_only",
         "compatibility_only",
+    )
+)
+_ALLOWED_BOUNDARY_KINDS = frozenset(
+    (
+        "api_only",
+        "cli_error",
+        "compatibility_only",
+        "inspect_json",
+        "partial_static_boundary",
+        "verify_smt_linear",
     )
 )
 
@@ -57,6 +68,10 @@ _REF_RE = re.compile(
 )
 _EXAMPLE_RE = re.compile(
     r"^\.\. diagnostics-example (?P<code>\S+) (?P<index>[1-9][0-9]*) (?P<kind>\S+)$",
+    re.MULTILINE,
+)
+_BOUNDARY_RE = re.compile(
+    r"^\.\. diagnostics-boundary (?P<code>\S+) kind=(?P<kind>\S+)$",
     re.MULTILINE,
 )
 
@@ -115,6 +130,32 @@ def _collect_metadata(text: str) -> Dict[str, Mapping[str, str]]:
     return data
 
 
+def _collect_marker_duplicates(
+    text: str,
+    pattern: re.Pattern,
+    key_names: Sequence[str],
+) -> List[str]:
+    """Collect duplicate marker keys for one marker pattern.
+
+    :param text: Concatenated reference source text.
+    :type text: str
+    :param pattern: Compiled marker pattern with named groups.
+    :type pattern: re.Pattern
+    :param key_names: Named groups that form the duplicate key.
+    :type key_names: Sequence[str]
+    :return: Duplicate marker keys rendered as readable strings.
+    :rtype: List[str]
+    """
+    seen: Set[str] = set()
+    duplicates: List[str] = []
+    for match in pattern.finditer(text):
+        key = ".".join(match.group(name) for name in key_names)
+        if key in seen:
+            duplicates.append(key)
+        seen.add(key)
+    return duplicates
+
+
 def _collect_refs(text: str) -> Dict[str, Dict[str, Mapping[str, str]]]:
     """Collect refs-schema markers from one language source.
 
@@ -144,6 +185,41 @@ def _collect_examples(text: str) -> Dict[str, List[Mapping[str, str]]]:
         code = match.group("code")
         data.setdefault(code, []).append(match.groupdict())
     return data
+
+
+def _collect_boundaries(text: str) -> Dict[str, Mapping[str, str]]:
+    """Collect reproduction-boundary markers from one language source.
+
+    :param text: Concatenated reference source text.
+    :type text: str
+    :return: Mapping from code to parsed boundary marker.
+    :rtype: Dict[str, Mapping[str, str]]
+    """
+    data: Dict[str, Mapping[str, str]] = {}
+    for match in _BOUNDARY_RE.finditer(text):
+        data[match.group("code")] = match.groupdict()
+    return data
+
+
+def _expected_boundary_kind(spec: CodeSpec) -> str:
+    """Return the expected reproduction boundary for a diagnostic code.
+
+    :param spec: Diagnostic code specification.
+    :type spec: pyfcstm.diagnostics.codes.CodeSpec
+    :return: Boundary kind label expected in the reference marker.
+    :rtype: str
+    """
+    if spec.emit_tier == "lookup_api":
+        return "api_only"
+    if spec.emit_tier == "catalog_only":
+        return "compatibility_only"
+    if spec.emit_tier == "verify_pipeline":
+        return "verify_smt_linear"
+    if spec.emit_tier == "partial_static_pipeline":
+        return "partial_static_boundary"
+    if spec.severity == "error":
+        return "cli_error"
+    return "inspect_json"
 
 
 def _compare_code_sets(
@@ -330,6 +406,87 @@ def _check_examples(
                 ))
 
 
+def _check_boundaries(
+    language: str,
+    boundaries: Mapping[str, Mapping[str, str]],
+    problems: List[str],
+) -> None:
+    """Check reproduction-boundary markers against :data:`CODE_REGISTRY`.
+
+    :param language: Language label for diagnostics.
+    :type language: str
+    :param boundaries: Parsed boundary markers.
+    :type boundaries: Mapping[str, Mapping[str, str]]
+    :param problems: Mutable list that receives problem strings.
+    :type problems: List[str]
+    :return: ``None``.
+    :rtype: None
+    """
+    expected_codes = set(CODE_REGISTRY)
+    actual_codes = set(boundaries)
+    missing = sorted(expected_codes - actual_codes)
+    extra = sorted(actual_codes - expected_codes)
+    if missing:
+        problems.append("{lang}: missing boundary markers: {codes}".format(
+            lang=language,
+            codes=", ".join(missing),
+        ))
+    if extra:
+        problems.append("{lang}: unknown boundary markers: {codes}".format(
+            lang=language,
+            codes=", ".join(extra),
+        ))
+    for code, spec in CODE_REGISTRY.items():
+        marker = boundaries.get(code)
+        if marker is None:
+            continue
+        kind = marker["kind"]
+        if kind not in _ALLOWED_BOUNDARY_KINDS:
+            problems.append("{lang}: {code} has unsupported boundary kind {kind!r}".format(
+                lang=language,
+                code=code,
+                kind=kind,
+            ))
+        expected_kind = _expected_boundary_kind(spec)
+        if kind != expected_kind:
+            problems.append(
+                "{lang}: {code} boundary kind is {actual!r}, expected {expected!r}".format(
+                    lang=language,
+                    code=code,
+                    actual=kind,
+                    expected=expected_kind,
+                )
+            )
+
+
+def _check_duplicate_markers(language: str, text: str, problems: List[str]) -> None:
+    """Reject duplicate hidden documentation markers.
+
+    :param language: Language label for diagnostics.
+    :type language: str
+    :param text: Concatenated reference source text.
+    :type text: str
+    :param problems: Mutable list that receives problem strings.
+    :type problems: List[str]
+    :return: ``None``.
+    :rtype: None
+    """
+    duplicate_groups = (
+        ("metadata", _META_RE, ("code",)),
+        ("refs", _REF_RE, ("code", "field")),
+        ("examples", _EXAMPLE_RE, ("code", "index")),
+        ("boundaries", _BOUNDARY_RE, ("code",)),
+    )
+    for label, pattern, key_names in duplicate_groups:
+        duplicates = _collect_marker_duplicates(text, pattern, key_names)
+        if duplicates:
+            problems.append("{lang}: duplicate {label} markers: {items}".format(
+                lang=language,
+                label=label,
+                items=", ".join(duplicates),
+            ))
+
+
 def _check_language(language: str, paths: Sequence[Path]) -> List[str]:
     """Run all reference checks for one language.
 
@@ -342,13 +499,16 @@ def _check_language(language: str, paths: Sequence[Path]) -> List[str]:
     """
     problems: List[str] = []
     text = _load_language_text(paths)
+    _check_duplicate_markers(language, text, problems)
     metadata = _collect_metadata(text)
     refs = _collect_refs(text)
     examples = _collect_examples(text)
+    boundaries = _collect_boundaries(text)
     _compare_code_sets(language, metadata, problems)
     _check_metadata_fields(language, metadata, problems)
     _check_refs(language, refs, problems)
     _check_examples(language, examples, problems)
+    _check_boundaries(language, boundaries, problems)
     return problems
 
 

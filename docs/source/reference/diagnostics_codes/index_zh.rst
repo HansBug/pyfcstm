@@ -66,7 +66,12 @@
    * - 类型
      - 含义
    * - ``repro_cli``
-     - 期望可通过当前命令行或模型构建路径复现。
+     - 期望可作为成功检查报告复现；使用
+       ``pyfcstm inspect -i <file> --format json`` 并读取 ``diagnostics[]``。
+   * - ``cli_error``
+     - 期望可作为受控命令行或模型校验错误复现。当前检查格式会在成功
+       JSON 报告产生前以非零状态退出，因此应断言错误输出和退出状态，而不是
+       ``diagnostics[]``。
    * - ``repro_api``
      - 期望可通过显式 Python API 调用复现。
    * - ``verify_opt_in``
@@ -85,6 +90,6 @@
 
    python tools/check_diagnostics_reference_docs.py --check
 
-该检查会验证诊断码集合、严重级别、发射层级、能力层级、源码对象、``refs`` 字段、双语覆盖和每个诊断码的示例标记数量。它不证明示例在语义上真的不趋同；PR review 仍需要人工抽样。
+该检查会验证诊断码集合、严重级别、发射层级、能力层级、源码对象、``refs`` 字段、双语覆盖、每个诊断码的复现边界标记和示例标记数量。它不证明示例在语义上真的不趋同；PR review 仍需要人工抽样。
 
 .. include:: _code_catalog_zh.rst.inc

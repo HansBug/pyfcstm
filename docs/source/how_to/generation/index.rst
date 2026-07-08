@@ -73,6 +73,12 @@ machine-specific integration guide. The reference pages document the general
 contract; the generated README tells you the actual class names, event ids,
 hook names, state ids, hot-start examples, and build snippets for that model.
 
+Treat the generated README as the handoff from documentation to integration. If
+the generic reference and the generated README appear to disagree, start with
+the generated README for names that depend on your machine, then use the
+reference to check whether the template family, event input model, or evidence
+boundary was misread.
+
 The generated top-level files are:
 
 .. list-table:: Generated file summary
@@ -133,6 +139,12 @@ on the displayed toolchain. It is not a claim that every embedded compiler,
 industrial profile, sanitizer profile, or certification environment has been
 validated.
 
+When the native demonstration fails, record the toolchain snapshot first, then
+decide whether the failure is a generator issue, a missing build tool, or a
+custom driver that disagrees with the generated README. Template maintainers
+need the template name, output directory, compiler versions, and smallest driver,
+not only the final compiler error line.
+
 Choose explicit events or polling
 ---------------------------------
 
@@ -158,6 +170,16 @@ cycle:
 Use ``c_poll`` or ``cpp_poll`` only when the polling shape is the desired
 integration surface. Do not treat it as a semantic fork of FCSTM execution; it
 is the event input mechanism that changes.
+
+For the same model, start with the template whose event input is easiest to
+drive in the host application. Switching later is possible, but the consumer
+code, hook installation, and native smoke command should be updated together so
+that the generated README remains the single integration checklist.
+
+In a change record, write down three facts: which template was chosen, how the
+host supplies events, and which command proved the generated output usable. That
+keeps later readers from reverse-engineering the integration surface from the
+output tree and helps separate event-input mistakes from hook or build issues.
 
 Troubleshoot common generation failures
 ---------------------------------------

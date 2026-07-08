@@ -111,7 +111,7 @@
 文件契约
 --------
 
-模板目录可以包含 ``config.yaml``。渲染器会先读取它，再遍历文件。空文件和只有注释的文件会按空映射（mapping）处理。若没有提供 ``expr_styles.default`` 或 ``stmt_styles.default``，渲染器会创建默认 DSL 样式。
+模板目录必须包含 ``config.yaml``。渲染器会先读取它，再遍历文件；缺少该文件时会在渲染任何模板文件前失败。空文件和只有注释的文件会按空映射（mapping）处理。若没有提供 ``expr_styles.default`` 或 ``stmt_styles.default``，渲染器会创建默认 DSL 样式。
 
 只接受这些顶层键：
 
@@ -433,7 +433,7 @@ Jinja 环境辅助对象
      - ``expr_styles: {py_expr: {base_lang: python}}``
      - 合法。``py_expr`` 委托给 Python 表达式渲染器。
    * - 语句样式。
-     - ``stmt_styles: {py_stmt: {base_lang: python, assign: "{target} = {value}"}}``
+     - ``stmt_styles: {py_stmt: {base_lang: python, assign: "{{ target }} = {{ expr }}"}}``
      - 合法。覆盖项影响该样式的赋值渲染。
    * - 未知键。
      - ``helpers: {}``
@@ -464,7 +464,7 @@ Jinja 环境辅助对象
      - ``expr_styles: {bad: c}``
      - 非法。每个样式条目必须是映射。
    * - 缺少基准样式。
-     - ``stmt_styles: {bad: {assign: "{target} = {value};"}}``
+     - ``stmt_styles: {bad: {assign: "{{ target }} = {{ expr }};"}}``
      - 非法。必须有 ``base_lang``。
    * - 未知基准样式。
      - ``expr_styles: {bad: {base_lang: ruby}}``

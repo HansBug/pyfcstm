@@ -58,6 +58,8 @@ pyfcstm 当前打包五个内置模板：``python``、``c``、``c_poll``、``cpp
 
 每个内置模板都会在输出目录写入 ``README.md`` 和 ``README_zh.md``。这些文件由你的模型生成，是具体机器的集成指南。参考页给通用契约；生成 README 给出该模型实际的类名、事件编号、钩子（hook）名称、状态编号、热启动（hot start）例子和构建片段。
 
+把生成 README 当作从文档进入集成的交接点。如果通用参考和生成 README 看起来不一致，先以生成 README 中随机器变化的名称为准，再回到参考页核对模板家族、事件输入模型或证据边界是否被误读。
+
 顶层生成文件如下：
 
 .. list-table:: 生成文件摘要
@@ -71,16 +73,16 @@ pyfcstm 当前打包五个内置模板：``python``、``c``、``c_poll``、``cpp
      - 从 ``machine.py`` 导入生成的机器类。
    * - ``c``
      - ``machine.h``、``machine.c``、生成 README
-     - include ``machine.h``，把事件编号数组传给 ``..._cycle``。
+     - 包含 ``machine.h``，把事件编号数组传给 ``..._cycle``。
    * - ``c_poll``
      - ``machine.h``、``machine.c``、生成 README
      - 安装 ``EventChecks``，调用事件轮询形式的周期函数。
    * - ``cpp``
      - C 核心文件加 ``machine.hpp`` / ``machine.cpp`` 和 README
-     - include ``machine.hpp``，使用 ``MachineWrapper``。
+     - 包含 ``machine.hpp``，使用 ``MachineWrapper``。
    * - ``cpp_poll``
      - C 轮询核心文件加 ``machine.hpp`` / ``machine.cpp`` 和 README
-     - include ``machine.hpp``，安装包装层事件检查，再使用 ``MachineWrapper``。
+     - 包含 ``machine.hpp``，安装包装层事件检查，再使用 ``MachineWrapper``。
 
 冒烟检查 Python 输出
 --------------------
@@ -109,6 +111,8 @@ pyfcstm 当前打包五个内置模板：``python``、``c``、``c_poll``、``cpp
 
 这是本地冒烟检查。它证明生成文件在显示的工具链上完成编译并运行；它不是对所有嵌入式编译器、工业配置、清理器配置或认证环境的声明。
 
+如果本机演示失败，先记录工具链快照，再判断失败属于生成器问题、构建工具缺失，还是自定义驱动和生成 README 不一致。不要只贴最后一行编译错误；模板维护者需要看到使用的模板名、输出目录、编译器版本和最小驱动。
+
 选择显式事件或轮询
 ------------------
 
@@ -131,6 +135,10 @@ pyfcstm 当前打包五个内置模板：``python``、``c``、``c_poll``、``cpp
      - 主机通过回调、设备探针或应用状态读取事件真值。
 
 只有当轮询形状正是你想要的集成面时，才使用 ``c_poll`` 或 ``cpp_poll``。它改变的是事件输入机制，不是 FCSTM 执行语义分叉。
+
+同一个模型应先选择宿主应用最容易提供事件真值的模板。后续切换模板当然可以，但消费者代码、钩子安装方式和本机冒烟命令需要一起更新，这样生成 README 才仍然是唯一的集成检查清单。
+
+建议在变更记录里写清楚三件事：选择了哪个模板、宿主侧如何提供事件、用哪条命令证明生成输出可用。这样后续读者不需要从输出目录反推集成方式，也更容易判断失败是输入事件、钩子安装还是构建环境造成的。
 
 排查常见生成失败
 ----------------
@@ -208,7 +216,7 @@ pyfcstm 当前打包五个内置模板：``python``、``c``、``c_poll``、``cpp
    * - 生成 C++ 包装层。
      - ``pyfcstm generate -i docs/source/tutorials/generation/simple_machine.fcstm --template cpp -o /tmp/pyfcstm-cpp --clear``
      - 除 C 核心外，还出现 ``machine.hpp`` 和 ``machine.cpp``。
-     - 用户代码应 include ``machine.hpp``。如果构建绕过包装层，冒烟检查就不能证明文档里的 C++ 集成面。
+     - 用户代码应包含 ``machine.hpp``。如果构建绕过包装层，冒烟检查就不能证明文档里的 C++ 集成面。
    * - 生成 C++ 轮询包装层。
      - ``pyfcstm generate -i docs/source/tutorials/generation/simple_machine.fcstm --template cpp_poll -o /tmp/pyfcstm-cpp-poll --clear``
      - 生成包装层文件和轮询 README 指引。
@@ -278,7 +286,7 @@ pyfcstm 当前打包五个内置模板：``python``、``c``、``c_poll``、``cpp
      - 缩减到一个模板文件和一个小模型，再参考现有模板使用的模型对象。
      - 此时模型已经解析完成，失败层是受信任模板表达式或辅助对象。
    * - 本机构建失败。
-     - include 路径缺失、编译模式不对或钩子表不完整。
+     - 头文件包含路径缺失、编译模式不对或钩子表不完整。
      - 用生成 README 的构建片段和最小驱动复现。
      - 应用构建失败可能混入了与生成输出无关的构建系统假设。
 

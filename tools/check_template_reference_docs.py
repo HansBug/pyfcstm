@@ -293,6 +293,7 @@ def _check_builtin_reference_page(
     path: Path, expected: Sequence[Mapping[str, str]]
 ) -> List[str]:
     missing = []
+    text = path.read_text(encoding="utf-8")
     meta_markers = _collect_markers(path, "template-ref-meta")
     contract_markers = _collect_markers(path, "template-ref-contract")
     profile_markers = _collect_markers(path, "template-ref-profile")
@@ -309,6 +310,12 @@ def _check_builtin_reference_page(
                         "%s: template-ref-meta %s has %s=%r, expected %r"
                         % (path.relative_to(ROOT), name, key, meta.get(key), value)
                     )
+            description = item["description"]
+            if text.count(description) < 2:
+                missing.append(
+                    "%s: visible metadata table for %s must mirror description %r"
+                    % (path.relative_to(ROOT), name, description)
+                )
 
         contract, words = _find_marker(contract_markers, name)
         if not contract:

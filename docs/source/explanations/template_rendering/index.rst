@@ -284,10 +284,11 @@ lives in a checkout.
 Custom template trust boundary
 ------------------------------
 
-A custom template is trusted code. Jinja sandboxing limits some template syntax,
-but ``config.yaml`` can register imported Python objects through ``type:
-import``. Therefore the safety boundary is not "arbitrary user uploads are safe".
-The boundary is "the project running generation trusts this template directory".
+A custom template is trusted code. The renderer uses a normal Jinja2
+environment, and ``config.yaml`` can register imported Python objects through
+``type: import``. Therefore the safety boundary is not "arbitrary user uploads
+are safe". The boundary is "the project running generation trusts this
+template directory".
 
 .. list-table:: Trust-boundary examples
    :header-rows: 1

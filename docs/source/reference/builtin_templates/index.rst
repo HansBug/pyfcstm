@@ -75,13 +75,13 @@ packaged index; the remaining visible metadata is mirrored by the source
      - ``cpp``
      - ``cpp.zip`` / ``cpp``
      - ``true``
-     - First-class C++ wrapper template that reuses the C99 runtime core.
+     - Early-stage first-class C++ template that reuses the C99 runtime core and emits C++ wrapper files.
    * - ``cpp_poll``
      - C++ Poll Wrapper
      - ``cpp``
      - ``cpp_poll.zip`` / ``cpp_poll``
      - ``true``
-     - C++ polling wrapper template that reuses the C polling runtime core.
+     - Early-stage first-class C++ poll template that reuses the C poll runtime core and emits C++ wrapper files.
 
 Discovery API
 -------------
@@ -342,6 +342,16 @@ Unsupported or risky assumptions
    * - "A generated file tree proves runtime correctness."
      - Rendering success proves file creation only.
      - Runtime, native and semantic claims need matching smoke or alignment evidence.
+
+When reviewing an integration claim with this table, first ask which evidence
+layer the claim needs. File existence needs only a generation command; importing
+a Python class needs a consumer smoke check; compiling C-family output needs a
+native toolchain; semantic equivalence needs simulator-alignment fixtures.
+
+That is why this page does not turn "a built-in template exists" into "the
+target platform is certified." The template contract states what this repository
+can prove; release, embedded-porting, or safety-critical deployment still needs
+project-specific evidence from the target environment.
 
 Source-fact audit map
 ---------------------

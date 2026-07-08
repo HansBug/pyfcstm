@@ -29,7 +29,7 @@
 
 .. code-block:: jinja
 
-   Machine: {{ model.name }}
+   Machine: {{ model.root_state.name }}
    States:
    {%- for state in model.walk_states() %}
    - {{ state.path | join('.') }}
@@ -112,10 +112,10 @@
      - 结果
    * - 带 ``params`` 的 ``type: template``
      - ``params: [state]`` 和 ``template: "{{ state.path | join('.') }}"``
-     - 返回一个 callable，位置参数会映射到 ``params``。
+     - 返回一个可调用对象（callable），位置参数会映射到 ``params``。
    * - 不带 ``params`` 的 ``type: template``
-     - ``template: "{{ model.name }}"``
-     - 返回 Jinja 模板的 ``render`` callable。
+     - ``template: "{{ model.root_state.name }}"``
+     - 返回 Jinja 模板的 ``render`` 可调用对象。
    * - ``type: import``
      - ``from: pyfcstm.utils.to_c_identifier``
      - 为受信任模板导入 Python 对象。
@@ -124,7 +124,7 @@
      - 注册字面值。
    * - 未知 ``type``
      - ``{prefix: Demo}``
-     - 把剩余映射 原样注册。
+     - 把剩余映射原样注册。
 
 C 家族模板会显式导入 ``to_c_identifier``、``to_c_path_identifier``、``to_c_public_identifier``、``render_c_action_body`` 和 ``render_c_condition_body`` 等辅助对象。这些对象不会默认注入每个渲染器环境。
 
@@ -143,7 +143,7 @@ C 家族模板会显式导入 ``to_c_identifier``、``to_c_path_identifier``、`
      - 生成的目标语言源码和目标语言钩子。
      - 用户可以检查输出并运行目标侧检查。
    * - 重复文件结构
-     - Jinja macro 或 include。
+     - Jinja 宏（macro）或包含指令（include）。
      - 保持模板可读，不把行为移入 Python 回调。
    * - 命名和格式化辅助
      - 模板本地 ``globals`` / ``filters`` / ``tests``。
@@ -295,7 +295,7 @@ C 家族模板会显式导入 ``to_c_identifier``、``to_c_path_identifier``、`
 
 .. code-block:: jinja
 
-   model={{ model.name }}
+   model={{ model.root_state.name }}
    states={{ model.walk_states() | list | length }}
 
 成功信号是渲染出的 ``machine_summary.txt`` 和复制出的 ``static_note.txt``。这个例子证明文件映射和命名表达式样式可以加载；它不证明生成运行时正确。

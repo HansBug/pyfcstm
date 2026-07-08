@@ -115,10 +115,11 @@ directory or diagnosing a rendering failure. For a task flow, see
 File contract
 -------------
 
-A template directory may contain ``config.yaml``. The renderer reads it before
-walking files. Empty files and comment-only files are treated as an empty
-mapping. When no ``expr_styles.default`` or ``stmt_styles.default`` is supplied,
-the renderer creates a default DSL style.
+A template directory must contain ``config.yaml``. The renderer reads it
+before walking files; a missing file fails before any template file is rendered.
+Empty files and comment-only files are treated as an empty mapping. When no
+``expr_styles.default`` or ``stmt_styles.default`` is supplied, the renderer
+creates a default DSL style.
 
 Only these top-level keys are accepted:
 
@@ -477,7 +478,7 @@ by the renderer; they are not complete production templates.
      - ``expr_styles: {py_expr: {base_lang: python}}``
      - Legal. ``py_expr`` delegates to the Python expression renderer.
    * - Statement style.
-     - ``stmt_styles: {py_stmt: {base_lang: python, assign: "{target} = {value}"}}``
+     - ``stmt_styles: {py_stmt: {base_lang: python, assign: "{{ target }} = {{ expr }}"}}``
      - Legal. The override affects assignment rendering for that style.
    * - Unknown key.
      - ``helpers: {}``
@@ -508,7 +509,7 @@ by the renderer; they are not complete production templates.
      - ``expr_styles: {bad: c}``
      - Invalid. Each style entry must be a mapping.
    * - Missing base.
-     - ``stmt_styles: {bad: {assign: "{target} = {value};"}}``
+     - ``stmt_styles: {bad: {assign: "{{ target }} = {{ expr }};"}}``
      - Invalid. ``base_lang`` is required.
    * - Unknown base.
      - ``expr_styles: {bad: {base_lang: ruby}}``

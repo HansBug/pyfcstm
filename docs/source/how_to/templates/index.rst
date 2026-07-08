@@ -36,7 +36,7 @@ A first rendered file can inspect the model object and state paths:
 
 .. code-block:: jinja
 
-   Machine: {{ model.name }}
+   Machine: {{ model.root_state.name }}
    States:
    {%- for state in model.walk_states() %}
    - {{ state.path | join('.') }}
@@ -133,7 +133,7 @@ expressions.
      - ``params: [state]`` and ``template: "{{ state.path | join('.') }}"``
      - Returns a callable whose positional arguments are mapped to ``params``.
    * - ``type: template`` without ``params``
-     - ``template: "{{ model.name }}"``
+     - ``template: "{{ model.root_state.name }}"``
      - Returns the Jinja template's ``render`` callable.
    * - ``type: import``
      - ``from: pyfcstm.utils.to_c_identifier``
@@ -321,7 +321,7 @@ logic out of the prose and name the success signal explicitly:
 
 .. code-block:: jinja
 
-   model={{ model.name }}
+   model={{ model.root_state.name }}
    states={{ model.walk_states() | list | length }}
 
 The success signal is a rendered ``machine_summary.txt`` and a copied

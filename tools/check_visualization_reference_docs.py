@@ -60,6 +60,8 @@ _MARKER_SCHEMAS = {
 }
 
 _VISUALIZE_COMMAND = pyfcstmcli.commands["visualize"]
+# Fields whose resolved values vary by detail preset or parent visibility switch;
+# static dataclass defaults are covered separately by visualization-ref-field markers.
 _PRESET_FIELDS = (
     "show_variable_definitions",
     "show_pseudo_state_style",
@@ -169,9 +171,10 @@ def _expected_fields() -> Dict[str, str]:
 def _read_lines(path: Path) -> List[str]:
     try:
         return path.read_text(encoding="utf-8").splitlines()
-    except OSError as err:
-        # OSError: Path.read_text() raises this for missing or unreadable docs.
-        raise CheckFailure("%s cannot be read: %s" % (path, err))
+    except (OSError, UnicodeDecodeError) as err:
+        # OSError: Path.read_text() raises this for missing/unreadable docs;
+        # UnicodeDecodeError: it raises this when a docs file is not UTF-8.
+        raise CheckFailure("%s cannot be read as UTF-8 text: %s" % (path, err))
 
 
 def _parse_marker_line(

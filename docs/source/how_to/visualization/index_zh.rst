@@ -176,10 +176,10 @@ CI 图表任务不应依赖桌面查看器：
 
 如果渲染在持续集成中是可选项，把源码导出和渲染导出拆开。源码导出证明 pyfcstm 能解析并输出 PlantUML；渲染导出额外证明渲染后端可用。
 
-命令行取值不够时使用 Python 应用程序接口（API）
+命令行取值不够时使用 Python API（应用程序接口）
 ------------------------------------------------
 
-命令行支持标量和元组值。需要事件颜色字典这类对象配置时，使用 Python 应用程序接口（API）：
+命令行支持标量和元组值。需要事件颜色字典这类对象配置时，使用 Python API（应用程序接口）：
 
 .. code-block:: python
 
@@ -194,6 +194,111 @@ CI 图表任务不应依赖桌面查看器：
 完整可运行示例可下载
 :download:`python_basic.demo.py <../../tutorials/visualization/python_basic.demo.py>` 和
 :download:`python_options.demo.py <../../tutorials/visualization/python_options.demo.py>`。
+
+具体可视化配方
+----------------
+
+每个配方先写读者目标。需要可审查性时先导出源码；只有需要图片产物时才渲染。
+
+.. list-table:: 聚焦可视化配方
+   :header-rows: 1
+
+   * - 读者目标
+     - 命令
+     - 预期产物
+     - 边界
+   * - 只审查层级。
+     - ``pyfcstm plantuml -i machine.fcstm -l minimal -o machine.structure.puml``
+     - 紧凑 ``.puml`` 源码，隐藏实现细节。
+     - 不检查任何渲染器。
+   * - 审查状态/事件流。
+     - ``pyfcstm plantuml -i machine.fcstm -c event_visualization_mode=both -o machine.events.puml``
+     - 源码包含面向事件的标签、图例或颜色事实。
+     - 事件着色可能让大图变密。
+   * - 审查生命周期钩子。
+     - ``pyfcstm plantuml -i machine.fcstm -l full -c show_concrete_actions=false -o machine.hooks.puml``
+     - 抽象钩子可见，具体动作体隐藏。
+     - 适合集成讨论，不适合动作体审计。
+   * - 审查大型子树。
+     - ``pyfcstm plantuml -i machine.fcstm -c max_depth=2 -o machine.depth2.puml``
+     - 深层后代在第 2 层后折叠。
+     - 被隐藏的后代仍然存在于模型中。
+   * - 在 CI 中产出图片。
+     - ``pyfcstm visualize -i machine.fcstm -t svg -o build/machine.svg --no-open``
+     - SVG 文件出现在请求路径。
+     - 需要已配置的本地或远程渲染器。
+   * - 渲染前检查后端。
+     - ``pyfcstm visualize --check --renderer auto``
+     - 后端可用性报告。
+     - 不解析 DSL，也不证明图表内容。
+
+视觉审查清单
+~~~~~~~~~~~~
+
+文档接受新增或修改图之前，检查渲染后的 HTML，并回答：
+
+* 标签在配置宽度下是否可读？
+* 图注是否说明该图证明什么？
+* 图源是否能追踪到 ``.fcstm`` 或 ``.puml`` 输入？
+* 是否真的需要密集 ``full`` 视图，还是 ``normal`` 加一个覆盖项更清晰？
+* 如果使用远程渲染，PlantUML 源码离开本机是否可接受？
+
+
+
+任务卡片
+--------
+
+上面的配方是简短命令选择；下面的卡片把常见任务展开成完整 how-to 合同：起始输入、命令、预期信号、副作用和第一步修复。新增可视化任务时，应保持这种具体度，而不是只追加命令列表。
+
+.. list-table:: 任务卡片
+   :header-rows: 1
+
+   * - 任务
+     - 起点
+     - 命令
+     - 预期信号和副作用
+     - 失败时的第一步修复
+   * - 只审查层次
+     - ``docs/source/tutorials/quick_start/traffic_light.fcstm`` 或另一个小型源文件。
+     - ``pyfcstm plantuml -i traffic_light.fcstm -l minimal -o traffic_light.minimal.puml``。
+     - 文本文件以 ``@startuml`` 开头，并包含紧凑状态层次；不需要渲染器。
+     - 如果写文件前失败，先运行 ``pyfcstm inspect -i traffic_light.fcstm`` 定位解析/模型错误。
+   * - 解释事件和 guard
+     - 转换使用事件或 guard 的模型。
+     - ``pyfcstm plantuml -i machine.fcstm -l normal -c show_events=true -c show_transition_guards=true -o machine.events.puml``。
+     - 源标签应显示该转换族使用的事件名和 guard 条件。
+     - 如果标签缺失，确认转换语法确实包含事件/guard，且没有覆盖项隐藏它们。
+   * - 展示集成钩子
+     - 带抽象生命周期动作的模型。
+     - ``pyfcstm plantuml -i machine.fcstm -l full -c show_concrete_actions=false -o machine.hooks.puml``。
+     - 源会突出抽象钩子，同时抑制实现体。
+     - 如果图仍过密，添加 ``-c max_action_lines=2``，或用 ``max_depth`` 拆分。
+   * - 生成 CI SVG 产物
+     - 安装了 pyfcstm 且有被批准 PlantUML 后端的 CI 任务。
+     - ``pyfcstm visualize -i machine.fcstm -t svg -o artifacts/machine.svg --no-open``。
+     - SVG 文件存在；标准输出报告渲染器和输出路径；不需要桌面查看器。
+     - 如果渲染器发现失败，运行 ``pyfcstm visualize --check --renderer auto``，再决定本地或远程渲染是否允许。
+   * - 保持私有图本地渲染
+     - 机密模型和本地 PlantUML jar。
+     - ``pyfcstm visualize -i private.fcstm --renderer local -p ./plantuml.jar -t png -o private.png --no-open``。
+     - PNG 被写出，PlantUML 源不会发给远程服务。
+     - 如果本地渲染失败，修复 Java/JAR 路径；除非允许远程回退，否则不要切到 ``auto``。
+   * - 诊断选项解析错误
+     - 使用 ``-c`` 覆盖项的命令。
+     - ``pyfcstm plantuml -i machine.fcstm -c max_depth=abc`` 可作为有意失败探针。
+     - 命令应点名非法键/值，而不是写出误导性源码。
+     - 把值改成整数，或移除该覆盖项。
+
+视觉验收例子
+~~~~~~~~~~~~
+
+生成图以后，应检查实际渲染 HTML 或图片，而不只是检查源命令。使用这组简短验收规则：
+
+1. 图注说明这张图回答的问题。
+2. 所选预设匹配问题：``minimal`` 用于层次，``normal`` 用于转换，只有生命周期/动作细节本身是重点时才用 ``full``。
+3. 文本在文档宽度下可读。若不可读，优先减少细节，而不是单纯放大图片。
+4. 渲染路径符合数据边界：私有模型用本地渲染，只有源文本允许离开本机时才用远程。
+5. 页面应链接到 :doc:`/reference/visualization_options/index_zh`，解释所有非显而易见的选项。
 
 排查可视化问题
 --------------

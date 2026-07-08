@@ -172,6 +172,49 @@ When syntax or parse rules change, update the packaged LLM grammar guide:
 Commit the Markdown guide and checksum together. If the grammar guide did not
 change, record why it was outside the change scope.
 
+Worked grammar-change playbooks
+-------------------------------
+
+Use these playbooks to decide how much of the toolchain must move with a syntax
+change.
+
+.. list-table:: Grammar-change playbooks
+   :header-rows: 1
+
+   * - Change type
+     - Minimum files to inspect
+     - Required checks
+     - Common failure if skipped
+   * - Add a parser keyword or operator.
+     - ``GrammarLexer.g4``, ``GrammarParser.g4``, ``pyfcstm/highlight/pygments_lexer.py``, ``editors/fcstm.tmLanguage.json``, docs and LLM guide.
+     - ``make antlr_build``; ``python editors/validate.py``; relevant parser/model tests; ``make sha256`` when the LLM guide changes.
+     - Parser accepts text that highlighters or LLM guidance still teach incorrectly.
+   * - Change parse-tree shape.
+     - Grammar files, generated parser output, ``pyfcstm/dsl/listener.py``, ``pyfcstm/dsl/node.py``, model import/export code.
+     - Parser tests plus model import/export tests.
+     - Syntax parses but AST/model conversion loses data.
+   * - Add editor authoring support.
+     - TextMate grammar, ``editors/vscode/src/*``, snippets, validation suites.
+     - ``make vscode`` and targeted ``make verify-p0.*`` suites.
+     - VSCode suggests syntax that Python model import rejects.
+   * - Update only examples or docs wording.
+     - Human docs, prompt-facing grammar guide when syntax advice changes.
+     - Sphinx build, example parse commands, ``make sha256`` if guide content changes.
+     - Human docs and LLM prompts drift apart.
+
+Concrete review checklist
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Before requesting review, attach this evidence to the PR body or comment:
+
+* exact grammar files changed, or an explicit statement that grammar files are untouched;
+* whether generated parser files were regenerated;
+* whether listener/model/import/export code changed;
+* highlighter/editor assets checked or intentionally out of scope;
+* LLM grammar guide and checksum decision;
+* Python and JavaScript/editor test boundary decision.
+
+
 Document and review the change
 ------------------------------
 

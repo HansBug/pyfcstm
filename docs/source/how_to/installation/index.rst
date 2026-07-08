@@ -235,6 +235,72 @@ Troubleshooting checklist
      - Headless environment or no system opener.
      - Use ``--no-open`` in scripts; use ``--strict-open`` only when opening is required.
 
+Verification examples and failure signals
+------------------------------------------
+
+Use these short checks after installation. They are intentionally independent of
+rendering backends so they work on a fresh Python-only environment.
+
+.. list-table:: Installation verification matrix
+   :header-rows: 1
+
+   * - Check
+     - Command
+     - Expected signal
+     - If it fails
+   * - Package import.
+     - ``python -c "import pyfcstm; print(pyfcstm.__title__)"``
+     - Prints the package title.
+     - The package is not installed in this interpreter.
+   * - Console script.
+     - ``pyfcstm --help``
+     - Lists public commands.
+     - Use ``python -m pyfcstm --help`` to detect a PATH/virtualenv mismatch.
+   * - Version.
+     - ``pyfcstm -v``
+     - Prints ``Pyfcstm, version``.
+     - Confirm the command belongs to the intended environment.
+   * - Python-only DSL smoke.
+     - ``pyfcstm inspect -i smoke.fcstm``
+     - Prints ``[OK] FCSTM Inspect Report`` for the minimal model.
+     - Fix DSL syntax or installation before checking renderers.
+   * - Source-only diagram smoke.
+     - ``pyfcstm plantuml -i smoke.fcstm -o smoke.puml``
+     - ``smoke.puml`` begins with ``@startuml``.
+     - This does not require Java or a PlantUML jar.
+   * - Renderer smoke.
+     - ``pyfcstm visualize --check --renderer auto``
+     - Reports local and/or remote renderer availability.
+     - Configure Java/jar or remote host only if rendered images are required.
+
+Common installation diagnosis examples
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table:: Diagnosis examples
+   :header-rows: 1
+
+   * - Symptom
+     - Probe
+     - Meaning
+     - Repair
+   * - ``pyfcstm`` not found.
+     - ``python -m pyfcstm --help``
+     - Package may be installed but console script is not on ``PATH``.
+     - Activate the virtualenv or reinstall with the intended interpreter.
+   * - Import works but command uses another version.
+     - ``python -m pyfcstm -v`` and ``pyfcstm -v``.
+     - Interpreter and console script point to different environments.
+     - Prefer ``python -m pyfcstm`` in automation until the environment is fixed.
+   * - ``plantuml`` succeeds but ``visualize`` fails.
+     - ``pyfcstm visualize --check --renderer local``.
+     - Python package is installed; renderer backend is missing.
+     - Install Java and PlantUML jar, or use an allowed remote renderer.
+   * - Native generated runtime build fails.
+     - Build the generated output with its generated README command.
+     - pyfcstm generation may be fine; target compiler/toolchain is missing or incompatible.
+     - Install target toolchain and keep native checks explicit.
+
+
 Next steps
 ----------
 

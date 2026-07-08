@@ -120,6 +120,27 @@ Drift examples
      - The fix is lost at the next regeneration.
      - Move behavior to source files and regenerate outputs.
 
+Trace example: adding one keyword
+---------------------------------
+
+A one-word syntax change is not a one-file change. Suppose a new lifecycle-like
+keyword were added. The safe reasoning path is:
+
+1. Grammar decides whether the token can be parsed.
+2. Listener and AST nodes decide where the parsed fact is stored.
+3. Model import decides whether the fact has valid semantics.
+4. Pygments and TextMate decide whether humans see the same token class.
+5. VSCode decides whether authoring tools suggest, diagnose, and explain it.
+6. Human docs and the LLM grammar guide decide whether readers and repair prompts
+   learn the same rule.
+7. Tests on each side prove the Python and JavaScript/editor boundaries without
+   sharing test-only fixtures.
+
+This is why the completion standard is deliberately broader than ``make
+antlr_build``. Regeneration proves that generated parser code is current; it does
+not prove semantic import, highlighting, editor behavior, or prompt guidance.
+
+
 Completion standard
 -------------------
 

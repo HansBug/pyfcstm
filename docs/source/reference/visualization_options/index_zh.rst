@@ -251,10 +251,400 @@ PlantUML 选项字段
      - 布尔值
      - 是否包含 ``<<pseudo>>``、``<<composite>>`` 等 PlantUML 构造型。
    * - ``custom_colors``
-     - 仅 Python 应用程序接口（API）
+     - 仅 Python API（应用程序接口）
      - ``None``
      - 映射或 ``None``
      - ``color`` 和 ``both`` 事件模式使用的自定义事件颜色映射。命令行不解析该字典选项。
+
+字段和渲染器例子卡片
+--------------------------------
+
+上面的表给出闭合字段列表；下面的卡片说明字段组在真实命令中怎样相互影响。这里故意重复：每一行都给具体命令、预期源码或渲染信号，以及选择或避免它的原因。
+
+预设解析例子
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table:: 例子
+   :header-rows: 1
+
+   * - 用途
+     - 命令
+     - 预期效果
+     - 选择规则
+   * - Minimal structure review
+     - ``pyfcstm plantuml -i machine.fcstm -l minimal -o machine.min.puml``
+     - Shows hierarchy, variables, transition guards/effects, and events; hides lifecycle action text and pseudo-state styling.
+     - Use for architecture discussion where implementation bodies would distract.
+   * - Normal documentation view
+     - ``pyfcstm plantuml -i machine.fcstm -l normal -o machine.normal.puml``
+     - Adds pseudo-state styling while keeping lifecycle actions hidden.
+     - Use for most documentation and review snippets.
+   * - Full semantic review
+     - ``pyfcstm plantuml -i machine.fcstm -l full -o machine.full.puml``
+     - Shows lifecycle action families and concrete/abstract action visibility controlled by the detail preset.
+     - Use for semantic review, generated-runtime alignment, or debugging.
+   * - Override after preset
+     - ``pyfcstm plantuml -i machine.fcstm -l minimal -c show_lifecycle_actions=true -o machine.min-actions.puml``
+     - Explicit value wins over preset defaults.
+     - Use sparingly when a mostly minimal diagram needs one semantic dimension.
+
+审查说明：
+  如果命令改变源码可见性，检查生成的 ``.puml``。如果命令改变渲染行为，检查 ``visualize --check`` 或渲染产物路径。
+
+变量和状态标签例子
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table:: 例子
+   :header-rows: 1
+
+   * - 用途
+     - 命令
+     - 预期效果
+     - 选择规则
+   * - Legend variables
+     - ``pyfcstm plantuml -i machine.fcstm -c variable_display_mode=legend -o machine.vars.puml``
+     - Variable definitions render in a PlantUML legend.
+     - Good when variables are global context for the whole diagram.
+   * - Hide variables
+     - ``pyfcstm plantuml -i machine.fcstm -c variable_display_mode=hide -o machine.no-vars.puml``
+     - Variable inventory is removed from the source.
+     - Good for structure-only diagrams.
+   * - Dual state labels
+     - ``pyfcstm plantuml -i machine.fcstm -c state_name_format=extra_name,name -o machine.labels.puml``
+     - State labels include both readable extra name and raw model name.
+     - Good when generated identifiers and DSL names both matter.
+   * - Collapsed depth
+     - ``pyfcstm plantuml -i machine.fcstm -c max_depth=2 -c collapsed_state_marker="[more]" -o machine.depth.puml``
+     - Descendants beyond depth are replaced by the marker.
+     - Good for large hierarchical models.
+
+审查说明：
+  如果命令改变源码可见性，检查生成的 ``.puml``。如果命令改变渲染行为，检查 ``visualize --check`` 或渲染产物路径。
+
+生命周期可见性例子
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table:: 例子
+   :header-rows: 1
+
+   * - 用途
+     - 命令
+     - 预期效果
+     - 选择规则
+   * - Master lifecycle switch
+     - ``pyfcstm plantuml -i machine.fcstm -c show_lifecycle_actions=true -o machine.lifecycle.puml``
+     - Enter, during, exit, aspect, abstract, and concrete action families inherit visible defaults.
+     - Use when lifecycle ordering is part of review.
+   * - Only abstract hooks
+     - ``pyfcstm plantuml -i machine.fcstm -c show_lifecycle_actions=false -c show_abstract_actions=true -o machine.hooks.puml``
+     - Abstract extension points remain visible while concrete bodies stay hidden.
+     - Use for integration-surface reviews.
+   * - Limit action text
+     - ``pyfcstm plantuml -i machine.fcstm -l full -c max_action_lines=3 -o machine.short-actions.puml``
+     - Long action bodies are clipped after the configured line count.
+     - Use when full diagrams become too tall.
+   * - Aspect-only review
+     - ``pyfcstm plantuml -i machine.fcstm -c show_lifecycle_actions=false -c show_aspect_actions=true -o machine.aspects.puml``
+     - Descendant-cycle before/after aspects are visible without other lifecycle bodies.
+     - Use when reviewing cross-cutting behavior.
+
+审查说明：
+  如果命令改变源码可见性，检查生成的 ``.puml``。如果命令改变渲染行为，检查 ``visualize --check`` 或渲染产物路径。
+
+转换和事件例子
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table:: 例子
+   :header-rows: 1
+
+   * - 用途
+     - 命令
+     - 预期效果
+     - 选择规则
+   * - Hide guards
+     - ``pyfcstm plantuml -i machine.fcstm -c show_transition_guards=false -o machine.no-guards.puml``
+     - Transition labels omit guard conditions.
+     - Use only when guards are not relevant to the audience.
+   * - Inline effects
+     - ``pyfcstm plantuml -i machine.fcstm -c transition_effect_mode=inline -o machine.inline-effects.puml``
+     - Transition effects appear compactly on the transition instead of note blocks.
+     - Use for small effect bodies.
+   * - Event legend
+     - ``pyfcstm plantuml -i machine.fcstm -c event_visualization_mode=legend -o machine.event-legend.puml``
+     - Events get a legend without coloring transitions.
+     - Use when event names repeat often.
+   * - Event colors and legend
+     - ``pyfcstm plantuml -i machine.fcstm -c event_visualization_mode=both -o machine.event-colors.puml``
+     - Events are colored and listed in the legend.
+     - Use for event-flow diagrams.
+
+审查说明：
+  如果命令改变源码可见性，检查生成的 ``.puml``。如果命令改变渲染行为，检查 ``visualize --check`` 或渲染产物路径。
+
+渲染器和环境例子
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table:: 例子
+   :header-rows: 1
+
+   * - 用途
+     - 命令
+     - 预期效果
+     - 选择规则
+   * - Source-only export
+     - ``pyfcstm plantuml -i machine.fcstm -o machine.puml``
+     - No renderer is checked or used.
+     - Safe even when Java or network rendering is unavailable.
+   * - Backend check
+     - ``pyfcstm visualize --check --renderer auto``
+     - Reports local and remote availability and exits without parsing DSL.
+     - Use before CI rendering jobs.
+   * - Cache output
+     - ``pyfcstm visualize -i machine.fcstm --no-open``
+     - Writes to the pyfcstm visualize cache when -o is omitted.
+     - Use only for local preview, not reproducible build outputs.
+   * - Strict open
+     - ``pyfcstm visualize -i machine.fcstm --strict-open``
+     - Viewer launch failure becomes command failure.
+     - Use only for desktop workflows that require opening the image.
+
+审查说明：
+  如果命令改变源码可见性，检查生成的 ``.puml``。如果命令改变渲染行为，检查 ``visualize --check`` 或渲染产物路径。
+
+非法取值例子
+~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table:: 例子
+   :header-rows: 1
+
+   * - 用途
+     - 命令
+     - 预期效果
+     - 选择规则
+   * - Unknown field
+     - ``pyfcstm plantuml -i machine.fcstm -c does_not_exist=true``
+     - Fails because the key is not a PlantUMLOptions field.
+     - Check the complete field table.
+   * - Wrong integer
+     - ``pyfcstm plantuml -i machine.fcstm -c max_depth=abc``
+     - Fails because max_depth expects an integer or None.
+     - Use a number such as 2.
+   * - Wrong render type suffix
+     - ``pyfcstm visualize -i machine.fcstm -o machine.svg -t png --no-open``
+     - Fails before rendering because suffix and type disagree.
+     - Use -o machine.png or -t svg.
+   * - Private source over remote
+     - ``pyfcstm visualize -i private.fcstm --renderer remote --no-open``
+     - This may succeed but sends PlantUML source to a service.
+     - Use local rendering for private diagrams.
+
+审查说明：
+  如果命令改变源码可见性，检查生成的 ``.puml``。如果命令改变渲染行为，检查 ``visualize --check`` 或渲染产物路径。
+
+解析轨迹：生命周期动作
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+生命周期可见性是用户最容易误解选项模型的地方。解析后的值并不只是 dataclass 默认值：
+
+1. 显式子开关（例如 ``show_enter_actions=false``）最优先。
+2. 如果子开关是 ``None``，并且父开关 ``show_lifecycle_actions`` 是显式值，则继承父开关。
+3. 如果父开关也是 ``None``，则由所选细节预设提供默认值。
+4. 最终兜底值只在这些步骤之后应用。
+
+.. list-table:: 生命周期解析例子
+   :header-rows: 1
+
+   * - 输入
+     - 解析含义
+     - 读者可见结果
+   * - ``-l minimal``
+     - lifecycle parent and child switches resolve false.
+     - lifecycle text is hidden.
+   * - ``-l full``
+     - lifecycle parent and child switches resolve true.
+     - enter/during/exit/aspect/abstract/concrete actions are visible unless another option hides them.
+   * - ``-l full -c show_concrete_actions=false``
+     - concrete body visibility is explicitly false; other full preset action groups remain visible.
+     - abstract hooks can remain visible while implementation bodies are hidden.
+   * - ``-c show_lifecycle_actions=false -c show_enter_actions=true``
+     - explicit child switch overrides explicit parent switch for enter actions.
+     - enter actions are visible even though other lifecycle groups remain hidden.
+
+
+中文说明
+~~~~~~~~
+
+命令、选项、字段名和环境变量保持原文；解释性文字应使用中文术语。后续扩写本页时，不要用 marker 行数代替真实例子和边界说明。
+
+
+逐字段场景矩阵
+--------------
+
+上面的完整字段表是封闭清单；下面的矩阵更偏实际审查：每个公开字段都有两个常规例子和一个边界例子。需要证明某个图形选择是有意为之，而不是偶然产物时，应使用这组矩阵。
+
+.. list-table:: 源可见性与标签字段
+   :header-rows: 1
+
+   * - 字段
+     - 例子 A
+     - 例子 B
+     - 边界或反例
+   * - ``detail_level``
+     - ``-l minimal`` 用于小型层次审查。
+     - ``-l full`` 用于生命周期动作主题。
+     - CLI 不要传 ``-c detail_level=full``；应使用 ``-l``。
+   * - ``show_variable_definitions``
+     - ``-c show_variable_definitions=true`` 用于在审查中证明变量声明。
+     - ``-c show_variable_definitions=false`` 用于只看结构的图。
+     - 即使本开关为 true，``variable_display_mode=hide`` 也会隐藏变量。
+   * - ``variable_display_mode``
+     - ``legend`` 让文档页面里的变量更紧凑。
+     - ``note`` 让变量在状态图旁更醒目。
+     - ``hide`` 不是位置选项，而是抑制变量输出。
+   * - ``variable_legend_position``
+     - ``top left`` 会把右侧留给事件图例。
+     - ``bottom right`` 适合图顶部很密的情况。
+     - shell 中包含空格的值需要加引号。
+   * - ``state_name_format``
+     - ``extra_name`` 在存在显示名时展示显示名。
+     - ``extra_name,name`` 同时保留人类标签和 DSL 标识符。
+     - ``path`` 可能让大图变吵；只在需要消歧时使用。
+   * - ``show_pseudo_state_style``
+     - ``true`` 让 normal/full 图里的伪状态更容易辨认。
+     - ``false`` 让 minimal 图更少样式干扰。
+     - 它只影响样式，不影响模型中是否存在伪状态。
+   * - ``collapse_empty_states``
+     - ``true`` 缩短没有可见动作文本的状态。
+     - ``false`` 保留常规 PlantUML 状态块，便于阅读。
+     - 如果生命周期细节被隐藏，某个状态可能视觉上为空，但实际有隐藏动作。
+   * - ``max_depth``
+     - ``1`` 只保留根层结构，适合高层审查。
+     - ``2`` 展示一层嵌套，同时隐藏更深细节。
+     - 它只隐藏图形细节，不删除模型状态。
+   * - ``collapsed_state_marker``
+     - ``...`` 紧凑且中性。
+     - ``[hidden children]`` 对文档读者更明确。
+     - 只有 ``max_depth`` 确实折叠后代时，标记才会出现。
+
+.. list-table:: 生命周期与动作字段
+   :header-rows: 1
+
+   * - 字段
+     - 例子 A
+     - 例子 B
+     - 边界或反例
+   * - ``show_lifecycle_actions``
+     - ``true`` 用于审查 entry/during/exit 顺序。
+     - ``false`` 用于更关注转换和层次而不是动作体的图。
+     - 子开关只有显式设置时才会覆盖它。
+   * - ``show_enter_actions``
+     - 配合 ``show_lifecycle_actions=false`` 和 ``true``，单独突出初始化钩子。
+     - 配合 ``show_lifecycle_actions=true`` 和 ``false``，隐藏嘈杂的 entry 细节。
+     - Python 中的 ``None`` 表示继承，不是 false。
+   * - ``show_during_actions``
+     - ``true`` 用于周期行为审查。
+     - ``false`` 用于只强调转换。
+     - aspect 形式的 ``during`` 钩子由 ``show_aspect_actions`` 分开控制。
+   * - ``show_exit_actions``
+     - ``true`` 用于清理行为重要的场景。
+     - ``false`` 用于紧凑状态清单。
+     - 隐藏 exit 动作不会隐藏转换 effect。
+   * - ``show_aspect_actions``
+     - ``true`` 展示 ``>> during before`` 和 ``>> during after`` 钩子。
+     - ``false`` 表示读者只需要叶状态本地动作。
+     - 它关注 aspect 钩子，不是普通转换 guard。
+   * - ``show_abstract_actions``
+     - ``true`` 用于让生成代码集成钩子可见。
+     - ``false`` 用于只审查具体操作。
+     - 生命周期可见性允许动作组之后，它才继续过滤动作。
+   * - ``show_concrete_actions``
+     - ``true`` 用于审查赋值和操作体。
+     - ``false`` 用于只展示抽象扩展点。
+     - 它不改变生成运行时代码行为。
+   * - ``abstract_action_marker``
+     - ``text`` 保留 DSL 词 ``abstract``。
+     - ``symbol`` 使用紧凑的 ``«abstract»`` 标记。
+     - ``none`` 可能隐藏差异；只有图注解释了选择时才使用。
+   * - ``max_action_lines``
+     - ``3`` 让 normal 图中的长动作更可读。
+     - ``1`` 只显示第一行作为定位信息。
+     - ``0`` 或 ``None`` 不像正整数那样提供有用的行数限制。
+
+.. list-table:: 转换、事件与样式字段
+   :header-rows: 1
+
+   * - 字段
+     - 例子 A
+     - 例子 B
+     - 边界或反例
+   * - ``show_transition_guards``
+     - ``true`` 用于可达性和条件审查。
+     - ``false`` 用于纯拓扑图。
+     - 隐藏 guard 可能让互斥路径看起来有歧义。
+   * - ``show_transition_effects``
+     - ``true`` 用于变量更新重要的场景。
+     - ``false`` 用于紧凑路由图。
+     - 即使图中隐藏，effect 仍可能存在于模型中。
+   * - ``transition_effect_mode``
+     - ``note`` 让长 effect 不挤在边标签上。
+     - ``inline`` 适合短赋值。
+     - ``hide`` 会在 effect 存在时也抑制文本。
+   * - ``show_events``
+     - ``true`` 用于解释事件触发转换。
+     - ``false`` 用于只关注可能移动路径的图。
+     - 事件被隐藏时，事件颜色和图例没有意义。
+   * - ``event_name_format``
+     - ``extra_name,relpath`` 紧凑且面向用户。
+     - ``name,path`` 适合绝对归属很重要的场景。
+     - ``relpath`` 会在可用时跟随转换里的事件引用。
+   * - ``event_visualization_mode``
+     - ``color`` 给事件族着色但不增加图例。
+     - ``both`` 同时使用颜色和图例，适合文档。
+     - ``dependency_view`` 是保留模式，不应当作普通事件模式。
+   * - ``event_legend_position``
+     - ``right`` 把事件解释放在图旁边。
+     - ``bottom center`` 适合宽图。
+     - 只有启用事件图例输出时，它才有意义。
+   * - ``use_skinparam``
+     - ``true`` 应用 pyfcstm 默认 PlantUML 样式。
+     - ``false`` 让下游 PlantUML 主题接管样式。
+     - 关闭它可能降低伪状态/组合状态差异的可见性。
+   * - ``use_stereotypes``
+     - ``true`` 输出 ``<<pseudo>>`` 等 stereotype。
+     - ``false`` 产生更朴素的 PlantUML 源。
+     - 某些样式规则依赖 stereotype，因此关闭它可能改变视觉含义。
+   * - ``custom_colors``
+     - Python API 可以把事件组映射到稳定颜色。
+     - 用于需要匹配图例调色板的发布级图。
+     - CLI 不能解析这个字段的字典值。
+
+.. list-table:: 渲染器与环境决策字段
+   :header-rows: 1
+
+   * - 决策
+     - 例子 A
+     - 例子 B
+     - 边界或反例
+   * - 渲染类型
+     - ``-t svg`` 用于可缩放文档。
+     - ``-t png`` 用于截图或快速预览。
+     - 提供后缀时，输出后缀必须匹配类型。
+   * - 渲染器模式
+     - ``--renderer local`` 用于私有图。
+     - ``--renderer remote`` 用于由已批准服务负责渲染的场景。
+     - ``--renderer auto`` 可能在本地失败后退回远程。
+   * - 本地后端路径
+     - ``-j /usr/bin/java`` 固定 Java 可执行文件。
+     - ``-p ./plantuml.jar`` 固定 PlantUML jar。
+     - 这些选项不影响远程渲染。
+   * - 远程后端主机
+     - ``-r http://www.plantuml.com/plantuml`` 显式使用公共默认服务。
+     - ``PLANTUML_HOST=https://plantuml.internal/plantuml`` 使用内部服务。
+     - 远程渲染会把源文本发送到该主机。
+   * - 查看器行为
+     - ``--no-open`` 是稳定脚本写法。
+     - 只有打开查看器本身也是需求时，才使用 ``--strict-open``。
+     - CI、``PYFCSTM_NO_GUI`` 和缺失显示变量都可能跳过普通 ``--open``。
 
 类型化 ``-c`` 取值语法
 ----------------------
@@ -313,7 +703,7 @@ PlantUML 选项字段
    pyfcstm plantuml -i machine.fcstm -c state_name_format=extra_name,name
    pyfcstm plantuml -i machine.fcstm -c 'variable_legend_position=bottom right'
 
-Python 应用程序接口（API）例子：
+Python API（应用程序接口）例子：
 
 .. code-block:: python
 

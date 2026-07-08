@@ -218,6 +218,71 @@ CI 中渲染图表时，不要启动查看器：
      - 无图形界面环境或没有系统打开器。
      - 脚本中使用 ``--no-open``；只有确实要求打开时才用 ``--strict-open``。
 
+验证例子和失败信号
+--------------------
+
+安装后先跑这些短检查。它们故意不依赖渲染后端，所以适合刚安装好的 Python-only 环境。
+
+.. list-table:: 安装验证矩阵
+   :header-rows: 1
+
+   * - 检查
+     - 命令
+     - 预期信号
+     - 如果失败
+   * - 包导入。
+     - ``python -c "import pyfcstm; print(pyfcstm.__title__)"``
+     - 打印包标题。
+     - 这个解释器里没有安装包。
+   * - 控制台脚本。
+     - ``pyfcstm --help``
+     - 列出公开命令。
+     - 用 ``python -m pyfcstm --help`` 判断是否是 PATH/虚拟环境不一致。
+   * - 版本。
+     - ``pyfcstm -v``
+     - 打印 ``Pyfcstm, version``。
+     - 确认命令属于目标环境。
+   * - Python-only DSL 冒烟检查。
+     - ``pyfcstm inspect -i smoke.fcstm``
+     - 最小模型打印 ``[OK] FCSTM Inspect Report``。
+     - 先修 DSL 语法或安装，再检查渲染器。
+   * - 源码图表冒烟检查。
+     - ``pyfcstm plantuml -i smoke.fcstm -o smoke.puml``
+     - ``smoke.puml`` 以 ``@startuml`` 开头。
+     - 不需要 Java 或 PlantUML jar。
+   * - 渲染器冒烟检查。
+     - ``pyfcstm visualize --check --renderer auto``
+     - 报告本地和/或远程渲染器可用性。
+     - 只有需要渲染图片时才配置 Java/jar 或远程主机。
+
+常见安装诊断例子
+~~~~~~~~~~~~~~~~
+
+.. list-table:: 诊断例子
+   :header-rows: 1
+
+   * - 现象
+     - 探针
+     - 含义
+     - 修复
+   * - 找不到 ``pyfcstm``。
+     - ``python -m pyfcstm --help``
+     - 包可能已安装，但控制台脚本不在 ``PATH``。
+     - 激活虚拟环境，或用目标解释器重新安装。
+   * - import 可用但命令版本不同。
+     - ``python -m pyfcstm -v`` 和 ``pyfcstm -v``。
+     - 解释器和控制台脚本指向不同环境。
+     - 自动化中先用 ``python -m pyfcstm``，直到环境修好。
+   * - ``plantuml`` 成功但 ``visualize`` 失败。
+     - ``pyfcstm visualize --check --renderer local``。
+     - Python 包已安装；缺的是渲染后端。
+     - 安装 Java 和 PlantUML jar，或使用允许的远程渲染器。
+   * - native 生成运行时构建失败。
+     - 按生成 README 的命令构建生成目录。
+     - pyfcstm 生成可能没问题；缺的是目标编译器/工具链。
+     - 安装目标工具链，并保持 native 检查显式触发。
+
+
 后续阅读
 --------
 

@@ -238,6 +238,170 @@ Troubleshoot by layer
      - ``pyfcstm visualize --check --renderer auto``
      - :doc:`/reference/visualization_options/index`
 
+Worked command examples with expected signals
+---------------------------------------------
+
+Use the examples below as copyable patterns. They intentionally show only short output excerpts; full command output may include richer terminal formatting.
+
+.. list-table:: Command inputs and success signals
+   :header-rows: 1
+
+   * - Task
+     - Starting input
+     - Command
+     - Success signal
+     - File side effect
+   * - Simulate one cold-entry cycle.
+     - ``traffic_light.fcstm`` from the quick-start tutorial.
+     - ``pyfcstm simulate -i traffic_light.fcstm -e "current; cycle; current"``
+     - Transcript contains ``Cycle: 0`` followed by ``Cycle: 1`` and ``Current State: TrafficLight.Red``.
+     - None.
+   * - Export a human inspect report.
+     - Any parseable ``.fcstm`` file.
+     - ``pyfcstm inspect -i traffic_light.fcstm``
+     - Output begins with ``[OK] FCSTM Inspect Report`` and ends with ``No diagnostics.`` for a clean model.
+     - None.
+   * - Export JSON inspect data.
+     - Any parseable ``.fcstm`` file.
+     - ``pyfcstm inspect -i traffic_light.fcstm --format json -o traffic_light.inspect.json``
+     - JSON contains ``metrics`` and ``diagnostics`` keys.
+     - Writes ``traffic_light.inspect.json``.
+   * - Generate the Python built-in template.
+     - Any parseable ``.fcstm`` file.
+     - ``pyfcstm generate -i traffic_light.fcstm --template python -o generated/python --clear``
+     - Output directory contains ``machine.py``, ``README.md``, and ``README_zh.md``.
+     - Clears and rewrites ``generated/python``.
+   * - Export PlantUML source.
+     - Any parseable ``.fcstm`` file.
+     - ``pyfcstm plantuml -i traffic_light.fcstm -o traffic_light.puml``
+     - File begins with ``@startuml`` and includes the root state.
+     - Writes ``traffic_light.puml``.
+   * - Check visualization backend.
+     - No DSL input required.
+     - ``pyfcstm visualize --check --renderer auto``
+     - Output reports local and/or remote renderer status.
+     - None.
+   * - Render an SVG artifact.
+     - Any parseable ``.fcstm`` file and a working renderer.
+     - ``pyfcstm visualize -i traffic_light.fcstm -t svg -o traffic_light.svg --no-open``
+     - Command reports the renderer and output path on success.
+     - Writes ``traffic_light.svg``.
+
+Short output excerpts
+~~~~~~~~~~~~~~~~~~~~~
+
+Simulation batch output should look like this, with formatting possibly changing by terminal:
+
+.. code-block:: text
+
+   >>> current
+   Cycle: 0
+   Current State: TrafficLight
+   Variables:
+     timer = 0
+   >>> cycle
+   Cycle: 1
+   Current State: TrafficLight.Red
+
+Inspect human output for the same clean model is intentionally compact:
+
+.. code-block:: text
+
+   [OK] FCSTM Inspect Report: traffic_light.fcstm
+   Summary
+     status: ok
+     root: TrafficLight
+     states: 4 total / 3 leaf
+     diagnostics: 0 errors / 0 warnings / 0 infos
+
+A generated Python output directory should have this minimum shape:
+
+.. code-block:: text
+
+   README.md
+   README_zh.md
+   machine.py
+
+PlantUML source begins as text, not as an image:
+
+.. code-block:: text
+
+   @startuml
+   hide empty description
+   skinparam state {
+     BackgroundColor<<pseudo>> LightGray
+   }
+
+Failure probes
+~~~~~~~~~~~~~~
+
+Use these probes when a workflow fails and you need to locate the layer quickly:
+
+.. list-table:: Failure probes
+   :header-rows: 1
+
+   * - Probe
+     - Command
+     - Expected failure signal
+     - Meaning
+   * - Missing input option.
+     - ``pyfcstm inspect``
+     - ``Missing option '-i' / '--input-code'``.
+     - Click did not reach DSL parsing.
+   * - Invalid inspect format.
+     - ``pyfcstm inspect -i traffic_light.fcstm --format xml``
+     - Click reports allowed choices.
+     - Fix command syntax before debugging the model.
+   * - Visualization suffix mismatch.
+     - ``pyfcstm visualize -i traffic_light.fcstm -o traffic_light.svg -t png --no-open``
+     - Output says suffix ``.svg`` does not match ``png``.
+     - Fix output naming before debugging PlantUML.
+   * - Renderer availability.
+     - ``pyfcstm visualize --check --renderer local``
+     - Reports missing Java, PlantUML jar, or backend failure when local rendering is unavailable.
+     - Configure local renderer or switch to an allowed remote renderer.
+
+
+
+End-to-end acceptance cards
+---------------------------
+
+Use these cards when a project README, CI job, or bug report needs more than a
+single command. Each card connects the command sequence to an acceptance signal
+and a first repair path.
+
+.. list-table:: Workflow acceptance cards
+   :header-rows: 1
+
+   * - Workflow
+     - Commands
+     - Accept when
+     - Repair first
+   * - Reproduce a user's current state
+     - ``pyfcstm simulate -i machine.fcstm -e "current; cycle Start; current"``.
+     - The transcript names the starting active path, the cycle count changes, and variables are visible.
+     - If the event has no effect, inspect whether the event scope and source state match the model.
+   * - Hand a model to an LLM for repair
+     - ``pyfcstm inspect -i machine.fcstm --format llm-md -o machine.inspect.md``.
+     - The Markdown report includes status, metrics, diagnostics, source excerpts, and suggested repair facts.
+     - If the report is empty or lacks diagnostics, rerun with human format to confirm the file being inspected.
+   * - Capture a machine-readable regression artifact
+     - ``pyfcstm inspect -i machine.fcstm --format json -o reports/machine.inspect.json``.
+     - JSON parses successfully and contains metrics plus diagnostics arrays.
+     - If a suffix warning appears, rename the target so humans do not confuse the format.
+   * - Refresh generated Python code
+     - ``pyfcstm generate -i machine.fcstm --template python -o generated/python --clear``.
+     - ``machine.py``, ``README.md``, and ``README_zh.md`` exist, and the target directory contains only expected generated files.
+     - If stale files remain, check that ``--clear`` targeted the generated directory you inspected.
+   * - Produce reviewable diagram source
+     - ``pyfcstm plantuml -i machine.fcstm -l normal -o diagrams/machine.puml``.
+     - The file is text, begins with ``@startuml``, and can be diffed in code review.
+     - If reviewers expected an image, either render with ``visualize`` or state that source review is intentional.
+   * - Produce a rendered documentation image
+     - ``pyfcstm visualize -i machine.fcstm -t svg -o docs/_static/machine.svg --no-open``.
+     - The SVG exists and a visual inspection confirms labels are readable.
+     - If rendering fails, run ``visualize --check`` before changing diagram options.
+
 Next steps
 ----------
 

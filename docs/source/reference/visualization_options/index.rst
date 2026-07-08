@@ -267,6 +267,394 @@ fallback. Parent switches are especially important for lifecycle actions:
      - mapping or ``None``
      - Custom event color mapping for ``color`` and ``both`` event modes. The CLI does not parse dictionaries for this option.
 
+Field and renderer example cards
+--------------------------------
+
+The table above gives the closed field list. The cards below show how groups of fields interact in real commands. They are intentionally repetitive: each row gives a concrete command, the expected source or rendering signal, and the reason to choose or avoid it.
+
+Preset resolution examples
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table:: Examples
+   :header-rows: 1
+
+   * - Use case
+     - Command
+     - Expected effect
+     - Selection rule
+   * - Minimal structure review
+     - ``pyfcstm plantuml -i machine.fcstm -l minimal -o machine.min.puml``
+     - Shows hierarchy, variables, transition guards/effects, and events; hides lifecycle action text and pseudo-state styling.
+     - Use for architecture discussion where implementation bodies would distract.
+   * - Normal documentation view
+     - ``pyfcstm plantuml -i machine.fcstm -l normal -o machine.normal.puml``
+     - Adds pseudo-state styling while keeping lifecycle actions hidden.
+     - Use for most documentation and review snippets.
+   * - Full semantic review
+     - ``pyfcstm plantuml -i machine.fcstm -l full -o machine.full.puml``
+     - Shows lifecycle action families and concrete/abstract action visibility controlled by the detail preset.
+     - Use for semantic review, generated-runtime alignment, or debugging.
+   * - Override after preset
+     - ``pyfcstm plantuml -i machine.fcstm -l minimal -c show_lifecycle_actions=true -o machine.min-actions.puml``
+     - Explicit value wins over preset defaults.
+     - Use sparingly when a mostly minimal diagram needs one semantic dimension.
+
+Review note:
+  If the command changes source visibility, verify the generated ``.puml``. If it changes rendering behavior, verify ``visualize --check`` or the rendered artifact path.
+
+Variable and state label examples
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table:: Examples
+   :header-rows: 1
+
+   * - Use case
+     - Command
+     - Expected effect
+     - Selection rule
+   * - Legend variables
+     - ``pyfcstm plantuml -i machine.fcstm -c variable_display_mode=legend -o machine.vars.puml``
+     - Variable definitions render in a PlantUML legend.
+     - Good when variables are global context for the whole diagram.
+   * - Hide variables
+     - ``pyfcstm plantuml -i machine.fcstm -c variable_display_mode=hide -o machine.no-vars.puml``
+     - Variable inventory is removed from the source.
+     - Good for structure-only diagrams.
+   * - Dual state labels
+     - ``pyfcstm plantuml -i machine.fcstm -c state_name_format=extra_name,name -o machine.labels.puml``
+     - State labels include both readable extra name and raw model name.
+     - Good when generated identifiers and DSL names both matter.
+   * - Collapsed depth
+     - ``pyfcstm plantuml -i machine.fcstm -c max_depth=2 -c collapsed_state_marker="[more]" -o machine.depth.puml``
+     - Descendants beyond depth are replaced by the marker.
+     - Good for large hierarchical models.
+
+Review note:
+  If the command changes source visibility, verify the generated ``.puml``. If it changes rendering behavior, verify ``visualize --check`` or the rendered artifact path.
+
+Lifecycle visibility examples
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table:: Examples
+   :header-rows: 1
+
+   * - Use case
+     - Command
+     - Expected effect
+     - Selection rule
+   * - Master lifecycle switch
+     - ``pyfcstm plantuml -i machine.fcstm -c show_lifecycle_actions=true -o machine.lifecycle.puml``
+     - Enter, during, exit, aspect, abstract, and concrete action families inherit visible defaults.
+     - Use when lifecycle ordering is part of review.
+   * - Only abstract hooks
+     - ``pyfcstm plantuml -i machine.fcstm -c show_lifecycle_actions=false -c show_abstract_actions=true -o machine.hooks.puml``
+     - Abstract extension points remain visible while concrete bodies stay hidden.
+     - Use for integration-surface reviews.
+   * - Limit action text
+     - ``pyfcstm plantuml -i machine.fcstm -l full -c max_action_lines=3 -o machine.short-actions.puml``
+     - Long action bodies are clipped after the configured line count.
+     - Use when full diagrams become too tall.
+   * - Aspect-only review
+     - ``pyfcstm plantuml -i machine.fcstm -c show_lifecycle_actions=false -c show_aspect_actions=true -o machine.aspects.puml``
+     - Descendant-cycle before/after aspects are visible without other lifecycle bodies.
+     - Use when reviewing cross-cutting behavior.
+
+Review note:
+  If the command changes source visibility, verify the generated ``.puml``. If it changes rendering behavior, verify ``visualize --check`` or the rendered artifact path.
+
+Transition and event examples
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table:: Examples
+   :header-rows: 1
+
+   * - Use case
+     - Command
+     - Expected effect
+     - Selection rule
+   * - Hide guards
+     - ``pyfcstm plantuml -i machine.fcstm -c show_transition_guards=false -o machine.no-guards.puml``
+     - Transition labels omit guard conditions.
+     - Use only when guards are not relevant to the audience.
+   * - Inline effects
+     - ``pyfcstm plantuml -i machine.fcstm -c transition_effect_mode=inline -o machine.inline-effects.puml``
+     - Transition effects appear compactly on the transition instead of note blocks.
+     - Use for small effect bodies.
+   * - Event legend
+     - ``pyfcstm plantuml -i machine.fcstm -c event_visualization_mode=legend -o machine.event-legend.puml``
+     - Events get a legend without coloring transitions.
+     - Use when event names repeat often.
+   * - Event colors and legend
+     - ``pyfcstm plantuml -i machine.fcstm -c event_visualization_mode=both -o machine.event-colors.puml``
+     - Events are colored and listed in the legend.
+     - Use for event-flow diagrams.
+
+Review note:
+  If the command changes source visibility, verify the generated ``.puml``. If it changes rendering behavior, verify ``visualize --check`` or the rendered artifact path.
+
+Renderer and environment examples
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table:: Examples
+   :header-rows: 1
+
+   * - Use case
+     - Command
+     - Expected effect
+     - Selection rule
+   * - Source-only export
+     - ``pyfcstm plantuml -i machine.fcstm -o machine.puml``
+     - No renderer is checked or used.
+     - Safe even when Java or network rendering is unavailable.
+   * - Backend check
+     - ``pyfcstm visualize --check --renderer auto``
+     - Reports local and remote availability and exits without parsing DSL.
+     - Use before CI rendering jobs.
+   * - Cache output
+     - ``pyfcstm visualize -i machine.fcstm --no-open``
+     - Writes to the pyfcstm visualize cache when -o is omitted.
+     - Use only for local preview, not reproducible build outputs.
+   * - Strict open
+     - ``pyfcstm visualize -i machine.fcstm --strict-open``
+     - Viewer launch failure becomes command failure.
+     - Use only for desktop workflows that require opening the image.
+
+Review note:
+  If the command changes source visibility, verify the generated ``.puml``. If it changes rendering behavior, verify ``visualize --check`` or the rendered artifact path.
+
+Invalid value examples
+~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table:: Examples
+   :header-rows: 1
+
+   * - Use case
+     - Command
+     - Expected effect
+     - Selection rule
+   * - Unknown field
+     - ``pyfcstm plantuml -i machine.fcstm -c does_not_exist=true``
+     - Fails because the key is not a PlantUMLOptions field.
+     - Check the complete field table.
+   * - Wrong integer
+     - ``pyfcstm plantuml -i machine.fcstm -c max_depth=abc``
+     - Fails because max_depth expects an integer or None.
+     - Use a number such as 2.
+   * - Wrong render type suffix
+     - ``pyfcstm visualize -i machine.fcstm -o machine.svg -t png --no-open``
+     - Fails before rendering because suffix and type disagree.
+     - Use -o machine.png or -t svg.
+   * - Private source over remote
+     - ``pyfcstm visualize -i private.fcstm --renderer remote --no-open``
+     - This may succeed but sends PlantUML source to a service.
+     - Use local rendering for private diagrams.
+
+Review note:
+  If the command changes source visibility, verify the generated ``.puml``. If it changes rendering behavior, verify ``visualize --check`` or the rendered artifact path.
+
+Resolution trace: lifecycle actions
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Lifecycle visibility is the most common place where users misread the option model. The resolved value is not simply the dataclass default:
+
+1. An explicit child switch such as ``show_enter_actions=false`` wins first.
+2. If the child switch is ``None``, it inherits from ``show_lifecycle_actions`` when that parent switch is explicit.
+3. If the parent switch is also ``None``, the selected detail preset supplies the default.
+4. Final fallback values are applied only after those steps.
+
+.. list-table:: Lifecycle resolution examples
+   :header-rows: 1
+
+   * - Input
+     - Resolved meaning
+     - Reader-visible result
+   * - ``-l minimal``
+     - lifecycle parent and child switches resolve false.
+     - lifecycle text is hidden.
+   * - ``-l full``
+     - lifecycle parent and child switches resolve true.
+     - enter/during/exit/aspect/abstract/concrete actions are visible unless another option hides them.
+   * - ``-l full -c show_concrete_actions=false``
+     - concrete body visibility is explicitly false; other full preset action groups remain visible.
+     - abstract hooks can remain visible while implementation bodies are hidden.
+   * - ``-c show_lifecycle_actions=false -c show_enter_actions=true``
+     - explicit child switch overrides explicit parent switch for enter actions.
+     - enter actions are visible even though other lifecycle groups remain hidden.
+
+
+
+Per-field scenario matrix
+-------------------------
+
+The complete field map above is intentionally closed-list. The matrix below is
+more practical: every public field gets two normal examples and one boundary
+example. Use it when a review needs to prove that a diagram choice is deliberate
+rather than accidental.
+
+.. list-table:: Source visibility and label fields
+   :header-rows: 1
+
+   * - Field
+     - Example A
+     - Example B
+     - Boundary or counterexample
+   * - ``detail_level``
+     - ``-l minimal`` for a small hierarchy review.
+     - ``-l full`` when lifecycle actions are the topic.
+     - Do not pass ``-c detail_level=full`` on the CLI; use ``-l``.
+   * - ``show_variable_definitions``
+     - ``-c show_variable_definitions=true`` to prove variable declarations in a review.
+     - ``-c show_variable_definitions=false`` for a structure-only diagram.
+     - ``variable_display_mode=hide`` also hides variables even when this switch is true.
+   * - ``variable_display_mode``
+     - ``legend`` keeps variables compact for documentation pages.
+     - ``note`` makes variables stand out near the state graph.
+     - ``hide`` is not a position; it suppresses variable output.
+   * - ``variable_legend_position``
+     - ``top left`` leaves right-side event legends free.
+     - ``bottom right`` works when the top of the diagram is dense.
+     - Quote values containing spaces in shells.
+   * - ``state_name_format``
+     - ``extra_name`` shows the display label when available.
+     - ``extra_name,name`` keeps both human label and DSL identifier.
+     - ``path`` can make large diagrams noisy; reserve it for ambiguity removal.
+   * - ``show_pseudo_state_style``
+     - ``true`` makes pseudo states visually distinct in normal/full diagrams.
+     - ``false`` keeps minimal diagrams less stylized.
+     - It affects styling only, not whether pseudo states exist in the model.
+   * - ``collapse_empty_states``
+     - ``true`` shortens states with no visible action text.
+     - ``false`` keeps normal PlantUML state blocks for readability.
+     - If lifecycle details are hidden, a state may become visually empty even though it has hidden actions.
+   * - ``max_depth``
+     - ``1`` keeps only root-level structure for a high-level review.
+     - ``2`` shows one nested layer while hiding deeper details.
+     - It hides diagram detail only; it does not delete model states.
+   * - ``collapsed_state_marker``
+     - ``...`` is compact and neutral.
+     - ``[hidden children]`` is explicit for documentation readers.
+     - The marker appears only when ``max_depth`` actually collapses descendants.
+
+.. list-table:: Lifecycle and action fields
+   :header-rows: 1
+
+   * - Field
+     - Example A
+     - Example B
+     - Boundary or counterexample
+   * - ``show_lifecycle_actions``
+     - ``true`` when entry/during/exit order is the review target.
+     - ``false`` when transitions and hierarchy matter more than action bodies.
+     - Child switches override it only when they are explicitly set.
+   * - ``show_enter_actions``
+     - ``true`` with ``show_lifecycle_actions=false`` to spotlight initialization hooks.
+     - ``false`` with ``show_lifecycle_actions=true`` to hide noisy entry details.
+     - ``None`` in Python means inherit, not false.
+   * - ``show_during_actions``
+     - ``true`` for cycle-behavior reviews.
+     - ``false`` when only transitions should be emphasized.
+     - Aspect ``during`` hooks are governed separately by ``show_aspect_actions``.
+   * - ``show_exit_actions``
+     - ``true`` when cleanup behavior is important.
+     - ``false`` for compact state inventories.
+     - Hiding exit actions does not hide transition effects.
+   * - ``show_aspect_actions``
+     - ``true`` to show ``>> during before`` and ``>> during after`` hooks.
+     - ``false`` when leaf-local actions are enough for the reader.
+     - It is about aspect hooks, not ordinary transition guards.
+   * - ``show_abstract_actions``
+     - ``true`` when generated-code integration hooks must be visible.
+     - ``false`` when only concrete operations are being audited.
+     - It filters action visibility after lifecycle visibility has allowed the action group.
+   * - ``show_concrete_actions``
+     - ``true`` to audit assignments and operation bodies.
+     - ``false`` to show only abstract extension points.
+     - It does not change generated runtime behavior.
+   * - ``abstract_action_marker``
+     - ``text`` preserves the DSL word ``abstract``.
+     - ``symbol`` uses a compact ``«abstract»`` marker.
+     - ``none`` can hide the distinction; use it only when the caption explains the choice.
+   * - ``max_action_lines``
+     - ``3`` keeps long actions readable in a normal diagram.
+     - ``1`` shows only the first line as a locator.
+     - ``0`` or ``None`` does not provide a useful line cap in the same way as a positive integer.
+
+.. list-table:: Transition, event, and styling fields
+   :header-rows: 1
+
+   * - Field
+     - Example A
+     - Example B
+     - Boundary or counterexample
+   * - ``show_transition_guards``
+     - ``true`` for reachability and condition review.
+     - ``false`` for a pure topology diagram.
+     - Hiding guards can make mutually exclusive paths look ambiguous.
+   * - ``show_transition_effects``
+     - ``true`` when variable updates matter.
+     - ``false`` for compact routing diagrams.
+     - Effects may still exist in the model even if hidden from the diagram.
+   * - ``transition_effect_mode``
+     - ``note`` keeps long effects off the edge label.
+     - ``inline`` is compact for short assignments.
+     - ``hide`` suppresses effect text even when effects are present.
+   * - ``show_events``
+     - ``true`` to explain event-triggered transitions.
+     - ``false`` for diagrams focused only on possible movement.
+     - Event colors and legends are not useful if events are hidden.
+   * - ``event_name_format``
+     - ``extra_name,relpath`` is compact and user-facing.
+     - ``name,path`` is useful when absolute ownership matters.
+     - ``relpath`` depends on the transition's event reference when available.
+   * - ``event_visualization_mode``
+     - ``color`` colors event families without adding a legend.
+     - ``both`` uses colors plus legend for documentation.
+     - ``dependency_view`` is reserved and should not be treated as the normal event mode.
+   * - ``event_legend_position``
+     - ``right`` keeps event explanations beside the graph.
+     - ``bottom center`` works for wide diagrams.
+     - It matters only when event legend output is enabled.
+   * - ``use_skinparam``
+     - ``true`` applies pyfcstm's default PlantUML styling.
+     - ``false`` lets a downstream PlantUML theme own styling.
+     - Turning it off can make pseudo/composite distinctions less visible.
+   * - ``use_stereotypes``
+     - ``true`` emits stereotypes such as ``<<pseudo>>``.
+     - ``false`` produces plainer PlantUML source.
+     - Some style rules depend on stereotypes, so disabling them can change visual meaning.
+   * - ``custom_colors``
+     - Python API code can map event groups to stable colors.
+     - Use it for a publication diagram that must match a legend palette.
+     - The CLI cannot parse dictionary values for this field.
+
+.. list-table:: Renderer and environment decision fields
+   :header-rows: 1
+
+   * - Decision
+     - Example A
+     - Example B
+     - Boundary or counterexample
+   * - Render type
+     - ``-t svg`` for scalable documentation.
+     - ``-t png`` for screenshots or quick previews.
+     - The output suffix must match the type when a suffix is provided.
+   * - Renderer mode
+     - ``--renderer local`` for private diagrams.
+     - ``--renderer remote`` when an approved service owns rendering.
+     - ``--renderer auto`` may fall back to remote after local failure.
+   * - Local backend paths
+     - ``-j /usr/bin/java`` fixes the Java executable.
+     - ``-p ./plantuml.jar`` fixes the PlantUML jar.
+     - These options do not affect remote rendering.
+   * - Remote backend host
+     - ``-r http://www.plantuml.com/plantuml`` uses the public default explicitly.
+     - ``PLANTUML_HOST=https://plantuml.internal/plantuml`` uses an internal service.
+     - Remote rendering sends source text to that host.
+   * - Viewer behavior
+     - ``--no-open`` is the stable scripted form.
+     - ``--strict-open`` is appropriate only when opening the viewer is itself required.
+     - CI, ``PYFCSTM_NO_GUI``, and missing display variables can skip ordinary ``--open``.
+
 Typed ``-c`` value syntax
 -------------------------
 

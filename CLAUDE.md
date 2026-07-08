@@ -1189,6 +1189,14 @@ traceable generated resources, synchronized language variants where applicable, 
 below. Review documentation PRs with the C/I/M criteria in that guide, in addition to the reST, generated-file, and
 multilingual rules in this section.
 
+The depth gate in [docs/documentation_authoring.md](docs/documentation_authoring.md) is a merge-blocking rule, not a
+suggestion. For substantial documentation PRs, especially PRs created to repair thin docs, reviewers must verify every
+required inventory field, every role-specific depth requirement, every runnable example/output requirement, every
+reference row/counterexample requirement, every diagram/visual-evidence requirement, bilingual parity, migration records,
+and verification evidence. If any required item is missing and not explicitly removed from scope with ownership assigned
+to another page, reject ready-to-merge status until it is fixed. A green Sphinx build, drift checker, or CI run does not
+override this authoring gate.
+
 #### Documentation Structure
 
 Files in [docs/source/](docs/source/):

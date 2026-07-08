@@ -182,6 +182,135 @@ Several repository files are generated and should not be edited directly:
 The safe pattern is always: edit the source, run the generator, review the diff,
 and record the verification command.
 
+Worked trace: one source, several kinds of evidence
+---------------------------------------------------
+
+Consider the quick-start ``traffic_light.fcstm`` file. The same source text can
+produce several different artifacts, but each artifact proves a different thing.
+
+.. list-table:: Trace from source to artifact
+   :header-rows: 1
+
+   * - Step
+     - Component boundary
+     - Example command or object
+     - What the evidence proves
+     - What it does not prove
+   * - Parse text.
+     - ``pyfcstm.dsl``
+     - ``pyfcstm inspect -i traffic_light.fcstm`` starts by parsing the file.
+     - The file is syntactically valid FCSTM.
+     - It does not prove target runtime behavior.
+   * - Import semantic model.
+     - ``pyfcstm.model``
+     - The inspect report names root ``TrafficLight`` and counts 4 states / 4 transitions.
+     - The model importer accepted names, hierarchy, variables, and transitions.
+     - It does not render an image or compile generated code.
+   * - Execute reference semantics.
+     - ``pyfcstm.simulate``
+     - ``pyfcstm simulate -i traffic_light.fcstm -e "current; cycle; current"``.
+     - Cold entry and one cycle produce a concrete active-state trace.
+     - It does not prove every generated target template matches the simulator.
+   * - Inspect structured facts.
+     - ``pyfcstm.diagnostics`` and inspect adapters
+     - ``pyfcstm inspect -i traffic_light.fcstm --format json``.
+     - Metrics and diagnostics are available for scripts and LLM repair workflows.
+     - It does not run hidden unbounded verification.
+   * - Export diagram source.
+     - ``model.to_plantuml``
+     - ``pyfcstm plantuml -i traffic_light.fcstm -o traffic_light.puml``.
+     - The model can be represented as deterministic PlantUML source.
+     - It does not prove a renderer is installed.
+   * - Render a diagram.
+     - ``pyfcstm visualize`` plus external backend
+     - ``pyfcstm visualize -i traffic_light.fcstm -t svg -o traffic_light.svg --no-open``.
+     - A configured PlantUML backend can turn the source into an image.
+     - It does not prove the model semantics are correct beyond the source used.
+   * - Generate runtime files.
+     - ``pyfcstm.render`` and packaged templates
+     - ``pyfcstm generate -i traffic_light.fcstm --template python -o generated/python --clear``.
+     - The template can consume the model and write target files.
+     - It does not by itself prove generated runtime parity; alignment tests own that claim.
+
+Command boundary trace
+----------------------
+
+The same ``traffic_light.fcstm`` input can pass through several command paths.
+The paths are related, but each proves a different boundary. This trace is the
+reason the documentation keeps CLI recipes, visualization recipes, and reference
+facts separate.
+
+.. list-table:: Boundary trace from one input file
+   :header-rows: 1
+
+   * - Step
+     - Command or API layer
+     - Artifact
+     - What the artifact proves
+     - What it does not prove
+   * - Parse and import
+     - ``load_state_machine_from_file`` via command entry points
+     - In-memory semantic model
+     - The DSL can be decoded, parsed, scoped, and validated as a state machine.
+     - It does not prove any renderer, template, or external tool is installed.
+   * - Inspect facts
+     - ``pyfcstm inspect -i traffic_light.fcstm``
+     - Human, JSON, or LLM-oriented report
+     - Diagnostics and metrics describe the model facts seen by pyfcstm.
+     - It does not execute target-language code.
+   * - Simulate behavior
+     - ``pyfcstm simulate -i traffic_light.fcstm -e "cycle; current"``
+     - Simulator transcript
+     - The Python simulator can execute the selected cycle path.
+     - It does not prove generated C/C++/Python runtime parity by itself.
+   * - Export diagram source
+     - ``pyfcstm plantuml -i traffic_light.fcstm -o traffic_light.puml``
+     - PlantUML text
+     - The model can be represented as textual diagram source.
+     - It does not prove Java, PlantUML, remote rendering, or visual readability.
+   * - Render a diagram
+     - ``pyfcstm visualize -i traffic_light.fcstm -t svg -o traffic_light.svg --no-open``
+     - SVG, PNG, or PDF artifact
+     - The selected rendering backend can turn the PlantUML source into an artifact.
+     - It does not prove the chosen detail level is the clearest explanation; visual review owns that.
+   * - Generate runtime files
+     - ``pyfcstm generate -i traffic_light.fcstm --template python -o generated/python --clear``
+     - Generated runtime tree
+     - A packaged template can consume the model and write target files.
+     - It does not prove native toolchains or downstream integration tests have run.
+
+A failure at a later boundary should not be fixed by guessing at an earlier
+layer. For example, a remote PlantUML outage is a visualization-environment
+problem, not a DSL parser problem. Conversely, a model-validation error should
+be fixed in the DSL/model path before retrying templates or renderers.
+
+Counterexamples that keep the boundaries honest
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* A successful ``plantuml`` command only proves source export. It can succeed on
+  a machine with no Java, no PlantUML jar, and no network renderer.
+* A successful ``visualize`` command proves renderer availability for that run,
+  but the remote mode may send PlantUML source outside the local machine.
+* A successful ``generate`` command proves rendering completed. It does not prove
+  that a C/C++ compiler is installed or that a native executable has been tested.
+* A clean inspect report is useful for humans and LLM repair prompts, but it is
+  not a promise that every possible runtime path has been explored.
+
+Visual evidence review
+~~~~~~~~~~~~~~~~~~~~~~
+
+The architecture figure above was regenerated from ``structure.puml`` for this
+PR-Q hardening pass. It is intended to prove three relationships only:
+
+1. all command-facing features share the semantic model boundary;
+2. PlantUML source export and image rendering are separate layers;
+3. source templates and packaged templates have different maintenance roles.
+
+It is not an API map and it is not a substitute for the generated API reference.
+When this figure changes, rebuild the SVG/PNG pair and inspect the rendered HTML
+so that labels remain readable at documentation width.
+
+
 Where to go next
 ----------------
 

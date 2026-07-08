@@ -1,101 +1,80 @@
 @startuml
-!define FOUNDATION_COLOR #E8F5E9
-!define CORE_COLOR #E3F2FD
-!define APPLICATION_COLOR #FFF3E0
-!define EXTENSION_COLOR #F3E5F5
-
 skinparam componentStyle rectangle
-skinparam nodesep 15
-skinparam ranksep 30
 skinparam backgroundColor white
 skinparam shadowing false
+skinparam nodesep 25
+skinparam ranksep 35
+skinparam packageTitleAlignment left
 
-' Foundation Layer
-package "Foundation Layer" <<Rectangle>> {
-    component [pyfcstm.config\n----\nmeta.py] as config FOUNDATION_COLOR
-    component [pyfcstm.utils\n----\nvalidate.py\ntext.py\nsafe.py\ndoc.py\nbinary.py\ndecode.py\njinja2.py\njson.py] as utils FOUNDATION_COLOR
-}
+!define SOURCE #E8F5E9
+!define CORE #E3F2FD
+!define ANALYSIS #FFF8E1
+!define OUTPUT #F3E5F5
+!define EXTERNAL #FFEBEE
 
-' Core Layer
-package "Core Layer" <<Rectangle>> {
-    component [pyfcstm.dsl\n----\nparse.py\nlistener.py\nnode.py\nerror.py\ngrammar/Grammar.g4] as dsl CORE_COLOR
-    component [pyfcstm.model\n----\nmodel.py\nexpr.py\nbase.py] as model CORE_COLOR
-}
-
-' Application Layer
-package "Application Layer" <<Rectangle>> {
-    component [pyfcstm.render\n----\nrender.py\nenv.py\nexpr.py\nfunc.py] as render APPLICATION_COLOR
-    component [pyfcstm.entry\n----\ncli.py\ndispatch.py\nplantuml.py\ngenerate.py\nbase.py] as entry APPLICATION_COLOR
-}
-
-' Extension Layer
-package "Extension Layer" <<Rectangle>> {
-    component [pyfcstm.template] as template EXTENSION_COLOR
-}
-
-' External entities
 actor User
-file "DSL Code\n(.fcstm)" as dsl_file
-file "Templates\n(config.yaml, .j2)" as template_files
-file "Generated Code" as output_code
-file "PlantUML\n(.puml)" as plantuml_file
+file "FCSTM source\n(.fcstm)" as source SOURCE
+component "DSL parser\npyfcstm.dsl" as parser CORE
+component "AST nodes\npyfcstm.dsl.node" as ast CORE
+component "semantic model\npyfcstm.model" as model CORE
 
-' User interactions
-User --> entry : CLI commands
-dsl_file --> entry : Input
-template_files --> render : Load
-entry --> output_code : Generate
-entry --> plantuml_file : Export
+package "Model consumers" {
+  component "inspect + diagnostics\npyfcstm.diagnostics\npyfcstm.verify" as inspect ANALYSIS
+  component "simulation runtime\npyfcstm.simulate" as simulate ANALYSIS
+  component "PlantUML source export\nmodel.to_plantuml" as plantuml OUTPUT
+  component "renderer command\npyfcstm visualize" as visualize OUTPUT
+  component "template renderer\npyfcstm.render" as render OUTPUT
+}
 
-' Layer dependencies
-utils -down-> dsl : text, validate, doc
-utils -down-> model : validate, json
-utils -down-> render : jinja2, binary, decode
-config -down-> entry : meta
+package "Template assets" {
+  folder "source templates\ntemplates/" as templates SOURCE
+  folder "packaged templates\npyfcstm/template/" as packaged OUTPUT
+}
 
-dsl -down-> model : AST → Model
-model -down-> render : Model → Code
-model -down-> entry : Model access
+cloud "External tools\nJava / PlantUML jar\nremote PlantUML server\nC/C++ compilers" as external EXTERNAL
+file "Reports\nhuman / JSON / LLM" as reports OUTPUT
+file "Simulation transcript" as transcript OUTPUT
+file "PlantUML text\n(.puml)" as puml OUTPUT
+file "Rendered diagram\n.png / .svg / .pdf" as diagram OUTPUT
+file "Generated runtime" as runtime OUTPUT
 
-render -down-> entry : Code generation
-template -down-> render : Extensions
+User --> source : writes model
+source --> parser : parse text
+parser --> ast : build parse/AST facts
+ast --> model : import + validate semantics
+model --> inspect : model facts + bounded checks
+model --> simulate : executable reference semantics
+model --> plantuml : diagram source facts
+plantuml --> visualize : source to render
+model --> render : generation context
 
-' Data flow annotations
-note top of dsl
-    **Stage 1: Parsing**
-    ANTLR4 grammar
-    Parse tree → AST nodes
+templates --> packaged : make tpl
+packaged --> render : built-in template extraction
+templates --> render : custom trusted template
+
+inspect --> reports
+simulate --> transcript
+plantuml --> puml
+visualize --> diagram
+render --> runtime
+visualize --> external : optional renderer backend
+runtime --> external : optional target build/test
+
+note right of model
+  Single semantic source of truth.
+  Downstream tools should not re-parse
+  or invent DSL semantics.
 end note
 
-note top of model
-    **Stage 2: Modeling**
-    AST → State Machine
-    Hierarchical states
-    Transitions & Events
+note bottom of visualize
+  plantuml exports source only.
+  visualize adds renderer, cache,
+  viewer, suffix, and privacy boundaries.
 end note
 
-note top of render
-    **Stage 3: Generation**
-    Jinja2 templates
-    Expression rendering
-    Multi-language output
+note bottom of render
+  Generation writes target files.
+  Compile/run evidence is separate from
+  renderer success.
 end note
-
-note bottom of entry
-    **User Interface**
-    pyfcstm plantuml
-    pyfcstm generate
-end note
-
-note right of utils
-    **Cross-cutting Utilities**
-    • Validation framework
-    • Text normalization
-    • Identifier generation
-    • Comment formatting
-    • Binary detection
-    • Auto-decoding
-    • Jinja2 helpers
-end note
-
 @enduml

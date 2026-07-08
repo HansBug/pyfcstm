@@ -1744,3 +1744,40 @@ Because PR-Q does not edit ``.fcstm``, ``.puml``, ``.demo.*``, ``.plot.*``, or
 notebook source resources, no documentation resource regeneration is expected.
 The required verification is the documentation build plus the two new tools-only
 reference drift checks.
+
+PR-Q depth-gate hardening update
+--------------------------------
+
+Scope
+~~~~~
+
+After PR-Q initially reached a CI-green state, review tightened the documentation
+quality bar. This follow-up records the additional hardening: CLI and
+visualization references were expanded with example-heavy evidence cards,
+per-option decision cards, and per-field scenario matrices; how-to pages gained
+concrete command signals and task acceptance cards; explanations gained
+trace-based boundary reasoning; and the documentation authoring guide now treats
+substantial docs PR depth as a merge-blocking gate.
+
+Resource update records
+~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table:: PR-Q depth-gate resource update
+   :header-rows: 1
+
+   * - Resource
+     - Action
+     - Regeneration command
+     - Notes
+   * - ``docs/source/explanations/architecture/structure.puml``
+     - update
+     - hand-edited source, then regenerated SVG/PNG with ``python -m plantumlcli -R -t svg -o structure.puml.svg -O docs/source/explanations/architecture docs/source/explanations/architecture/structure.puml`` and ``python -m plantumlcli -R -t png -o structure.puml.png -O docs/source/explanations/architecture docs/source/explanations/architecture/structure.puml``
+     - The figure now shows the model-centered pipeline, inspect/simulate/render/visualize consumers, packaged template split, external renderer/toolchain boundaries, and generated artifacts.
+   * - ``docs/source/explanations/architecture/structure.puml.svg`` and ``structure.puml.png``
+     - regenerate
+     - same commands as above
+     - Visual inspection confirmed the regenerated diagram is readable at full resolution; Sphinx HTML visual placement is verified by the PR-Q docs build.
+   * - Other ``.fcstm``, ``.demo.*``, ``.puml`` and generated documentation resources
+     - keep
+     - not applicable
+     - No other source-output resource pair was moved or regenerated in this hardening update.

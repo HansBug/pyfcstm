@@ -203,6 +203,122 @@ For complete runnable examples, download
 and
 :download:`python_options.demo.py <../../tutorials/visualization/python_options.demo.py>`.
 
+Concrete visualization recipes
+------------------------------
+
+Each recipe below names the reader goal first. Start with source export when
+reviewability matters, then render only when an image artifact is required.
+
+.. list-table:: Focused visualization recipes
+   :header-rows: 1
+
+   * - Reader goal
+     - Command
+     - Expected artifact
+     - Boundary
+   * - Review hierarchy only.
+     - ``pyfcstm plantuml -i machine.fcstm -l minimal -o machine.structure.puml``
+     - Compact ``.puml`` source with implementation details hidden.
+     - Does not check any renderer.
+   * - Review state/event flow.
+     - ``pyfcstm plantuml -i machine.fcstm -c event_visualization_mode=both -o machine.events.puml``
+     - Source contains event-oriented labels/legend/color facts.
+     - Event coloring can make large diagrams visually dense.
+   * - Review lifecycle hooks.
+     - ``pyfcstm plantuml -i machine.fcstm -l full -c show_concrete_actions=false -o machine.hooks.puml``
+     - Abstract hooks remain visible while concrete bodies are hidden.
+     - Good for integration discussions, not for operation-body audits.
+   * - Review a large subtree.
+     - ``pyfcstm plantuml -i machine.fcstm -c max_depth=2 -o machine.depth2.puml``
+     - Deep descendants are collapsed after depth 2.
+     - Hidden descendants still exist in the model.
+   * - Produce an image in CI.
+     - ``pyfcstm visualize -i machine.fcstm -t svg -o build/machine.svg --no-open``
+     - SVG file appears at the requested path.
+     - Requires a configured local or remote renderer.
+   * - Check renderer before rendering.
+     - ``pyfcstm visualize --check --renderer auto``
+     - Backend availability report.
+     - Does not parse the DSL and does not prove diagram content.
+
+Visual review checklist
+~~~~~~~~~~~~~~~~~~~~~~~
+
+Before accepting a new or changed diagram in documentation, inspect the rendered
+HTML and ask these questions:
+
+* Are labels readable at the configured width?
+* Does the caption state what the figure proves?
+* Is the diagram source traceable to ``.fcstm`` or ``.puml`` input?
+* Is a dense ``full`` view really needed, or would ``normal`` plus one override be clearer?
+* If remote rendering was used, is it acceptable that PlantUML source left the local machine?
+
+
+
+Worked task cards
+-----------------
+
+The recipes above are short command choices. The cards below expand each common
+task into the full how-to contract: starting input, command, expected signal,
+side effect, and first repair step. Keep new visualization tasks at this level
+of specificity instead of adding bare command lists.
+
+.. list-table:: Task cards
+   :header-rows: 1
+
+   * - Task
+     - Start from
+     - Command
+     - Expected signal and side effect
+     - First repair if it fails
+   * - Review the hierarchy only
+     - ``docs/source/tutorials/quick_start/traffic_light.fcstm`` or another small source file.
+     - ``pyfcstm plantuml -i traffic_light.fcstm -l minimal -o traffic_light.minimal.puml``.
+     - Text file starts with ``@startuml`` and contains a compact state hierarchy; no renderer is required.
+     - If the command fails before writing, run ``pyfcstm inspect -i traffic_light.fcstm`` to locate parse/model errors.
+   * - Explain events and guards
+     - A model whose transitions use events or guards.
+     - ``pyfcstm plantuml -i machine.fcstm -l normal -c show_events=true -c show_transition_guards=true -o machine.events.puml``.
+     - Source labels should show the event names and guard conditions used by the transition family.
+     - If labels are missing, confirm the transition syntax actually contains events/guards and that no override hides them.
+   * - Show integration hooks
+     - A model with abstract lifecycle actions.
+     - ``pyfcstm plantuml -i machine.fcstm -l full -c show_concrete_actions=false -o machine.hooks.puml``.
+     - The source emphasizes abstract hooks while suppressing implementation bodies.
+     - If the diagram is still too dense, add ``-c max_action_lines=2`` or split by ``max_depth``.
+   * - Produce a CI SVG artifact
+     - A CI job with pyfcstm and an approved PlantUML backend.
+     - ``pyfcstm visualize -i machine.fcstm -t svg -o artifacts/machine.svg --no-open``.
+     - The SVG file exists; stdout reports the renderer and output path; no desktop viewer is required.
+     - If renderer discovery fails, run ``pyfcstm visualize --check --renderer auto`` and decide whether local or remote rendering is allowed.
+   * - Keep a private diagram local
+     - A confidential model and a local PlantUML jar.
+     - ``pyfcstm visualize -i private.fcstm --renderer local -p ./plantuml.jar -t png -o private.png --no-open``.
+     - The PNG is written without sending PlantUML source to a remote service.
+     - If local rendering fails, fix Java/JAR paths; do not switch to ``auto`` unless remote fallback is acceptable.
+   * - Diagnose an option parse error
+     - A command using ``-c`` overrides.
+     - ``pyfcstm plantuml -i machine.fcstm -c max_depth=abc`` as a deliberate failing probe.
+     - The command should name the invalid key/value instead of writing misleading source.
+     - Replace the value with an integer or remove the override.
+
+Visual acceptance examples
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+After producing a diagram, review the actual rendered HTML or image, not only
+the source command. Use this short acceptance rubric:
+
+1. The caption states the question answered by the diagram.
+2. The selected preset matches that question: ``minimal`` for hierarchy,
+   ``normal`` for transitions, ``full`` only when lifecycle/action detail is
+   the point.
+3. Text is readable at the documentation width. If not, reduce detail before
+   increasing image size.
+4. The rendering path is acceptable for the data: local for private models,
+   remote only when source text may leave the machine.
+5. The page links to :doc:`/reference/visualization_options/index` for every
+   option that is not self-evident.
+
 Troubleshoot visualization
 --------------------------
 

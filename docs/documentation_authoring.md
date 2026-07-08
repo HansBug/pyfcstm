@@ -78,6 +78,87 @@ This example shows the minimum specificity expected for a non-DSL module.
 | Migration and landing pages | If old generation tutorial sections move to how-to or reference pages, keep a landing page or migration table that answers where each old heading went. |
 | Verification | `git diff --check`; CLI help comparison if options are documented; focused docs build if Sphinx pages changed; template tests or `make tpl` only when template assets or template docs are materially changed. |
 
+
+## Merge-blocking depth gate for substantial documentation PRs
+
+A substantial documentation PR is any change that adds, restructures, or materially expands user-facing documentation for
+a capability family. These PRs must pass this depth gate before they can be called ready. This gate is intentionally strict:
+if one required item is missing, the PR must stay open and the missing item must be fixed or explicitly removed from the PR
+scope. A green Sphinx build, drift marker check, or reviewer skim is not enough.
+
+### Depth multipliers for repair or hardening PRs
+
+When a PR exists specifically because earlier documentation was too thin, the author must set an explicit depth target in
+the PR body and judge the result against the starting page shape. The multiplier is a floor for information density and
+coverage, not permission to pad prose.
+
+| Page role | Minimum hardening target | What counts toward the target | What does not count |
+|---|---:|---|---|
+| Reference | At least five times the previous useful coverage for the affected capability, or a complete closed-list reference when the closed list is smaller. | Field/option tables, defaults, legal values, illegal values, examples, counterexamples, diagnostics, side effects, and implementation links. | Repeated overview prose, marker comments alone, copied CLI help with no boundary explanation. |
+| How-to guide | At least three times the previous useful task coverage for affected tasks, unless every task already has concrete examples and outputs. | Task prerequisites, input files, commands, expected output or success signal, file side effects, troubleshooting, and next links. | Bare command lists, long opaque scripts in prose, references to examples without explaining what they prove. |
+| Explanation | At least three times the previous useful explanatory coverage for affected concepts, unless the concept is already covered with traces and diagrams. | Data-flow traces, execution/order reasoning, design motivation, diagrams, boundary examples, and counterexamples. | Directory listings, repeated reference facts, architecture slogans, diagrams with no explanatory claim. |
+
+If a page cannot or should not meet the multiplier because the scope is intentionally narrow, the PR body must state the
+narrow scope and list which sibling page owns the omitted tutorial, how-to, explanation, or reference obligations. Without
+that explicit ownership map, the omission is an Important finding by default.
+
+### Reference-page requirements
+
+Reference pages for command-heavy, schema-heavy, option-heavy, or field-heavy capabilities must be complete enough for a
+reader to make a correct decision without reading implementation code. For every public command, option group, report
+field group, template config key group, or visualization field group in scope, include all applicable items:
+
+- exact spelling and aliases;
+- required/optional status and default value;
+- accepted value types and closed choices;
+- legal examples, with at least three non-equivalent examples for tricky or high-impact items;
+- illegal examples or counterexamples for common mistakes;
+- stdout, stderr, exit status, file side effects, cache or overwrite behavior where the feature is command-facing;
+- relevant diagnostics, warnings, policy rejections, or backend failures;
+- implementation or generated-asset source facts used to verify the row.
+
+A marker-based drift checker may prove that a row exists, but it does not prove that the prose is sufficient. The PR must
+still include human review evidence for reference depth. For CLI and visualization references specifically, a hardening PR
+must include short reproducible examples for success and failure paths, not only option tables.
+
+### How-to-page requirements
+
+Every task in a how-to page must be runnable or explicitly marked as schematic. Runnable tasks must include:
+
+1. the starting assumption or input file;
+2. the command or code to run;
+3. a short expected output excerpt or an unambiguous success signal;
+4. the file or directory side effect, if any;
+5. the first troubleshooting step when the task fails;
+6. a link to the relevant reference page for exhaustive facts.
+
+A how-to page that only lists commands is not ready. If a command output is too long, show a small excerpt and say it is
+truncated. If a long workflow is needed, put it in a `.demo.*` or `.demox.*` source file and show only focused snippets in
+prose.
+
+### Explanation-page requirements
+
+Explanation pages must teach the mechanism, not just name the modules. For every complex behavior or architecture path in
+scope, include at least one of the following, and prefer several when the concept is central:
+
+- an end-to-end trace from input to output;
+- an ordering table or timeline;
+- a before/after, authored/expanded, or source/generated comparison;
+- a diagram whose caption says exactly what it proves;
+- a counterexample showing what the mechanism does not prove.
+
+Diagrams are subject to visual review. If a diagram is added or materially reused, the PR must verify the rendered HTML,
+check that the image is readable at the chosen width, and state what the figure proves. A figure that merely decorates the
+page is not acceptable evidence.
+
+### Strict review rule
+
+Reviewers must apply this section as a merge gate. Missing reference rows, missing examples, missing outputs, missing
+failure boundaries, missing bilingual parity, missing migration records, or missing verification evidence are not optional
+polish items. Classify them with the C/I/M guide below and keep the PR out of ready state until every Critical and
+Important item is resolved. Minor wording issues can be deferred, but only when they do not hide a coverage, correctness,
+or reproducibility gap.
+
 ## Module-specific coverage floors
 
 "DSL-level" documentation quality does not mean every module must have the same line count as the DSL pages. It means

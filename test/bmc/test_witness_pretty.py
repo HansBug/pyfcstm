@@ -178,7 +178,7 @@ def _edge_trace() -> BmcWitnessTrace:
             BmcWitnessFrame(0, None, None, "init", False, {}),
             BmcWitnessFrame(1, None, None, None, False, {}),
             BmcWitnessFrame(
-                2, 3, "Root.C", None, True, {"flag": True, "items": (), "data": {}}
+                2, 3, "Root.C", None, True, {"count": 1, "ratio": 0.5, "score": 2}
             ),
         ),
         (
@@ -204,7 +204,7 @@ def _edge_trace() -> BmcWitnessTrace:
                         "Root.C",
                         "Root.C",
                         named_ref="Root.Ref",
-                        snapshot={"flag": True, "items": (1, 2), "data": {}},
+                        snapshot={"count": 1, "ratio": 0.5, "score": 2},
                     ),
                 ),
             ),
@@ -382,15 +382,15 @@ def test_witness_trace_can_hide_events_and_calls_by_option() -> None:
 
 
 def test_witness_trace_edge_rows_and_full_call_details_are_golden_pinned() -> None:
-    """Sentinels, no-step frames, lists, booleans, and named refs are pinned."""
+    """Sentinels, no-step frames, finite values, and named refs are pinned."""
     expected = """
     BmcWitnessTrace[reach, sat] frames=3 steps=1
 
-    frame    step    source_frame    target_frame    case_kind    case        via              state    progress    [flag]    [items]    [data]    events    calls                                                                                                                        extra
-    -------  ------  --------------  --------------  -----------  ----------  ---------------  -------  ----------  --------  ---------  --------  --------  ---------------------------------------------------------------------------------------------------------------------------  -------
-    0        -       -               -               -            -           -                init     initial     -         -          -         -         -                                                                                                                            I
-    1        -       -               -               -            -           -                -        frame       -         -          -         -         -                                                                                                                            -
-    2        0       0               2               delta        delta-case  init --> Root.C  Root.C   delta       true      -          -         -         Root.C.Named{stage=enter, role=state_enter, state=Root.C, active=Root.C, named_ref=Root.Ref, data=-, flag=true, items=1, 2}  DTP
+    frame    step    source_frame    target_frame    case_kind    case        via              state    progress    [count]    [ratio]    [score]    events    calls                                                                                                                      extra
+    -------  ------  --------------  --------------  -----------  ----------  ---------------  -------  ----------  ---------  ---------  ---------  --------  -------------------------------------------------------------------------------------------------------------------------  -------
+    0        -       -               -               -            -           -                init     initial     -          -          -          -         -                                                                                                                          I
+    1        -       -               -               -            -           -                -        frame       -          -          -          -         -                                                                                                                          -
+    2        0       0               2               delta        delta-case  init --> Root.C  Root.C   delta       1          0.5        2          -         Root.C.Named{stage=enter, role=state_enter, state=Root.C, active=Root.C, named_ref=Root.Ref, count=1, ratio=0.5, score=2}  DTP
 
     extra: I=initial D=delta G=gamma T=terminated N=rows truncated V=vars hidden E=events truncated C=calls truncated W=cell width truncated P=full path unavailable R=hidden event reads
     """
@@ -406,20 +406,20 @@ def test_witness_trace_edge_width_and_empty_event_cells_are_golden_pinned() -> N
     expected_width = """
     BmcWitnessTrace[reach, sat] frames=3 steps=1
 
-    frame    via    state    progress    [flag]    [items]    [data]    events    calls    extra
-    -------  -----  -------  ----------  --------  ---------  --------  --------  -------  -------
-    0        -      …        initial     -         -          -         -         -        IW
-    1        -      -        frame       -         -          -         -         -        -
-    2        …      …        …           …         -          -         -         …        DTW
+    frame    via    state    progress    [count]    [ratio]    [score]    events    calls    extra
+    -------  -----  -------  ----------  ---------  ---------  ---------  --------  -------  -------
+    0        -      …        initial     -          -          -          -         -        IW
+    1        -      -        frame       -          -          -          -         -        -
+    2        …      …        …           1          …          2          -         …        DTW
     """
     expected_empty_events = """
     BmcWitnessTrace[reach, sat] frames=3 steps=1
 
-    frame    via              state    progress    [flag]    [items]    [data]    events    calls            extra
-    -------  ---------------  -------  ----------  --------  ---------  --------  --------  ---------------  -------
-    0        -                init     initial     -         -          -         -         -                I
-    1        -                -        frame       -         -          -         -         -                -
-    2        init --> Root.C  Root.C   delta       true      -          -         -         Root.C.Named(1)  DT
+    frame    via              state    progress    [count]    [ratio]    [score]    events    calls            extra
+    -------  ---------------  -------  ----------  ---------  ---------  ---------  --------  ---------------  -------
+    0        -                init     initial     -          -          -          -         -                I
+    1        -                -        frame       -          -          -          -         -                -
+    2        init --> Root.C  Root.C   delta       1          0.5        2          -         Root.C.Named(1)  DT
     """
 
     _assert_text_equal(

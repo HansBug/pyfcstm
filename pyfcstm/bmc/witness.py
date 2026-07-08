@@ -62,6 +62,7 @@ except ImportError:  # pragma: no cover - Python < 3.8 compatibility
     from typing_extensions import Literal
 
 _CanonicalDict = Dict[str, Any]
+#: Public solver statuses returned by :class:`BmcSolveResult`.
 BmcSolveStatus = Literal["sat", "unsat", "unknown", "timeout"]
 _INTERNAL_ISSUE_URL = "https://github.com/HansBug/pyfcstm/issues/new"
 _REPLAY_FLOAT_TOLERANCE = 1e-9
@@ -134,6 +135,39 @@ def _coerce_public_sequence(
     if not all(isinstance(item, item_type) for item in items):
         raise BmcBuildError("%s must contain %s." % (name, item_description))
     return items
+
+
+def _is_public_finite_number(value: Any) -> bool:
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, int):
+        return True
+    if isinstance(value, float):
+        return math.isfinite(value)
+    return False
+
+
+def _coerce_public_value_mapping(name: str, value: object) -> Dict[str, Any]:
+    if not isinstance(value, Mapping):
+        raise BmcBuildError("%s must be a mapping." % name)
+    result = {}
+    for key, item in value.items():
+        if not isinstance(key, str) or not key:
+            raise BmcBuildError("%s keys must be non-empty strings." % name)
+        if not _is_public_finite_number(item):
+            raise BmcBuildError("%s.%s must be a finite int or float." % (name, key))
+        result[key] = item
+    return result
+
+
+def _validate_optional_reason(name: str, value: Optional[str]) -> None:
+    if value is not None and not isinstance(value, str):
+        raise BmcBuildError("%s must be a string or None." % name)
+
+
+def _validate_elapsed_ms(value: float) -> None:
+    if not _is_public_finite_number(value) or value < 0:
+        raise BmcBuildError("elapsed_ms must be a finite non-negative number.")
 
 
 def _format_scalar(value: Any) -> str:
@@ -1280,8 +1314,9 @@ class BmcSolveResult(_PrettyPrintableMixin):
             self.incomplete_model, z3.ModelRef
         ):
             raise BmcBuildError("incomplete_model must be z3.ModelRef or None.")
-        if not isinstance(self.elapsed_ms, (int, float)):
-            raise BmcBuildError("elapsed_ms must be numeric.")
+        _validate_optional_reason("reason", self.reason)
+        _validate_elapsed_ms(self.elapsed_ms)
+        _validate_optional_reason("incomplete_reason", self.incomplete_reason)
         if self.timeout_ms is not None and (
             isinstance(self.timeout_ms, bool)
             or not isinstance(self.timeout_ms, int)
@@ -1521,9 +1556,9 @@ class BmcWitnessCallRecord(_PrettyPrintableMixin):
             not isinstance(self.named_ref, str) or not self.named_ref
         ):
             raise BmcBuildError("named_ref must be a non-empty string or None.")
-        if not isinstance(self.snapshot, Mapping):
-            raise BmcBuildError("snapshot must be a mapping.")
-        object.__setattr__(self, "snapshot", dict(self.snapshot))
+        object.__setattr__(
+            self, "snapshot", _coerce_public_value_mapping("snapshot", self.snapshot)
+        )
 
     def to_canonical(self) -> _CanonicalDict:
         """Return a JSON-stable call record.
@@ -1607,9 +1642,9 @@ class BmcWitnessFrame(_PrettyPrintableMixin):
             raise BmcBuildError("init sentinel frames must not be terminated.")
         if self.sentinel == "terminated" and not self.terminated:
             raise BmcBuildError("terminated sentinel frames must be terminated.")
-        if not isinstance(self.vars, Mapping):
-            raise BmcBuildError("vars must be a mapping.")
-        object.__setattr__(self, "vars", dict(self.vars))
+        object.__setattr__(
+            self, "vars", _coerce_public_value_mapping("vars", self.vars)
+        )
 
     def to_canonical(self) -> _CanonicalDict:
         """Return a JSON-stable frame dictionary.
@@ -1914,9 +1949,11 @@ class BmcRuntimeFrame(_PrettyPrintableMixin):
             )
         if not isinstance(self.terminated, bool):
             raise BmcBuildError("runtime frame terminated must be bool.")
-        if not isinstance(self.vars, Mapping):
-            raise BmcBuildError("runtime frame vars must be a mapping.")
-        object.__setattr__(self, "vars", dict(self.vars))
+        object.__setattr__(
+            self,
+            "vars",
+            _coerce_public_value_mapping("runtime frame vars", self.vars),
+        )
 
     def to_canonical(self) -> _CanonicalDict:
         """Return a JSON-stable runtime frame.
@@ -2965,17 +3002,59 @@ def _runtime_frame(runtime: SimulationRuntime, index: int) -> BmcRuntimeFrame:
 def _compare_values(
     mismatches: list[BmcReplayMismatch], path: str, expected: Any, actual: Any
 ) -> None:
-    if isinstance(expected, float) or isinstance(actual, float):
-        if abs(float(expected) - float(actual)) > _REPLAY_FLOAT_TOLERANCE:
+    if isinstance(expected, bool) or isinstance(actual, bool):
+        if not isinstance(expected, bool) or not isinstance(actual, bool):
             mismatches.append(
-                BmcReplayMismatch(
-                    path,
-                    expected,
-                    actual,
-                    "float value mismatch",
-                    _REPLAY_FLOAT_TOLERANCE,
-                )
+                BmcReplayMismatch(path, expected, actual, "value type mismatch")
             )
+        elif expected != actual:
+            mismatches.append(
+                BmcReplayMismatch(path, expected, actual, "value mismatch")
+            )
+        return
+    expected_is_number = isinstance(expected, (int, float))
+    actual_is_number = isinstance(actual, (int, float))
+    if expected_is_number or actual_is_number:
+        if not _is_public_finite_number(expected) or not _is_public_finite_number(
+            actual
+        ):
+            mismatches.append(
+                BmcReplayMismatch(path, expected, actual, "numeric value mismatch")
+            )
+            return
+        if isinstance(expected, float) or isinstance(actual, float):
+            expected_fraction = (
+                Fraction.from_float(expected)
+                if isinstance(expected, float)
+                else Fraction(expected)
+            )
+            actual_fraction = (
+                Fraction.from_float(actual)
+                if isinstance(actual, float)
+                else Fraction(actual)
+            )
+            if abs(expected_fraction - actual_fraction) > Fraction.from_float(
+                _REPLAY_FLOAT_TOLERANCE
+            ):
+                mismatches.append(
+                    BmcReplayMismatch(
+                        path,
+                        expected,
+                        actual,
+                        "float value mismatch",
+                        _REPLAY_FLOAT_TOLERANCE,
+                    )
+                )
+            return
+        if expected != actual:
+            mismatches.append(
+                BmcReplayMismatch(path, expected, actual, "value mismatch")
+            )
+        return
+    if type(expected) is not type(actual):
+        mismatches.append(
+            BmcReplayMismatch(path, expected, actual, "value type mismatch")
+        )
         return
     if expected != actual:
         mismatches.append(BmcReplayMismatch(path, expected, actual, "value mismatch"))

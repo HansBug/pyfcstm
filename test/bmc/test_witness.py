@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from types import SimpleNamespace
 
 import pytest
@@ -440,6 +441,30 @@ def test_internal_z3_decode_guards_are_loud() -> None:
             "elapsed_ms",
         ),
         (
+            lambda formula: BmcSolveResult(formula, "sat", elapsed_ms=True),
+            "elapsed_ms",
+        ),
+        (
+            lambda formula: BmcSolveResult(formula, "sat", elapsed_ms=float("nan")),
+            "elapsed_ms",
+        ),
+        (
+            lambda formula: BmcSolveResult(formula, "sat", elapsed_ms=float("inf")),
+            "elapsed_ms",
+        ),
+        (
+            lambda formula: BmcSolveResult(formula, "sat", elapsed_ms=-1),
+            "elapsed_ms",
+        ),
+        (
+            lambda formula: BmcSolveResult(formula, "sat", reason=123),
+            "reason",
+        ),
+        (
+            lambda formula: BmcSolveResult(formula, "sat", incomplete_reason=object()),
+            "incomplete_reason",
+        ),
+        (
             lambda formula: BmcSolveResult(formula, "sat", timeout_ms=0),
             "timeout_ms",
         ),
@@ -492,6 +517,42 @@ def test_solve_result_rejects_invalid_public_payloads(factory, message) -> None:
             ),
             "snapshot",
         ),
+        (
+            lambda: BmcWitnessCallRecord(
+                0, "A", "during", "role", "S", "S", snapshot={1: 1}
+            ),
+            "snapshot keys",
+        ),
+        (
+            lambda: BmcWitnessCallRecord(
+                0, "A", "during", "role", "S", "S", snapshot={"x": None}
+            ),
+            "snapshot.x",
+        ),
+        (
+            lambda: BmcWitnessCallRecord(
+                0, "A", "during", "role", "S", "S", snapshot={"x": True}
+            ),
+            "snapshot.x",
+        ),
+        (
+            lambda: BmcWitnessCallRecord(
+                0, "A", "during", "role", "S", "S", snapshot={"x": "1"}
+            ),
+            "snapshot.x",
+        ),
+        (
+            lambda: BmcWitnessCallRecord(
+                0, "A", "during", "role", "S", "S", snapshot={"x": float("nan")}
+            ),
+            "snapshot.x",
+        ),
+        (
+            lambda: BmcWitnessCallRecord(
+                0, "A", "during", "role", "S", "S", snapshot={"x": float("inf")}
+            ),
+            "snapshot.x",
+        ),
         (lambda: BmcWitnessFrame(True, None, None, "init", False, {}), "frame index"),
         (lambda: BmcWitnessFrame(0, True, None, "init", False, {}), "state_id"),
         (lambda: BmcWitnessFrame(0, None, "", "init", False, {}), "state"),
@@ -510,6 +571,27 @@ def test_solve_result_rejects_invalid_public_payloads(factory, message) -> None:
         ),
         (lambda: BmcWitnessFrame(0, None, None, "init", "no", {}), "terminated"),
         (lambda: BmcWitnessFrame(0, None, None, "init", False, ()), "vars"),
+        (lambda: BmcWitnessFrame(0, None, None, "init", False, {1: 1}), "vars keys"),
+        (
+            lambda: BmcWitnessFrame(0, None, None, "init", False, {"x": None}),
+            "vars.x",
+        ),
+        (
+            lambda: BmcWitnessFrame(0, None, None, "init", False, {"x": True}),
+            "vars.x",
+        ),
+        (
+            lambda: BmcWitnessFrame(0, None, None, "init", False, {"x": "1"}),
+            "vars.x",
+        ),
+        (
+            lambda: BmcWitnessFrame(0, None, None, "init", False, {"x": float("nan")}),
+            "vars.x",
+        ),
+        (
+            lambda: BmcWitnessFrame(0, None, None, "init", False, {"x": float("inf")}),
+            "vars.x",
+        ),
         (
             lambda: BmcWitnessStep(
                 True, 0, 1, "c", "fallback", "fallback_gamma", None, None, False, True
@@ -644,6 +726,27 @@ def test_solve_result_rejects_invalid_public_payloads(factory, message) -> None:
         (lambda: BmcRuntimeFrame(0, "", True, {}), "runtime frame state"),
         (lambda: BmcRuntimeFrame(0, None, "yes", {}), "runtime frame terminated"),
         (lambda: BmcRuntimeFrame(0, None, True, ()), "runtime frame vars"),
+        (lambda: BmcRuntimeFrame(0, None, True, {1: 1}), "runtime frame vars keys"),
+        (
+            lambda: BmcRuntimeFrame(0, None, True, {"x": None}),
+            "runtime frame vars.x",
+        ),
+        (
+            lambda: BmcRuntimeFrame(0, None, True, {"x": True}),
+            "runtime frame vars.x",
+        ),
+        (
+            lambda: BmcRuntimeFrame(0, None, True, {"x": "1"}),
+            "runtime frame vars.x",
+        ),
+        (
+            lambda: BmcRuntimeFrame(0, None, True, {"x": float("nan")}),
+            "runtime frame vars.x",
+        ),
+        (
+            lambda: BmcRuntimeFrame(0, None, True, {"x": float("inf")}),
+            "runtime frame vars.x",
+        ),
         (lambda: BmcRuntimeStep(True, (), (), (), ()), "runtime step index"),
         (lambda: BmcRuntimeStep(0, (object(),), (), (), ()), "input_events"),
         (lambda: BmcRuntimeStep(0, "Root.Go", (), (), ()), "input_events"),
@@ -707,6 +810,35 @@ def test_witness_public_dataclasses_reject_invalid_payloads(factory, message) ->
     """Witness JSON/replay dataclasses validate their public payload shape."""
     with pytest.raises(BmcBuildError, match=message):
         factory()
+
+
+def test_value_comparison_fails_closed_for_non_finite_and_bool_numbers() -> None:
+    """Replay value comparison cannot treat invalid numerics as equal."""
+    mismatches = []
+
+    witness_module._compare_values(mismatches, "frames[1].vars.x", float("nan"), 0)
+    witness_module._compare_values(mismatches, "frames[1].vars.y", 1, float("inf"))
+    witness_module._compare_values(mismatches, "frames[1].vars.z", True, 1)
+
+    assert len(mismatches) == 3
+    assert mismatches[0].path == "frames[1].vars.x"
+    assert math.isnan(mismatches[0].expected)
+    assert mismatches[0].actual == 0
+    assert mismatches[0].message == "numeric value mismatch"
+    assert mismatches[1].to_canonical() == {
+        "path": "frames[1].vars.y",
+        "expected": 1,
+        "actual": float("inf"),
+        "message": "numeric value mismatch",
+        "tolerance": None,
+    }
+    assert mismatches[2].to_canonical() == {
+        "path": "frames[1].vars.z",
+        "expected": True,
+        "actual": 1,
+        "message": "value type mismatch",
+        "tolerance": None,
+    }
 
 
 def test_abstract_call_role_internal_consistency_errors_are_loud() -> None:

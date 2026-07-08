@@ -109,6 +109,35 @@ def test_replay_reports_structured_var_mismatch() -> None:
     )
 
 
+def test_replay_rejects_non_finite_witness_variables_before_replay() -> None:
+    """NaN/Inf witness payloads cannot forge successful replay comparisons."""
+    _, trace = _trace(
+        """
+        def int x = 0;
+        state Root {
+            state A;
+            [*] -> A;
+        }
+        """,
+        'check reach <= 1: active("Root.A");',
+    )
+
+    with pytest.raises(BmcBuildError, match="vars.x"):
+        replace(trace.frames[1], vars={"x": float("nan")})
+    with pytest.raises(BmcBuildError, match="vars.x"):
+        replace(trace.frames[1], vars={"x": float("inf")})
+    with pytest.raises(BmcBuildError, match="snapshot.x"):
+        BmcWitnessCallRecord(
+            0,
+            "Root.A.Touch",
+            "during",
+            "leaf_during",
+            "Root.A",
+            "Root.A",
+            snapshot={"x": float("nan")},
+        )
+
+
 def test_replay_float_comparison_uses_tolerance() -> None:
     """Float replay compares with explicit tolerance and reports large drift."""
     model, trace = _trace(

@@ -299,8 +299,8 @@ def test_replay_rejects_tampered_initial_terminated_step_payload() -> None:
     assert [item.to_canonical() for item in replay.mismatches] == [
         {
             "path": "steps[0].input_events",
-            "expected": ("Root.fake",),
-            "actual": (),
+            "expected": ["Root.fake"],
+            "actual": [],
             "message": "input events mismatch",
             "tolerance": None,
         },
@@ -878,15 +878,15 @@ def test_replay_reports_missing_frame_and_call_snapshot_keys() -> None:
     assert [item.to_canonical() for item in replay.mismatches] == [
         {
             "path": "steps[0].abstract_calls[0].snapshot",
-            "expected": ("x",),
-            "actual": ("x", "y"),
+            "expected": ["x"],
+            "actual": ["x", "y"],
             "message": "abstract call snapshot key set mismatch",
             "tolerance": None,
         },
         {
             "path": "frames[1].vars",
-            "expected": ("x",),
-            "actual": ("x", "y"),
+            "expected": ["x"],
+            "actual": ["x", "y"],
             "message": "variable key set mismatch",
             "tolerance": None,
         },

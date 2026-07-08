@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 from types import SimpleNamespace
 
 import pytest
@@ -884,6 +883,22 @@ def test_solve_result_rejects_invalid_public_payloads(factory, message) -> None:
             lambda: BmcReplayMismatch("x", 1, 2, "bad", float("inf")),
             "mismatch tolerance",
         ),
+        (
+            lambda: BmcReplayMismatch("x", float("nan"), 2, "bad"),
+            "mismatch expected",
+        ),
+        (
+            lambda: BmcReplayMismatch("x", 1, float("inf"), "bad"),
+            "mismatch actual",
+        ),
+        (
+            lambda: BmcReplayMismatch("x", 1, object(), "bad"),
+            "mismatch actual",
+        ),
+        (
+            lambda: BmcReplayMismatch("x", 1, set(), "bad"),
+            "mismatch actual",
+        ),
         (lambda: BmcReplayResult(object(), BmcRuntimeTrace((), ())), "witness"),
         (
             lambda: BmcReplayResult(BmcWitnessTrace({}, {}, {}, (), ()), object()),
@@ -958,9 +973,75 @@ def test_witness_trace_metadata_rejects_cycles_and_excessive_depth(monkeypatch) 
     with pytest.raises(BmcBuildError, match="cyclic metadata"):
         BmcWitnessTrace({"payload": cyclic_list}, {}, {}, (), ())
 
+    class BadKey:
+        def __str__(self) -> str:
+            raise RuntimeError("metadata keys must be validated before sorting")
+
+    with pytest.raises(BmcBuildError, match="property keys"):
+        BmcWitnessTrace({BadKey(): 1}, {}, {}, (), ())
+
     monkeypatch.setattr(witness_module, "_PUBLIC_JSON_MAX_DEPTH", 2)
     with pytest.raises(BmcBuildError, match="nesting exceeds"):
         BmcWitnessTrace({"a": {"b": {"c": 1}}}, {}, {}, (), ())
+
+    cyclic_mismatch = []
+    cyclic_mismatch.append(cyclic_mismatch)
+    with pytest.raises(BmcBuildError, match="cyclic metadata"):
+        BmcReplayMismatch("x", cyclic_mismatch, 1, "bad")
+    with pytest.raises(BmcBuildError, match="nesting exceeds"):
+        BmcReplayMismatch("x", {"a": {"b": {"c": 1}}}, 1, "bad")
+
+
+def test_public_canonicalization_revalidates_mutated_nested_payloads() -> None:
+    """Canonical output rejects post-construction public payload mutation."""
+    trace = BmcWitnessTrace(
+        {"items": [1, 2]},
+        {"status": "sat"},
+        {"mode": "cold"},
+        (BmcWitnessFrame(0, None, None, "init", False, {"x": 1}),),
+        (),
+    )
+    trace.property["items"].append(float("nan"))
+    with pytest.raises(BmcBuildError, match="property.items"):
+        trace.to_canonical()
+
+    trace = BmcWitnessTrace({"kind": "reach"}, {"status": "sat"}, {}, (), ())
+    trace.solver["elapsed_ms"] = float("inf")
+    with pytest.raises(BmcBuildError, match="solver.elapsed_ms"):
+        trace.to_canonical()
+
+    trace = BmcWitnessTrace({"kind": "reach"}, {"status": "sat"}, {}, (), ())
+    trace.initial["bad"] = object()
+    with pytest.raises(BmcBuildError, match="initial.bad"):
+        trace.to_canonical()
+
+    frame = BmcWitnessFrame(0, None, None, "init", False, {"x": 1})
+    frame.vars["x"] = float("inf")
+    with pytest.raises(BmcBuildError, match="vars.x"):
+        frame.to_canonical()
+
+    call = BmcWitnessCallRecord(
+        0,
+        "Root.A.Touch",
+        "during",
+        "leaf_during",
+        "Root.A",
+        "Root.A",
+        snapshot={"x": 1},
+    )
+    call.snapshot["x"] = float("nan")
+    with pytest.raises(BmcBuildError, match="snapshot.x"):
+        call.to_canonical()
+
+    runtime_frame = BmcRuntimeFrame(0, "Root.A", False, {"x": 1})
+    runtime_frame.vars["x"] = float("nan")
+    with pytest.raises(BmcBuildError, match="runtime frame vars.x"):
+        runtime_frame.to_canonical()
+
+    mismatch = BmcReplayMismatch("frames[1].vars", [], {}, "bad")
+    mismatch.expected.append(float("nan"))
+    with pytest.raises(BmcBuildError, match="mismatch expected"):
+        mismatch.to_canonical()
 
 
 def test_internal_json_metadata_mapping_guard_is_loud() -> None:
@@ -987,13 +1068,13 @@ def test_value_comparison_fails_closed_for_non_finite_and_bool_numbers() -> None
 
     assert len(mismatches) == 6
     assert mismatches[0].path == "frames[1].vars.x"
-    assert math.isnan(mismatches[0].expected)
+    assert mismatches[0].expected == "nan"
     assert mismatches[0].actual == 0
     assert mismatches[0].message == "numeric value mismatch"
     assert mismatches[1].to_canonical() == {
         "path": "frames[1].vars.y",
         "expected": 1,
-        "actual": float("inf"),
+        "actual": "inf",
         "message": "numeric value mismatch",
         "tolerance": None,
     }

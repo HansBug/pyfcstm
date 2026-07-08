@@ -214,9 +214,12 @@ def _coerce_public_json_mapping(
     _stack.add(value_id)
     result = {}
     try:
-        for key, item in sorted(value.items(), key=lambda pair: str(pair[0])):
+        items = []
+        for key, item in value.items():
             if not isinstance(key, str) or not key:
                 raise BmcBuildError("%s keys must be non-empty strings." % name)
+            items.append((key, item))
+        for key, item in sorted(items, key=lambda pair: pair[0]):
             result[key] = _coerce_public_json_value(
                 "%s.%s" % (name, key), item, _stack, _depth + 1
             )
@@ -259,6 +262,16 @@ def _validate_witness_solver_metadata(value: Mapping[str, Any]) -> None:
         _validate_optional_reason(
             "solver.incomplete_reason", value["incomplete_reason"]
         )
+
+
+def _canonical_public_value_mapping(name: str, value: object) -> Dict[str, Any]:
+    return dict(sorted(_coerce_public_value_mapping(name, value).items()))
+
+
+def _public_mismatch_diagnostic_value(value: Any) -> Any:
+    if isinstance(value, float) and not math.isfinite(value):
+        return str(value)
+    return value
 
 
 def _format_scalar(value: Any) -> str:
@@ -1678,7 +1691,7 @@ class BmcWitnessCallRecord(_PrettyPrintableMixin):
             "state": self.state,
             "active_leaf": self.active_leaf,
             "named_ref": self.named_ref,
-            "snapshot": dict(sorted(self.snapshot.items())),
+            "snapshot": _canonical_public_value_mapping("snapshot", self.snapshot),
         }
 
 
@@ -1762,7 +1775,7 @@ class BmcWitnessFrame(_PrettyPrintableMixin):
             "state": self.state,
             "sentinel": self.sentinel,
             "terminated": self.terminated,
-            "vars": dict(sorted(self.vars.items())),
+            "vars": _canonical_public_value_mapping("vars", self.vars),
         }
 
 
@@ -2018,11 +2031,13 @@ class BmcWitnessTrace(_PrettyPrintableMixin):
             >>> trace.to_canonical()['steps']
             []
         """
+        solver_metadata = _coerce_public_json_mapping("solver", self.solver)
+        _validate_witness_solver_metadata(solver_metadata)
         return {
             "schema_version": self.schema_version,
-            "property": dict(sorted(self.property.items())),
-            "solver": dict(sorted(self.solver.items())),
-            "initial": dict(sorted(self.initial.items())),
+            "property": _coerce_public_json_mapping("property", self.property),
+            "solver": solver_metadata,
+            "initial": _coerce_public_json_mapping("initial", self.initial),
             "frames": [item.to_canonical() for item in self.frames],
             "steps": [item.to_canonical() for item in self.steps],
             "diagnostics": list(self.diagnostics),
@@ -2091,7 +2106,7 @@ class BmcRuntimeFrame(_PrettyPrintableMixin):
             "index": self.index,
             "state": self.state,
             "terminated": self.terminated,
-            "vars": dict(sorted(self.vars.items())),
+            "vars": _canonical_public_value_mapping("runtime frame vars", self.vars),
         }
 
 
@@ -2283,6 +2298,14 @@ class BmcReplayMismatch(_PrettyPrintableMixin):
             raise BmcBuildError(
                 "mismatch tolerance must be a finite non-negative number or None."
             )
+        object.__setattr__(
+            self,
+            "expected",
+            _coerce_public_json_value("mismatch expected", self.expected),
+        )
+        object.__setattr__(
+            self, "actual", _coerce_public_json_value("mismatch actual", self.actual)
+        )
 
     def to_canonical(self) -> _CanonicalDict:
         """Return a JSON-stable mismatch dictionary.
@@ -2297,8 +2320,8 @@ class BmcReplayMismatch(_PrettyPrintableMixin):
         """
         return {
             "path": self.path,
-            "expected": self.expected,
-            "actual": self.actual,
+            "expected": _coerce_public_json_value("mismatch expected", self.expected),
+            "actual": _coerce_public_json_value("mismatch actual", self.actual),
             "message": self.message,
             "tolerance": self.tolerance,
         }
@@ -3140,7 +3163,12 @@ def _compare_values(
             actual
         ):
             mismatches.append(
-                BmcReplayMismatch(path, expected, actual, "numeric value mismatch")
+                BmcReplayMismatch(
+                    path,
+                    _public_mismatch_diagnostic_value(expected),
+                    _public_mismatch_diagnostic_value(actual),
+                    "numeric value mismatch",
+                )
             )
             return
         if isinstance(expected, float) or isinstance(actual, float):

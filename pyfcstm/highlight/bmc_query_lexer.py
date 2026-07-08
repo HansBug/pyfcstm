@@ -104,6 +104,13 @@ class FcstmBmcQueryLexer(RegexLexer):
         "trigger",
         "within",
         "current",
+        "null",
+        "action",
+        "step",
+        "stage",
+        "role",
+        "active_leaf",
+        "named_ref",
     )
     _ATOM_NAMES = (
         "var",
@@ -111,6 +118,7 @@ class FcstmBmcQueryLexer(RegexLexer):
         "terminated",
         "event",
         "case",
+        "call_count",
         "called",
     )
     _BARE_ATOM_NAMES = ("cycle",)
@@ -142,7 +150,7 @@ class FcstmBmcQueryLexer(RegexLexer):
         "sign",
     )
     _QUERY_HINT_RE = re.compile(
-        r"(?is)\b(?:init|assume|check)\b|\b(?:active|event|case|called|var|terminated)\s*\("
+        r"(?is)\b(?:init|assume|check)\b|\b(?:active|event|case|call_count|called|var|terminated)\s*\("
     )
     _CHECK_RE = re.compile(
         r"(?is)\bcheck\s+(?:reach|forbid|invariant|must_reach|exists_always|response|cover)\s*<=\s*\d+\s*:"
@@ -259,7 +267,10 @@ class FcstmBmcQueryLexer(RegexLexer):
             score += 0.25
         if FcstmBmcQueryLexer._INIT_RE.search(text):
             score += 0.20
-        if re.search(r"(?is)\b(?:active|event|case|called|var|terminated)\s*\(", text):
+        if re.search(
+            r"(?is)\b(?:active|event|case|call_count|called|var|terminated)\s*\(",
+            text,
+        ):
             score += 0.10
         if re.search(r"(?is)\bstate\s+\w+\b|\[\s*\*\s*\]\s*->", text):
             score -= 0.30

@@ -140,6 +140,16 @@ NUMERIC_TEXT_ROUND_TRIP_CASES: List[TextRoundTripCase] = [
     TextRoundTripCase("num", 'var("变量")', 'var("变量")'),
     TextRoundTripCase("num", "cycle", "cycle"),
     TextRoundTripCase("num", "cycle + 1", "cycle + 1"),
+    TextRoundTripCase("num", "call_count()", "call_count()"),
+    TextRoundTripCase("num", 'call_count("Hook")', 'call_count("Hook")'),
+    TextRoundTripCase("num", "call_count(+0)", "call_count(+0)"),
+    TextRoundTripCase("num", "call_count(-0)", "call_count(+0)"),
+    TextRoundTripCase("num", "call_count(step=0..1)", "call_count(0..1)"),
+    TextRoundTripCase(
+        "num",
+        'call_count(action="Hook", step=*, named_ref=null)',
+        'call_count("Hook", *, named_ref=null)',
+    ),
     TextRoundTripCase(
         "num", '(active("Root.A")) ? 1 : 0', '(active("Root.A")) ? 1 : 0'
     ),
@@ -178,8 +188,20 @@ CONDITION_TEXT_ROUND_TRIP_CASES: List[TextRoundTripCase] = [
     TextRoundTripCase("cond", 'case("safe", current)', 'case("safe")'),
     TextRoundTripCase("cond", 'case("safe", 5)', 'case("safe", 5)'),
     TextRoundTripCase("cond", 'called("Hook")', 'called("Hook")'),
-    TextRoundTripCase("cond", 'called("Hook", current)', 'called("Hook")'),
+    TextRoundTripCase("cond", 'called("Hook", +0)', 'called("Hook", +0)'),
+    TextRoundTripCase("cond", 'called("Hook", -0)', 'called("Hook", +0)'),
     TextRoundTripCase("cond", 'called("Hook", 6)', 'called("Hook", 6)'),
+    TextRoundTripCase("cond", 'called("Hook", step=*)', 'called("Hook", *)'),
+    TextRoundTripCase(
+        "cond",
+        'called(action="Hook", step=0..2, state="Root.A", stage="during", active_leaf="Root.A", named_ref=null)',
+        'called("Hook", 0..2, stage="during", state="Root.A", active_leaf="Root.A", named_ref=null)',
+    ),
+    TextRoundTripCase(
+        "cond",
+        'called("Hook", step=-2..+0, where x >= 1)',
+        'called("Hook", -2..+0, where x >= 1)',
+    ),
     TextRoundTripCase("cond", '!active("Root.A")', '!active("Root.A")'),
     TextRoundTripCase("cond", 'not active("Root.A")', '!active("Root.A")'),
     TextRoundTripCase(
@@ -328,8 +350,8 @@ QUERY_TEXT_ROUND_TRIP_CASES: List[TextRoundTripCase] = [
     ),
     TextRoundTripCase(
         "query",
-        'check must_reach <= 6: called("Hook", current);',
-        'init cold;\n\ncheck must_reach <= 6: called("Hook");',
+        'check must_reach <= 6: called("Hook", +0);',
+        'init cold;\n\ncheck must_reach <= 6: called("Hook", +0);',
     ),
     TextRoundTripCase(
         "query",

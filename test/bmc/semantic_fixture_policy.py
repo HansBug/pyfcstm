@@ -63,7 +63,7 @@ NUMERIC_UNSUPPORTED_CASES = {
     "persistent_int_writeback_normalizes_integer_float",
 }
 
-HANDLER_CALL_PARTIAL_CASES = {
+HANDLER_CALL_ALIGNMENT_CASES = {
     "abstract_handler_context_metadata",
     "abstract_handler_context_vars_are_read_only",
     "abstract_hook_context_hot_start_leaf",
@@ -107,7 +107,7 @@ BMC_CORE_FIXTURE_LEDGER_CASES = (
     PLAIN_BEFORE_ALIGNMENT_CASES
     | INITIAL_DELTA_ALIGNMENT_CASES
     | NUMERIC_UNSUPPORTED_CASES
-    | HANDLER_CALL_PARTIAL_CASES
+    | HANDLER_CALL_ALIGNMENT_CASES
     | TEMPORARY_BMC_CORE_EXCLUDE_CASES
     | CONSTRUCTOR_DIAGNOSTIC_EXCLUDE_CASES
 )
@@ -134,7 +134,7 @@ def policy_for_case(case_id: str) -> BmcSemanticFixturePolicy:
         >>> policy_for_case("combo_initial_plain_before_deferred").bucket
         'initial_plain_before'
         >>> policy_for_case("abstract_handler_context_metadata").mode
-        'partial'
+        'hard_pass'
     """
     if case_id in PLAIN_BEFORE_ALIGNMENT_CASES:
         return BmcSemanticFixturePolicy(
@@ -154,12 +154,11 @@ def policy_for_case(case_id: str) -> BmcSemanticFixturePolicy:
             bucket="numeric_unsupported",
             reason="Current Int bitwise / integer-normalization lowering is unsupported and must fail loudly.",
         )
-    if case_id in HANDLER_CALL_PARTIAL_CASES:
+    if case_id in HANDLER_CALL_ALIGNMENT_CASES:
         return BmcSemanticFixturePolicy(
-            mode="partial",
+            mode="hard_pass",
             bucket="abstract_handler_calls",
-            reason="State, ended, and vars must align now; handler_calls wait for abstract call records.",
-            ignored_expect_fields=("handler_calls",),
+            reason="Abstract call records, call-time snapshots, and handler_calls expectations are covered by the current BMC relation.",
         )
     if case_id in TEMPORARY_BMC_CORE_EXCLUDE_CASES:
         return _temporary_policy(case_id)

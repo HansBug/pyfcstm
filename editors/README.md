@@ -89,7 +89,7 @@ The BMC query language has its own highlighter so query files do not reuse the m
 - Pygments aliases: `fbmcq`, `fcstm-bmc-query`
 - MIME type: `text/x-fcstm-bmc-query`
 
-The highlighter covers query clauses (`init`, `assume`, `check`), initial variable policy (`havoc`), property kinds (`reach`, `forbid`, `invariant`, `must_reach`, `exists_always`, `response`, `cover`), BMC atoms (`var`, `cycle`, `active`, `terminated`, `event`, `case`, `called`), event cardinality (`at_most_one`), FCSTM-compatible expression operators, literals, strings, and comments. It intentionally does not add `warm` or `hot` init targets because the current `.fbmcq` grammar only accepts `cold`, `terminated`, and `state("...")`.
+The highlighter covers query clauses (`init`, `assume`, `check`), initial variable policy (`havoc`), property kinds (`reach`, `forbid`, `invariant`, `must_reach`, `exists_always`, `response`, `cover`), BMC atoms (`var`, `cycle`, `active`, `terminated`, `event`, `case`, `call_count`, `called`), call filters (`action`, `step`, `stage`, `role`, `state`, `active_leaf`, `named_ref`, `null`), event cardinality (`at_most_one`), FCSTM-compatible expression operators, literals, strings, and comments. It intentionally does not add `warm` or `hot` init targets because the current `.fbmcq` grammar only accepts `cold`, `terminated`, and `state("...")`.
 
 `^` is highlighted as a numeric bitwise operator. Boolean exclusive-or remains the `xor` keyword.
 

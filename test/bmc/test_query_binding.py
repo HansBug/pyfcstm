@@ -139,6 +139,17 @@ def binding_model():
             {"mode": "cold", "kind": "cover", "assumptions": 0},
             id="cover-current-canonical",
         ),
+        pytest.param(
+            'check reach <= 3: called("Hook") && call_count("Hook", step=*) >= 1;',
+            {"mode": "cold", "kind": "reach", "assumptions": 0},
+            id="call-predicate-property",
+        ),
+        pytest.param(
+            'check reach <= 3: called("Hook", step=0..2) '
+            '&& call_count("Hook", step=-2..+0, where x >= 0) >= 1;',
+            {"mode": "cold", "kind": "reach", "assumptions": 0},
+            id="call-predicate-step-ranges",
+        ),
     ],
 )
 def test_bind_bmc_query_structure_accepts_positive_queries(source, expected):
@@ -352,16 +363,22 @@ def test_bound_bmc_query_to_ast_node_round_trips_domain_binding(binding_model):
             id="init-where-event",
         ),
         pytest.param(
-            'check reach <= 3: called("Hook");',
-            "unsupported_called_atom",
-            "property.predicate",
-            id="called-ordinary-property",
-        ),
-        pytest.param(
             'check cover <= 3: called("Hook");',
-            "unsupported_called_atom",
+            "cover_predicate",
             "property.predicate",
             id="called-cover-property",
+        ),
+        pytest.param(
+            'assume always: call_count("Hook") >= 1; check reach <= 3: true;',
+            "call_count_not_allowed",
+            "assumptions[0].predicate.left",
+            id="call-count-assumption",
+        ),
+        pytest.param(
+            'assume always: called("Hook"); check reach <= 3: true;',
+            "called_not_allowed",
+            "assumptions[0].predicate",
+            id="called-assumption",
         ),
         pytest.param(
             'check reach <= 3: (cycle <= 1) ? active("A") : case("L");',
@@ -717,9 +734,7 @@ def test_binding_imports_remain_layered():
             id="initial-resolved-havoc-duplicate",
         ),
         pytest.param(
-            lambda: BoundInitialSpec(
-                InitialSpec(), resolved_havoc_variables=("x", "")
-            ),
+            lambda: BoundInitialSpec(InitialSpec(), resolved_havoc_variables=("x", "")),
             id="initial-resolved-havoc-empty-name",
         ),
         pytest.param(
@@ -1035,7 +1050,9 @@ def test_internal_initial_policy_duplicate_guard_remains_defensive_when_shape_ch
 @pytest.mark.unittest
 def test_internal_domain_variable_names_handles_domainless_context():
     """Domain-name extraction stays safe before model-aware binding."""
-    assert binding_module._domain_variable_names(binding_module._BindingContext(1)) == ()
+    assert (
+        binding_module._domain_variable_names(binding_module._BindingContext(1)) == ()
+    )
 
 
 @pytest.mark.unittest

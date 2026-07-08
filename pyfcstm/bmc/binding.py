@@ -48,6 +48,9 @@ from pyfcstm.bmc.ast import (
     BmcCondExpr,
     BmcNumExpr,
     BoolLiteral,
+    CallCount,
+    CallFilter,
+    CallStepSelector,
     Called,
     Case,
     CondBinaryOp,
@@ -93,6 +96,16 @@ _PROPERTY_KINDS = {
     "cover",
 }
 _RESERVED_STATE_PATHS = {"$STATE_INIT", "$STATE_TERMINATE"}
+_CALL_RUNTIME_ROLES = {
+    "state_enter",
+    "state_exit",
+    "leaf_during",
+    "plain_during_before",
+    "plain_during_after",
+    "aspect_during_before",
+    "aspect_during_after",
+    "transition_effect",
+}
 
 
 def _is_non_empty_text(value: object) -> bool:
@@ -966,6 +979,81 @@ def _resolve_variable(
     return entry.id
 
 
+def _iter_model_actions(model: object):
+    if model is None or not hasattr(model, "walk_states"):
+        return ()
+    actions = []
+    for state in model.walk_states():
+        for attr_name in (
+            "on_enters",
+            "on_durings",
+            "on_exits",
+            "on_during_aspects",
+        ):
+            actions.extend(getattr(state, attr_name, ()) or ())
+    return tuple(actions)
+
+
+def _domain_model(ctx: _BindingContext) -> object:
+    if not ctx.has_domain:
+        return None
+    return getattr(ctx.domain, "model", None)
+
+
+def _named_abstract_action_paths(ctx: _BindingContext) -> Tuple[str, ...]:
+    return tuple(
+        sorted(
+            {
+                action.func_name
+                for action in _iter_model_actions(_domain_model(ctx))
+                if getattr(action, "is_abstract", False)
+                and getattr(action, "name", None) is not None
+            }
+        )
+    )
+
+
+def _named_ref_action_paths(ctx: _BindingContext) -> Tuple[str, ...]:
+    return tuple(
+        sorted(
+            {
+                action.func_name
+                for action in _iter_model_actions(_domain_model(ctx))
+                if getattr(action, "is_ref", False)
+                and getattr(action, "name", None) is not None
+            }
+        )
+    )
+
+
+def _resolve_call_action(ctx: _BindingContext, action_path: str, path: str) -> None:
+    _require_non_empty_field(action_path, path, "action")
+    model = _domain_model(ctx)
+    if model is None:
+        return
+    choices = _named_abstract_action_paths(ctx)
+    if action_path not in choices:
+        _raise_binding_error(
+            "unknown_call_action",
+            path,
+            "call action must name an existing named abstract action.",
+        )
+
+
+def _resolve_named_ref(ctx: _BindingContext, ref_path: str, path: str) -> None:
+    _require_non_empty_field(ref_path, path, "named_ref")
+    model = _domain_model(ctx)
+    if model is None:
+        return
+    choices = _named_ref_action_paths(ctx)
+    if ref_path not in choices:
+        _raise_binding_error(
+            "unknown_named_ref",
+            path,
+            "named_ref must name an existing named ref action.",
+        )
+
+
 def _validate_current_frame(frame: object, path: str) -> None:
     if frame != "current":
         _raise_binding_error(
@@ -1013,8 +1101,146 @@ def _validate_event_cycles(selector: object, bound: int, path: str) -> Tuple[int
     )
 
 
+def _bind_call_step_selector(selector: CallStepSelector, bound: int, path: str) -> None:
+    if not isinstance(selector, CallStepSelector):
+        _raise_binding_error(
+            "call_step_selector_type",
+            path,
+            "call step selector must be a CallStepSelector.",
+        )
+    points = [point for point in (selector.start, selector.end) if point is not None]
+    for index, point in enumerate(points):
+        if point.kind == "absolute" and not (0 <= point.value < bound):
+            _raise_binding_error(
+                "call_step_out_of_range",
+                "%s[%d]" % (path, index),
+                "absolute call step selector must satisfy 0 <= k < bound.",
+            )
+
+
+def _bind_call_where_num_expr(
+    ctx: _BindingContext, expr: BmcNumExpr, path: str
+) -> None:
+    if isinstance(expr, NameRef):
+        _resolve_variable(ctx, expr.name, path, "call_where_bare")
+        return
+    if isinstance(expr, FrameVar):
+        _resolve_variable(ctx, expr.name, path, "call_where_var_call")
+        return
+    if isinstance(expr, Cycle):
+        _raise_binding_error(
+            "cycle_not_allowed",
+            path,
+            "bare cycle is not a call-time snapshot variable and is not allowed "
+            "inside call where filters.",
+        )
+    if isinstance(expr, (IntLiteral, FloatLiteral, MathConst)):
+        return
+    if isinstance(expr, CallCount):
+        _raise_binding_error(
+            "call_count_not_allowed",
+            path,
+            "call_count() is not allowed inside call where filters.",
+        )
+    if isinstance(expr, NumUnaryOp):
+        _bind_call_where_num_expr(ctx, expr.operand, path + ".operand")
+        return
+    if isinstance(expr, NumBinaryOp):
+        _bind_call_where_num_expr(ctx, expr.left, path + ".left")
+        _bind_call_where_num_expr(ctx, expr.right, path + ".right")
+        return
+    if isinstance(expr, NumConditionalOp):
+        _bind_call_where_condition(ctx, expr.condition, path + ".condition")
+        _bind_call_where_num_expr(ctx, expr.if_true, path + ".if_true")
+        _bind_call_where_num_expr(ctx, expr.if_false, path + ".if_false")
+        return
+    if isinstance(expr, UFuncCall):
+        _bind_call_where_num_expr(ctx, expr.operand, path + ".operand")
+        return
+    _raise_binding_error(
+        "unsupported_call_where_numeric_expr",
+        path,
+        "Unsupported call where numeric expression: %s." % type(expr).__name__,
+    )
+
+
+def _bind_call_where_condition(
+    ctx: _BindingContext, expr: BmcCondExpr, path: str
+) -> None:
+    if isinstance(expr, BoolLiteral):
+        return
+    if isinstance(expr, NumericComparison):
+        _bind_call_where_num_expr(ctx, expr.left, path + ".left")
+        _bind_call_where_num_expr(ctx, expr.right, path + ".right")
+        return
+    if isinstance(expr, CondUnaryOp):
+        _bind_call_where_condition(ctx, expr.operand, path + ".operand")
+        return
+    if isinstance(expr, CondBinaryOp):
+        _bind_call_where_condition(ctx, expr.left, path + ".left")
+        _bind_call_where_condition(ctx, expr.right, path + ".right")
+        return
+    if isinstance(expr, CondConditionalOp):
+        _bind_call_where_condition(ctx, expr.condition, path + ".condition")
+        _bind_call_where_condition(ctx, expr.if_true, path + ".if_true")
+        _bind_call_where_condition(ctx, expr.if_false, path + ".if_false")
+        return
+    if isinstance(expr, (Active, Terminated, Event, Case, Called)):
+        _raise_binding_error(
+            "call_where_atom_not_allowed",
+            path,
+            "call where filters may only use snapshot variables, literals, "
+            "numeric operators, comparisons, and logical operators.",
+        )
+    _raise_binding_error(
+        "unsupported_call_where_condition_expr",
+        path,
+        "Unsupported call where condition expression: %s." % type(expr).__name__,
+    )
+
+
+def _bind_call_filter(ctx: _BindingContext, filter_node: CallFilter, path: str) -> None:
+    if not isinstance(filter_node, CallFilter):
+        _raise_binding_error(
+            "call_filter_type", path, "call filter must be CallFilter."
+        )
+    if filter_node.action is not None:
+        _resolve_call_action(ctx, filter_node.action, path + ".action")
+    _bind_call_step_selector(filter_node.effective_step, ctx.bound, path + ".step")
+    if filter_node.stage is not None and filter_node.stage not in {
+        "enter",
+        "during",
+        "exit",
+    }:
+        _raise_binding_error(
+            "call_stage",
+            path + ".stage",
+            "call stage must be 'enter', 'during', or 'exit'.",
+        )
+    if filter_node.role is not None and filter_node.role not in _CALL_RUNTIME_ROLES:
+        _raise_binding_error(
+            "call_role",
+            path + ".role",
+            "call role must be one of the supported runtime roles.",
+        )
+    if filter_node.state is not None:
+        _resolve_state(ctx, filter_node.state, path + ".state", "call_state")
+    if filter_node.active_leaf is not None:
+        _resolve_state(
+            ctx, filter_node.active_leaf, path + ".active_leaf", "call_active_leaf"
+        )
+    if filter_node.named_ref is not None:
+        _resolve_named_ref(ctx, filter_node.named_ref, path + ".named_ref")
+    if filter_node.where is not None:
+        _bind_call_where_condition(ctx, filter_node.where, path + ".where")
+
+
 def _bind_numeric_expr(
-    ctx: _BindingContext, expr: BmcNumExpr, path: str, allow_cycle: bool
+    ctx: _BindingContext,
+    expr: BmcNumExpr,
+    path: str,
+    allow_cycle: bool,
+    allow_call: bool = False,
 ) -> None:
     if isinstance(expr, NameRef):
         _resolve_variable(ctx, expr.name, path, "bare")
@@ -1030,25 +1256,42 @@ def _bind_numeric_expr(
                 "bare cycle is not allowed in this binding context.",
             )
         return
+    if isinstance(expr, CallCount):
+        if not allow_call:
+            _raise_binding_error(
+                "call_count_not_allowed",
+                path,
+                "call_count() is not allowed in this binding context.",
+            )
+        _bind_call_filter(ctx, expr.filter, path + ".filter")
+        return
     if isinstance(expr, NumUnaryOp):
-        _bind_numeric_expr(ctx, expr.operand, path + ".operand", allow_cycle)
+        _bind_numeric_expr(
+            ctx, expr.operand, path + ".operand", allow_cycle, allow_call
+        )
         return
     if isinstance(expr, NumBinaryOp):
-        _bind_numeric_expr(ctx, expr.left, path + ".left", allow_cycle)
-        _bind_numeric_expr(ctx, expr.right, path + ".right", allow_cycle)
+        _bind_numeric_expr(ctx, expr.left, path + ".left", allow_cycle, allow_call)
+        _bind_numeric_expr(ctx, expr.right, path + ".right", allow_cycle, allow_call)
         return
     if isinstance(expr, NumConditionalOp):
         _bind_condition_expr(
             ctx,
             expr.condition,
             path + ".condition",
-            _ConditionRules.frame_local(allow_cycle=allow_cycle),
+            _ConditionRules.frame_local(allow_cycle=allow_cycle, allow_call=allow_call),
         )
-        _bind_numeric_expr(ctx, expr.if_true, path + ".if_true", allow_cycle)
-        _bind_numeric_expr(ctx, expr.if_false, path + ".if_false", allow_cycle)
+        _bind_numeric_expr(
+            ctx, expr.if_true, path + ".if_true", allow_cycle, allow_call
+        )
+        _bind_numeric_expr(
+            ctx, expr.if_false, path + ".if_false", allow_cycle, allow_call
+        )
         return
     if isinstance(expr, UFuncCall):
-        _bind_numeric_expr(ctx, expr.operand, path + ".operand", allow_cycle)
+        _bind_numeric_expr(
+            ctx, expr.operand, path + ".operand", allow_cycle, allow_call
+        )
         return
     if isinstance(expr, (IntLiteral, FloatLiteral, MathConst)):
         return
@@ -1063,18 +1306,25 @@ def _bind_numeric_expr(
 class _ConditionRules:
     allow_cycle: bool = True
     allow_event_current: bool = False
+    allow_call: bool = False
 
     @classmethod
-    def frame_local(cls, allow_cycle: bool = True) -> "_ConditionRules":
-        return cls(allow_cycle=allow_cycle)
+    def frame_local(
+        cls, allow_cycle: bool = True, allow_call: bool = False
+    ) -> "_ConditionRules":
+        return cls(allow_cycle=allow_cycle, allow_call=allow_call)
 
 
 def _bind_condition_expr(
     ctx: _BindingContext, expr: BmcCondExpr, path: str, rules: _ConditionRules
 ) -> None:
     if isinstance(expr, NumericComparison):
-        _bind_numeric_expr(ctx, expr.left, path + ".left", rules.allow_cycle)
-        _bind_numeric_expr(ctx, expr.right, path + ".right", rules.allow_cycle)
+        _bind_numeric_expr(
+            ctx, expr.left, path + ".left", rules.allow_cycle, rules.allow_call
+        )
+        _bind_numeric_expr(
+            ctx, expr.right, path + ".right", rules.allow_cycle, rules.allow_call
+        )
         return
     if isinstance(expr, CondUnaryOp):
         _bind_condition_expr(ctx, expr.operand, path + ".operand", rules)
@@ -1111,11 +1361,14 @@ def _bind_condition_expr(
             "case atoms are only allowed as the naked cover predicate.",
         )
     if isinstance(expr, Called):
-        _raise_binding_error(
-            "unsupported_called_atom",
-            path,
-            "called() atoms are parsed but unsupported by this semantic binding layer.",
-        )
+        if not rules.allow_call:
+            _raise_binding_error(
+                "called_not_allowed",
+                path,
+                "called() is not allowed in this binding context.",
+            )
+        _bind_call_filter(ctx, expr.call_filter, path + ".filter")
+        return
     if isinstance(expr, BoolLiteral):
         return
     _raise_binding_error(
@@ -1275,24 +1528,19 @@ def _bind_property(ctx: _BindingContext, property_node: BmcProperty) -> BoundPro
             ctx,
             property_node.trigger,
             "property.trigger",
-            _ConditionRules(allow_cycle=True, allow_event_current=True),
+            _ConditionRules(
+                allow_cycle=True, allow_event_current=True, allow_call=True
+            ),
         )
         _bind_condition_expr(
             ctx,
             property_node.response,
             "property.response",
-            _ConditionRules.frame_local(allow_cycle=True),
+            _ConditionRules.frame_local(allow_cycle=True, allow_call=True),
         )
         return BoundProperty(property_node)
     if kind == "cover":
         predicate = property_node.predicate
-        if isinstance(predicate, Called):
-            _bind_condition_expr(
-                ctx,
-                predicate,
-                "property.predicate",
-                _ConditionRules.frame_local(allow_cycle=True),
-            )
         if not isinstance(predicate, Case) or predicate.frame != "current":
             _raise_binding_error(
                 "cover_predicate",
@@ -1307,7 +1555,7 @@ def _bind_property(ctx: _BindingContext, property_node: BmcProperty) -> BoundPro
         ctx,
         property_node.predicate,
         "property.predicate",
-        _ConditionRules.frame_local(allow_cycle=True),
+        _ConditionRules.frame_local(allow_cycle=True, allow_call=True),
     )
     return BoundProperty(property_node)
 

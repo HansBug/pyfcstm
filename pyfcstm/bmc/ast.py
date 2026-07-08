@@ -45,7 +45,8 @@ The module contains:
 * FCSTM-compatible nodes such as :class:`IntLiteral`, :class:`NameRef`,
   :class:`NumBinaryOp`, :class:`NumericComparison`, and :class:`CondBinaryOp`.
 * BMC-only extension nodes such as :class:`FrameVar`, :class:`Cycle`,
-  :class:`Active`, :class:`Event`, :class:`Case`, and :class:`Called`.
+  :class:`Active`, :class:`Event`, :class:`Case`, :class:`CallCount`, and
+  :class:`Called`.
 
 Example::
 
@@ -64,7 +65,7 @@ import math
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, ClassVar, Dict, Optional, Union
+from typing import Any, ClassVar, Dict, Optional, Tuple, Union
 
 from pyfcstm.bmc.errors import InvalidBmcQuery
 
@@ -74,6 +75,8 @@ except ImportError:  # pragma: no cover - Python < 3.8 compatibility
     from typing_extensions import Literal
 
 _FrameSelector = Union[int, Literal["current"]]
+_CallStepPointKind = Literal["absolute", "relative"]
+_CallStepSelectorKind = Literal["omitted", "all", "point", "range"]
 _CanonicalDict = Dict[str, Any]
 
 _DECIMAL_INT_RE = re.compile(r"^[0-9]+$")
@@ -150,6 +153,8 @@ _FBMCQ_RESERVED_NAMES = {
     "active",
     "case",
     "called",
+    "call_count",
+    "null",
 }
 _BARE_NAME_RESERVED = _FCSTM_RESERVED_NAMES | _FBMCQ_RESERVED_NAMES
 
@@ -353,6 +358,17 @@ def _optional_unit_frame_call_to_dsl(name: str, frame: _FrameSelector) -> str:
     return "%s(%s)" % (name, _frame_to_dsl(frame))
 
 
+def _validate_call_arg_string(value: object, field_name: str) -> Optional[str]:
+    if value is None:
+        return None
+    _require_non_empty_query_string(value, field_name)
+    return value
+
+
+def _named_arg_to_dsl(name: str, value: str) -> str:
+    return "%s=%s" % (name, value)
+
+
 def _grouped(text: str) -> str:
     return "(%s)" % text
 
@@ -360,7 +376,16 @@ def _grouped(text: str) -> str:
 def _num_operand_to_dsl(expr: BmcNumExpr) -> str:
     if isinstance(
         expr,
-        (IntLiteral, FloatLiteral, NameRef, MathConst, UFuncCall, FrameVar, Cycle),
+        (
+            IntLiteral,
+            FloatLiteral,
+            NameRef,
+            MathConst,
+            UFuncCall,
+            FrameVar,
+            Cycle,
+            CallCount,
+        ),
     ):
         return str(expr)
     return _grouped(str(expr))
@@ -458,6 +483,407 @@ class IntLiteral(BmcNumExpr):
 
     def _to_dsl(self) -> str:
         return self.raw
+
+
+@dataclass(frozen=True)
+class CallStepPoint:
+    """Point used by ``called`` and ``call_count`` step selectors.
+
+    A point is either absolute, such as ``3``, or relative to the predicate
+    anchor, such as ``+2`` or ``-1``.  Relative zero canonicalizes to ``+0`` so
+    ``+0`` and ``-0`` compare equal after parsing.
+
+    :param kind: ``"absolute"`` or ``"relative"``.
+    :type kind: str
+    :param value: Non-negative absolute index or signed relative offset.
+    :type value: int
+
+    Example::
+
+        >>> str(CallStepPoint.relative(0))
+        '+0'
+        >>> CallStepPoint.absolute(3).to_canonical()["value"]
+        3
+    """
+
+    kind: _CallStepPointKind
+    value: int
+
+    def __post_init__(self) -> None:
+        if self.kind not in {"absolute", "relative"}:
+            raise InvalidBmcQuery("call step point kind must be absolute or relative.")
+        if isinstance(self.value, bool) or not isinstance(self.value, int):
+            raise InvalidBmcQuery("call step point value must be an integer.")
+        if self.kind == "absolute" and self.value < 0:
+            raise InvalidBmcQuery("absolute call step point must be non-negative.")
+
+    @classmethod
+    def absolute(cls, value: int) -> "CallStepPoint":
+        """Return an absolute step point.
+
+        :param value: Non-negative step index.
+        :type value: int
+        :return: Absolute step point.
+        :rtype: CallStepPoint
+
+        Example::
+
+            >>> str(CallStepPoint.absolute(2))
+            '2'
+        """
+        return cls("absolute", value)
+
+    @classmethod
+    def relative(cls, value: int) -> "CallStepPoint":
+        """Return a relative step point.
+
+        :param value: Signed offset from the predicate anchor.
+        :type value: int
+        :return: Relative step point.
+        :rtype: CallStepPoint
+
+        Example::
+
+            >>> str(CallStepPoint.relative(-3))
+            '-3'
+        """
+        return cls("relative", value)
+
+    def to_canonical(self) -> _CanonicalDict:
+        """Return a JSON-stable point summary.
+
+        :return: Canonical call step point.
+        :rtype: Dict[str, object]
+
+        Example::
+
+            >>> CallStepPoint.relative(1).to_canonical()["kind"]
+            'relative'
+        """
+        return {"node": "call_step_point", "kind": self.kind, "value": self.value}
+
+    def __str__(self) -> str:
+        """Return canonical ``.fbmcq`` text for this point.
+
+        :return: Point DSL text.
+        :rtype: str
+
+        Example::
+
+            >>> str(CallStepPoint.relative(0))
+            '+0'
+        """
+        if self.kind == "absolute":
+            return str(self.value)
+        return ("%+d" % self.value) if self.value != 0 else "+0"
+
+
+@dataclass(frozen=True)
+class CallStepSelector:
+    """Step set selector used by abstract-call query predicates.
+
+    :param kind: ``"omitted"``, ``"all"``, ``"point"``, or ``"range"``.
+    :type kind: str
+    :param start: Point or ``None`` for omitted/current range starts.
+    :type start: CallStepPoint, optional
+    :param end: Point or ``None`` for omitted/current range ends.
+    :type end: CallStepPoint, optional
+
+    Example::
+
+        >>> str(CallStepSelector.all())
+        '*'
+        >>> str(CallStepSelector.range(CallStepPoint.relative(-2), CallStepPoint.relative(0)))
+        '-2..+0'
+    """
+
+    kind: _CallStepSelectorKind = "omitted"
+    start: Optional[CallStepPoint] = None
+    end: Optional[CallStepPoint] = None
+
+    def __post_init__(self) -> None:
+        if self.kind not in {"omitted", "all", "point", "range"}:
+            raise InvalidBmcQuery("unsupported call step selector kind.")
+        if self.start is not None and not isinstance(self.start, CallStepPoint):
+            raise InvalidBmcQuery("call step selector start must be CallStepPoint.")
+        if self.end is not None and not isinstance(self.end, CallStepPoint):
+            raise InvalidBmcQuery("call step selector end must be CallStepPoint.")
+        if self.kind in {"omitted", "all"} and (
+            self.start is not None or self.end is not None
+        ):
+            raise InvalidBmcQuery(
+                "%s call step selector cannot have endpoints." % self.kind
+            )
+        if self.kind == "point":
+            if self.start is None or self.end is not None:
+                raise InvalidBmcQuery(
+                    "point call step selector needs exactly one point."
+                )
+        if self.kind == "range":
+            if self.start is None and self.end is None:
+                raise InvalidBmcQuery("call step range '..' is invalid.")
+            if self.start is not None and self.end is not None:
+                start = self.start
+                end = self.end
+                if start.kind == end.kind and start.value > end.value:
+                    raise InvalidBmcQuery("call step range start must not exceed end.")
+            if self.start is not None and self.end is None:
+                start = self.start
+                if start.kind == "relative" and start.value > 0:
+                    raise InvalidBmcQuery(
+                        "open-ended future call step range is invalid."
+                    )
+            if self.start is None and self.end is not None:
+                end = self.end
+                if end.kind == "relative" and end.value < 0:
+                    raise InvalidBmcQuery("open-start past call step range is invalid.")
+
+    @classmethod
+    def omitted(cls) -> "CallStepSelector":
+        """Return the implicit current-step selector.
+
+        :return: Omitted selector.
+        :rtype: CallStepSelector
+
+        Example::
+
+            >>> CallStepSelector.omitted().to_canonical()["kind"]
+            'omitted'
+        """
+        return cls("omitted")
+
+    @classmethod
+    def all(cls) -> "CallStepSelector":
+        """Return the all-steps selector.
+
+        :return: All-steps selector.
+        :rtype: CallStepSelector
+
+        Example::
+
+            >>> str(CallStepSelector.all())
+            '*'
+        """
+        return cls("all")
+
+    @classmethod
+    def point(cls, point: CallStepPoint) -> "CallStepSelector":
+        """Return a point selector.
+
+        :param point: Selected step point.
+        :type point: CallStepPoint
+        :return: Point selector.
+        :rtype: CallStepSelector
+
+        Example::
+
+            >>> str(CallStepSelector.point(CallStepPoint.absolute(3)))
+            '3'
+        """
+        return cls("point", start=point)
+
+    @classmethod
+    def range(
+        cls, start: Optional[CallStepPoint], end: Optional[CallStepPoint]
+    ) -> "CallStepSelector":
+        """Return an inclusive range or relative window selector.
+
+        :param start: Start point, or ``None`` for the current anchor.
+        :type start: CallStepPoint, optional
+        :param end: End point, or ``None`` for the current anchor.
+        :type end: CallStepPoint, optional
+        :return: Range selector.
+        :rtype: CallStepSelector
+
+        Example::
+
+            >>> str(CallStepSelector.range(None, CallStepPoint.relative(2)))
+            '..+2'
+        """
+        return cls("range", start=start, end=end)
+
+    def to_canonical(self) -> _CanonicalDict:
+        """Return a JSON-stable selector summary.
+
+        :return: Canonical call step selector.
+        :rtype: Dict[str, object]
+
+        Example::
+
+            >>> CallStepSelector.all().to_canonical()["kind"]
+            'all'
+        """
+        return {
+            "node": "call_step_selector",
+            "kind": self.kind,
+            "start": self.start.to_canonical() if self.start is not None else None,
+            "end": self.end.to_canonical() if self.end is not None else None,
+        }
+
+    def __str__(self) -> str:
+        """Return canonical selector DSL text.
+
+        :return: Selector text.
+        :rtype: str
+
+        Example::
+
+            >>> str(CallStepSelector.range(CallStepPoint.relative(-1), None))
+            '-1..'
+        """
+        if self.kind == "omitted":
+            return ""
+        if self.kind == "all":
+            return "*"
+        if self.kind == "point":
+            return str(self.start)
+        return "%s..%s" % (
+            "" if self.start is None else str(self.start),
+            "" if self.end is None else str(self.end),
+        )
+
+
+@dataclass(frozen=True)
+class CallFilter:
+    """Shared argument model for ``called`` and ``call_count`` predicates.
+
+    Omitted filter fields mean ``true`` for that dimension.  ``where`` is a
+    filter over the matched call-time snapshot, not a global assertion over all
+    calls.  :func:`str` returns the canonical argument fragment without the
+    surrounding ``called`` or ``call_count`` function name.
+
+    :param action: Resolved abstract action path filter, defaults to ``None``.
+    :type action: str, optional
+    :param step: Step selector, defaults to omitted/current.
+    :type step: CallStepSelector, optional
+    :param stage: Lifecycle stage filter such as ``"during"``.
+    :type stage: str, optional
+    :param role: Runtime role filter such as ``"aspect_during_before"``.
+    :type role: str, optional
+    :param state: Runtime public state path filter.
+    :type state: str, optional
+    :param active_leaf: Runtime active leaf path filter.
+    :type active_leaf: str, optional
+    :param named_ref: Named-ref callsite path filter, defaults to ``None``.
+    :type named_ref: str, optional
+    :param named_ref_is_null: Whether ``named_ref=null`` was requested.
+    :type named_ref_is_null: bool, optional
+    :param where: Snapshot predicate filter, defaults to ``None``.
+    :type where: BmcCondExpr, optional
+
+    Example::
+
+        >>> str(CallFilter(action="Root.Hook"))
+        '"Root.Hook"'
+    """
+
+    action: Optional[str] = None
+    step: Optional[CallStepSelector] = None
+    stage: Optional[str] = None
+    role: Optional[str] = None
+    state: Optional[str] = None
+    active_leaf: Optional[str] = None
+    named_ref: Optional[str] = None
+    named_ref_is_null: bool = False
+    where: Optional[BmcCondExpr] = None
+
+    def __post_init__(self) -> None:
+        for field_name in (
+            "action",
+            "stage",
+            "role",
+            "state",
+            "active_leaf",
+            "named_ref",
+        ):
+            object.__setattr__(
+                self,
+                field_name,
+                _validate_call_arg_string(getattr(self, field_name), field_name),
+            )
+        if self.step is not None and not isinstance(self.step, CallStepSelector):
+            raise InvalidBmcQuery("step must be CallStepSelector.")
+        if self.named_ref_is_null and self.named_ref is not None:
+            raise InvalidBmcQuery("named_ref cannot be both a string and null.")
+        if not isinstance(self.named_ref_is_null, bool):
+            raise InvalidBmcQuery("named_ref_is_null must be bool.")
+        if self.where is not None and not isinstance(self.where, BmcCondExpr):
+            raise InvalidBmcQuery("where must be a BMC condition expression.")
+
+    @property
+    def effective_step(self) -> CallStepSelector:
+        """Return explicit or omitted step selector.
+
+        :return: Step selector.
+        :rtype: CallStepSelector
+
+        Example::
+
+            >>> CallFilter().effective_step.kind
+            'omitted'
+        """
+        return self.step if self.step is not None else CallStepSelector.omitted()
+
+    def to_canonical(self) -> _CanonicalDict:
+        """Return a JSON-stable call-filter shape.
+
+        :return: Canonical call filter.
+        :rtype: Dict[str, object]
+
+        Example::
+
+            >>> CallFilter(action="A").to_canonical()["action"]
+            'A'
+        """
+        return {
+            "node": "call_filter",
+            "action": self.action,
+            "step": self.effective_step.to_canonical(),
+            "stage": self.stage,
+            "role": self.role,
+            "state": self.state,
+            "active_leaf": self.active_leaf,
+            "named_ref": self.named_ref,
+            "named_ref_is_null": self.named_ref_is_null,
+            "where": self.where.to_canonical() if self.where is not None else None,
+        }
+
+    def _args_to_dsl(self) -> Tuple[str, ...]:
+        args = []
+        if self.action is not None:
+            args.append(_quote_string(self.action))
+        if self.step is not None:
+            args.append(str(self.step))
+        if self.stage is not None:
+            args.append(_named_arg_to_dsl("stage", _quote_string(self.stage)))
+        if self.role is not None:
+            args.append(_named_arg_to_dsl("role", _quote_string(self.role)))
+        if self.state is not None:
+            args.append(_named_arg_to_dsl("state", _quote_string(self.state)))
+        if self.active_leaf is not None:
+            args.append(
+                _named_arg_to_dsl("active_leaf", _quote_string(self.active_leaf))
+            )
+        if self.named_ref_is_null:
+            args.append(_named_arg_to_dsl("named_ref", "null"))
+        elif self.named_ref is not None:
+            args.append(_named_arg_to_dsl("named_ref", _quote_string(self.named_ref)))
+        if self.where is not None:
+            args.append("where %s" % self.where)
+        return tuple(args)
+
+    def __str__(self) -> str:
+        """Return the comma-separated canonical argument list.
+
+        :return: Argument DSL text without surrounding function name.
+        :rtype: str
+
+        Example::
+
+            >>> str(CallFilter(action="A", step=CallStepSelector.all()))
+            '"A", *'
+        """
+        return _call_args_to_dsl(*self._args_to_dsl())
 
 
 @dataclass(frozen=True)
@@ -1133,36 +1559,147 @@ class Case(BmcCondExpr):
 
 
 @dataclass(frozen=True)
-class Called(BmcCondExpr):
-    """Boolean atom for future abstract-call tracking.
+class CallCount(BmcNumExpr):
+    """Numeric expression counting matching abstract-call occurrences.
 
-    :param name: Abstract action or hook name.
-    :type name: str
-    :param frame: Frame index or ``"current"``, defaults to ``"current"``.
+    :param filter: Shared abstract-call filter, defaults to an empty filter.
+    :type filter: CallFilter, optional
+
+    Example::
+
+        >>> str(CallCount(CallFilter(action="Root.Hook")))
+        'call_count("Root.Hook")'
+    """
+
+    _node_name: ClassVar[str] = "call_count"
+
+    filter: CallFilter = CallFilter()
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.filter, CallFilter):
+            raise InvalidBmcQuery("filter must be CallFilter.")
+
+    def _canonical_payload(self) -> _CanonicalDict:
+        return {"filter": self.filter.to_canonical()}
+
+    def _to_dsl(self) -> str:
+        return "call_count(%s)" % str(self.filter)
+
+
+@dataclass(frozen=True)
+class Called(BmcCondExpr):
+    """Boolean atom testing whether a matching abstract call exists.
+
+    The legacy ``Called("Hook", frame=2)`` constructor remains accepted for
+    compatibility with earlier query-model tests. New parser output should use
+    :class:`CallFilter` so ``called()`` and richer named arguments are available.
+
+    :param name: Legacy abstract action or hook name, defaults to ``None``.
+    :type name: str, optional
+    :param frame: Legacy frame/step selector, defaults to ``"current"``.
     :type frame: int or str, optional
+    :param filter: Shared call filter for the new argument model, defaults to
+        ``None``.
+    :type filter: CallFilter, optional
 
     Example::
 
         >>> Called("Check", frame=2).to_canonical()["name"]
         'Check'
+        >>> str(Called(filter=CallFilter()))
+        'called()'
     """
 
     _node_name: ClassVar[str] = "called"
 
-    name: str
+    name: Optional[str] = None
     frame: _FrameSelector = "current"
+    filter: Optional[CallFilter] = None
 
     def __post_init__(self) -> None:
-        _require_non_empty_query_string(self.name, "name")
+        if self.name is not None:
+            _require_non_empty_query_string(self.name, "name")
         object.__setattr__(self, "frame", _normalize_frame(self.frame))
+        if self.filter is not None and not isinstance(self.filter, CallFilter):
+            raise InvalidBmcQuery("filter must be CallFilter.")
+        if self.filter is None and self.name is None:
+            object.__setattr__(self, "filter", CallFilter())
+        elif self.filter is not None and (
+            self.name is not None or self.frame != "current"
+        ):
+            raise InvalidBmcQuery(
+                "Called accepts either legacy name/frame or a CallFilter, not both."
+            )
+
+    @property
+    def call_filter(self) -> CallFilter:
+        """Return the normalized call filter.
+
+        :return: Call filter used by semantic lowering.
+        :rtype: CallFilter
+
+        Example::
+
+            >>> Called("Hook", frame=1).call_filter.action
+            'Hook'
+        """
+        if self.filter is not None:
+            return self.filter
+        step = (
+            None
+            if self.frame == "current"
+            else CallStepSelector.point(CallStepPoint.absolute(self.frame))
+        )
+        return CallFilter(action=self.name, step=step)
 
     def _canonical_payload(self) -> _CanonicalDict:
-        return {"name": self.name, "frame": self.frame}
+        if self.filter is None:
+            return {"name": self.name, "frame": self.frame}
+        simple_frame = self._legacy_simple_frame()
+        if simple_frame is not None:
+            return {"name": self.filter.action, "frame": simple_frame}
+        return {"filter": self.filter.to_canonical()}
 
     def _to_dsl(self) -> str:
-        return _optional_frame_call_to_dsl(
-            "called", _quote_string(self.name), self.frame
-        )
+        if self.filter is None:
+            return _optional_frame_call_to_dsl(
+                "called", _quote_string(self.name or ""), self.frame
+            )
+        simple_frame = self._legacy_simple_frame()
+        if simple_frame is not None:
+            return _optional_frame_call_to_dsl(
+                "called", _quote_string(self.filter.action or ""), simple_frame
+            )
+        return "called(%s)" % str(self.filter)
+
+    def _legacy_simple_frame(self) -> Optional[_FrameSelector]:
+        if self.filter is None or self.filter.action is None:
+            return None
+        if (
+            any(
+                item is not None
+                for item in (
+                    self.filter.stage,
+                    self.filter.role,
+                    self.filter.state,
+                    self.filter.active_leaf,
+                    self.filter.named_ref,
+                    self.filter.where,
+                )
+            )
+            or self.filter.named_ref_is_null
+        ):
+            return None
+        selector = self.filter.effective_step
+        if selector.kind == "omitted":
+            return "current"
+        if (
+            selector.kind == "point"
+            and selector.start is not None
+            and selector.start.kind == "absolute"
+        ):
+            return selector.start.value
+        return None
 
 
 __all__ = [
@@ -1184,6 +1721,10 @@ __all__ = [
     "CondConditionalOp",
     "FrameVar",
     "Cycle",
+    "CallStepPoint",
+    "CallStepSelector",
+    "CallFilter",
+    "CallCount",
     "Active",
     "Terminated",
     "Event",

@@ -23,6 +23,7 @@ def test_relation_public_exports_are_lazy_and_complete() -> None:
     relation = importlib.import_module("pyfcstm.bmc.relation")
 
     expected = {
+        "BmcAbstractCallRecord",
         "BmcTraceSymbols",
         "BmcCaseRelation",
         "BmcStepRelation",

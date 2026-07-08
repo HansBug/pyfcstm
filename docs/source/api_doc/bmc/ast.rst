@@ -38,6 +38,27 @@ IntLiteral
     :members: __post_init__,value,raw,kind
 
 
+CallStepPoint
+-----------------------------------------------------
+
+.. autoclass:: CallStepPoint
+    :members: __post_init__,absolute,relative,to_canonical,__str__,kind,value
+
+
+CallStepSelector
+-----------------------------------------------------
+
+.. autoclass:: CallStepSelector
+    :members: __post_init__,omitted,all,point,range,to_canonical,__str__,kind,start,end
+
+
+CallFilter
+-----------------------------------------------------
+
+.. autoclass:: CallFilter
+    :members: __post_init__,effective_step,to_canonical,__str__,action,step,stage,role,state,active_leaf,named_ref,named_ref_is_null,where
+
+
 FloatLiteral
 -----------------------------------------------------
 
@@ -163,8 +184,15 @@ Case
     :members: __post_init__,label,frame
 
 
+CallCount
+-----------------------------------------------------
+
+.. autoclass:: CallCount
+    :members: __post_init__,filter
+
+
 Called
 -----------------------------------------------------
 
 .. autoclass:: Called
-    :members: __post_init__,name,frame
+    :members: __post_init__,call_filter,name,frame,filter

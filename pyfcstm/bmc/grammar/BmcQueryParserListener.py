@@ -277,6 +277,14 @@ class BmcQueryParserListener(ParseTreeListener):
     def exitIdExprNum(self, ctx: BmcQueryParser.IdExprNumContext):
         pass
 
+    # Enter a parse tree produced by BmcQueryParser#callCountExprNum.
+    def enterCallCountExprNum(self, ctx: BmcQueryParser.CallCountExprNumContext):
+        pass
+
+    # Exit a parse tree produced by BmcQueryParser#callCountExprNum.
+    def exitCallCountExprNum(self, ctx: BmcQueryParser.CallCountExprNumContext):
+        pass
+
     # Enter a parse tree produced by BmcQueryParser#conditionalCStyleExprCond.
     def enterConditionalCStyleExprCond(
         self, ctx: BmcQueryParser.ConditionalCStyleExprCondContext
@@ -359,6 +367,46 @@ class BmcQueryParserListener(ParseTreeListener):
 
     # Exit a parse tree produced by BmcQueryParser#bmc_boolean_atom.
     def exitBmc_boolean_atom(self, ctx: BmcQueryParser.Bmc_boolean_atomContext):
+        pass
+
+    # Enter a parse tree produced by BmcQueryParser#call_arguments.
+    def enterCall_arguments(self, ctx: BmcQueryParser.Call_argumentsContext):
+        pass
+
+    # Exit a parse tree produced by BmcQueryParser#call_arguments.
+    def exitCall_arguments(self, ctx: BmcQueryParser.Call_argumentsContext):
+        pass
+
+    # Enter a parse tree produced by BmcQueryParser#call_argument.
+    def enterCall_argument(self, ctx: BmcQueryParser.Call_argumentContext):
+        pass
+
+    # Exit a parse tree produced by BmcQueryParser#call_argument.
+    def exitCall_argument(self, ctx: BmcQueryParser.Call_argumentContext):
+        pass
+
+    # Enter a parse tree produced by BmcQueryParser#call_argument_value.
+    def enterCall_argument_value(self, ctx: BmcQueryParser.Call_argument_valueContext):
+        pass
+
+    # Exit a parse tree produced by BmcQueryParser#call_argument_value.
+    def exitCall_argument_value(self, ctx: BmcQueryParser.Call_argument_valueContext):
+        pass
+
+    # Enter a parse tree produced by BmcQueryParser#call_step_selector.
+    def enterCall_step_selector(self, ctx: BmcQueryParser.Call_step_selectorContext):
+        pass
+
+    # Exit a parse tree produced by BmcQueryParser#call_step_selector.
+    def exitCall_step_selector(self, ctx: BmcQueryParser.Call_step_selectorContext):
+        pass
+
+    # Enter a parse tree produced by BmcQueryParser#call_step_point.
+    def enterCall_step_point(self, ctx: BmcQueryParser.Call_step_pointContext):
+        pass
+
+    # Exit a parse tree produced by BmcQueryParser#call_step_point.
+    def exitCall_step_point(self, ctx: BmcQueryParser.Call_step_pointContext):
         pass
 
     # Enter a parse tree produced by BmcQueryParser#num_literal.

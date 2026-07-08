@@ -728,6 +728,15 @@ class ActionBlock:
     :param is_abstract: Whether this block represents an abstract hook, defaults
         to ``False``.
     :type is_abstract: bool, optional
+    :param active_leaf_path: Runtime active leaf path when the block executes,
+        defaults to ``None`` for legacy callers.
+    :type active_leaf_path: str, optional
+    :param execution_state_path: Runtime public state path passed to abstract
+        handler context, defaults to ``None`` and falls back to owner state.
+    :type execution_state_path: str, optional
+    :param named_ref: Named reference callsite path when this block was reached
+        through ``ref``, defaults to ``None``.
+    :type named_ref: str, optional
 
     Example::
 
@@ -743,6 +752,9 @@ class ActionBlock:
     action_name: Optional[str] = None
     transition_label: Optional[str] = None
     is_abstract: bool = False
+    active_leaf_path: Optional[str] = None
+    execution_state_path: Optional[str] = None
+    named_ref: Optional[str] = None
 
     def __post_init__(self) -> None:
         owner_state_id = _validate_index(self.owner_state_id, "owner_state_id")
@@ -784,6 +796,26 @@ class ActionBlock:
                 "transition_label",
                 _require_non_empty_string(self.transition_label, "transition_label"),
             )
+        if self.active_leaf_path is not None:
+            object.__setattr__(
+                self,
+                "active_leaf_path",
+                _require_non_empty_string(self.active_leaf_path, "active_leaf_path"),
+            )
+        if self.execution_state_path is not None:
+            object.__setattr__(
+                self,
+                "execution_state_path",
+                _require_non_empty_string(
+                    self.execution_state_path, "execution_state_path"
+                ),
+            )
+        if self.named_ref is not None:
+            object.__setattr__(
+                self,
+                "named_ref",
+                _require_non_empty_string(self.named_ref, "named_ref"),
+            )
 
     def to_canonical(self) -> _CanonicalDict:
         """Return a JSON-stable action-block dictionary.
@@ -805,6 +837,9 @@ class ActionBlock:
             "action_name": self.action_name,
             "transition_label": self.transition_label,
             "is_abstract": self.is_abstract,
+            "active_leaf_path": self.active_leaf_path,
+            "execution_state_path": self.execution_state_path,
+            "named_ref": self.named_ref,
             "operations": [_statement_to_canonical(item) for item in self.operations],
         }
 

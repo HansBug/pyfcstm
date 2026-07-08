@@ -83,7 +83,15 @@ _FBMCQ_RESERVED_VAR_NAMES = {
     "active",
     "case",
     "called",
+    "call_count",
     "current",
+    "null",
+    "action",
+    "step",
+    "stage",
+    "role",
+    "active_leaf",
+    "named_ref",
     "pi",
     "E",
     "tau",
@@ -252,6 +260,136 @@ def _expect_vars_absent(core, names: Sequence[str]) -> z3.BoolRef:
     return z3.BoolVal(True)
 
 
+def _expected_handler_call_value(item: Mapping[str, Any], field_name: str) -> Any:
+    defaults = {
+        "active_leaf": item.get("state"),
+        "call_stage": item.get("stage"),
+        "abstract_target": item.get("action"),
+        "named_ref": None,
+    }
+    return item.get(field_name, defaults.get(field_name))
+
+
+def _expect_handler_record(core, record, expected: Mapping[str, Any]) -> z3.BoolRef:
+    terms = [
+        z3.BoolVal(record.action_name == expected.get("action")),
+        z3.BoolVal(record.state_path == expected.get("state")),
+        z3.BoolVal(record.stage == expected.get("stage")),
+        z3.BoolVal(
+            record.active_leaf_path
+            == _expected_handler_call_value(expected, "active_leaf")
+        ),
+        z3.BoolVal(
+            record.stage == _expected_handler_call_value(expected, "call_stage")
+        ),
+        z3.BoolVal(
+            record.action_name
+            == _expected_handler_call_value(expected, "abstract_target")
+        ),
+        z3.BoolVal(
+            record.named_ref == _expected_handler_call_value(expected, "named_ref")
+        ),
+    ]
+    expected_vars = expected.get("vars") or {}
+    variable_names = {var.name for var in core.context.domain.variables}
+    if set(expected_vars) != variable_names:
+        return z3.BoolVal(False)
+    for name, value in sorted(expected_vars.items()):
+        try:
+            snapshot_value = record.snapshot[name]
+        except KeyError as err:
+            raise BmcBuildError(
+                "BMC call record is missing snapshot variable %r." % name
+            ) from err
+        terms.append(snapshot_value == value)
+    return z3.And(*terms)
+
+
+def _expect_handler_calls(
+    core, frame_index: int, expected_calls: Sequence[Mapping[str, Any]]
+) -> z3.BoolRef:
+    expected = tuple(dict(item) for item in expected_calls)
+    total = z3.IntVal(0)
+    selected_prefix = z3.IntVal(0)
+    ordered_terms = []
+    for step in core.steps[:frame_index]:
+        for relation in step.case_relations:
+            relation_call_count = len(relation.call_records)
+            for local_index, record in enumerate(relation.call_records):
+                choices = [
+                    z3.And(
+                        selected_prefix + local_index == expected_index,
+                        _expect_handler_record(core, record, expected_item),
+                    )
+                    for expected_index, expected_item in enumerate(expected)
+                ]
+                ordered_terms.append(
+                    z3.Implies(
+                        relation.selector,
+                        z3.Or(*choices) if choices else z3.BoolVal(False),
+                    )
+                )
+            selected_count = z3.If(
+                relation.selector,
+                z3.IntVal(relation_call_count),
+                z3.IntVal(0),
+            )
+            total = total + selected_count
+            selected_prefix = selected_prefix + selected_count
+    return z3.And(total == len(expected), *ordered_terms)
+
+
+def _handler_step_selector(frame_index: int) -> str:
+    if frame_index <= 0:
+        return "-1"
+    if frame_index == 1:
+        return "0"
+    return "0..%d" % (frame_index - 1)
+
+
+def _handler_var_predicate(values: Mapping[str, Any]) -> str:
+    return " && ".join(
+        "%s == %s" % (_var_reference(name), _value_literal(value))
+        for name, value in sorted(values.items())
+    )
+
+
+def _handler_call_filter_query(item: Mapping[str, Any], step_selector: str) -> str:
+    args = [
+        json.dumps(item["action"], ensure_ascii=False),
+        "step=%s" % step_selector,
+        "state=%s" % json.dumps(item["state"], ensure_ascii=False),
+        "stage=%s" % json.dumps(item["stage"], ensure_ascii=False),
+        "active_leaf=%s"
+        % json.dumps(
+            _expected_handler_call_value(item, "active_leaf"), ensure_ascii=False
+        ),
+    ]
+    named_ref = _expected_handler_call_value(item, "named_ref")
+    if named_ref is None:
+        args.append("named_ref=null")
+    else:
+        args.append("named_ref=%s" % json.dumps(named_ref, ensure_ascii=False))
+    where = _handler_var_predicate(item.get("vars") or {})
+    if where:
+        args.append("where %s" % where)
+    return ", ".join(args)
+
+
+def _expect_handler_calls_query(
+    frame_index: int, expected_calls: Sequence[Mapping[str, Any]]
+) -> str:
+    step_selector = _handler_step_selector(frame_index)
+    terms = ["call_count(step=%s) == %d" % (step_selector, len(expected_calls))]
+    grouped = {}
+    for item in expected_calls:
+        filter_text = _handler_call_filter_query(item, step_selector)
+        grouped[filter_text] = grouped.get(filter_text, 0) + 1
+    for filter_text, count in sorted(grouped.items()):
+        terms.append("call_count(%s) == %d" % (filter_text, count))
+    return " && ".join(terms)
+
+
 def _expectation_expr(core, case, ignored_fields: Sequence[str]) -> z3.BoolRef:
     ignored = set(ignored_fields)
     constraints = []
@@ -263,18 +401,19 @@ def _expectation_expr(core, case, ignored_fields: Sequence[str]) -> z3.BoolRef:
         "vars_keys",
         "vars_absent",
         "ended",
+        "handler_calls",
     }
     observed_public_fields = 0
     for index, step in enumerate(case.data.get("steps") or []):
         field_path = "steps[%d]" % index
         expect = step.get("expect") or {}
-        if "handler_calls" in expect and "handler_calls" not in ignored:
-            raise BmcBuildError(
-                "%s %s handler_calls need an explicit partial BMC policy."
-                % (case.id, field_path)
-            )
         frame_index += _effective_cycle_count(step, case.id, case.yaml_path, field_path)
         try:
+            if "handler_calls" in expect and "handler_calls" not in ignored:
+                observed_public_fields += 1
+                constraints.append(
+                    _expect_handler_calls(core, frame_index, expect["handler_calls"])
+                )
             if "state" in expect:
                 observed_public_fields += 1
                 constraints.append(_expect_state(core, frame_index, expect["state"]))
@@ -352,9 +491,9 @@ def _expectation_query_predicate(case, ignored_fields: Sequence[str]) -> str:
             observed_public_fields += 1
             terms.append(_expect_vars_query(expect["vars_exact"]))
         if "handler_calls" in expect and "handler_calls" not in ignored:
-            raise BmcBuildError(
-                "%s %s handler_calls need an explicit partial BMC policy."
-                % (case.id, field_path)
+            observed_public_fields += 1
+            terms.append(
+                _expect_handler_calls_query(frame_index, expect["handler_calls"])
             )
         if terms:
             frame_clauses.append(
@@ -435,6 +574,17 @@ def test_bmc_semantic_fixture_policy_covers_known_gap_inventory() -> None:
 
     policy_map = policy_by_case(BMC_CORE_FIXTURE_LEDGER_CASES)
     assert set(policy_map) == BMC_CORE_FIXTURE_LEDGER_CASES
+    mode_counts = {
+        mode: sum(1 for item in cases.values() if policy_for_case(item.id).mode == mode)
+        for mode in _SUPPORTED_POLICY_MODES
+    }
+    assert mode_counts == {
+        "hard_pass": 146,
+        "partial": 0,
+        "expected_unsupported": 3,
+        "temporary_exclude": 10,
+        "long_term_exclude": 6,
+    }
 
     for case_id in BMC_CORE_FIXTURE_LEDGER_CASES:
         policy = policy_for_case(case_id)

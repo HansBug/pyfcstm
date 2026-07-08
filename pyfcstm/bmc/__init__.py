@@ -65,9 +65,11 @@ Public module structure:
      - Represent the current FCSTM ``cond_expression`` shape.
    * - BMC-only query atoms
      - :class:`FrameVar`, :class:`Cycle`, :class:`Active`,
-       :class:`Terminated`, :class:`Event`, :class:`Case`, :class:`Called`
+       :class:`Terminated`, :class:`Event`, :class:`Case`,
+       :class:`CallCount`, :class:`Called`
      - Represent frame variables, cycle counters, active state, selected event,
-       selected macro-step case, termination, and future abstract-call atoms.
+       selected macro-step case, termination, and abstract-call count/existence
+       predicates.
    * - BMC domain model
      - :class:`StateDomainEntry`, :class:`EventDomainEntry`,
        :class:`VarDomainEntry`, :class:`FrameRef`, :class:`StepRef`,
@@ -106,12 +108,12 @@ Public module structure:
      - Prepare ``StateMachine + .fbmcq`` inputs into bound query and domain
        context without solver, witness, CLI, or verify-registry coupling.
    * - BMC relation builder
-     - :class:`BmcTraceSymbols`, :class:`BmcCaseRelation`,
-       :class:`BmcStepRelation`, :class:`BmcCoreFormula`,
+     - :class:`BmcAbstractCallRecord`, :class:`BmcTraceSymbols`,
+       :class:`BmcCaseRelation`, :class:`BmcStepRelation`, :class:`BmcCoreFormula`,
        :func:`build_bmc_core_formula`
      - Lower prepared contexts and macro-step cases into ``Core_N`` while
-       leaving health gates, objectives, solving, and witness replay to later
-       modules.
+       exposing selected-case abstract-call records and leaving health gates,
+       objectives, solving, and witness replay to later modules.
    * - BMC property compiler
      - :class:`BmcPropertyFormula`, :func:`compile_bmc_property`
      - Compile the bound query ``check`` clause into a solver objective layered
@@ -139,6 +141,10 @@ from pyfcstm.bmc.ast import (
     BmcExpr,
     BmcNumExpr,
     BoolLiteral,
+    CallCount,
+    CallFilter,
+    CallStepPoint,
+    CallStepSelector,
     Called,
     Case,
     CondBinaryOp,
@@ -250,6 +256,7 @@ _ENGINE_EXPORTS = {
 }
 
 _RELATION_EXPORTS = {
+    "BmcAbstractCallRecord",
     "BmcTraceSymbols",
     "BmcCaseRelation",
     "BmcStepRelation",
@@ -363,6 +370,10 @@ __all__ = [
     "CondConditionalOp",
     "FrameVar",
     "Cycle",
+    "CallStepPoint",
+    "CallStepSelector",
+    "CallFilter",
+    "CallCount",
     "Active",
     "Terminated",
     "Event",
@@ -422,6 +433,7 @@ __all__ = [
     "BmcPreparedContext",
     "BmcEngine",
     "prepare_bmc_query",
+    "BmcAbstractCallRecord",
     "BmcTraceSymbols",
     "BmcCaseRelation",
     "BmcStepRelation",

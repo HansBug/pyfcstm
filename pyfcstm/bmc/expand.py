@@ -740,7 +740,14 @@ class _MacroExpander:
                     if func.aspect == "before"
                     else "aspect_during_after"
                 )
-                current = self._record_func(current, owner, func, "aspect_action", role)
+                current = self._record_func(
+                    current,
+                    owner,
+                    func,
+                    "aspect_action",
+                    role,
+                    execution_state_path=".".join(state.path),
+                )
             else:
                 current = self._record_func(
                     current, owner, func, "state_action", "leaf_during"
@@ -817,15 +824,27 @@ class _MacroExpander:
         func: object,
         block_kind: str,
         runtime_role: str,
+        named_ref: Optional[str] = None,
+        execution_state_path: Optional[str] = None,
     ) -> _MacroFrontier:
+        public_state_path = execution_state_path or ".".join(owner.path)
         if isinstance(func, (OnStage, OnAspect)) and func.is_ref:
             if func.ref is None:
                 raise _internal_expansion_error(  # pragma: no cover
                     "action reference is missing its resolved target."
                 )
             ref_owner = func.ref.parent if func.ref.parent is not None else owner
+            ref_name = named_ref
+            if ref_name is None and getattr(func, "name", None) is not None:
+                ref_name = func.func_name
             return self._record_func(
-                frontier, ref_owner, func.ref, block_kind, runtime_role
+                frontier,
+                ref_owner,
+                func.ref,
+                block_kind,
+                runtime_role,
+                ref_name,
+                public_state_path,
             )
         if not isinstance(func, (OnStage, OnAspect)):
             raise _internal_expansion_error(  # pragma: no cover
@@ -834,15 +853,22 @@ class _MacroExpander:
         operations = () if func.is_abstract else tuple(func.operations)
         if not operations and not func.is_abstract:
             return frontier
+        action_name = (
+            func.func_name
+            if (not func.is_abstract or getattr(func, "name", None) is not None)
+            else None
+        )
         return self._append_action_block(
             frontier,
             owner,
             block_kind,
             runtime_role,
             operations,
-            func.func_name,
+            action_name,
             None,
             func.is_abstract,
+            named_ref,
+            public_state_path,
         )
 
     def _append_action_block(
@@ -855,6 +881,8 @@ class _MacroExpander:
         action_name: Optional[str],
         transition_label: Optional[str],
         is_abstract: bool,
+        named_ref: Optional[str] = None,
+        execution_state_path: Optional[str] = None,
     ) -> _MacroFrontier:
         owner_path = ".".join(owner.path)
         block = ActionBlock(
@@ -866,11 +894,20 @@ class _MacroExpander:
             action_name=action_name,
             transition_label=transition_label,
             is_abstract=is_abstract,
+            active_leaf_path=self._active_leaf_path(frontier, owner),
+            execution_state_path=execution_state_path or owner_path,
+            named_ref=named_ref,
         )
         return self._replace_frontier(
             frontier,
             action_blocks=frontier.action_blocks + (block,),
         )
+
+    def _active_leaf_path(self, frontier: _MacroFrontier, owner: State) -> str:
+        for frame in reversed(frontier.stack):
+            if frame.state.is_leaf_state and not frame.state.is_pseudo:
+                return ".".join(frame.state.path)
+        return ".".join(owner.path)
 
     def _leaf_fallback_outcomes(
         self,

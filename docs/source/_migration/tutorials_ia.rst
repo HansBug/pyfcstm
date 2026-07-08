@@ -1653,6 +1653,64 @@ Verification note: this pass is prose and index hardening only. Existing demo
 outputs are referenced unchanged; if a later PR modifies any ``*.demo.*`` source
 or output, that PR must record the exact source-output regeneration command.
 
+PR-P generation and template hardening record
+=============================================
+
+PR-P is an in-place strengthening pass for the generation and template pages. It
+keeps the existing generation tutorial URL stable, does not move generation demo
+resources, and makes the role split explicit: first-success tutorial, built-in
+generation tasks, custom-template authoring, renderer explanation, built-in
+template reference, and template-configuration reference.
+
+.. list-table:: PR-P affected-page record
+   :header-rows: 1
+
+   * - Page or resource
+     - Pre-PR-P state
+     - PR-P action
+     - URL/resource movement
+   * - ``tutorials/generation/index*.rst``
+     - Short first generated-runtime tutorial existed.
+     - Keep it as the first-success path and point deeper material to how-to,
+       explanation and reference pages.
+     - No URL move.
+   * - ``how_to/generation/index*.rst``
+     - Covered basic built-in generation and smoke output, but not all contract
+       boundaries.
+     - Expand built-in template selection, experimental status, generated README
+       contract, event-model choice, native smoke evidence and failure repair.
+     - No URL move.
+   * - ``how_to/templates/index*.rst``
+     - Covered a minimal custom template but used too little validation context.
+     - Rework as a custom-template author guide with file mapping, helper
+       registration, expression/statement rendering and validation matrix.
+     - No URL move.
+   * - ``explanations/template_rendering/index*.rst``
+     - Explained the renderer pipeline at a high level.
+     - Add user-input and template-asset chains, responsibility boundaries,
+       statement-renderer distinctions, logic placement and evidence boundaries.
+     - No URL move.
+   * - ``reference/builtin_templates/index*.rst``
+     - Thin matrix of template names and rough entry points.
+     - Rebuild as per-template contract reference backed by package metadata and
+       generated README boundaries.
+     - No URL move.
+   * - ``reference/template_config/index*.rst``
+     - Basic key lookup table.
+     - Expand into a quasi-spec for validation branches, style names, aliases,
+       object-loading forms, helpers, file mapping and clear semantics.
+     - No URL move.
+   * - ``docs/source/tutorials/generation/simple_machine.fcstm`` and demo files
+     - Existing checked generation resources.
+     - Reused unchanged as the concrete example source and output evidence.
+     - No resource move.
+
+Verification note: the new ``tools/check_template_reference_docs.py --check``
+tracks hidden synchronization markers in both English and Chinese reference
+pages. It is a maintenance guard for metadata, style, helper and config-branch
+coverage; it is not a pytest unit test and may read repository template source
+metadata directly.
+
 PR-Q command, visualization, architecture, and grammar-tooling strengthening
 ----------------------------------------------------------------------------
 

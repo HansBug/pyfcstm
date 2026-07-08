@@ -41,7 +41,7 @@ from dataclasses import dataclass, field
 from fractions import Fraction
 from typing import Any, Callable, Dict, Iterable, Mapping, Optional, Sequence, Tuple
 
-from tabulate import tabulate
+from tabulate import tabulate, tabulate_formats
 import z3
 
 from pyfcstm.bmc import ast as bmc_ast
@@ -922,6 +922,10 @@ def _render_pretty_object(
 ) -> str:
     if not isinstance(tablefmt, str) or not tablefmt:
         raise BmcBuildError("tablefmt must be a non-empty string.")
+    if tablefmt not in tabulate_formats:
+        raise BmcBuildError(
+            "tablefmt must be a tabulate-supported format, got %r." % tablefmt
+        )
     kwargs = {
         "tablefmt": tablefmt,
         "verbose": verbose,
@@ -1214,6 +1218,8 @@ class BmcSolveResult(_PrettyPrintableMixin):
     :type incomplete_reason: str, optional
     :param diagnostics: Solver-level diagnostics, defaults to ``()``.
     :type diagnostics: Tuple[str, ...], optional
+    :raises pyfcstm.bmc.errors.BmcBuildError: If the solve result payload is
+        malformed.
 
     Example::
 
@@ -1352,6 +1358,7 @@ class BmcEventDecodePolicy(_PrettyPrintableMixin):
         may be added when they are required to replay a response counterexample,
         defaults to ``True``.
     :type include_property_support: bool, optional
+    :raises pyfcstm.bmc.errors.BmcBuildError: If a policy flag is malformed.
 
     Example::
 
@@ -1396,6 +1403,8 @@ class BmcWitnessEvent(_PrettyPrintableMixin):
     :type reason: str
     :param model_value: Boolean value observed in the SAT model.
     :type model_value: bool
+    :raises pyfcstm.bmc.errors.BmcBuildError: If the event payload is
+        malformed.
 
     Example::
 
@@ -1461,6 +1470,8 @@ class BmcWitnessCallRecord(_PrettyPrintableMixin):
     :param snapshot: Persistent variable snapshot before the handler call,
         defaults to ``{}``.
     :type snapshot: Mapping[str, object], optional
+    :raises pyfcstm.bmc.errors.BmcBuildError: If the call-record payload is
+        malformed.
 
     Example::
 
@@ -1536,6 +1547,8 @@ class BmcWitnessFrame(_PrettyPrintableMixin):
     :type terminated: bool
     :param vars: Persistent variable values.
     :type vars: Mapping[str, object]
+    :raises pyfcstm.bmc.errors.BmcBuildError: If the frame payload is
+        malformed.
 
     Example::
 
@@ -1567,8 +1580,16 @@ class BmcWitnessFrame(_PrettyPrintableMixin):
             raise BmcBuildError("state must be a non-empty string or None.")
         if self.sentinel not in {None, "init", "terminated"}:
             raise BmcBuildError("sentinel must be init, terminated, or None.")
+        if self.sentinel is not None and (
+            self.state_id is not None or self.state is not None
+        ):
+            raise BmcBuildError("sentinel frames must not set state_id or state.")
         if not isinstance(self.terminated, bool):
             raise BmcBuildError("terminated must be bool.")
+        if self.sentinel == "init" and self.terminated:
+            raise BmcBuildError("init sentinel frames must not be terminated.")
+        if self.sentinel == "terminated" and not self.terminated:
+            raise BmcBuildError("terminated sentinel frames must be terminated.")
         if not isinstance(self.vars, Mapping):
             raise BmcBuildError("vars must be a mapping.")
         object.__setattr__(self, "vars", dict(self.vars))
@@ -1625,6 +1646,8 @@ class BmcWitnessStep(_PrettyPrintableMixin):
     :type event_reads: Sequence[BmcWitnessEvent], optional
     :param abstract_calls: Decoded abstract-call records, defaults to ``()``.
     :type abstract_calls: Sequence[BmcWitnessCallRecord], optional
+    :raises pyfcstm.bmc.errors.BmcBuildError: If the step payload is
+        malformed.
 
     Example::
 
@@ -1741,6 +1764,8 @@ class BmcWitnessTrace(_PrettyPrintableMixin):
     :param schema_version: Witness schema version, defaults to
         ``"bmc-witness/v1"``.
     :type schema_version: str, optional
+    :raises pyfcstm.bmc.errors.BmcBuildError: If the trace payload is
+        malformed or violates public witness invariants.
 
     Example::
 
@@ -1816,6 +1841,8 @@ class BmcRuntimeFrame(_PrettyPrintableMixin):
     :type terminated: bool
     :param vars: Persistent runtime variables.
     :type vars: Mapping[str, object]
+    :raises pyfcstm.bmc.errors.BmcBuildError: If the runtime-frame payload is
+        malformed.
 
     Example::
 
@@ -1827,6 +1854,25 @@ class BmcRuntimeFrame(_PrettyPrintableMixin):
     state: Optional[str]
     terminated: bool
     vars: Mapping[str, Any]
+
+    def __post_init__(self) -> None:
+        if (
+            isinstance(self.index, bool)
+            or not isinstance(self.index, int)
+            or self.index < 0
+        ):
+            raise BmcBuildError("runtime frame index must be a non-negative integer.")
+        if self.state is not None and (
+            not isinstance(self.state, str) or not self.state
+        ):
+            raise BmcBuildError(
+                "runtime frame state must be a non-empty string or None."
+            )
+        if not isinstance(self.terminated, bool):
+            raise BmcBuildError("runtime frame terminated must be bool.")
+        if not isinstance(self.vars, Mapping):
+            raise BmcBuildError("runtime frame vars must be a mapping.")
+        object.__setattr__(self, "vars", dict(self.vars))
 
     def to_canonical(self) -> _CanonicalDict:
         """Return a JSON-stable runtime frame.
@@ -1861,6 +1907,8 @@ class BmcRuntimeStep(_PrettyPrintableMixin):
     :type unconsumed_events: Sequence[str]
     :param abstract_calls: Handler call records captured in this step.
     :type abstract_calls: Sequence[BmcWitnessCallRecord]
+    :raises pyfcstm.bmc.errors.BmcBuildError: If the runtime-step payload is
+        malformed.
 
     Example::
 
@@ -1873,6 +1921,30 @@ class BmcRuntimeStep(_PrettyPrintableMixin):
     consumed_events: Sequence[str]
     unconsumed_events: Sequence[str]
     abstract_calls: Sequence[BmcWitnessCallRecord]
+
+    def __post_init__(self) -> None:
+        if (
+            isinstance(self.index, bool)
+            or not isinstance(self.index, int)
+            or self.index < 0
+        ):
+            raise BmcBuildError("runtime step index must be a non-negative integer.")
+        if not all(isinstance(item, str) for item in self.input_events):
+            raise BmcBuildError("input_events must contain strings.")
+        if not all(isinstance(item, str) for item in self.consumed_events):
+            raise BmcBuildError("consumed_events must contain strings.")
+        if not all(isinstance(item, str) for item in self.unconsumed_events):
+            raise BmcBuildError("unconsumed_events must contain strings.")
+        if not all(
+            isinstance(item, BmcWitnessCallRecord) for item in self.abstract_calls
+        ):
+            raise BmcBuildError(
+                "abstract_calls must contain BmcWitnessCallRecord objects."
+            )
+        object.__setattr__(self, "input_events", tuple(self.input_events))
+        object.__setattr__(self, "consumed_events", tuple(self.consumed_events))
+        object.__setattr__(self, "unconsumed_events", tuple(self.unconsumed_events))
+        object.__setattr__(self, "abstract_calls", tuple(self.abstract_calls))
 
     def to_canonical(self) -> _CanonicalDict:
         """Return a JSON-stable runtime step.
@@ -1902,6 +1974,8 @@ class BmcRuntimeTrace(_PrettyPrintableMixin):
     :type frames: Sequence[BmcRuntimeFrame]
     :param steps: Runtime steps.
     :type steps: Sequence[BmcRuntimeStep]
+    :raises pyfcstm.bmc.errors.BmcBuildError: If the runtime-trace payload is
+        malformed.
 
     Example::
 
@@ -1911,6 +1985,18 @@ class BmcRuntimeTrace(_PrettyPrintableMixin):
 
     frames: Sequence[BmcRuntimeFrame]
     steps: Sequence[BmcRuntimeStep]
+
+    def __post_init__(self) -> None:
+        if not all(isinstance(item, BmcRuntimeFrame) for item in self.frames):
+            raise BmcBuildError(
+                "runtime trace frames must contain BmcRuntimeFrame objects."
+            )
+        if not all(isinstance(item, BmcRuntimeStep) for item in self.steps):
+            raise BmcBuildError(
+                "runtime trace steps must contain BmcRuntimeStep objects."
+            )
+        object.__setattr__(self, "frames", tuple(self.frames))
+        object.__setattr__(self, "steps", tuple(self.steps))
 
     def to_canonical(self) -> _CanonicalDict:
         """Return a JSON-stable runtime trace.
@@ -1943,6 +2029,8 @@ class BmcReplayMismatch(_PrettyPrintableMixin):
     :type message: str
     :param tolerance: Float tolerance used for comparison, defaults to ``None``.
     :type tolerance: float, optional
+    :raises pyfcstm.bmc.errors.BmcBuildError: If the mismatch payload is
+        malformed.
 
     Example::
 
@@ -1955,6 +2043,20 @@ class BmcReplayMismatch(_PrettyPrintableMixin):
     actual: Any
     message: str
     tolerance: Optional[float] = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.path, str) or not self.path:
+            raise BmcBuildError("mismatch path must be a non-empty string.")
+        if not isinstance(self.message, str) or not self.message:
+            raise BmcBuildError("mismatch message must be a non-empty string.")
+        if self.tolerance is not None and (
+            isinstance(self.tolerance, bool)
+            or not isinstance(self.tolerance, (int, float))
+            or self.tolerance < 0
+        ):
+            raise BmcBuildError(
+                "mismatch tolerance must be a non-negative number or None."
+            )
 
     def to_canonical(self) -> _CanonicalDict:
         """Return a JSON-stable mismatch dictionary.
@@ -1986,6 +2088,8 @@ class BmcReplayResult(_PrettyPrintableMixin):
     :type runtime_trace: BmcRuntimeTrace
     :param mismatches: Structured replay mismatches, defaults to ``()``.
     :type mismatches: Sequence[BmcReplayMismatch], optional
+    :raises pyfcstm.bmc.errors.BmcBuildError: If the replay result payload is
+        malformed.
 
     Example::
 
@@ -2685,6 +2789,8 @@ def _initial_metadata(
     formula: BmcPropertyFormula, frames: Sequence[BmcWitnessFrame]
 ) -> _CanonicalDict:
     initial = formula.core.context.bound_query.initial.source
+    if not frames:
+        raise _internal_error("Decoded witness trace has no frames.")
     first = frames[0]
     return {
         "mode": initial.mode,

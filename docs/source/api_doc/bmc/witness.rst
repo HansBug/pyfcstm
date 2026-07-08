@@ -71,28 +71,28 @@ BmcRuntimeFrame
 -----------------------------------------------------
 
 .. autoclass:: BmcRuntimeFrame
-    :members: to_canonical,index,state,terminated,vars
+    :members: __post_init__,to_canonical,index,state,terminated,vars
 
 
 BmcRuntimeStep
 -----------------------------------------------------
 
 .. autoclass:: BmcRuntimeStep
-    :members: to_canonical,index,input_events,consumed_events,unconsumed_events,abstract_calls
+    :members: __post_init__,to_canonical,index,input_events,consumed_events,unconsumed_events,abstract_calls
 
 
 BmcRuntimeTrace
 -----------------------------------------------------
 
 .. autoclass:: BmcRuntimeTrace
-    :members: to_canonical,frames,steps
+    :members: __post_init__,to_canonical,frames,steps
 
 
 BmcReplayMismatch
 -----------------------------------------------------
 
 .. autoclass:: BmcReplayMismatch
-    :members: to_canonical,path,expected,actual,message,tolerance
+    :members: __post_init__,to_canonical,path,expected,actual,message,tolerance
 
 
 BmcReplayResult

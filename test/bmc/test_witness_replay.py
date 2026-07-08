@@ -333,6 +333,29 @@ def test_replay_rejects_tampered_initial_terminated_frame_vars() -> None:
     ]
 
 
+def test_replay_rejects_forged_non_initial_init_sentinel_frames() -> None:
+    """Public frames cannot combine ``init`` sentinels with forged state fields."""
+    _model, trace = _trace(
+        """
+        state Root {
+            state A;
+            [*] -> A;
+        }
+        """,
+        'check reach <= 1: active("Root.A");',
+    )
+    with pytest.raises(BmcBuildError, match="sentinel frames"):
+        replace(trace.frames[1], sentinel="init")
+    with pytest.raises(BmcBuildError, match="init sentinel"):
+        replace(
+            trace.frames[1],
+            state_id=None,
+            state=None,
+            sentinel="init",
+            terminated=True,
+        )
+
+
 def test_replay_reports_witness_trace_shape_mismatches() -> None:
     """Replay reports corrupted step indices and frame/step linkage."""
     model, trace = _trace(

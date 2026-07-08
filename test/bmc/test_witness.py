@@ -14,6 +14,8 @@ from pyfcstm.bmc import (
     BmcEventDecodePolicy,
     BmcReplayMismatch,
     BmcReplayResult,
+    BmcRuntimeFrame,
+    BmcRuntimeStep,
     BmcRuntimeTrace,
     BmcSolveResult,
     BmcWitnessCallRecord,
@@ -412,6 +414,12 @@ def test_internal_z3_decode_guards_are_loud() -> None:
         assert "internal BMC witness consistency error" in str(error_info.value)
         assert "https://github.com/HansBug/pyfcstm/issues/new" in str(error_info.value)
 
+    _, formula = _compile("state Root;", 'check reach <= 1: active("Root");')
+    with pytest.raises(BmcBuildError, match="no frames") as error_info:
+        witness_module._initial_metadata(formula, ())
+    assert "internal BMC witness consistency error" in str(error_info.value)
+    assert "https://github.com/HansBug/pyfcstm/issues/new" in str(error_info.value)
+
 
 @pytest.mark.parametrize(
     ("factory", "message"),
@@ -484,6 +492,18 @@ def test_solve_result_rejects_invalid_public_payloads(factory, message) -> None:
         (lambda: BmcWitnessFrame(0, True, None, "init", False, {}), "state_id"),
         (lambda: BmcWitnessFrame(0, None, "", "init", False, {}), "state"),
         (lambda: BmcWitnessFrame(0, None, None, "diag", False, {}), "sentinel"),
+        (
+            lambda: BmcWitnessFrame(0, 1, None, "init", False, {}),
+            "sentinel frames",
+        ),
+        (
+            lambda: BmcWitnessFrame(0, None, "Root", "init", False, {}),
+            "sentinel frames",
+        ),
+        (
+            lambda: BmcWitnessFrame(0, None, None, "terminated", False, {}),
+            "terminated sentinel",
+        ),
         (lambda: BmcWitnessFrame(0, None, None, "init", "no", {}), "terminated"),
         (lambda: BmcWitnessFrame(0, None, None, "init", False, ()), "vars"),
         (
@@ -565,6 +585,26 @@ def test_solve_result_rejects_invalid_public_payloads(factory, message) -> None:
         (lambda: BmcWitnessTrace({}, {}, {}, (object(),), ()), "frames"),
         (lambda: BmcWitnessTrace({}, {}, {}, (), (object(),)), "steps"),
         (lambda: BmcWitnessTrace({}, {}, {}, (), (), diagnostics=(1,)), "diagnostics"),
+        (lambda: BmcRuntimeFrame(True, None, True, {}), "runtime frame index"),
+        (lambda: BmcRuntimeFrame(0, "", True, {}), "runtime frame state"),
+        (lambda: BmcRuntimeFrame(0, None, "yes", {}), "runtime frame terminated"),
+        (lambda: BmcRuntimeFrame(0, None, True, ()), "runtime frame vars"),
+        (lambda: BmcRuntimeStep(True, (), (), (), ()), "runtime step index"),
+        (lambda: BmcRuntimeStep(0, (object(),), (), (), ()), "input_events"),
+        (lambda: BmcRuntimeStep(0, (), (object(),), (), ()), "consumed_events"),
+        (lambda: BmcRuntimeStep(0, (), (), (object(),), ()), "unconsumed_events"),
+        (lambda: BmcRuntimeStep(0, (), (), (), (object(),)), "abstract_calls"),
+        (
+            lambda: BmcRuntimeTrace((object(),), ()),
+            "runtime trace frames",
+        ),
+        (
+            lambda: BmcRuntimeTrace((), (object(),)),
+            "runtime trace steps",
+        ),
+        (lambda: BmcReplayMismatch("", 1, 2, "bad"), "mismatch path"),
+        (lambda: BmcReplayMismatch("x", 1, 2, ""), "mismatch message"),
+        (lambda: BmcReplayMismatch("x", 1, 2, "bad", "wide"), "mismatch tolerance"),
         (lambda: BmcReplayResult(object(), BmcRuntimeTrace((), ())), "witness"),
         (
             lambda: BmcReplayResult(BmcWitnessTrace({}, {}, {}, (), ()), object()),

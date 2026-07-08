@@ -835,6 +835,7 @@ def test_pretty_print_truncation_and_text_validation_are_explicit(monkeypatch) -
     ("kwargs", "message"),
     [
         ({"tablefmt": ""}, "tablefmt"),
+        ({"tablefmt": "not_a_tabulate_format"}, "tablefmt"),
         ({"verbose": "yes"}, "verbose"),
         ({"show_case": 1}, "show_case"),
         ({"show_ids": 1}, "show_ids"),

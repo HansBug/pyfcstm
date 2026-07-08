@@ -3,6 +3,8 @@
 
 本教程展示从 FCSTM 模型生成 PlantUML 图源码和渲染示例的最短路径。导出任务配方请见 :doc:`/how_to/visualization/index_zh`；选项事实请见 :doc:`/reference/visualization_options/index_zh`。
 
+术语说明：图源文件（diagram source）、渲染后端（rendering backend）和本地渲染（local rendering）在本页首次交接后，后文只使用中文术语。
+
 示例状态机
 ----------
 
@@ -27,7 +29,7 @@
 渲染示例
 --------
 
-文档资源构建会把生成的 PlantUML 源码渲染为 SVG artifact：
+文档资源构建会把生成的 PlantUML 源码渲染为 SVG 产物：
 
 .. figure:: output_cli_basic.puml.svg
    :alt: CLI 基本可视化输出

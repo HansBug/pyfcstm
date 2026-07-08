@@ -48,31 +48,31 @@
      - ``python``
      - ``python.zip`` / ``python``
      - ``true``
-     - Native Python built-in template with embedded runtime logic.
+     - 内置运行时逻辑的原生 Python 内置模板。
    * - ``c``
      - C99
      - ``c``
      - ``c.zip`` / ``c``
      - ``true``
-     - Native C99 built-in template with embedded runtime logic and abstract hook callbacks.
+     - 内置运行时逻辑和抽象钩子回调的原生 C99 内置模板。
    * - ``c_poll``
      - C Poll
      - ``c``
      - ``c_poll.zip`` / ``c_poll``
      - ``true``
-     - Native C99 / C++98 built-in template with hook-polled events and embedded runtime logic.
+     - 使用钩子轮询事件并内置运行时逻辑的原生 C99 / C++98 内置模板。
    * - ``cpp``
-     - C++ Wrapper
+     - ``C++ Wrapper``
      - ``cpp``
      - ``cpp.zip`` / ``cpp``
      - ``true``
-     - Early-stage first-class C++ template that reuses the C99 runtime core and emits C++ wrapper files.
+     - 复用 C99 运行时核心并生成 C++ 包装文件的早期一等 C++ 模板。
    * - ``cpp_poll``
-     - C++ Poll Wrapper
+     - ``C++ Poll Wrapper``
      - ``cpp``
      - ``cpp_poll.zip`` / ``cpp_poll``
      - ``true``
-     - Early-stage first-class C++ poll template that reuses the C poll runtime core and emits C++ wrapper files.
+     - 复用 C 轮询运行时核心并生成 C++ 包装文件的早期一等 C++ 轮询模板。
 
 发现公开接口（API）
 ------------------------

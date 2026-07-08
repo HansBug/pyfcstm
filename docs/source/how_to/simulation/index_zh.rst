@@ -8,6 +8,8 @@
 :doc:`../../explanations/execution_semantics/index_zh`；精确命令形式、设置、导出格式和 Python 应用程序接口边界见
 :doc:`../../reference/simulation/index_zh`。
 
+术语说明：批处理模式（batch mode）、交互命令行（interactive command line）、热启动（hot start）和抽象处理器（abstract handler）在本页首次交接后，后文只使用中文术语。
+
 快速命令提醒
 ------------
 

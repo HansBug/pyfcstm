@@ -56,8 +56,7 @@ LLM 语法指南
   normalization、lifecycle action refs、abstract handler contracts 和 cycle
   boundary 行为上的语义。
 - 增加模拟器与生成运行时对齐的 semantic fixture corpus。
-- 稳定生成的 Python runtime metadata、callback rollback 行为和 expression
-  error wrapping。
+- 稳定生成的 Python 运行时元数据、回调回滚行为和表达式错误包装。
 - 打包内置模板仍通过 ``pyfcstm generate --template ...`` 使用。当前打包模板为
   ``python``、``c`` 和 ``c_poll``；VSCode 扩展有独立版本线，本 Python 包
   发布不会把 VSCode 扩展版本改为 ``0.5.0``。

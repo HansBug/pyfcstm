@@ -560,7 +560,8 @@ class BmcWitnessStep:
     :type target_frame: int
     :param case_label: Selected BMC case label.
     :type case_label: str
-    :param case_kind: Selected BMC case kind.
+    :param case_kind: Selected BMC case kind, such as ``"initial"``,
+        ``"transition"``, ``"fallback"``, ``"delta"``, or ``"absorb"``.
     :type case_kind: str
     :param progress: Replay-friendly progress classification.
     :type progress: str
@@ -1445,6 +1446,9 @@ def _response_trigger_event_paths(formula: BmcPropertyFormula) -> Tuple[str, ...
     paths = []
     for atom in _collect_event_atoms(trigger):
         if atom.selector != "current":
+            # Response replay can only synthesize current-cycle input events.
+            # Events bound to other selectors are properties of other frames or
+            # steps and must already be satisfied by the fixed witness trace.
             continue
         # Binding has already resolved the path against the domain. Re-look it
         # up here so typo-like forged objects fail loudly instead of entering
@@ -1872,6 +1876,67 @@ def _compare_calls(
             )
 
 
+def _compare_step(
+    mismatches: list[BmcReplayMismatch],
+    witness: BmcWitnessStep,
+    runtime: BmcRuntimeStep,
+) -> None:
+    if tuple(witness.input_event_paths) != tuple(runtime.input_events):
+        mismatches.append(
+            BmcReplayMismatch(
+                "steps[%d].input_events" % witness.index,
+                tuple(witness.input_event_paths),
+                tuple(runtime.input_events),
+                "input events mismatch",
+            )
+        )
+    _compare_calls(
+        mismatches, witness.index, witness.abstract_calls, runtime.abstract_calls
+    )
+
+
+def _compare_trace_shape(
+    mismatches: list[BmcReplayMismatch], witness: BmcWitnessTrace
+) -> None:
+    if witness.frames and len(witness.frames) != len(witness.steps) + 1:
+        mismatches.append(
+            BmcReplayMismatch(
+                "frames",
+                len(witness.steps) + 1,
+                len(witness.frames),
+                "frame/step length mismatch",
+            )
+        )
+    for position, step in enumerate(witness.steps):
+        if step.index != position:
+            mismatches.append(
+                BmcReplayMismatch(
+                    "steps[%d].index" % position,
+                    position,
+                    step.index,
+                    "step index mismatch",
+                )
+            )
+        if step.source_frame != position:
+            mismatches.append(
+                BmcReplayMismatch(
+                    "steps[%d].source_frame" % position,
+                    position,
+                    step.source_frame,
+                    "step source frame mismatch",
+                )
+            )
+        if step.target_frame != position + 1:
+            mismatches.append(
+                BmcReplayMismatch(
+                    "steps[%d].target_frame" % position,
+                    position + 1,
+                    step.target_frame,
+                    "step target frame mismatch",
+                )
+            )
+
+
 def _initial_runtime(
     state_machine: StateMachine, witness: BmcWitnessTrace
 ) -> Optional[SimulationRuntime]:
@@ -1939,6 +2004,7 @@ def replay_bmc_witness(
     frames = []
     steps = []
     mismatches: list[BmcReplayMismatch] = []
+    _compare_trace_shape(mismatches, witness)
     if runtime is None:
         runtime_frames = tuple(
             BmcRuntimeFrame(frame.index, None, True, dict(frame.vars))
@@ -1951,6 +2017,8 @@ def replay_bmc_witness(
         for frame in witness.frames:
             if frame.index < len(runtime_frames):
                 _compare_frame(mismatches, frame, runtime_frames[frame.index])
+        for step, runtime_step in zip(witness.steps, runtime_steps):
+            _compare_step(mismatches, step, runtime_step)
         return BmcReplayResult(witness, runtime_trace, tuple(mismatches))
     _register_recorder(runtime, recorder, abstract_handlers)
     frames.append(_runtime_frame(runtime, 0))
@@ -1982,16 +2050,7 @@ def replay_bmc_witness(
             abstract_calls=step_calls,
         )
         steps.append(runtime_step)
-        if tuple(step.input_event_paths) != tuple(result.input_events):
-            mismatches.append(
-                BmcReplayMismatch(
-                    "steps[%d].input_events" % step.index,
-                    tuple(step.input_event_paths),
-                    tuple(result.input_events),
-                    "input events mismatch",
-                )
-            )
-        _compare_calls(mismatches, step.index, step.abstract_calls, step_calls)
+        _compare_step(mismatches, step, runtime_step)
         runtime_frame = _runtime_frame(runtime, step.target_frame)
         frames.append(runtime_frame)
         if step.target_frame < len(witness.frames):

@@ -14,6 +14,7 @@ from pyfcstm.bmc import (
 )
 from pyfcstm.bmc.witness import (
     BmcWitnessCallRecord,
+    BmcWitnessEvent,
     BmcWitnessTrace,
     decode_bmc_witness,
     replay_bmc_witness,
@@ -102,6 +103,83 @@ def test_replay_handles_initial_terminated_absorb_trace() -> None:
     assert all(frame.terminated for frame in replay.runtime_trace.frames)
     assert replay.runtime_trace.frames[0].vars == {"x": 3}
     assert replay.runtime_trace.frames[-1].vars == {"x": 3}
+
+
+def test_replay_rejects_tampered_initial_terminated_step_payload() -> None:
+    """Synthetic terminated replay still compares step events and calls."""
+    model, trace = _trace(
+        """
+        def int x = 0;
+        state Root;
+        """,
+        "init terminated havoc * where x == 3;\ncheck reach <= 1: terminated();",
+    )
+    assert replay_bmc_witness(model, trace).ok is True
+    bad_step = replace(
+        trace.steps[0],
+        input_events=(BmcWitnessEvent("Root.fake", "explicit_true_assumption"),),
+        abstract_calls=(
+            BmcWitnessCallRecord(
+                0,
+                "Root.fake.Abstract",
+                "during",
+                "leaf_during",
+                "Root",
+                "Root",
+                snapshot={"x": 3},
+            ),
+        ),
+    )
+    bad_trace = BmcWitnessTrace(
+        trace.property,
+        trace.solver,
+        trace.initial,
+        trace.frames,
+        (bad_step,) + trace.steps[1:],
+        trace.diagnostics,
+    )
+
+    replay = replay_bmc_witness(model, bad_trace)
+    assert replay.ok is False
+    assert any(
+        item.path == "steps[0].input_events" and item.message == "input events mismatch"
+        for item in replay.mismatches
+    )
+    assert any(
+        item.path == "steps[0].abstract_calls"
+        and item.message == "abstract call count mismatch"
+        for item in replay.mismatches
+    )
+
+
+def test_replay_reports_witness_trace_shape_mismatches() -> None:
+    """Replay reports corrupted step indices and frame/step linkage."""
+    model, trace = _trace(
+        """
+        state Root {
+            state A;
+            [*] -> A;
+        }
+        """,
+        'check reach <= 1: active("Root.A");',
+    )
+    bad_step = replace(trace.steps[0], index=3, source_frame=2, target_frame=4)
+    bad_trace = BmcWitnessTrace(
+        trace.property,
+        trace.solver,
+        trace.initial,
+        trace.frames,
+        (bad_step,) + trace.steps,
+        trace.diagnostics,
+    )
+
+    replay = replay_bmc_witness(model, bad_trace)
+    assert replay.ok is False
+    paths = {item.path for item in replay.mismatches}
+    assert "frames" in paths
+    assert "steps[0].index" in paths
+    assert "steps[0].source_frame" in paths
+    assert "steps[0].target_frame" in paths
 
 
 def test_replay_checks_abstract_call_role_metadata() -> None:

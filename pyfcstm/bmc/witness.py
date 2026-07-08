@@ -1898,7 +1898,7 @@ def _compare_step(
 def _compare_trace_shape(
     mismatches: list[BmcReplayMismatch], witness: BmcWitnessTrace
 ) -> None:
-    if witness.frames and len(witness.frames) != len(witness.steps) + 1:
+    if len(witness.frames) != len(witness.steps) + 1:
         mismatches.append(
             BmcReplayMismatch(
                 "frames",
@@ -1907,6 +1907,16 @@ def _compare_trace_shape(
                 "frame/step length mismatch",
             )
         )
+    for position, frame in enumerate(witness.frames):
+        if frame.index != position:
+            mismatches.append(
+                BmcReplayMismatch(
+                    "frames[%d].index" % position,
+                    position,
+                    frame.index,
+                    "frame index mismatch",
+                )
+            )
     for position, step in enumerate(witness.steps):
         if step.index != position:
             mismatches.append(
@@ -2006,17 +2016,17 @@ def replay_bmc_witness(
     mismatches: list[BmcReplayMismatch] = []
     _compare_trace_shape(mismatches, witness)
     if runtime is None:
+        terminated_vars = dict(witness.frames[0].vars) if witness.frames else {}
         runtime_frames = tuple(
-            BmcRuntimeFrame(frame.index, None, True, dict(frame.vars))
-            for frame in witness.frames
+            BmcRuntimeFrame(index, None, True, dict(terminated_vars))
+            for index, _frame in enumerate(witness.frames)
         )
         runtime_steps = tuple(
             BmcRuntimeStep(step.index, (), (), (), ()) for step in witness.steps
         )
         runtime_trace = BmcRuntimeTrace(runtime_frames, runtime_steps)
-        for frame in witness.frames:
-            if frame.index < len(runtime_frames):
-                _compare_frame(mismatches, frame, runtime_frames[frame.index])
+        for frame, runtime_frame in zip(witness.frames, runtime_frames):
+            _compare_frame(mismatches, frame, runtime_frame)
         for step, runtime_step in zip(witness.steps, runtime_steps):
             _compare_step(mismatches, step, runtime_step)
         return BmcReplayResult(witness, runtime_trace, tuple(mismatches))

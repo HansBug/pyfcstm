@@ -152,6 +152,35 @@ def test_replay_rejects_tampered_initial_terminated_step_payload() -> None:
     )
 
 
+def test_replay_rejects_tampered_initial_terminated_frame_vars() -> None:
+    """Synthetic terminated replay derives absorb vars from the initial frame."""
+    model, trace = _trace(
+        """
+        def int x = 0;
+        state Root;
+        """,
+        "init terminated havoc * where x == 3;\ncheck reach <= 1: terminated();",
+    )
+    assert replay_bmc_witness(model, trace).ok is True
+    bad_frame = replace(trace.frames[1], vars={"x": 999})
+    bad_trace = BmcWitnessTrace(
+        trace.property,
+        trace.solver,
+        trace.initial,
+        (trace.frames[0], bad_frame),
+        trace.steps,
+        trace.diagnostics,
+    )
+
+    replay = replay_bmc_witness(model, bad_trace)
+    assert replay.ok is False
+    assert replay.runtime_trace.frames[1].vars == {"x": 3}
+    assert any(
+        item.path == "frames[1].vars.x" and item.message == "value mismatch"
+        for item in replay.mismatches
+    )
+
+
 def test_replay_reports_witness_trace_shape_mismatches() -> None:
     """Replay reports corrupted step indices and frame/step linkage."""
     model, trace = _trace(
@@ -164,11 +193,12 @@ def test_replay_reports_witness_trace_shape_mismatches() -> None:
         'check reach <= 1: active("Root.A");',
     )
     bad_step = replace(trace.steps[0], index=3, source_frame=2, target_frame=4)
+    bad_frame = replace(trace.frames[1], index=7)
     bad_trace = BmcWitnessTrace(
         trace.property,
         trace.solver,
         trace.initial,
-        trace.frames,
+        (trace.frames[0], bad_frame),
         (bad_step,) + trace.steps,
         trace.diagnostics,
     )
@@ -177,9 +207,29 @@ def test_replay_reports_witness_trace_shape_mismatches() -> None:
     assert replay.ok is False
     paths = {item.path for item in replay.mismatches}
     assert "frames" in paths
+    assert "frames[1].index" in paths
     assert "steps[0].index" in paths
     assert "steps[0].source_frame" in paths
     assert "steps[0].target_frame" in paths
+
+
+def test_replay_reports_empty_witness_trace_shape_mismatch() -> None:
+    """Replay rejects public traces without the required initial frame."""
+    model = load_state_machine_from_text("state Root;")
+    trace = BmcWitnessTrace(
+        {"kind": "reach"},
+        {"status": "sat"},
+        {"mode": "cold"},
+        (),
+        (),
+    )
+
+    replay = replay_bmc_witness(model, trace)
+    assert replay.ok is False
+    assert any(
+        item.path == "frames" and item.message == "frame/step length mismatch"
+        for item in replay.mismatches
+    )
 
 
 def test_replay_checks_abstract_call_role_metadata() -> None:

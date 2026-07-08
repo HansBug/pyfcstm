@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Iterable, List, Mapping, Sequence, Tuple
+from typing import Iterable, List, Sequence, Tuple
 
 import pytest
 
@@ -14,6 +14,7 @@ from pyfcstm.bmc.witness import (
     BmcRuntimeTrace,
     BmcWitnessCallRecord,
     _HandlerCallRecorder,
+    _abstract_call_role_resolver,
     _register_recorder,
     decode_bmc_witness,
     replay_bmc_witness,
@@ -51,31 +52,6 @@ def _runtime_frame(runtime, index: int) -> BmcRuntimeFrame:
     )
 
 
-def _call_value(item: Mapping[str, object], field_name: str):
-    defaults = {
-        "active_leaf": item.get("state"),
-        "call_stage": item.get("stage"),
-        "abstract_target": item.get("action"),
-        "named_ref": None,
-    }
-    return item.get(field_name, defaults.get(field_name))
-
-
-def _fixture_call_record(
-    index: int, item: Mapping[str, object]
-) -> BmcWitnessCallRecord:
-    return BmcWitnessCallRecord(
-        ordinal=index,
-        action_name=_call_value(item, "abstract_target"),
-        stage=_call_value(item, "call_stage"),
-        role="runtime_handler",
-        state=item["state"],
-        active_leaf=_call_value(item, "active_leaf"),
-        named_ref=_call_value(item, "named_ref"),
-        snapshot=dict(item.get("vars") or {}),
-    )
-
-
 def collect_simulation_trace_for_bmc_fixture(
     case,
 ) -> Tuple[BmcRuntimeTrace, Tuple[Tuple[str, ...], ...]]:
@@ -85,7 +61,7 @@ def collect_simulation_trace_for_bmc_fixture(
 
     runtime = SimulationRuntime(model, **_simulation_kwargs(case))
     _register_fixture_handlers(runtime, case)
-    recorder = _HandlerCallRecorder()
+    recorder = _HandlerCallRecorder(_abstract_call_role_resolver(model))
     _register_recorder(runtime, recorder, None)
     frames: List[BmcRuntimeFrame] = [_runtime_frame(runtime, 0)]
     steps: List[BmcRuntimeStep] = []

@@ -186,6 +186,30 @@ def test_response_trigger_support_uses_domain_order_for_disjunction() -> None:
     assert replay_bmc_witness(model, trace).ok is True
 
 
+def test_response_trigger_support_can_be_disabled_by_policy() -> None:
+    """The event policy can suppress property-support replay inputs."""
+    _, formula = _compile(
+        """
+        state Root {
+            event trigger;
+            state A;
+            [*] -> A;
+        }
+        """,
+        'init state("Root.A");\n'
+        "check response <= 1:\n"
+        '  trigger event("Root.trigger", current)\n'
+        "  -> within 1 terminated();",
+    )
+    result = solve_bmc_property(formula)
+    trace = decode_bmc_witness(
+        formula,
+        result.model,
+        event_policy=BmcEventDecodePolicy(include_property_support=False),
+    )
+    assert trace.steps[0].input_events == ()
+
+
 def test_solve_property_reports_incomplete_response_diagnostics() -> None:
     """Response objectives expose incomplete-bound solves separately."""
     _, formula = _compile(

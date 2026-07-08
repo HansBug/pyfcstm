@@ -48,7 +48,7 @@ from pyfcstm.bmc.errors import BmcBuildError
 from pyfcstm.bmc.properties import BmcPropertyFormula, _lower_predicate
 from pyfcstm.bmc.query import EventAssumption
 from pyfcstm.bmc.relation import BmcCaseRelation
-from pyfcstm.model import StateMachine
+from pyfcstm.model import OnAspect, OnStage, StateMachine
 from pyfcstm.simulate import ReadOnlyExecutionContext, SimulationRuntime
 
 try:
@@ -995,22 +995,103 @@ class BmcReplayResult:
 
 
 class _HandlerCallRecorder:
-    def __init__(self) -> None:
+    def __init__(self, role_resolver: "_AbstractCallRoleResolver") -> None:
+        self.role_resolver = role_resolver
         self.calls: list[BmcWitnessCallRecord] = []
+        self._expected_step_calls: Tuple[BmcWitnessCallRecord, ...] = ()
+        self._step_start = 0
+
+    def begin_step(self, expected_calls: Sequence[BmcWitnessCallRecord] = ()) -> None:
+        self._expected_step_calls = tuple(expected_calls)
+        self._step_start = len(self.calls)
+
+    def end_step(self) -> None:
+        self._expected_step_calls = ()
+        self._step_start = len(self.calls)
 
     def handler(self, ctx: ReadOnlyExecutionContext) -> None:
+        local_index = len(self.calls) - self._step_start
+        expected_call = (
+            self._expected_step_calls[local_index]
+            if local_index < len(self._expected_step_calls)
+            else None
+        )
+        role = self.role_resolver.resolve(ctx, expected_call)
         self.calls.append(
             BmcWitnessCallRecord(
                 ordinal=len(self.calls),
                 action_name=ctx.abstract_target or ctx.action_name,
                 stage=ctx.call_stage or ctx.action_stage,
-                role="runtime_handler",
+                role=role,
                 state=ctx.get_full_state_path(),
                 active_leaf=".".join(ctx.active_leaf or ctx.state_path),
                 named_ref=ctx.named_ref,
                 snapshot=dict(ctx.vars),
             )
         )
+
+
+class _AbstractCallRoleResolver:
+    def __init__(
+        self,
+        named_roles: Mapping[str, str],
+        context_roles: Mapping[Tuple[str, str, str], Sequence[str]],
+    ) -> None:
+        self.named_roles = dict(named_roles)
+        self.context_roles = {
+            key: tuple(values) for key, values in context_roles.items()
+        }
+
+    def resolve(
+        self,
+        ctx: ReadOnlyExecutionContext,
+        expected_call: Optional[BmcWitnessCallRecord] = None,
+    ) -> str:
+        if ctx.named_ref is not None:
+            return self._named_role(ctx.named_ref)
+        action_name = ctx.abstract_target or ctx.action_name
+        call_stage = ctx.call_stage or ctx.action_stage
+        state_path = ctx.get_full_state_path()
+        key = (action_name, call_stage, state_path)
+        if key in self.context_roles:
+            candidates = tuple(dict.fromkeys(self.context_roles[key]))
+            if len(candidates) == 1:
+                return candidates[0]
+            if (
+                expected_call is not None
+                and _call_matches_runtime_context(expected_call, ctx)
+                and expected_call.role in candidates
+            ):
+                return expected_call.role
+            raise _internal_error(
+                "Runtime abstract call %r at %s has ambiguous replay roles: %r."
+                % (action_name, state_path, candidates)
+            )
+        return self._named_role(action_name)
+
+    def _named_role(self, action_name: str) -> str:
+        try:
+            return self.named_roles[action_name]
+        except KeyError as err:
+            # KeyError: every named abstract call observed from the runtime
+            # should have a matching model action, ref callsite, or contextual
+            # unnamed-ref entry. Missing entries indicate that witness replay
+            # can no longer independently classify the call role.
+            raise _internal_error(
+                "Runtime abstract call %r has no replay role metadata." % action_name
+            ) from err
+
+
+def _call_matches_runtime_context(
+    call: BmcWitnessCallRecord, ctx: ReadOnlyExecutionContext
+) -> bool:
+    return (
+        call.action_name == (ctx.abstract_target or ctx.action_name)
+        and call.stage == (ctx.call_stage or ctx.action_stage)
+        and call.state == ctx.get_full_state_path()
+        and call.active_leaf == ".".join(ctx.active_leaf or ctx.state_path)
+        and call.named_ref == ctx.named_ref
+    )
 
 
 def _iter_actions(state_machine: StateMachine) -> Iterable[object]:
@@ -1023,6 +1104,97 @@ def _iter_actions(state_machine: StateMachine) -> Iterable[object]:
         ):
             for action in getattr(state, attr_name, ()) or ():
                 yield action
+
+
+def _role_for_action(action: object) -> Optional[str]:
+    if isinstance(action, OnAspect):
+        if action.stage == "during" and action.aspect == "before":
+            return "aspect_during_before"
+        if action.stage == "during" and action.aspect == "after":
+            return "aspect_during_after"
+        raise _internal_error(
+            "Unsupported aspect action role for %s." % action.func_name
+        )
+    if isinstance(action, OnStage):
+        if action.stage == "enter":
+            return "state_enter"
+        if action.stage == "exit":
+            return "state_exit"
+        if action.stage == "during" and action.aspect == "before":
+            return "plain_during_before"
+        if action.stage == "during" and action.aspect == "after":
+            return "plain_during_after"
+        if action.stage == "during":
+            return "leaf_during"
+        raise _internal_error(
+            "Unsupported stage action role for %s." % action.func_name
+        )
+    return None
+
+
+def _resolved_abstract_target(action: object) -> Optional[str]:
+    current = action
+    seen_ids = set()
+    while getattr(current, "ref", None) is not None:
+        current_id = id(current)
+        if current_id in seen_ids:
+            return None
+        seen_ids.add(current_id)
+        current = current.ref
+    if (
+        getattr(current, "is_abstract", False)
+        and getattr(current, "name", None) is not None
+    ):
+        return current.func_name
+    return None
+
+
+def _descendant_leaf_paths(state: object) -> Tuple[str, ...]:
+    if getattr(state, "is_leaf_state", False) and not getattr(
+        state, "is_pseudo", False
+    ):
+        return (".".join(state.path),)
+    paths = []
+    for child in getattr(state, "substates", {}).values():
+        paths.extend(_descendant_leaf_paths(child))
+    return tuple(paths)
+
+
+def _runtime_state_paths_for_action(action: object) -> Tuple[str, ...]:
+    parent = getattr(action, "parent", None)
+    if parent is None:
+        raise _internal_error("Lifecycle action %r has no parent state." % action)
+    if isinstance(action, OnAspect):
+        return _descendant_leaf_paths(parent)
+    return (".".join(parent.path),)
+
+
+def _abstract_call_role_resolver(
+    state_machine: StateMachine,
+) -> _AbstractCallRoleResolver:
+    named_roles = {}
+    context_roles: Dict[Tuple[str, str, str], list[str]] = {}
+    for action in _iter_actions(state_machine):
+        role = _role_for_action(action)
+        if role is None:
+            continue
+        if getattr(action, "name", None) is not None:
+            named_roles[action.func_name] = role
+        target = _resolved_abstract_target(action)
+        if target is None:
+            continue
+        if getattr(action, "ref", None) is None:
+            named_roles.setdefault(target, role)
+        stage = getattr(action, "stage", None)
+        if not isinstance(stage, str):
+            raise _internal_error("Lifecycle action %r has no call stage." % action)
+        for state_path in _runtime_state_paths_for_action(action):
+            context_roles.setdefault((target, stage, state_path), []).append(role)
+    return _AbstractCallRoleResolver(named_roles, context_roles)
+
+
+def _abstract_action_role_map(state_machine: StateMachine) -> Mapping[str, str]:
+    return _abstract_call_role_resolver(state_machine).named_roles
 
 
 def _iter_resolved_abstract_action_paths(
@@ -1163,10 +1335,6 @@ def _event_model_value(
     formula: BmcPropertyFormula, model: z3.ModelRef, step: int, path: str
 ) -> bool:
     return _z3_bool_value(model, formula.core.symbols.event_input(step, path))
-
-
-def _event_key(event: BmcWitnessEvent) -> Tuple[int, str, str]:
-    return (0 if event.reason != "property_support" else 1, event.path, event.reason)
 
 
 def _case_positive_events(
@@ -1622,7 +1790,14 @@ def _compare_calls(
     for call_index, (left, right) in enumerate(zip(expected, actual)):
         left_canon = left.to_canonical()
         right_canon = right.to_canonical()
-        for key in ("action_name", "stage", "state", "active_leaf", "named_ref"):
+        for key in (
+            "action_name",
+            "stage",
+            "role",
+            "state",
+            "active_leaf",
+            "named_ref",
+        ):
             if left_canon[key] != right_canon[key]:
                 mismatches.append(
                     BmcReplayMismatch(
@@ -1702,7 +1877,7 @@ def replay_bmc_witness(
     if not isinstance(witness, BmcWitnessTrace):
         raise BmcBuildError("witness must be BmcWitnessTrace.")
     runtime = _initial_runtime(state_machine, witness)
-    recorder = _HandlerCallRecorder()
+    recorder = _HandlerCallRecorder(_abstract_call_role_resolver(state_machine))
     frames = []
     steps = []
     mismatches: list[BmcReplayMismatch] = []
@@ -1725,7 +1900,9 @@ def replay_bmc_witness(
         _compare_frame(mismatches, witness.frames[0], frames[0])
     for step in witness.steps:
         before_count = len(recorder.calls)
+        recorder.begin_step(step.abstract_calls)
         result = runtime.cycle(step.input_event_paths)
+        recorder.end_step()
         step_calls = tuple(
             BmcWitnessCallRecord(
                 ordinal=idx,

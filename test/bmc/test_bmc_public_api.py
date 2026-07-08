@@ -114,6 +114,22 @@ def test_bmc_public_api_exports_exact_names():
         "build_bmc_core_formula",
         "BmcPropertyFormula",
         "compile_bmc_property",
+        "solve_bmc_property",
+        "decode_bmc_witness",
+        "replay_bmc_witness",
+        "BmcSolveStatus",
+        "BmcEventDecodePolicy",
+        "BmcSolveResult",
+        "BmcWitnessEvent",
+        "BmcWitnessCallRecord",
+        "BmcWitnessFrame",
+        "BmcWitnessStep",
+        "BmcWitnessTrace",
+        "BmcRuntimeFrame",
+        "BmcRuntimeStep",
+        "BmcRuntimeTrace",
+        "BmcReplayMismatch",
+        "BmcReplayResult",
     }
 
     assert set(bmc.__all__) == expected
@@ -164,6 +180,22 @@ def test_bmc_public_api_exports_exact_names():
         "build_bmc_core_formula",
         "BmcPropertyFormula",
         "compile_bmc_property",
+        "BmcSolveStatus",
+        "BmcEventDecodePolicy",
+        "BmcSolveResult",
+        "BmcWitnessEvent",
+        "BmcWitnessCallRecord",
+        "BmcWitnessFrame",
+        "BmcWitnessStep",
+        "BmcWitnessTrace",
+        "BmcRuntimeFrame",
+        "BmcRuntimeStep",
+        "BmcRuntimeTrace",
+        "BmcReplayMismatch",
+        "BmcReplayResult",
+        "solve_bmc_property",
+        "decode_bmc_witness",
+        "replay_bmc_witness",
     }
     function_names = {
         "parse_bmc_query",
@@ -187,6 +219,9 @@ def test_bmc_public_api_exports_exact_names():
         "prepare_bmc_query",
         "build_bmc_core_formula",
         "compile_bmc_property",
+        "solve_bmc_property",
+        "decode_bmc_witness",
+        "replay_bmc_witness",
     }
     for name in expected - lazy_names - function_names:
         assert getattr(bmc, name).__name__ == name
@@ -220,6 +255,7 @@ def test_submodule_all_exports_are_exact():
     engine = importlib.import_module("pyfcstm.bmc.engine")
     relation = importlib.import_module("pyfcstm.bmc.relation")
     properties = importlib.import_module("pyfcstm.bmc.properties")
+    witness = importlib.import_module("pyfcstm.bmc.witness")
 
     assert set(errors.__all__) == {
         "BmcError",
@@ -345,6 +381,24 @@ def test_submodule_all_exports_are_exact():
     assert set(properties.__all__) == {
         "BmcPropertyFormula",
         "compile_bmc_property",
+    }
+    assert set(witness.__all__) == {
+        "BmcSolveStatus",
+        "BmcEventDecodePolicy",
+        "BmcSolveResult",
+        "BmcWitnessEvent",
+        "BmcWitnessCallRecord",
+        "BmcWitnessFrame",
+        "BmcWitnessStep",
+        "BmcWitnessTrace",
+        "BmcRuntimeFrame",
+        "BmcRuntimeStep",
+        "BmcRuntimeTrace",
+        "BmcReplayMismatch",
+        "BmcReplayResult",
+        "solve_bmc_property",
+        "decode_bmc_witness",
+        "replay_bmc_witness",
     }
 
 

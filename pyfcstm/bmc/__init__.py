@@ -118,6 +118,18 @@ Public module structure:
      - :class:`BmcPropertyFormula`, :func:`compile_bmc_property`
      - Compile the bound query ``check`` clause into a solver objective layered
        on top of ``Core_N`` without solving or witness replay.
+   * - BMC solver and witness decoding
+     - :class:`BmcSolveResult`, :class:`BmcWitnessTrace`,
+       :class:`BmcWitnessFrame`, :class:`BmcWitnessStep`,
+       :class:`BmcWitnessEvent`, :class:`BmcWitnessCallRecord`,
+       :func:`solve_bmc_property`, :func:`decode_bmc_witness`
+     - Solve compiled property formulas and decode SAT models into
+       JSON-stable macro-step witness traces.
+   * - BMC witness replay
+     - :class:`BmcReplayResult`, :class:`BmcReplayMismatch`,
+       :func:`replay_bmc_witness`
+     - Replay decoded witnesses through ``SimulationRuntime`` and return
+       structured mismatch diagnostics.
    * - Query root model
      - :class:`InitialVariablePolicy`, :class:`InitialSpec`,
        :class:`BmcAssumption`, :class:`FrameAssumption`, :class:`EventAssumption`,
@@ -269,6 +281,25 @@ _PROPERTY_EXPORTS = {
     "compile_bmc_property",
 }
 
+_WITNESS_EXPORTS = {
+    "BmcSolveStatus",
+    "BmcEventDecodePolicy",
+    "BmcSolveResult",
+    "BmcWitnessEvent",
+    "BmcWitnessCallRecord",
+    "BmcWitnessFrame",
+    "BmcWitnessStep",
+    "BmcWitnessTrace",
+    "BmcRuntimeFrame",
+    "BmcRuntimeStep",
+    "BmcRuntimeTrace",
+    "BmcReplayMismatch",
+    "BmcReplayResult",
+    "solve_bmc_property",
+    "decode_bmc_witness",
+    "replay_bmc_witness",
+}
+
 _LAZY_EXPORT_MODULES = {
     "pyfcstm.bmc.binding": _BINDING_EXPORTS,
     "pyfcstm.bmc.domain": _DOMAIN_EXPORTS,
@@ -278,6 +309,7 @@ _LAZY_EXPORT_MODULES = {
     "pyfcstm.bmc.engine": _ENGINE_EXPORTS,
     "pyfcstm.bmc.relation": _RELATION_EXPORTS,
     "pyfcstm.bmc.properties": _PROPERTY_EXPORTS,
+    "pyfcstm.bmc.witness": _WITNESS_EXPORTS,
 }
 
 
@@ -336,6 +368,7 @@ def __dir__():
         | _ENGINE_EXPORTS
         | _RELATION_EXPORTS
         | _PROPERTY_EXPORTS
+        | _WITNESS_EXPORTS
     )
 
 
@@ -441,4 +474,20 @@ __all__ = [
     "build_bmc_core_formula",
     "BmcPropertyFormula",
     "compile_bmc_property",
+    "BmcSolveStatus",
+    "BmcEventDecodePolicy",
+    "BmcSolveResult",
+    "BmcWitnessEvent",
+    "BmcWitnessCallRecord",
+    "BmcWitnessFrame",
+    "BmcWitnessStep",
+    "BmcWitnessTrace",
+    "BmcRuntimeFrame",
+    "BmcRuntimeStep",
+    "BmcRuntimeTrace",
+    "BmcReplayMismatch",
+    "BmcReplayResult",
+    "solve_bmc_property",
+    "decode_bmc_witness",
+    "replay_bmc_witness",
 ]

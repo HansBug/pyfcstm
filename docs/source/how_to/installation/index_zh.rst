@@ -5,6 +5,10 @@
 
 当你需要在本机或持续集成（CI）运行器上得到可用的 ``pyfcstm`` 命令时使用本指南。项目支持 Python 3.7 到 3.14，所以下面的命令避免只适用于最新 Python 的假设。
 
+本页中文术语约定：一体化安装（all-in-one install）、虚拟环境（virtual environment）、可编辑安装（editable install）、
+运行依赖（runtime dependency）、文档构建（docs build）、渲染后端（rendering backend）和原生工具链（native toolchain）
+首次在这里对应英文；后文普通说明使用中文术语。命令、包名、文件路径和外部工具名称保持原文。
+
 安装包含什么
 ------------
 

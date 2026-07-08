@@ -7,6 +7,11 @@
 如果你需要按任务操作，请看 :doc:`/how_to/cli_workflows/index_zh`；如果你需要 ``plantuml`` 和
 ``visualize`` 共用的图表选项，请看 :doc:`/reference/visualization_options/index_zh`。
 
+本页中文术语约定：命令（command）、选项（option）、标准输出（stdout）、标准错误（stderr）、退出状态（exit status）、
+文件副作用（file side effect）、失败分类（failure taxonomy）、批处理（batch）、策略（policy）、渲染器（renderer）、
+后端（backend）、缓存（cache）、文件后缀（suffix）和无图形界面（headless）首次在这里对应英文；后文普通说明使用中文术语。命令、
+选项、环境变量、错误关键字和输出摘录仍保持原文，以便复制和搜索。
+
 下面的同步标记是给 ``tools/check_cli_reference_docs.py`` 使用的注释，用于让本页和 Click 命令树、
 人工确认的边界事实保持一致。
 
@@ -227,6 +232,9 @@
 * 交互模式向标准输出打印提示符和运行时信息，并等待用户命令。
 * 批处理模式向标准输出打印命令结果，脚本结束后退出。
 * 除非使用 shell 重定向，否则该命令没有文件副作用。
+* 输入、解析和模型验证失败会在进入模拟器命令层前以非零退出状态结束。
+* 批处理模式中的模拟器命令层失败（例如未知批处理命令或无法解析的事件名）目前属于转录级失败：消息打印到标准输出，
+  批处理进程仍以退出状态 ``0`` 结束。
 * 典型失败包括输入不可读、解析错误、模型验证错误、未知模拟器命令、无效事件名、无效热启动状态或变量赋值。
 
 典型例子：
@@ -521,18 +529,18 @@
      - 命令
      - 预期信号
      - 副作用或原因
-   * - Confirm the console script
+   * - 确认控制台脚本
      - ``pyfcstm --help``
-     - Help starts with Usage and lists all public commands.
-     - None
-   * - Confirm module fallback
+     - 帮助以 Usage 开头，并列出所有公开命令。
+     - 无。
+   * - 确认模块形式兜底入口
      - ``python -m pyfcstm --help``
-     - Help starts with Usage: python -m pyfcstm.
-     - None
-   * - Record version
+     - 帮助以 Usage: python -m pyfcstm 开头。
+     - 无。
+   * - 记录版本信息
      - ``pyfcstm -v``
-     - Output includes Pyfcstm, version and maintainer contact.
-     - None
+     - 输出包含 Pyfcstm、版本号和维护者联系方式。
+     - 无。
 
 .. list-table:: 失败和边界形式
    :header-rows: 1
@@ -541,18 +549,18 @@
      - 示例
      - 预期信号
      - 首要修复
-   * - Console script missing
+   * - 缺少控制台脚本
      - ``pyfcstm --help``
-     - Shell command-not-found before pyfcstm starts.
-     - Run python -m pyfcstm --help with the intended interpreter.
-   * - Unknown subcommand
+     - shell 在 pyfcstm 启动前报告命令不存在。
+     - 用目标解释器运行 python -m pyfcstm --help。
+   * - 未知子命令
      - ``pyfcstm render``
-     - Click reports no such command.
-     - Use pyfcstm --help and choose a public command.
-   * - Option on wrong command
+     - Click 报告没有这个命令。
+     - 运行 pyfcstm --help，并选择公开命令。
+   * - 选项放在错误命令层
      - ``pyfcstm --format json inspect -i machine.fcstm``
-     - Click reports unknown top-level option.
-     - Move command options after the subcommand.
+     - Click 报告未知顶层选项。
+     - 把命令选项移动到子命令后面。
 
 证据规则：
   把这些例子当成行为探针。如果实现输出变化，更新这里的短信号，并保持选项 marker checker 为绿。
@@ -567,18 +575,18 @@
      - 命令
      - 预期信号
      - 副作用或原因
-   * - Deterministic batch trace
+   * - 确定性批处理轨迹
      - ``pyfcstm simulate -i traffic_light.fcstm -e "current; cycle; current"``
-     - Transcript includes Cycle: 0, then Cycle: 1 and the active state.
-     - No file side effect.
-   * - Explicit event cycle
+     - 转录包含 Cycle: 0、随后包含 Cycle: 1 和活跃状态。
+     - 没有文件副作用。
+   * - 显式事件周期
      - ``pyfcstm simulate -i machine.fcstm -e "cycle Start; current"``
-     - Transcript records the event-bearing cycle and resulting active path.
-     - No file side effect.
-   * - Hot start
+     - 转录记录带事件的周期和结果活跃路径。
+     - 没有文件副作用。
+   * - 热启动
      - ``pyfcstm simulate -i machine.fcstm -e "init System.Active counter=10; cycle; current"``
-     - Run starts from the requested active path and variable values.
-     - No file side effect.
+     - 运行从请求的活跃路径和变量值开始。
+     - 没有文件副作用。
 
 .. list-table:: 失败和边界形式
    :header-rows: 1
@@ -587,18 +595,18 @@
      - 示例
      - 预期信号
      - 首要修复
-   * - Missing input
+   * - 缺少输入
      - ``pyfcstm simulate``
-     - Click reports Missing option '-i' / '--input-code'.
-     - Pass the DSL file with -i.
-   * - Unknown batch command
+     - Click 报告 Missing option '-i' / '--input-code'。
+     - 用 -i 传入 DSL 文件。
+   * - 未知批处理命令
      - ``pyfcstm simulate -i machine.fcstm -e "rewind"``
-     - Simulator command layer reports the unknown command.
-     - Use the simulation command reference.
-   * - Invalid hot-start values
+     - 模拟器命令层把未知命令写入转录；批处理模式进程仍以退出状态 ``0`` 结束。
+     - 查阅模拟命令参考。
+   * - 非法热启动值
      - ``pyfcstm simulate -i machine.fcstm -e "init System.Active counter=oops"``
-     - Hot-start validation rejects invalid assignments.
-     - Provide every required variable with a typed value.
+     - 热启动验证拒绝非法赋值。
+     - 为每个必需变量提供带类型含义的值。
 
 证据规则：
   把这些例子当成行为探针。如果实现输出变化，更新这里的短信号，并保持选项 marker checker 为绿。
@@ -613,22 +621,22 @@
      - 命令
      - 预期信号
      - 副作用或原因
-   * - Human report
+   * - 人类可读报告
      - ``pyfcstm inspect -i traffic_light.fcstm``
-     - Output begins with [OK] FCSTM Inspect Report and count summary.
-     - No file side effect.
-   * - JSON report
+     - 输出以 [OK] FCSTM Inspect Report 和计数摘要开头。
+     - 没有文件副作用。
+   * - JSON 报告
      - ``pyfcstm inspect -i traffic_light.fcstm --format json -o traffic_light.inspect.json``
-     - JSON includes metrics, diagnostics, states, transitions, and graph sections.
-     - Writes the requested JSON file.
-   * - LLM Markdown report
+     - JSON 包含 metrics、diagnostics、states、transitions 和图结构小节。
+     - 写出请求的 JSON 文件。
+   * - LLM Markdown 报告
      - ``pyfcstm inspect -i machine.fcstm --format llm-md -o machine.inspect.md``
-     - File contains compact repair-oriented facts and diagnostics.
-     - Writes the requested Markdown file.
-   * - Bounded verify report
+     - 文件包含面向修复的紧凑事实和诊断。
+     - 写出请求的 Markdown 文件。
+   * - 有界验证报告
      - ``pyfcstm inspect -i machine.fcstm --enable-verify --smt-timeout-ms 2000``
-     - Report includes inspect-eligible verification diagnostics.
-     - No file side effect unless -o is used.
+     - 报告包含 inspect 允许范围内的验证诊断。
+     - 除非使用 -o，否则没有文件副作用。
 
 .. list-table:: 失败和边界形式
    :header-rows: 1
@@ -637,22 +645,22 @@
      - 示例
      - 预期信号
      - 首要修复
-   * - Missing input
+   * - 缺少输入
      - ``pyfcstm inspect``
-     - Click reports Missing option '-i' / '--input-code'.
-     - Pass the DSL file explicitly.
-   * - Invalid format
+     - Click 报告 Missing option '-i' / '--input-code'。
+     - 显式传入 DSL 文件。
+   * - 非法格式
      - ``pyfcstm inspect -i machine.fcstm --format xml``
-     - Click reports xml is not one of human/json/llm-json/llm-md.
-     - Choose a documented format.
-   * - Forbidden verify policy
+     - Click 报告 xml 不是 human/json/llm-json/llm-md 之一。
+     - 选择文档列出的格式。
+   * - 被拒绝的验证策略
      - ``pyfcstm inspect -i machine.fcstm --enable-verify --max-complexity-tier bmc_search``
-     - Inspect policy rejects the expensive tier before parsing the model.
-     - Keep routine checks within allowed tiers.
-   * - Suffix mismatch warning
+     - inspect 策略在解析模型前拒绝高成本层级。
+     - 把日常检查限制在允许层级内。
+   * - 后缀不匹配警告
      - ``pyfcstm inspect -i machine.fcstm --format json -o machine.txt``
-     - Format remains json; suffix warning is informational.
-     - Use a matching suffix for clarity.
+     - 格式仍为 json；后缀警告只是提示信息。
+     - 使用匹配后缀以避免歧义。
 
 证据规则：
   把这些例子当成行为探针。如果实现输出变化，更新这里的短信号，并保持选项 marker checker 为绿。
@@ -667,18 +675,18 @@
      - 命令
      - 预期信号
      - 副作用或原因
-   * - Python built-in template
+   * - Python 内置模板
      - ``pyfcstm generate -i traffic_light.fcstm --template python -o generated/python --clear``
-     - Directory contains machine.py, README.md, README_zh.md.
-     - Clears and rewrites target directory.
-   * - C built-in template
+     - 目录包含 machine.py、README.md 和 README_zh.md。
+     - 清空并重写目标目录。
+   * - C 内置模板
      - ``pyfcstm generate -i machine.fcstm --template c -o generated/c``
-     - Directory contains C artifacts described by generated README.
-     - Writes files; does not compile.
-   * - Custom template
+     - 目录包含生成 README 说明的 C 产物。
+     - 只写文件；不编译。
+   * - 自定义模板
      - ``pyfcstm generate -i machine.fcstm -t ./templates/my_target -o generated/my_target``
-     - Files follow config.yaml and .j2 output paths.
-     - Writes custom output tree.
+     - 文件遵循 config.yaml 和 .j2 输出路径规则。
+     - 写出自定义输出树。
 
 .. list-table:: 失败和边界形式
    :header-rows: 1
@@ -687,22 +695,22 @@
      - 示例
      - 预期信号
      - 首要修复
-   * - Both template inputs
+   * - 同时给出两种模板输入
      - ``pyfcstm generate -i machine.fcstm --template python -t ./templates/python -o out``
-     - Command rejects conflicting template arguments.
-     - Use exactly one template source.
-   * - Unknown built-in template
+     - 命令拒绝冲突的模板参数。
+     - 只使用一个模板来源。
+   * - 未知内置模板
      - ``pyfcstm generate -i machine.fcstm --template ruby -o out``
-     - Template lookup reports unavailable name.
-     - Use a documented built-in name.
-   * - Dangerous clear
+     - 模板查找报告名称不可用。
+     - 使用文档列出的内置名称。
+   * - 危险清空
      - ``pyfcstm generate -i machine.fcstm --template python -o . --clear``
-     - Request is destructive even if accepted.
-     - Use a dedicated generated directory.
-   * - Broken custom template
+     - 即使命令接受，该请求也具有破坏性。
+     - 使用专门的生成目录。
+   * - 损坏的自定义模板
      - ``pyfcstm generate -i machine.fcstm -t ./broken_template -o out``
-     - Renderer reports config, import, Jinja, or filesystem error.
-     - Debug custom template before blaming DSL.
+     - 渲染器报告配置、导入、Jinja 或文件系统错误。
+     - 先调试自定义模板，再怀疑 DSL。
 
 证据规则：
   把这些例子当成行为探针。如果实现输出变化，更新这里的短信号，并保持选项 marker checker 为绿。
@@ -717,18 +725,18 @@
      - 命令
      - 预期信号
      - 副作用或原因
-   * - Write source file
+   * - 写出源码文件
      - ``pyfcstm plantuml -i traffic_light.fcstm -o traffic_light.puml``
-     - File begins with @startuml and includes the root state block.
-     - Writes requested .puml file.
-   * - Print source
+     - 文件以 @startuml 开头，并包含根状态块。
+     - 写出请求的 .puml 文件。
+   * - 打印源码
      - ``pyfcstm plantuml -i traffic_light.fcstm``
-     - stdout begins with @startuml.
-     - No file side effect unless redirected.
-   * - Dense review source
+     - 标准输出以 @startuml 开头。
+     - 除非重定向，否则没有文件副作用。
+   * - 密集审查源码
      - ``pyfcstm plantuml -i machine.fcstm -l full -c max_action_lines=3 -o machine.full.puml``
-     - Source includes allowed lifecycle/action details.
-     - Writes source only.
+     - 源码包含允许显示的生命周期/动作细节。
+     - 只写源码。
 
 .. list-table:: 失败和边界形式
    :header-rows: 1
@@ -737,18 +745,18 @@
      - 示例
      - 预期信号
      - 首要修复
-   * - Unknown config key
+   * - 未知配置键
      - ``pyfcstm plantuml -i machine.fcstm -c typo_option=true``
-     - PlantUMLOptions construction rejects the key.
-     - Use the closed option list.
-   * - Invalid typed value
+     - PlantUMLOptions 构造过程拒绝该键。
+     - 使用封闭选项列表。
+   * - 非法类型值
      - ``pyfcstm plantuml -i machine.fcstm -c max_depth=abc``
-     - Value parser reports the offending key.
-     - Use an integer or omit the option.
-   * - Expecting image output
+     - 取值解析器报告出错的键。
+     - 使用整数，或省略该选项。
+   * - 误以为会输出图片
      - ``pyfcstm plantuml -i machine.fcstm -o machine.svg``
-     - Command writes source text to that path, not SVG image data.
-     - Use visualize -t svg for rendered images.
+     - 命令向该路径写入源码文本，而不是 SVG 图片数据。
+     - 需要渲染图片时使用 visualize -t svg。
 
 证据规则：
   把这些例子当成行为探针。如果实现输出变化，更新这里的短信号，并保持选项 marker checker 为绿。
@@ -763,22 +771,22 @@
      - 命令
      - 预期信号
      - 副作用或原因
-   * - Check backend
+   * - 检查后端
      - ``pyfcstm visualize --check --renderer auto``
-     - Reports local and/or remote renderer availability.
-     - Does not parse DSL or write a diagram.
-   * - Render SVG in CI
+     - 报告本地和/或远程渲染器可用性。
+     - 不解析 DSL，也不写图表。
+   * - 在 CI 中渲染 SVG
      - ``pyfcstm visualize -i traffic_light.fcstm -t svg -o traffic_light.svg --no-open``
-     - Reports renderer and output path on success.
-     - Writes SVG file.
-   * - Force local renderer
+     - 成功时报告渲染器和输出路径。
+     - 写出 SVG 文件。
+   * - 强制本地渲染器
      - ``pyfcstm visualize -i machine.fcstm --renderer local -p ./plantuml.jar --no-open``
-     - Uses Java plus supplied PlantUML jar.
-     - Writes requested or cache output.
-   * - Force remote renderer
+     - 使用 Java 和提供的 PlantUML jar。
+     - 写出请求路径或缓存输出。
+   * - 强制远程渲染器
      - ``pyfcstm visualize -i machine.fcstm --renderer remote -r http://www.plantuml.com/plantuml --no-open``
-     - Sends generated PlantUML source to configured service.
-     - Writes rendered artifact.
+     - 把生成的 PlantUML 源码发送到配置的服务。
+     - 写出渲染产物。
 
 .. list-table:: 失败和边界形式
    :header-rows: 1
@@ -787,22 +795,22 @@
      - 示例
      - 预期信号
      - 首要修复
-   * - Suffix/type conflict
+   * - 后缀/类型冲突
      - ``pyfcstm visualize -i machine.fcstm -o diagram.svg -t png --no-open``
-     - Fails before rendering because .svg does not match png.
-     - Align suffix and --type.
-   * - Missing local jar
+     - 在渲染前失败，因为 .svg 与 png 不匹配。
+     - 对齐文件后缀和 --type。
+   * - 缺少本地 jar
      - ``pyfcstm visualize --check --renderer local``
-     - Local check names missing PlantUML jar or Java/path failure.
-     - Set PLANTUML_JAR or pass -p.
-   * - Headless open
+     - 本地检查会说明缺少 PlantUML jar，或 Java/路径失败。
+     - 设置 PLANTUML_JAR，或传入 -p。
+   * - 无图形界面打开
      - ``pyfcstm visualize -i machine.fcstm --open``
-     - Normal open is skipped in CI/headless; strict-open makes it fatal.
-     - Use --no-open for scripts.
-   * - Remote unreachable
+     - 普通打开在 CI/无图形界面中会跳过；strict-open 会让它变成致命错误。
+     - 脚本中使用 --no-open。
+   * - 远程不可达
      - ``pyfcstm visualize --check --renderer remote -r http://example.invalid/plantuml``
-     - Remote check reports backend/network failure.
-     - Fix network/host or use local.
+     - 远程检查报告后端/网络失败。
+     - 修复网络/主机，或改用本地。
 
 证据规则：
   把这些例子当成行为探针。如果实现输出变化，更新这里的短信号，并保持选项 marker checker 为绿。
@@ -1022,6 +1030,10 @@
      - 状态重名、转换无效、引用无法解析，或声明无效。
      - 模型验证诊断。
      - 渲染或生成前先修复 DSL 语义问题。
+   * - 模拟器命令层
+     - 模型加载后出现未知批处理命令或事件名。
+     - 标准输出中的转录级失败；批处理模式目前仍以退出状态 ``0`` 结束。
+     - 修正模拟器命令脚本，不要只依赖退出状态判断这类失败。
    * - 输出路径
      - 权限不足、后缀不匹配，或 ``--clear`` 指向不安全目录。
      - 写文件前或写文件时非零退出。

@@ -507,6 +507,15 @@ When a page has both English and Chinese variants, keep them synchronized in sco
 
 Chinese prose should use Chinese terms. When an English term is needed for precision, introduce it once per page in the form `中文术语（English term）`, then use the Chinese term afterwards. Use the same Chinese term for the same English concept across related pages unless a page explicitly explains why a different translation is intentional. For included fragments or shared snippets, treat the rendered page as the reader-facing boundary: the final page should introduce the term before relying on the Chinese-only form.
 
+For substantial bilingual PRs, each changed Chinese page should include an explicit terminology handoff for the core
+concepts it discusses. A compact term sentence near the top of the page is acceptable when the page covers many
+command, option, renderer, template, grammar, or diagnostics concepts. The handoff must cover the terms a reviewer would
+otherwise need to search for, such as command-facing words (for example stdout, stderr, exit status, side effect),
+visualization words (renderer, backend, cache, suffix, headless), grammar-tooling words (parser, lexer, listener,
+completion), and documentation-policy words (reference, how-to, explanation) when those concepts are central to the page.
+Do not rely on a repository-wide glossary to satisfy a per-page first-use requirement unless the page links to that
+glossary before using the term.
+
 Keep these verbatim for correctness:
 
 - code, commands, CLI output, file paths, module paths, API names, identifiers, JSON fields, diagnostic codes;

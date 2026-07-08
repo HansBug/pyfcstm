@@ -6,6 +6,10 @@
 本页是 FCSTM 语法、高亮和编辑器维护的精确地图。任务流程见 :doc:`../../how_to/grammar_editor/index_zh`；
 设计原因见 :doc:`../../explanations/grammar_tooling/index_zh`。
 
+本页中文术语约定：解析器（parser）、词法器（lexer）、监听器（listener）、生成文件（generated file）、
+语法高亮（syntax highlighting）、编辑器验证（editor validation）、验证套件（verification suite）和校验和（checksum）
+首次在这里对应英文；后文普通说明使用中文术语。ANTLR、Pygments、TextMate、VSCode、LLM、命令和路径保持原文。
+
 规范源文件和生成文件
 --------------------
 

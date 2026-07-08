@@ -1204,6 +1204,11 @@ must record the human depth review, including page-role ownership, runnable exam
 generated-resource and visual evidence, bilingual parity, and verification commands. Missing even one required item is a
 blocking defect, regardless of passing CI.
 
+Apply the whole guide as written, including newly added module-specific or language-specific rules. Do not cherry-pick
+only the convenient parts of [docs/documentation_authoring.md](docs/documentation_authoring.md): if a changed Chinese page,
+reference table, how-to task, explanation trace, generated resource, migration note, or verification record falls under a
+documented requirement, that requirement must be checked and satisfied before ready/merge.
+
 #### Documentation Structure
 
 Files in [docs/source/](docs/source/):

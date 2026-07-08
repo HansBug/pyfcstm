@@ -6,6 +6,10 @@
 当你需要图表源码或渲染后的图表文件时使用本指南。完整选项表见 :doc:`/reference/visualization_options/index_zh`。
 首次图表流程见 :doc:`/tutorials/visualization/index_zh`。
 
+本页中文术语约定：渲染器（renderer）、渲染后端（backend）、本地渲染（local rendering）、
+远程渲染（remote rendering）、缓存（cache）、文件后缀（suffix）、无图形界面（headless）、查看器（viewer）和视觉验收（visual acceptance）
+首次在这里对应英文；后文普通说明使用中文术语。命令、路径、文件类型和输出摘录保持原文。
+
 具体输入和视觉证据
 ------------------
 

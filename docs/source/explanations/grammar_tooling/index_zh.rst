@@ -6,6 +6,10 @@
 FCSTM 语法支持有意分成多层。ANTLR 定义可解析语法，监听器代码把解析树变成仓库 AST 节点，模型导入给这些节点语义，
 独立的高亮器和编辑器让同一套语法在文档和作者工具中可用。
 
+本页中文术语约定：解析器（parser）、词法器（lexer）、监听器（listener）、抽象语法树（AST）、模型导入（model import）、
+语法高亮（syntax highlighting）、编辑器工具（editor tooling）、补全（completion）、悬停说明（hover）和提示词指南（prompt guide）
+首次在这里对应英文；后文普通说明使用中文术语。ANTLR、Pygments、TextMate、VSCode、LLM、命令和文件路径保持原文。
+
 为什么一个语法变化会触及多层
 ----------------------------
 

@@ -6,6 +6,10 @@
 当你需要一组可重复命令时使用本指南。本页假设 pyfcstm 已经安装；如果尚未安装，请先看
 :doc:`/how_to/installation/index_zh`。精确选项和失败边界请查 :doc:`/reference/cli/index_zh`。
 
+本页中文术语约定：命令（command）、标准输出（stdout）、标准错误（stderr）、退出状态（exit status）、
+文件副作用（file side effect）、批处理（batch）、渲染器（renderer）、后端（backend）和第一排查步骤（first troubleshooting step）
+首次在这里对应英文；后文普通说明使用中文术语。命令行文本、路径和输出摘录保持原文。
+
 本页使用的具体示例
 ------------------
 
@@ -362,7 +366,11 @@ CI 或无图形界面环境中渲染时不要启动查看器：
      status: ok
      root: TrafficLight
      states: 4 total / 3 leaf
+     transitions: 4
+     variables: 1
      diagnostics: 0 errors / 0 warnings / 0 infos
+
+   No diagnostics.
 
 Python 生成输出目录至少应有下面的形状：
 
@@ -404,8 +412,12 @@ PlantUML 源码是文本，不是图片：
      - 先修命令语法，再调模型。
    * - 可视化后缀不匹配。
      - ``pyfcstm visualize -i traffic_light.fcstm -o traffic_light.svg -t png --no-open``
-     - 输出说明后缀 ``.svg`` 不匹配 ``png``。
+     - 输出说明 ``Output file suffix '.svg' does not match render type 'png'.``。
      - 先修输出命名，再调 PlantUML。
+   * - 模拟器命令层失败。
+     - ``pyfcstm simulate -i traffic_light.fcstm -e "rewind"``
+     - 转录显示 ``Unknown command: rewind``，但批处理模式仍以退出状态 ``0`` 结束。
+     - 把转录当作失败信号，并修正模拟器命令脚本。
    * - 渲染器可用性。
      - ``pyfcstm visualize --check --renderer local``
      - 本地不可用时报告缺少 Java、PlantUML jar 或后端失败。

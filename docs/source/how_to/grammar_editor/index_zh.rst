@@ -6,6 +6,10 @@
 当你修改 FCSTM 语法、高亮或编辑器支持时使用本指南。精确文件地图和命令列表见
 :doc:`../../reference/grammar_tooling/index_zh`；设计原因见 :doc:`../../explanations/grammar_tooling/index_zh`。
 
+本页中文术语约定：解析器（parser）、监听器（listener）、词法器（lexer）、语法高亮（syntax highlighting）、
+补全（completion）、悬停说明（hover）、片段（snippet）和验证套件（verification suite）首次在这里对应英文；后文普通说明使用中文术语。ANTLR、
+Pygments、TextMate、VSCode、LLM、命令和文件路径保持原文。
+
 先判断修改类型
 --------------
 

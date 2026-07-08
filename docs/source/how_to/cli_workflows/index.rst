@@ -387,7 +387,11 @@ Inspect human output for the same clean model is intentionally compact:
      status: ok
      root: TrafficLight
      states: 4 total / 3 leaf
+     transitions: 4
+     variables: 1
      diagnostics: 0 errors / 0 warnings / 0 infos
+
+   No diagnostics.
 
 A generated Python output directory should have this minimum shape:
 
@@ -429,8 +433,12 @@ Use these probes when a workflow fails and you need to locate the layer quickly:
      - Fix command syntax before debugging the model.
    * - Visualization suffix mismatch.
      - ``pyfcstm visualize -i traffic_light.fcstm -o traffic_light.svg -t png --no-open``
-     - Output says suffix ``.svg`` does not match ``png``.
+     - Output says ``Output file suffix '.svg' does not match render type 'png'.``
      - Fix output naming before debugging PlantUML.
+   * - Simulator command-layer failure.
+     - ``pyfcstm simulate -i traffic_light.fcstm -e "rewind"``
+     - Transcript says ``Unknown command: rewind`` while batch mode still exits with status ``0``.
+     - Treat the transcript as the failure signal and fix the simulator command script.
    * - Renderer availability.
      - ``pyfcstm visualize --check --renderer local``
      - Reports missing Java, PlantUML jar, or backend failure when local rendering is unavailable.

@@ -6,6 +6,10 @@
 pyfcstm 围绕模型中心流水线组织。领域特定语言（DSL）文本先变成解析器节点，解析器节点再变成语义状态机模型，之后模型可以被模拟、
 检查、在有界策略内验证、可视化，或渲染为目标语言代码。
 
+本页中文术语约定：流水线（pipeline）、解析器（parser）、语义模型（semantic model）、诊断（diagnostics）、
+验证（verification）、渲染器（renderer）、模板（template）、生成运行时（generated runtime）和证据边界（evidence boundary）
+首次在这里对应英文；后文普通说明使用中文术语。模块路径、命令、DSL、AST、LLM 和文件格式保持原文。
+
 主流水线
 --------
 

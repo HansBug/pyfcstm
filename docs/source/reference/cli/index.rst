@@ -247,6 +247,12 @@ Output and failure facts:
 * Batch mode prints the command results to standard output and returns after
   the script finishes.
 * The command has no file side effects unless invoked from shell redirection.
+* Input, parse, and model-validation failures exit non-zero before the
+  simulator command layer runs.
+* Simulator command-layer failures in batch mode, such as an unknown batch
+  command or an unresolvable event name, are transcript-level failures today:
+  they are printed to standard output and the batch process still exits with
+  status ``0``.
 * Typical failures are unreadable input, parse errors, model validation errors,
   unknown simulator commands, invalid event names, or invalid hot-start state
   and variable assignments.
@@ -638,7 +644,7 @@ Evidence rule:
      - Pass the DSL file with -i.
    * - Unknown batch command
      - ``pyfcstm simulate -i machine.fcstm -e "rewind"``
-     - Simulator command layer reports the unknown command.
+     - Simulator command layer prints the unknown command in the transcript; batch mode still exits with status ``0``.
      - Use the simulation command reference.
    * - Invalid hot-start values
      - ``pyfcstm simulate -i machine.fcstm -e "init System.Active counter=oops"``
@@ -1064,6 +1070,10 @@ Failure taxonomy
      - Duplicate state names, invalid transitions, unresolved refs, or invalid declarations.
      - Model validation diagnostics.
      - Fix semantic issues in the DSL before rendering/generation.
+   * - Simulator command layer
+     - Unknown batch command or event name after the model has loaded.
+     - Transcript-level failure on standard output; batch mode currently exits with status ``0``.
+     - Fix the simulator command script and do not rely on exit status alone for these failures.
    * - Output path
      - Permission denied, suffix mismatch, or unsafe ``--clear`` target.
      - Non-zero exit before or during file write.

@@ -7,6 +7,11 @@
 源码后停止；``visualize`` 使用同一份源码配置，然后通过 PlantUML 后端渲染图片或 PDF。任务流程请看
 :doc:`/how_to/visualization/index_zh`，精确选项事实请查本页。
 
+本页中文术语约定：渲染器（renderer）、渲染后端（backend）、本地渲染（local rendering）、
+远程渲染（remote rendering）、缓存（cache）、文件后缀（suffix）、无图形界面（headless）、查看器（viewer）、
+隐私边界（privacy boundary）和选项解析（option parsing）首次在这里对应英文；后文普通说明使用中文术语。命令、字段名、
+环境变量、枚举值和错误摘录仍保持原文。
+
 下面的同步标记是给 ``tools/check_visualization_reference_docs.py`` 使用的注释，覆盖每个 ``PlantUMLOptions`` 字段，
 以及命令行渲染器、文件类型、环境变量、解析器和失败边界事实。
 
@@ -308,22 +313,22 @@ PlantUML 选项字段
      - 命令
      - 预期效果
      - 选择规则
-   * - Minimal structure review
+   * - 最小结构审查
      - ``pyfcstm plantuml -i machine.fcstm -l minimal -o machine.min.puml``
-     - Shows hierarchy, variables, transition guards/effects, and events; hides lifecycle action text and pseudo-state styling.
-     - Use for architecture discussion where implementation bodies would distract.
-   * - Normal documentation view
+     - 显示层级、变量、转换保护条件/效果和事件；隐藏生命周期动作文本和伪状态样式。
+     - 用于架构讨论，避免实现体分散注意力。
+   * - 普通文档视图
      - ``pyfcstm plantuml -i machine.fcstm -l normal -o machine.normal.puml``
-     - Adds pseudo-state styling while keeping lifecycle actions hidden.
-     - Use for most documentation and review snippets.
-   * - Full semantic review
+     - 增加伪状态样式，同时隐藏生命周期动作。
+     - 用于大多数文档和审查片段。
+   * - 完整语义审查
      - ``pyfcstm plantuml -i machine.fcstm -l full -o machine.full.puml``
-     - Shows lifecycle action families and concrete/abstract action visibility controlled by the detail preset.
-     - Use for semantic review, generated-runtime alignment, or debugging.
-   * - Override after preset
+     - 显示生命周期动作族，以及由细节预设控制的具体/抽象动作可见性。
+     - 用于语义审查、生成运行时对齐或调试。
+   * - 预设后覆盖
      - ``pyfcstm plantuml -i machine.fcstm -l minimal -c show_lifecycle_actions=true -o machine.min-actions.puml``
-     - Explicit value wins over preset defaults.
-     - Use sparingly when a mostly minimal diagram needs one semantic dimension.
+     - 显式值优先于预设默认值。
+     - 仅在最小图需要补一个语义维度时少量使用。
 
 审查说明：
   如果命令改变源码可见性，检查生成的 ``.puml``。如果命令改变渲染行为，检查 ``visualize --check`` 或渲染产物路径。
@@ -338,22 +343,22 @@ PlantUML 选项字段
      - 命令
      - 预期效果
      - 选择规则
-   * - Legend variables
+   * - 图例变量
      - ``pyfcstm plantuml -i machine.fcstm -c variable_display_mode=legend -o machine.vars.puml``
-     - Variable definitions render in a PlantUML legend.
-     - Good when variables are global context for the whole diagram.
-   * - Hide variables
+     - 变量定义渲染在 PlantUML 图例中。
+     - 适合变量是整张图全局上下文的情况。
+   * - 隐藏变量
      - ``pyfcstm plantuml -i machine.fcstm -c variable_display_mode=hide -o machine.no-vars.puml``
-     - Variable inventory is removed from the source.
-     - Good for structure-only diagrams.
-   * - Dual state labels
+     - 变量清单会从源码中移除。
+     - 适合只展示结构的图。
+   * - 双状态标签
      - ``pyfcstm plantuml -i machine.fcstm -c state_name_format=extra_name,name -o machine.labels.puml``
-     - State labels include both readable extra name and raw model name.
-     - Good when generated identifiers and DSL names both matter.
-   * - Collapsed depth
+     - 状态标签同时包含可读额外名称和原始模型名。
+     - 适合生成标识符和 DSL 名称都重要的情况。
+   * - 折叠深度
      - ``pyfcstm plantuml -i machine.fcstm -c max_depth=2 -c collapsed_state_marker="[more]" -o machine.depth.puml``
-     - Descendants beyond depth are replaced by the marker.
-     - Good for large hierarchical models.
+     - 超过深度的后代会被标记替代。
+     - 适合大型层级模型。
 
 审查说明：
   如果命令改变源码可见性，检查生成的 ``.puml``。如果命令改变渲染行为，检查 ``visualize --check`` 或渲染产物路径。
@@ -368,22 +373,22 @@ PlantUML 选项字段
      - 命令
      - 预期效果
      - 选择规则
-   * - Master lifecycle switch
+   * - 生命周期总开关
      - ``pyfcstm plantuml -i machine.fcstm -c show_lifecycle_actions=true -o machine.lifecycle.puml``
-     - Enter, during, exit, aspect, abstract, and concrete action families inherit visible defaults.
-     - Use when lifecycle ordering is part of review.
-   * - Only abstract hooks
+     - enter、during、exit、切面、抽象和具体动作族继承可见性默认值。
+     - 用于生命周期顺序属于审查内容的情况。
+   * - 只看抽象钩子
      - ``pyfcstm plantuml -i machine.fcstm -c show_lifecycle_actions=false -c show_abstract_actions=true -o machine.hooks.puml``
-     - Abstract extension points remain visible while concrete bodies stay hidden.
-     - Use for integration-surface reviews.
-   * - Limit action text
+     - 抽象扩展点保持可见，具体动作体保持隐藏。
+     - 用于集成表面审查。
+   * - 限制动作文本
      - ``pyfcstm plantuml -i machine.fcstm -l full -c max_action_lines=3 -o machine.short-actions.puml``
-     - Long action bodies are clipped after the configured line count.
-     - Use when full diagrams become too tall.
-   * - Aspect-only review
+     - 长动作体会在配置行数后截断。
+     - 用于完整图过高的情况。
+   * - 只审查切面
      - ``pyfcstm plantuml -i machine.fcstm -c show_lifecycle_actions=false -c show_aspect_actions=true -o machine.aspects.puml``
-     - Descendant-cycle before/after aspects are visible without other lifecycle bodies.
-     - Use when reviewing cross-cutting behavior.
+     - 后代周期 before/after 切面可见，其他生命周期体隐藏。
+     - 用于审查横切行为。
 
 审查说明：
   如果命令改变源码可见性，检查生成的 ``.puml``。如果命令改变渲染行为，检查 ``visualize --check`` 或渲染产物路径。
@@ -398,22 +403,22 @@ PlantUML 选项字段
      - 命令
      - 预期效果
      - 选择规则
-   * - Hide guards
+   * - 隐藏保护条件
      - ``pyfcstm plantuml -i machine.fcstm -c show_transition_guards=false -o machine.no-guards.puml``
-     - Transition labels omit guard conditions.
-     - Use only when guards are not relevant to the audience.
-   * - Inline effects
+     - 转换标签省略保护条件。
+     - 仅在保护条件与读者无关时使用。
+   * - 内联效果
      - ``pyfcstm plantuml -i machine.fcstm -c transition_effect_mode=inline -o machine.inline-effects.puml``
-     - Transition effects appear compactly on the transition instead of note blocks.
-     - Use for small effect bodies.
-   * - Event legend
+     - 转换效果紧凑显示在转换上，而不是注释块中。
+     - 用于较短的效果体。
+   * - 事件图例
      - ``pyfcstm plantuml -i machine.fcstm -c event_visualization_mode=legend -o machine.event-legend.puml``
-     - Events get a legend without coloring transitions.
-     - Use when event names repeat often.
-   * - Event colors and legend
+     - 事件进入图例，但不为转换着色。
+     - 用于事件名频繁重复的情况。
+   * - 事件颜色和图例
      - ``pyfcstm plantuml -i machine.fcstm -c event_visualization_mode=both -o machine.event-colors.puml``
-     - Events are colored and listed in the legend.
-     - Use for event-flow diagrams.
+     - 事件会被着色并列入图例。
+     - 用于事件流图。
 
 审查说明：
   如果命令改变源码可见性，检查生成的 ``.puml``。如果命令改变渲染行为，检查 ``visualize --check`` 或渲染产物路径。
@@ -428,22 +433,22 @@ PlantUML 选项字段
      - 命令
      - 预期效果
      - 选择规则
-   * - Source-only export
+   * - 只导出源码
      - ``pyfcstm plantuml -i machine.fcstm -o machine.puml``
-     - No renderer is checked or used.
-     - Safe even when Java or network rendering is unavailable.
-   * - Backend check
+     - 不检查也不使用渲染器。
+     - 即使 Java 或网络渲染不可用也安全。
+   * - 后端检查
      - ``pyfcstm visualize --check --renderer auto``
-     - Reports local and remote availability and exits without parsing DSL.
-     - Use before CI rendering jobs.
-   * - Cache output
+     - 报告本地和远程可用性，并在不解析 DSL 的情况下退出。
+     - 在 CI 渲染任务前使用。
+   * - 缓存输出
      - ``pyfcstm visualize -i machine.fcstm --no-open``
-     - Writes to the pyfcstm visualize cache when -o is omitted.
-     - Use only for local preview, not reproducible build outputs.
-   * - Strict open
+     - 省略 -o 时写入 pyfcstm visualize 缓存。
+     - 仅用于本地预览，不用于可复现构建输出。
+   * - 严格打开
      - ``pyfcstm visualize -i machine.fcstm --strict-open``
-     - Viewer launch failure becomes command failure.
-     - Use only for desktop workflows that require opening the image.
+     - 查看器启动失败会变成命令失败。
+     - 只用于必须打开图片的桌面工作流。
 
 审查说明：
   如果命令改变源码可见性，检查生成的 ``.puml``。如果命令改变渲染行为，检查 ``visualize --check`` 或渲染产物路径。
@@ -458,22 +463,22 @@ PlantUML 选项字段
      - 命令
      - 预期效果
      - 选择规则
-   * - Unknown field
+   * - 未知字段
      - ``pyfcstm plantuml -i machine.fcstm -c does_not_exist=true``
-     - Fails because the key is not a PlantUMLOptions field.
-     - Check the complete field table.
-   * - Wrong integer
+     - 失败原因是该键不是 PlantUMLOptions 字段。
+     - 检查完整字段表。
+   * - 错误整数
      - ``pyfcstm plantuml -i machine.fcstm -c max_depth=abc``
-     - Fails because max_depth expects an integer or None.
-     - Use a number such as 2.
-   * - Wrong render type suffix
+     - 失败原因是 max_depth 需要整数或 None。
+     - 使用 2 这样的数字。
+   * - 错误渲染类型后缀
      - ``pyfcstm visualize -i machine.fcstm -o machine.svg -t png --no-open``
-     - Fails before rendering because suffix and type disagree.
-     - Use -o machine.png or -t svg.
-   * - Private source over remote
+     - 在渲染前失败，因为后缀和类型不一致。
+     - 使用 -o machine.png 或 -t svg。
+   * - 私有源码走远程
      - ``pyfcstm visualize -i private.fcstm --renderer remote --no-open``
-     - This may succeed but sends PlantUML source to a service.
-     - Use local rendering for private diagrams.
+     - 这可能成功，但会把 PlantUML 源码发送给服务。
+     - 私有图使用本地渲染。
 
 审查说明：
   如果命令改变源码可见性，检查生成的 ``.puml``。如果命令改变渲染行为，检查 ``visualize --check`` 或渲染产物路径。
@@ -495,17 +500,17 @@ PlantUML 选项字段
      - 解析含义
      - 读者可见结果
    * - ``-l minimal``
-     - lifecycle parent and child switches resolve false.
-     - lifecycle text is hidden.
+     - 生命周期父开关和子开关解析为 false。
+     - 生命周期文本隐藏。
    * - ``-l full``
-     - lifecycle parent and child switches resolve true.
-     - enter/during/exit/aspect/abstract/concrete actions are visible unless another option hides them.
+     - 生命周期父开关和子开关解析为 true。
+     - 除非其他选项隐藏，enter/during/exit/切面/抽象/具体动作都可见。
    * - ``-l full -c show_concrete_actions=false``
-     - concrete body visibility is explicitly false; other full preset action groups remain visible.
-     - abstract hooks can remain visible while implementation bodies are hidden.
+     - 具体动作体可见性显式为 false；其他 full 预设动作组保持可见。
+     - 抽象钩子可以保持可见，同时隐藏实现体。
    * - ``-c show_lifecycle_actions=false -c show_enter_actions=true``
-     - explicit child switch overrides explicit parent switch for enter actions.
-     - enter actions are visible even though other lifecycle groups remain hidden.
+     - 对 enter 动作来说，显式子开关覆盖显式父开关。
+     - 即使其他生命周期组保持隐藏，enter 动作仍可见。
 
 
 中文说明

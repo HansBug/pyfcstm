@@ -34,11 +34,14 @@ Example::
 
 from __future__ import annotations
 
+import io
+import sys
 import time
 from dataclasses import dataclass, field
 from fractions import Fraction
 from typing import Any, Callable, Dict, Iterable, Mapping, Optional, Sequence, Tuple
 
+from tabulate import tabulate
 import z3
 
 from pyfcstm.bmc import ast as bmc_ast
@@ -60,6 +63,34 @@ _CanonicalDict = Dict[str, Any]
 BmcSolveStatus = Literal["sat", "unsat", "unknown", "timeout"]
 _INTERNAL_ISSUE_URL = "https://github.com/HansBug/pyfcstm/issues/new"
 _REPLAY_FLOAT_TOLERANCE = 1e-9
+_PRETTY_STR_MAX_ROWS = 50
+_MARKDOWN_TABLE_FORMATS = {"github"}
+_EVENT_REASON_PRIORITY = {
+    "explicit_true_assumption": 0,
+    "property_support": 1,
+    "case_positive": 2,
+    "negative_case_read": 3,
+    "explicit_false_assumption": 4,
+    "model_debug": 5,
+}
+_EVENT_REASON_TAGS = {
+    "case_positive": "case",
+    "explicit_true_assumption": "assume",
+    "property_support": "prop",
+    "negative_case_read": "read=false",
+    "explicit_false_assumption": "assume=false",
+    "model_debug": "debug",
+}
+_REPLAY_EVENT_REASONS = {
+    "case_positive",
+    "explicit_true_assumption",
+    "property_support",
+}
+_PRETTY_EXTRA_LEGEND = (
+    "extra: I=initial D=delta G=gamma T=terminated N=rows truncated "
+    "V=vars hidden E=events truncated C=calls truncated "
+    "W=cell width truncated P=full path unavailable R=hidden event reads"
+)
 
 
 def _internal_error(message: str) -> BmcBuildError:
@@ -67,6 +98,1002 @@ def _internal_error(message: str) -> BmcBuildError:
         "%s This is an internal BMC witness consistency error; please open an "
         "issue with a reproducer: %s" % (message, _INTERNAL_ISSUE_URL)
     )
+
+
+def _validate_pretty_choice(name: str, value: str, choices: Sequence[str]) -> None:
+    if value not in choices:
+        raise BmcBuildError(
+            "%s must be one of %s." % (name, ", ".join(repr(item) for item in choices))
+        )
+
+
+def _validate_optional_non_negative_int(name: str, value: Optional[int]) -> None:
+    if value is not None and (
+        isinstance(value, bool) or not isinstance(value, int) or value < 0
+    ):
+        raise BmcBuildError("%s must be a non-negative integer or None." % name)
+
+
+def _validate_optional_positive_int(name: str, value: Optional[int]) -> None:
+    if value is not None and (
+        isinstance(value, bool) or not isinstance(value, int) or value <= 0
+    ):
+        raise BmcBuildError("%s must be a positive integer or None." % name)
+
+
+def _format_scalar(value: Any) -> str:
+    if value is None:
+        return "-"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, Mapping):
+        return _format_mapping_inline(value)
+    if isinstance(value, (list, tuple)):
+        if not value:
+            return "-"
+        return ", ".join(_format_scalar(item) for item in value)
+    return str(value)
+
+
+def _format_mapping_inline(value: Mapping[str, Any]) -> str:
+    if not value:
+        return "-"
+    return ", ".join(
+        "%s=%s" % (key, _format_scalar(item))
+        for key, item in sorted(value.items(), key=lambda pair: pair[0])
+    )
+
+
+def _format_path(path: str, mode: str) -> str:
+    if mode == "short":
+        return path.rsplit(".", 1)[-1]
+    return path
+
+
+def _join_cell_lines(lines: Sequence[str], tablefmt: str) -> str:
+    cleaned = [line if line else "-" for line in lines]
+    if not cleaned:  # pragma: no cover - public renderers do not pass empty cells here.
+        return "-"
+    if tablefmt in _MARKDOWN_TABLE_FORMATS:
+        return "<br>".join(cleaned)
+    return "\n".join(cleaned)
+
+
+def _limit_text_line(line: str, max_cell_width: Optional[int]) -> Tuple[str, bool]:
+    if max_cell_width is None or len(line) <= max_cell_width:
+        return line, False
+    if max_cell_width <= 1:
+        return "…", True
+    return line[: max_cell_width - 1] + "…", True
+
+
+def _limited_cell(
+    lines: Sequence[str],
+    tablefmt: str,
+    max_items: Optional[int] = None,
+    max_cell_width: Optional[int] = 72,
+    truncation_marker: Optional[str] = None,
+) -> Tuple[str, Tuple[str, ...]]:
+    markers = []
+    selected = list(lines)
+    if max_items is not None and len(selected) > max_items:
+        hidden_count = len(selected) - max_items
+        selected = selected[:max_items] + ["… (+%d more)" % hidden_count]
+        if truncation_marker is not None:
+            markers.append(truncation_marker)
+    width_limited = []
+    width_truncated = False
+    for line in selected:
+        limited, truncated = _limit_text_line(line, max_cell_width)
+        width_limited.append(limited)
+        width_truncated = width_truncated or truncated
+    if width_truncated:
+        markers.append("W")
+    return _join_cell_lines(width_limited, tablefmt), tuple(markers)
+
+
+def _state_label(frame_or_state: Any) -> str:
+    if isinstance(frame_or_state, BmcWitnessFrame):
+        if frame_or_state.state is not None:
+            return frame_or_state.state
+        if frame_or_state.sentinel is not None:
+            return frame_or_state.sentinel
+        return "-"
+    if isinstance(frame_or_state, BmcRuntimeFrame):
+        if frame_or_state.state is not None:
+            return frame_or_state.state
+        if frame_or_state.terminated:
+            return "terminated"
+        return "-"
+    if frame_or_state is None:  # pragma: no cover - defensive for malformed traces.
+        return "-"
+    return str(frame_or_state)
+
+
+def _via_text(
+    source: Any,
+    target: Any,
+    via_mode: str,
+    tablefmt: str,
+    max_cell_width: Optional[int],
+    terminated_absorb: bool = False,
+) -> Tuple[str, Tuple[str, ...]]:
+    if terminated_absorb:
+        return "-", ()
+    source_text = _state_label(source)
+    target_text = _state_label(target)
+    if source_text == "-" and target_text == "-":
+        return "-", ()
+    endpoint = "%s --> %s" % (source_text, target_text)
+    markers = []
+    if via_mode == "full":
+        markers.append("P")
+    cell, width_markers = _limited_cell(
+        (endpoint,), tablefmt, max_cell_width=max_cell_width
+    )
+    markers.extend(width_markers)
+    return cell, tuple(markers)
+
+
+def _merge_event_reasons(
+    events: Sequence["BmcWitnessEvent"],
+) -> Tuple["BmcWitnessEvent", ...]:
+    by_path: Dict[str, BmcWitnessEvent] = {}
+    order = []
+    for event in events:
+        if event.path not in by_path:
+            by_path[event.path] = event
+            order.append(event.path)
+            continue
+        current = by_path[event.path]
+        if (
+            _EVENT_REASON_PRIORITY[event.reason]
+            < _EVENT_REASON_PRIORITY[current.reason]
+        ):
+            by_path[event.path] = event
+    return tuple(by_path[path] for path in order)
+
+
+def _event_display(event: "BmcWitnessEvent", event_reason: str) -> str:
+    tag = _EVENT_REASON_TAGS[event.reason]
+    if event_reason == "always":
+        return "%s[%s]" % (event.path, tag)
+    if event_reason == "never" and event.reason in _REPLAY_EVENT_REASONS:
+        return event.path
+    if event_reason == "never":
+        return "%s[%s]" % (event.path, tag)
+    if event.reason == "case_positive":
+        return event.path
+    return "%s[%s]" % (event.path, tag)
+
+
+def _event_cell(
+    input_events: Sequence["BmcWitnessEvent"],
+    event_reads: Sequence["BmcWitnessEvent"],
+    events_mode: str,
+    event_reason: str,
+    tablefmt: str,
+    max_events: Optional[int],
+    max_cell_width: Optional[int],
+) -> Tuple[str, Tuple[str, ...]]:
+    if events_mode == "none":
+        return "-", ()
+    if events_mode == "input":
+        events = tuple(
+            event for event in input_events if event.reason in _REPLAY_EVENT_REASONS
+        )
+    else:
+        events = tuple(input_events) + tuple(event_reads)
+    lines = [
+        _event_display(event, event_reason) for event in _merge_event_reasons(events)
+    ]
+    if not lines:
+        return "-", ()
+    return _limited_cell(
+        lines,
+        tablefmt,
+        max_items=max_events,
+        max_cell_width=max_cell_width,
+        truncation_marker="E",
+    )
+
+
+def _runtime_event_cell(
+    input_events: Sequence[str],
+    unconsumed_events: Sequence[str],
+    events_mode: str,
+    tablefmt: str,
+    max_events: Optional[int],
+    max_cell_width: Optional[int],
+) -> Tuple[str, Tuple[str, ...]]:
+    if events_mode == "none" or not input_events:
+        return "-", ()
+    unconsumed = set(unconsumed_events)
+    lines = [
+        "%s[unconsumed]" % event if event in unconsumed else str(event)
+        for event in input_events
+    ]
+    return _limited_cell(
+        lines,
+        tablefmt,
+        max_items=max_events,
+        max_cell_width=max_cell_width,
+        truncation_marker="E",
+    )
+
+
+def _call_summary_lines(
+    calls: Sequence["BmcWitnessCallRecord"], call_path: str
+) -> Tuple[str, ...]:
+    counts: Dict[str, int] = {}
+    order = []
+    for call in calls:
+        if call.action_name not in counts:
+            counts[call.action_name] = 0
+            order.append(call.action_name)
+        counts[call.action_name] += 1
+    return tuple(
+        "%s(%d)" % (_format_path(action_name, call_path), counts[action_name])
+        for action_name in order
+    )
+
+
+def _call_expanded_line(
+    call: "BmcWitnessCallRecord", call_path: str, call_details: str
+) -> str:
+    fields = []
+    if call_details == "full":
+        fields.extend(
+            [
+                ("stage", call.stage),
+                ("role", call.role),
+                ("state", call.state),
+                ("active", call.active_leaf),
+            ]
+        )
+        if call.named_ref is not None:
+            fields.append(("named_ref", call.named_ref))
+    else:
+        fields.append(("state", call.state))
+    for key in sorted(call.snapshot):
+        fields.append((key, call.snapshot[key]))
+    detail = ", ".join("%s=%s" % (key, _format_scalar(value)) for key, value in fields)
+    return "%s{%s}" % (_format_path(call.action_name, call_path), detail)
+
+
+def _call_cell(
+    calls: Sequence["BmcWitnessCallRecord"],
+    calls_mode: str,
+    call_path: str,
+    call_details: str,
+    tablefmt: str,
+    max_call_groups: Optional[int],
+    max_cell_width: Optional[int],
+) -> Tuple[str, Tuple[str, ...]]:
+    if calls_mode == "none" or not calls:
+        return "-", ()
+    if calls_mode == "summary":
+        lines = _call_summary_lines(calls, call_path)
+    else:
+        lines = tuple(
+            _call_expanded_line(call, call_path, call_details) for call in calls
+        )
+    return _limited_cell(
+        lines,
+        tablefmt,
+        max_items=max_call_groups,
+        max_cell_width=max_cell_width,
+        truncation_marker="C",
+    )
+
+
+def _ordered_var_names(
+    frames: Sequence[Any], vars_order: str, max_var_columns: Optional[int]
+) -> Tuple[Tuple[str, ...], bool]:
+    names = []
+    seen = set()
+    for frame in frames:
+        for name in getattr(frame, "vars", {}):
+            if name not in seen:
+                names.append(name)
+                seen.add(name)
+    if vars_order == "alpha":
+        names = sorted(names)
+    hidden = max_var_columns is not None and len(names) > max_var_columns
+    if hidden:
+        names = names[:max_var_columns]
+    return tuple(names), hidden
+
+
+def _tabulate_table(
+    rows: Sequence[Sequence[Any]], headers: Sequence[str], tablefmt: str
+) -> str:
+    return tabulate(
+        rows,
+        headers=headers,
+        tablefmt=tablefmt,
+        disable_numparse=True,
+    )
+
+
+def _format_extra(markers: Sequence[str]) -> str:
+    ordered = []
+    for marker in ("I", "D", "G", "T", "N", "V", "E", "C", "W", "P", "R"):
+        if marker in markers and marker not in ordered:
+            ordered.append(marker)
+    return "".join(ordered) if ordered else "-"
+
+
+def _trace_preamble(trace: "BmcWitnessTrace") -> str:
+    kind = trace.property.get("kind", "property")
+    bound = trace.property.get("bound")
+    status = trace.solver.get("status", "-")
+    if bound is None:
+        spec = str(kind)
+    else:
+        spec = "%s<=%s" % (kind, bound)
+    return "BmcWitnessTrace[%s, %s] frames=%d steps=%d" % (
+        spec,
+        status,
+        len(trace.frames),
+        len(trace.steps),
+    )
+
+
+def _runtime_trace_preamble(trace: "BmcRuntimeTrace") -> str:
+    return "BmcRuntimeTrace frames=%d steps=%d" % (len(trace.frames), len(trace.steps))
+
+
+def _coerce_pretty_options(
+    verbose: bool,
+    events_mode: str,
+    event_reason: str,
+    calls_mode: str,
+    call_details: str,
+    via_mode: str,
+    show_case: bool,
+    show_ids: bool,
+    show_legend: bool,
+) -> Tuple[str, str, str, str, str, bool, bool, bool]:
+    if not isinstance(verbose, bool):
+        raise BmcBuildError("verbose must be bool.")
+    if not isinstance(show_case, bool):
+        raise BmcBuildError("show_case must be bool.")
+    if not isinstance(show_ids, bool):
+        raise BmcBuildError("show_ids must be bool.")
+    if not isinstance(show_legend, bool):
+        raise BmcBuildError("show_legend must be bool.")
+    if verbose:
+        return "all", "always", "expanded", "full", "full", True, True, True
+    return (
+        events_mode,
+        event_reason,
+        calls_mode,
+        call_details,
+        via_mode,
+        show_case,
+        show_ids,
+        show_legend,
+    )
+
+
+def _render_witness_trace(
+    trace: "BmcWitnessTrace",
+    *,
+    tablefmt: str,
+    verbose: bool,
+    max_rows: Optional[int],
+    max_events: Optional[int],
+    max_call_groups: Optional[int],
+    max_cell_width: Optional[int],
+    max_var_columns: Optional[int],
+    vars_order: str,
+    events_mode: str,
+    event_reason: str,
+    calls_mode: str,
+    call_path: str,
+    call_details: str,
+    via_mode: str,
+    show_case: bool,
+    show_ids: bool,
+    show_legend: bool,
+) -> str:
+    (
+        events_mode,
+        event_reason,
+        calls_mode,
+        call_details,
+        via_mode,
+        show_case,
+        show_ids,
+        show_legend,
+    ) = _coerce_pretty_options(
+        verbose,
+        events_mode,
+        event_reason,
+        calls_mode,
+        call_details,
+        via_mode,
+        show_case,
+        show_ids,
+        show_legend,
+    )
+    _validate_trace_pretty_options(
+        max_rows,
+        max_events,
+        max_call_groups,
+        max_cell_width,
+        max_var_columns,
+        vars_order,
+        events_mode,
+        event_reason,
+        calls_mode,
+        call_path,
+        call_details,
+        via_mode,
+    )
+    var_names, hidden_vars = _ordered_var_names(
+        trace.frames, vars_order, max_var_columns
+    )
+    headers = ["frame"]
+    if show_ids:
+        headers.extend(["step", "source_frame", "target_frame", "case_kind"])
+    if show_case:
+        headers.append("case")
+    headers.extend(["via", "state", "progress"])
+    headers.extend("[%s]" % name for name in var_names)
+    headers.extend(["events", "calls", "extra"])
+    rows = []
+    for frame in trace.frames:
+        step = next(
+            (item for item in trace.steps if item.target_frame == frame.index), None
+        )
+        markers = []
+        if frame.index == 0:
+            via = "-"
+            progress = "initial"
+            events = "-"
+            calls = "-"
+            markers.append("I")
+        elif step is None:
+            via = "-"
+            progress = "frame"
+            events = "-"
+            calls = "-"
+        else:
+            via, via_markers = _via_text(
+                step.source_state,
+                step.target_state,
+                via_mode,
+                tablefmt,
+                max_cell_width,
+                terminated_absorb=frame.terminated and step.case_kind == "absorb",
+            )
+            markers.extend(via_markers)
+            progress, progress_markers = _limited_cell(
+                (step.progress,), tablefmt, max_cell_width=max_cell_width
+            )
+            markers.extend(progress_markers)
+            events, event_markers = _event_cell(
+                step.input_events,
+                step.event_reads,
+                events_mode,
+                event_reason,
+                tablefmt,
+                max_events,
+                max_cell_width,
+            )
+            markers.extend(event_markers)
+            calls, call_markers = _call_cell(
+                step.abstract_calls,
+                calls_mode,
+                call_path,
+                call_details,
+                tablefmt,
+                max_call_groups,
+                max_cell_width,
+            )
+            markers.extend(call_markers)
+            if step.delta:
+                markers.append("D")
+            if step.gamma:
+                markers.append("G")
+            if step.event_reads and events_mode == "input":
+                markers.append("R")
+        if frame.terminated:
+            markers.append("T")
+        if hidden_vars:
+            markers.append("V")
+        row = [str(frame.index)]
+        if show_ids:
+            if step is None:
+                row.extend(["-", "-", "-", "-"])
+            else:
+                row.extend(
+                    [
+                        str(step.index),
+                        str(step.source_frame),
+                        str(step.target_frame),
+                        step.case_kind,
+                    ]
+                )
+        if show_case:
+            row.append(step.case_label if step is not None else "-")
+        state, state_markers = _limited_cell(
+            (_state_label(frame),), tablefmt, max_cell_width=max_cell_width
+        )
+        markers.extend(state_markers)
+        row.extend([via, state, progress])
+        for name in var_names:
+            value, var_markers = _limited_cell(
+                (_format_scalar(frame.vars.get(name)),),
+                tablefmt,
+                max_cell_width=max_cell_width,
+            )
+            markers.extend(var_markers)
+            row.append(value)
+        row.extend([events, calls, _format_extra(markers)])
+        rows.append(row)
+    rows = _limit_rows(rows, max_rows, len(headers))
+    parts = [_trace_preamble(trace), "", _tabulate_table(rows, headers, tablefmt)]
+    if show_legend:
+        parts.extend(["", _PRETTY_EXTRA_LEGEND])
+    return "\n".join(parts)
+
+
+def _limit_rows(
+    rows: Sequence[Sequence[str]], max_rows: Optional[int], width: int
+) -> Sequence[Sequence[str]]:
+    if max_rows is None or len(rows) <= max_rows:
+        return rows
+    hidden = len(rows) - max_rows
+    truncated = [list(row) for row in rows[:max_rows]]
+    marker_row = ["-"] * width
+    marker_row[0] = "…"
+    if width >= 4:
+        marker_row[3] = "… (+%d more rows)" % hidden
+    else:  # pragma: no cover - all public trace tables have at least four columns.
+        marker_row[-1] = "… (+%d more rows)" % hidden
+    marker_row[-1] = _format_extra(("N",))
+    truncated.append(marker_row)
+    return truncated
+
+
+def _validate_trace_pretty_options(
+    max_rows: Optional[int],
+    max_events: Optional[int],
+    max_call_groups: Optional[int],
+    max_cell_width: Optional[int],
+    max_var_columns: Optional[int],
+    vars_order: str,
+    events_mode: str,
+    event_reason: str,
+    calls_mode: str,
+    call_path: str,
+    call_details: str,
+    via_mode: str,
+) -> None:
+    _validate_optional_non_negative_int("max_rows", max_rows)
+    _validate_optional_non_negative_int("max_events", max_events)
+    _validate_optional_non_negative_int("max_call_groups", max_call_groups)
+    _validate_optional_positive_int("max_cell_width", max_cell_width)
+    _validate_optional_non_negative_int("max_var_columns", max_var_columns)
+    _validate_pretty_choice("vars_order", vars_order, ("domain", "alpha"))
+    _validate_pretty_choice("events_mode", events_mode, ("input", "all", "none"))
+    _validate_pretty_choice("event_reason", event_reason, ("auto", "always", "never"))
+    _validate_pretty_choice("calls_mode", calls_mode, ("none", "summary", "expanded"))
+    _validate_pretty_choice("call_path", call_path, ("full", "short"))
+    _validate_pretty_choice("call_details", call_details, ("state_vars", "full"))
+    _validate_pretty_choice("via_mode", via_mode, ("endpoint", "full"))
+
+
+def _render_runtime_trace(
+    trace: "BmcRuntimeTrace",
+    *,
+    tablefmt: str,
+    verbose: bool,
+    max_rows: Optional[int],
+    max_events: Optional[int],
+    max_call_groups: Optional[int],
+    max_cell_width: Optional[int],
+    max_var_columns: Optional[int],
+    vars_order: str,
+    events_mode: str,
+    event_reason: str,
+    calls_mode: str,
+    call_path: str,
+    call_details: str,
+    via_mode: str,
+    show_case: bool,
+    show_ids: bool,
+    show_legend: bool,
+) -> str:
+    (
+        events_mode,
+        event_reason,
+        calls_mode,
+        call_details,
+        via_mode,
+        show_case,
+        show_ids,
+        show_legend,
+    ) = _coerce_pretty_options(
+        verbose,
+        events_mode,
+        event_reason,
+        calls_mode,
+        call_details,
+        via_mode,
+        show_case,
+        show_ids,
+        show_legend,
+    )
+    _validate_trace_pretty_options(
+        max_rows,
+        max_events,
+        max_call_groups,
+        max_cell_width,
+        max_var_columns,
+        vars_order,
+        events_mode,
+        event_reason,
+        calls_mode,
+        call_path,
+        call_details,
+        via_mode,
+    )
+    var_names, hidden_vars = _ordered_var_names(
+        trace.frames, vars_order, max_var_columns
+    )
+    headers = ["frame"]
+    if show_ids:
+        headers.append("step")
+    headers.extend(["via", "state", "progress"])
+    headers.extend("[%s]" % name for name in var_names)
+    headers.extend(["events", "calls", "extra"])
+    rows = []
+    for frame in trace.frames:
+        step = (
+            trace.steps[frame.index - 1]
+            if 0 < frame.index <= len(trace.steps)
+            else None
+        )
+        markers = []
+        if frame.index == 0:
+            via = "-"
+            progress = "initial"
+            events = "-"
+            calls = "-"
+            markers.append("I")
+        elif step is None:
+            via = "-"
+            progress = "runtime_frame"
+            events = "-"
+            calls = "-"
+        else:
+            source = (
+                trace.frames[frame.index - 1]
+                if frame.index - 1 < len(trace.frames)
+                else None
+            )
+            via, via_markers = _via_text(
+                source,
+                frame,
+                via_mode,
+                tablefmt,
+                max_cell_width,
+                terminated_absorb=frame.terminated
+                and getattr(source, "terminated", False),
+            )
+            markers.extend(via_markers)
+            progress = "runtime_step"
+            events, event_markers = _runtime_event_cell(
+                step.input_events,
+                step.unconsumed_events,
+                events_mode,
+                tablefmt,
+                max_events,
+                max_cell_width,
+            )
+            markers.extend(event_markers)
+            if step.unconsumed_events:
+                markers.append("R")
+            calls, call_markers = _call_cell(
+                step.abstract_calls,
+                calls_mode,
+                call_path,
+                call_details,
+                tablefmt,
+                max_call_groups,
+                max_cell_width,
+            )
+            markers.extend(call_markers)
+        if frame.terminated:
+            markers.append("T")
+        if hidden_vars:
+            markers.append("V")
+        row = [str(frame.index)]
+        if show_ids:
+            row.append(str(step.index) if step is not None else "-")
+        state, state_markers = _limited_cell(
+            (_state_label(frame),), tablefmt, max_cell_width=max_cell_width
+        )
+        markers.extend(state_markers)
+        row.extend([via, state, progress])
+        for name in var_names:
+            value, var_markers = _limited_cell(
+                (_format_scalar(frame.vars.get(name)),),
+                tablefmt,
+                max_cell_width=max_cell_width,
+            )
+            markers.extend(var_markers)
+            row.append(value)
+        row.extend([events, calls, _format_extra(markers)])
+        rows.append(row)
+    rows = _limit_rows(rows, max_rows, len(headers))
+    parts = [
+        _runtime_trace_preamble(trace),
+        "",
+        _tabulate_table(rows, headers, tablefmt),
+    ]
+    if show_legend:
+        parts.extend(["", _PRETTY_EXTRA_LEGEND])
+    return "\n".join(parts)
+
+
+def _render_replay_result(result: "BmcReplayResult", **kwargs: Any) -> str:
+    trace_text = _render_runtime_trace(result.runtime_trace, **kwargs)
+    status = "ok" if result.ok else "mismatch"
+    parts = [
+        "BmcReplayResult[%s] mismatches=%d" % (status, len(result.mismatches)),
+        "",
+        trace_text,
+    ]
+    if result.mismatches:
+        parts.append("")
+        for mismatch in result.mismatches:
+            parts.append(
+                "MISMATCH %s: %s != %s"
+                % (
+                    mismatch.path,
+                    _format_scalar(mismatch.expected),
+                    _format_scalar(mismatch.actual),
+                )
+            )
+    return "\n".join(parts)
+
+
+def _canonical_for_pretty(obj: Any) -> Mapping[str, Any]:
+    if isinstance(obj, BmcSolveResult):
+        return obj.to_canonical()
+    if isinstance(obj, BmcEventDecodePolicy):
+        return {
+            "include_debug_reads": obj.include_debug_reads,
+            "include_property_support": obj.include_property_support,
+        }
+    if isinstance(obj, BmcWitnessEvent):
+        return obj.to_canonical()
+    if isinstance(obj, BmcWitnessCallRecord):
+        return obj.to_canonical()
+    if isinstance(obj, BmcWitnessFrame):
+        return obj.to_canonical()
+    if isinstance(obj, BmcWitnessStep):
+        return obj.to_canonical()
+    if isinstance(obj, BmcRuntimeFrame):
+        return obj.to_canonical()
+    if isinstance(obj, BmcRuntimeStep):
+        return obj.to_canonical()
+    if isinstance(obj, BmcReplayMismatch):
+        return obj.to_canonical()
+    return {"value": obj}  # pragma: no cover - mixin is only used by known classes.
+
+
+def _render_field_value_object(obj: Any, tablefmt: str) -> str:
+    rows = []
+    for key, value in _canonical_for_pretty(obj).items():
+        if key == "node":
+            continue
+        rows.append((key, _format_scalar(value)))
+    return "\n".join(
+        [
+            obj.__class__.__name__,
+            _tabulate_table(rows, ("field", "value"), tablefmt),
+        ]
+    )
+
+
+def _render_pretty_object(
+    obj: Any,
+    *,
+    tablefmt: str,
+    verbose: bool,
+    max_rows: Optional[int],
+    max_events: Optional[int],
+    max_call_groups: Optional[int],
+    max_cell_width: Optional[int],
+    max_var_columns: Optional[int],
+    vars_order: str,
+    events_mode: str,
+    event_reason: str,
+    calls_mode: str,
+    call_path: str,
+    call_details: str,
+    via_mode: str,
+    show_case: bool,
+    show_ids: bool,
+    show_legend: bool,
+) -> str:
+    if not isinstance(tablefmt, str) or not tablefmt:
+        raise BmcBuildError("tablefmt must be a non-empty string.")
+    kwargs = {
+        "tablefmt": tablefmt,
+        "verbose": verbose,
+        "max_rows": max_rows,
+        "max_events": max_events,
+        "max_call_groups": max_call_groups,
+        "max_cell_width": max_cell_width,
+        "max_var_columns": max_var_columns,
+        "vars_order": vars_order,
+        "events_mode": events_mode,
+        "event_reason": event_reason,
+        "calls_mode": calls_mode,
+        "call_path": call_path,
+        "call_details": call_details,
+        "via_mode": via_mode,
+        "show_case": show_case,
+        "show_ids": show_ids,
+        "show_legend": show_legend,
+    }
+    if isinstance(obj, BmcWitnessTrace):
+        return _render_witness_trace(obj, **kwargs)
+    if isinstance(obj, BmcRuntimeTrace):
+        return _render_runtime_trace(obj, **kwargs)
+    if isinstance(obj, BmcReplayResult):
+        return _render_replay_result(obj, **kwargs)
+    return _render_field_value_object(obj, tablefmt)
+
+
+class _PrettyPrintableMixin:
+    def pretty_print(
+        self,
+        *,
+        file: Optional[Any] = None,
+        tablefmt: str = "simple",
+        verbose: bool = False,
+        max_rows: Optional[int] = None,
+        max_events: Optional[int] = 6,
+        max_call_groups: Optional[int] = 6,
+        max_cell_width: Optional[int] = 72,
+        max_var_columns: Optional[int] = None,
+        vars_order: str = "domain",
+        events_mode: str = "input",
+        event_reason: str = "auto",
+        calls_mode: str = "summary",
+        call_path: str = "full",
+        call_details: str = "state_vars",
+        via_mode: str = "endpoint",
+        show_case: bool = False,
+        show_ids: bool = False,
+        show_legend: bool = True,
+        end: str = "\n",
+    ) -> None:
+        """Print a human-readable representation.
+
+        :param file: File-like object to write to, defaults to ``sys.stdout``.
+        :type file: object, optional
+        :param tablefmt: ``tabulate`` table format, defaults to ``"simple"``.
+        :type tablefmt: str, optional
+        :param verbose: Whether to enable the verbose audit view, defaults to
+            ``False``.
+        :type verbose: bool, optional
+        :param max_rows: Maximum trace rows to show, defaults to ``None``.
+        :type max_rows: int, optional
+        :param max_events: Maximum event lines per step, defaults to ``6``.
+        :type max_events: int, optional
+        :param max_call_groups: Maximum call lines per step, defaults to ``6``.
+        :type max_call_groups: int, optional
+        :param max_cell_width: Maximum logical cell-line width, defaults to
+            ``72``.
+        :type max_cell_width: int, optional
+        :param max_var_columns: Maximum variable columns, defaults to ``None``.
+        :type max_var_columns: int, optional
+        :param vars_order: Variable column order, defaults to ``"domain"``.
+        :type vars_order: str, optional
+        :param events_mode: Event display mode, defaults to ``"input"``.
+        :type events_mode: str, optional
+        :param event_reason: Event reason tag mode, defaults to ``"auto"``.
+        :type event_reason: str, optional
+        :param calls_mode: Abstract-call display mode, defaults to
+            ``"summary"``.
+        :type calls_mode: str, optional
+        :param call_path: Abstract-call path display mode, defaults to
+            ``"full"``.
+        :type call_path: str, optional
+        :param call_details: Expanded call detail mode, defaults to
+            ``"state_vars"``.
+        :type call_details: str, optional
+        :param via_mode: Transition path display mode, defaults to
+            ``"endpoint"``.
+        :type via_mode: str, optional
+        :param show_case: Whether to show selected BMC case labels, defaults to
+            ``False``.
+        :type show_case: bool, optional
+        :param show_ids: Whether to show debug id columns, defaults to
+            ``False``.
+        :type show_ids: bool, optional
+        :param show_legend: Whether to append the ``extra`` legend, defaults to
+            ``True``.
+        :type show_legend: bool, optional
+        :param end: String appended after output, defaults to a newline.
+        :type end: str, optional
+        :return: ``None``.
+        :rtype: None
+
+        Example::
+
+            >>> BmcWitnessEvent('Root.Go', 'case_positive').to_text().splitlines()[0]
+            'BmcWitnessEvent'
+        """
+        if file is None:
+            file = sys.stdout
+        if not isinstance(end, str):
+            raise BmcBuildError("end must be str.")
+        text = _render_pretty_object(
+            self,
+            tablefmt=tablefmt,
+            verbose=verbose,
+            max_rows=max_rows,
+            max_events=max_events,
+            max_call_groups=max_call_groups,
+            max_cell_width=max_cell_width,
+            max_var_columns=max_var_columns,
+            vars_order=vars_order,
+            events_mode=events_mode,
+            event_reason=event_reason,
+            calls_mode=calls_mode,
+            call_path=call_path,
+            call_details=call_details,
+            via_mode=via_mode,
+            show_case=show_case,
+            show_ids=show_ids,
+            show_legend=show_legend,
+        )
+        file.write(text)
+        file.write(end)
+
+    def to_text(self, **kwargs: Any) -> str:
+        """Return a human-readable representation as text.
+
+        :param kwargs: Pretty-print options except ``file`` and ``end``.
+        :type kwargs: object
+        :return: Rendered text.
+        :rtype: str
+        :raises pyfcstm.bmc.errors.BmcBuildError: If ``file`` or ``end`` is
+            passed to this string-returning helper.
+
+        Example::
+
+            >>> BmcWitnessEvent('Root.Go', 'case_positive').to_text().startswith('BmcWitnessEvent')
+            True
+        """
+        if "file" in kwargs or "end" in kwargs:
+            raise BmcBuildError("to_text does not accept file or end.")
+        buffer = io.StringIO()
+        self.pretty_print(file=buffer, end="", **kwargs)
+        return buffer.getvalue()
+
+    def __str__(self) -> str:
+        """Return the default terminal-friendly representation.
+
+        :return: Rendered text.
+        :rtype: str
+
+        Example::
+
+            >>> str(BmcWitnessEvent('Root.Go', 'case_positive')).splitlines()[0]
+            'BmcWitnessEvent'
+        """
+        return self.to_text(max_rows=_PRETTY_STR_MAX_ROWS)
 
 
 def _require_formula(formula: object) -> BmcPropertyFormula:
@@ -153,7 +1180,7 @@ def _solve(
 
 
 @dataclass(frozen=True)
-class BmcSolveResult:
+class BmcSolveResult(_PrettyPrintableMixin):
     """Structured result for one BMC property solve.
 
     The raw Z3 models are intentionally kept as Python attributes rather than
@@ -308,7 +1335,7 @@ class BmcSolveResult:
 
 
 @dataclass(frozen=True)
-class BmcEventDecodePolicy:
+class BmcEventDecodePolicy(_PrettyPrintableMixin):
     """Policy for decoding sparse replay events from a SAT model.
 
     The default policy emits the canonical replay-minimal event set plus debug
@@ -341,7 +1368,7 @@ class BmcEventDecodePolicy:
 
 
 @dataclass(frozen=True)
-class BmcWitnessEvent:
+class BmcWitnessEvent(_PrettyPrintableMixin):
     """Replay input event decoded for one BMC step.
 
     :param path: Fully qualified event path.
@@ -395,7 +1422,7 @@ class BmcWitnessEvent:
 
 
 @dataclass(frozen=True)
-class BmcWitnessCallRecord:
+class BmcWitnessCallRecord(_PrettyPrintableMixin):
     """Decoded abstract-call occurrence for one selected macro-step case.
 
     :param ordinal: Call ordinal within the selected case.
@@ -475,7 +1502,7 @@ class BmcWitnessCallRecord:
 
 
 @dataclass(frozen=True)
-class BmcWitnessFrame:
+class BmcWitnessFrame(_PrettyPrintableMixin):
     """Decoded public frame in a BMC witness trace.
 
     :param index: Frame index.
@@ -549,7 +1576,7 @@ class BmcWitnessFrame:
 
 
 @dataclass(frozen=True)
-class BmcWitnessStep:
+class BmcWitnessStep(_PrettyPrintableMixin):
     """Decoded macro-step witness entry.
 
     :param index: Step index.
@@ -677,7 +1704,7 @@ class BmcWitnessStep:
 
 
 @dataclass(frozen=True)
-class BmcWitnessTrace:
+class BmcWitnessTrace(_PrettyPrintableMixin):
     """Decoded BMC witness trace.
 
     :param property: Property metadata.
@@ -759,7 +1786,7 @@ class BmcWitnessTrace:
 
 
 @dataclass(frozen=True)
-class BmcRuntimeFrame:
+class BmcRuntimeFrame(_PrettyPrintableMixin):
     """Runtime frame captured during witness replay.
 
     :param index: Frame index.
@@ -802,7 +1829,7 @@ class BmcRuntimeFrame:
 
 
 @dataclass(frozen=True)
-class BmcRuntimeStep:
+class BmcRuntimeStep(_PrettyPrintableMixin):
     """Runtime step captured during witness replay.
 
     :param index: Step index.
@@ -849,7 +1876,7 @@ class BmcRuntimeStep:
 
 
 @dataclass(frozen=True)
-class BmcRuntimeTrace:
+class BmcRuntimeTrace(_PrettyPrintableMixin):
     """Runtime replay trace.
 
     :param frames: Runtime frames.
@@ -884,7 +1911,7 @@ class BmcRuntimeTrace:
 
 
 @dataclass(frozen=True)
-class BmcReplayMismatch:
+class BmcReplayMismatch(_PrettyPrintableMixin):
     """Structured replay mismatch.
 
     :param path: Dotted or indexed mismatch path.
@@ -931,7 +1958,7 @@ class BmcReplayMismatch:
 
 
 @dataclass(frozen=True)
-class BmcReplayResult:
+class BmcReplayResult(_PrettyPrintableMixin):
     """Result of replaying a BMC witness through ``SimulationRuntime``.
 
     :param witness: Witness that was replayed.

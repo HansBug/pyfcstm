@@ -13,7 +13,7 @@ Markers are Sphinx-safe comment-shaped lines.  Each marker must fit on one
 physical line and start with ``.. `` followed by an unregistered marker name::
 
     .. visualization-ref-field: name=show_events default=None
-    .. visualization-ref-preset: name=normal defaults=show_events=True,show_pseudo_state_style=True
+    .. visualization-ref-preset: name=normal defaults=show_variable_definitions=True,show_pseudo_state_style=True,show_lifecycle_actions=False,show_enter_actions=False,show_during_actions=False,show_exit_actions=False,show_aspect_actions=False,show_abstract_actions=False,show_concrete_actions=False,show_transition_guards=True,show_transition_effects=True,show_events=True
     .. visualization-ref-renderer: name=auto
     .. visualization-ref-boundary: renderer-auto-fallback suffix-mismatch check-mode
 
@@ -22,8 +22,9 @@ Unknown marker groups, missing required keys, malformed tokens, and unknown
 optional keys are reported as documentation errors.  Boundary and parser-form
 markers carry flag tokens after the required key when a group represents a set.
 
-Markers prove fact inventory coverage; they do not replace review of examples,
-prose depth, or target-language diagrams.
+Preset defaults cover every optional boolean display switch resolved by
+``PlantUMLOptions.to_config()``.  Markers prove fact inventory coverage; they do
+not replace review of examples, prose depth, or target-language diagrams.
 """
 
 from __future__ import annotations
@@ -61,11 +62,17 @@ _MARKER_SCHEMAS = {
 _VISUALIZE_COMMAND = pyfcstmcli.commands["visualize"]
 _PRESET_FIELDS = (
     "show_variable_definitions",
+    "show_pseudo_state_style",
     "show_lifecycle_actions",
+    "show_enter_actions",
+    "show_during_actions",
+    "show_exit_actions",
+    "show_aspect_actions",
+    "show_abstract_actions",
+    "show_concrete_actions",
     "show_transition_guards",
     "show_transition_effects",
     "show_events",
-    "show_pseudo_state_style",
 )
 _EXPECTED_PRESETS = frozenset(("minimal", "normal", "full"))
 _EXPECTED_PARSER_FORMS = frozenset(

@@ -38,9 +38,9 @@
 .. visualization-ref-field: name=use_skinparam default=True
 .. visualization-ref-field: name=use_stereotypes default=True
 .. visualization-ref-field: name=custom_colors default=None
-.. visualization-ref-preset: name=minimal defaults=show_variable_definitions=True,show_lifecycle_actions=False,show_transition_guards=True,show_transition_effects=True,show_events=True,show_pseudo_state_style=False
-.. visualization-ref-preset: name=normal defaults=show_variable_definitions=True,show_lifecycle_actions=False,show_transition_guards=True,show_transition_effects=True,show_events=True,show_pseudo_state_style=True
-.. visualization-ref-preset: name=full defaults=show_variable_definitions=True,show_lifecycle_actions=True,show_transition_guards=True,show_transition_effects=True,show_events=True,show_pseudo_state_style=True
+.. visualization-ref-preset: name=minimal defaults=show_variable_definitions=True,show_pseudo_state_style=False,show_lifecycle_actions=False,show_enter_actions=False,show_during_actions=False,show_exit_actions=False,show_aspect_actions=False,show_abstract_actions=False,show_concrete_actions=False,show_transition_guards=True,show_transition_effects=True,show_events=True
+.. visualization-ref-preset: name=normal defaults=show_variable_definitions=True,show_pseudo_state_style=True,show_lifecycle_actions=False,show_enter_actions=False,show_during_actions=False,show_exit_actions=False,show_aspect_actions=False,show_abstract_actions=False,show_concrete_actions=False,show_transition_guards=True,show_transition_effects=True,show_events=True
+.. visualization-ref-preset: name=full defaults=show_variable_definitions=True,show_pseudo_state_style=True,show_lifecycle_actions=True,show_enter_actions=True,show_during_actions=True,show_exit_actions=True,show_aspect_actions=True,show_abstract_actions=True,show_concrete_actions=True,show_transition_guards=True,show_transition_effects=True,show_events=True
 .. visualization-ref-renderer: name=local
 .. visualization-ref-renderer: name=remote
 .. visualization-ref-renderer: name=auto

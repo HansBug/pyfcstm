@@ -20,10 +20,13 @@ Unknown marker groups, missing required keys, malformed tokens, and unknown
 optional keys are reported as documentation errors.
 
 The checker derives command names, option names, choice lists, and stable
-choice-option defaults from Click.  Semantic facts such as stdout, stderr, exit
-status, file side effects, and failure taxonomy are human marker commitments;
-Click cannot infer them reliably, so this checker verifies that the
-corresponding markers exist and are associated with the right command.
+choice-option defaults from Click.  Defaults are required only for choice
+options with an explicit stable default; Click-version-specific unset sentinels
+and ``None`` defaults are normalized to an absent marker default.  Semantic
+facts such as stdout, stderr, exit status, file side effects, and failure
+taxonomy are human marker commitments; Click cannot infer them reliably, so this
+checker verifies that the corresponding markers exist and are associated with
+the right command.
 """
 
 from __future__ import annotations
@@ -145,6 +148,8 @@ def _option_strings(option: click.Option) -> List[str]:
 
 def _stable_default(option: click.Option) -> str:
     value = option.default
+    if value is None or str(value) == "Sentinel.UNSET":
+        return ""
     if isinstance(value, tuple):
         return ",".join(str(item) for item in value)
     return str(value)

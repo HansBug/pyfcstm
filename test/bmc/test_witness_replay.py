@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import replace
 
 import pytest
+from hbutils.testing import TextAligner
 
 from pyfcstm.bmc import (
     BmcBuildError,
@@ -24,6 +25,12 @@ from pyfcstm.model import load_state_machine_from_text
 
 
 pytestmark = pytest.mark.unittest
+_TEXT = TextAligner().multiple_lines()
+
+
+def _assert_text_equal(expected: str, actual: str) -> None:
+    """Assert exact multiline text with aligned diff output."""
+    _TEXT.assert_equal(expected, actual, max_diff=20, max_extra=20)
 
 
 def _trace(dsl_text: str, query_text: str):
@@ -34,6 +41,18 @@ def _trace(dsl_text: str, query_text: str):
     result = solve_bmc_property(formula)
     assert result.status == "sat"
     return model, decode_bmc_witness(formula, result.model)
+
+
+def test_replay_rejects_invalid_public_arguments() -> None:
+    """The replay public API rejects invalid entry-point argument shapes."""
+    model, trace = _trace("state Root;", 'check reach <= 1: active("Root");')
+
+    with pytest.raises(BmcBuildError, match="state_machine must be StateMachine"):
+        replay_bmc_witness(object(), trace)
+    with pytest.raises(BmcBuildError, match="witness must be BmcWitnessTrace"):
+        replay_bmc_witness(model, object())
+    with pytest.raises(BmcBuildError, match="abstract_handlers must be a mapping"):
+        replay_bmc_witness(model, trace, abstract_handlers=object())
 
 
 def test_replay_reports_structured_var_mismatch() -> None:
@@ -62,8 +81,91 @@ def test_replay_reports_structured_var_mismatch() -> None:
     )
     replay = replay_bmc_witness(model, bad_trace)
     assert replay.ok is False
-    assert replay.mismatches[0].path == "frames[1].vars.x"
-    assert replay.mismatches[0].message == "value mismatch"
+    assert [item.to_canonical() for item in replay.mismatches] == [
+        {
+            "path": "frames[1].vars.x",
+            "expected": 2,
+            "actual": 1,
+            "message": "value mismatch",
+            "tolerance": None,
+        }
+    ]
+    _assert_text_equal(
+        """
+        BmcReplayResult[mismatch] mismatches=1
+
+        BmcRuntimeTrace frames=2 steps=1
+
+        frame    via              state    progress      [x]    events    calls    extra
+        -------  ---------------  -------  ------------  -----  --------  -------  -------
+        0        -                Root     initial       0      -         -        I
+        1        Root --> Root.A  Root.A   runtime_step  1      -         -        -
+
+        MISMATCH frames[1].vars.x: 2 != 1
+        """,
+        replay.to_text(show_legend=False),
+    )
+
+
+def test_replay_float_comparison_uses_tolerance() -> None:
+    """Float replay compares with explicit tolerance and reports large drift."""
+    model, trace = _trace(
+        """
+        def float x = 0.0;
+        state Root {
+            state A { during { x = x + 0.5; } }
+            [*] -> A;
+        }
+        """,
+        'check reach <= 1: active("Root.A") && x == 0.5;',
+    )
+
+    close_frame = replace(trace.frames[1], vars={"x": 0.5 + 1e-10})
+    close_trace = BmcWitnessTrace(
+        trace.property,
+        trace.solver,
+        trace.initial,
+        (trace.frames[0], close_frame),
+        trace.steps,
+        trace.diagnostics,
+    )
+    assert replay_bmc_witness(model, close_trace).ok is True
+
+    far_frame = replace(trace.frames[1], vars={"x": 0.5 + 1e-5})
+    far_trace = BmcWitnessTrace(
+        trace.property,
+        trace.solver,
+        trace.initial,
+        (trace.frames[0], far_frame),
+        trace.steps,
+        trace.diagnostics,
+    )
+    replay = replay_bmc_witness(model, far_trace)
+    assert replay.ok is False
+    assert [item.to_canonical() for item in replay.mismatches] == [
+        {
+            "path": "frames[1].vars.x",
+            "expected": 0.50001,
+            "actual": 0.5,
+            "message": "float value mismatch",
+            "tolerance": 1e-9,
+        }
+    ]
+    _assert_text_equal(
+        """
+        BmcReplayResult[mismatch] mismatches=1
+
+        BmcRuntimeTrace frames=2 steps=1
+
+        frame    via              state    progress      [x]    events    calls    extra
+        -------  ---------------  -------  ------------  -----  --------  -------  -------
+        0        -                Root     initial       0.0    -         -        I
+        1        Root --> Root.A  Root.A   runtime_step  0.5    -         -        -
+
+        MISMATCH frames[1].vars.x: 0.50001 != 0.5
+        """,
+        replay.to_text(show_legend=False),
+    )
 
 
 def test_replay_accepts_havoc_where_initial_values_through_public_constructor() -> None:
@@ -84,6 +186,17 @@ def test_replay_accepts_havoc_where_initial_values_through_public_constructor() 
     assert replay.ok is True
     assert replay.runtime_trace.frames[0].vars == {"x": 7}
     assert replay.runtime_trace.frames[1].vars == {"x": 8}
+    _assert_text_equal(
+        """
+        BmcRuntimeTrace frames=2 steps=1
+
+        frame    via              state    progress      [x]    events    calls    extra
+        -------  ---------------  -------  ------------  -----  --------  -------  -------
+        0        -                Root     initial       7      -         -        I
+        1        Root --> Root.A  Root.A   runtime_step  8      -         -        -
+        """,
+        replay.runtime_trace.to_text(show_legend=False),
+    )
 
 
 def test_replay_handles_initial_terminated_absorb_trace() -> None:
@@ -103,6 +216,17 @@ def test_replay_handles_initial_terminated_absorb_trace() -> None:
     assert all(frame.terminated for frame in replay.runtime_trace.frames)
     assert replay.runtime_trace.frames[0].vars == {"x": 3}
     assert replay.runtime_trace.frames[-1].vars == {"x": 3}
+    _assert_text_equal(
+        """
+        BmcRuntimeTrace frames=2 steps=1
+
+        frame    via    state       progress      [x]    events    calls    extra
+        -------  -----  ----------  ------------  -----  --------  -------  -------
+        0        -      terminated  initial       3      -         -        IT
+        1        -      terminated  runtime_step  3      -         -        T
+        """,
+        replay.runtime_trace.to_text(show_legend=False),
+    )
 
 
 def test_replay_rejects_tampered_initial_terminated_step_payload() -> None:
@@ -141,14 +265,37 @@ def test_replay_rejects_tampered_initial_terminated_step_payload() -> None:
 
     replay = replay_bmc_witness(model, bad_trace)
     assert replay.ok is False
-    assert any(
-        item.path == "steps[0].input_events" and item.message == "input events mismatch"
-        for item in replay.mismatches
-    )
-    assert any(
-        item.path == "steps[0].abstract_calls"
-        and item.message == "abstract call count mismatch"
-        for item in replay.mismatches
+    assert [item.to_canonical() for item in replay.mismatches] == [
+        {
+            "path": "steps[0].input_events",
+            "expected": ("Root.fake",),
+            "actual": (),
+            "message": "input events mismatch",
+            "tolerance": None,
+        },
+        {
+            "path": "steps[0].abstract_calls",
+            "expected": 1,
+            "actual": 0,
+            "message": "abstract call count mismatch",
+            "tolerance": None,
+        },
+    ]
+    _assert_text_equal(
+        """
+        BmcReplayResult[mismatch] mismatches=2
+
+        BmcRuntimeTrace frames=2 steps=1
+
+        frame    via    state       progress      [x]    events    calls    extra
+        -------  -----  ----------  ------------  -----  --------  -------  -------
+        0        -      terminated  initial       3      -         -        IT
+        1        -      terminated  runtime_step  3      -         -        T
+
+        MISMATCH steps[0].input_events: Root.fake != -
+        MISMATCH steps[0].abstract_calls: 1 != 0
+        """,
+        replay.to_text(show_legend=False),
     )
 
 
@@ -175,10 +322,15 @@ def test_replay_rejects_tampered_initial_terminated_frame_vars() -> None:
     replay = replay_bmc_witness(model, bad_trace)
     assert replay.ok is False
     assert replay.runtime_trace.frames[1].vars == {"x": 3}
-    assert any(
-        item.path == "frames[1].vars.x" and item.message == "value mismatch"
-        for item in replay.mismatches
-    )
+    assert [item.to_canonical() for item in replay.mismatches] == [
+        {
+            "path": "frames[1].vars.x",
+            "expected": 999,
+            "actual": 3,
+            "message": "value mismatch",
+            "tolerance": None,
+        }
+    ]
 
 
 def test_replay_reports_witness_trace_shape_mismatches() -> None:
@@ -205,12 +357,87 @@ def test_replay_reports_witness_trace_shape_mismatches() -> None:
 
     replay = replay_bmc_witness(model, bad_trace)
     assert replay.ok is False
-    paths = {item.path for item in replay.mismatches}
-    assert "frames" in paths
-    assert "frames[1].index" in paths
-    assert "steps[0].index" in paths
-    assert "steps[0].source_frame" in paths
-    assert "steps[0].target_frame" in paths
+    assert [item.to_canonical() for item in replay.mismatches] == [
+        {
+            "path": "frames",
+            "expected": 3,
+            "actual": 2,
+            "message": "frame/step length mismatch",
+            "tolerance": None,
+        },
+        {
+            "path": "frames[1].index",
+            "expected": 1,
+            "actual": 7,
+            "message": "frame index mismatch",
+            "tolerance": None,
+        },
+        {
+            "path": "steps[0].index",
+            "expected": 0,
+            "actual": 3,
+            "message": "step index mismatch",
+            "tolerance": None,
+        },
+        {
+            "path": "steps[0].source_frame",
+            "expected": 0,
+            "actual": 2,
+            "message": "step source frame mismatch",
+            "tolerance": None,
+        },
+        {
+            "path": "steps[0].target_frame",
+            "expected": 1,
+            "actual": 4,
+            "message": "step target frame mismatch",
+            "tolerance": None,
+        },
+        {
+            "path": "steps[1].index",
+            "expected": 1,
+            "actual": 0,
+            "message": "step index mismatch",
+            "tolerance": None,
+        },
+        {
+            "path": "steps[1].source_frame",
+            "expected": 1,
+            "actual": 0,
+            "message": "step source frame mismatch",
+            "tolerance": None,
+        },
+        {
+            "path": "steps[1].target_frame",
+            "expected": 2,
+            "actual": 1,
+            "message": "step target frame mismatch",
+            "tolerance": None,
+        },
+    ]
+    _assert_text_equal(
+        """
+        BmcReplayResult[mismatch] mismatches=8
+
+        BmcRuntimeTrace frames=3 steps=2
+
+        frame    via              state    progress       events    calls    extra
+        -------  ---------------  -------  -------------  --------  -------  -------
+        0        -                Root     initial        -         -        I
+        4        -                Root.A   runtime_frame  -         -        -
+        1        Root --> Root.A  Root.A   runtime_step   -         -        -
+
+        MISMATCH frames: 3 != 2
+        MISMATCH frames[1].index: 1 != 7
+        MISMATCH steps[0].index: 0 != 3
+        MISMATCH steps[0].source_frame: 0 != 2
+        MISMATCH steps[0].target_frame: 1 != 4
+        MISMATCH steps[1].index: 1 != 0
+        MISMATCH steps[1].source_frame: 1 != 0
+        MISMATCH steps[1].target_frame: 2 != 1
+        """,
+        replay.to_text(show_legend=False),
+    )
 
 
 def test_replay_reports_empty_witness_trace_shape_mismatch() -> None:
@@ -226,9 +453,28 @@ def test_replay_reports_empty_witness_trace_shape_mismatch() -> None:
 
     replay = replay_bmc_witness(model, trace)
     assert replay.ok is False
-    assert any(
-        item.path == "frames" and item.message == "frame/step length mismatch"
-        for item in replay.mismatches
+    assert [item.to_canonical() for item in replay.mismatches] == [
+        {
+            "path": "frames",
+            "expected": 1,
+            "actual": 0,
+            "message": "frame/step length mismatch",
+            "tolerance": None,
+        }
+    ]
+    _assert_text_equal(
+        """
+        BmcReplayResult[mismatch] mismatches=1
+
+        BmcRuntimeTrace frames=1 steps=0
+
+        frame    via    state    progress    events    calls    extra
+        -------  -----  -------  ----------  --------  -------  -------
+        0        -      Root     initial     -         -        I
+
+        MISMATCH frames: 1 != 0
+        """,
+        replay.to_text(show_legend=False),
     )
 
 
@@ -272,7 +518,15 @@ def test_replay_checks_abstract_call_role_metadata() -> None:
     )
     bad_replay = replay_bmc_witness(model, bad_trace)
     assert bad_replay.ok is False
-    assert bad_replay.mismatches[0].path == "steps[0].abstract_calls[0].role"
+    assert [item.to_canonical() for item in bad_replay.mismatches] == [
+        {
+            "path": "steps[0].abstract_calls[0].role",
+            "expected": "state_enter",
+            "actual": "leaf_during",
+            "message": "abstract call metadata mismatch",
+            "tolerance": None,
+        }
+    ]
 
 
 def test_replay_wraps_user_abstract_handlers_after_recording() -> None:
@@ -335,7 +589,7 @@ def test_replay_disambiguates_unnamed_ref_roles_from_witness_step() -> None:
 
 
 def test_replay_rejects_unknown_user_abstract_handler_paths() -> None:
-    """Replay validates custom handler paths before constructing runtime traces."""
+    """Replay validates custom handler mappings before constructing traces."""
     model, trace = _trace(
         """
         state Root {
@@ -353,6 +607,8 @@ def test_replay_rejects_unknown_user_abstract_handler_paths() -> None:
             trace,
             abstract_handlers={"Root.A.Missing": lambda ctx: None},
         )
+    with pytest.raises(BmcBuildError, match="non-callable handlers"):
+        replay_bmc_witness(model, trace, abstract_handlers={"Root.A.Touch": object()})
 
 
 def test_replay_rejects_swapped_valid_unnamed_ref_roles() -> None:
@@ -395,11 +651,22 @@ def test_replay_rejects_swapped_valid_unnamed_ref_roles() -> None:
     assert replay.runtime_trace.steps[0].abstract_calls[0].role == (
         "aspect_during_before"
     )
-    assert any(
-        item.path == "steps[0].abstract_calls[0].role"
-        and item.message == "abstract call metadata mismatch"
-        for item in replay.mismatches
-    )
+    assert [item.to_canonical() for item in replay.mismatches] == [
+        {
+            "path": "steps[0].abstract_calls[0].role",
+            "expected": "leaf_during",
+            "actual": "aspect_during_before",
+            "message": "abstract call metadata mismatch",
+            "tolerance": None,
+        },
+        {
+            "path": "steps[0].abstract_calls[1].role",
+            "expected": "aspect_during_before",
+            "actual": "leaf_during",
+            "message": "abstract call metadata mismatch",
+            "tolerance": None,
+        },
+    ]
 
 
 def test_replay_reports_missing_frame_and_call_snapshot_keys() -> None:
@@ -437,15 +704,22 @@ def test_replay_reports_missing_frame_and_call_snapshot_keys() -> None:
 
     replay = replay_bmc_witness(model, bad_trace)
     assert replay.ok is False
-    assert any(
-        item.path == "frames[1].vars" and item.message == "variable key set mismatch"
-        for item in replay.mismatches
-    )
-    assert any(
-        item.path == "steps[0].abstract_calls[0].snapshot"
-        and item.message == "abstract call snapshot key set mismatch"
-        for item in replay.mismatches
-    )
+    assert [item.to_canonical() for item in replay.mismatches] == [
+        {
+            "path": "steps[0].abstract_calls[0].snapshot",
+            "expected": ("x",),
+            "actual": ("x", "y"),
+            "message": "abstract call snapshot key set mismatch",
+            "tolerance": None,
+        },
+        {
+            "path": "frames[1].vars",
+            "expected": ("x",),
+            "actual": ("x", "y"),
+            "message": "variable key set mismatch",
+            "tolerance": None,
+        },
+    ]
 
 
 def test_replay_reports_state_and_termination_mismatches() -> None:
@@ -473,5 +747,35 @@ def test_replay_reports_state_and_termination_mismatches() -> None:
 
     replay = replay_bmc_witness(model, bad_trace)
     assert replay.ok is False
-    assert any(item.path == "frames[1].state" for item in replay.mismatches)
-    assert any(item.path == "frames[1].terminated" for item in replay.mismatches)
+    assert [item.to_canonical() for item in replay.mismatches] == [
+        {
+            "path": "frames[1].state",
+            "expected": None,
+            "actual": "Root.B",
+            "message": "state mismatch",
+            "tolerance": None,
+        },
+        {
+            "path": "frames[1].terminated",
+            "expected": True,
+            "actual": False,
+            "message": "terminated mismatch",
+            "tolerance": None,
+        },
+    ]
+    _assert_text_equal(
+        """
+        BmcReplayResult[mismatch] mismatches=2
+
+        BmcRuntimeTrace frames=2 steps=1
+
+        frame    via                state    progress      events    calls    extra
+        -------  -----------------  -------  ------------  --------  -------  -------
+        0        -                  Root.A   initial       -         -        I
+        1        Root.A --> Root.B  Root.B   runtime_step  -         -        -
+
+        MISMATCH frames[1].state: - != Root.B
+        MISMATCH frames[1].terminated: true != false
+        """,
+        replay.to_text(show_legend=False),
+    )

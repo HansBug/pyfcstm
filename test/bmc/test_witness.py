@@ -428,6 +428,15 @@ def test_event_decode_policy_can_drop_debug_reads_without_changing_replay_inputs
     None
 ):
     """Debug reads are optional metadata, not replay inputs."""
+    assert BmcEventDecodePolicy(
+        include_debug_reads=False,
+        include_property_support=True,
+    ).to_canonical() == {
+        "node": "bmc_event_decode_policy",
+        "include_debug_reads": False,
+        "include_property_support": True,
+    }
+
     _, formula = _compile(
         """
         state Root {

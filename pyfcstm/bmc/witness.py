@@ -867,10 +867,7 @@ def _canonical_for_pretty(obj: Any) -> Mapping[str, Any]:
     if isinstance(obj, BmcSolveResult):
         return obj.to_canonical()
     if isinstance(obj, BmcEventDecodePolicy):
-        return {
-            "include_debug_reads": obj.include_debug_reads,
-            "include_property_support": obj.include_property_support,
-        }
+        return obj.to_canonical()
     if isinstance(obj, BmcWitnessEvent):
         return obj.to_canonical()
     if isinstance(obj, BmcWitnessCallRecord):
@@ -1084,6 +1081,11 @@ class _PrettyPrintableMixin:
 
     def __str__(self) -> str:
         """Return the default terminal-friendly representation.
+
+        Trace-like objects cap this implicit display at the first 50 rows so a
+        direct ``print(obj)`` remains practical in terminals.  Use
+        :meth:`to_text` or :meth:`pretty_print` with ``max_rows=None`` when the
+        full table is required.
 
         :return: Rendered text.
         :rtype: str
@@ -1365,6 +1367,23 @@ class BmcEventDecodePolicy(_PrettyPrintableMixin):
             raise BmcBuildError("include_debug_reads must be bool.")
         if not isinstance(self.include_property_support, bool):
             raise BmcBuildError("include_property_support must be bool.")
+
+    def to_canonical(self) -> _CanonicalDict:
+        """Return a JSON-stable event decode policy.
+
+        :return: Canonical event decode policy.
+        :rtype: Dict[str, object]
+
+        Example::
+
+            >>> BmcEventDecodePolicy().to_canonical()['include_debug_reads']
+            True
+        """
+        return {
+            "node": "bmc_event_decode_policy",
+            "include_debug_reads": self.include_debug_reads,
+            "include_property_support": self.include_property_support,
+        }
 
 
 @dataclass(frozen=True)

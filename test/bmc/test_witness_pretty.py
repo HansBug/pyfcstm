@@ -7,6 +7,7 @@ import io
 import pytest
 from hbutils.testing import TextAligner
 
+import pyfcstm.bmc.witness as witness_module
 from pyfcstm.bmc import (
     BmcBuildError,
     BmcEngine,
@@ -259,9 +260,6 @@ def test_witness_trace_expanded_calls_keep_one_calls_column() -> None:
     text = _sample_trace().to_text(calls_mode="expanded", show_legend=False)
 
     _assert_text_equal(expected, text)
-    assert "vars=" not in text
-    assert "call state" not in text
-    assert "call vars" not in text
 
 
 def test_witness_trace_event_modes_and_reason_priority_are_stable() -> None:
@@ -766,7 +764,7 @@ def test_github_tablefmt_uses_br_for_multiline_cells() -> None:
     )
 
 
-def test_pretty_print_truncation_and_text_validation_are_explicit() -> None:
+def test_pretty_print_truncation_and_text_validation_are_explicit(monkeypatch) -> None:
     """Presentation truncation markers and invalid text kwargs are pinned."""
     trace = _sample_trace()
     expected_rows = """
@@ -778,6 +776,18 @@ def test_pretty_print_truncation_and_text_validation_are_explicit() -> None:
     1        Root.A --> Root.A  Root.A   fallback_gamma    2      1      Root.tick  Root.A.Touch(1)  GR
                                                                                     Root.Shared(2)
     …        -                  -        … (+1 more rows)  -      -      -          -                N
+    """
+    expected_str_rows = """
+    BmcWitnessTrace[reach<=2, sat] frames=3 steps=2
+
+    frame    via                state    progress          [x]    [y]    events     calls            extra
+    -------  -----------------  -------  ----------------  -----  -----  ---------  ---------------  -------
+    0        -                  Root.A   initial           1      1      -          -                I
+    1        Root.A --> Root.A  Root.A   fallback_gamma    2      1      Root.tick  Root.A.Touch(1)  GR
+                                                                                    Root.Shared(2)
+    …        -                  -        … (+1 more rows)  -      -      -          -                N
+
+    extra: I=initial D=delta G=gamma T=terminated N=rows truncated V=vars hidden E=events truncated C=calls truncated W=cell width truncated P=full path unavailable R=hidden event reads
     """
     expected_items = """
     BmcWitnessTrace[reach<=2, sat] frames=3 steps=2
@@ -803,6 +813,8 @@ def test_pretty_print_truncation_and_text_validation_are_explicit() -> None:
     """
 
     _assert_text_equal(expected_rows, trace.to_text(max_rows=2, show_legend=False))
+    monkeypatch.setattr(witness_module, "_PRETTY_STR_MAX_ROWS", 2)
+    _assert_text_equal(expected_str_rows, str(trace))
     _assert_text_equal(
         expected_items,
         trace.to_text(

@@ -29,7 +29,7 @@ BmcEventDecodePolicy
 -----------------------------------------------------
 
 .. autoclass:: BmcEventDecodePolicy
-    :members: __post_init__,include_debug_reads,include_property_support
+    :members: __post_init__,to_canonical,include_debug_reads,include_property_support
 
 
 BmcWitnessEvent

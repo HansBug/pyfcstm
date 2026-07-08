@@ -76,6 +76,24 @@ Use this route when reviewing or extending tutorial material.
 * Confirm Chinese and English tutorial pages teach the same capability and expose
   the same risk boundaries, even when the prose is not word-for-word identical.
 
+Reader completion signals
+-------------------------
+
+After a tutorial, readers should be able to answer three questions.
+
+* What input file did I just run or read?
+* What did the output, state change, report, or diagram prove?
+* Where should I leave the tutorial when I need to repeat, look up, or explain
+  the same behavior?
+
+If those questions are still unclear, the tutorial needs a shorter output
+excerpt, a clearer result explanation, or a more explicit next link. If those
+questions are already clear, do not move reference tables into the tutorial;
+send the reader to the matching how-to guide, explanation, or reference page.
+
+A tutorial may stay compact, but it must make the completed learning loop and
+the next document role visible.
+
 Sibling tutorial cards
 ----------------------
 

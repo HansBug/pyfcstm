@@ -75,6 +75,24 @@ Use this route when reviewing explanation quality.
 * Check bilingual pages teach the same mechanism and do not drop diagrams,
   traces, or boundary statements in one language.
 
+Explanation reading signals
+---------------------------
+
+When reading an explanation page, readers should not only collect terms. They
+should be able to place one observed behavior into a larger causal chain: what
+the input is, what the system does first, which boundary stops the behavior, and
+which results are only warnings versus evidence that proves a problem exists.
+
+If the reader needs the next command, they have left an explanation question and
+should return to a how-to guide. If the reader needs a legal value, default, or
+field name, they need a reference page. If they do not yet know which observed
+behavior to start from, a tutorial should provide a smaller observable example.
+
+The value of an explanation page is making later tasks and reference lookups
+easier to use, not copying all of those pages into one place. If a paragraph
+cannot say which later judgment it improves, it is probably ordinary directory
+text and needs more substance.
+
 Concept cards
 -------------
 

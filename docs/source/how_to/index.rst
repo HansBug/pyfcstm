@@ -68,6 +68,23 @@ Use this route to review how-to quality.
 * Check changed Chinese pages carry the same task, output, warning, and next-link
   coverage as the English page.
 
+Task page usage signals
+-----------------------
+
+A good task page should tell readers what input they need before they start and
+what observable signal means the task succeeded after they finish. Command tasks
+usually need a short output excerpt, generated filename, or exit behavior.
+Editing tasks usually need to say which file should change, how to check the
+result, and how to repair common mistakes.
+
+If a task page only says "run this command" without a success signal, it is not
+yet verifiable enough. If it starts explaining broad design reasons, move that
+reasoning to an explanation page. If it lists a closed set of options, move the
+exact facts to a reference page.
+
+A task page may stay concise, but every step should leave enough evidence for a
+reader or reviewer to reproduce the outcome.
+
 Task cards
 ----------
 

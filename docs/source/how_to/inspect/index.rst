@@ -74,9 +74,13 @@ or review comment:
 .. code-block:: text
 
    [WARN] FCSTM Inspect Report: docs/source/tutorials/inspect/inspect_diagnostics.fcstm
+
    Summary
      status: warning
      root: InspectDemo
+     states: 6 total / 3 leaf
+     transitions: 5
+     variables: 5
      diagnostics: 0 errors / 9 warnings / 4 infos
 
 The first warning is ``W_DURING_CONST_ASSIGN`` and includes a source excerpt,

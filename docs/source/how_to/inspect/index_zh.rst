@@ -86,9 +86,13 @@ Inspect 任务指南
 .. code-block:: text
 
    [WARN] FCSTM Inspect Report: docs/source/tutorials/inspect/inspect_diagnostics.fcstm
+
    Summary
      status: warning
      root: InspectDemo
+     states: 6 total / 3 leaf
+     transitions: 5
+     variables: 5
      diagnostics: 0 errors / 9 warnings / 4 infos
 
 第一个警告是 ``W_DURING_CONST_ASSIGN``\ ，并带源码摘录、原因、修复形状和禁止做法。

@@ -6,6 +6,30 @@
 当你需要一组可重复命令时使用本指南。本页假设 pyfcstm 已经安装；如果尚未安装，请先看
 :doc:`/how_to/installation/index_zh`。精确选项和失败边界请查 :doc:`/reference/cli/index_zh`。
 
+本页使用的具体示例
+------------------
+
+当需要真实输入时，本页使用仓库内的 quick-start 源文件
+``docs/source/tutorials/quick_start/traffic_light.fcstm``。项目脚本中请替换成自己的状态机文件。
+
+先运行一个命令，确认命令行、解析器和模型导入器看到的是同一份源码：
+
+.. code-block:: bash
+
+   pyfcstm inspect -i docs/source/tutorials/quick_start/traffic_light.fcstm
+
+预期成功信号：
+
+.. code-block:: text
+
+   [OK] FCSTM Inspect Report: docs/source/tutorials/quick_start/traffic_light.fcstm
+   root: TrafficLight
+   states: 4 total / 3 leaf
+   transitions: 4
+   diagnostics: 0 errors / 0 warnings / 0 infos
+
+如果命令在摘要前失败，先修复这一层，再尝试模拟、生成或可视化。文件不可读、解析错误、模型验证错误都属于更早的层；渲染器或模板配置无法修复这些问题。
+
 先选对命令
 ----------
 
@@ -36,6 +60,50 @@
      - ``visualize``
      - ``.png``、``.svg`` 或 ``.pdf``
      - :doc:`/reference/visualization_options/index_zh`
+
+核心工作流验收卡片
+------------------
+
+把命令写进项目自动化时，用下表确认每一步确实成功，并知道失败时先查哪里。
+
+.. list-table:: 命令行任务验收卡片
+   :header-rows: 1
+
+   * - 任务
+     - 可复制命令
+     - 成功信号
+     - 文件副作用
+     - 第一排查步骤
+   * - 模拟一条短路径。
+     - ``pyfcstm simulate -i docs/source/tutorials/quick_start/traffic_light.fcstm -e "current; cycle; current"``
+     - 周期后输出包含 ``Current State: TrafficLight.Red``。
+     - 无；除非 shell 重定向标准输出。
+     - 先运行 ``inspect``；若检查干净，再看批处理命令拼写和事件名。
+   * - 导出机器事实。
+     - ``pyfcstm inspect -i docs/source/tutorials/quick_start/traffic_light.fcstm --format json -o /tmp/traffic.inspect.json``
+     - JSON 含有 ``"root_state_path": "TrafficLight"``，且 ``diagnostics`` 列表为空。
+     - 写出指定报告文件。
+     - 先查 ``--format`` 拼写和验证策略选项，不要马上假设模型错误。
+   * - 生成 Python 文件。
+     - ``pyfcstm generate -i docs/source/tutorials/quick_start/traffic_light.fcstm --template python -o /tmp/traffic-python --clear``
+     - 输出目录包含生成的 Python 运行时文件和生成 README 指引。
+     - 带 ``--clear`` 时会替换输出目录。
+     - 确认只使用 ``--template`` 或 ``--template-dir`` 其中之一，并确认输出目录可安全删除。
+   * - 导出 PlantUML 源码。
+     - ``pyfcstm plantuml -i docs/source/tutorials/quick_start/traffic_light.fcstm -o /tmp/traffic.puml``
+     - 文件以 ``@startuml`` 开头，并包含 ``state "TrafficLight"``。
+     - 只写出指定的 ``.puml`` 文件。
+     - 若失败，排查 DSL/模型错误；这里不涉及渲染器。
+   * - 检查渲染器。
+     - ``pyfcstm visualize --check --renderer auto``
+     - 报告至少一个可用渲染器，或给出清楚的后端错误。
+     - 不读取 DSL 文件，也不写图表文件。
+     - 本地失败时提供 ``--plantuml-jar`` 或 ``PLANTUML_JAR``；远程失败时检查远程主机。
+   * - 渲染图表。
+     - ``pyfcstm visualize -i docs/source/tutorials/quick_start/traffic_light.fcstm -t svg -o /tmp/traffic.svg --no-open``
+     - 指定 SVG 存在且非空。
+     - 写出渲染产物，并可能使用渲染器缓存目录。
+     - 先运行 ``plantuml``，把源码导出失败和渲染器失败分开。
 
 查看命令帮助
 ------------

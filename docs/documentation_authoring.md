@@ -159,6 +159,33 @@ polish items. Classify them with the C/I/M guide below and keep the PR out of re
 Important item is resolved. Minor wording issues can be deferred, but only when they do not hide a coverage, correctness,
 or reproducibility gap.
 
+### Zero-exception ready and merge rule
+
+This guide is not advisory for substantial documentation PRs. If a required item in the inventory, depth gate,
+role-specific contract, module-specific checklist, bilingual policy, migration record, generated-resource chain, or
+verification section applies to the PR scope, it must be satisfied before the PR is called ready. Missing one required
+item is enough to reject ready-to-merge status.
+
+Authors and reviewers must not substitute automated green checks for this review. Sphinx proves syntax and linkability;
+drift checkers prove selected marker coverage; CI proves configured jobs. None of those checks proves that prose is
+thick enough, that examples are useful to humans, that failure boundaries are explained, that diagrams teach the right
+claim, or that bilingual pages expose the same risks. The PR body or a linked PR comment must therefore include
+human-review evidence for each affected documentation family:
+
+- which tutorial, how-to, explanation, and reference obligations are in scope;
+- which obligations are intentionally out of scope and which sibling page or follow-up owns them;
+- which exact pages were read for thickness rather than only checked by tools;
+- which runnable examples were executed or intentionally kept schematic;
+- which generated resources and diagrams were regenerated or visually inspected;
+- which bilingual pages were compared for capability, examples, warnings, and failure-boundary parity.
+
+When a substantial PR exists because a page was too thin, reviewers should assume the previous shape was insufficient
+until the author shows concrete coverage growth. For command- or field-heavy pages, this means rows plus examples,
+counterexamples, output signals, side effects, and repair steps. For how-to pages, this means task cards with inputs,
+commands, outputs, side effects, and troubleshooting. For explanations, this means mechanism traces, ordering or
+boundary reasoning, counterexamples, and diagram claims where diagrams are used. If any of those elements is absent
+without a scoped ownership handoff, the finding is at least Important.
+
 ## Module-specific coverage floors
 
 "DSL-level" documentation quality does not mean every module must have the same line count as the DSL pages. It means

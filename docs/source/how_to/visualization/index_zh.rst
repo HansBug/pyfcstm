@@ -6,6 +6,20 @@
 当你需要图表源码或渲染后的图表文件时使用本指南。完整选项表见 :doc:`/reference/visualization_options/index_zh`。
 首次图表流程见 :doc:`/tutorials/visualization/index_zh`。
 
+具体输入和视觉证据
+------------------
+
+下面的具体示例使用 ``docs/source/tutorials/visualization/example.fcstm``。可视化教程已经从该源码生成
+``output_minimal.puml.svg``、``output_normal.puml.svg`` 和 ``output_full.puml.svg``，所以本任务指南可以引用真实渲染产物，而不是只让读者相信选项名。
+
+比较渲染图片前，先导出 PlantUML 源码：
+
+.. code-block:: bash
+
+   pyfcstm plantuml -i docs/source/tutorials/visualization/example.fcstm -o /tmp/example.puml
+
+成功信号是 ``/tmp/example.puml`` 存在、以 ``@startuml`` 开头，并包含预期状态名。若源码导出失败，先修复 DSL/模型错误，再改渲染器设置。渲染选项无法修复无效的 PlantUML 源码。
+
 先选择源码还是渲染产物
 ----------------------
 
@@ -27,6 +41,45 @@
    * - 私有图表
      - ``visualize --renderer local``
      - 避免把 PlantUML 源码发送给远程服务。
+
+可视化任务验收卡片
+------------------
+
+决定某个图表步骤是否适合放进教程、审查记录或持续集成（CI）任务时，使用下表。
+
+.. list-table:: 可视化任务证据
+   :header-rows: 1
+
+   * - 任务
+     - 命令
+     - 成功信号
+     - 副作用
+     - 第一排查步骤
+   * - 审阅图表源码。
+     - ``pyfcstm plantuml -i docs/source/tutorials/visualization/example.fcstm -o /tmp/example.puml``
+     - ``/tmp/example.puml`` 以 ``@startuml`` 开头，且是可比较差异的文本。
+     - 只写指定源码文件。
+     - PlantUML 导出失败时，先对同一输入运行 ``inspect``。
+   * - 比较细节预设。
+     - ``pyfcstm plantuml -i docs/source/tutorials/visualization/example.fcstm -l full -o /tmp/example.full.puml``
+     - full 源码包含 minimal 预设隐藏的生命周期/动作细节。
+     - 写出第二个源码文件供审阅。
+     - 混用预设和 ``-c`` 覆盖前，先查 :doc:`/reference/visualization_options/index_zh`。
+   * - 检查渲染器可用性。
+     - ``pyfcstm visualize --check --renderer auto``
+     - 报告可用的本地/远程后端，或给出具体后端错误。
+     - 不写图表文件。
+     - 接受远程回退前，先判断隐私要求是否必须使用 ``--renderer local``。
+   * - 无图形界面依赖地渲染。
+     - ``pyfcstm visualize -i docs/source/tutorials/visualization/example.fcstm -t svg -o /tmp/example.svg --no-open``
+     - ``/tmp/example.svg`` 存在，并且在文档/审查上下文中可读。
+     - 写出渲染文件，并可能填充渲染器缓存。
+     - 若后端报告成功但文件缺失，把它当作渲染器失败，而不是 DSL 失败。
+   * - 验证文档图。
+     - 重新生成图源码后构建 HTML。
+     - 图在文档宽度下清晰可读，图注说明它证明什么。
+     - 图源码变化时更新生成图片。
+     - 检查渲染后的 HTML；只看 reST 源码不能证明视觉质量。
 
 导出 PlantUML 源码
 ------------------

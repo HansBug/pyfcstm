@@ -143,6 +143,52 @@
 * 面向用户的进度和成功消息写入标准输出；Click 格式化的错误写入标准错误。
 * 写文件命令只创建或替换请求的输出路径或目录。这里唯一会有意删除已有输出目录内容的选项是 ``generate --clear``。
 
+参考级命令示例
+--------------
+
+各命令小节里的示例使用 ``machine.fcstm`` 作为紧凑占位符。下表把同一组命令契约绑定到一个具体仓库源文件，方便审查者复现成功和失败行为，而不需要临时编造输入。
+
+.. list-table:: 具体命令契约
+   :header-rows: 1
+
+   * - 命令族
+     - 合法示例
+     - 预期成功证据
+     - 常见非法示例
+     - 预期失败边界
+   * - ``simulate``
+     - ``pyfcstm simulate -i docs/source/tutorials/quick_start/traffic_light.fcstm -e "current; cycle; current"``
+     - 标准输出包含 ``Cycle: 1`` 和 ``Current State: TrafficLight.Red``；不写文件。
+     - ``pyfcstm simulate -i docs/source/tutorials/quick_start/traffic_light.fcstm -e "cycle MissingEvent"``
+     - 解析和模型导入之后，在模拟器命令或事件处理层失败，不涉及渲染。
+   * - ``inspect``
+     - ``pyfcstm inspect -i docs/source/tutorials/quick_start/traffic_light.fcstm --format json -o /tmp/traffic.inspect.json``
+     - 输出文件包含 ``"root_state_path": "TrafficLight"`` 和 ``"diagnostics": []``。
+     - ``pyfcstm inspect -i docs/source/tutorials/quick_start/traffic_light.fcstm --format xml``
+     - Click 在写报告前拒绝封闭的 ``--format`` 取值。
+   * - ``generate``
+     - ``pyfcstm generate -i docs/source/tutorials/quick_start/traffic_light.fcstm --template python -o /tmp/traffic-python --clear``
+     - 输出目录被替换，并由打包 Python 模板填充。
+     - ``pyfcstm generate -i docs/source/tutorials/quick_start/traffic_light.fcstm --template python -t ./templates/python -o /tmp/bad``
+     - 命令验证拒绝同时使用内置模板和自定义模板来源。
+   * - ``plantuml``
+     - ``pyfcstm plantuml -i docs/source/tutorials/quick_start/traffic_light.fcstm -o /tmp/traffic.puml``
+     - 指定文件以 ``@startuml`` 开头，并且是确定性文本。
+     - ``pyfcstm plantuml -i /tmp/missing.fcstm -o /tmp/missing.puml``
+     - 输入文件读取先失败；这里不涉及渲染器。
+   * - ``visualize``
+     - ``pyfcstm visualize --check --renderer auto``
+     - 命令报告本地/远程后端可用性，且不读取 DSL 文件。
+     - ``pyfcstm visualize --check --renderer local``
+     - 没有本地 jar 配置的机器会在渲染器可用性层失败，不解析模型。
+   * - ``visualize``
+     - ``pyfcstm visualize -i docs/source/tutorials/quick_start/traffic_light.fcstm -t svg -o /tmp/traffic.svg --no-open``
+     - 后端渲染成功后，指定图片文件存在。
+     - ``pyfcstm visualize -i docs/source/tutorials/quick_start/traffic_light.fcstm -t jpg -o /tmp/traffic.jpg --no-open``
+     - Click 在渲染前拒绝封闭的渲染类型取值。
+
+这些示例不能替代下方完整选项表。它们展示的是契约形状：合法示例、可观察成功信号、非法示例，以及失败归属层。
+
 ``simulate``
 ------------
 

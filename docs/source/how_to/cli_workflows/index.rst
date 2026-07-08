@@ -7,6 +7,35 @@ Use this guide when you want a repeatable command sequence. It assumes pyfcstm
 is already installed; if not, start with :doc:`/how_to/installation/index`. For
 exact options and failure boundaries, use :doc:`/reference/cli/index`.
 
+Concrete sample used below
+--------------------------
+
+The examples on this page use the checked-in quick-start source
+``docs/source/tutorials/quick_start/traffic_light.fcstm`` when a real input is
+needed. Replace that path with your own machine file in project scripts.
+
+Run one command first to prove that the CLI, the parser, and the model importer
+all see the same source:
+
+.. code-block:: bash
+
+   pyfcstm inspect -i docs/source/tutorials/quick_start/traffic_light.fcstm
+
+Expected success signal:
+
+.. code-block:: text
+
+   [OK] FCSTM Inspect Report: docs/source/tutorials/quick_start/traffic_light.fcstm
+   root: TrafficLight
+   states: 4 total / 3 leaf
+   transitions: 4
+   diagnostics: 0 errors / 0 warnings / 0 infos
+
+If the command fails before the summary, fix that layer before trying
+simulation, generation, or visualization. Unreadable files, parse errors, and
+model validation errors are earlier-layer problems; renderer and template
+changes cannot repair them.
+
 Choose the right command first
 ------------------------------
 
@@ -37,6 +66,52 @@ Choose the right command first
      - ``visualize``
      - ``.png``, ``.svg``, or ``.pdf``
      - :doc:`/reference/visualization_options/index`
+
+Core workflow acceptance cards
+------------------------------
+
+Use this table when turning commands into project automation. Each row gives the
+minimum evidence that the step succeeded and the first thing to inspect when it
+does not.
+
+.. list-table:: CLI task acceptance cards
+   :header-rows: 1
+
+   * - Task
+     - Copyable command
+     - Success signal
+     - File side effect
+     - First troubleshooting step
+   * - Simulate a short path.
+     - ``pyfcstm simulate -i docs/source/tutorials/quick_start/traffic_light.fcstm -e "current; cycle; current"``
+     - Output includes ``Current State: TrafficLight.Red`` after the cycle.
+     - None unless stdout is redirected.
+     - Run ``inspect`` first; if inspect is clean, check batch command spelling and event names.
+   * - Export machine facts.
+     - ``pyfcstm inspect -i docs/source/tutorials/quick_start/traffic_light.fcstm --format json -o /tmp/traffic.inspect.json``
+     - JSON contains ``"root_state_path": "TrafficLight"`` and an empty ``diagnostics`` list.
+     - Writes the requested report file.
+     - Check ``--format`` spelling and verify-policy options before assuming the model is wrong.
+   * - Generate Python files.
+     - ``pyfcstm generate -i docs/source/tutorials/quick_start/traffic_light.fcstm --template python -o /tmp/traffic-python --clear``
+     - Output directory contains generated Python runtime files and generated README guidance.
+     - Replaces the output directory when ``--clear`` is present.
+     - Confirm exactly one of ``--template`` or ``--template-dir`` is used and that the output directory is disposable.
+   * - Export PlantUML source.
+     - ``pyfcstm plantuml -i docs/source/tutorials/quick_start/traffic_light.fcstm -o /tmp/traffic.puml``
+     - The file starts with ``@startuml`` and contains ``state "TrafficLight"``.
+     - Writes only the requested ``.puml`` file.
+     - If this fails, debug DSL/model errors; no renderer is involved.
+   * - Check a renderer.
+     - ``pyfcstm visualize --check --renderer auto``
+     - Reports at least one usable renderer, or a clear backend error.
+     - No DSL file is read and no diagram file is written.
+     - For local failures, provide ``--plantuml-jar`` or ``PLANTUML_JAR``; for remote failures, check the remote host.
+   * - Render a diagram.
+     - ``pyfcstm visualize -i docs/source/tutorials/quick_start/traffic_light.fcstm -t svg -o /tmp/traffic.svg --no-open``
+     - The requested SVG exists and is non-empty.
+     - Writes the rendered artifact and may use renderer cache directories.
+     - Run ``plantuml`` first to separate source-export failures from renderer failures.
 
 Inspect command help
 --------------------

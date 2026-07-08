@@ -69,6 +69,43 @@
 2. **渲染产物层**。``visualize`` 选择渲染后端、文件类型、输出路径和查看器行为。这些设置不改变 PlantUML 源码里的模型事实，
    只决定源码如何变成 ``png``、``svg`` 或 ``pdf``。
 
+参考级选项场景
+--------------
+
+下面的参考表按字段做到闭合，但单个字段行不能展示选项如何组合。下列场景把最常见组合绑定到可观察结果和失败边界。
+
+.. list-table:: 选项场景和边界
+   :header-rows: 1
+
+   * - 场景
+     - 示例
+     - 预期效果
+     - 边界或反例
+   * - 只用预设导出源码。
+     - ``pyfcstm plantuml -i docs/source/tutorials/visualization/example.fcstm -l minimal -o /tmp/minimal.puml``
+     - 使用 ``minimal`` 预设生成源码文本，不写图片。
+     - 把 ``-t svg`` 传给 ``plantuml`` 是非法的；渲染类型属于 ``visualize``。
+   * - 预设加窄覆盖。
+     - ``pyfcstm plantuml -i docs/source/tutorials/visualization/example.fcstm -l full -c max_action_lines=3 -o /tmp/compact.puml``
+     - 保持 full 可见性，同时把每个动作块限制为三行。
+     - ``-c detail_level=full`` 属于错误层次；预设应使用 ``-l full``。
+   * - 事件导向图。
+     - ``pyfcstm plantuml -i docs/source/tutorials/visualization/example.fcstm -c event_visualization_mode=both -o /tmp/events.puml``
+     - 同时在转换和事件辅助结构中显示事件。
+     - 非法枚举值会在选项解析阶段失败，不会调用渲染器。
+   * - 无图形界面渲染。
+     - ``pyfcstm visualize -i docs/source/tutorials/visualization/example.fcstm -t svg -o /tmp/example.svg --no-open``
+     - 写出 SVG，并跳过桌面查看器启动。
+     - 没有 ``--no-open`` 时，即使渲染成功，图形界面可用性也可能影响最后的打开步骤。
+   * - 本地渲染隐私。
+     - ``pyfcstm visualize -i docs/source/tutorials/visualization/example.fcstm --renderer local -p ./plantuml.jar --no-open``
+     - 当 Java 和 jar 可用时，PlantUML 源码保留在本机。
+     - 缺少 jar 或 Java 是本地后端失败，不是模型或 PlantUML 选项失败。
+   * - 远程渲染便利性。
+     - ``pyfcstm visualize -i docs/source/tutorials/visualization/example.fcstm --renderer remote --no-open``
+     - 把 PlantUML 源码发送到配置的远程主机，并写出渲染产物。
+     - 除非允许把源码发送到该主机，否则不要用于私有图表。
+
 细节预设
 --------
 

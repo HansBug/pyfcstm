@@ -1197,6 +1197,13 @@ and verification evidence. If any required item is missing and not explicitly re
 to another page, reject ready-to-merge status until it is fixed. A green Sphinx build, drift checker, or CI run does not
 override this authoring gate.
 
+Treat this as a hard stop during implementation and review: do not mark a substantial documentation PR ready, do not
+write a ready-to-merge summary, and do not merge on the user's behalf when any applicable item in
+[docs/documentation_authoring.md](docs/documentation_authoring.md) is unsatisfied. The PR body or a linked PR comment
+must record the human depth review, including page-role ownership, runnable examples or explicit schematic boundaries,
+generated-resource and visual evidence, bilingual parity, and verification commands. Missing even one required item is a
+blocking defect, regardless of passing CI.
+
 #### Documentation Structure
 
 Files in [docs/source/](docs/source/):

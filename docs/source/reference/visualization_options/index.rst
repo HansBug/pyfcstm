@@ -76,6 +76,45 @@ Visualization has two independent layers:
    model facts in the PlantUML source; they only decide how the source becomes
    ``png``, ``svg``, or ``pdf``.
 
+Reference-grade option scenarios
+--------------------------------
+
+The reference tables below are exhaustive by field, but field rows alone do not
+show how options combine. These scenarios pin the most common combinations to
+observable outcomes and failure boundaries.
+
+.. list-table:: Option scenarios and boundaries
+   :header-rows: 1
+
+   * - Scenario
+     - Example
+     - Expected effect
+     - Boundary or counterexample
+   * - Preset-only source export.
+     - ``pyfcstm plantuml -i docs/source/tutorials/visualization/example.fcstm -l minimal -o /tmp/minimal.puml``
+     - Uses the ``minimal`` preset for source text and writes no image.
+     - Passing ``-t svg`` to ``plantuml`` is invalid because render type belongs to ``visualize``.
+   * - Preset plus narrow override.
+     - ``pyfcstm plantuml -i docs/source/tutorials/visualization/example.fcstm -l full -c max_action_lines=3 -o /tmp/compact.puml``
+     - Keeps full visibility while limiting each action block to three visible lines.
+     - ``-c detail_level=full`` is the wrong layer; use ``-l full`` for the preset.
+   * - Event-oriented diagram.
+     - ``pyfcstm plantuml -i docs/source/tutorials/visualization/example.fcstm -c event_visualization_mode=both -o /tmp/events.puml``
+     - Shows events directly in transitions and in event-supporting visual structures.
+     - Invalid enum values fail during option parsing before a renderer is called.
+   * - Headless render.
+     - ``pyfcstm visualize -i docs/source/tutorials/visualization/example.fcstm -t svg -o /tmp/example.svg --no-open``
+     - Writes an SVG and skips desktop viewer launch.
+     - Without ``--no-open``, GUI availability can affect the final open step even after rendering succeeds.
+   * - Local renderer privacy.
+     - ``pyfcstm visualize -i docs/source/tutorials/visualization/example.fcstm --renderer local -p ./plantuml.jar --no-open``
+     - Keeps PlantUML source on the local machine when Java and the jar are available.
+     - Missing jar or Java is a local backend failure, not a model or PlantUML-option failure.
+   * - Remote renderer convenience.
+     - ``pyfcstm visualize -i docs/source/tutorials/visualization/example.fcstm --renderer remote --no-open``
+     - Sends PlantUML source to the configured remote host and writes the rendered artifact.
+     - Do not use for private diagrams unless sending the source to that host is acceptable.
+
 Detail presets
 --------------
 

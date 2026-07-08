@@ -154,6 +154,57 @@ that may depend on external tools:
   directory. ``generate --clear`` is the only command option here that
   intentionally removes existing output-directory contents before writing.
 
+Reference-grade command examples
+--------------------------------
+
+The examples in individual command sections use ``machine.fcstm`` as a compact
+placeholder. The table below anchors the same command contracts to one concrete
+repository source file so reviewers can reproduce success and failure behavior
+without inventing inputs.
+
+.. list-table:: Concrete command contracts
+   :header-rows: 1
+
+   * - Command family
+     - Valid example
+     - Expected success evidence
+     - Common invalid example
+     - Expected failure boundary
+   * - ``simulate``
+     - ``pyfcstm simulate -i docs/source/tutorials/quick_start/traffic_light.fcstm -e "current; cycle; current"``
+     - Standard output includes ``Cycle: 1`` and ``Current State: TrafficLight.Red``; no files are written.
+     - ``pyfcstm simulate -i docs/source/tutorials/quick_start/traffic_light.fcstm -e "cycle MissingEvent"``
+     - Simulator-command or event handling fails after parsing/model import, not during rendering.
+   * - ``inspect``
+     - ``pyfcstm inspect -i docs/source/tutorials/quick_start/traffic_light.fcstm --format json -o /tmp/traffic.inspect.json``
+     - The output file contains ``"root_state_path": "TrafficLight"`` and ``"diagnostics": []``.
+     - ``pyfcstm inspect -i docs/source/tutorials/quick_start/traffic_light.fcstm --format xml``
+     - Click rejects the closed ``--format`` choice before writing a report.
+   * - ``generate``
+     - ``pyfcstm generate -i docs/source/tutorials/quick_start/traffic_light.fcstm --template python -o /tmp/traffic-python --clear``
+     - The output directory is replaced and populated from the packaged Python template.
+     - ``pyfcstm generate -i docs/source/tutorials/quick_start/traffic_light.fcstm --template python -t ./templates/python -o /tmp/bad``
+     - Command validation rejects using built-in and custom template sources together.
+   * - ``plantuml``
+     - ``pyfcstm plantuml -i docs/source/tutorials/quick_start/traffic_light.fcstm -o /tmp/traffic.puml``
+     - The requested file starts with ``@startuml`` and is deterministic text.
+     - ``pyfcstm plantuml -i /tmp/missing.fcstm -o /tmp/missing.puml``
+     - Input-file reading fails before any renderer is involved.
+   * - ``visualize``
+     - ``pyfcstm visualize --check --renderer auto``
+     - The command reports local/remote backend availability and does not read a DSL file.
+     - ``pyfcstm visualize --check --renderer local``
+     - On a machine without a local jar configuration, renderer availability fails without parsing a model.
+   * - ``visualize``
+     - ``pyfcstm visualize -i docs/source/tutorials/quick_start/traffic_light.fcstm -t svg -o /tmp/traffic.svg --no-open``
+     - The requested image file exists after successful backend rendering.
+     - ``pyfcstm visualize -i docs/source/tutorials/quick_start/traffic_light.fcstm -t jpg -o /tmp/traffic.jpg --no-open``
+     - Click rejects the closed render-type choice before rendering.
+
+These examples are not a replacement for the exhaustive option tables below.
+They show the contract shape: a valid example, the observable success signal,
+an invalid example, and the layer that owns the failure.
+
 ``simulate``
 ------------
 

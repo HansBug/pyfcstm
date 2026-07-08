@@ -7,6 +7,26 @@ Use this guide when you need diagram source or rendered diagram files. For the
 complete option table, see :doc:`/reference/visualization_options/index`. For a
 first diagram walkthrough, see :doc:`/tutorials/visualization/index`.
 
+Concrete input and visual evidence
+----------------------------------
+
+The concrete examples below use
+``docs/source/tutorials/visualization/example.fcstm``. The visualization
+tutorial already generates ``output_minimal.puml.svg``, ``output_normal.puml.svg``,
+and ``output_full.puml.svg`` from that source, so this how-to can point to real
+rendered artifacts instead of asking readers to trust option names.
+
+Before comparing rendered images, export PlantUML source:
+
+.. code-block:: bash
+
+   pyfcstm plantuml -i docs/source/tutorials/visualization/example.fcstm -o /tmp/example.puml
+
+Success means ``/tmp/example.puml`` exists, starts with ``@startuml``, and
+contains the expected state names. If source export fails, fix DSL/model errors
+before changing renderer settings. Rendering options cannot repair invalid
+PlantUML source.
+
 Choose source or rendered output
 --------------------------------
 
@@ -28,6 +48,46 @@ Choose source or rendered output
    * - Private diagrams
      - ``visualize --renderer local``
      - Avoids sending PlantUML source to a remote service.
+
+Visualization task acceptance cards
+-----------------------------------
+
+Use these cards when deciding whether a diagram step is ready for a tutorial,
+review note, or CI job.
+
+.. list-table:: Visualization task evidence
+   :header-rows: 1
+
+   * - Task
+     - Command
+     - Success signal
+     - Side effect
+     - First troubleshooting step
+   * - Review diagram source.
+     - ``pyfcstm plantuml -i docs/source/tutorials/visualization/example.fcstm -o /tmp/example.puml``
+     - ``/tmp/example.puml`` starts with ``@startuml`` and is diffable text.
+     - Writes only the requested source file.
+     - Run ``inspect`` on the same input if PlantUML export fails.
+   * - Compare detail presets.
+     - ``pyfcstm plantuml -i docs/source/tutorials/visualization/example.fcstm -l full -o /tmp/example.full.puml``
+     - The full source includes lifecycle/action details that the minimal preset hides.
+     - Writes a second source file for review.
+     - Check :doc:`/reference/visualization_options/index` before mixing preset and ``-c`` overrides.
+   * - Check renderer availability.
+     - ``pyfcstm visualize --check --renderer auto``
+     - Reports either a usable local/remote backend or a concrete backend error.
+     - No diagram file is written.
+     - Decide whether privacy requires ``--renderer local`` before accepting remote fallback.
+   * - Render without GUI dependence.
+     - ``pyfcstm visualize -i docs/source/tutorials/visualization/example.fcstm -t svg -o /tmp/example.svg --no-open``
+     - ``/tmp/example.svg`` exists and is visually readable in the docs/review context.
+     - Writes the rendered file and may populate renderer cache.
+     - If the file is missing but the backend reported success, treat that as a renderer failure, not a DSL failure.
+   * - Verify a documented figure.
+     - Build HTML after regenerating the source diagram.
+     - The figure is legible at the documented width and its caption states the claim it proves.
+     - Updates generated image files when diagram sources changed.
+     - Inspect the rendered HTML; source reST alone does not prove visual quality.
 
 Export PlantUML source
 ----------------------

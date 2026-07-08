@@ -140,6 +140,102 @@ This is why the completion standard is deliberately broader than ``make
 antlr_build``. Regeneration proves that generated parser code is current; it does
 not prove semantic import, highlighting, editor behavior, or prompt guidance.
 
+Mechanism trace: from syntax text to author feedback
+----------------------------------------------------
+
+The following trace shows why the documentation treats grammar tooling as a
+pipeline rather than a collection of independent files. A syntax form such as a
+guarded transition moves through several evidence boundaries before a user sees
+it as reliable language support.
+
+.. list-table:: Syntax-support trace
+   :header-rows: 1
+
+   * - Boundary
+     - Example source fact
+     - What passes through
+     - What can fail here
+     - Evidence that closes the boundary
+   * - Tokenization.
+     - ``GrammarLexer.g4`` operator and keyword rules.
+     - Character sequences become tokens such as identifiers, comparison operators, and braces.
+     - A longer operator can be split incorrectly when ordering is wrong.
+     - Lexer/parser tests and regenerated parser output.
+   * - Parse shape.
+     - ``GrammarParser.g4`` transition, event, guard, and block rules.
+     - Tokens become a parse tree with concrete rule names.
+     - A form may parse too broadly, making a later diagnostic less precise.
+     - Parser positive and negative examples.
+   * - AST construction.
+     - ``pyfcstm/dsl/listener.py`` and ``pyfcstm/dsl/node.py``.
+     - Parse events become repository AST nodes with export behavior.
+     - Listener code can drop a field even though the grammar accepted it.
+     - AST round-trip or import tests.
+   * - Semantic import.
+     - ``pyfcstm/model/imports.py`` and model validation.
+     - AST nodes become states, transitions, events, actions, and diagnostics.
+     - Scope resolution, duplicate names, unresolved references, or illegal targets can fail.
+     - Model tests, diagnostics examples, and inspect reports.
+   * - Authoring display.
+     - Pygments lexer, TextMate grammar, and VSCode providers.
+     - The same syntax is colored, completed, diagnosed, and explained while editing.
+     - Highlighting can teach a stale token; completion can suggest a form the parser rejects.
+     - ``python editors/validate.py`` and focused VSCode verification.
+   * - Human and prompt guidance.
+     - User docs and ``pyfcstm/llm/fcstm_grammar_guide.md``.
+     - The supported rule is presented to readers and repair prompts.
+     - Examples can become stale even when code is correct.
+     - Sphinx builds, Markdown/checksum updates, and example execution where relevant.
+
+This trace also defines the troubleshooting order. If command-line parsing
+rejects a file, fix grammar or model facts before touching highlighters. If the
+parser accepts the file but VSCode marks it suspicious, treat the editor as
+stale unless a fresh parser/model test proves otherwise.
+
+Boundary examples: what each symptom means
+------------------------------------------
+
+The same visible symptom can come from different layers. Use concrete
+reproductions and repair ownership instead of guessing.
+
+.. list-table:: Grammar-tooling boundary examples
+   :header-rows: 1
+
+   * - Symptom
+     - Minimal reproduction
+     - Likely owner
+     - Correct first repair
+     - Incorrect shortcut
+   * - A valid command-line file is not highlighted.
+     - ``python -m pyfcstm inspect -i sample.fcstm`` succeeds, but the editor shows keywords as plain text.
+     - Pygments, TextMate, or VSCode language registration.
+     - Update syntax display assets and run editor validation.
+     - Changing parser grammar just to influence colors.
+   * - VSCode completion suggests invalid syntax.
+     - Insert the completed snippet and run ``pyfcstm inspect``; the parser/model rejects it.
+     - VSCode completion or snippets.
+     - Remove or fix the suggestion and add a focused editor test.
+     - Loosening parser/model validation to accept a bad suggestion.
+   * - A new parser rule compiles but model import loses data.
+     - Parse succeeds, but inspect output omits the new event, action, or transition fact.
+     - Listener, AST node, or model importer.
+     - Add an AST/model test that checks the represented fact.
+     - Only updating documentation because the grammar accepts the text.
+   * - Documentation example fails after a grammar change.
+     - Copy the documented FCSTM block into a file and run ``pyfcstm inspect``.
+     - The page and its generated example resources.
+     - Update the example or explicitly mark it as an invalid counterexample.
+     - Leaving the stale example because Sphinx still builds.
+   * - LLM repair keeps generating old syntax.
+     - The human docs are updated, but ``pyfcstm/llm/fcstm_grammar_guide.md`` still teaches the old rule.
+     - Prompt-facing grammar guide and checksum.
+     - Update the guide, run ``make sha256``, and include both files.
+     - Treating the human documentation update as enough for prompt users.
+
+These examples are intentionally not phrased as one universal command. The
+right check depends on which boundary changed. A parser-only patch should not be
+forced to run VSCode packaging, but a syntax-support patch that claims editor
+parity must include editor evidence.
 
 Completion standard
 -------------------

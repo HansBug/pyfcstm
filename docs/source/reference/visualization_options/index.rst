@@ -14,37 +14,37 @@ The synchronization markers below are comments consumed by
 ``PlantUMLOptions`` field plus CLI renderer, type, environment, parser, and
 failure-boundary facts.
 
-.. visualization-ref-field: name=detail_level
-.. visualization-ref-field: name=show_variable_definitions
-.. visualization-ref-field: name=variable_display_mode
-.. visualization-ref-field: name=variable_legend_position
-.. visualization-ref-field: name=state_name_format
-.. visualization-ref-field: name=show_pseudo_state_style
-.. visualization-ref-field: name=collapse_empty_states
-.. visualization-ref-field: name=show_lifecycle_actions
-.. visualization-ref-field: name=show_enter_actions
-.. visualization-ref-field: name=show_during_actions
-.. visualization-ref-field: name=show_exit_actions
-.. visualization-ref-field: name=show_aspect_actions
-.. visualization-ref-field: name=show_abstract_actions
-.. visualization-ref-field: name=show_concrete_actions
-.. visualization-ref-field: name=abstract_action_marker
-.. visualization-ref-field: name=max_action_lines
-.. visualization-ref-field: name=show_transition_guards
-.. visualization-ref-field: name=show_transition_effects
-.. visualization-ref-field: name=transition_effect_mode
-.. visualization-ref-field: name=show_events
-.. visualization-ref-field: name=event_name_format
-.. visualization-ref-field: name=event_visualization_mode
-.. visualization-ref-field: name=event_legend_position
-.. visualization-ref-field: name=max_depth
-.. visualization-ref-field: name=collapsed_state_marker
-.. visualization-ref-field: name=use_skinparam
-.. visualization-ref-field: name=use_stereotypes
-.. visualization-ref-field: name=custom_colors
-.. visualization-ref-preset: name=minimal
-.. visualization-ref-preset: name=normal
-.. visualization-ref-preset: name=full
+.. visualization-ref-field: name=detail_level default=normal
+.. visualization-ref-field: name=show_variable_definitions default=None
+.. visualization-ref-field: name=variable_display_mode default=legend
+.. visualization-ref-field: name=variable_legend_position default="top left"
+.. visualization-ref-field: name=state_name_format default=extra_name
+.. visualization-ref-field: name=show_pseudo_state_style default=None
+.. visualization-ref-field: name=collapse_empty_states default=False
+.. visualization-ref-field: name=show_lifecycle_actions default=None
+.. visualization-ref-field: name=show_enter_actions default=None
+.. visualization-ref-field: name=show_during_actions default=None
+.. visualization-ref-field: name=show_exit_actions default=None
+.. visualization-ref-field: name=show_aspect_actions default=None
+.. visualization-ref-field: name=show_abstract_actions default=None
+.. visualization-ref-field: name=show_concrete_actions default=None
+.. visualization-ref-field: name=abstract_action_marker default=text
+.. visualization-ref-field: name=max_action_lines default=None
+.. visualization-ref-field: name=show_transition_guards default=None
+.. visualization-ref-field: name=show_transition_effects default=None
+.. visualization-ref-field: name=transition_effect_mode default=note
+.. visualization-ref-field: name=show_events default=None
+.. visualization-ref-field: name=event_name_format default=extra_name,relpath
+.. visualization-ref-field: name=event_visualization_mode default=none
+.. visualization-ref-field: name=event_legend_position default=right
+.. visualization-ref-field: name=max_depth default=None
+.. visualization-ref-field: name=collapsed_state_marker default=...
+.. visualization-ref-field: name=use_skinparam default=True
+.. visualization-ref-field: name=use_stereotypes default=True
+.. visualization-ref-field: name=custom_colors default=None
+.. visualization-ref-preset: name=minimal defaults=show_variable_definitions=True,show_lifecycle_actions=False,show_transition_guards=True,show_transition_effects=True,show_events=True,show_pseudo_state_style=False
+.. visualization-ref-preset: name=normal defaults=show_variable_definitions=True,show_lifecycle_actions=False,show_transition_guards=True,show_transition_effects=True,show_events=True,show_pseudo_state_style=True
+.. visualization-ref-preset: name=full defaults=show_variable_definitions=True,show_lifecycle_actions=True,show_transition_guards=True,show_transition_effects=True,show_events=True,show_pseudo_state_style=True
 .. visualization-ref-renderer: name=local
 .. visualization-ref-renderer: name=remote
 .. visualization-ref-renderer: name=auto

@@ -13,7 +13,7 @@ Markers are Sphinx-safe comment-shaped lines.  Each marker must fit on one
 physical line and start with ``.. `` followed by an unregistered marker name::
 
     .. visualization-ref-field: name=show_events default=None
-    .. visualization-ref-preset: name=normal
+    .. visualization-ref-preset: name=normal defaults=show_events=True,show_pseudo_state_style=True
     .. visualization-ref-renderer: name=auto
     .. visualization-ref-boundary: renderer-auto-fallback suffix-mismatch check-mode
 
@@ -40,7 +40,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from pyfcstm.entry import visualize as visualize_entry  # noqa: E402
+from pyfcstm.entry.cli import pyfcstmcli  # noqa: E402
 from pyfcstm.model.plantuml import PlantUMLOptions  # noqa: E402
 
 _LANG_FILES = {
@@ -50,7 +50,7 @@ _LANG_FILES = {
 
 _MARKER_SCHEMAS = {
     "visualization-ref-field": (frozenset(("name",)), frozenset(("default",))),
-    "visualization-ref-preset": (frozenset(("name",)), frozenset()),
+    "visualization-ref-preset": (frozenset(("name",)), frozenset(("defaults",))),
     "visualization-ref-renderer": (frozenset(("name",)), frozenset()),
     "visualization-ref-render-type": (frozenset(("name",)), frozenset()),
     "visualization-ref-envvar": (frozenset(("name",)), frozenset()),
@@ -58,6 +58,15 @@ _MARKER_SCHEMAS = {
     "visualization-ref-boundary": (frozenset(("group",)), frozenset()),
 }
 
+_VISUALIZE_COMMAND = pyfcstmcli.commands["visualize"]
+_PRESET_FIELDS = (
+    "show_variable_definitions",
+    "show_lifecycle_actions",
+    "show_transition_guards",
+    "show_transition_effects",
+    "show_events",
+    "show_pseudo_state_style",
+)
 _EXPECTED_PRESETS = frozenset(("minimal", "normal", "full"))
 _EXPECTED_PARSER_FORMS = frozenset(
     (
@@ -75,8 +84,8 @@ _EXPECTED_PARSER_FORMS = frozenset(
 )
 _EXPECTED_ENVVARS = frozenset(
     (
-        visualize_entry._PLANTUML_JAR_ENV,
-        visualize_entry._PLANTUML_HOST_ENV,
+        "PLANTUML_JAR",
+        "PLANTUML_HOST",
         "PYFCSTM_NO_GUI",
         "CI",
         "DISPLAY",
@@ -117,6 +126,32 @@ def _stable_default(field: dataclasses.Field[object]) -> str:
     return str(value)
 
 
+def _click_choice_options() -> Dict[str, Tuple[str, ...]]:
+    result: Dict[str, Tuple[str, ...]] = {}
+    for param in _VISUALIZE_COMMAND.params:
+        if hasattr(param.type, "choices"):
+            result[param.name] = tuple(str(choice) for choice in param.type.choices)
+    return result
+
+
+def _expected_renderers() -> Tuple[str, ...]:
+    return _click_choice_options()["renderer"]
+
+
+def _expected_render_types() -> Tuple[str, ...]:
+    return _click_choice_options()["render_type"]
+
+
+def _expected_preset_defaults() -> Dict[str, str]:
+    result: Dict[str, str] = {}
+    for level in sorted(_EXPECTED_PRESETS):
+        config = PlantUMLOptions(detail_level=level).to_config()
+        result[level] = ",".join(
+            "%s=%s" % (name, getattr(config, name)) for name in _PRESET_FIELDS
+        )
+    return result
+
+
 def _expected_fields() -> Dict[str, str]:
     return {
         name: _stable_default(field)
@@ -125,7 +160,11 @@ def _expected_fields() -> Dict[str, str]:
 
 
 def _read_lines(path: Path) -> List[str]:
-    return path.read_text(encoding="utf-8").splitlines()
+    try:
+        return path.read_text(encoding="utf-8").splitlines()
+    except OSError as err:
+        # OSError: Path.read_text() raises this for missing or unreadable docs.
+        raise CheckFailure("%s cannot be read: %s" % (path, err))
 
 
 def _parse_marker_line(
@@ -195,6 +234,23 @@ def _names(
     return {values["name"] for values, _flags in markers[group]}
 
 
+def _named_values(
+    markers: Mapping[str, List[Tuple[Dict[str, str], Set[str]]]], group: str
+) -> Dict[str, Dict[str, str]]:
+    result: Dict[str, Dict[str, str]] = {}
+    duplicates: List[str] = []
+    for values, _flags in markers[group]:
+        name = values["name"]
+        if name in result:
+            duplicates.append(name)
+        result[name] = values
+    if duplicates:
+        raise CheckFailure(
+            "duplicate %s marker(s): %s" % (group, ", ".join(sorted(duplicates)))
+        )
+    return result
+
+
 def _flags(
     markers: Mapping[str, List[Tuple[Dict[str, str], Set[str]]]],
     group: str,
@@ -229,27 +285,55 @@ def _check_one(path: Path) -> List[str]:
         return [str(err)]
 
     fields = _expected_fields()
+    field_markers = _named_values(markers, "visualization-ref-field")
     errors.extend(
         _check_missing(
             path,
             "visualization-ref-field",
             fields,
-            _names(markers, "visualization-ref-field"),
+            field_markers,
         )
     )
+    for name in sorted(set(fields) & set(field_markers)):
+        expected_default = fields[name]
+        found_default = field_markers[name].get("default")
+        if found_default is None:
+            errors.append(
+                "%s missing visualization-ref-field default for %s" % (path, name)
+            )
+        elif found_default != expected_default:
+            errors.append(
+                "%s has stale visualization-ref-field default for %s: expected %s, found %s"
+                % (path, name, expected_default, found_default)
+            )
+
+    preset_defaults = _expected_preset_defaults()
+    preset_markers = _named_values(markers, "visualization-ref-preset")
     errors.extend(
         _check_missing(
             path,
             "visualization-ref-preset",
-            _EXPECTED_PRESETS,
-            _names(markers, "visualization-ref-preset"),
+            preset_defaults,
+            preset_markers,
         )
     )
+    for name in sorted(set(preset_defaults) & set(preset_markers)):
+        expected_defaults = preset_defaults[name]
+        found_defaults = preset_markers[name].get("defaults")
+        if found_defaults is None:
+            errors.append(
+                "%s missing visualization-ref-preset defaults for %s" % (path, name)
+            )
+        elif found_defaults != expected_defaults:
+            errors.append(
+                "%s has stale visualization-ref-preset defaults for %s: expected %s, found %s"
+                % (path, name, expected_defaults, found_defaults)
+            )
     errors.extend(
         _check_missing(
             path,
             "visualization-ref-renderer",
-            visualize_entry._VISUALIZE_RENDERERS,
+            _expected_renderers(),
             _names(markers, "visualization-ref-renderer"),
         )
     )
@@ -257,7 +341,7 @@ def _check_one(path: Path) -> List[str]:
         _check_missing(
             path,
             "visualization-ref-render-type",
-            visualize_entry._VISUALIZE_RENDER_TYPES,
+            _expected_render_types(),
             _names(markers, "visualization-ref-render-type"),
         )
     )

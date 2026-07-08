@@ -19,10 +19,11 @@ Arguments use shell-like ``key=value`` tokens.  Token order does not matter.
 Unknown marker groups, missing required keys, malformed tokens, and unknown
 optional keys are reported as documentation errors.
 
-The checker derives command and option names from Click.  Semantic facts such as
-stdout, stderr, exit status, file side effects, and failure taxonomy are human
-marker commitments; Click cannot infer them reliably, so this checker verifies
-that the corresponding markers exist and are associated with the right command.
+The checker derives command names, option names, choice lists, and stable
+choice-option defaults from Click.  Semantic facts such as stdout, stderr, exit
+status, file side effects, and failure taxonomy are human marker commitments;
+Click cannot infer them reliably, so this checker verifies that the
+corresponding markers exist and are associated with the right command.
 """
 
 from __future__ import annotations
@@ -41,6 +42,8 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from pyfcstm.entry.cli import pyfcstmcli  # noqa: E402
+
+_OptionFact = Dict[str, str]
 
 _LANG_FILES = {
     "en": _REPO_ROOT / "docs/source/reference/cli/index.rst",
@@ -140,24 +143,38 @@ def _option_strings(option: click.Option) -> List[str]:
     return values
 
 
-def _command_option_facts() -> Dict[str, Dict[str, str]]:
-    facts: Dict[str, Dict[str, str]] = {}
+def _stable_default(option: click.Option) -> str:
+    value = option.default
+    if isinstance(value, tuple):
+        return ",".join(str(item) for item in value)
+    return str(value)
+
+
+def _command_option_facts() -> Dict[str, Dict[str, _OptionFact]]:
+    facts: Dict[str, Dict[str, _OptionFact]] = {}
     for command_name, command in sorted(pyfcstmcli.commands.items()):
-        options: Dict[str, str] = {}
+        options: Dict[str, _OptionFact] = {}
         for param in command.params:
             if isinstance(param, click.Option):
                 choices = ""
                 if isinstance(param.type, click.Choice):
                     choices = ",".join(str(choice) for choice in param.type.choices)
                 for opt in _option_strings(param):
-                    options[opt] = choices
-        options[_MANUAL_COMMAND_HELP_OPTION] = ""
+                    options[opt] = {
+                        "choices": choices,
+                        "default": _stable_default(param),
+                    }
+        options[_MANUAL_COMMAND_HELP_OPTION] = {"choices": "", "default": ""}
         facts[command_name] = options
     return facts
 
 
 def _read_lines(path: Path) -> List[str]:
-    return path.read_text(encoding="utf-8").splitlines()
+    try:
+        return path.read_text(encoding="utf-8").splitlines()
+    except OSError as err:
+        # OSError: Path.read_text() raises this for missing or unreadable docs.
+        raise CheckFailure("%s cannot be read: %s" % (path, err))
 
 
 def _parse_marker_line(
@@ -221,11 +238,21 @@ def _collect_markers(
 
 def _option_markers(
     markers: Mapping[str, List[Tuple[Dict[str, str], Set[str]]]],
-) -> Set[Tuple[str, str]]:
-    return {
-        (values["command"], values["option"])
-        for values, _flags in markers["cli-ref-option"]
-    }
+) -> Dict[Tuple[str, str], Dict[str, str]]:
+    result: Dict[Tuple[str, str], Dict[str, str]] = {}
+    duplicates: List[Tuple[str, str]] = []
+    for values, _flags in markers["cli-ref-option"]:
+        key = (values["command"], values["option"])
+        if key in result:
+            duplicates.append(key)
+        result[key] = values
+    if duplicates:
+        duplicate_text = ", ".join(
+            "command=%s option=%s" % (command, option)
+            for command, option in sorted(duplicates)
+        )
+        raise CheckFailure("duplicate cli-ref-option marker(s): %s" % duplicate_text)
+    return result
 
 
 def _boundary_markers(
@@ -238,7 +265,9 @@ def _boundary_markers(
     return result
 
 
-def _check_one(path: Path, command_facts: Mapping[str, Mapping[str, str]]) -> List[str]:
+def _check_one(
+    path: Path, command_facts: Mapping[str, Mapping[str, _OptionFact]]
+) -> List[str]:
     errors: List[str] = []
     try:
         markers = _collect_markers(path)
@@ -253,7 +282,12 @@ def _check_one(path: Path, command_facts: Mapping[str, Mapping[str, str]]) -> Li
     for command in sorted(found_commands - expected_commands):
         errors.append("%s has stale cli-ref-command for %s" % (path, command))
 
-    found_options = _option_markers(markers)
+    try:
+        option_markers = _option_markers(markers)
+    except CheckFailure as err:
+        # CheckFailure: duplicate option markers make exact metadata ambiguous.
+        return [str(err)]
+    found_options = set(option_markers)
     expected_options = {
         (command, option)
         for command, options in command_facts.items()
@@ -270,6 +304,47 @@ def _check_one(path: Path, command_facts: Mapping[str, Mapping[str, str]]) -> Li
         errors.append(
             "%s has stale cli-ref-option command=%s option=%s" % (path, command, option)
         )
+    for command, option in sorted(found_options & expected_options):
+        values = option_markers[(command, option)]
+        fact = command_facts.get(command, {}).get(option, {})
+        expected_choices = fact.get("choices", "")
+        found_choices = values.get("choices", "")
+        if expected_choices and not found_choices:
+            errors.append(
+                "%s missing cli-ref-option choices for command=%s option=%s"
+                % (path, command, option)
+            )
+        elif expected_choices != found_choices:
+            errors.append(
+                "%s has stale cli-ref-option choices for command=%s option=%s: "
+                "expected %s, found %s"
+                % (path, command, option, expected_choices or "<none>", found_choices)
+            )
+
+        expected_default = fact.get("default", "")
+        found_default = values.get("default")
+        if (
+            expected_choices
+            and expected_default
+            and expected_default != "Sentinel.UNSET"
+        ):
+            if found_default is None:
+                errors.append(
+                    "%s missing cli-ref-option default for command=%s option=%s"
+                    % (path, command, option)
+                )
+            elif expected_default != found_default:
+                errors.append(
+                    "%s has stale cli-ref-option default for command=%s option=%s: "
+                    "expected %s, found %s"
+                    % (path, command, option, expected_default, found_default)
+                )
+        elif found_default is not None and expected_default != found_default:
+            errors.append(
+                "%s has stale cli-ref-option default for command=%s option=%s: "
+                "expected %s, found %s"
+                % (path, command, option, expected_default or "<none>", found_default)
+            )
 
     found_boundaries = _boundary_markers(markers)
     for command, required in sorted(_REQUIRED_BOUNDARIES.items()):

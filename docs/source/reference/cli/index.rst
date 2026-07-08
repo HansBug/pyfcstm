@@ -29,11 +29,11 @@ Click command tree and with the documented human-only boundary facts.
 .. cli-ref-option: command=inspect option=--input-code
 .. cli-ref-option: command=inspect option=-o
 .. cli-ref-option: command=inspect option=--output
-.. cli-ref-option: command=inspect option=--format choices=human,json,llm-json,llm-md
-.. cli-ref-option: command=inspect option=--color choices=auto,always,never
+.. cli-ref-option: command=inspect option=--format choices=human,json,llm-json,llm-md default=human
+.. cli-ref-option: command=inspect option=--color choices=auto,always,never default=auto
 .. cli-ref-option: command=inspect option=--enable-verify
-.. cli-ref-option: command=inspect option=--max-complexity-tier choices=structural,smt_linear,smt_nonlinear_decidable,smt_undecidable_heuristic,bmc_search
-.. cli-ref-option: command=inspect option=--max-call-count-scaling choices=none,one,linear_in_states,linear_in_transitions,linear_in_vars,linear_in_leaves,quadratic_in_outgoing_per_state,quadratic_in_states,vars_times_transitions,k_unrollings,k_unrollings_times_branching
+.. cli-ref-option: command=inspect option=--max-complexity-tier choices=structural,smt_linear,smt_nonlinear_decidable,smt_undecidable_heuristic,bmc_search default=structural
+.. cli-ref-option: command=inspect option=--max-call-count-scaling choices=none,one,linear_in_states,linear_in_transitions,linear_in_vars,linear_in_leaves,quadratic_in_outgoing_per_state,quadratic_in_states,vars_times_transitions,k_unrollings,k_unrollings_times_branching default=linear_in_transitions
 .. cli-ref-option: command=inspect option=--smt-timeout-ms
 .. cli-ref-option: command=inspect option=--help
 .. cli-ref-command: name=plantuml
@@ -41,8 +41,8 @@ Click command tree and with the documented human-only boundary facts.
 .. cli-ref-option: command=plantuml option=--input-code
 .. cli-ref-option: command=plantuml option=-o
 .. cli-ref-option: command=plantuml option=--output
-.. cli-ref-option: command=plantuml option=-l choices=minimal,normal,full
-.. cli-ref-option: command=plantuml option=--level choices=minimal,normal,full
+.. cli-ref-option: command=plantuml option=-l choices=minimal,normal,full default=normal
+.. cli-ref-option: command=plantuml option=--level choices=minimal,normal,full default=normal
 .. cli-ref-option: command=plantuml option=-c
 .. cli-ref-option: command=plantuml option=--config
 .. cli-ref-option: command=plantuml option=--help
@@ -58,13 +58,13 @@ Click command tree and with the documented human-only boundary facts.
 .. cli-ref-option: command=visualize option=--input-code
 .. cli-ref-option: command=visualize option=-o
 .. cli-ref-option: command=visualize option=--output
-.. cli-ref-option: command=visualize option=-l choices=minimal,normal,full
-.. cli-ref-option: command=visualize option=--level choices=minimal,normal,full
+.. cli-ref-option: command=visualize option=-l choices=minimal,normal,full default=normal
+.. cli-ref-option: command=visualize option=--level choices=minimal,normal,full default=normal
 .. cli-ref-option: command=visualize option=-c
 .. cli-ref-option: command=visualize option=--config
-.. cli-ref-option: command=visualize option=-t choices=png,svg,pdf
-.. cli-ref-option: command=visualize option=--type choices=png,svg,pdf
-.. cli-ref-option: command=visualize option=--renderer choices=local,remote,auto
+.. cli-ref-option: command=visualize option=-t choices=png,svg,pdf default=png
+.. cli-ref-option: command=visualize option=--type choices=png,svg,pdf default=png
+.. cli-ref-option: command=visualize option=--renderer choices=local,remote,auto default=auto
 .. cli-ref-option: command=visualize option=-j
 .. cli-ref-option: command=visualize option=--java
 .. cli-ref-option: command=visualize option=-p

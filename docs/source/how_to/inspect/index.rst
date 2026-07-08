@@ -3,33 +3,31 @@
 Inspect tasks
 =============
 
-Use these recipes when you already know what you want ``pyfcstm inspect``
-to do. The tutorial at :doc:`../../tutorials/inspect/index` shows the first
-walkthrough; this page is the task desk for CI jobs, local triage, LLM repair
-handoffs, suffix warnings, and bounded verify integration.
+Use these recipes when you already know what you want ``pyfcstm inspect`` to
+do. The tutorial at :doc:`../../tutorials/inspect/index` shows the walkthrough;
+this page is the task desk for CI, triage, repair handoffs, suffix warnings,
+and bounded verify integration.
 
-The recipes use the checked tutorial input
-``docs/source/tutorials/inspect/inspect_diagnostics.fcstm``. It is valid FCSTM
-DSL and intentionally contains suspicious but inspectable design facts. A
-command failure in this page means the input could not become a report at all;
-a successful report can still contain warnings and infos.
+The recipes use ``docs/source/tutorials/inspect/inspect_diagnostics.fcstm``. It
+is valid FCSTM DSL and intentionally contains suspicious but inspectable design
+facts. A command failure means the input could not become a report; a successful
+report can still contain warnings and infos.
 
 .. figure:: ../../tutorials/inspect/inspect_diagnostics.fcstm.puml.svg
    :alt: Inspect demo state machine with combo relay pseudo states
    :width: 82%
 
-   The figure proves the authored machine is small but not trivial: two combo
-   triggers expand into pseudo relay states, and the diagnostic examples can
-   point to both authored transitions and generated relay provenance.
+   The figure proves the authored machine is small but not trivial: combo
+   triggers expand into pseudo relay states while diagnostics still point back
+   to authored transitions and relay provenance.
 
 Shared rules for every recipe
 -----------------------------
 
 Each card states the same six audit facts: **Input**, **Command or code**,
 **Expected signal**, **File side effect**, **First failure check**, and
-**Reference link**. Prefer short snippets in prose. The longer regenerated
-workflows remain in the ``inspect_*.demo.sh`` files beside the tutorial input
-and are referenced here only for the focused evidence they provide.
+**Reference link**. Longer regenerated workflows stay in the tutorial
+``inspect_*.demo.sh`` files and are referenced only for focused evidence.
 
 1. Choose the report format
 ---------------------------
@@ -46,9 +44,9 @@ repair prompt.
    pyfcstm inspect -i docs/source/tutorials/inspect/inspect_diagnostics.fcstm --format llm-json
    pyfcstm inspect -i docs/source/tutorials/inspect/inspect_diagnostics.fcstm --format llm-md
 
-**Expected signal.** ``human`` starts with a checker-style summary,
-``json`` contains ``root_state_path`` and structural arrays, ``llm-json`` starts
-with ``schema_version`` ``pyfcstm.inspect.llm.v1``, and ``llm-md`` starts with a
+**Expected signal.** ``human`` starts with a checker-style summary, ``json``
+contains ``root_state_path`` and structural arrays, ``llm-json`` starts with
+``schema_version`` ``pyfcstm.inspect.llm.v1``, and ``llm-md`` starts with a
 Markdown heading.
 
 **File side effect.** None unless ``-o`` is used; all four commands write to
@@ -57,8 +55,7 @@ stdout by default.
 **First failure check.** Run ``python -m pyfcstm inspect --help`` and confirm
 that ``--format`` still lists ``human|json|llm-json|llm-md``.
 
-**Reference link.** Format contracts live in
-:doc:`../../reference/inspect_report/index`.
+**Reference link.** Format contracts live in :doc:`../../reference/inspect_report/index`.
 
 2. Read a human report during local triage
 ------------------------------------------
@@ -76,7 +73,7 @@ or review comment:
 
 .. code-block:: text
 
-   [WARN] FCSTM Inspect Report: inspect_diagnostics.fcstm
+   [WARN] FCSTM Inspect Report: docs/source/tutorials/inspect/inspect_diagnostics.fcstm
    Summary
      status: warning
      root: InspectDemo
@@ -85,11 +82,10 @@ or review comment:
 The first warning is ``W_DURING_CONST_ASSIGN`` and includes a source excerpt,
 ``why`` text, suggested fix shapes, and ``do-not`` guidance.
 
-**File side effect.** None; the pipeline reads one file and writes plain text to
-stdout.
+**File side effect.** None; the pipeline reads one file and writes plain text to stdout.
 
 **First failure check.** If the first line is colorized escape text, add
-``--color never``. If no report appears, check stderr for a read, parse, or
+``--color never``. If no report appears, check stderr for read, parse, or
 model-validation failure before debugging diagnostics.
 
 **Reference link.** Diagnostic-code meaning and repair metadata live in
@@ -109,8 +105,7 @@ model-validation failure before debugging diagnostics.
    sed -n '1,5p' /tmp/inspect-human.txt
 
 **Expected signal.** The file starts with ``[WARN] FCSTM Inspect Report`` and
-contains no ANSI escape sequences. Color is always disabled for file output,
-even when terminal output could be colored.
+contains no ANSI escapes. Color is always disabled for file output.
 
 **File side effect.** ``/tmp/inspect-human.txt`` is created or overwritten with
 UTF-8 text.
@@ -118,8 +113,7 @@ UTF-8 text.
 **First failure check.** If the file is empty, check whether the output
 directory exists; ``pyfcstm inspect`` reports write failures as CLI errors.
 
-**Reference link.** The color and output-file rules are listed in
-:doc:`../../reference/inspect_report/index`.
+**Reference link.** Color and output-file rules are listed in :doc:`../../reference/inspect_report/index`.
 
 4. Write full JSON for CI or tooling
 ------------------------------------
@@ -142,8 +136,8 @@ directory exists; ``pyfcstm inspect`` reports write failures as CLI errors.
    print(len(report['diagnostics']))
    PY
 
-**Expected signal.** The checked example prints ``InspectDemo``, then
-``6 5``, then ``13``. The full JSON also contains ``combo_origins``,
+**Expected signal.** The checked example prints ``InspectDemo``, then ``6 5``,
+then ``13``. The full JSON also contains ``combo_origins``,
 ``reachability_graph``, ``var_dataflow``, and ``metrics``.
 
 **File side effect.** ``/tmp/inspect.json`` is created or overwritten.
@@ -157,7 +151,7 @@ directory exists; ``pyfcstm inspect`` reports write failures as CLI errors.
 5. Fail a CI gate from JSON severity
 ------------------------------------
 
-**Input.** A full JSON report that already exists.
+**Input.** A full JSON report generated by task 4 at ``/tmp/inspect.json``.
 
 **Command or code.** Count severities instead of matching message text:
 
@@ -187,8 +181,7 @@ warning-only policy prints ``warnings: 9`` and exits successfully.
 6. Write ``llm-json`` for an automated repair prompt
 ----------------------------------------------------
 
-**Input.** A valid model and an LLM repair loop that should not receive the
-entire structural inventory.
+**Input.** A valid model and an LLM repair loop that needs a compact packet.
 
 **Command or code.** Create the compact repair packet:
 
@@ -209,7 +202,7 @@ entire structural inventory.
 
 **Expected signal.** The schema version is ``pyfcstm.inspect.llm.v1``. The
 first diagnostic includes ``source_excerpt``, ``refs``, ``recommended_actions``,
-and ``do_not``.
+and ``do_not``; the final count line is ``2 1``.
 
 **File side effect.** ``/tmp/inspect.llm.json`` is created or overwritten.
 
@@ -230,7 +223,7 @@ and ``do_not``.
 
    pyfcstm inspect -i docs/source/tutorials/inspect/inspect_diagnostics.fcstm \
        --format llm-md -o /tmp/inspect.llm.md
-   sed -n '1,12p' /tmp/inspect.llm.md
+   sed -n '1,7p' /tmp/inspect.llm.md
 
 **Expected signal.** The checked demo begins with:
 
@@ -238,7 +231,9 @@ and ``do_not``.
 
    # FCSTM Inspect Report
    - Schema: `pyfcstm.inspect.llm.v1`
+   - Schema status: `stable`
    - Status: `warning`
+   - Input: `docs/source/tutorials/inspect/inspect_diagnostics.fcstm`
    - Diagnostics: 0 errors / 9 warnings / 4 infos
 
 **File side effect.** ``/tmp/inspect.llm.md`` is created or overwritten.
@@ -247,7 +242,7 @@ and ``do_not``.
 used ``--format llm-md`` and not ``--format llm-json``.
 
 **Reference link.** The shared LLM contract is in
-:doc:`../../reference/inspect_report/index`; repair philosophy is explained in
+:doc:`../../reference/inspect_report/index`; repair philosophy is in
 :doc:`../../explanations/diagnostics/index`.
 
 8. Navigate from a diagnostic to the source span
@@ -274,9 +269,9 @@ combo event:
 
 **File side effect.** None.
 
-**First failure check.** If the source line is missing, confirm that the report
-was built from the top-level source file. Imported or generated spans may have
-less nearby source context than the primary file.
+**First failure check.** If the source line is missing, confirm the report came
+from the top-level source file; imported or generated spans may have less
+nearby context.
 
 **Reference link.** ``span`` and ``location`` fields are specified in
 :doc:`../../reference/inspect_report/index`.
@@ -295,8 +290,9 @@ different format.
        -o /tmp/report.json 2> /tmp/inspect-suffix.err
    sed -n '1p' /tmp/inspect-suffix.err
 
-**Expected signal.** Stderr says the file looks like JSON but the selected
-format is ``human``. The command still writes the requested human report.
+**Expected signal.** Stderr says the file looks like JSON but the format is
+``human``. The command still writes human text; explicit JSON output to a
+Markdown suffix also warns about suffix-vs-format mismatch.
 
 **File side effect.** ``/tmp/report.json`` contains human text, not JSON;
 ``/tmp/inspect-suffix.err`` contains the warning in this example.
@@ -322,9 +318,8 @@ normal report:
 
 **Expected signal.** A syntax error exits with status ``1`` and writes stderr
 similar to ``Failed to parse input DSL file``. A duplicate state model error
-exits with status ``1`` and starts with ``Invalid state machine model``. The
-valid tutorial fixture exits with status ``0`` even though its report status is
-``warning``.
+starts with ``Invalid state machine model``. The valid tutorial fixture exits
+with status ``0`` even though its report status is ``warning``.
 
 **File side effect.** A failed command does not produce a successful
 ``diagnostics`` array. If ``-o`` was requested, do not trust a stale file from a
@@ -365,7 +360,7 @@ checks when verify integration is enabled.
 
 **First failure check.** If no verify-backed codes appear, confirm
 ``--enable-verify`` was present. Raising ``--max-complexity-tier`` can allow
-more bounded algorithms, but it does not enable BMC search.
+more bounded algorithms, not BMC search.
 
 **Reference link.** Verify tier meaning is explained in
 :doc:`../../explanations/diagnostics/index`; code details are in
@@ -384,13 +379,13 @@ them with a controlled message:
 
    pyfcstm inspect -i docs/source/tutorials/inspect/inspect_diagnostics.fcstm \
        --max-complexity-tier bmc_search
-   pyfcstm inspect -i docs/source/tutorials/inspect/inspect_diagnostics.fcstm \
-       --max-call-count-scaling k_unrollings
+   for scaling in k_unrollings k_unrollings_times_branching; do
+       pyfcstm inspect -i docs/source/tutorials/inspect/inspect_diagnostics.fcstm --max-call-count-scaling "$scaling"
+   done
 
 **Expected signal.** Each command exits with status ``1``. The first stderr
 says ``bmc_search algorithms are not allowed in automatic inspect runs``; the
-second says ``call-count scaling 'k_unrollings' is not allowed``. The same
-policy also rejects ``k_unrollings_times_branching``.
+call-count examples say their requested scaling is not allowed.
 
 **File side effect.** No successful report is produced.
 
@@ -404,8 +399,8 @@ user-driven verification workflows, not automatic inspect.
 13. Keep target and deployment warnings precise
 -----------------------------------------------
 
-**Input.** A diagnostic whose message mentions a target family or generated
-runtime profile.
+**Input.** A task-4 full JSON report and a diagnostic whose message mentions a
+target family or generated runtime profile.
 
 **Command or code.** Read the numeric warning refs:
 
@@ -468,4 +463,9 @@ This table is supplementary; it is not one of the thirteen task cards.
 Verification evidence for this page
 -----------------------------------
 
-The short excerpts above are grounded in checked tutorial resources: ``inspect_human.demo.sh.txt`` for human output, ``inspect_formats.demo.sh.txt`` for JSON and LLM shape, ``inspect_cli_edges.demo.sh.txt`` for color and suffix behavior, ``inspect_invalid.demo.sh.txt`` for parse failure, and ``inspect_verify_policy.demo.sh.txt`` for policy rejection. Re-run the scripts in ``docs/source/tutorials/inspect/`` only when those source resources change.
+The short excerpts above are grounded in checked tutorial resources:
+``inspect_human.demo.sh.txt`` for human output, ``inspect_formats.demo.sh.txt``
+for JSON/LLM shape, ``inspect_cli_edges.demo.sh.txt`` for color/suffix behavior,
+``inspect_invalid.demo.sh.txt`` for parse failure, and
+``inspect_verify_policy.demo.sh.txt`` for policy rejection. Re-run scripts only
+when those source resources change.

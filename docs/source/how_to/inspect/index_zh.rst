@@ -85,7 +85,7 @@ Inspect 任务指南
 
 .. code-block:: text
 
-   [WARN] FCSTM Inspect Report: inspect_diagnostics.fcstm
+   [WARN] FCSTM Inspect Report: docs/source/tutorials/inspect/inspect_diagnostics.fcstm
    Summary
      status: warning
      root: InspectDemo
@@ -153,7 +153,7 @@ Inspect 任务指南
 5. 用 JSON 严重级别做门禁
 ----------------------------------------
 
-输入。已经生成的完整 JSON 报告。
+输入。第 4 个任务已经写到 ``/tmp/inspect.json`` 的完整 JSON 报告。
 
 命令或代码。统计严重级别，不匹配人类可读消息：
 
@@ -200,7 +200,7 @@ Inspect 任务指南
    PY
 
 预期信号。结构版本是 ``pyfcstm.inspect.llm.v1``\ 。第一个诊断包含
-``source_excerpt``、``refs``、``recommended_actions`` 和 ``do_not``\ 。
+``source_excerpt``、``refs``、``recommended_actions`` 和 ``do_not``\ ；最后一行计数是 ``2 1``\ 。
 
 文件副作用。``/tmp/inspect.llm.json`` 会被创建或覆盖。
 
@@ -219,7 +219,7 @@ Inspect 任务指南
 
    pyfcstm inspect -i docs/source/tutorials/inspect/inspect_diagnostics.fcstm \
        --format llm-md -o /tmp/inspect.llm.md
-   sed -n '1,12p' /tmp/inspect.llm.md
+   sed -n '1,7p' /tmp/inspect.llm.md
 
 预期信号。已检查示例开头是：
 
@@ -227,7 +227,9 @@ Inspect 任务指南
 
    # FCSTM Inspect Report
    - Schema: `pyfcstm.inspect.llm.v1`
+   - Schema status: `stable`
    - Status: `warning`
+   - Input: `docs/source/tutorials/inspect/inspect_diagnostics.fcstm`
    - Diagnostics: 0 errors / 9 warnings / 4 infos
 
 文件副作用。``/tmp/inspect.llm.md`` 会被创建或覆盖。
@@ -274,7 +276,7 @@ Inspect 任务指南
        -o /tmp/report.json 2> /tmp/inspect-suffix.err
    sed -n '1p' /tmp/inspect-suffix.err
 
-预期信号。标准错误会提示文件看起来像 JSON，但当前格式是 ``human``\ 。命令仍会写出请求的人类可读报告。
+预期信号。标准错误会提示文件看起来像 JSON，但当前格式是 ``human``\ 。命令仍会写出请求的人类可读报告；反过来把显式 JSON 写到 Markdown 后缀时也会提示后缀和格式不匹配。
 
 文件副作用。``/tmp/report.json`` 含人类可读文本，不是 JSON；本示例还把警告写到 ``/tmp/inspect-suffix.err``\ 。
 
@@ -342,8 +344,10 @@ Inspect 任务指南
        --max-complexity-tier bmc_search
    pyfcstm inspect -i docs/source/tutorials/inspect/inspect_diagnostics.fcstm \
        --max-call-count-scaling k_unrollings
+   pyfcstm inspect -i docs/source/tutorials/inspect/inspect_diagnostics.fcstm \
+       --max-call-count-scaling k_unrollings_times_branching
 
-预期信号。两条命令都以状态 ``1`` 退出。第一条标准错误说明 ``bmc_search algorithms are not allowed in automatic inspect runs``\ ；第二条说明 ``call-count scaling 'k_unrollings' is not allowed``\ 。``k_unrollings_times_branching`` 同样会被拒绝。
+预期信号。三条命令都以状态 ``1`` 退出。第一条标准错误说明 ``bmc_search algorithms are not allowed in automatic inspect runs``\ ；两个调用次数缩放示例都会说明所请求的缩放不被允许。
 
 文件副作用。不产生成功报告。
 
@@ -354,7 +358,7 @@ Inspect 任务指南
 13. 保持目标和部署警告的范围精确
 ----------------------------------------
 
-输入。消息里提到目标家族或生成运行时配置的诊断。
+输入。第 4 个任务已经写出的完整 JSON 报告，以及消息里提到目标家族或生成运行时配置的诊断。
 
 命令或代码。读取数值警告的结构化引用：
 

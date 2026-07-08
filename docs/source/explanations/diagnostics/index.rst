@@ -50,7 +50,8 @@ boundary. Only then can inspect build the structural report and attach
      - Analyzer modules add warnings and infos from structural, combo, numeric,
        data-flow, type-shape, redundancy, and design-health facts.
      - Static ``diagnostics[]`` entries.
-     - Some registry codes are lookup-only or compatibility-only.
+     - Internal analyzer bugs surface as failures; lookup-only registry codes
+       are not analyzer failures.
    * - Optional verify adapter
      - With ``--enable-verify``, bounded eligible verification algorithms run
        and their results are normalized.
@@ -215,7 +216,7 @@ answers where the diagnostic can come from. They are related but not the same.
      - The code was proven by an SMT solver.
    * - ``verify_pipeline``
      - Optional verify integration may emit the code.
-     - It runs unless ``--enable-verify`` and policy allow it.
+     - It runs without ``--enable-verify`` or despite policy rejection.
    * - ``lookup_api``
      - Explicit resolver APIs own the code.
      - It is expected in ordinary CLI inspect output.
@@ -270,8 +271,8 @@ inspect, verify, generated code, and repair tooling clear.
      - The static data-flow analyzer found no DSL write path. It did not prove
        an abstract handler will never mutate external state.
    * - ``--enable-verify``
-     - The command can add bounded topology or SMT-local findings. It does not
-       silently enable BMC search or unbounded path exploration.
+     - The command can add bounded topology or bounded SMT findings. It does
+       not silently enable BMC search or unbounded path exploration.
    * - LLM repair report
      - The report makes a repair prompt more grounded. It does not prove that
        the LLM's patch is correct without tests or human review.
@@ -317,3 +318,17 @@ Use this matrix when deciding where to handle an outcome.
 A good inspect workflow therefore has two gates: first prove the command
 produced a report, then decide what the report's diagnostics mean for the
 specific human, CI, IDE, LLM, or deployment consumer.
+
+Practical reading order
+-----------------------
+
+Read each diagnostic in a fixed order: start with ``code`` for the category,
+then ``severity`` for priority, then ``span`` or ``location`` for the source,
+then ``refs`` for target, variable, event, or provenance scope. Read natural
+language guidance last. This prevents two common mistakes: acting on message
+text without checking target scope, or applying a suggested edit without
+checking author intent.
+
+The same order is useful when reviewing an LLM patch. A patch that cannot name
+the ``code``, source range, and ``refs`` field it used has not really followed
+the inspect report.

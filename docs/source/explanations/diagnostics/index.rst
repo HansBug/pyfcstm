@@ -316,19 +316,22 @@ Use this matrix when deciding where to handle an outcome.
      - Apply smallest justified edit and verify afterwards.
 
 A good inspect workflow therefore has two gates: first prove the command
-produced a report, then decide what the report's diagnostics mean for the
-specific human, CI, IDE, LLM, or deployment consumer.
+produced a report, then decide what its diagnostics mean for the consumer.
 
 Practical reading order
 -----------------------
 
-Read each diagnostic in a fixed order: start with ``code`` for the category,
-then ``severity`` for priority, then ``span`` or ``location`` for the source,
-then ``refs`` for target, variable, event, or provenance scope. Read natural
-language guidance last. This prevents two common mistakes: acting on message
-text without checking target scope, or applying a suggested edit without
-checking author intent.
+Read each diagnostic in order: ``code`` for category, ``severity`` for
+priority, ``span`` or ``location`` for source, then ``refs`` for target,
+variable, event, or provenance scope. Read prose last so you do not act without
+target scope or author intent.
 
-The same order is useful when reviewing an LLM patch. A patch that cannot name
-the ``code``, source range, and ``refs`` field it used has not really followed
-the inspect report.
+If a diagnostic has no source range, do not treat that as a tool defect first.
+Check whether it comes from a lookup API, compatibility contract, generated object,
+or no safe single source object; the code reference lists source object and refs.
+
+The same order is useful when reviewing an LLM patch: if it cannot name the
+``code``, source range, and ``refs`` field it used, it has not followed the
+report. In short: prove the report exists, decide whether the item applies to
+the current target, then edit source; this page explains reading behavior
+instead of repeating reference tables.

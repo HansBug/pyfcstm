@@ -230,6 +230,7 @@ and ``do_not``; the final count line is ``2 1``.
 .. code-block:: text
 
    # FCSTM Inspect Report
+
    - Schema: `pyfcstm.inspect.llm.v1`
    - Schema status: `stable`
    - Status: `warning`

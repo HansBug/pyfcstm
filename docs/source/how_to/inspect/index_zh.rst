@@ -226,6 +226,7 @@ Inspect 任务指南
 .. code-block:: text
 
    # FCSTM Inspect Report
+
    - Schema: `pyfcstm.inspect.llm.v1`
    - Schema status: `stable`
    - Status: `warning`

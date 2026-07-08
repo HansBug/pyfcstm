@@ -7,6 +7,7 @@ from dataclasses import replace
 import pytest
 
 from pyfcstm.bmc import (
+    BmcBuildError,
     BmcEngine,
     build_bmc_core_formula,
     compile_bmc_property,
@@ -203,3 +204,146 @@ def test_replay_disambiguates_unnamed_ref_roles_from_witness_step() -> None:
         "aspect_during_before",
         "leaf_during",
     ]
+
+
+def test_replay_rejects_unknown_user_abstract_handler_paths() -> None:
+    """Replay validates custom handler paths before constructing runtime traces."""
+    model, trace = _trace(
+        """
+        state Root {
+            state A {
+                during abstract Touch;
+            }
+            [*] -> A;
+        }
+        """,
+        'check reach <= 1: active("Root.A") && called("Root.A.Touch", step=0);',
+    )
+    with pytest.raises(BmcBuildError, match="unknown abstract action paths"):
+        replay_bmc_witness(
+            model,
+            trace,
+            abstract_handlers={"Root.A.Missing": lambda ctx: None},
+        )
+
+
+def test_replay_rejects_swapped_valid_unnamed_ref_roles() -> None:
+    """Runtime role resolution is independent from mutable witness role fields."""
+    model, trace = _trace(
+        """
+        state Root {
+            state Library {
+                during abstract Shared;
+            }
+            >> during before ref /Library.Shared;
+            state A {
+                during ref /Library.Shared;
+            }
+            [*] -> A;
+        }
+        """,
+        'init state("Root.A");\n'
+        'check reach <= 1: call_count("Root.Library.Shared", step=0) == 2 '
+        '&& called("Root.Library.Shared", step=0, role="aspect_during_before") '
+        '&& called("Root.Library.Shared", step=0, role="leaf_during");',
+    )
+    calls = trace.steps[0].abstract_calls
+    swapped_calls = (
+        replace(calls[0], role=calls[1].role),
+        replace(calls[1], role=calls[0].role),
+    )
+    bad_step = replace(trace.steps[0], abstract_calls=swapped_calls)
+    bad_trace = BmcWitnessTrace(
+        trace.property,
+        trace.solver,
+        trace.initial,
+        trace.frames,
+        (bad_step,),
+        trace.diagnostics,
+    )
+
+    replay = replay_bmc_witness(model, bad_trace)
+    assert replay.ok is False
+    assert replay.runtime_trace.steps[0].abstract_calls[0].role == (
+        "aspect_during_before"
+    )
+    assert any(
+        item.path == "steps[0].abstract_calls[0].role"
+        and item.message == "abstract call metadata mismatch"
+        for item in replay.mismatches
+    )
+
+
+def test_replay_reports_missing_frame_and_call_snapshot_keys() -> None:
+    """Replay rejects truncated witness vars and abstract-call snapshots."""
+    model, trace = _trace(
+        """
+        def int x = 0;
+        def int y = 1;
+        state Root {
+            state A {
+                during abstract Touch;
+                during { x = x + 1; }
+            }
+            [*] -> A;
+        }
+        """,
+        'check reach <= 1: active("Root.A") && '
+        'called("Root.A.Touch", step=0) && x == 1 && y == 1;',
+    )
+    assert replay_bmc_witness(model, trace).ok is True
+    bad_frame = replace(trace.frames[1], vars={"x": trace.frames[1].vars["x"]})
+    bad_call = replace(
+        trace.steps[0].abstract_calls[0],
+        snapshot={"x": trace.steps[0].abstract_calls[0].snapshot["x"]},
+    )
+    bad_step = replace(trace.steps[0], abstract_calls=(bad_call,))
+    bad_trace = BmcWitnessTrace(
+        trace.property,
+        trace.solver,
+        trace.initial,
+        (trace.frames[0], bad_frame),
+        (bad_step,),
+        trace.diagnostics,
+    )
+
+    replay = replay_bmc_witness(model, bad_trace)
+    assert replay.ok is False
+    assert any(
+        item.path == "frames[1].vars" and item.message == "variable key set mismatch"
+        for item in replay.mismatches
+    )
+    assert any(
+        item.path == "steps[0].abstract_calls[0].snapshot"
+        and item.message == "abstract call snapshot key set mismatch"
+        for item in replay.mismatches
+    )
+
+
+def test_replay_reports_state_and_termination_mismatches() -> None:
+    """Replay reports corrupted state and termination frame metadata."""
+    model, trace = _trace(
+        """
+        state Root {
+            state A;
+            state B;
+            [*] -> A;
+            A -> B;
+        }
+        """,
+        'init state("Root.A");\ncheck reach <= 1: active("Root.B");',
+    )
+    bad_frame = replace(trace.frames[1], state="Root.A", terminated=True)
+    bad_trace = BmcWitnessTrace(
+        trace.property,
+        trace.solver,
+        trace.initial,
+        (trace.frames[0], bad_frame),
+        trace.steps,
+        trace.diagnostics,
+    )
+
+    replay = replay_bmc_witness(model, bad_trace)
+    assert replay.ok is False
+    assert any(item.path == "frames[1].state" for item in replay.mismatches)
+    assert any(item.path == "frames[1].terminated" for item in replay.mismatches)

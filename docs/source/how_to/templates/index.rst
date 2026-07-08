@@ -234,3 +234,131 @@ Troubleshoot template authoring failures
    * - Output directory lost unrelated files
      - Use of ``--clear``.
      - Render into a scratch directory or omit ``--clear`` when preserving files matters.
+
+Authoring task cards
+--------------------
+
+These cards turn the custom-template guide into reviewable tasks. Use them when
+building a new template or when checking that a how-to example is not only a
+fragment.
+
+.. list-table:: Template author task cards
+   :header-rows: 1
+
+   * - Task
+     - Input
+     - Output or success signal
+     - First troubleshooting step
+   * - Render one text file.
+     - ``config.yaml`` plus ``machine_summary.txt.j2``.
+     - The output directory contains ``machine_summary.txt`` with the model name.
+     - If the file is missing, confirm the source file really ends in ``.j2`` and is not ignored.
+   * - Copy a static file.
+     - A non-``.j2`` file such as ``static_note.txt``.
+     - The same bytes appear in the output directory.
+     - If it is copied unexpectedly, inspect ``ignores`` and remember ``config.yaml`` is skipped separately.
+   * - Render a nested output path.
+     - ``src/machine.py.j2`` or ``include/machine.h.j2``.
+     - Parent directories are created and the final suffix is removed.
+     - If the directory is absent, reduce to a single nested file before adding macros.
+   * - Add a target expression style.
+     - ``expr_styles.<name>.base_lang`` in ``config.yaml``.
+     - ``{{ guard | expr_render(style='<name>') }}`` emits target syntax.
+     - If validation rejects the style, check that the style value is a mapping with ``base_lang``.
+   * - Add a target statement style.
+     - ``stmt_styles.<name>.base_lang`` plus overrides such as ``assign``.
+     - ``stmts_render`` emits executable assignment or ``if`` blocks for the target.
+     - If output still looks like DSL, check that you did not call ``operation_stmt_render``.
+   * - Register a filter.
+     - ``filters.<name>: {type: import, from: package.module.object}``.
+     - The template can call ``{{ value | name }}``.
+     - If import fails, run the same import from Python in the generation environment.
+   * - Register a value.
+     - ``globals.project_name: {type: value, value: Demo}``.
+     - ``{{ project_name }}`` renders the configured value.
+     - If the value is a mapping instead, check whether ``type`` is missing or misspelled.
+   * - Register a template callable.
+     - ``type: template`` with optional ``params``.
+     - Repeated formatting logic lives in a callable object instead of long inline Jinja.
+     - If arguments bind incorrectly, test positional and keyword forms separately.
+   * - Prove the template is not hiding runtime behavior.
+     - Generated source plus a short consumer or compiler smoke.
+     - The runtime behavior is visible in target-language output and hooks.
+     - If behavior lives only in Python helper imports, move it into generated code or document why it is maintainer-only.
+
+Minimal debug workflow
+----------------------
+
+When a custom template fails, debug in the same order as the renderer runs:
+
+1. Validate the input FCSTM model with a normal command such as ``pyfcstm inspect``.
+2. Validate ``config.yaml`` shape against :doc:`../../reference/template_config/index`.
+3. Reduce to one ``*.j2`` file and one static file.
+4. Add expression rendering, then statement rendering, then imported helpers.
+5. Only after renderer smoke succeeds, run formatter, compiler, runtime, or alignment checks.
+
+This order prevents a compiler error from hiding a renderer error, or a renderer
+error from hiding an invalid model.
+
+Runnable micro-template shape
+-----------------------------
+
+A short authoring example should fit on one screen. Keep the project-specific
+logic out of the prose and name the success signal explicitly:
+
+.. code-block:: text
+
+   my_template/
+     config.yaml
+     machine_summary.txt.j2
+     static_note.txt
+
+.. code-block:: yaml
+
+   expr_styles:
+     py_expr:
+       base_lang: python
+
+.. code-block:: jinja
+
+   model={{ model.name }}
+   states={{ model.walk_states() | list | length }}
+
+The success signal is a rendered ``machine_summary.txt`` and a copied
+``static_note.txt``. This example proves file mapping and a named expression
+style can be loaded; it does not prove a generated runtime is correct.
+
+Helper design checklist
+-----------------------
+
+.. list-table:: Helper placement checklist
+   :header-rows: 1
+
+   * - Question
+     - Good answer
+     - Risky answer
+   * - Is the helper pure naming or formatting?
+     - Register it as a local filter or global and cover it with a renderer smoke.
+     - Hide target runtime semantics in a Python helper that users cannot inspect.
+   * - Does the helper emit C-family runtime bodies?
+     - Reuse source facts from ``pyfcstm/render/c_runtime.py`` and document the target profile.
+     - Reimplement C scope mutation in ad-hoc Jinja strings with no tests.
+   * - Does the helper depend on host environment variables?
+     - Treat it as project-specific and document the variable contract.
+     - Depend on a developer's shell variable without a fallback.
+   * - Does the helper cross multiple built-in templates?
+     - Move shared behavior to reviewed renderer code with tests.
+     - Copy divergent versions into several templates without a drift check.
+
+Validation records to keep in a PR
+----------------------------------
+
+A template-authoring change should report these records when they apply:
+
+* renderer smoke command and the generated files it produced;
+* formatter command and the representative file it checked;
+* compiler or native smoke command, or the exact missing tool reason;
+* runtime smoke command and the observed output snippet;
+* simulator-alignment command when parity is claimed;
+* a short statement that ``operation_stmt_render`` was not used for executable
+  runtime bodies.

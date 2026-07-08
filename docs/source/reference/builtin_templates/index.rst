@@ -227,3 +227,136 @@ Python generated runtime has the same fixed-width integer carrying risk.
 C++ templates reuse C cores by design. ``cpp`` reuses the C99 core; ``cpp_poll``
 reuses the C polling core. Their C++ value is the wrapper integration surface,
 not a separate execution semantics implementation.
+
+Selection and misuse matrix
+---------------------------
+
+.. list-table:: Selection matrix
+   :header-rows: 1
+
+   * - Template
+     - Good first use
+     - Misuse to avoid
+     - First verification
+   * - ``python``
+     - Application or test code can import a Python module and call ``cycle``.
+     - Treating Python smoke success as evidence for C-family integer storage or compiler behavior.
+     - Import ``machine.py`` and run a short event sequence from the generated README.
+   * - ``c``
+     - A C host collects events and submits generated event ids each cycle.
+     - Expecting polling callbacks to be queried by the explicit-event API.
+     - Compile ``machine.c`` with a driver that includes ``machine.h`` and submits ids.
+   * - ``c_poll``
+     - A C host wants event truth queried from callbacks at cycle time.
+     - Leaving an ``EventChecks`` entry unset and assuming a missing callback means false in every integration shape.
+     - Compile and run a driver that installs the full event-check table.
+   * - ``cpp``
+     - A C++ host wants wrapper methods while accepting a generated C core.
+     - Calling it a fully independent C++ runtime or testing only the C core.
+     - Compile a consumer that includes ``machine.hpp`` and uses the wrapper.
+   * - ``cpp_poll``
+     - A C++ host wants wrapper-facing polling callbacks.
+     - Mixing explicit event ids with the polling wrapper and expecting both APIs to be equivalent.
+     - Compile a wrapper consumer that installs event checks and calls ``cycle()``.
+
+Per-template evidence cards
+---------------------------
+
+.. list-table:: Evidence cards
+   :header-rows: 1
+
+   * - Template
+     - Source facts
+     - Runtime evidence
+     - Boundary evidence
+   * - ``python``
+     - Packaged metadata, Python template config, generated README templates, Python template tests.
+     - Import/cycle smoke and simulator-alignment tests for the supported Python generated runtime.
+     - No native compiler proof; generated code should be self-contained Python standard-library code.
+   * - ``c``
+     - C template config, C runtime helpers from ``pyfcstm/render/c_runtime.py``, generated C README, native tests.
+     - C compiler smoke and semantic-alignment coverage for explicit event ids.
+     - Fixed-width integer profile and toolchain-specific native evidence must remain visible.
+   * - ``c_poll``
+     - C polling template config, event-check generated files, C runtime helper source facts.
+     - Native smoke that exercises polling callbacks and alignment coverage for the polling event model.
+     - Polling changes event input, not FCSTM lifecycle semantics.
+   * - ``cpp``
+     - C core template facts plus wrapper ``machine.hpp`` / ``machine.cpp`` templates.
+     - C++ wrapper smoke, not merely C core compile success.
+     - Wrapper integration surface is C++98-compatible and reuses the generated C core.
+   * - ``cpp_poll``
+     - C polling core facts plus polling wrapper templates.
+     - Wrapper smoke with event checks installed through the wrapper-facing surface.
+     - Not an independent C++ polling runtime; it is a C polling core plus wrapper.
+
+Generic example snippets
+------------------------
+
+The exact names are model-specific. Treat these snippets as shape examples and
+read the generated README for the concrete symbols.
+
+.. list-table:: Integration shapes
+   :header-rows: 1
+
+   * - Template
+     - Shape example
+     - What the generated README supplies
+   * - ``python``
+     - ``from machine import <GeneratedMachine>; machine = <GeneratedMachine>(); machine.cycle()``
+     - Class name, event strings, hook method names, state and variable readers.
+   * - ``c``
+     - ``#include "machine.h"`` then initialize a machine object and pass event-id arrays to the generated cycle function.
+     - C prefix, type names, event ids, hook table fields, init/cycle/destroy names.
+   * - ``c_poll``
+     - Initialize the machine, install hooks, install ``EventChecks``, and call the polling cycle function.
+     - Event-check table fields, callback signatures, lifecycle function names.
+   * - ``cpp``
+     - ``#include "machine.hpp"`` then construct the generated wrapper and call wrapper cycle methods.
+     - Namespace, wrapper class name, hook aliases, cycle overloads.
+   * - ``cpp_poll``
+     - Construct the wrapper, install wrapper hooks and event checks, then call ``cycle()``.
+     - Wrapper event-check aliases, setter names, and polling lifecycle snippets.
+
+Unsupported or risky assumptions
+--------------------------------
+
+.. list-table:: Counterexamples
+   :header-rows: 1
+
+   * - Assumption
+     - Why it is wrong
+     - Safer wording
+   * - "All built-in templates are production certified."
+     - Metadata currently marks all five templates as experimental.
+     - They have current repository tests and smoke evidence, not every-platform certification.
+   * - "The repository ``templates/`` directory is the user API."
+     - Ordinary users should use packaged assets through ``--template``.
+     - Repository template source is a maintainer input and packaging source.
+   * - "C++ templates do not need the C generated core."
+     - ``cpp`` and ``cpp_poll`` reuse generated C cores.
+     - C++ templates provide wrapper integration surfaces over the generated C core.
+   * - "Polling templates change state-machine semantics."
+     - Polling changes how event truth is supplied.
+     - Lifecycle and transition semantics should remain aligned with the simulator, within documented exclusions.
+   * - "A generated file tree proves runtime correctness."
+     - Rendering success proves file creation only.
+     - Runtime, native and semantic claims need matching smoke or alignment evidence.
+
+Source-fact audit map
+---------------------
+
+A reviewer can audit this page without guessing by checking these sources:
+
+* package list and archive names: ``pyfcstm/template/index.json``;
+* per-template title, language, description and experimental status:
+  ``templates/<name>/template.json``;
+* generated files and integration snippets: generated ``README.md`` and
+  ``README_zh.md`` from each template;
+* event input models: generated README files, runtime templates and template
+  tests;
+* C-family helper and fixed-width body facts: ``pyfcstm/render/c_runtime.py``;
+* wrapper facts: ``templates/cpp`` and ``templates/cpp_poll`` source templates
+  plus wrapper smoke tests;
+* current evidence boundary: template unit tests, semantic-alignment tests,
+  formatter checks and native smoke checks when the host toolchain is available.

@@ -198,3 +198,180 @@ Generation documentation should name the evidence behind each claim:
 Generated README files are part of this evidence story. Reference pages provide
 general contracts; generated README files provide the machine-specific API and
 build facts for one generated model.
+
+End-to-end trace: one generation run
+------------------------------------
+
+This trace shows why generation failures should be diagnosed by layer instead of
+by guessing at the final output file.
+
+.. list-table:: Generation trace
+   :header-rows: 1
+
+   * - Step
+     - Object or file
+     - Owner
+     - Failure class
+   * - Read input bytes.
+     - ``input.fcstm``.
+     - CLI entry and decoder utilities.
+     - File-not-found, unreadable bytes, or decoding failure.
+   * - Parse DSL.
+     - DSL AST nodes.
+     - ``pyfcstm/dsl/``.
+     - Grammar errors and source spans.
+   * - Import model.
+     - ``StateMachine``.
+     - ``pyfcstm/model/`` and model importer code.
+     - Model validation errors and semantic diagnostics.
+   * - Resolve template source.
+     - Extracted built-in directory or custom directory.
+     - ``pyfcstm/template`` for built-ins, user project for custom templates.
+     - Unknown built-in template, missing custom path, or broken package asset.
+   * - Read template config.
+     - ``config.yaml``.
+     - Renderer validation.
+     - Invalid YAML, wrong root type, invalid section shape, missing ``base_lang``.
+   * - Build Jinja environment.
+     - Globals, filters, tests, expression styles, statement styles.
+     - Renderer plus trusted template config.
+     - Helper import failure, invalid object-loading form, or missing style.
+   * - Render/copy files.
+     - Output tree.
+     - Renderer and template files.
+     - Jinja error, bad model attribute, filesystem write failure.
+   * - Integrate target output.
+     - Generated README, runtime source, consumer code, compiler.
+     - Target-language user or template tests.
+     - Runtime smoke failure, compiler error, unsupported deployment profile.
+
+The key boundary is step 8. The renderer can prove that it produced files. It
+cannot by itself prove that a target compiler, target event loop, or downstream
+application integration is correct.
+
+Built-in asset chain
+--------------------
+
+Built-in templates have a second chain before the normal renderer sees them:
+
+.. list-table:: Built-in asset chain
+   :header-rows: 1
+
+   * - Stage
+     - Source of truth
+     - Reviewer question
+   * - Repository source.
+     - ``templates/<name>/`` and template README files.
+     - Did the maintainer edit the source template, not a packaged zip by hand?
+   * - Packaging.
+     - ``tools/package_templates.py`` and ``make tpl``.
+     - Did the packaged archive and ``pyfcstm/template/index.json`` refresh together?
+   * - Package metadata.
+     - ``pyfcstm/template/index.json``.
+     - Does every documented template name, archive, root, language, and experimental flag match metadata?
+   * - Extraction.
+     - ``pyfcstm.template.extract_template()``.
+     - Does ``--template`` produce an ordinary directory before rendering starts?
+   * - Rendering.
+     - ``StateMachineCodeRenderer``.
+     - Does the extracted template follow the same ``config.yaml`` and file-mapping rules as a custom directory?
+
+That split explains why user docs should prefer ``--template python`` while
+maintainer docs may mention repository ``templates/`` source directories. The
+ordinary generated-code user should not need to know where the source template
+lives in a checkout.
+
+Custom template trust boundary
+------------------------------
+
+A custom template is trusted code. Jinja sandboxing limits some template syntax,
+but ``config.yaml`` can register imported Python objects through ``type:
+import``. Therefore the safety boundary is not "arbitrary user uploads are safe".
+The boundary is "the project running generation trusts this template directory".
+
+.. list-table:: Trust-boundary examples
+   :header-rows: 1
+
+   * - Situation
+     - Safe framing
+     - Unsafe framing
+   * - Team-owned template in the same repository.
+     - Review it like source code and run renderer smoke checks.
+     - Treat it as inert data because it is only a template.
+   * - Third-party template directory.
+     - Inspect ``config.yaml`` imports and Jinja files before running generation.
+     - Run it in a privileged build environment without review.
+   * - Environment-variable dependent template.
+     - Document each variable as part of the project template contract.
+     - Depend on undeclared developer shell state.
+
+Renderer responsibility boundary
+--------------------------------
+
+The renderer owns structure, not every downstream promise. These examples are
+useful when deciding where a bug belongs:
+
+.. list-table:: Boundary examples
+   :header-rows: 1
+
+   * - Observed problem
+     - Likely owner
+     - Why
+   * - ``*.j2`` file is rendered with the wrong output path.
+     - Renderer file mapping or ignore rules.
+     - The renderer decides suffix removal and static copy behavior.
+   * - ``expr_render(style='go')`` emits unexpected expression syntax.
+     - Expression renderer style implementation or style configuration.
+     - The expression renderer owns expression textual shape.
+   * - Generated C hook signature does not match generated README.
+     - C template and generated README template.
+     - Target API is emitted by the template, not by the generic renderer.
+   * - Generated C code fails under a non-default embedded compiler.
+     - Template target profile and downstream toolchain.
+     - The renderer did not certify every compiler; it only emitted files.
+   * - A custom imported helper performs hidden state transitions.
+     - Custom template design.
+     - Runtime semantics should be visible in generated source or target hooks.
+
+Statement rendering design
+--------------------------
+
+Statement rendering exists because operation blocks are structured model nodes.
+A renderer must know persistent variables, temporary variables, target assignment
+syntax, and block syntax. A string echo cannot safely replace that context.
+
+.. list-table:: Statement rendering context
+   :header-rows: 1
+
+   * - Context item
+     - Why it matters
+     - Example consequence
+   * - Persistent state variables.
+     - Assignments may need a state scope target.
+     - Python runtime output uses ``scope[...]`` while C output uses a C struct pointer.
+   * - Temporary variable names.
+     - A variable assigned inside a block may be local after the first assignment.
+     - The renderer must avoid treating every name as a persistent state variable.
+   * - Temporary variable types.
+     - Languages such as C need declaration text.
+     - ``declare_temp`` and type aliases matter for executable output.
+   * - Block structure.
+     - ``if`` / ``elif`` / ``else`` syntax differs by language.
+     - ``block_end`` is empty in Python-like indentation and explicit in brace languages.
+
+This is why ``operation_stmt_render`` remains useful for DSL echo text but is not
+a runtime-code shortcut.
+
+Generated README as machine-specific evidence
+---------------------------------------------
+
+The generic pages cannot know every generated name because names are derived
+from the model. The generated README is therefore part of the output contract.
+Use this split when writing or reviewing docs:
+
+* generic reference pages list template families, config keys, event-model
+  shapes, and evidence boundaries;
+* how-to pages show short commands and representative output snippets;
+* the generated README lists the concrete machine class, C prefix, event ids,
+  state ids, hook names, hot-start snippets, and build command for that model;
+* tests and smoke demos prove selected generated README examples still execute.

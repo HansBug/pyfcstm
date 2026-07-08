@@ -414,3 +414,156 @@ Jinja 环境辅助对象
 * ``python`` 定义 Python 表达式和语句样式，以及生成钩子命名辅助。
 * ``c`` 和 ``c_poll`` 定义 C 作用域表达式渲染、C 运行时语句渲染、C 标识符过滤器和 C 运行时代码体辅助。
 * ``cpp`` 和 ``cpp_poll`` 复用 C 家族辅助层，同时增加包装层文件；它们的 ``ignores`` 还冗余列出 ``config.yaml``，这是无害的，因为渲染器已经跳过实际配置文件。
+
+合法与非法例子
+--------------
+
+下面的例子故意很短。它们展示渲染器接受或拒绝的形状，不是完整生产模板。
+
+.. list-table:: 顶层例子
+   :header-rows: 1
+
+   * - 场景
+     - YAML
+     - 结果
+   * - 空配置。
+     - ``{}``
+     - 合法。渲染器使用内置默认值，不增加样式或辅助对象。
+   * - 表达式样式。
+     - ``expr_styles: {py_expr: {base_lang: python}}``
+     - 合法。``py_expr`` 委托给 Python 表达式渲染器。
+   * - 语句样式。
+     - ``stmt_styles: {py_stmt: {base_lang: python, assign: "{target} = {value}"}}``
+     - 合法。覆盖项影响该样式的赋值渲染。
+   * - 未知键。
+     - ``helpers: {}``
+     - 非法。应把值放入 ``globals``、``filters`` 或 ``tests``。
+   * - 根不是映射。
+     - ``[expr_styles]``
+     - 非法。根必须是映射。
+   * - 忽略规则形状错误。
+     - ``ignores: '*.tmp'``
+     - 非法。``ignores`` 必须是字符串列表。
+
+.. list-table:: 样式例子
+   :header-rows: 1
+
+   * - 场景
+     - YAML
+     - 结果
+   * - 规范表达式样式。
+     - ``expr_styles: {c_expr: {base_lang: c}}``
+     - 合法。``c_expr`` 可传给 ``expr_render``。
+   * - 别名表达式样式。
+     - ``expr_styles: {node_expr: {base_lang: nodejs}}``
+     - 合法。别名会解析为 ``js``。
+   * - 带表达式语言的语句样式。
+     - ``stmt_styles: {c_runtime: {base_lang: c, expr_lang: c_scope_expr}}``
+     - 合法，前提是 ``c_scope_expr`` 也定义为表达式样式。
+   * - 样式是标量。
+     - ``expr_styles: {bad: c}``
+     - 非法。每个样式条目必须是映射。
+   * - 缺少基准样式。
+     - ``stmt_styles: {bad: {assign: "{target} = {value};"}}``
+     - 非法。必须有 ``base_lang``。
+   * - 未知基准样式。
+     - ``expr_styles: {bad: {base_lang: ruby}}``
+     - 非法，除非渲染器未来增加 ``ruby`` 基准。
+
+对象加载例子
+------------
+
+.. list-table:: 对象加载例子
+   :header-rows: 1
+
+   * - 形式
+     - YAML
+     - 说明
+   * - 导入辅助对象。
+     - ``filters: {snake: {type: import, from: mypkg.naming.snake}}``
+     - 导入对象注册为过滤器。
+   * - 保存字面值。
+     - ``globals: {project: {type: value, value: demo}}``
+     - 字面值可通过 ``project`` 访问。
+   * - 带参数的模板可调用对象。
+     - ``globals: {banner: {type: template, params: [name], template: "{{ name }}"}}``
+     - 位置参数绑定到 ``params``，并与关键字参数合并。
+   * - 不带参数的模板可调用对象。
+     - ``globals: {banner: {type: template, template: "demo"}}``
+     - 可调用对象渲染已配置模板，不做位置参数绑定。
+   * - 导入目标失败。
+     - ``filters: {missing: {type: import, from: no.such.object}}``
+     - 环境构建时非法；修复 Python 导入路径。
+   * - 未知 ``type``。
+     - ``globals: {x: {type: mystery, value: 1}}``
+     - 返回剩余映射；不要把它当成公开模板模式。
+   * - 缺少 ``type``。
+     - ``globals: {x: {value: 1}}``
+     - 映射原样返回；若想表达字面值，应写 ``type: value``。
+
+语句辅助函数例子
+----------------
+
+.. list-table:: 语句辅助函数调用
+   :header-rows: 1
+
+   * - 调用
+     - 用途
+     - 边界
+   * - ``{{ stmt | stmt_render(style='python') }}``
+     - 把单个语句节点渲染成 Python 可执行语法。
+     - 输入必须是语句节点，不是任意文本。
+   * - ``{{ action.operations | stmts_render(style='c_runtime') }}``
+     - 把一组操作节点渲染成目标运行时样式。
+     - 持久变量和临时变量上下文会影响输出。
+   * - ``{{ action.operations | stmts_render(style='python', sep='\n\n') }}``
+     - 使用自定义分隔符渲染。
+     - 分隔符只改文本布局，不改语义。
+   * - ``{{ action.operations | operation_stmts_render }}``
+     - 为文档或注释回显 DSL 形状操作文本。
+     - 不要用作可执行运行时源码。
+
+校验分支快速参考
+----------------
+
+.. list-table:: 无效形状与修复
+   :header-rows: 1
+
+   * - 无效形状
+     - 错误家族
+     - 修复
+   * - YAML 格式错误。
+     - YAML 解析错误。
+     - 先修正缩进、引号或集合语法，再查渲染器事实。
+   * - 只有注释的文件。
+     - 合法空配置。
+     - 不需要修复；它等同 ``{}``。
+   * - ``expr_styles: []``。
+     - 分节类型错误。
+     - 使用从样式名到样式映射的映射。
+   * - ``tests: []``。
+     - 分节类型错误。
+     - 使用从测试器名称到对象加载项的映射。
+   * - ``ignores: [1]``。
+     - 忽略项类型错误。
+     - 把每个模式写成字符串。
+   * - ``type: template`` 缺 ``template``。
+     - 对象加载校验。
+     - 添加 Jinja 模板字符串。
+   * - ``type: import`` 缺 ``from``。
+     - 对象加载校验。
+     - 添加 Python 对象导入路径。
+   * - ``type: value`` 缺 ``value``。
+     - 对象加载校验。
+     - 添加字面值；若未使用则删除该对象。
+
+破坏性输出例子
+--------------
+
+``ignores`` 和 ``.git`` 保护的是模板输入扫描，不保护输出目录。这些是命令层事实：
+
+* 把 ``--clear`` 指向 ``/tmp/generated`` 这类可丢弃目录是合适的；
+* 把 ``--clear`` 指向项目源码目录，可能在生成前删除该目录中的文件；
+* 静态模板文件保持原始字节，渲染文件以 UTF-8 文本和 LF 换行写出；
+* 输出目录中已有符号链接时，清理会 unlink 它，而不是跟随为目录树；
+* 防御性 ``clear-other-warning`` 路径用于少见文件类型，不应被写成主要清理行为。

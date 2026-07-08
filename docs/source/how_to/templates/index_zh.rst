@@ -185,7 +185,7 @@ C 家族模板会显式导入 ``to_c_identifier``、``to_c_path_identifier``、`
      - 不覆盖全部 FCSTM 语义。
    * - 模拟器对齐
      - 模板声称与 ``SimulationRuntime`` 等价。
-     - 共享语义样例或 trace 与模拟器一致。
+     - 共享语义样例或追踪与模拟器一致。
      - 必须说明事件模型排除项和覆盖范围。
 
 排查模板作者常见失败
@@ -212,3 +212,124 @@ C 家族模板会显式导入 ``to_c_identifier``、``to_c_path_identifier``、`
    * - 输出目录丢了无关文件
      - 是否使用 ``--clear``。
      - 渲染到临时目录；需要保留文件时不要使用 ``--clear``。
+
+作者任务卡
+----------
+
+下面的卡片把自定义模板指南变成可评审任务。新建模板或检查操作指南示例时，用它们确认示例不是孤立片段。
+
+.. list-table:: 模板作者任务卡
+   :header-rows: 1
+
+   * - 任务
+     - 输入
+     - 输出或成功信号
+     - 第一排查步骤
+   * - 渲染一个文本文件。
+     - ``config.yaml`` 加 ``machine_summary.txt.j2``。
+     - 输出目录出现 ``machine_summary.txt``，其中有模型名。
+     - 若文件缺失，确认源文件确实以 ``.j2`` 结尾且没有被忽略。
+   * - 复制静态文件。
+     - 非 ``.j2`` 文件，例如 ``static_note.txt``。
+     - 输出目录出现相同字节。
+     - 若文件意外复制，检查 ``ignores``；记住 ``config.yaml`` 会单独跳过。
+   * - 渲染嵌套输出路径。
+     - ``src/machine.py.j2`` 或 ``include/machine.h.j2``。
+     - 父目录被创建，最终后缀被移除。
+     - 若目录不存在，先缩减到单个嵌套文件，再加入宏。
+   * - 添加目标表达式样式。
+     - ``config.yaml`` 中的 ``expr_styles.<name>.base_lang``。
+     - ``{{ guard | expr_render(style='<name>') }}`` 输出目标语法。
+     - 若校验拒绝样式，检查样式值是否为映射并包含 ``base_lang``。
+   * - 添加目标语句样式。
+     - ``stmt_styles.<name>.base_lang`` 加 ``assign`` 等覆盖项。
+     - ``stmts_render`` 输出目标侧可执行赋值或 ``if`` 块。
+     - 若输出仍像 DSL，检查是否误用了 ``operation_stmt_render``。
+   * - 注册过滤器。
+     - ``filters.<name>: {type: import, from: package.module.object}``。
+     - 模板可调用 ``{{ value | name }}``。
+     - 若导入失败，在生成环境中用 Python 运行同一个 import。
+   * - 注册字面值。
+     - ``globals.project_name: {type: value, value: Demo}``。
+     - ``{{ project_name }}`` 输出配置值。
+     - 若得到的是映射，检查 ``type`` 是否缺失或拼错。
+   * - 注册模板可调用对象。
+     - ``type: template``，可带 ``params``。
+     - 重复格式化逻辑进入可调用对象，不写成长行 Jinja。
+     - 若参数绑定异常，分别测试位置参数和关键字参数。
+   * - 证明模板没有隐藏运行时行为。
+     - 生成源码加短消费者或编译冒烟检查。
+     - 运行时行为在目标语言输出和钩子里可见。
+     - 若行为只在 Python 辅助导入中，移入生成代码，或说明它只是维护者内部逻辑。
+
+最小调试流程
+------------
+
+自定义模板失败时，按渲染器实际顺序调试：
+
+1. 先用 ``pyfcstm inspect`` 等普通命令校验输入 FCSTM 模型。
+2. 再按 :doc:`../../reference/template_config/index_zh` 校验 ``config.yaml`` 形状。
+3. 缩减到一个 ``*.j2`` 文件和一个静态文件。
+4. 依次加入表达式渲染、语句渲染、导入辅助对象。
+5. 渲染冒烟检查通过后，再跑格式化器、编译器、运行时或语义对齐检查。
+
+这个顺序能避免编译错误掩盖渲染错误，也避免渲染错误掩盖无效模型。
+
+可运行微型模板形状
+------------------
+
+短作者示例应能放在一个屏幕内。把项目特定逻辑留在正文外，并明确写出成功信号：
+
+.. code-block:: text
+
+   my_template/
+     config.yaml
+     machine_summary.txt.j2
+     static_note.txt
+
+.. code-block:: yaml
+
+   expr_styles:
+     py_expr:
+       base_lang: python
+
+.. code-block:: jinja
+
+   model={{ model.name }}
+   states={{ model.walk_states() | list | length }}
+
+成功信号是渲染出的 ``machine_summary.txt`` 和复制出的 ``static_note.txt``。这个例子证明文件映射和命名表达式样式可以加载；它不证明生成运行时正确。
+
+辅助对象设计检查表
+------------------
+
+.. list-table:: 辅助对象归位检查表
+   :header-rows: 1
+
+   * - 问题
+     - 好答案
+     - 高风险答案
+   * - 辅助对象只是命名或格式化吗？
+     - 注册成本地过滤器或全局变量，并用渲染冒烟覆盖。
+     - 把目标运行时语义藏进用户不可见的 Python 辅助对象。
+   * - 辅助对象会输出 C 家族运行时代码体吗？
+     - 复用 ``pyfcstm/render/c_runtime.py`` 的事实，并记录目标配置。
+     - 用没有测试的临时 Jinja 字符串重新实现 C 作用域修改。
+   * - 辅助对象依赖主机环境变量吗？
+     - 视为项目特定契约，并记录变量含义。
+     - 依赖开发者 shell 变量且没有兜底。
+   * - 辅助对象跨多个内置模板吗？
+     - 把共享行为放入经过评审且有测试的渲染器代码。
+     - 在多个模板里复制会漂移的版本。
+
+应保留的验证记录
+----------------
+
+模板作者变更需要在适用时报告这些记录：
+
+* 渲染器冒烟命令，以及它生成的文件；
+* 格式化命令，以及被检查的代表性文件；
+* 编译器或本机冒烟命令，或缺失工具的确切原因；
+* 运行时冒烟命令和观测输出片段；
+* 声称语义等价时的模拟器对齐命令；
+* 简短说明 ``operation_stmt_render`` 没有用于可执行运行时代码体。

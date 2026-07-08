@@ -457,3 +457,178 @@ The built-in templates exercise the same contract:
 * ``cpp`` and ``cpp_poll`` reuse the C-family helper layer while adding wrapper
   files; their ``ignores`` list also names ``config.yaml`` redundantly, which is
   harmless because the renderer already skips the actual config file.
+
+Legal and illegal examples
+--------------------------
+
+These examples are intentionally small. They show the shape accepted or rejected
+by the renderer; they are not complete production templates.
+
+.. list-table:: Top-level examples
+   :header-rows: 1
+
+   * - Case
+     - YAML
+     - Result
+   * - Empty config.
+     - ``{}``
+     - Legal. The renderer uses built-in defaults and no extra styles or helpers.
+   * - Expression style.
+     - ``expr_styles: {py_expr: {base_lang: python}}``
+     - Legal. ``py_expr`` delegates to the Python expression renderer.
+   * - Statement style.
+     - ``stmt_styles: {py_stmt: {base_lang: python, assign: "{target} = {value}"}}``
+     - Legal. The override affects assignment rendering for that style.
+   * - Unknown key.
+     - ``helpers: {}``
+     - Invalid. Move values under ``globals``, ``filters`` or ``tests``.
+   * - Wrong root.
+     - ``[expr_styles]``
+     - Invalid. The root must be a mapping.
+   * - Invalid ignores.
+     - ``ignores: '*.tmp'``
+     - Invalid. ``ignores`` must be a list of strings.
+
+.. list-table:: Style examples
+   :header-rows: 1
+
+   * - Case
+     - YAML
+     - Result
+   * - Canonical expression style.
+     - ``expr_styles: {c_expr: {base_lang: c}}``
+     - Legal. ``c_expr`` can be used with ``expr_render``.
+   * - Alias expression style.
+     - ``expr_styles: {node_expr: {base_lang: nodejs}}``
+     - Legal. The alias resolves to ``js``.
+   * - Statement style with expression language.
+     - ``stmt_styles: {c_runtime: {base_lang: c, expr_lang: c_scope_expr}}``
+     - Legal when ``c_scope_expr`` is also defined as an expression style.
+   * - Style is scalar.
+     - ``expr_styles: {bad: c}``
+     - Invalid. Each style entry must be a mapping.
+   * - Missing base.
+     - ``stmt_styles: {bad: {assign: "{target} = {value};"}}``
+     - Invalid. ``base_lang`` is required.
+   * - Unknown base.
+     - ``expr_styles: {bad: {base_lang: ruby}}``
+     - Invalid unless the renderer later adds a ``ruby`` base.
+
+Object-loading examples
+-----------------------
+
+.. list-table:: Object-loading examples
+   :header-rows: 1
+
+   * - Form
+     - YAML
+     - Notes
+   * - Import a helper.
+     - ``filters: {snake: {type: import, from: mypkg.naming.snake}}``
+     - The imported object is registered as a filter.
+   * - Store a value.
+     - ``globals: {project: {type: value, value: demo}}``
+     - The literal value is available as ``project``.
+   * - Template callable with params.
+     - ``globals: {banner: {type: template, params: [name], template: "{{ name }}"}}``
+     - Positional arguments bind to ``params`` and merge with keyword arguments.
+   * - Template callable without params.
+     - ``globals: {banner: {type: template, template: "demo"}}``
+     - The callable renders the configured template without positional binding.
+   * - Import target failure.
+     - ``filters: {missing: {type: import, from: no.such.object}}``
+     - Invalid at environment setup time; fix the Python import path.
+   * - Unknown type.
+     - ``globals: {x: {type: mystery, value: 1}}``
+     - The remaining mapping is returned; do not use this as a public template pattern.
+   * - Missing type.
+     - ``globals: {x: {value: 1}}``
+     - The mapping is returned as-is; use ``type: value`` when a literal value is intended.
+
+Statement helper examples
+-------------------------
+
+.. list-table:: Statement helper calls
+   :header-rows: 1
+
+   * - Call
+     - Use
+     - Boundary
+   * - ``{{ stmt | stmt_render(style='python') }}``
+     - Render one executable statement node in Python syntax.
+     - Requires a statement node, not arbitrary text.
+   * - ``{{ action.operations | stmts_render(style='c_runtime') }}``
+     - Render a sequence of operation nodes for a target runtime style.
+     - Persistent variable and temporary-variable context matters.
+   * - ``{{ action.operations | stmts_render(style='python', sep='\n\n') }}``
+     - Render with a custom separator.
+     - Separator changes text layout, not semantics.
+   * - ``{{ action.operations | operation_stmts_render }}``
+     - Echo DSL-like operation text for docs or comments.
+     - Do not use as executable runtime source.
+
+Validation branch quick reference
+---------------------------------
+
+.. list-table:: Invalid shapes and repairs
+   :header-rows: 1
+
+   * - Invalid shape
+     - Error family
+     - Repair
+   * - Malformed YAML.
+     - YAML parse error.
+     - Fix indentation, quoting, or collection syntax before checking renderer facts.
+   * - Comment-only file.
+     - Legal empty config.
+     - No repair needed; it behaves like ``{}``.
+   * - ``expr_styles: []``.
+     - Section type error.
+     - Use a mapping from style name to style mapping.
+   * - ``tests: []``.
+     - Section type error.
+     - Use a mapping from test name to object-loading item.
+   * - ``ignores: [1]``.
+     - Ignore item type error.
+     - Quote each pattern as a string.
+   * - ``type: template`` without ``template``.
+     - Object-loading validation.
+     - Add the Jinja template string.
+   * - ``type: import`` without ``from``.
+     - Object-loading validation.
+     - Add the import path to the Python object.
+   * - ``type: value`` without ``value``.
+     - Object-loading validation.
+     - Add the literal value or remove the object if it is unused.
+
+Destructive output examples
+---------------------------
+
+``ignores`` and ``.git`` protection apply to scanning the template input. They
+do not protect the output directory. These examples are command-facing facts:
+
+* rendering with ``--clear`` into ``/tmp/generated`` is appropriate when that
+  directory is disposable;
+* rendering with ``--clear`` into a project source directory can delete files in
+  that directory before generation;
+* static template files keep their original bytes, while rendered files are
+  written as UTF-8 text with LF newlines;
+* a symlink already inside the output directory is unlinked during clear, not
+  followed as a directory tree;
+* the defensive ``clear-other-warning`` path exists for uncommon file types and
+  should not be presented as the primary cleanup behavior.
+
+Review checklist
+----------------
+
+A template-config reference update is incomplete unless it answers these review
+questions:
+
+* did every top-level key keep a marker and visible row;
+* did every new validation branch get one legal repair and one invalid YAML
+  shape;
+* did English and Chinese pages cover the same canonical style names, aliases,
+  statement fields, object-loading forms, helpers, and file behaviors;
+* did the prose distinguish runtime statement rendering from DSL echo rendering;
+* did any destructive output behavior mention ``--clear`` and the fact that
+  input-side ``.git`` ignores do not protect output directories.

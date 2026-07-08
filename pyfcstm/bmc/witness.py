@@ -160,6 +160,36 @@ def _coerce_public_value_mapping(name: str, value: object) -> Dict[str, Any]:
     return result
 
 
+def _coerce_public_json_value(path: str, value: object) -> Any:
+    if value is None or isinstance(value, (bool, str)):
+        return value
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise BmcBuildError("%s must be finite for JSON-stable metadata." % path)
+        return value
+    if isinstance(value, Mapping):
+        return _coerce_public_json_mapping(path, value)
+    if isinstance(value, (list, tuple)):
+        return [
+            _coerce_public_json_value("%s[%d]" % (path, index), item)
+            for index, item in enumerate(value)
+        ]
+    raise BmcBuildError("%s must be JSON-stable metadata." % path)
+
+
+def _coerce_public_json_mapping(name: str, value: object) -> Dict[str, Any]:
+    if not isinstance(value, Mapping):
+        raise BmcBuildError("%s must be a mapping." % name)
+    result = {}
+    for key, item in sorted(value.items(), key=lambda pair: str(pair[0])):
+        if not isinstance(key, str) or not key:
+            raise BmcBuildError("%s keys must be non-empty strings." % name)
+        result[key] = _coerce_public_json_value("%s.%s" % (name, key), item)
+    return result
+
+
 def _validate_optional_reason(name: str, value: Optional[str]) -> None:
     if value is not None and not isinstance(value, str):
         raise BmcBuildError("%s must be a string or None." % name)
@@ -168,6 +198,32 @@ def _validate_optional_reason(name: str, value: Optional[str]) -> None:
 def _validate_elapsed_ms(value: float) -> None:
     if not _is_public_finite_number(value) or value < 0:
         raise BmcBuildError("elapsed_ms must be a finite non-negative number.")
+
+
+def _validate_witness_solver_metadata(value: Mapping[str, Any]) -> None:
+    status = value.get("status")
+    if status is not None and status not in {"sat", "unsat", "unknown", "timeout"}:
+        raise BmcBuildError("solver.status must be sat, unsat, unknown, or timeout.")
+    incomplete_status = value.get("incomplete_status")
+    if incomplete_status is not None and incomplete_status not in {
+        "sat",
+        "unsat",
+        "unknown",
+        "timeout",
+    }:
+        raise BmcBuildError(
+            "solver.incomplete_status must be sat, unsat, unknown, timeout, or None."
+        )
+    if "elapsed_ms" in value:
+        _validate_elapsed_ms(value["elapsed_ms"])
+    if "incomplete_elapsed_ms" in value:
+        _validate_elapsed_ms(value["incomplete_elapsed_ms"])
+    if "reason" in value:
+        _validate_optional_reason("solver.reason", value["reason"])
+    if "incomplete_reason" in value:
+        _validate_optional_reason(
+            "solver.incomplete_reason", value["incomplete_reason"]
+        )
 
 
 def _format_scalar(value: Any) -> str:
@@ -1241,7 +1297,9 @@ class BmcSolveResult(_PrettyPrintableMixin):
     The raw Z3 models are intentionally kept as Python attributes rather than
     JSON fields.  Callers can pass :attr:`model` to
     :func:`decode_bmc_witness` when :attr:`status` is ``"sat"`` while
-    :meth:`to_canonical` remains JSON-stable for logs and tests.
+    :meth:`to_canonical` remains JSON-stable for logs and tests.  Manually
+    constructed SAT results must carry their SAT model so the public status and
+    replay payload cannot diverge.
 
     :param formula: Compiled BMC property formula that was solved.
     :type formula: pyfcstm.bmc.properties.BmcPropertyFormula
@@ -1328,6 +1386,12 @@ class BmcSolveResult(_PrettyPrintableMixin):
             "diagnostics",
             _coerce_public_sequence("diagnostics", self.diagnostics, str, "strings"),
         )
+        if self.status == "sat" and self.model is None:
+            raise BmcBuildError("model is required when status is sat.")
+        if self.incomplete_status == "sat" and self.incomplete_model is None:
+            raise BmcBuildError(
+                "incomplete_model is required when incomplete_status is sat."
+            )
 
     @property
     def kind(self) -> str:
@@ -1692,9 +1756,10 @@ class BmcWitnessStep(_PrettyPrintableMixin):
     :type delta: bool
     :param gamma: Decoded ``Gamma_i`` flag.
     :type gamma: bool
-    :param input_events: Sparse replay input events, defaults to ``()``.
+    :param input_events: Sparse replay input events whose reasons are replay
+        inputs and whose model values are ``True``, defaults to ``()``.
     :type input_events: Sequence[BmcWitnessEvent], optional
-    :param event_reads: Debug event reads, defaults to ``()``.
+    :param event_reads: Debug-only event reads, defaults to ``()``.
     :type event_reads: Sequence[BmcWitnessEvent], optional
     :param abstract_calls: Decoded abstract-call records, defaults to ``()``.
     :type abstract_calls: Sequence[BmcWitnessCallRecord], optional
@@ -1759,6 +1824,18 @@ class BmcWitnessStep(_PrettyPrintableMixin):
                 "BmcWitnessEvent objects",
             ),
         )
+        for event in self.input_events:
+            if event.reason not in _REPLAY_EVENT_REASONS:
+                raise BmcBuildError(
+                    "input_events must contain only replay input event reasons."
+                )
+            if event.model_value is not True:
+                raise BmcBuildError("input_events must have model_value true.")
+        for event in self.event_reads:
+            if event.reason in _REPLAY_EVENT_REASONS:
+                raise BmcBuildError(
+                    "event_reads must contain only debug event reasons."
+                )
         object.__setattr__(
             self,
             "abstract_calls",
@@ -1818,6 +1895,11 @@ class BmcWitnessStep(_PrettyPrintableMixin):
 class BmcWitnessTrace(_PrettyPrintableMixin):
     """Decoded BMC witness trace.
 
+    The metadata dictionaries are public JSON-stable payloads.  They may
+    contain strings, booleans, ``None``, finite numeric values, nested mappings,
+    and lists, but not arbitrary Python objects or non-finite floating-point
+    values.
+
     :param property: Property metadata.
     :type property: Mapping[str, object]
     :param solver: Solver metadata.
@@ -1862,9 +1944,13 @@ class BmcWitnessTrace(_PrettyPrintableMixin):
             raise BmcBuildError("solver must be a mapping.")
         if not isinstance(self.initial, Mapping):
             raise BmcBuildError("initial must be a mapping.")
-        object.__setattr__(self, "property", dict(self.property))
-        object.__setattr__(self, "solver", dict(self.solver))
-        object.__setattr__(self, "initial", dict(self.initial))
+        property_metadata = _coerce_public_json_mapping("property", self.property)
+        solver_metadata = _coerce_public_json_mapping("solver", self.solver)
+        initial_metadata = _coerce_public_json_mapping("initial", self.initial)
+        _validate_witness_solver_metadata(solver_metadata)
+        object.__setattr__(self, "property", property_metadata)
+        object.__setattr__(self, "solver", solver_metadata)
+        object.__setattr__(self, "initial", initial_metadata)
         object.__setattr__(
             self,
             "frames",

@@ -427,53 +427,60 @@ def test_internal_z3_decode_guards_are_loud() -> None:
     [
         (lambda formula: BmcSolveResult(object(), "sat"), "formula must"),
         (lambda formula: BmcSolveResult(formula, "maybe"), "status must"),
+        (lambda formula: BmcSolveResult(formula, "sat"), "model is required"),
         (lambda formula: BmcSolveResult(formula, "sat", model=object()), "model must"),
         (
-            lambda formula: BmcSolveResult(formula, "sat", incomplete_status="maybe"),
+            lambda formula: BmcSolveResult(formula, "unsat", incomplete_status="maybe"),
             "incomplete_status",
         ),
         (
-            lambda formula: BmcSolveResult(formula, "sat", incomplete_model=object()),
+            lambda formula: BmcSolveResult(formula, "unsat", incomplete_status="sat"),
+            "incomplete_model is required",
+        ),
+        (
+            lambda formula: BmcSolveResult(formula, "unsat", incomplete_model=object()),
             "incomplete_model",
         ),
         (
-            lambda formula: BmcSolveResult(formula, "sat", elapsed_ms="slow"),
+            lambda formula: BmcSolveResult(formula, "unsat", elapsed_ms="slow"),
             "elapsed_ms",
         ),
         (
-            lambda formula: BmcSolveResult(formula, "sat", elapsed_ms=True),
+            lambda formula: BmcSolveResult(formula, "unsat", elapsed_ms=True),
             "elapsed_ms",
         ),
         (
-            lambda formula: BmcSolveResult(formula, "sat", elapsed_ms=float("nan")),
+            lambda formula: BmcSolveResult(formula, "unsat", elapsed_ms=float("nan")),
             "elapsed_ms",
         ),
         (
-            lambda formula: BmcSolveResult(formula, "sat", elapsed_ms=float("inf")),
+            lambda formula: BmcSolveResult(formula, "unsat", elapsed_ms=float("inf")),
             "elapsed_ms",
         ),
         (
-            lambda formula: BmcSolveResult(formula, "sat", elapsed_ms=-1),
+            lambda formula: BmcSolveResult(formula, "unsat", elapsed_ms=-1),
             "elapsed_ms",
         ),
         (
-            lambda formula: BmcSolveResult(formula, "sat", reason=123),
+            lambda formula: BmcSolveResult(formula, "unsat", reason=123),
             "reason",
         ),
         (
-            lambda formula: BmcSolveResult(formula, "sat", incomplete_reason=object()),
+            lambda formula: BmcSolveResult(
+                formula, "unsat", incomplete_reason=object()
+            ),
             "incomplete_reason",
         ),
         (
-            lambda formula: BmcSolveResult(formula, "sat", timeout_ms=0),
+            lambda formula: BmcSolveResult(formula, "unsat", timeout_ms=0),
             "timeout_ms",
         ),
         (
-            lambda formula: BmcSolveResult(formula, "sat", diagnostics=(1,)),
+            lambda formula: BmcSolveResult(formula, "unsat", diagnostics=(1,)),
             "diagnostics",
         ),
         (
-            lambda formula: BmcSolveResult(formula, "sat", diagnostics="bad"),
+            lambda formula: BmcSolveResult(formula, "unsat", diagnostics="bad"),
             "diagnostics",
         ),
     ],
@@ -644,6 +651,40 @@ def test_solve_result_rejects_invalid_public_payloads(factory, message) -> None:
                 None,
                 False,
                 True,
+                input_events=(
+                    BmcWitnessEvent("Root.Noise", "negative_case_read", False),
+                ),
+            ),
+            "replay input event reasons",
+        ),
+        (
+            lambda: BmcWitnessStep(
+                0,
+                0,
+                1,
+                "c",
+                "fallback",
+                "fallback_gamma",
+                None,
+                None,
+                False,
+                True,
+                input_events=(BmcWitnessEvent("Root.Go", "case_positive", False),),
+            ),
+            "model_value true",
+        ),
+        (
+            lambda: BmcWitnessStep(
+                0,
+                0,
+                1,
+                "c",
+                "fallback",
+                "fallback_gamma",
+                None,
+                None,
+                False,
+                True,
                 input_events="Root.Go",
             ),
             "input_events",
@@ -663,6 +704,22 @@ def test_solve_result_rejects_invalid_public_payloads(factory, message) -> None:
                 event_reads=(object(),),
             ),
             "event_reads",
+        ),
+        (
+            lambda: BmcWitnessStep(
+                0,
+                0,
+                1,
+                "c",
+                "fallback",
+                "fallback_gamma",
+                None,
+                None,
+                False,
+                True,
+                event_reads=(BmcWitnessEvent("Root.Go", "case_positive"),),
+            ),
+            "debug event reasons",
         ),
         (
             lambda: BmcWitnessStep(
@@ -716,6 +773,50 @@ def test_solve_result_rejects_invalid_public_payloads(factory, message) -> None:
         (lambda: BmcWitnessTrace((), {}, {}, (), ()), "property"),
         (lambda: BmcWitnessTrace({}, (), {}, (), ()), "solver"),
         (lambda: BmcWitnessTrace({}, {}, (), (), ()), "initial"),
+        (
+            lambda: BmcWitnessTrace({"bad": object()}, {}, {}, (), ()),
+            "property.bad",
+        ),
+        (
+            lambda: BmcWitnessTrace({1: "bad"}, {}, {}, (), ()),
+            "property keys",
+        ),
+        (
+            lambda: BmcWitnessTrace(
+                {}, {"status": "sat", "elapsed_ms": float("nan")}, {}, (), ()
+            ),
+            "solver.elapsed_ms",
+        ),
+        (
+            lambda: BmcWitnessTrace(
+                {}, {"status": "sat", "reason": object()}, {}, (), ()
+            ),
+            "solver.reason",
+        ),
+        (
+            lambda: BmcWitnessTrace({}, {"status": "maybe"}, {}, (), ()),
+            "solver.status",
+        ),
+        (
+            lambda: BmcWitnessTrace({}, {"incomplete_status": "maybe"}, {}, (), ()),
+            "solver.incomplete_status",
+        ),
+        (
+            lambda: BmcWitnessTrace({}, {"elapsed_ms": True}, {}, (), ()),
+            "elapsed_ms",
+        ),
+        (
+            lambda: BmcWitnessTrace({}, {"incomplete_elapsed_ms": -1}, {}, (), ()),
+            "elapsed_ms",
+        ),
+        (
+            lambda: BmcWitnessTrace({}, {"reason": False}, {}, (), ()),
+            "solver.reason",
+        ),
+        (
+            lambda: BmcWitnessTrace({}, {"incomplete_reason": 1}, {}, (), ()),
+            "solver.incomplete_reason",
+        ),
         (lambda: BmcWitnessTrace({}, {}, {}, (object(),), ()), "frames"),
         (lambda: BmcWitnessTrace({}, {}, {}, None, ()), "frames"),
         (lambda: BmcWitnessTrace({}, {}, {}, (), (object(),)), "steps"),
@@ -812,6 +913,45 @@ def test_witness_public_dataclasses_reject_invalid_payloads(factory, message) ->
         factory()
 
 
+def test_witness_trace_metadata_accepts_nested_json_payloads() -> None:
+    """Public witness metadata preserves deterministic JSON-stable values."""
+    trace = BmcWitnessTrace(
+        {"kind": "reach", "tags": ["fast", {"nested": True}, None, 2]},
+        {
+            "status": "sat",
+            "elapsed_ms": 1.25,
+            "reason": "ok",
+            "incomplete_status": "unknown",
+            "incomplete_elapsed_ms": 2,
+            "incomplete_reason": None,
+        },
+        {"mode": "cold", "argv": ["--flag", 1]},
+        (),
+        (),
+    )
+
+    canonical = trace.to_canonical()
+    assert canonical["property"] == {
+        "kind": "reach",
+        "tags": ["fast", {"nested": True}, None, 2],
+    }
+    assert canonical["solver"] == {
+        "elapsed_ms": 1.25,
+        "incomplete_elapsed_ms": 2,
+        "incomplete_reason": None,
+        "incomplete_status": "unknown",
+        "reason": "ok",
+        "status": "sat",
+    }
+    assert canonical["initial"] == {"argv": ["--flag", 1], "mode": "cold"}
+
+
+def test_internal_json_metadata_mapping_guard_is_loud() -> None:
+    """The recursive JSON metadata helper rejects non-mapping callers."""
+    with pytest.raises(BmcBuildError, match="metadata must be a mapping"):
+        witness_module._coerce_public_json_mapping("metadata", ())
+
+
 def test_value_comparison_fails_closed_for_non_finite_and_bool_numbers() -> None:
     """Replay value comparison cannot treat invalid numerics as equal."""
     mismatches = []
@@ -819,8 +959,11 @@ def test_value_comparison_fails_closed_for_non_finite_and_bool_numbers() -> None
     witness_module._compare_values(mismatches, "frames[1].vars.x", float("nan"), 0)
     witness_module._compare_values(mismatches, "frames[1].vars.y", 1, float("inf"))
     witness_module._compare_values(mismatches, "frames[1].vars.z", True, 1)
+    witness_module._compare_values(mismatches, "frames[1].vars.flag", True, False)
+    witness_module._compare_values(mismatches, "frames[1].state", "Root.A", None)
+    witness_module._compare_values(mismatches, "frames[1].mode", "active", "idle")
 
-    assert len(mismatches) == 3
+    assert len(mismatches) == 6
     assert mismatches[0].path == "frames[1].vars.x"
     assert math.isnan(mismatches[0].expected)
     assert mismatches[0].actual == 0
@@ -837,6 +980,27 @@ def test_value_comparison_fails_closed_for_non_finite_and_bool_numbers() -> None
         "expected": True,
         "actual": 1,
         "message": "value type mismatch",
+        "tolerance": None,
+    }
+    assert mismatches[3].to_canonical() == {
+        "path": "frames[1].vars.flag",
+        "expected": True,
+        "actual": False,
+        "message": "value mismatch",
+        "tolerance": None,
+    }
+    assert mismatches[4].to_canonical() == {
+        "path": "frames[1].state",
+        "expected": "Root.A",
+        "actual": None,
+        "message": "value type mismatch",
+        "tolerance": None,
+    }
+    assert mismatches[5].to_canonical() == {
+        "path": "frames[1].mode",
+        "expected": "active",
+        "actual": "idle",
+        "message": "value mismatch",
         "tolerance": None,
     }
 

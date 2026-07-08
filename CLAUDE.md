@@ -1189,6 +1189,26 @@ traceable generated resources, synchronized language variants where applicable, 
 below. Review documentation PRs with the C/I/M criteria in that guide, in addition to the reST, generated-file, and
 multilingual rules in this section.
 
+The depth gate in [docs/documentation_authoring.md](docs/documentation_authoring.md) is a merge-blocking rule, not a
+suggestion. For substantial documentation PRs, especially PRs created to repair thin docs, reviewers must verify every
+required inventory field, every role-specific depth requirement, every runnable example/output requirement, every
+reference row/counterexample requirement, every diagram/visual-evidence requirement, bilingual parity, migration records,
+and verification evidence. If any required item is missing and not explicitly removed from scope with ownership assigned
+to another page, reject ready-to-merge status until it is fixed. A green Sphinx build, drift checker, or CI run does not
+override this authoring gate.
+
+Treat this as a hard stop during implementation and review: do not mark a substantial documentation PR ready, do not
+write a ready-to-merge summary, and do not merge on the user's behalf when any applicable item in
+[docs/documentation_authoring.md](docs/documentation_authoring.md) is unsatisfied. The PR body or a linked PR comment
+must record the human depth review, including page-role ownership, runnable examples or explicit schematic boundaries,
+generated-resource and visual evidence, bilingual parity, and verification commands. Missing even one required item is a
+blocking defect, regardless of passing CI.
+
+Apply the whole guide as written, including newly added module-specific or language-specific rules. Do not cherry-pick
+only the convenient parts of [docs/documentation_authoring.md](docs/documentation_authoring.md): if a changed Chinese page,
+reference table, how-to task, explanation trace, generated resource, migration note, or verification record falls under a
+documented requirement, that requirement must be checked and satisfied before ready/merge.
+
 #### Documentation Structure
 
 Files in [docs/source/](docs/source/):

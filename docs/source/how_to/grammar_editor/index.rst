@@ -3,106 +3,148 @@
 Grammar and editor tasks
 ========================
 
-Use this guide when changing FCSTM syntax, syntax highlighting, or editor
-support. For exact file paths, see :doc:`../../reference/grammar_tooling/index`.
+Use this guide when changing FCSTM syntax, highlighting, or editor support. For
+exact file maps and command lists, see :doc:`../../reference/grammar_tooling/index`.
+For design rationale, see :doc:`../../explanations/grammar_tooling/index`.
 
-Change grammar syntax
+Decide what kind of change this is
+----------------------------------
+
+.. list-table:: Change type
+   :header-rows: 1
+
+   * - Change
+     - Must update
+     - Usually also update
+   * - New parseable syntax
+     - ANTLR grammar, generated parser outputs, listener/AST/model import, tests, DSL docs.
+     - Pygments, TextMate, VSCode diagnostics/completion/hover.
+   * - New keyword or operator spelling
+     - Lexer grammar, parser grammar when used in rules, highlighters, editor validation.
+     - DSL reference examples and LLM grammar guide.
+   * - New semantic interpretation of existing syntax
+     - Model import/validation, simulator or renderer behavior, tests, semantic docs.
+     - Editor diagnostics if authoring feedback changes.
+   * - Highlighting-only correction
+     - Pygments or TextMate assets, editor validation.
+     - Documentation examples when they taught the wrong form.
+   * - VSCode authoring feature change
+     - VSCode TypeScript providers and focused verification suite.
+     - TextMate grammar if the feature depends on token classification.
+
+Change parser grammar
 ---------------------
 
-1. Edit ``pyfcstm/dsl/grammar/GrammarParser.g4`` or
+1. Edit ``pyfcstm/dsl/grammar/GrammarParser.g4`` and/or
    ``pyfcstm/dsl/grammar/GrammarLexer.g4``.
-2. Run the ANTLR generator:
+2. Regenerate ANTLR outputs:
 
    .. code-block:: bash
 
       make antlr_build
 
-3. Update ``pyfcstm/dsl/listener.py`` and ``pyfcstm/dsl/node.py`` if the parse
-   tree shape changed.
-4. Add or update parser/model tests for the syntax change.
-5. Update the LLM grammar guide when prompt-facing syntax changes.
+3. Update ``pyfcstm/dsl/listener.py`` and ``pyfcstm/dsl/node.py`` when parse
+   tree shape or AST node shape changes.
+4. Update model import and validation if the construct has semantic meaning.
+5. Add tests that prove both accepted and rejected forms.
+6. Update user-facing DSL docs and the packaged LLM grammar guide when prompt
+   or user syntax changes.
 
-Change highlighting
--------------------
+Operator and keyword ordering
+-----------------------------
 
-After grammar changes, keep highlighters in sync:
+When adding operators, keep longer tokens before shorter prefixes in lexer and
+highlighting rules. Examples:
 
-1. Update ``pyfcstm/highlight/pygments_lexer.py`` for Python/Sphinx highlighting.
-2. Update ``editors/fcstm.tmLanguage.json`` for TextMate-compatible editors.
-3. Put multi-character operators before shorter prefixes.
-4. Run:
+* ``**`` before ``*``;
+* ``<<`` before ``<``;
+* ``<=`` and ``>=`` before ``<`` and ``>``;
+* ``==`` and ``!=`` before ``=`` and ``!``;
+* ``&&`` and ``||`` before single-character forms.
+
+When adding keywords, update the grammar and all syntax display layers in the
+same change. A keyword that parses but does not highlight creates documentation
+and editor drift.
+
+Synchronize highlighting
+------------------------
+
+After grammar or keyword changes, update both highlighter families:
+
+1. ``pyfcstm/highlight/pygments_lexer.py`` for Sphinx and Python-side
+   highlighting.
+2. ``editors/fcstm.tmLanguage.json`` for TextMate-compatible editors.
+3. Run the editor/highlight validation command:
 
    .. code-block:: bash
 
       python editors/validate.py
 
-The validation command is the repository-level check for editor/highlight asset
-consistency. If you only document a workflow and do not run a tool in a docs-only
-PR, say so in the PR comment.
+If a docs-only PR does not run the editor command, say that explicitly in the PR
+comment. Grammar or editor behavior changes should not skip it silently.
 
-Update the VSCode extension
----------------------------
+Update VSCode support
+---------------------
 
-When editor behavior changes, inspect ``editors/vscode/`` and the JavaScript
-frontend under ``editors/jsfcstm/``. Build the extension package with:
+Inspect ``editors/vscode/`` when authoring behavior changes. Typical places are:
+
+* ``src/diagnostics.ts`` for syntax diagnostics and Problems-panel feedback;
+* ``src/symbols.ts`` for Outline and breadcrumbs;
+* ``src/completion.ts`` for keyword and symbol completion;
+* ``src/hover.ts`` for hover explanations;
+* ``snippets/fcstm.code-snippets`` for user snippets.
+
+Build the extension package when packaging behavior matters:
 
 .. code-block:: bash
 
    make vscode
 
-Use ``make vscode_clean`` when cleaning local extension build outputs.
+Use ``make vscode_clean`` only when cleaning local extension build outputs.
 
 Verify Python and Sphinx highlighting
 -------------------------------------
 
-For Python tools, confirm that the packaged Pygments entry point is visible:
+For Python tools, confirm the Pygments alias is visible:
 
 .. code-block:: bash
 
    python -c "from pygments.lexers import get_lexer_by_name; print(get_lexer_by_name('fcstm'))"
 
-For Sphinx pages, prefer ``.. code-block:: fcstm`` examples and build the docs
-in both languages when the visible documentation changes:
+For Sphinx pages, use ``.. code-block:: fcstm`` examples and build the docs in
+both languages when visible documentation changes:
 
 .. code-block:: bash
 
    NO_CONTENTS_BUILD=1 READTHEDOCS_LANGUAGE=en sphinx-build -b html docs/source /tmp/pyfcstm-docs-en
    NO_CONTENTS_BUILD=1 READTHEDOCS_LANGUAGE=zh sphinx-build -b html docs/source /tmp/pyfcstm-docs-zh
 
-If a lexer alias stops working, check ``setup.py`` and ``docs/source/conf.py``
+If highlighting fails in Sphinx, check ``setup.py`` and ``docs/source/conf.py``
 before changing examples.
 
 Install and verify the VSCode extension
 ---------------------------------------
 
-For a released package, install the downloaded ``.vsix`` file with:
-
-.. code-block:: bash
-
-   code --install-extension fcstm-language-support-0.1.0.vsix
-
-For local development, build and install the package produced by the repository
-Makefile:
+For local development, build and install the package produced by the Makefile:
 
 .. code-block:: bash
 
    make vscode
    code --install-extension editors/vscode/build/fcstm-language-support-0.1.0.vsix
 
-Verifying Installation: after installation, open a ``.fcstm`` file and verify these editor behaviors:
+After installation, open a ``.fcstm`` file and verify:
 
 1. The bottom-right language mode is ``FCSTM``.
 2. Keywords, operators, comments, and literals are highlighted.
-3. The Outline view shows document symbols for states, variables, and events.
+3. Outline shows variables, states, and events.
 4. Typing ``state`` offers completions.
 5. Hovering over keywords such as ``pseudo`` or ``effect`` shows help text.
-6. A deliberately invalid file reports syntax diagnostics in the Problems panel.
+6. A deliberately invalid file reports syntax diagnostics in Problems.
 
 Run VSCode verification suites
 ------------------------------
 
-When the extension behavior changes, run the focused suites from
-``editors/vscode`` before the aggregate check:
+When extension behavior changes, run focused suites before the aggregate check:
 
 .. code-block:: bash
 
@@ -114,34 +156,75 @@ When the extension behavior changes, run the focused suites from
    make verify-p0.6  # hover documentation
    make verify
 
-For syntax-only documentation updates, it is acceptable to record that these
-Node.js-backed checks were not run, but grammar or editor behavior changes should
-not skip them silently.
+Syntax-only documentation updates may record that Node.js-backed checks were
+not run, but parser/editor changes should include the relevant suites.
 
-Troubleshoot editor behavior
-----------------------------
+Update prompt-facing grammar guide
+----------------------------------
 
-Use this checklist before changing grammar or editor code:
+When syntax or parse rules change, update the packaged LLM grammar guide:
 
-* If Sphinx highlighting fails, verify the ``fcstm`` lexer alias and reinstall
-  the package in the environment that runs Sphinx.
-* If TextMate highlighting fails, confirm that ``editors/fcstm.tmLanguage.json``
-  was installed in the editor-specific package location and restart the editor.
-* For Sublime Text, create a ``FCSTM`` package directory under
-  ``Preferences -> Browse Packages`` and copy ``fcstm.tmLanguage.json`` there.
-* VS Code Extension Not Working: confirm the extension is installed, the file
-  extension is ``.fcstm``, and the language mode is ``FCSTM``.
-* If diagnostics do not appear, save the file, check the Problems panel, and
-  inspect the ``FCSTM Language Support`` output channel.
-* If completion does not appear, trigger it manually with ``Ctrl+Space`` and
-  check that the cursor is not inside a comment or string.
+.. code-block:: bash
 
-Document the change
--------------------
+   make sha256
+   SKIP_SLOW_TESTS=1 make unittest RANGE_DIR=./llm
 
-Syntax changes should update the user-facing DSL reference or how-to pages,
-not just the grammar files. Maintenance-only changes should update the tooling
-reference and explain whether generated assets were regenerated.
+Commit the Markdown guide and checksum together. If the grammar guide did not
+change, record why it was outside the change scope.
 
-Before opening review, include the commands you ran and the syntax examples that
-prove the grammar, highlighting, and editor assets agree.
+Worked grammar-change playbooks
+-------------------------------
+
+Use these playbooks to decide how much of the toolchain must move with a syntax
+change.
+
+.. list-table:: Grammar-change playbooks
+   :header-rows: 1
+
+   * - Change type
+     - Minimum files to inspect
+     - Required checks
+     - Common failure if skipped
+   * - Add a parser keyword or operator.
+     - ``GrammarLexer.g4``, ``GrammarParser.g4``, ``pyfcstm/highlight/pygments_lexer.py``, ``editors/fcstm.tmLanguage.json``, docs and LLM guide.
+     - ``make antlr_build``; ``python editors/validate.py``; relevant parser/model tests; ``make sha256`` when the LLM guide changes.
+     - Parser accepts text that highlighters or LLM guidance still teach incorrectly.
+   * - Change parse-tree shape.
+     - Grammar files, generated parser output, ``pyfcstm/dsl/listener.py``, ``pyfcstm/dsl/node.py``, model import/export code.
+     - Parser tests plus model import/export tests.
+     - Syntax parses but AST/model conversion loses data.
+   * - Add editor authoring support.
+     - TextMate grammar, ``editors/vscode/src/*``, snippets, validation suites.
+     - ``make vscode`` and targeted ``make verify-p0.*`` suites.
+     - VSCode suggests syntax that Python model import rejects.
+   * - Update only examples or docs wording.
+     - Human docs, prompt-facing grammar guide when syntax advice changes.
+     - Sphinx build, example parse commands, ``make sha256`` if guide content changes.
+     - Human docs and LLM prompts drift apart.
+
+Concrete review checklist
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Before requesting review, attach this evidence to the PR body or comment:
+
+* exact grammar files changed, or an explicit statement that grammar files are untouched;
+* whether generated parser files were regenerated;
+* whether listener/model/import/export code changed;
+* highlighter/editor assets checked or intentionally out of scope;
+* LLM grammar guide and checksum decision;
+* Python and JavaScript/editor test boundary decision.
+
+
+Document and review the change
+------------------------------
+
+Before review, include:
+
+* the syntax forms added, changed, or deliberately rejected;
+* parser/model tests or docs-only validation rationale;
+* highlighter and editor validation commands;
+* generated parser or documentation outputs that were regenerated;
+* any old examples that were removed or redirected.
+
+A grammar change is ready only when parser behavior, model semantics,
+highlighting, editor feedback, user docs, and tests all tell the same story.

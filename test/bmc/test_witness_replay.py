@@ -16,6 +16,8 @@ from pyfcstm.bmc import (
 from pyfcstm.bmc.witness import (
     BmcWitnessCallRecord,
     BmcWitnessEvent,
+    BmcWitnessFrame,
+    BmcWitnessStep,
     BmcWitnessTrace,
     decode_bmc_witness,
     replay_bmc_witness,
@@ -334,8 +336,8 @@ def test_replay_rejects_tampered_initial_terminated_frame_vars() -> None:
 
 
 def test_replay_rejects_forged_non_initial_init_sentinel_frames() -> None:
-    """Public frames cannot combine ``init`` sentinels with forged state fields."""
-    _model, trace = _trace(
+    """Forged later ``init`` sentinels cannot hide real runtime states."""
+    model, trace = _trace(
         """
         state Root {
             state A;
@@ -354,6 +356,123 @@ def test_replay_rejects_forged_non_initial_init_sentinel_frames() -> None:
             sentinel="init",
             terminated=True,
         )
+
+    forged_frame = BmcWitnessFrame(
+        trace.frames[1].index,
+        None,
+        None,
+        "init",
+        False,
+        dict(trace.frames[1].vars),
+    )
+    forged_trace = BmcWitnessTrace(
+        trace.property,
+        trace.solver,
+        trace.initial,
+        (trace.frames[0], forged_frame),
+        trace.steps,
+        trace.diagnostics,
+    )
+
+    result = replay_bmc_witness(model, forged_trace)
+
+    assert [mismatch.to_canonical() for mismatch in result.mismatches] == [
+        {
+            "path": "frames[1].state",
+            "expected": "Root",
+            "actual": "Root.A",
+            "message": "init sentinel state mismatch",
+            "tolerance": None,
+        }
+    ]
+
+
+def test_replay_accepts_later_init_sentinel_when_initial_cycle_stays_unstable() -> None:
+    """Failed initial cycles may remain at the public ``init`` sentinel."""
+    model = load_state_machine_from_text(
+        """
+        state Root {
+            state A;
+            [*] -> A :: Start;
+        }
+        """
+    )
+    trace = BmcWitnessTrace(
+        {"kind": "reach"},
+        {"status": "sat"},
+        {"mode": "cold"},
+        (
+            BmcWitnessFrame(0, None, None, "init", False, {}),
+            BmcWitnessFrame(1, None, None, "init", False, {}),
+        ),
+        (
+            BmcWitnessStep(
+                0,
+                0,
+                1,
+                "Root::delta::0",
+                "delta",
+                "delta",
+                None,
+                None,
+                True,
+                False,
+            ),
+        ),
+    )
+
+    result = replay_bmc_witness(model, trace)
+
+    assert result.ok
+    assert result.to_canonical()["runtime_trace"] == {
+        "frames": [
+            {"index": 0, "state": "Root", "terminated": False, "vars": {}},
+            {"index": 1, "state": "Root", "terminated": False, "vars": {}},
+        ],
+        "steps": [
+            {
+                "index": 0,
+                "input_events": [],
+                "consumed_events": [],
+                "unconsumed_events": [],
+                "abstract_calls": [],
+            }
+        ],
+    }
+
+
+def test_replay_reports_init_sentinel_when_runtime_is_terminated() -> None:
+    """An ``init`` sentinel cannot hide a terminated synthetic replay frame."""
+    model = load_state_machine_from_text("state Root;")
+    trace = BmcWitnessTrace(
+        {"kind": "reach"},
+        {"status": "sat"},
+        {"mode": "cold"},
+        (
+            BmcWitnessFrame(0, None, None, "terminated", True, {}),
+            BmcWitnessFrame(1, None, None, "init", False, {}),
+        ),
+        (),
+    )
+
+    result = replay_bmc_witness(model, trace)
+
+    assert [mismatch.to_canonical() for mismatch in result.mismatches] == [
+        {
+            "path": "frames",
+            "expected": 1,
+            "actual": 2,
+            "message": "frame/step length mismatch",
+            "tolerance": None,
+        },
+        {
+            "path": "frames[1].terminated",
+            "expected": False,
+            "actual": True,
+            "message": "init sentinel terminated mismatch",
+            "tolerance": None,
+        },
+    ]
 
 
 def test_replay_reports_witness_trace_shape_mismatches() -> None:

@@ -35,8 +35,10 @@ Example::
 from __future__ import annotations
 
 import io
+import math
 import sys
 import time
+from collections.abc import Iterable as IterableABC
 from dataclasses import dataclass, field
 from fractions import Fraction
 from typing import Any, Callable, Dict, Iterable, Mapping, Optional, Sequence, Tuple
@@ -119,6 +121,19 @@ def _validate_optional_positive_int(name: str, value: Optional[int]) -> None:
         isinstance(value, bool) or not isinstance(value, int) or value <= 0
     ):
         raise BmcBuildError("%s must be a positive integer or None." % name)
+
+
+def _coerce_public_sequence(
+    name: str, value: object, item_type: object, item_description: str
+) -> Tuple[Any, ...]:
+    if isinstance(value, (str, bytes)) or isinstance(value, Mapping):
+        raise BmcBuildError("%s must be a sequence of %s." % (name, item_description))
+    if not isinstance(value, IterableABC):
+        raise BmcBuildError("%s must be a sequence of %s." % (name, item_description))
+    items = tuple(value)
+    if not all(isinstance(item, item_type) for item in items):
+        raise BmcBuildError("%s must contain %s." % (name, item_description))
+    return items
 
 
 def _format_scalar(value: Any) -> str:
@@ -1273,9 +1288,11 @@ class BmcSolveResult(_PrettyPrintableMixin):
             or self.timeout_ms <= 0
         ):
             raise BmcBuildError("timeout_ms must be a positive integer or None.")
-        if not all(isinstance(item, str) for item in self.diagnostics):
-            raise BmcBuildError("diagnostics must contain strings.")
-        object.__setattr__(self, "diagnostics", tuple(self.diagnostics))
+        object.__setattr__(
+            self,
+            "diagnostics",
+            _coerce_public_sequence("diagnostics", self.diagnostics, str, "strings"),
+        )
 
     @property
     def kind(self) -> str:
@@ -1687,19 +1704,36 @@ class BmcWitnessStep(_PrettyPrintableMixin):
                 )
         if not isinstance(self.delta, bool) or not isinstance(self.gamma, bool):
             raise BmcBuildError("delta and gamma must be bool.")
-        if not all(isinstance(item, BmcWitnessEvent) for item in self.input_events):
-            raise BmcBuildError("input_events must contain BmcWitnessEvent objects.")
-        if not all(isinstance(item, BmcWitnessEvent) for item in self.event_reads):
-            raise BmcBuildError("event_reads must contain BmcWitnessEvent objects.")
-        if not all(
-            isinstance(item, BmcWitnessCallRecord) for item in self.abstract_calls
-        ):
-            raise BmcBuildError(
-                "abstract_calls must contain BmcWitnessCallRecord objects."
-            )
-        object.__setattr__(self, "input_events", tuple(self.input_events))
-        object.__setattr__(self, "event_reads", tuple(self.event_reads))
-        object.__setattr__(self, "abstract_calls", tuple(self.abstract_calls))
+        object.__setattr__(
+            self,
+            "input_events",
+            _coerce_public_sequence(
+                "input_events",
+                self.input_events,
+                BmcWitnessEvent,
+                "BmcWitnessEvent objects",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "event_reads",
+            _coerce_public_sequence(
+                "event_reads",
+                self.event_reads,
+                BmcWitnessEvent,
+                "BmcWitnessEvent objects",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "abstract_calls",
+            _coerce_public_sequence(
+                "abstract_calls",
+                self.abstract_calls,
+                BmcWitnessCallRecord,
+                "BmcWitnessCallRecord objects",
+            ),
+        )
 
     @property
     def input_event_paths(self) -> Tuple[str, ...]:
@@ -1793,18 +1827,28 @@ class BmcWitnessTrace(_PrettyPrintableMixin):
             raise BmcBuildError("solver must be a mapping.")
         if not isinstance(self.initial, Mapping):
             raise BmcBuildError("initial must be a mapping.")
-        if not all(isinstance(item, BmcWitnessFrame) for item in self.frames):
-            raise BmcBuildError("frames must contain BmcWitnessFrame objects.")
-        if not all(isinstance(item, BmcWitnessStep) for item in self.steps):
-            raise BmcBuildError("steps must contain BmcWitnessStep objects.")
-        if not all(isinstance(item, str) for item in self.diagnostics):
-            raise BmcBuildError("diagnostics must contain strings.")
         object.__setattr__(self, "property", dict(self.property))
         object.__setattr__(self, "solver", dict(self.solver))
         object.__setattr__(self, "initial", dict(self.initial))
-        object.__setattr__(self, "frames", tuple(self.frames))
-        object.__setattr__(self, "steps", tuple(self.steps))
-        object.__setattr__(self, "diagnostics", tuple(self.diagnostics))
+        object.__setattr__(
+            self,
+            "frames",
+            _coerce_public_sequence(
+                "frames", self.frames, BmcWitnessFrame, "BmcWitnessFrame objects"
+            ),
+        )
+        object.__setattr__(
+            self,
+            "steps",
+            _coerce_public_sequence(
+                "steps", self.steps, BmcWitnessStep, "BmcWitnessStep objects"
+            ),
+        )
+        object.__setattr__(
+            self,
+            "diagnostics",
+            _coerce_public_sequence("diagnostics", self.diagnostics, str, "strings"),
+        )
 
     def to_canonical(self) -> _CanonicalDict:
         """Return a JSON-stable witness dictionary.
@@ -1929,22 +1973,35 @@ class BmcRuntimeStep(_PrettyPrintableMixin):
             or self.index < 0
         ):
             raise BmcBuildError("runtime step index must be a non-negative integer.")
-        if not all(isinstance(item, str) for item in self.input_events):
-            raise BmcBuildError("input_events must contain strings.")
-        if not all(isinstance(item, str) for item in self.consumed_events):
-            raise BmcBuildError("consumed_events must contain strings.")
-        if not all(isinstance(item, str) for item in self.unconsumed_events):
-            raise BmcBuildError("unconsumed_events must contain strings.")
-        if not all(
-            isinstance(item, BmcWitnessCallRecord) for item in self.abstract_calls
-        ):
-            raise BmcBuildError(
-                "abstract_calls must contain BmcWitnessCallRecord objects."
-            )
-        object.__setattr__(self, "input_events", tuple(self.input_events))
-        object.__setattr__(self, "consumed_events", tuple(self.consumed_events))
-        object.__setattr__(self, "unconsumed_events", tuple(self.unconsumed_events))
-        object.__setattr__(self, "abstract_calls", tuple(self.abstract_calls))
+        object.__setattr__(
+            self,
+            "input_events",
+            _coerce_public_sequence("input_events", self.input_events, str, "strings"),
+        )
+        object.__setattr__(
+            self,
+            "consumed_events",
+            _coerce_public_sequence(
+                "consumed_events", self.consumed_events, str, "strings"
+            ),
+        )
+        object.__setattr__(
+            self,
+            "unconsumed_events",
+            _coerce_public_sequence(
+                "unconsumed_events", self.unconsumed_events, str, "strings"
+            ),
+        )
+        object.__setattr__(
+            self,
+            "abstract_calls",
+            _coerce_public_sequence(
+                "abstract_calls",
+                self.abstract_calls,
+                BmcWitnessCallRecord,
+                "BmcWitnessCallRecord objects",
+            ),
+        )
 
     def to_canonical(self) -> _CanonicalDict:
         """Return a JSON-stable runtime step.
@@ -1987,16 +2044,26 @@ class BmcRuntimeTrace(_PrettyPrintableMixin):
     steps: Sequence[BmcRuntimeStep]
 
     def __post_init__(self) -> None:
-        if not all(isinstance(item, BmcRuntimeFrame) for item in self.frames):
-            raise BmcBuildError(
-                "runtime trace frames must contain BmcRuntimeFrame objects."
-            )
-        if not all(isinstance(item, BmcRuntimeStep) for item in self.steps):
-            raise BmcBuildError(
-                "runtime trace steps must contain BmcRuntimeStep objects."
-            )
-        object.__setattr__(self, "frames", tuple(self.frames))
-        object.__setattr__(self, "steps", tuple(self.steps))
+        object.__setattr__(
+            self,
+            "frames",
+            _coerce_public_sequence(
+                "runtime trace frames",
+                self.frames,
+                BmcRuntimeFrame,
+                "BmcRuntimeFrame objects",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "steps",
+            _coerce_public_sequence(
+                "runtime trace steps",
+                self.steps,
+                BmcRuntimeStep,
+                "BmcRuntimeStep objects",
+            ),
+        )
 
     def to_canonical(self) -> _CanonicalDict:
         """Return a JSON-stable runtime trace.
@@ -2053,9 +2120,10 @@ class BmcReplayMismatch(_PrettyPrintableMixin):
             isinstance(self.tolerance, bool)
             or not isinstance(self.tolerance, (int, float))
             or self.tolerance < 0
+            or not math.isfinite(float(self.tolerance))
         ):
             raise BmcBuildError(
-                "mismatch tolerance must be a non-negative number or None."
+                "mismatch tolerance must be a finite non-negative number or None."
             )
 
     def to_canonical(self) -> _CanonicalDict:
@@ -2107,9 +2175,16 @@ class BmcReplayResult(_PrettyPrintableMixin):
             raise BmcBuildError("witness must be BmcWitnessTrace.")
         if not isinstance(self.runtime_trace, BmcRuntimeTrace):
             raise BmcBuildError("runtime_trace must be BmcRuntimeTrace.")
-        if not all(isinstance(item, BmcReplayMismatch) for item in self.mismatches):
-            raise BmcBuildError("mismatches must contain BmcReplayMismatch objects.")
-        object.__setattr__(self, "mismatches", tuple(self.mismatches))
+        object.__setattr__(
+            self,
+            "mismatches",
+            _coerce_public_sequence(
+                "mismatches",
+                self.mismatches,
+                BmcReplayMismatch,
+                "BmcReplayMismatch objects",
+            ),
+        )
 
     @property
     def ok(self) -> bool:
@@ -2931,6 +3006,7 @@ def _compare_frame(
     mismatches: list[BmcReplayMismatch],
     witness: BmcWitnessFrame,
     runtime: BmcRuntimeFrame,
+    init_runtime_state: Optional[str] = None,
 ) -> None:
     common_var_names = _compare_mapping_keys(
         mismatches,
@@ -2940,6 +3016,24 @@ def _compare_frame(
         "variable key set mismatch",
     )
     if witness.sentinel == "init":
+        if init_runtime_state != runtime.state:
+            mismatches.append(
+                BmcReplayMismatch(
+                    "frames[%d].state" % witness.index,
+                    init_runtime_state,
+                    runtime.state,
+                    "init sentinel state mismatch",
+                )
+            )
+        if runtime.terminated:
+            mismatches.append(
+                BmcReplayMismatch(
+                    "frames[%d].terminated" % witness.index,
+                    False,
+                    runtime.terminated,
+                    "init sentinel terminated mismatch",
+                )
+            )
         for name in common_var_names:
             _compare_values(
                 mismatches,
@@ -3184,8 +3278,13 @@ def replay_bmc_witness(
         return BmcReplayResult(witness, runtime_trace, tuple(mismatches))
     _register_recorder(runtime, recorder, abstract_handlers)
     frames.append(_runtime_frame(runtime, 0))
+    init_runtime_state = (
+        frames[0].state
+        if witness.frames and witness.frames[0].sentinel == "init"
+        else None
+    )
     if witness.frames:
-        _compare_frame(mismatches, witness.frames[0], frames[0])
+        _compare_frame(mismatches, witness.frames[0], frames[0], init_runtime_state)
     for step in witness.steps:
         before_count = len(recorder.calls)
         recorder.begin_step()
@@ -3216,7 +3315,12 @@ def replay_bmc_witness(
         runtime_frame = _runtime_frame(runtime, step.target_frame)
         frames.append(runtime_frame)
         if step.target_frame < len(witness.frames):
-            _compare_frame(mismatches, witness.frames[step.target_frame], runtime_frame)
+            _compare_frame(
+                mismatches,
+                witness.frames[step.target_frame],
+                runtime_frame,
+                init_runtime_state,
+            )
     return BmcReplayResult(
         witness=witness,
         runtime_trace=BmcRuntimeTrace(tuple(frames), tuple(steps)),

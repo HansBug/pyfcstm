@@ -946,10 +946,32 @@ def test_witness_trace_metadata_accepts_nested_json_payloads() -> None:
     assert canonical["initial"] == {"argv": ["--flag", 1], "mode": "cold"}
 
 
+def test_witness_trace_metadata_rejects_cycles_and_excessive_depth(monkeypatch) -> None:
+    """JSON-stable metadata validation fails loudly instead of recursing."""
+    cyclic_mapping = {}
+    cyclic_mapping["self"] = cyclic_mapping
+    with pytest.raises(BmcBuildError, match="cyclic metadata"):
+        BmcWitnessTrace({"payload": cyclic_mapping}, {}, {}, (), ())
+
+    cyclic_list = []
+    cyclic_list.append(cyclic_list)
+    with pytest.raises(BmcBuildError, match="cyclic metadata"):
+        BmcWitnessTrace({"payload": cyclic_list}, {}, {}, (), ())
+
+    monkeypatch.setattr(witness_module, "_PUBLIC_JSON_MAX_DEPTH", 2)
+    with pytest.raises(BmcBuildError, match="nesting exceeds"):
+        BmcWitnessTrace({"a": {"b": {"c": 1}}}, {}, {}, (), ())
+
+
 def test_internal_json_metadata_mapping_guard_is_loud() -> None:
     """The recursive JSON metadata helper rejects non-mapping callers."""
     with pytest.raises(BmcBuildError, match="metadata must be a mapping"):
         witness_module._coerce_public_json_mapping("metadata", ())
+    assert witness_module._coerce_public_json_value(
+        "metadata", [1, {"enabled": True}]
+    ) == [1, {"enabled": True}]
+    with pytest.raises(BmcBuildError, match="nesting exceeds"):
+        witness_module._coerce_public_json_mapping("metadata", {"x": 1}, _depth=999)
 
 
 def test_value_comparison_fails_closed_for_non_finite_and_bool_numbers() -> None:

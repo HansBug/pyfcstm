@@ -94,6 +94,7 @@ _PRETTY_EXTRA_LEGEND = (
     "V=vars hidden E=events truncated C=calls truncated "
     "W=cell width truncated P=full path unavailable R=hidden event reads"
 )
+_PUBLIC_JSON_MAX_DEPTH = 256
 
 
 def _internal_error(message: str) -> BmcBuildError:
@@ -160,7 +161,13 @@ def _coerce_public_value_mapping(name: str, value: object) -> Dict[str, Any]:
     return result
 
 
-def _coerce_public_json_value(path: str, value: object) -> Any:
+def _coerce_public_json_value(
+    path: str, value: object, _stack: Optional[set] = None, _depth: int = 0
+) -> Any:
+    if _depth > _PUBLIC_JSON_MAX_DEPTH:
+        raise BmcBuildError(
+            "%s metadata nesting exceeds %d levels." % (path, _PUBLIC_JSON_MAX_DEPTH)
+        )
     if value is None or isinstance(value, (bool, str)):
         return value
     if isinstance(value, int):
@@ -169,25 +176,53 @@ def _coerce_public_json_value(path: str, value: object) -> Any:
         if not math.isfinite(value):
             raise BmcBuildError("%s must be finite for JSON-stable metadata." % path)
         return value
+    if _stack is None:
+        _stack = set()
     if isinstance(value, Mapping):
-        return _coerce_public_json_mapping(path, value)
+        return _coerce_public_json_mapping(path, value, _stack, _depth)
     if isinstance(value, (list, tuple)):
-        return [
-            _coerce_public_json_value("%s[%d]" % (path, index), item)
-            for index, item in enumerate(value)
-        ]
+        value_id = id(value)
+        if value_id in _stack:
+            raise BmcBuildError("%s must not contain cyclic metadata." % path)
+        _stack.add(value_id)
+        try:
+            return [
+                _coerce_public_json_value(
+                    "%s[%d]" % (path, index), item, _stack, _depth + 1
+                )
+                for index, item in enumerate(value)
+            ]
+        finally:
+            _stack.remove(value_id)
     raise BmcBuildError("%s must be JSON-stable metadata." % path)
 
 
-def _coerce_public_json_mapping(name: str, value: object) -> Dict[str, Any]:
+def _coerce_public_json_mapping(
+    name: str, value: object, _stack: Optional[set] = None, _depth: int = 0
+) -> Dict[str, Any]:
     if not isinstance(value, Mapping):
         raise BmcBuildError("%s must be a mapping." % name)
+    if _depth > _PUBLIC_JSON_MAX_DEPTH:
+        raise BmcBuildError(
+            "%s metadata nesting exceeds %d levels." % (name, _PUBLIC_JSON_MAX_DEPTH)
+        )
+    if _stack is None:
+        _stack = set()
+    value_id = id(value)
+    if value_id in _stack:
+        raise BmcBuildError("%s must not contain cyclic metadata." % name)
+    _stack.add(value_id)
     result = {}
-    for key, item in sorted(value.items(), key=lambda pair: str(pair[0])):
-        if not isinstance(key, str) or not key:
-            raise BmcBuildError("%s keys must be non-empty strings." % name)
-        result[key] = _coerce_public_json_value("%s.%s" % (name, key), item)
-    return result
+    try:
+        for key, item in sorted(value.items(), key=lambda pair: str(pair[0])):
+            if not isinstance(key, str) or not key:
+                raise BmcBuildError("%s keys must be non-empty strings." % name)
+            result[key] = _coerce_public_json_value(
+                "%s.%s" % (name, key), item, _stack, _depth + 1
+            )
+        return result
+    finally:
+        _stack.remove(value_id)
 
 
 def _validate_optional_reason(name: str, value: Optional[str]) -> None:

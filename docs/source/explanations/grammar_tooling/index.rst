@@ -3,72 +3,132 @@
 Grammar tooling explanation
 ===========================
 
-FCSTM syntax support is deliberately multi-layered. The ANTLR grammar defines
-parseable syntax, the listener turns parse trees into repository AST nodes, and
-separate highlighters make the same syntax readable in documentation and
-editors.
+FCSTM syntax support is deliberately multi-layered. ANTLR defines parseable
+syntax, listener code turns parse trees into repository AST nodes, model import
+gives those nodes semantic meaning, and separate highlighters/editors make the
+same syntax usable in documents and authoring tools.
 
-Why several files must move together
+Why one syntax change touches several layers
+--------------------------------------------
+
+A grammar change is not complete when a ``.g4`` file accepts new text. Users see
+syntax through command errors, model diagnostics, rendered documentation, VSCode
+highlighting, completion suggestions, hover text, snippets, and LLM-facing
+prompts. If one layer is updated and another layer is stale, the project teaches
+contradictory language rules.
+
+The maintenance invariant is therefore:
+
+* grammar decides what can parse;
+* listener and AST nodes decide what syntax shape is represented;
+* model import decides what the syntax means;
+* diagnostics decide how invalid or risky forms are explained;
+* Pygments and TextMate decide how humans visually recognize syntax;
+* editor features decide how authors discover and repair syntax while typing;
+* documentation and tests decide what users can rely on.
+
+Parser grammar versus semantic model
 ------------------------------------
 
-A grammar change is not complete when the ``.g4`` file parses. Users also see
-syntax through examples, Sphinx code blocks, VSCode highlighting, and JavaScript
-editor tooling. If these layers drift, a model may parse correctly while docs or
-editors still teach the old syntax.
+The parser should remain a syntactic recognizer. It can reject malformed token
+orders and missing punctuation, but it should not own every semantic rule. For
+example, resolving whether a transition target exists depends on the state tree,
+so that belongs in model import and validation rather than in a parser rule.
 
-The maintenance rule is therefore:
+This separation keeps grammar readable and makes diagnostics more useful:
+syntax errors can point to malformed text, while semantic diagnostics can point
+to resolved model facts such as duplicate states, illegal transitions, or
+unresolved references.
 
-* Parser grammar defines what is valid.
-* Listener and AST nodes define what the Python model can import.
-* Pygments and TextMate define how humans see the syntax.
-* Editor validation checks that the editor-facing assets remain aligned.
-* DSL docs and tests define what users can rely on.
+Generated parser boundary
+-------------------------
 
-Pygments and TextMate roles
----------------------------
+ANTLR-generated files are regeneration outputs. Hand-editing them creates a
+fork that disappears on the next ``make antlr_build``. Manual behavior belongs
+in listener, node, model, diagnostics, or editor code. This makes regeneration a
+safe maintenance step instead of a risky rewrite.
 
-Pygments serves Python and documentation contexts. It lets Sphinx, terminal
-formatters, notebooks, and other Python tools display FCSTM snippets without
-running the model importer. TextMate grammar serves editor highlighting contexts.
-It is intentionally lighter than the parser: it should classify text clearly,
-but it should not become a second semantic validator.
+Highlighting is not validation
+------------------------------
 
-This is why examples that only need highlighting can stay in documentation or
-editor tooling, while semantic examples belong in parser, model, simulator, or
-verification tests.
+Pygments and TextMate highlighters classify text for human readability. They
+should track grammar facts, but they should not become a second parser. A
+highlighter may conservatively color ambiguous text; it must not advertise a
+keyword, operator, or block form that the parser rejects.
+
+The practical rule is: highlighters help a reader see the structure, while
+parser/model tests prove that the structure is accepted and meaningful.
+
+Why Pygments and TextMate both exist
+------------------------------------
+
+Pygments serves Python and documentation contexts: Sphinx pages, terminal
+formatters, notebooks, and other Python tools. TextMate serves editor contexts:
+VSCode and other TextMate-compatible editors. Their consumers and syntax formats
+are different, so both need explicit maintenance even when they represent the
+same language.
 
 VSCode role
 -----------
 
-The VSCode extension combines TextMate highlighting with parser-backed authoring
-features such as diagnostics, document symbols, completion, hover help, snippets,
-and preview support. It is an authoring aid, not the canonical execution engine.
-When a syntax change affects both parseability and editor feedback, update the
-Python grammar/model path first, then synchronize editor diagnostics and
-completion so users see the same language that the parser accepts.
+The VSCode extension combines TextMate highlighting with parser-backed and
+metadata-backed authoring features: diagnostics, symbols, completion, hover,
+snippets, and preview support. It is an authoring aid, not the canonical runtime
+or model importer. When VSCode disagrees with Python parsing, Python grammar and
+model behavior remain authoritative, but the editor must be fixed so authors do
+not learn the wrong language.
 
-Parser and listener boundary
-----------------------------
+Documentation and LLM guide role
+--------------------------------
 
-ANTLR generated files should not contain hand-written behavior. Repository logic
-belongs in listener, node, model, or validation code. This keeps regeneration
-safe: ``make antlr_build`` may rewrite generated parser outputs without losing
-manual changes.
+User documentation explains the supported language in four roles: tutorial,
+how-to, explanation, and reference. The packaged LLM grammar guide is a compact
+prompt-facing grammar source. Syntax changes that matter to users should update
+both the human docs and the prompt-facing guide so human readers and LLM repair
+flows receive the same rule set.
 
-Highlighting boundary
----------------------
-
-Syntax highlighting should follow grammar facts, not invent syntax. It is fine
-for highlighters to be conservative around ambiguous text, but they should not
-advertise keywords, operators, or block forms that the parser rejects.
-
-Editor tooling boundary
+Test boundary rationale
 -----------------------
 
-The JavaScript and VSCode assets support authoring workflows. They should remain
-independent from Python unit-test fixtures. When both sides need the same syntax
-scenario, duplicate the minimal DSL example in the appropriate test tree instead
-of making one side import the other's tests.
+Python and JavaScript/editor tests stay independent. If both sides need the same
+syntax scenario, duplicate the minimal DSL fixture in each side's own test tree.
+This avoids a Python unit test depending on Node.js and avoids a JavaScript
+editor test depending on repository-level Python fixtures.
 
-This separation keeps Python tests runnable without Node.js and keeps editor
-tests runnable without the repository-level Python test tree.
+Drift examples
+--------------
+
+.. list-table:: Common drift patterns
+   :header-rows: 1
+
+   * - Drift
+     - Why it is harmful
+     - Correct response
+   * - Parser accepts a new keyword but highlighters do not color it.
+     - Documentation and editor views make valid syntax look suspicious or plain.
+     - Update Pygments, TextMate, and editor validation.
+   * - Highlighter advertises an operator the parser rejects.
+     - Users copy examples that cannot parse.
+     - Remove or correct the highlighter pattern and add a negative example if needed.
+   * - VSCode completion suggests a syntax form that model import rejects.
+     - Authors receive false confidence before command-line validation fails.
+     - Update completion and diagnostics to match parser/model behavior.
+   * - LLM guide omits a new syntax form.
+     - LLM-assisted repair keeps generating older or incomplete DSL.
+     - Update the guide and checksum with the syntax docs.
+   * - Generated parser output is edited by hand.
+     - The fix is lost at the next regeneration.
+     - Move behavior to source files and regenerate outputs.
+
+Completion standard
+-------------------
+
+A grammar/tooling change is complete when each affected surface tells the same
+story:
+
+1. the grammar parses the intended syntax;
+2. AST/model import represents the intended meaning;
+3. diagnostics reject invalid forms with useful messages;
+4. highlighters and editor tooling recognize the visible syntax;
+5. user docs and the LLM guide teach the same rule;
+6. tests or explicit validation commands cover the changed surfaces.

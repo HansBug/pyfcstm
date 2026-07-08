@@ -1,53 +1,98 @@
 .. _sec-explanations-grammar-tooling-zh:
 
-语法工具链解释
-==============
+语法工具解释
+============
 
-FCSTM syntax support 分为多个层次。ANTLR grammar 定义可解析语法，listener 将 parse tree 转换为仓库 AST nodes，独立 highlighters 让同一语法在文档和编辑器里可读。
+FCSTM 语法支持有意分成多层。ANTLR 定义可解析语法，监听器代码把解析树变成仓库 AST 节点，模型导入给这些节点语义，
+独立的高亮器和编辑器让同一套语法在文档和作者工具中可用。
 
-为什么多个文件必须一起更新
---------------------------
+为什么一个语法变化会触及多层
+----------------------------
 
-语法变更不是让 ``.g4`` 能 parse 就结束。用户还会通过 examples、Sphinx code blocks、VSCode highlighting 和 JavaScript editor tooling 看到语法。如果这些层次漂移，就会出现 model 能 parse，但 docs 或 editor 仍在教旧语法的情况。
+``.g4`` 文件接受新文本，并不等于语法变化完成。用户会通过命令错误、模型诊断、渲染文档、VSCode 高亮、补全建议、悬停说明、片段和面向大语言模型（LLM）的提示词看到语法。如果一层更新而另一层过期，项目就会教出互相矛盾的语言规则。
 
-维护规则因此是：
+因此维护不变量是：
 
-* Parser grammar 定义什么有效。
-* Listener 和 AST nodes 定义 Python model importer 能导入什么。
-* Pygments 和 TextMate 定义人看到的 highlighting。
-* Editor validation 检查 editor-facing assets 是否对齐。
-* DSL docs 和 tests 定义用户可以依赖什么。
+* 语法决定什么能解析；
+* 监听器和 AST 节点决定语法形状如何表示；
+* 模型导入决定语法是什么意思；
+* 诊断决定如何解释无效或有风险的形式；
+* Pygments 和 TextMate 决定人类如何视觉识别语法；
+* 编辑器功能决定作者在输入时如何发现和修复语法；
+* 文档和测试决定用户可以依赖什么。
 
+解析语法和语义模型
+------------------
 
-Pygments 与 TextMate 角色
--------------------------
+解析器应保持为语法识别器。它可以拒绝错误的标记顺序和缺失标点，但不应承载所有语义规则。例如，转换目标是否存在依赖状态树解析结果，因此应属于模型导入和验证，而不是解析规则。
 
-Pygments 服务 Python 和 documentation contexts。它让 Sphinx、terminal formatters、notebooks 和其他 Python tools 能展示 FCSTM snippets，而不需要运行 model importer。
+这种分离让语法更易读，也让诊断更有用：语法错误可以指向格式错误的文本，语义诊断可以指向已解析模型事实，例如状态重名、非法转换或无法解析的引用。
 
-TextMate grammar 服务 editor highlighting contexts。它刻意比 parser 更轻：它应该清晰分类文本，但不应该变成第二套 semantic validator。
+生成解析器边界
+--------------
 
-因此，只需要 highlighting 的例子可以留在 documentation 或 editor tooling 中；semantic examples 应放到 parser、model、simulator 或 verification tests。
+ANTLR 生成文件是再生成输出。手改它们会制造一个在下次 ``make antlr_build`` 时消失的分叉。人工行为应放在监听器、节点、模型、诊断或编辑器代码中。这让再生成成为安全维护步骤，而不是有风险的重写。
+
+高亮不是验证
+------------
+
+Pygments 和 TextMate 高亮器为人类可读性分类文本。它们应跟随语法事实，但不应成为第二个解析器。高亮器可以保守地给歧义文本着色；但不能宣传解析器会拒绝的关键字、操作符或块形式。
+
+实用规则是：高亮器帮助读者看见结构，解析器/模型测试证明该结构被接受且有意义。
+
+为什么同时需要 Pygments 和 TextMate
+------------------------------------
+
+Pygments 服务 Python 和文档环境：Sphinx 页面、终端格式化器、笔记本和其他 Python 工具。TextMate 服务编辑器环境：VSCode 和其他 TextMate 兼容编辑器。两者的消费者和语法格式不同，所以即使表示同一语言，也都需要显式维护。
 
 VSCode 角色
 -----------
 
-VSCode extension 把 TextMate highlighting 和 parser-backed authoring features 组合起来，包括 diagnostics、document symbols、completion、hover help、snippets 和 preview support。它是 authoring aid，而不是 canonical execution engine。
+VSCode 扩展把 TextMate 高亮与基于解析器或元数据的作者功能组合起来：诊断、符号、补全、悬停、片段和预览支持。它是作者辅助工具，不是规范运行时或模型导入器。当 VSCode 和 Python 解析不一致时，以 Python 语法和模型行为为准，但必须修复编辑器，避免作者学到错误语言。
 
-syntax change 同时影响 parseability 和 editor feedback 时，应先更新 Python grammar/model path，再同步 editor diagnostics 和 completion，让用户看到的 language 与 parser 接受的 language 一致。
+文档和大语言模型指南角色
+--------------------------
 
-Parser 与 listener 边界
------------------------
+用户文档按四种角色解释支持的语言：教程、任务指南、解释和参考。打包大语言模型（LLM）语法指南是紧凑的提示词语法来源。影响用户的语法变化应同时更新人类文档和提示词指南，让人类读者和 大语言模型修复流程收到同一套规则。
 
-ANTLR 生成文件不应包含手写行为。仓库逻辑应放在 listener、node、model 或 validation code 中。这样 ``make antlr_build`` 重写生成 parser outputs 时不会丢手工修改。
+测试边界原因
+------------
 
-Highlighting 边界
------------------
+Python 和 JavaScript/编辑器测试保持独立。如果两边都需要同一个语法场景，应在各自测试树中复制最小 DSL 夹具。这样 Python 单元测试不依赖 Node.js，JavaScript 编辑器测试也不依赖仓库级 Python 夹具。
 
-Syntax highlighting 应跟随 grammar facts，而不是发明语法。highlighter 可以在模糊文本上保守，但不应宣传 parser 会拒绝的 keyword、operator 或 block form。
+漂移例子
+--------
 
-Editor tooling 边界
--------------------
+.. list-table:: 常见漂移模式
+   :header-rows: 1
 
-JavaScript 和 VSCode assets 支持 authoring workflows。它们应与 Python 单元测试 fixtures 保持独立。两侧需要同一语法场景时，在各自 test tree 中复制最小 DSL 例子，而不是互相 import 对方 tests。
+   * - 漂移
+     - 为什么有害
+     - 正确处理
+   * - 解析器接受新关键字，但高亮器不着色。
+     - 文档和编辑器视图让合法语法看起来可疑或像普通文本。
+     - 更新 Pygments、TextMate 和编辑器验证。
+   * - 高亮器宣传解析器拒绝的操作符。
+     - 用户复制后得到无法解析的示例。
+     - 移除或修正高亮模式，必要时添加反例。
+   * - VSCode 补全建议模型导入会拒绝的语法。
+     - 作者在命令行验证失败前得到错误信心。
+     - 更新补全和诊断，使其匹配解析器/模型行为。
+   * - LLM 指南漏掉新语法。
+     - LLM 辅助修复继续生成旧 DSL 或不完整 DSL。
+     - 随语法文档更新指南和校验和。
+   * - 手改生成的解析器输出。
+     - 下次再生成时修复丢失。
+     - 把行为移到源文件并重新生成输出。
 
-这种分离保证 Python tests 不需要 Node.js 也能运行，也保证 editor tests 不依赖仓库级 Python test tree。
+完成标准
+--------
+
+当每个受影响表面讲的是同一个故事时，语法/工具变更才算完成：
+
+1. 语法能解析目标形式；
+2. AST/模型导入表示目标含义；
+3. 诊断用有用消息拒绝无效形式；
+4. 高亮和编辑器工具识别可见语法；
+5. 用户文档和 LLM 指南教授同一规则；
+6. 测试或显式验证命令覆盖变化表面。

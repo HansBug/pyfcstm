@@ -1,74 +1,108 @@
 .. _sec-reference-grammar-tooling-zh:
 
-语法与编辑器工具链参考
-======================
+语法和编辑器工具参考
+====================
 
-本页是 FCSTM grammar、syntax highlighting 和 editor 维护的事实地图。更新流程见 :doc:`../../how_to/grammar_editor/index_zh`；设计解释见 :doc:`../../explanations/grammar_tooling/index_zh`。
+本页是 FCSTM 语法、高亮和编辑器维护的精确地图。任务流程见 :doc:`../../how_to/grammar_editor/index_zh`；
+设计原因见 :doc:`../../explanations/grammar_tooling/index_zh`。
 
-权威文件
---------
+规范源文件和生成文件
+--------------------
 
-.. list-table:: 语法与编辑器文件
+.. list-table:: 语法和编辑器文件
    :header-rows: 1
 
    * - 区域
      - 路径
+     - 源文件或生成物
      - 说明
-   * - Parser grammar
+   * - 解析语法
      - ``pyfcstm/dsl/grammar/GrammarParser.g4``
-     - FCSTM DSL parser rules 的权威来源。
-   * - Lexer grammar
+     - 源文件
+     - FCSTM 构造的解析规则。
+   * - 词法语法
      - ``pyfcstm/dsl/grammar/GrammarLexer.g4``
-     - tokens、keywords、literals 和 operators 的权威来源。
-   * - Python parser output
+     - 源文件
+     - 标记、关键字、字面量和操作符。
+   * - Python 解析器输出
      - ``pyfcstm/dsl/grammar/``
-     - ANTLR 生成的 Python 文件；用 ``make antlr_build`` 刷新。
-   * - DSL listener
+     - 生成物
+     - 由 ``make antlr_build`` 重新生成；不要手改生成的解析器文件。
+   * - 领域特定语言（DSL）监听器
      - ``pyfcstm/dsl/listener.py``
-     - 把 parse events 转换为 AST nodes。
-   * - DSL AST nodes
+     - 源文件
+     - 把解析事件转换成 AST 节点。
+   * - DSL AST 节点
      - ``pyfcstm/dsl/node.py``
-     - Syntax tree dataclasses 和导出 helpers。
-   * - Pygments lexer
+     - 源文件
+     - 语法树数据类和导出辅助函数。
+   * - 模型导入器
+     - ``pyfcstm/model/imports.py`` 及相关 ``pyfcstm/model/`` 模块
+     - 源文件
+     - 把 AST 节点转换成语义模型对象和诊断。
+   * - Pygments 词法器
      - ``pyfcstm/highlight/pygments_lexer.py``
-     - 文档和 Python 侧 syntax highlighting。
-   * - TextMate grammar
+     - 源文件
+     - 文档和 Python 侧语法高亮。
+   * - TextMate 语法
      - ``editors/fcstm.tmLanguage.json``
-     - 编辑器共享 highlighting grammar。
-   * - Editor validation
+     - 源文件
+     - TextMate 兼容高亮语法。
+   * - 编辑器验证
      - ``editors/validate.py``
-     - editor/highlight assets 的仓库校验命令。
-   * - JavaScript frontend
+     - 源命令
+     - 验证高亮/编辑器资产一致性。
+   * - JavaScript 前端
      - ``editors/jsfcstm/``
-     - editor integrations 使用的 JavaScript parser/runtime assets。
-   * - VSCode extension
+     - 源文件和本地生成资产
+     - 编辑器集成使用的 JavaScript 解析器/运行时资产。
+   * - VSCode 扩展
      - ``editors/vscode/``
-     - VSCode 打包和扩展集成。
+     - 源文件和构建输出
+     - VSCode 打包和作者功能。
+   * - 大语言模型（LLM）语法指南
+     - ``pyfcstm/llm/fcstm_grammar_guide.md``
+     - 提示词源资产
+     - 语法变化时更新，并用 ``make sha256`` 刷新 ``.sha256``。
 
-核心命令
---------
+核心维护命令
+------------
 
-.. list-table:: 维护命令
+.. list-table:: 命令
    :header-rows: 1
 
    * - 命令
-     - 作用
+     - 目的
+     - 典型触发
    * - ``make antlr``
-     - 需要时下载或设置 ANTLR 支持。
+     - 需要时下载/设置 ANTLR 支持。
+     - 首次本地语法维护设置。
    * - ``make antlr_build``
-     - 修改 ``GrammarParser.g4`` 或 ``GrammarLexer.g4`` 后重新生成 parser outputs。
+     - 编辑 ``GrammarParser.g4`` 或 ``GrammarLexer.g4`` 后重新生成解析器输出。
+     - 任意语法文件变化。
    * - ``python editors/validate.py``
-     - 校验 syntax highlighting 和 editor asset 一致性。
+     - 验证语法高亮和编辑器资产一致性。
+     - 语法、关键字、操作符、Pygments 或 TextMate 变化。
    * - ``make vscode``
-     - 构建 VSCode extension package。
+     - 构建 VSCode 扩展包。
+     - VSCode 包或扩展集成变化。
    * - ``make vscode_clean``
-     - 清理 VSCode extension build artifacts。
+     - 移除 VSCode 扩展构建产物。
+     - 本地清理。
+   * - ``make sha256``
+     - 刷新生成的校验和旁文件。
+     - LLM 语法指南内容变化。
+   * - ``SKIP_SLOW_TESTS=1 make unittest RANGE_DIR=./llm``
+     - 验证 LLM 指南打包和校验和行为。
+     - LLM 指南或提示词资产变化。
 
-
-Pygments 与 Sphinx 事实
+Pygments 和 Sphinx 事实
 -----------------------
 
-package 通过 ``setup.py`` 中的 ``pygments.lexers`` entry point 注册 ``pyfcstm.highlight.pygments_lexer.FcstmLexer``。canonical alias 是 ``fcstm``；lexer 也接受 ``fcsm``。程序化调用可使用：
+包通过 ``setup.py`` 中的 ``pygments.lexers`` 入口注册 :class:`pyfcstm.highlight.pygments_lexer.FcstmLexer`。
+规范别名是 ``fcstm``；词法器也接受 ``fcsm``。
+
+程序化加载检查：
 
 .. code-block:: python
 
@@ -76,91 +110,119 @@ package 通过 ``setup.py`` 中的 ``pygments.lexers`` entry point 注册 ``pyfc
 
    lexer = get_lexer_by_name("fcstm")
 
-documentation build 也会在 ``docs/source/conf.py`` 中注册 lexer，并用 ``fcstm`` code blocks 展示示例。如果 Sphinx highlighting 失败，先检查 installed package entry point 和 docs configuration，再修改示例源码。
+Sphinx 也在 ``docs/source/conf.py`` 中注册该词法器。面向用户的 FCSTM 示例应使用：
 
-TextMate 与 editor 事实
------------------------
+.. code-block:: rst
 
-仓库 TextMate grammar 是 ``editors/fcstm.tmLanguage.json``。它是 TextMate-compatible editor highlighting 的来源，并会在 VSCode extension packaging 时复制到 extension 的 ``syntaxes/`` 区域。
+   .. code-block:: fcstm
 
-Sublime Text 可以使用同一个文件：在 ``Preferences -> Browse Packages`` 下放入类似 ``FCSTM`` 的 package 目录即可。
+      state Root {
+          state Idle;
+          [*] -> Idle;
+      }
 
-VSCode extension 事实
----------------------
+TextMate 事实
+-------------
 
-VSCode extension 位于 ``editors/vscode/``。package manifest 是 ``package.json``；language configuration 是 ``language-configuration.json``；TypeScript providers 位于 ``src/``。
+仓库 TextMate 语法是 ``editors/fcstm.tmLanguage.json``。它是 TextMate 兼容高亮的来源，并在打包时复制到 VSCode 扩展的 ``syntaxes/`` 区域。
 
-bundled output 位于 ``dist/``；local packages 以 ``.vsix`` 文件写入 ``build/``。
+Sublime Text 集成时，把同一文件放到 ``Preferences -> Browse Packages`` 下类似 ``FCSTM`` 的包目录中。
 
-extension 提供这些 editor-facing capabilities：
+VSCode 扩展事实
+---------------
 
-.. list-table:: VSCode feature map
+.. list-table:: VSCode 文件地图
    :header-rows: 1
 
-   * - Capability
-     - Representative files
-     - User-visible behavior
-   * - Syntax diagnostics
-     - ``src/diagnostics.ts``
-     - Problems panel diagnostics 和 inline squiggles。
-   * - Document symbols
-     - ``src/symbols.ts``
-     - variables、states 和 events 的 Outline 与 breadcrumb navigation。
-   * - Completion
-     - ``src/completion.ts``
-     - keywords、constants、built-ins 和 document-local symbols 的 IntelliSense。
-   * - Hover documentation
-     - ``src/hover.ts``
-     - event scopes、pseudo states、lifecycle keywords 和 aspect syntax 的 contextual help。
-   * - Snippets
-     - ``snippets/fcstm.code-snippets``
-     - common variable、state、transition 和 lifecycle patterns 的短 prefixes。
+   * - 文件或目录
+     - 目的
+   * - ``editors/vscode/package.json``
+     - 扩展清单、命令、激活、语言贡献和脚本。
+   * - ``editors/vscode/language-configuration.json``
+     - 注释、括号、缩进和编辑器语言行为。
+   * - ``editors/vscode/src/diagnostics.ts``
+     - Problems 面板诊断和行内波浪线。
+   * - ``editors/vscode/src/symbols.ts``
+     - Outline 和面包屑的文档符号。
+   * - ``editors/vscode/src/completion.ts``
+     - 关键字、常量、内置项和文档内符号补全。
+   * - ``editors/vscode/src/hover.ts``
+     - 事件作用域、伪状态、生命周期关键字和切面语法的上下文帮助。
+   * - ``editors/vscode/snippets/fcstm.code-snippets``
+     - 常见变量、状态、转换和生命周期形式的片段。
+   * - ``editors/vscode/dist/``
+     - 打包输出。
+   * - ``editors/vscode/build/``
+     - 本地 ``.vsix`` 包输出。
 
-本地 VSIX 安装使用标准 VSCode command-line interface：
+本地 VSIX 安装：
 
 .. code-block:: bash
 
    code --install-extension editors/vscode/build/fcstm-language-support-0.1.0.vsix
 
-校验命令族
-----------
+VSCode 验证套件
+---------------
 
-VSCode Makefile 暴露 focused suites 和 aggregate ``make verify`` target。当前 focused suites 包括：
-
-.. list-table:: VSCode verification suites
+.. list-table:: 聚焦套件
    :header-rows: 1
 
-   * - Command
-     - Focus
+   * - 命令
+     - 关注点
    * - ``make verify-p0.2``
-     - Parser integration。
+     - 解析器集成。
    * - ``make verify-p0.3``
-     - Syntax diagnostics。
+     - 语法诊断。
    * - ``make verify-p0.4``
-     - Document symbols。
+     - 文档符号。
    * - ``make verify-p0.5``
-     - Completion support。
+     - 补全支持。
    * - ``make verify-p0.6``
-     - Hover documentation。
+     - 悬停说明。
    * - ``make verify``
-     - Aggregate extension verification，包含更新的 semantic、import、preview 和 end-to-end checks。
+     - 汇总扩展验证，包括较新的语义、导入、预览和端到端检查。
 
 操作符顺序事实
 --------------
 
-Lexer patterns 和 highlighters 应把多字符操作符放在单字符前缀之前。例如 ``**`` 在 ``*`` 前，``<<`` 在 ``<`` 前，``<=`` 在 ``<`` 前，``>=`` 在 ``>`` 前，``==`` 在 ``=`` 前，``!=`` 在 ``!`` 前，``&&`` / ``||`` 在单字符前缀之前。
+词法模式和高亮器应把多字符操作符放在单字符操作符之前。
 
-关键词更新清单
+.. list-table:: 操作符顺序示例
+   :header-rows: 1
+
+   * - 较长标记
+     - 必须排在其前
+     - 原因
+   * - ``**``
+     - ``*``
+     - 幂运算不能被切成两个乘法标记。
+   * - ``<<``
+     - ``<``
+     - 位移不能被切成两个小于号标记。
+   * - ``<=`` / ``>=``
+     - ``<`` / ``>``
+     - 比较操作符必须保留等号后缀。
+   * - ``==`` / ``!=``
+     - ``=`` / ``!``
+     - 相等和不等不能被切成赋值或取反标记。
+   * - ``&&`` / ``||``
+     - ``&`` / ``|``
+     - 逻辑操作符不能被切成类似按位操作符的片段。
+
+关键字更新清单
 --------------
 
-语法新增 keyword 或 operator 时，应同步更新：
+语法变化新增关键字或操作符时，一起更新：
 
-1. ``pyfcstm/dsl/grammar/`` 下的 ANTLR grammar files。
-2. 通过 ``make antlr_build`` 生成 parser outputs。
-3. parse tree 形状变化时更新 listener 和 AST handling。
-4. Pygments lexer groups。
-5. TextMate grammar keyword/operator patterns。
-6. Editor validation expectations。
-7. 用户可见语法变化对应的 DSL guide 和 tests。
+1. ``pyfcstm/dsl/grammar/`` 下的 ANTLR 语法文件。
+2. 通过 ``make antlr_build`` 得到的解析器输出。
+3. 解析树形状变化时的监听器和 AST 处理。
+4. 语义含义变化时的模型导入和验证。
+5. Pygments 词法器分组。
+6. TextMate 语法里的关键字/操作符模式。
+7. 编辑器验证期望。
+8. 作者行为变化时的 VSCode 诊断、补全、悬停和片段。
+9. 用户语法变化时的 DSL 指南、示例和测试。
+10. 提示词语法变化时的 LLM 语法指南和校验和。
 
-不要把生成 parser 路径写成源码权威来源。``.g4`` 文件是源，生成 parser 文件是输出。
+不要把生成的解析器路径写成事实来源。``.g4`` 文件是源；生成的解析器文件是输出。

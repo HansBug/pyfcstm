@@ -1652,3 +1652,95 @@ simulation resource is moved by this pass.
 Verification note: this pass is prose and index hardening only. Existing demo
 outputs are referenced unchanged; if a later PR modifies any ``*.demo.*`` source
 or output, that PR must record the exact source-output regeneration command.
+
+PR-Q command, visualization, architecture, and grammar-tooling strengthening
+----------------------------------------------------------------------------
+
+Scope
+~~~~~
+
+PR-Q strengthens the command-line, installation, visualization, architecture,
+and grammar/editor-tooling documentation after the earlier information
+architecture split. It does not move public pages or tutorial resources; it adds
+in-place depth, exact reference coverage, and tools-only drift checks for CLI and
+visualization facts.
+
+Chapter records
+~~~~~~~~~~~~~~~
+
+.. list-table:: PR-Q chapter updates
+   :header-rows: 1
+
+   * - Location
+     - Action
+     - Notes
+   * - ``how_to/installation/index*.rst``
+     - strengthen in place
+     - Clarifies all-in-one package install, external renderer boundaries, virtualenv/CI patterns, smoke checks, and troubleshooting.
+   * - ``how_to/cli_workflows/index*.rst``
+     - strengthen in place
+     - Expands command selection, simulation, inspect, generation, PlantUML source, rendered diagram, reproducibility, and layer-by-layer troubleshooting workflows.
+   * - ``reference/cli/index*.rst``
+     - strengthen in place
+     - Adds complete command/option markers, output/failure contracts, examples, and command boundary taxonomy.
+   * - ``how_to/visualization/index*.rst``
+     - strengthen in place
+     - Expands source-vs-rendered selection, preset comparison, focus patterns, renderer selection, CI stability, Python API use, and troubleshooting.
+   * - ``reference/visualization_options/index*.rst``
+     - strengthen in place
+     - Adds complete ``PlantUMLOptions`` field map, typed ``-c`` value syntax, renderer/file facts, environment variables, and behavior boundaries.
+   * - ``explanations/architecture/index*.rst``
+     - strengthen in place
+     - Explains the model-centered pipeline, command flow, template asset split, diagnostics boundary, simulation/template relationship, visualization split, and generated-asset rules.
+   * - ``how_to/grammar_editor/index*.rst``
+     - strengthen in place
+     - Expands grammar, highlighter, VSCode, LLM guide, and validation workflow guidance.
+   * - ``reference/grammar_tooling/index*.rst``
+     - strengthen in place
+     - Adds canonical file map, command map, Pygments/TextMate/VSCode facts, verification suites, operator ordering, and keyword update checklist.
+   * - ``explanations/grammar_tooling/index*.rst``
+     - strengthen in place
+     - Explains parser/model/highlighter/editor/docs coupling and drift risks.
+
+Tooling records
+~~~~~~~~~~~~~~~
+
+.. list-table:: PR-Q tools-only checks
+   :header-rows: 1
+
+   * - Tool
+     - Action
+     - Purpose
+   * - ``tools/check_cli_reference_docs.py``
+     - add
+     - Verifies CLI reference synchronization markers against the Click command tree and human-documented command boundary tokens.
+   * - ``tools/check_visualization_reference_docs.py``
+     - add
+     - Verifies visualization reference markers against ``PlantUMLOptions`` fields, renderer/type constants, environment facts, parser forms, and behavior boundary tokens.
+
+Resource migration records
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table:: PR-Q resource migration
+   :header-rows: 1
+
+   * - Resource
+     - Action
+     - Notes
+   * - ``docs/source/tutorials/visualization/output_*.puml`` and rendered images
+     - keep
+     - Existing generated figures are reused by the strengthened visualization how-to; no regeneration was required.
+   * - ``docs/source/tutorials/installation/*.demo.*`` and outputs
+     - keep
+     - Existing installation examples remain in their tutorial directory and are reused by the installation how-to.
+   * - All other tutorial/demo/diagram resources
+     - keep
+     - PR-Q is an in-place prose and tooling update with no public URL or resource movement.
+
+Validation note
+~~~~~~~~~~~~~~~
+
+Because PR-Q does not edit ``.fcstm``, ``.puml``, ``.demo.*``, ``.plot.*``, or
+notebook source resources, no documentation resource regeneration is expected.
+The required verification is the documentation build plus the two new tools-only
+reference drift checks.

@@ -1,98 +1,139 @@
 .. _sec-how-to-grammar-editor-zh:
 
-语法与编辑器任务指南
-====================
+语法和编辑器任务
+================
 
-修改 FCSTM syntax、syntax highlighting 或 editor support 时使用本指南。准确文件路径见 :doc:`../../reference/grammar_tooling/index_zh`。
+当你修改 FCSTM 语法、高亮或编辑器支持时使用本指南。精确文件地图和命令列表见
+:doc:`../../reference/grammar_tooling/index_zh`；设计原因见 :doc:`../../explanations/grammar_tooling/index_zh`。
 
-修改语法
---------
+先判断修改类型
+--------------
 
-1. 编辑 ``pyfcstm/dsl/grammar/GrammarParser.g4`` 或 ``pyfcstm/dsl/grammar/GrammarLexer.g4``。
-2. 运行 ANTLR 生成：
+.. list-table:: 修改类型
+   :header-rows: 1
+
+   * - 修改
+     - 必须更新
+     - 通常也要更新
+   * - 新增可解析语法
+     - ANTLR 语法、生成的解析器输出、监听器/AST/模型导入、测试、领域特定语言（DSL）文档。
+     - Pygments、TextMate、VSCode 诊断/补全/悬停说明。
+   * - 新增关键字或操作符拼写
+     - 词法语法、需要规则时的解析语法、高亮器、编辑器验证。
+     - DSL 参考示例和 大语言模型（LLM）语法指南。
+   * - 修改既有语法的语义解释
+     - 模型导入/验证、模拟器或渲染器行为、测试、语义文档。
+     - 如果编辑器反馈变化，也更新编辑器诊断。
+   * - 只修正高亮
+     - Pygments 或 TextMate 资产、编辑器验证。
+     - 当文档示例教错形式时更新示例。
+   * - 修改 VSCode 作者功能
+     - VSCode TypeScript 提供器和对应验证套件。
+     - 如果功能依赖词法分类，也更新 TextMate 语法。
+
+修改解析语法
+------------
+
+1. 编辑 ``pyfcstm/dsl/grammar/GrammarParser.g4`` 和/或 ``pyfcstm/dsl/grammar/GrammarLexer.g4``。
+2. 重新生成 ANTLR 输出：
 
    .. code-block:: bash
 
       make antlr_build
 
-3. 如果 parse tree 形状变化，更新 ``pyfcstm/dsl/listener.py`` 和 ``pyfcstm/dsl/node.py``。
-4. 为语法变化添加或更新 parser/model tests。
-5. prompt-facing syntax 变化时，同步更新 LLM grammar guide。
+3. 如果解析树形状或 AST 节点形状变化，更新 ``pyfcstm/dsl/listener.py`` 和 ``pyfcstm/dsl/node.py``。
+4. 如果构造有语义含义，更新模型导入和验证。
+5. 添加测试，证明接受形式和拒绝形式。
+6. 当用户语法或提示词语法变化时，更新用户 DSL 文档和打包 LLM 语法指南。
 
-修改高亮
+操作符和关键字顺序
+------------------
+
+新增操作符时，词法和高亮规则中长标记要排在短前缀之前。例如：
+
+* ``**`` 在 ``*`` 之前；
+* ``<<`` 在 ``<`` 之前；
+* ``<=`` 和 ``>=`` 在 ``<`` 和 ``>`` 之前；
+* ``==`` 和 ``!=`` 在 ``=`` 和 ``!`` 之前；
+* ``&&`` 和 ``||`` 在单字符形式之前。
+
+新增关键字时，在同一个修改里更新语法和所有语法展示层。能解析但不高亮的关键字，会造成文档和编辑器漂移。
+
+同步高亮
 --------
 
-grammar 变化后，同步 highlighters：
+语法或关键字变化后，同时更新两类高亮：
 
-1. 更新 ``pyfcstm/highlight/pygments_lexer.py``。
-2. 更新 ``editors/fcstm.tmLanguage.json``。
-3. 多字符操作符必须放在更短前缀之前。
-4. 运行：
+1. ``pyfcstm/highlight/pygments_lexer.py``，用于 Sphinx 和 Python 侧高亮。
+2. ``editors/fcstm.tmLanguage.json``，用于 TextMate 兼容编辑器。
+3. 运行编辑器/高亮验证命令：
 
    .. code-block:: bash
 
       python editors/validate.py
 
-``editors/validate.py`` 是 editor/highlight asset 一致性的仓库级校验命令。如果 docs-only PR 只记录流程而没有运行某个工具，需要在 PR comment 中说明。
+如果文档 PR 没有运行编辑器命令，要在 PR 评论里明说。语法或编辑器行为变化不应静默跳过该命令。
 
-更新 VSCode 扩展
+更新 VSCode 支持
 ----------------
 
-editor 行为变化时，检查 ``editors/vscode/`` 和 ``editors/jsfcstm/``。构建扩展包：
+作者体验变化时，检查 ``editors/vscode/``。常见位置包括：
+
+* ``src/diagnostics.ts``：语法诊断和 Problems 面板反馈；
+* ``src/symbols.ts``：Outline 和面包屑；
+* ``src/completion.ts``：关键字和符号补全；
+* ``src/hover.ts``：悬停说明；
+* ``snippets/fcstm.code-snippets``：用户片段。
+
+涉及打包行为时构建扩展包：
 
 .. code-block:: bash
 
    make vscode
 
-用 ``make vscode_clean`` 清理本地 extension build outputs。
+``make vscode_clean`` 只用于清理本地扩展构建输出。
 
 验证 Python 和 Sphinx 高亮
 --------------------------
 
-对于 Python 工具，确认 packaged Pygments entry point 可见：
+Python 工具侧，确认 Pygments 别名可见：
 
 .. code-block:: bash
 
    python -c "from pygments.lexers import get_lexer_by_name; print(get_lexer_by_name('fcstm'))"
 
-对于 Sphinx 页面，优先使用 ``.. code-block:: fcstm`` 示例；可见文档变化时，应构建中英文文档：
+Sphinx 页面中使用 ``.. code-block:: fcstm`` 示例；可见文档变化时构建双语文档：
 
 .. code-block:: bash
 
    NO_CONTENTS_BUILD=1 READTHEDOCS_LANGUAGE=en sphinx-build -b html docs/source /tmp/pyfcstm-docs-en
    NO_CONTENTS_BUILD=1 READTHEDOCS_LANGUAGE=zh sphinx-build -b html docs/source /tmp/pyfcstm-docs-zh
 
-如果 lexer alias 不工作，先检查 ``setup.py`` 和 ``docs/source/conf.py``，再修改示例。
+如果 Sphinx 高亮失败，先检查 ``setup.py`` 和 ``docs/source/conf.py``，再改示例。
 
 安装并验证 VSCode 扩展
 ----------------------
 
-对于发布包，用下载的 ``.vsix`` 文件安装：
-
-.. code-block:: bash
-
-   code --install-extension fcstm-language-support-0.1.0.vsix
-
-对于本地开发，先构建仓库 Makefile 产物，再安装：
+本地开发时，构建并安装 Makefile 产出的包：
 
 .. code-block:: bash
 
    make vscode
    code --install-extension editors/vscode/build/fcstm-language-support-0.1.0.vsix
 
-安装后打开 ``.fcstm`` 文件，并验证这些 editor behaviors：
+安装后打开 ``.fcstm`` 文件并验证：
 
-1. 右下角 language mode 是 ``FCSTM``。
-2. keywords、operators、comments 和 literals 正常高亮。
-3. Outline view 显示 states、variables 和 events 的 document symbols。
-4. 输入 ``state`` 时出现 completions。
-5. 悬停 ``pseudo`` 或 ``effect`` 等关键字时显示帮助文本。
-6. 故意打开一个 invalid 文件时，Problems panel 显示 syntax diagnostics。
+1. 右下角语言模式是 ``FCSTM``。
+2. 关键字、操作符、注释和字面量都有高亮。
+3. Outline 显示变量、状态和事件。
+4. 输入 ``state`` 会出现补全。
+5. 悬停 ``pseudo`` 或 ``effect`` 等关键字时显示说明。
+6. 故意无效的文件会在 Problems 中报告语法诊断。
 
-运行 VSCode 校验套件
+运行 VSCode 验证套件
 --------------------
 
-extension behavior 变化时，先在 ``editors/vscode`` 中运行 focused suites，再运行 aggregate check：
+扩展行为变化时，先运行聚焦套件，再运行汇总检查：
 
 .. code-block:: bash
 
@@ -104,23 +145,29 @@ extension behavior 变化时，先在 ``editors/vscode`` 中运行 focused suite
    make verify-p0.6  # hover documentation
    make verify
 
-对于 syntax-only 文档更新，可以在 PR comment 中记录这些 Node.js-backed checks 未运行；但 grammar 或 editor behavior 变化不应静默跳过这些检查。
+只改语法说明的文档更新，可以记录没有运行 Node.js 支持的检查；解析器或编辑器变化应包含相关套件。
 
-排查 editor 行为
-----------------
+更新面向提示词的语法指南
+------------------------
 
-改 grammar 或 editor code 前，先用这个 checklist：
+语法或解析规则变化时，更新打包 LLM 语法指南：
 
-* 如果 Sphinx highlighting 失败，验证 ``fcstm`` lexer alias，并在运行 Sphinx 的环境中重新安装 package。
-* 如果 TextMate highlighting 失败，确认 ``editors/fcstm.tmLanguage.json`` 已安装到对应 editor package 位置，并重启 editor。
-* 对 Sublime Text，在 ``Preferences -> Browse Packages`` 下创建 ``FCSTM`` package 目录，并把 ``fcstm.tmLanguage.json`` 复制进去。
-* 如果 VSCode 未激活，确认 extension 已安装、文件扩展名是 ``.fcstm``，并且 language mode 是 ``FCSTM``。
-* 如果 diagnostics 未显示，保存文件、检查 Problems panel，并查看 ``FCSTM Language Support`` output channel。
-* 如果 completion 未显示，用 ``Ctrl+Space`` 手动触发，并确认光标不在 comment 或 string 中。
+.. code-block:: bash
 
-记录变更
---------
+   make sha256
+   SKIP_SLOW_TESTS=1 make unittest RANGE_DIR=./llm
 
-语法变化应该更新用户可见 DSL reference 或 how-to 页面，而不只是 grammar 文件。维护者侧变化应更新工具链参考，并说明生成资产是否已重新生成。
+Markdown 指南和校验和要一起提交。如果语法指南没有变化，记录它为何不在修改范围内。
 
-进入 review 前，列出你运行的命令，以及能证明 grammar、highlighting 和 editor assets 一致的语法例子。
+记录并审查修改
+--------------
+
+进入审查前，说明：
+
+* 新增、修改或明确拒绝的语法形式；
+* 解析器/模型测试，或文档-only 验证理由；
+* 高亮和编辑器验证命令；
+* 重新生成的解析器或文档输出；
+* 被移除或重定向的旧示例。
+
+只有解析器行为、模型语义、高亮、编辑器反馈、用户文档和测试讲的是同一个故事时，语法修改才算准备好。

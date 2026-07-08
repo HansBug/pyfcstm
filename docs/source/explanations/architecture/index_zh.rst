@@ -3,47 +3,157 @@
 架构解释
 ========
 
-pyfcstm 围绕清晰 pipeline 组织：DSL 文本变成 AST nodes，AST nodes 变成经过验证的 state-machine model，然后这个 model 可以被 simulate、inspect、verify、visualize 或 render 成目标语言代码。
+pyfcstm 围绕模型中心流水线组织。领域特定语言（DSL）文本先变成解析器节点，解析器节点再变成语义状态机模型，之后模型可以被模拟、
+检查、在有界策略内验证、可视化，或渲染为目标语言代码。
 
-主流程
-------
-
-.. figure:: structure.puml.svg
-
-   仓库高层 pipeline。
-
-主要层次包括：
-
-* **DSL parsing**：位于 ``pyfcstm/dsl/``。ANTLR grammar files 定义 syntax，listener code 构建 AST nodes。
-* **Model import**：位于 ``pyfcstm/model/``。importer 将 states、transitions、events、actions、variables 和 diagnostics 解析为语义 state-machine model。
-* **Runtime tools**：位于 ``pyfcstm/simulate/`` 和 ``pyfcstm/entry/``。它们提供交互式和 batch simulation、CLI entry points、inspect output 和 PlantUML export。
-* **Rendering**：位于 ``pyfcstm/render/``，打包模板位于 ``pyfcstm/template/``。renderer 消费 model 和 template assets；它不 hard-code 目标 runtime API。
-* **Analysis**：位于 ``pyfcstm/solver/`` 以及 verify/inspect integrations。它们把 model facts 转换为 diagnostics 和 reachability-style checks。
-* **Documentation and LLM guide assets**：位于 ``docs/`` 和 ``pyfcstm/llm/``。prompt-facing grammar guide 是带 checksum 的打包资产。
-
-当前内置模板形态
-----------------
-
-内置模板是当前行为，不是计划中的功能。可编辑源码资产位于 ``templates/``。可分发内置模板资产位于 ``pyfcstm/template/``，通过 ``make tpl`` 刷新。CLI 路径 ``pyfcstm generate --template <name>`` 会解包打包资产，然后使用与自定义模板目录相同的 renderer。
-
-这个拆分让维护者拥有源码树，也让用户拥有稳定的命名入口。
-
-Inspect 与 diagnostics
-----------------------
-
-Inspect 和 diagnostics 属于 model-facing toolchain。它们提供结构化 facts 和详细消息，可指导人类或 LLM-assisted repair。它们不替代 runtime simulation 或 generated-code validation；它们暴露 parser 和 model importer 对机器的理解。
-
-Simulation 与执行语义
----------------------
-
-Simulator 是 Python 侧语义检查的参考可执行模型。声称与 simulator 对齐的模板 runtime 应该通过 simulator trace 做验证。生命周期 action 顺序、hot start behavior、composite-state entry semantics 等执行细节见 :doc:`../execution_semantics/index_zh`。
-
-维护边界
+主流水线
 --------
 
-* 生成 grammar outputs 应重新生成，不手工编辑。
-* 生成文档应通过文档命令产生，不直接编辑。
-* 内置模板应先改仓库模板源码，再重新打包。
-* ``test/`` 下的单元测试应面向生产 ``pyfcstm`` 行为，并与 JavaScript test tree 独立。
+.. figure:: structure.puml.svg
+   :alt: pyfcstm 架构流水线
+   :align: center
 
-这些边界让仓库保持可解释，并让每个生成资产可复现。
+   仓库高层流水线。
+
+关键设计选择是：大多数功能都汇聚到模型层。解析器不应该知道目标语言代码生成；模板不应该重新解析 DSL 文本；可视化不应该编造模型导入器没有产生的事实。
+
+.. list-table:: 层级职责
+   :header-rows: 1
+
+   * - 层级
+     - 代表路径
+     - 负责
+     - 不应负责
+   * - DSL 解析
+     - ``pyfcstm/dsl/grammar/``、``pyfcstm/dsl/parse.py``、``pyfcstm/dsl/listener.py``
+     - 语法入口、解析错误、AST 节点构造。
+     - 需要已解析模型上下文的语义验证。
+   * - 模型导入和模型对象
+     - ``pyfcstm/model/``
+     - 状态、变量、转换、事件、生命周期动作、引用、PlantUML 导出、验证诊断。
+     - 命令行展示或模板特定目标运行时行为。
+   * - 模拟
+     - ``pyfcstm/simulate/`` 和 ``pyfcstm/entry/simulate/``
+     - 周期、事件、热启动、动作顺序和活跃状态轨迹的可执行参考语义。
+     - 生成目标语言运行时的实现细节。
+   * - 诊断和验证集成
+     - ``pyfcstm/diagnostics/``、``pyfcstm/verify/``、``pyfcstm/solver/``
+     - 结构化模型事实、诊断消息、有界验证检查、SMT 翻译。
+     - 隐藏在日常 inspect 命令里的无界证明。
+   * - 渲染和模板
+     - ``pyfcstm/render/``、``templates/``、``pyfcstm/template/``
+     - Jinja 环境、表达式/语句渲染、打包模板资产、生成产物。
+     - 解析器语法或模拟器捷径。
+   * - 命令行入口
+     - ``pyfcstm/entry/``
+     - 用户命令接线、选项解析、输出路由和命令特定错误边界。
+     - 应属于模型、渲染、模拟或诊断模块的业务逻辑。
+   * - 文档和 大语言模型（LLM）资产
+     - ``docs/``、``pyfcstm/llm/``
+     - 用户指南、生成资源、面向提示词的语法指南、校验和纪律。
+     - 未经代码或示例校验的运行时事实。
+
+为什么模型是中心
+----------------
+
+DSL 有意保持紧凑，但语义需要解析：转换目标需要所属作用域，事件需要作用域规则，生命周期动作需要确定顺序，强制转换和组合转换会展开成普通模型事实。把这些解析放在模型层，可以让所有下游工具共享同一事实来源。
+
+这避免三类常见漂移：
+
+* 模拟器和模板各自解释 DSL 文本，导致行为不一致。
+* 图表输出展示了模型导入器会拒绝的语法。
+* inspect 报告和诊断描述的图，与代码生成消费的图不同。
+
+命令流
+------
+
+公开命令行命令只是同一流水线上的薄编排层：
+
+.. list-table:: 命令行流程
+   :header-rows: 1
+
+   * - 命令
+     - 读取 DSL
+     - 构建模型
+     - 下游动作
+     - 外部依赖边界
+   * - ``simulate``
+     - 是
+     - 是
+     - 运行 ``SimulationRuntime``。
+     - 普通使用不需要。
+   * - ``inspect``
+     - 是
+     - 是
+     - 运行诊断和可选 inspect 范围内的验证检查。
+     - SMT 工作受显式 inspect 策略选项约束。
+   * - ``generate``
+     - 是
+     - 是
+     - 使用内置或自定义模板运行 ``StateMachineCodeRenderer``。
+     - 目标编译器不属于生成本身。
+   * - ``plantuml``
+     - 是
+     - 是
+     - 调用模型 PlantUML 导出并写源码文本。
+     - 不需要渲染器。
+   * - ``visualize``
+     - 是，除 ``--check`` 外
+     - 是，除 ``--check`` 外
+     - 构造 PlantUML 源码，再通过 ``plantumlcli`` 渲染。
+     - 可能需要 Java/jar 或远程 PlantUML 服务。
+
+模板资产拆分
+------------
+
+内置模板有两个位置，原因不同：
+
+* ``templates/`` 是维护者编辑的仓库源码。
+* ``pyfcstm/template/`` 包含安装用户使用的打包 zip 资产和 ``index.json``。
+
+``make tpl`` 从仓库源码刷新打包资产。测试和命令行路径验证内置模板时，应通过打包/公开表面进入，才能匹配用户行为。因此文档会区分维护者模板编辑和普通 ``pyfcstm generate --template python`` 使用。
+
+诊断、验证和 inspect
+--------------------
+
+诊断和 inspect 输出暴露模型事实与可操作消息。它们足够详细，可以指导人类和 LLM 辅助修复，但边界明确：
+
+* inspect 始终报告解析/模型事实和诊断。
+* 可选验证集成必须显式开启，并受策略限制。
+* 高成本或无界验证族不会被日常 inspect 命令偷偷运行。
+* 诊断能指出可能原因和源码位置；它不能替代模拟、目标编译或生成运行时测试。
+
+模拟和生成运行时
+----------------
+
+Python 模拟器是仓库一致性检查里的可执行参考语义。声明与模拟器一致的内置运行时模板，应与模拟器轨迹对齐测试，而不是只验证能编译。这为生命周期顺序、热启动、转换效果和活跃状态更新提供了具体契约。
+
+生成目标运行时仍然有目标语言问题：应用程序接口形状、格式化稳定性、编译器/工具链行为，以及抽象动作的集成钩子。这些属于模板设计和测试，不属于解析器。
+
+可视化边界
+----------
+
+PlantUML 导出属于模型，因为图表需要已解析模型事实。渲染属于命令行和可选运行环境，因为它依赖 Java、PlantUML jar、远程服务、文件后缀、缓存和桌面查看器行为。
+
+这就是 ``plantuml`` 是源码导出命令，而 ``visualize`` 是渲染命令的原因。用户即使没有安装渲染后端，也能依赖源码导出。
+
+生成资产边界
+------------
+
+仓库中有几类文件是生成物，不应直接手改：
+
+* 语法输出目录下的 ANTLR 解析器输出。
+* 模板源码变化后生成的打包模板 zip 资产和模板索引。
+* 文档构建规则生成的图表、演示输出和笔记本结果文件。
+* RST 生成器产生的应用程序接口参考文件。
+
+安全模式始终是：编辑源文件，运行生成器，审阅差异，记录验证命令。
+
+后续阅读
+--------
+
+* 语法和含义：:doc:`../dsl_semantics/index_zh`
+* 运行时顺序：:doc:`../execution_semantics/index_zh`
+* 诊断边界：:doc:`../diagnostics/index_zh`
+* 模板设计：:doc:`../template_rendering/index_zh`
+* 语法和编辑器耦合：:doc:`../grammar_tooling/index_zh`

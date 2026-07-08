@@ -1652,3 +1652,185 @@ simulation resource is moved by this pass.
 Verification note: this pass is prose and index hardening only. Existing demo
 outputs are referenced unchanged; if a later PR modifies any ``*.demo.*`` source
 or output, that PR must record the exact source-output regeneration command.
+
+PR-Q command, visualization, architecture, and grammar-tooling strengthening
+----------------------------------------------------------------------------
+
+Scope
+~~~~~
+
+PR-Q strengthens the command-line, installation, visualization, architecture,
+and grammar/editor-tooling documentation after the earlier information
+architecture split. It does not move public pages or tutorial resources; it adds
+in-place depth, exact reference coverage, and tools-only drift checks for CLI and
+visualization facts.
+
+Chapter records
+~~~~~~~~~~~~~~~
+
+.. list-table:: PR-Q chapter updates
+   :header-rows: 1
+
+   * - Location
+     - Action
+     - Notes
+   * - ``how_to/installation/index*.rst``
+     - strengthen in place
+     - Clarifies all-in-one package install, external renderer boundaries, virtualenv/CI patterns, smoke checks, and troubleshooting.
+   * - ``how_to/cli_workflows/index*.rst``
+     - strengthen in place
+     - Expands command selection, simulation, inspect, generation, PlantUML source, rendered diagram, reproducibility, and layer-by-layer troubleshooting workflows.
+   * - ``reference/cli/index*.rst``
+     - strengthen in place
+     - Adds complete command/option markers, output/failure contracts, examples, and command boundary taxonomy.
+   * - ``how_to/visualization/index*.rst``
+     - strengthen in place
+     - Expands source-vs-rendered selection, preset comparison, focus patterns, renderer selection, CI stability, Python API use, and troubleshooting.
+   * - ``reference/visualization_options/index*.rst``
+     - strengthen in place
+     - Adds complete ``PlantUMLOptions`` field map, typed ``-c`` value syntax, renderer/file facts, environment variables, and behavior boundaries.
+   * - ``explanations/architecture/index*.rst``
+     - strengthen in place
+     - Explains the model-centered pipeline, command flow, template asset split, diagnostics boundary, simulation/template relationship, visualization split, and generated-asset rules.
+   * - ``how_to/grammar_editor/index*.rst``
+     - strengthen in place
+     - Expands grammar, highlighter, VSCode, LLM guide, and validation workflow guidance.
+   * - ``reference/grammar_tooling/index*.rst``
+     - strengthen in place
+     - Adds canonical file map, command map, Pygments/TextMate/VSCode facts, verification suites, operator ordering, and keyword update checklist.
+   * - ``explanations/grammar_tooling/index*.rst``
+     - strengthen in place
+     - Explains parser/model/highlighter/editor/docs coupling and drift risks.
+
+Tooling records
+~~~~~~~~~~~~~~~
+
+.. list-table:: PR-Q tools-only checks
+   :header-rows: 1
+
+   * - Tool
+     - Action
+     - Purpose
+   * - ``tools/check_cli_reference_docs.py``
+     - add
+     - Verifies CLI reference synchronization markers against the Click command tree and human-documented command boundary tokens.
+   * - ``tools/check_visualization_reference_docs.py``
+     - add
+     - Verifies visualization reference markers against ``PlantUMLOptions`` fields, renderer/type constants, environment facts, parser forms, and behavior boundary tokens.
+
+Resource migration records
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table:: PR-Q resource migration
+   :header-rows: 1
+
+   * - Resource
+     - Action
+     - Notes
+   * - ``docs/source/tutorials/visualization/output_*.puml`` and rendered images
+     - keep
+     - Existing generated figures are reused by the strengthened visualization how-to; no regeneration was required.
+   * - ``docs/source/tutorials/installation/*.demo.*`` and outputs
+     - keep
+     - Existing installation examples remain in their tutorial directory and are reused by the installation how-to.
+   * - All other tutorial/demo/diagram resources
+     - keep
+     - PR-Q is an in-place prose and tooling update with no public URL or resource movement.
+
+Validation note
+~~~~~~~~~~~~~~~
+
+Because PR-Q does not edit ``.fcstm``, ``.puml``, ``.demo.*``, ``.plot.*``, or
+notebook source resources, no documentation resource regeneration is expected.
+The required verification is the documentation build plus the two new tools-only
+reference drift checks.
+
+PR-Q depth-gate hardening update
+--------------------------------
+
+Scope
+~~~~~
+
+After PR-Q initially reached a CI-green state, review tightened the documentation
+quality bar. This follow-up records the additional hardening: CLI and
+visualization references were expanded with example-heavy evidence cards,
+per-option decision cards, and per-field scenario matrices; how-to pages gained
+concrete command signals and task acceptance cards; explanations gained
+trace-based boundary reasoning; and the documentation authoring guide now treats
+substantial docs PR depth as a merge-blocking gate.
+
+Resource update records
+~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table:: PR-Q depth-gate resource update
+   :header-rows: 1
+
+   * - Resource
+     - Action
+     - Regeneration command
+     - Notes
+   * - ``docs/source/explanations/architecture/structure.puml``
+     - update
+     - hand-edited source, then regenerated SVG/PNG with ``python -m plantumlcli -R -t svg -o structure.puml.svg -O docs/source/explanations/architecture docs/source/explanations/architecture/structure.puml`` and ``python -m plantumlcli -R -t png -o structure.puml.png -O docs/source/explanations/architecture docs/source/explanations/architecture/structure.puml``
+     - The figure now shows the model-centered pipeline, inspect/simulate/render/visualize consumers, packaged template split, external renderer/toolchain boundaries, and generated artifacts.
+   * - ``docs/source/explanations/architecture/structure.puml.svg`` and ``structure.puml.png``
+     - regenerate
+     - same commands as above
+     - Visual inspection confirmed the regenerated diagram is readable at full resolution; Sphinx HTML visual placement is verified by the PR-Q docs build.
+   * - Other ``.fcstm``, ``.demo.*``, ``.puml`` and generated documentation resources
+     - keep
+     - not applicable
+     - No other source-output resource pair was moved or regenerated in this hardening update.
+
+PR-Q strict authoring-gate follow-up
+------------------------------------
+
+Scope
+~~~~~
+
+The second PR-Q follow-up records the explicit reviewer requirement that command,
+visualization, how-to, and explanation pages must be reviewed for human depth,
+not merely for Sphinx or marker-check success. It strengthens the long-term
+authoring policy and adds more concrete examples, output signals, side effects,
+failure boundaries, and mechanism traces to the pages most likely to be copied
+into user projects.
+
+Page updates
+~~~~~~~~~~~~
+
+.. list-table:: PR-Q strict-gate page updates
+   :header-rows: 1
+
+   * - Location
+     - Action
+     - Notes
+   * - ``docs/documentation_authoring.md``
+     - strengthen policy
+     - Adds a zero-exception ready/merge rule requiring human depth evidence for substantial documentation PRs.
+   * - ``CLAUDE.md``
+     - strengthen policy pointer
+     - States directly that missing any applicable authoring-guide requirement blocks ready and merge, even when CI is green.
+   * - ``how_to/cli_workflows/index*.rst``
+     - add concrete task evidence
+     - Adds the quick-start traffic-light source as a real sample, with acceptance cards covering command, output, side effect, and first troubleshooting step.
+   * - ``reference/cli/index*.rst``
+     - add reference-grade examples
+     - Adds valid/invalid examples for each command family and names the layer that owns each failure.
+   * - ``how_to/visualization/index*.rst``
+     - add visual task evidence
+     - Adds the visualization tutorial source as a real sample, visual task acceptance cards, and HTML/visual-review expectations.
+   * - ``reference/visualization_options/index*.rst``
+     - add scenario coverage
+     - Adds option-combination scenarios so field rows are backed by concrete effects and counterexamples.
+   * - ``explanations/grammar_tooling/index*.rst``
+     - add mechanism traces
+     - Adds syntax-support trace and boundary examples from tokenization through docs/LLM guidance.
+
+Resource update records
+~~~~~~~~~~~~~~~~~~~~~~~
+
+No generated documentation resources are moved or regenerated by this follow-up.
+The new examples reuse existing checked-in sources under
+``docs/source/tutorials/quick_start/`` and ``docs/source/tutorials/visualization/``.
+Validation therefore focuses on reST/Sphinx correctness, reference drift checks,
+and visual inspection of existing generated figures in the rebuilt HTML.

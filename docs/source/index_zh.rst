@@ -40,57 +40,27 @@ pyfcstm 适用于：
 -------------
 
 安装
-~~~~~~~~~~~~~
+~~~~
 
 .. code-block:: bash
 
    pip install pyfcstm
 
-基本用法
-~~~~~~~~~~~~~
+完整安装检查请见 :doc:`how_to/installation/index_zh`。
 
-**1. 使用 DSL 定义状态机**
+最快路径
+~~~~~~~~
 
-创建文件 ``traffic_light.fcstm``：
-
-.. code-block:: fcstm
-
-   def int timer = 0;
-
-   state TrafficLight {
-       [*] -> Red;
-
-       state Red {
-           enter { timer = 0; }
-           during { timer = timer + 1; }
-       }
-
-       state Yellow {
-           enter { timer = 0; }
-           during { timer = timer + 1; }
-       }
-
-       state Green {
-           enter { timer = 0; }
-           during { timer = timer + 1; }
-       }
-
-       Red -> Green : if [timer >= 30];
-       Green -> Yellow : if [timer >= 25];
-       Yellow -> Red : if [timer >= 5];
-   }
-
-**2. 生成代码**
+创建 ``traffic_light.fcstm``，并按照 :doc:`tutorials/quick_start/index_zh` 中的完整流程操作。最短命令链如下：
 
 .. code-block:: bash
 
-   pyfcstm generate -i traffic_light.fcstm -t templates/c/ -o output/
-
-**3. 使用 PlantUML 可视化**
-
-.. code-block:: bash
-
+   pyfcstm simulate -i traffic_light.fcstm -e "cycle; cycle; current"
+   pyfcstm inspect -i traffic_light.fcstm --format json -o traffic_light.inspect.json
+   pyfcstm generate -i traffic_light.fcstm --template python -o generated --clear
    pyfcstm plantuml -i traffic_light.fcstm -o traffic_light.puml
+
+对打包内置模板使用 ``--template``。只有在渲染自定义模板目录时，才使用 ``-t/--template-dir``。
 
 架构
 -------------
@@ -111,28 +81,120 @@ pyfcstm 遵循三阶段流水线：
 教程
 -------------------------
 
+教程提供学习路径和首次成功流程。路线图放在第一项，后面直接列出具体教程页面，让首页左侧导航可以直接展示完整学习路径。
+
 .. toctree::
     :maxdepth: 2
     :caption: 教程
     :hidden:
 
-    tutorials/installation/index_zh
-    tutorials/structure/index_zh
+    教程路线图 <tutorials/index_zh>
+    tutorials/quick_start/index_zh
     tutorials/dsl/index_zh
-    tutorials/render/index_zh
     tutorials/simulation/index_zh
+    tutorials/inspect/index_zh
+    tutorials/generation/index_zh
     tutorials/visualization/index_zh
-    tutorials/cli/index_zh
-    tutorials/grammar/index_zh
 
-* :doc:`tutorials/installation/index_zh`
-* :doc:`tutorials/structure/index_zh`
+* :doc:`教程路线图 <tutorials/index_zh>`
+* :doc:`tutorials/quick_start/index_zh`
 * :doc:`tutorials/dsl/index_zh`
-* :doc:`tutorials/render/index_zh`
 * :doc:`tutorials/simulation/index_zh`
+* :doc:`tutorials/inspect/index_zh`
+* :doc:`tutorials/generation/index_zh`
 * :doc:`tutorials/visualization/index_zh`
-* :doc:`tutorials/cli/index_zh`
-* :doc:`tutorials/grammar/index_zh`
+
+任务指南
+--------
+
+任务指南面向具体操作。路线图放在第一项，后面直接列出具体任务页面，让首页左侧导航不需要再点进分类页才能看到工作流。
+
+.. toctree::
+    :maxdepth: 2
+    :caption: 任务指南
+    :hidden:
+
+    任务指南路线图 <how_to/index_zh>
+    how_to/installation/index_zh
+    how_to/cli_workflows/index_zh
+    how_to/dsl/index_zh
+    how_to/simulation/index_zh
+    how_to/inspect/index_zh
+    how_to/generation/index_zh
+    how_to/visualization/index_zh
+    how_to/templates/index_zh
+    how_to/grammar_editor/index_zh
+
+* :doc:`任务指南路线图 <how_to/index_zh>`
+* :doc:`how_to/installation/index_zh`
+* :doc:`how_to/cli_workflows/index_zh`
+* :doc:`how_to/dsl/index_zh`
+* :doc:`how_to/simulation/index_zh`
+* :doc:`how_to/inspect/index_zh`
+* :doc:`how_to/generation/index_zh`
+* :doc:`how_to/visualization/index_zh`
+* :doc:`how_to/templates/index_zh`
+* :doc:`how_to/grammar_editor/index_zh`
+
+解释
+----
+
+解释页说明语义、架构、边界和取舍。地图页放在第一项，后面直接列出具体解释主题。
+
+.. toctree::
+    :maxdepth: 2
+    :caption: 解释
+    :hidden:
+
+    解释地图 <explanations/index_zh>
+    explanations/architecture/index_zh
+    explanations/dsl_semantics/index_zh
+    explanations/execution_semantics/index_zh
+    explanations/diagnostics/index_zh
+    explanations/template_rendering/index_zh
+    explanations/grammar_tooling/index_zh
+
+* :doc:`解释地图 <explanations/index_zh>`
+* :doc:`explanations/architecture/index_zh`
+* :doc:`explanations/dsl_semantics/index_zh`
+* :doc:`explanations/execution_semantics/index_zh`
+* :doc:`explanations/diagnostics/index_zh`
+* :doc:`explanations/template_rendering/index_zh`
+* :doc:`explanations/grammar_tooling/index_zh`
+
+参考
+----
+
+参考页用于查准事实。地图页放在第一项，自动生成的应用程序接口（API）文档保持为参考区最后一项。
+
+.. toctree::
+    :maxdepth: 2
+    :caption: 参考
+    :hidden:
+
+    参考地图 <reference/index_zh>
+    reference/cli/index_zh
+    reference/dsl/index_zh
+    reference/inspect_report/index_zh
+    reference/diagnostics_codes/index_zh
+    reference/simulation/index_zh
+    reference/visualization_options/index_zh
+    reference/template_config/index_zh
+    reference/grammar_tooling/index_zh
+    reference/builtin_templates/index_zh
+    应用程序接口文档 <api_doc_zh>
+
+* :doc:`参考地图 <reference/index_zh>`
+* :doc:`reference/cli/index_zh`
+* :doc:`reference/dsl/index_zh`
+* :doc:`reference/inspect_report/index_zh`
+* :doc:`reference/diagnostics_codes/index_zh`
+* :doc:`reference/simulation/index_zh`
+* :doc:`reference/visualization_options/index_zh`
+* :doc:`reference/template_config/index_zh`
+* :doc:`reference/grammar_tooling/index_zh`
+* :doc:`reference/builtin_templates/index_zh`
+* :doc:`应用程序接口文档 <api_doc_zh>`
 
 版本说明
 -------------------------
@@ -145,15 +207,6 @@ pyfcstm 遵循三阶段流水线：
     release_notes_zh
 
 * :doc:`release_notes_zh`
-
-最佳实践
--------------------------
-
-.. toctree::
-    :maxdepth: 2
-    :caption: 最佳实践
-
-.. include:: api_doc_zh.rst
 
 社区和支持
 -----------------------

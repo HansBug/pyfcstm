@@ -1,0 +1,24 @@
+def int timer = 0;
+
+state TrafficLight {
+    [*] -> Red;
+
+    state Red {
+        enter { timer = 0; }
+        during { timer = timer + 1; }
+    }
+
+    state Yellow {
+        enter { timer = 0; }
+        during { timer = timer + 1; }
+    }
+
+    state Green {
+        enter { timer = 0; }
+        during { timer = timer + 1; }
+    }
+
+    Red -> Green : if [timer >= 30];
+    Green -> Yellow : if [timer >= 25];
+    Yellow -> Red : if [timer >= 5];
+}

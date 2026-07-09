@@ -263,8 +263,10 @@ Event scopes are part of the model semantics:
 - `Source -> Target : /EventName;` creates or uses a root-scoped event.
 
 Combo event terms inherit the same scope rules from their leading prefix. A
-continuation term may be absolute, for example `S -> T : E1 + /Bus.E2;`. Do not
-write `:/EventName`; that is a shorthand in prose, not valid DSL.
+continuation term may be absolute, for example `S -> T : E1 + /Bus.E2;`. For
+readability, prefer the spaced root-event form `: /EventName`; the current parser
+also accepts compact `:/EventName`, but prompts and documentation should use the
+spaced form so the event-scope token and root path are visually distinct.
 
 ## Forced Transitions
 

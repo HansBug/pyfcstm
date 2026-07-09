@@ -1,0 +1,15 @@
+=== Color policy ===
+color_always_has_ansi: True
+color_never_has_ansi: False
+json_color_always_has_ansi: False
+
+=== Output suffix warning ===
+Warning: output file '.inspect_cli_edges.tmp/report.json' looks like JSON, but inspect format is 'human'. Use '--format json' if you intended machine-readable JSON output.
+[WARN] FCSTM Inspect Report: inspect_diagnostics.fcstm
+
+Summary
+  status: warning
+
+=== Explicit JSON can use any suffix ===
+Warning: output file '.inspect_cli_edges.tmp/report.md' looks like Markdown, but inspect format is 'json'. Use '--format llm-md' if you intended Markdown output.
+json_loaded: InspectDemo

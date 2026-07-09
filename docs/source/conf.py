@@ -149,13 +149,77 @@ if not os.path.exists(_source_index):
     raise FileNotFoundError(f'Source index file not found: {_source_index!r}.')
 shutil.copyfile(_source_index, _target_index)
 
+
+def _cleanup_generated_index(app, exception):
+    """
+    Remove the copied language index after a Sphinx build finishes.
+
+    The Sphinx configuration copies either ``index_en.rst`` or
+    ``index_zh.rst`` to the ignored build-time ``index.rst`` entry point.
+    Cleaning the copied file after each build prevents a later local build in a
+    different language from reading a stale index.
+
+    :param app: Sphinx application object passed by the ``build-finished``
+        event.
+    :type app: sphinx.application.Sphinx
+    :param exception: Build exception passed by Sphinx, or ``None`` when the
+        build completed successfully.
+    :type exception: BaseException or None
+    :return: ``None``.
+    :rtype: None
+    """
+    if os.path.exists(_target_index):
+        os.remove(_target_index)
+
+
+def setup(app):
+    """
+    Register Sphinx documentation build hooks.
+
+    The hook only manages the generated language-specific ``index.rst`` copy.
+    It does not change Sphinx source discovery or generated documentation
+    content.
+
+    :param app: Sphinx application object used to register event callbacks.
+    :type app: sphinx.application.Sphinx
+    :return: ``None``.
+    :rtype: None
+    """
+    app.connect('build-finished', _cleanup_generated_index)
+
+
 # The master document is now index.rst, which is copied from index_<language>.rst
 master_doc = 'index'
 
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
 # This pattern also affects html_static_path and html_extra_path.
-exclude_patterns = []
+def _relative_doc_path(path):
+    return os.path.relpath(path, _DOC_PATH).replace(os.sep, '/')
+
+
+def _language_variant_excludes(selected_language):
+    excludes = {'index_en.rst', 'index_zh.rst'}
+    zh_files = []
+    for root, _, filenames in os.walk(_DOC_PATH):
+        for filename in filenames:
+            if filename.endswith('_zh.rst'):
+                zh_files.append(_relative_doc_path(os.path.join(root, filename)))
+
+    if selected_language == 'zh':
+        excludes.add('api_doc_en.rst')
+        for zh_file in zh_files:
+            english_file = f'{zh_file[:-7]}.rst'
+            if english_file != 'index.rst' and os.path.exists(os.path.join(_DOC_PATH, english_file)):
+                excludes.add(english_file)
+    else:
+        excludes.add('api_doc_zh.rst')
+        excludes.update(zh_files)
+
+    return sorted(excludes)
+
+
+exclude_patterns = _language_variant_excludes(language)
 
 # Locale directories for internationalization
 locale_dirs = ['locale/']

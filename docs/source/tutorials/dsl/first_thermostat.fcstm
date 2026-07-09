@@ -1,0 +1,26 @@
+// First runnable thermostat model for the DSL tutorial.
+// The temperature changes in lifecycle actions, so inspect reports no warnings.
+
+def int temperature = 20;
+
+state Thermostat {
+    [*] -> Idle;
+
+    state Idle {
+        during {
+            temperature = temperature - 1;
+        }
+    }
+
+    state Heating {
+        enter {
+            temperature = temperature + 1;
+        }
+        during {
+            temperature = temperature + 1;
+        }
+    }
+
+    Idle -> Heating : if [temperature < 20];
+    Heating -> Idle : if [temperature >= 22];
+}

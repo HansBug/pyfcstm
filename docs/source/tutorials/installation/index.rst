@@ -1,43 +1,18 @@
-Installation
-===================
+:orphan:
 
-pyfcstm is currently hosted on PyPI. It requires Python >= 3.7 and is tested on CPython 3.7 through 3.14.
+Installation landing page
+=========================
 
-You can simply install pyfcstm from PyPI with the following command:
+Installation is now treated as a task guide rather than a tutorial chapter.
+Use :doc:`/how_to/installation/index` for the maintained installation steps,
+verification commands, and troubleshooting checklist.
 
-.. code:: shell
+For a guided first run after installation, continue to
+:doc:`/tutorials/quick_start/index`.
 
-    pip install pyfcstm
+Compatibility note
+------------------
 
-You can also install with the newest version through GitHub:
-
-.. code:: shell
-
-    pip install -U git+https://github.com/hansbug/pyfcstm@main
-
-You can check your installation by the following python \
-script:
-
-.. literalinclude:: install_check.demo.py
-    :language: python
-    :linenos:
-
-The output should be like below, which means your installation \
-is successful.
-
-.. literalinclude:: install_check.demo.py.txt
-    :language: text
-    :linenos:
-
-You can check with CLI command as well
-
-.. literalinclude:: cli_check.demo.sh
-    :language: shell
-    :linenos:
-
-.. literalinclude:: cli_check.demo.sh.txt
-    :language: txt
-    :linenos:
-
-pyfcstm is still under development, you can also check out the \
-documents in stable version through `https://hansbug.github.io/pyfcstm/main/index.html <https://hansbug.github.io/pyfcstm/main/index.html>`_.
+This page remains in place so old links to ``tutorials/installation/`` keep
+working. New installation content should go to the maintained how-to guide
+linked above.

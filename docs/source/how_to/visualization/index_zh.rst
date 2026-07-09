@@ -7,7 +7,7 @@
 首次图表流程见 :doc:`/tutorials/visualization/index_zh`。
 
 本页中文术语约定：渲染器（renderer）、渲染后端（backend）、本地渲染（local rendering）、
-远程渲染（remote rendering）、缓存（cache）、文件后缀（suffix）、无图形界面（headless）、查看器（viewer）和视觉验收（visual acceptance）
+远程渲染（remote rendering）、缓存（cache）、文件后缀（suffix）、无图形界面（headless）、查看器（viewer）、守卫条件（guard）和视觉验收（visual acceptance）
 首次在这里对应英文；后文普通说明使用中文术语。命令、路径、文件类型和输出摘录保持原文。
 
 具体输入和视觉证据
@@ -305,7 +305,7 @@ CI 图表任务不应依赖桌面查看器：
 任务卡片
 --------
 
-上面的配方是简短命令选择；下面的卡片把常见任务展开成完整 how-to 合同：起始输入、命令、预期信号、副作用和第一步修复。新增可视化任务时，应保持这种具体度，而不是只追加命令列表。
+上面的配方是简短命令选择；下面的卡片把常见任务展开成完整任务指南合同：起始输入、命令、预期信号、副作用和第一步修复。新增可视化任务时，应保持这种具体度，而不是只追加命令列表。
 
 .. list-table:: 任务卡片
    :header-rows: 1
@@ -320,11 +320,11 @@ CI 图表任务不应依赖桌面查看器：
      - ``pyfcstm plantuml -i traffic_light.fcstm -l minimal -o traffic_light.minimal.puml``。
      - 文本文件以 ``@startuml`` 开头，并包含紧凑状态层次；不需要渲染器。
      - 如果写文件前失败，先运行 ``pyfcstm inspect -i traffic_light.fcstm`` 定位解析/模型错误。
-   * - 解释事件和 guard
-     - 转换使用事件或 guard 的模型。
+   * - 解释事件和守卫条件
+     - 转换使用事件或守卫条件的模型。
      - ``pyfcstm plantuml -i machine.fcstm -l normal -c show_events=true -c show_transition_guards=true -o machine.events.puml``。
-     - 源标签应显示该转换族使用的事件名和 guard 条件。
-     - 如果标签缺失，确认转换语法确实包含事件/guard，且没有覆盖项隐藏它们。
+     - 源标签应显示该转换族使用的事件名和守卫条件。
+     - 如果标签缺失，确认转换语法确实包含事件/守卫条件，且没有覆盖项隐藏它们。
    * - 展示集成钩子
      - 带抽象生命周期动作的模型。
      - ``pyfcstm plantuml -i machine.fcstm -l full -c show_concrete_actions=false -o machine.hooks.puml``。

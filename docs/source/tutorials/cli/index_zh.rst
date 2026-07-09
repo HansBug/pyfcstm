@@ -5,6 +5,8 @@ CLI 文档入口页
 
 命令行内容已经拆到任务页和参考页。本旧 URL 继续保留，但只承担稳定入口职责。
 
+术语说明：命令行界面（command-line interface）后文只称命令行；结构化检查报告（inspect report）后文只称检查报告。
+
 请改用这些页面：
 
 * :doc:`/how_to/cli_workflows/index_zh`：常见任务，例如获取帮助、仿真模型、导出 inspect JSON、生成代码和导出 PlantUML。

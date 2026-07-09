@@ -5,6 +5,8 @@
 
 安装现在归入任务指南，而不是教程章节。请使用 :doc:`/how_to/installation/index_zh` 获取维护中的安装步骤、验证命令和排查清单。
 
+术语说明：本页是兼容入口（compatibility landing page），后文只称兼容入口。
+
 安装后如果想走一遍引导式首次运行，请继续阅读 :doc:`/tutorials/quick_start/index_zh`。
 
 兼容说明

@@ -11,6 +11,7 @@ on:
       - 'requirements-doc.txt'
       - 'auto_rst.py'
       - 'auto_rst_top_index.py'
+      - 'tools/check_docs_terminology.py'
       - '.github/scripts/detect_ci_routes.py'
       - '.readthedocs.yaml'
       - '.github/workflows/docs-check.yml'
@@ -23,6 +24,7 @@ on:
       - 'requirements-doc.txt'
       - 'auto_rst.py'
       - 'auto_rst_top_index.py'
+      - 'tools/check_docs_terminology.py'
       - '.github/scripts/detect_ci_routes.py'
       - '.readthedocs.yaml'
       - '.github/workflows/docs-check.yml'
@@ -174,6 +176,10 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt -r requirements-doc.txt
           python -m pip install -e . --no-deps
+      - name: Check Chinese documentation terminology
+        shell: bash
+        run: |
+          make docs_terminology_check
       - name: Build English docs without generated contents
         shell: bash
         run: |

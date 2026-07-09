@@ -225,7 +225,7 @@ CI 中渲染图表时，不要启动查看器：
 验证例子和失败信号
 --------------------
 
-安装后先跑这些短检查。它们故意不依赖渲染后端，所以适合刚安装好的 Python-only 环境。
+安装后先跑这些短检查。它们故意不依赖渲染后端，所以适合刚安装好的纯 Python 环境。
 
 .. list-table:: 安装验证矩阵
    :header-rows: 1
@@ -246,7 +246,7 @@ CI 中渲染图表时，不要启动查看器：
      - ``pyfcstm -v``
      - 打印 ``Pyfcstm, version``。
      - 确认命令属于目标环境。
-   * - Python-only DSL 冒烟检查。
+   * - 纯 Python DSL 冒烟检查。
      - ``pyfcstm inspect -i smoke.fcstm``
      - 最小模型打印 ``[OK] FCSTM Inspect Report``。
      - 先修 DSL 语法或安装，再检查渲染器。
@@ -281,10 +281,10 @@ CI 中渲染图表时，不要启动查看器：
      - ``pyfcstm visualize --check --renderer local``。
      - Python 包已安装；缺的是渲染后端。
      - 安装 Java 和 PlantUML jar，或使用允许的远程渲染器。
-   * - native 生成运行时构建失败。
+   * - 原生生成运行时构建失败。
      - 按生成 README 的命令构建生成目录。
      - pyfcstm 生成可能没问题；缺的是目标编译器/工具链。
-     - 安装目标工具链，并保持 native 检查显式触发。
+     - 安装目标工具链，并保持原生检查显式触发。
 
 
 后续阅读

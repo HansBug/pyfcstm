@@ -623,7 +623,7 @@
      - 副作用或原因
    * - 人类可读报告
      - ``pyfcstm inspect -i traffic_light.fcstm``
-     - 输出以 [OK] FCSTM Inspect Report 和计数摘要开头。
+     - 输出以 ``[OK] FCSTM Inspect Report`` 和计数摘要开头。
      - 没有文件副作用。
    * - JSON 报告
      - ``pyfcstm inspect -i traffic_light.fcstm --format json -o traffic_light.inspect.json``
@@ -819,7 +819,7 @@
 中文说明
 ~~~~~~~~
 
-上表中的命令、文件名、选项、错误关键字保持原文，是为了可复制和可搜索。普通说明应使用中文术语；如果后续继续扩写本页，应避免把 command、option、output、failure 这类词反复写进中文 prose。
+上表中的命令、文件名、选项、错误关键字保持原文，是为了可复制和可搜索。普通说明应使用中文术语；如果后续继续扩写本页，应避免把命令、选项、输出、失败这类概念反复写成英文普通说明。
 
 
 

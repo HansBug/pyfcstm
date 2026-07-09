@@ -575,6 +575,12 @@ grep -RInE --include='*.html' 'class="problematic"|<span class="problematic"' /t
 
 For bilingual page changes, also perform a content-synchronization review. Confirm that each changed English or Chinese page has the corresponding language update, or record an explicit deferral. Compare changed headings, commands, examples, warnings, file paths, and diagnostics; a clean HTML build only proves syntax, not translation coverage.
 
+For Chinese documentation changes, run the terminology gate and fix or justify every hit:
+
+```bash
+make docs_terminology_check
+```
+
 For generated documentation resources, use the generation workflow documented in `CLAUDE.md` rather than editing generated outputs directly. The broad `CLAUDE.md` reminder to run `make contents` applies to Sphinx/source-resource documentation changes that may refresh generated outputs. For policy-only files outside the Sphinx tree, or prose-only changes that do not affect generated resources, record why `make contents` is not applicable; otherwise run it and include any intentional generated updates.
 
 For public Python API or generated API index changes, run `make rst_auto` and include intentional generated RST updates.
@@ -637,7 +643,7 @@ This section records how the guide satisfies its own rules. Keep it updated when
 | Diagnostics and errors | Documentation review defects are classified as Critical, Important, or Minor; product diagnostic codes are referenced only when target documentation needs them. |
 | Examples and resources | The generation-module inventory is the worked non-DSL example; command snippets are short and tied to repository guidance. |
 | Migration and landing pages | The guide does not move user-facing pages; it adds a `CLAUDE.md` entry so the non-Sphinx policy file remains discoverable. |
-| Verification | `git diff --check` and reviewer C/I/M checks are the relevant verification path for this policy-only change; `make contents`, Sphinx HTML, and `make rst_auto` checks become required when the corresponding Sphinx source, generated documentation resource, public Python API, or generated API index changes are in scope. |
+| Verification | `git diff --check`, `make docs_terminology_check`, and reviewer C/I/M checks are the relevant verification path for this policy-only change; `make contents`, Sphinx HTML, and `make rst_auto` checks become required when the corresponding Sphinx source, generated documentation resource, public Python API, or generated API index changes are in scope. |
 
 Applied to this guide itself:
 

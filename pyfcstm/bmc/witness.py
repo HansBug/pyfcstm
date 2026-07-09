@@ -1349,8 +1349,8 @@ class BmcSolveResult(_PrettyPrintableMixin):
     properties such as :attr:`property_satisfied`, :attr:`witness_found`, and
     :attr:`counterexample_found` translate solver objective satisfiability into
     user-facing bounded property results.  Manually constructed SAT results
-    must carry their SAT model so the public status and replay payload cannot
-    diverge.
+    must carry their SAT model, and non-SAT results must not carry a model, so
+    the public status and replay payload cannot diverge.
 
     :param formula: Compiled BMC property formula that was solved.
     :type formula: pyfcstm.bmc.properties.BmcPropertyFormula
@@ -1439,9 +1439,15 @@ class BmcSolveResult(_PrettyPrintableMixin):
         )
         if self.status == "sat" and self.model is None:
             raise BmcBuildError("model is required when status is sat.")
+        if self.status != "sat" and self.model is not None:
+            raise BmcBuildError("model must be None unless status is sat.")
         if self.incomplete_status == "sat" and self.incomplete_model is None:
             raise BmcBuildError(
                 "incomplete_model is required when incomplete_status is sat."
+            )
+        if self.incomplete_status != "sat" and self.incomplete_model is not None:
+            raise BmcBuildError(
+                "incomplete_model must be None unless incomplete_status is sat."
             )
 
     @property

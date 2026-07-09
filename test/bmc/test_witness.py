@@ -632,6 +632,22 @@ def test_internal_z3_decode_guards_are_loud() -> None:
         (lambda formula: BmcSolveResult(formula, "sat"), "model is required"),
         (lambda formula: BmcSolveResult(formula, "sat", model=object()), "model must"),
         (
+            lambda formula: BmcSolveResult(formula, "unsat", model=_empty_sat_model()),
+            "model must be None",
+        ),
+        (
+            lambda formula: BmcSolveResult(
+                formula, "unknown", model=_empty_sat_model(), reason="unknown"
+            ),
+            "model must be None",
+        ),
+        (
+            lambda formula: BmcSolveResult(
+                formula, "timeout", model=_empty_sat_model(), reason="timeout"
+            ),
+            "model must be None",
+        ),
+        (
             lambda formula: BmcSolveResult(formula, "unsat", incomplete_status="maybe"),
             "incomplete_status",
         ),
@@ -642,6 +658,41 @@ def test_internal_z3_decode_guards_are_loud() -> None:
         (
             lambda formula: BmcSolveResult(formula, "unsat", incomplete_model=object()),
             "incomplete_model",
+        ),
+        (
+            lambda formula: BmcSolveResult(
+                formula, "unsat", incomplete_model=_empty_sat_model()
+            ),
+            "incomplete_model must be None",
+        ),
+        (
+            lambda formula: BmcSolveResult(
+                formula,
+                "unsat",
+                incomplete_status="unsat",
+                incomplete_model=_empty_sat_model(),
+            ),
+            "incomplete_model must be None",
+        ),
+        (
+            lambda formula: BmcSolveResult(
+                formula,
+                "unsat",
+                incomplete_status="unknown",
+                incomplete_model=_empty_sat_model(),
+                incomplete_reason="unknown",
+            ),
+            "incomplete_model must be None",
+        ),
+        (
+            lambda formula: BmcSolveResult(
+                formula,
+                "unsat",
+                incomplete_status="timeout",
+                incomplete_model=_empty_sat_model(),
+                incomplete_reason="timeout",
+            ),
+            "incomplete_model must be None",
         ),
         (
             lambda formula: BmcSolveResult(formula, "unsat", elapsed_ms="slow"),

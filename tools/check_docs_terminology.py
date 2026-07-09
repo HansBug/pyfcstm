@@ -4,9 +4,9 @@
 The checker is intentionally conservative: it reports only a bounded list of
 ordinary English prose terms that the repository documentation policy says
 should normally be translated or introduced with a same-page Chinese/English
-handoff. It ignores code blocks, inline literals, roles, directive lines, file
-paths, option names, and known product or API names so that command examples and
-exact identifiers can stay verbatim.
+handoff. It ignores code blocks, inline literals, roles, non-prose directive
+arguments, file paths, option names, and known product or API names so that
+command examples and exact identifiers can stay verbatim.
 
 Example::
 
@@ -99,6 +99,26 @@ CODE_DIRECTIVES = {
     "literalinclude",
     "parsed-literal",
     "raw",
+}
+
+PROSE_ARGUMENT_DIRECTIVES = {
+    "admonition",
+    "attention",
+    "caution",
+    "contents",
+    "csv-table",
+    "danger",
+    "error",
+    "hint",
+    "important",
+    "list-table",
+    "note",
+    "rubric",
+    "sidebar",
+    "table",
+    "tip",
+    "topic",
+    "warning",
 }
 
 DIRECTIVE_PREFIXES = (
@@ -222,6 +242,26 @@ def _directive_name(stripped: str) -> Optional[str]:
     return body.split("::", 1)[0].split()[0]
 
 
+def _directive_argument(stripped: str) -> str:
+    """Extract the same-line argument from a reST directive line.
+
+    :param stripped: Source line with leading whitespace removed.
+    :type stripped: str
+    :return: Text after ``::`` with surrounding whitespace removed, or an empty
+        string when the line is not a directive with a same-line argument.
+    :rtype: str
+
+    Example::
+
+        >>> _directive_argument(".. csv-table:: runtime table")
+        'runtime table'
+    """
+
+    if not stripped.startswith(".. ") or "::" not in stripped:
+        return ""
+    return stripped.split("::", 1)[1].strip()
+
+
 def _strip_inline_markup(text: str) -> str:
     """Remove inline markup that is expected to contain exact literals.
 
@@ -250,8 +290,8 @@ def iter_prose_lines(path: Path) -> Iterator[Tuple[int, str, str]]:
     """Yield candidate prose lines from a reST file.
 
     Code-like directives and their indented bodies are skipped. Ordinary table
-    cells, bullet items, and paragraphs remain visible because repository policy
-    applies to prose in those locations too.
+    cells, bullet items, paragraphs, and visible directive titles remain visible
+    because repository policy applies to prose in those locations too.
 
     :param path: reST page to inspect.
     :type path: pathlib.Path
@@ -284,6 +324,11 @@ def iter_prose_lines(path: Path) -> Iterator[Tuple[int, str, str]]:
         if directive is not None:
             if directive in CODE_DIRECTIVES:
                 skip_indent = indent
+            elif directive in PROSE_ARGUMENT_DIRECTIVES:
+                argument = _directive_argument(stripped)
+                cleaned = _strip_inline_markup(argument)
+                if cleaned.strip():
+                    yield lineno, line, cleaned
             continue
 
         if stripped.startswith(DIRECTIVE_PREFIXES):
@@ -419,6 +464,17 @@ def run_self_check() -> int:
                     root,
                     "csv_table_zh.rst",
                     ".. csv-table:: t\n\n   普通 runtime, 普通 renderer\n",
+                ),
+                {"runtime", "renderer"},
+            )
+        )
+        cases.append(
+            (
+                "table directive titles are scanned",
+                _write_self_check_page(
+                    root,
+                    "table_title_zh.rst",
+                    ".. list-table:: runtime renderer 概览\n\n   * - 中文单元\n",
                 ),
                 {"runtime", "renderer"},
             )

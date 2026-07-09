@@ -1477,9 +1477,12 @@ class BmcSolveResult(_PrettyPrintableMixin):
         """Return whether the verdict is known to be horizon-incomplete.
 
         Solver ``unknown`` and ``timeout`` statuses are always incomplete.  A
-        response property is also incomplete when its suffix diagnostic can
-        still contain an uncovered trigger window, because a primary
-        ``"unsat"`` objective then cannot be reported as a satisfied response.
+        response property is also incomplete when the primary objective is
+        ``"unsat"`` and its suffix diagnostic was not solved, was inconclusive,
+        or can still contain an uncovered trigger window.  If the primary
+        response objective is ``"sat"``, the counterexample verdict is already
+        decisive even when a separate suffix diagnostic would also be
+        satisfiable.
 
         :return: Whether the solve result carries an incomplete verdict.
         :rtype: bool
@@ -1496,7 +1499,12 @@ class BmcSolveResult(_PrettyPrintableMixin):
         """
         if self.status in {"unknown", "timeout"}:
             return True
-        return self.kind == "response" and self.incomplete_status in {
+        if self.kind != "response" or self.status != "unsat":
+            return False
+        if z3.is_false(self.formula.incomplete_formula):
+            return False
+        return self.incomplete_status in {
+            None,
             "sat",
             "unknown",
             "timeout",
@@ -1559,8 +1567,9 @@ class BmcSolveResult(_PrettyPrintableMixin):
         This verdict translates the solver objective status through
         :attr:`polarity`.  Witness objectives are satisfied exactly when SAT
         finds a witness.  Counterexample objectives are satisfied exactly when
-        the counterexample search is UNSAT, except response properties with a
-        satisfiable or inconclusive suffix diagnostic remain incomplete.
+        the counterexample search is UNSAT, except response properties whose
+        suffix diagnostic is unsolved, satisfiable, or inconclusive remain
+        incomplete.
 
         :return: ``True`` if the bounded property is satisfied, ``False`` if it
             is violated or lacks a required witness, and ``None`` if the result
@@ -2856,6 +2865,8 @@ def solve_bmc_property(
         'sat'
     """
     checked = _require_formula(formula)
+    if not isinstance(check_incomplete, bool):
+        raise BmcBuildError("check_incomplete must be bool.")
     status, model, reason, elapsed_ms = _solve(checked.solve_formula, timeout_ms)
     incomplete_status = None
     incomplete_model = None
@@ -2869,6 +2880,9 @@ def solve_bmc_property(
             incomplete_elapsed_ms,
         ) = _solve(checked.incomplete_solve_formula, timeout_ms)
         diagnostics.append("incomplete_elapsed_ms=%.3f" % incomplete_elapsed_ms)
+    elif not check_incomplete and not z3.is_false(checked.incomplete_formula):
+        incomplete_reason = "incomplete check disabled"
+        diagnostics.append("incomplete_check=disabled")
     return BmcSolveResult(
         formula=checked,
         status=status,

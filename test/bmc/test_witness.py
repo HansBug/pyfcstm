@@ -409,6 +409,67 @@ def test_solve_property_reports_incomplete_response_diagnostics() -> None:
     assert any(item.startswith("incomplete_elapsed_ms=") for item in result.diagnostics)
 
 
+def test_solve_property_keeps_unchecked_response_suffix_incomplete() -> None:
+    """Disabling suffix diagnostics must not report response UNSAT as satisfied."""
+    _, formula = _compile(
+        """
+        state Root {
+            event trigger;
+            state A;
+            [*] -> A;
+        }
+        """,
+        'init state("Root.A");\n'
+        "check response <= 1:\n"
+        '  trigger event("Root.trigger", current)\n'
+        "  -> within 2 terminated();",
+    )
+    result = solve_bmc_property(formula, check_incomplete=False)
+
+    assert result.status == "unsat"
+    assert result.model is None
+    assert result.incomplete_status is None
+    assert result.incomplete_model is None
+    assert result.incomplete_reason == "incomplete check disabled"
+    assert result.property_satisfied is None
+    assert result.witness_found is False
+    assert result.counterexample_found is False
+    assert result.incomplete is True
+    assert result.outcome == "incomplete"
+    assert result.to_canonical()["property_satisfied"] is None
+    assert "incomplete_check=disabled" in result.diagnostics
+
+
+def test_response_violation_verdict_stays_decisive_with_suffix() -> None:
+    """A response SAT counterexample remains decisive even with suffix metadata."""
+    _, formula = _compile(
+        """
+        state Root {
+            event trigger;
+            state A;
+            [*] -> A;
+        }
+        """,
+        'init state("Root.A");\n'
+        "check response <= 1:\n"
+        '  trigger event("Root.trigger", current)\n'
+        "  -> within 2 terminated();",
+    )
+    result = BmcSolveResult(
+        formula,
+        "sat",
+        model=_empty_sat_model(),
+        incomplete_status="sat",
+        incomplete_model=_empty_sat_model(),
+    )
+
+    assert result.property_satisfied is False
+    assert result.witness_found is False
+    assert result.counterexample_found is True
+    assert result.incomplete is False
+    assert result.outcome == "property_violated"
+
+
 @pytest.mark.parametrize(
     ("kind", "polarity"),
     [
@@ -487,6 +548,16 @@ def test_solve_property_rejects_invalid_timeout_values(bad_timeout) -> None:
     _, formula = _compile("state Root;", 'check reach <= 1: active("Root");')
     with pytest.raises(BmcBuildError, match="timeout_ms"):
         solve_bmc_property(formula, timeout_ms=bad_timeout)
+
+
+@pytest.mark.parametrize("bad_check_incomplete", [0, 1, "yes", object()])
+def test_solve_property_rejects_invalid_check_incomplete_values(
+    bad_check_incomplete,
+) -> None:
+    """The public solver validates the incomplete-check switch loudly."""
+    _, formula = _compile("state Root;", 'check reach <= 1: active("Root");')
+    with pytest.raises(BmcBuildError, match="check_incomplete"):
+        solve_bmc_property(formula, check_incomplete=bad_check_incomplete)
 
 
 def test_solver_unknown_and_timeout_paths_are_structured(monkeypatch) -> None:

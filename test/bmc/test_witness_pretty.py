@@ -526,6 +526,11 @@ def test_public_non_trace_objects_are_field_value_golden_pinned() -> None:
     kind                  reach
     polarity              witness
     status                unsat
+    property_satisfied    false
+    witness_found         false
+    counterexample_found  false
+    incomplete            false
+    outcome               no_witness
     reason                because
     elapsed_ms            1.25
     timeout_ms            10

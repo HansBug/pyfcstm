@@ -1345,9 +1345,12 @@ class BmcSolveResult(_PrettyPrintableMixin):
     The raw Z3 models are intentionally kept as Python attributes rather than
     JSON fields.  Callers can pass :attr:`model` to
     :func:`decode_bmc_witness` when :attr:`status` is ``"sat"`` while
-    :meth:`to_canonical` remains JSON-stable for logs and tests.  Manually
-    constructed SAT results must carry their SAT model so the public status and
-    replay payload cannot diverge.
+    :meth:`to_canonical` remains JSON-stable for logs and tests.  Verdict
+    properties such as :attr:`property_satisfied`, :attr:`witness_found`, and
+    :attr:`counterexample_found` translate solver objective satisfiability into
+    user-facing bounded property results.  Manually constructed SAT results
+    must carry their SAT model so the public status and replay payload cannot
+    diverge.
 
     :param formula: Compiled BMC property formula that was solved.
     :type formula: pyfcstm.bmc.properties.BmcPropertyFormula
@@ -1469,6 +1472,152 @@ class BmcSolveResult(_PrettyPrintableMixin):
         """
         return self.formula.polarity
 
+    @property
+    def incomplete(self) -> bool:
+        """Return whether the verdict is known to be horizon-incomplete.
+
+        Solver ``unknown`` and ``timeout`` statuses are always incomplete.  A
+        response property is also incomplete when its suffix diagnostic can
+        still contain an uncovered trigger window, because a primary
+        ``"unsat"`` objective then cannot be reported as a satisfied response.
+
+        :return: Whether the solve result carries an incomplete verdict.
+        :rtype: bool
+
+        Example::
+
+            >>> from pyfcstm.bmc.witness import BmcSolveResult
+            >>> from pyfcstm.bmc import BmcEngine, build_bmc_core_formula, compile_bmc_property
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> sm = load_state_machine_from_text('state Root;')
+            >>> formula = compile_bmc_property(build_bmc_core_formula(BmcEngine(sm).prepare('check reach <= 1: active("Root");')))
+            >>> BmcSolveResult(formula, 'timeout', reason='timeout').incomplete
+            True
+        """
+        if self.status in {"unknown", "timeout"}:
+            return True
+        return self.kind == "response" and self.incomplete_status in {
+            "sat",
+            "unknown",
+            "timeout",
+        }
+
+    @property
+    def witness_found(self) -> bool:
+        """Return whether the primary objective found a positive witness.
+
+        :return: ``True`` when SAT means a witness and the primary objective is
+            satisfiable.
+        :rtype: bool
+
+        Example::
+
+            >>> import z3
+            >>> from pyfcstm.bmc.witness import BmcSolveResult
+            >>> from pyfcstm.bmc import BmcEngine, build_bmc_core_formula, compile_bmc_property
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> sm = load_state_machine_from_text('state Root;')
+            >>> formula = compile_bmc_property(build_bmc_core_formula(BmcEngine(sm).prepare('check reach <= 1: active("Root");')))
+            >>> solver = z3.Solver()
+            >>> solver.add(z3.BoolVal(True))
+            >>> solver.check() == z3.sat
+            True
+            >>> BmcSolveResult(formula, 'sat', model=solver.model()).witness_found
+            True
+        """
+        return self.status == "sat" and self.polarity == "witness"
+
+    @property
+    def counterexample_found(self) -> bool:
+        """Return whether the primary objective found a counterexample.
+
+        :return: ``True`` when SAT means a violation trace and the primary
+            objective is satisfiable.
+        :rtype: bool
+
+        Example::
+
+            >>> import z3
+            >>> from pyfcstm.bmc.witness import BmcSolveResult
+            >>> from pyfcstm.bmc import BmcEngine, build_bmc_core_formula, compile_bmc_property
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> sm = load_state_machine_from_text('state Root;')
+            >>> formula = compile_bmc_property(build_bmc_core_formula(BmcEngine(sm).prepare('check forbid <= 1: active("Root");')))
+            >>> solver = z3.Solver()
+            >>> solver.add(z3.BoolVal(True))
+            >>> solver.check() == z3.sat
+            True
+            >>> BmcSolveResult(formula, 'sat', model=solver.model()).counterexample_found
+            True
+        """
+        return self.status == "sat" and self.polarity == "counterexample"
+
+    @property
+    def property_satisfied(self) -> Optional[bool]:
+        """Return the user-facing bounded property verdict.
+
+        This verdict translates the solver objective status through
+        :attr:`polarity`.  Witness objectives are satisfied exactly when SAT
+        finds a witness.  Counterexample objectives are satisfied exactly when
+        the counterexample search is UNSAT, except response properties with a
+        satisfiable or inconclusive suffix diagnostic remain incomplete.
+
+        :return: ``True`` if the bounded property is satisfied, ``False`` if it
+            is violated or lacks a required witness, and ``None`` if the result
+            is incomplete.
+        :rtype: Optional[bool]
+
+        Example::
+
+            >>> from pyfcstm.bmc.witness import BmcSolveResult
+            >>> from pyfcstm.bmc import BmcEngine, build_bmc_core_formula, compile_bmc_property
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> sm = load_state_machine_from_text('state Root;')
+            >>> formula = compile_bmc_property(build_bmc_core_formula(BmcEngine(sm).prepare('check reach <= 1: terminated();')))
+            >>> BmcSolveResult(formula, 'unsat').property_satisfied
+            False
+        """
+        if self.status in {"unknown", "timeout"}:
+            return None
+        if self.status == "sat":
+            return self.polarity == "witness"
+        if self.kind == "response" and self.incomplete:
+            return None
+        return self.polarity == "counterexample"
+
+    @property
+    def outcome(self) -> str:
+        """Return a stable user-facing outcome label.
+
+        :return: One of ``"property_satisfied"``, ``"property_violated"``,
+            ``"witness_found"``, ``"no_witness"``, ``"incomplete"``,
+            ``"timeout"``, or ``"unknown"``.
+        :rtype: str
+
+        Example::
+
+            >>> from pyfcstm.bmc.witness import BmcSolveResult
+            >>> from pyfcstm.bmc import BmcEngine, build_bmc_core_formula, compile_bmc_property
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> sm = load_state_machine_from_text('state Root;')
+            >>> formula = compile_bmc_property(build_bmc_core_formula(BmcEngine(sm).prepare('check reach <= 1: terminated();')))
+            >>> BmcSolveResult(formula, 'unsat').outcome
+            'no_witness'
+        """
+        if self.status == "timeout":
+            return "timeout"
+        if self.status == "unknown":
+            return "unknown"
+        if self.status == "sat":
+            if self.polarity == "witness":
+                return "witness_found"
+            return "property_violated"
+        if self.kind == "response" and self.incomplete:
+            return "incomplete"
+        if self.polarity == "witness":
+            return "no_witness"
+        return "property_satisfied"
+
     def to_canonical(self) -> _CanonicalDict:
         """Return a JSON-stable solve summary.
 
@@ -1495,6 +1644,11 @@ class BmcSolveResult(_PrettyPrintableMixin):
             "kind": self.kind,
             "polarity": self.polarity,
             "status": self.status,
+            "property_satisfied": self.property_satisfied,
+            "witness_found": self.witness_found,
+            "counterexample_found": self.counterexample_found,
+            "incomplete": self.incomplete,
+            "outcome": self.outcome,
             "reason": self.reason,
             "elapsed_ms": self.elapsed_ms,
             "timeout_ms": self.timeout_ms,

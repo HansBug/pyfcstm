@@ -22,7 +22,7 @@ BmcSolveResult
 -----------------------------------------------------
 
 .. autoclass:: BmcSolveResult
-    :members: __post_init__,kind,polarity,to_canonical,formula,status,model,reason,elapsed_ms,timeout_ms,incomplete_status,incomplete_model,incomplete_reason,diagnostics
+    :members: __post_init__,kind,polarity,incomplete,witness_found,counterexample_found,property_satisfied,outcome,to_canonical,formula,status,model,reason,elapsed_ms,timeout_ms,incomplete_status,incomplete_model,incomplete_reason,diagnostics
 
 
 BmcEventDecodePolicy

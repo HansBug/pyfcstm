@@ -51,6 +51,61 @@ def _solve_with_extra(formula, *extra):
     return solver.model()
 
 
+def _empty_sat_model():
+    solver = z3.Solver()
+    solver.add(z3.BoolVal(True))
+    assert solver.check() == z3.sat
+    return solver.model()
+
+
+_VERDICT_DSL = """
+state Root {
+    event Go;
+    state A;
+    state B;
+    [*] -> A;
+    A -> B : Go;
+}
+"""
+
+
+def _first_case_label(dsl_text: str, query_text: str, kind: str) -> str:
+    model = load_state_machine_from_text(dsl_text)
+    core = build_bmc_core_formula(BmcEngine(model).prepare(query_text))
+    return next(
+        relation.case.label
+        for step in core.steps
+        for relation in step.case_relations
+        if relation.case.kind == kind
+    )
+
+
+def _verdict_formula(kind: str):
+    if kind == "cover":
+        label = _first_case_label(
+            _VERDICT_DSL,
+            'init state("Root.A"); check reach <= 1: active("Root.B");',
+            "transition",
+        )
+        return _compile(
+            _VERDICT_DSL,
+            'init state("Root.A"); check cover <= 1: case("%s");' % label,
+        )[1]
+    queries = {
+        "reach": 'init state("Root.A"); check reach <= 1: active("Root.B");',
+        "exists_always": 'init state("Root.A"); check exists_always <= 1: active("Root");',
+        "forbid": 'init state("Root.A"); check forbid <= 1: active("Root.A");',
+        "invariant": 'init state("Root.A"); check invariant <= 1: active("Root");',
+        "must_reach": 'init state("Root.A"); check must_reach <= 1: active("Root.B");',
+        "response": (
+            'init state("Root.A"); '
+            'check response <= 1: trigger event("Root.Go", current) '
+            '-> within 1 active("Root.B");'
+        ),
+    }
+    return _compile(_VERDICT_DSL, queries[kind])[1]
+
+
 def test_witness_api_is_lazy_exported_from_bmc_package() -> None:
     """The root package exposes the witness layer without eager solver work."""
     assert BmcEventDecodePolicy().include_debug_reads is True
@@ -345,8 +400,85 @@ def test_solve_property_reports_incomplete_response_diagnostics() -> None:
     assert result.model is None
     assert result.incomplete_status == "sat"
     assert result.incomplete_model is not None
+    assert result.property_satisfied is None
+    assert result.witness_found is False
+    assert result.counterexample_found is False
+    assert result.incomplete is True
+    assert result.outcome == "incomplete"
     assert result.to_canonical()["has_incomplete_model"] is True
     assert any(item.startswith("incomplete_elapsed_ms=") for item in result.diagnostics)
+
+
+@pytest.mark.parametrize(
+    ("kind", "polarity"),
+    [
+        ("reach", "witness"),
+        ("exists_always", "witness"),
+        ("cover", "witness"),
+        ("forbid", "counterexample"),
+        ("invariant", "counterexample"),
+        ("must_reach", "counterexample"),
+        ("response", "counterexample"),
+    ],
+)
+def test_solve_result_public_verdict_truth_table(kind, polarity) -> None:
+    """Public verdict fields translate objective SAT/UNSAT into property results."""
+    formula = _verdict_formula(kind)
+    sat_result = BmcSolveResult(formula, "sat", model=_empty_sat_model())
+    unsat_result = BmcSolveResult(formula, "unsat")
+
+    assert sat_result.polarity == polarity
+    assert unsat_result.polarity == polarity
+
+    if polarity == "witness":
+        assert sat_result.property_satisfied is True
+        assert sat_result.witness_found is True
+        assert sat_result.counterexample_found is False
+        assert sat_result.incomplete is False
+        assert sat_result.outcome == "witness_found"
+        assert sat_result.to_canonical()["property_satisfied"] is True
+
+        assert unsat_result.property_satisfied is False
+        assert unsat_result.witness_found is False
+        assert unsat_result.counterexample_found is False
+        assert unsat_result.incomplete is False
+        assert unsat_result.outcome == "no_witness"
+        assert unsat_result.to_canonical()["outcome"] == "no_witness"
+    else:
+        assert sat_result.property_satisfied is False
+        assert sat_result.witness_found is False
+        assert sat_result.counterexample_found is True
+        assert sat_result.incomplete is False
+        assert sat_result.outcome == "property_violated"
+        assert sat_result.to_canonical()["counterexample_found"] is True
+
+        assert unsat_result.property_satisfied is True
+        assert unsat_result.witness_found is False
+        assert unsat_result.counterexample_found is False
+        assert unsat_result.incomplete is False
+        assert unsat_result.outcome == "property_satisfied"
+        assert unsat_result.to_canonical()["property_satisfied"] is True
+
+
+@pytest.mark.parametrize(
+    ("status", "reason", "outcome"),
+    [
+        ("unknown", "canceled", "unknown"),
+        ("timeout", "timeout", "timeout"),
+    ],
+)
+def test_solve_result_unknown_and_timeout_verdicts_are_incomplete(
+    status, reason, outcome
+) -> None:
+    """Unknown and timeout solver statuses do not claim a property verdict."""
+    result = BmcSolveResult(_verdict_formula("reach"), status, reason=reason)
+
+    assert result.property_satisfied is None
+    assert result.witness_found is False
+    assert result.counterexample_found is False
+    assert result.incomplete is True
+    assert result.outcome == outcome
+    assert result.to_canonical()["incomplete"] is True
 
 
 @pytest.mark.parametrize("bad_timeout", [0, -1, True, 1.5])

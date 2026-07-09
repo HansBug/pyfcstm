@@ -1,0 +1,45 @@
+@startuml
+component "State Machine Model" as model {
+  [State Objects]
+  [Transition Objects]
+  [Event Objects]
+}
+
+component "Template Engine" as engine {
+  [Jinja2 Environment]
+  [Global Variables]
+  [Filters]
+  [Expression Renderer]
+}
+
+component "Configuration File" as config {
+  [Expression Styles]
+  [Ignore Rules]
+  [Custom Functions]
+}
+
+component "Template Files" as templates {
+  [.j2 Templates]
+  [Static Files]
+}
+
+component "Output System" as output {
+  [Generated Code]
+  [Header Files]
+  [Documentation]
+}
+
+model --> engine : Provide data
+config --> engine : Configure behavior
+templates --> engine : Provide templates
+engine --> output : Generate files
+
+note right of engine
+  Template engine is the core
+  of the system, responsible
+  for combining data model
+  with templates to generate
+  final output
+end note
+
+@enduml

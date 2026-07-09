@@ -11,6 +11,7 @@ on:
       - 'requirements-doc.txt'
       - 'auto_rst.py'
       - 'auto_rst_top_index.py'
+      - 'tools/check_docs_terminology.py'
       - '.github/scripts/detect_ci_routes.py'
       - '.readthedocs.yaml'
       - '.github/workflows/docs-check.yml'
@@ -23,6 +24,7 @@ on:
       - 'requirements-doc.txt'
       - 'auto_rst.py'
       - 'auto_rst_top_index.py'
+      - 'tools/check_docs_terminology.py'
       - '.github/scripts/detect_ci_routes.py'
       - '.readthedocs.yaml'
       - '.github/workflows/docs-check.yml'
@@ -174,6 +176,10 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt -r requirements-doc.txt
           python -m pip install -e . --no-deps
+      - name: Check Chinese documentation terminology
+        shell: bash
+        run: |
+          make docs_terminology_check
       - name: Build English docs without generated contents
         shell: bash
         run: |
@@ -283,15 +289,275 @@ jobs:
         shell: bash
         run: |
           plantumlcli -c
-          make -f docs/source/all.mk SOURCE=docs/source build
+          make -C docs contents
       - name: Verify generated docs resources are committed
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         shell: bash
         run: |
           set -euo pipefail
-          git diff --exit-code -- docs/source
-          untracked_docs="$(git ls-files --others --exclude-standard -- docs/source)"
-          if [ -n "$untracked_docs" ]; then
-            echo "Untracked docs resources were generated:" >&2
-            echo "$untracked_docs" >&2
-            exit 1
+
+          if [ "${GITHUB_EVENT_NAME}" != "pull_request" ]; then
+            git diff --exit-code -- docs/source
+            untracked_docs="$(git ls-files --others --exclude-standard -- docs/source)"
+            if [ -n "$untracked_docs" ]; then
+              echo "Untracked docs resources were generated:" >&2
+              echo "$untracked_docs" >&2
+              exit 1
+            fi
+            exit 0
+          fi
+
+          mkdir -p .ci/docs-resources
+          changed_file=.ci/docs-resources/changed-files.txt
+          verify_file=.ci/docs-resources/verify-paths.txt
+
+          if ! git cat-file -e "${PR_BASE_SHA}^{commit}" 2>/dev/null; then
+            git fetch --no-tags --prune origin \
+              "+refs/heads/${PR_BASE_REF}:refs/remotes/origin/${PR_BASE_REF}"
+          fi
+          if ! git cat-file -e "${PR_HEAD_SHA}^{commit}" 2>/dev/null; then
+            git fetch --no-tags --prune origin \
+              "+refs/pull/${PR_NUMBER}/head:refs/remotes/origin/pr/${PR_NUMBER}/head"
+          fi
+
+          git diff --name-only "${PR_BASE_SHA}" "${PR_HEAD_SHA}" > "$changed_file"
+
+          python - <<'PY'
+          from pathlib import Path
+
+          changed_paths = [
+              line.strip()
+              for line in Path('.ci/docs-resources/changed-files.txt').read_text(
+                  encoding='utf-8'
+              ).splitlines()
+              if line.strip()
+          ]
+          present_paths = set()
+          absent_paths = set()
+
+          generated_suffixes = (
+              '.fcstm.puml',
+              '.fcstm.puml.png',
+              '.fcstm.puml.svg',
+              '.puml.png',
+              '.puml.svg',
+              '.gv.png',
+              '.gv.svg',
+              '.demo.py.txt',
+              '.demox.py.txt',
+              '.demox.py.err',
+              '.demox.py.exitcode',
+              '.plot.py.svg',
+              '.demo.sh.txt',
+              '.demox.sh.txt',
+              '.demox.sh.err',
+              '.demox.sh.exitcode',
+              '.result.ipynb',
+          )
+
+          def add_present(path):
+              if path.startswith('docs/source/'):
+                  present_paths.add(path)
+
+          def add_absent(path):
+              if path.startswith('docs/source/'):
+                  absent_paths.add(path)
+
+          def add_for_source(path, source_exists):
+              if source_exists:
+                  add_present(path)
+              else:
+                  add_absent(path)
+
+          def changed_file_exists(path):
+              return Path(path).exists()
+
+          for changed_path in changed_paths:
+              if changed_path.startswith('logos/'):
+                  add_present('docs/source/_static/logos')
+                  continue
+              if not changed_path.startswith('docs/source/'):
+                  continue
+              source_exists = changed_file_exists(changed_path)
+              if changed_path.endswith('.full.fcstm'):
+                  stem = changed_path[:-len('.full.fcstm')]
+                  add_for_source(stem + '.full.fcstm.puml', source_exists)
+                  add_for_source(stem + '.full.fcstm.puml.png', source_exists)
+                  add_for_source(stem + '.full.fcstm.puml.svg', source_exists)
+              elif changed_path.endswith('.minimal.fcstm'):
+                  stem = changed_path[:-len('.minimal.fcstm')]
+                  add_for_source(stem + '.minimal.fcstm.puml', source_exists)
+                  add_for_source(stem + '.minimal.fcstm.puml.png', source_exists)
+                  add_for_source(stem + '.minimal.fcstm.puml.svg', source_exists)
+              elif changed_path.endswith('.fcstm'):
+                  stem = changed_path[:-len('.fcstm')]
+                  add_for_source(stem + '.fcstm.puml', source_exists)
+                  add_for_source(stem + '.fcstm.puml.png', source_exists)
+                  add_for_source(stem + '.fcstm.puml.svg', source_exists)
+              elif changed_path.endswith('.puml'):
+                  add_for_source(changed_path + '.png', source_exists)
+                  add_for_source(changed_path + '.svg', source_exists)
+              elif changed_path.endswith('.gv'):
+                  add_for_source(changed_path + '.png', source_exists)
+                  add_for_source(changed_path + '.svg', source_exists)
+              elif changed_path.endswith('.demo.py'):
+                  add_for_source(changed_path + '.txt', source_exists)
+              elif changed_path.endswith('.demox.py'):
+                  add_for_source(changed_path + '.txt', source_exists)
+                  add_for_source(changed_path + '.err', source_exists)
+                  add_for_source(changed_path + '.exitcode', source_exists)
+              elif changed_path.endswith('.plot.py'):
+                  add_for_source(changed_path + '.svg', source_exists)
+              elif changed_path.endswith('.demo.sh'):
+                  add_for_source(changed_path + '.txt', source_exists)
+              elif changed_path.endswith('.demox.sh'):
+                  add_for_source(changed_path + '.txt', source_exists)
+                  add_for_source(changed_path + '.err', source_exists)
+                  add_for_source(changed_path + '.exitcode', source_exists)
+              elif changed_path.endswith('.ipynb'):
+                  add_for_source(changed_path[:-len('.ipynb')] + '.result.ipynb', source_exists)
+              elif changed_path.endswith('.fcstm.puml.png'):
+                  source = changed_path[:-len('.fcstm.puml.png')] + '.fcstm'
+                  add_for_source(changed_path, changed_file_exists(source))
+              elif changed_path.endswith('.fcstm.puml.svg'):
+                  source = changed_path[:-len('.fcstm.puml.svg')] + '.fcstm'
+                  add_for_source(changed_path, changed_file_exists(source))
+              elif changed_path.endswith('.fcstm.puml'):
+                  source = changed_path[:-len('.fcstm.puml')] + '.fcstm'
+                  add_for_source(changed_path, changed_file_exists(source))
+              elif changed_path.endswith('.puml.png'):
+                  source = changed_path[:-len('.puml.png')] + '.puml'
+                  add_for_source(changed_path, changed_file_exists(source))
+              elif changed_path.endswith('.puml.svg'):
+                  source = changed_path[:-len('.puml.svg')] + '.puml'
+                  add_for_source(changed_path, changed_file_exists(source))
+              elif changed_path.endswith('.gv.png'):
+                  source = changed_path[:-len('.gv.png')] + '.gv'
+                  add_for_source(changed_path, changed_file_exists(source))
+              elif changed_path.endswith('.gv.svg'):
+                  source = changed_path[:-len('.gv.svg')] + '.gv'
+                  add_for_source(changed_path, changed_file_exists(source))
+              elif changed_path.endswith('.demo.py.txt'):
+                  source = changed_path[:-len('.txt')]
+                  add_for_source(changed_path, changed_file_exists(source))
+              elif changed_path.endswith('.demox.py.txt'):
+                  source = changed_path[:-len('.txt')]
+                  add_for_source(changed_path, changed_file_exists(source))
+              elif changed_path.endswith('.demox.py.err'):
+                  source = changed_path[:-len('.err')]
+                  add_for_source(changed_path, changed_file_exists(source))
+              elif changed_path.endswith('.demox.py.exitcode'):
+                  source = changed_path[:-len('.exitcode')]
+                  add_for_source(changed_path, changed_file_exists(source))
+              elif changed_path.endswith('.plot.py.svg'):
+                  source = changed_path[:-len('.svg')]
+                  add_for_source(changed_path, changed_file_exists(source))
+              elif changed_path.endswith('.demo.sh.txt'):
+                  source = changed_path[:-len('.txt')]
+                  add_for_source(changed_path, changed_file_exists(source))
+              elif changed_path.endswith('.demox.sh.txt'):
+                  source = changed_path[:-len('.txt')]
+                  add_for_source(changed_path, changed_file_exists(source))
+              elif changed_path.endswith('.demox.sh.err'):
+                  source = changed_path[:-len('.err')]
+                  add_for_source(changed_path, changed_file_exists(source))
+              elif changed_path.endswith('.demox.sh.exitcode'):
+                  source = changed_path[:-len('.exitcode')]
+                  add_for_source(changed_path, changed_file_exists(source))
+              elif changed_path.endswith('.result.ipynb'):
+                  source = changed_path[:-len('.result.ipynb')] + '.ipynb'
+                  add_for_source(changed_path, changed_file_exists(source))
+              elif changed_path.endswith(generated_suffixes):
+                  add_present(changed_path)
+
+          with Path('.ci/docs-resources/verify-paths.txt').open('w', encoding='utf-8') as output:
+              for path in sorted(present_paths | absent_paths):
+                  print(path, file=output)
+          with Path('.ci/docs-resources/verify-present-paths.txt').open('w', encoding='utf-8') as output:
+              for path in sorted(present_paths):
+                  print(path, file=output)
+          with Path('.ci/docs-resources/verify-absent-paths.txt').open('w', encoding='utf-8') as output:
+              for path in sorted(absent_paths):
+                  print(path, file=output)
+          PY
+
+          echo "Docs generated resource paths checked for this PR:"
+          cat "$verify_file"
+
+          if [ -s "$verify_file" ]; then
+            present_verify_file=.ci/docs-resources/verify-present-paths.txt
+            absent_verify_file=.ci/docs-resources/verify-absent-paths.txt
+            tracked_verify_file=.ci/docs-resources/tracked-verify-paths.txt
+            ignored_verify_file=.ci/docs-resources/ignored-existing-paths.txt
+            untracked_verify_file=.ci/docs-resources/untracked-existing-paths.txt
+            missing_verify_file=.ci/docs-resources/missing-paths.txt
+            stale_verify_file=.ci/docs-resources/stale-paths.txt
+            : > "$tracked_verify_file"
+            : > "$ignored_verify_file"
+            : > "$untracked_verify_file"
+            : > "$missing_verify_file"
+            : > "$stale_verify_file"
+
+            while IFS= read -r path; do
+              if [ -z "$path" ]; then
+                continue
+              fi
+              if [ -d "$path" ] || git ls-files --error-unmatch -- "$path" >/dev/null 2>&1; then
+                printf '%s\n' "$path" >> "$tracked_verify_file"
+              elif [ -e "$path" ]; then
+                if git check-ignore -q --no-index -- "$path"; then
+                  printf '%s\n' "$path" >> "$ignored_verify_file"
+                else
+                  printf '%s\n' "$path" >> "$untracked_verify_file"
+                fi
+              else
+                printf '%s\n' "$path" >> "$missing_verify_file"
+              fi
+            done < "$present_verify_file"
+
+            while IFS= read -r path; do
+              if [ -z "$path" ]; then
+                continue
+              fi
+              if [ -e "$path" ] || git ls-files --error-unmatch -- "$path" >/dev/null 2>&1; then
+                printf '%s\n' "$path" >> "$stale_verify_file"
+              fi
+            done < "$absent_verify_file"
+
+            if [ -s "$missing_verify_file" ]; then
+              echo "Expected docs resources were not generated:" >&2
+              cat "$missing_verify_file" >&2
+              exit 1
+            fi
+
+            if [ -s "$stale_verify_file" ]; then
+              echo "Docs resources were generated or committed for deleted sources:" >&2
+              cat "$stale_verify_file" >&2
+              exit 1
+            fi
+
+            if [ -s "$tracked_verify_file" ]; then
+              xargs -a "$tracked_verify_file" -r git diff --exit-code --
+              untracked_docs="$(xargs -a "$tracked_verify_file" -r git ls-files --others --exclude-standard --)"
+              if [ -n "$untracked_docs" ]; then
+                echo "Untracked docs resources were generated:" >&2
+                echo "$untracked_docs" >&2
+                exit 1
+              fi
+            fi
+
+            if [ -s "$untracked_verify_file" ]; then
+              echo "Untracked docs resources were generated:" >&2
+              cat "$untracked_verify_file" >&2
+              exit 1
+            fi
+
+            if [ -s "$ignored_verify_file" ]; then
+              echo "Ignored generated docs resources exist and are intentionally not committed:"
+              cat "$ignored_verify_file"
+            fi
           fi

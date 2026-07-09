@@ -1,4 +1,4 @@
-.PHONY: docs test unittest template_unittest resource antlr antlr_build fcstm_antlr_build fbmcq_antlr_build build package clean docs_auto todos_auto tests_auto rst_auto sha256 jsfcstm jsfcstm_clean vscode vscode_clean vscode_install vscode_uninstall logos logos_clean app_icons app_icons_clean help tpl tpl_clean templates_package template_packaging_check template_source_install_check test_boundary_check
+.PHONY: docs test unittest template_unittest resource antlr antlr_build fcstm_antlr_build fbmcq_antlr_build build package clean docs_auto todos_auto tests_auto rst_auto sha256 jsfcstm jsfcstm_clean vscode vscode_clean vscode_install vscode_uninstall logos logos_clean app_icons app_icons_clean help tpl tpl_clean templates_package template_packaging_check template_source_install_check docs_terminology_check test_boundary_check
 
 PYTHON := $(shell which python)
 
@@ -100,6 +100,7 @@ help:
 	@echo "  make pdocs        - Build production documentation with versioning"
 	@echo "  make rst_auto     - Generate RST documentation from Python source"
 	@echo "                      Options: RANGE_DIR=<dir>"
+	@echo "  make docs_terminology_check - Check Chinese documentation terminology"
 	@echo "  make sha256       - Update generated SHA-256 sidecar files"
 	@echo ""
 	@echo "LLM-Based Documentation (requires hbllmutils):"
@@ -203,6 +204,10 @@ template_packaging_check:
 
 template_source_install_check:
 	$(PYTHON) tools/check_template_source_install.py
+
+docs_terminology_check:
+	$(PYTHON) tools/check_docs_terminology.py --self-check
+	$(PYTHON) tools/check_docs_terminology.py --check
 
 test_boundary_check:
 	$(PYTHON) tools/check_test_boundary.py

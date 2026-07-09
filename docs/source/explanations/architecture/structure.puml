@@ -1,0 +1,80 @@
+@startuml
+skinparam componentStyle rectangle
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam nodesep 25
+skinparam ranksep 35
+skinparam packageTitleAlignment left
+
+!define SOURCE #E8F5E9
+!define CORE #E3F2FD
+!define ANALYSIS #FFF8E1
+!define OUTPUT #F3E5F5
+!define EXTERNAL #FFEBEE
+
+actor User
+file "FCSTM source\n(.fcstm)" as source SOURCE
+component "DSL parser\npyfcstm.dsl" as parser CORE
+component "AST nodes\npyfcstm.dsl.node" as ast CORE
+component "semantic model\npyfcstm.model" as model CORE
+
+package "Model consumers" {
+  component "inspect + diagnostics\npyfcstm.diagnostics\npyfcstm.verify" as inspect ANALYSIS
+  component "simulation runtime\npyfcstm.simulate" as simulate ANALYSIS
+  component "PlantUML source export\nmodel.to_plantuml" as plantuml OUTPUT
+  component "renderer command\npyfcstm visualize" as visualize OUTPUT
+  component "template renderer\npyfcstm.render" as render OUTPUT
+}
+
+package "Template assets" {
+  folder "source templates\ntemplates/" as templates SOURCE
+  folder "packaged templates\npyfcstm/template/" as packaged OUTPUT
+}
+
+cloud "External tools\nJava / PlantUML jar\nremote PlantUML server\nC/C++ compilers" as external EXTERNAL
+file "Reports\nhuman / JSON / LLM" as reports OUTPUT
+file "Simulation transcript" as transcript OUTPUT
+file "PlantUML text\n(.puml)" as puml OUTPUT
+file "Rendered diagram\n.png / .svg / .pdf" as diagram OUTPUT
+file "Generated runtime" as runtime OUTPUT
+
+User --> source : writes model
+source --> parser : parse text
+parser --> ast : build parse/AST facts
+ast --> model : import + validate semantics
+model --> inspect : model facts + bounded checks
+model --> simulate : executable reference semantics
+model --> plantuml : diagram source facts
+plantuml --> visualize : source to render
+model --> render : generation context
+
+templates --> packaged : make tpl
+packaged --> render : built-in template extraction
+templates --> render : custom trusted template
+
+inspect --> reports
+simulate --> transcript
+plantuml --> puml
+visualize --> diagram
+render --> runtime
+visualize --> external : optional renderer backend
+runtime --> external : optional target build/test
+
+note right of model
+  Single semantic source of truth.
+  Downstream tools should not re-parse
+  or invent DSL semantics.
+end note
+
+note bottom of visualize
+  plantuml exports source only.
+  visualize adds renderer, cache,
+  viewer, suffix, and privacy boundaries.
+end note
+
+note bottom of render
+  Generation writes target files.
+  Compile/run evidence is separate from
+  renderer success.
+end note
+@enduml

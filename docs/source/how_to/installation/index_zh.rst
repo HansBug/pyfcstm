@@ -225,7 +225,7 @@ CI 中渲染图表时，不要启动查看器：
 验证例子和失败信号
 --------------------
 
-安装后先跑这些短检查。它们故意不依赖渲染后端，所以适合刚安装好的 仅 Python 环境。
+安装后先跑这些短检查。它们故意不依赖渲染后端，所以适合刚安装好的纯 Python 环境。
 
 .. list-table:: 安装验证矩阵
    :header-rows: 1
@@ -246,7 +246,7 @@ CI 中渲染图表时，不要启动查看器：
      - ``pyfcstm -v``
      - 打印 ``Pyfcstm, version``。
      - 确认命令属于目标环境。
-   * - 仅 Python 的 DSL 冒烟检查。
+   * - 纯 Python DSL 冒烟检查。
      - ``pyfcstm inspect -i smoke.fcstm``
      - 最小模型打印 ``[OK] FCSTM Inspect Report``。
      - 先修 DSL 语法或安装，再检查渲染器。

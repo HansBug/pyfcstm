@@ -52,10 +52,10 @@ LLM 语法指南
 模拟器与内置模板
 ~~~~~~~~~~~~~~~~
 
-- 强化模拟器在 speculative rollback、hot-start initialization、event
-  normalization、lifecycle action refs、abstract handler contracts 和 cycle
-  boundary 行为上的语义。
-- 增加模拟器与生成运行时对齐的 semantic fixture corpus。
+- 强化模拟器在推测回滚（speculative rollback）、热启动初始化（hot-start initialization）、
+  事件归一化（event normalization）、生命周期动作引用（lifecycle action refs）、
+  抽象处理器契约（abstract handler contracts）和周期边界（cycle boundary）行为上的语义。
+- 增加模拟器与生成运行时对齐的语义用例语料（semantic fixture corpus）。
 - 稳定生成的 Python 运行时元数据、回调回滚行为和表达式错误包装。
 - 打包内置模板仍通过 ``pyfcstm generate --template ...`` 使用。当前打包模板为
   ``python``、``c`` 和 ``c_poll``；VSCode 扩展有独立版本线，本 Python 包

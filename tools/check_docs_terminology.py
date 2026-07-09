@@ -19,6 +19,7 @@ import argparse
 import json
 import re
 import sys
+import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Iterable, Iterator, List, Optional, Sequence, Tuple
@@ -32,6 +33,7 @@ PRIMARY_ROOTS = (
 )
 SECONDARY_PAGES = (
     DOCS_SOURCE / "index_zh.rst",
+    DOCS_SOURCE / "api_doc_zh.rst",
     DOCS_SOURCE / "release_notes_zh.rst",
 )
 
@@ -73,6 +75,22 @@ REJECTED_TERMS = (
     "highlighters",
     "forms",
     "Python-only",
+    "module",
+    "class",
+    "function",
+    "data object",
+    "inspect report",
+    "diagnostics code",
+    "visualization option",
+    "template config",
+    "toctree",
+    "speculative rollback",
+    "hot-start initialization",
+    "event normalization",
+    "lifecycle action refs",
+    "abstract handler contracts",
+    "cycle boundary",
+    "semantic fixture corpus",
 )
 
 CODE_DIRECTIVES = {
@@ -81,7 +99,6 @@ CODE_DIRECTIVES = {
     "literalinclude",
     "parsed-literal",
     "raw",
-    "csv-table",
 }
 
 DIRECTIVE_PREFIXES = (
@@ -94,7 +111,8 @@ ROLE_RE = re.compile(r":[A-Za-z][A-Za-z0-9_-]*:`[^`]*`")
 EXPLICIT_LINK_RE = re.compile(r"`[^`<]*<[^`>]+>`_")
 SUBSTITUTION_RE = re.compile(r"\|[^|]+\|")
 URL_RE = re.compile(r"https?://\S+")
-HANDOFF_RE = re.compile(r"（[^）]*[A-Za-z][^）]*）")
+HANDOFF_RE = re.compile(r"(?<=[\u4e00-\u9fffA-Za-z0-9_）])（[A-Za-z0-9][A-Za-z0-9_+./#\-\s]*）")
+KNOWN_LITERAL_PHRASE_RE = re.compile(r"(?<![A-Za-z0-9_])(?:C\+\+ Poll Wrapper|C\+\+ Wrapper)(?![A-Za-z0-9_])")
 PATH_RE = re.compile(r"(?<![A-Za-z0-9_])(?:[./]?[-A-Za-z0-9_]+/)+[-A-Za-z0-9_.*]+")
 OPTION_RE = re.compile(r"(?<![A-Za-z0-9_])--?[A-Za-z][A-Za-z0-9_-]*")
 TARGET_RE = re.compile(r"(?<![A-Za-z0-9_])_[A-Za-z0-9_-]+:(?![A-Za-z0-9_])")
@@ -219,6 +237,7 @@ def _strip_inline_markup(text: str) -> str:
     cleaned = EXPLICIT_LINK_RE.sub(" ", cleaned)
     cleaned = SUBSTITUTION_RE.sub(" ", cleaned)
     cleaned = HANDOFF_RE.sub(" ", cleaned)
+    cleaned = KNOWN_LITERAL_PHRASE_RE.sub(" ", cleaned)
     cleaned = URL_RE.sub(" ", cleaned)
     cleaned = PATH_RE.sub(" ", cleaned)
     cleaned = OPTION_RE.sub(" ", cleaned)
@@ -323,6 +342,114 @@ def scan_pages(paths: Iterable[Path]) -> List[Finding]:
     return findings
 
 
+def _write_self_check_page(directory: Path, name: str, text: str) -> Path:
+    """Write a temporary self-check page.
+
+    :param directory: Directory for the temporary page.
+    :type directory: pathlib.Path
+    :param name: File name to create.
+    :type name: str
+    :param text: Page content.
+    :type text: str
+    :return: Path to the written page.
+    :rtype: pathlib.Path
+    """
+
+    path = directory / name
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def _finding_terms(findings: Iterable[Finding]) -> List[str]:
+    """Return finding terms in source order.
+
+    :param findings: Findings to summarize.
+    :type findings: collections.abc.Iterable[Finding]
+    :return: Finding terms.
+    :rtype: list[str]
+    """
+
+    return [finding.term for finding in findings]
+
+
+def run_self_check() -> int:
+    """Run built-in regression checks for terminology scanning boundaries.
+
+    :return: ``0`` when all regression checks pass, otherwise ``1``.
+    :rtype: int
+
+    Example::
+
+        >>> run_self_check() in {0, 1}
+        True
+    """
+
+    cases = []
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir)
+        cases.append(
+            (
+                "plain prose terms are reported",
+                _write_self_check_page(root, "plain_zh.rst", "这是普通 runtime 和 renderer 说明。\n"),
+                {"runtime", "renderer"},
+            )
+        )
+        cases.append(
+            (
+                "simple terminology handoff is ignored",
+                _write_self_check_page(root, "handoff_zh.rst", "运行时（runtime）后文只称运行时。\n"),
+                set(),
+            )
+        )
+        cases.append(
+            (
+                "ordinary parenthetical prose is still scanned",
+                _write_self_check_page(
+                    root,
+                    "parenthetical_zh.rst",
+                    "这个说明（详见 runtime 与 renderer 章节）没有做术语交接。\n",
+                ),
+                {"runtime", "renderer"},
+            )
+        )
+        cases.append(
+            (
+                "csv table visible cells are scanned",
+                _write_self_check_page(
+                    root,
+                    "csv_table_zh.rst",
+                    ".. csv-table:: t\n\n   普通 runtime, 普通 renderer\n",
+                ),
+                {"runtime", "renderer"},
+            )
+        )
+        cases.append(
+            (
+                "inline literals are ignored",
+                _write_self_check_page(root, "literal_zh.rst", "这行包含 ``runtime`` 字面量。\n"),
+                set(),
+            )
+        )
+        cases.append(
+            (
+                "known template titles are ignored as exact names",
+                _write_self_check_page(root, "template_title_zh.rst", "标题列保留 C++ Wrapper。\n"),
+                set(),
+            )
+        )
+
+        failed = False
+        for label, path, expected_terms in cases:
+            terms = set(_finding_terms(scan_page(path)))
+            if terms != expected_terms:
+                failed = True
+                print(
+                    f"self-check failed: {label}: expected {sorted(expected_terms)!r}, got {sorted(terms)!r}",
+                    file=sys.stderr,
+                )
+        return 1 if failed else 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the command-line parser.
 
@@ -340,6 +467,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--json",
         action="store_true",
         help="emit findings as JSON instead of text",
+    )
+    parser.add_argument(
+        "--self-check",
+        action="store_true",
+        help="run built-in regression checks and exit",
     )
     parser.add_argument(
         "--list-pages",
@@ -387,6 +519,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.self_check:
+        return run_self_check()
+
     pages = _expand_pages(args.pages)
 
     if args.list_pages:

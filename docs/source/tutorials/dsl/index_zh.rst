@@ -10,8 +10,7 @@
 本教程覆盖什么
 --------------
 
-这一页是 FCSTM DSL 的首次成功路径：构建一个小型温控器模型，运行它，并阅读第一份检查报告
-（inspect report）。它不会试图一次性列完所有运算符、导入映射（import mapping）、组合转换
+这一页是 FCSTM DSL 的首次成功路径：构建一个小型温控器模型，运行它，并阅读第一份检查报告（inspect report）。它不会试图一次性列完所有运算符、导入映射（import mapping）、组合转换
 （combo transition）或诊断码（diagnostic code）。这些高级主题后文只称为导入映射、组合转换和诊断码。
 
 * :doc:`../../how_to/dsl/index_zh` 按任务给出写法、示例、命令、预期诊断和修复步骤。

@@ -560,7 +560,7 @@ JSON 中重点看：
 常见错误：裸目录路径不会被当作 DSL 源加载；``def sensor_* -> left_$2;`` 这样的越界占位符
 会触发导入映射验证错误。``$0`` 表示完整被导入名称，``$1`` / ``${1}`` 表示第一个通配捕获。
 
-前置片段形式（preamble form，如 ``name = value;`` 和 ``name := value;``）是导入组装辅助测试使用的解析辅助入口，不是普通 ``state_machine_dsl`` 文件里的根级 ``def``。边界见 :ref:`dsl-import-preamble-forms-zh`。
+前置片段形式（preamble form）例如 ``name = value;`` 和 ``name := value;``，它是导入组装辅助测试使用的解析辅助入口，不是普通 ``state_machine_dsl`` 文件里的根级 ``def``。边界见 :ref:`dsl-import-preamble-forms-zh`。
 
 从仓库根目录验证映射导入：
 

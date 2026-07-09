@@ -632,8 +632,18 @@ def test_internal_z3_decode_guards_are_loud() -> None:
         (lambda formula: BmcSolveResult(formula, "sat"), "model is required"),
         (lambda formula: BmcSolveResult(formula, "sat", model=object()), "model must"),
         (
+            lambda formula: BmcSolveResult(
+                formula, "sat", model=_empty_sat_model(), reason="timeout"
+            ),
+            "reason must be None",
+        ),
+        (
             lambda formula: BmcSolveResult(formula, "unsat", model=_empty_sat_model()),
             "model must be None",
+        ),
+        (
+            lambda formula: BmcSolveResult(formula, "unsat", reason="because"),
+            "reason must be None",
         ),
         (
             lambda formula: BmcSolveResult(
@@ -673,6 +683,25 @@ def test_internal_z3_decode_guards_are_loud() -> None:
                 incomplete_model=_empty_sat_model(),
             ),
             "incomplete_model must be None",
+        ),
+        (
+            lambda formula: BmcSolveResult(
+                formula,
+                "unsat",
+                incomplete_status="unsat",
+                incomplete_reason="because",
+            ),
+            "incomplete_reason must be None",
+        ),
+        (
+            lambda formula: BmcSolveResult(
+                formula,
+                "unsat",
+                incomplete_status="sat",
+                incomplete_model=_empty_sat_model(),
+                incomplete_reason="because",
+            ),
+            "incomplete_reason must be None",
         ),
         (
             lambda formula: BmcSolveResult(
@@ -1047,12 +1076,50 @@ def test_solve_result_rejects_invalid_public_payloads(factory, message) -> None:
             "solver.reason",
         ),
         (
+            lambda: BmcWitnessTrace(
+                {}, {"status": "sat", "reason": "timeout"}, {}, (), ()
+            ),
+            "solver.reason must be None",
+        ),
+        (
+            lambda: BmcWitnessTrace(
+                {}, {"status": "unsat", "reason": "because"}, {}, (), ()
+            ),
+            "solver.reason must be None",
+        ),
+        (
             lambda: BmcWitnessTrace({}, {"status": "maybe"}, {}, (), ()),
             "solver.status",
         ),
         (
             lambda: BmcWitnessTrace({}, {"incomplete_status": "maybe"}, {}, (), ()),
             "solver.incomplete_status",
+        ),
+        (
+            lambda: BmcWitnessTrace(
+                {},
+                {
+                    "incomplete_status": "sat",
+                    "incomplete_reason": "because",
+                },
+                {},
+                (),
+                (),
+            ),
+            "solver.incomplete_reason must be None",
+        ),
+        (
+            lambda: BmcWitnessTrace(
+                {},
+                {
+                    "incomplete_status": "unsat",
+                    "incomplete_reason": "because",
+                },
+                {},
+                (),
+                (),
+            ),
+            "solver.incomplete_reason must be None",
         ),
         (
             lambda: BmcWitnessTrace({}, {"elapsed_ms": True}, {}, (), ()),
@@ -1187,7 +1254,7 @@ def test_witness_trace_metadata_accepts_nested_json_payloads() -> None:
     trace = BmcWitnessTrace(
         {"kind": "reach", "tags": ["fast", {"nested": True}, None, 2]},
         {
-            "status": "sat",
+            "status": "unknown",
             "elapsed_ms": 1.25,
             "reason": "ok",
             "incomplete_status": "unknown",
@@ -1210,7 +1277,7 @@ def test_witness_trace_metadata_accepts_nested_json_payloads() -> None:
         "incomplete_reason": None,
         "incomplete_status": "unknown",
         "reason": "ok",
-        "status": "sat",
+        "status": "unknown",
     }
     assert canonical["initial"] == {"argv": ["--flag", 1], "mode": "cold"}
 

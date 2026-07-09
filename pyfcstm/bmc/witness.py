@@ -233,6 +233,27 @@ def _validate_optional_reason(name: str, value: Optional[str]) -> None:
         raise BmcBuildError("%s must be a string or None." % name)
 
 
+def _validate_primary_solve_reason(
+    status_name: str, status: Optional[str], reason_name: str, reason: Optional[str]
+) -> None:
+    _validate_optional_reason(reason_name, reason)
+    if reason is not None and status not in {"unknown", "timeout"}:
+        raise BmcBuildError(
+            "%s must be None unless %s is unknown or timeout."
+            % (reason_name, status_name)
+        )
+
+
+def _validate_incomplete_solve_reason(
+    status_name: str, status: Optional[str], reason_name: str, reason: Optional[str]
+) -> None:
+    _validate_optional_reason(reason_name, reason)
+    if reason is not None and status in {"sat", "unsat"}:
+        raise BmcBuildError(
+            "%s must be None when %s is sat or unsat." % (reason_name, status_name)
+        )
+
+
 def _validate_elapsed_ms(value: float) -> None:
     if not _is_public_finite_number(value) or value < 0:
         raise BmcBuildError("elapsed_ms must be a finite non-negative number.")
@@ -257,10 +278,15 @@ def _validate_witness_solver_metadata(value: Mapping[str, Any]) -> None:
     if "incomplete_elapsed_ms" in value:
         _validate_elapsed_ms(value["incomplete_elapsed_ms"])
     if "reason" in value:
-        _validate_optional_reason("solver.reason", value["reason"])
+        _validate_primary_solve_reason(
+            "solver.status", status, "solver.reason", value["reason"]
+        )
     if "incomplete_reason" in value:
-        _validate_optional_reason(
-            "solver.incomplete_reason", value["incomplete_reason"]
+        _validate_incomplete_solve_reason(
+            "solver.incomplete_status",
+            incomplete_status,
+            "solver.incomplete_reason",
+            value["incomplete_reason"],
         )
 
 
@@ -1358,7 +1384,8 @@ class BmcSolveResult(_PrettyPrintableMixin):
     :type status: str
     :param model: SAT model for ``formula.solve_formula``, defaults to ``None``.
     :type model: z3.ModelRef, optional
-    :param reason: Unknown or timeout reason, defaults to ``None``.
+    :param reason: Raw solver reason for ``"unknown"`` or ``"timeout"``
+        primary statuses, defaults to ``None``.
     :type reason: str, optional
     :param elapsed_ms: Objective solve wall time in milliseconds, defaults to
         ``0.0``.
@@ -1371,8 +1398,9 @@ class BmcSolveResult(_PrettyPrintableMixin):
     :param incomplete_model: SAT model for the incomplete-bound formula,
         defaults to ``None``.
     :type incomplete_model: z3.ModelRef, optional
-    :param incomplete_reason: Unknown or timeout reason for incomplete solve,
-        defaults to ``None``.
+    :param incomplete_reason: Raw solver reason for an inconclusive
+        incomplete-bound solve, or a diagnostic reason when that solve was not
+        executed, defaults to ``None``.
     :type incomplete_reason: str, optional
     :param diagnostics: Solver-level diagnostics, defaults to ``()``.
     :type diagnostics: Tuple[str, ...], optional
@@ -1423,9 +1451,14 @@ class BmcSolveResult(_PrettyPrintableMixin):
             self.incomplete_model, z3.ModelRef
         ):
             raise BmcBuildError("incomplete_model must be z3.ModelRef or None.")
-        _validate_optional_reason("reason", self.reason)
+        _validate_primary_solve_reason("status", self.status, "reason", self.reason)
         _validate_elapsed_ms(self.elapsed_ms)
-        _validate_optional_reason("incomplete_reason", self.incomplete_reason)
+        _validate_incomplete_solve_reason(
+            "incomplete_status",
+            self.incomplete_status,
+            "incomplete_reason",
+            self.incomplete_reason,
+        )
         if self.timeout_ms is not None and (
             isinstance(self.timeout_ms, bool)
             or not isinstance(self.timeout_ms, int)

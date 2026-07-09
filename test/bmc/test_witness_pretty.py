@@ -525,12 +525,12 @@ def test_public_non_trace_objects_are_field_value_golden_pinned() -> None:
     field                 value
     kind                  reach
     polarity              witness
-    status                unsat
-    property_satisfied    false
+    status                unknown
+    property_satisfied    -
     witness_found         false
     counterexample_found  false
-    incomplete            false
-    outcome               no_witness
+    incomplete            true
+    outcome               unknown
     reason                because
     elapsed_ms            1.25
     timeout_ms            10
@@ -596,7 +596,7 @@ def test_public_non_trace_objects_are_field_value_golden_pinned() -> None:
         expected_solve,
         BmcSolveResult(
             _sample_formula(),
-            "unsat",
+            "unknown",
             reason="because",
             elapsed_ms=1.25,
             timeout_ms=10,

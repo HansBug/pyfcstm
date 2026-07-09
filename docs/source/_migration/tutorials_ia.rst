@@ -1892,3 +1892,107 @@ The new examples reuse existing checked-in sources under
 ``docs/source/tutorials/quick_start/`` and ``docs/source/tutorials/visualization/``.
 Validation therefore focuses on reST/Sphinx correctness, reference drift checks,
 and visual inspection of existing generated figures in the rebuilt HTML.
+
+PR-R through PR-T final hardening handoff
+-----------------------------------------
+
+Scope
+~~~~~
+
+PR-R, PR-S, and PR-T were added after the first information-architecture split
+because the documentation hardening phase found that some non-DSL pages needed
+stronger task guidance, roadmap guidance, and Chinese terminology discipline.
+Their detailed planning and review records live in the corresponding PR bodies
+and umbrella PR discussion; PR-U records their final migration-log handoff here
+so a maintainer can find the durable closeout from the repository alone.
+
+Chapter records
+~~~~~~~~~~~~~~~
+
+.. list-table:: PR-R through PR-T final hardening records
+   :header-rows: 1
+
+   * - Slice
+     - Main pages
+     - Action
+     - Notes
+   * - PR-R diagnostics task and explanation hardening
+     - ``how_to/inspect/index*.rst`` and ``explanations/diagnostics/index*.rst``
+     - strengthen in place
+     - Turned PR-O's thick reference coverage into executable task guidance and
+       mechanism explanation for human, JSON, LLM, CI, span, suffix-warning,
+       invalid-DSL, validation, success-report, ``--enable-verify``, and policy
+       rejection flows. No public URL or resource move.
+   * - PR-S roadmap and map re-guidance
+     - ``tutorials/index*.rst``, ``how_to/index*.rst``,
+       ``explanations/index*.rst``, and ``reference/index*.rst``
+     - strengthen in place
+     - Reworked the four module guide pages as reader routers with role, non-goal,
+       path, sibling-card, prerequisite, result, and next-link guidance. These
+       pages remain sibling leaf pages and do not own child pages through
+       ``.. toctree::``.
+   * - PR-T Chinese terminology and bilingual gate
+     - Chinese user-facing docs, ``docs/documentation_authoring.md``,
+       ``auto_rst_top_index.py``, and Docs Check workflow
+     - add checker and fix terminology
+     - Added ``tools/check_docs_terminology.py``, ``make docs_terminology_check``,
+       and workflow coverage; fixed ordinary English prose residue while keeping
+       code, paths, API names, schema fields, template names, and metadata values
+       verbatim where correctness requires it.
+
+Resource records
+~~~~~~~~~~~~~~~~
+
+No PR-R through PR-T generated-resource migration is required by this handoff.
+PR-R and PR-S strengthened existing prose pages; PR-T added a tools-only
+terminology checker and updated generated API intro source text through
+``auto_rst_top_index.py``. Existing ``.fcstm``, ``.puml``, image, and demo
+source-output chains remain at their previous paths.
+
+PR-U final coverage audit
+-------------------------
+
+Scope
+~~~~~
+
+PR-U closes the umbrella documentation overhaul by adding the durable final
+coverage ledger in :doc:`final_coverage_audit`. The audit is intentionally
+orphaned and not part of the public navigation. It does not create a new reader
+role; it records which existing Tutorial, How-to, Explanation, and Reference
+pages own each capability family.
+
+Chapter records
+~~~~~~~~~~~~~~~
+
+.. list-table:: PR-U final audit records
+   :header-rows: 1
+
+   * - Location
+     - Action
+     - Notes
+   * - ``docs/source/_migration/final_coverage_audit.rst``
+     - add
+     - Durable full-site coverage matrix for DSL, Simulation, Inspect and
+       diagnostics, Generation, Templates, Visualization, CLI workflows,
+       Installation, Grammar tooling, Architecture/execution explanations, API
+       reference, old tutorial entries, bilingual parity, and verification.
+   * - ``docs/source/_migration/tutorials_ia.rst``
+     - append
+     - Adds the PR-R through PR-T hardening handoff and links to the PR-U final
+       audit so the migration log remains self-contained.
+   * - ``docs/source/reference/builtin_templates/index_zh.rst``
+     - repair drift
+     - Mirrors the exact source metadata ``description`` strings in the visible
+       Chinese metadata table so ``tools/check_template_reference_docs.py`` can
+       prove that the page matches ``pyfcstm/template/index.json`` and
+       ``templates/<name>/template.json``. Surrounding Chinese prose explains
+       why those metadata values remain verbatim.
+
+Verification note
+~~~~~~~~~~~~~~~~~
+
+PR-U is a documentation and tools-gate closeout. Its ready evidence must include
+``make rst_auto``, ``git diff --check``, the CLI, visualization, diagnostics,
+template reference, template packaging, template source-install, terminology,
+boundary, navigation/API/landing, EN/ZH Sphinx HTML, and HTML problematic scans
+listed in ``final_coverage_audit.rst`` and the PR body.

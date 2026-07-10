@@ -1,10 +1,12 @@
 欢迎来到 pyfcstm（Python Finite Control State Machine Framework）的文档
 ==========================================================================
 
-.. image:: _static/logos/logo_banner.svg
-   :alt: pyfcstm - Python Finite Control State Machine Framework
-   :align: center
-   :width: 800px
+.. only:: html
+
+   .. image:: _static/logos/logo_banner.svg
+      :alt: pyfcstm - Python Finite Control State Machine Framework
+      :align: center
+      :width: 800px
 
 概述
 -------------

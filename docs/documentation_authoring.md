@@ -575,6 +575,36 @@ grep -RInE --include='*.html' 'class="problematic"|<span class="problematic"' /t
 
 For bilingual page changes, also perform a content-synchronization review. Confirm that each changed English or Chinese page has the corresponding language update, or record an explicit deferral. Compare changed headings, commands, examples, warnings, file paths, and diagnostics; a clean HTML build only proves syntax, not translation coverage.
 
+For changes that can affect PDF structure or generated LaTeX, run the repository PDF gate in addition to HTML. This
+includes root index/toctree changes, Sphinx or LaTeX configuration, title-page/logo/font changes, autodoc value shape,
+and public Python or data inputs that can materially enlarge generated documentation:
+
+```bash
+make docs_pdf_en
+make docs_pdf_zh
+# Or build both languages with one resource-generation pass:
+make docs_pdf
+python tools/check_docs_pdf.py --check
+```
+
+The English and Chinese outputs must remain isolated under `docs/build/pdf/en/` and `docs/build/pdf/zh/`. A successful
+Sphinx HTML build does not prove PDF integrity, and the existence of a PDF does not prove that LaTeX reached the end of
+the document. The shared validator therefore checks PDF structure, the independent `Contents`/`目录` heading and major
+entries, the language-specific release-note document sentinel, the final-eight-page generated-index tail sentinel, CJK
+text extraction and embedded Fandol fonts, generated TeX line length, hidden large autodoc values, makeindex rejection
+counts, fatal logs, and forbidden latexmk force mode.
+
+Review the produced PDFs manually as well. At minimum inspect the title page and logo, the first global contents pages,
+one deep API page, tables and code blocks, converted SVG images, English-page CJK samples, Chinese glyphs, links or
+cross-references, and the final document pages. Rebuild in both language orders when shared configuration or build-root
+isolation changes. If the root toctree's final item or the final release-note paragraph changes, update the validator's
+language-specific document sentinel in the same change. If the alphabetically final generated API index entry changes,
+update its index-tail sentinel as well. In both cases, prove that a deliberately truncated PDF is still rejected.
+
+Keep one semantic Sphinx source tree: builder-specific conditions may change presentation such as banners, title-page
+logos, contents headings, and fonts, but must not introduce a copied PDF narrative or a separately maintained chapter
+list. Generated TeX, auxiliary files, logs, and PDFs are verification artifacts under `docs/build/`; do not commit them.
+
 For Chinese documentation changes, run the terminology gate and fix or justify every hit:
 
 ```bash

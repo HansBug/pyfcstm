@@ -250,6 +250,8 @@ make templates_package  # Alias of make tpl
 ```bash
 make docs                        # Build documentation locally (auto-detects language)
 make docs_en / make docs_zh      # Build for specific language
+make docs_pdf                    # Build and validate English and Chinese PDFs
+make docs_pdf_en / make docs_pdf_zh  # Build and validate one language PDF
 make pdocs                       # Production documentation with versioning
 make rst_auto                    # Generate RST from Python source files
 make rst_auto RANGE_DIR=model    # Generate RST for specific directory
@@ -1287,10 +1289,33 @@ make -f all.mk cleanplt   # Clean plot outputs only
 # From docs/
 make html       # Build HTML documentation (includes resource generation)
 make contents   # Generate resources only (without building HTML)
+make pdf        # Build and validate English and Chinese PDFs
+make pdf_en     # Build and validate the English PDF
+make pdf_zh     # Build and validate the Chinese PDF
 make prod       # Production build with versioning
 make clean      # Clean generated resources
 make doc_clean  # Clean Sphinx build output only
 ```
+
+The equivalent repository-root PDF commands are `make docs_pdf`, `make docs_pdf_en`, and `make docs_pdf_zh`. Their
+language-isolated build roots are [docs/build/pdf/en/](docs/build/pdf/en/) and
+[docs/build/pdf/zh/](docs/build/pdf/zh/); each command runs [tools/check_docs_pdf.py](tools/check_docs_pdf.py) before it
+reports success.
+
+#### PDF Build Discipline
+
+- Changes to a root index or toctree, [docs/source/conf.py](docs/source/conf.py), LaTeX configuration, documentation
+  fonts or logos, autodoc value presentation, or Python/data inputs that can substantially enlarge generated
+  documentation require both HTML and PDF verification for the affected language. Shared bilingual structure changes
+  require both languages.
+- Keep one semantic source tree. Builder conditions may adapt banners, title-page logos, global contents headings, and
+  fonts, but must not duplicate narrative content or maintain a second chapter list for PDF.
+- Module-level mappings, caches, and YAML/JSON-backed registries must not inject large runtime `repr` values into
+  autodoc by default. Preserve the public name, type, and explanation, use supported autodoc metadata such as
+  `:meta hide-value:` when appropriate, and check generated HTML/LaTeX physical line lengths.
+- The `latex_elements['tableofcontents']` override must finish with `\sphinxtableofcontents`. Any change to that override
+  or to the first captioned root toctree requires rechecking the independent `Contents` and `目录` lines in both PDFs.
+- Do not edit or commit generated `.tex`, `.toc`, `.aux`, `.idx`, `.log`, or `.pdf` files under `docs/build/`.
 
 #### DO and DO NOT
 

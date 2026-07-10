@@ -89,10 +89,15 @@ _CLI_PATTERNS = (
 )
 _DOCS_META_PATTERNS = (
     "docs/**",
+    "pyfcstm/*.py",
+    "pyfcstm/**/*.py",
+    "pyfcstm/diagnostics/codes.yaml",
+    "tools/check_docs_pdf.py",
     "requirements.txt",
     "requirements-doc.txt",
     "auto_rst.py",
     "auto_rst_top_index.py",
+    "Makefile",
     ".readthedocs.yaml",
     ".github/workflows/docs-check.yml",
     ".github/scripts/detect_ci_routes.py",
@@ -537,6 +542,51 @@ def run_self_check() -> None:
         docs_resource_changed=True,
     )
     _check_case(
+        "autodoc Python source",
+        ["pyfcstm/diagnostics/codes.py"],
+        True,
+        True,
+        True,
+        False,
+        True,
+    )
+    _check_case(
+        "top-level autodoc Python source",
+        ["pyfcstm/__init__.py"],
+        True,
+        True,
+        True,
+        False,
+        True,
+    )
+    _check_case(
+        "autodoc registry data",
+        ["pyfcstm/diagnostics/codes.yaml"],
+        True,
+        True,
+        True,
+        False,
+        True,
+    )
+    _check_case(
+        "PDF validator",
+        ["tools/check_docs_pdf.py"],
+        True,
+        True,
+        True,
+        False,
+        True,
+    )
+    _check_case(
+        "root Makefile PDF entry",
+        ["Makefile"],
+        True,
+        True,
+        True,
+        False,
+        True,
+    )
+    _check_case(
         "CLI docs fixture",
         ["docs/source/tutorials/cli/simple_machine.fcstm"],
         True,
@@ -571,7 +621,7 @@ def run_self_check() -> None:
         "mds asset", ["mds/research-note.md"], False, False, False, False, False
     )
     _check_case(
-        "python code", ["pyfcstm/model/model.py"], True, True, True, False, False
+        "python code", ["pyfcstm/model/model.py"], True, True, True, False, True
     )
     _check_case(
         "pytest fixture", ["test/model/test_model.py"], True, True, False, False, False

@@ -1,4 +1,4 @@
-.PHONY: docs test unittest template_unittest resource antlr antlr_build build package clean docs_auto todos_auto tests_auto rst_auto sha256 jsfcstm jsfcstm_clean vscode vscode_clean vscode_install vscode_uninstall logos logos_clean app_icons app_icons_clean help tpl tpl_clean templates_package template_packaging_check template_source_install_check docs_terminology_check test_boundary_check
+.PHONY: docs docs_en docs_zh docs_pdf docs_pdf_en docs_pdf_zh test unittest template_unittest resource antlr antlr_build build package clean docs_auto todos_auto tests_auto rst_auto sha256 jsfcstm jsfcstm_clean vscode vscode_clean vscode_install vscode_uninstall logos logos_clean app_icons app_icons_clean help tpl tpl_clean templates_package template_packaging_check template_source_install_check docs_terminology_check test_boundary_check
 
 PYTHON := $(shell which python)
 
@@ -94,6 +94,9 @@ help:
 	@echo "  make docs         - Build documentation (auto-detects language)"
 	@echo "  make docs_en      - Build English documentation"
 	@echo "  make docs_zh      - Build Chinese documentation"
+	@echo "  make docs_pdf     - Build and validate English and Chinese PDFs"
+	@echo "  make docs_pdf_en  - Build and validate the English PDF"
+	@echo "  make docs_pdf_zh  - Build and validate the Chinese PDF"
 	@echo "  make pdocs        - Build production documentation with versioning"
 	@echo "  make rst_auto     - Generate RST documentation from Python source"
 	@echo "                      Options: RANGE_DIR=<dir>"
@@ -183,6 +186,12 @@ docs_en:
 	READTHEDOCS_LANGUAGE=en $(MAKE) -C "${DOC_DIR}" build
 docs_zh:
 	READTHEDOCS_LANGUAGE=zh-cn $(MAKE) -C "${DOC_DIR}" build
+docs_pdf:
+	$(MAKE) -C "${DOC_DIR}" pdf
+docs_pdf_en:
+	$(MAKE) -C "${DOC_DIR}" pdf_en
+docs_pdf_zh:
+	$(MAKE) -C "${DOC_DIR}" pdf_zh
 pdocs:
 	$(MAKE) -C "${DOC_DIR}" prod
 

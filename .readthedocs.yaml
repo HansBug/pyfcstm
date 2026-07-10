@@ -13,6 +13,12 @@ build:
     - graphviz
     - pandoc
     - texlive-latex-base
+    - texlive-xetex
+    - texlive-latex-recommended
+    - texlive-latex-extra
+    - texlive-fonts-recommended
+    - texlive-lang-chinese
+    - latexmk
     - make
     - wget
     - curl

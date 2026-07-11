@@ -37,6 +37,13 @@ from test.testings.simulate_semantics import (
 pytestmark = pytest.mark.unittest
 
 
+def _bmc_presence_cycle_input(cycle_input):
+    """Project a fixture cycle input onto ordered Boolean event presence."""
+    if isinstance(cycle_input, list):
+        return list(dict.fromkeys(cycle_input))
+    return cycle_input
+
+
 def _runtime_state(runtime) -> str:
     if runtime.is_ended:
         return None
@@ -75,7 +82,9 @@ def collect_simulation_trace_for_bmc_fixture(
                 % case.id
             )
         cycle_count = _effective_cycle_count(step, case.id, case.yaml_path, field_path)
-        cycle_input = _cycle_input_for_step(step, case.id, case.yaml_path, field_path)
+        cycle_input = _bmc_presence_cycle_input(
+            _cycle_input_for_step(step, case.id, case.yaml_path, field_path)
+        )
         for _ in range(cycle_count):
             before = len(recorder.calls)
             result = runtime.cycle(cycle_input)
@@ -168,8 +177,9 @@ def _hard_pass_cases():
 
 @pytest.mark.parametrize("case", _hard_pass_cases(), ids=lambda case: case.id)
 def test_bmc_witness_replay_matches_full_semantic_fixture_trace(case) -> None:
-    """Hard-pass semantic fixtures replay with full macro-observable parity."""
+    """Hard-pass fixture traces are exact prefixes of decoded BMC replays."""
     expected_trace, event_inputs = collect_simulation_trace_for_bmc_fixture(case)
+    assert all(len(inputs) == len(set(inputs)) for inputs in event_inputs)
     model = build_state_machine_from_case(case)
     query = _query_with_fixture_events(case, model, len(event_inputs), event_inputs)
     formula = compile_bmc_property(
@@ -180,18 +190,11 @@ def test_bmc_witness_replay_matches_full_semantic_fixture_trace(case) -> None:
     witness = decode_bmc_witness(formula, result.model)
     replay = replay_bmc_witness(model, witness)
     assert replay.ok, [item.to_canonical() for item in replay.mismatches]
-    if not event_inputs:
-        # The current .fbmcq property bound is positive, while a few semantic
-        # fixtures assert construction/hot-start state with ``cycle_count: 0``.
-        # PR-12 can still verify that witness replay uses the correct public
-        # constructor state and variables, but there is no zero-step property
-        # witness to compare against yet.
-        assert (
-            replay.runtime_trace.frames[0].to_canonical()
-            == expected_trace.frames[0].to_canonical()
-        )
-        return
-    assert replay.runtime_trace.to_canonical() == expected_trace.to_canonical()
+    fixture_prefix = BmcRuntimeTrace(
+        replay.runtime_trace.frames[: len(expected_trace.frames)],
+        replay.runtime_trace.steps[: len(expected_trace.steps)],
+    )
+    assert fixture_prefix.to_canonical() == expected_trace.to_canonical()
 
 
 def test_bmc_witness_fixture_runner_keeps_policy_counts_auditable() -> None:
@@ -207,3 +210,78 @@ def test_bmc_witness_fixture_runner_keeps_policy_counts_auditable() -> None:
         "long_term_exclude": 6,
     }
     assert len(_hard_pass_cases()) == 146
+    zero_step_ids = set()
+    for case in _hard_pass_cases():
+        cycle_count = 0
+        for index, step in enumerate(case.data.get("steps") or []):
+            cycle_count += _effective_cycle_count(
+                step,
+                case.id,
+                case.yaml_path,
+                "steps[%d]" % index,
+            )
+        if cycle_count == 0:
+            zero_step_ids.add(case.id)
+    assert zero_step_ids == {"persistent_initial_vars_override_skips_initializer"}
+
+
+def test_duplicate_event_fixture_uses_boolean_presence_without_exclusion() -> None:
+    """The duplicate-input fixture keeps coverage after presence projection."""
+    case = next(
+        item
+        for item in iter_semantic_cases()
+        if item.id == "event_duplicate_inputs_preserve_public_state"
+    )
+    raw_cycle_input = _cycle_input_for_step(
+        case.data["steps"][1],
+        case.id,
+        case.yaml_path,
+        "steps[1]",
+    )
+    assert raw_cycle_input == [
+        "Root.A.Tick",
+        "Root.A.Noise",
+        "Root.A.Tick",
+    ]
+    assert policy_for_case(case.id).mode == "hard_pass"
+    assert is_runner_excluded(case, BMC_CORE_RUNNER) is False
+
+    expected_trace, event_inputs = collect_simulation_trace_for_bmc_fixture(case)
+
+    assert event_inputs == ((), ("Root.A.Tick", "Root.A.Noise"))
+    assert expected_trace.steps[1].to_canonical() == {
+        "index": 1,
+        "input_events": ["Root.A.Tick", "Root.A.Noise"],
+        "consumed_events": ["Root.A.Tick"],
+        "unconsumed_events": ["Root.A.Noise"],
+        "abstract_calls": [],
+    }
+
+    model = build_state_machine_from_case(case)
+    query = _query_with_fixture_events(case, model, len(event_inputs), event_inputs)
+    formula = compile_bmc_property(
+        build_bmc_core_formula(BmcEngine(model).prepare(query))
+    )
+    result = solve_bmc_property(formula)
+    assert result.status == "sat"
+
+    witness = decode_bmc_witness(formula, result.model)
+    replay = replay_bmc_witness(model, witness)
+
+    assert witness.steps[1].input_event_paths == ("Root.A.Tick", "Root.A.Noise")
+    assert [item.to_canonical() for item in witness.steps[1].input_events] == [
+        {
+            "path": "Root.A.Tick",
+            "reason": "explicit_true_assumption",
+            "model_value": True,
+        },
+        {
+            "path": "Root.A.Noise",
+            "reason": "explicit_true_assumption",
+            "model_value": True,
+        },
+    ]
+    assert witness.steps[1].consumed_events == ("Root.A.Tick",)
+    assert witness.steps[1].unconsumed_events == ("Root.A.Noise",)
+    assert replay.ok is True
+    assert replay.runtime_trace.to_canonical() == expected_trace.to_canonical()

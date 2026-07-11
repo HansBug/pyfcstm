@@ -272,7 +272,12 @@ def test_replay_rejects_tampered_initial_terminated_step_payload() -> None:
     assert replay_bmc_witness(model, trace).ok is True
     bad_step = replace(
         trace.steps[0],
-        input_events=(BmcWitnessEvent("Root.fake", "explicit_true_assumption"),),
+        input_events=(
+            BmcWitnessEvent("Root.fake_consumed", "explicit_true_assumption"),
+            BmcWitnessEvent("Root.fake_unconsumed", "explicit_true_assumption"),
+        ),
+        consumed_events=("Root.fake_consumed",),
+        unconsumed_events=("Root.fake_unconsumed",),
         abstract_calls=(
             BmcWitnessCallRecord(
                 0,
@@ -299,9 +304,23 @@ def test_replay_rejects_tampered_initial_terminated_step_payload() -> None:
     assert [item.to_canonical() for item in replay.mismatches] == [
         {
             "path": "steps[0].input_events",
-            "expected": ["Root.fake"],
+            "expected": ["Root.fake_consumed", "Root.fake_unconsumed"],
             "actual": [],
             "message": "input events mismatch",
+            "tolerance": None,
+        },
+        {
+            "path": "steps[0].consumed_events",
+            "expected": ["Root.fake_consumed"],
+            "actual": [],
+            "message": "consumed events mismatch",
+            "tolerance": None,
+        },
+        {
+            "path": "steps[0].unconsumed_events",
+            "expected": ["Root.fake_unconsumed"],
+            "actual": [],
+            "message": "unconsumed events mismatch",
             "tolerance": None,
         },
         {
@@ -314,7 +333,7 @@ def test_replay_rejects_tampered_initial_terminated_step_payload() -> None:
     ]
     _assert_text_equal(
         """
-        BmcReplayResult[mismatch] mismatches=2
+        BmcReplayResult[mismatch] mismatches=4
 
         BmcRuntimeTrace frames=2 steps=1
 
@@ -323,7 +342,9 @@ def test_replay_rejects_tampered_initial_terminated_step_payload() -> None:
         0        -      terminated  initial       3      -         -        IT
         1        -      terminated  runtime_step  3      -         -        T
 
-        MISMATCH steps[0].input_events: Root.fake != -
+        MISMATCH steps[0].input_events: Root.fake_consumed, Root.fake_unconsumed != -
+        MISMATCH steps[0].consumed_events: Root.fake_consumed != -
+        MISMATCH steps[0].unconsumed_events: Root.fake_unconsumed != -
         MISMATCH steps[0].abstract_calls: 1 != 0
         """,
         replay.to_text(show_legend=False),

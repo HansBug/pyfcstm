@@ -316,7 +316,11 @@ def test_response_trigger_support_does_not_duplicate_explicit_true_inputs() -> N
     result = solve_bmc_property(formula)
     assert result.status == "sat"
 
-    trace = decode_bmc_witness(formula, result.model)
+    trace = decode_bmc_witness(
+        formula,
+        result.model,
+        event_policy=BmcEventDecodePolicy(include_property_support=False),
+    )
     assert [
         (item.path, item.reason, item.model_value)
         for item in trace.steps[0].input_events
@@ -356,8 +360,8 @@ def test_explicit_true_assumptions_preserve_required_case_events() -> None:
     assert replay.runtime_trace.steps[0].unconsumed_events == ("Root.noise",)
 
 
-def test_response_trigger_support_can_be_disabled_by_policy() -> None:
-    """The event policy can suppress property-support replay inputs."""
+def test_response_trigger_support_cannot_be_disabled_when_replay_requires_it() -> None:
+    """The decoder rejects a policy that would erase a response trigger."""
     _, formula = _compile(
         """
         state Root {
@@ -372,12 +376,122 @@ def test_response_trigger_support_can_be_disabled_by_policy() -> None:
         "  -> within 1 terminated();",
     )
     result = solve_bmc_property(formula)
-    trace = decode_bmc_witness(
-        formula,
-        result.model,
-        event_policy=BmcEventDecodePolicy(include_property_support=False),
+    with pytest.raises(BmcBuildError, match="property-support events"):
+        decode_bmc_witness(
+            formula,
+            result.model,
+            event_policy=BmcEventDecodePolicy(include_property_support=False),
+        )
+
+
+def test_response_non_trigger_step_ignores_true_event_without_rejecting_model() -> None:
+    """A true event on a non-trigger step is not mistaken for trigger support."""
+    model, formula = _compile(
+        """
+        state Root {
+            event trigger;
+            event advance;
+            state A;
+            state B;
+            [*] -> A;
+            A -> B : /advance;
+        }
+        """,
+        'init state("Root.A");\n'
+        'assume event("Root.advance", 0) == true;\n'
+        "check response <= 2:\n"
+        '  trigger event("Root.trigger", current) && active("Root.B")\n'
+        "  -> within 1 terminated();",
     )
-    assert trace.steps[0].input_events == ()
+    trigger_0 = formula.core.symbols.event_input(0, "Root.trigger")
+    trigger_1 = formula.core.symbols.event_input(1, "Root.trigger")
+    model_ref = _solve_with_extra(formula, trigger_0, trigger_1)
+
+    trace = decode_bmc_witness(formula, model_ref)
+
+    assert trace.steps[0].input_event_paths == ("Root.advance",)
+    assert trace.steps[1].input_event_paths == ("Root.trigger",)
+    assert trace.steps[1].input_events == (
+        BmcWitnessEvent("Root.trigger", "property_support", True),
+    )
+    assert replay_bmc_witness(model, trace).ok is True
+
+
+def test_duplicate_event_assumptions_decode_to_one_runtime_occurrence() -> None:
+    """Overlapping logical assumptions preserve Boolean event presence semantics."""
+    model, formula = _compile(
+        """
+        state Root {
+            event noise;
+            state A;
+            [*] -> A;
+        }
+        """,
+        'init state("Root.A");\n'
+        'assume event("Root.noise", *) == true;\n'
+        'assume event("Root.noise", 0) == true;\n'
+        'check reach <= 1: active("Root.A");',
+    )
+    result = solve_bmc_property(formula)
+
+    trace = decode_bmc_witness(formula, result.model)
+    replay = replay_bmc_witness(model, trace)
+
+    assert trace.steps[0].input_event_paths == ("Root.noise",)
+    assert trace.steps[0].input_events == (
+        BmcWitnessEvent("Root.noise", "explicit_true_assumption", True),
+    )
+    assert replay.ok is True
+    assert replay.runtime_trace.steps[0].input_events == ("Root.noise",)
+    assert replay.runtime_trace.steps[0].unconsumed_events == ("Root.noise",)
+
+
+def test_event_reason_merge_keeps_one_path_with_strongest_provenance() -> None:
+    """Canonical event merging is order-stable and provenance-aware."""
+    assert witness_module._merge_event_reasons(
+        (
+            BmcWitnessEvent("Root.noise", "model_debug", True),
+            BmcWitnessEvent("Root.keep", "case_positive", True),
+            BmcWitnessEvent("Root.noise", "case_positive", True),
+            BmcWitnessEvent("Root.noise", "explicit_true_assumption", True),
+        )
+    ) == (
+        BmcWitnessEvent("Root.noise", "explicit_true_assumption", True),
+        BmcWitnessEvent("Root.keep", "case_positive", True),
+    )
+
+
+def test_witness_event_accounting_matches_replayed_multi_hop_consumption() -> None:
+    """Witness accounting preserves repeated consumption within one macro step."""
+    model, formula = _compile(
+        """
+        state Root {
+            event go;
+            state Parent {
+                state A;
+                [*] -> A;
+                A -> [*] : /go;
+            }
+            state C;
+            [*] -> Parent;
+            Parent -> C : /go;
+        }
+        """,
+        'init state("Root.Parent.A");\n'
+        'assume event("Root.go", 0) == true;\n'
+        'check reach <= 1: active("Root.C");',
+    )
+    result = solve_bmc_property(formula)
+
+    trace = decode_bmc_witness(formula, result.model)
+    replay = replay_bmc_witness(model, trace)
+
+    assert trace.steps[0].input_event_paths == ("Root.go",)
+    assert trace.steps[0].consumed_events == ("Root.go", "Root.go")
+    assert trace.steps[0].unconsumed_events == ()
+    assert replay.ok is True
+    assert replay.runtime_trace.steps[0].consumed_events == ("Root.go", "Root.go")
+    assert replay.runtime_trace.steps[0].unconsumed_events == ()
 
 
 def test_solve_property_reports_incomplete_response_diagnostics() -> None:
@@ -1249,6 +1363,49 @@ def test_witness_public_dataclasses_reject_invalid_payloads(factory, message) ->
         factory()
 
 
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        (
+            {
+                "input_events": (
+                    BmcWitnessEvent("Root.Go", "case_positive"),
+                    BmcWitnessEvent("Root.Go", "explicit_true_assumption"),
+                )
+            },
+            "at most one event per path",
+        ),
+        (
+            {"consumed_events": ("Root.Go",)},
+            "must reference replay input event paths",
+        ),
+        (
+            {
+                "input_events": (BmcWitnessEvent("Root.Go", "case_positive"),),
+                "unconsumed_events": (),
+            },
+            "must equal input events minus consumed events",
+        ),
+    ],
+)
+def test_witness_step_rejects_inconsistent_event_accounting(kwargs, message) -> None:
+    """Public witness steps enforce canonical event-accounting invariants."""
+    with pytest.raises(BmcBuildError, match=message):
+        BmcWitnessStep(
+            0,
+            0,
+            1,
+            "Root::fallback::Root::0",
+            "fallback",
+            "fallback_gamma",
+            "Root",
+            "Root",
+            False,
+            True,
+            **kwargs,
+        )
+
+
 def test_witness_trace_metadata_accepts_nested_json_payloads() -> None:
     """Public witness metadata preserves deterministic JSON-stable values."""
     trace = BmcWitnessTrace(
@@ -1280,6 +1437,72 @@ def test_witness_trace_metadata_accepts_nested_json_payloads() -> None:
         "status": "unknown",
     }
     assert canonical["initial"] == {"argv": ["--flag", 1], "mode": "cold"}
+
+
+def test_witness_v1_step_schema_includes_complete_event_accounting() -> None:
+    """The first public witness schema pins full cycle event accounting."""
+    trace = BmcWitnessTrace(
+        {"kind": "reach"},
+        {"status": "sat"},
+        {"mode": "hot"},
+        (
+            BmcWitnessFrame(0, 0, "Root.A", None, False, {}),
+            BmcWitnessFrame(1, 1, "Root.B", None, False, {}),
+        ),
+        (
+            BmcWitnessStep(
+                0,
+                0,
+                1,
+                "Root.A::transition::Root.B::0",
+                "transition",
+                "transition",
+                "Root.A",
+                "Root.B",
+                False,
+                False,
+                input_events=(
+                    BmcWitnessEvent("Root.Go", "explicit_true_assumption", True),
+                    BmcWitnessEvent("Root.Noise", "explicit_true_assumption", True),
+                ),
+                consumed_events=("Root.Go", "Root.Go"),
+            ),
+        ),
+    )
+
+    payload = trace.to_canonical()
+
+    assert payload["schema_version"] == "bmc-witness/v1"
+    assert payload["steps"] == [
+        {
+            "index": 0,
+            "source_frame": 0,
+            "target_frame": 1,
+            "case_label": "Root.A::transition::Root.B::0",
+            "case_kind": "transition",
+            "progress": "transition",
+            "source_state": "Root.A",
+            "target_state": "Root.B",
+            "delta": False,
+            "gamma": False,
+            "input_events": [
+                {
+                    "path": "Root.Go",
+                    "reason": "explicit_true_assumption",
+                    "model_value": True,
+                },
+                {
+                    "path": "Root.Noise",
+                    "reason": "explicit_true_assumption",
+                    "model_value": True,
+                },
+            ],
+            "event_reads": [],
+            "abstract_calls": [],
+            "consumed_events": ["Root.Go", "Root.Go"],
+            "unconsumed_events": ["Root.Noise"],
+        }
+    ]
 
 
 def test_witness_trace_metadata_rejects_cycles_and_excessive_depth(monkeypatch) -> None:
@@ -1617,6 +1840,32 @@ def test_internal_event_decode_edge_guards_are_loud() -> None:
         == ()
     )
 
+    _, true_no_event_formula = _compile(
+        """
+        state Root {
+            state A;
+            [*] -> A;
+        }
+        """,
+        'init state("Root.A");\n'
+        "check response <= 1:\n"
+        '  trigger active("Root.A")\n'
+        "  -> within 1 terminated();",
+    )
+    solver = z3.Solver()
+    solver.add(true_no_event_formula.core.core)
+    assert solver.check() == z3.sat
+    assert (
+        witness_module._property_support_events(
+            true_no_event_formula,
+            solver.model(),
+            0,
+            (),
+            BmcEventDecodePolicy(),
+        )
+        == ()
+    )
+
     _, formula = _compile(
         """
         state Root {
@@ -1635,7 +1884,7 @@ def test_internal_event_decode_edge_guards_are_loud() -> None:
     solver = z3.Solver()
     solver.add(formula.core.core, event)
     assert solver.check() == z3.sat
-    with pytest.raises(BmcBuildError, match="Response trigger remained false"):
+    assert (
         witness_module._property_support_events(
             formula,
             solver.model(),
@@ -1643,6 +1892,8 @@ def test_internal_event_decode_edge_guards_are_loud() -> None:
             (),
             BmcEventDecodePolicy(),
         )
+        == ()
+    )
 
 
 def test_replay_result_and_mismatch_canonical_shapes_are_json_stable() -> None:

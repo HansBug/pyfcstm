@@ -148,6 +148,7 @@ class _MacroFrontier:
     case_kind: str
     path_signatures: Tuple[Tuple[Tuple[object, ...], int], ...] = ()
     depth: int = 0
+    consumed_events: Tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -162,6 +163,7 @@ class _MacroOutcome:
     priority_exclusions: Tuple[PriorityExclusion, ...]
     case_kind: str
     failed_conditions: Tuple[BoolTemplate, ...] = ()
+    consumed_events: Tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -576,6 +578,11 @@ class _MacroExpander:
             condition=BoolTemplate.and_(*conditions),
             used_events=used_events,
             guard_requirements=guard_requirements,
+            consumed_events=(
+                frontier.consumed_events + (transition.event.path_name,)
+                if transition.event is not None
+                else frontier.consumed_events
+            ),
         )
 
     def _expand_triggered_transition(
@@ -1005,6 +1012,7 @@ class _MacroExpander:
                 outcome.priority_exclusions,
                 _CASE_KIND_FALLBACK,
                 tuple(failed),
+                outcome.consumed_events,
             )
             for outcome in expansion.outcomes
         )
@@ -1021,6 +1029,7 @@ class _MacroExpander:
             frontier.guard_requirements,
             frontier.priority_exclusions,
             frontier.case_kind,
+            consumed_events=frontier.consumed_events,
         )
 
     def _terminate_outcome(self, frontier: _MacroFrontier) -> _MacroOutcome:
@@ -1034,6 +1043,7 @@ class _MacroExpander:
             frontier.guard_requirements,
             frontier.priority_exclusions,
             frontier.case_kind,
+            consumed_events=frontier.consumed_events,
         )
 
     def _cases_from_outcomes(
@@ -1050,6 +1060,7 @@ class _MacroExpander:
                 outcome.condition,
                 outcome.action_blocks,
                 used_events=outcome.used_events,
+                consumed_events=outcome.consumed_events,
                 guard_requirements=outcome.guard_requirements,
                 priority_exclusions=outcome.priority_exclusions,
                 failed_conditions=outcome.failed_conditions,
@@ -1164,6 +1175,7 @@ class _MacroExpander:
             "case_kind": frontier.case_kind,
             "path_signatures": frontier.path_signatures,
             "depth": frontier.depth,
+            "consumed_events": frontier.consumed_events,
         }
         values.update(updates)
         return _MacroFrontier(**values)

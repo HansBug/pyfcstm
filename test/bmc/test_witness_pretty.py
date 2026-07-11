@@ -135,7 +135,7 @@ def _sample_trace() -> BmcWitnessTrace:
 
 
 def _event_priority_trace() -> BmcWitnessTrace:
-    """Build an event trace with duplicate provenance and debug reads."""
+    """Build a canonical event trace with replay provenance and debug reads."""
     return BmcWitnessTrace(
         {"kind": "reach", "bound": 1},
         {"status": "sat"},
@@ -157,7 +157,6 @@ def _event_priority_trace() -> BmcWitnessTrace:
                 False,
                 True,
                 (
-                    BmcWitnessEvent("Root.dup", "case_positive"),
                     BmcWitnessEvent("Root.dup", "explicit_true_assumption"),
                     BmcWitnessEvent("Root.prop", "property_support"),
                 ),
@@ -262,8 +261,8 @@ def test_witness_trace_expanded_calls_keep_one_calls_column() -> None:
     _assert_text_equal(expected, text)
 
 
-def test_witness_trace_event_modes_and_reason_priority_are_stable() -> None:
-    """Event tags follow replay-input provenance and debug-read rules."""
+def test_witness_trace_event_modes_and_canonical_reasons_are_stable() -> None:
+    """Event tags follow canonical replay provenance and debug-read rules."""
     trace = _event_priority_trace()
     expected_default = """
     BmcWitnessTrace[reach<=1, sat] frames=2 steps=1
@@ -559,20 +558,22 @@ def test_public_non_trace_objects_are_field_value_golden_pinned() -> None:
     """
     expected_step = """
     BmcWitnessStep
-    field           value
-    index           0
-    source_frame    0
-    target_frame    1
-    case_label      case
-    case_kind       fallback
-    progress        fallback_gamma
-    source_state    Root.A
-    target_state    Root.A
-    delta           false
-    gamma           true
-    input_events    -
-    event_reads     -
-    abstract_calls  -
+    field              value
+    index              0
+    source_frame       0
+    target_frame       1
+    case_label         case
+    case_kind          fallback
+    progress           fallback_gamma
+    source_state       Root.A
+    target_state       Root.A
+    delta              false
+    gamma              true
+    input_events       -
+    event_reads        -
+    abstract_calls     -
+    consumed_events    -
+    unconsumed_events  -
     """
     expected_runtime_frame = """
     BmcRuntimeFrame

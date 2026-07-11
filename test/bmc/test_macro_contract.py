@@ -438,6 +438,45 @@ def test_cycle_case_public_validation_rejects_invalid_local_shapes(macro_domain)
             (),
             used_events=(_bad_object(),),
         )
+    with pytest.raises(InvalidBmcEncoding, match="consumed_events"):
+        CycleCase(
+            "transition",
+            source.source_state_id,
+            source.source_state_path,
+            target_id,
+            target_path,
+            label,
+            BoolTemplate.true(),
+            (),
+            consumed_events=(_bad_object(),),
+        )
+    with pytest.raises(InvalidBmcEncoding, match="positive EventUse"):
+        CycleCase(
+            "transition",
+            source.source_state_id,
+            source.source_state_path,
+            target_id,
+            target_path,
+            label,
+            BoolTemplate.true(),
+            (),
+            consumed_events=("Root.Plant.Ping",),
+        )
+    ping = macro_domain.event_by_path("Root.Plant.Ping")
+    with pytest.raises(InvalidBmcEncoding, match="positive EventUse"):
+        CycleCase(
+            "transition",
+            source.source_state_id,
+            source.source_state_path,
+            target_id,
+            target_path,
+            label,
+            BoolTemplate.true(),
+            (),
+            used_events=(EventUse(ping.id, ping.path, "negative", "fallback"),),
+            consumed_events=(ping.path,),
+            domain=macro_domain,
+        )
     with pytest.raises(InvalidBmcEncoding, match="GuardRequirement"):
         CycleCase(
             "transition",

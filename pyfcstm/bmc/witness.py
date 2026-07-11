@@ -6,7 +6,9 @@ macro-step traces, and replays those traces against
 :class:`pyfcstm.simulate.SimulationRuntime` as a runtime-alignment oracle.  The
 trace deliberately stays at the public cycle boundary: frames, sparse replay
 input events, selected BMC case metadata, delta/gamma progress flags, and
-abstract-call snapshots.
+abstract-call snapshots. Each step also records ordered consumed events and
+derived unconsumed inputs so replay checks the complete public cycle event
+accounting contract.
 
 The module contains:
 
@@ -431,6 +433,13 @@ def _merge_event_reasons(
         ):
             by_path[event.path] = event
     return tuple(by_path[path] for path in order)
+
+
+def _unconsumed_event_paths(
+    input_events: Sequence[str], consumed_events: Sequence[str]
+) -> Tuple[str, ...]:
+    consumed = set(consumed_events)
+    return tuple(path for path in input_events if path not in consumed)
 
 
 def _event_display(event: "BmcWitnessEvent", event_reason: str) -> str:
@@ -1722,7 +1731,9 @@ class BmcEventDecodePolicy(_PrettyPrintableMixin):
     :type include_debug_reads: bool, optional
     :param include_property_support: Whether response-trigger support events
         may be added when they are required to replay a response counterexample,
-        defaults to ``True``.
+        defaults to ``True``. If disabled, decoding still succeeds when support
+        is unnecessary, but fails loudly rather than emitting a non-faithful
+        trace when support is required.
     :type include_property_support: bool, optional
     :raises pyfcstm.bmc.errors.BmcBuildError: If a policy flag is malformed.
 
@@ -2013,6 +2024,13 @@ class BmcWitnessStep(_PrettyPrintableMixin):
     :type event_reads: Sequence[BmcWitnessEvent], optional
     :param abstract_calls: Decoded abstract-call records, defaults to ``()``.
     :type abstract_calls: Sequence[BmcWitnessCallRecord], optional
+    :param consumed_events: Event paths consumed by selected evented
+        transitions in micro-step order, defaults to ``()``.
+    :type consumed_events: Sequence[str], optional
+    :param unconsumed_events: Replay input event paths not consumed by the
+        selected macro path. ``None`` derives the value from ``input_events``
+        and ``consumed_events``, defaults to ``None``.
+    :type unconsumed_events: Sequence[str], optional
     :raises pyfcstm.bmc.errors.BmcBuildError: If the step payload is
         malformed.
 
@@ -2036,6 +2054,8 @@ class BmcWitnessStep(_PrettyPrintableMixin):
     input_events: Sequence[BmcWitnessEvent] = ()
     event_reads: Sequence[BmcWitnessEvent] = ()
     abstract_calls: Sequence[BmcWitnessCallRecord] = ()
+    consumed_events: Sequence[str] = ()
+    unconsumed_events: Optional[Sequence[str]] = None
 
     def __post_init__(self) -> None:
         for field_name in ("index", "source_frame", "target_frame"):
@@ -2086,6 +2106,12 @@ class BmcWitnessStep(_PrettyPrintableMixin):
                 raise BmcBuildError(
                     "event_reads must contain only debug event reasons."
                 )
+        for field_name in ("input_events", "event_reads"):
+            paths = [event.path for event in getattr(self, field_name)]
+            if len(paths) != len(set(paths)):
+                raise BmcBuildError(
+                    "%s must contain at most one event per path." % field_name
+                )
         object.__setattr__(
             self,
             "abstract_calls",
@@ -2096,6 +2122,36 @@ class BmcWitnessStep(_PrettyPrintableMixin):
                 "BmcWitnessCallRecord objects",
             ),
         )
+        object.__setattr__(
+            self,
+            "consumed_events",
+            _coerce_public_sequence(
+                "consumed_events", self.consumed_events, str, "strings"
+            ),
+        )
+        input_paths = self.input_event_paths
+        if any(path not in set(input_paths) for path in self.consumed_events):
+            raise BmcBuildError(
+                "consumed_events must reference replay input event paths."
+            )
+        expected_unconsumed = _unconsumed_event_paths(input_paths, self.consumed_events)
+        if self.unconsumed_events is None:
+            object.__setattr__(self, "unconsumed_events", expected_unconsumed)
+        else:
+            object.__setattr__(
+                self,
+                "unconsumed_events",
+                _coerce_public_sequence(
+                    "unconsumed_events",
+                    self.unconsumed_events,
+                    str,
+                    "strings",
+                ),
+            )
+        if tuple(self.unconsumed_events) != expected_unconsumed:
+            raise BmcBuildError(
+                "unconsumed_events must equal input events minus consumed events."
+            )
 
     @property
     def input_event_paths(self) -> Tuple[str, ...]:
@@ -2138,6 +2194,8 @@ class BmcWitnessStep(_PrettyPrintableMixin):
             "input_events": [item.to_canonical() for item in self.input_events],
             "event_reads": [item.to_canonical() for item in self.event_reads],
             "abstract_calls": [item.to_canonical() for item in self.abstract_calls],
+            "consumed_events": list(self.consumed_events),
+            "unconsumed_events": list(self.unconsumed_events),
         }
 
 
@@ -2148,7 +2206,9 @@ class BmcWitnessTrace(_PrettyPrintableMixin):
     The metadata dictionaries are public JSON-stable payloads.  They may
     contain strings, booleans, ``None``, finite numeric values, nested mappings,
     and lists, but not arbitrary Python objects or non-finite floating-point
-    values.
+    values. The ``bmc-witness/v1`` step schema includes canonical replay input
+    events, ordered consumed event paths, and presence-derived unconsumed event
+    paths.
 
     :param property: Property metadata.
     :type property: Mapping[str, object]
@@ -3111,11 +3171,25 @@ def _property_support_events(
     existing_paths: Iterable[str],
     event_policy: BmcEventDecodePolicy,
 ) -> Tuple[BmcWitnessEvent, ...]:
-    if formula.kind != "response" or not event_policy.include_property_support:
+    if formula.kind != "response":
+        return ()
+    model_true_paths = tuple(
+        path
+        for path in _response_trigger_event_paths(formula)
+        if _event_model_value(formula, model, step_index, path)
+    )
+    if not _response_trigger_is_true_under_events(
+        formula, model, step_index, model_true_paths
+    ):
         return ()
     existing = set(existing_paths)
     if _response_trigger_is_true_under_events(formula, model, step_index, existing):
         return ()
+    if not event_policy.include_property_support:
+        raise BmcBuildError(
+            "Response witness replay requires property-support events at step %d, "
+            "but include_property_support is false." % step_index
+        )
     event_order = {
         entry.path: index
         for index, entry in enumerate(formula.core.context.domain.events)
@@ -3136,12 +3210,10 @@ def _property_support_events(
         support.append(BmcWitnessEvent(path, "property_support", True))
         if _response_trigger_is_true_under_events(formula, model, step_index, selected):
             return tuple(support)
-    if candidates:
-        raise _internal_error(
-            "Response trigger remained false after adding all true support events "
-            "at step %d." % step_index
-        )
-    return ()
+    raise _internal_error(  # pragma: no cover - guarded by the full-model precheck.
+        "Response trigger remained false after adding all true support events "
+        "at step %d." % step_index
+    )
 
 
 def _event_inputs_for_step(
@@ -3150,24 +3222,23 @@ def _event_inputs_for_step(
     relation: BmcCaseRelation,
     event_policy: BmcEventDecodePolicy,
 ) -> Tuple[Tuple[BmcWitnessEvent, ...], Tuple[BmcWitnessEvent, ...]]:
-    case_events = list(_case_positive_events(formula, model, relation))
+    case_events = _case_positive_events(formula, model, relation)
     assumption_events, assumption_reads = _explicit_assumption_events(
         formula, model, relation.step_index
     )
-    inputs_list = list(assumption_events) if assumption_events else list(case_events)
-    seen_paths = {item.path for item in inputs_list}
-    for item in case_events:
-        if item.path not in seen_paths:
-            inputs_list.append(item)
-            seen_paths.add(item.path)
-    for item in _property_support_events(
-        formula, model, relation.step_index, seen_paths, event_policy
-    ):
-        inputs_list.append(item)
-        seen_paths.add(item.path)
-    inputs = tuple(inputs_list)
+    replay_inputs = _merge_event_reasons(assumption_events + case_events)
+    support_events = _property_support_events(
+        formula,
+        model,
+        relation.step_index,
+        (item.path for item in replay_inputs),
+        event_policy,
+    )
+    inputs = _merge_event_reasons(replay_inputs + support_events)
     if event_policy.include_debug_reads:
-        reads = tuple(_debug_event_reads(formula, model, relation) + assumption_reads)
+        reads = _merge_event_reasons(
+            _debug_event_reads(formula, model, relation) + assumption_reads
+        )
     else:
         reads = ()
     return inputs, reads
@@ -3229,6 +3300,10 @@ def _decode_step(
     input_events, event_reads = _event_inputs_for_step(
         formula, model, relation, event_policy
     )
+    consumed_events = tuple(relation.case.consumed_events)
+    unconsumed_events = _unconsumed_event_paths(
+        tuple(item.path for item in input_events), consumed_events
+    )
     source = frames[step_index]
     target = frames[step_index + 1]
     return BmcWitnessStep(
@@ -3245,6 +3320,8 @@ def _decode_step(
         input_events=input_events,
         event_reads=event_reads,
         abstract_calls=_decode_calls(formula, model, relation),
+        consumed_events=consumed_events,
+        unconsumed_events=unconsumed_events,
     )
 
 
@@ -3569,6 +3646,24 @@ def _compare_step(
                 tuple(witness.input_event_paths),
                 tuple(runtime.input_events),
                 "input events mismatch",
+            )
+        )
+    if tuple(witness.consumed_events) != tuple(runtime.consumed_events):
+        mismatches.append(
+            BmcReplayMismatch(
+                "steps[%d].consumed_events" % witness.index,
+                tuple(witness.consumed_events),
+                tuple(runtime.consumed_events),
+                "consumed events mismatch",
+            )
+        )
+    if tuple(witness.unconsumed_events) != tuple(runtime.unconsumed_events):
+        mismatches.append(
+            BmcReplayMismatch(
+                "steps[%d].unconsumed_events" % witness.index,
+                tuple(witness.unconsumed_events),
+                tuple(runtime.unconsumed_events),
+                "unconsumed events mismatch",
             )
         )
     _compare_calls(

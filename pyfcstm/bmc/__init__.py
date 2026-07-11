@@ -90,8 +90,8 @@ Public module structure:
        :class:`ActionBlock`, :class:`CycleCase`,
        :class:`MacroStepFormal`, :class:`PartitionCheckResult`
      - Freeze case labels, control-path conditions, anchored guards,
-       runtime action blocks, source-local buckets, and build-time partition
-       summaries.
+       runtime action blocks, ordered event consumption, source-local buckets,
+       and build-time partition summaries.
    * - Macro-step case helpers
      - :func:`case_path_condition`, :func:`terminated_absorb_case`,
        :func:`build_fallback_case`, :func:`build_semantic_delta_case`,
@@ -123,8 +123,8 @@ Public module structure:
        :class:`BmcWitnessFrame`, :class:`BmcWitnessStep`,
        :class:`BmcWitnessEvent`, :class:`BmcWitnessCallRecord`,
        :func:`solve_bmc_property`, :func:`decode_bmc_witness`
-     - Solve compiled property formulas and decode SAT models into
-       JSON-stable macro-step witness traces.
+     - Solve compiled property formulas and decode SAT models into JSON-stable
+       macro-step witness traces with complete cycle event accounting.
    * - BMC witness replay
      - :class:`BmcReplayResult`, :class:`BmcReplayMismatch`,
        :func:`replay_bmc_witness`

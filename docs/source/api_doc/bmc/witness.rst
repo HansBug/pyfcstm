@@ -22,84 +22,84 @@ BmcSolveResult
 -----------------------------------------------------
 
 .. autoclass:: BmcSolveResult
-    :members: __post_init__,kind,polarity,incomplete,witness_found,counterexample_found,property_satisfied,outcome,to_canonical,formula,status,model,reason,elapsed_ms,timeout_ms,incomplete_status,incomplete_model,incomplete_reason,diagnostics
+    :members: __post_init__,kind,polarity,incomplete,witness_found,counterexample_found,property_satisfied,outcome,to_canonical,pretty_print,to_text,__str__,formula,status,model,reason,elapsed_ms,timeout_ms,incomplete_status,incomplete_model,incomplete_reason,diagnostics
 
 
 BmcEventDecodePolicy
 -----------------------------------------------------
 
 .. autoclass:: BmcEventDecodePolicy
-    :members: __post_init__,to_canonical,include_debug_reads,include_property_support
+    :members: __post_init__,to_canonical,pretty_print,to_text,__str__,include_debug_reads,include_property_support
 
 
 BmcWitnessEvent
 -----------------------------------------------------
 
 .. autoclass:: BmcWitnessEvent
-    :members: __post_init__,to_canonical,path,reason,model_value
+    :members: __post_init__,to_canonical,pretty_print,to_text,__str__,path,reason,model_value
 
 
 BmcWitnessCallRecord
 -----------------------------------------------------
 
 .. autoclass:: BmcWitnessCallRecord
-    :members: __post_init__,to_canonical,ordinal,action_name,stage,role,state,active_leaf,named_ref,snapshot
+    :members: __post_init__,to_canonical,pretty_print,to_text,__str__,ordinal,action_name,stage,role,state,active_leaf,named_ref,snapshot
 
 
 BmcWitnessFrame
 -----------------------------------------------------
 
 .. autoclass:: BmcWitnessFrame
-    :members: __post_init__,to_canonical,index,state_id,state,sentinel,terminated,vars
+    :members: __post_init__,to_canonical,pretty_print,to_text,__str__,index,state_id,state,sentinel,terminated,vars
 
 
 BmcWitnessStep
 -----------------------------------------------------
 
 .. autoclass:: BmcWitnessStep
-    :members: __post_init__,input_event_paths,to_canonical,index,source_frame,target_frame,case_label,case_kind,progress,source_state,target_state,delta,gamma,input_events,event_reads,abstract_calls
+    :members: __post_init__,input_event_paths,to_canonical,pretty_print,to_text,__str__,index,source_frame,target_frame,case_label,case_kind,progress,source_state,target_state,delta,gamma,input_events,event_reads,abstract_calls,consumed_events,unconsumed_events
 
 
 BmcWitnessTrace
 -----------------------------------------------------
 
 .. autoclass:: BmcWitnessTrace
-    :members: __post_init__,to_canonical,property,solver,initial,frames,steps,diagnostics,schema_version
+    :members: __post_init__,to_canonical,pretty_print,to_text,__str__,property,solver,initial,frames,steps,diagnostics,schema_version
 
 
 BmcRuntimeFrame
 -----------------------------------------------------
 
 .. autoclass:: BmcRuntimeFrame
-    :members: __post_init__,to_canonical,index,state,terminated,vars
+    :members: __post_init__,to_canonical,pretty_print,to_text,__str__,index,state,terminated,vars
 
 
 BmcRuntimeStep
 -----------------------------------------------------
 
 .. autoclass:: BmcRuntimeStep
-    :members: __post_init__,to_canonical,index,input_events,consumed_events,unconsumed_events,abstract_calls
+    :members: __post_init__,to_canonical,pretty_print,to_text,__str__,index,input_events,consumed_events,unconsumed_events,abstract_calls
 
 
 BmcRuntimeTrace
 -----------------------------------------------------
 
 .. autoclass:: BmcRuntimeTrace
-    :members: __post_init__,to_canonical,frames,steps
+    :members: __post_init__,to_canonical,pretty_print,to_text,__str__,frames,steps
 
 
 BmcReplayMismatch
 -----------------------------------------------------
 
 .. autoclass:: BmcReplayMismatch
-    :members: __post_init__,to_canonical,path,expected,actual,message,tolerance
+    :members: __post_init__,to_canonical,pretty_print,to_text,__str__,path,expected,actual,message,tolerance
 
 
 BmcReplayResult
 -----------------------------------------------------
 
 .. autoclass:: BmcReplayResult
-    :members: __post_init__,ok,to_canonical,witness,runtime_trace,mismatches
+    :members: __post_init__,ok,to_canonical,pretty_print,to_text,__str__,witness,runtime_trace,mismatches
 
 
 solve\_bmc\_property

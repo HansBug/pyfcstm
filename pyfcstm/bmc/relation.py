@@ -823,6 +823,7 @@ class BmcCaseRelation:
             "case_kind": self.case.kind,
             "source_state_id": self.case.source_state_id,
             "target_state_id": self.case.target_state_id,
+            "consumed_events": list(self.case.consumed_events),
             "selector": _z3_text(self.selector),
             "antecedent": _z3_text(self.antecedent),
             "consequent": _z3_text(self.consequent),

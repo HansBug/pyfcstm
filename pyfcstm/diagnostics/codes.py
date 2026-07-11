@@ -775,7 +775,12 @@ def _resolve_codes_yaml_path() -> str:
 
 _CODES_YAML_PATH = _resolve_codes_yaml_path()
 
-#: Mapping ``code -> CodeSpec`` loaded from ``codes.yaml`` at import time.
-#: Wrapped in :class:`types.MappingProxyType` so downstream callers cannot
-#: mutate the registry by accident.
 CODE_REGISTRY: Mapping[str, CodeSpec] = MappingProxyType(load_codes(_CODES_YAML_PATH))
+"""
+Mapping ``code -> CodeSpec`` loaded from ``codes.yaml`` at import time.
+
+The mapping is wrapped in :class:`types.MappingProxyType` so downstream
+callers cannot mutate the registry by accident.
+
+:meta hide-value:
+"""

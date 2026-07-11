@@ -12,7 +12,14 @@ build:
   apt_packages:
     - graphviz
     - pandoc
+    - fonts-freefont-otf
     - texlive-latex-base
+    - texlive-xetex
+    - texlive-latex-recommended
+    - texlive-latex-extra
+    - texlive-fonts-recommended
+    - texlive-lang-chinese
+    - latexmk
     - make
     - wget
     - curl

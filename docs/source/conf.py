@@ -270,6 +270,30 @@ else:
 epub_title = project
 epub_exclude_files = ['search.html']
 
+# -- Options for LaTeX/PDF output --------------------------------------------
+
+# Keep one semantic document tree for HTML and PDF. These settings only adapt
+# the title page, Unicode fonts, index tool, and global contents heading to the
+# LaTeX medium.
+latex_engine = 'xelatex'
+latex_use_xindy = False
+latex_logo = '_static/logos/logo_banner.png'
+
+_latex_contents_title = '目录' if language == 'zh' else 'Contents'
+_latex_preamble_parts = [] if language == 'zh' else [r'\usepackage{xeCJK}']
+_latex_preamble_parts.append(
+    r'\DeclareRobustCommand{\pyfcstmcontentsname}{%s}' % _latex_contents_title
+)
+latex_elements = {
+    'preamble': '\n'.join(_latex_preamble_parts),
+    # Keep Sphinx's public macro so page-number switching and ToC hooks remain.
+    'tableofcontents': (
+        r'\renewcommand{\contentsname}{\pyfcstmcontentsname}'
+        + '\n'
+        + r'\sphinxtableofcontents'
+    ),
+}
+
 # Whitelist pattern for tags (set to None to ignore all tags)
 smv_tag_whitelist = r'^v.*$'  # Include all tags start with 'v'
 smv_branch_whitelist = r'^.*$'  # Include all branches

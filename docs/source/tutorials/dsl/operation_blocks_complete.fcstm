@@ -1,0 +1,57 @@
+def int sensor = 0;
+def int target = 10;
+def int mode = 0;
+def int alarm_count = 0;
+def int led = 0;
+
+state OperationBlocksComplete {
+    [*] -> Sampling;
+
+    state Sampling {
+        enter {
+            target = target + 0;
+            delta = abs(target - sensor);
+            if [delta > 5] {
+                mode = 2;
+            } else if [delta > 2] {
+                mode = 1;
+            } else {
+                mode = 0;
+            }
+            ;
+        }
+        during {
+            sensor = sensor + 1;
+        }
+    }
+
+    state Done {
+        enter {
+            led = (alarm_count > 0) ? 1 : 0;
+        }
+    }
+
+    state Cooling {
+        during {
+            sensor = sensor - 1;
+        }
+    }
+
+    state Resetting {
+        enter {
+            alarm_count = 0;
+        }
+    }
+
+    Sampling -> Done : if [sensor >= target] effect {
+        next_sample = sensor + 1;
+        alarm_count = (next_sample > target) ? alarm_count + 1 : alarm_count;
+        led = (mode > 0) ? 1 : 0;
+    };
+
+    Done -> Cooling : if [led >= 0];
+    Cooling -> Resetting : if [sensor <= target];
+    Resetting -> Sampling : if [alarm_count == 0] effect {
+        sensor = 0;
+    };
+}

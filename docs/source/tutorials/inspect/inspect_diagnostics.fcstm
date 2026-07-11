@@ -1,0 +1,23 @@
+def int counter = 0;
+def int ready = 1;
+def int unused_flag = 0;
+def int too_large = 9223372036854775808;
+def float ratio = 1.5;
+
+state InspectDemo {
+    >> during before abstract ReadExternalInputs;
+
+    state Active {
+        during {
+            counter = 1;
+        }
+    }
+    state Done;
+    state ComboDone;
+
+    [*] -> Active;
+    Active -> ComboDone :: Confirm + Confirm;
+    Active -> Done : [ready > 0] + [ready > -1] effect {
+        ratio = ratio + 1.0;
+    };
+}

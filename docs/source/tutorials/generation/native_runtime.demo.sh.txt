@@ -1,0 +1,49 @@
+=== Toolchain snapshot ===
+os: Linux 6.17.0-23-generic x86_64
+cc: cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+c++: c++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+cmake: cmake version 3.31.10
+
+=== c ===
+file: README.md
+file: README_zh.md
+file: machine.c
+file: machine.h
+c initial: SimpleMachine.Idle counter=0
+c after Start: SimpleMachine.Running counter=0
+c after Stop: SimpleMachine.Stopped counter=1
+c after Reset: SimpleMachine.Idle counter=1
+
+=== c_poll ===
+file: README.md
+file: README_zh.md
+file: machine.c
+file: machine.h
+c_poll initial: SimpleMachine.Idle counter=0
+c_poll after Start: SimpleMachine.Running counter=0
+c_poll after Stop: SimpleMachine.Stopped counter=1
+c_poll after Reset: SimpleMachine.Idle counter=1
+
+=== cpp ===
+file: README.md
+file: README_zh.md
+file: machine.c
+file: machine.cpp
+file: machine.h
+file: machine.hpp
+cpp initial: SimpleMachine.Idle counter=0
+cpp after Start: SimpleMachine.Running counter=0
+cpp after Stop: SimpleMachine.Stopped counter=1
+cpp after Reset: SimpleMachine.Idle counter=1
+
+=== cpp_poll ===
+file: README.md
+file: README_zh.md
+file: machine.c
+file: machine.cpp
+file: machine.h
+file: machine.hpp
+cpp_poll initial: SimpleMachine.Idle counter=0
+cpp_poll after Start: SimpleMachine.Running counter=0
+cpp_poll after Stop: SimpleMachine.Stopped counter=1
+cpp_poll after Reset: SimpleMachine.Idle counter=1

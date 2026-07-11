@@ -511,6 +511,12 @@ def convert_code_to_rst(code_file: str, rst_file: str, lib_dir: str = "."):
         if module_name.split(".")[-1] == "__init__":
             module_name = ".".join(module_name.split(".")[:-1])
 
+        normalized_rel_file = rel_file.replace("\\", "/")
+        is_root_package_index = (
+            normalized_rel_file.endswith("/__init__.py")
+            and normalized_rel_file.count("/") == 1
+        )
+
         print(f"{rst_to_text(module_name)}", file=buffer)
         print("========================================================", file=buffer)
         print("", file=buffer)
@@ -521,7 +527,7 @@ def convert_code_to_rst(code_file: str, rst_file: str, lib_dir: str = "."):
         print("", file=buffer)
         print("", file=buffer)
 
-        if os.path.basename(code_file) == "__init__.py":
+        if os.path.basename(code_file) == "__init__.py" and not is_root_package_index:
             print_package_toctree(buffer, code_file)
 
         print_extracted_members(buffer, members)

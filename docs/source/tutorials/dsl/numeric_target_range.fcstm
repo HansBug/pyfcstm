@@ -1,0 +1,11 @@
+def int too_big = 9223372036854775808;
+
+state NumericTargetRange {
+    state Idle {
+        enter {
+            too_big = too_big + 0;
+        }
+    }
+    [*] -> Idle;
+    Idle -> [*] : if [too_big > 0];
+}

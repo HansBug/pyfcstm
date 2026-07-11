@@ -1,0 +1,44 @@
+def int ready = 1;
+def int accepted = 0;
+def int retries = 0;
+def int boot_seen = 0;
+
+state ComboTransitions {
+    event Abort;
+
+    state Session {
+        enter {
+            ready = ready + 0;
+        }
+
+        [*] -> Waiting;
+        [*] -> Booted :: Start + [ready > 0] effect {
+            boot_seen = 1;
+        }
+
+        state Waiting;
+        state Booted;
+        state Accepted {
+            enter {
+                accepted = accepted + 1;
+            }
+        }
+        state Retrying {
+            enter {
+                retries = retries + 1;
+            }
+        }
+
+        Waiting -> Accepted :: Request + [ready > 0] + Confirm effect {
+            accepted = accepted + 1;
+        }
+        Waiting -> Retrying : [ready == 0] + /Abort effect {
+            retries = retries + 1;
+        }
+        Retrying -> Waiting : if [ready > 0 || retries > 0];
+        Accepted -> Waiting : if [accepted > 0];
+        Booted -> Waiting : if [boot_seen > 0];
+    }
+
+    [*] -> Session;
+}

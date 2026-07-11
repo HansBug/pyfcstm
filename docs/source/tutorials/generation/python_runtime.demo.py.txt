@@ -1,0 +1,5 @@
+generated files: README.md, README_zh.md, machine.py
+initial: SimpleMachine.Idle counter=0
+after Start: SimpleMachine.Running counter=0
+after Stop: SimpleMachine.Stopped counter=1
+after Reset: SimpleMachine.Idle counter=1

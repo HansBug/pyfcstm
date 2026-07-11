@@ -44,51 +44,23 @@ Installation
 
    pip install pyfcstm
 
-Basic Usage
-~~~~~~~~~~~~~
+The full installation checklist is in :doc:`how_to/installation/index`.
 
-**1. Define a State Machine in DSL**
+Fast Path
+~~~~~~~~~
 
-Create a file ``traffic_light.fcstm``:
-
-.. code-block:: fcstm
-
-   def int timer = 0;
-
-   state TrafficLight {
-       [*] -> Red;
-
-       state Red {
-           enter { timer = 0; }
-           during { timer = timer + 1; }
-       }
-
-       state Yellow {
-           enter { timer = 0; }
-           during { timer = timer + 1; }
-       }
-
-       state Green {
-           enter { timer = 0; }
-           during { timer = timer + 1; }
-       }
-
-       Red -> Green : if [timer >= 30];
-       Green -> Yellow : if [timer >= 25];
-       Yellow -> Red : if [timer >= 5];
-   }
-
-**2. Generate Code**
+Create ``traffic_light.fcstm`` and follow the complete walkthrough in
+:doc:`tutorials/quick_start/index`. The shortest command sequence is:
 
 .. code-block:: bash
 
-   pyfcstm generate -i traffic_light.fcstm -t templates/c/ -o output/
-
-**3. Visualize with PlantUML**
-
-.. code-block:: bash
-
+   pyfcstm simulate -i traffic_light.fcstm -e "cycle; cycle; current"
+   pyfcstm inspect -i traffic_light.fcstm --format json -o traffic_light.inspect.json
+   pyfcstm generate -i traffic_light.fcstm --template python -o generated --clear
    pyfcstm plantuml -i traffic_light.fcstm -o traffic_light.puml
+
+Use ``--template`` for packaged built-in templates. Use ``-t/--template-dir``
+only when rendering with a custom template directory.
 
 Architecture
 -------------
@@ -109,28 +81,127 @@ The framework provides:
 Tutorials
 -------------------------
 
+Tutorials provide learning paths and first-success walkthroughs. The roadmap is
+listed first, followed by the concrete tutorial pages so the left navigation can
+show the whole learning path directly from this home page.
+
 .. toctree::
     :maxdepth: 2
     :caption: Tutorials
     :hidden:
 
-    tutorials/installation/index
-    tutorials/structure/index
+    Tutorial roadmap <tutorials/index>
+    tutorials/quick_start/index
     tutorials/dsl/index
-    tutorials/render/index
     tutorials/simulation/index
+    tutorials/inspect/index
+    tutorials/generation/index
     tutorials/visualization/index
-    tutorials/cli/index
-    tutorials/grammar/index
 
-* :doc:`tutorials/installation/index`
-* :doc:`tutorials/structure/index`
+* :doc:`Tutorial roadmap <tutorials/index>`
+* :doc:`tutorials/quick_start/index`
 * :doc:`tutorials/dsl/index`
-* :doc:`tutorials/render/index`
 * :doc:`tutorials/simulation/index`
+* :doc:`tutorials/inspect/index`
+* :doc:`tutorials/generation/index`
 * :doc:`tutorials/visualization/index`
-* :doc:`tutorials/cli/index`
-* :doc:`tutorials/grammar/index`
+
+How-to Guides
+-------------
+
+How-to guides are task-oriented pages. The roadmap is listed first, followed by
+concrete tasks so the left navigation exposes the available workflows without an
+extra click through a category page.
+
+.. toctree::
+    :maxdepth: 2
+    :caption: How-to Guides
+    :hidden:
+
+    How-to roadmap <how_to/index>
+    how_to/installation/index
+    how_to/cli_workflows/index
+    how_to/dsl/index
+    how_to/simulation/index
+    how_to/inspect/index
+    how_to/generation/index
+    how_to/visualization/index
+    how_to/templates/index
+    how_to/grammar_editor/index
+
+* :doc:`How-to roadmap <how_to/index>`
+* :doc:`how_to/installation/index`
+* :doc:`how_to/cli_workflows/index`
+* :doc:`how_to/dsl/index`
+* :doc:`how_to/simulation/index`
+* :doc:`how_to/inspect/index`
+* :doc:`how_to/generation/index`
+* :doc:`how_to/visualization/index`
+* :doc:`how_to/templates/index`
+* :doc:`how_to/grammar_editor/index`
+
+Explanations
+------------
+
+Explanations describe semantics, architecture, boundaries, and trade-offs. The
+map page comes first, then the individual explanation topics are listed directly
+in the global navigation.
+
+.. toctree::
+    :maxdepth: 2
+    :caption: Explanations
+    :hidden:
+
+    Explanation map <explanations/index>
+    explanations/architecture/index
+    explanations/dsl_semantics/index
+    explanations/execution_semantics/index
+    explanations/diagnostics/index
+    explanations/template_rendering/index
+    explanations/grammar_tooling/index
+
+* :doc:`Explanation map <explanations/index>`
+* :doc:`explanations/architecture/index`
+* :doc:`explanations/dsl_semantics/index`
+* :doc:`explanations/execution_semantics/index`
+* :doc:`explanations/diagnostics/index`
+* :doc:`explanations/template_rendering/index`
+* :doc:`explanations/grammar_tooling/index`
+
+Reference
+---------
+
+Reference pages are for exact facts. The map page is listed first and the
+generated API documentation remains the last item in this reference area.
+
+.. toctree::
+    :maxdepth: 2
+    :caption: Reference
+    :hidden:
+
+    Reference map <reference/index>
+    reference/cli/index
+    reference/dsl/index
+    reference/inspect_report/index
+    reference/diagnostics_codes/index
+    reference/simulation/index
+    reference/visualization_options/index
+    reference/template_config/index
+    reference/grammar_tooling/index
+    reference/builtin_templates/index
+    API Documentation <api_doc_en>
+
+* :doc:`Reference map <reference/index>`
+* :doc:`reference/cli/index`
+* :doc:`reference/dsl/index`
+* :doc:`reference/inspect_report/index`
+* :doc:`reference/diagnostics_codes/index`
+* :doc:`reference/simulation/index`
+* :doc:`reference/visualization_options/index`
+* :doc:`reference/template_config/index`
+* :doc:`reference/grammar_tooling/index`
+* :doc:`reference/builtin_templates/index`
+* :doc:`API Documentation <api_doc_en>`
 
 Release Notes
 -------------------------
@@ -143,15 +214,6 @@ Release Notes
     release_notes
 
 * :doc:`release_notes`
-
-Best Practice
--------------------------
-
-.. toctree::
-    :maxdepth: 2
-    :caption: Best Practice
-
-.. include:: api_doc_en.rst
 
 Community and Support
 -----------------------

@@ -1,0 +1,36 @@
+def int x = 1;
+def int y = 2;
+def int flag = 0;
+def int score = 0;
+def float wave = 0.0;
+
+state ExpressionConditionTernary {
+    [*] -> Checking;
+
+    state Checking {
+        enter {
+            x = x + 0;
+            y = y + 0;
+            wave = sin(pi / 2.0) + log2(8.0);
+            score = (x < y) ? 10 : 20;
+            flag = ((x < y) && !(flag > 0)) ? 1 : 0;
+        }
+    }
+
+    state Matched {
+        during {
+            score = score + 1;
+        }
+    }
+
+    state Blocked {
+        during {
+            score = score - 1;
+        }
+    }
+
+    Checking -> Matched : if [((x < y && flag == 1) || (x == y)) && ((x > 0 => y > 0) && ((x < y) xor (flag == 0)))];
+    Checking -> Blocked : if [(x > y) iff false];
+    Matched -> [*] : if [score >= 0 && ((x < y) ? true : false)];
+    Blocked -> [*] : if [not (x < y) || wave >= 0.0];
+}

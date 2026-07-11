@@ -1,0 +1,7 @@
+state ComboDuplicateEvent {
+    state A;
+    state B;
+    [*] -> A;
+    A -> B :: Go + Go;
+    B -> [*];
+}

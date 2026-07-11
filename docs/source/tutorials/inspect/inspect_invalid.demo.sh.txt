@@ -1,0 +1,5 @@
+exit_code: 1
+stdout_bytes: 0
+stderr_excerpt:
+Failed to parse input DSL file .inspect_invalid.tmp/bad.fcstm: Found 1 errors during parsing:
+Error 1: Syntax error at line 4, column 0, near '<EOF>': Unexpected end of file - missing closing brace

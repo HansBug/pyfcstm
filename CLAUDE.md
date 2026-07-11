@@ -1193,6 +1193,38 @@ Core ([requirements.txt](requirements.txt)): `antlr4-python3-runtime==4.9.3`, `j
 
 **CRITICAL RULE**: Always edit source files only. Never edit generated files directly—they will be overwritten.
 
+#### Documentation Authoring Discipline
+
+Before adding, restructuring, or substantially expanding user-facing documentation, read
+[docs/documentation_authoring.md](docs/documentation_authoring.md). That file is repository-maintainer guidance, not a
+Sphinx toctree page; it is intentionally made discoverable through this `CLAUDE.md` entry.
+
+Documentation changes must start from a concrete coverage inventory and must preserve the separation between Tutorials,
+How-to Guides, Explanations, and Reference material. Use real commands, real outputs, explicit failure boundaries,
+traceable generated resources, synchronized language variants where applicable, and the Chinese terminology discipline
+below. Review documentation PRs with the C/I/M criteria in that guide, in addition to the reST, generated-file, and
+multilingual rules in this section.
+
+The depth gate in [docs/documentation_authoring.md](docs/documentation_authoring.md) is a merge-blocking rule, not a
+suggestion. For substantial documentation PRs, especially PRs created to repair thin docs, reviewers must verify every
+required inventory field, every role-specific depth requirement, every runnable example/output requirement, every
+reference row/counterexample requirement, every diagram/visual-evidence requirement, bilingual parity, migration records,
+and verification evidence. If any required item is missing and not explicitly removed from scope with ownership assigned
+to another page, reject ready-to-merge status until it is fixed. A green Sphinx build, drift checker, or CI run does not
+override this authoring gate.
+
+Treat this as a hard stop during implementation and review: do not mark a substantial documentation PR ready, do not
+write a ready-to-merge summary, and do not merge on the user's behalf when any applicable item in
+[docs/documentation_authoring.md](docs/documentation_authoring.md) is unsatisfied. The PR body or a linked PR comment
+must record the human depth review, including page-role ownership, runnable examples or explicit schematic boundaries,
+generated-resource and visual evidence, bilingual parity, and verification commands. Missing even one required item is a
+blocking defect, regardless of passing CI.
+
+Apply the whole guide as written, including newly added module-specific or language-specific rules. Do not cherry-pick
+only the convenient parts of [docs/documentation_authoring.md](docs/documentation_authoring.md): if a changed Chinese page,
+reference table, how-to task, explanation trace, generated resource, migration note, or verification record falls under a
+documented requirement, that requirement must be checked and satisfied before ready/merge.
+
 #### Documentation Structure
 
 Files in [docs/source/](docs/source/):
@@ -1295,7 +1327,9 @@ make doc_clean  # Clean Sphinx build output only
 - `*.ipynb` for notebooks (with outputs cleared)
 - `*.rst`, `*.md` for documentation text
 
-Run `make contents` before committing documentation changes.
+Run `make contents` before committing Sphinx source or documentation resource changes that may refresh generated
+outputs. For policy-only files outside the Sphinx tree, or prose-only changes that do not affect generated resources,
+record why `make contents` is not applicable; otherwise run it and commit any intentional generated updates.
 
 #### Example Workflow
 
@@ -1324,6 +1358,35 @@ Requires: `sphinx`, `sphinx-multiversion`, `plantumlcli`, `graphviz` (`dot`), `j
 
 Language selection via `READTHEDOCS_LANGUAGE` env var (default `en`). [docs/source/conf.py](docs/source/conf.py) copies
 `index_<lang>.rst` → `index.rst` at build time. Language codes normalized (`zh-CN`, `zh_CN` → `zh`).
+
+#### Chinese Technical Terminology Discipline
+
+Chinese documentation should read as Chinese prose, not as English prose with Chinese glue words. In ordinary Chinese
+sentences, prefer Chinese technical terms. When an English term is genuinely needed for precision, write it only at the
+first occurrence on the same page as ``中文术语（English term）`` and use the Chinese term alone afterwards.
+
+Examples:
+
+- First occurrence: ``组合转换（combo transition）``; later occurrences: ``组合转换``.
+- First occurrence: ``强制转换（forced transition）``; later occurrences: ``强制转换``.
+- First occurrence: ``伪中继状态（pseudo relay state）``; later occurrences: ``伪中继状态``.
+
+This rule applies to normal paragraphs, list items, table headings, table cells, figure captions, and tutorial
+explanations. Do not repeatedly sprinkle words such as ``combo``, ``forced``, ``relay``, ``runtime``, ``source``,
+``target``, ``generated``, ``checked``, ``form``, or ``fact`` through Chinese prose after the concept has been
+introduced.
+
+Literal correctness still wins where text is not prose. Keep the following verbatim:
+
+- code, commands, file paths, module paths, API names, identifiers, and generated output
+- DSL keywords such as ``state``, ``enter``, ``during``, ``exit``, and ``effect``
+- grammar rule names such as ``combo_transition_trigger``
+- JSON field names, diagnostic codes, target template names, and target identifiers such as ``c``, ``cpp``, and
+  ``python``
+- short source-code labels where translating would make the example inaccurate
+
+When reviewing Chinese documentation, treat unnecessary English-term repetition as a real documentation-quality issue.
+If a page needs a terminology reminder, add a compact term list near the beginning and then keep later prose Chinese.
 
 #### File Naming Conventions
 

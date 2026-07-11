@@ -18,6 +18,8 @@ Package contracts:
 * Engine exports are resolved lazily; importing :mod:`pyfcstm.bmc` does not
   prepare queries or load model-aware engine modules.
 * The root package must not depend on ``pyfcstm.verify`` or its registry.
+* The high-level query compilation facade remains compile-only; solving and
+  witness decoding require a separate explicit call.
 * :func:`str` on exported query and expression dataclasses is reserved for the
   canonical ``.fbmcq`` query DSL spelling.
 * :func:`repr` remains the dataclass debugging representation; callers that need
@@ -118,6 +120,10 @@ Public module structure:
      - :class:`BmcPropertyFormula`, :func:`compile_bmc_property`
      - Compile the bound query ``check`` clause into a solver objective layered
        on top of ``Core_N`` without solving or witness replay.
+   * - BMC query compilation facade
+     - :func:`compile_bmc_query`
+     - Compose query preparation, ``Core_N`` construction, and property
+       compilation into a solve-ready formula without starting a solver.
    * - BMC solver and witness decoding
      - :class:`BmcSolveResult`, :class:`BmcWitnessTrace`,
        :class:`BmcWitnessFrame`, :class:`BmcWitnessStep`,
@@ -281,6 +287,10 @@ _PROPERTY_EXPORTS = {
     "compile_bmc_property",
 }
 
+_PIPELINE_EXPORTS = {
+    "compile_bmc_query",
+}
+
 _WITNESS_EXPORTS = {
     "BmcSolveStatus",
     "BmcEventDecodePolicy",
@@ -309,12 +319,13 @@ _LAZY_EXPORT_MODULES = {
     "pyfcstm.bmc.engine": _ENGINE_EXPORTS,
     "pyfcstm.bmc.relation": _RELATION_EXPORTS,
     "pyfcstm.bmc.properties": _PROPERTY_EXPORTS,
+    "pyfcstm.bmc.pipeline": _PIPELINE_EXPORTS,
     "pyfcstm.bmc.witness": _WITNESS_EXPORTS,
 }
 
 
 def __getattr__(name: str):
-    """Lazily resolve model-aware binding, domain, macro-step, and engine exports.
+    """Lazily resolve model-aware binding, compilation, and solver exports.
 
     Binding, domain numbering, macro-step helpers, and the preparation engine
     are kept behind lazy exports so parser-only callers can import
@@ -368,6 +379,7 @@ def __dir__():
         | _ENGINE_EXPORTS
         | _RELATION_EXPORTS
         | _PROPERTY_EXPORTS
+        | _PIPELINE_EXPORTS
         | _WITNESS_EXPORTS
     )
 
@@ -474,6 +486,7 @@ __all__ = [
     "build_bmc_core_formula",
     "BmcPropertyFormula",
     "compile_bmc_property",
+    "compile_bmc_query",
     "BmcSolveStatus",
     "BmcEventDecodePolicy",
     "BmcSolveResult",

@@ -1,6 +1,30 @@
 Release Notes
 =============
 
+Unreleased
+----------
+
+Verification and Inspect
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+- Removed the unimplemented ``bounded_reachability``, ``symbolic_bfs``,
+  ``bounded_safety``, ``bounded_invariant``, and ``path_witness`` entries from
+  :data:`pyfcstm.verify.REGISTRY`. The registry now contains only its 14
+  callable structural and SMT-local algorithms.
+- Removed the verify-only taxonomy values ``bmc_search``, ``k_unrollings``,
+  ``k_unrollings_times_branching``, and ``bmc_unrolled``. BMC queries and
+  witnesses are exposed by :mod:`pyfcstm.bmc`, not through verify or inspect.
+
+Compatibility Notes
+~~~~~~~~~~~~~~~~~~~
+
+Code that referenced the removed verify registry keys or taxonomy values must
+migrate to the public :mod:`pyfcstm.bmc` query APIs. The ``inspect`` CLI no
+longer accepts the removed BMC-only values merely to reject them in application
+code; Click now reports them as invalid choices with usage exit status ``2``
+instead of the former policy-error status ``1``. This public API contraction
+requires a minor-version bump in the next package release.
+
 v0.5.0
 ------
 

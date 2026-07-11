@@ -45,7 +45,7 @@
    * - ``static_pipeline``
      - 默认静态检查或模型诊断路径会产生。
    * - ``verify_pipeline``
-     - 只有运行有界且允许进入检查的验证算法时才会产生，通常需要 ``--enable-verify``。
+     - 只有运行封闭且在策略预算内的结构或局部 SMT 验证算法时才会产生，通常需要 ``--enable-verify``。
    * - ``lookup_api``
      - 由显式解析 API 产生，不属于默认静态检查输出。
    * - ``partial_static_pipeline``

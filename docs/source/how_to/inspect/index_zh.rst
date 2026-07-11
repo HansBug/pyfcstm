@@ -6,7 +6,7 @@ Inspect 任务指南
 本页是 ``pyfcstm inspect`` 的任务手册。第一次学习请先看
 :doc:`../../tutorials/inspect/index_zh`；需要查完整字段时再看
 :doc:`../../reference/inspect_report/index_zh` 和
-:doc:`../../reference/diagnostics_codes/index_zh`。这里关注的是：本地读报告、写机器报告、给大语言模型修复循环交接、处理输出后缀、区分失败边界，以及谨慎启用有界验证。
+:doc:`../../reference/diagnostics_codes/index_zh`。这里关注的是：本地读报告、写机器报告、给大语言模型修复循环交接、处理输出后缀、区分失败边界，以及谨慎启用结构与局部 SMT 验证。
 
 本页核心术语只在这里集中交接一次：检查（inspect）、诊断（diagnostic）、人类可读格式（human）、完整 JSON（json）、大语言模型 JSON（llm-json）、大语言模型 Markdown（llm-md）、标准输出（stdout）、标准错误（stderr）、退出状态（exit status）、副作用（side effect）、验证（verify）。后文普通叙述会尽量使用中文；命令、路径、字段、诊断码和格式名保持原样。
 
@@ -308,7 +308,7 @@ Inspect 任务指南
 
 参考链接。失败边界见 :doc:`../../reference/inspect_report/index_zh` 和 :doc:`../../explanations/diagnostics/index_zh`。
 
-11. 启用有界验证诊断
+11. 启用结构与局部 SMT 验证诊断
 ----------------------------------------
 
 输入。合法模型，以及确实需要验证支持事实的场景。
@@ -332,35 +332,11 @@ Inspect 任务指南
 
 文件副作用。``/tmp/inspect-verify.json`` 会被创建或覆盖。
 
-首个失败检查。如果没有验证支持的诊断，确认命令里确实有 ``--enable-verify``\ 。提高 ``--max-complexity-tier`` 只能允许更多有界算法，不会开启 BMC 搜索。
+首个失败检查。如果没有验证支持的诊断，确认命令里确实有 ``--enable-verify``\ 。提高 ``--max-complexity-tier`` 只能允许更多模型派生的结构或局部 SMT 算法；它不会加载 :mod:`pyfcstm.bmc`，也不会解析 ``.fbmcq`` 查询。
 
 参考链接。验证层级见 :doc:`../../explanations/diagnostics/index_zh`；诊断码细节见 :doc:`../../reference/diagnostics_codes/index_zh`。
 
-12. 识别验证策略拒绝
-----------------------------------------
-
-输入。命令请求自动检查运行超出边界的策略。
-
-命令或代码。下面的标签会被 Click 接受，然后由检查策略拒绝：
-
-.. code-block:: bash
-
-   pyfcstm inspect -i docs/source/tutorials/inspect/inspect_diagnostics.fcstm \
-       --max-complexity-tier bmc_search
-   pyfcstm inspect -i docs/source/tutorials/inspect/inspect_diagnostics.fcstm \
-       --max-call-count-scaling k_unrollings
-   pyfcstm inspect -i docs/source/tutorials/inspect/inspect_diagnostics.fcstm \
-       --max-call-count-scaling k_unrollings_times_branching
-
-预期信号。三条命令都以状态 ``1`` 退出。第一条标准错误说明 ``bmc_search algorithms are not allowed in automatic inspect runs``\ ；两个调用次数缩放示例都会说明所请求的缩放不被允许。
-
-文件副作用。不产生成功报告。
-
-首个失败检查。如果持续集成误用了这些标签，删除策略参数，不要吞掉错误。BMC 类检查需要单独的显式验证流程。
-
-参考链接。允许和禁止的策略值见 :doc:`../../reference/inspect_report/index_zh`。
-
-13. 保持目标和部署警告的范围精确
+12. 保持目标和部署警告的范围精确
 ----------------------------------------
 
 输入。第 4 个任务已经写出的完整 JSON 报告，以及消息里提到目标家族或生成运行时配置的诊断。
@@ -424,5 +400,4 @@ Inspect 任务指南
 短摘录来自这些已检查资源：``inspect_human.demo.sh.txt`` 负责人类可读输出，
 ``inspect_formats.demo.sh.txt`` 负责 JSON 和大语言模型报告形状，
 ``inspect_cli_edges.demo.sh.txt`` 负责颜色和后缀行为，
-``inspect_invalid.demo.sh.txt`` 负责解析失败，
-``inspect_verify_policy.demo.sh.txt`` 负责策略拒绝。只有源资源改变时才需要重新运行对应脚本；单纯复用短摘录时，不应在正文嵌入长 shell 脚本。
+``inspect_invalid.demo.sh.txt`` 负责解析失败。只有源资源改变时才需要重新运行对应脚本；单纯复用短摘录时，不应在正文嵌入长 shell 脚本。

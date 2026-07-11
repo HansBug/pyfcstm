@@ -32,8 +32,8 @@ Click command tree and with the documented human-only boundary facts.
 .. cli-ref-option: command=inspect option=--format choices=human,json,llm-json,llm-md default=human
 .. cli-ref-option: command=inspect option=--color choices=auto,always,never default=auto
 .. cli-ref-option: command=inspect option=--enable-verify
-.. cli-ref-option: command=inspect option=--max-complexity-tier choices=structural,smt_linear,smt_nonlinear_decidable,smt_undecidable_heuristic,bmc_search default=structural
-.. cli-ref-option: command=inspect option=--max-call-count-scaling choices=none,one,linear_in_states,linear_in_transitions,linear_in_vars,linear_in_leaves,quadratic_in_outgoing_per_state,quadratic_in_states,vars_times_transitions,k_unrollings,k_unrollings_times_branching default=linear_in_transitions
+.. cli-ref-option: command=inspect option=--max-complexity-tier choices=structural,smt_linear,smt_nonlinear_decidable,smt_undecidable_heuristic default=structural
+.. cli-ref-option: command=inspect option=--max-call-count-scaling choices=none,one,linear_in_states,linear_in_transitions,linear_in_vars,linear_in_leaves,quadratic_in_outgoing_per_state,quadratic_in_states,vars_times_transitions default=linear_in_transitions
 .. cli-ref-option: command=inspect option=--smt-timeout-ms
 .. cli-ref-option: command=inspect option=--help
 .. cli-ref-command: name=plantuml
@@ -119,7 +119,7 @@ Top-level command
    * - ``inspect``
      - FCSTM DSL file
      - Human text, JSON, LLM JSON, or LLM Markdown
-     - You want parser/model facts, diagnostics, and optional bounded verify diagnostics.
+     - You want parser/model facts, diagnostics, and optional structural or SMT-local verify diagnostics.
    * - ``generate``
      - FCSTM DSL file plus a built-in or custom template
      - Rendered files under an output directory
@@ -305,12 +305,12 @@ does not prove generated target code.
      - Include inspect-eligible verification diagnostics.
    * - ``--max-complexity-tier``
      - ``structural``
-     - ``structural``, ``smt_linear``, ``smt_nonlinear_decidable``, ``smt_undecidable_heuristic``, ``bmc_search``
-     - Maximum verify complexity accepted by inspect. ``bmc_search`` is parsed only to report the policy error.
+     - ``structural``, ``smt_linear``, ``smt_nonlinear_decidable``, ``smt_undecidable_heuristic``
+     - Maximum structural or SMT-local verify complexity accepted by inspect.
    * - ``--max-call-count-scaling``
      - ``linear_in_transitions``
-     - ``none``, ``one``, ``linear_in_states``, ``linear_in_transitions``, ``linear_in_vars``, ``linear_in_leaves``, ``quadratic_in_outgoing_per_state``, ``quadratic_in_states``, ``vars_times_transitions``, ``k_unrollings``, ``k_unrollings_times_branching``
-     - Maximum inspect-eligible verify call-count scaling. ``k_unrollings`` labels are parsed only to report the policy error.
+     - ``none``, ``one``, ``linear_in_states``, ``linear_in_transitions``, ``linear_in_vars``, ``linear_in_leaves``, ``quadratic_in_outgoing_per_state``, ``quadratic_in_states``, ``vars_times_transitions``
+     - Maximum model-derived verify call-count scaling accepted by inspect.
    * - ``--smt-timeout-ms``
      - unset
      - integer ``>= 0``
@@ -676,7 +676,7 @@ Evidence rule:
      - ``pyfcstm inspect -i machine.fcstm --format llm-md -o machine.inspect.md``
      - File contains compact repair-oriented facts and diagnostics.
      - Writes the requested Markdown file.
-   * - Bounded verify report
+   * - Structural and SMT-local verify report
      - ``pyfcstm inspect -i machine.fcstm --enable-verify --smt-timeout-ms 2000``
      - Report includes inspect-eligible verification diagnostics.
      - No file side effect unless -o is used.
@@ -696,10 +696,6 @@ Evidence rule:
      - ``pyfcstm inspect -i machine.fcstm --format xml``
      - Click reports xml is not one of human/json/llm-json/llm-md.
      - Choose a documented format.
-   * - Forbidden verify policy
-     - ``pyfcstm inspect -i machine.fcstm --enable-verify --max-complexity-tier bmc_search``
-     - Inspect policy rejects the expensive tier before parsing the model.
-     - Keep routine checks within allowed tiers.
    * - Suffix mismatch warning
      - ``pyfcstm inspect -i machine.fcstm --format json -o machine.txt``
      - Format remains json; suffix warning is informational.
@@ -929,16 +925,16 @@ counterexample, and the evidence that should be inspected after the run.
      - Inspect stdout for ANSI sequences only in human stdout mode.
    * - ``--enable-verify``
      - Add it when structural or SMT-local verify facts are intentionally requested.
-     - It is disabled by default; enabling it does not permit forbidden policy tiers.
+     - It is disabled by default; enabling it does not load :mod:`pyfcstm.bmc` or parse ``.fbmcq`` queries.
      - The diagnostic sections may include verification-derived entries, but inspect remains policy-bounded.
    * - ``--max-complexity-tier``
      - ``structural``; ``smt_linear``; ``smt_nonlinear_decidable`` when the caller accepts that cost.
-     - ``bmc_search`` is accepted by Click only so inspect can reject it with a policy message.
-     - Policy failures happen before a model parse is required, making them easy to diagnose.
+     - Click rejects values outside the documented choices before model parsing.
+     - CLI help lists the exact accepted tiers; successful reports contain only algorithms within the selected tier.
    * - ``--max-call-count-scaling``
      - ``none``; ``one``; ``linear_in_transitions``; other allowed finite taxonomy values.
-     - ``k_unrollings`` and ``k_unrollings_times_branching`` are policy-rejected for automatic inspect runs.
-     - The error identifies the forbidden scaling label.
+     - Click rejects values outside the documented choices before model parsing.
+     - CLI help lists the exact accepted scaling values; verify results remain within the selected call-count budget.
    * - ``--smt-timeout-ms``
      - ``--smt-timeout-ms 2000``; ``--smt-timeout-ms 0``; omit it for default solver behavior.
      - Negative values are rejected by Click's integer range validation.

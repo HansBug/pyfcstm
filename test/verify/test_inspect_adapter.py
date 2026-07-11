@@ -74,30 +74,16 @@ def test_smt_linear_requires_opt_in_complexity_tier():
     )
 
 
-def test_queried_and_bmc_algorithms_are_never_eligible():
-    assert (
-        eligible_for_inspect(
-            REGISTRY["bounded_reachability"],
-            max_complexity_tier="smt_undecidable_heuristic",
-            max_call_count_scaling="vars_times_transitions",
-        )
-        is False
-    )
+def test_queried_algorithms_are_never_eligible():
     queried_structural = _meta(closedness="queried", complexity_tier="structural")
     assert eligible_for_inspect(queried_structural) is False
-    closed_bmc = _meta(
-        closedness="closed",
-        complexity_tier="bmc_search",
-        call_count_scaling="k_unrollings",
-    )
-    assert eligible_for_inspect(closed_bmc) is False
 
 
-def test_bmc_search_max_complexity_tier_is_forbidden():
-    with pytest.raises(InspectAccessForbiddenError, match="bmc_search"):
+def test_unknown_max_complexity_tier_is_forbidden():
+    with pytest.raises(InspectAccessForbiddenError, match="unknown inspect complexity"):
         eligible_for_inspect(
             REGISTRY["topological_reachable_set"],
-            max_complexity_tier="bmc_search",
+            max_complexity_tier=cast(ComplexityTier, "unknown_tier"),
         )
 
 
@@ -119,10 +105,12 @@ def test_call_count_limit_blocks_more_expensive_closed_algorithm():
 
 
 def test_call_count_scaling_outside_inspect_order_is_not_eligible():
-    k_unroll = _meta(call_count_scaling="k_unrollings")
+    unknown_scaling = _meta(
+        call_count_scaling=cast(CallCountScaling, "unknown_scaling")
+    )
     assert (
         eligible_for_inspect(
-            k_unroll,
+            unknown_scaling,
             max_complexity_tier="smt_undecidable_heuristic",
             max_call_count_scaling="vars_times_transitions",
         )
@@ -140,8 +128,7 @@ def test_invalid_inspect_limits_raise_instead_of_disabling_all_algorithms():
 
     for invalid_call_count in (
         "linear_in_transition",
-        "k_unrollings",
-        "k_unrollings_times_branching",
+        "unknown_scaling",
         None,
     ):
         with pytest.raises(InspectAccessForbiddenError):
@@ -232,6 +219,18 @@ def test_run_inspect_algorithms_executes_default_eligible_registry_set():
     assert first.reason is None
     assert first.diagnostics == ()
     assert first.raw_result["Root.A"] == ()
+
+
+def test_highest_inspect_budget_executes_every_builtin_in_registry_order():
+    results = run_inspect_algorithms(
+        _machine(),
+        max_complexity_tier="smt_undecidable_heuristic",
+        max_call_count_scaling="vars_times_transitions",
+        smt_timeout_ms=1000,
+    )
+
+    assert tuple(result.algorithm_name for result in results) == tuple(REGISTRY)
+    assert len(results) == 14
 
 
 def test_run_inspect_algorithms_passes_timeout_only_to_smt_algorithms():
@@ -783,10 +782,10 @@ def test_run_inspect_algorithms_does_not_execute_excluded_metadata():
     assert calls == []
 
 
-def test_run_inspect_algorithms_rejects_bmc_complexity_limit():
-    with pytest.raises(InspectAccessForbiddenError, match="bmc_search"):
+def test_run_inspect_algorithms_rejects_unknown_complexity_limit():
+    with pytest.raises(InspectAccessForbiddenError, match="unknown inspect complexity"):
         run_inspect_algorithms(
             _machine(),
-            max_complexity_tier="bmc_search",
+            max_complexity_tier=cast(ComplexityTier, "unknown_tier"),
             registry={},
         )

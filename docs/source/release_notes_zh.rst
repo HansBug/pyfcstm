@@ -1,6 +1,29 @@
 版本说明
 ========
 
+未发布
+------
+
+验证与 inspect
+~~~~~~~~~~~~~~
+
+- 从 :data:`pyfcstm.verify.REGISTRY` 删除从未实现的
+  ``bounded_reachability``、``symbolic_bfs``、``bounded_safety``、
+  ``bounded_invariant`` 和 ``path_witness``。注册表现在只保留 14 个可调用的
+  结构与局部 SMT 算法。
+- 删除 verify 专用 taxonomy 值 ``bmc_search``、``k_unrollings``、
+  ``k_unrollings_times_branching`` 和 ``bmc_unrolled``。BMC 查询与 witness
+  由 :mod:`pyfcstm.bmc` 提供，不经过 verify 或 inspect。
+
+兼容性说明
+~~~~~~~~~~
+
+依赖上述旧 registry key 或 taxonomy 值的代码需要迁移到公开的
+:mod:`pyfcstm.bmc` 查询 API。``inspect`` CLI 不再为了应用层拒绝而接收这些
+BMC 专用值；Click 现在会把它们作为非法 choice 处理，usage 退出状态为 ``2``，
+而不是以前的策略错误状态 ``1``。这项公开 API 收缩要求下一次 Python 包发布
+提升 minor 版本。
+
 v0.5.0
 ------
 

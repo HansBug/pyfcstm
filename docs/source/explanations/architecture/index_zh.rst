@@ -42,7 +42,7 @@ pyfcstm 围绕模型中心流水线组织。领域特定语言（DSL）文本先
      - 生成目标语言运行时的实现细节。
    * - 诊断和验证集成
      - ``pyfcstm/diagnostics/``、``pyfcstm/verify/``、``pyfcstm/solver/``
-     - 结构化模型事实、诊断消息、有界验证检查、SMT 翻译。
+     - 结构化模型事实、诊断消息、模型派生的结构与局部 SMT 检查、SMT 翻译。
      - 隐藏在日常 inspect 命令里的无界证明。
    * - 渲染和模板
      - ``pyfcstm/render/``、``templates/``、``pyfcstm/template/``

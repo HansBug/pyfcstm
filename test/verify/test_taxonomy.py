@@ -85,7 +85,6 @@ def test_literal_value_sets_match_issue_contract():
         "smt_linear",
         "smt_nonlinear_decidable",
         "smt_undecidable_heuristic",
-        "bmc_search",
     }
     assert set(get_args(SMTLogic)) == {
         "QF_UF",
@@ -121,8 +120,6 @@ def test_literal_value_sets_match_issue_contract():
         "quadratic_in_outgoing_per_state",
         "quadratic_in_states",
         "vars_times_transitions",
-        "k_unrollings",
-        "k_unrollings_times_branching",
     }
     assert set(get_args(FallbackUnknownRisk)) == {
         "none",
@@ -134,18 +131,16 @@ def test_literal_value_sets_match_issue_contract():
     assert set(get_args(VerificationScope)) == {
         "topological_only",
         "smt_local",
-        "bmc_unrolled",
     }
 
 
-def test_inspect_order_constants_exclude_bmc_search_and_k_unrollings():
+def test_inspect_order_constants_cover_the_complete_taxonomy():
     assert COMPLEXITY_TIER_ORDER == (
         "structural",
         "smt_linear",
         "smt_nonlinear_decidable",
         "smt_undecidable_heuristic",
     )
-    assert "bmc_search" not in COMPLEXITY_TIER_ORDER
     assert CALL_COUNT_SCALING_ORDER == (
         "none",
         "one",
@@ -157,8 +152,8 @@ def test_inspect_order_constants_exclude_bmc_search_and_k_unrollings():
         "quadratic_in_states",
         "vars_times_transitions",
     )
-    assert "k_unrollings" not in CALL_COUNT_SCALING_ORDER
-    assert "k_unrollings_times_branching" not in CALL_COUNT_SCALING_ORDER
+    assert set(COMPLEXITY_TIER_ORDER) == set(get_args(ComplexityTier))
+    assert set(CALL_COUNT_SCALING_ORDER) == set(get_args(CallCountScaling))
 
 
 def test_public_verify_package_reexports_core_contract():

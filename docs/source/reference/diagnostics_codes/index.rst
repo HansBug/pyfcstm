@@ -50,7 +50,7 @@ Emission tiers
    * - ``static_pipeline``
      - Produced by the default static inspect/model diagnostics path.
    * - ``verify_pipeline``
-     - Produced only when bounded inspect-eligible verify algorithms run, normally through ``--enable-verify``.
+     - Produced only when closed, policy-budgeted structural or SMT-local verify algorithms run, normally through ``--enable-verify``.
    * - ``lookup_api``
      - Produced by explicit resolver APIs, not by default static inspect output.
    * - ``partial_static_pipeline``

@@ -1109,6 +1109,10 @@ class CycleCase:
     :param failed_conditions: Diagnostic-only failed candidate conditions,
         defaults to ``()``.
     :type failed_conditions: Tuple[BoolTemplate, ...], optional
+    :param consumed_events: Canonical event paths consumed by executed evented
+        transitions in micro-step order. Paths may repeat when one Boolean
+        event presence enables several transitions, defaults to ``()``.
+    :type consumed_events: Tuple[str, ...], optional
     :param domain: Optional domain used for eager validation, defaults to
         ``None``.
     :type domain: BmcDomain, optional
@@ -1132,6 +1136,7 @@ class CycleCase:
     guard_requirements: Tuple[GuardRequirement, ...] = ()
     priority_exclusions: Tuple[PriorityExclusion, ...] = ()
     failed_conditions: Tuple[BoolTemplate, ...] = ()
+    consumed_events: Tuple[str, ...] = ()
     domain: Optional[BmcDomain] = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
@@ -1171,6 +1176,20 @@ class CycleCase:
             )
         for item in failed_conditions:
             _validate_condition_atom_prefixes(item, "failed_conditions")
+        consumed_events = tuple(self.consumed_events)
+        if not all(isinstance(item, str) and item for item in consumed_events):
+            raise InvalidBmcEncoding(
+                "consumed_events must contain non-empty event path strings."
+            )
+        positive_event_paths = {
+            event_use.path
+            for event_use in used_events
+            if event_use.polarity == "positive"
+        }
+        if any(path not in positive_event_paths for path in consumed_events):
+            raise InvalidBmcEncoding(
+                "consumed event paths must have a positive EventUse."
+            )
 
         object.__setattr__(self, "kind", kind)
         object.__setattr__(self, "source_state_id", source_id)
@@ -1200,6 +1219,7 @@ class CycleCase:
             "failed_conditions",
             tuple(sorted(failed_conditions, key=_canonical_key)),
         )
+        object.__setattr__(self, "consumed_events", consumed_events)
         self._validate_label()
         self._validate_kind_shape()
         self._validate_local_atom_links()
@@ -1317,6 +1337,7 @@ class CycleCase:
             "target_state_path": self.target_state_path,
             "label": self.label,
             "used_events": [item.to_canonical() for item in self.used_events],
+            "consumed_events": list(self.consumed_events),
             "guard_requirements": [
                 item.to_canonical() for item in self.guard_requirements
             ],

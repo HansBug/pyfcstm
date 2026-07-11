@@ -823,6 +823,7 @@ class BmcCaseRelation:
             "case_kind": self.case.kind,
             "source_state_id": self.case.source_state_id,
             "target_state_id": self.case.target_state_id,
+            "consumed_events": list(self.case.consumed_events),
             "selector": _z3_text(self.selector),
             "antecedent": _z3_text(self.antecedent),
             "consequent": _z3_text(self.consequent),
@@ -1859,6 +1860,11 @@ def _build_case_relation(
     post_constraints: List[z3.ExprRef] = [
         symbols.frame_state(step_index + 1) == z3.IntVal(case.target_state_id)
     ]
+    if case.kind == "absorb":
+        post_constraints.extend(
+            z3.Not(symbols.event_input(step_index, event.path))
+            for event in symbols.domain.events
+        )
     post_var_exprs = {}
     for var in symbols.domain.variables:
         try:

@@ -62,18 +62,45 @@ class PublicMemberExtractor(ast.NodeVisitor):
     Extract public members (classes, functions, variables) from Python code.
 
     This class uses AST node visiting to traverse Python code and identify
-    public classes, functions, and variables, excluding private and protected members.
+    public classes, functions, and variables, excluding private and protected
+    members. Same-module protected mixin bases remain available as inheritance
+    sources for public subclasses.
+
+    :param class_index: Top-level classes keyed by name, defaults to ``None``.
+    :type class_index: Dict[str, ast.ClassDef], optional
+
+    Example::
+
+        >>> tree = ast.parse('class Visible:\\n    def run(self):\\n        pass\\n')
+        >>> extractor = PublicMemberExtractor({'Visible': tree.body[0]})
+        >>> extractor.visit(tree)
+        >>> extractor.public_classes[0]['name']
+        'Visible'
     """
 
-    def __init__(self):
+    def __init__(self, class_index=None):
         """
         Initialize the PublicMemberExtractor.
 
-        Sets up empty lists to store extracted public classes, functions, and variables.
+        Sets up empty lists to store extracted public classes, functions, and
+        variables, plus the same-module class index used for inheritance.
+
+        :param class_index: Top-level classes keyed by name, defaults to
+            ``None``.
+        :type class_index: Dict[str, ast.ClassDef], optional
+        :return: ``None``.
+        :rtype: None
+
+        Example::
+
+            >>> extractor = PublicMemberExtractor()
+            >>> extractor.public_classes
+            []
         """
         self.public_classes = []
         self.public_functions = []
         self.public_variables = []
+        self.class_index = dict(class_index or {})
 
     @classmethod
     def is_private(cls, name: str) -> bool:
@@ -133,15 +160,30 @@ class PublicMemberExtractor(ast.NodeVisitor):
             or cls.is_magic_method(name)
         )
 
-    def extract_class_members(self, node: ast.ClassDef) -> Dict[str, Any]:
+    def extract_class_members(
+        self, node: ast.ClassDef, inherited_from=()
+    ) -> Dict[str, Any]:
         """
         Extract public members and magic methods from a class definition.
 
         :param node: The class definition AST node.
         :type node: ast.ClassDef
-
-        :return: Dictionary containing 'methods' and 'attributes' lists.
+        :param inherited_from: Same-module base names already visited while
+            resolving this inheritance chain, defaults to ``()``.
+        :type inherited_from: Tuple[str, ...], optional
+        :return: Dictionary containing 'methods' and 'attributes' lists. Direct
+            members precede inherited members and override them by name.
         :rtype: Dict[str, Any]
+
+        Example::
+
+            >>> tree = ast.parse('class Item:\\n    value = 1\\n    def run(self):\\n        pass\\n')
+            >>> extractor = PublicMemberExtractor({'Item': tree.body[0]})
+            >>> members = extractor.extract_class_members(tree.body[0])
+            >>> [item['name'] for item in members['methods']]
+            ['run']
+            >>> [item['name'] for item in members['attributes']]
+            ['value']
         """
         methods = []
         attributes = []
@@ -193,6 +235,30 @@ class PublicMemberExtractor(ast.NodeVisitor):
                         else None,
                     }
                     attributes.append(attr_info)
+
+        method_names = {item["name"] for item in methods}
+        attribute_names = {item["name"] for item in attributes}
+        visited = set(inherited_from)
+        visited.add(node.name)
+        for base in node.bases:
+            base_name = self.get_node_source(base)
+            base_node = self.class_index.get(base_name)
+            if (
+                base_node is None
+                or base_name in visited
+                or not self.is_protected(base_name)
+                or not base_name.endswith("Mixin")
+            ):
+                continue
+            inherited = self.extract_class_members(base_node, tuple(visited))
+            for method in inherited["methods"]:
+                if method["name"] not in method_names:
+                    methods.append(method)
+                    method_names.add(method["name"])
+            for attribute in inherited["attributes"]:
+                if attribute["name"] not in attribute_names:
+                    attributes.append(attribute)
+                    attribute_names.add(attribute["name"])
 
         return {"methods": methods, "attributes": attributes}
 
@@ -381,7 +447,10 @@ def extract_public_members(source_code: str) -> Dict[str, List[Dict[str, Any]]]:
         True
     """
     tree = ast.parse(source_code)
-    extractor = PublicMemberExtractor()
+    class_index = {
+        node.name: node for node in tree.body if isinstance(node, ast.ClassDef)
+    }
+    extractor = PublicMemberExtractor(class_index)
     extractor.visit(tree)
 
     return {

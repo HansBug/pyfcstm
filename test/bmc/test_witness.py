@@ -417,6 +417,31 @@ def test_response_non_trigger_step_ignores_true_event_without_rejecting_model() 
     assert replay_bmc_witness(model, trace).ok is True
 
 
+def test_response_cannot_trigger_on_event_after_runtime_termination() -> None:
+    """Absorb steps cannot create response counterexamples from ignored events."""
+    _, formula = _compile(
+        """
+        state Root {
+            event go;
+            state A;
+            [*] -> A;
+            A -> [*] : /go;
+        }
+        """,
+        'init state("Root.A");\n'
+        'assume event("Root.go", 0) == true;\n'
+        "check response <= 2:\n"
+        '  trigger event("Root.go", current) && terminated()\n'
+        '  -> within 1 active("Root.A");',
+    )
+
+    result = solve_bmc_property(formula)
+
+    assert result.status == "unsat"
+    assert result.model is None
+    assert result.property_satisfied is True
+
+
 def test_duplicate_event_assumptions_decode_to_one_runtime_occurrence() -> None:
     """Overlapping logical assumptions preserve Boolean event presence semantics."""
     model, formula = _compile(
@@ -467,6 +492,7 @@ def test_witness_event_accounting_matches_replayed_multi_hop_consumption() -> No
         """
         state Root {
             event go;
+            event noise;
             state Parent {
                 state A;
                 [*] -> A;
@@ -479,6 +505,7 @@ def test_witness_event_accounting_matches_replayed_multi_hop_consumption() -> No
         """,
         'init state("Root.Parent.A");\n'
         'assume event("Root.go", 0) == true;\n'
+        'assume event("Root.noise", 0) == true;\n'
         'check reach <= 1: active("Root.C");',
     )
     result = solve_bmc_property(formula)
@@ -486,12 +513,12 @@ def test_witness_event_accounting_matches_replayed_multi_hop_consumption() -> No
     trace = decode_bmc_witness(formula, result.model)
     replay = replay_bmc_witness(model, trace)
 
-    assert trace.steps[0].input_event_paths == ("Root.go",)
+    assert trace.steps[0].input_event_paths == ("Root.go", "Root.noise")
     assert trace.steps[0].consumed_events == ("Root.go", "Root.go")
-    assert trace.steps[0].unconsumed_events == ()
+    assert trace.steps[0].unconsumed_events == ("Root.noise",)
     assert replay.ok is True
     assert replay.runtime_trace.steps[0].consumed_events == ("Root.go", "Root.go")
-    assert replay.runtime_trace.steps[0].unconsumed_events == ()
+    assert replay.runtime_trace.steps[0].unconsumed_events == ("Root.noise",)
 
 
 def test_solve_property_reports_incomplete_response_diagnostics() -> None:

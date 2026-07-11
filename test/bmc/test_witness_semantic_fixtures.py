@@ -177,7 +177,7 @@ def _hard_pass_cases():
 
 @pytest.mark.parametrize("case", _hard_pass_cases(), ids=lambda case: case.id)
 def test_bmc_witness_replay_matches_full_semantic_fixture_trace(case) -> None:
-    """Hard-pass fixture traces are exact prefixes of decoded BMC replays."""
+    """Hard-pass fixtures match fully except the registered zero-cycle case."""
     expected_trace, event_inputs = collect_simulation_trace_for_bmc_fixture(case)
     assert all(len(inputs) == len(set(inputs)) for inputs in event_inputs)
     model = build_state_machine_from_case(case)
@@ -190,11 +190,17 @@ def test_bmc_witness_replay_matches_full_semantic_fixture_trace(case) -> None:
     witness = decode_bmc_witness(formula, result.model)
     replay = replay_bmc_witness(model, witness)
     assert replay.ok, [item.to_canonical() for item in replay.mismatches]
-    fixture_prefix = BmcRuntimeTrace(
-        replay.runtime_trace.frames[: len(expected_trace.frames)],
-        replay.runtime_trace.steps[: len(expected_trace.steps)],
+    if event_inputs:
+        assert replay.runtime_trace.to_canonical() == expected_trace.to_canonical()
+        return
+
+    # A positive FBMCQ bound gives this zero-cycle fixture one decoded step.
+    # Its complete fixture trace is the initial frame, so compare that exact
+    # zero-step prefix while the ledger test below pins it as the sole case.
+    assert expected_trace.steps == ()
+    assert replay.runtime_trace.frames[0].to_canonical() == (
+        expected_trace.frames[0].to_canonical()
     )
-    assert fixture_prefix.to_canonical() == expected_trace.to_canonical()
 
 
 def test_bmc_witness_fixture_runner_keeps_policy_counts_auditable() -> None:
@@ -224,6 +230,22 @@ def test_bmc_witness_fixture_runner_keeps_policy_counts_auditable() -> None:
             zero_step_ids.add(case.id)
     assert zero_step_ids == {"persistent_initial_vars_override_skips_initializer"}
 
+    raw_duplicate_ids = set()
+    for case in _hard_pass_cases():
+        for index, step in enumerate(case.data.get("steps") or []):
+            cycle_input = _cycle_input_for_step(
+                step,
+                case.id,
+                case.yaml_path,
+                "steps[%d]" % index,
+            )
+            if isinstance(cycle_input, list) and any(
+                item in cycle_input[:item_index]
+                for item_index, item in enumerate(cycle_input)
+            ):
+                raw_duplicate_ids.add(case.id)
+    assert raw_duplicate_ids == {"event_duplicate_inputs_preserve_public_state"}
+
 
 def test_duplicate_event_fixture_uses_boolean_presence_without_exclusion() -> None:
     """The duplicate-input fixture keeps coverage after presence projection."""
@@ -245,6 +267,25 @@ def test_duplicate_event_fixture_uses_boolean_presence_without_exclusion() -> No
     ]
     assert policy_for_case(case.id).mode == "hard_pass"
     assert is_runner_excluded(case, BMC_CORE_RUNNER) is False
+
+    from pyfcstm.simulate import SimulationRuntime
+
+    raw_model = build_state_machine_from_case(case)
+    raw_runtime = SimulationRuntime(raw_model, **_simulation_kwargs(case))
+    _register_fixture_handlers(raw_runtime, case)
+    raw_runtime.cycle(
+        _cycle_input_for_step(
+            case.data["steps"][0], case.id, case.yaml_path, "steps[0]"
+        )
+    )
+    raw_result = raw_runtime.cycle(raw_cycle_input)
+    assert raw_result.input_events == (
+        "Root.A.Tick",
+        "Root.A.Noise",
+        "Root.A.Tick",
+    )
+    assert raw_result.consumed_events == ("Root.A.Tick",)
+    assert raw_result.unconsumed_events == ("Root.A.Noise", "Root.A.Tick")
 
     expected_trace, event_inputs = collect_simulation_trace_for_bmc_fixture(case)
 

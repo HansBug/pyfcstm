@@ -199,6 +199,32 @@ def test_bound_two_uses_recurrence_absorb_after_initial_termination() -> None:
 
 
 @pytest.mark.unittest
+def test_recurrence_absorb_rejects_event_inputs_after_termination() -> None:
+    """Terminated runtime steps cannot observe external event inputs."""
+    model = load_state_machine_from_text(
+        """
+        state Root {
+            event Go;
+            state A;
+            [*] -> A;
+            A -> [*] : /Go;
+        }
+        """
+    )
+    context = BmcEngine(model).prepare(
+        'init state("Root.A");\n'
+        'assume event("Root.Go", 0) == true;\n'
+        "check reach <= 2: terminated();"
+    )
+    core = build_bmc_core_formula(context)
+    go_after_termination = core.symbols.event_input(1, "Root.Go")
+
+    assert _solver(core.core).check() == z3.sat
+    assert _solver(core.core, go_after_termination).check() == z3.unsat
+    assert _solver(core.core, z3.Not(go_after_termination)).check() == z3.sat
+
+
+@pytest.mark.unittest
 def test_initial_where_only_constrains_i0_not_macro_case_partition() -> None:
     """Initial ``where`` predicates enter ``I_0`` without changing cases."""
     model = load_state_machine_from_text(

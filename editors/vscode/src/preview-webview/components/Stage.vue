@@ -11,7 +11,10 @@ import {smoothGraphEdges} from '../render/edge-smoother';
 import type {PaletteId, PaletteMode} from '../render/palette';
 import {getElk} from '../composables/useElk';
 import {decidePreviewPointerAction, PREVIEW_DRAG_THRESHOLD_PX} from '../interaction';
-import type {PreviewWebviewState, SelectionRef, TextRange, PreviewElkNode, PreviewPayload} from '../types';
+import type {
+    PreviewWebviewState, SelectionRef, TextRange, PreviewElkNode,
+    PreviewPayload, PreviewExportFormat,
+} from '../types';
 import {jsPDF} from 'jspdf';
 
 const props = defineProps<{
@@ -36,6 +39,13 @@ const emptyMessage = ref('');
 const svgBounds = ref({width: 0, height: 0});
 let svgString = '';
 let layoutToken = 0;
+
+function notifyPreviewReady() {
+    window.dispatchEvent(new CustomEvent('fcstm-emit', {detail: {
+        type: 'previewReady',
+        payload: null,
+    }}));
+}
 
 const viewTransform = {tx: 0, ty: 0, scale: 1};
 let dragState: null | {startX: number; startY: number; tx: number; ty: number} = null;
@@ -103,6 +113,7 @@ function rerenderFromCache() {
         innerRef.value.innerHTML = result.svg;
     }
     isEmpty.value = false;
+    notifyPreviewReady();
     // Re-apply overlays on the new DOM without blowing away the
     // existing pan / zoom.
     void nextTick().then(() => {
@@ -157,6 +168,7 @@ async function relayout() {
             innerRef.value.innerHTML = result.svg;
         }
         isEmpty.value = false;
+        notifyPreviewReady();
         await nextTick();
         applySelection();
         fitToView();
@@ -436,37 +448,61 @@ async function renderCurrentSvgToPdf(): Promise<Uint8Array> {
 }
 
 /**
- * Unified export. Renders SVG, PNG and PDF up front and ships all
- * three to the extension in a single message; the format the user
- * picks in the QuickPick decides which payload gets written. SVG is
- * a cheap string dump; PNG goes through the standard canvas pipeline
- * at 2x; PDF wraps a 4x-rasterised version of the same SVG into a
- * single page sized to the diagram. All three stay in lockstep with
- * the current view.
- *
- * Rendered in parallel via ``Promise.all`` so the combined latency
- * is dominated by the slowest of the three (the 4x PDF raster)
- * rather than the sum.
+ * Render the one format selected by the extension host. SVG remains a
+ * direct string export, while PNG and PDF use their respective raster
+ * pipelines only when requested.
  */
-async function onExportEvt() {
-    if (!svgString) return;
-    try {
-        const [pngBlob, pdfBytes] = await Promise.all([
-            renderCurrentSvgToPng(),
-            renderCurrentSvgToPdf(),
-        ]);
-        const [pngBase64, pdfBase64] = await Promise.all([
-            blobToBase64(pngBlob),
-            Promise.resolve(uint8ToBase64(pdfBytes)),
-        ]);
-        window.dispatchEvent(new CustomEvent('fcstm-emit', {detail: {
-            type: 'exportDiagram',
-            payload: {svg: svgString, pngBase64, pdfBase64},
-        }}));
-    } catch (err) {
+async function onExportEvt(event: Event) {
+    const detail = (event as CustomEvent<{
+        format?: PreviewExportFormat;
+        requestId?: number;
+    }>).detail;
+    const format = detail?.format;
+    if (format !== 'svg' && format !== 'png' && format !== 'pdf') {
+        return;
+    }
+    window.dispatchEvent(new CustomEvent('fcstm-emit', {detail: {
+        type: 'exportStarted',
+        payload: {requestId: typeof detail.requestId === 'number' ? detail.requestId : 0},
+    }}));
+    if (!svgString) {
         window.dispatchEvent(new CustomEvent('fcstm-emit', {detail: {
             type: 'exportError',
-            payload: (err as Error)?.message || String(err),
+            payload: {
+                message: 'The diagram is not ready yet. Wait for the preview to finish rendering and try again.',
+                requestId: typeof detail.requestId === 'number' ? detail.requestId : 0,
+            },
+        }}));
+        return;
+    }
+    try {
+        let data: string;
+        if (format === 'svg') {
+            data = svgString;
+        } else if (format === 'png') {
+            data = await blobToBase64(await renderCurrentSvgToPng());
+        } else {
+            data = uint8ToBase64(await renderCurrentSvgToPdf());
+        }
+        window.dispatchEvent(new CustomEvent('fcstm-emit', {detail: {
+            type: 'exportDiagram',
+            payload: {
+                format,
+                data,
+                requestId: typeof detail.requestId === 'number' ? detail.requestId : 0,
+            },
+        }}));
+    } catch (err) {
+        if (!(err instanceof Error)) {
+            throw err;
+        }
+        // Image, canvas, FileReader, and jsPDF calls report export failures as Error.
+        window.dispatchEvent(new CustomEvent('fcstm-emit', {detail: {
+            type: 'exportError',
+            payload: {
+                message: err.message,
+                requestId: typeof detail.requestId === 'number' ? detail.requestId : 0,
+            },
         }}));
     }
 }
@@ -555,7 +591,7 @@ onMounted(() => {
     window.addEventListener('mouseup', onMouseUpWindow);
     window.addEventListener('fcstm-fit', onFitEvt as EventListener);
     window.addEventListener('fcstm-actual', onActualEvt as EventListener);
-    window.addEventListener('fcstm-export', onExportEvt as EventListener);
+    window.addEventListener('fcstm-perform-export', onExportEvt as EventListener);
     window.addEventListener('fcstm-copy-png', onCopyPngEvt as EventListener);
     window.addEventListener('fcstm-copy-svg', onCopySvgEvt as EventListener);
     window.addEventListener('resize', onFitEvt);
@@ -566,7 +602,7 @@ onUnmounted(() => {
     window.removeEventListener('mouseup', onMouseUpWindow);
     window.removeEventListener('fcstm-fit', onFitEvt as EventListener);
     window.removeEventListener('fcstm-actual', onActualEvt as EventListener);
-    window.removeEventListener('fcstm-export', onExportEvt as EventListener);
+    window.removeEventListener('fcstm-perform-export', onExportEvt as EventListener);
     window.removeEventListener('fcstm-copy-png', onCopyPngEvt as EventListener);
     window.removeEventListener('fcstm-copy-svg', onCopySvgEvt as EventListener);
     window.removeEventListener('resize', onFitEvt);

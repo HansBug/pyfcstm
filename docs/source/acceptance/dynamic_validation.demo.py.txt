@@ -1,0 +1,799 @@
+{
+  "cases": [
+    {
+      "case": "design_validation_failure_multilevel_transition",
+      "detected_problem": "Reject a non-stoppable multilevel transition during speculative validation while preserving the active state and committed variables.",
+      "expected_actual": {
+        "actual": {
+          "source": "test.testings.simulate_semantics.run_simulation_case",
+          "steps": [
+            {
+              "cycle": [],
+              "field_path": "steps[0].expect",
+              "observed": {
+                "ended": false,
+                "state": "Root.A",
+                "vars": {
+                  "counter": 1,
+                  "flag": 0
+                }
+              },
+              "step": 0
+            },
+            {
+              "cycle": [],
+              "field_path": "steps[1].expect",
+              "observed": {
+                "ended": false,
+                "state": "Root.A",
+                "vars": {
+                  "counter": 2,
+                  "flag": 0
+                }
+              },
+              "step": 1
+            },
+            {
+              "cycle": [],
+              "field_path": "steps[2].expect",
+              "observed": {
+                "ended": false,
+                "state": "Root.A",
+                "vars": {
+                  "counter": 3,
+                  "flag": 0
+                }
+              },
+              "step": 2
+            },
+            {
+              "cycle": [],
+              "field_path": "steps[3].expect",
+              "observed": {
+                "ended": false,
+                "state": "Root.A",
+                "vars": {
+                  "counter": 4,
+                  "flag": 0
+                }
+              },
+              "step": 3
+            }
+          ]
+        },
+        "expected": {
+          "steps": [
+            {
+              "cycle": [],
+              "expect": {
+                "ended": false,
+                "state": "Root.A",
+                "vars": {
+                  "counter": 1,
+                  "flag": 0
+                }
+              },
+              "field_path": "steps[0].expect",
+              "step": 0
+            },
+            {
+              "cycle": [],
+              "expect": {
+                "ended": false,
+                "state": "Root.A",
+                "vars": {
+                  "counter": 2,
+                  "flag": 0
+                }
+              },
+              "field_path": "steps[1].expect",
+              "step": 1
+            },
+            {
+              "cycle": [],
+              "expect": {
+                "ended": false,
+                "state": "Root.A",
+                "vars": {
+                  "counter": 3,
+                  "flag": 0
+                }
+              },
+              "field_path": "steps[2].expect",
+              "step": 2
+            },
+            {
+              "cycle": [],
+              "expect": {
+                "ended": false,
+                "state": "Root.A",
+                "vars": {
+                  "counter": 4,
+                  "flag": 0
+                }
+              },
+              "field_path": "steps[3].expect",
+              "step": 3
+            }
+          ]
+        }
+      },
+      "matched": true,
+      "matched_evidence": [
+        {
+          "actual": "Root.A",
+          "expected": "Root.A",
+          "field": "steps[0].expect.state",
+          "matched": true
+        },
+        {
+          "actual": false,
+          "expected": false,
+          "field": "steps[0].expect.ended",
+          "matched": true
+        },
+        {
+          "actual": 1,
+          "expected": 1,
+          "field": "steps[0].expect.vars.counter",
+          "matched": true
+        },
+        {
+          "actual": 0,
+          "expected": 0,
+          "field": "steps[0].expect.vars.flag",
+          "matched": true
+        },
+        {
+          "actual": "Root.A",
+          "expected": "Root.A",
+          "field": "steps[1].expect.state",
+          "matched": true
+        },
+        {
+          "actual": false,
+          "expected": false,
+          "field": "steps[1].expect.ended",
+          "matched": true
+        },
+        {
+          "actual": 2,
+          "expected": 2,
+          "field": "steps[1].expect.vars.counter",
+          "matched": true
+        },
+        {
+          "actual": 0,
+          "expected": 0,
+          "field": "steps[1].expect.vars.flag",
+          "matched": true
+        },
+        {
+          "actual": "Root.A",
+          "expected": "Root.A",
+          "field": "steps[2].expect.state",
+          "matched": true
+        },
+        {
+          "actual": false,
+          "expected": false,
+          "field": "steps[2].expect.ended",
+          "matched": true
+        },
+        {
+          "actual": 3,
+          "expected": 3,
+          "field": "steps[2].expect.vars.counter",
+          "matched": true
+        },
+        {
+          "actual": 0,
+          "expected": 0,
+          "field": "steps[2].expect.vars.flag",
+          "matched": true
+        },
+        {
+          "actual": "Root.A",
+          "expected": "Root.A",
+          "field": "steps[3].expect.state",
+          "matched": true
+        },
+        {
+          "actual": false,
+          "expected": false,
+          "field": "steps[3].expect.ended",
+          "matched": true
+        },
+        {
+          "actual": 4,
+          "expected": 4,
+          "field": "steps[3].expect.vars.counter",
+          "matched": true
+        },
+        {
+          "actual": 0,
+          "expected": 0,
+          "field": "steps[3].expect.vars.flag",
+          "matched": true
+        }
+      ]
+    },
+    {
+      "case": "design_evented_pseudo_chain_invalid_then_valid",
+      "detected_problem": "Reject an event-incomplete pseudo chain, then accept the path when both required events are supplied in one cycle.",
+      "expected_actual": {
+        "actual": {
+          "source": "test.testings.simulate_semantics.run_simulation_case",
+          "steps": [
+            {
+              "cycle": [],
+              "field_path": "steps[0].expect",
+              "observed": {
+                "ended": false,
+                "state": "Root.A",
+                "vars": {
+                  "counter": 1
+                }
+              },
+              "step": 0
+            },
+            {
+              "cycle": "Root.A.GoB",
+              "field_path": "steps[1].expect",
+              "observed": {
+                "ended": false,
+                "state": "Root.A",
+                "vars": {
+                  "counter": 2
+                }
+              },
+              "step": 1
+            },
+            {
+              "cycle": [
+                "Root.A.GoB",
+                "Root.B.P1.Event"
+              ],
+              "field_path": "steps[2].expect",
+              "observed": {
+                "ended": false,
+                "state": "Root.B.B1",
+                "vars": {
+                  "counter": 112
+                }
+              },
+              "step": 2
+            }
+          ]
+        },
+        "expected": {
+          "steps": [
+            {
+              "cycle": [],
+              "expect": {
+                "ended": false,
+                "state": "Root.A",
+                "vars": {
+                  "counter": 1
+                }
+              },
+              "field_path": "steps[0].expect",
+              "step": 0
+            },
+            {
+              "cycle": "Root.A.GoB",
+              "expect": {
+                "ended": false,
+                "state": "Root.A",
+                "vars": {
+                  "counter": 2
+                }
+              },
+              "field_path": "steps[1].expect",
+              "step": 1
+            },
+            {
+              "cycle": [
+                "Root.A.GoB",
+                "Root.B.P1.Event"
+              ],
+              "expect": {
+                "ended": false,
+                "state": "Root.B.B1",
+                "vars": {
+                  "counter": 112
+                }
+              },
+              "field_path": "steps[2].expect",
+              "step": 2
+            }
+          ]
+        }
+      },
+      "matched": true,
+      "matched_evidence": [
+        {
+          "actual": "Root.A",
+          "expected": "Root.A",
+          "field": "steps[0].expect.state",
+          "matched": true
+        },
+        {
+          "actual": false,
+          "expected": false,
+          "field": "steps[0].expect.ended",
+          "matched": true
+        },
+        {
+          "actual": 1,
+          "expected": 1,
+          "field": "steps[0].expect.vars.counter",
+          "matched": true
+        },
+        {
+          "actual": "Root.A",
+          "expected": "Root.A",
+          "field": "steps[1].expect.state",
+          "matched": true
+        },
+        {
+          "actual": false,
+          "expected": false,
+          "field": "steps[1].expect.ended",
+          "matched": true
+        },
+        {
+          "actual": 2,
+          "expected": 2,
+          "field": "steps[1].expect.vars.counter",
+          "matched": true
+        },
+        {
+          "actual": "Root.B.B1",
+          "expected": "Root.B.B1",
+          "field": "steps[2].expect.state",
+          "matched": true
+        },
+        {
+          "actual": false,
+          "expected": false,
+          "field": "steps[2].expect.ended",
+          "matched": true
+        },
+        {
+          "actual": 112,
+          "expected": 112,
+          "field": "steps[2].expect.vars.counter",
+          "matched": true
+        }
+      ]
+    },
+    {
+      "case": "expression_failure_transition_guard_raises_expression_error",
+      "detected_problem": "Wrap transition-guard division by zero in SimulationRuntimeExpressionError with ZeroDivisionError as its cause while preserving the runtime snapshot.",
+      "expected_actual": {
+        "actual": {
+          "source": "test.testings.simulate_semantics.run_simulation_case",
+          "steps": [
+            {
+              "cycle": [],
+              "field_path": "steps[0].expect",
+              "observed": {
+                "ended": false,
+                "state": "Root.A",
+                "vars": {
+                  "counter": 0,
+                  "divisor": 0
+                }
+              },
+              "step": 0
+            },
+            {
+              "cycle": [],
+              "field_path": "steps[1].expect",
+              "observed": {
+                "ended": false,
+                "raises": {
+                  "cause": {
+                    "message": "division by zero",
+                    "type": "ZeroDivisionError"
+                  },
+                  "message": "transition guard evaluation failed: division by zero",
+                  "type": "SimulationRuntimeExpressionError"
+                },
+                "state": "Root.A",
+                "vars": {
+                  "counter": 0,
+                  "divisor": 0
+                }
+              },
+              "step": 1
+            }
+          ]
+        },
+        "expected": {
+          "steps": [
+            {
+              "cycle": [],
+              "expect": {
+                "ended": false,
+                "state": "Root.A",
+                "vars": {
+                  "counter": 0,
+                  "divisor": 0
+                }
+              },
+              "field_path": "steps[0].expect",
+              "step": 0
+            },
+            {
+              "cycle": [],
+              "expect": {
+                "ended": false,
+                "raises": {
+                  "cause_match": "division by zero",
+                  "cause_match_kind": "substring",
+                  "cause_type": "ZeroDivisionError",
+                  "match": "transition guard evaluation failed: division by zero",
+                  "match_kind": "substring",
+                  "type": "SimulationRuntimeExpressionError"
+                },
+                "state": "Root.A",
+                "vars": {
+                  "counter": 0,
+                  "divisor": 0
+                }
+              },
+              "field_path": "steps[1].expect",
+              "step": 1
+            }
+          ]
+        }
+      },
+      "matched": true,
+      "matched_evidence": [
+        {
+          "actual": "Root.A",
+          "expected": "Root.A",
+          "field": "steps[0].expect.state",
+          "matched": true
+        },
+        {
+          "actual": false,
+          "expected": false,
+          "field": "steps[0].expect.ended",
+          "matched": true
+        },
+        {
+          "actual": 0,
+          "expected": 0,
+          "field": "steps[0].expect.vars.counter",
+          "matched": true
+        },
+        {
+          "actual": 0,
+          "expected": 0,
+          "field": "steps[0].expect.vars.divisor",
+          "matched": true
+        },
+        {
+          "actual": "Root.A",
+          "expected": "Root.A",
+          "field": "steps[1].expect.state",
+          "matched": true
+        },
+        {
+          "actual": false,
+          "expected": false,
+          "field": "steps[1].expect.ended",
+          "matched": true
+        },
+        {
+          "actual": 0,
+          "expected": 0,
+          "field": "steps[1].expect.vars.counter",
+          "matched": true
+        },
+        {
+          "actual": 0,
+          "expected": 0,
+          "field": "steps[1].expect.vars.divisor",
+          "matched": true
+        },
+        {
+          "actual": "SimulationRuntimeExpressionError",
+          "expected": "SimulationRuntimeExpressionError",
+          "field": "steps[1].expect.raises.type",
+          "matched": true
+        },
+        {
+          "actual": "transition guard evaluation failed: division by zero",
+          "expected": {
+            "kind": "substring",
+            "text": "transition guard evaluation failed: division by zero"
+          },
+          "field": "steps[1].expect.raises.match",
+          "matched": true
+        },
+        {
+          "actual": "ZeroDivisionError",
+          "expected": "ZeroDivisionError",
+          "field": "steps[1].expect.raises.cause_type",
+          "matched": true
+        },
+        {
+          "actual": "division by zero",
+          "expected": {
+            "kind": "substring",
+            "text": "division by zero"
+          },
+          "field": "steps[1].expect.raises.cause_match",
+          "matched": true
+        }
+      ]
+    },
+    {
+      "case": "pseudo_self_loop_step_limit_raises_dfs_error",
+      "detected_problem": "Stop an unbounded pseudo-state self-loop at the speculative step limit with SimulationRuntimeDfsError and roll back the runtime snapshot.",
+      "expected_actual": {
+        "actual": {
+          "source": "test.testings.simulate_semantics.run_simulation_case",
+          "steps": [
+            {
+              "cycle": [],
+              "field_path": "steps[0].expect",
+              "observed": {
+                "ended": false,
+                "state": "Root.A",
+                "vars": {
+                  "spin": 0,
+                  "x": 1
+                }
+              },
+              "step": 0
+            },
+            {
+              "cycle": "Root.A.Go",
+              "field_path": "steps[1].expect",
+              "observed": {
+                "ended": false,
+                "raises": {
+                  "cause": null,
+                  "message": "Speculative DFS exceeded the step safety limit (1000) without reaching a stoppable state or pruning; the state machine likely contains an invalid unbounded pseudo-state or transition chain.",
+                  "type": "SimulationRuntimeDfsError"
+                },
+                "state": "Root.A",
+                "vars": {
+                  "spin": 0,
+                  "x": 1
+                }
+              },
+              "step": 1
+            }
+          ]
+        },
+        "expected": {
+          "steps": [
+            {
+              "cycle": [],
+              "expect": {
+                "ended": false,
+                "state": "Root.A",
+                "vars": {
+                  "spin": 0,
+                  "x": 1
+                }
+              },
+              "field_path": "steps[0].expect",
+              "step": 0
+            },
+            {
+              "cycle": "Root.A.Go",
+              "expect": {
+                "ended": false,
+                "raises": {
+                  "match": "step safety limit",
+                  "match_kind": "substring",
+                  "type": "SimulationRuntimeDfsError"
+                },
+                "state": "Root.A",
+                "vars": {
+                  "spin": 0,
+                  "x": 1
+                }
+              },
+              "field_path": "steps[1].expect",
+              "step": 1
+            }
+          ]
+        }
+      },
+      "matched": true,
+      "matched_evidence": [
+        {
+          "actual": "Root.A",
+          "expected": "Root.A",
+          "field": "steps[0].expect.state",
+          "matched": true
+        },
+        {
+          "actual": false,
+          "expected": false,
+          "field": "steps[0].expect.ended",
+          "matched": true
+        },
+        {
+          "actual": 1,
+          "expected": 1,
+          "field": "steps[0].expect.vars.x",
+          "matched": true
+        },
+        {
+          "actual": 0,
+          "expected": 0,
+          "field": "steps[0].expect.vars.spin",
+          "matched": true
+        },
+        {
+          "actual": "Root.A",
+          "expected": "Root.A",
+          "field": "steps[1].expect.state",
+          "matched": true
+        },
+        {
+          "actual": false,
+          "expected": false,
+          "field": "steps[1].expect.ended",
+          "matched": true
+        },
+        {
+          "actual": 1,
+          "expected": 1,
+          "field": "steps[1].expect.vars.x",
+          "matched": true
+        },
+        {
+          "actual": 0,
+          "expected": 0,
+          "field": "steps[1].expect.vars.spin",
+          "matched": true
+        },
+        {
+          "actual": "SimulationRuntimeDfsError",
+          "expected": "SimulationRuntimeDfsError",
+          "field": "steps[1].expect.raises.type",
+          "matched": true
+        },
+        {
+          "actual": "Speculative DFS exceeded the step safety limit (1000) without reaching a stoppable state or pruning; the state machine likely contains an invalid unbounded pseudo-state or transition chain.",
+          "expected": {
+            "kind": "substring",
+            "text": "step safety limit"
+          },
+          "field": "steps[1].expect.raises.match",
+          "matched": true
+        }
+      ]
+    }
+  ],
+  "mutation_counterexample": {
+    "case": "design_validation_failure_multilevel_transition",
+    "error_type": "AssertionError",
+    "matched": true,
+    "matched_evidence": [
+      {
+        "actual": "AssertionError",
+        "expected": "AssertionError",
+        "field": "error_type",
+        "matched": true
+      },
+      {
+        "actual": "Root.A",
+        "expected": "Root.A",
+        "field": "original_expected_state",
+        "matched": true
+      },
+      {
+        "actual": "design_validation_failure_multilevel_transition steps[0].expect state mismatch: ('Root', 'A') != ('Root', 'Mutated'); original=Root.A; mutated=Root.Mutated",
+        "expected": "design_validation_failure_multilevel_transition",
+        "field": "message.case_id",
+        "matched": true
+      },
+      {
+        "actual": "design_validation_failure_multilevel_transition steps[0].expect state mismatch: ('Root', 'A') != ('Root', 'Mutated'); original=Root.A; mutated=Root.Mutated",
+        "expected": "steps[0].expect state mismatch",
+        "field": "message.expectation_path",
+        "matched": true
+      },
+      {
+        "actual": "design_validation_failure_multilevel_transition steps[0].expect state mismatch: ('Root', 'A') != ('Root', 'Mutated'); original=Root.A; mutated=Root.Mutated",
+        "expected": "Root.A",
+        "field": "message.original_state",
+        "matched": true
+      },
+      {
+        "actual": "design_validation_failure_multilevel_transition steps[0].expect state mismatch: ('Root', 'A') != ('Root', 'Mutated'); original=Root.A; mutated=Root.Mutated",
+        "expected": "Root.Mutated",
+        "field": "message.mutated_state",
+        "matched": true
+      },
+      {
+        "actual": "design_validation_failure_multilevel_transition steps[0].expect state mismatch: ('Root', 'A') != ('Root', 'Mutated')",
+        "expected": "('Root', 'A')",
+        "field": "raw_message.actual_state",
+        "matched": true
+      },
+      {
+        "actual": "design_validation_failure_multilevel_transition steps[0].expect state mismatch: ('Root', 'A') != ('Root', 'Mutated')",
+        "expected": "('Root', 'Mutated')",
+        "field": "raw_message.expected_state",
+        "matched": true
+      }
+    ],
+    "message": "temporary mutation produced the exact required assertion mismatch",
+    "raw_message": "design_validation_failure_multilevel_transition steps[0].expect state mismatch: ('Root', 'A') != ('Root', 'Mutated')",
+    "status": "passed"
+  },
+  "required_cases": [
+    "design_validation_failure_multilevel_transition",
+    "design_evented_pseudo_chain_invalid_then_valid",
+    "expression_failure_transition_guard_raises_expression_error",
+    "pseudo_self_loop_step_limit_raises_dfs_error"
+  ],
+  "source_fixture_integrity": {
+    "algorithm": "sha256",
+    "files": [
+      {
+        "after_sha256": "cd40ed8699a9d80f0381a6738f2b28439832cb8b52fde144826f1c230af9b0a6",
+        "before_sha256": "cd40ed8699a9d80f0381a6738f2b28439832cb8b52fde144826f1c230af9b0a6",
+        "file": "design_validation_failure_multilevel_transition.yaml",
+        "unchanged": true
+      },
+      {
+        "after_sha256": "4ce8ae776d7efa0a9f00fa26097ac0eacd353501dbc03898114534fdf019353a",
+        "before_sha256": "4ce8ae776d7efa0a9f00fa26097ac0eacd353501dbc03898114534fdf019353a",
+        "file": "design_validation_failure_multilevel_transition.fcstm",
+        "unchanged": true
+      },
+      {
+        "after_sha256": "7d87cd9115b5c1e968485e60c330bf6f3be16c044f550d0cdb6cafd7d5ae0c67",
+        "before_sha256": "7d87cd9115b5c1e968485e60c330bf6f3be16c044f550d0cdb6cafd7d5ae0c67",
+        "file": "design_evented_pseudo_chain_invalid_then_valid.yaml",
+        "unchanged": true
+      },
+      {
+        "after_sha256": "b1c533e360ae87558ef7cd56dca46b1b22df169784494f2d2f37384cdc839492",
+        "before_sha256": "b1c533e360ae87558ef7cd56dca46b1b22df169784494f2d2f37384cdc839492",
+        "file": "design_evented_pseudo_chain_invalid_then_valid.fcstm",
+        "unchanged": true
+      },
+      {
+        "after_sha256": "e3715a5e3582c529405c74a0539dbb026173ad4ee650a3e75b322396ad2df2a4",
+        "before_sha256": "e3715a5e3582c529405c74a0539dbb026173ad4ee650a3e75b322396ad2df2a4",
+        "file": "expression_failure_transition_guard_raises_expression_error.yaml",
+        "unchanged": true
+      },
+      {
+        "after_sha256": "6d332728477db215774b8d1fdaf3196d6e52a165f030eba407569841c3d3d263",
+        "before_sha256": "6d332728477db215774b8d1fdaf3196d6e52a165f030eba407569841c3d3d263",
+        "file": "expression_failure_transition_guard_raises_expression_error.fcstm",
+        "unchanged": true
+      },
+      {
+        "after_sha256": "439d3b42c28a7d97dfaf2825d86dd8e80cf6a11895997124980769f585349fa7",
+        "before_sha256": "439d3b42c28a7d97dfaf2825d86dd8e80cf6a11895997124980769f585349fa7",
+        "file": "pseudo_self_loop_step_limit_raises_dfs_error.yaml",
+        "unchanged": true
+      },
+      {
+        "after_sha256": "3a0f79e2e12f4ff32ae11dabc5c48748931f9e5acf0e4947cc392a82cb5a0648",
+        "before_sha256": "3a0f79e2e12f4ff32ae11dabc5c48748931f9e5acf0e4947cc392a82cb5a0648",
+        "file": "pseudo_self_loop_step_limit_raises_dfs_error.fcstm",
+        "unchanged": true
+      }
+    ],
+    "read_only": true,
+    "status": "passed"
+  },
+  "status": "passed"
+}

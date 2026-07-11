@@ -1,7 +1,8 @@
 import os
-import re
+import shutil
 
 from setuptools import find_packages, setup
+from setuptools.command.build_py import build_py as _build_py
 
 _MODULE_NAME = "pyfcstm"
 _PACKAGE_NAME = "pyfcstm"
@@ -19,18 +20,24 @@ def _load_req(file: str):
         return [line.strip() for line in f.readlines() if line.strip()]
 
 
+class _CleanPackageBuild(_build_py):
+    """Build Python modules from a clean package output directory."""
+
+    def run(self):
+        """Remove stale package files before copying the selected package set.
+
+        :return: ``None``.
+        :rtype: None
+        """
+        package_build_dir = os.path.join(self.build_lib, _MODULE_NAME)
+        if os.path.exists(package_build_dir):
+            shutil.rmtree(package_build_dir)
+        super().run()
+
+
 requirements = _load_req("requirements.txt")
 
-_REQ_PATTERN = re.compile(r"^requirements-(\w+)\.txt$")
-_REQ_BLACKLIST = {"zoo"}
-group_requirements = {
-    item.group(1): _load_req(item.group(0))
-    for item in [_REQ_PATTERN.fullmatch(reqpath) for reqpath in os.listdir()]
-    if item
-    if item.group(1) not in _REQ_BLACKLIST
-}
-
-with open("README.md", "r", encoding="utf-8") as f:
+with open("README_ACCEPTANCE.md", "r", encoding="utf-8") as f:
     readme = f.read()
 
 templates_source_dir = os.path.join(here, "templates")
@@ -45,25 +52,19 @@ if os.path.isdir(templates_source_dir):
     )
 
 package_data = {
-    package_name: [
-        "*.yaml",
-        "*.yml",
-        "*.json",
-        "*.png",
-        "*.zip",
-        "*.g4",
-        "*.tokens",
-        "*.interp",
-    ]
-    for package_name in find_packages(include=("*"))
+    "pyfcstm.diagnostics": ["codes.yaml", "schema.json"],
+    "pyfcstm.template": ["*.json", "*.zip"],
 }
-package_data.setdefault("pyfcstm.llm", []).extend(["*.md", "*.sha256"])
+packages = find_packages(
+    include=(_MODULE_NAME, "%s.*" % _MODULE_NAME),
+    exclude=("pyfcstm.llm", "pyfcstm.llm.*"),
+)
 
 setup(
     # information
     name=_PACKAGE_NAME,
     version=meta["__VERSION__"],
-    packages=find_packages(include=(_MODULE_NAME, "%s.*" % _MODULE_NAME)),
+    packages=packages,
     package_data=package_data,
     description=meta["__DESCRIPTION__"],
     long_description=readme,
@@ -76,9 +77,9 @@ setup(
     # environment
     python_requires=">=3.7",
     install_requires=requirements,
-    extras_require=group_requirements,
+    extras_require={},
     classifiers=[
-        "Development Status :: 5 - Production/Stable",
+        "Development Status :: 4 - Beta",
         # Intended Audience
         "Intended Audience :: Developers",
         "Intended Audience :: Science/Research",
@@ -132,6 +133,7 @@ setup(
             "fcstm = pyfcstm.highlight.pygments_lexer:FcstmLexer",
         ],
     },
+    cmdclass={"build_py": _CleanPackageBuild},
     project_urls={
         "Homepage": "https://github.com/hansbug/pyfcstm",
         "Documentation": "https://pyfcstm.readthedocs.io/",

@@ -1,8 +1,27 @@
-include README.md
+include README_ACCEPTANCE.md
+include LICENSE
 include MANIFEST.in
 include requirements.txt
-include requirements-*.txt
-recursive-include pyfcstm *.json *.yml *.yaml *.png
+
+recursive-include pyfcstm *.py
+recursive-include pyfcstm/dsl/grammar *.g4 *.interp *.tokens
+recursive-include pyfcstm/diagnostics codes.yaml schema.json
 recursive-include pyfcstm/template *.zip *.json
-recursive-include pyfcstm/dsl *.g4 *.interp *.tokens
-recursive-include pyfcstm/llm *.md *.sha256
+
+prune pyfcstm/llm
+prune test
+prune docs
+prune editors
+prune llm_eval
+prune .github
+prune .omx
+prune .agents
+prune templates
+
+exclude requirements-build.txt
+exclude requirements-dev.txt
+exclude requirements-doc.txt
+exclude requirements-test.txt
+exclude README.md
+recursive-exclude pyfcstm __pycache__ *.py[cod]
+recursive-exclude pyfcstm/diagnostics README.md inspect_llm_report_schema.json

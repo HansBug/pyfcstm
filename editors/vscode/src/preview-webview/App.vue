@@ -11,7 +11,7 @@ import BottomPanels from './components/BottomPanels.vue';
 import {bridge} from './composables/useBridge';
 import type {
     PreviewWebviewState, SelectionRef, PreviewResolvedOptions,
-    TextRange, PreviewStateDetail, PreviewTransitionDetail,
+    TextRange, PreviewStateDetail, PreviewTransitionDetail, PreviewExportFormat,
 } from './types';
 import type {PaletteId, PaletteMode} from './render/palette';
 
@@ -267,6 +267,18 @@ function onMessage(ev: MessageEvent) {
             applyActiveRange(cue.range);
             return;
         }
+        if (maybeCue.type === 'performExport') {
+            const cue = maybeCue as {type: 'performExport'; format?: string; requestId?: number};
+            if (cue.format === 'svg' || cue.format === 'png' || cue.format === 'pdf') {
+                window.dispatchEvent(new CustomEvent('fcstm-perform-export', {
+                    detail: {
+                        format: cue.format as PreviewExportFormat,
+                        requestId: typeof cue.requestId === 'number' ? cue.requestId : 0,
+                    },
+                }));
+            }
+            return;
+        }
     }
     setState(data as PreviewWebviewState);
 }
@@ -303,9 +315,15 @@ function onKeyDown(ev: KeyboardEvent) {
     }
 }
 
+function requestExport() {
+    vscode.postMessage({type: 'requestExport'});
+}
+
 onMounted(() => {
     window.addEventListener('message', onMessage);
     window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('fcstm-export', requestExport);
+    vscode.postMessage({type: 'webviewReady'});
     const stored = vscode.getState();
     if (stored) {
         state.value = stored;
@@ -341,6 +359,7 @@ onMounted(() => {
 onUnmounted(() => {
     window.removeEventListener('message', onMessage);
     window.removeEventListener('keydown', onKeyDown);
+    window.removeEventListener('fcstm-export', requestExport);
     themeObserver?.disconnect();
     themeObserver = null;
 });

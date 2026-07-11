@@ -40,7 +40,7 @@ _REQUIRED_COMMANDS = (
     "pdfinfo",
     "pdftotext",
     "pdffonts",
-    "qpdf",
+    "mutool",
 )
 _CJK_CHARACTER = r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]"
 _FATAL_LOG_PATTERNS = (
@@ -72,13 +72,71 @@ _LANGUAGE_SPECS = {
         "document_sentinel": "hard-coded parsing targets",
         "tail_sentinel": "windows_chinese_encodings",
         "cjk_sentinel": "你好",
+        "minimum_pages": 20,
+        "required_text": (),
+        "required_bookmarks": (
+            "Tutorials",
+            "How-to Guides",
+            "Explanations",
+            "Reference",
+        ),
+        "forbidden_text": (),
     },
     "zh": {
         "contents_title": "目录",
-        "contents_entries": ("教程", "任务指南", "解释", "参考"),
-        "document_sentinel": "字符串解析方式硬编码依赖",
-        "tail_sentinel": "windows_chinese_encodings",
-        "cjk_sentinel": "你好",
+        "contents_entries": (
+            "交付范围",
+            "功能映射",
+            "动态验证",
+            "编辑器与 GUI 交接",
+        ),
+        "document_sentinel": "项目验收可复现验收完成哨兵",
+        "tail_sentinel": "acceptance_pdf_tail_sentinel",
+        "cjk_sentinel": "动态验证不是形式化验证",
+        "minimum_pages": 18,
+        "required_text": (
+            "五套内置模板",
+            "cmake-native-evidence",
+            "pygments-entry-point",
+            "java-jar-prerequisite",
+            "expected_actual",
+            "mutation_counterexample",
+            "design_validation_failure_multilevel_transition",
+            "design_evented_pseudo_chain_invalid_then_valid",
+            "expression_failure_transition_guard_raises_expression_error",
+            "pseudo_self_loop_step_limit_raises_dfs_error",
+            "TextMate 高亮",
+            "Problems 诊断",
+            "completion",
+            "hover",
+            "definition",
+            "outline",
+            "format",
+            "code action",
+            "preview",
+            "export",
+            "公式编辑交接",
+            "acceptance_pdf_tail_sentinel",
+        ),
+        "required_bookmarks": (
+            "功能映射",
+            "后端真实证据",
+            "最小自定义模板",
+            "动态验证",
+            "编辑器与 GUI 交接",
+            "Java/JAR 前置",
+            "PDF 门禁",
+        ),
+        "forbidden_text": (
+            r"issue\s*#",
+            r"PR\s*#",
+            r"pull request",
+            r"dev/s714",
+            r"S714",
+            r"LLM",
+            r"/home/",
+            r"/tmp/",
+        ),
     },
 }
 
@@ -165,6 +223,8 @@ def _language_spec(language: str) -> Mapping[str, object]:
 
         >>> _language_spec('zh')['contents_title']
         '目录'
+        >>> _language_spec('zh')['tail_sentinel']
+        'acceptance_pdf_tail_sentinel'
     """
     if language not in _LANGUAGE_SPECS:
         raise PdfValidationError(
@@ -281,6 +341,7 @@ def _validate_extracted_text(
     front_text: str,
     tail_text: str,
     language: str,
+    enforce_required_text: bool = False,
 ) -> None:
     """
     Validate directory, document-end, index-tail, and CJK PDF text.
@@ -294,6 +355,8 @@ def _validate_extracted_text(
     :type tail_text: str
     :param language: Documentation language code.
     :type language: str
+    :param enforce_required_text: Whether to enforce language-specific full-content sentinels.
+    :type enforce_required_text: bool, optional
     :return: ``None``.
     :rtype: None
     :raises PdfValidationError: If a required title, entry, document sentinel,
@@ -352,6 +415,22 @@ def _validate_extracted_text(
                 spec["cjk_sentinel"]
             )
         )
+
+    if enforce_required_text:
+        for required_text in spec.get("required_text", ()):
+            normalized_required = _normalize_extracted_text(str(required_text))
+            if normalized_required not in normalized_full:
+                raise PdfValidationError(
+                    "PDF text is missing required content {0!r}".format(required_text)
+                )
+
+        for forbidden_pattern in spec.get("forbidden_text", ()):
+            if re.search(str(forbidden_pattern), normalized_full, re.IGNORECASE):
+                raise PdfValidationError(
+                    "PDF text contains forbidden internal marker matching {0!r}".format(
+                        forbidden_pattern
+                    )
+                )
 
 
 def _validate_tex_file(tex_path: Path) -> int:
@@ -555,14 +634,54 @@ def _extract_pdf_text(pdf_path: Path, first_page: int, last_page: int) -> str:
     ).stdout
 
 
-def _validate_pdf_file(pdf_path: Path, language: str) -> Tuple[int, str]:
+def _validate_pdf_outline(pdf_path: Path, language: str) -> str:
     """
-    Validate PDF structure, extracted content, and embedded CJK fonts.
+    Validate PDF bookmarks with ``mutool show outline``.
 
     :param pdf_path: Generated PDF.
     :type pdf_path: pathlib.Path
     :param language: Documentation language code.
     :type language: str
+    :return: Raw outline text.
+    :rtype: str
+    :raises PdfValidationError: If the outline is unreadable or missing a
+        required major bookmark.
+
+    Example::
+
+        >>> isinstance(_validate_pdf_outline, Callable)
+        True
+    """
+    spec = _language_spec(language)
+    outline = _run_command(["mutool", "show", str(pdf_path), "outline"]).stdout
+    normalized_outline = _normalize_extracted_text(outline)
+    if not normalized_outline:
+        raise PdfValidationError("PDF has no readable bookmark outline")
+    for bookmark in spec.get("required_bookmarks", ()):  # type: ignore[attr-defined]
+        if _normalize_extracted_text(str(bookmark)) not in normalized_outline:
+            raise PdfValidationError(
+                "PDF outline is missing required bookmark {0!r}".format(bookmark)
+            )
+    return outline
+
+
+def _validate_pdf_file(
+    pdf_path: Path,
+    language: str,
+    enforce_minimum_pages: bool = True,
+    enforce_required_text: bool = True,
+) -> Tuple[int, str]:
+    """
+    Validate PDF structure, extracted content, bookmarks, and embedded CJK fonts.
+
+    :param pdf_path: Generated PDF.
+    :type pdf_path: pathlib.Path
+    :param language: Documentation language code.
+    :type language: str
+    :param enforce_minimum_pages: Whether to enforce the language-specific page-count floor.
+    :type enforce_minimum_pages: bool, optional
+    :param enforce_required_text: Whether to enforce language-specific full-content sentinels.
+    :type enforce_required_text: bool, optional
     :return: Page count and raw ``pdffonts`` output.
     :rtype: tuple[int, str]
     :raises PdfValidationError: If PDF structure, text, or fonts are invalid.
@@ -572,27 +691,56 @@ def _validate_pdf_file(pdf_path: Path, language: str) -> Tuple[int, str]:
         >>> isinstance(_validate_pdf_file, Callable)
         True
     """
-    _run_command(["qpdf", "--check", str(pdf_path)])
+    if shutil.which("qpdf") is not None:
+        _run_command(["qpdf", "--check", str(pdf_path)])
     pages = _pdf_page_count(pdf_path)
+    minimum_pages = int(_language_spec(language).get("minimum_pages", 1))
+    if enforce_minimum_pages and pages < minimum_pages:
+        raise PdfValidationError(
+            "PDF page count {0} is below required minimum {1}".format(
+                pages, minimum_pages
+            )
+        )
+    if enforce_required_text:
+        _validate_pdf_outline(pdf_path, language)
     full_text = _extract_pdf_text(pdf_path, 1, pages)
     front_text = _extract_pdf_text(pdf_path, 1, min(pages, 20))
     tail_text = _extract_pdf_text(pdf_path, max(1, pages - _TAIL_PAGE_COUNT + 1), pages)
-    _validate_extracted_text(full_text, front_text, tail_text, language)
+    _validate_extracted_text(
+        full_text,
+        front_text,
+        tail_text,
+        language,
+        enforce_required_text=enforce_required_text,
+    )
     fonts = _run_command(["pdffonts", str(pdf_path)]).stdout
     if "Fandol" not in fonts:
         raise PdfValidationError("PDF embeds no Fandol CJK font: {0}".format(pdf_path))
+    if "CID" not in fonts:
+        raise PdfValidationError(
+            "PDF fonts output has no CID font entries: {0}".format(pdf_path)
+        )
     return pages, fonts
 
 
-def validate_docs_pdf(build_root: Path, language: str) -> Dict[str, object]:
+def validate_docs_pdf(
+    build_root: Path,
+    language: str,
+    enforce_minimum_pages: bool = True,
+    enforce_required_text: bool = True,
+) -> Dict[str, object]:
     """
     Validate one language-specific Sphinx PDF build root.
 
     :param build_root: Sphinx make-mode output root containing ``latex/`` and
         ``build.log``.
     :type build_root: pathlib.Path
-    :param language: Documentation language, either ``en`` or ``zh``.
+    :param language: Documentation language.
     :type language: str
+    :param enforce_minimum_pages: Whether to enforce the language-specific page-count floor.
+    :type enforce_minimum_pages: bool, optional
+    :param enforce_required_text: Whether to enforce language-specific full-content sentinels.
+    :type enforce_required_text: bool, optional
     :return: Validation evidence including artifact paths, page count, maximum
         TeX line length, and makeindex counts.
     :rtype: dict[str, object]
@@ -610,7 +758,12 @@ def validate_docs_pdf(build_root: Path, language: str) -> Dict[str, object]:
     maximum_line = _validate_tex_file(tex_path)
     log_text = _collect_log_text(build_root, tex_path.stem)
     accepted, rejected = _validate_log_text(log_text)
-    pages, fonts = _validate_pdf_file(pdf_path, language)
+    pages, fonts = _validate_pdf_file(
+        pdf_path,
+        language,
+        enforce_minimum_pages=enforce_minimum_pages,
+        enforce_required_text=enforce_required_text,
+    )
     return {
         "language": language,
         "build_root": str(build_root),
@@ -733,6 +886,7 @@ def _smoke_source(language: str) -> str:
     section_text = "\n".join(
         "\\section{{{0}}}\nSmoke text for {0}.".format(section) for section in sections
     )
+    cjk_sentinel_text = str(spec["cjk_sentinel"])
     tail_sentinel_tex = str(spec["tail_sentinel"]).replace("_", r"\_")
     return r"""\documentclass{article}
 \usepackage{fontspec}
@@ -750,7 +904,7 @@ def _smoke_source(language: str) -> str:
 \newpage
 %s
 \index{smoke}
-\textbf{你好} \texttt{你好}
+\textbf{你好} \texttt{你好} %s
 \newpage
 %s
 \texttt{%s}
@@ -759,6 +913,7 @@ def _smoke_source(language: str) -> str:
 """ % (
         title,
         section_text,
+        cjk_sentinel_text,
         spec["document_sentinel"],
         tail_sentinel_tex,
     )
@@ -810,7 +965,9 @@ def _create_smoke_build(build_root: Path, language: str) -> Path:
                 result.returncode, result.stdout
             )
         )
-    validate_docs_pdf(build_root, language)
+    validate_docs_pdf(
+        build_root, language, enforce_minimum_pages=False, enforce_required_text=False
+    )
     return tex_path.with_suffix(".pdf")
 
 
@@ -935,6 +1092,34 @@ def _run_pure_self_checks(root: Path) -> None:
     )
     validate_isolated_build_roots(root / "en", root / "zh")
 
+    zh_spec = _language_spec("zh")
+    zh_front = "目录\n" + "\n".join(zh_spec["contents_entries"])
+    _validate_extracted_text(
+        "动态验证不是形式化验证 项目验收可复现验收完成哨兵",
+        zh_front,
+        zh_spec["tail_sentinel"],
+        "zh",
+    )
+    _expect_failure(
+        "zh acceptance rejects full-doc contents",
+        lambda: _validate_extracted_text(
+            "动态验证不是形式化验证 项目验收可复现验收完成哨兵",
+            "目录\n教程\n任务指南\n解释\n参考",
+            zh_spec["tail_sentinel"],
+            "zh",
+        ),
+    )
+    _expect_failure(
+        "zh missing acceptance required text",
+        lambda: _validate_extracted_text(
+            "动态验证不是形式化验证 项目验收可复现验收完成哨兵",
+            zh_front,
+            zh_spec["tail_sentinel"],
+            "zh",
+            enforce_required_text=True,
+        ),
+    )
+
 
 def _run_external_self_checks(root: Path) -> None:
     """
@@ -959,6 +1144,7 @@ def _run_external_self_checks(root: Path) -> None:
     validate_isolated_build_roots(en_root, zh_root)
     en_pdf = _create_smoke_build(en_root, "en")
     _create_smoke_build(zh_root, "zh")
+
     broken_pdf = root / "truncated.pdf"
     try:
         data = en_pdf.read_bytes()
@@ -968,9 +1154,14 @@ def _run_external_self_checks(root: Path) -> None:
         raise PdfValidationError(
             "cannot create truncated PDF fixture: {0}".format(error)
         ) from error
-    result = _run_command(["qpdf", "--check", str(broken_pdf)], check=False)
-    if result.returncode == 0:
-        raise PdfValidationError("qpdf accepted the truncated self-check PDF")
+    if shutil.which("qpdf") is not None:
+        result = _run_command(["qpdf", "--check", str(broken_pdf)], check=False)
+        if result.returncode == 0:
+            raise PdfValidationError("qpdf accepted the truncated self-check PDF")
+    else:
+        result = _run_command(["pdftotext", str(broken_pdf), "-"], check=False)
+        if result.returncode == 0:
+            raise PdfValidationError("pdftotext accepted the truncated self-check PDF")
 
 
 def run_self_check() -> None:

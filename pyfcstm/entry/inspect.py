@@ -3,7 +3,8 @@
 This module registers the ``inspect`` CLI command. The command reads an FCSTM
 DSL file, builds a :class:`pyfcstm.model.StateMachine`, runs
 :func:`pyfcstm.diagnostics.inspect_model`, and emits the inspection payload in
-human-readable, full JSON, or stable LLM-oriented formats.
+human-readable or full JSON formats from the CLI, while keeping stable
+LLM-oriented renderers available through the Python API.
 
 Module map:
 
@@ -69,6 +70,7 @@ _INSPECT_CALL_COUNT_CHOICES = CALL_COUNT_SCALING_ORDER + (
     "k_unrollings_times_branching",
 )
 _INSPECT_OUTPUT_FORMAT_CHOICES = ("human", "json", "llm-json", "llm-md")
+_INSPECT_CLI_OUTPUT_FORMAT_CHOICES = ("human", "json")
 _INSPECT_COLOR_CHOICES = ("auto", "always", "never")
 
 
@@ -356,7 +358,9 @@ def build_inspect_output(
     :param input_code_file: Path to the input FCSTM DSL file.
     :type input_code_file: str
     :param output_format: One of ``"human"``, ``"json"``,
-        ``"llm-json"``, or ``"llm-md"``. Defaults to ``"human"``.
+        ``"llm-json"``, or ``"llm-md"``. The CLI exposes only
+        ``"human"`` and ``"json"``, while LLM formats remain available to
+        Python callers. Defaults to ``"human"``.
     :type output_format: str, optional
     :param color_enabled: Whether the human renderer should emit ANSI color.
         Ignored by machine-readable formats.
@@ -463,8 +467,10 @@ def _add_inspect_subcommand(cli: click.Group) -> click.Group:
 
     The registered command emits a human-readable report by default and can
     still emit the full :func:`pyfcstm.diagnostics.inspect_model` JSON payload
-    when ``--format json`` is selected. Verify integration remains disabled by
-    default and is enabled only by passing ``--enable-verify``.
+    when ``--format json`` is selected. LLM-oriented and verify-policy controls
+    remain outside the public CLI surface; those renderers are available
+    through :func:`build_inspect_output` and :func:`build_inspect_json` for
+    internal callers.
 
     :param cli: The Click group to which the subcommand should be added.
     :type cli: click.Group
@@ -504,7 +510,7 @@ def _add_inspect_subcommand(cli: click.Group) -> click.Group:
     @click.option(
         "--format",
         "output_format",
-        type=click.Choice(_INSPECT_OUTPUT_FORMAT_CHOICES, case_sensitive=True),
+        type=click.Choice(_INSPECT_CLI_OUTPUT_FORMAT_CHOICES, case_sensitive=True),
         default="human",
         show_default=True,
         help="Inspect output format; use json for the full machine-readable report.",
@@ -517,49 +523,11 @@ def _add_inspect_subcommand(cli: click.Group) -> click.Group:
         show_default=True,
         help="Control ANSI color for human inspect output only.",
     )
-    @click.option(
-        "--enable-verify",
-        is_flag=True,
-        help="Run inspect-eligible pyfcstm.verify algorithms.",
-    )
-    @click.option(
-        "--max-complexity-tier",
-        type=click.Choice(_INSPECT_COMPLEXITY_CHOICES, case_sensitive=True),
-        default="structural",
-        show_default=True,
-        help=(
-            "Maximum verify complexity tier accepted by inspect; bmc_search is "
-            "parsed only to report a policy error."
-        ),
-    )
-    @click.option(
-        "--max-call-count-scaling",
-        type=click.Choice(_INSPECT_CALL_COUNT_CHOICES, case_sensitive=True),
-        default="linear_in_transitions",
-        show_default=True,
-        help=(
-            "Maximum verify call-count scaling accepted by inspect; "
-            "k_unrollings values are parsed only to report a policy error."
-        ),
-    )
-    @click.option(
-        "--smt-timeout-ms",
-        type=click.IntRange(min=0),
-        default=None,
-        help=(
-            "Optional SMT solver timeout in milliseconds; "
-            "0 keeps Z3 without a finite timeout."
-        ),
-    )
     def inspect_command(
         input_code_file: str,
         output_file: Optional[str],
         output_format: str,
         color_mode: str,
-        enable_verify: bool,
-        max_complexity_tier: str,
-        max_call_count_scaling: str,
-        smt_timeout_ms: Optional[int],
     ) -> None:
         """Inspect a state machine DSL file and emit the selected report format.
 
@@ -573,20 +541,6 @@ def _add_inspect_subcommand(cli: click.Group) -> click.Group:
         :type output_format: str
         :param color_mode: ANSI color mode for human output.
         :type color_mode: str
-        :param enable_verify: Whether to run inspect-eligible verify
-            algorithms.
-        :type enable_verify: bool
-        :param max_complexity_tier: Maximum verify complexity tier accepted by
-            the inspect adapter.
-        :type max_complexity_tier: str
-        :param max_call_count_scaling: Maximum verify call-count scaling
-            accepted by the inspect adapter.
-        :type max_call_count_scaling: str
-        :param smt_timeout_ms: Optional SMT solver timeout in milliseconds.
-            ``None`` leaves the timeout unset, while ``0`` is forwarded
-            unchanged to the solver layer and keeps Z3 without a finite
-            timeout.
-        :type smt_timeout_ms: Optional[int]
         :return: ``None``. Inspect output is written to a file or stdout.
         :rtype: None
 
@@ -595,7 +549,6 @@ def _add_inspect_subcommand(cli: click.Group) -> click.Group:
             $ pyfcstm inspect -i machine.fcstm
             $ pyfcstm inspect -i machine.fcstm --format json
             $ pyfcstm inspect -i machine.fcstm --color always
-            $ pyfcstm inspect -i machine.fcstm --enable-verify --max-complexity-tier smt_linear
         """
         color_enabled = resolve_inspect_color_enabled(
             color_mode,
@@ -606,10 +559,6 @@ def _add_inspect_subcommand(cli: click.Group) -> click.Group:
             input_code_file,
             output_format=output_format,
             color_enabled=color_enabled,
-            enable_verify=enable_verify,
-            max_complexity_tier=max_complexity_tier,
-            max_call_count_scaling=max_call_count_scaling,
-            smt_timeout_ms=smt_timeout_ms,
         )
         warning = inspect_output_suffix_warning(output_file, output_format)
         if warning is not None:

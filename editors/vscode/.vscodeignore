@@ -1,34 +1,18 @@
-.vscode/**
-.vscode-test/**
-.gitignore
-.git/**
-node_modules/**
-*.vsix
-**/*.map
-**/.DS_Store
-test/**
-.github/**
+# Runtime VSIX allowlist: exclude everything, then re-include exact packaged files only.
+**
 
-# Source files (not needed in package)
-src/**
-parser/**
-tsconfig.json
-.eslintrc.json
-esbuild.config.js
-Makefile
+!package.json
+!README.md
+!LICENSE
+!language-configuration.json
 
-# Build artifacts (keep only dist/)
-out/**
-
-# Documentation
-TODO.md
-PARSER.md
-DEPENDENCY-FIX.md
-BUILD-IMPROVEMENTS.md
-
-# Scripts (not needed in package)
-scripts/**
-
-# Keep bundled extension
 !dist/extension.js
 !dist/server.js
+!dist/preview-webview.js
+!dist/preview-webview.css
+
+!resources/icon.png
+
+!snippets/fcstm.code-snippets
+
+!syntaxes/fcstm.tmLanguage.json

@@ -23,24 +23,26 @@ NO_CONTENTS_BUILD = true
 # Catch-all target: route all unknown targets to Sphinx using the new
 # "make mode" option.  $(O) is meant as a shortcut for $(SPHINXOPTS).
 # Put it first so that "make" without argument is like "make help".
-.PHONY: help contents build html pdf pdf_en pdf_zh _pdf_en _pdf_zh prod clean sourcedir builddir Makefile
+.PHONY: help contents _acceptance_contents build html pdf pdf_en pdf_zh _pdf_en _pdf_zh _acceptance_pdf prod clean sourcedir builddir Makefile
 
 help:
 	@$(SPHINXBUILD) -M help "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)
 
 contents:
 	@$(ALL) build
+_acceptance_contents:
+	@$(MAKE) -f "$(SOURCEDIR)/fcstms.mk" SOURCE="$(SOURCEDIR)/acceptance" build
+	@$(MAKE) -f "$(SOURCEDIR)/demos.mk" SOURCE="$(SOURCEDIR)/acceptance" build
+	@$(MAKE) -f "$(SOURCEDIR)/graphviz.mk" SOURCE="$(SOURCEDIR)/acceptance" build
 build: html
 html: contents
 	@$(SPHINXBUILD) -M html "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)
 	@touch "$(BUILDDIR)/html/.nojekyll"
-pdf: contents
-	@$(MAKE) _pdf_en
+pdf: _acceptance_contents
 	@$(MAKE) _pdf_zh
-	@$(PYTHON) "$(PDFCHECKER)" --check-isolation "$(PDFBUILDDIR)/en" "$(PDFBUILDDIR)/zh"
 pdf_en: contents
 	@$(MAKE) _pdf_en
-pdf_zh: contents
+pdf_zh: _acceptance_contents
 	@$(MAKE) _pdf_zh
 _pdf_en:
 	@rm -rf "$(PDFBUILDDIR)/en"
@@ -56,20 +58,22 @@ _pdf_en:
 		printf '%s\n' "$$duration" > "$(PDFBUILDDIR)/en/duration-seconds.txt"; \
 		printf 'English PDF build duration: %s seconds\n' "$$duration"
 	@$(PYTHON) "$(PDFCHECKER)" --language en --build-root "$(PDFBUILDDIR)/en"
-_pdf_zh:
+_acceptance_pdf:
 	@rm -rf "$(PDFBUILDDIR)/zh"
 	@mkdir -p "$(PDFBUILDDIR)/zh"
 	@start="$$(date +%s)"; \
 		log="$(PDFBUILDDIR)/zh/build.log"; \
-		if ! NO_CONTENTS_BUILD=1 READTHEDOCS_LANGUAGE=zh $(SPHINXBUILD) -M latexpdf "$(SOURCEDIR)" "$(PDFBUILDDIR)/zh" $(SPHINXOPTS) $(O) > "$$log" 2>&1; then \
+		if ! NO_CONTENTS_BUILD=1 PYFCSTM_ACCEPTANCE_PDF=1 READTHEDOCS_LANGUAGE=zh $(SPHINXBUILD) -M latexpdf "$(SOURCEDIR)" "$(PDFBUILDDIR)/zh" $(SPHINXOPTS) $(O) > "$$log" 2>&1; then \
 			cat "$$log"; \
 			exit 1; \
 		fi; \
 		cat "$$log"; \
 		duration="$$(($$(date +%s) - $$start))"; \
 		printf '%s\n' "$$duration" > "$(PDFBUILDDIR)/zh/duration-seconds.txt"; \
-		printf 'Chinese PDF build duration: %s seconds\n' "$$duration"
+		printf 'Acceptance Chinese PDF build duration: %s seconds\n' "$$duration"
 	@$(PYTHON) "$(PDFCHECKER)" --language zh --build-root "$(PDFBUILDDIR)/zh"
+_pdf_zh:
+	@$(MAKE) _acceptance_pdf
 prod:
 	@NO_CONTENTS_BUILD='' $(SPHINXMULTIVERSION) "$(SOURCEDIR)" "$(BUILDDIR)/html" $(SPHINXOPTS) $(O)
 	@cp main_page.html "$(BUILDDIR)/html/index.html"

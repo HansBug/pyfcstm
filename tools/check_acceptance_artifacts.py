@@ -32,6 +32,7 @@ Example::
 from __future__ import annotations
 
 import argparse
+import ast
 import csv
 import fnmatch
 import json
@@ -856,6 +857,19 @@ def run_self_check() -> Mapping[str, object]:
         _write_inventory_fixture(inventory, good=True)
         _assert_executable_inventory_entries(_read_inventory_entries(inventory))
         checks.append("executable-positive")
+        windows_inventory = root / "pyinstaller-inventory-windows.txt"
+        windows_inventory.write_text(
+            " 1, 2, 3, 1, 'x', 'icons\\\\pyfcstm.png'\n",
+            encoding="utf-8",
+        )
+        windows_entries = _read_inventory_entries(windows_inventory)
+        if windows_entries != ("icons/pyfcstm.png",):
+            raise ArtifactValidationError(
+                "Windows PyInstaller inventory path was not decoded: {0!r}".format(
+                    windows_entries
+                )
+            )
+        checks.append("executable-windows-inventory-path")
         delivery_facts = {
             "os_name": "nt",
             "system_name": "Windows",
@@ -1877,9 +1891,26 @@ def _parse_inventory_entries(text: str) -> Tuple[str, ...]:
             line = line.strip()
             if not line:
                 continue
-            quoted = re.search(r"['\"]([^'\"]+)['\"]\s*$", line)
-            if quoted:
-                entries.append(_normalize_entry(quoted.group(1)))
+            is_quoted_entry = line.endswith(("'", '"')) and (
+                "," in line or line.startswith(("'", '"'))
+            )
+            if is_quoted_entry:
+                try:
+                    literal = ast.literal_eval("({0})".format(line))
+                except (SyntaxError, ValueError) as error:
+                    # ast.literal_eval raises SyntaxError/ValueError when an
+                    # archive-viewer entry ends like a literal but is malformed.
+                    raise ArtifactValidationError(
+                        "invalid quoted PyInstaller inventory entry: {0!r}".format(line)
+                    ) from error
+                value = literal[-1] if isinstance(literal, tuple) else literal
+                if not isinstance(value, str):
+                    raise ArtifactValidationError(
+                        "PyInstaller inventory entry path is not text: {0!r}".format(
+                            value
+                        )
+                    )
+                entries.append(_normalize_entry(value))
                 continue
             if " " not in line and "\t" not in line:
                 entries.append(_normalize_entry(line.strip(",\"'")))

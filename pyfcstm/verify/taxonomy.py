@@ -47,7 +47,6 @@ ComplexityTier = Literal[
     "smt_linear",
     "smt_nonlinear_decidable",
     "smt_undecidable_heuristic",
-    "bmc_search",
 ]
 SMTLogic = Literal[
     "QF_UF",
@@ -83,8 +82,6 @@ CallCountScaling = Literal[
     "quadratic_in_outgoing_per_state",
     "quadratic_in_states",
     "vars_times_transitions",
-    "k_unrollings",
-    "k_unrollings_times_branching",
 ]
 FallbackUnknownRisk = Literal[
     "none",
@@ -96,7 +93,6 @@ FallbackUnknownRisk = Literal[
 VerificationScope = Literal[
     "topological_only",
     "smt_local",
-    "bmc_unrolled",
 ]
 
 COMPLEXITY_TIER_ORDER = (

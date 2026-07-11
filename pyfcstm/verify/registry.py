@@ -1,17 +1,15 @@
 """Algorithm registry for :mod:`pyfcstm.verify`.
 
 The registry maps stable algorithm names to
-:class:`pyfcstm.verify.taxonomy.VerifyAlgorithmMeta` entries.  Implemented
-structural and SMT-local algorithms carry callables; planned bounded-search
-entries stay present with ``impl=None`` so downstream policy can expose the
-future surface without running it automatically.
+:class:`pyfcstm.verify.taxonomy.VerifyAlgorithmMeta` entries. Every registered
+structural or SMT-local algorithm carries an executable callable.
 
 Example::
 
     >>> from pyfcstm.verify.registry import REGISTRY
     >>> REGISTRY["dead_guard"].impl.__name__
     'dead_guard'
-    >>> REGISTRY["bounded_reachability"].impl is None
+    >>> all(callable(meta.impl) for meta in REGISTRY.values())
     True
 """
 
@@ -216,79 +214,12 @@ def _composite_init_guards_incomplete(
     )
 
 
-def _bmc_placeholder(
-    name: str,
-    description: str,
-    call_count_scaling: CallCountScaling,
-    fallback_unknown_risk: FallbackUnknownRisk = "medium",
-    incremental: bool = True,
-    dominant_dim: Tuple[str, ...] = ("depth", "vars", "events", "branching"),
-) -> VerifyAlgorithmMeta:
-    """Build metadata for a planned bounded-model-checking algorithm.
-
-    BMC entries are intentionally placeholders with ``impl=None``.  They remain
-    in the registry so planning, documentation, and inspect gating can expose
-    the future query surface without accidentally running search algorithms in
-    automatic inspect flows.
-
-    :param name: Registry key and planned algorithm name.
-    :type name: str
-    :param description: Human-readable algorithm summary.
-    :type description: str
-    :param call_count_scaling: Planned call-count scaling class.
-    :type call_count_scaling: CallCountScaling
-    :param fallback_unknown_risk: Risk of inconclusive fallback, defaults to
-        ``"medium"``.
-    :type fallback_unknown_risk: FallbackUnknownRisk, optional
-    :param incremental: Whether the future implementation should support
-        incremental solving, defaults to ``True``.
-    :type incremental: bool, optional
-    :param dominant_dim: Dominant model dimensions for cost explanations,
-        defaults to ``("depth", "vars", "events", "branching")``.
-    :type dominant_dim: Tuple[str, ...], optional
-    :return: Placeholder metadata entry.
-    :rtype: VerifyAlgorithmMeta
-
-    Example::
-
-        >>> meta = _bmc_placeholder(
-        ...     "bounded_reachability",
-        ...     "Query bounded reachability.",
-        ...     "k_unrollings",
-        ... )
-        >>> meta.closedness
-        'queried'
-        >>> meta.impl is None
-        True
-    """
-    return VerifyAlgorithmMeta(
-        name=name,
-        description=description,
-        closedness="queried",
-        complexity_tier="bmc_search",
-        smt_logic="QF_LIRA",
-        formula_size_scaling="linear",
-        call_count_scaling=call_count_scaling,
-        incremental=incremental,
-        fallback_unknown_risk=fallback_unknown_risk,
-        recommended_tactic="smt",
-        quantifier_alternation_depth=0,
-        max_bitwidth=None,
-        theory_combination=("LIA", "LRA"),
-        verification_scope="bmc_unrolled",
-        dominant_dim=dominant_dim,
-        diagnostic_codes=(),
-        impl=None,
-    )
-
-
 def _build_registry() -> Mapping[str, VerifyAlgorithmMeta]:
     """Build the immutable verify algorithm metadata mapping.
 
     The returned mapping keeps structural algorithms first, implemented
-    local-SMT algorithms next, and planned BMC placeholders last.  Registry
-    order is intentionally stable because inspect adapters iterate over the
-    mapping in declaration order.
+    local-SMT algorithms next. Registry order is intentionally stable because
+    inspect adapters iterate over the mapping in declaration order.
 
     :return: Mapping from algorithm name to metadata.
     :rtype: Mapping[str, VerifyAlgorithmMeta]
@@ -298,8 +229,8 @@ def _build_registry() -> Mapping[str, VerifyAlgorithmMeta]:
         >>> registry = _build_registry()
         >>> "dead_guard" in registry
         True
-        >>> registry["bounded_reachability"].impl is None
-        True
+        >>> len(registry), all(callable(meta.impl) for meta in registry.values())
+        (14, True)
     """
     return {
         "topological_reachable_set": _structural(
@@ -400,34 +331,6 @@ def _build_registry() -> Mapping[str, VerifyAlgorithmMeta]:
         ),
         "composite_init_guards_incomplete": _composite_init_guards_incomplete(
             impl=composite_init_guards_incomplete
-        ),
-        "bounded_reachability": _bmc_placeholder(
-            "bounded_reachability",
-            "Query whether a target state is reachable from a source within a bound.",
-            "k_unrollings",
-        ),
-        "symbolic_bfs": _bmc_placeholder(
-            "symbolic_bfs",
-            "Build bounded symbolic BFS spaces for queried reachability algorithms.",
-            "k_unrollings_times_branching",
-        ),
-        "bounded_safety": _bmc_placeholder(
-            "bounded_safety",
-            "Query whether bounded executions avoid bad states or bad conditions.",
-            "k_unrollings",
-        ),
-        "bounded_invariant": _bmc_placeholder(
-            "bounded_invariant",
-            "Query whether an invariant holds over all bounded reachable frames.",
-            "k_unrollings_times_branching",
-            fallback_unknown_risk="high",
-        ),
-        "path_witness": _bmc_placeholder(
-            "path_witness",
-            "Decode a concrete path witness from a satisfiable symbolic frame.",
-            "one",
-            incremental=False,
-            dominant_dim=("depth",),
         ),
     }
 

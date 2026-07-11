@@ -28,7 +28,7 @@ jar files, Graphviz, or desktop viewers.
    * - ``simulate``
      - yes
      - no
-   * - ``inspect`` and bounded verify integration
+   * - ``inspect`` and structural/SMT-local verify integration
      - yes
      - no extra system tool for normal inspect use
    * - ``generate`` with packaged templates

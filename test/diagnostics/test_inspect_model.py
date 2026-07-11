@@ -11,6 +11,8 @@ that inspect surface.
 import json
 import os
 import inspect
+import subprocess
+import sys
 
 import pytest
 
@@ -3541,21 +3543,10 @@ class TestInspectModelVerifyIntegration:
 
         assert 'W_DEAD_GUARD' not in {diag.code for diag in report.diagnostics}
 
-    def test_invalid_verify_complexity_tier_raises_controlled_error(self):
-        from pyfcstm.verify import InspectAccessForbiddenError
-
-        with pytest.raises(InspectAccessForbiddenError, match='bmc_search'):
-            inspect_model(
-                _parse(SIMPLE_DSL),
-                enable_verify=True,
-                max_complexity_tier='bmc_search',
-            )
-
     @pytest.mark.parametrize(
         ('kwargs', 'message'),
         [
             ({'max_complexity_tier': 'unknown_tier'}, 'unknown inspect complexity tier'),
-            ({'max_call_count_scaling': 'k_unrollings'}, 'call-count scaling'),
             ({'max_call_count_scaling': 'unknown_scaling'}, 'call-count scaling'),
         ],
     )
@@ -3568,6 +3559,42 @@ class TestInspectModelVerifyIntegration:
                 enable_verify=True,
                 **kwargs,
             )
+
+    def test_highest_budget_inspect_model_does_not_load_bmc_in_fresh_process(self):
+        script = """
+import sys
+
+from pyfcstm.diagnostics import inspect_model
+from pyfcstm.dsl import parse_with_grammar_entry
+from pyfcstm.model import parse_dsl_node_to_state_machine
+
+ast = parse_with_grammar_entry('state Root;', 'state_machine_dsl')
+machine = parse_dsl_node_to_state_machine(ast)
+report = inspect_model(
+    machine,
+    enable_verify=True,
+    max_complexity_tier='smt_undecidable_heuristic',
+    max_call_count_scaling='vars_times_transitions',
+    smt_timeout_ms=1000,
+)
+if report.root_state_path != 'Root':
+    raise SystemExit(report.root_state_path)
+loaded = sorted(
+    name for name in sys.modules
+    if name == 'pyfcstm.bmc' or name.startswith('pyfcstm.bmc.')
+)
+if loaded:
+    raise SystemExit('\\n'.join(loaded))
+"""
+        result = subprocess.run(
+            [sys.executable, '-c', script],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
 
 
 @pytest.mark.unittest

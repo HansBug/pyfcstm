@@ -24,6 +24,13 @@ Verification and Inspect
 - Added inspect safety gates for complexity tier, call-count scaling, and SMT
   timeout forwarding. BMC-style search remains outside the automatic inspect
   path.
+- Removed the unimplemented ``bounded_reachability``, ``symbolic_bfs``,
+  ``bounded_safety``, ``bounded_invariant``, and ``path_witness`` entries from
+  :data:`pyfcstm.verify.REGISTRY`. The registry now contains only its 14
+  callable structural and SMT-local algorithms.
+- Removed the verify-only taxonomy values ``bmc_search``, ``k_unrollings``,
+  ``k_unrollings_times_branching``, and ``bmc_unrolled``. BMC queries and
+  witnesses are exposed by :mod:`pyfcstm.bmc`, not through verify or inspect.
 
 Diagnostics and CLI
 ~~~~~~~~~~~~~~~~~~~
@@ -115,3 +122,9 @@ The verification and inspect APIs are new public surfaces in this release. They
 are intended to be stable at the function and JSON-contract level, but callers
 should still treat precise diagnostic wording and solver evidence text as
 diagnostic payloads rather than hard-coded parsing targets.
+
+Code that referenced the removed verify registry keys or taxonomy values must
+migrate to the public :mod:`pyfcstm.bmc` query APIs. The ``inspect`` CLI no
+longer accepts the removed BMC-only values merely to reject them in application
+code; Click now reports them as invalid choices with usage exit status ``2``
+instead of the former policy-error status ``1``.

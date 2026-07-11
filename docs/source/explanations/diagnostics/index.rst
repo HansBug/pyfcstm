@@ -181,11 +181,11 @@ already reports ``W_DEADLOCK_LEAF`` from static structure. When the command adds
 algorithms. The same model then reports facts such as ``W_TOPOLOGICAL_NOEXIT``
 and ``I_TOPOLOGICAL_NON_TERMINATING``.
 
-This does not mean inspect ran an unbounded state-space search. The adapter
-iterates registry metadata, keeps only closed algorithms within the selected
-complexity and call-count policy, and rejects ``bmc_search`` and
-``k_unrollings`` labels before any report is produced. The result is useful
-extra topology feedback, not a proof over all event schedules and abstract
+This does not mean inspect ran a state-space search. The adapter iterates
+registry metadata and keeps only closed structural and SMT-local algorithms
+within the selected complexity and call-count policy. Inspect does not parse
+``.fbmcq`` queries or load :mod:`pyfcstm.bmc`. The result is useful extra
+model-derived feedback, not a proof over all event schedules and abstract
 handlers.
 
 Severity, risk, and emit tier

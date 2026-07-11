@@ -20,8 +20,8 @@ Module map:
        :class:`AlgorithmResult`.
    * - Registry
      - :data:`REGISTRY`
-     - Store :class:`VerifyAlgorithmMeta` for every implemented or planned
-       verification algorithm.
+     - Store :class:`VerifyAlgorithmMeta` for every implemented verification
+       algorithm.
    * - Inspect gating
      - :func:`eligible_for_inspect`, :func:`iter_inspect_eligible`
      - Decide which raw algorithms may be used by automatic inspect workflows.

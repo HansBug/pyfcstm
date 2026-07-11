@@ -27,7 +27,7 @@
    * - ``simulate``
      - 是
      - 不需要
-   * - ``inspect`` 和有界验证集成
+   * - ``inspect`` 和结构/局部 SMT 验证集成
      - 是
      - 普通 inspect 使用不需要额外系统工具
    * - 使用打包模板的 ``generate``

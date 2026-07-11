@@ -26,20 +26,12 @@ GROUP2_SMT_LOCAL = (
     "composite_init_guards_incomplete",
 )
 
-GROUP3_BMC_PLACEHOLDERS = (
-    "bounded_reachability",
-    "symbolic_bfs",
-    "bounded_safety",
-    "bounded_invariant",
-    "path_witness",
-)
-
-ALL_ALGORITHMS = GROUP1_TOPOLOGY + GROUP2_SMT_LOCAL + GROUP3_BMC_PLACEHOLDERS
+ALL_ALGORITHMS = GROUP1_TOPOLOGY + GROUP2_SMT_LOCAL
 
 
 def test_registry_contains_exactly_all_verify_algorithms_in_stable_order():
     assert tuple(REGISTRY) == ALL_ALGORITHMS
-    assert len(REGISTRY) == 19
+    assert len(REGISTRY) == 14
 
 
 def test_registry_keys_match_meta_names_and_raw_impl_state():
@@ -49,10 +41,7 @@ def test_registry_keys_match_meta_names_and_raw_impl_state():
         assert meta.name == name
         assert meta.description
         assert meta.quantifier_alternation_depth == 0
-        if name in GROUP1_TOPOLOGY or name in GROUP2_SMT_LOCAL:
-            assert meta.impl is not None
-        else:
-            assert meta.impl is None
+        assert callable(meta.impl)
 
 
 def test_registry_module_does_not_expose_mutable_backing_store():
@@ -217,42 +206,7 @@ def test_group2_smt_local_metadata_contract():
         assert REGISTRY[name].diagnostic_codes == codes
 
 
-def test_group3_bmc_placeholder_metadata_contract():
-    for name in GROUP3_BMC_PLACEHOLDERS:
-        meta = REGISTRY[name]
-        assert meta.closedness == "queried"
-        assert meta.complexity_tier == "bmc_search"
-        assert meta.smt_logic == "QF_LIRA"
-        assert meta.formula_size_scaling == "linear"
-        assert meta.recommended_tactic == "smt"
-        assert meta.verification_scope == "bmc_unrolled"
-        assert meta.diagnostic_codes == ()
-
-    for name in set(GROUP3_BMC_PLACEHOLDERS) - {"path_witness"}:
-        assert REGISTRY[name].incremental is True
-        assert REGISTRY[name].dominant_dim == (
-            "depth",
-            "vars",
-            "events",
-            "branching",
-        )
-    assert REGISTRY["path_witness"].incremental is False
-    assert REGISTRY["path_witness"].dominant_dim == ("depth",)
-
-    assert REGISTRY["bounded_reachability"].call_count_scaling == "k_unrollings"
-    assert REGISTRY["bounded_safety"].call_count_scaling == "k_unrollings"
-    assert REGISTRY["symbolic_bfs"].call_count_scaling == "k_unrollings_times_branching"
-    assert (
-        REGISTRY["bounded_invariant"].call_count_scaling
-        == "k_unrollings_times_branching"
-    )
-    assert REGISTRY["path_witness"].call_count_scaling == "one"
-    assert REGISTRY["bounded_invariant"].fallback_unknown_risk == "high"
-    for name in set(GROUP3_BMC_PLACEHOLDERS) - {"bounded_invariant"}:
-        assert REGISTRY[name].fallback_unknown_risk == "medium"
-
-
-def test_structural_smt_and_bmc_metadata_are_mutually_consistent():
+def test_structural_and_smt_metadata_are_mutually_consistent():
     for meta in REGISTRY.values():
         if meta.complexity_tier == "structural":
             assert meta.smt_logic is None
@@ -262,12 +216,9 @@ def test_structural_smt_and_bmc_metadata_are_mutually_consistent():
             assert meta.closedness == "closed"
             assert meta.smt_logic == "QF_LIRA"
             assert meta.verification_scope == "smt_local"
-        if meta.complexity_tier == "bmc_search":
-            assert meta.closedness == "queried"
-            assert meta.verification_scope == "bmc_unrolled"
 
 
-def test_verify_package_does_not_import_diagnostics():
+def test_verify_package_does_not_import_diagnostics_or_bmc():
     import ast
     import pathlib
 
@@ -281,33 +232,70 @@ def test_verify_package_does_not_import_diagnostics():
             return ".".join(prefix)
         return node.module or ""
 
+    forbidden_prefixes = ("pyfcstm.diagnostics", "pyfcstm.bmc")
     bad = []
     for path in pathlib.Path("pyfcstm/verify").rglob("*.py"):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 for alias in node.names:
-                    if alias.name == "pyfcstm.diagnostics" or alias.name.startswith(
-                        "pyfcstm.diagnostics."
+                    if any(
+                        alias.name == prefix or alias.name.startswith(prefix + ".")
+                        for prefix in forbidden_prefixes
                     ):
                         bad.append((path, node.lineno, alias.name))
             elif isinstance(node, ast.ImportFrom):
                 module = resolved_import_from(path, node)
-                if module == "pyfcstm.diagnostics" or module.startswith(
-                    "pyfcstm.diagnostics."
+                if any(
+                    module == prefix or module.startswith(prefix + ".")
+                    for prefix in forbidden_prefixes
                 ):
                     bad.append((path, node.lineno, module))
-                if module == "pyfcstm" and any(
-                    alias.name == "diagnostics" for alias in node.names
-                ):
-                    bad.append((path, node.lineno, "from pyfcstm import diagnostics"))
+                if module == "pyfcstm":
+                    for alias in node.names:
+                        if alias.name in {"diagnostics", "bmc"}:
+                            bad.append(
+                                (
+                                    path,
+                                    node.lineno,
+                                    "from pyfcstm import {0}".format(alias.name),
+                                )
+                            )
     assert bad == []
+
+
+def test_verify_package_import_does_not_load_bmc_in_fresh_process():
+    import subprocess
+    import sys
+
+    script = """
+import sys
+
+import pyfcstm.verify  # noqa: F401
+loaded = sorted(
+    name for name in sys.modules
+    if name == 'pyfcstm.bmc' or name.startswith('pyfcstm.bmc.')
+)
+if loaded:
+    raise SystemExit("\\n".join(loaded))
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        universal_newlines=True,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_verify_package_does_not_create_later_algorithm_modules():
     import pathlib
 
     forbidden_paths = (
+        "pyfcstm/verify/bmc.py",
+        "pyfcstm/verify/bmc",
         "pyfcstm/verify/search.py",
         "pyfcstm/verify/reachability.py",
     )

@@ -400,8 +400,9 @@ def test_c_family_readmes_document_deployment_safety_boundaries(rendered_templat
             assert "pyfcstm inspect" in text
             assert "C/C++ deployment-profile" in text
             assert "Python" in text
-            assert "https://github.com/HansBug/pyfcstm/issues/254" in text
-            assert "https://github.com/HansBug/pyfcstm/issues/255" in text
+            lowered = text.lower()
+            assert "github" not in lowered
+            assert "s714" not in lowered
             assert "non-reentrant" in text
             assert "volatile" in text
             assert "DMA" in text

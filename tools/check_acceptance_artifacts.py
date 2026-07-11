@@ -17,6 +17,7 @@ The module contains:
 * :func:`validate_executable_inventory` - Validate a PyInstaller inventory.
 * :func:`validate_pdf_artifact` - Validate acceptance PDF metadata and text evidence.
 * :func:`validate_vsix` - Validate one VS Code extension package.
+* :func:`validate_delivery_bundle` - Validate the consolidated six-file bundle.
 * :func:`validate_template_assets` - Compare template ZIP entry names and
   payload bytes while ignoring ZIP container metadata.
 * :func:`run_self_check` - Exercise positive and adversarial fixtures.
@@ -35,6 +36,8 @@ import argparse
 import ast
 import csv
 import fnmatch
+import hashlib
+import io
 import json
 import os
 import platform
@@ -47,6 +50,7 @@ import tarfile
 import tempfile
 import unicodedata
 import zipfile
+import zlib
 from pathlib import Path
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 from xml.etree import ElementTree
@@ -56,6 +60,7 @@ TEMPLATE_NAMES = ("c", "c_poll", "cpp", "cpp_poll", "python")
 CLI_COMMANDS = ("generate", "inspect", "plantuml", "simulate", "visualize")
 VSIX_ENTRY_COUNT = 13
 VSIX_EXTENSION_ID = "hansbug.fcstm-language-support@0.1.0"
+FORBIDDEN_DELIVERY_TERMS = ("github", "s714")
 
 WHEEL_REQUIRED = (
     "pyfcstm/__init__.py",
@@ -169,7 +174,10 @@ EXECUTABLE_REQUIRED_PATTERN_GROUPS = (
         "libz3.dylib",
         "libz3.dll",
     ),
-    ("python37.dll",),
+)
+WINDOWS_EXECUTABLE_REQUIRED_PATTERN_GROUPS = (("python37.dll",),)
+LINUX_EXECUTABLE_REQUIRED_PATTERN_GROUPS = (
+    ("libpython3.7*.so*", "python3.7/lib-dynload/*"),
 )
 EXECUTABLE_DENYLIST = (
     "pyfcstm/llm/*",
@@ -193,6 +201,8 @@ PDF_REQUIRED_TEXT = (
     "Windows 7 可执行文件交付基线",
     "windows-2022",
     "python37.dll",
+    "Linux 可执行文件交付基线",
+    "ubuntu-22.04",
     "模型动态验证",
     "动态验证不是形式化验证",
     "design_validation_failure_multilevel_transition",
@@ -219,6 +229,7 @@ PDF_DENY_TEXT = (
     "/home/zhangshaoang/",
     "dev/s714",
     "S714",
+    "github",
 )
 PDF_REQUIRED_OUTLINE = (
     "项目验收要求",
@@ -399,6 +410,11 @@ def validate_packages(
     _assert_denylist("wheel", wheel_entries, WHEEL_DENYLIST)
     _assert_wheel_dist_info(wheel_entries, wheel_payloads)
     _assert_acceptance_metadata(wheel_payloads)
+    wheel_sensitive_scan = _assert_delivery_content_clean(
+        "wheel",
+        (wheels[0].name,) + wheel_entries,
+        {wheels[0].name: wheels[0].read_bytes(), **wheel_payloads},
+    )
 
     sdist_entries, sdist_payloads = _read_tar_entries(sdists[0])
     sdist_normalized = _strip_single_root(sdist_entries)
@@ -406,6 +422,11 @@ def validate_packages(
     _assert_sdist_allowlist(sdist_normalized)
     _assert_denylist("sdist", sdist_normalized, SDIST_DENYLIST)
     _assert_sdist_readme(sdist_payloads)
+    sdist_sensitive_scan = _assert_delivery_content_clean(
+        "sdist",
+        (sdists[0].name,) + sdist_entries,
+        {sdists[0].name: sdists[0].read_bytes(), **sdist_payloads},
+    )
 
     smoke = None
     if install_smoke:
@@ -417,6 +438,10 @@ def validate_packages(
         "sdist": str(sdists[0]),
         "wheel_entries": len(wheel_entries),
         "sdist_entries": len(sdist_entries),
+        "sensitive_scan": {
+            "wheel": wheel_sensitive_scan,
+            "sdist": sdist_sensitive_scan,
+        },
         "install_smoke": smoke,
     }
 
@@ -473,19 +498,31 @@ def validate_executable_inventory(
             "PlantUML JAR does not exist: {0}".format(plantuml_jar)
         )
 
-    build_baseline = _assert_windows7_delivery_build_baseline()
+    build_baseline = _assert_executable_delivery_build_baseline()
     inventory_text = _run_command(
         [archive_viewer, "-r", "-l", str(executable.resolve())]
     ).stdout
     entries = _parse_inventory_entries(inventory_text)
     inventory_origin = "{0} -r -l {1}".format(archive_viewer, executable.resolve())
-    _assert_executable_inventory_entries(entries)
+    _assert_executable_inventory_entries(entries, build_baseline["platform"])
+    extracted_payloads = _read_pyinstaller_payloads(executable)
+    executable_bytes = executable.read_bytes()
+    sensitive_scan = _assert_delivery_content_clean(
+        "executable",
+        (executable.name,) + entries + tuple(extracted_payloads),
+        {
+            executable.name: executable_bytes,
+            "printable-strings": _extract_printable_strings(executable_bytes),
+            **extracted_payloads,
+        },
+    )
     smoke = _run_executable_smoke(executable, source, plantuml_jar)
     return {
         "inventory": inventory_origin,
         "entries": len(entries),
         "executable": str(executable),
         "build_baseline": build_baseline,
+        "sensitive_scan": sensitive_scan,
         "e2e": smoke,
     }
 
@@ -597,12 +634,23 @@ def validate_pdf_artifact(
     _assert_text_contains("acceptance PDF text", text, PDF_REQUIRED_TEXT)
     _assert_text_excludes("acceptance PDF text", text, PDF_DENY_TEXT)
     outline_entries, required_outline = _validate_pdf_outline(outline)
+    sensitive_scan = _assert_delivery_content_clean(
+        "acceptance PDF",
+        (pdf.name,),
+        {
+            pdf.name: pdf.read_bytes(),
+            "extracted-text": text.encode("utf-8"),
+            "metadata": metadata.encode("utf-8"),
+            "outline": outline.encode("utf-8"),
+        },
+    )
     return {
         "pdf": str(pdf),
         "pages": pages,
         "text_chars": text_chars,
         "outline_entries": outline_entries,
         "required_outline": required_outline,
+        "sensitive_scan": sensitive_scan,
     }
 
 
@@ -668,6 +716,11 @@ def validate_vsix(
     readme = _decode_payload(payloads, "extension/README.md", "VSIX README")
     manifest = _decode_payload(payloads, "extension.vsixmanifest", "VSIX manifest")
     _assert_text_excludes("VSIX visible text", readme + "\n" + manifest, VSIX_DENY_TEXT)
+    sensitive_scan = _assert_delivery_content_clean(
+        "VSIX",
+        (vsix.name,) + entries,
+        {vsix.name: vsix.read_bytes(), **payloads},
+    )
     if javascript_syntax:
         _run_vsix_javascript_syntax_checks(payloads)
     smoke = None
@@ -679,8 +732,99 @@ def validate_vsix(
         "extension": installation_id,
         "version": package.get("version"),
         "source": str(source) if source is not None else None,
+        "sensitive_scan": sensitive_scan,
         "install_smoke": smoke,
     }
+
+
+def validate_delivery_bundle(delivery_dir: Path) -> Mapping[str, object]:
+    """
+    Validate the consolidated six-file acceptance delivery bundle.
+
+    This final gate repeats filename, signature, archive-member, PDF evidence,
+    raw executable, printable-string, and extractable PyInstaller payload scans
+    after staging artifacts have been downloaded and merged.
+
+    :param delivery_dir: Directory containing the six final delivery files.
+    :type delivery_dir: pathlib.Path
+    :return: Frozen file metadata and zero-count sensitive-term reports.
+    :rtype: collections.abc.Mapping[str, object]
+    :raises ArtifactValidationError: If the bundle contract or content scan
+        fails.
+
+    Example::
+
+        >>> try:
+        ...     validate_delivery_bundle(Path('/missing'))
+        ... except ArtifactValidationError as error:
+        ...     str(error).startswith('delivery directory does not exist')
+        True
+    """
+    files = _classify_delivery_files(delivery_dir)
+    _assert_delivery_signatures(files)
+    scans: Dict[str, Mapping[str, object]] = {}
+
+    wheel = files["wheel"]
+    wheel_entries, wheel_payloads = _read_zip_entries(wheel)
+    scans["wheel"] = _assert_delivery_content_clean(
+        "delivery wheel",
+        (wheel.name,) + wheel_entries,
+        {wheel.name: wheel.read_bytes(), **wheel_payloads},
+    )
+
+    sdist = files["sdist"]
+    sdist_entries, sdist_payloads = _read_tar_entries(sdist)
+    scans["sdist"] = _assert_delivery_content_clean(
+        "delivery sdist",
+        (sdist.name,) + sdist_entries,
+        {sdist.name: sdist.read_bytes(), **sdist_payloads},
+    )
+
+    pdf = files["pdf"]
+    scans["pdf"] = _assert_delivery_content_clean(
+        "delivery PDF",
+        (pdf.name,),
+        {
+            pdf.name: pdf.read_bytes(),
+            "extracted-text": _extract_pdf_text(pdf).encode("utf-8"),
+            "metadata": _extract_pdf_metadata(pdf).encode("utf-8"),
+            "outline": _extract_pdf_outline(pdf).encode("utf-8"),
+        },
+    )
+
+    vsix = files["vsix"]
+    vsix_entries, vsix_payloads = _read_zip_entries(vsix)
+    scans["vsix"] = _assert_delivery_content_clean(
+        "delivery VSIX",
+        (vsix.name,) + vsix_entries,
+        {vsix.name: vsix.read_bytes(), **vsix_payloads},
+    )
+
+    for key in ("windows_executable", "linux_executable"):
+        executable = files[key]
+        executable_bytes = executable.read_bytes()
+        extracted_payloads = _read_pyinstaller_payloads(executable)
+        scans[key] = _assert_delivery_content_clean(
+            "delivery {0}".format(key.replace("_", " ")),
+            (executable.name,) + tuple(extracted_payloads),
+            {
+                executable.name: executable_bytes,
+                "printable-strings": _extract_printable_strings(executable_bytes),
+                **extracted_payloads,
+            },
+        )
+
+    frozen_files = []
+    for key, path in sorted(files.items()):
+        frozen_files.append(
+            {
+                "kind": key,
+                "name": path.name,
+                "bytes": path.stat().st_size,
+                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            }
+        )
+    return {"files": frozen_files, "sensitive_scan": scans}
 
 
 def validate_template_assets(
@@ -828,7 +972,12 @@ def run_self_check() -> Mapping[str, object]:
             "wheel license required",
         )
         checks.append("packages-wheel-license-required")
-        for mode in ("wheel-diagnostics-readme", "sdist-diagnostics-readme"):
+        for mode in (
+            "wheel-diagnostics-readme",
+            "sdist-diagnostics-readme",
+            "wheel-sensitive-payload",
+            "sdist-sensitive-payload",
+        ):
             _expect_failure(
                 lambda mode=mode: validate_packages(
                     _copy_and_tamper_package_fixture(
@@ -929,6 +1078,30 @@ def run_self_check() -> Mapping[str, object]:
                 "Windows 7 delivery {0}".format(key),
             )
         checks.append("executable-windows7-baseline-negative")
+        linux_delivery_facts = {
+            "os_name": "posix",
+            "system_name": "Linux",
+            "python_version": (3, 7),
+            "pointer_bits": 64,
+            "github_actions": "true",
+            "runner_os": "Linux",
+            "baseline": "ubuntu-22.04-cpython-3.7-x86_64",
+            "image_os": "ubuntu22",
+        }
+        _assert_linux_delivery_build_facts(**linux_delivery_facts)
+        linux_inventory = root / "pyinstaller-inventory-linux.txt"
+        _write_inventory_fixture(linux_inventory, good=True, delivery_platform="linux")
+        _assert_executable_inventory_entries(
+            _read_inventory_entries(linux_inventory), "linux"
+        )
+        checks.append("executable-linux-baseline-positive")
+        invalid_linux_facts = dict(linux_delivery_facts)
+        invalid_linux_facts["image_os"] = "ubuntu24"
+        _expect_failure(
+            lambda: _assert_linux_delivery_build_facts(**invalid_linux_facts),
+            "Linux delivery image",
+        )
+        checks.append("executable-linux-baseline-negative")
         bad_inventory = root / "pyinstaller-inventory-bad.txt"
         _write_inventory_fixture(bad_inventory, good=False)
         _expect_failure(
@@ -938,6 +1111,20 @@ def run_self_check() -> Mapping[str, object]:
             "inventory denylist",
         )
         checks.append("executable-deny")
+        sensitive_inventory = root / "pyinstaller-inventory-sensitive.txt"
+        _write_inventory_fixture(sensitive_inventory, good=True)
+        sensitive_inventory.write_text(
+            sensitive_inventory.read_text(encoding="utf-8")
+            + " 0, 1, 1, 1, 'x', 'payload/GitHub.txt'\n",
+            encoding="utf-8",
+        )
+        _expect_failure(
+            lambda: _assert_executable_inventory_entries(
+                _read_inventory_entries(sensitive_inventory)
+            ),
+            "executable sensitive inventory",
+        )
+        checks.append("executable-sensitive-inventory-negative")
         missing_inventory = root / "pyinstaller-inventory-missing.txt"
         _write_inventory_fixture(missing_inventory, good=True, missing_required=True)
         _expect_failure(
@@ -1013,6 +1200,29 @@ def run_self_check() -> Mapping[str, object]:
             "pdf deny text",
         )
         checks.append("pdf-deny")
+        for mutation in ("sensitive-text", "sensitive-metadata", "sensitive-outline"):
+            sensitive_text = root / ("pdf-" + mutation + ".txt")
+            sensitive_metadata = root / ("pdfinfo-" + mutation + ".txt")
+            sensitive_outline = root / ("outline-" + mutation + ".txt")
+            _write_pdf_sidecars(
+                sensitive_text,
+                sensitive_metadata,
+                sensitive_outline,
+                good=True,
+                mutation=mutation,
+            )
+            _expect_failure(
+                lambda sensitive_text=sensitive_text, sensitive_metadata=sensitive_metadata, sensitive_outline=sensitive_outline: (
+                    validate_pdf_artifact(
+                        pdf,
+                        sensitive_text,
+                        sensitive_metadata,
+                        sensitive_outline,
+                    )
+                ),
+                "PDF {0}".format(mutation),
+            )
+            checks.append("pdf-{0}-negative".format(mutation))
         bad_metadata = root / "pdfinfo-bad.txt"
         _write_pdf_sidecars(
             text_file, bad_metadata, outline_file, good=True, mutation="metadata"
@@ -1068,6 +1278,7 @@ def run_self_check() -> Mapping[str, object]:
             "placeholder-bundle",
             "empty-grammar",
             "missing-manifest-asset",
+            "sensitive-bundle",
         ):
             bad_dir = root / "vsix-{0}".format(mutation)
             bad_vsix = bad_dir / "fcstm-language-support-0.1.0.vsix"
@@ -1121,6 +1332,35 @@ def run_self_check() -> Mapping[str, object]:
             "VSIX installed-layout extra file",
         )
         checks.append("vsix-install-layout")
+
+        delivery_dir = root / "delivery"
+        delivery_dir.mkdir()
+        shutil.copy2(str(next(package_dir.glob("*.whl"))), str(delivery_dir))
+        shutil.copy2(str(next(package_dir.glob("*.tar.gz"))), str(delivery_dir))
+        shutil.copy2(str(pdf), str(delivery_dir))
+        shutil.copy2(str(vsix), str(delivery_dir))
+        (delivery_dir / "pyfcstm-0.0.0-windows-x86_64.exe").write_bytes(
+            b"MZ" + b"safe" * 16
+        )
+        (delivery_dir / "pyfcstm-0.0.0-linux-x86_64").write_bytes(
+            b"\x7fELF" + b"safe" * 16
+        )
+        delivery_files = _classify_delivery_files(delivery_dir)
+        _assert_delivery_signatures(delivery_files)
+        _assert_delivery_content_clean(
+            "delivery fixture",
+            (path.name for path in delivery_files.values()),
+            {path.name: path.read_bytes() for path in delivery_files.values()},
+        )
+        checks.append("delivery-six-file-positive")
+        extra_delivery = root / "delivery-extra"
+        shutil.copytree(str(delivery_dir), str(extra_delivery))
+        (extra_delivery / "report.json").write_text("{}\n", encoding="utf-8")
+        _expect_failure(
+            lambda: _classify_delivery_files(extra_delivery),
+            "delivery exact file count",
+        )
+        checks.append("delivery-file-count-negative")
 
         expected_templates = root / "templates-expected"
         actual_templates = root / "templates-actual"
@@ -1238,6 +1478,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 code=args.code_bin,
                 source=args.source,
             )
+        elif args.command == "delivery":
+            summary = validate_delivery_bundle(args.delivery_dir)
         elif args.command == "template-assets":
             summary = validate_template_assets(
                 args.packaged,
@@ -1339,6 +1581,12 @@ def _build_parser() -> argparse.ArgumentParser:
     vsix.add_argument("--code-bin", "--code", dest="code_bin", default="code")
     _add_subcommand_report(vsix)
 
+    delivery = subparsers.add_parser(
+        "delivery", help="validate the consolidated six-file delivery"
+    )
+    delivery.add_argument("--delivery-dir", type=Path, required=True)
+    _add_subcommand_report(delivery)
+
     templates = subparsers.add_parser("template-assets", help="compare template assets")
     templates.add_argument(
         "--packaged", "--actual-dir", dest="packaged", type=Path, required=True
@@ -1372,6 +1620,237 @@ def _format_summary(summary: Mapping[str, object]) -> str:
 
 def _normalize_entry(path: str) -> str:
     return path.replace("\\", "/").lstrip("./")
+
+
+def _classify_delivery_files(delivery_dir: Path) -> Mapping[str, Path]:
+    if not delivery_dir.is_dir():
+        raise ArtifactValidationError(
+            "delivery directory does not exist: {0}".format(delivery_dir)
+        )
+    paths = sorted(path for path in delivery_dir.iterdir() if path.is_file())
+    if len(paths) != 6:
+        raise ArtifactValidationError(
+            "expected exactly six delivery files, got {0}: {1}".format(
+                len(paths), [path.name for path in paths]
+            )
+        )
+
+    def unique(pattern: str, label: str) -> Path:
+        matches = [path for path in paths if re.fullmatch(pattern, path.name)]
+        if len(matches) != 1:
+            raise ArtifactValidationError(
+                "expected one {0} matching {1!r}, got {2}".format(
+                    label, pattern, [path.name for path in matches]
+                )
+            )
+        return matches[0]
+
+    wheel = unique(r"pyfcstm-([0-9][^-]*)-py3-none-any\.whl", "wheel")
+    version_match = re.fullmatch(r"pyfcstm-([0-9][^-]*)-py3-none-any\.whl", wheel.name)
+    if version_match is None:  # pragma: no cover - unique matched above
+        raise ArtifactValidationError("cannot parse wheel version: {0}".format(wheel))
+    version = re.escape(version_match.group(1))
+    return {
+        "wheel": wheel,
+        "sdist": unique(r"pyfcstm-{0}\.tar\.gz".format(version), "sdist"),
+        "pdf": unique(r"pyfcstm-acceptance-zh\.pdf", "PDF"),
+        "vsix": unique(r"fcstm-language-support-([0-9][^-]*)\.vsix", "VSIX"),
+        "windows_executable": unique(
+            r"pyfcstm-{0}-windows-x86_64\.exe".format(version),
+            "Windows executable",
+        ),
+        "linux_executable": unique(
+            r"pyfcstm-{0}-linux-x86_64".format(version), "Linux executable"
+        ),
+    }
+
+
+def _assert_delivery_signatures(files: Mapping[str, Path]) -> None:
+    signatures = {
+        "wheel": b"PK",
+        "sdist": b"\x1f\x8b",
+        "pdf": b"%PDF",
+        "vsix": b"PK",
+        "windows_executable": b"MZ",
+        "linux_executable": b"\x7fELF",
+    }
+    for key, signature in signatures.items():
+        path = files[key]
+        try:
+            actual = path.read_bytes()[: len(signature)]
+        except OSError as error:
+            # Path.read_bytes raises OSError for unreadable delivery files.
+            raise ArtifactValidationError(
+                "cannot read delivery file {0}: {1}".format(path, error)
+            ) from error
+        if actual != signature:
+            raise ArtifactValidationError(
+                "invalid delivery signature for {0}: expected {1!r}, got {2!r}".format(
+                    path.name, signature, actual
+                )
+            )
+
+
+def _assert_delivery_content_clean(
+    label: str,
+    names: Iterable[str],
+    payloads: Mapping[str, bytes],
+) -> Mapping[str, object]:
+    """
+    Reject forbidden acceptance-delivery terms in names or payload bytes.
+
+    The scan is ASCII case-insensitive and recursively opens ZIP payloads, so
+    compressed template archives and VSIX members cannot hide a forbidden
+    term. The returned zero-count report is suitable for CI evidence but is
+    never added to the delivery bundle itself.
+
+    :param label: Human-readable artifact label.
+    :type label: str
+    :param names: Artifact and member names to scan.
+    :type names: collections.abc.Iterable[str]
+    :param payloads: Named raw payloads to scan.
+    :type payloads: collections.abc.Mapping[str, bytes]
+    :return: Zero-count scan summary.
+    :rtype: collections.abc.Mapping[str, object]
+    :raises ArtifactValidationError: If a forbidden term is present.
+
+    Example::
+
+        >>> _assert_delivery_content_clean('fixture', ('safe.txt',), {'safe.txt': b'ok'})['terms']
+        {'github': 0, 's714': 0}
+    """
+    counts = {term: 0 for term in FORBIDDEN_DELIVERY_TERMS}
+    matches: Dict[str, List[str]] = {term: [] for term in FORBIDDEN_DELIVERY_TERMS}
+    scanned_items = 0
+    scanned_bytes = 0
+
+    def scan_bytes(origin: str, data: bytes, depth: int = 0) -> None:
+        nonlocal scanned_items, scanned_bytes
+        scanned_items += 1
+        scanned_bytes += len(data)
+        lowered = data.lower()
+        for term in FORBIDDEN_DELIVERY_TERMS:
+            count = lowered.count(term.encode("ascii"))
+            counts[term] += count
+            if count:
+                matches[term].append("{0} ({1})".format(origin, count))
+        if depth >= 4 or not data.startswith(b"PK"):
+            return
+        try:
+            with zipfile.ZipFile(io.BytesIO(data), "r") as archive:
+                for info in archive.infolist():
+                    scan_name("{0}!{1}".format(origin, info.filename))
+                    scan_bytes(
+                        "{0}!{1}".format(origin, info.filename),
+                        archive.read(info.filename),
+                        depth + 1,
+                    )
+        except zipfile.BadZipFile as error:
+            # A PK-prefixed non-ZIP binary is still covered by its raw-byte scan.
+            if origin.lower().endswith((".zip", ".whl", ".vsix")):
+                raise ArtifactValidationError(
+                    "{0} contains an invalid ZIP payload {1}: {2}".format(
+                        label, origin, error
+                    )
+                ) from error
+
+    def scan_name(name: str) -> None:
+        lowered = name.lower()
+        for term in FORBIDDEN_DELIVERY_TERMS:
+            count = lowered.count(term)
+            counts[term] += count
+            if count:
+                matches[term].append("name:{0} ({1})".format(name, count))
+
+    for name in names:
+        scan_name(str(name))
+    for origin, payload in payloads.items():
+        scan_bytes(str(origin), payload)
+
+    if any(counts.values()):
+        details = {
+            term: matches[term] for term in FORBIDDEN_DELIVERY_TERMS if matches[term]
+        }
+        raise ArtifactValidationError(
+            "{0} contains forbidden delivery terms: {1}".format(
+                label, json.dumps(details, ensure_ascii=False, sort_keys=True)
+            )
+        )
+    return {
+        "terms": counts,
+        "scanned_items": scanned_items,
+        "scanned_bytes": scanned_bytes,
+    }
+
+
+def _extract_printable_strings(data: bytes) -> bytes:
+    """
+    Extract printable ASCII runs for explicit executable string scanning.
+
+    :param data: Raw executable bytes.
+    :type data: bytes
+    :return: Newline-separated printable strings of at least four bytes.
+    :rtype: bytes
+
+    Example::
+
+        >>> _extract_printable_strings(b'\\x00hello\\x00x')
+        b'hello'
+    """
+    return b"\n".join(re.findall(rb"[\x20-\x7e]{4,}", data))
+
+
+def _read_pyinstaller_payloads(executable: Path) -> Mapping[str, bytes]:
+    """
+    Read root and embedded PYZ payloads from a PyInstaller executable.
+
+    :param executable: PyInstaller executable to inspect.
+    :type executable: pathlib.Path
+    :return: Payload names mapped to uncompressed bytes.
+    :rtype: collections.abc.Mapping[str, bytes]
+    :raises ArtifactValidationError: If the executable archive cannot be read.
+
+    Example::
+
+        >>> _read_pyinstaller_payloads(Path('/missing'))  # doctest: +SKIP
+        {}
+    """
+    try:
+        from PyInstaller.archive.readers import (
+            ArchiveReadError,
+            CArchiveReader,
+            PKG_ITEM_PYZ,
+        )
+    except ImportError as error:
+        # PyInstaller is the executable builder and supplies its archive reader.
+        raise ArtifactValidationError(
+            "PyInstaller archive reader is required for executable payload scanning"
+        ) from error
+
+    try:
+        archive = CArchiveReader(str(executable))
+        payloads: Dict[str, bytes] = {}
+        for name, entry in archive.toc.items():
+            payload = archive.extract(name)
+            if payload is not None:
+                payloads["PKG/{0}".format(name)] = payload
+            if entry[-1] != PKG_ITEM_PYZ:
+                continue
+            embedded = archive.open_embedded_archive(name)
+            for embedded_name in embedded.toc:
+                embedded_payload = embedded.extract(embedded_name, raw=True)
+                if embedded_payload is not None:
+                    payloads["PKG/{0}!{1}".format(name, embedded_name)] = (
+                        embedded_payload
+                    )
+        return payloads
+    except (ArchiveReadError, OSError, ValueError, zlib.error) as error:
+        # Reader construction/extraction raises these for malformed PKG/PYZ data.
+        raise ArtifactValidationError(
+            "cannot extract PyInstaller payloads from {0}: {1}".format(
+                executable, error
+            )
+        ) from error
 
 
 def _read_zip_entries(path: Path) -> Tuple[Tuple[str, ...], Dict[str, bytes]]:
@@ -1914,13 +2393,29 @@ def _read_inventory_entries(inventory: Path) -> Tuple[str, ...]:
     return _parse_inventory_entries(text)
 
 
-def _assert_executable_inventory_entries(entries: Iterable[str]) -> None:
+def _assert_executable_inventory_entries(
+    entries: Iterable[str], delivery_platform: str = "windows"
+) -> None:
     normalized = tuple(entries)
     _assert_required("executable inventory", normalized, EXECUTABLE_REQUIRED)
     _assert_required_pattern_groups(
         "executable inventory", normalized, EXECUTABLE_REQUIRED_PATTERN_GROUPS
     )
+    if delivery_platform == "windows":
+        platform_groups = WINDOWS_EXECUTABLE_REQUIRED_PATTERN_GROUPS
+    elif delivery_platform == "linux":
+        platform_groups = LINUX_EXECUTABLE_REQUIRED_PATTERN_GROUPS
+    else:
+        raise ArtifactValidationError(
+            "unsupported executable delivery platform: {0}".format(delivery_platform)
+        )
+    _assert_required_pattern_groups(
+        "{0} executable inventory".format(delivery_platform),
+        normalized,
+        platform_groups,
+    )
     _assert_denylist("executable inventory", normalized, EXECUTABLE_DENYLIST)
+    _assert_delivery_content_clean("executable inventory", normalized, {})
 
 
 def _parse_inventory_entries(text: str) -> Tuple[str, ...]:
@@ -2233,10 +2728,22 @@ def _assert_executable_platform_shape(executable: Path) -> None:
             raise ArtifactValidationError(
                 "Windows executable does not have PE MZ magic: {0}".format(executable)
             )
-    elif not os.access(str(executable), os.X_OK):
-        raise ArtifactValidationError(
-            "executable is not marked executable: {0}".format(executable)
-        )
+    else:
+        if not os.access(str(executable), os.X_OK):
+            raise ArtifactValidationError(
+                "executable is not marked executable: {0}".format(executable)
+            )
+        try:
+            magic = executable.read_bytes()[:4]
+        except OSError as error:
+            # Path.read_bytes raises OSError when the executable is unreadable.
+            raise ArtifactValidationError(
+                "cannot read executable {0}: {1}".format(executable, error)
+            ) from error
+        if magic != b"\x7fELF":
+            raise ArtifactValidationError(
+                "Linux executable does not have ELF magic: {0}".format(executable)
+            )
 
 
 def _assert_windows7_delivery_build_facts(
@@ -2289,6 +2796,7 @@ def _assert_windows7_delivery_build_facts(
         '3.7'
     """
     facts = {
+        "platform": "windows",
         "os_name": os_name,
         "system": system_name,
         "python": "{0}.{1}".format(*python_version),
@@ -2299,6 +2807,7 @@ def _assert_windows7_delivery_build_facts(
         "image_os": image_os,
     }
     expected = {
+        "platform": "windows",
         "os_name": "nt",
         "system": "Windows",
         "python": "3.7",
@@ -2346,6 +2855,140 @@ def _assert_windows7_delivery_build_baseline() -> Mapping[str, object]:
         runner_os=os.environ.get("RUNNER_OS", ""),
         baseline=os.environ.get("PYFCSTM_WINDOWS7_DELIVERY_BASELINE", ""),
         image_os=os.environ.get("ImageOS", ""),
+    )
+
+
+def _assert_linux_delivery_build_facts(
+    os_name: str,
+    system_name: str,
+    python_version: Tuple[int, int],
+    pointer_bits: int,
+    github_actions: str,
+    runner_os: str,
+    baseline: str,
+    image_os: str,
+) -> Mapping[str, object]:
+    """
+    Validate the Ubuntu 22.04 CPython 3.7 x86-64 delivery provenance.
+
+    :param os_name: Python operating-system family name.
+    :type os_name: str
+    :param system_name: Platform system name.
+    :type system_name: str
+    :param python_version: Python major and minor version pair.
+    :type python_version: typing.Tuple[int, int]
+    :param pointer_bits: Interpreter pointer width in bits.
+    :type pointer_bits: int
+    :param github_actions: Hosted automation environment marker.
+    :type github_actions: str
+    :param runner_os: Hosted runner operating-system name.
+    :type runner_os: str
+    :param baseline: Explicit Linux delivery baseline marker.
+    :type baseline: str
+    :param image_os: Hosted-runner image identifier.
+    :type image_os: str
+    :return: Validated Linux build provenance facts.
+    :rtype: collections.abc.Mapping[str, object]
+    :raises ArtifactValidationError: If any fact differs from the accepted
+        Ubuntu 22.04 CPython 3.7 x86-64 baseline.
+
+    Example::
+
+        >>> facts = _assert_linux_delivery_build_facts(
+        ...     os_name="posix",
+        ...     system_name="Linux",
+        ...     python_version=(3, 7),
+        ...     pointer_bits=64,
+        ...     github_actions="true",
+        ...     runner_os="Linux",
+        ...     baseline="ubuntu-22.04-cpython-3.7-x86_64",
+        ...     image_os="ubuntu22",
+        ... )
+        >>> facts["platform"]
+        'linux'
+    """
+    facts = {
+        "platform": "linux",
+        "os_name": os_name,
+        "system": system_name,
+        "python": "{0}.{1}".format(*python_version),
+        "pointer_bits": pointer_bits,
+        "github_actions": github_actions,
+        "runner_os": runner_os,
+        "baseline": baseline,
+        "image_os": image_os,
+    }
+    expected = {
+        "platform": "linux",
+        "os_name": "posix",
+        "system": "Linux",
+        "python": "3.7",
+        "pointer_bits": 64,
+        "github_actions": "true",
+        "runner_os": "Linux",
+        "baseline": "ubuntu-22.04-cpython-3.7-x86_64",
+        "image_os": "ubuntu22",
+    }
+    mismatches = {
+        key: {"actual": facts[key], "expected": value}
+        for key, value in expected.items()
+        if facts[key] != value
+    }
+    if mismatches:
+        raise ArtifactValidationError(
+            "Linux delivery build baseline mismatch: {0}".format(
+                json.dumps(mismatches, sort_keys=True)
+            )
+        )
+    return facts
+
+
+def _assert_linux_delivery_build_baseline() -> Mapping[str, object]:
+    """
+    Validate the current process against the Linux delivery baseline.
+
+    :return: Validated build provenance facts for the current process.
+    :rtype: collections.abc.Mapping[str, object]
+    :raises ArtifactValidationError: If the current process is not Ubuntu
+        22.04 with 64-bit CPython 3.7 under hosted automation.
+
+    Example::
+
+        >>> _assert_linux_delivery_build_baseline()  # doctest: +SKIP
+    """
+    return _assert_linux_delivery_build_facts(
+        os_name=os.name,
+        system_name=platform.system(),
+        python_version=(sys.version_info[0], sys.version_info[1]),
+        pointer_bits=struct.calcsize("P") * 8,
+        github_actions=os.environ.get("GITHUB_ACTIONS", ""),
+        runner_os=os.environ.get("RUNNER_OS", ""),
+        baseline=os.environ.get("PYFCSTM_LINUX_DELIVERY_BASELINE", ""),
+        image_os=os.environ.get("ImageOS", ""),
+    )
+
+
+def _assert_executable_delivery_build_baseline() -> Mapping[str, object]:
+    """
+    Validate the current Windows or Linux executable delivery provenance.
+
+    :return: Platform-specific validated build provenance.
+    :rtype: collections.abc.Mapping[str, object]
+    :raises ArtifactValidationError: If the platform is unsupported or the
+        corresponding delivery baseline is not satisfied.
+
+    Example::
+
+        >>> _assert_executable_delivery_build_baseline()  # doctest: +SKIP
+    """
+    if os.name == "nt":
+        return _assert_windows7_delivery_build_baseline()
+    if os.name == "posix" and platform.system() == "Linux":
+        return _assert_linux_delivery_build_baseline()
+    raise ArtifactValidationError(
+        "unsupported executable delivery host: os.name={0!r}, system={1!r}".format(
+            os.name, platform.system()
+        )
     )
 
 
@@ -3234,6 +3877,16 @@ def _copy_and_tamper_package_fixture(source: Path, target: Path, mode: str) -> P
         _write_tar(sdist, payloads)
     elif mode == "wheel-filename":
         wheel.rename(wheel.with_name("acceptance-" + wheel.name))
+    elif mode == "wheel-sensitive-payload":
+        entries, payloads = _read_zip_entries(wheel)
+        payloads["pyfcstm/diagnostics/schema.json"] += b"\nGITHUB\n"
+        _refresh_wheel_record(payloads)
+        _write_zip(wheel, payloads)
+    elif mode == "sdist-sensitive-payload":
+        entries, payloads = _read_tar_entries(sdist)
+        setup_entry = next(entry for entry in entries if entry.endswith("/setup.py"))
+        payloads[setup_entry] += b"\ns714\n"
+        _write_tar(sdist, payloads)
     else:
         raise ArtifactValidationError("unknown package tamper mode: {0}".format(mode))
     return target
@@ -3251,11 +3904,21 @@ def _refresh_wheel_record(payloads: Dict[str, bytes]) -> None:
 
 
 def _write_inventory_fixture(
-    path: Path, good: bool, missing_required: bool = False
+    path: Path,
+    good: bool,
+    missing_required: bool = False,
+    delivery_platform: str = "windows",
 ) -> None:
     entries = list(EXECUTABLE_REQUIRED)
     entries.append("z3/lib/libz3.so")
-    entries.append("python37.dll")
+    if delivery_platform == "windows":
+        entries.append("python37.dll")
+    elif delivery_platform == "linux":
+        entries.append("libpython3.7m.so.1.0")
+    else:
+        raise ArtifactValidationError(
+            "unknown inventory fixture platform: {0}".format(delivery_platform)
+        )
     if missing_required:
         entries.remove("pyfcstm/template/python.zip")
     if not good:
@@ -3314,6 +3977,12 @@ def _write_pdf_sidecars(
             '+\t"{0}"\t#nameddest=chapter.{1}'.format(title, index)
             for index, title in enumerate(PDF_REQUIRED_OUTLINE[:-1], start=1)
         )
+    elif mutation == "sensitive-text":
+        text += "\nGitHub\n"
+    elif mutation == "sensitive-metadata":
+        metadata += "Subject: S714\n"
+    elif mutation == "sensitive-outline":
+        outline += '\n+\t"GitHub"\t#nameddest=chapter.999\n'
     elif mutation is not None:
         raise ArtifactValidationError(
             "unknown PDF sidecar mutation: {0}".format(mutation)
@@ -3399,6 +4068,8 @@ def _create_vsix_fixture(path: Path, mutation: Optional[str] = None) -> None:
         payloads["extension/syntaxes/fcstm.tmLanguage.json"] = b"{}\n"
     elif mutation == "missing-manifest-asset":
         del payloads["extension/README.md"]
+    elif mutation == "sensitive-bundle":
+        payloads["extension/dist/extension.js"] += b"/* GiThUb */\n"
     elif mutation not in (None, "wrong-id", "wrong-version"):
         raise ArtifactValidationError(
             "unknown VSIX fixture mutation: {0}".format(mutation)

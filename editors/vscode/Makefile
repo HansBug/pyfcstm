@@ -247,7 +247,7 @@ package: icons
 	mkdir -p $(dir $(VSIX_OUT))
 	rm -f $(VSIX_OUT)
 	@test -z "$$(find $(dir $(VSIX_OUT)) -maxdepth 1 -name '*.vsix' -print -quit)" || (echo "VSIX output dir contains stale .vsix files" && find $(dir $(VSIX_OUT)) -maxdepth 1 -name '*.vsix' -print && exit 1)
-	npx vsce package --ignoreFile .vscodeignore --readme-path README.md --no-dependencies --out $(VSIX_OUT)
+	npx vsce package --ignoreFile .vscodeignore --readme-path README.md --no-dependencies --allow-missing-repository --out $(VSIX_OUT)
 	python3 ./scripts/normalize-vsix.py $(VSIX_OUT)
 	node ./scripts/check-vsix.js --vsix $(VSIX_OUT)
 	@echo "VSIX: $(VSIX_OUT)"

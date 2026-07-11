@@ -215,8 +215,7 @@ pyfcstm 遵循三阶段流水线：
    社区和支持
    -----------------------
 
-   * **GitHub 仓库**：https://github.com/HansBug/pyfcstm
-   * **问题跟踪**：https://github.com/HansBug/pyfcstm/issues
+   * **在线文档**：https://pyfcstm.readthedocs.io/
    * **PyPI 包**：https://pypi.org/project/pyfcstm/
 
 许可证

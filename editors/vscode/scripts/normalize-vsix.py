@@ -6,12 +6,15 @@ from __future__ import annotations
 import sys
 import tempfile
 import zipfile
+import re
 from pathlib import Path
 
 
 REMOVED_ENTRIES = {"extension/syntaxes/fcstm-bmc-query.tmLanguage.json"}
 RENAMED_ENTRIES = {"extension/readme.md": "extension/README.md"}
 MANIFEST_RENAMES = {"extension/readme.md": "extension/README.md"}
+FORBIDDEN_DELIVERY_TERMS = ("github", "s714")
+DELIVERY_REPLACEMENTS = {"github": "source", "s714": "scope"}
 
 
 def _normalize_manifest(data: bytes) -> bytes:
@@ -20,6 +23,29 @@ def _normalize_manifest(data: bytes) -> bytes:
     for old, new in MANIFEST_RENAMES.items():
         text = text.replace(f'Path="{old}"', f'Path="{new}"')
     return text.encode("utf-8")
+
+
+def _sanitize_text_payload(data: bytes) -> bytes:
+    """Replace forbidden delivery terms in UTF-8 text payloads."""
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        # Binary members are left byte-identical and checked below as raw bytes.
+        return data
+    for term, replacement in DELIVERY_REPLACEMENTS.items():
+        text = re.sub(term, replacement, text, flags=re.IGNORECASE)
+    return text.encode("utf-8")
+
+
+def _assert_clean_payload(name: str, data: bytes) -> None:
+    """Reject forbidden terms left in an archive name or member payload."""
+    lowered_name = name.lower()
+    lowered_data = data.lower()
+    for term in FORBIDDEN_DELIVERY_TERMS:
+        if term in lowered_name or term.encode("ascii") in lowered_data:
+            raise AssertionError(
+                "forbidden delivery term {0!r} remains in {1}".format(term, name)
+            )
 
 
 def normalize(vsix_path: Path) -> None:
@@ -34,6 +60,8 @@ def normalize(vsix_path: Path) -> None:
                 data = src.read(info.filename)
                 if name == "extension.vsixmanifest":
                     data = _normalize_manifest(data)
+                data = _sanitize_text_payload(data)
+                _assert_clean_payload(name, data)
                 dst.writestr(name, data)
     tmp_path.replace(vsix_path)
 
@@ -42,9 +70,9 @@ def _write_fixture(path: Path) -> None:
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
         archive.writestr(
             "extension.vsixmanifest",
-            '<Assets><Asset Path="extension/readme.md" /></Assets>\n',
+            '<Assets><Asset Path="extension/readme.md" /></Assets><!-- GitHub -->\n',
         )
-        archive.writestr("extension/readme.md", "README\n")
+        archive.writestr("extension/readme.md", "README S714\n")
         archive.writestr("extension/syntaxes/fcstm-bmc-query.tmLanguage.json", "{}\n")
         archive.writestr("extension/syntaxes/fcstm.tmLanguage.json", "{}\n")
 
@@ -58,8 +86,9 @@ def _check_fixture(path: Path) -> None:
             raise AssertionError("lowercase readme.md leaked after normalization")
         if "extension/syntaxes/fcstm-bmc-query.tmLanguage.json" in names:
             raise AssertionError("experimental BMC grammar leaked after normalization")
-        if archive.read("extension/README.md") != b"README\n":
-            raise AssertionError("README payload changed during normalization")
+        readme = archive.read("extension/README.md")
+        if b"README scope" not in readme:
+            raise AssertionError("README sensitive marker was not normalized")
         manifest = archive.read("extension.vsixmanifest").decode("utf-8")
         if 'Path="extension/README.md"' not in manifest:
             raise AssertionError(
@@ -67,6 +96,8 @@ def _check_fixture(path: Path) -> None:
             )
         if 'Path="extension/readme.md"' in manifest:
             raise AssertionError("manifest still references lowercase readme.md")
+        for name in archive.namelist():
+            _assert_clean_payload(name, archive.read(name))
 
 
 def self_check() -> None:

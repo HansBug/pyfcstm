@@ -13,7 +13,6 @@ prune test
 prune docs
 prune editors
 prune llm_eval
-prune .github
 prune .omx
 prune .agents
 prune templates

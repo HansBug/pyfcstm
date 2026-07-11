@@ -274,6 +274,14 @@ a = Analysis(
     noarchive=False,
 )
 
+from tools.sanitize_pyinstaller_inputs import (
+    install_sanitized_bootstrap_modules,
+    sanitize_analysis_inputs,
+)
+
+sanitize_analysis_inputs(a)
+install_sanitized_bootstrap_modules()
+
 # Use compressed PYZ archive.
 pyz = PYZ(
     a.pure,

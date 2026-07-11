@@ -26,22 +26,8 @@
     "hierarchical state machine",
     "syntax highlighting"
   ],
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/HansBug/pyfcstm.git"
-  },
-  "bugs": {
-    "url": "https://github.com/HansBug/pyfcstm/issues"
-  },
-  "homepage": "https://github.com/HansBug/pyfcstm#readme",
-  "qna": "https://github.com/HansBug/pyfcstm/discussions",
-  "badges": [
-    {
-      "url": "https://img.shields.io/github/stars/HansBug/pyfcstm?style=social",
-      "href": "https://github.com/HansBug/pyfcstm",
-      "description": "Star pyfcstm on GitHub"
-    }
-  ],
+  "homepage": "https://pyfcstm.readthedocs.io/",
+  "qna": false,
   "icon": "resources/icon.png",
   "main": "./dist/extension.js",
   "activationEvents": [

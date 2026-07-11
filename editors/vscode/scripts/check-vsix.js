@@ -39,6 +39,7 @@ const FORBIDDEN_PATTERNS = [
   /^extension\/(?:Makefile|tsconfig\.json|esbuild\.config\.js|\.eslintrc\.json|package-lock\.json)$/,
   /^extension\/.*\.(?:vsix|whl|tar\.gz|pdf|exe)$/,
 ];
+const FORBIDDEN_DELIVERY_TERMS = ['github', 's714'];
 
 function fail(message) {
   throw new Error(message);
@@ -47,7 +48,9 @@ function fail(message) {
 function run(cmd, args, options = {}) {
   const result = spawnSync(cmd, args, {encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, ...options});
   if (result.status !== 0) {
-    fail(`${cmd} ${args.join(' ')} failed: ${(result.stderr || result.stdout || '').trim()}`);
+    const details = result.stderr || result.stdout || '';
+    const text = Buffer.isBuffer(details) ? details.toString('utf8') : details;
+    fail(`${cmd} ${args.join(' ')} failed: ${text.trim()}`);
   }
   return result.stdout;
 }
@@ -56,8 +59,28 @@ function zipEntries(vsixPath) {
   return run('unzip', ['-Z1', vsixPath]).split(/\r?\n/).filter(Boolean).sort();
 }
 
+function literalUnzipPattern(entry) {
+  return entry.replace(/\[/g, '[[]').replace(/\*/g, '[*]').replace(/\?/g, '[?]');
+}
+
 function zipText(vsixPath, entry) {
-  return run('unzip', ['-p', vsixPath, entry]);
+  return run('unzip', ['-p', vsixPath, literalUnzipPattern(entry)]);
+}
+
+function zipBytes(vsixPath, entry) {
+  return run('unzip', ['-p', vsixPath, literalUnzipPattern(entry)], {encoding: null});
+}
+
+function assertSensitiveTermsAbsent(vsixPath, entries) {
+  for (const entry of entries) {
+    const loweredName = entry.toLowerCase();
+    const loweredPayload = zipBytes(vsixPath, entry).toString('latin1').toLowerCase();
+    for (const term of FORBIDDEN_DELIVERY_TERMS) {
+      if (loweredName.includes(term) || loweredPayload.includes(term)) {
+        fail(`Forbidden delivery term ${term} found in VSIX member ${entry}`);
+      }
+    }
+  }
 }
 
 function assertEntrySet(entries) {
@@ -174,6 +197,7 @@ function checkVsix(vsixPath) {
   }
   const entries = zipEntries(resolved);
   assertEntrySet(entries);
+  assertSensitiveTermsAbsent(resolved, entries);
   assertManifest(resolved);
   assertJavaScriptSyntax(resolved);
   assertBundleOffline(resolved);
@@ -246,6 +270,11 @@ function selfCheck() {
 
     const bmcDir = fs.mkdtempSync(path.join(tempDir, 'bmc-'));
     assertFails('extra BMC grammar', () => checkVsix(createFixture(bmcDir, [...EXPECTED_ENTRIES, 'extension/syntaxes/fcstm-bmc-query.tmLanguage.json'])));
+
+    const sensitiveDir = fs.mkdtempSync(path.join(tempDir, 'sensitive-'));
+    const sensitiveVsix = createFixture(sensitiveDir, EXPECTED_ENTRIES);
+    run('python3', ['-c', `import pathlib, zipfile\np=pathlib.Path(${JSON.stringify(sensitiveVsix)})\nwith zipfile.ZipFile(p, 'r') as z: payloads={name: z.read(name) for name in z.namelist()}\npayloads['extension/dist/extension.js']=b'/* GITHUB */\\n'\nwith zipfile.ZipFile(p, 'w') as z:\n    for name, data in payloads.items(): z.writestr(name, data)\n`]);
+    assertFails('sensitive bundle payload', () => checkVsix(sensitiveVsix));
 
     const badPkgDir = fs.mkdtempSync(path.join(tempDir, 'badpkg-'));
     assertFails('wrong extension id', () => checkVsix(createFixture(badPkgDir, EXPECTED_ENTRIES, {name: 'wrong'})));

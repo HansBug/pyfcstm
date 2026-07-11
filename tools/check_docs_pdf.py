@@ -153,6 +153,8 @@ _ACCEPTANCE_LANGUAGE_SPECS = {
             "Windows 7 可执行文件交付基线",
             "windows-2022",
             "python37.dll",
+            "Linux 可执行文件交付基线",
+            "ubuntu-22.04",
             "acceptance_pdf_tail_sentinel",
             "教程路线图",
             "任务指南路线图",
@@ -179,6 +181,7 @@ _ACCEPTANCE_LANGUAGE_SPECS = {
         "forbidden_text": (
             r"dev/s714",
             r"S714",
+            r"github",
             r"/home/zhangshaoang/",
         ),
     },

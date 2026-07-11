@@ -73,7 +73,7 @@ setup(
     author_email=meta["__AUTHOR_EMAIL__"],
     license="GNU Lesser General Public License v3 (LGPLv3)",
     keywords="state-machine, code-generation, compiler, template-engine, modelling",
-    url="https://github.com/hansbug/pyfcstm",
+    url="https://pyfcstm.readthedocs.io/",
     # environment
     python_requires=">=3.7",
     install_requires=requirements,
@@ -135,17 +135,9 @@ setup(
     },
     cmdclass={"build_py": _CleanPackageBuild},
     project_urls={
-        "Homepage": "https://github.com/hansbug/pyfcstm",
+        "Homepage": "https://pyfcstm.readthedocs.io/",
         "Documentation": "https://pyfcstm.readthedocs.io/",
-        "Source": "https://github.com/hansbug/pyfcstm",
         "Download": "https://pypi.org/project/pyfcstm/#files",
-        "Bug Reports": "https://github.com/hansbug/pyfcstm/issues",
-        # 'Changelog': 'https://github.com/hansbug/pyfcstm/blob/main/CHANGELOG.md',
-        "Contributing": "https://github.com/hansbug/pyfcstm/blob/main/CONTRIBUTING.md",
-        "Pull Requests": "https://github.com/hansbug/pyfcstm/pulls",
-        "CI": "https://github.com/hansbug/pyfcstm/actions",
         "Coverage": "https://codecov.io/gh/hansbug/pyfcstm",
-        "Wiki": "https://github.com/hansbug/pyfcstm/wiki",
-        "License": "https://github.com/hansbug/pyfcstm/blob/main/LICENSE",
     },
 )

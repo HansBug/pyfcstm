@@ -19,6 +19,7 @@ pyfcstm.bmc
     listener
     macro
     parse
+    pipeline
     properties
     query
     relation

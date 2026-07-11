@@ -375,6 +375,28 @@ jobs:
                       ),
                       file=summary,
                   )
+              activation = result['linux_activation']
+              print('', file=summary)
+              print('### Linux artifact activation', file=summary)
+              print('', file=summary)
+              print(
+                  '- Downloaded mode: `{0}`'.format(
+                      activation['transport_mode']
+                  ),
+                  file=summary,
+              )
+              print(
+                  '- Required command: `{0}`'.format(
+                      activation['activation_command']
+                  ),
+                  file=summary,
+              )
+              print(
+                  '- Verified after activation: `{0}`'.format(
+                      activation['verified_after_activation']
+                  ),
+                  file=summary,
+              )
           PY
       - name: Upload consolidated acceptance delivery
         id: upload

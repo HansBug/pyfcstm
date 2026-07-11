@@ -737,6 +737,88 @@ def validate_vsix(
     }
 
 
+def _validate_linux_delivery_activation(executable: Path) -> Mapping[str, object]:
+    """
+    Verify the documented activation step for a downloaded Linux CLI.
+
+    GitHub artifact transport normalizes loose-file permissions to ``0644``.
+    The delivery therefore documents ``chmod +x`` as a required activation
+    step. This check copies the exact ELF bytes, restores executable bits on
+    the copy, and runs the public help command without mutating the frozen
+    artifact or its SHA-256.
+
+    :param executable: Downloaded Linux CLI path.
+    :type executable: pathlib.Path
+    :return: Original mode, activation command, and post-activation evidence.
+    :rtype: collections.abc.Mapping[str, object]
+    :raises ArtifactValidationError: If activation or the public command table
+        cannot be verified on Linux.
+
+    Example::
+
+        >>> result = _validate_linux_delivery_activation(Path('/missing'))
+        Traceback (most recent call last):
+        ...
+        check_acceptance_artifacts.ArtifactValidationError: Linux delivery executable does not exist: /missing
+    """
+    if not executable.is_file():
+        raise ArtifactValidationError(
+            "Linux delivery executable does not exist: {0}".format(executable)
+        )
+    original_mode = executable.stat().st_mode & 0o777
+    activation_required = not bool(original_mode & 0o111)
+    activation_command = "chmod +x {0}".format(executable.name)
+    if os.name != "posix" or platform.system() != "Linux":
+        return {
+            "transport_mode": "{0:04o}".format(original_mode),
+            "activation_required": activation_required,
+            "activation_command": activation_command,
+            "verified_after_activation": False,
+            "verification_skipped": "activation execution requires Linux",
+        }
+
+    with tempfile.TemporaryDirectory(
+        prefix="acceptance-linux-activation-"
+    ) as directory:
+        activated = Path(directory) / executable.name
+        try:
+            shutil.copyfile(str(executable), str(activated))
+            activated.chmod(0o644)
+            activated.chmod(activated.stat().st_mode | 0o111)
+        except OSError as error:
+            # copyfile/chmod raise OSError when the artifact cannot be copied
+            # or the temporary filesystem cannot restore executable bits.
+            raise ArtifactValidationError(
+                "cannot activate Linux delivery executable {0}: {1}".format(
+                    executable, error
+                )
+            ) from error
+        if not os.access(str(activated), os.X_OK):
+            raise ArtifactValidationError(
+                "chmod did not make Linux delivery executable runnable: {0}".format(
+                    executable
+                )
+            )
+        help_text = _run_command(
+            [str(activated), "--help"],
+            cwd=Path(directory),
+            env=_clean_subprocess_environment(),
+        ).stdout
+        commands = _parse_click_commands(help_text)
+        if commands != CLI_COMMANDS:
+            raise ArtifactValidationError(
+                "activated Linux delivery command table mismatch: actual {0}, "
+                "expected {1}".format(commands, CLI_COMMANDS)
+            )
+    return {
+        "transport_mode": "{0:04o}".format(original_mode),
+        "activation_required": activation_required,
+        "activation_command": activation_command,
+        "verified_after_activation": True,
+        "commands": commands,
+    }
+
+
 def validate_delivery_bundle(delivery_dir: Path) -> Mapping[str, object]:
     """
     Validate the consolidated six-file acceptance delivery bundle.
@@ -762,6 +844,7 @@ def validate_delivery_bundle(delivery_dir: Path) -> Mapping[str, object]:
     """
     files = _classify_delivery_files(delivery_dir)
     _assert_delivery_signatures(files)
+    linux_activation = _validate_linux_delivery_activation(files["linux_executable"])
     scans: Dict[str, Mapping[str, object]] = {}
 
     wheel = files["wheel"]
@@ -824,7 +907,11 @@ def validate_delivery_bundle(delivery_dir: Path) -> Mapping[str, object]:
                 "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
             }
         )
-    return {"files": frozen_files, "sensitive_scan": scans}
+    return {
+        "files": frozen_files,
+        "linux_activation": linux_activation,
+        "sensitive_scan": scans,
+    }
 
 
 def validate_template_assets(
@@ -1353,6 +1440,29 @@ def run_self_check() -> Mapping[str, object]:
             {path.name: path.read_bytes() for path in delivery_files.values()},
         )
         checks.append("delivery-six-file-positive")
+        activation_script = root / "pyfcstm-0.0.0-linux-x86_64-activation"
+        activation_script.write_text(
+            "#!/bin/sh\n"
+            "printf '%s\\n' 'Usage: pyfcstm [OPTIONS] COMMAND [ARGS]...'\n"
+            "printf '%s\\n' 'Commands:'\n"
+            "printf '%s\\n' '  generate  Generate code.'\n"
+            "printf '%s\\n' '  inspect  Inspect a model.'\n"
+            "printf '%s\\n' '  plantuml  Generate PlantUML.'\n"
+            "printf '%s\\n' '  simulate  Simulate a model.'\n"
+            "printf '%s\\n' '  visualize  Render a diagram.'\n",
+            encoding="utf-8",
+        )
+        activation_script.chmod(0o644)
+        activation = _validate_linux_delivery_activation(activation_script)
+        if not activation["activation_required"]:
+            raise ArtifactValidationError(
+                "delivery activation self-check did not detect normalized mode"
+            )
+        if not activation["verified_after_activation"]:
+            raise ArtifactValidationError(
+                "delivery activation self-check did not execute after chmod"
+            )
+        checks.append("delivery-linux-activation-positive")
         extra_delivery = root / "delivery-extra"
         shutil.copytree(str(delivery_dir), str(extra_delivery))
         (extra_delivery / "report.json").write_text("{}\n", encoding="utf-8")

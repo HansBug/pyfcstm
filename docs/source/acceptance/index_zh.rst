@@ -54,6 +54,15 @@
 
 Linux CLI 使用同一个普通 ``make build`` 入口，在 ``ubuntu-22.04`` runner、64 位 CPython 3.7 和 ``x86_64`` 环境构建。产物名严格为 ``pyfcstm-0.5.0-linux-x86_64``，必须具有 ELF 标识，并从仓库外完成与 Windows 产物相同的命令、图片、仿真和五套模板端到端检查。
 
+自动化 artifact 以 ZIP 传输松散文件时会把 POSIX 文件权限规范化为 ``0644``，因此下载并解包最终六文件交付物后，先执行以下标准激活步骤：
+
+.. code-block:: bash
+
+   chmod +x pyfcstm-0.5.0-linux-x86_64
+   ./pyfcstm-0.5.0-linux-x86_64 --help
+
+该操作只恢复本地可执行位，不修改 ELF 文件字节或 SHA-256。最终 delivery checker 记录下载后的原始 mode，在临时副本上恢复权限，并真实运行 ``--help`` 核对五个顶层命令。上传前 staging 仍必须直接具有可执行权限并通过完整端到端检查。
+
 两个平台的可执行文件还必须扫描文件名、原始字节、可打印字符串、递归 inventory 以及可提取的 PyInstaller PKG/PYZ payload。两个禁用词均采用大小写不敏感匹配，任何命中都会阻止最终六文件交付包生成。
 
 功能映射

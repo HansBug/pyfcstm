@@ -50,8 +50,8 @@ try:
 except ImportError:  # pragma: no cover - Python < 3.8 compatibility
     from typing_extensions import Literal
 
-from pyfcstm.bmc.ast import BmcCondExpr
-from pyfcstm.bmc.errors import InvalidBmcQuery
+from .ast import BmcCondExpr
+from .errors import InvalidBmcQuery
 
 _CanonicalDict = Dict[str, Any]
 _QuerySelector = Union[int, Literal["*"], str]

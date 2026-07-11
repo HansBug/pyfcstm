@@ -32,10 +32,37 @@ from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
 
 import z3
 
-from pyfcstm.bmc import ast as bmc_ast
-from pyfcstm.bmc.errors import BmcBuildError, InvalidBmcQuery, UnsupportedBmcQuery
-from pyfcstm.bmc.query import BmcProperty
-from pyfcstm.bmc.relation import (
+from .ast import (
+    Active,
+    BmcCondExpr,
+    BmcNumExpr,
+    BoolLiteral,
+    CallCount,
+    CallFilter,
+    CallStepPoint,
+    CallStepSelector,
+    Called,
+    Case,
+    CondBinaryOp,
+    CondConditionalOp,
+    CondUnaryOp,
+    Cycle,
+    Event,
+    FloatLiteral,
+    FrameVar,
+    IntLiteral,
+    MathConst,
+    NameRef,
+    NumBinaryOp,
+    NumConditionalOp,
+    NumUnaryOp,
+    NumericComparison,
+    Terminated,
+    UFuncCall,
+)
+from .errors import BmcBuildError, InvalidBmcQuery, UnsupportedBmcQuery
+from .query import BmcProperty
+from .relation import (
     BmcCoreFormula,
     _lower_bmc_cond_expr,
 )
@@ -262,38 +289,38 @@ class BmcPropertyFormula:
         }
 
 
-def _validate_num_context(expr: bmc_ast.BmcNumExpr, context: str, path: str) -> None:
-    if isinstance(expr, bmc_ast.CallCount):
+def _validate_num_context(expr: BmcNumExpr, context: str, path: str) -> None:
+    if isinstance(expr, CallCount):
         _validate_call_filter_context(expr.filter, context, path + ".filter")
         return
-    if isinstance(expr, bmc_ast.Cycle):
+    if isinstance(expr, Cycle):
         if context == "call_where":
             raise UnsupportedBmcQuery("%s call where cannot use cycle." % path)
         return
     if isinstance(
         expr,
         (
-            bmc_ast.IntLiteral,
-            bmc_ast.FloatLiteral,
-            bmc_ast.NameRef,
-            bmc_ast.MathConst,
-            bmc_ast.FrameVar,
+            IntLiteral,
+            FloatLiteral,
+            NameRef,
+            MathConst,
+            FrameVar,
         ),
     ):
         return
-    if isinstance(expr, bmc_ast.NumUnaryOp):
+    if isinstance(expr, NumUnaryOp):
         _validate_num_context(expr.operand, context, path + ".operand")
         return
-    if isinstance(expr, bmc_ast.NumBinaryOp):
+    if isinstance(expr, NumBinaryOp):
         _validate_num_context(expr.left, context, path + ".left")
         _validate_num_context(expr.right, context, path + ".right")
         return
-    if isinstance(expr, bmc_ast.NumConditionalOp):
+    if isinstance(expr, NumConditionalOp):
         _validate_condition_context(expr.condition, context, path + ".condition")
         _validate_num_context(expr.if_true, context, path + ".if_true")
         _validate_num_context(expr.if_false, context, path + ".if_false")
         return
-    if isinstance(expr, bmc_ast.UFuncCall):
+    if isinstance(expr, UFuncCall):
         _validate_num_context(expr.operand, context, path + ".operand")
         return
     raise UnsupportedBmcQuery(  # pragma: no cover - public AST numeric set is closed.
@@ -301,28 +328,26 @@ def _validate_num_context(expr: bmc_ast.BmcNumExpr, context: str, path: str) -> 
     )
 
 
-def _validate_condition_context(
-    expr: bmc_ast.BmcCondExpr, context: str, path: str
-) -> None:
-    if isinstance(expr, bmc_ast.BoolLiteral):
+def _validate_condition_context(expr: BmcCondExpr, context: str, path: str) -> None:
+    if isinstance(expr, BoolLiteral):
         return
-    if isinstance(expr, bmc_ast.NumericComparison):
+    if isinstance(expr, NumericComparison):
         _validate_num_context(expr.left, context, path + ".left")
         _validate_num_context(expr.right, context, path + ".right")
         return
-    if isinstance(expr, bmc_ast.CondUnaryOp):
+    if isinstance(expr, CondUnaryOp):
         _validate_condition_context(expr.operand, context, path + ".operand")
         return
-    if isinstance(expr, bmc_ast.CondBinaryOp):
+    if isinstance(expr, CondBinaryOp):
         _validate_condition_context(expr.left, context, path + ".left")
         _validate_condition_context(expr.right, context, path + ".right")
         return
-    if isinstance(expr, bmc_ast.CondConditionalOp):
+    if isinstance(expr, CondConditionalOp):
         _validate_condition_context(expr.condition, context, path + ".condition")
         _validate_condition_context(expr.if_true, context, path + ".if_true")
         _validate_condition_context(expr.if_false, context, path + ".if_false")
         return
-    if isinstance(expr, bmc_ast.Active):
+    if isinstance(expr, Active):
         if context == "call_where":
             raise UnsupportedBmcQuery("%s call where cannot use active()." % path)
         if expr.frame != "current":
@@ -331,7 +356,7 @@ def _validate_condition_context(
                 "predicates must use the current frame." % path
             )
         return
-    if isinstance(expr, bmc_ast.Terminated):
+    if isinstance(expr, Terminated):
         if context == "call_where":
             raise UnsupportedBmcQuery("%s call where cannot use terminated()." % path)
         if expr.frame != "current":
@@ -340,7 +365,7 @@ def _validate_condition_context(
                 "predicates must use the current frame." % path
             )
         return
-    if isinstance(expr, bmc_ast.Event):
+    if isinstance(expr, Event):
         if context == "response_trigger" and expr.selector == "current":
             return
         if context == "response_trigger":  # pragma: no cover - binder rejects this.
@@ -352,12 +377,12 @@ def _validate_condition_context(
             "%s is frame-local; event atoms are only allowed in response triggers."
             % path
         )
-    if isinstance(expr, bmc_ast.Case):
+    if isinstance(expr, Case):
         raise UnsupportedBmcQuery(  # pragma: no cover - binder rejects nested case().
             "%s is not a cover predicate; case atoms are only allowed as naked cover predicates."
             % path
         )
-    if isinstance(expr, bmc_ast.Called):
+    if isinstance(expr, Called):
         _validate_call_filter_context(expr.call_filter, context, path + ".filter")
         return
     raise UnsupportedBmcQuery(  # pragma: no cover - public AST condition set is closed.
@@ -367,7 +392,7 @@ def _validate_condition_context(
 
 def _lower_predicate(
     core: BmcCoreFormula,
-    expr: bmc_ast.BmcCondExpr,
+    expr: BmcCondExpr,
     *,
     frame_index: int,
     step_index: Optional[int] = None,
@@ -407,9 +432,9 @@ def _polarity(kind: str) -> str:
 
 
 def _validate_call_filter_context(
-    filter_node: bmc_ast.CallFilter, context: str, path: str
+    filter_node: CallFilter, context: str, path: str
 ) -> None:
-    if not isinstance(filter_node, bmc_ast.CallFilter):
+    if not isinstance(filter_node, CallFilter):
         raise UnsupportedBmcQuery("%s must be a call filter." % path)
     if context not in {"frame", "response_trigger"}:
         raise UnsupportedBmcQuery(
@@ -419,12 +444,12 @@ def _validate_call_filter_context(
         _validate_condition_context(filter_node.where, "call_where", path + ".where")
 
 
-def _eval_call_step_point(point: bmc_ast.CallStepPoint, anchor: int) -> int:
+def _eval_call_step_point(point: CallStepPoint, anchor: int) -> int:
     return point.value if point.kind == "absolute" else anchor + point.value
 
 
 def _effective_call_steps(
-    selector: bmc_ast.CallStepSelector, anchor: int, bound: int
+    selector: CallStepSelector, anchor: int, bound: int
 ) -> Tuple[int, ...]:
     """Return in-bounds symbolic steps selected around an anchor step.
 
@@ -448,7 +473,7 @@ def _effective_call_steps(
 
     Example::
 
-        >>> selector = bmc_ast.CallStepSelector.point(bmc_ast.CallStepPoint.relative(-1))
+        >>> selector = CallStepSelector.point(CallStepPoint.relative(-1))
         >>> _effective_call_steps(selector, anchor=2, bound=4)
         (1,)
     """
@@ -538,7 +563,7 @@ class _CallSnapshotSymbols:
 
 
 def _snapshot_cond_expr(
-    expr: bmc_ast.BmcCondExpr,
+    expr: BmcCondExpr,
     snapshot: Mapping[str, z3.ArithRef],
     label: str,
     step_index: int,
@@ -556,7 +581,7 @@ def _snapshot_cond_expr(
 def _call_match_expr(
     relation,
     record,
-    filter_node: bmc_ast.CallFilter,
+    filter_node: CallFilter,
     step_index: int,
 ) -> z3.BoolRef:
     terms = [relation.selector]
@@ -585,7 +610,7 @@ def _call_match_expr(
 
 def _lower_call_count(
     core: BmcCoreFormula,
-    expr: bmc_ast.CallCount,
+    expr: CallCount,
     frame_index: int,
     step_index: Optional[int],
 ) -> z3.ArithRef:
@@ -609,7 +634,7 @@ def _lower_call_count(
     return z3.Sum(*items)
 
 
-def _single_predicate(prop: BmcProperty) -> bmc_ast.BmcCondExpr:
+def _single_predicate(prop: BmcProperty) -> BmcCondExpr:
     if (
         prop.predicate is None
     ):  # pragma: no cover - query validation owns property shape.
@@ -618,7 +643,7 @@ def _single_predicate(prop: BmcProperty) -> bmc_ast.BmcCondExpr:
 
 
 def _frame_predicates(
-    core: BmcCoreFormula, expr: bmc_ast.BmcCondExpr
+    core: BmcCoreFormula, expr: BmcCondExpr
 ) -> Tuple[_PredicateFormula, ...]:
     return tuple(
         _lower_predicate(
@@ -693,7 +718,7 @@ def _cover_selectors(core: BmcCoreFormula, label: str) -> Tuple[z3.BoolRef, ...]
 def _compile_cover(core: BmcCoreFormula, prop: BmcProperty) -> Tuple[z3.BoolRef, str]:
     predicate = prop.predicate
     if (
-        not isinstance(predicate, bmc_ast.Case) or predicate.frame != "current"
+        not isinstance(predicate, Case) or predicate.frame != "current"
     ):  # pragma: no cover - binder rejects this.
         raise InvalidBmcQuery(
             'cover properties require a naked case("label") predicate.'

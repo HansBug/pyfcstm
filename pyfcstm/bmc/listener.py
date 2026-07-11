@@ -30,7 +30,7 @@ from __future__ import annotations
 import ast as py_ast
 from typing import Any, Dict, List, cast
 
-from pyfcstm.bmc.ast import (
+from .ast import (
     Active,
     BoolLiteral,
     CallCount,
@@ -56,10 +56,10 @@ from pyfcstm.bmc.ast import (
     Terminated,
     UFuncCall,
 )
-from pyfcstm.bmc.grammar.BmcQueryParser import BmcQueryParser
-from pyfcstm.bmc.grammar.BmcQueryParserListener import BmcQueryParserListener
-from pyfcstm.bmc.errors import InvalidBmcQuery
-from pyfcstm.bmc.query import (
+from .grammar.BmcQueryParser import BmcQueryParser
+from .grammar.BmcQueryParserListener import BmcQueryParserListener
+from .errors import InvalidBmcQuery
+from .query import (
     BmcProperty,
     BmcQuery,
     EventAssumption,

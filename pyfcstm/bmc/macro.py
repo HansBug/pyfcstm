@@ -56,9 +56,9 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
-from pyfcstm.bmc.domain import STATE_INIT_ID, STATE_TERMINATE_ID, BmcDomain
-from pyfcstm.bmc.errors import BmcBuildError, InvalidBmcDomain, InvalidBmcEncoding
-from pyfcstm.bmc.source import (
+from .domain import STATE_INIT_ID, STATE_TERMINATE_ID, BmcDomain
+from .errors import BmcBuildError, InvalidBmcDomain, InvalidBmcEncoding
+from .source import (
     INIT_CASE_PATH,
     TERMINATE_CASE_PATH,
     MacroStepSource,

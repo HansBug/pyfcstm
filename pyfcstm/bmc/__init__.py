@@ -147,7 +147,7 @@ Example::
     'reach'
 """
 
-from pyfcstm.bmc.ast import (
+from .ast import (
     Active,
     BmcCondExpr,
     BmcExpr,
@@ -176,7 +176,7 @@ from pyfcstm.bmc.ast import (
     Terminated,
     UFuncCall,
 )
-from pyfcstm.bmc.errors import (
+from .errors import (
     BmcBuildError,
     BmcError,
     BmcQueryParseError,
@@ -185,14 +185,14 @@ from pyfcstm.bmc.errors import (
     InvalidBmcQuery,
     UnsupportedBmcQuery,
 )
-from pyfcstm.bmc.parse import (
+from .parse import (
     build_bmc_ast_from_parse_tree,
     parse_bmc_cond_expression,
     parse_bmc_num_expression,
     parse_bmc_query,
     parse_with_bmc_grammar_entry,
 )
-from pyfcstm.bmc.query import (
+from .query import (
     BmcAssumption,
     BmcProperty,
     BmcQuery,

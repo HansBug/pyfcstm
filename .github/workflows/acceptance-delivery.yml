@@ -33,7 +33,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 20
           submodules: 'recursive'
@@ -42,12 +42,12 @@ jobs:
         with:
           python-version: '3.11'
       - name: Set up Java 11
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
           java-version: '11'
       - name: Set up Node.js 20
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '20'
       - name: Install build dependencies
@@ -59,6 +59,7 @@ jobs:
             -r requirements.txt \
             -r requirements-dev.txt \
             -r requirements-build.txt
+          python -m pip install --upgrade build
           npm install --global @vscode/vsce
           make antlr
       - name: Build and validate Python packages
@@ -92,7 +93,7 @@ jobs:
           cp editors/vscode/build/*.vsix acceptance-stage/
           test "$(find acceptance-stage -maxdepth 1 -type f | wc -l)" -eq 3
       - name: Upload portable staging artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: acceptance-stage-portable-${{ github.run_id }}
           path: acceptance-stage/*
@@ -110,7 +111,7 @@ jobs:
           - 18080:8080
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 20
           submodules: 'recursive'
@@ -165,7 +166,7 @@ jobs:
             acceptance-stage/
           test "$(find acceptance-stage -maxdepth 1 -type f | wc -l)" -eq 1
       - name: Upload PDF staging artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: acceptance-stage-pdf-${{ github.run_id }}
           path: acceptance-stage/*
@@ -183,7 +184,7 @@ jobs:
       PYFCSTM_WINDOWS7_DELIVERY_BASELINE: windows-2022-cpython-3.7-x86_64
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 20
           submodules: 'recursive'
@@ -233,7 +234,7 @@ jobs:
           cp "$executable" acceptance-stage/
           test "$(find acceptance-stage -maxdepth 1 -type f | wc -l)" -eq 1
       - name: Upload Windows staging artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: acceptance-stage-windows-${{ github.run_id }}
           path: acceptance-stage/*
@@ -250,7 +251,7 @@ jobs:
       - windows_cli
     steps:
       - name: Download all staged deliverables
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           pattern: acceptance-stage-*-${{ github.run_id }}
           path: delivery
@@ -332,7 +333,7 @@ jobs:
           PY
       - name: Upload consolidated acceptance delivery
         id: upload
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: pyfcstm-acceptance-delivery-${{ github.sha }}
           path: delivery/*

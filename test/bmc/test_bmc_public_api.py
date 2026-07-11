@@ -114,6 +114,7 @@ def test_bmc_public_api_exports_exact_names():
         "build_bmc_core_formula",
         "BmcPropertyFormula",
         "compile_bmc_property",
+        "compile_bmc_query",
         "solve_bmc_property",
         "decode_bmc_witness",
         "replay_bmc_witness",
@@ -133,6 +134,8 @@ def test_bmc_public_api_exports_exact_names():
     }
 
     assert set(bmc.__all__) == expected
+    assert bmc._PIPELINE_EXPORTS == {"compile_bmc_query"}
+    assert bmc._LAZY_EXPORT_MODULES["pyfcstm.bmc.pipeline"] is bmc._PIPELINE_EXPORTS
     lazy_names = {
         "STATE_INIT_ID",
         "STATE_TERMINATE_ID",
@@ -180,6 +183,7 @@ def test_bmc_public_api_exports_exact_names():
         "build_bmc_core_formula",
         "BmcPropertyFormula",
         "compile_bmc_property",
+        "compile_bmc_query",
         "BmcSolveStatus",
         "BmcEventDecodePolicy",
         "BmcSolveResult",
@@ -219,6 +223,7 @@ def test_bmc_public_api_exports_exact_names():
         "prepare_bmc_query",
         "build_bmc_core_formula",
         "compile_bmc_property",
+        "compile_bmc_query",
         "solve_bmc_property",
         "decode_bmc_witness",
         "replay_bmc_witness",
@@ -235,6 +240,7 @@ def test_bmc_public_api_exports_exact_names():
     assert bmc.BmcOptions().__class__.__name__ == "BmcOptions"
     assert "BmcDomain" in dir(bmc)
     assert "BmcEngine" in dir(bmc)
+    assert "compile_bmc_query" in dir(bmc)
 
     with pytest.raises(AttributeError, match="NoSuchBmcExport"):
         getattr(bmc, "NoSuchBmcExport")
@@ -255,6 +261,7 @@ def test_submodule_all_exports_are_exact():
     engine = importlib.import_module("pyfcstm.bmc.engine")
     relation = importlib.import_module("pyfcstm.bmc.relation")
     properties = importlib.import_module("pyfcstm.bmc.properties")
+    pipeline = importlib.import_module("pyfcstm.bmc.pipeline")
     witness = importlib.import_module("pyfcstm.bmc.witness")
 
     assert set(errors.__all__) == {
@@ -382,6 +389,7 @@ def test_submodule_all_exports_are_exact():
         "BmcPropertyFormula",
         "compile_bmc_property",
     }
+    assert pipeline.__all__ == ["compile_bmc_query"]
     assert set(witness.__all__) == {
         "BmcSolveStatus",
         "BmcEventDecodePolicy",

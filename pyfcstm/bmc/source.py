@@ -47,14 +47,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Union
 
-from pyfcstm.bmc.domain import (
+from .domain import (
     STATE_INIT_ID,
     STATE_TERMINATE_ID,
     BmcDomain,
     StateDomainEntry,
 )
-from pyfcstm.bmc.errors import InvalidBmcDomain, InvalidBmcEncoding, InvalidBmcQuery
-from pyfcstm.bmc.query import InitialSpec
+from .errors import InvalidBmcDomain, InvalidBmcEncoding, InvalidBmcQuery
+from .query import InitialSpec
 
 INIT_CASE_PATH = "__init__"
 TERMINATE_CASE_PATH = "__terminate__"

@@ -23,6 +23,7 @@ from pyfcstm.bmc import (
     BmcWitnessFrame,
     BmcWitnessStep,
     BmcWitnessTrace,
+    Event,
     build_bmc_core_formula,
     compile_bmc_property,
     decode_bmc_witness,
@@ -1829,9 +1830,7 @@ def test_internal_event_decode_edge_guards_are_loud() -> None:
                 bound_query=SimpleNamespace(
                     property=SimpleNamespace(
                         source=SimpleNamespace(
-                            trigger=witness_module.bmc_ast.Event(
-                                "Root.trigger", selector=0
-                            )
+                            trigger=Event("Root.trigger", selector=0)
                         )
                     )
                 )

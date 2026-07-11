@@ -56,25 +56,49 @@ from typing import (
 
 import z3
 
-from pyfcstm.bmc import ast as bmc_ast
-from pyfcstm.bmc.binding import BoundAssumption
-from pyfcstm.bmc.domain import (
+from .ast import (
+    Active,
+    BmcCondExpr,
+    BmcNumExpr,
+    BoolLiteral,
+    CallCount,
+    Called,
+    Case,
+    CondBinaryOp,
+    CondConditionalOp,
+    CondUnaryOp,
+    Cycle,
+    Event,
+    FloatLiteral,
+    FrameVar,
+    IntLiteral,
+    MathConst,
+    NameRef,
+    NumBinaryOp,
+    NumConditionalOp,
+    NumUnaryOp,
+    NumericComparison,
+    Terminated,
+    UFuncCall,
+)
+from .binding import BoundAssumption
+from .domain import (
     STATE_INIT_ID,
     STATE_TERMINATE_ID,
     BmcDomain,
 )
-from pyfcstm.bmc.engine import BmcPreparedContext
-from pyfcstm.bmc.errors import BmcBuildError, UnsupportedBmcQuery
-from pyfcstm.bmc.expand import expand_macro_step_cases
-from pyfcstm.bmc.macro import (
+from .engine import BmcPreparedContext
+from .errors import BmcBuildError, UnsupportedBmcQuery
+from .expand import expand_macro_step_cases
+from .macro import (
     ActionBlock,
     BoolTemplate,
     CycleCase,
     GuardRequirement,
     MacroStepFormal,
 )
-from pyfcstm.bmc.query import EventCardinalityAssumption, FrameAssumption
-from pyfcstm.bmc.source import (
+from .query import EventCardinalityAssumption, FrameAssumption
+from .source import (
     entry_source,
     init_source,
     source_from_initial_spec,
@@ -87,7 +111,7 @@ from pyfcstm.solver.operation import execute_operations_domain
 
 _CanonicalDict = Dict[str, Any]
 _Z3Expr = Union[z3.ArithRef, z3.BoolRef]
-_CallCountLowerer = Callable[[bmc_ast.CallCount, int, Optional[int]], _Z3Expr]
+_CallCountLowerer = Callable[[CallCount, int, Optional[int]], _Z3Expr]
 _EVENT_ATOM_PREFIX = "event:"
 _GUARD_ATOM_PREFIX = "guard:"
 _ACCEPTED_ATOM_PREFIX = "accepted:"
@@ -1206,7 +1230,7 @@ def _resolve_step(selector: object, current_step: Optional[int], bound: int) -> 
 
 
 def _lower_bmc_num_expr(
-    expr: bmc_ast.BmcNumExpr,
+    expr: BmcNumExpr,
     symbols: BmcTraceSymbols,
     *,
     frame_index: int,
@@ -1214,26 +1238,26 @@ def _lower_bmc_num_expr(
     call_count_lowerer: Optional[_CallCountLowerer] = None,
 ) -> _LoweredValue:
     label = "BMC numeric expression %s" % expr
-    if isinstance(expr, bmc_ast.IntLiteral):
+    if isinstance(expr, IntLiteral):
         return _LoweredValue(z3.IntVal(expr.value))
-    if isinstance(expr, bmc_ast.FloatLiteral):
+    if isinstance(expr, FloatLiteral):
         return _LoweredValue(z3.RealVal(str(expr.value)))
-    if isinstance(expr, bmc_ast.NameRef):
+    if isinstance(expr, NameRef):
         return _LoweredValue(symbols.frame_var(frame_index, expr.name))
-    if isinstance(expr, bmc_ast.FrameVar):
+    if isinstance(expr, FrameVar):
         return _LoweredValue(symbols.frame_var(frame_index, expr.name))
-    if isinstance(expr, bmc_ast.Cycle):
+    if isinstance(expr, Cycle):
         return _LoweredValue(z3.IntVal(frame_index))
-    if isinstance(expr, bmc_ast.CallCount):
+    if isinstance(expr, CallCount):
         if call_count_lowerer is None:
             raise UnsupportedBmcQuery(
                 "call_count() needs property call-record context."
             )
         return _LoweredValue(call_count_lowerer(expr, frame_index, step_index))
-    if isinstance(expr, bmc_ast.MathConst):
+    if isinstance(expr, MathConst):
         constants = {"pi": math.pi, "E": math.e, "tau": math.tau}
         return _LoweredValue(z3.RealVal(str(constants[expr.name])))
-    if isinstance(expr, bmc_ast.NumUnaryOp):
+    if isinstance(expr, NumUnaryOp):
         operand = _lower_bmc_num_expr(
             expr.operand,
             symbols,
@@ -1249,7 +1273,7 @@ def _lower_bmc_num_expr(
         raise UnsupportedBmcQuery(  # pragma: no cover - AST validates operator names.
             "%s uses unsupported unary operator %r." % (label, expr.op)
         )
-    if isinstance(expr, bmc_ast.NumBinaryOp):
+    if isinstance(expr, NumBinaryOp):
         left = _lower_bmc_num_expr(
             expr.left,
             symbols,
@@ -1275,7 +1299,7 @@ def _lower_bmc_num_expr(
             _z3_arith_binary(expr.op, left_expr, right_expr, label),
             tuple(constraints),
         )
-    if isinstance(expr, bmc_ast.NumConditionalOp):
+    if isinstance(expr, NumConditionalOp):
         condition = _lower_bmc_cond_expr(
             expr.condition,
             symbols,
@@ -1341,7 +1365,7 @@ def _lower_bmc_num_expr(
                 ),
             ),
         )
-    if isinstance(expr, bmc_ast.UFuncCall):
+    if isinstance(expr, UFuncCall):
         operand = _lower_bmc_num_expr(
             expr.operand,
             symbols,
@@ -1360,7 +1384,7 @@ def _lower_bmc_num_expr(
 
 
 def _lower_bmc_cond_expr(
-    expr: bmc_ast.BmcCondExpr,
+    expr: BmcCondExpr,
     symbols: BmcTraceSymbols,
     *,
     frame_index: int,
@@ -1368,9 +1392,9 @@ def _lower_bmc_cond_expr(
     call_count_lowerer: Optional[_CallCountLowerer] = None,
 ) -> _LoweredValue:
     label = "BMC condition expression %s" % expr
-    if isinstance(expr, bmc_ast.BoolLiteral):
+    if isinstance(expr, BoolLiteral):
         return _LoweredValue(z3.BoolVal(expr.value))
-    if isinstance(expr, bmc_ast.NumericComparison):
+    if isinstance(expr, NumericComparison):
         left = _lower_bmc_num_expr(
             expr.left,
             symbols,
@@ -1394,7 +1418,7 @@ def _lower_bmc_cond_expr(
             ),
             (*left.definedness_constraints, *right.definedness_constraints),
         )
-    if isinstance(expr, bmc_ast.CondUnaryOp):
+    if isinstance(expr, CondUnaryOp):
         operand = _lower_bmc_cond_expr(
             expr.operand,
             symbols,
@@ -1410,7 +1434,7 @@ def _lower_bmc_cond_expr(
         raise UnsupportedBmcQuery(  # pragma: no cover - AST validates operator names.
             "%s uses unsupported condition unary operator %r." % (label, expr.op)
         )
-    if isinstance(expr, bmc_ast.CondBinaryOp):
+    if isinstance(expr, CondBinaryOp):
         left = _lower_bmc_cond_expr(
             expr.left,
             symbols,
@@ -1474,7 +1498,7 @@ def _lower_bmc_cond_expr(
                 "%s uses unsupported condition operator %r." % (label, expr.op)
             )
         return _LoweredValue(value, definedness_constraints)
-    if isinstance(expr, bmc_ast.CondConditionalOp):
+    if isinstance(expr, CondConditionalOp):
         condition = _lower_bmc_cond_expr(
             expr.condition,
             symbols,
@@ -1540,30 +1564,28 @@ def _lower_bmc_cond_expr(
                 ),
             ),
         )
-    if isinstance(expr, bmc_ast.Active):
+    if isinstance(expr, Active):
         frame = _resolve_frame(expr.frame, frame_index, symbols.domain.bound)
         return _LoweredValue(symbols.active_state(frame, expr.state_path))
-    if isinstance(expr, bmc_ast.Terminated):
+    if isinstance(expr, Terminated):
         frame = _resolve_frame(expr.frame, frame_index, symbols.domain.bound)
         return _LoweredValue(
             symbols.frame_state(frame) == z3.IntVal(STATE_TERMINATE_ID)
         )
     if isinstance(
-        expr, bmc_ast.Event
+        expr, Event
     ):  # pragma: no cover - environment assumptions lower event atoms separately.
         step = _resolve_step(expr.selector, step_index, symbols.domain.bound)
         event = symbols.domain.event_by_path(expr.event_path)
         return _LoweredValue(symbols.event_input(step, event.path))
-    if isinstance(
-        expr, bmc_ast.Case
-    ):  # pragma: no cover - objective compiler owns case atoms.
+    if isinstance(expr, Case):  # pragma: no cover - objective compiler owns case atoms.
         step = _resolve_step(expr.frame, step_index, symbols.domain.bound)
         return _LoweredValue(symbols.case_selector(step, expr.label))
-    if isinstance(expr, bmc_ast.Called):
+    if isinstance(expr, Called):
         if call_count_lowerer is None:
             raise UnsupportedBmcQuery("called() needs property call-record context.")
         count_expr = call_count_lowerer(
-            bmc_ast.CallCount(expr.call_filter), frame_index, step_index
+            CallCount(expr.call_filter), frame_index, step_index
         )
         return _LoweredValue(_expect_arith(count_expr, label) >= z3.IntVal(1))
     raise UnsupportedBmcQuery(  # pragma: no cover - current AST class set is closed.

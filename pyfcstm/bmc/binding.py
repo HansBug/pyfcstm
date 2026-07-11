@@ -43,7 +43,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from pyfcstm.bmc.ast import (
+from .ast import (
     Active,
     BmcCondExpr,
     BmcNumExpr,
@@ -70,8 +70,8 @@ from pyfcstm.bmc.ast import (
     Terminated,
     UFuncCall,
 )
-from pyfcstm.bmc.errors import InvalidBmcDomain, InvalidBmcQuery
-from pyfcstm.bmc.query import (
+from .errors import InvalidBmcDomain, InvalidBmcQuery
+from .query import (
     BmcAssumption,
     BmcProperty,
     BmcQuery,
@@ -1595,7 +1595,7 @@ def bind_bmc_query_structure(query: BmcQuery) -> BoundBmcQuery:
 
 
 def _domain_from_model(model: object, bound: int) -> object:
-    from pyfcstm.bmc.domain import build_bmc_domain
+    from .domain import build_bmc_domain
 
     try:
         return build_bmc_domain(model, bound)
@@ -1606,7 +1606,7 @@ def _domain_from_model(model: object, bound: int) -> object:
 
 
 def _validate_domain_bound(domain: object, query_bound: int) -> None:
-    from pyfcstm.bmc.domain import BmcDomain
+    from .domain import BmcDomain
 
     if not isinstance(domain, BmcDomain):
         _raise_binding_error("domain_type", "domain", "domain must be BmcDomain.")

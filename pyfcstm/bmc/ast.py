@@ -67,7 +67,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, ClassVar, Dict, Optional, Tuple, Union
 
-from pyfcstm.bmc.errors import InvalidBmcQuery
+from .errors import InvalidBmcQuery
 
 try:
     from typing import Literal

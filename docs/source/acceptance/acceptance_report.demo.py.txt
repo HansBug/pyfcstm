@@ -62,28 +62,27 @@
       "returncode": 0,
       "stderr_tail": [],
       "stdout_tail": [
-        "gmake[5]: Leaving directory '<tmp>/pyfcstm-acceptance-generate-vv431s9p/generated/c/build'",
-        "gmake[5]: Entering directory '<tmp>/pyfcstm-acceptance-generate-vv431s9p/generated/c/build'",
-        "[ 50%] \u001b[32mBuilding C object CMakeFiles/machine.dir/machine.c.o\u001b[0m",
-        "[100%] \u001b[32m\u001b[1mLinking C static library libmachine.a\u001b[0m",
-        "gmake[5]: Leaving directory '<tmp>/pyfcstm-acceptance-generate-vv431s9p/generated/c/build'",
+        "gmake[3]: Leaving directory '<tmp>/pyfcstm-acceptance-generate-he8a505j/generated/c/build'",
+        "gmake[3]: Entering directory '<tmp>/pyfcstm-acceptance-generate-he8a505j/generated/c/build'",
+        "[ 50%] Building C object CMakeFiles/machine.dir/machine.c.o",
+        "[100%] Linking C static library libmachine.a",
+        "gmake[3]: Leaving directory '<tmp>/pyfcstm-acceptance-generate-he8a505j/generated/c/build'",
         "[100%] Built target machine",
-        "gmake[4]: Leaving directory '<tmp>/pyfcstm-acceptance-generate-vv431s9p/generated/c/build'",
-        "gmake[3]: Leaving directory '<tmp>/pyfcstm-acceptance-generate-vv431s9p/generated/c/build'"
+        "gmake[2]: Leaving directory '<tmp>/pyfcstm-acceptance-generate-he8a505j/generated/c/build'",
+        "gmake[1]: Leaving directory '<tmp>/pyfcstm-acceptance-generate-he8a505j/generated/c/build'"
       ]
     },
     "configure": {
       "command": "<home>/.pyenv/versions/3.10.10/bin/cmake ..",
       "returncode": 0,
       "stderr_tail": [
+        "CMake Deprecation Warning at CMakeLists.txt:1 (cmake_minimum_required):",
         "  Compatibility with CMake < 3.10 will be removed from a future version of",
         "  CMake.",
         "",
         "  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax",
         "  to tell CMake that the project requires at least <min> but has been updated",
-        "  to work with policies introduced by <max> or earlier.",
-        "",
-        "\u001b[0m"
+        "  to work with policies introduced by <max> or earlier."
       ],
       "stdout_tail": [
         "-- Detecting C compiler ABI info",
@@ -93,7 +92,7 @@
         "-- Detecting C compile features - done",
         "-- Configuring done (0.1s)",
         "-- Generating done (0.0s)",
-        "-- Build files have been written to: <tmp>/pyfcstm-acceptance-generate-vv431s9p/generated/c/build"
+        "-- Build files have been written to: <tmp>/pyfcstm-acceptance-generate-he8a505j/generated/c/build"
       ]
     }
   },
@@ -104,28 +103,27 @@
       "returncode": 0,
       "stderr_tail": [],
       "stdout_tail": [
-        "gmake[5]: Leaving directory '<tmp>/pyfcstm-acceptance-generate-vv431s9p/generated/c_poll/build'",
-        "gmake[5]: Entering directory '<tmp>/pyfcstm-acceptance-generate-vv431s9p/generated/c_poll/build'",
-        "[ 50%] \u001b[32mBuilding C object CMakeFiles/machine.dir/machine.c.o\u001b[0m",
-        "[100%] \u001b[32m\u001b[1mLinking C static library libmachine.a\u001b[0m",
-        "gmake[5]: Leaving directory '<tmp>/pyfcstm-acceptance-generate-vv431s9p/generated/c_poll/build'",
+        "gmake[3]: Leaving directory '<tmp>/pyfcstm-acceptance-generate-he8a505j/generated/c_poll/build'",
+        "gmake[3]: Entering directory '<tmp>/pyfcstm-acceptance-generate-he8a505j/generated/c_poll/build'",
+        "[ 50%] Building C object CMakeFiles/machine.dir/machine.c.o",
+        "[100%] Linking C static library libmachine.a",
+        "gmake[3]: Leaving directory '<tmp>/pyfcstm-acceptance-generate-he8a505j/generated/c_poll/build'",
         "[100%] Built target machine",
-        "gmake[4]: Leaving directory '<tmp>/pyfcstm-acceptance-generate-vv431s9p/generated/c_poll/build'",
-        "gmake[3]: Leaving directory '<tmp>/pyfcstm-acceptance-generate-vv431s9p/generated/c_poll/build'"
+        "gmake[2]: Leaving directory '<tmp>/pyfcstm-acceptance-generate-he8a505j/generated/c_poll/build'",
+        "gmake[1]: Leaving directory '<tmp>/pyfcstm-acceptance-generate-he8a505j/generated/c_poll/build'"
       ]
     },
     "configure": {
       "command": "<home>/.pyenv/versions/3.10.10/bin/cmake ..",
       "returncode": 0,
       "stderr_tail": [
+        "CMake Deprecation Warning at CMakeLists.txt:1 (cmake_minimum_required):",
         "  Compatibility with CMake < 3.10 will be removed from a future version of",
         "  CMake.",
         "",
         "  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax",
         "  to tell CMake that the project requires at least <min> but has been updated",
-        "  to work with policies introduced by <max> or earlier.",
-        "",
-        "\u001b[0m"
+        "  to work with policies introduced by <max> or earlier."
       ],
       "stdout_tail": [
         "-- Detecting C compiler ABI info",
@@ -135,7 +133,7 @@
         "-- Detecting C compile features - done",
         "-- Configuring done (0.1s)",
         "-- Generating done (0.0s)",
-        "-- Build files have been written to: <tmp>/pyfcstm-acceptance-generate-vv431s9p/generated/c_poll/build"
+        "-- Build files have been written to: <tmp>/pyfcstm-acceptance-generate-he8a505j/generated/c_poll/build"
       ]
     }
   },
@@ -146,28 +144,27 @@
       "returncode": 0,
       "stderr_tail": [],
       "stdout_tail": [
-        "gmake[5]: Entering directory '<tmp>/pyfcstm-acceptance-generate-vv431s9p/generated/cpp/build'",
-        "[ 33%] \u001b[32mBuilding C object CMakeFiles/machine.dir/machine.c.o\u001b[0m",
-        "[ 66%] \u001b[32mBuilding CXX object CMakeFiles/machine.dir/machine.cpp.o\u001b[0m",
-        "[100%] \u001b[32m\u001b[1mLinking CXX static library libmachine.a\u001b[0m",
-        "gmake[5]: Leaving directory '<tmp>/pyfcstm-acceptance-generate-vv431s9p/generated/cpp/build'",
+        "gmake[3]: Entering directory '<tmp>/pyfcstm-acceptance-generate-he8a505j/generated/cpp/build'",
+        "[ 33%] Building C object CMakeFiles/machine.dir/machine.c.o",
+        "[ 66%] Building CXX object CMakeFiles/machine.dir/machine.cpp.o",
+        "[100%] Linking CXX static library libmachine.a",
+        "gmake[3]: Leaving directory '<tmp>/pyfcstm-acceptance-generate-he8a505j/generated/cpp/build'",
         "[100%] Built target machine",
-        "gmake[4]: Leaving directory '<tmp>/pyfcstm-acceptance-generate-vv431s9p/generated/cpp/build'",
-        "gmake[3]: Leaving directory '<tmp>/pyfcstm-acceptance-generate-vv431s9p/generated/cpp/build'"
+        "gmake[2]: Leaving directory '<tmp>/pyfcstm-acceptance-generate-he8a505j/generated/cpp/build'",
+        "gmake[1]: Leaving directory '<tmp>/pyfcstm-acceptance-generate-he8a505j/generated/cpp/build'"
       ]
     },
     "configure": {
       "command": "<home>/.pyenv/versions/3.10.10/bin/cmake ..",
       "returncode": 0,
       "stderr_tail": [
+        "CMake Deprecation Warning at CMakeLists.txt:1 (cmake_minimum_required):",
         "  Compatibility with CMake < 3.10 will be removed from a future version of",
         "  CMake.",
         "",
         "  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax",
         "  to tell CMake that the project requires at least <min> but has been updated",
-        "  to work with policies introduced by <max> or earlier.",
-        "",
-        "\u001b[0m"
+        "  to work with policies introduced by <max> or earlier."
       ],
       "stdout_tail": [
         "-- Detecting CXX compiler ABI info",
@@ -177,7 +174,7 @@
         "-- Detecting CXX compile features - done",
         "-- Configuring done (0.2s)",
         "-- Generating done (0.0s)",
-        "-- Build files have been written to: <tmp>/pyfcstm-acceptance-generate-vv431s9p/generated/cpp/build"
+        "-- Build files have been written to: <tmp>/pyfcstm-acceptance-generate-he8a505j/generated/cpp/build"
       ]
     }
   },
@@ -188,28 +185,27 @@
       "returncode": 0,
       "stderr_tail": [],
       "stdout_tail": [
-        "gmake[5]: Entering directory '<tmp>/pyfcstm-acceptance-generate-vv431s9p/generated/cpp_poll/build'",
-        "[ 33%] \u001b[32mBuilding C object CMakeFiles/machine.dir/machine.c.o\u001b[0m",
-        "[ 66%] \u001b[32mBuilding CXX object CMakeFiles/machine.dir/machine.cpp.o\u001b[0m",
-        "[100%] \u001b[32m\u001b[1mLinking CXX static library libmachine.a\u001b[0m",
-        "gmake[5]: Leaving directory '<tmp>/pyfcstm-acceptance-generate-vv431s9p/generated/cpp_poll/build'",
+        "gmake[3]: Entering directory '<tmp>/pyfcstm-acceptance-generate-he8a505j/generated/cpp_poll/build'",
+        "[ 33%] Building C object CMakeFiles/machine.dir/machine.c.o",
+        "[ 66%] Building CXX object CMakeFiles/machine.dir/machine.cpp.o",
+        "[100%] Linking CXX static library libmachine.a",
+        "gmake[3]: Leaving directory '<tmp>/pyfcstm-acceptance-generate-he8a505j/generated/cpp_poll/build'",
         "[100%] Built target machine",
-        "gmake[4]: Leaving directory '<tmp>/pyfcstm-acceptance-generate-vv431s9p/generated/cpp_poll/build'",
-        "gmake[3]: Leaving directory '<tmp>/pyfcstm-acceptance-generate-vv431s9p/generated/cpp_poll/build'"
+        "gmake[2]: Leaving directory '<tmp>/pyfcstm-acceptance-generate-he8a505j/generated/cpp_poll/build'",
+        "gmake[1]: Leaving directory '<tmp>/pyfcstm-acceptance-generate-he8a505j/generated/cpp_poll/build'"
       ]
     },
     "configure": {
       "command": "<home>/.pyenv/versions/3.10.10/bin/cmake ..",
       "returncode": 0,
       "stderr_tail": [
+        "CMake Deprecation Warning at CMakeLists.txt:1 (cmake_minimum_required):",
         "  Compatibility with CMake < 3.10 will be removed from a future version of",
         "  CMake.",
         "",
         "  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax",
         "  to tell CMake that the project requires at least <min> but has been updated",
-        "  to work with policies introduced by <max> or earlier.",
-        "",
-        "\u001b[0m"
+        "  to work with policies introduced by <max> or earlier."
       ],
       "stdout_tail": [
         "-- Detecting CXX compiler ABI info",
@@ -219,7 +215,7 @@
         "-- Detecting CXX compile features - done",
         "-- Configuring done (0.2s)",
         "-- Generating done (0.0s)",
-        "-- Build files have been written to: <tmp>/pyfcstm-acceptance-generate-vv431s9p/generated/cpp_poll/build"
+        "-- Build files have been written to: <tmp>/pyfcstm-acceptance-generate-he8a505j/generated/cpp_poll/build"
       ]
     }
   }

@@ -352,8 +352,8 @@ jobs:
           plantumlcli -c
           make docs_pdf 2>&1 | tee .ci/docs-pdf/build-output.log
 
-          zh_seconds="$(cat docs/build/pdf/zh/duration-seconds.txt)"
-          zh_tex="$(find docs/build/pdf/zh/latex -maxdepth 1 -type f -name '*.tex' -print -quit)"
+          zh_seconds="$(cat docs/build/pdf/acceptance-zh/duration-seconds.txt)"
+          zh_tex="$(find docs/build/pdf/acceptance-zh/latex -maxdepth 1 -type f -name '*.tex' -print -quit)"
           zh_pdf="${zh_tex%.tex}.pdf"
           {
             echo '## Acceptance PDF build'

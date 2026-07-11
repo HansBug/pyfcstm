@@ -19,6 +19,8 @@ Example::
 
     $ python tools/check_docs_pdf.py --check
     $ python tools/check_docs_pdf.py --language en --build-root docs/build/pdf/en
+    $ python tools/check_docs_pdf.py --language zh --profile acceptance \
+        --build-root docs/build/pdf/acceptance-zh
 """
 
 import argparse
@@ -69,7 +71,7 @@ _MAKEINDEX_RESULT_PATTERN = re.compile(
     re.IGNORECASE,
 )
 _PAGES_PATTERN = re.compile(r"^Pages:\s*(?P<pages>\d+)\s*$", re.MULTILINE)
-_LANGUAGE_SPECS = {
+_STANDARD_LANGUAGE_SPECS = {
     "en": {
         "contents_title": "Contents",
         "contents_entries": (
@@ -92,6 +94,21 @@ _LANGUAGE_SPECS = {
         ),
         "forbidden_text": (),
     },
+    "zh": {
+        "contents_title": "目录",
+        "contents_entries": ("教程", "任务指南", "解释", "参考"),
+        "document_sentinel": "字符串解析方式硬编码依赖",
+        "tail_sentinel": "windows_chinese_encodings",
+        "cjk_sentinel": "你好",
+        "minimum_pages": 20,
+        "minimum_text_chars": 0,
+        "required_text": (),
+        "required_bookmarks": ("教程", "任务指南", "解释", "参考"),
+        "forbidden_text": (),
+    },
+}
+
+_ACCEPTANCE_LANGUAGE_SPECS = {
     "zh": {
         "contents_title": "目录",
         "contents_entries": (
@@ -167,6 +184,11 @@ _LANGUAGE_SPECS = {
     },
 }
 
+_PROFILE_LANGUAGE_SPECS = {
+    "standard": _STANDARD_LANGUAGE_SPECS,
+    "acceptance": _ACCEPTANCE_LANGUAGE_SPECS,
+}
+
 
 class PdfValidationError(RuntimeError):
     """
@@ -236,12 +258,14 @@ def _write_text(path: Path, text: str) -> None:
         raise PdfValidationError("cannot write {0}: {1}".format(path, error)) from error
 
 
-def _language_spec(language: str) -> Mapping[str, object]:
+def _language_spec(language: str, profile: str = "standard") -> Mapping[str, object]:
     """
     Return the validation specification for one documentation language.
 
     :param language: Documentation language code.
     :type language: str
+    :param profile: Validation profile, defaults to ``'standard'``.
+    :type profile: str, optional
     :return: Language-specific titles, entries, and sentinels.
     :rtype: collections.abc.Mapping[str, object]
     :raises PdfValidationError: If the language is unsupported.
@@ -251,13 +275,22 @@ def _language_spec(language: str) -> Mapping[str, object]:
         >>> _language_spec('zh')['contents_title']
         '目录'
         >>> _language_spec('zh')['tail_sentinel']
-        'acceptance_pdf_tail_sentinel'
+        'windows_chinese_encodings'
+        >>> _language_spec('zh', 'acceptance')['contents_entries'][0]
+        '项目验收要求'
     """
-    if language not in _LANGUAGE_SPECS:
+    if profile not in _PROFILE_LANGUAGE_SPECS:
         raise PdfValidationError(
-            "unsupported documentation language: {0}".format(language)
+            "unsupported PDF validation profile: {0}".format(profile)
         )
-    return _LANGUAGE_SPECS[language]
+    profile_specs = _PROFILE_LANGUAGE_SPECS[profile]
+    if language not in profile_specs:
+        raise PdfValidationError(
+            "unsupported documentation language {0!r} for profile {1!r}".format(
+                language, profile
+            )
+        )
+    return profile_specs[language]
 
 
 def _require_command(command: str) -> str:
@@ -369,6 +402,7 @@ def _validate_extracted_text(
     tail_text: str,
     language: str,
     enforce_required_text: bool = False,
+    profile: str = "standard",
 ) -> None:
     """
     Validate directory, document-end, index-tail, and CJK PDF text.
@@ -384,6 +418,8 @@ def _validate_extracted_text(
     :type language: str
     :param enforce_required_text: Whether to enforce language-specific full-content sentinels.
     :type enforce_required_text: bool, optional
+    :param profile: Validation profile, defaults to ``'standard'``.
+    :type profile: str, optional
     :return: ``None``.
     :rtype: None
     :raises PdfValidationError: If a required title, entry, document sentinel,
@@ -396,7 +432,7 @@ def _validate_extracted_text(
         >>> full = '你好 hard-coded parsing targets'
         >>> _validate_extracted_text(full, front, 'windows_chinese_encodings', 'en')
     """
-    spec = _language_spec(language)
+    spec = _language_spec(language, profile)
     title = str(spec["contents_title"])
     normalized_lines = {
         _normalize_extracted_text(line)
@@ -669,7 +705,9 @@ def _extract_pdf_text(pdf_path: Path, first_page: int, last_page: int) -> str:
     ).stdout
 
 
-def _validate_pdf_outline(pdf_path: Path, language: str) -> str:
+def _validate_pdf_outline(
+    pdf_path: Path, language: str, profile: str = "standard"
+) -> str:
     """
     Validate PDF bookmarks with ``mutool show outline``.
 
@@ -677,6 +715,8 @@ def _validate_pdf_outline(pdf_path: Path, language: str) -> str:
     :type pdf_path: pathlib.Path
     :param language: Documentation language code.
     :type language: str
+    :param profile: Validation profile, defaults to ``'standard'``.
+    :type profile: str, optional
     :return: Raw outline text.
     :rtype: str
     :raises PdfValidationError: If the outline is unreadable or missing a
@@ -687,7 +727,7 @@ def _validate_pdf_outline(pdf_path: Path, language: str) -> str:
         >>> isinstance(_validate_pdf_outline, Callable)
         True
     """
-    spec = _language_spec(language)
+    spec = _language_spec(language, profile)
     outline = _run_command(["mutool", "show", str(pdf_path), "outline"]).stdout
     normalized_outline = _normalize_extracted_text(outline)
     if not normalized_outline:
@@ -705,6 +745,7 @@ def _validate_pdf_file(
     language: str,
     enforce_minimum_pages: bool = True,
     enforce_required_text: bool = True,
+    profile: str = "standard",
 ) -> Tuple[int, str, int, str]:
     """
     Validate PDF structure, extracted content, bookmarks, and embedded CJK fonts.
@@ -717,6 +758,8 @@ def _validate_pdf_file(
     :type enforce_minimum_pages: bool, optional
     :param enforce_required_text: Whether to enforce language-specific full-content sentinels.
     :type enforce_required_text: bool, optional
+    :param profile: Validation profile, defaults to ``'standard'``.
+    :type profile: str, optional
     :return: Page count, raw ``pdffonts`` output, normalized text length, and
         raw bookmark outline.
     :rtype: tuple[int, str, int, str]
@@ -730,7 +773,8 @@ def _validate_pdf_file(
     if shutil.which("qpdf") is not None:
         _run_command(["qpdf", "--check", str(pdf_path)])
     pages = _pdf_page_count(pdf_path)
-    minimum_pages = int(_language_spec(language).get("minimum_pages", 1))
+    spec = _language_spec(language, profile)
+    minimum_pages = int(spec.get("minimum_pages", 1))
     if enforce_minimum_pages and pages < minimum_pages:
         raise PdfValidationError(
             "PDF page count {0} is below required minimum {1}".format(
@@ -739,10 +783,10 @@ def _validate_pdf_file(
         )
     outline = ""
     if enforce_required_text:
-        outline = _validate_pdf_outline(pdf_path, language)
+        outline = _validate_pdf_outline(pdf_path, language, profile)
     full_text = _extract_pdf_text(pdf_path, 1, pages)
     text_chars = len(_normalize_extracted_text(full_text))
-    minimum_text_chars = int(_language_spec(language).get("minimum_text_chars", 0))
+    minimum_text_chars = int(spec.get("minimum_text_chars", 0))
     if enforce_minimum_pages and text_chars < minimum_text_chars:
         raise PdfValidationError(
             "PDF normalized text length {0} is below required minimum {1}".format(
@@ -757,6 +801,7 @@ def _validate_pdf_file(
         tail_text,
         language,
         enforce_required_text=enforce_required_text,
+        profile=profile,
     )
     fonts = _run_command(["pdffonts", str(pdf_path)]).stdout
     if "Fandol" not in fonts:
@@ -773,6 +818,7 @@ def validate_docs_pdf(
     language: str,
     enforce_minimum_pages: bool = True,
     enforce_required_text: bool = True,
+    profile: str = "standard",
 ) -> Dict[str, object]:
     """
     Validate one language-specific Sphinx PDF build root.
@@ -786,6 +832,8 @@ def validate_docs_pdf(
     :type enforce_minimum_pages: bool, optional
     :param enforce_required_text: Whether to enforce language-specific full-content sentinels.
     :type enforce_required_text: bool, optional
+    :param profile: Validation profile, defaults to ``'standard'``.
+    :type profile: str, optional
     :return: Validation evidence including artifact paths, page count, maximum
         TeX line length, and makeindex counts.
     :rtype: dict[str, object]
@@ -797,7 +845,7 @@ def validate_docs_pdf(
         >>> isinstance(validate_docs_pdf, Callable)
         True
     """
-    _language_spec(language)
+    spec = _language_spec(language, profile)
     build_root = build_root.resolve()
     tex_path, pdf_path = _primary_artifacts(build_root)
     maximum_line = _validate_tex_file(tex_path)
@@ -808,9 +856,11 @@ def validate_docs_pdf(
         language,
         enforce_minimum_pages=enforce_minimum_pages,
         enforce_required_text=enforce_required_text,
+        profile=profile,
     )
     return {
         "language": language,
+        "profile": profile,
         "build_root": str(build_root),
         "tex_path": str(tex_path),
         "pdf_path": str(pdf_path),
@@ -818,7 +868,7 @@ def validate_docs_pdf(
         "text_chars": text_chars,
         "outline_entries": len([line for line in outline.splitlines() if line.strip()]),
         "required_contents_entries": tuple(
-            str(item) for item in _language_spec(language)["contents_entries"]
+            str(item) for item in spec["contents_entries"]
         ),
         "maximum_tex_line_length": maximum_line,
         "makeindex_accepted": accepted,
@@ -903,32 +953,84 @@ def _validate_acceptance_source_contract(index_text: str, conf_text: str) -> Non
             "release/community entries are not hidden from the acceptance PDF"
         )
 
-    required_conf_markers = (
-        'master_doc = "index"',
-        'app.tags.add("acceptance_pdf")',
-        "项目验收要求 <acceptance/index_zh>",
-        "_copy_language_index(_source_index, _target_index, _ACCEPTANCE_PDF)",
-        '"index",\n            "pyfcstm-acceptance-zh.tex"',
+    required_conf_patterns = (
+        (r"master_doc\s*=\s*['\"]index['\"]", "master_doc=index"),
+        (
+            r"app\.tags\.add\(\s*['\"]acceptance_pdf['\"]\s*\)",
+            "acceptance_pdf Sphinx tag",
+        ),
+        (
+            re.escape("项目验收要求 <acceptance/index_zh>"),
+            "acceptance chapter injection",
+        ),
+        (
+            r"_index_text\s*=\s*\([\s\S]*?_ACCEPTANCE_TOCTREE",
+            "normal manual root injection",
+        ),
+        (
+            r"['\"]pyfcstm-acceptance-zh\.tex['\"]",
+            "acceptance PDF filename",
+        ),
     )
-    for marker in required_conf_markers:
-        if marker not in conf_text:
+    for pattern, label in required_conf_patterns:
+        if re.search(pattern, conf_text) is None:
             raise PdfValidationError(
-                "Sphinx acceptance profile is missing {0!r}".format(marker)
+                "Sphinx acceptance profile is missing {0}".format(label)
             )
     forbidden_excludes = (
-        '"api_doc/**"',
-        '"tutorials/**"',
-        '"how_to/**"',
-        '"explanations/**"',
-        '"reference/**"',
+        "api_doc/**",
+        "tutorials/**",
+        "how_to/**",
+        "explanations/**",
+        "reference/**",
     )
     for marker in forbidden_excludes:
-        if marker in conf_text:
+        quoted_marker = r"['\"]{0}['\"]".format(re.escape(marker))
+        if re.search(quoted_marker, conf_text) is not None:
             raise PdfValidationError(
                 "Sphinx acceptance profile excludes technical content {0}".format(
                     marker
                 )
             )
+
+
+def _validate_docs_makefile_contract(makefile_text: str) -> None:
+    """
+    Require acceptance PDF generation to remain additive and isolated.
+
+    The standard bilingual and Chinese PDF targets must retain the normal
+    documentation profile. Only ``acceptance_pdf`` may select the acceptance
+    profile, and it must write to a separate build root.
+
+    :param makefile_text: Contents of ``docs/Makefile``.
+    :type makefile_text: str
+    :return: ``None``.
+    :rtype: None
+    :raises PdfValidationError: If an original PDF target is replaced or the
+        acceptance build is not isolated.
+
+    Example::
+
+        >>> isinstance(_validate_docs_makefile_contract, Callable)
+        True
+    """
+    required_patterns = (
+        (r"^pdf:\s+contents$", "standard bilingual pdf target"),
+        (r"^pdf_zh:\s+contents$", "standard Chinese pdf target"),
+        (r"^acceptance_pdf:\s+contents$", "additive acceptance pdf target"),
+        (
+            r"PYFCSTM_ACCEPTANCE_PDF=1[^\n]+PDFBUILDDIR\)/acceptance-zh",
+            "isolated acceptance profile invocation",
+        ),
+        (
+            r"--language\s+zh\s+--profile\s+acceptance\s+--build-root\s+"
+            r"[\"']\$\(PDFBUILDDIR\)/acceptance-zh[\"']",
+            "acceptance PDF checker profile",
+        ),
+    )
+    for pattern, label in required_patterns:
+        if re.search(pattern, makefile_text, re.MULTILINE) is None:
+            raise PdfValidationError("docs Makefile is missing {0}".format(label))
 
 
 def _expect_failure(label: str, callback: Callable[[], object]) -> None:
@@ -989,12 +1091,14 @@ def _check_sphinx_metadata_contract() -> None:
         )
 
 
-def _smoke_source(language: str) -> str:
+def _smoke_source(language: str, profile: str = "standard") -> str:
     """
     Return a standalone XeLaTeX smoke document for one language.
 
     :param language: Documentation language code.
     :type language: str
+    :param profile: Validation profile, defaults to ``'standard'``.
+    :type profile: str, optional
     :return: Complete XeLaTeX source with ToC, index, CJK, and tail sentinel.
     :rtype: str
     :raises PdfValidationError: If the language is unsupported.
@@ -1004,7 +1108,7 @@ def _smoke_source(language: str) -> str:
         >>> r'\\usepackage{xeCJK}' in _smoke_source('en')
         True
     """
-    spec = _language_spec(language)
+    spec = _language_spec(language, profile)
     title = str(spec["contents_title"])
     sections = tuple(str(entry) for entry in spec["contents_entries"])
     section_text = "\n".join(
@@ -1043,7 +1147,9 @@ def _smoke_source(language: str) -> str:
     )
 
 
-def _create_smoke_build(build_root: Path, language: str) -> Path:
+def _create_smoke_build(
+    build_root: Path, language: str, profile: str = "standard"
+) -> Path:
     """
     Compile one standalone XeLaTeX smoke build in a temporary root.
 
@@ -1051,6 +1157,8 @@ def _create_smoke_build(build_root: Path, language: str) -> Path:
     :type build_root: pathlib.Path
     :param language: Documentation language code.
     :type language: str
+    :param profile: Validation profile, defaults to ``'standard'``.
+    :type profile: str, optional
     :return: Generated PDF path.
     :rtype: pathlib.Path
     :raises PdfValidationError: If the smoke document cannot be compiled.
@@ -1069,7 +1177,7 @@ def _create_smoke_build(build_root: Path, language: str) -> Path:
             "cannot create smoke build root: {0}".format(error)
         ) from error
     tex_path = latex_dir / "smoke.tex"
-    _write_text(tex_path, _smoke_source(language))
+    _write_text(tex_path, _smoke_source(language, profile))
     result = _run_command(
         [
             "latexmk",
@@ -1090,7 +1198,11 @@ def _create_smoke_build(build_root: Path, language: str) -> Path:
             )
         )
     validate_docs_pdf(
-        build_root, language, enforce_minimum_pages=False, enforce_required_text=False
+        build_root,
+        language,
+        enforce_minimum_pages=False,
+        enforce_required_text=False,
+        profile=profile,
     )
     return tex_path.with_suffix(".pdf")
 
@@ -1121,7 +1233,9 @@ def _run_pure_self_checks(root: Path) -> None:
     repository = Path(__file__).resolve().parents[1]
     index_text = _read_text(repository / "docs" / "source" / "index_zh.rst")
     conf_text = _read_text(repository / "docs" / "source" / "conf.py")
+    makefile_text = _read_text(repository / "docs" / "Makefile")
     _validate_acceptance_source_contract(index_text, conf_text)
+    _validate_docs_makefile_contract(makefile_text)
     _expect_failure(
         "missing technical manual root",
         lambda: _validate_acceptance_source_contract(
@@ -1137,6 +1251,18 @@ def _run_pure_self_checks(root: Path) -> None:
         lambda: _validate_acceptance_source_contract(
             index_text,
             conf_text + '\nexclude_patterns.append("tutorials/**")\n',
+        ),
+    )
+    _expect_failure(
+        "acceptance profile replaces standard PDF target",
+        lambda: _validate_docs_makefile_contract(
+            makefile_text.replace("pdf: contents", "pdf: acceptance_pdf", 1)
+        ),
+    )
+    _expect_failure(
+        "acceptance PDF uses the standard checker profile",
+        lambda: _validate_docs_makefile_contract(
+            makefile_text.replace("--profile acceptance", "--profile standard", 1)
         ),
     )
     _check_sphinx_metadata_contract()
@@ -1245,13 +1371,22 @@ def _run_pure_self_checks(root: Path) -> None:
     )
     validate_isolated_build_roots(root / "en", root / "zh")
 
-    zh_spec = _language_spec("zh")
+    standard_zh_spec = _language_spec("zh")
+    if standard_zh_spec["contents_entries"][0] != "教程":
+        raise PdfValidationError("standard Chinese PDF profile lost the normal manual")
+    _expect_failure(
+        "acceptance profile rejects English",
+        lambda: _language_spec("en", "acceptance"),
+    )
+
+    zh_spec = _language_spec("zh", "acceptance")
     zh_front = "目录\n" + "\n".join(zh_spec["contents_entries"])
     _validate_extracted_text(
         "动态验证不是形式化验证 项目验收可复现验收完成哨兵",
         zh_front,
         zh_spec["tail_sentinel"],
         "zh",
+        profile="acceptance",
     )
     _expect_failure(
         "zh acceptance rejects abbreviated contents",
@@ -1260,6 +1395,7 @@ def _run_pure_self_checks(root: Path) -> None:
             "目录\n交付范围\n功能映射\n动态验证\n编辑器与 GUI 交接",
             zh_spec["tail_sentinel"],
             "zh",
+            profile="acceptance",
         ),
     )
     _expect_failure(
@@ -1270,6 +1406,7 @@ def _run_pure_self_checks(root: Path) -> None:
             zh_spec["tail_sentinel"],
             "zh",
             enforce_required_text=True,
+            profile="acceptance",
         ),
     )
 
@@ -1364,6 +1501,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="run built-in positive and adversarial self-checks",
     )
     parser.add_argument("--language", choices=("en", "zh"))
+    parser.add_argument(
+        "--profile",
+        choices=tuple(sorted(_PROFILE_LANGUAGE_SPECS)),
+        default="standard",
+        help="validation profile (default: standard)",
+    )
     parser.add_argument("--build-root", type=Path)
     parser.add_argument(
         "--check-isolation",
@@ -1412,8 +1555,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return 0
     if args.language is None or args.build_root is None:
         parser.error("--language and --build-root must be used together")
-    evidence = validate_docs_pdf(args.build_root, args.language)
+    evidence = validate_docs_pdf(args.build_root, args.language, profile=args.profile)
     print("PDF validation passed: {0}".format(evidence["pdf_path"]))
+    print("Profile: {0}".format(evidence["profile"]))
     print("Pages: {0}".format(evidence["pages"]))
     print("Normalized text characters: {0}".format(evidence["text_chars"]))
     print("Outline entries: {0}".format(evidence["outline_entries"]))

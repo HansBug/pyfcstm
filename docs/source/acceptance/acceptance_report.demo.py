@@ -111,7 +111,9 @@ def main():
     )
 
     try:
-        load_state_machine_from_text("state Broken { state A;", path="syntax-demo.fcstm")
+        load_state_machine_from_text(
+            "state Broken { state A;", path="syntax-demo.fcstm"
+        )
     except GrammarParseError as error:
         # GrammarParseError: load_state_machine_from_text reports malformed FCSTM syntax.
         first = error.errors[0]
@@ -142,7 +144,9 @@ def main():
             },
         )
 
-    with tempfile.TemporaryDirectory(prefix="pyfcstm-acceptance-generate-") as directory:
+    with tempfile.TemporaryDirectory(
+        prefix="pyfcstm-acceptance-generate-"
+    ) as directory:
         root = Path(directory)
         generated = {}
         native = {}
@@ -155,9 +159,13 @@ def main():
                 str(output_dir),
                 clear_previous_directory=True,
             )
-            generated[template_name] = sorted(path.name for path in output_dir.iterdir())
+            generated[template_name] = sorted(
+                path.name for path in output_dir.iterdir()
+            )
             if template_name in {"c", "c_poll", "cpp", "cpp_poll"}:
-                native[template_name] = _build_native_template(template_name, output_dir)
+                native[template_name] = _build_native_template(
+                    template_name, output_dir
+                )
         _print_json("five-template-generation", generated)
         _print_json("cmake-native-evidence", native)
 
@@ -180,7 +188,9 @@ def main():
     java_path = shutil.which("java")
     antlr_jar = Path(__file__).resolve().parents[3] / "antlr-4.9.3.jar"
     java_evidence = {
-        "java": _run_command([java_path, "-version"]) if java_path else {"returncode": None, "stderr_tail": ["java not found"]},
+        "java": _run_command([java_path, "-version"])
+        if java_path
+        else {"returncode": None, "stderr_tail": ["java not found"]},
         "antlr_jar_exists": antlr_jar.is_file(),
         "antlr_jar": antlr_jar.name,
     }

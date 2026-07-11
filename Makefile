@@ -190,7 +190,7 @@ docs_en:
 docs_zh:
 	READTHEDOCS_LANGUAGE=zh-cn $(MAKE) -C "${DOC_DIR}" build
 docs_pdf:
-	$(MAKE) -C "${DOC_DIR}" pdf
+	$(MAKE) -C "${DOC_DIR}" acceptance_pdf
 docs_pdf_en:
 	$(MAKE) -C "${DOC_DIR}" pdf_en
 docs_pdf_zh:

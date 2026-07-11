@@ -18,6 +18,7 @@
 
 import os
 import re
+import shutil
 import sys
 from datetime import datetime
 from subprocess import Popen
@@ -27,14 +28,14 @@ from packaging import version as version_
 
 # Get current location
 _DOC_PATH = os.path.dirname(os.path.abspath(__file__))
-_PROJ_PATH = os.path.abspath(os.path.join(_DOC_PATH, "..", ".."))
-_LIBS_PATH = os.path.join(_DOC_PATH, "_libs")
-_SHIMS_PATH = os.path.join(_DOC_PATH, "_shims")
+_PROJ_PATH = os.path.abspath(os.path.join(_DOC_PATH, '..', '..'))
+_LIBS_PATH = os.path.join(_DOC_PATH, '_libs')
+_SHIMS_PATH = os.path.join(_DOC_PATH, '_shims')
 os.chdir(_PROJ_PATH)
 
 # Set environment, remove the pre-installed package
 sys.path.insert(0, _PROJ_PATH)
-modnames = [mname for mname in sys.modules if mname.startswith("pyfcstm")]
+modnames = [mname for mname in sys.modules if mname.startswith('pyfcstm')]
 for modname in modnames:
     del sys.modules[modname]
 
@@ -44,71 +45,38 @@ if not os.environ.get("NO_CONTENTS_BUILD"):
     _env.update(
         dict(
             SOURCEDIR=_DOC_PATH,
-            BUILDDIR=os.path.abspath(os.path.join(_DOC_PATH, "..", "build")),
-            PYTHONPATH=":".join([_PROJ_PATH, _LIBS_PATH]),
-            PATH=":".join([_SHIMS_PATH, os.environ.get("PATH", "")]),
+            BUILDDIR=os.path.abspath(os.path.join(_DOC_PATH, '..', 'build')),
+            PYTHONPATH=':'.join([_PROJ_PATH, _LIBS_PATH]),
+            PATH=':'.join([_SHIMS_PATH, os.environ.get('PATH', '')]),
         )
     )
 
-    if os.path.exists(os.path.join(_PROJ_PATH, "requirements-build.txt")):
-        pip_build_cmd = (
-            where.first("pip"),
-            "install",
-            "-r",
-            os.path.join(_PROJ_PATH, "requirements-build.txt"),
-        )
+    if os.path.exists(os.path.join(_PROJ_PATH, 'requirements-build.txt')):
+        pip_build_cmd = (where.first('pip'), 'install', '-r', os.path.join(_PROJ_PATH, 'requirements-build.txt'))
         print("Install pip requirements {cmd}...".format(cmd=repr(pip_build_cmd)))
-        pip_build = Popen(
-            pip_build_cmd,
-            stdout=sys.stdout,
-            stderr=sys.stderr,
-            env=_env,
-            cwd=_PROJ_PATH,
-        )
+        pip_build = Popen(pip_build_cmd, stdout=sys.stdout, stderr=sys.stderr, env=_env, cwd=_PROJ_PATH)
         if pip_build.wait() != 0:
-            raise ChildProcessError(
-                "Pip install failed with %d." % (pip_build.returncode,)
-            )
+            raise ChildProcessError("Pip install failed with %d." % (pip_build.returncode,))
 
-        make_build_cmd = (where.first("make"), "clean", "build")
+        make_build_cmd = (where.first('make'), 'clean', 'build')
         print("Try building extensions {cmd}...".format(cmd=repr(make_build_cmd)))
-        make_build = Popen(
-            make_build_cmd,
-            stdout=sys.stdout,
-            stderr=sys.stderr,
-            env=_env,
-            cwd=_PROJ_PATH,
-        )
+        make_build = Popen(make_build_cmd, stdout=sys.stdout, stderr=sys.stderr, env=_env, cwd=_PROJ_PATH)
         if make_build.wait() != 0:
-            raise ChildProcessError(
-                "Extension build failed with %d." % (make_build.returncode,)
-            )
+            raise ChildProcessError("Extension build failed with %d." % (make_build.returncode,))
 
-    pip_cmd = (
-        where.first("pip"),
-        "install",
-        "-r",
-        os.path.join(_PROJ_PATH, "requirements.txt"),
-    )
+    pip_cmd = (where.first('pip'), 'install', '-r', os.path.join(_PROJ_PATH, 'requirements.txt'))
     print("Install pip requirements {cmd}...".format(cmd=repr(pip_cmd)))
     pip = Popen(pip_cmd, stdout=sys.stdout, stderr=sys.stderr, env=_env, cwd=_DOC_PATH)
     if pip.wait() != 0:
         raise ChildProcessError("Pip install failed with %d." % (pip.returncode,))
 
-    pip_docs_cmd = (
-        where.first("pip"),
-        "install",
-        "-r",
-        os.path.join(_PROJ_PATH, "requirements-doc.txt"),
-    )
+    pip_docs_cmd = (where.first('pip'), 'install', '-r', os.path.join(_PROJ_PATH, 'requirements-doc.txt'))
     print("Install pip docs requirements {cmd}...".format(cmd=repr(pip_docs_cmd)))
-    pip_docs = Popen(
-        pip_docs_cmd, stdout=sys.stdout, stderr=sys.stderr, env=_env, cwd=_DOC_PATH
-    )
+    pip_docs = Popen(pip_docs_cmd, stdout=sys.stdout, stderr=sys.stderr, env=_env, cwd=_DOC_PATH)
     if pip_docs.wait() != 0:
         raise ChildProcessError("Pip docs install failed with %d." % (pip.returncode,))
 
-    all_cmd = (where.first("make"), "-f", "all.mk", "build")
+    all_cmd = (where.first('make'), '-f', "all.mk", "build")
     print("Building all {cmd} at {cp}...".format(cmd=repr(all_cmd), cp=repr(_DOC_PATH)))
     all_ = Popen(all_cmd, stdout=sys.stdout, stderr=sys.stderr, env=_env, cwd=_DOC_PATH)
     if all_.wait() != 0:
@@ -116,20 +84,21 @@ if not os.environ.get("NO_CONTENTS_BUILD"):
 
     print("Build of contents complete.")
 
-from pyfcstm.config.meta import __TITLE__, __AUTHOR__, __VERSION__  # noqa: E402
+from pyfcstm.config.meta import __TITLE__, __AUTHOR__, __VERSION__
 
 # Register FCSTM Pygments lexer for syntax highlighting
-from pyfcstm.highlight.pygments_lexer import FcstmLexer  # noqa: E402
-from sphinx.highlighting import lexers  # noqa: E402
+from pygments.lexers import get_lexer_by_name
+from pyfcstm.highlight.pygments_lexer import FcstmLexer
+from sphinx.highlighting import lexers
 
 # Register the lexer with Sphinx
-lexers["fcstm"] = FcstmLexer()
-lexers["fcsm"] = FcstmLexer()  # Alternative alias
+lexers['fcstm'] = FcstmLexer()
+lexers['fcsm'] = FcstmLexer()  # Alternative alias
 
 print("✓ FCSTM Pygments lexer registered successfully")
 
 project = __TITLE__
-copyright = "{year}, {author}".format(year=datetime.now().year, author=__AUTHOR__)
+copyright = '{year}, {author}'.format(year=datetime.now().year, author=__AUTHOR__)
 author = __AUTHOR__
 
 # The short X.Y version
@@ -143,23 +112,23 @@ release = __VERSION__
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
 extensions = [
-    "sphinx.ext.autodoc",
-    "sphinx.ext.doctest",
-    "sphinx.ext.mathjax",
-    "sphinx.ext.ifconfig",
-    "sphinx.ext.viewcode",
-    "sphinx.ext.githubpages",
-    "sphinx.ext.todo",
-    "sphinx.ext.graphviz",
-    "enum_tools.autoenum",
+    'sphinx.ext.autodoc',
+    'sphinx.ext.doctest',
+    'sphinx.ext.mathjax',
+    'sphinx.ext.ifconfig',
+    'sphinx.ext.viewcode',
+    'sphinx.ext.githubpages',
+    'sphinx.ext.todo',
+    'sphinx.ext.graphviz',
+    'enum_tools.autoenum',
     "sphinx_multiversion",
-    "nbsphinx",
-    "sphinx_toolbox.collapse",
-    "sphinxcontrib.rsvgconverter",
+    'nbsphinx',
+    'sphinx_toolbox.collapse',
+    'sphinxcontrib.rsvgconverter',
 ]
 
 # Add any paths that contain templates here, relative to this directory.
-templates_path = ["_templates"]
+templates_path = ['_templates']
 
 # The language for content autogenerated by Sphinx. Refer to documentation
 # for a list of supported languages.
@@ -169,14 +138,14 @@ templates_path = ["_templates"]
 #
 # ReadTheDocs sets this automatically based on the project's language configuration.
 # For local builds, allow override via environment variable.
-_ACCEPTANCE_PDF = os.environ.get("PYFCSTM_ACCEPTANCE_PDF") == "1"
+_ACCEPTANCE_PDF = os.environ.get('PYFCSTM_ACCEPTANCE_PDF') == '1'
 
-READTHEDOCS_LANGUAGE = os.environ.get("READTHEDOCS_LANGUAGE", "en")
+READTHEDOCS_LANGUAGE = os.environ.get('READTHEDOCS_LANGUAGE', 'en')
 if _ACCEPTANCE_PDF:
-    READTHEDOCS_LANGUAGE = "zh"
+    READTHEDOCS_LANGUAGE = 'zh'
 language = READTHEDOCS_LANGUAGE
-if "zh" in re.split(r"[_-]+", language.lower()):
-    language = "zh"
+if 'zh' in re.split(r'[_-]+', language.lower()):
+    language = 'zh'
 
 _ACCEPTANCE_TOCTREE = """.. toctree::
    :maxdepth: 2
@@ -187,51 +156,27 @@ _ACCEPTANCE_TOCTREE = """.. toctree::
 
 """
 
-
-def _copy_language_index(source: str, target: str, include_acceptance: bool) -> None:
-    """
-    Copy one language root and optionally prepend the acceptance page.
-
-    The generated ``index.rst`` remains the normal Chinese manual root. The
-    acceptance profile only inserts one leading toctree after the document
-    title; it does not duplicate or replace the manual structure.
-
-    :param source: Language-specific source index path.
-    :type source: str
-    :param target: Generated Sphinx root path.
-    :type target: str
-    :param include_acceptance: Whether to insert the acceptance toctree.
-    :type include_acceptance: bool
-    :return: ``None``.
-    :rtype: None
-    :raises ValueError: If the source has no title/content boundary.
-    :raises OSError: If the source cannot be read or the target cannot be
-        written.
-
-    Example::
-
-        >>> callable(_copy_language_index)
-        True
-    """
-    with open(source, "r", encoding="utf-8") as source_file:
-        text = source_file.read()
-    if include_acceptance:
-        title_boundary = text.find("\n\n")
-        if title_boundary < 0:
-            raise ValueError(
-                "Documentation root has no title boundary: {0!r}.".format(source)
-            )
-        insertion = title_boundary + 2
-        text = text[:insertion] + _ACCEPTANCE_TOCTREE + text[insertion:]
-    with open(target, "w", encoding="utf-8", newline="") as target_file:
-        target_file.write(text)
-
-
-_source_index = os.path.join(_DOC_PATH, f"index_{language}.rst")
-_target_index = os.path.join(_DOC_PATH, "index.rst")
+_source_index = os.path.join(_DOC_PATH, f'index_{language}.rst')
+_target_index = os.path.join(_DOC_PATH, 'index.rst')
 if not os.path.exists(_source_index):
-    raise FileNotFoundError(f"Source index file not found: {_source_index!r}.")
-_copy_language_index(_source_index, _target_index, _ACCEPTANCE_PDF)
+    raise FileNotFoundError(f'Source index file not found: {_source_index!r}.')
+shutil.copyfile(_source_index, _target_index)
+if _ACCEPTANCE_PDF:
+    with open(_target_index, 'r', encoding='utf-8') as index_file:
+        _index_text = index_file.read()
+    _title_boundary = _index_text.find('\n\n')
+    if _title_boundary < 0:
+        raise ValueError(
+            'Documentation root has no title boundary: {!r}.'.format(_source_index)
+        )
+    _insertion = _title_boundary + 2
+    _index_text = (
+        _index_text[:_insertion]
+        + _ACCEPTANCE_TOCTREE
+        + _index_text[_insertion:]
+    )
+    with open(_target_index, 'w', encoding='utf-8', newline='') as index_file:
+        index_file.write(_index_text)
 
 
 def _cleanup_generated_index(app, exception):
@@ -252,7 +197,7 @@ def _cleanup_generated_index(app, exception):
     :return: ``None``.
     :rtype: None
     """
-    if _target_index is not None and os.path.exists(_target_index):
+    if os.path.exists(_target_index):
         os.remove(_target_index)
 
 
@@ -261,9 +206,8 @@ def setup(app):
     Register Sphinx documentation build hooks.
 
     The hook manages the generated language-specific ``index.rst`` copy and
-    marks the acceptance PDF profile before source parsing. The profile tag
-    exposes the acceptance chapter only in the delivery PDF; normal HTML keeps
-    the original documentation tree unchanged.
+    tags the isolated acceptance PDF profile. Normal HTML and standard PDF
+    builds retain the original documentation tree.
 
     :param app: Sphinx application object used to register event callbacks.
     :type app: sphinx.application.Sphinx
@@ -271,53 +215,48 @@ def setup(app):
     :rtype: None
     """
     if _ACCEPTANCE_PDF:
-        app.tags.add("acceptance_pdf")
-    app.connect("build-finished", _cleanup_generated_index)
+        app.tags.add('acceptance_pdf')
+    app.connect('build-finished', _cleanup_generated_index)
 
 
 # The master document is now index.rst, which is copied from index_<language>.rst
-master_doc = "index"
-
+master_doc = 'index'
 
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
 # This pattern also affects html_static_path and html_extra_path.
 def _relative_doc_path(path):
-    return os.path.relpath(path, _DOC_PATH).replace(os.sep, "/")
+    return os.path.relpath(path, _DOC_PATH).replace(os.sep, '/')
 
 
 def _language_variant_excludes(selected_language):
-    excludes = {"index_en.rst", "index_zh.rst"}
+    excludes = {'index_en.rst', 'index_zh.rst'}
     zh_files = []
     for root, _, filenames in os.walk(_DOC_PATH):
         for filename in filenames:
-            if filename.endswith("_zh.rst"):
+            if filename.endswith('_zh.rst'):
                 zh_files.append(_relative_doc_path(os.path.join(root, filename)))
 
-    if selected_language == "zh":
-        excludes.add("api_doc_en.rst")
+    if selected_language == 'zh':
+        excludes.add('api_doc_en.rst')
         for zh_file in zh_files:
-            english_file = f"{zh_file[:-7]}.rst"
-            if english_file != "index.rst" and os.path.exists(
-                os.path.join(_DOC_PATH, english_file)
-            ):
+            english_file = f'{zh_file[:-7]}.rst'
+            if english_file != 'index.rst' and os.path.exists(os.path.join(_DOC_PATH, english_file)):
                 excludes.add(english_file)
     else:
-        excludes.add("api_doc_zh.rst")
+        excludes.add('api_doc_zh.rst')
         excludes.update(zh_files)
 
     return sorted(excludes)
 
 
 if _ACCEPTANCE_PDF:
-    exclude_patterns = _language_variant_excludes("zh") + [
-        "_migration/**",
-    ]
+    exclude_patterns = _language_variant_excludes('zh') + ['_migration/**']
 else:
-    exclude_patterns = _language_variant_excludes(language) + ["acceptance/**"]
+    exclude_patterns = _language_variant_excludes(language) + ['acceptance/**']
 
 # Locale directories for internationalization
-locale_dirs = ["locale/"]
+locale_dirs = ['locale/']
 gettext_compact = False
 
 # -- Options for HTML output -------------------------------------------------
@@ -325,88 +264,89 @@ gettext_compact = False
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of plugins themes.
 #
-html_theme = "sphinx_rtd_theme"
-htmlhelp_basename = "TreeValue"
+html_theme = 'sphinx_rtd_theme'
+htmlhelp_basename = 'TreeValue'
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the plugins static files,
 # so a file named "default.css" will overwrite the plugins "default.css".
-html_static_path = ["_static"]
+html_static_path = ['_static']
 
 html_css_files = [
-    "css/custom.css",
+    'css/custom.css',
 ]
 
 # Language-specific settings
 html_context = {
-    "display_github": True,
-    "github_user": "hansbug",
-    "github_repo": "pyfcstm",
-    "github_version": "main",
-    "conf_py_path": "/docs/source/",
+    'display_github': True,
+    'github_user': 'hansbug',
+    'github_repo': 'pyfcstm',
+    'github_version': 'main',
+    'conf_py_path': '/docs/source/',
 }
 
 # Add language selector to the theme
-if language == "zh":
-    html_context["language"] = "zh_CN"
-    html_context["languages"] = [
-        ("English", "../en/"),
-        ("中文", "../zh/"),
+if language == 'zh':
+    html_context['language'] = 'zh_CN'
+    html_context['languages'] = [
+        ('English', '../en/'),
+        ('中文', '../zh/'),
     ]
 else:
-    html_context["language"] = "en"
-    html_context["languages"] = [
-        ("English", "../en/"),
-        ("中文", "../zh/"),
+    html_context['language'] = 'en'
+    html_context['languages'] = [
+        ('English', '../en/'),
+        ('中文', '../zh/'),
     ]
 
 epub_title = project
-epub_exclude_files = ["search.html"]
+epub_exclude_files = ['search.html']
 
 # -- Options for LaTeX/PDF output --------------------------------------------
 
 # Keep one semantic document tree for HTML and PDF. These settings only adapt
 # the title page, Unicode fonts, index tool, and global contents heading to the
 # LaTeX medium.
-latex_engine = "xelatex"
+latex_engine = 'xelatex'
 latex_use_xindy = False
-latex_logo = "_static/logos/logo_banner.png"
+latex_logo = '_static/logos/logo_banner.png'
 
-_latex_contents_title = "目录" if language == "zh" else "Contents"
-_latex_preamble_parts = [] if language == "zh" else [r"\usepackage{xeCJK}"]
+_latex_contents_title = '目录' if language == 'zh' else 'Contents'
+_latex_preamble_parts = [] if language == 'zh' else [r'\usepackage{xeCJK}']
 _latex_preamble_parts.append(
-    r"\DeclareRobustCommand{\pyfcstmcontentsname}{%s}" % _latex_contents_title
+    r'\DeclareRobustCommand{\pyfcstmcontentsname}{%s}' % _latex_contents_title
 )
 if _ACCEPTANCE_PDF:
-    _latex_preamble_parts.append(r"\let\cleardoublepage\clearpage")
-if _ACCEPTANCE_PDF:
+    _latex_preamble_parts.append(r'\let\cleardoublepage\clearpage')
     latex_documents = [
         (
-            "index",
-            "pyfcstm-acceptance-zh.tex",
-            "项目验收中文手册",
+            'index',
+            'pyfcstm-acceptance-zh.tex',
+            '项目验收中文手册',
             author,
-            "manual",
+            'manual',
         )
     ]
 
 latex_elements = {
-    "preamble": "\n".join(_latex_preamble_parts),
-    "extraclassoptions": "oneside,openany" if _ACCEPTANCE_PDF else "",
+    'preamble': '\n'.join(_latex_preamble_parts),
     # Keep Sphinx's public macro so page-number switching and ToC hooks remain.
-    "tableofcontents": (
-        r"\renewcommand{\contentsname}{\pyfcstmcontentsname}"
-        + "\n"
-        + r"\sphinxtableofcontents"
+    'tableofcontents': (
+        r'\renewcommand{\contentsname}{\pyfcstmcontentsname}'
+        + '\n'
+        + r'\sphinxtableofcontents'
     ),
 }
 
+if _ACCEPTANCE_PDF:
+    latex_elements['extraclassoptions'] = 'oneside,openany'
+
 # Whitelist pattern for tags (set to None to ignore all tags)
-smv_tag_whitelist = r"^v.*$"  # Include all tags start with 'v'
-smv_branch_whitelist = r"^.*$"  # Include all branches
-smv_remote_whitelist = r"^.*$"  # Use branches from all remotes
-smv_released_pattern = r"^tags/.*$"  # Tags only
-smv_outputdir_format = "{ref.name}"  # Use the branch/tag name
+smv_tag_whitelist = r'^v.*$'  # Include all tags start with 'v'
+smv_branch_whitelist = r'^.*$'  # Include all branches
+smv_remote_whitelist = r'^.*$'  # Use branches from all remotes
+smv_released_pattern = r'^tags/.*$'  # Tags only
+smv_outputdir_format = '{ref.name}'  # Use the branch/tag name
 
 if not os.environ.get("ENV_PROD"):
     todo_include_todos = True

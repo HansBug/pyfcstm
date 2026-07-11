@@ -375,6 +375,7 @@ class TestEntryVisualize:
             def dump(self, path, render_type, source):
                 pathlib.Path(path).write_text("ok")
 
+        monkeypatch.setattr(visualize_module.sys, "platform", "linux")
         monkeypatch.setattr(
             visualize_module, "create_local_plantuml_backend", lambda **kw: _OkLocal()
         )
@@ -493,6 +494,7 @@ class TestEntryVisualize:
             def dump(self, *args, **kwargs):
                 raise OSError("disk full")
 
+        monkeypatch.setattr(visualize_module.sys, "platform", "linux")
         monkeypatch.setattr(
             visualize_module,
             "create_local_plantuml_backend",
@@ -626,6 +628,37 @@ class TestEntryVisualize:
         assert commands[0][3] == "-tsvg"
         assert output_file.read_bytes().startswith(b"%PDF")
 
+    def test_render_local_plantuml_on_windows_falls_back_to_direct_pdf(
+        self, tmp_path, monkeypatch
+    ):
+        class DummyBackend:
+            java = "java.exe"
+            plantuml = "plantuml.jar"
+
+        commands = []
+
+        def _run(command, **kwargs):
+            commands.append(command)
+            output_dir = pathlib.Path(command[command.index("-o") + 1])
+            (output_dir / "diagram.pdf").write_bytes(b"%PDF-1.4\n")
+            return type(
+                "Completed", (), {"returncode": 0, "stdout": "", "stderr": ""}
+            )()
+
+        monkeypatch.setattr(visualize_module.subprocess, "run", _run)
+        monkeypatch.setitem(sys.modules, "cairosvg", None)
+        output_file = tmp_path / "out.pdf"
+
+        visualize_module._render_local_plantuml_on_windows(
+            DummyBackend(),
+            output_file,
+            "pdf",
+            "@startuml\n@enduml",
+        )
+
+        assert commands[0][3] == "-tpdf"
+        assert output_file.read_bytes().startswith(b"%PDF")
+
     def test_render_plantuml_diagram_routes_windows_local_backend(
         self, tmp_path, monkeypatch
     ):
@@ -675,6 +708,7 @@ class TestEntryVisualize:
                 # Backend reports success but doesn't write the file.
                 return None
 
+        monkeypatch.setattr(visualize_module.sys, "platform", "linux")
         monkeypatch.setattr(
             visualize_module,
             "create_local_plantuml_backend",

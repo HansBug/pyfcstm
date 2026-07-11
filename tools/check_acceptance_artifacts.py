@@ -78,6 +78,7 @@ WHEEL_REQUIRED = (
     "pyfcstm/template/python.zip",
 )
 WHEEL_DIST_INFO_REQUIRED = ("METADATA", "WHEEL", "RECORD", "entry_points.txt")
+WHEEL_DIST_INFO_LICENSE_PATHS = ("LICENSE", "licenses/LICENSE")
 WHEEL_DENYLIST = (
     "pyfcstm/llm/*",
     "pyfcstm/diagnostics/README*",
@@ -816,6 +817,17 @@ def run_self_check() -> Mapping[str, object]:
             "wheel denylist",
         )
         checks.append("packages-wheel-deny")
+        _expect_failure(
+            lambda: validate_packages(
+                _copy_and_tamper_package_fixture(
+                    package_dir,
+                    root / "bad-packages-license",
+                    "wheel-missing-license",
+                )
+            ),
+            "wheel license required",
+        )
+        checks.append("packages-wheel-license-required")
         for mode in ("wheel-diagnostics-readme", "sdist-diagnostics-readme"):
             _expect_failure(
                 lambda mode=mode: validate_packages(
@@ -853,6 +865,13 @@ def run_self_check() -> Mapping[str, object]:
             install_files, install_files, "package file parity"
         )
         checks.append("packages-runtime-files-positive")
+        dist_info = "pyfcstm-0.0.0.dist-info"
+        _assert_package_install_files(
+            ("{0}/LICENSE".format(dist_info),),
+            ("{0}/licenses/LICENSE".format(dist_info),),
+            "equivalent wheel license layouts",
+        )
+        checks.append("packages-license-layout-equivalence")
         _expect_failure(
             lambda: _assert_package_install_files(
                 install_files,
@@ -1538,7 +1557,7 @@ def _assert_wheel_allowlist(entries: Iterable[str]) -> None:
             relative = entry.split(".dist-info/", 1)[1]
             if relative in WHEEL_DIST_INFO_REQUIRED or relative == "top_level.txt":
                 continue
-            if relative.startswith("licenses/"):
+            if relative in WHEEL_DIST_INFO_LICENSE_PATHS:
                 continue
         invalid.append(entry)
     if invalid:
@@ -1602,6 +1621,17 @@ def _assert_wheel_dist_info(
     dist_info = dist_info_dirs[0]
     required = ["{0}/{1}".format(dist_info, name) for name in WHEEL_DIST_INFO_REQUIRED]
     _assert_required("wheel dist-info", entries, required)
+    license_entries = [
+        "{0}/{1}".format(dist_info, name)
+        for name in WHEEL_DIST_INFO_LICENSE_PATHS
+        if "{0}/{1}".format(dist_info, name) in entry_tuple
+    ]
+    if len(license_entries) != 1:
+        raise ArtifactValidationError(
+            "wheel dist-info must contain exactly one LICENSE file, found {0}".format(
+                license_entries
+            )
+        )
     entry_points = _decode_payload(
         payloads, "{0}/entry_points.txt".format(dist_info), "wheel entry points"
     )
@@ -2303,8 +2333,8 @@ def _assert_windows7_delivery_build_baseline() -> Mapping[str, object]:
 
     Example::
 
-        >>> facts = _assert_windows7_delivery_build_baseline()
-        >>> facts["image_os"]
+        >>> facts = _assert_windows7_delivery_build_baseline()  # doctest: +SKIP
+        >>> facts["image_os"]  # doctest: +SKIP
         'win22'
     """
     return _assert_windows7_delivery_build_facts(
@@ -2541,6 +2571,8 @@ def _run_common_pdf_checker(build_root: Path) -> None:
             str(checker),
             "--language",
             "zh",
+            "--profile",
+            "acceptance",
             "--build-root",
             str(build_root),
         ]
@@ -3045,8 +3077,8 @@ def _wheel_install_files(entries: Iterable[str]) -> Tuple[str, ...]:
 def _assert_package_install_files(
     expected: Iterable[str], actual: Iterable[str], label: str
 ) -> None:
-    expected_set = set(expected)
-    actual_set = set(actual)
+    expected_set = {_normalize_distribution_file(entry) for entry in expected}
+    actual_set = {_normalize_distribution_file(entry) for entry in actual}
     missing = sorted(expected_set - actual_set)
     extra = sorted(actual_set - expected_set)
     if missing or extra:
@@ -3055,6 +3087,31 @@ def _assert_package_install_files(
                 label, missing, extra
             )
         )
+
+
+def _normalize_distribution_file(entry: str) -> str:
+    """
+    Normalize equivalent wheel license installation paths.
+
+    Different supported setuptools versions install the same license as either
+    ``dist-info/LICENSE`` or ``dist-info/licenses/LICENSE``. The acceptance
+    checker requires the license while treating those two metadata layouts as
+    equivalent.
+
+    :param entry: Distribution-relative installed file path.
+    :type entry: str
+    :return: Normalized installed file path.
+    :rtype: str
+
+    Example::
+
+        >>> _normalize_distribution_file('pkg.dist-info/licenses/LICENSE')
+        'pkg.dist-info/LICENSE'
+    """
+    suffix = ".dist-info/licenses/LICENSE"
+    if entry.endswith(suffix):
+        return entry[: -len(suffix)] + ".dist-info/LICENSE"
+    return entry
 
 
 def _parse_json_command_output(text: str, label: str) -> Mapping[str, object]:
@@ -3118,6 +3175,7 @@ def _create_package_fixture(package_dir: Path) -> None:
                 "utf-8"
             ),
             "{0}/WHEEL".format(dist_info): b"Wheel-Version: 1.0\n",
+            "{0}/LICENSE".format(dist_info): b"Apache License 2.0 fixture\n",
             "{0}/RECORD".format(dist_info): b"",
             "{0}/entry_points.txt".format(
                 dist_info
@@ -3150,6 +3208,15 @@ def _copy_and_tamper_package_fixture(source: Path, target: Path, mode: str) -> P
     elif mode == "wheel-diagnostics-readme":
         entries, payloads = _read_zip_entries(wheel)
         payloads["pyfcstm/diagnostics/README.md"] = b"# internal\n"
+        _refresh_wheel_record(payloads)
+        _write_zip(wheel, payloads)
+    elif mode == "wheel-missing-license":
+        entries, payloads = _read_zip_entries(wheel)
+        payloads = {
+            entry: payload
+            for entry, payload in payloads.items()
+            if not entry.endswith(".dist-info/LICENSE")
+        }
         _refresh_wheel_record(payloads)
         _write_zip(wheel, payloads)
     elif mode == "sdist-diagnostics-readme":

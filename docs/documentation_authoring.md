@@ -441,6 +441,14 @@ reject empty or overflowing formula containers, inspect desktop and mobile
 screenshots, inspect both PDFs, and record human mathematical review. Missing
 one applicable item is Critical even when Sphinx and unit tests are green.
 
+Build English and Chinese HTML into fresh, language-isolated output roots.
+Never reuse a root that may retain both ``index.html`` and ``index_zh.html``;
+that can make a language-insensitive visual checker pass against stale pages.
+Run ``python tools/check_bmc_math_visual.py --check`` before the browser pass.
+The browser pass must select English ``index.html`` and Chinese
+``index_zh.html`` explicitly, report all 12 language/page/viewport checks, and
+write screenshots plus ``report.json`` to a fresh output root.
+
 The user-facing surface also includes root `README.md` and `CLAUDE.md`. Keep
 their feature summary, runnable quick start, bounded/replay caveat, and links in
 sync without copying the full reference or equation ledger into landing pages.

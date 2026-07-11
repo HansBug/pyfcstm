@@ -5,18 +5,19 @@ from __future__ import annotations
 
 import argparse
 import json
+import tempfile
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, Iterator, List, Optional, Sequence, Tuple
 
 from playwright.sync_api import sync_playwright
 
 
 _PLAYWRIGHT_VERSION = "1.55.0"
-_PAGES = (
-    "explanations/bmc_semantics/index.html",
-    "explanations/bmc_properties/index.html",
-    "explanations/bmc_solving/index.html",
+_PAGE_DIRECTORIES = (
+    "explanations/bmc_semantics",
+    "explanations/bmc_properties",
+    "explanations/bmc_solving",
 )
 _VIEWPORTS = {
     "desktop": {"width": 1440, "height": 1000},
@@ -26,6 +27,46 @@ _VIEWPORTS = {
 
 class VisualCheckFailure(Exception):
     """Raised when rendered mathematical documentation fails visual checks."""
+
+
+def _rendered_page_relative(language: str, directory: str) -> Path:
+    if language == "en":
+        filename = "index.html"
+    elif language == "zh":
+        filename = "index_zh.html"
+    else:
+        raise VisualCheckFailure("Unsupported documentation language: %s" % language)
+    return Path(directory) / filename
+
+
+def _rendered_pages(
+    html_roots: Dict[str, Path],
+) -> Iterator[Tuple[str, str, Path]]:
+    for language, html_root in sorted(html_roots.items()):
+        for directory in _PAGE_DIRECTORIES:
+            yield (
+                language,
+                directory,
+                html_root / _rendered_page_relative(language, directory),
+            )
+
+
+def _check_page_path_contract() -> None:
+    with tempfile.TemporaryDirectory(prefix="pyfcstm-bmc-visual-check-") as temp_dir:
+        root = Path(temp_dir)
+        html_roots = {"en": root / "en", "zh": root / "zh"}
+        expected = set()
+        for language, html_root in html_roots.items():
+            for directory in _PAGE_DIRECTORIES:
+                page = html_root / _rendered_page_relative(language, directory)
+                page.parent.mkdir(parents=True, exist_ok=True)
+                page.write_text("<html></html>\n", encoding="utf-8")
+                expected.add(page)
+        selected = {page for _language, _directory, page in _rendered_pages(html_roots)}
+        if selected != expected or not all(page.is_file() for page in selected):
+            raise VisualCheckFailure(
+                "English index.html and Chinese index_zh.html path selection diverged."
+            )
 
 
 def _require_playwright_version() -> None:
@@ -112,12 +153,18 @@ def check(
             for viewport_name, viewport in _VIEWPORTS.items():
                 context = browser.new_context(viewport=viewport)
                 page = context.new_page()
-                for relative in _PAGES:
-                    html_path = html_root / relative
+                for _page_language, directory, html_path in _rendered_pages(
+                    {language: html_root}
+                ):
                     if not html_path.is_file():
                         errors.append("missing rendered page: %s" % html_path)
                         continue
-                    key = "%s/%s/%s" % (language, viewport_name, relative)
+                    key = "%s/%s/%s/%s" % (
+                        language,
+                        viewport_name,
+                        directory,
+                        html_path.name,
+                    )
                     facts = _check_page(page, html_path.resolve().as_uri())
                     report["pages"][key] = facts
                     all_anchors.update(facts["equation_anchors"])
@@ -130,7 +177,7 @@ def check(
                     if facts["document_overflow"]:
                         errors.append("%s has horizontal document overflow" % key)
                     screenshot_name = "%s-%s.png" % (
-                        relative.replace("/index.html", "").replace("/", "-"),
+                        directory.replace("/", "-"),
                         viewport_name,
                     )
                     page.screenshot(
@@ -158,11 +205,33 @@ def check(
 def main(argv: Optional[Sequence[str]] = None) -> int:
     """Run the visual checker from built English and Chinese HTML roots."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--html-root-en", type=Path, required=True)
-    parser.add_argument("--html-root-zh", type=Path, required=True)
-    parser.add_argument("--output-root", type=Path, required=True)
-    parser.add_argument("--browser-executable", type=Path, required=True)
+    parser.add_argument("--check", action="store_true")
+    parser.add_argument("--html-root-en", type=Path)
+    parser.add_argument("--html-root-zh", type=Path)
+    parser.add_argument("--output-root", type=Path)
+    parser.add_argument("--browser-executable", type=Path)
     args = parser.parse_args(argv)
+    visual_arguments = (
+        args.html_root_en,
+        args.html_root_zh,
+        args.output_root,
+        args.browser_executable,
+    )
+    if args.check:
+        if any(value is not None for value in visual_arguments):
+            parser.error("--check cannot be combined with visual-run arguments")
+        try:
+            _check_page_path_contract()
+        except VisualCheckFailure as err:
+            print("BMC MathJax visual self-check failed:\n%s" % err)
+            return 1
+        print("BMC MathJax visual page-path contract is up to date.")
+        return 0
+    if any(value is None for value in visual_arguments):
+        parser.error(
+            "--html-root-en, --html-root-zh, --output-root, and "
+            "--browser-executable are required"
+        )
     html_roots = {
         "en": _require_directory(args.html_root_en, "English HTML root"),
         "zh": _require_directory(args.html_root_zh, "Chinese HTML root"),

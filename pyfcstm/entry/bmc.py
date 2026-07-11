@@ -50,7 +50,7 @@ import click
 
 from .base import CONTEXT_SETTINGS, ClickErrorException, command_wrap
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover - static imports are never executed.
     from ..bmc import (
         BmcPropertyFormula,
         BmcReplayResult,

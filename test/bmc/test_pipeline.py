@@ -83,6 +83,8 @@ def test_pipeline_uses_explicit_relative_sibling_imports() -> None:
     sibling_modules = {"engine", "properties", "query", "relation"}
 
     for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            assert all(not alias.name.startswith("pyfcstm.bmc") for alias in node.names)
         if isinstance(node, ast.ImportFrom):
             assert all(alias.name != "*" for alias in node.names)
             assert not (
@@ -111,6 +113,27 @@ def test_compile_bmc_query_matches_manual_pipeline(as_text: bool) -> None:
         assert actual.core.context.source_text is None
 
 
+def test_text_and_ast_inputs_share_semantics_but_keep_distinct_provenance() -> None:
+    """Cross-input semantics match while source provenance stays contextual."""
+    model = _model()
+    query_text = 'check reach <= 1: active("Root.Done");'
+
+    text_formula = compile_bmc_query(model, query_text)
+    ast_formula = compile_bmc_query(model, parse_bmc_query(query_text))
+    text_context = text_formula.core.context
+    ast_context = ast_formula.core.context
+
+    assert text_context.query.to_canonical() == ast_context.query.to_canonical()
+    assert (
+        text_context.bound_query.to_canonical()
+        == ast_context.bound_query.to_canonical()
+    )
+    assert text_context.domain.to_canonical() == ast_context.domain.to_canonical()
+    assert text_formula.to_canonical() == ast_formula.to_canonical()
+    assert text_context.source_text == query_text
+    assert ast_context.source_text is None
+
+
 def test_compile_bmc_query_forwards_options_and_rejects_positional_options() -> None:
     """The facade forwards policy options through its keyword-only argument."""
     model = _model()
@@ -135,13 +158,22 @@ def test_compile_bmc_query_forwards_options_and_rejects_positional_options() -> 
         ("prepare_bmc_query", InvalidBmcQuery("query failure")),
         ("prepare_bmc_query", InvalidBmcDomain("domain failure")),
         ("build_bmc_core_formula", UnsupportedBmcQuery("lowering failure")),
+        ("compile_bmc_property", BmcBuildError("property build failure")),
+        ("compile_bmc_property", InvalidBmcQuery("property query failure")),
+        (
+            "compile_bmc_property",
+            UnsupportedBmcQuery("property lowering failure"),
+        ),
     ],
     ids=[
         "build-error",
         "parse-error",
         "invalid-query",
         "invalid-domain",
-        "unsupported-query",
+        "core-unsupported-query",
+        "property-build-error",
+        "property-invalid-query",
+        "property-unsupported-query",
     ],
 )
 def test_compile_bmc_query_propagates_stage_errors_unchanged(
@@ -172,6 +204,15 @@ def test_compile_bmc_query_preserves_real_prepare_errors() -> None:
     with pytest.raises(InvalidBmcQuery) as excinfo:
         compile_bmc_query(model, 'check reach <= 1: active("Root.Missing");')
     assert excinfo.value.diagnostic.code == "unknown_state"
+
+
+def test_compile_bmc_query_preserves_real_unsupported_lowering_error() -> None:
+    """A parser-supported operation without lowering keeps its public error."""
+    model = load_state_machine_from_text("def int x = 4; state Root;")
+    query = "assume always: sin(x) >= 0;\ncheck reach <= 1: terminated();"
+
+    with pytest.raises(UnsupportedBmcQuery, match="unsupported function 'sin'"):
+        compile_bmc_query(model, query)
 
 
 def test_compile_bmc_query_does_not_construct_a_solver(

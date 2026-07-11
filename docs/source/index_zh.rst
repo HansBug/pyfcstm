@@ -92,6 +92,7 @@ pyfcstm 遵循三阶段流水线：
 
     教程路线图 <tutorials/index_zh>
     tutorials/quick_start/index_zh
+    tutorials/bmc/index_zh
     tutorials/dsl/index_zh
     tutorials/simulation/index_zh
     tutorials/inspect/index_zh
@@ -100,6 +101,7 @@ pyfcstm 遵循三阶段流水线：
 
 * :doc:`教程路线图 <tutorials/index_zh>`
 * :doc:`tutorials/quick_start/index_zh`
+* :doc:`tutorials/bmc/index_zh`
 * :doc:`tutorials/dsl/index_zh`
 * :doc:`tutorials/simulation/index_zh`
 * :doc:`tutorials/inspect/index_zh`
@@ -119,6 +121,7 @@ pyfcstm 遵循三阶段流水线：
     任务指南路线图 <how_to/index_zh>
     how_to/installation/index_zh
     how_to/cli_workflows/index_zh
+    how_to/bmc/index_zh
     how_to/dsl/index_zh
     how_to/simulation/index_zh
     how_to/inspect/index_zh
@@ -130,6 +133,7 @@ pyfcstm 遵循三阶段流水线：
 * :doc:`任务指南路线图 <how_to/index_zh>`
 * :doc:`how_to/installation/index_zh`
 * :doc:`how_to/cli_workflows/index_zh`
+* :doc:`how_to/bmc/index_zh`
 * :doc:`how_to/dsl/index_zh`
 * :doc:`how_to/simulation/index_zh`
 * :doc:`how_to/inspect/index_zh`
@@ -152,6 +156,9 @@ pyfcstm 遵循三阶段流水线：
     explanations/architecture/index_zh
     explanations/dsl_semantics/index_zh
     explanations/execution_semantics/index_zh
+    explanations/bmc_semantics/index_zh
+    explanations/bmc_properties/index_zh
+    explanations/bmc_solving/index_zh
     explanations/diagnostics/index_zh
     explanations/template_rendering/index_zh
     explanations/grammar_tooling/index_zh
@@ -160,6 +167,9 @@ pyfcstm 遵循三阶段流水线：
 * :doc:`explanations/architecture/index_zh`
 * :doc:`explanations/dsl_semantics/index_zh`
 * :doc:`explanations/execution_semantics/index_zh`
+* :doc:`explanations/bmc_semantics/index_zh`
+* :doc:`explanations/bmc_properties/index_zh`
+* :doc:`explanations/bmc_solving/index_zh`
 * :doc:`explanations/diagnostics/index_zh`
 * :doc:`explanations/template_rendering/index_zh`
 * :doc:`explanations/grammar_tooling/index_zh`
@@ -184,6 +194,8 @@ pyfcstm 遵循三阶段流水线：
     reference/template_config/index_zh
     reference/grammar_tooling/index_zh
     reference/builtin_templates/index_zh
+    reference/bmc_query/index_zh
+    reference/bmc_results/index_zh
     应用程序接口文档 <api_doc_zh>
 
 * :doc:`参考地图 <reference/index_zh>`
@@ -196,6 +208,8 @@ pyfcstm 遵循三阶段流水线：
 * :doc:`reference/template_config/index_zh`
 * :doc:`reference/grammar_tooling/index_zh`
 * :doc:`reference/builtin_templates/index_zh`
+* :doc:`reference/bmc_query/index_zh`
+* :doc:`reference/bmc_results/index_zh`
 * :doc:`应用程序接口文档 <api_doc_zh>`
 
 版本说明

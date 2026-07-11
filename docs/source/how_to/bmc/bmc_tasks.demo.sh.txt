@@ -1,0 +1,12 @@
+reach sat witness_found exit=0
+forbid sat property_violated exit=1
+invariant unsat property_satisfied exit=0
+must_reach unsat property_satisfied exit=0
+exists_always sat witness_found exit=0
+response unsat property_satisfied exit=0
+cover sat witness_found exit=0
+reach sat witness_found exit=0
+invariant unsat property_satisfied exit=0
+reach sat witness_found exit=0
+response unsat incomplete exit=3
+invalid_state controlled_error exit=1

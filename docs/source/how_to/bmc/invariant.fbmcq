@@ -1,0 +1,2 @@
+init state("Root.Idle");
+check invariant <= 1: x == 0;

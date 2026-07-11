@@ -113,6 +113,21 @@ Next step: read :doc:`dsl/index` when you want to understand the input file, or
 jump to :doc:`/how_to/cli_workflows/index` when you only need repeatable command
 recipes.
 
+Bounded model checking: :doc:`bmc/index`
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Prerequisites: the CLI is installed and you can read a one-state FCSTM model.
+
+Outcome: you run one bounded reachability query, read the property verdict
+before the solver status, save stable JSON, and confirm SAT witness replay.
+
+Non-goal: it does not enumerate the FBMCQ grammar or derive the transition
+relation and property objectives.
+
+Next step: repeat practical checks with :doc:`/how_to/bmc/index`, understand
+the mathematics through :doc:`/explanations/bmc_semantics/index`, or look up
+exact query forms in :doc:`/reference/bmc_query/index`.
+
 DSL tutorial: :doc:`dsl/index`
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

@@ -400,6 +400,63 @@ Reference floors:
 - `reference/visualization_options/` must cover the option dataclass, CLI parser value forms, environment variables,
   and failure boundaries instead of listing only friendly presets.
 
+### BMC and mathematical documentation
+
+Bounded model checking documentation must cover the complete path from an
+``.fcstm`` model and ``.fbmcq`` query to a solver result, decoded witness, and
+runtime replay. A BMC documentation PR is not ready when it documents only the
+CLI surface or only copies formulas from Z3 output.
+
+The source-fact inventory must read all applicable production layers:
+
+- `pyfcstm/bmc/grammar/`, `ast.py`, `parse.py`, `listener.py`, `query.py`, and `binding.py` for syntax and contexts;
+- `domain.py`, `source.py`, `macro.py`, `expand.py`, `engine.py`, and `relation.py` for bounded transition construction;
+- `properties.py` and `pipeline.py` for objectives, polarity, definedness, and the compile-only facade;
+- `witness.py` and `errors.py` for solver status, timeout, witness, replay, mismatch, and failures;
+- matching tests under `test/bmc/` and user-entry tests under `test/entry/`.
+
+The four page roles have separate hard floors:
+
+| Role | BMC minimum |
+|---|---|
+| Tutorial | One runnable first-success path with human output, JSON, witness, replay, exit status, and a bounded-result caveat. |
+| How-to | Every task has starting files, exact command, expected output, failure boundary, and next diagnostic step. Together the tasks cover every property kind, initialization, assumptions, calls, CI, timeout, incomplete horizons, and troubleshooting. |
+| Explanation | Define symbols before use; derive the core relation, objectives, solver checks, verdict mapping, witness projection, and replay boundary. Every major equation maps to implementation, test, and a trace. |
+| Reference | Close over grammar, defaults, legal and illegal contexts, CLI options, streams, atomic file effects, exits, JSON nullability, witness/replay, packaging, and unsupported behavior. Every property kind and high-impact family needs at least three non-equivalent legal examples plus a boundary example. |
+
+Mathematical pages use inline `:math:` and labelled `.. math::` blocks referenced
+through `:eq:`. Maintain an equation ledger containing label, claim, literal
+LaTeX, implementation symbol, test, working query, and trace. Equivalent
+rewrites do not count as distinct semantic equations. Raw SMT-LIB may be an
+audit appendix but cannot replace derivation.
+
+English and Chinese counterparts must have the same labels and literal LaTeX
+after only line-ending, directive-indent, trailing-space, and outer-blank-line
+normalization. Text inside `\text{...}` remains identical; translate prose
+outside the formula. Automated parity checks prevent drift but do not prove the
+mathematics.
+
+MathJax HTML and XeLaTeX PDF are both hard gates. Verify equation targets,
+reject empty or overflowing formula containers, inspect desktop and mobile
+screenshots, inspect both PDFs, and record human mathematical review. Missing
+one applicable item is Critical even when Sphinx and unit tests are green.
+
+The user-facing surface also includes root `README.md` and `CLAUDE.md`. Keep
+their feature summary, runnable quick start, bounded/replay caveat, and links in
+sync without copying the full reference or equation ledger into landing pages.
+
+BMC command documentation must make the property verdict the first human
+conclusion. SAT and UNSAT describe the encoded solver objective and reverse
+meaning across witness and counterexample polarities; they belong in the
+diagnostic layer, not in place of ``property holds``, ``property does not
+hold``, or ``inconclusive``. Human examples cover all verdict families,
+primary and horizon timing, replay trust, mismatch diagnostics, and bounded
+scope. Terminal color uses an explicit ``auto|always|never`` contract: ``auto``
+requires a suitable TTY and honors ``NO_COLOR``, while ``always`` may force
+color through a pipe. JSON and output files remain ANSI-free. CI, tools, and LLM examples
+consume the versioned JSON schema and never scrape human wording or live
+timing.
+
 ## Page contracts and failure boundaries
 
 ### Tutorial contract

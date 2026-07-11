@@ -1,0 +1,2 @@
+init state("Root.Idle");
+check exists_always <= 1: x == 0;

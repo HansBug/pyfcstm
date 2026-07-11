@@ -146,6 +146,24 @@ API field.
 Next step: use :doc:`/how_to/simulation/index` for operations and
 :doc:`/reference/simulation/index` for exact command/API facts.
 
+Bounded model checking: :doc:`bmc_semantics/index`,
+:doc:`bmc_properties/index`, and :doc:`bmc_solving/index`
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Prerequisites: you can read an FCSTM model and FBMCQ query but need to know why
+the bounded result, property polarity, witness, and replay have their current
+meaning.
+
+Outcome: the three pages take you from allocated trace symbols and the core
+transition relation, through definedness and all seven property objectives, to
+dual solver checks, verdict mapping, witness projection, and runtime replay.
+
+Non-goal: they do not teach first use or serve as field catalogs.
+
+Next step: run tasks in :doc:`/how_to/bmc/index`; use
+:doc:`/reference/bmc_query/index` and :doc:`/reference/bmc_results/index` for
+exact syntax and protocol facts.
+
 Diagnostics: :doc:`diagnostics/index`
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

@@ -85,6 +85,20 @@
 下一步：想理解输入文件就读 :doc:`dsl/index_zh`；
 只想重复命令流程就读 :doc:`/how_to/cli_workflows/index_zh`。
 
+有界模型检查：:doc:`bmc/index_zh`
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+读前条件：命令行已经安装，并且你能读懂一个只含单状态的 FCSTM 模型。
+
+读后能力：你能运行一条有界可达查询，先读性质结论、再看求解状态，保存稳定 JSON，
+并确认 SAT 见证通过运行时重放。
+
+不负责内容：它不枚举 FBMCQ 文法，也不推导转换关系和性质目标。
+
+下一步：重复检查任务看 :doc:`/how_to/bmc/index_zh`；数学原理从
+:doc:`/explanations/bmc_semantics/index_zh` 开始；精确查询形式查
+:doc:`/reference/bmc_query/index_zh`。
+
 语言教程：:doc:`dsl/index_zh`
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

@@ -50,6 +50,7 @@ custom target-language template directories.
 - [Installation](#installation)
 - [Quick Start](#quick-start)
     - [CLI Usage](#1-using-the-command-line-interface-cli)
+        - [Bounded Model Checking](#bounded-model-checking)
     - [Python API](#2-using-the-python-api)
     - [Example DSL Code](#3-example-dsl-code-traffic-light-example)
 - [DSL Syntax Overview](#dsl-syntax-overview)
@@ -73,6 +74,7 @@ pyfcstm aims to provide a complete solution from conceptual design to code imple
 | **Cross-Language Support**      | Easily enables state machine code generation for embedded or high-performance languages like **C/C++** through the template system.   | Suitable for scenarios where state machine logic needs to be deployed across different platforms or languages. | [Template Tutorial - Expression Styles](https://pyfcstm.readthedocs.io/en/latest/tutorials/render/index.html) |
 | **PlantUML Integration**        | Directly converts DSL files into **PlantUML** code, with preset detail levels and fine-grained visualization options.                | Facilitates design review and documentation generation.                                                        | [Visualization Guide](https://pyfcstm.readthedocs.io/en/latest/tutorials/visualization/index.html)            |
 | **Simulation Runtime**          | Runs FCSTM models directly in Python or from an interactive CLI REPL / batch executor.                                                | Lets you validate behavior before committing to generated code.                                                | [Simulation Guide](https://pyfcstm.readthedocs.io/en/latest/tutorials/simulation/index.html)                  |
+| **Bounded Model Checking**      | Compiles `.fbmcq` properties against FCSTM models, solves them with Z3, decodes SAT traces, and requires runtime replay before reporting a trusted verdict. | Checks reachability, safety, invariants, response, coverage, and call behavior within an explicit bound; human output states whether the property holds, while `bmc-cli/v1` JSON supports CI, tools, and LLMs. | [First BMC Tutorial](https://pyfcstm.readthedocs.io/en/latest/tutorials/bmc/index.html) |
 | **Syntax Highlighting**         | Includes FCSTM syntax highlighting for Pygments and editor integrations, including a VS Code extension in this repository.            | Improves authoring, documentation, and review workflows around `.fcstm` files.                                 | [Syntax Highlighting Guide](https://pyfcstm.readthedocs.io/en/latest/tutorials/grammar/index.html)            |
 | **Structured Diagnostics**      | `pyfcstm.diagnostics` ships **59 diagnostic codes** (20 errors / 32 warnings / 7 infos) covering parse errors, design-health issues (deadlock, unreachable, redundant transitions, const-folded guards, etc.), Layer 0 use-def dataflow analysis, and optional verify-backed checks. | Replace ad-hoc regex / message scraping with a stable structured API; codes carry `for_llm` payloads to drive LLM-assisted repair. | [Diagnostics Code List](#static-diagnostics-codes) |
 | **`inspect_model()` API**       | One-call structured view of a state machine: states / transitions / variables / events / metrics + reachability graph + var dataflow + aspect impact map + diagnostics. Round-trippable via `to_json()` against a published JSON schema. | Drop-in replacement for hand-written model walkers; single source of truth for downstream tooling.             | [inspect_model API](https://pyfcstm.readthedocs.io/en/latest/api_doc/diagnostics/inspect.html)                |
@@ -211,6 +213,100 @@ pyfcstm simulate -i traffic_light.fcstm -e "current; cycle 3; history 3"
 ```
 
 In interactive mode, useful commands include `cycle`, `current`, `events`, `history`, `init`, and `export`.
+
+#### Bounded Model Checking
+
+Consider a door controller with a mechanical latch. Opening is safe only after
+the latch has been released, so the controller tracks the physical latch with
+`latch_engaged`. Create `door.fcstm` with the normal workflow and a maintenance
+override path:
+
+```fcstm
+def int latch_engaged = 1;
+
+state Door {
+    [*] -> Locked;
+
+    state Locked;
+    state Unlocked;
+    state Open;
+
+    Locked -> Unlocked : Unlock effect {
+        latch_engaged = 0;
+    }
+    Unlocked -> Open : OpenDoor;
+    Open -> Unlocked : Close;
+    Unlocked -> Locked : Lock effect {
+        latch_engaged = 1;
+    }
+
+    // Maintenance can open the door directly, but this path forgot to
+    // release the physical latch.
+    Locked -> Open : ServiceOverride;
+}
+```
+
+The intended safety property is not "the door never opens". It is "the door is
+never open while the latch is engaged." Express that property in
+`door_latch_safety.fbmcq`. `forbid` asks BMC to find an execution in which the
+unsafe state-and-data combination becomes true:
+
+```fbmcq
+check forbid <= 2:
+    active("Door.Open") && latch_engaged == 1;
+```
+
+The default report puts the property verdict first and uses ANSI color when
+stdout is an interactive terminal:
+
+```shell
+pyfcstm bmc -i door.fcstm -q door_latch_safety.fbmcq
+```
+
+```text
+BMC forbid <= 2: PROPERTY DOES NOT HOLD
+A counterexample violating the bounded property was found.
+
+Solver: SAT in ... ms
+Replay: verified (3 frames, 2 steps).
+
+Trace
+  0: init -> Door.Locked [initial]
+  1: Door.Locked -> Door.Open [transition; events=Door.ServiceOverride]
+```
+
+The first line is the user conclusion: the claimed safety property does not
+hold. The normal `Unlock` path clears `latch_engaged`, but the trace exposes a
+different path: `ServiceOverride` moves directly from `Locked` to `Open`
+without releasing the latch. This is the kind of interaction BMC is useful
+for: each transition looks plausible in isolation, while the state and data
+together violate the safety rule. `Solver: SAT` is only supporting information;
+for counterexample-polarity properties such as `forbid`, SAT means a violation
+was found.
+
+Repair the maintenance transition so it preserves the same physical invariant
+as the normal unlock path:
+
+```fcstm
+Locked -> Open : ServiceOverride effect {
+    latch_engaged = 0;
+}
+```
+
+Running the same query now reports `PROPERTY HOLDS` and `Solver: UNSAT`: no
+counterexample exists within two macro-steps. This remains a bounded result,
+not an unbounded proof. Use the stable JSON envelope for CI, tools, and LLM
+inputs:
+
+```shell
+pyfcstm bmc -i door.fcstm -q door_latch_safety.fbmcq --json -o bmc-result.json
+```
+
+Every result is bounded by the query's `<= N`; no result is an unbounded proof.
+SAT traces are decoded and replayed through the runtime before they are reported
+as trusted. Use `--color auto|always|never` for human output: `auto` requires a
+suitable TTY and honors `NO_COLOR`, while `always` can force color through a
+pipe. JSON and `--output` files never contain ANSI escapes.
 
 #### Templated Code Generation
 
@@ -863,6 +959,13 @@ pyfcstm is designed for a wide range of applications where state machines are es
 - **Simulation Guide**: [Simulation Runtime](https://pyfcstm.readthedocs.io/en/latest/tutorials/simulation/index.html)
 - **Template System Guide**: [Template Tutorial](https://pyfcstm.readthedocs.io/en/latest/tutorials/render/index.html)
 - **CLI Reference**: [CLI Guide](https://pyfcstm.readthedocs.io/en/latest/tutorials/cli/index.html)
+- **BMC Tutorial**: [Your First Bounded Model Check](https://pyfcstm.readthedocs.io/en/latest/tutorials/bmc/index.html)
+- **BMC Task Recipes**: [BMC How-to](https://pyfcstm.readthedocs.io/en/latest/how_to/bmc/index.html)
+- **BMC Transition Semantics**: [Bounded Transition System](https://pyfcstm.readthedocs.io/en/latest/explanations/bmc_semantics/index.html)
+- **BMC Property Semantics**: [Objectives, Definedness, and Bounds](https://pyfcstm.readthedocs.io/en/latest/explanations/bmc_properties/index.html)
+- **BMC Solving and Replay**: [Solver, Witness, and Replay](https://pyfcstm.readthedocs.io/en/latest/explanations/bmc_solving/index.html)
+- **FBMCQ Reference**: [Query Language](https://pyfcstm.readthedocs.io/en/latest/reference/bmc_query/index.html)
+- **BMC Result Protocol**: [CLI, JSON, and Exit Status](https://pyfcstm.readthedocs.io/en/latest/reference/bmc_results/index.html)
 - **Syntax Highlighting Guide**: [Grammar and Editor Support](https://pyfcstm.readthedocs.io/en/latest/tutorials/grammar/index.html)
 - **API Documentation**: [API Reference](https://pyfcstm.readthedocs.io/en/latest/api_doc/index.html)
 

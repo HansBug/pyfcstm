@@ -120,6 +120,10 @@ Top-level command
      - FCSTM DSL file
      - Human text, JSON, LLM JSON, or LLM Markdown
      - You want parser/model facts, diagnostics, and optional structural or SMT-local verify diagnostics.
+   * - ``bmc``
+     - FCSTM DSL file plus one FBMCQ query file
+     - Polarity-aware human property verdict or versioned JSON
+     - You want bounded reachability, safety, response, coverage, or call evidence with mandatory SAT replay.
    * - ``generate``
      - FCSTM DSL file plus a built-in or custom template
      - Rendered files under an output directory
@@ -139,13 +143,15 @@ Common command contract
 The CLI is intentionally split between source-producing commands and commands
 that may depend on external tools:
 
-* ``simulate``, ``inspect``, ``generate``, and ``plantuml`` read DSL and use
+* ``simulate``, ``inspect``, ``bmc``, ``generate``, and ``plantuml`` read DSL and use
   Python-side pyfcstm functionality. They do not require Java, a PlantUML jar,
   or a network renderer.
 * ``visualize`` first builds PlantUML source and then calls ``plantumlcli``.
   It may require Java and a PlantUML jar for local rendering or a reachable
   PlantUML server for remote rendering.
-* A successful command exits with status ``0``. Click validation failures,
+* Most successful commands exit with status ``0``. BMC additionally uses
+  property-aware exit statuses ``1``, ``3``, and ``4`` for a negative bounded
+  verdict, an inconclusive result, and replay mismatch respectively. Click validation failures,
   missing files, parse errors, model validation errors, rendering failures, and
   policy violations exit non-zero.
 * User-facing progress and success messages are written to standard output;
@@ -180,6 +186,11 @@ without inventing inputs.
      - The output file contains ``"root_state_path": "TrafficLight"`` and ``"diagnostics": []``.
      - ``pyfcstm inspect -i docs/source/tutorials/quick_start/traffic_light.fcstm --format xml``
      - Click rejects the closed ``--format`` choice before writing a report.
+   * - ``bmc``
+     - ``pyfcstm bmc -i docs/source/tutorials/bmc/first_check.fcstm -q docs/source/tutorials/bmc/reach_door.fbmcq``
+     - The first line is ``BMC reach <= 1: PROPERTY HOLDS`` and replay is verified.
+     - ``pyfcstm bmc -i docs/source/tutorials/bmc/first_check.fcstm -q /tmp/missing.fbmcq``
+     - Query-file reading fails before compilation and emits no partial report.
    * - ``generate``
      - ``pyfcstm generate -i docs/source/tutorials/quick_start/traffic_light.fcstm --template python -o /tmp/traffic-python --clear``
      - The output directory is replaced and populated from the packaged Python template.
@@ -204,6 +215,16 @@ without inventing inputs.
 These examples are not a replacement for the exhaustive option tables below.
 They show the contract shape: a valid example, the observable success signal,
 an invalid example, and the layer that owns the failure.
+
+``bmc``
+-------
+
+The BMC command has a separate exhaustive protocol reference because SAT/UNSAT
+must be translated through property polarity and every SAT result crosses a
+witness/replay trust boundary. See :doc:`/reference/bmc_results/index` for all
+options, color behavior, streams, property verdicts, timing, exits, JSON fields,
+diagnostics, witness/replay records, and packaging. See
+:doc:`/reference/bmc_query/index` for the FBMCQ language.
 
 ``simulate``
 ------------

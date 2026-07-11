@@ -4,6 +4,30 @@ Release Notes
 Unreleased
 ----------
 
+Bounded Model Checking
+~~~~~~~~~~~~~~~~~~~~~~
+
+- Added ``pyfcstm bmc`` for one FCSTM model and one FBMCQ query. The default
+  terminal report states whether the bounded property holds before showing the
+  SAT/UNSAT solver diagnostic, uses optional ANSI color, and requires decoded
+  SAT witnesses to pass runtime replay.
+- Added the packaged ``bmc-cli/v1`` JSON schema for CI, tools, and LLM
+  consumers. The envelope preserves polarity-aware outcomes, solver timing,
+  witness and replay records, diagnostics, and the matching process exit code.
+- Added bilingual Tutorial, How-to, three mathematical Explanation pages, and
+  two exhaustive Reference pages. The explanations derive 40 labelled,
+  implementation-traceable equations and are verified in MathJax HTML and
+  XeLaTeX PDF output.
+
+Compatibility Notes
+~~~~~~~~~~~~~~~~~~~
+
+BMC results are bounded by the query's ``<= N`` and are not unbounded proofs.
+Scripts must consume ``--json`` instead of parsing human wording, color, or
+live timing. SAT means a witness for witness-polarity properties and a
+counterexample for counterexample-polarity properties; use the reported
+property verdict or ``result.outcome`` rather than treating SAT as success.
+
 Verification and Inspect
 ~~~~~~~~~~~~~~~~~~~~~~~~
 

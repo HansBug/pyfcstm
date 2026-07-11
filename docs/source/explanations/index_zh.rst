@@ -116,6 +116,21 @@
 下一步：操作任务看 :doc:`/how_to/simulation/index_zh`；
 精确命令和接口事实看 :doc:`/reference/simulation/index_zh`。
 
+有界模型检查：:doc:`bmc_semantics/index_zh`、
+:doc:`bmc_properties/index_zh` 与 :doc:`bmc_solving/index_zh`
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+读前条件：你能读 FCSTM 模型和 FBMCQ 查询，但需要理解有界结论、性质极性、见证与重放
+为何具有当前含义。
+
+读后能力：三页依次解释轨迹符号与核心转换关系、定义性与七类性质目标，以及双重求解、
+结论映射、见证投影和运行时重放。
+
+不负责内容：它们不教授首次使用，也不充当字段目录。
+
+下一步：操作任务看 :doc:`/how_to/bmc/index_zh`；精确语法与协议事实查
+:doc:`/reference/bmc_query/index_zh` 和 :doc:`/reference/bmc_results/index_zh`。
+
 诊断：:doc:`diagnostics/index_zh`
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

@@ -93,7 +93,7 @@ jobs:
           cp editors/vscode/build/*.vsix acceptance-stage/
           test "$(find acceptance-stage -maxdepth 1 -type f | wc -l)" -eq 3
       - name: Upload portable staging artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: acceptance-stage-portable-${{ github.run_id }}
           path: acceptance-stage/*
@@ -166,7 +166,7 @@ jobs:
             acceptance-stage/
           test "$(find acceptance-stage -maxdepth 1 -type f | wc -l)" -eq 1
       - name: Upload PDF staging artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: acceptance-stage-pdf-${{ github.run_id }}
           path: acceptance-stage/*
@@ -234,7 +234,7 @@ jobs:
           cp "$executable" acceptance-stage/
           test "$(find acceptance-stage -maxdepth 1 -type f | wc -l)" -eq 1
       - name: Upload Windows staging artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: acceptance-stage-windows-${{ github.run_id }}
           path: acceptance-stage/*
@@ -251,7 +251,7 @@ jobs:
       - windows_cli
     steps:
       - name: Download all staged deliverables
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v6
         with:
           pattern: acceptance-stage-*-${{ github.run_id }}
           path: delivery
@@ -333,7 +333,7 @@ jobs:
           PY
       - name: Upload consolidated acceptance delivery
         id: upload
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: pyfcstm-acceptance-delivery-${{ github.sha }}
           path: delivery/*

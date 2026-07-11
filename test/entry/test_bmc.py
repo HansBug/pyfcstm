@@ -47,6 +47,29 @@ def _json_result(model_path: Path, query_path: Path, *args: str):
     return result, json.loads(result.stdout) if result.stdout else None
 
 
+def _stderr_text(result) -> str:
+    """Return stderr across Click versions with and without split capture."""
+    try:
+        return result.stderr
+    except ValueError:
+        # Older Click releases merge stderr into output and reject the stderr
+        # property instead of exposing a separately captured stream.
+        return result.output
+
+
+def _assert_stderr_only(result, fragment: str) -> None:
+    """Check an error message and strict stdout separation when available."""
+    try:
+        stderr = result.stderr
+    except ValueError:
+        # Older Click cannot prove stream separation; output still proves the
+        # user-facing error while surrounding assertions cover side effects.
+        assert fragment in result.output
+    else:
+        assert result.stdout == ""
+        assert fragment in stderr
+
+
 def test_importing_entry_does_not_eagerly_load_bmc() -> None:
     """Registering CLI commands leaves the optional BMC stack unloaded."""
     script = """
@@ -295,8 +318,7 @@ def test_bmc_input_error_does_not_modify_output(bmc_files) -> None:
     )
 
     assert result.exit_code == 1
-    assert result.stdout == ""
-    assert "Query file not found" in result.stderr
+    _assert_stderr_only(result, "Query file not found")
     assert output_path.read_text(encoding="utf-8") == "keep"
 
 
@@ -354,9 +376,8 @@ def test_bmc_internal_witness_error_keeps_traceback(
     result = _run("-i", str(model_path), "-q", str(query_path), "--json")
 
     assert result.exit_code == 1
-    assert result.stdout == ""
-    assert "Unexpected error found when running pyfcstm!" in result.stderr
-    assert "internal BMC witness consistency error" in result.stderr
+    _assert_stderr_only(result, "Unexpected error found when running pyfcstm!")
+    assert "internal BMC witness consistency error" in _stderr_text(result)
 
 
 @pytest.mark.parametrize("stage", ["decode", "replay"])
@@ -376,9 +397,8 @@ def test_bmc_unexpected_witness_pipeline_error_keeps_traceback(
     result = _run("-i", str(model_path), "-q", str(query_path), "--json")
 
     assert result.exit_code == 1
-    assert result.stdout == ""
-    assert "Unexpected error found when running pyfcstm!" in result.stderr
-    assert "ValueError: forged %s failure" % stage in result.stderr
+    _assert_stderr_only(result, "Unexpected error found when running pyfcstm!")
+    assert "ValueError: forged %s failure" % stage in _stderr_text(result)
 
 
 def test_bmc_rejects_nonpositive_numeric_options(bmc_files) -> None:
@@ -389,7 +409,7 @@ def test_bmc_rejects_nonpositive_numeric_options(bmc_files) -> None:
     for option in ("--timeout-ms", "--max-bound"):
         result = _run("-i", str(model_path), "-q", str(query_path), option, "0")
         assert result.exit_code == 2
-        assert "Invalid value" in result.stderr
+        assert "Invalid value" in _stderr_text(result)
 
 
 def test_bmc_schema_is_packaged_and_validates_result_matrix(
@@ -516,8 +536,9 @@ def test_bmc_max_bound_is_a_controlled_compile_error(bmc_files) -> None:
     )
 
     assert result.exit_code == 1
-    assert result.stdout == ""
-    assert "max_bound policy rejected query_bound=2 with max_bound=1" in result.stderr
+    _assert_stderr_only(
+        result, "max_bound policy rejected query_bound=2 with max_bound=1"
+    )
 
 
 @pytest.mark.parametrize(
@@ -537,9 +558,8 @@ def test_bmc_query_parse_and_binding_errors_are_controlled(
     result = _run("-i", str(model_path), "-q", str(query_path))
 
     assert result.exit_code == 1
-    assert result.stdout == ""
-    assert message in result.stderr
-    assert "Unexpected error found" not in result.stderr
+    _assert_stderr_only(result, message)
+    assert "Unexpected error found" not in _stderr_text(result)
 
 
 def test_bmc_missing_output_parent_is_controlled(bmc_files) -> None:
@@ -559,8 +579,7 @@ def test_bmc_missing_output_parent_is_controlled(bmc_files) -> None:
     )
 
     assert result.exit_code == 1
-    assert result.stdout == ""
-    assert "Failed to write BMC output file" in result.stderr
+    _assert_stderr_only(result, "Failed to write BMC output file")
     assert not output_path.parent.exists()
 
 
@@ -632,8 +651,8 @@ def test_bmc_internal_compile_and_solve_errors_keep_internal_identity(
     monkeypatch.setattr(bmc_entry, "_compile_bmc_query", fail_compile)
     result = _run("-i", str(model_path), "-q", str(query_path))
     assert result.exit_code == 1
-    assert "forged compile invariant failure" in result.stderr
-    assert "Unexpected error found when running pyfcstm!" in result.stderr
+    assert "forged compile invariant failure" in _stderr_text(result)
+    assert "Unexpected error found when running pyfcstm!" in _stderr_text(result)
 
     monkeypatch.undo()
 
@@ -643,7 +662,7 @@ def test_bmc_internal_compile_and_solve_errors_keep_internal_identity(
     monkeypatch.setattr(bmc_entry, "_solve_bmc_property", fail_solve)
     result = _run("-i", str(model_path), "-q", str(query_path))
     assert result.exit_code == 1
-    assert "solver bundle is inconsistent" in result.stderr
+    assert "solver bundle is inconsistent" in _stderr_text(result)
 
 
 def test_atomic_writer_reports_replace_and_cleanup_failures(

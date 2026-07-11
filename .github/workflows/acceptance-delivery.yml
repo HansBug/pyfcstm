@@ -271,7 +271,10 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends binutils libcairo2
+          sudo apt-get install -y --no-install-recommends \
+            binutils \
+            graphviz \
+            libcairo2
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt -r requirements-build.txt
       - name: Build and validate Linux executable

@@ -6,9 +6,26 @@ This package exposes the command-line interface (CLI) entry point for the
 as :data:`pyfcstmcli`, which can be used to invoke CLI commands programmatically
 or to register it with external tooling.
 
-The package contains the following main components:
+Module roadmap
+--------------
 
-* :data:`pyfcstmcli` - CLI group object for the ``pyfcstm`` command-line tool
+.. list-table::
+   :header-rows: 1
+
+   * - Module
+     - Responsibility
+   * - :mod:`pyfcstm.entry.cli`
+     - Builds the root Click command group exported as :data:`pyfcstmcli`.
+   * - :mod:`pyfcstm.entry.inspect`
+     - Produces human-readable and structured model diagnostics.
+   * - :mod:`pyfcstm.entry.generate`
+     - Generates target-language artifacts from custom or built-in templates.
+   * - :mod:`pyfcstm.entry.plantuml`
+     - Exports FCSTM models as PlantUML source.
+   * - :mod:`pyfcstm.entry.visualize`
+     - Renders PlantUML source to image files and optionally opens them.
+   * - :mod:`pyfcstm.entry.simulate`
+     - Provides batch and interactive simulation commands.
 
 Example::
 
@@ -19,7 +36,6 @@ Example::
 .. note::
    The underlying CLI implementation is defined in :mod:`pyfcstm.entry.cli`.
    This package module merely re-exports the CLI group for convenience.
-
 """
 
 from .cli import cli as pyfcstmcli

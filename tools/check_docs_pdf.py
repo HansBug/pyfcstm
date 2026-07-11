@@ -54,6 +54,15 @@ _FATAL_LOG_PATTERNS = (
     re.compile(r"fontspec Error", re.IGNORECASE),
     re.compile(r"Latexmk: Errors", re.IGNORECASE),
 )
+_REFERENCE_WARNING_PATTERNS = (
+    re.compile(r"WARNING:.*undefined label", re.IGNORECASE),
+    re.compile(r"WARNING:.*unknown document", re.IGNORECASE),
+    re.compile(r"WARNING:.*reference target not found", re.IGNORECASE),
+    re.compile(
+        r"WARNING:.*toctree contains reference to nonexisting document",
+        re.IGNORECASE,
+    ),
+)
 _FORCE_MODE_PATTERN = re.compile(r"\blatexmk\b[^\n]*(?:^|\s)-f(?:\s|$)", re.IGNORECASE)
 _MAKEINDEX_RESULT_PATTERN = re.compile(
     r"(?P<accepted>\d+) entries accepted,\s*(?P<rejected>\d+) rejected",
@@ -73,6 +82,7 @@ _LANGUAGE_SPECS = {
         "tail_sentinel": "windows_chinese_encodings",
         "cjk_sentinel": "你好",
         "minimum_pages": 20,
+        "minimum_text_chars": 0,
         "required_text": (),
         "required_bookmarks": (
             "Tutorials",
@@ -85,16 +95,23 @@ _LANGUAGE_SPECS = {
     "zh": {
         "contents_title": "目录",
         "contents_entries": (
+            "项目验收要求",
+            "教程",
+            "任务指南",
+            "解释",
+            "参考",
+            "API 文档",
+        ),
+        "document_sentinel": "项目验收可复现验收完成哨兵",
+        "tail_sentinel": "windows_chinese_encodings",
+        "cjk_sentinel": "动态验证不是形式化验证",
+        "minimum_pages": 500,
+        "minimum_text_chars": 250_000,
+        "required_text": (
             "交付范围",
             "功能映射",
             "动态验证",
             "编辑器与 GUI 交接",
-        ),
-        "document_sentinel": "项目验收可复现验收完成哨兵",
-        "tail_sentinel": "acceptance_pdf_tail_sentinel",
-        "cjk_sentinel": "动态验证不是形式化验证",
-        "minimum_pages": 18,
-        "required_text": (
             "五套内置模板",
             "cmake-native-evidence",
             "pygments-entry-point",
@@ -120,8 +137,15 @@ _LANGUAGE_SPECS = {
             "windows-2022",
             "python37.dll",
             "acceptance_pdf_tail_sentinel",
+            "教程路线图",
+            "任务指南路线图",
+            "解释地图",
+            "参考地图",
+            "API 文档",
+            "windows_chinese_encodings",
         ),
         "required_bookmarks": (
+            "项目验收要求",
             "功能映射",
             "后端真实证据",
             "最小自定义模板",
@@ -129,16 +153,16 @@ _LANGUAGE_SPECS = {
             "编辑器与 GUI 交接",
             "Java/JAR 前置",
             "PDF 门禁",
+            "教程路线图",
+            "任务指南路线图",
+            "解释地图",
+            "参考地图",
+            "API 文档",
         ),
         "forbidden_text": (
-            r"issue\s*#",
-            r"PR\s*#",
-            r"pull request",
             r"dev/s714",
             r"S714",
-            r"LLM",
-            r"/home/",
-            r"/tmp/",
+            r"/home/zhangshaoang/",
         ),
     },
 }
@@ -498,6 +522,14 @@ def _validate_log_text(log_text: str) -> Tuple[int, int]:
             raise PdfValidationError(
                 "build log contains fatal pattern {0!r}".format(match.group(0))
             )
+    for pattern in _REFERENCE_WARNING_PATTERNS:
+        match = pattern.search(log_text)
+        if match is not None:
+            raise PdfValidationError(
+                "build log contains broken-reference warning {0!r}".format(
+                    match.group(0)
+                )
+            )
     if _FORCE_MODE_PATTERN.search(log_text) is not None:
         raise PdfValidationError("build log shows forbidden latexmk -f force mode")
     results = list(_MAKEINDEX_RESULT_PATTERN.finditer(log_text))
@@ -673,7 +705,7 @@ def _validate_pdf_file(
     language: str,
     enforce_minimum_pages: bool = True,
     enforce_required_text: bool = True,
-) -> Tuple[int, str]:
+) -> Tuple[int, str, int, str]:
     """
     Validate PDF structure, extracted content, bookmarks, and embedded CJK fonts.
 
@@ -681,12 +713,13 @@ def _validate_pdf_file(
     :type pdf_path: pathlib.Path
     :param language: Documentation language code.
     :type language: str
-    :param enforce_minimum_pages: Whether to enforce the language-specific page-count floor.
+    :param enforce_minimum_pages: Whether to enforce the language-specific page-count and text-size floors.
     :type enforce_minimum_pages: bool, optional
     :param enforce_required_text: Whether to enforce language-specific full-content sentinels.
     :type enforce_required_text: bool, optional
-    :return: Page count and raw ``pdffonts`` output.
-    :rtype: tuple[int, str]
+    :return: Page count, raw ``pdffonts`` output, normalized text length, and
+        raw bookmark outline.
+    :rtype: tuple[int, str, int, str]
     :raises PdfValidationError: If PDF structure, text, or fonts are invalid.
 
     Example::
@@ -704,9 +737,18 @@ def _validate_pdf_file(
                 pages, minimum_pages
             )
         )
+    outline = ""
     if enforce_required_text:
-        _validate_pdf_outline(pdf_path, language)
+        outline = _validate_pdf_outline(pdf_path, language)
     full_text = _extract_pdf_text(pdf_path, 1, pages)
+    text_chars = len(_normalize_extracted_text(full_text))
+    minimum_text_chars = int(_language_spec(language).get("minimum_text_chars", 0))
+    if enforce_minimum_pages and text_chars < minimum_text_chars:
+        raise PdfValidationError(
+            "PDF normalized text length {0} is below required minimum {1}".format(
+                text_chars, minimum_text_chars
+            )
+        )
     front_text = _extract_pdf_text(pdf_path, 1, min(pages, 20))
     tail_text = _extract_pdf_text(pdf_path, max(1, pages - _TAIL_PAGE_COUNT + 1), pages)
     _validate_extracted_text(
@@ -723,7 +765,7 @@ def _validate_pdf_file(
         raise PdfValidationError(
             "PDF fonts output has no CID font entries: {0}".format(pdf_path)
         )
-    return pages, fonts
+    return pages, fonts, text_chars, outline
 
 
 def validate_docs_pdf(
@@ -740,7 +782,7 @@ def validate_docs_pdf(
     :type build_root: pathlib.Path
     :param language: Documentation language.
     :type language: str
-    :param enforce_minimum_pages: Whether to enforce the language-specific page-count floor.
+    :param enforce_minimum_pages: Whether to enforce the language-specific page-count and text-size floors.
     :type enforce_minimum_pages: bool, optional
     :param enforce_required_text: Whether to enforce language-specific full-content sentinels.
     :type enforce_required_text: bool, optional
@@ -761,7 +803,7 @@ def validate_docs_pdf(
     maximum_line = _validate_tex_file(tex_path)
     log_text = _collect_log_text(build_root, tex_path.stem)
     accepted, rejected = _validate_log_text(log_text)
-    pages, fonts = _validate_pdf_file(
+    pages, fonts, text_chars, outline = _validate_pdf_file(
         pdf_path,
         language,
         enforce_minimum_pages=enforce_minimum_pages,
@@ -773,6 +815,11 @@ def validate_docs_pdf(
         "tex_path": str(tex_path),
         "pdf_path": str(pdf_path),
         "pages": pages,
+        "text_chars": text_chars,
+        "outline_entries": len([line for line in outline.splitlines() if line.strip()]),
+        "required_contents_entries": tuple(
+            str(item) for item in _language_spec(language)["contents_entries"]
+        ),
         "maximum_tex_line_length": maximum_line,
         "makeindex_accepted": accepted,
         "makeindex_rejected": rejected,
@@ -808,6 +855,80 @@ def validate_isolated_build_roots(first: Path, second: Path) -> None:
                 first_resolved, second_resolved
             )
         )
+
+
+def _validate_acceptance_source_contract(index_text: str, conf_text: str) -> None:
+    """
+    Validate the source-level full-manual acceptance profile contract.
+
+    The delivery PDF must reuse the normal Chinese manual root, place the
+    acceptance page before every technical section, and keep all five
+    technical navigation roots. This fast check catches an accidental return
+    to an acceptance-only document before XeLaTeX work starts.
+
+    :param index_text: Chinese root document source.
+    :type index_text: str
+    :param conf_text: Sphinx configuration source.
+    :type conf_text: str
+    :return: ``None``.
+    :rtype: None
+    :raises PdfValidationError: If the root, ordering, profile tag, or technical
+        source inclusion contract is missing.
+
+    Example::
+
+        >>> isinstance(_validate_acceptance_source_contract, Callable)
+        True
+    """
+    ordered_index_markers = (
+        "教程路线图 <tutorials/index_zh>",
+        "任务指南路线图 <how_to/index_zh>",
+        "解释地图 <explanations/index_zh>",
+        "参考地图 <reference/index_zh>",
+        "应用程序接口文档 <api_doc_zh>",
+    )
+    cursor = -1
+    for marker in ordered_index_markers:
+        position = index_text.find(marker, cursor + 1)
+        if position < 0:
+            raise PdfValidationError(
+                "Chinese manual root is missing ordered entry {0!r}".format(marker)
+            )
+        cursor = position
+
+    hidden_entry = index_text.find(".. only:: not acceptance_pdf")
+    release_entry = index_text.find("release_notes_zh")
+    if hidden_entry < 0 or release_entry < hidden_entry:
+        raise PdfValidationError(
+            "release/community entries are not hidden from the acceptance PDF"
+        )
+
+    required_conf_markers = (
+        'master_doc = "index"',
+        'app.tags.add("acceptance_pdf")',
+        "项目验收要求 <acceptance/index_zh>",
+        "_copy_language_index(_source_index, _target_index, _ACCEPTANCE_PDF)",
+        '"index",\n            "pyfcstm-acceptance-zh.tex"',
+    )
+    for marker in required_conf_markers:
+        if marker not in conf_text:
+            raise PdfValidationError(
+                "Sphinx acceptance profile is missing {0!r}".format(marker)
+            )
+    forbidden_excludes = (
+        '"api_doc/**"',
+        '"tutorials/**"',
+        '"how_to/**"',
+        '"explanations/**"',
+        '"reference/**"',
+    )
+    for marker in forbidden_excludes:
+        if marker in conf_text:
+            raise PdfValidationError(
+                "Sphinx acceptance profile excludes technical content {0}".format(
+                    marker
+                )
+            )
 
 
 def _expect_failure(label: str, callback: Callable[[], object]) -> None:
@@ -997,6 +1118,27 @@ def _run_pure_self_checks(root: Path) -> None:
         raise PdfValidationError(
             "cannot create pure self-check root: {0}".format(error)
         ) from error
+    repository = Path(__file__).resolve().parents[1]
+    index_text = _read_text(repository / "docs" / "source" / "index_zh.rst")
+    conf_text = _read_text(repository / "docs" / "source" / "conf.py")
+    _validate_acceptance_source_contract(index_text, conf_text)
+    _expect_failure(
+        "missing technical manual root",
+        lambda: _validate_acceptance_source_contract(
+            index_text.replace(
+                "教程路线图 <tutorials/index_zh>",
+                "教程路线图 <tutorials/missing>",
+            ),
+            conf_text,
+        ),
+    )
+    _expect_failure(
+        "acceptance profile excludes technical docs",
+        lambda: _validate_acceptance_source_contract(
+            index_text,
+            conf_text + '\nexclude_patterns.append("tutorials/**")\n',
+        ),
+    )
     _check_sphinx_metadata_contract()
     en_spec = _language_spec("en")
     en_front = "Contents\n" + "\n".join(en_spec["contents_entries"])
@@ -1084,6 +1226,14 @@ def _run_pure_self_checks(root: Path) -> None:
         ),
     )
     _expect_failure(
+        "broken Sphinx document reference",
+        lambda: _validate_log_text(
+            good_log
+            + "\nWARNING: toctree contains reference to nonexisting document "
+            + "'tutorials/missing'"
+        ),
+    )
+    _expect_failure(
         "shared bilingual roots",
         lambda: validate_isolated_build_roots(root / "same", root / "same"),
     )
@@ -1104,10 +1254,10 @@ def _run_pure_self_checks(root: Path) -> None:
         "zh",
     )
     _expect_failure(
-        "zh acceptance rejects full-doc contents",
+        "zh acceptance rejects abbreviated contents",
         lambda: _validate_extracted_text(
             "动态验证不是形式化验证 项目验收可复现验收完成哨兵",
-            "目录\n教程\n任务指南\n解释\n参考",
+            "目录\n交付范围\n功能映射\n动态验证\n编辑器与 GUI 交接",
             zh_spec["tail_sentinel"],
             "zh",
         ),
@@ -1265,6 +1415,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     evidence = validate_docs_pdf(args.build_root, args.language)
     print("PDF validation passed: {0}".format(evidence["pdf_path"]))
     print("Pages: {0}".format(evidence["pages"]))
+    print("Normalized text characters: {0}".format(evidence["text_chars"]))
+    print("Outline entries: {0}".format(evidence["outline_entries"]))
     print("Maximum TeX line: {0}".format(evidence["maximum_tex_line_length"]))
     print("Makeindex rejected: {0}".format(evidence["makeindex_rejected"]))
     return 0

@@ -18,7 +18,6 @@
 
 import os
 import re
-import shutil
 import sys
 from datetime import datetime
 from subprocess import Popen
@@ -179,15 +178,60 @@ language = READTHEDOCS_LANGUAGE
 if "zh" in re.split(r"[_-]+", language.lower()):
     language = "zh"
 
-if _ACCEPTANCE_PDF:
-    _source_index = os.path.join(_DOC_PATH, "acceptance", "index_zh.rst")
-    _target_index = None
-else:
-    _source_index = os.path.join(_DOC_PATH, f"index_{language}.rst")
-    _target_index = os.path.join(_DOC_PATH, "index.rst")
-    if not os.path.exists(_source_index):
-        raise FileNotFoundError(f"Source index file not found: {_source_index!r}.")
-    shutil.copyfile(_source_index, _target_index)
+_ACCEPTANCE_TOCTREE = """.. toctree::
+   :maxdepth: 2
+   :caption: 项目验收
+   :hidden:
+
+   项目验收要求 <acceptance/index_zh>
+
+"""
+
+
+def _copy_language_index(source: str, target: str, include_acceptance: bool) -> None:
+    """
+    Copy one language root and optionally prepend the acceptance page.
+
+    The generated ``index.rst`` remains the normal Chinese manual root. The
+    acceptance profile only inserts one leading toctree after the document
+    title; it does not duplicate or replace the manual structure.
+
+    :param source: Language-specific source index path.
+    :type source: str
+    :param target: Generated Sphinx root path.
+    :type target: str
+    :param include_acceptance: Whether to insert the acceptance toctree.
+    :type include_acceptance: bool
+    :return: ``None``.
+    :rtype: None
+    :raises ValueError: If the source has no title/content boundary.
+    :raises OSError: If the source cannot be read or the target cannot be
+        written.
+
+    Example::
+
+        >>> callable(_copy_language_index)
+        True
+    """
+    with open(source, "r", encoding="utf-8") as source_file:
+        text = source_file.read()
+    if include_acceptance:
+        title_boundary = text.find("\n\n")
+        if title_boundary < 0:
+            raise ValueError(
+                "Documentation root has no title boundary: {0!r}.".format(source)
+            )
+        insertion = title_boundary + 2
+        text = text[:insertion] + _ACCEPTANCE_TOCTREE + text[insertion:]
+    with open(target, "w", encoding="utf-8", newline="") as target_file:
+        target_file.write(text)
+
+
+_source_index = os.path.join(_DOC_PATH, f"index_{language}.rst")
+_target_index = os.path.join(_DOC_PATH, "index.rst")
+if not os.path.exists(_source_index):
+    raise FileNotFoundError(f"Source index file not found: {_source_index!r}.")
+_copy_language_index(_source_index, _target_index, _ACCEPTANCE_PDF)
 
 
 def _cleanup_generated_index(app, exception):
@@ -216,20 +260,23 @@ def setup(app):
     """
     Register Sphinx documentation build hooks.
 
-    The hook only manages the generated language-specific ``index.rst`` copy.
-    It does not change Sphinx source discovery or generated documentation
-    content.
+    The hook manages the generated language-specific ``index.rst`` copy and
+    marks the acceptance PDF profile before source parsing. The profile tag
+    exposes the acceptance chapter only in the delivery PDF; normal HTML keeps
+    the original documentation tree unchanged.
 
     :param app: Sphinx application object used to register event callbacks.
     :type app: sphinx.application.Sphinx
     :return: ``None``.
     :rtype: None
     """
+    if _ACCEPTANCE_PDF:
+        app.tags.add("acceptance_pdf")
     app.connect("build-finished", _cleanup_generated_index)
 
 
 # The master document is now index.rst, which is copied from index_<language>.rst
-master_doc = "acceptance/index_zh" if _ACCEPTANCE_PDF else "index"
+master_doc = "index"
 
 
 # List of patterns, relative to source directory, that match files and
@@ -263,20 +310,8 @@ def _language_variant_excludes(selected_language):
 
 
 if _ACCEPTANCE_PDF:
-    exclude_patterns = [
+    exclude_patterns = _language_variant_excludes("zh") + [
         "_migration/**",
-        "api_doc/**",
-        "tutorials/**",
-        "how_to/**",
-        "explanations/**",
-        "reference/**",
-        "index.rst",
-        "index_en.rst",
-        "index_zh.rst",
-        "api_doc_en.rst",
-        "api_doc_zh.rst",
-        "release_notes.rst",
-        "release_notes_zh.rst",
     ]
 else:
     exclude_patterns = _language_variant_excludes(language) + ["acceptance/**"]
@@ -344,19 +379,16 @@ _latex_preamble_parts.append(
 )
 if _ACCEPTANCE_PDF:
     _latex_preamble_parts.append(r"\let\cleardoublepage\clearpage")
-latex_documents = (
-    [
+if _ACCEPTANCE_PDF:
+    latex_documents = [
         (
-            "acceptance/index_zh",
+            "index",
             "pyfcstm-acceptance-zh.tex",
             "项目验收中文手册",
             author,
             "manual",
         )
     ]
-    if _ACCEPTANCE_PDF
-    else []
-)
 
 latex_elements = {
     "preamble": "\n".join(_latex_preamble_parts),

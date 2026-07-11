@@ -25,6 +25,7 @@ import pathlib
 import shutil
 import subprocess
 import sys
+import tempfile
 from typing import Any, Dict, Optional, Tuple
 
 import click
@@ -32,11 +33,11 @@ import click
 from .base import CONTEXT_SETTINGS, ClickErrorException
 from .plantuml import build_plantuml_output
 
-_VISUALIZE_RENDER_TYPES = ('png', 'svg', 'pdf')
-_VISUALIZE_RENDERERS = ('local', 'remote', 'auto')
-_PLANTUML_JAR_ENV = 'PLANTUML_JAR'
-_PLANTUML_HOST_ENV = 'PLANTUML_HOST'
-_OFFICIAL_PLANTUML_HOST = 'http://www.plantuml.com/plantuml'
+_VISUALIZE_RENDER_TYPES = ("png", "svg", "pdf")
+_VISUALIZE_RENDERERS = ("local", "remote", "auto")
+_PLANTUML_JAR_ENV = "PLANTUML_JAR"
+_PLANTUML_HOST_ENV = "PLANTUML_HOST"
+_OFFICIAL_PLANTUML_HOST = "http://www.plantuml.com/plantuml"
 
 
 def _plantumlcli_runtime_errors() -> tuple:
@@ -69,7 +70,9 @@ def _plantumlcli_runtime_errors() -> tuple:
     classes = [OSError, ValueError]
     try:
         from plantumlcli.utils.execute import CommandLineExecuteError
-    except ImportError:  # pragma: no cover - plantumlcli ships this since 0.0.1; defensive only.
+    except (
+        ImportError
+    ):  # pragma: no cover - plantumlcli ships this since 0.0.1; defensive only.
         # The only reason this import would fail is a corrupted plantumlcli
         # install. The outer load_plantumlcli_classes() barrier would already
         # have surfaced the problem before we got here.
@@ -102,7 +105,7 @@ def _env_flag(name: str) -> bool:
     value = os.environ.get(name)
     if value is None:
         return False
-    return value.strip().lower() not in {'', '0', 'false', 'no', 'off'}
+    return value.strip().lower() not in {"", "0", "false", "no", "off"}
 
 
 def get_visualize_cache_dir() -> pathlib.Path:
@@ -114,21 +117,32 @@ def get_visualize_cache_dir() -> pathlib.Path:
 
     :return: Cache directory path.
     :rtype: pathlib.Path
+
+    Example::
+
+        >>> get_visualize_cache_dir().name  # doctest: +SKIP
+        'visualize'
     """
     home = pathlib.Path.home()
-    if sys.platform == 'win32':  # pragma: no cover -- exercised on the Windows CI runner only.
+    if (
+        sys.platform == "win32"
+    ):  # pragma: no cover -- exercised on the Windows CI runner only.
         # Windows uses %LOCALAPPDATA% so the cache survives roaming-profile
         # syncs. Falls back to the documented default when the env var is
         # unset (locked-down user profiles).
-        base_dir = pathlib.Path(os.environ.get('LOCALAPPDATA') or (home / 'AppData' / 'Local'))
-    elif sys.platform == 'darwin':  # pragma: no cover -- exercised on the macOS CI runner only.
+        base_dir = pathlib.Path(
+            os.environ.get("LOCALAPPDATA") or (home / "AppData" / "Local")
+        )
+    elif (
+        sys.platform == "darwin"
+    ):  # pragma: no cover -- exercised on the macOS CI runner only.
         # macOS convention; ~/Library/Caches is the documented per-user
         # cache root.
-        base_dir = home / 'Library' / 'Caches'
+        base_dir = home / "Library" / "Caches"
     else:
-        base_dir = pathlib.Path(os.environ.get('XDG_CACHE_HOME') or (home / '.cache'))
+        base_dir = pathlib.Path(os.environ.get("XDG_CACHE_HOME") or (home / ".cache"))
 
-    cache_dir = base_dir / 'pyfcstm' / 'visualize'
+    cache_dir = base_dir / "pyfcstm" / "visualize"
     cache_dir.mkdir(parents=True, exist_ok=True)
     return cache_dir
 
@@ -152,22 +166,29 @@ def resolve_visualize_output_path(
     :rtype: pathlib.Path
     :raises pyfcstm.entry.base.ClickErrorException: If the output suffix
         conflicts with ``render_type``.
+
+    Example::
+
+        >>> resolve_visualize_output_path(
+        ...     'machine.fcstm', 'diagram', 'svg'
+        ... ).name
+        'diagram.svg'
     """
-    suffix = f'.{render_type}'
+    suffix = f".{render_type}"
     if output_file:
         output_path = pathlib.Path(output_file)
         if output_path.suffix:
             if output_path.suffix.lower() != suffix:
                 raise ClickErrorException(
-                    f'Output file suffix {output_path.suffix!r} does not match render type {render_type!r}.'
+                    f"Output file suffix {output_path.suffix!r} does not match render type {render_type!r}."
                 )
         else:
             output_path = output_path.with_suffix(suffix)
         return pathlib.Path(os.path.abspath(str(output_path.expanduser())))
 
     input_path = pathlib.Path(input_code_file).expanduser()
-    digest = hashlib.sha1(str(input_path.resolve()).encode('utf-8')).hexdigest()[:12]
-    filename = f'{input_path.stem or "diagram"}-{digest}.{render_type}'
+    digest = hashlib.sha1(str(input_path.resolve()).encode("utf-8")).hexdigest()[:12]
+    filename = f"{input_path.stem or 'diagram'}-{digest}.{render_type}"
     return get_visualize_cache_dir() / filename
 
 
@@ -179,6 +200,12 @@ def load_plantumlcli_classes():
     :rtype: Tuple[type, type]
     :raises pyfcstm.entry.base.ClickErrorException: If the package is not
         available.
+
+    Example::
+
+        >>> local_type, remote_type = load_plantumlcli_classes()  # doctest: +SKIP
+        >>> local_type.__name__, remote_type.__name__  # doctest: +SKIP
+        ('LocalPlantuml', 'RemotePlantuml')
     """
     try:
         from plantumlcli import LocalPlantuml, RemotePlantuml
@@ -200,7 +227,7 @@ def _format_exception_message(err: Exception) -> str:
     """
     message = str(err).strip()
     if message:
-        return f'{type(err).__name__}: {message}'
+        return f"{type(err).__name__}: {message}"
     return type(err).__name__
 
 
@@ -217,6 +244,11 @@ def create_local_plantuml_backend(
     :type plantuml_jar: str or None
     :return: Local backend object.
     :rtype: Any
+
+    Example::
+
+        >>> create_local_plantuml_backend()  # doctest: +SKIP
+        <plantumlcli.models.local.LocalPlantuml object at ...>
     """
     LocalPlantuml, _ = load_plantumlcli_classes()
     return LocalPlantuml.autoload(java=java, plantuml=plantuml_jar)
@@ -230,6 +262,11 @@ def create_remote_plantuml_backend(remote_host: Optional[str] = None):
     :type remote_host: str or None
     :return: Remote backend object.
     :rtype: Any
+
+    Example::
+
+        >>> create_remote_plantuml_backend()  # doctest: +SKIP
+        <plantumlcli.models.remote.RemotePlantuml object at ...>
     """
     _, RemotePlantuml = load_plantumlcli_classes()
     return RemotePlantuml.autoload(host=remote_host)
@@ -257,6 +294,11 @@ def run_plantumlcli_builtin_check(
     :type remote_host: str or None
     :return: Mapping from renderer name to ``(available, message)``.
     :rtype: Dict[str, Tuple[bool, str]]
+
+    Example::
+
+        >>> run_plantumlcli_builtin_check('auto')  # doctest: +SKIP
+        {...}
     """
     try:
         LocalPlantuml, RemotePlantuml = load_plantumlcli_classes()
@@ -265,17 +307,17 @@ def run_plantumlcli_builtin_check(
     except ClickErrorException as err:
         message = err.message
         return {
-            'package': (False, message),
-            'local': (False, message),
-            'remote': (False, message),
+            "package": (False, message),
+            "local": (False, message),
+            "remote": (False, message),
         }
 
     local_ok, local = try_plantuml(LocalPlantuml, java=java, plantuml=plantuml_jar)
     remote_ok, remote = try_plantuml(RemotePlantuml, host=remote_host)
 
-    if renderer == 'local':
+    if renderer == "local":
         check_type = PlantumlCheckType.LOCAL
-    elif renderer == 'remote':
+    elif renderer == "remote":
         check_type = PlantumlCheckType.REMOTE
     else:
         check_type = PlantumlCheckType.BOTH
@@ -283,9 +325,9 @@ def run_plantumlcli_builtin_check(
     print_check_info(check_type, local_ok, local, remote_ok, remote)
 
     return {
-        'package': (True, 'plantumlcli Python package is available.'),
-        'local': (local_ok, 'available' if local_ok else repr(local)),
-        'remote': (remote_ok, 'available' if remote_ok else repr(remote)),
+        "package": (True, "plantumlcli Python package is available."),
+        "local": (local_ok, "available" if local_ok else repr(local)),
+        "remote": (remote_ok, "available" if remote_ok else repr(remote)),
     }
 
 
@@ -310,24 +352,35 @@ def resolve_renderer_backend(
     :rtype: Tuple[str, Any]
     :raises pyfcstm.entry.base.ClickErrorException: If no usable backend is
         available for the requested mode.
+
+    Example::
+
+        >>> resolve_renderer_backend('auto')  # doctest: +SKIP
+        ('local', <plantumlcli.models.local.LocalPlantuml object at ...>)
     """
-    if renderer == 'local':
+    if renderer == "local":
         try:
-            backend = create_local_plantuml_backend(java=java, plantuml_jar=plantuml_jar)
+            backend = create_local_plantuml_backend(
+                java=java, plantuml_jar=plantuml_jar
+            )
             backend.check()
         except _PLANTUMLCLI_RUNTIME_ERRORS as err:
             # See _plantumlcli_runtime_errors() for the documented class set.
-            raise ClickErrorException(f'Local PlantUML renderer is unavailable: {_format_exception_message(err)}')
-        return 'local', backend
+            raise ClickErrorException(
+                f"Local PlantUML renderer is unavailable: {_format_exception_message(err)}"
+            )
+        return "local", backend
 
-    if renderer == 'remote':
+    if renderer == "remote":
         try:
             backend = create_remote_plantuml_backend(remote_host=remote_host)
             backend.check()
         except _PLANTUMLCLI_RUNTIME_ERRORS as err:
             # See _plantumlcli_runtime_errors() for the documented class set.
-            raise ClickErrorException(f'Remote PlantUML renderer is unavailable: {_format_exception_message(err)}')
-        return 'remote', backend
+            raise ClickErrorException(
+                f"Remote PlantUML renderer is unavailable: {_format_exception_message(err)}"
+            )
+        return "remote", backend
 
     try:
         backend = create_local_plantuml_backend(java=java, plantuml_jar=plantuml_jar)
@@ -340,14 +393,112 @@ def resolve_renderer_backend(
         except _PLANTUMLCLI_RUNTIME_ERRORS as remote_err:
             # See _plantumlcli_runtime_errors() for the documented class set.
             raise ClickErrorException(
-                'No usable PlantUML renderer found. '
-                f'Local failed: {_format_exception_message(local_err)}. '
-                f'Remote failed: {_format_exception_message(remote_err)}.'
+                "No usable PlantUML renderer found. "
+                f"Local failed: {_format_exception_message(local_err)}. "
+                f"Remote failed: {_format_exception_message(remote_err)}."
             )
         else:
-            return 'remote', backend
+            return "remote", backend
     else:
-        return 'local', backend
+        return "local", backend
+
+
+def _render_local_plantuml_on_windows(
+    backend: Any,
+    output_file: pathlib.Path,
+    render_type: str,
+    plantuml_output: str,
+) -> None:
+    """
+    Render locally on Windows without keeping the PlantUML source open.
+
+    ``plantumlcli`` 0.0.3 renders through a ``NamedTemporaryFile`` that remains
+    open while Java reads it. Windows locks that file, so the external process
+    receives ``PermissionError``. This adapter materializes and closes the
+    source before invoking the same Java/JAR pair exposed by the backend. For
+    PDF output it also preserves ``plantumlcli``'s optional CairoSVG path,
+    because the standalone PlantUML JAR does not bundle Batik's PDF converter.
+
+    :param backend: Loaded ``plantumlcli.LocalPlantuml`` backend.
+    :type backend: Any
+    :param output_file: Target rendered file path.
+    :type output_file: pathlib.Path
+    :param render_type: PlantUML output type.
+    :type render_type: str
+    :param plantuml_output: PlantUML source text.
+    :type plantuml_output: str
+    :return: ``None``.
+    :rtype: None
+    :raises OSError: If Java exits unsuccessfully.
+    :raises FileNotFoundError: If PlantUML does not create exactly one output
+        file of the requested type.
+
+    Example::
+
+        >>> backend = create_local_plantuml_backend()  # doctest: +SKIP
+        >>> _render_local_plantuml_on_windows(  # doctest: +SKIP
+        ...     backend, pathlib.Path('machine.png'), 'png', '@startuml\\n@enduml'
+        ... )
+    """
+    with tempfile.TemporaryDirectory(prefix="pyfcstm-plantuml-") as directory:
+        root = pathlib.Path(directory)
+        source_file = root / "diagram.puml"
+        output_dir = root / "output"
+        output_dir.mkdir()
+        source_file.write_text(plantuml_output, encoding="utf-8")
+
+        generated_type = render_type
+        cairosvg = None
+        if render_type == "pdf":
+            try:
+                import cairosvg as cairosvg_module
+            except ImportError:
+                # CairoSVG is optional in plantumlcli; without it, retain the
+                # backend's direct PlantUML PDF behavior and resulting error.
+                pass
+            else:
+                cairosvg = cairosvg_module
+                generated_type = "svg"
+
+        command = [
+            str(backend.java),
+            "-jar",
+            str(backend.plantuml),
+            f"-t{generated_type}",
+            "-charset",
+            "UTF-8",
+            "-o",
+            str(output_dir),
+            str(source_file),
+        ]
+        result = subprocess.run(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or "").strip()
+            raise OSError(
+                "Local PlantUML process exited with status "
+                f"{result.returncode}: {detail or 'no process output'}"
+            )
+
+        generated_files = tuple(output_dir.glob(f"*.{generated_type}"))
+        if len(generated_files) != 1:
+            raise FileNotFoundError(
+                "Local PlantUML produced "
+                f"{len(generated_files)} {generated_type!r} files; "
+                "expected exactly one."
+            )
+        if cairosvg is not None:
+            cairosvg.svg2pdf(
+                bytestring=generated_files[0].read_bytes(),
+                write_to=str(output_file),
+            )
+        else:
+            shutil.copyfile(str(generated_files[0]), str(output_file))
 
 
 def render_plantuml_diagram(
@@ -370,15 +521,22 @@ def render_plantuml_diagram(
     :type render_type: str
     :param renderer: Requested renderer mode.
     :type renderer: str
-    :return: Effective renderer mode used for the render.
-    :rtype: str
     :param java: Optional Java executable path for local rendering.
     :type java: str or None
     :param plantuml_jar: Optional PlantUML jar path for local rendering.
     :type plantuml_jar: str or None
     :param remote_host: Optional remote PlantUML host URL.
     :type remote_host: str or None
+    :return: Effective renderer mode used for the render.
+    :rtype: str
     :raises pyfcstm.entry.base.ClickErrorException: If rendering fails.
+
+    Example::
+
+        >>> render_plantuml_diagram(  # doctest: +SKIP
+        ...     '@startuml\\n@enduml', pathlib.Path('machine.svg'), 'svg', 'auto'
+        ... )
+        'local'
     """
     output_file.parent.mkdir(parents=True, exist_ok=True)
     effective_renderer, backend = resolve_renderer_backend(
@@ -389,16 +547,24 @@ def render_plantuml_diagram(
     )
 
     try:
-        backend.dump(str(output_file), render_type, plantuml_output)
+        if effective_renderer == "local" and sys.platform == "win32":
+            _render_local_plantuml_on_windows(
+                backend,
+                output_file,
+                render_type,
+                plantuml_output,
+            )
+        else:
+            backend.dump(str(output_file), render_type, plantuml_output)
     except _PLANTUMLCLI_RUNTIME_ERRORS as err:
         # See _plantumlcli_runtime_errors() for the documented class set.
         raise ClickErrorException(
-            f'Failed to render diagram with plantumlcli ({effective_renderer}): {_format_exception_message(err)}'
+            f"Failed to render diagram with plantumlcli ({effective_renderer}): {_format_exception_message(err)}"
         )
 
     if not output_file.exists():
         raise ClickErrorException(
-            f'plantumlcli reported success but no output file was created: {output_file}'
+            f"plantumlcli reported success but no output file was created: {output_file}"
         )
 
     return effective_renderer
@@ -410,15 +576,25 @@ def detect_headless_environment() -> Tuple[bool, Optional[str]]:
 
     :return: Two-tuple of ``(is_headless, reason)``.
     :rtype: Tuple[bool, Optional[str]]
-    """
-    if _env_flag('PYFCSTM_NO_GUI'):
-        return True, 'GUI display disabled by PYFCSTM_NO_GUI.'
-    if _env_flag('CI'):
-        return True, 'GUI display disabled in CI environment.'
 
-    if sys.platform.startswith('linux'):
-        if not any(os.environ.get(key) for key in ('DISPLAY', 'WAYLAND_DISPLAY', 'MIR_SOCKET')):
-            return True, 'No desktop session detected (DISPLAY/WAYLAND_DISPLAY/MIR_SOCKET is unset).'
+    Example::
+
+        >>> isinstance(detect_headless_environment()[0], bool)
+        True
+    """
+    if _env_flag("PYFCSTM_NO_GUI"):
+        return True, "GUI display disabled by PYFCSTM_NO_GUI."
+    if _env_flag("CI"):
+        return True, "GUI display disabled in CI environment."
+
+    if sys.platform.startswith("linux"):
+        if not any(
+            os.environ.get(key) for key in ("DISPLAY", "WAYLAND_DISPLAY", "MIR_SOCKET")
+        ):
+            return (
+                True,
+                "No desktop session detected (DISPLAY/WAYLAND_DISPLAY/MIR_SOCKET is unset).",
+            )
 
     return False, None
 
@@ -431,47 +607,52 @@ def open_diagram_with_default_app(file_path: pathlib.Path) -> Tuple[bool, str]:
     :type file_path: pathlib.Path
     :return: Two-tuple of ``(opened, reason)``.
     :rtype: Tuple[bool, str]
+
+    Example::
+
+        >>> open_diagram_with_default_app(pathlib.Path('machine.png'))  # doctest: +SKIP
+        (True, '')
     """
     headless, reason = detect_headless_environment()
     if headless:
-        return False, reason or 'GUI display is not available.'
+        return False, reason or "GUI display is not available."
 
     try:
-        if sys.platform == 'win32':  # pragma: no cover -- exercised on Windows CI only.
+        if sys.platform == "win32":  # pragma: no cover -- exercised on Windows CI only.
             # ``os.startfile`` is Windows-only; the type-ignore is intentional.
             os.startfile(str(file_path))  # type: ignore[attr-defined]
-            return True, ''
-        if sys.platform == 'darwin':  # pragma: no cover -- exercised on macOS CI only.
+            return True, ""
+        if sys.platform == "darwin":  # pragma: no cover -- exercised on macOS CI only.
             # macOS uses the ``open`` CLI to dispatch to the registered
             # viewer for the file extension.
             subprocess.Popen(
-                ['open', str(file_path)],
+                ["open", str(file_path)],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
-            return True, ''
+            return True, ""
 
-        xdg_open = shutil.which('xdg-open')
+        xdg_open = shutil.which("xdg-open")
         if xdg_open is not None:
             subprocess.Popen(
                 [xdg_open, str(file_path)],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
-            return True, ''
+            return True, ""
 
-        gio = shutil.which('gio')
+        gio = shutil.which("gio")
         if gio is not None:
             subprocess.Popen(
-                [gio, 'open', str(file_path)],
+                [gio, "open", str(file_path)],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
-            return True, ''
+            return True, ""
 
-        return False, 'No supported system opener was found.'
+        return False, "No supported system opener was found."
     except OSError as err:
-        return False, f'Failed to launch system viewer: {err}'
+        return False, f"Failed to launch system viewer: {err}"
 
 
 def _add_visualize_subcommand(cli: click.Group) -> click.Group:
@@ -482,106 +663,112 @@ def _add_visualize_subcommand(cli: click.Group) -> click.Group:
     :type cli: click.Group
     :return: The mutated Click group.
     :rtype: click.Group
+
+    Example::
+
+        >>> group = click.Group()
+        >>> 'visualize' in _add_visualize_subcommand(group).commands
+        True
     """
 
     @cli.command(
-        'visualize',
-        help='Render a state machine DSL file into a diagram and optionally open it.',
+        "visualize",
+        help="Render a state machine DSL file into a diagram and optionally open it.",
         context_settings=CONTEXT_SETTINGS,
     )
     @click.option(
-        '-i',
-        '--input-code',
-        'input_code_file',
+        "-i",
+        "--input-code",
+        "input_code_file",
         type=str,
         required=False,
-        help='Input code file of state machine DSL.',
+        help="Input code file of state machine DSL.",
     )
     @click.option(
-        '-o',
-        '--output',
-        'output_file',
+        "-o",
+        "--output",
+        "output_file",
         type=str,
         default=None,
-        help='Output diagram file. Uses a cache directory when omitted.',
+        help="Output diagram file. Uses a cache directory when omitted.",
     )
     @click.option(
-        '-l',
-        '--level',
-        'detail_level',
-        type=click.Choice(['minimal', 'normal', 'full'], case_sensitive=False),
-        default='normal',
-        help='Detail level preset (minimal/normal/full). Default: normal.',
+        "-l",
+        "--level",
+        "detail_level",
+        type=click.Choice(["minimal", "normal", "full"], case_sensitive=False),
+        default="normal",
+        help="Detail level preset (minimal/normal/full). Default: normal.",
     )
     @click.option(
-        '-c',
-        '--config',
-        'config_options',
+        "-c",
+        "--config",
+        "config_options",
         multiple=True,
-        help='Configuration options in key=value format. Can be specified multiple times.',
+        help="Configuration options in key=value format. Can be specified multiple times.",
     )
     @click.option(
-        '-t',
-        '--type',
-        'render_type',
+        "-t",
+        "--type",
+        "render_type",
         type=click.Choice(_VISUALIZE_RENDER_TYPES, case_sensitive=False),
-        default='png',
-        help='Rendered diagram type. Default: png.',
+        default="png",
+        help="Rendered diagram type. Default: png.",
     )
     @click.option(
-        '--renderer',
+        "--renderer",
         type=click.Choice(_VISUALIZE_RENDERERS, case_sensitive=False),
-        default='auto',
-        help='Renderer mode: local, remote or auto. Default: auto.',
+        default="auto",
+        help="Renderer mode: local, remote or auto. Default: auto.",
     )
     @click.option(
-        '-j',
-        '--java',
-        'java',
+        "-j",
+        "--java",
+        "java",
         type=str,
-        default=shutil.which('java'),
-        help='Path of java executable file (will load from environment when not given).',
-        show_default='java from ${PATH}',
+        default=shutil.which("java"),
+        help="Path of java executable file (will load from environment when not given).",
+        show_default="java from ${PATH}",
     )
     @click.option(
-        '-p',
-        '--plantuml',
-        '--plantuml-jar',
-        'plantuml_jar',
+        "-p",
+        "--plantuml",
+        "--plantuml-jar",
+        "plantuml_jar",
         envvar=_PLANTUML_JAR_ENV,
         type=str,
         default=None,
-        help=f'Path of PlantUML jar file (will load from ${{{_PLANTUML_JAR_ENV}}} when not given).',
+        help=f"Path of PlantUML jar file (will load from ${{{_PLANTUML_JAR_ENV}}} when not given).",
     )
     @click.option(
-        '-r',
-        '--remote-host',
-        'remote_host',
+        "-r",
+        "--remote-host",
+        "remote_host",
         envvar=_PLANTUML_HOST_ENV,
         type=str,
         default=_OFFICIAL_PLANTUML_HOST,
-        help=f'Remote host of the online PlantUML editor '
-             f'(will load from ${{{_PLANTUML_HOST_ENV}}} when not given).',
+        help=f"Remote host of the online PlantUML editor "
+        f"(will load from ${{{_PLANTUML_HOST_ENV}}} when not given).",
         show_default=True,
     )
     @click.option(
-        '--check',
-        'check_only',
+        "--check",
+        "check_only",
         is_flag=True,
         default=False,
-        help='Check renderer availability and exit without rendering a diagram.',
+        help="Check renderer availability and exit without rendering a diagram.",
     )
     @click.option(
-        '--open/--no-open',
-        'open_after_render',
+        "--open/--no-open",
+        "open_after_render",
         default=True,
-        help='Open the rendered file with the system default viewer.',
+        help="Open the rendered file with the system default viewer.",
     )
     @click.option(
-        '--strict-open',
+        "--strict-open",
         is_flag=True,
         default=False,
-        help='Treat viewer launch failure as an error.',
+        help="Treat viewer launch failure as an error.",
     )
     def visualize(
         input_code_file: str,
@@ -634,17 +821,23 @@ def _add_visualize_subcommand(cli: click.Group) -> click.Group:
                 plantuml_jar=plantuml_jar,
                 remote_host=remote_host,
             )
-            if renderer.lower() == 'local':
-                click.get_current_context().exit(0 if status['local'][0] else 1)
-            elif renderer.lower() == 'remote':
-                click.get_current_context().exit(0 if status['remote'][0] else 1)
+            if renderer.lower() == "local":
+                click.get_current_context().exit(0 if status["local"][0] else 1)
+            elif renderer.lower() == "remote":
+                click.get_current_context().exit(0 if status["remote"][0] else 1)
             else:
-                click.get_current_context().exit(0 if (status['local'][0] or status['remote'][0]) else 1)
+                click.get_current_context().exit(
+                    0 if (status["local"][0] or status["remote"][0]) else 1
+                )
 
         if not input_code_file:
-            raise ClickErrorException('Input DSL file is required unless --check is used.')
+            raise ClickErrorException(
+                "Input DSL file is required unless --check is used."
+            )
 
-        output_path = resolve_visualize_output_path(input_code_file, output_file, render_type.lower())
+        output_path = resolve_visualize_output_path(
+            input_code_file, output_file, render_type.lower()
+        )
         plantuml_output = build_plantuml_output(
             input_code_file=input_code_file,
             detail_level=detail_level,
@@ -660,22 +853,22 @@ def _add_visualize_subcommand(cli: click.Group) -> click.Group:
             remote_host=remote_host,
         )
 
-        click.echo(f'Diagram rendered successfully with {effective_renderer} renderer.')
-        click.echo(f'Output file: {output_path}')
+        click.echo(f"Diagram rendered successfully with {effective_renderer} renderer.")
+        click.echo(f"Output file: {output_path}")
 
         if not open_after_render:
             return
 
         opened, reason = open_diagram_with_default_app(output_path)
         if opened:
-            click.echo('Opened rendered diagram with the system default viewer.')
+            click.echo("Opened rendered diagram with the system default viewer.")
             return
 
         if strict_open:
             raise ClickErrorException(
-                f'Failed to open rendered diagram automatically. Output file: {output_path}. Reason: {reason}'
+                f"Failed to open rendered diagram automatically. Output file: {output_path}. Reason: {reason}"
             )
 
-        click.echo(f'GUI display skipped: {reason}')
+        click.echo(f"GUI display skipped: {reason}")
 
     return cli

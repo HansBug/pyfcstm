@@ -207,22 +207,20 @@ PDF_REQUIRED_TEXT = (
     "Problems 诊断",
     "公式编辑交接",
     "GUI",
+    "教程路线图",
+    "任务指南路线图",
+    "解释地图",
+    "参考地图",
+    "API 文档",
+    "windows_chinese_encodings",
 )
 PDF_DENY_TEXT = (
-    "LLM 评估",
-    "BMC 教程",
-    "SMT 教程",
-    "形式化验证教程",
-    "贡献指南",
-    "发布流程",
-    "/home/",
-    "/tmp/",
-    "TODO",
-    "issue #",
-    "PR #",
-    "本 PR",
+    "/home/zhangshaoang/",
+    "dev/s714",
+    "S714",
 )
 PDF_REQUIRED_OUTLINE = (
+    "项目验收要求",
     "交付范围",
     "功能映射",
     "验收样例",
@@ -232,15 +230,17 @@ PDF_REQUIRED_OUTLINE = (
     "编辑器与 GUI 交接",
     "Java/JAR 前置",
     "PDF 门禁",
+    "教程路线图",
+    "任务指南路线图",
+    "解释地图",
+    "参考地图",
+    "API 文档",
 )
 PDF_DENY_OUTLINE = (
-    "API Documentation",
     "Release Notes",
     "Community",
-    "Module Index",
     "发布说明",
     "社区",
-    "模块索引",
 )
 
 VSIX_REQUIRED_ENTRIES = (
@@ -495,8 +495,9 @@ def validate_pdf_artifact(
     metadata_file: Optional[Path] = None,
     outline_file: Optional[Path] = None,
     build_root: Optional[Path] = None,
-    min_pages: int = 8,
-    max_pages: int = 160,
+    min_pages: int = 500,
+    max_pages: int = 1000,
+    min_text_chars: int = 250_000,
 ) -> Mapping[str, object]:
     """
     Validate acceptance PDF metadata, extracted text, and outline evidence.
@@ -522,6 +523,8 @@ def validate_pdf_artifact(
     :type min_pages: int, optional
     :param max_pages: Maximum acceptable PDF page count.
     :type max_pages: int, optional
+    :param min_text_chars: Minimum normalized extracted-text length.
+    :type min_text_chars: int, optional
     :return: Summary of validated PDF evidence.
     :rtype: collections.abc.Mapping[str, object]
     :raises ArtifactValidationError: If required metadata, text, or outline
@@ -584,14 +587,21 @@ def validate_pdf_artifact(
                 pdf, pages, min_pages, max_pages
             )
         )
+    text_chars = len(_normalize_search_text(text))
+    if text_chars < min_text_chars:
+        raise ArtifactValidationError(
+            "acceptance PDF normalized text length {0} is below required "
+            "minimum {1}".format(text_chars, min_text_chars)
+        )
     _assert_text_contains("acceptance PDF text", text, PDF_REQUIRED_TEXT)
     _assert_text_excludes("acceptance PDF text", text, PDF_DENY_TEXT)
-    outline_titles = _validate_pdf_outline(outline)
+    outline_entries, required_outline = _validate_pdf_outline(outline)
     return {
         "pdf": str(pdf),
         "pages": pages,
-        "text_chars": len(text),
-        "outline": outline_titles,
+        "text_chars": text_chars,
+        "outline_entries": outline_entries,
+        "required_outline": required_outline,
     }
 
 
@@ -968,6 +978,15 @@ def run_self_check() -> Mapping[str, object]:
         _write_pdf_sidecars(text_file, metadata_file, outline_file, good=True)
         validate_pdf_artifact(pdf, text_file, metadata_file, outline_file)
         checks.append("pdf-positive")
+        sparse_text = root / "pdf-sparse.txt"
+        sparse_text.write_text("\n".join(PDF_REQUIRED_TEXT), encoding="utf-8")
+        _expect_failure(
+            lambda: validate_pdf_artifact(
+                pdf, sparse_text, metadata_file, outline_file
+            ),
+            "PDF text-size floor",
+        )
+        checks.append("pdf-text-size-negative")
         bad_text = root / "pdf-bad.txt"
         _write_pdf_sidecars(bad_text, metadata_file, outline_file, good=False)
         _expect_failure(
@@ -1191,6 +1210,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 build_root=args.build_root,
                 min_pages=args.min_pages,
                 max_pages=args.max_pages,
+                min_text_chars=args.min_text_chars,
             )
         elif args.command == "vsix":
             summary = validate_vsix(
@@ -1288,8 +1308,9 @@ def _build_parser() -> argparse.ArgumentParser:
 
     pdf = subparsers.add_parser("pdf", help="validate a real acceptance PDF build")
     pdf.add_argument("--build-root", type=Path, required=True)
-    pdf.add_argument("--min-pages", type=int, default=8)
-    pdf.add_argument("--max-pages", type=int, default=160)
+    pdf.add_argument("--min-pages", type=int, default=500)
+    pdf.add_argument("--max-pages", type=int, default=1000)
+    pdf.add_argument("--min-text-chars", type=int, default=250_000)
     _add_subcommand_report(pdf)
 
     vsix = subparsers.add_parser("vsix", help="validate acceptance VSIX archive")
@@ -2474,10 +2495,9 @@ def _normalize_search_text(text: str) -> str:
     return "".join(normalized.split())
 
 
-def _validate_pdf_outline(outline: str) -> Tuple[str, ...]:
+def _validate_pdf_outline(outline: str) -> Tuple[int, Tuple[str, ...]]:
     _assert_text_contains("acceptance PDF outline", outline, PDF_REQUIRED_OUTLINE)
     _assert_text_excludes("acceptance PDF outline", outline, PDF_DENY_OUTLINE)
-    mutool_titles = []
     mutool_rows = []
     plain_titles = []
     for line in outline.splitlines():
@@ -2486,21 +2506,27 @@ def _validate_pdf_outline(outline: str) -> Tuple[str, ...]:
             mutool_rows.append((len(match.group("indent")), match.group("title")))
         elif line.strip():
             plain_titles.append(line.strip())
-    if mutool_rows:
-        minimum_indent = min(indent for indent, _ in mutool_rows)
-        mutool_titles = [
-            title for indent, title in mutool_rows if indent == minimum_indent
-        ]
-        titles = tuple(mutool_titles)
-    else:
-        titles = tuple(plain_titles)
-    if titles != PDF_REQUIRED_OUTLINE:
-        raise ArtifactValidationError(
-            "acceptance PDF top-level outline mismatch: actual {0}, expected {1}".format(
-                titles, PDF_REQUIRED_OUTLINE
+    titles = (
+        tuple(title for _, title in mutool_rows) if mutool_rows else tuple(plain_titles)
+    )
+    normalized_titles = tuple(_normalize_search_text(title) for title in titles)
+    cursor = -1
+    for required in PDF_REQUIRED_OUTLINE:
+        normalized_required = _normalize_search_text(required)
+        try:
+            cursor = next(
+                index
+                for index in range(cursor + 1, len(normalized_titles))
+                if normalized_required in normalized_titles[index]
             )
-        )
-    return titles
+        except StopIteration as error:
+            # This ordered subset proves that the acceptance chapter precedes
+            # the retained technical manual instead of replacing it.
+            raise ArtifactValidationError(
+                "acceptance PDF outline is missing ordered title {0!r} "
+                "after index {1}".format(required, cursor)
+            ) from error
+    return len(titles), PDF_REQUIRED_OUTLINE
 
 
 def _run_common_pdf_checker(build_root: Path) -> None:
@@ -3206,16 +3232,16 @@ def _write_pdf_sidecars(
     good: bool,
     mutation: Optional[str] = None,
 ) -> None:
-    text = "\n".join(PDF_REQUIRED_TEXT)
+    text = "\n".join(PDF_REQUIRED_TEXT) + "\n" + ("技术正文" * 70_000)
     if not good:
-        text += "\nLLM 评估\n"
-    metadata = "Title: pyfcstm 项目验收\nPages: 42\n"
+        text += "\nS714\n"
+    metadata = "Title: pyfcstm 项目验收\nPages: 620\n"
     outline = "\n".join(
         '+\t"{0}"\t#nameddest=chapter.{1}'.format(title, index)
         for index, title in enumerate(PDF_REQUIRED_OUTLINE, start=1)
     )
     if mutation == "metadata":
-        metadata = "Title: pyfcstm 项目验收\nPages: 600\n"
+        metadata = "Title: pyfcstm 项目验收\nPages: 1200\n"
     elif mutation == "outline":
         outline = "\n".join(
             '+\t"{0}"\t#nameddest=chapter.{1}'.format(title, index)

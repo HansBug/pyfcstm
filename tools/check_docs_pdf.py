@@ -116,6 +116,9 @@ _LANGUAGE_SPECS = {
             "preview",
             "export",
             "公式编辑交接",
+            "Windows 7 可执行文件交付基线",
+            "windows-2022",
+            "python37.dll",
             "acceptance_pdf_tail_sentinel",
         ),
         "required_bookmarks": (

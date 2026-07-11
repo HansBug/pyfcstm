@@ -27,6 +27,8 @@
      - 动态验证不是形式化验证；GUI 边界是后端合同和交接项，不在本文内实现桌面控件。
    * - Verification
      - 根目录执行 ``make docs_pdf``，产物名为 ``pyfcstm-acceptance-zh.pdf``；随后运行 ``tools/check_docs_pdf.py``、``pdfinfo``、``pdftotext``、``mutool`` 与逐页渲染检查。
+   * - CLI baseline
+     - 最终可执行文件为 ``pyfcstm-0.5.0-windows-x86_64.exe``，由 GitHub Actions ``windows-2022`` runner 使用 64 位 CPython 3.7 构建，并按本项目验收口径作为 Windows 7 兼容交付基线。
 
 普通根目录构建命令：
 
@@ -35,6 +37,18 @@
    make docs_pdf
 
 该入口直接构建验收 PDF，不需要额外专用目标。LaTeX 采用 ``oneside`` 与 ``openany``，避免手册类双面排版产生无意义空白页。
+
+**Windows 7 可执行文件交付基线**
+
+最终 CLI 仍通过普通 ``make build`` 入口生成，但冻结构建环境固定为 GitHub Actions ``windows-2022`` runner、64 位 CPython 3.7 和 ``x86_64``。本项目以该组合构建并通过真实成品检查，作为 Windows 7 兼容交付标准；不把 Windows Server 2022 上的运行结果表述成 Windows 7 实机测试。
+
+门禁同时检查以下事实：
+
+* 构建进程是 GitHub Actions Windows runner，解释器主次版本严格为 3.7，指针宽度为 64 位；
+* 文件名严格为 ``pyfcstm-0.5.0-windows-x86_64.exe``，文件具有 PE ``MZ`` 标识，递归 PyInstaller inventory 包含 ``python37.dll``；
+* inventory 保留五套模板、诊断数据和 Z3 运行动态库，并排除大模型专用资源、ANTLR 开发数据、Z3 headers、test 和 docs；
+* 同一真实 EXE 从仓库外执行五个顶层命令、human/JSON inspect、PNG/SVG 渲染、批处理仿真和五套模板生成；
+* 固定 PlantUML JAR 先校验 SHA-256，再用于本地图片渲染，避免用远程服务或伪造 inventory 代替真实运行。
 
 功能映射
 --------

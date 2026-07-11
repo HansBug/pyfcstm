@@ -26,7 +26,7 @@ Example::
 
     $ python tools/check_acceptance_artifacts.py --check
     $ python tools/check_acceptance_artifacts.py packages --artifact-dir dist/packages
-    $ python tools/check_acceptance_artifacts.py executable --path dist/pyfcstm-0.5.0-linux-x86_64 --source acceptance.fcstm
+    $ python tools/check_acceptance_artifacts.py executable --path dist/pyfcstm-0.5.0-windows-x86_64.exe --source acceptance.fcstm --plantuml-jar plantuml.jar
 """
 
 from __future__ import annotations
@@ -39,6 +39,7 @@ import os
 import platform
 import re
 import shutil
+import struct
 import subprocess
 import sys
 import tarfile
@@ -166,6 +167,7 @@ EXECUTABLE_REQUIRED_PATTERN_GROUPS = (
         "libz3.dylib",
         "libz3.dll",
     ),
+    ("python37.dll",),
 )
 EXECUTABLE_DENYLIST = (
     "pyfcstm/llm/*",
@@ -186,6 +188,9 @@ EXECUTABLE_DENYLIST = (
 PDF_REQUIRED_TEXT = (
     "项目验收",
     "fcstm状态机建模与解析",
+    "Windows 7 可执行文件交付基线",
+    "windows-2022",
+    "python37.dll",
     "模型动态验证",
     "动态验证不是形式化验证",
     "design_validation_failure_multilevel_transition",
@@ -423,10 +428,12 @@ def validate_executable_inventory(
     """
     Validate a recursive PyInstaller inventory and executable behavior.
 
-    Validation always derives a recursive inventory from the supplied binary
-    and then runs the complete end-to-end command suite. A caller-provided
-    inventory is deliberately not accepted as artifact evidence because it can
-    be detached from the executable under test.
+    Validation requires the accepted Windows 7 delivery build baseline
+    (GitHub Actions ``windows-2022``, 64-bit CPython 3.7), derives a recursive
+    inventory from the supplied binary, and then runs the complete end-to-end
+    command suite. A caller-provided inventory is deliberately not accepted as
+    artifact evidence because it can be detached from the executable under
+    test.
 
     :param executable: Executable file to inventory and execute.
     :type executable: pathlib.Path
@@ -436,7 +443,7 @@ def validate_executable_inventory(
     :type plantuml_jar: pathlib.Path
     :param archive_viewer: PyInstaller archive viewer command.
     :type archive_viewer: str, optional
-    :return: Summary of validated executable evidence.
+    :return: Summary of build provenance, inventory, and executable evidence.
     :rtype: collections.abc.Mapping[str, object]
     :raises ArtifactValidationError: If inventory generation, inventory rules,
         source validation, or executable behavior fails.
@@ -464,6 +471,7 @@ def validate_executable_inventory(
             "PlantUML JAR does not exist: {0}".format(plantuml_jar)
         )
 
+    build_baseline = _assert_windows7_delivery_build_baseline()
     inventory_text = _run_command(
         [archive_viewer, "-r", "-l", str(executable.resolve())]
     ).stdout
@@ -475,6 +483,7 @@ def validate_executable_inventory(
         "inventory": inventory_origin,
         "entries": len(entries),
         "executable": str(executable),
+        "build_baseline": build_baseline,
         "e2e": smoke,
     }
 
@@ -847,6 +856,36 @@ def run_self_check() -> Mapping[str, object]:
         _write_inventory_fixture(inventory, good=True)
         _assert_executable_inventory_entries(_read_inventory_entries(inventory))
         checks.append("executable-positive")
+        delivery_facts = {
+            "os_name": "nt",
+            "system_name": "Windows",
+            "python_version": (3, 7),
+            "pointer_bits": 64,
+            "github_actions": "true",
+            "runner_os": "Windows",
+            "baseline": "windows-2022-cpython-3.7-x86_64",
+            "image_os": "win22",
+        }
+        _assert_windows7_delivery_build_facts(**delivery_facts)
+        checks.append("executable-windows7-baseline-positive")
+        invalid_delivery_facts = (
+            ("os_name", "posix"),
+            ("system_name", "Linux"),
+            ("python_version", (3, 8)),
+            ("pointer_bits", 32),
+            ("github_actions", ""),
+            ("runner_os", "Linux"),
+            ("baseline", ""),
+            ("image_os", ""),
+        )
+        for key, invalid_value in invalid_delivery_facts:
+            facts = dict(delivery_facts)
+            facts[key] = invalid_value
+            _expect_failure(
+                lambda facts=facts: _assert_windows7_delivery_build_facts(**facts),
+                "Windows 7 delivery {0}".format(key),
+            )
+        checks.append("executable-windows7-baseline-negative")
         bad_inventory = root / "pyinstaller-inventory-bad.txt"
         _write_inventory_fixture(bad_inventory, good=False)
         _expect_failure(
@@ -2118,6 +2157,116 @@ def _assert_executable_platform_shape(executable: Path) -> None:
         )
 
 
+def _assert_windows7_delivery_build_facts(
+    os_name: str,
+    system_name: str,
+    python_version: Tuple[int, int],
+    pointer_bits: int,
+    github_actions: str,
+    runner_os: str,
+    baseline: str,
+    image_os: str,
+) -> Mapping[str, object]:
+    """
+    Validate the accepted Windows 7 delivery build provenance.
+
+    :param os_name: Python operating-system family name.
+    :type os_name: str
+    :param system_name: Platform system name.
+    :type system_name: str
+    :param python_version: Python major and minor version pair.
+    :type python_version: typing.Tuple[int, int]
+    :param pointer_bits: Interpreter pointer width in bits.
+    :type pointer_bits: int
+    :param github_actions: GitHub Actions environment marker.
+    :type github_actions: str
+    :param runner_os: GitHub Actions runner operating-system name.
+    :type runner_os: str
+    :param baseline: Explicit acceptance delivery baseline marker.
+    :type baseline: str
+    :param image_os: GitHub hosted-runner image identifier.
+    :type image_os: str
+    :return: Validated build provenance facts.
+    :rtype: collections.abc.Mapping[str, object]
+    :raises ArtifactValidationError: If any fact differs from the accepted
+        ``windows-2022`` CPython 3.7 x86-64 baseline.
+
+    Example::
+
+        >>> facts = _assert_windows7_delivery_build_facts(
+        ...     os_name="nt",
+        ...     system_name="Windows",
+        ...     python_version=(3, 7),
+        ...     pointer_bits=64,
+        ...     github_actions="true",
+        ...     runner_os="Windows",
+        ...     baseline="windows-2022-cpython-3.7-x86_64",
+        ...     image_os="win22",
+        ... )
+        >>> facts["python"]
+        '3.7'
+    """
+    facts = {
+        "os_name": os_name,
+        "system": system_name,
+        "python": "{0}.{1}".format(*python_version),
+        "pointer_bits": pointer_bits,
+        "github_actions": github_actions,
+        "runner_os": runner_os,
+        "baseline": baseline,
+        "image_os": image_os,
+    }
+    expected = {
+        "os_name": "nt",
+        "system": "Windows",
+        "python": "3.7",
+        "pointer_bits": 64,
+        "github_actions": "true",
+        "runner_os": "Windows",
+        "baseline": "windows-2022-cpython-3.7-x86_64",
+        "image_os": "win22",
+    }
+    mismatches = {
+        key: {"actual": facts[key], "expected": value}
+        for key, value in expected.items()
+        if facts[key] != value
+    }
+    if mismatches:
+        raise ArtifactValidationError(
+            "Windows 7 delivery build baseline mismatch: {0}".format(
+                json.dumps(mismatches, sort_keys=True)
+            )
+        )
+    return facts
+
+
+def _assert_windows7_delivery_build_baseline() -> Mapping[str, object]:
+    """
+    Validate the current process against the accepted delivery baseline.
+
+    :return: Validated build provenance facts for the current process.
+    :rtype: collections.abc.Mapping[str, object]
+    :raises ArtifactValidationError: If the current process is not the accepted
+        GitHub Actions ``windows-2022`` CPython 3.7 x86-64 build.
+
+    Example::
+
+        >>> facts = _assert_windows7_delivery_build_baseline()
+        >>> facts["image_os"]
+        'win22'
+    """
+    return _assert_windows7_delivery_build_facts(
+        os_name=os.name,
+        system_name=platform.system(),
+        python_version=(sys.version_info[0], sys.version_info[1]),
+        pointer_bits=struct.calcsize("P") * 8,
+        github_actions=os.environ.get("GITHUB_ACTIONS", ""),
+        runner_os=os.environ.get("RUNNER_OS", ""),
+        baseline=os.environ.get("PYFCSTM_WINDOWS7_DELIVERY_BASELINE", ""),
+        image_os=os.environ.get("ImageOS", ""),
+    )
+
+
 def _parse_executable_version(version_text: str) -> str:
     match = re.search(
         r"\bversion\s+([0-9][0-9A-Za-z.+-]*)", version_text, re.IGNORECASE
@@ -2982,6 +3131,7 @@ def _write_inventory_fixture(
 ) -> None:
     entries = list(EXECUTABLE_REQUIRED)
     entries.append("z3/lib/libz3.so")
+    entries.append("python37.dll")
     if missing_required:
         entries.remove("pyfcstm/template/python.zip")
     if not good:

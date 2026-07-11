@@ -31,6 +31,7 @@ help:
 contents:
 	@$(ALL) build
 _acceptance_contents:
+	@$(MAKE) -f "$(SOURCEDIR)/logos.mk" SOURCE="$(SOURCEDIR)" build
 	@$(MAKE) -f "$(SOURCEDIR)/fcstms.mk" SOURCE="$(SOURCEDIR)/acceptance" build
 	@$(MAKE) -f "$(SOURCEDIR)/demos.mk" SOURCE="$(SOURCEDIR)/acceptance" build
 	@$(MAKE) -f "$(SOURCEDIR)/graphviz.mk" SOURCE="$(SOURCEDIR)/acceptance" build

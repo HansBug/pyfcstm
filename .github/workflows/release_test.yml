@@ -241,6 +241,24 @@ jobs:
         shell: bash
         run: |
           python -m tools.test_cli "${{ env.CLI_ARTIFACT_PATH }}" --test-dsl docs/source/tutorials/cli/simple_machine.fcstm --template-dir test/testfile/template_1
+      - name: Validate Windows 7 delivery executable
+        if: ${{ env.OS_NAME == 'Windows' }}
+        env:
+          PYFCSTM_WINDOWS7_DELIVERY_BASELINE: windows-2022-cpython-3.7-x86_64
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/acceptance-tools
+          curl -fsSL \
+            -o build/acceptance-tools/plantuml-1.2022.7.jar \
+            https://github.com/plantuml/plantuml/releases/download/v1.2022.7/plantuml-1.2022.7.jar
+          printf '%s  %s\n' \
+            eaea0c5777f3ee2c484046d115e2404156bd005961d37dd219f03ae5650375b8 \
+            build/acceptance-tools/plantuml-1.2022.7.jar | sha256sum --check
+          python tools/check_acceptance_artifacts.py executable \
+            --path "${{ env.CLI_ARTIFACT_PATH }}" \
+            --source docs/source/acceptance/acceptance.fcstm \
+            --plantuml-jar build/acceptance-tools/plantuml-1.2022.7.jar
       - name: Upload packed files to artifacts
         uses: actions/upload-artifact@v4
         with:

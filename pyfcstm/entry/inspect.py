@@ -308,7 +308,7 @@ def build_inspect_json(
         )
     except InspectAccessForbiddenError as err:
         # _validate_inspect_policy and inspect_model reject forbidden automatic
-        # inspect verify policies such as BMC search.
+        # inspect verify policies such as unknown tiers or scaling values.
         raise ClickErrorException(str(err))
 
     return (
@@ -429,7 +429,7 @@ def build_inspect_output(
         )
     except InspectAccessForbiddenError as err:
         # _validate_inspect_policy and inspect_model reject forbidden
-        # automatic inspect verify policies such as BMC search.
+        # automatic inspect verify policies such as unknown tiers or scaling values.
         raise ClickErrorException(str(err))
 
     if output_format == "human":

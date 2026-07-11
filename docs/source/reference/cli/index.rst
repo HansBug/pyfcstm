@@ -930,9 +930,11 @@ counterexample, and the evidence that should be inspected after the run.
    * - ``--max-complexity-tier``
      - ``structural``; ``smt_linear``; ``smt_nonlinear_decidable`` when the caller accepts that cost.
      - Click rejects values outside the documented choices before model parsing.
+     - CLI help lists the exact accepted tiers; successful reports contain only algorithms within the selected tier.
    * - ``--max-call-count-scaling``
      - ``none``; ``one``; ``linear_in_transitions``; other allowed finite taxonomy values.
      - Click rejects values outside the documented choices before model parsing.
+     - CLI help lists the exact accepted scaling values; verify results remain within the selected call-count budget.
    * - ``--smt-timeout-ms``
      - ``--smt-timeout-ms 2000``; ``--smt-timeout-ms 0``; omit it for default solver behavior.
      - Negative values are rejected by Click's integer range validation.

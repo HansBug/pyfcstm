@@ -14,8 +14,12 @@ Module map:
      - Public entry
      - Purpose
    * - Raw algorithms
-     - :func:`dead_guard`, :func:`effect_no_op_under_guard`,
-       :func:`transition_shadowed_by_predecessor`
+     - :func:`dead_guard`, :func:`guard_tautology`,
+       :func:`forced_guard_unsat_under_init`,
+       :func:`effect_no_op_under_guard`, :func:`effect_contradicts_guard`,
+       :func:`transition_shadowed_by_predecessor`,
+       :func:`enter_postcondition_implies_during_precondition`, and
+       :func:`composite_init_guards_incomplete`
      - Run one precise verification check and return
        :class:`AlgorithmResult`.
    * - Registry

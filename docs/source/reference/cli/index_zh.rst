@@ -890,9 +890,11 @@
    * - ``--max-complexity-tier``
      - ``structural``；``smt_linear``；调用者接受成本时可用 ``smt_nonlinear_decidable``。
      - Click 会在解析模型前拒绝文档选项之外的值。
+     - CLI 帮助会列出精确的合法层级；成功报告只包含所选层级预算内的算法。
    * - ``--max-call-count-scaling``
      - ``none``；``one``；``linear_in_transitions``；其他受允许的有限 taxonomy 值。
      - Click 会在解析模型前拒绝文档选项之外的值。
+     - CLI 帮助会列出精确的合法规模值；验证结果保持在所选调用次数预算内。
    * - ``--smt-timeout-ms``
      - ``--smt-timeout-ms 2000``；``--smt-timeout-ms 0``；省略则使用默认求解器行为。
      - 负数会被 Click 整数范围校验拒绝。

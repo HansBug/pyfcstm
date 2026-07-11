@@ -315,7 +315,7 @@ def iter_inspect_eligible(
     """
     Iterate over registry algorithms eligible for inspect automation.
 
-    :param max_complexity_tier: Maximum allowed non-BMC complexity tier.
+    :param max_complexity_tier: Maximum complexity tier accepted by inspect.
     :type max_complexity_tier: ComplexityTier
     :param max_call_count_scaling: Maximum allowed inspect call-count scaling.
     :type max_call_count_scaling: CallCountScaling

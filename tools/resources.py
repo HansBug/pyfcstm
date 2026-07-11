@@ -20,7 +20,12 @@ import os.path
 import platform
 from typing import Iterator, Mapping, Optional, Sequence, Tuple
 
-import importlib_metadata
+try:
+    from importlib import metadata as importlib_metadata
+except ImportError:
+    # Python 3.7 does not provide importlib.metadata, so the supported legacy
+    # interpreter uses the importlib-metadata backport from requirements.txt.
+    import importlib_metadata
 
 
 ResourceMapping = Tuple[str, str]
@@ -136,7 +141,7 @@ def get_executable_path(dist_dir: str = "dist") -> str:
         True
     """
     suffix = ".exe" if os.name == "nt" else ""
-    return os.path.join(dist_dir, get_executable_name() + suffix)
+    return os.path.join(dist_dir, get_executable_name() + suffix).replace(os.sep, "/")
 
 
 class ResourceCollectionError(RuntimeError):

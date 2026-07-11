@@ -337,10 +337,10 @@ class TestEntryInspect:
         )
 
         assert result.exitcode != 0
-        assert "No such option: --max-complexity-tier" in (
-            result.stderr or result.stdout
-        )
-        assert "Input DSL file not found" not in (result.stderr or result.stdout)
+        message = result.stderr or result.stdout
+        assert "No such option" in message
+        assert "--max-complexity-tier" in message
+        assert "Input DSL file not found" not in message
 
     def test_build_inspect_json_rejects_unknown_policy_before_reading_input(self):
         with pytest.raises(
@@ -391,9 +391,9 @@ class TestEntryInspect:
         )
 
         assert result.exitcode != 0
-        assert "No such option: --max-call-count-scaling" in (
-            result.stderr or result.stdout
-        )
+        message = result.stderr or result.stdout
+        assert "No such option" in message
+        assert "--max-call-count-scaling" in message
 
     def test_build_inspect_json_accepts_zero_smt_timeout(self, inspect_code_file):
         payload = json.loads(

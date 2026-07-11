@@ -35,12 +35,12 @@ from antlr4 import CommonTokenStream, InputStream, ParserRuleContext, Token
 from antlr4.error.ErrorListener import ErrorListener
 from antlr4.tree.Tree import ErrorNode, ParseTreeWalker
 
-from pyfcstm.bmc.ast import BmcCondExpr, BmcNumExpr
-from pyfcstm.bmc.errors import BmcQueryParseError
-from pyfcstm.bmc.grammar.BmcQueryLexer import BmcQueryLexer
-from pyfcstm.bmc.grammar.BmcQueryParser import BmcQueryParser
-from pyfcstm.bmc.listener import BmcQueryParseListener
-from pyfcstm.bmc.query import BmcQuery
+from .ast import BmcCondExpr, BmcNumExpr
+from .errors import BmcQueryParseError
+from .grammar.BmcQueryLexer import BmcQueryLexer
+from .grammar.BmcQueryParser import BmcQueryParser
+from .listener import BmcQueryParseListener
+from .query import BmcQuery
 
 _ParserEntry = Callable[[BmcQueryParser], ParserRuleContext]
 _SUPPORTED_ENTRIES = {

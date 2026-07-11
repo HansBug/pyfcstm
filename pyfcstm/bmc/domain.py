@@ -48,7 +48,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, Optional, Sequence, Tuple
 
-from pyfcstm.bmc.errors import InvalidBmcDomain
+from .errors import InvalidBmcDomain
 from pyfcstm.model import Event, State, StateMachine
 
 STATE_INIT_ID = -3

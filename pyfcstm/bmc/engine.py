@@ -34,16 +34,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, Tuple, Union
 
-from pyfcstm.bmc.binding import (
+from .binding import (
     BoundBmcQuery,
     BoundReference,
     bind_bmc_query,
     bind_bmc_query_structure,
 )
-from pyfcstm.bmc.domain import BmcDomain, build_bmc_domain
-from pyfcstm.bmc.errors import BmcBuildError
-from pyfcstm.bmc.parse import parse_bmc_query
-from pyfcstm.bmc.query import BmcQuery
+from .domain import BmcDomain, build_bmc_domain
+from .errors import BmcBuildError
+from .parse import parse_bmc_query
+from .query import BmcQuery
 from pyfcstm.model import StateMachine
 
 _CanonicalDict = Dict[str, Any]

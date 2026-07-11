@@ -48,13 +48,23 @@ from typing import Any, Callable, Dict, Iterable, Mapping, Optional, Sequence, T
 from tabulate import tabulate, tabulate_formats
 import z3
 
-from pyfcstm.bmc import ast as bmc_ast
-from pyfcstm.bmc.binding import BoundAssumption
-from pyfcstm.bmc.domain import STATE_INIT_ID, STATE_TERMINATE_ID
-from pyfcstm.bmc.errors import BmcBuildError
-from pyfcstm.bmc.properties import BmcPropertyFormula, _lower_predicate
-from pyfcstm.bmc.query import EventAssumption
-from pyfcstm.bmc.relation import BmcCaseRelation
+from .ast import (
+    Active,
+    BoolLiteral,
+    Called,
+    CondBinaryOp,
+    CondConditionalOp,
+    CondUnaryOp,
+    Event,
+    NumericComparison,
+    Terminated,
+)
+from .binding import BoundAssumption
+from .domain import STATE_INIT_ID, STATE_TERMINATE_ID
+from .errors import BmcBuildError
+from .properties import BmcPropertyFormula, _lower_predicate
+from .query import EventAssumption
+from .relation import BmcCaseRelation
 from pyfcstm.model import OnAspect, OnStage, StateMachine
 from pyfcstm.simulate import ReadOnlyExecutionContext, SimulationRuntime
 
@@ -3090,24 +3100,22 @@ def _explicit_assumption_events(
     return tuple(inputs), tuple(reads)
 
 
-def _collect_event_atoms(expr: object) -> Tuple[bmc_ast.Event, ...]:
+def _collect_event_atoms(expr: object) -> Tuple[Event, ...]:
     atoms = []
-    if isinstance(expr, bmc_ast.Event):
+    if isinstance(expr, Event):
         atoms.append(expr)
-    elif isinstance(expr, bmc_ast.CondUnaryOp):
+    elif isinstance(expr, CondUnaryOp):
         atoms.extend(_collect_event_atoms(expr.operand))
-    elif isinstance(expr, bmc_ast.CondBinaryOp):
+    elif isinstance(expr, CondBinaryOp):
         atoms.extend(_collect_event_atoms(expr.left))
         atoms.extend(_collect_event_atoms(expr.right))
-    elif isinstance(expr, bmc_ast.CondConditionalOp):
+    elif isinstance(expr, CondConditionalOp):
         atoms.extend(_collect_event_atoms(expr.condition))
         atoms.extend(_collect_event_atoms(expr.if_true))
         atoms.extend(_collect_event_atoms(expr.if_false))
-    elif isinstance(expr, bmc_ast.NumericComparison):
+    elif isinstance(expr, NumericComparison):
         return ()
-    elif isinstance(
-        expr, (bmc_ast.BoolLiteral, bmc_ast.Active, bmc_ast.Terminated, bmc_ast.Called)
-    ):
+    elif isinstance(expr, (BoolLiteral, Active, Terminated, Called)):
         return ()
     return tuple(atoms)
 

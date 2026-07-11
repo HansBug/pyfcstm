@@ -31,9 +31,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple, Union, cast
 
-from pyfcstm.bmc.domain import STATE_TERMINATE_ID, BmcDomain
-from pyfcstm.bmc.errors import BmcBuildError, InvalidBmcDomain, InvalidBmcEncoding
-from pyfcstm.bmc.macro import (
+from .domain import STATE_TERMINATE_ID, BmcDomain
+from .errors import BmcBuildError, InvalidBmcDomain, InvalidBmcEncoding
+from .macro import (
     ActionBlock,
     BoolTemplate,
     CycleCase,
@@ -44,7 +44,7 @@ from pyfcstm.bmc.macro import (
     build_semantic_delta_case,
     terminated_absorb_case,
 )
-from pyfcstm.bmc.source import TERMINATE_CASE_PATH, MacroStepSource
+from .source import TERMINATE_CASE_PATH, MacroStepSource
 from pyfcstm.dsl import EXIT_STATE
 from pyfcstm.model import (
     Boolean,

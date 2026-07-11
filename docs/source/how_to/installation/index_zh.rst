@@ -76,21 +76,42 @@ Windows ``cmd.exe`` 中通常这样激活：
    python -m pip install pyfcstm
    pyfcstm --help
 
-从源码归档安装
---------------
+.. only:: not acceptance_pdf
 
-需要从验收源码归档安装时，直接把归档路径交给 pip：
+   从 main 分支安装
+   -----------------
 
-.. code-block:: bash
+   只有你明确需要当前仓库状态而不是最新 PyPI 发布时，才使用源码安装：
 
-   python -m pip install ./pyfcstm-0.5.0.tar.gz
+   .. code-block:: bash
 
-自动化环境应固定归档文件及其 SHA-256，避免输入内容在构建配置不变时发生漂移。
+      python -m pip install -U git+https://github.com/hansbug/pyfcstm@main
+
+   在项目自动化里固定分支、标签或提交。未固定的源码安装可能在构建配置不变时改变结果。
+
+.. only:: acceptance_pdf
+
+   从源码归档安装
+   --------------
+
+   需要从验收源码归档安装时，直接把归档路径交给 pip：
+
+   .. code-block:: bash
+
+      python -m pip install ./pyfcstm-0.5.0.tar.gz
+
+   自动化环境应固定归档文件及其 SHA-256，避免输入内容在构建配置不变时发生漂移。
 
 使用预构建可执行文件
 --------------------
 
-如果部署环境不能直接安装 Python 包，请从项目验收交付包取得与目标平台匹配的预构建可执行文件。普通开发和 CI 优先使用 PyPI；只有部署模型适合时才使用预构建产物。
+.. only:: not acceptance_pdf
+
+   如果部署环境不能直接安装 Python 包，请查看 `GitHub Releases 页面 <https://github.com/HansBug/pyfcstm/releases>`_ 是否有预构建可执行产物。普通开发和 CI 优先使用 PyPI；只有部署模型适合时才使用发布产物。
+
+.. only:: acceptance_pdf
+
+   如果部署环境不能直接安装 Python 包，请从项目验收交付包取得与目标平台匹配的预构建可执行文件。普通开发和 CI 优先使用 PyPI；只有部署模型适合时才使用预构建产物。
 
 验证 Python 包
 --------------
@@ -293,4 +314,11 @@ CI 中渲染图表时，不要启动查看器：
 * :doc:`/tutorials/quick_start/index_zh` 给出最短端到端路径。
 * :doc:`/how_to/cli_workflows/index_zh` 展示常用命令行任务。
 * :doc:`/reference/cli/index_zh` 列出命令和选项事实。
-* 已发布文档位于 `pyfcstm.readthedocs.io <https://pyfcstm.readthedocs.io/>`_。
+
+.. only:: not acceptance_pdf
+
+   * 已发布文档位于 `hansbug.github.io/pyfcstm <https://hansbug.github.io/pyfcstm/main/index.html>`_。
+
+.. only:: acceptance_pdf
+
+   * 已发布文档位于 `pyfcstm.readthedocs.io <https://pyfcstm.readthedocs.io/>`_。

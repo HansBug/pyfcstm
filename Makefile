@@ -47,7 +47,8 @@ APP_ICON_SOURCE := ${LOGOS_DIR}/logo.png
 PYINSTALLER_ICON_ICO := ${APP_ICON_DIR}/pyfcstm.ico
 PYINSTALLER_ICON_ICNS := ${APP_ICON_DIR}/pyfcstm.icns
 PYINSTALLER_BUNDLE_ICON := ${APP_ICON_DIR}/pyfcstm.png
-PYINSTALLER_BIN := ${DIST_DIR}/pyfcstm$(if ${IS_WIN},.exe,)
+PYINSTALLER_NAME := $(shell $(PYTHON) -m tools.resources --artifact-name)
+PYINSTALLER_BIN := ${DIST_DIR}/${PYINSTALLER_NAME}$(if ${IS_WIN},.exe,)
 VSCODE_ICON := ${VSCODE_EXT_DIR}/resources/icon.png
 APP_ICON_STAMP := ${APP_ICON_DIR}/.stamp
 
@@ -94,7 +95,7 @@ help:
 	@echo "  make docs         - Build documentation (auto-detects language)"
 	@echo "  make docs_en      - Build English documentation"
 	@echo "  make docs_zh      - Build Chinese documentation"
-	@echo "  make docs_pdf     - Build and validate English and Chinese PDFs"
+	@echo "  make docs_pdf     - Build and validate the Chinese project-acceptance PDF"
 	@echo "  make docs_pdf_en  - Build and validate the English PDF"
 	@echo "  make docs_pdf_zh  - Build and validate the Chinese PDF"
 	@echo "  make pdocs        - Build production documentation with versioning"
@@ -150,13 +151,15 @@ help:
 package: tpl
 	$(PYTHON) -m build --sdist --wheel --outdir ${DIST_DIR}
 build: tpl ${APP_ICON_STAMP}
+	rm -f ${DIST_DIR}/pyfcstm ${DIST_DIR}/pyfcstm.exe
 	$(PYTHON) -m tools.generate_spec -o pyfcstm.spec --icon-dir ${APP_ICON_DIR}
 	pyinstaller pyfcstm.spec
-	@echo "Verifying bundled PyInstaller icon asset..."
+	@test -f "${PYINSTALLER_BIN}" || (echo "✗ Expected standalone executable ${PYINSTALLER_BIN}" && exit 1)
+	@echo "Verifying bundled PyInstaller icon asset in ${PYINSTALLER_BIN}..."
 	@pyi-archive_viewer -l ${PYINSTALLER_BIN} | grep -q "pyfcstm.png" && echo "✓ Bundled icon asset included in PyInstaller executable" || (echo "✗ Bundled icon asset missing from PyInstaller executable" && exit 1)
 
 test_cli:
-	python -m tools.test_cli dist/pyfcstm \
+	python -m tools.test_cli ${PYINSTALLER_BIN} \
 		--test-dsl docs/source/tutorials/cli/simple_machine.fcstm \
 		--template-dir test/testfile/template_1
 clean:
@@ -187,7 +190,7 @@ docs_en:
 docs_zh:
 	READTHEDOCS_LANGUAGE=zh-cn $(MAKE) -C "${DOC_DIR}" build
 docs_pdf:
-	$(MAKE) -C "${DOC_DIR}" pdf
+	$(MAKE) -C "${DOC_DIR}" acceptance_pdf
 docs_pdf_en:
 	$(MAKE) -C "${DOC_DIR}" pdf_en
 docs_pdf_zh:

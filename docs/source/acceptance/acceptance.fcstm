@@ -1,0 +1,48 @@
+def int counter = 0;
+def int temperature = 25;
+def int enabled = 1;
+def int flag = 0;
+
+state System {
+    enter {
+        counter = counter + 1;
+    }
+
+    state Idle {
+        during {
+            counter = counter + 1;
+        }
+    }
+
+    state Cooling {
+        pseudo state Decide {
+            enter {
+                counter = counter + 10;
+            }
+        }
+
+        state Active {
+            during {
+                temperature = temperature - 1;
+            }
+        }
+
+        state Done {
+            during {
+                flag = flag + 1;
+            }
+        }
+
+        [*] -> Decide;
+        Decide -> Active :: Confirm;
+        Active -> Done : if [temperature <= 20] effect {
+            flag = 1;
+        };
+    }
+
+    [*] -> Idle;
+    Idle -> Cooling :: StartCooling;
+    Idle -> Cooling : if [temperature > 30 && enabled == 1] effect {
+        flag = 1;
+    };
+}

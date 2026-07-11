@@ -198,24 +198,26 @@ pyfcstm 遵循三阶段流水线：
 * :doc:`reference/builtin_templates/index_zh`
 * :doc:`应用程序接口文档 <api_doc_zh>`
 
-版本说明
--------------------------
+.. only:: not acceptance_pdf
 
-.. toctree::
-    :maxdepth: 1
-    :caption: 版本说明
-    :hidden:
+   版本说明
+   -------------------------
 
-    release_notes_zh
+   .. toctree::
+       :maxdepth: 1
+       :caption: 版本说明
+       :hidden:
 
-* :doc:`release_notes_zh`
+       release_notes_zh
 
-社区和支持
------------------------
+   * :doc:`release_notes_zh`
 
-* **GitHub 仓库**：https://github.com/HansBug/pyfcstm
-* **问题跟踪**：https://github.com/HansBug/pyfcstm/issues
-* **PyPI 包**：https://pypi.org/project/pyfcstm/
+   社区和支持
+   -----------------------
+
+   * **GitHub 仓库**：https://github.com/HansBug/pyfcstm
+   * **问题跟踪**：https://github.com/HansBug/pyfcstm/issues
+   * **PyPI 包**：https://pypi.org/project/pyfcstm/
 
 许可证
 ---------

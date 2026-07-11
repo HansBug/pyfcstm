@@ -26,29 +26,16 @@
     "hierarchical state machine",
     "syntax highlighting"
   ],
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/HansBug/pyfcstm.git"
-  },
-  "bugs": {
-    "url": "https://github.com/HansBug/pyfcstm/issues"
-  },
-  "homepage": "https://github.com/HansBug/pyfcstm#readme",
-  "qna": "https://github.com/HansBug/pyfcstm/discussions",
-  "badges": [
-    {
-      "url": "https://img.shields.io/github/stars/HansBug/pyfcstm?style=social",
-      "href": "https://github.com/HansBug/pyfcstm",
-      "description": "Star pyfcstm on GitHub"
-    }
-  ],
+  "homepage": "https://pyfcstm.readthedocs.io/",
+  "qna": false,
   "icon": "resources/icon.png",
   "main": "./dist/extension.js",
   "activationEvents": [
     "onLanguage:fcstm",
     "onCommand:fcstm.preview.open",
     "onCommand:fcstm.preview.openAlone",
-    "onCommand:fcstm.preview.toggle"
+    "onCommand:fcstm.preview.toggle",
+    "onCommand:fcstm.preview.export"
   ],
   "scripts": {
     "vscode:prepublish": "npm run compile",
@@ -57,7 +44,7 @@
     "compile:tsc": "tsc -p ./",
     "pretest": "npm run compile:tsc",
     "lint": "eslint src --ext ts",
-    "package": "vsce package --out build/"
+    "package": "make package"
   },
   "dependencies": {
     "@pyfcstm/jsfcstm": "file:../jsfcstm/jsfcstm.tgz",
@@ -111,6 +98,12 @@
         "command": "fcstm.preview.toggle",
         "title": "Toggle Preview Layout",
         "category": "FCSTM"
+      },
+      {
+        "command": "fcstm.preview.export",
+        "title": "Export Preview Diagram",
+        "category": "FCSTM",
+        "icon": "$(export)"
       }
     ],
     "languages": [

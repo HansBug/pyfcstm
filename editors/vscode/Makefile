@@ -1,7 +1,7 @@
 # Makefile for FCSTM VSCode Extension
 # This file provides commands for building and maintaining the extension
 
-.PHONY: all parser clean install build package verify-p0.2 verify-p0.3 verify-p0.4 verify-p0.5 verify-p0.6 verify-p1.b verify-editor-contexts verify-reference-scoping verify-temp-variables verify-outline-layout verify-import-editor-support verify-semantic-editor-support verify-phase8-preview verify-phase9-preview verify-preview-interaction verify-preview-renders verify test-e2e help syntaxes icons jsfcstm-install jsfcstm-build jsfcstm-pack
+.PHONY: all parser clean install build package verify-p0.2 verify-p0.3 verify-p0.4 verify-p0.5 verify-p0.6 verify-p1.b verify-editor-contexts verify-reference-scoping verify-temp-variables verify-outline-layout verify-import-editor-support verify-semantic-editor-support verify-phase8-preview verify-phase9-preview verify-preview-interaction verify-preview-renders verify test-e2e help syntaxes icons jsfcstm-install jsfcstm-build jsfcstm-pack smoke-vscode
 
 # ANTLR configuration
 ANTLR_VERSION := 4.9.3
@@ -20,6 +20,7 @@ NPM := npm
 TSC := npx tsc
 ROOT_DIR := ../..
 JSFCSTM_DIR := ../jsfcstm
+.DEFAULT_GOAL := package
 
 help:
 	@echo "FCSTM VSCode Extension Build Commands"
@@ -51,8 +52,9 @@ help:
 	@echo "  make test-e2e     - Run end-to-end bundle verification (20 tests)"
 	@echo "  make verify       - Run all verification tests"
 	@echo "  make package      - Build VSIX package (runs all prerequisites)"
+	@echo "  make smoke-vscode - Install the VSIX into an isolated VS Code profile and run smoke checks"
 	@echo "  make clean        - Remove generated files"
-	@echo "  make all          - Install deps, copy syntaxes, and build"
+	@echo "  make all          - Build the packaged VSIX"
 	@echo "  make icons        - Generate the packaged extension marketplace icon"
 	@echo ""
 	@echo "Prerequisites:"
@@ -61,7 +63,7 @@ help:
 	@echo "  - ANTLR jar at $(ANTLR_JAR)"
 	@echo ""
 
-all: build
+all: package
 
 jsfcstm-install:
 	@echo "Installing jsfcstm local package dependencies..."
@@ -212,22 +214,47 @@ test-e2e: build
 	node ./scripts/test-e2e.js
 	@echo ""
 
-verify: verify-p0.2 verify-p0.3 verify-p0.4 verify-p0.5 verify-p0.6 verify-p1.b verify-editor-contexts verify-reference-scoping verify-temp-variables verify-outline-layout verify-import-editor-support verify-semantic-editor-support verify-phase9-preview verify-preview-interaction verify-preview-renders test-e2e
+verify: package verify-p0.2 verify-p0.3 verify-p0.4 verify-p0.5 verify-p0.6 verify-p1.b verify-editor-contexts verify-reference-scoping verify-temp-variables verify-outline-layout verify-import-editor-support verify-semantic-editor-support verify-phase9-preview verify-preview-interaction verify-preview-renders test-e2e
 	@echo "All verification tests passed!"
 
-package: all
-	@echo "Building VSIX package..."
-	@echo "Note: VSIX packaging keeps normal npm dependency traversal"
-	@mkdir -p ./build
-	$(NPM) run package
-	@echo "Package built successfully in ./build/"
-	@echo ""
-	@echo "Verifying package contents..."
-	@unzip -l ./build/*.vsix | grep -q "dist/extension.js" && echo "✓ Bundled extension.js included" || echo "✗ WARNING: extension.js not found in package!"
-	@unzip -l ./build/*.vsix | grep -q "dist/server.js" && echo "✓ Bundled server.js included" || (echo "✗ Bundled server.js missing from package!" && exit 1)
-	@unzip -l ./build/*.vsix | grep -q "resources/icon.png" && echo "✓ Extension icon included in package" || (echo "✗ Extension icon missing from package!" && exit 1)
-	@echo "Package size:"
-	@ls -lh ./build/*.vsix | awk '{print "  " $$9 ": " $$5}'
+
+VSIX_OUT ?= $(abspath ./build/fcstm-language-support-0.1.0.vsix)
+SMOKE_OUT ?= $(abspath ../../dist/vscode-smoke)
+CODE_BIN ?= code
+VSIX_PATH ?= $(VSIX_OUT)
+
+package: icons
+	@echo "Building the local jsfcstm package consumed by the VSIX..."
+	$(MAKE) -C $(JSFCSTM_DIR) install pack
+	@echo "Cleaning VSCode extension build tree..."
+	rm -rf ./node_modules ./dist ./out ./build
+	@test -f $(JSFCSTM_DIR)/jsfcstm.tgz || (echo "Local jsfcstm package was not produced: $(JSFCSTM_DIR)/jsfcstm.tgz" && exit 2)
+	sha256sum $(JSFCSTM_DIR)/jsfcstm.tgz
+	@echo "Installing VSCode extension dependencies from the local jsfcstm tarball..."
+	$(NPM) install --force --package-lock=false
+	$(NPM) install --force --package-lock=false $(JSFCSTM_DIR)/jsfcstm.tgz
+	@echo "Verifying installed jsfcstm package matches the local tarball..."
+	JSFCSTM_EXTRACT="$$(mktemp -d)"; \
+		tar -xzf $(JSFCSTM_DIR)/jsfcstm.tgz -C "$$JSFCSTM_EXTRACT"; \
+		diff -qr "$$JSFCSTM_EXTRACT/package" ./node_modules/@pyfcstm/jsfcstm; \
+		rm -rf "$$JSFCSTM_EXTRACT"
+	$(NPM) ls @pyfcstm/jsfcstm @vscode/vsce esbuild unplugin-vue --depth=0
+	$(MAKE) syntaxes
+	@echo "Building production extension bundles..."
+	node esbuild.config.js --production
+	$(NPM) run compile
+	@echo "Packaging strict VSIX to $(VSIX_OUT)..."
+	mkdir -p $(dir $(VSIX_OUT))
+	rm -f $(VSIX_OUT)
+	@test -z "$$(find $(dir $(VSIX_OUT)) -maxdepth 1 -name '*.vsix' -print -quit)" || (echo "VSIX output dir contains stale .vsix files" && find $(dir $(VSIX_OUT)) -maxdepth 1 -name '*.vsix' -print && exit 1)
+	npx vsce package --ignoreFile .vscodeignore --readme-path README.md --no-dependencies --allow-missing-repository --out $(VSIX_OUT)
+	python3 ./scripts/normalize-vsix.py $(VSIX_OUT)
+	node ./scripts/check-vsix.js --vsix $(VSIX_OUT)
+	@echo "VSIX: $(VSIX_OUT)"
+
+smoke-vscode:
+	@test -f "$(VSIX_PATH)" || (echo "VSIX package not found: $(VSIX_PATH). Run make package first or set VSIX_PATH." && exit 2)
+	node ./scripts/smoke-vscode.js --vsix $(VSIX_PATH) --out $(SMOKE_OUT) --code $(CODE_BIN)
 
 clean:
 	@echo "Cleaning generated files..."
@@ -238,7 +265,6 @@ clean:
 	rm -rf ./node_modules
 	rm -rf ./build
 	rm -f ./*.vsix
-	$(MAKE) -C $(JSFCSTM_DIR) clean
 	@echo "Clean complete."
 
 # Check if ANTLR jar exists

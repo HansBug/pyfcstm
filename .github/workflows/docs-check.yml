@@ -311,6 +311,7 @@ jobs:
             latexmk \
             librsvg2-bin \
             make \
+            mupdf-tools \
             pandoc \
             poppler-utils \
             qpdf \
@@ -332,6 +333,7 @@ jobs:
           latexmk -v
           qpdf --version
           pdfinfo -v 2>&1 | head -n 1
+          mutool -v
           kpsewhich xeCJK.sty
           kpsewhich FandolSong-Regular.otf
           fc-match -f '%{family}\n' FreeSerif | grep -F FreeSerif
@@ -341,7 +343,7 @@ jobs:
           set -euo pipefail
           mkdir -p .ci/docs-pdf
           python tools/check_docs_pdf.py --check 2>&1 | tee .ci/docs-pdf/validator-self-check.log
-      - name: Build and validate bilingual PDFs
+      - name: Build and validate acceptance PDF
         env:
           PLANTUML_HOST: http://localhost:18080
         shell: bash
@@ -350,16 +352,12 @@ jobs:
           plantumlcli -c
           make docs_pdf 2>&1 | tee .ci/docs-pdf/build-output.log
 
-          en_seconds="$(cat docs/build/pdf/en/duration-seconds.txt)"
-          zh_seconds="$(cat docs/build/pdf/zh/duration-seconds.txt)"
-          en_tex="$(find docs/build/pdf/en/latex -maxdepth 1 -type f -name '*.tex' -print -quit)"
-          zh_tex="$(find docs/build/pdf/zh/latex -maxdepth 1 -type f -name '*.tex' -print -quit)"
-          en_pdf="${en_tex%.tex}.pdf"
+          zh_seconds="$(cat docs/build/pdf/acceptance-zh/duration-seconds.txt)"
+          zh_tex="$(find docs/build/pdf/acceptance-zh/latex -maxdepth 1 -type f -name '*.tex' -print -quit)"
           zh_pdf="${zh_tex%.tex}.pdf"
           {
-            echo '## Bilingual PDF build'
+            echo '## Acceptance PDF build'
             echo
-            echo "* English: \`${en_seconds}s\`, \`${en_pdf}\`"
             echo "* Chinese: \`${zh_seconds}s\`, \`${zh_pdf}\`"
           } >> "${GITHUB_STEP_SUMMARY}"
       - name: Upload PDF build evidence

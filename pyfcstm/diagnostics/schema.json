@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft-07/schema#",
-  "$id": "https://github.com/HansBug/pyfcstm/blob/main/pyfcstm/diagnostics/schema.json",
+  "$id": "urn:pyfcstm:diagnostics:model-inspect:v1",
   "title": "ModelInspect",
   "description": "Shared contract between pyfcstm and jsfcstm for inspect_model() output, including structural data, derived graphs, and diagnostics.",
   "type": "object",

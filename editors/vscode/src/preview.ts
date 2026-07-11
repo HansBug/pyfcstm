@@ -13,6 +13,12 @@ import {
 } from '@pyfcstm/jsfcstm';
 
 type PreviewLayoutMode = 'side' | 'alone';
+type PreviewExportFormat = 'svg' | 'png' | 'pdf';
+
+interface PreviewExportCommandOptions {
+    format?: PreviewExportFormat;
+    destination?: vscode.Uri;
+}
 
 interface PreviewSummaryEntry {
     label: string;
@@ -107,6 +113,16 @@ function isFcstmDocument(document: vscode.TextDocument | undefined): document is
 
 function isFcstmUri(uri: vscode.Uri | undefined): uri is vscode.Uri {
     return Boolean(uri && isFcstmPath(uri.fsPath));
+}
+
+function isUri(value: unknown): value is vscode.Uri {
+    return Boolean(
+        value
+        && typeof value === 'object'
+        && typeof (value as vscode.Uri).scheme === 'string'
+        && typeof (value as vscode.Uri).fsPath === 'string'
+        && typeof (value as vscode.Uri).toString === 'function'
+    );
 }
 
 function hasFileSystemPath(document: vscode.TextDocument): boolean {
@@ -258,6 +274,11 @@ export class FcstmPreviewController implements vscode.Disposable {
     // their back.
     private seenImportBoundaryIds = new Set<string>();
     private layoutMode: PreviewLayoutMode = 'side';
+    private webviewReady = false;
+    private previewDiagramReady = false;
+    private nextExportRequestId = 0;
+    private lastStartedExportRequestId = 0;
+    private exportDestinations = new Map<number, vscode.Uri>();
 
     constructor(private readonly context: vscode.ExtensionContext) {
         const graph = getWorkspaceGraph();
@@ -271,6 +292,10 @@ export class FcstmPreviewController implements vscode.Disposable {
             vscode.commands.registerCommand('fcstm.preview.open', (resource?: vscode.Uri) => this.openWithMode('side', resource)),
             vscode.commands.registerCommand('fcstm.preview.openAlone', (resource?: vscode.Uri) => this.openWithMode('alone', resource)),
             vscode.commands.registerCommand('fcstm.preview.toggle', () => this.togglePreview()),
+            vscode.commands.registerCommand(
+                'fcstm.preview.export',
+                (options?: PreviewExportCommandOptions) => this.requestExport(options)
+            ),
             vscode.workspace.onDidOpenTextDocument(document => this.syncOverlay(document)),
             vscode.workspace.onDidChangeTextDocument(event => {
                 this.syncOverlay(event.document);
@@ -386,16 +411,16 @@ export class FcstmPreviewController implements vscode.Disposable {
         if (this.panel) {
             this.panel.reveal(viewColumn, true);
         } else {
-            this.createPanel(document, viewColumn);
+            this.createPanel(document, viewColumn, mode !== 'alone');
         }
         this.scheduleRefresh(document, true);
     }
 
-    private createPanel(document: vscode.TextDocument, viewColumn: vscode.ViewColumn): void {
+    private createPanel(document: vscode.TextDocument, viewColumn: vscode.ViewColumn, preserveFocus: boolean): void {
         this.panel = vscode.window.createWebviewPanel(
             'fcstmPreview',
             `FCSTM Preview: ${basenameForDocument(document)}`,
-            {preserveFocus: true, viewColumn},
+            {preserveFocus, viewColumn},
             {
                 enableFindWidget: true,
                 enableScripts: true,
@@ -406,6 +431,9 @@ export class FcstmPreviewController implements vscode.Disposable {
         this.panel.onDidDispose(() => {
             this.panel = null;
             this.currentDocumentUri = null;
+            this.webviewReady = false;
+            this.previewDiagramReady = false;
+            this.exportDestinations.clear();
         }, null, this.disposables);
         this.panel.webview.onDidReceiveMessage(msg => void this.handleWebviewMessage(msg), null, this.disposables);
 
@@ -440,12 +468,31 @@ export class FcstmPreviewController implements vscode.Disposable {
             range?: {start: {line: number; character: number}; end: {line: number; character: number}};
             collapsed?: string[];
             mode?: PreviewLayoutMode;
-            svg?: string;
-            base64?: string;
+            format?: PreviewExportFormat;
+            data?: string;
+            requestId?: number;
             message?: string;
         };
 
         switch (payload.type) {
+            case 'webviewReady':
+                this.webviewReady = true;
+                await this.refreshCurrentDocument();
+                return;
+            case 'previewReady':
+                this.previewDiagramReady = true;
+                return;
+            case 'requestExport':
+                await this.requestExport();
+                return;
+            case 'exportStarted':
+                if (typeof payload.requestId === 'number') {
+                    this.lastStartedExportRequestId = Math.max(
+                        this.lastStartedExportRequestId,
+                        payload.requestId
+                    );
+                }
+                return;
             case 'patchOptions':
                 if (payload.options && typeof payload.options === 'object') {
                     this.previewOptions = {...this.previewOptions, ...payload.options};
@@ -467,11 +514,18 @@ export class FcstmPreviewController implements vscode.Disposable {
                 }
                 return;
             case 'exportDiagram':
-                if (typeof payload.svg === 'string' && typeof payload.pngBase64 === 'string' && typeof payload.pdfBase64 === 'string') {
-                    await this.exportDiagram(payload.svg, payload.pngBase64, payload.pdfBase64);
+                if (
+                    (payload.format === 'svg' || payload.format === 'png' || payload.format === 'pdf')
+                    && typeof payload.data === 'string'
+                    && typeof payload.requestId === 'number'
+                ) {
+                    await this.exportDiagram(payload.format, payload.data, payload.requestId);
                 }
                 return;
             case 'exportError':
+                if (typeof payload.requestId === 'number') {
+                    this.exportDestinations.delete(payload.requestId);
+                }
                 if (payload.message) {
                     await vscode.window.showErrorMessage(`Export failed: ${payload.message}`);
                 }
@@ -487,6 +541,87 @@ export class FcstmPreviewController implements vscode.Disposable {
                 }
                 return;
         }
+    }
+
+
+    private async requestExport(options?: PreviewExportCommandOptions): Promise<boolean> {
+        if (!this.panel) {
+            const document = await this.resolveDocument(undefined);
+            if (!document) {
+                return false;
+            }
+            await this.openWithMode('alone', document.uri);
+        }
+        if (!this.panel) {
+            return false;
+        }
+        if (!this.webviewReady || !this.previewDiagramReady) {
+            const ready = await this.waitForPreviewReady();
+            if (!ready) {
+                await vscode.window.showWarningMessage('The diagram is still being prepared. Try exporting again when the preview is visible.');
+                return false;
+            }
+        }
+        let format = options?.format;
+        if (format !== 'svg' && format !== 'png' && format !== 'pdf') {
+            const choice = await vscode.window.showQuickPick(
+                [
+                    {label: 'SVG', description: 'Vector image', format: 'svg' as const},
+                    {label: 'PNG', description: '2x raster image', format: 'png' as const},
+                    {label: 'PDF', description: 'Single-page PDF, 4x raster (paper-ready)', format: 'pdf' as const},
+                ],
+                {placeHolder: 'Export diagram as...', matchOnDescription: true}
+            );
+            if (!choice) {
+                return false;
+            }
+            format = choice.format;
+        }
+        const viewColumn = this.layoutMode === 'alone'
+            ? vscode.ViewColumn.Active
+            : vscode.ViewColumn.Beside;
+        this.panel.reveal(viewColumn, false);
+        const requestId = ++this.nextExportRequestId;
+        const destination = options?.destination;
+        if (isUri(destination)) {
+            this.exportDestinations.set(requestId, destination);
+        }
+        const delivered = await this.panel.webview.postMessage({
+            type: 'performExport',
+            format,
+            requestId,
+        });
+        if (!delivered) {
+            this.exportDestinations.delete(requestId);
+            return false;
+        }
+        const started = await this.waitForExportStart(requestId);
+        if (!started) {
+            this.exportDestinations.delete(requestId);
+        }
+        return started;
+    }
+
+    private async waitForPreviewReady(timeoutMs = 10000): Promise<boolean> {
+        const deadline = Date.now() + timeoutMs;
+        while (Date.now() < deadline) {
+            if (this.webviewReady && this.previewDiagramReady) {
+                return true;
+            }
+            await new Promise<void>(resolve => setTimeout(resolve, 50));
+        }
+        return this.webviewReady && this.previewDiagramReady;
+    }
+
+    private async waitForExportStart(requestId: number, timeoutMs = 2000): Promise<boolean> {
+        const deadline = Date.now() + timeoutMs;
+        while (Date.now() < deadline) {
+            if (this.lastStartedExportRequestId >= requestId) {
+                return true;
+            }
+            await new Promise<void>(resolve => setTimeout(resolve, 25));
+        }
+        return this.lastStartedExportRequestId >= requestId;
     }
 
     private async switchLayoutMode(mode: PreviewLayoutMode): Promise<void> {
@@ -541,47 +676,31 @@ export class FcstmPreviewController implements vscode.Disposable {
      * insertion without the reliability problems of in-browser
      * SVG→vector-PDF conversion. The payload arrives as base64.
      */
-    private async exportDiagram(svg: string, pngBase64: string, pdfBase64: string): Promise<void> {
-        const choice = await vscode.window.showQuickPick(
-            [
-                {label: 'SVG', description: 'Vector image', format: 'svg' as const},
-                {label: 'PNG', description: '2× raster image', format: 'png' as const},
-                {label: 'PDF', description: 'Single-page PDF, 4× raster (paper-ready)', format: 'pdf' as const},
-            ],
-            {placeHolder: 'Export diagram as…', matchOnDescription: true}
-        );
-        if (!choice) {
-            return;
-        }
-        const ext = choice.format;
+    private async exportDiagram(format: PreviewExportFormat, data: string, requestId: number): Promise<void> {
+        const ext = format;
         const defaultUri = this.currentDocumentUri
             ? vscode.Uri.file(this.currentDocumentUri.replace(/^file:\/\//, '').replace(/\.fcstm$/i, '.' + ext))
             : undefined;
-        const filters = ext === 'svg'
+        const filters: {[name: string]: string[]} = ext === 'svg'
             ? {'SVG Image': ['svg']}
             : ext === 'png'
                 ? {'PNG Image': ['png']}
                 : {'PDF Document': ['pdf']};
-        const uri = await vscode.window.showSaveDialog({
+        const requestedDestination = this.exportDestinations.get(requestId);
+        const uri = requestedDestination || await vscode.window.showSaveDialog({
             defaultUri,
             filters,
             saveLabel: `Export ${ext.toUpperCase()}`,
         });
+        this.exportDestinations.delete(requestId);
         if (!uri) {
             return;
         }
-        if (ext === 'png') {
-            await vscode.workspace.fs.writeFile(uri, Buffer.from(pngBase64, 'base64'));
-            await vscode.window.showInformationMessage(`Exported PNG to ${uri.fsPath}`);
-            return;
-        }
-        if (ext === 'pdf') {
-            await vscode.workspace.fs.writeFile(uri, Buffer.from(pdfBase64, 'base64'));
-            await vscode.window.showInformationMessage(`Exported PDF to ${uri.fsPath}`);
-            return;
-        }
-        await vscode.workspace.fs.writeFile(uri, Buffer.from(svg, 'utf8'));
-        await vscode.window.showInformationMessage(`Exported SVG to ${uri.fsPath}`);
+        const contents = format === 'svg'
+            ? Buffer.from(data, 'utf8')
+            : Buffer.from(data, 'base64');
+        await vscode.workspace.fs.writeFile(uri, contents);
+        await vscode.window.showInformationMessage(`Exported ${format.toUpperCase()} to ${uri.fsPath}`);
     }
 
     private async refreshCurrentDocument(): Promise<void> {
@@ -705,6 +824,7 @@ export class FcstmPreviewController implements vscode.Disposable {
         if (!this.panel || sequence !== this.updateSequence) {
             return;
         }
+        this.previewDiagramReady = false;
         this.panel.title = `FCSTM Preview: ${basenameForDocument(document)}`;
         void this.panel.webview.postMessage(state);
 

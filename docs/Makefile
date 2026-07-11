@@ -23,7 +23,7 @@ NO_CONTENTS_BUILD = true
 # Catch-all target: route all unknown targets to Sphinx using the new
 # "make mode" option.  $(O) is meant as a shortcut for $(SPHINXOPTS).
 # Put it first so that "make" without argument is like "make help".
-.PHONY: help contents build html pdf pdf_en pdf_zh _pdf_en _pdf_zh prod clean sourcedir builddir Makefile
+.PHONY: help contents build html pdf pdf_en pdf_zh acceptance_pdf _pdf_en _pdf_zh _acceptance_pdf prod clean sourcedir builddir Makefile
 
 help:
 	@$(SPHINXBUILD) -M help "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)
@@ -34,6 +34,7 @@ build: html
 html: contents
 	@$(SPHINXBUILD) -M html "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)
 	@touch "$(BUILDDIR)/html/.nojekyll"
+
 pdf: contents
 	@$(MAKE) _pdf_en
 	@$(MAKE) _pdf_zh
@@ -42,6 +43,8 @@ pdf_en: contents
 	@$(MAKE) _pdf_en
 pdf_zh: contents
 	@$(MAKE) _pdf_zh
+acceptance_pdf: contents
+	@$(MAKE) _acceptance_pdf
 _pdf_en:
 	@rm -rf "$(PDFBUILDDIR)/en"
 	@mkdir -p "$(PDFBUILDDIR)/en"
@@ -70,6 +73,20 @@ _pdf_zh:
 		printf '%s\n' "$$duration" > "$(PDFBUILDDIR)/zh/duration-seconds.txt"; \
 		printf 'Chinese PDF build duration: %s seconds\n' "$$duration"
 	@$(PYTHON) "$(PDFCHECKER)" --language zh --build-root "$(PDFBUILDDIR)/zh"
+_acceptance_pdf:
+	@rm -rf "$(PDFBUILDDIR)/acceptance-zh"
+	@mkdir -p "$(PDFBUILDDIR)/acceptance-zh"
+	@start="$$(date +%s)"; \
+		log="$(PDFBUILDDIR)/acceptance-zh/build.log"; \
+		if ! NO_CONTENTS_BUILD=1 PYFCSTM_ACCEPTANCE_PDF=1 READTHEDOCS_LANGUAGE=zh $(SPHINXBUILD) -M latexpdf "$(SOURCEDIR)" "$(PDFBUILDDIR)/acceptance-zh" $(SPHINXOPTS) $(O) > "$$log" 2>&1; then \
+			cat "$$log"; \
+			exit 1; \
+		fi; \
+		cat "$$log"; \
+		duration="$$(($$(date +%s) - $$start))"; \
+		printf '%s\n' "$$duration" > "$(PDFBUILDDIR)/acceptance-zh/duration-seconds.txt"; \
+		printf 'Acceptance Chinese PDF build duration: %s seconds\n' "$$duration"
+	@$(PYTHON) "$(PDFCHECKER)" --language zh --profile acceptance --build-root "$(PDFBUILDDIR)/acceptance-zh"
 prod:
 	@NO_CONTENTS_BUILD='' $(SPHINXMULTIVERSION) "$(SOURCEDIR)" "$(BUILDDIR)/html" $(SPHINXOPTS) $(O)
 	@cp main_page.html "$(BUILDDIR)/html/index.html"

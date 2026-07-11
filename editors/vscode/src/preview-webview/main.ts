@@ -50,10 +50,16 @@ window.addEventListener('fcstm-emit', (ev: Event) => {
     const detail = (ev as CustomEvent).detail as {type: string; payload: unknown};
     const api = bridge();
     if (detail.type === 'exportDiagram') {
-        const p = detail.payload as {svg: string; pngBase64: string; pdfBase64: string};
-        api.postMessage({type: 'exportDiagram', svg: p.svg, pngBase64: p.pngBase64, pdfBase64: p.pdfBase64});
+        const p = detail.payload as {format: 'svg' | 'png' | 'pdf'; data: string; requestId: number};
+        api.postMessage({type: 'exportDiagram', format: p.format, data: p.data, requestId: p.requestId});
     } else if (detail.type === 'exportError') {
-        api.postMessage({type: 'exportError', message: detail.payload as string});
+        const p = detail.payload as {message: string; requestId: number};
+        api.postMessage({type: 'exportError', message: p.message, requestId: p.requestId});
+    } else if (detail.type === 'previewReady') {
+        api.postMessage({type: 'previewReady'});
+    } else if (detail.type === 'exportStarted') {
+        const p = detail.payload as {requestId: number};
+        api.postMessage({type: 'exportStarted', requestId: p.requestId});
     } else if (detail.type === 'copyDone') {
         api.postMessage({type: 'copyDone', message: detail.payload as string});
     } else if (detail.type === 'copyError') {

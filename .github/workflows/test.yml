@@ -800,19 +800,20 @@ jobs:
         run: |
           echo "ZIP_NAME=pyfcstm-v${{ env.PACKAGE_VERSION }}-${{ env.OS_NAME }}-${{ env.CPU_ARCH }}-${{ env.GIT_COMMIT_ID }}-standalone" >> $GITHUB_ENV
           echo "CLI_NAME=pyfcstm-v${{ env.PACKAGE_VERSION }}-${{ env.OS_NAME }}-${{ env.CPU_ARCH }}" >> $GITHUB_ENV
+          echo "CLI_ARTIFACT_PATH=$(python -m tools.resources --artifact-path)" >> $GITHUB_ENV
       - name: Build standalone cli on Linux and MacOS
         if: ${{ env.OS_NAME != 'Windows' }}
         shell: bash
         run: |
           make build
           mkdir -p dist/${{ env.CLI_NAME }}
-          cp dist/pyfcstm dist/${{ env.CLI_NAME }}/pyfcstm
+          cp "${{ env.CLI_ARTIFACT_PATH }}" dist/${{ env.CLI_NAME }}/pyfcstm
           cd dist
           zip -r ${{ env.ZIP_NAME }}.zip ${{ env.CLI_NAME }}
           cd ..
           ls -al dist
-          dist/pyfcstm -v
-          dist/pyfcstm -h
+          "${{ env.CLI_ARTIFACT_PATH }}" -v
+          "${{ env.CLI_ARTIFACT_PATH }}" -h
       - name: Test CLI executable on Linux and MacOS
         if: ${{ env.OS_NAME != 'Windows' }}
         shell: bash
@@ -824,18 +825,18 @@ jobs:
         run: |
           make build
           mkdir -p dist/${{ env.CLI_NAME }}
-          cp dist/pyfcstm.exe dist/${{ env.CLI_NAME }}/pyfcstm.exe
+          cp "${{ env.CLI_ARTIFACT_PATH }}" dist/${{ env.CLI_NAME }}/pyfcstm.exe
           cd dist
           zip -r ${{ env.ZIP_NAME }}.zip ${{ env.CLI_NAME }}
           cd ..
           ls -al dist
-          dist/pyfcstm.exe -v
-          dist/pyfcstm.exe -h
+          "${{ env.CLI_ARTIFACT_PATH }}" -v
+          "${{ env.CLI_ARTIFACT_PATH }}" -h
       - name: Test CLI executable on Windows
         if: ${{ env.OS_NAME == 'Windows' }}
         shell: bash
         run: |
-          python -m tools.test_cli dist/pyfcstm.exe --test-dsl docs/source/tutorials/cli/simple_machine.fcstm --template-dir test/testfile/template_1
+          python -m tools.test_cli "${{ env.CLI_ARTIFACT_PATH }}" --test-dsl docs/source/tutorials/cli/simple_machine.fcstm --template-dir test/testfile/template_1
       - uses: actions/upload-artifact@v4
         with:
           name: pyfcstm-v${{ env.PACKAGE_VERSION }}-${{ env.OS_NAME }}-${{ env.CPU_ARCH }}-${{ env.GIT_COMMIT_ID }}

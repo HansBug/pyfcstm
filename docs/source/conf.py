@@ -138,16 +138,45 @@ templates_path = ['_templates']
 #
 # ReadTheDocs sets this automatically based on the project's language configuration.
 # For local builds, allow override via environment variable.
+_ACCEPTANCE_PDF = os.environ.get('PYFCSTM_ACCEPTANCE_PDF') == '1'
+
 READTHEDOCS_LANGUAGE = os.environ.get('READTHEDOCS_LANGUAGE', 'en')
+if _ACCEPTANCE_PDF:
+    READTHEDOCS_LANGUAGE = 'zh'
 language = READTHEDOCS_LANGUAGE
 if 'zh' in re.split(r'[_-]+', language.lower()):
     language = 'zh'
+
+_ACCEPTANCE_TOCTREE = """.. toctree::
+   :maxdepth: 2
+   :caption: 项目验收
+   :hidden:
+
+   项目验收要求 <acceptance/index_zh>
+
+"""
 
 _source_index = os.path.join(_DOC_PATH, f'index_{language}.rst')
 _target_index = os.path.join(_DOC_PATH, 'index.rst')
 if not os.path.exists(_source_index):
     raise FileNotFoundError(f'Source index file not found: {_source_index!r}.')
 shutil.copyfile(_source_index, _target_index)
+if _ACCEPTANCE_PDF:
+    with open(_target_index, 'r', encoding='utf-8') as index_file:
+        _index_text = index_file.read()
+    _title_boundary = _index_text.find('\n\n')
+    if _title_boundary < 0:
+        raise ValueError(
+            'Documentation root has no title boundary: {!r}.'.format(_source_index)
+        )
+    _insertion = _title_boundary + 2
+    _index_text = (
+        _index_text[:_insertion]
+        + _ACCEPTANCE_TOCTREE
+        + _index_text[_insertion:]
+    )
+    with open(_target_index, 'w', encoding='utf-8', newline='') as index_file:
+        index_file.write(_index_text)
 
 
 def _cleanup_generated_index(app, exception):
@@ -176,15 +205,17 @@ def setup(app):
     """
     Register Sphinx documentation build hooks.
 
-    The hook only manages the generated language-specific ``index.rst`` copy.
-    It does not change Sphinx source discovery or generated documentation
-    content.
+    The hook manages the generated language-specific ``index.rst`` copy and
+    tags the isolated acceptance PDF profile. Normal HTML and standard PDF
+    builds retain the original documentation tree.
 
     :param app: Sphinx application object used to register event callbacks.
     :type app: sphinx.application.Sphinx
     :return: ``None``.
     :rtype: None
     """
+    if _ACCEPTANCE_PDF:
+        app.tags.add('acceptance_pdf')
     app.connect('build-finished', _cleanup_generated_index)
 
 
@@ -219,7 +250,10 @@ def _language_variant_excludes(selected_language):
     return sorted(excludes)
 
 
-exclude_patterns = _language_variant_excludes(language)
+if _ACCEPTANCE_PDF:
+    exclude_patterns = _language_variant_excludes('zh') + ['_migration/**']
+else:
+    exclude_patterns = _language_variant_excludes(language) + ['acceptance/**']
 
 # Locale directories for internationalization
 locale_dirs = ['locale/']
@@ -282,6 +316,18 @@ _latex_preamble_parts = [] if language == 'zh' else [r'\usepackage{xeCJK}']
 _latex_preamble_parts.append(
     r'\DeclareRobustCommand{\pyfcstmcontentsname}{%s}' % _latex_contents_title
 )
+if _ACCEPTANCE_PDF:
+    _latex_preamble_parts.append(r'\let\cleardoublepage\clearpage')
+    latex_documents = [
+        (
+            'index',
+            'pyfcstm-acceptance-zh.tex',
+            '项目验收中文手册',
+            author,
+            'manual',
+        )
+    ]
+
 latex_elements = {
     'preamble': '\n'.join(_latex_preamble_parts),
     # Keep Sphinx's public macro so page-number switching and ToC hooks remain.
@@ -291,6 +337,9 @@ latex_elements = {
         + r'\sphinxtableofcontents'
     ),
 }
+
+if _ACCEPTANCE_PDF:
+    latex_elements['extraclassoptions'] = 'oneside,openany'
 
 # Whitelist pattern for tags (set to None to ignore all tags)
 smv_tag_whitelist = r'^v.*$'  # Include all tags start with 'v'

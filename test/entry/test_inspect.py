@@ -168,12 +168,13 @@ class TestEntryInspect:
             diagnostic["code"] for diagnostic in payload["diagnostics"]
         }
 
-    def test_inspect_format_llm_json_outputs_stable_packet(self, inspect_code_file):
-        result = _run_inspect("-i", inspect_code_file, "--format", "llm-json")
+    def test_build_inspect_output_llm_json_api_remains_available(
+        self, inspect_code_file
+    ):
+        text = build_inspect_output(inspect_code_file, output_format="llm-json")
 
-        assert result.exitcode == 0
-        assert not _has_ansi(result.stdout)
-        payload = _json_from_stdout(result)
+        assert not _has_ansi(text)
+        payload = json.loads(text)
         assert payload["schema_version"] == INSPECT_LLM_SCHEMA_VERSION
         assert payload["schema_status"] == "stable"
         assert payload["status"] == "warning"
@@ -187,35 +188,31 @@ class TestEntryInspect:
         )
         assert "for_llm" not in payload
 
-    def test_inspect_format_llm_md_outputs_stable_markdown(self, inspect_code_file):
-        result = _run_inspect("-i", inspect_code_file, "--format", "llm-md")
-
-        assert result.exitcode == 0
-        assert not _has_ansi(result.stdout)
-        assert "# FCSTM Inspect Report" in result.stdout
-        assert INSPECT_LLM_SCHEMA_VERSION in result.stdout
-        assert "Recommended actions" in result.stdout
-        assert "Repair notes" in result.stdout
-        assert "Schema status: `stable`" in result.stdout
-        assert "|     ^" in result.stdout
-
-    def test_inspect_llm_json_can_include_verify_backed_diagnostics(
+    def test_build_inspect_output_llm_markdown_api_remains_available(
         self, inspect_code_file
     ):
-        result = _run_inspect(
-            "-i",
+        text = build_inspect_output(inspect_code_file, output_format="llm-md")
+
+        assert not _has_ansi(text)
+        assert "# FCSTM Inspect Report" in text
+        assert INSPECT_LLM_SCHEMA_VERSION in text
+        assert "Recommended actions" in text
+        assert "Repair notes" in text
+        assert "Schema status: `stable`" in text
+        assert "|     ^" in text
+
+    def test_build_inspect_output_llm_json_can_include_verify_backed_diagnostics(
+        self, inspect_code_file
+    ):
+        text = build_inspect_output(
             inspect_code_file,
-            "--format",
-            "llm-json",
-            "--enable-verify",
-            "--max-complexity-tier",
-            "smt_linear",
-            "--smt-timeout-ms",
-            "1000",
+            output_format="llm-json",
+            enable_verify=True,
+            max_complexity_tier="smt_linear",
+            smt_timeout_ms=1000,
         )
 
-        assert result.exitcode == 0
-        payload = _json_from_stdout(result)
+        payload = json.loads(text)
         verify_diagnostics = [
             diagnostic
             for diagnostic in payload["diagnostics"]
@@ -229,7 +226,7 @@ class TestEntryInspect:
         }
         assert verify_diagnostics[0]["repair_guidance"]
 
-    @pytest.mark.parametrize("output_format", ["json", "llm-json", "llm-md"])
+    @pytest.mark.parametrize("output_format", ["json"])
     def test_inspect_machine_formats_ignore_color_always(
         self, inspect_code_file, output_format
     ):
@@ -248,44 +245,34 @@ class TestEntryInspect:
             json.loads(result.stdout)
 
     @pytest.mark.parametrize("output_format", ["human", "llm-md"])
-    def test_inspect_verify_combines_with_text_formats(
+    def test_build_inspect_output_verify_combines_with_text_formats(
         self, inspect_code_file, output_format
     ):
-        result = _run_inspect(
-            "-i",
+        text = build_inspect_output(
             inspect_code_file,
-            "--format",
-            output_format,
-            "--enable-verify",
-            "--max-complexity-tier",
-            "smt_linear",
-            "--smt-timeout-ms",
-            "1000",
+            output_format=output_format,
+            enable_verify=True,
+            max_complexity_tier="smt_linear",
+            smt_timeout_ms=1000,
         )
 
-        assert result.exitcode == 0
-        assert "W_DEAD_GUARD" in result.stdout
-        assert "verify-backed" in result.stdout
+        assert "W_DEAD_GUARD" in text
+        assert "verify-backed" in text
 
-    def test_inspect_verify_human_checker_style_marks_verify_source(
+    def test_build_inspect_output_verify_human_checker_style_marks_verify_source(
         self, inspect_code_file
     ):
-        result = _run_inspect(
-            "-i",
+        text = build_inspect_output(
             inspect_code_file,
-            "--format",
-            "human",
-            "--enable-verify",
-            "--max-complexity-tier",
-            "smt_linear",
-            "--smt-timeout-ms",
-            "1000",
+            output_format="human",
+            enable_verify=True,
+            max_complexity_tier="smt_linear",
+            smt_timeout_ms=1000,
         )
 
-        assert result.exitcode == 0
-        assert "[WARN] W_DEAD_GUARD" in result.stdout
-        assert "= source: verify-backed" in result.stdout
-        assert "= fix:" in result.stdout
+        assert "[WARN] W_DEAD_GUARD" in text
+        assert "= source: verify-backed" in text
+        assert "= fix:" in text
 
     def test_build_inspect_output_json_matches_build_inspect_json(
         self, inspect_code_file
@@ -295,72 +282,53 @@ class TestEntryInspect:
             output_format="json",
         ) == build_inspect_json(inspect_code_file)
 
-    def test_inspect_enable_verify_exposes_verify_diagnostics(self, inspect_code_file):
-        result = _run_inspect(
-            "-i",
-            inspect_code_file,
-            "--format",
-            "json",
-            "--enable-verify",
-            "--max-complexity-tier",
-            "smt_linear",
-            "--smt-timeout-ms",
-            "1000",
+    def test_build_inspect_json_enable_verify_exposes_verify_diagnostics(
+        self, inspect_code_file
+    ):
+        payload = json.loads(
+            build_inspect_json(
+                inspect_code_file,
+                enable_verify=True,
+                max_complexity_tier="smt_linear",
+                smt_timeout_ms=1000,
+            )
         )
-
-        assert result.exitcode == 0
-        payload = _json_from_stdout(result)
         assert "W_DEAD_GUARD" in {
             diagnostic["code"] for diagnostic in payload["diagnostics"]
         }
 
-    def test_inspect_help_documents_formats_and_zero_smt_timeout(self):
+    def test_inspect_help_exposes_only_human_and_json_formats(self):
         result = _run_inspect("--help")
 
         assert result.exitcode == 0
-        assert "--format [human|json|llm-json|llm-md]" in result.stdout
+        assert "--format [human|json]" in result.stdout
         assert "--color [auto|always|never]" in result.stdout
         assert "default: human" in result.stdout
         assert "default: auto" in result.stdout
-        assert "0 keeps Z3 without a finite timeout" in result.stdout
+        assert "llm-json" not in result.stdout
+        assert "llm-md" not in result.stdout
+        assert "--enable-verify" not in result.stdout
+        assert "--max-complexity-tier" not in result.stdout
+        assert "--max-call-count-scaling" not in result.stdout
+        assert "--smt-timeout-ms" not in result.stdout
+        assert "BMC" not in result.stdout
+        assert "SMT" not in result.stdout
         assert "return before a non-trivial proof search" not in result.stdout
 
-    def test_inspect_rejects_bmc_search_in_automatic_verify(
+    def test_build_inspect_json_rejects_bmc_search_policy(
         self,
         inspect_code_file,
     ):
-        result = _run_inspect(
-            "-i",
-            inspect_code_file,
-            "--format",
-            "json",
-            "--enable-verify",
-            "--max-complexity-tier",
-            "bmc_search",
-        )
+        with pytest.raises(
+            ClickErrorException, match="bmc_search algorithms are not allowed"
+        ):
+            build_inspect_json(
+                inspect_code_file,
+                enable_verify=True,
+                max_complexity_tier="bmc_search",
+            )
 
-        assert result.exitcode != 0
-        assert "bmc_search algorithms are not allowed" in (
-            result.stderr or result.stdout
-        )
-
-    def test_inspect_rejects_bmc_search_without_enable_verify(
-        self,
-        inspect_code_file,
-    ):
-        result = _run_inspect(
-            "-i",
-            inspect_code_file,
-            "--max-complexity-tier",
-            "bmc_search",
-        )
-
-        assert result.exitcode != 0
-        assert "bmc_search algorithms are not allowed" in (
-            result.stderr or result.stdout
-        )
-
-    def test_inspect_rejects_forbidden_policy_before_reading_input(self):
+    def test_inspect_cli_rejects_hidden_verify_options_without_reading_input(self):
         result = _run_inspect(
             "-i",
             "/missing/inspect_case.fcstm",
@@ -369,10 +337,10 @@ class TestEntryInspect:
         )
 
         assert result.exitcode != 0
-        assert "bmc_search algorithms are not allowed" in (
-            result.stderr or result.stdout
-        )
-        assert "Input DSL file not found" not in (result.stderr or result.stdout)
+        message = result.stderr or result.stdout
+        assert "No such option" in message
+        assert "--max-complexity-tier" in message
+        assert "Input DSL file not found" not in message
 
     def test_build_inspect_json_rejects_unknown_policy_before_reading_input(self):
         with pytest.raises(
@@ -399,23 +367,19 @@ class TestEntryInspect:
             "k_unrollings_times_branching",
         ],
     )
-    def test_inspect_rejects_invalid_call_count_scaling(
+    def test_build_inspect_json_rejects_invalid_call_count_scaling(
         self,
         inspect_code_file,
         call_count_scaling,
     ):
-        result = _run_inspect(
-            "-i",
-            inspect_code_file,
-            "--enable-verify",
-            "--max-call-count-scaling",
-            call_count_scaling,
-        )
+        with pytest.raises(ClickErrorException, match=call_count_scaling):
+            build_inspect_json(
+                inspect_code_file,
+                enable_verify=True,
+                max_call_count_scaling=call_count_scaling,
+            )
 
-        assert result.exitcode != 0
-        assert call_count_scaling in (result.stderr or result.stdout)
-
-    def test_inspect_rejects_invalid_call_count_scaling_without_enable_verify(
+    def test_inspect_cli_rejects_hidden_call_count_policy_option(
         self,
         inspect_code_file,
     ):
@@ -427,23 +391,19 @@ class TestEntryInspect:
         )
 
         assert result.exitcode != 0
-        assert "k_unrollings" in (result.stderr or result.stdout)
+        message = result.stderr or result.stdout
+        assert "No such option" in message
+        assert "--max-call-count-scaling" in message
 
-    def test_inspect_accepts_zero_smt_timeout(self, inspect_code_file):
-        result = _run_inspect(
-            "-i",
-            inspect_code_file,
-            "--format",
-            "json",
-            "--enable-verify",
-            "--max-complexity-tier",
-            "smt_linear",
-            "--smt-timeout-ms",
-            "0",
+    def test_build_inspect_json_accepts_zero_smt_timeout(self, inspect_code_file):
+        payload = json.loads(
+            build_inspect_json(
+                inspect_code_file,
+                enable_verify=True,
+                max_complexity_tier="smt_linear",
+                smt_timeout_ms=0,
+            )
         )
-
-        assert result.exitcode == 0
-        payload = _json_from_stdout(result)
         assert payload["root_state_path"] == "Root"
 
     def test_inspect_writes_json_to_output_file(self, inspect_code_file):

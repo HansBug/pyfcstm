@@ -1,0 +1,300 @@
+## inspect-json-summary
+{
+  "diagnostics": 4,
+  "state_count": 6,
+  "transition_count": 6
+}
+## syntax-diagnostic
+{
+  "column": 23,
+  "line": 1,
+  "message": "Unexpected end of file - missing closing brace",
+  "raw": "extraneous input '<EOF>' expecting {'import', EVENT, 'pseudo', 'state', 'enter', 'exit', 'during', '[*]', '>>', SEMI, RBRACE, '!', ID}"
+}
+## structure-diagnostic
+{
+  "code": "E_DANGLING_TRANSITION",
+  "message": "Unknown to state 'Missing' of transition:\n[*] -> Missing;",
+  "severity": "error"
+}
+## five-template-generation
+{
+  "c": [
+    "README.md",
+    "README_zh.md",
+    "machine.c",
+    "machine.h"
+  ],
+  "c_poll": [
+    "README.md",
+    "README_zh.md",
+    "machine.c",
+    "machine.h"
+  ],
+  "cpp": [
+    "README.md",
+    "README_zh.md",
+    "machine.c",
+    "machine.cpp",
+    "machine.h",
+    "machine.hpp"
+  ],
+  "cpp_poll": [
+    "README.md",
+    "README_zh.md",
+    "machine.c",
+    "machine.cpp",
+    "machine.h",
+    "machine.hpp"
+  ],
+  "python": [
+    "README.md",
+    "README_zh.md",
+    "machine.py"
+  ]
+}
+## cmake-native-evidence
+{
+  "c": {
+    "available": true,
+    "build": {
+      "command": "<home>/.pyenv/versions/3.10.10/bin/cmake --build . --config Release",
+      "returncode": 0,
+      "stderr_tail": [],
+      "stdout_tail": [
+        "gmake[3]: Leaving directory '<tmp>/pyfcstm-acceptance-generate-he8a505j/generated/c/build'",
+        "gmake[3]: Entering directory '<tmp>/pyfcstm-acceptance-generate-he8a505j/generated/c/build'",
+        "[ 50%] Building C object CMakeFiles/machine.dir/machine.c.o",
+        "[100%] Linking C static library libmachine.a",
+        "gmake[3]: Leaving directory '<tmp>/pyfcstm-acceptance-generate-he8a505j/generated/c/build'",
+        "[100%] Built target machine",
+        "gmake[2]: Leaving directory '<tmp>/pyfcstm-acceptance-generate-he8a505j/generated/c/build'",
+        "gmake[1]: Leaving directory '<tmp>/pyfcstm-acceptance-generate-he8a505j/generated/c/build'"
+      ]
+    },
+    "configure": {
+      "command": "<home>/.pyenv/versions/3.10.10/bin/cmake ..",
+      "returncode": 0,
+      "stderr_tail": [
+        "CMake Deprecation Warning at CMakeLists.txt:1 (cmake_minimum_required):",
+        "  Compatibility with CMake < 3.10 will be removed from a future version of",
+        "  CMake.",
+        "",
+        "  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax",
+        "  to tell CMake that the project requires at least <min> but has been updated",
+        "  to work with policies introduced by <max> or earlier."
+      ],
+      "stdout_tail": [
+        "-- Detecting C compiler ABI info",
+        "-- Detecting C compiler ABI info - done",
+        "-- Check for working C compiler: /usr/bin/cc - skipped",
+        "-- Detecting C compile features",
+        "-- Detecting C compile features - done",
+        "-- Configuring done (0.1s)",
+        "-- Generating done (0.0s)",
+        "-- Build files have been written to: <tmp>/pyfcstm-acceptance-generate-he8a505j/generated/c/build"
+      ]
+    }
+  },
+  "c_poll": {
+    "available": true,
+    "build": {
+      "command": "<home>/.pyenv/versions/3.10.10/bin/cmake --build . --config Release",
+      "returncode": 0,
+      "stderr_tail": [],
+      "stdout_tail": [
+        "gmake[3]: Leaving directory '<tmp>/pyfcstm-acceptance-generate-he8a505j/generated/c_poll/build'",
+        "gmake[3]: Entering directory '<tmp>/pyfcstm-acceptance-generate-he8a505j/generated/c_poll/build'",
+        "[ 50%] Building C object CMakeFiles/machine.dir/machine.c.o",
+        "[100%] Linking C static library libmachine.a",
+        "gmake[3]: Leaving directory '<tmp>/pyfcstm-acceptance-generate-he8a505j/generated/c_poll/build'",
+        "[100%] Built target machine",
+        "gmake[2]: Leaving directory '<tmp>/pyfcstm-acceptance-generate-he8a505j/generated/c_poll/build'",
+        "gmake[1]: Leaving directory '<tmp>/pyfcstm-acceptance-generate-he8a505j/generated/c_poll/build'"
+      ]
+    },
+    "configure": {
+      "command": "<home>/.pyenv/versions/3.10.10/bin/cmake ..",
+      "returncode": 0,
+      "stderr_tail": [
+        "CMake Deprecation Warning at CMakeLists.txt:1 (cmake_minimum_required):",
+        "  Compatibility with CMake < 3.10 will be removed from a future version of",
+        "  CMake.",
+        "",
+        "  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax",
+        "  to tell CMake that the project requires at least <min> but has been updated",
+        "  to work with policies introduced by <max> or earlier."
+      ],
+      "stdout_tail": [
+        "-- Detecting C compiler ABI info",
+        "-- Detecting C compiler ABI info - done",
+        "-- Check for working C compiler: /usr/bin/cc - skipped",
+        "-- Detecting C compile features",
+        "-- Detecting C compile features - done",
+        "-- Configuring done (0.1s)",
+        "-- Generating done (0.0s)",
+        "-- Build files have been written to: <tmp>/pyfcstm-acceptance-generate-he8a505j/generated/c_poll/build"
+      ]
+    }
+  },
+  "cpp": {
+    "available": true,
+    "build": {
+      "command": "<home>/.pyenv/versions/3.10.10/bin/cmake --build . --config Release",
+      "returncode": 0,
+      "stderr_tail": [],
+      "stdout_tail": [
+        "gmake[3]: Entering directory '<tmp>/pyfcstm-acceptance-generate-he8a505j/generated/cpp/build'",
+        "[ 33%] Building C object CMakeFiles/machine.dir/machine.c.o",
+        "[ 66%] Building CXX object CMakeFiles/machine.dir/machine.cpp.o",
+        "[100%] Linking CXX static library libmachine.a",
+        "gmake[3]: Leaving directory '<tmp>/pyfcstm-acceptance-generate-he8a505j/generated/cpp/build'",
+        "[100%] Built target machine",
+        "gmake[2]: Leaving directory '<tmp>/pyfcstm-acceptance-generate-he8a505j/generated/cpp/build'",
+        "gmake[1]: Leaving directory '<tmp>/pyfcstm-acceptance-generate-he8a505j/generated/cpp/build'"
+      ]
+    },
+    "configure": {
+      "command": "<home>/.pyenv/versions/3.10.10/bin/cmake ..",
+      "returncode": 0,
+      "stderr_tail": [
+        "CMake Deprecation Warning at CMakeLists.txt:1 (cmake_minimum_required):",
+        "  Compatibility with CMake < 3.10 will be removed from a future version of",
+        "  CMake.",
+        "",
+        "  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax",
+        "  to tell CMake that the project requires at least <min> but has been updated",
+        "  to work with policies introduced by <max> or earlier."
+      ],
+      "stdout_tail": [
+        "-- Detecting CXX compiler ABI info",
+        "-- Detecting CXX compiler ABI info - done",
+        "-- Check for working CXX compiler: /usr/bin/c++ - skipped",
+        "-- Detecting CXX compile features",
+        "-- Detecting CXX compile features - done",
+        "-- Configuring done (0.2s)",
+        "-- Generating done (0.0s)",
+        "-- Build files have been written to: <tmp>/pyfcstm-acceptance-generate-he8a505j/generated/cpp/build"
+      ]
+    }
+  },
+  "cpp_poll": {
+    "available": true,
+    "build": {
+      "command": "<home>/.pyenv/versions/3.10.10/bin/cmake --build . --config Release",
+      "returncode": 0,
+      "stderr_tail": [],
+      "stdout_tail": [
+        "gmake[3]: Entering directory '<tmp>/pyfcstm-acceptance-generate-he8a505j/generated/cpp_poll/build'",
+        "[ 33%] Building C object CMakeFiles/machine.dir/machine.c.o",
+        "[ 66%] Building CXX object CMakeFiles/machine.dir/machine.cpp.o",
+        "[100%] Linking CXX static library libmachine.a",
+        "gmake[3]: Leaving directory '<tmp>/pyfcstm-acceptance-generate-he8a505j/generated/cpp_poll/build'",
+        "[100%] Built target machine",
+        "gmake[2]: Leaving directory '<tmp>/pyfcstm-acceptance-generate-he8a505j/generated/cpp_poll/build'",
+        "gmake[1]: Leaving directory '<tmp>/pyfcstm-acceptance-generate-he8a505j/generated/cpp_poll/build'"
+      ]
+    },
+    "configure": {
+      "command": "<home>/.pyenv/versions/3.10.10/bin/cmake ..",
+      "returncode": 0,
+      "stderr_tail": [
+        "CMake Deprecation Warning at CMakeLists.txt:1 (cmake_minimum_required):",
+        "  Compatibility with CMake < 3.10 will be removed from a future version of",
+        "  CMake.",
+        "",
+        "  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax",
+        "  to tell CMake that the project requires at least <min> but has been updated",
+        "  to work with policies introduced by <max> or earlier."
+      ],
+      "stdout_tail": [
+        "-- Detecting CXX compiler ABI info",
+        "-- Detecting CXX compiler ABI info - done",
+        "-- Check for working CXX compiler: /usr/bin/c++ - skipped",
+        "-- Detecting CXX compile features",
+        "-- Detecting CXX compile features - done",
+        "-- Configuring done (0.2s)",
+        "-- Generating done (0.0s)",
+        "-- Build files have been written to: <tmp>/pyfcstm-acceptance-generate-he8a505j/generated/cpp_poll/build"
+      ]
+    }
+  }
+}
+## cli-simulation
+{
+  "command": "pyfcstm simulate -i <repo>/docs/source/acceptance/acceptance.fcstm -e cycle; current",
+  "returncode": 0,
+  "stderr_tail": [],
+  "stdout_tail": [
+    "────────────────────────────────────────────────────────────",
+    "Cycle: 1",
+    "Current State: System.Idle",
+    "Variables:",
+    "  counter = 2",
+    "  enabled = 1",
+    "  flag = 0",
+    "  temperature = 25"
+  ]
+}
+## cli-plantuml
+{
+  "command": "pyfcstm plantuml -i <repo>/docs/source/acceptance/acceptance.fcstm --level normal",
+  "returncode": 0,
+  "stderr_tail": [],
+  "stdout_tail": [
+    "    effect {",
+    "        flag = 1;",
+    "    }",
+    "    end note",
+    "}",
+    "[*] --> system",
+    "system --> [*]",
+    "@enduml"
+  ]
+}
+## template-list
+{
+  "templates": [
+    "c",
+    "c_poll",
+    "cpp",
+    "cpp_poll",
+    "python"
+  ]
+}
+## pygments-entry-point
+{
+  "aliases": [
+    "fcstm",
+    "fcsm"
+  ],
+  "class": "pyfcstm.highlight.pygments_lexer.FcstmLexer",
+  "filenames": [
+    "*.fcstm"
+  ]
+}
+## java-jar-prerequisite
+{
+  "antlr_jar": "antlr-4.9.3.jar",
+  "antlr_jar_exists": true,
+  "java": {
+    "command": "<home>/.jenv/shims/java -version",
+    "returncode": 0,
+    "stderr_tail": [
+      "java version \"1.8.0_202\"",
+      "Java(TM) SE Runtime Environment (build 1.8.0_202-b08)",
+      "Java HotSpot(TM) 64-Bit Server VM (build 25.202-b08, mixed mode)"
+    ],
+    "stdout_tail": []
+  }
+}
+## formula-error
+{
+  "message": "Invalid syntax - check for missing semicolons, braces, or operators"
+}
+## formula-smoke
+{
+  "action": "ok",
+  "logical": "ok",
+  "numeric": "ok"
+}

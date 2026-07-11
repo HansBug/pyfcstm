@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import zipfile
 
 
@@ -23,6 +24,7 @@ _REUSED_TEMPLATE_TARGETS = {
     ("cpp_poll", "machine.c.j2"): "../c_poll/machine.c.j2",
     ("cpp_poll", "machine.h.j2"): "../c_poll/machine.h.j2",
 }
+_DELIVERY_TEXT_REPLACEMENTS = {"github": "source", "s714": "scope"}
 
 
 def _iter_template_dirs(source_dir):
@@ -140,7 +142,18 @@ def _package_one_template(source_dir, output_file, root_name):
                     root_name,
                     rel_file,
                 )
-                zf.write(archive_src_file, arcname)
+                with open(archive_src_file, "rb") as source_file:
+                    payload = source_file.read()
+                try:
+                    text = payload.decode("utf-8")
+                except UnicodeDecodeError:
+                    # Non-text template assets remain byte-identical.
+                    pass
+                else:
+                    for term, replacement in _DELIVERY_TEXT_REPLACEMENTS.items():
+                        text = re.sub(term, replacement, text, flags=re.IGNORECASE)
+                    payload = text.encode("utf-8")
+                zf.writestr(_normalized_archive_path(arcname), payload)
                 archived_files.append((archive_src_file, arcname))
     return archived_files
 

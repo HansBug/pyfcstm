@@ -8,6 +8,8 @@ bootstrap in fresh dependency-free virtual environments.
 
 import argparse
 import os
+import shutil
+import stat
 import subprocess
 import sys
 import tarfile
@@ -191,6 +193,19 @@ def _extract_sdist(sdist: Path, output_dir: Path) -> Path:
     return extracted
 
 
+def _remove_temporary_tree(path: Path) -> None:
+    """Remove a checker workspace, retrying Windows read-only Git pack files."""
+
+    def _retry_readonly_remove(function, target, error_info):
+        error = error_info[1]
+        if not isinstance(error, PermissionError):
+            raise error
+        os.chmod(target, stat.S_IWRITE)
+        function(target)
+
+    shutil.rmtree(str(path), onerror=_retry_readonly_remove)
+
+
 def check_build_identity_packaging(repo_root: Path = _REPO_ROOT) -> None:
     """Validate direct-wheel and carried-sdist identity behavior from a clean clone."""
     resolved_root = repo_root.resolve()
@@ -199,8 +214,8 @@ def check_build_identity_packaging(repo_root: Path = _REPO_ROOT) -> None:
     ).stdout.strip()
     _require(len(expected_commit) in (40, 64), "Git did not provide a full object ID")
 
-    with tempfile.TemporaryDirectory(prefix="pyfcstm-build-identity-") as temporary:
-        temporary_root = Path(temporary)
+    temporary_root = Path(tempfile.mkdtemp(prefix="pyfcstm-build-identity-"))
+    try:
         clone_dir = temporary_root / "source"
         _run(
             ("git", "clone", "--no-local", str(resolved_root), str(clone_dir)),
@@ -236,6 +251,8 @@ def check_build_identity_packaging(repo_root: Path = _REPO_ROOT) -> None:
             "sdist-carried",
             temporary_root,
         )
+    finally:
+        _remove_temporary_tree(temporary_root)
 
 
 def main(arguments: Sequence[str] = None) -> int:

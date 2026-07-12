@@ -1,6 +1,7 @@
 build>=0.10,<1.2
 pyinstaller>=4.7
 setuptools
+wheel
 hbutils
 cairosvg
 Pillow

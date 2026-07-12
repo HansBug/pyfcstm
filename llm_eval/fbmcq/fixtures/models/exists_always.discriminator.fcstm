@@ -1,0 +1,11 @@
+def int x = 0;
+
+state Root {
+    event Go;
+
+    state Idle;
+    state Done;
+
+    [*] -> Idle;
+    Idle -> Done : Go effect { x = -1; }
+}

@@ -153,12 +153,12 @@ help:
 	@echo "  AUTO_OPTIONS=...  - LLM generation options"
 	@echo ""
 
-package: build_info tpl
+package: build_info
 	$(PYTHON) -m build --sdist --wheel --outdir ${DIST_DIR}
-build_info:
+build_info: tpl
 	$(PYTHON) -m tools.write_build_info
 
-build: build_info tpl ${APP_ICON_STAMP}
+build: build_info ${APP_ICON_STAMP}
 	$(PYTHON) -m tools.generate_spec -o pyfcstm.spec --icon-dir ${APP_ICON_DIR}
 	pyinstaller pyfcstm.spec
 	@echo "Verifying bundled PyInstaller icon asset..."

@@ -1,9 +1,8 @@
 """Tests for strict generated build identity data."""
 
 import subprocess
-import sys
 from datetime import datetime, timezone
-from types import ModuleType
+from types import SimpleNamespace
 
 import pytest
 
@@ -22,6 +21,20 @@ def _identity():
     )
 
 
+class _FrozenBuildInfoLoader:
+    def __init__(self, source):
+        self._code = compile(source, "pyfcstm/config/build_info.py", "exec")
+
+    def get_code(self, fullname):
+        assert fullname == "pyfcstm.config.build_info"
+        return self._code
+
+
+def _install_frozen_build_info(monkeypatch, source):
+    spec = SimpleNamespace(loader=_FrozenBuildInfoLoader(source))
+    monkeypatch.setattr(config.importlib.util, "find_spec", lambda fullname: spec)
+
+
 @pytest.mark.unittest
 class TestBuildIdentityData:
     def test_round_trip_generated_literal_data(self, tmp_path):
@@ -32,29 +45,54 @@ class TestBuildIdentityData:
 
         assert _build_identity.load_build_identity_file(path) == identity
 
-    def test_frozen_module_identity_uses_the_same_validation_contract(
-        self, monkeypatch
+    def test_frozen_module_identity_uses_static_generated_payload(
+        self, monkeypatch, tmp_path
     ):
-        module = ModuleType("pyfcstm.config.build_info")
+        path = tmp_path / "build_info.py"
         identity = _identity()
-        for field, value in identity.values().items():
-            setattr(module, field, value)
-        monkeypatch.setitem(sys.modules, module.__name__, module)
+        _build_identity.write_build_identity_file(path, identity)
+        _install_frozen_build_info(monkeypatch, path.read_text(encoding="ascii"))
 
         actual, error = config._load_frozen_build_identity()
 
         assert actual == identity
         assert error is None
 
-    def test_frozen_module_identity_reports_missing_fields(self, monkeypatch):
-        module = ModuleType("pyfcstm.config.build_info")
-        monkeypatch.setitem(sys.modules, module.__name__, module)
+    def test_frozen_module_body_is_not_executed(self, monkeypatch, tmp_path):
+        path = tmp_path / "build_info.py"
+        marker = tmp_path / "executed"
+        _build_identity.write_build_identity_file(path, _identity())
+        source = path.read_text(encoding="ascii")
+        source += "\nfrom pathlib import Path\nPath({!r}).touch()\n".format(str(marker))
+        _install_frozen_build_info(monkeypatch, source)
+
+        identity, error = config._load_frozen_build_identity()
+
+        assert identity == _identity()
+        assert error is None
+        assert not marker.exists()
+
+    def test_frozen_module_identity_reports_missing_payload(self, monkeypatch):
+        _install_frozen_build_info(monkeypatch, "BUILD_COMMIT = None\n")
 
         identity, error = config._load_frozen_build_identity()
 
         assert identity == _build_identity.BuildIdentity.unknown()
         assert error is not None
-        assert "AttributeError" in error
+        assert "BuildInfoDataError" in error
+
+    def test_frozen_module_identity_reports_loader_damage(self, monkeypatch):
+        class _DamagedLoader:
+            def get_code(self, fullname):
+                raise EOFError("truncated frozen bytecode")
+
+        spec = SimpleNamespace(loader=_DamagedLoader())
+        monkeypatch.setattr(config.importlib.util, "find_spec", lambda fullname: spec)
+
+        identity, error = config._load_frozen_build_identity()
+
+        assert identity == _build_identity.BuildIdentity.unknown()
+        assert error == "EOFError: truncated frozen bytecode"
 
     def test_rejects_code_without_executing_generated_file(self, tmp_path):
         path = tmp_path / "build_info.py"
@@ -70,6 +108,17 @@ class TestBuildIdentityData:
             _build_identity.load_build_identity_file(path)
 
         assert not marker.exists()
+
+    def test_rejects_transport_payload_that_disagrees_with_assignments(self, tmp_path):
+        path = tmp_path / "build_info.py"
+        _build_identity.write_build_identity_file(path, _identity())
+        content = path.read_text(encoding="ascii").replace(
+            "BUILD_REF = 'main'", "BUILD_REF = 'other'"
+        )
+        path.write_text(content, encoding="ascii")
+
+        with pytest.raises(_build_identity.BuildInfoDataError, match="transport"):
+            _build_identity.load_build_identity_file(path)
 
     @pytest.mark.parametrize(
         "replacement",

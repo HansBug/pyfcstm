@@ -26,15 +26,14 @@ Example::
     True
 """
 
+import importlib.util
 from pathlib import Path
 from typing import Optional, Tuple
 
-from ._build_identity import (
-    BUILD_INFO_FIELDS,
-    BuildIdentity,
-    load_build_identity_file,
-    load_build_identity_values,
-)
+from ._build_identity import BuildIdentity
+from ._build_identity import BuildInfoDataError
+from ._build_identity import _load_build_identity_transport
+from ._build_identity import load_build_identity_file
 
 
 _BUILD_INFO_PATH = Path(__file__).with_name("build_info.py")
@@ -53,24 +52,58 @@ def _load_build_identity(path: Path) -> Tuple[BuildIdentity, Optional[str]]:
 
 
 def _load_frozen_build_identity() -> Tuple[BuildIdentity, Optional[str]]:
-    """Load the statically bundled generated module when no source file exists."""
+    """Read bundled generated metadata without executing its module body."""
+    module_name = __name__ + ".build_info"
     try:
-        from . import build_info
+        spec = importlib.util.find_spec(module_name)
     except ModuleNotFoundError as err:
         # Only the optional generated module is absent; dependency failures must surface.
-        if err.name != __name__ + ".build_info":
+        if err.name != module_name:
             raise
         return BuildIdentity.unknown(), None
-    except (ImportError, SyntaxError) as err:
-        # A frozen generated module can fail to load when its bundle data is damaged.
+    except (ImportError, AttributeError, ValueError) as err:
+        # Frozen import metadata can be missing, incomplete, or malformed.
         return BuildIdentity.unknown(), "{}: {}".format(type(err).__name__, err)
+    if spec is None:
+        return BuildIdentity.unknown(), None
+    if spec.loader is None or not hasattr(spec.loader, "get_code"):
+        return BuildIdentity.unknown(), "ImportError: build info loader has no code"
 
     try:
-        values = {field: getattr(build_info, field) for field in BUILD_INFO_FIELDS}
-        return load_build_identity_values(values), None
-    except (AttributeError, ValueError, TypeError) as err:
-        # Missing fields and invalid values describe malformed generated metadata.
+        code = spec.loader.get_code(module_name)
+    except (
+        ImportError,
+        OSError,
+        EOFError,
+        SyntaxError,
+        ValueError,
+        TypeError,
+        RuntimeError,
+    ) as err:
+        # Bundled bytecode loaders use these errors for missing or damaged code data.
         return BuildIdentity.unknown(), "{}: {}".format(type(err).__name__, err)
+    if code is None:
+        return (
+            BuildIdentity.unknown(),
+            "ImportError: build info loader returned no code",
+        )
+    try:
+        payload = code.co_consts[0]
+    except (AttributeError, IndexError) as err:
+        # A malformed loader result may not expose a module code constant table.
+        return BuildIdentity.unknown(), "{}: {}".format(type(err).__name__, err)
+    try:
+        return _load_build_identity_transport(payload), None
+    except BuildInfoDataError as err:
+        # Static payload decoding and schema validation reject damaged metadata.
+        return BuildIdentity.unknown(), "{}: {}".format(type(err).__name__, err)
+
+
+def _collect_frozen_build_info():  # pragma: no cover
+    """Expose the generated module to static frozen-application analysis."""
+    from . import build_info
+
+    return build_info
 
 
 if _BUILD_INFO_PATH.is_file():

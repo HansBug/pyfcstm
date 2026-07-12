@@ -1,0 +1,107 @@
+{
+  "discriminator_result": {
+    "incomplete": false,
+    "outcome": "property_violated",
+    "primary_replay": "passed",
+    "property_satisfied": false,
+    "status": "sat"
+  },
+  "evidence_snapshot": {
+    "asset_sha256": {
+      "discriminator": "02ec0710a7299c21ba9d9b8120764bae409cba4afcd9fb66bed0c0012ed5e208",
+      "expected": "a2367b771d8afc0cc6d0cc0c1f7c387f07eefb25940727d06ec84704ef5cd1e0",
+      "mutated": "2539aea98fbec0ab2fd125637bb1fafe851e5ed1a918261a337a0a8382d58f5f",
+      "nominal": "9d0bdd892f222b3f5127496f38aac5dc63036349c06f3acacaf87677ecccc625"
+    },
+    "evaluator_sha256": "37abf1915b28d0626d15e4ef42d1011caa1e18df6a890cf7ed561723e8807707",
+    "git_commit": "64207b9d3b7092012a9db6ded1d04f52939dd572",
+    "git_dirty": false,
+    "guide_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+    "prompt_sha256": "76c0f11b37586938a3f5fbf04d37628e155f60419612c144591103dd51e450c9",
+    "query_sha256": "84c65cce34d02881cea5693139afaaebc70141b9a39701257e829f413310073f",
+    "raw_output_sha256": "84c65cce34d02881cea5693139afaaebc70141b9a39701257e829f413310073f",
+    "run_id": "20260712-final-v15-core",
+    "schema_version": "fbmcq-evaluator/v3",
+    "semantic_source_sha256": "f6cd22d3743ac7619b4ce8eadb65a03e0000d8342e478552bac254cc78335d04",
+    "task_sha256": "8c56853190bb0e350a3744090952488278e712ef412acd7009a719c55cbcc364"
+  },
+  "expected_discriminator_result": {
+    "incomplete": false,
+    "outcome": "property_violated",
+    "primary_replay": "passed",
+    "property_satisfied": false,
+    "status": "sat"
+  },
+  "expected_mutated_result": {
+    "incomplete": false,
+    "outcome": "property_satisfied",
+    "property_satisfied": true,
+    "status": "unsat"
+  },
+  "expected_nominal_result": {
+    "incomplete": false,
+    "outcome": "property_violated",
+    "primary_replay": "passed",
+    "property_satisfied": false,
+    "status": "sat"
+  },
+  "failure_category": null,
+  "failures": [],
+  "fixture_id": "invariant_complete",
+  "gates": [
+    "parse",
+    "canonical_round_trip",
+    "structure_binding",
+    "model_binding",
+    "compile",
+    "query_precondition",
+    "solve_and_replay",
+    "semantic_oracle",
+    "task_semantic_discriminator",
+    "mutation_discrimination"
+  ],
+  "guide_metadata": {
+    "byte_size": 27747,
+    "chapter_count": 18,
+    "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+    "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+    "line_count": 544,
+    "pyfcstm_version": "0.5.0",
+    "resource_name": "fbmcq_language_guide.md",
+    "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+  },
+  "mode": "live",
+  "mutated_result": {
+    "incomplete": false,
+    "outcome": "property_satisfied",
+    "property_satisfied": true,
+    "status": "unsat"
+  },
+  "nominal_result": {
+    "incomplete": false,
+    "outcome": "property_violated",
+    "primary_replay": "passed",
+    "property_satisfied": false,
+    "status": "sat"
+  },
+  "precondition_probes": [
+    {
+      "assumption_count": 0,
+      "status": "sat"
+    },
+    {
+      "assumption_count": 1,
+      "status": "sat"
+    }
+  ],
+  "provider": "claude",
+  "provider_command": [
+    "claude",
+    "-p"
+  ],
+  "provider_returncode": 0,
+  "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/claude/invariant_complete/raw_output.md",
+  "run_id": "20260712-final-v15-core",
+  "success": true,
+  "task_sha256": "8c56853190bb0e350a3744090952488278e712ef412acd7009a719c55cbcc364"
+}

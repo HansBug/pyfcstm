@@ -124,7 +124,10 @@ def collect_datas(bundle_icon=None):
         raise FileNotFoundError(
             "missing generated build identity: run make build_info before generating a spec"
         )
-    datas.append((str(build_info_path.resolve()), "pyfcstm/config"))
+    # Onedir builds retain their public executable as ``pyfcstm``. Keeping
+    # data below ``pyfcstm/config`` would collide with that executable, so
+    # the config loader also probes this private bundle-only data directory.
+    datas.append((str(build_info_path.resolve()), "_pyfcstm_build"))
 
     return datas
 
@@ -154,10 +157,6 @@ def generate_spec(icon_dir="build/icons", mode="onefile"):
     datas = collect_datas(bundle_icon=icon_root / "pyfcstm.png")
     executable_icon = resolve_executable_icon(icon_root)
     if mode == "onedir":
-        # PyInstaller preserves package data under ``pyfcstm/...``. Reusing
-        # that name for the executable makes a PyInstaller 5 COLLECT build
-        # attempt to create children below the executable file.
-        executable_name = "pyfcstm_cli"
         executable_inputs = "[],\n    exclude_binaries=True"
         tail = """
 coll = COLLECT(
@@ -172,7 +171,6 @@ coll = COLLECT(
 )
 """
     else:
-        executable_name = "pyfcstm"
         executable_inputs = "a.binaries,\n    a.datas,\n    []"
         tail = ""
 
@@ -206,7 +204,7 @@ exe = EXE(
     pyz,
     a.scripts,
     {executable_inputs},
-    name='{executable_name}',
+    name='pyfcstm',
     debug=False,
     bootloader_ignore_signals=False,
     strip=True,              # Enable symbol stripping to reduce size

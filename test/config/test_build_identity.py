@@ -7,6 +7,7 @@ import pytest
 
 from pyfcstm.config import _build_identity
 from pyfcstm.config import _load_build_identity
+from pyfcstm.config import _resolve_build_info_path
 
 
 def _identity():
@@ -99,6 +100,25 @@ class TestBuildIdentityData:
         assert identity.commit is None
         assert error is not None
         assert "BuildInfoDataError" in error
+
+    def test_build_identity_path_prefers_package_data_then_private_bundle_data(
+        self, tmp_path
+    ):
+        config_module_path = tmp_path / "pyfcstm" / "config" / "__init__.py"
+        config_module_path.parent.mkdir(parents=True)
+        package_local = config_module_path.with_name("build_info.py")
+        bundle_copy = tmp_path / "_pyfcstm_build" / "build_info.py"
+        bundle_copy.parent.mkdir()
+        bundle_copy.write_text("bundle", encoding="utf-8")
+
+        assert _resolve_build_info_path(config_module_path) == bundle_copy
+
+        package_local.write_text("package", encoding="utf-8")
+        assert _resolve_build_info_path(config_module_path) == package_local
+
+        package_local.unlink()
+        bundle_copy.unlink()
+        assert _resolve_build_info_path(config_module_path) == package_local
 
     @pytest.mark.parametrize(
         ("field", "value", "message"),

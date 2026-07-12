@@ -53,6 +53,8 @@ def get_grammar_guide_prompt_path_for_llm(
     :type raise_on_integrity_error: bool, optional
     :return: Filesystem path to ``fcstm_grammar_guide.md``.
     :rtype: str
+    :raises FileNotFoundError: If the packaged Markdown resource is missing.
+    :raises UnicodeDecodeError: If a resource is not valid UTF-8.
     :raises GrammarGuidePromptPathUnavailableError: If no real path exists.
     :raises GrammarGuidePromptIntegrityError: If checksum verification fails.
 
@@ -81,6 +83,8 @@ def get_grammar_guide_prompt_metadata_for_llm(
     :type raise_on_integrity_error: bool, optional
     :return: Resource metadata for experiment snapshots.
     :rtype: Dict[str, Union[str, int]]
+    :raises FileNotFoundError: If the packaged Markdown resource is missing.
+    :raises UnicodeDecodeError: If a resource is not valid UTF-8.
     :raises GrammarGuidePromptIntegrityError: If checksum verification fails.
 
     Example::

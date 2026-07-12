@@ -37,6 +37,12 @@ load\_build\_identity\_file
 .. autofunction:: load_build_identity_file
 
 
+load\_build\_identity\_values
+-----------------------------------------------------
+
+.. autofunction:: load_build_identity_values
+
+
 ensure\_build\_identity
 -----------------------------------------------------
 

@@ -1,10 +1,13 @@
 """Tests for strict generated build identity data."""
 
 import subprocess
+import sys
 from datetime import datetime, timezone
+from types import ModuleType
 
 import pytest
 
+import pyfcstm.config as config
 from pyfcstm.config import _build_identity
 from pyfcstm.config import _load_build_identity
 
@@ -28,6 +31,30 @@ class TestBuildIdentityData:
         _build_identity.write_build_identity_file(path, identity)
 
         assert _build_identity.load_build_identity_file(path) == identity
+
+    def test_frozen_module_identity_uses_the_same_validation_contract(
+        self, monkeypatch
+    ):
+        module = ModuleType("pyfcstm.config.build_info")
+        identity = _identity()
+        for field, value in identity.values().items():
+            setattr(module, field, value)
+        monkeypatch.setitem(sys.modules, module.__name__, module)
+
+        actual, error = config._load_frozen_build_identity()
+
+        assert actual == identity
+        assert error is None
+
+    def test_frozen_module_identity_reports_missing_fields(self, monkeypatch):
+        module = ModuleType("pyfcstm.config.build_info")
+        monkeypatch.setitem(sys.modules, module.__name__, module)
+
+        identity, error = config._load_frozen_build_identity()
+
+        assert identity == _build_identity.BuildIdentity.unknown()
+        assert error is not None
+        assert "AttributeError" in error
 
     def test_rejects_code_without_executing_generated_file(self, tmp_path):
         path = tmp_path / "build_info.py"

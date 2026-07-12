@@ -21,7 +21,7 @@ import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Optional, Sequence
+from typing import Dict, Mapping, Optional, Sequence
 
 
 BUILD_INFO_FIELDS = (
@@ -240,6 +240,11 @@ def load_build_identity_file(path: os.PathLike) -> BuildIdentity:
                 "build info field {} is not a literal".format(target.id)
             ) from err
     return _validate_identity_values(values)
+
+
+def load_build_identity_values(values: Mapping[str, object]) -> BuildIdentity:
+    """Validate build identity values obtained from a frozen Python module."""
+    return _validate_identity_values(dict(values))
 
 
 def _run_git(args: Sequence[str], cwd: Path) -> subprocess.CompletedProcess:

@@ -536,6 +536,7 @@ def print_package_toctree(f, code_file: str):
             os.path.isfile(code_abs_file)
             and code_rel_file.endswith(".py")
             and not (code_rel_base.startswith("__") and code_rel_base.endswith("__"))
+            and code_rel_file != "build_info.py"
         ):
             code_rels.append(code_rel_base)
         elif os.path.isdir(code_abs_file) and os.path.exists(

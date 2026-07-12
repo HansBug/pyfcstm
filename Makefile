@@ -58,7 +58,7 @@ BUILD_MODE ?= onefile
 PYINSTALLER_OUTPUT := ${DIST_DIR}/pyfcstm
 
 ifeq (${BUILD_MODE},onedir)
-PYINSTALLER_BIN := ${DIST_DIR}/pyfcstm/pyfcstm$(if ${IS_WIN},.exe,)
+PYINSTALLER_BIN := ${DIST_DIR}/pyfcstm/pyfcstm_cli$(if ${IS_WIN},.exe,)
 else ifeq (${BUILD_MODE},onefile)
 PYINSTALLER_BIN := ${DIST_DIR}/pyfcstm$(if ${IS_WIN},.exe,)
 else

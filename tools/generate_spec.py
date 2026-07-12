@@ -154,6 +154,10 @@ def generate_spec(icon_dir="build/icons", mode="onefile"):
     datas = collect_datas(bundle_icon=icon_root / "pyfcstm.png")
     executable_icon = resolve_executable_icon(icon_root)
     if mode == "onedir":
+        # PyInstaller preserves package data under ``pyfcstm/...``. Reusing
+        # that name for the executable makes a PyInstaller 5 COLLECT build
+        # attempt to create children below the executable file.
+        executable_name = "pyfcstm_cli"
         executable_inputs = "[],\n    exclude_binaries=True"
         tail = """
 coll = COLLECT(
@@ -168,6 +172,7 @@ coll = COLLECT(
 )
 """
     else:
+        executable_name = "pyfcstm"
         executable_inputs = "a.binaries,\n    a.datas,\n    []"
         tail = ""
 
@@ -201,7 +206,7 @@ exe = EXE(
     pyz,
     a.scripts,
     {executable_inputs},
-    name='pyfcstm',
+    name='{executable_name}',
     debug=False,
     bootloader_ignore_signals=False,
     strip=True,              # Enable symbol stripping to reduce size

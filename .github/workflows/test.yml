@@ -841,9 +841,9 @@ jobs:
         run: |
           make build_onedir
           if [ "${{ env.OS_NAME }}" = "Windows" ]; then
-            CLI_PATH=dist/pyfcstm/pyfcstm.exe
+            CLI_PATH=dist/pyfcstm/pyfcstm_cli.exe
           else
-            CLI_PATH=dist/pyfcstm/pyfcstm
+            CLI_PATH=dist/pyfcstm/pyfcstm_cli
           fi
           VERSION_OUTPUT="$($CLI_PATH --version)"
           printf '%s\n' "$VERSION_OUTPUT"

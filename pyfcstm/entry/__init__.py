@@ -8,7 +8,17 @@ or to register it with external tooling.
 
 The package contains the following main components:
 
-* :data:`pyfcstmcli` - CLI group object for the ``pyfcstm`` command-line tool
+.. list-table::
+   :header-rows: 1
+
+   * - Entry
+     - Purpose
+   * - :data:`pyfcstmcli`
+     - CLI group object for the ``pyfcstm`` command-line tool.
+   * - :func:`build_bmc_output`
+     - Run one BMC model/query pair and build a human or JSON report.
+   * - :func:`write_bmc_output`
+     - Atomically replace a file with a completed BMC report.
 
 Example::
 
@@ -23,5 +33,6 @@ Example::
 """
 
 from .cli import cli as pyfcstmcli
+from .bmc import build_bmc_output, write_bmc_output
 
-__all__ = ["pyfcstmcli"]
+__all__ = ["pyfcstmcli", "build_bmc_output", "write_bmc_output"]

@@ -1,0 +1,27 @@
+@startuml
+skinparam backgroundColor transparent
+skinparam shadowing false
+skinparam defaultTextAlignment center
+skinparam rectangle {
+  BackgroundColor #F8FAFC
+  BorderColor #475569
+  FontColor #0F172A
+}
+skinparam ArrowColor #334155
+
+rectangle "FCSTM model\n+ FBMCQ property" as input
+rectangle "Bound N\nN + 1 frames\nN macro steps" as horizon
+rectangle "Core transition formula\n+ property objective" as formula
+rectangle "Z3\nSAT / UNSAT / unknown" as solver
+rectangle "Decode SAT assignment\ninto a public witness" as decode
+rectangle "Replay witness with\nSimulationRuntime" as replay
+rectangle "Property verdict\n+ process exit status" as verdict
+
+input --> horizon
+horizon --> formula
+formula --> solver
+solver --> decode : SAT
+decode --> replay
+replay --> verdict
+solver --> verdict : UNSAT / unknown
+@enduml

@@ -2,3 +2,16 @@
 .wy-table-responsive table th {
   white-space: normal;
 }
+
+/* Keep wide display equations readable without widening the mobile document. */
+mjx-container[display="true"] {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+/* Long inline API names may wrap; literal code blocks retain their own rules. */
+code.literal {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}

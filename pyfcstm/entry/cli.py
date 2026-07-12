@@ -20,7 +20,8 @@ Example::
 
 .. note::
    Subcommands are added by decorator functions that mutate the Click group in
-   place and return it for chaining.
+   place and return it for chaining, including the bounded model checking entry
+   from :mod:`pyfcstm.entry.bmc`.
 """
 
 from typing import Callable, List
@@ -28,6 +29,7 @@ from typing import Callable, List
 import click
 
 from .dispatch import pyfcstmcli
+from .bmc import _add_bmc_subcommand
 from .generate import _add_generate_subcommand
 from .inspect import _add_inspect_subcommand
 from .plantuml import _add_plantuml_subcommand
@@ -35,6 +37,7 @@ from .simulate import _add_simulate_subcommand
 from .visualize import _add_visualize_subcommand
 
 _DECORATORS: List[Callable[[click.Group], click.Group]] = [
+    _add_bmc_subcommand,
     _add_generate_subcommand,
     _add_inspect_subcommand,
     _add_plantuml_subcommand,

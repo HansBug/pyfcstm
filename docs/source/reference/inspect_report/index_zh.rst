@@ -58,10 +58,10 @@ Inspect 报告参考
      - 在配置策略内追加允许进入 inspect 的验证算法。
    * - ``--max-complexity-tier``
      - 验证策略
-     - 接受有界层级；``bmc_search`` 只为报告策略错误而被解析。
+     - 选择 inspect 接受的最高结构或局部 SMT 复杂度层级。
    * - ``--max-call-count-scaling``
      - 验证策略
-     - 自动 inspect 会拒绝 ``k_unrollings`` 相关标签。
+     - 选择 inspect 接受的最高模型派生调用次数规模。
    * - ``--smt-timeout-ms``
      - 求解器支持的验证
      - ``None`` 表示命令行不覆盖超时；``0`` 会转交给 Z3，表示没有有限超时。

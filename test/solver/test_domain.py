@@ -7,7 +7,15 @@ from typing import List, cast
 import pytest
 import z3
 
-from pyfcstm.model.expr import BinaryOp, Boolean, Expr, Integer, UFunc, UnaryOp, Variable
+from pyfcstm.model.expr import (
+    BinaryOp,
+    Boolean,
+    Expr,
+    Integer,
+    UFunc,
+    UnaryOp,
+    Variable,
+)
 from pyfcstm.solver.expr import expr_to_z3
 
 
@@ -119,7 +127,9 @@ class TestTranslateExprDomain:
         """A failed left operand is returned before translating the right operand."""
         from pyfcstm.solver.domain import translate_expr_domain
 
-        result = translate_expr_domain(BinaryOp(Variable("missing"), "+", Integer(1)), {})
+        result = translate_expr_domain(
+            BinaryOp(Variable("missing"), "+", Integer(1)), {}
+        )
 
         assert result.z3_expr is None
         assert result.failure is not None
@@ -139,6 +149,90 @@ class TestTranslateExprDomain:
         assert result.failure is not None
         assert result.failure.kind == "value_error"
         assert "missing" in result.failure.reason
+
+    def test_logical_binary_definedness_follows_runtime_short_circuit(self):
+        """Logical ``&&`` / ``||`` evaluate right operands only when needed."""
+        from pyfcstm.solver.domain import translate_expr_domain
+
+        x = z3.Int("x")
+        risky = BinaryOp(BinaryOp(Integer(1), "/", Variable("x")), ">", Integer(0))
+        skipped_cases = (
+            BinaryOp(Boolean(True), "||", risky),
+            BinaryOp(Boolean(False), "&&", risky),
+        )
+        required_cases = (
+            BinaryOp(Boolean(False), "||", risky),
+            BinaryOp(Boolean(True), "&&", risky),
+        )
+
+        for expr in skipped_cases:
+            result = translate_expr_domain(expr, {"x": x})
+            assert result.failure is None
+            solver = z3.Solver()
+            solver.add(*(item.constraint for item in result.definedness_constraints))
+            solver.add(x == 0)
+            assert solver.check() == z3.sat
+
+        for expr in required_cases:
+            result = translate_expr_domain(expr, {"x": x})
+            assert result.failure is None
+            solver = z3.Solver()
+            solver.add(*(item.constraint for item in result.definedness_constraints))
+            solver.add(x == 0)
+            assert solver.check() == z3.unsat
+
+        dynamic_cases = (
+            (BinaryOp(BinaryOp(Variable("x"), "==", Integer(0)), "||", risky), True),
+            (BinaryOp(BinaryOp(Variable("x"), "!=", Integer(0)), "||", risky), False),
+            (BinaryOp(BinaryOp(Variable("x"), "!=", Integer(0)), "&&", risky), True),
+            (BinaryOp(BinaryOp(Variable("x"), "==", Integer(0)), "&&", risky), False),
+        )
+        for expr, zero_is_defined in dynamic_cases:
+            result = translate_expr_domain(expr, {"x": x})
+            assert result.failure is None
+            solver = z3.Solver()
+            solver.add(*(item.constraint for item in result.definedness_constraints))
+            solver.add(x == 0)
+            assert (solver.check() == z3.sat) is zero_is_defined
+
+        plain_result = translate_expr_domain(
+            BinaryOp(Boolean(True), "&&", Boolean(True)), {}
+        )
+        assert plain_result.failure is None
+        assert plain_result.definedness_constraints == ()
+        skipped_failure = translate_expr_domain(
+            BinaryOp(Boolean(True), "||", Variable("missing")), {}
+        )
+        assert skipped_failure.failure is None
+        assert str(skipped_failure.z3_expr) == "True"
+        pruned_result = translate_expr_domain(
+            BinaryOp(BinaryOp(Variable("x"), "==", Integer(0)), "&&", risky),
+            {"x": x},
+            assumptions=(x != 0,),
+        )
+        assert pruned_result.failure is None
+        assert str(pruned_result.z3_expr) == "False"
+        assert pruned_result.feasibility_checks[-1].status == "unsat"
+
+    def test_logical_binary_type_and_reachable_right_failures_are_structured(self):
+        """Lazy logical translation preserves structured type/failure results."""
+        from pyfcstm.solver.domain import translate_expr_domain
+
+        type_result = translate_expr_domain(
+            BinaryOp(Integer(1), "&&", Boolean(True)), {}
+        )
+        assert type_result.z3_expr is None
+        assert type_result.failure is not None
+        assert type_result.failure.kind == "type_error"
+        assert "Boolean left operand" in type_result.failure.reason
+
+        right_failure = translate_expr_domain(
+            BinaryOp(Boolean(True), "&&", Variable("missing")), {}
+        )
+        assert right_failure.z3_expr is None
+        assert right_failure.failure is not None
+        assert right_failure.failure.kind == "value_error"
+        assert "missing" in right_failure.failure.reason
 
     def test_unknown_binary_operator_is_structured_failure(self):
         """Unknown operators are normalized instead of leaking raw exceptions."""
@@ -650,7 +744,9 @@ class TestTranslateExprDomain:
                 )
             return original_translate(expr, z3_vars, **kwargs)
 
-        monkeypatch.setattr(domain, "_translate_expr_domain", translate_with_bad_divisor)
+        monkeypatch.setattr(
+            domain, "_translate_expr_domain", translate_with_bad_divisor
+        )
 
         result = translate_expr_domain(BinaryOp(Integer(1), "/", BadDivisor()), {})
 
@@ -737,7 +833,10 @@ class TestMergeDefinednessConstraints:
 
     def test_merge_preserves_contradictory_constraints(self):
         """Merging does not hide contradictions or run solver policy."""
-        from pyfcstm.solver.domain import DomainConstraint, merge_definedness_constraints
+        from pyfcstm.solver.domain import (
+            DomainConstraint,
+            merge_definedness_constraints,
+        )
 
         x = z3.Int("x")
         merged = merge_definedness_constraints(

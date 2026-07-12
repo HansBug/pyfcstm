@@ -10,6 +10,7 @@ pyfcstm.entry
     :maxdepth: 3
 
     base
+    bmc
     cli
     dispatch
     generate

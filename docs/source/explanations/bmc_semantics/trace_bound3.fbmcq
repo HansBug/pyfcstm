@@ -1,0 +1,6 @@
+init state("Root.A");
+
+assume event("Root.Go", 0) == true;
+assume event("Root.Go", 1..2) == false;
+
+check reach <= 3: active("Root.B");

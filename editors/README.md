@@ -4,12 +4,12 @@ Syntax highlighting support for FCSTM (Finite State Machine) DSL.
 
 ## Overview
 
-Two implementations provide syntax highlighting for FCSTM code:
+Two implementations provide syntax highlighting for FCSTM-related code:
 
-1. **Pygments Lexer** - For Sphinx documentation and Python-based tools
-2. **TextMate Grammar** - For GitHub, GitLab, and other platforms supporting TextMate grammars
+1. **Pygments lexers** - For Sphinx documentation and Python-based tools
+2. **TextMate grammars** - For VSCode, GitHub, GitLab, and other platforms supporting TextMate grammars
 
-Both implementations are based on the ANTLR grammar (`pyfcstm/dsl/grammar/Grammar.g4`) and have been thoroughly tested.
+The main `*.fcstm` assets follow the FCSTM DSL grammar. The `*.fbmcq` assets follow the separate FCSTM BMC Query grammar under `pyfcstm/bmc/grammar/`. Both surfaces are syntax highlighters only; model-aware validation remains in the parser, binder, simulator, and verification layers.
 
 ## Quick Start
 
@@ -17,7 +17,7 @@ Both implementations are based on the ANTLR grammar (`pyfcstm/dsl/grammar/Gramma
 
 Pygments is included as a core dependency and is automatically available.
 
-Use in Sphinx RST files:
+Use FCSTM model code in Sphinx RST files:
 
 ```rst
 .. code-block:: fcstm
@@ -45,11 +45,11 @@ lexers['fcsm'] = FcstmLexer()  # Alternative alias
 print("✓ FCSTM Pygments lexer registered successfully")
 ```
 
-This registration should be placed after importing your project metadata and before the Sphinx configuration variables. The lexer will then be automatically available for all `.. code-block:: fcstm` directives in your documentation.
+This registration should be placed after importing your project metadata and before the Sphinx configuration variables. Register `FcstmBmcQueryLexer` in the same place when documentation uses `.. code-block:: fbmcq` or `.. code-block:: fcstm-bmc-query`.
 
 ### TextMate Grammar
 
-The TextMate grammar (`editors/fcstm.tmLanguage.json`) provides syntax highlighting for platforms that support TextMate grammars, including GitHub and GitLab.
+The TextMate grammar (`editors/fcstm.tmLanguage.json`) provides syntax highlighting for platforms that support TextMate grammars, including GitHub and GitLab. The BMC query grammar lives in `editors/fcstm-bmc-query.tmLanguage.json`; the VSCode extension ships copied assets under `editors/vscode/syntaxes/`.
 
 ## Supported Syntax
 
@@ -75,6 +75,23 @@ with the `xor` keyword; `->` remains transition syntax, so implication uses
 **Special Symbols:** `[*]` (pseudo-state), `//` (line comment), `/* */` (block comment), `#` (Python-style comment)
 
 **Import Mapping Forms:** `import "./worker.fcstm" as Worker { ... }`, `def sensor_* -> io_$1;`, `def * -> Worker_${1};`, `event /Start -> Start named "Mapped Start";`
+
+
+### FCSTM BMC Query (`*.fbmcq`)
+
+The BMC query language has its own highlighter so query files do not reuse the main FCSTM model scopes.
+
+**Frozen identifiers:**
+
+- File extension: `.fbmcq`
+- VSCode language id: `fcstm-bmc-query`
+- TextMate scope: `source.fcstm.bmc.query`
+- Pygments aliases: `fbmcq`, `fcstm-bmc-query`
+- MIME type: `text/x-fcstm-bmc-query`
+
+The highlighter covers query clauses (`init`, `assume`, `check`), initial variable policy (`havoc`), property kinds (`reach`, `forbid`, `invariant`, `must_reach`, `exists_always`, `response`, `cover`), BMC atoms (`var`, `cycle`, `active`, `terminated`, `event`, `case`, `call_count`, `called`), call filters (`action`, `step`, `stage`, `role`, `state`, `active_leaf`, `named_ref`, `null`), event cardinality (`at_most_one`), FCSTM-compatible expression operators, literals, strings, and comments. It intentionally does not add `warm` or `hot` init targets because the current `.fbmcq` grammar only accepts `cold`, `terminated`, and `state("...")`.
+
+`^` is highlighted as a numeric bitwise operator. Boolean exclusive-or remains the `xor` keyword.
 
 ## Example
 
@@ -132,7 +149,9 @@ state TrafficLight {
 
 ### Pygments Lexer
 
-**Location:** `pyfcstm/highlight/pygments_lexer.py`
+**Locations:**
+- `pyfcstm/highlight/pygments_lexer.py` for `*.fcstm`
+- `pyfcstm/highlight/bmc_query_lexer.py` for `*.fbmcq`
 
 **Features:**
 - Token-based syntax highlighting
@@ -155,13 +174,16 @@ entry_points={
     ],
     'pygments.lexers': [
         'fcstm = pyfcstm.highlight.pygments_lexer:FcstmLexer',
+        'fbmcq = pyfcstm.highlight.bmc_query_lexer:FcstmBmcQueryLexer',
     ],
 }
 ```
 
 ### TextMate Grammar
 
-**Location:** `editors/fcstm.tmLanguage.json`
+**Locations:**
+- `editors/fcstm.tmLanguage.json` for `*.fcstm`
+- `editors/fcstm-bmc-query.tmLanguage.json` for `*.fbmcq`
 
 **Features:**
 - Scope-based syntax highlighting
@@ -180,11 +202,12 @@ entry_points={
 ### Validation Script
 
 **`editors/validate.py`** - Comprehensive validation:
-- Pygments lexer validation with 20+ checkpoints
-- TextMate grammar synchronization checks for the VSCode-packaged asset
-- Ordering-sensitive operator coverage checks
-- Terminal-based highlighting display
-- Token type verification
+- FCSTM Pygments lexer validation with 20+ checkpoints
+- FCSTM TextMate grammar synchronization checks for the VSCode-packaged asset
+- FBMCQ Pygments lexer metadata and token smoke checks
+- FBMCQ TextMate grammar synchronization and operator-order checks
+- VSCode `package.json` positive checks for `.fbmcq` language/grammar contributions
+- VSCode negative checks to ensure `.fbmcq` does not activate the `.fcstm` preview or language-server surfaces
 
 ### Running Tests
 
@@ -196,9 +219,10 @@ python editors/validate.py
 ### Test Results
 
 All tests pass successfully:
-- Pygments Lexer: PASSED (20/20 checkpoints)
-- Language detection score: 1.00
-- Token generation: 1861 tokens for comprehensive test code
+- FCSTM Pygments: PASSED
+- FCSTM TextMate: PASSED
+- FBMCQ Pygments: PASSED
+- FBMCQ TextMate and VSCode contribution checks: PASSED
 
 ## File Structure
 
@@ -206,12 +230,15 @@ All tests pass successfully:
 pyfcstm/
 ├── pyfcstm/
 │   └── highlight/
-│       ├── __init__.py              # Direct import of FcstmLexer
-│       └── pygments_lexer.py        # Pygments lexer implementation
+│       ├── __init__.py              # Direct import of public lexers
+│       ├── bmc_query_lexer.py       # FBMCQ Pygments lexer implementation
+│       └── pygments_lexer.py        # FCSTM Pygments lexer implementation
 ├── editors/
 │   ├── README.md                    # This file
-│   ├── fcstm.tmLanguage.json        # TextMate grammar
-│   └── validate.py                  # Validation script
+│   ├── fcstm.tmLanguage.json        # FCSTM TextMate grammar
+│   ├── fcstm-bmc-query.tmLanguage.json  # FBMCQ TextMate grammar
+│   ├── validate.py                  # Validation script
+│   └── vscode/syntaxes/             # VSCode-packaged grammar copies
 ├── requirements.txt                 # Includes pygments>=2.10.0
 └── setup.py                         # Updated with Pygments entry point
 ```
@@ -237,11 +264,12 @@ python -c "from pygments.lexers import get_lexer_by_name; print(get_lexer_by_nam
 
 When adding new keywords to the FCSTM grammar:
 
-1. Update `pyfcstm/dsl/grammar/Grammar.g4`
+1. Update the relevant ANTLR grammar: `pyfcstm/dsl/grammar/GrammarParser.g4` / `GrammarLexer.g4` for `*.fcstm`, or `pyfcstm/bmc/grammar/BmcQueryParser.g4` / `BmcQueryLexer.g4` for `*.fbmcq`.
 2. Regenerate parser: `make antlr_build`
 3. Update `pyfcstm/highlight/pygments_lexer.py`
-4. Update `editors/fcstm.tmLanguage.json`
-5. Update `editors/validate.py` to fit the new grammar (if necessary)
+4. Update `editors/fcstm.tmLanguage.json` for `*.fcstm`, or `editors/fcstm-bmc-query.tmLanguage.json` for `*.fbmcq`.
+5. Sync the VSCode grammar copy under `editors/vscode/syntaxes/`.
+6. Update `editors/validate.py` to fit the new grammar (if necessary).
 
 ### Consistency
 
@@ -250,7 +278,7 @@ Both implementations should be kept in sync. The Pygments lexer serves as the re
 ## Related Documentation
 
 - [FCSTM DSL Language Reference](../CLAUDE.md#dsl-language-reference)
-- [ANTLR Grammar](../pyfcstm/dsl/grammar/Grammar.g4)
+- [FCSTM Parser Grammar](../pyfcstm/dsl/grammar/GrammarParser.g4) and [FCSTM Lexer Grammar](../pyfcstm/dsl/grammar/GrammarLexer.g4)
 - [Pygments Documentation](https://pygments.org/)
 - [TextMate Grammar Documentation](https://macromates.com/manual/en/language_grammars)
 

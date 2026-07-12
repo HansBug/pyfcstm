@@ -151,6 +151,20 @@ Diagrams are subject to visual review. If a diagram is added or materially reuse
 check that the image is readable at the chosen width, and state what the figure proves. A figure that merely decorates the
 page is not acceptable evidence.
 
+Diagrams with reader-facing natural-language labels are bilingual artifacts.
+An English and Chinese page must not share one English-labelled Mermaid,
+PlantUML, Graphviz, or equivalent rendered diagram. Maintain separate source
+and rendered assets for both languages, use Chinese explanatory labels in the
+Chinese asset and English labels in the English asset, and make each page
+reference its matching version. Code identifiers, DSL keywords, API names, and
+other literals may remain verbatim inside the Chinese diagram; introduce their
+Chinese meaning in the same label when that improves comprehension. Language-
+neutral logos, raw screenshots whose text is the behavior under test, and
+diagrams containing no natural-language labels may be shared only when the PR
+records why localization is not applicable. Visual review must inspect both
+rendered language variants rather than assuming that translated source has an
+equivalent layout.
+
 ### Strict review rule
 
 Reviewers must apply this section as a merge gate. Missing reference rows, missing examples, missing outputs, missing
@@ -400,6 +414,84 @@ Reference floors:
 - `reference/visualization_options/` must cover the option dataclass, CLI parser value forms, environment variables,
   and failure boundaries instead of listing only friendly presets.
 
+### BMC and mathematical documentation
+
+Bounded model checking documentation must cover the complete path from an
+``.fcstm`` model and ``.fbmcq`` query to a solver result, decoded witness, and
+runtime replay. A BMC documentation PR is not ready when it documents only the
+CLI surface or only copies formulas from Z3 output.
+
+The source-fact inventory must read all applicable production layers:
+
+- `pyfcstm/bmc/grammar/`, `ast.py`, `parse.py`, `listener.py`, `query.py`, and `binding.py` for syntax and contexts;
+- `domain.py`, `source.py`, `macro.py`, `expand.py`, `engine.py`, and `relation.py` for bounded transition construction;
+- `properties.py` and `pipeline.py` for objectives, polarity, definedness, and the compile-only facade;
+- `witness.py` and `errors.py` for solver status, timeout, witness, replay, mismatch, and failures;
+- matching tests under `test/bmc/` and user-entry tests under `test/entry/`.
+
+The four page roles have separate hard floors:
+
+| Role | BMC minimum |
+|---|---|
+| Tutorial | One runnable first-success path with human output, JSON, witness, replay, exit status, and a bounded-result caveat. |
+| How-to | Every task has starting files, exact command, expected output, failure boundary, and next diagnostic step. Together the tasks cover every property kind, initialization, assumptions, calls, CI, timeout, incomplete horizons, and troubleshooting. |
+| Explanation | Define symbols before use; derive the core relation, objectives, solver checks, verdict mapping, witness projection, and replay boundary. Every major equation maps to implementation, test, and a trace. |
+| Reference | Close over grammar, defaults, legal and illegal contexts, CLI options, streams, atomic file effects, exits, JSON nullability, witness/replay, packaging, and unsupported behavior. Every property kind and high-impact family needs at least three non-equivalent legal examples plus a boundary example. |
+
+Reader-facing BMC examples are also a hard gate. Each prose code block should
+demonstrate one claim with the shortest meaningful model, query, command, or
+output excerpt that preserves that claim. Explain the block immediately: name
+what each relevant line contributes, state the expected observation, and say
+what conclusion the reader may and may not draw. Keep complete models and long
+reproduction flows as downloadable checked-in resources, but do not make a
+reader reverse-engineer those resources to understand the page. A generated
+multi-function program, an unexplained helper script, or a long shell/Python
+pipeline is not an acceptable substitute for a focused example, even when it
+runs successfully. When a script is retained for regression or resource
+generation, show the direct user command first and describe the script as
+optional verification infrastructure rather than a prerequisite.
+
+Mathematical pages use inline `:math:` and labelled `.. math::` blocks referenced
+through `:eq:`. Maintain an equation ledger containing label, claim, literal
+LaTeX, implementation symbol, test, working query, and trace. Equivalent
+rewrites do not count as distinct semantic equations. Raw SMT-LIB may be an
+audit appendix but cannot replace derivation.
+
+English and Chinese counterparts must have the same labels and literal LaTeX
+after only line-ending, directive-indent, trailing-space, and outer-blank-line
+normalization. Text inside `\text{...}` remains identical; translate prose
+outside the formula. Automated parity checks prevent drift but do not prove the
+mathematics.
+
+MathJax HTML and XeLaTeX PDF are both hard gates. Verify equation targets,
+reject empty or overflowing formula containers, inspect desktop and mobile
+screenshots, inspect both PDFs, and record human mathematical review. Missing
+one applicable item is Critical even when Sphinx and unit tests are green.
+
+Build English and Chinese HTML into fresh, language-isolated output roots.
+Never reuse a root that may retain both ``index.html`` and ``index_zh.html``;
+that can make a language-insensitive visual checker pass against stale pages.
+Run ``python tools/check_bmc_math_visual.py --check`` before the browser pass.
+The browser pass must select English ``index.html`` and Chinese
+``index_zh.html`` explicitly, report all 12 language/page/viewport checks, and
+write screenshots plus ``report.json`` to a fresh output root.
+
+The user-facing surface also includes root `README.md` and `CLAUDE.md`. Keep
+their feature summary, runnable quick start, bounded/replay caveat, and links in
+sync without copying the full reference or equation ledger into landing pages.
+
+BMC command documentation must make the property verdict the first human
+conclusion. SAT and UNSAT describe the encoded solver objective and reverse
+meaning across witness and counterexample polarities; they belong in the
+diagnostic layer, not in place of ``property holds``, ``property does not
+hold``, or ``inconclusive``. Human examples cover all verdict families,
+primary and horizon timing, replay trust, mismatch diagnostics, and bounded
+scope. Terminal color uses an explicit ``auto|always|never`` contract: ``auto``
+requires a suitable TTY and honors ``NO_COLOR``, while ``always`` may force
+color through a pipe. JSON and output files remain ANSI-free. CI, tools, and LLM examples
+consume the versioned JSON schema and never scrape human wording or live
+timing.
+
 ## Page contracts and failure boundaries
 
 ### Tutorial contract
@@ -565,7 +657,15 @@ For Sphinx source changes, run language-appropriate HTML checks. For broad or bi
 NO_CONTENTS_BUILD=1 READTHEDOCS_LANGUAGE=en sphinx-build -b html docs/source /tmp/pyfcstm-html-check-en
 NO_CONTENTS_BUILD=1 READTHEDOCS_LANGUAGE=zh sphinx-build -b html docs/source /tmp/pyfcstm-html-check-zh
 rg -n 'class="problematic"|<span class="problematic"' /tmp/pyfcstm-html-check-en /tmp/pyfcstm-html-check-zh -g '*.html'
+rg -n '``' /tmp/pyfcstm-html-check-en/{tutorials,how_to,explanations,reference} /tmp/pyfcstm-html-check-zh/{tutorials,how_to,explanations,reference} -g '*.html'
 ```
+
+The second scan catches a different reST failure mode: docutils can absorb bad
+inline-literal boundaries into one malformed ``<code>`` element without
+emitting ``class="problematic"``.  Inspect every hit in user-authored pages and
+either fix the leaked double backticks or document why the literal characters
+are intentional.  Do not use generated ``_modules`` source views as evidence
+for this check.
 
 `rg` is the preferred local scan tool because it is already used throughout this repository's maintainer guidance. If it is not available, use an equivalent recursive grep command, for example:
 

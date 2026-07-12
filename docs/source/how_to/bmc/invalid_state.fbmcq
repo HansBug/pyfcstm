@@ -1,0 +1,1 @@
+check reach <= 1: active("Root.Missing");

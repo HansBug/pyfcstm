@@ -1,0 +1,2 @@
+check forbid <= 2:
+    active("Door.Open") && latch_engaged == 1;

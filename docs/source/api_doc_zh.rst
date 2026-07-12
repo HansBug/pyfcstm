@@ -13,6 +13,7 @@ API 文档
     :hidden:
 
     api_doc/index
+    api_doc/bmc/index
     api_doc/config/index
     api_doc/diagnostics/index
     api_doc/dsl/index
@@ -28,6 +29,7 @@ API 文档
     api_doc/verify/index
 
 * :doc:`api_doc/index`
+* :doc:`api_doc/bmc/index`
 * :doc:`api_doc/config/index`
 * :doc:`api_doc/diagnostics/index`
 * :doc:`api_doc/dsl/index`

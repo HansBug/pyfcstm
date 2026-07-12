@@ -1,0 +1,506 @@
+"""Public API for FCSTM bounded model checking data contracts.
+
+The BMC package is an independent root package for the FCSTM bounded model
+checking workstream. It exposes parser-independent query and expression
+dataclasses, parser entry points, domain numbering snapshots, and macro-step
+source/case contracts while deliberately leaving semantic binding, solver
+lowering, witness replay, and verify-registry integration to separate layers.
+
+Package contracts:
+
+* BMC query objects are parser-independent and data-only in this package.
+* Parser entry points build parser-independent query objects and remain
+  separate from model-aware binding or solver lowering.
+* Domain-numbering and macro-step exports are resolved lazily so parser-only
+  imports do not load ``pyfcstm.model``.
+* Macro-step contracts and expansion are solver-independent and do not import
+  ``z3`` from the root package.
+* Engine exports are resolved lazily; importing :mod:`pyfcstm.bmc` does not
+  prepare queries or load model-aware engine modules.
+* The root package must not depend on ``pyfcstm.verify`` or its registry.
+* The high-level query compilation facade remains compile-only; solving and
+  witness decoding require a separate explicit call.
+* :func:`str` on exported query and expression dataclasses is reserved for the
+  canonical ``.fbmcq`` query DSL spelling.
+* :func:`repr` remains the dataclass debugging representation; callers that need
+  stable machine comparison should use ``to_canonical()``.
+
+Public module structure:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Area
+     - Public entry
+     - Purpose
+   * - Error hierarchy
+     - :class:`BmcError`, :class:`BmcQueryParseError`,
+       :class:`InvalidBmcQuery`,
+       :class:`UnsupportedBmcQuery`, :class:`InvalidBmcEncoding`,
+       :class:`InvalidBmcDomain`, :class:`BmcBuildError`
+     - Provide stable BMC-specific exception types without importing
+       ``pyfcstm.verify``.
+   * - Query parser
+     - :func:`parse_bmc_query`, :func:`parse_bmc_num_expression`,
+       :func:`parse_bmc_cond_expression`,
+       :func:`parse_with_bmc_grammar_entry`,
+       :func:`build_bmc_ast_from_parse_tree`
+     - Convert ``.fbmcq`` text or existing ANTLR parse trees into
+       parser-independent AST/query nodes.
+   * - Query binding
+     - :class:`BmcBindingDiagnostic`, :class:`BoundBmcQuery`,
+       :func:`bind_bmc_query_structure`, :func:`bind_bmc_query`
+     - Validate query semantic contexts and optionally resolve model/domain
+       references without coupling parser-only imports to solver layers.
+   * - Typed expression bases
+     - :class:`BmcExpr`, :class:`BmcNumExpr`, :class:`BmcCondExpr`
+     - Keep FCSTM numeric and condition expression categories explicit.
+   * - FCSTM-compatible numeric expressions
+     - :class:`IntLiteral`, :class:`FloatLiteral`, :class:`NameRef`,
+       :class:`MathConst`, :class:`NumUnaryOp`, :class:`NumBinaryOp`,
+       :class:`NumConditionalOp`, :class:`UFuncCall`
+     - Represent the current FCSTM ``num_expression`` shape.
+   * - FCSTM-compatible condition expressions
+     - :class:`BoolLiteral`, :class:`CondUnaryOp`,
+       :class:`NumericComparison`, :class:`CondBinaryOp`,
+       :class:`CondConditionalOp`
+     - Represent the current FCSTM ``cond_expression`` shape.
+   * - BMC-only query atoms
+     - :class:`FrameVar`, :class:`Cycle`, :class:`Active`,
+       :class:`Terminated`, :class:`Event`, :class:`Case`,
+       :class:`CallCount`, :class:`Called`
+     - Represent frame variables, cycle counters, active state, selected event,
+       selected macro-step case, termination, and abstract-call count/existence
+       predicates.
+   * - BMC domain model
+     - :class:`StateDomainEntry`, :class:`EventDomainEntry`,
+       :class:`VarDomainEntry`, :class:`FrameRef`, :class:`StepRef`,
+       :class:`EventInputRef`, :class:`BmcDomain`,
+       :func:`build_bmc_domain`
+     - Lazily number model states, events, persistent variables, frames, steps,
+       sentinel states, and event-input slots before solver lowering.
+   * - Macro-step sources
+     - :class:`MacroStepSource`, :func:`source_from_initial_spec`,
+       :func:`init_source`, :func:`entry_source`,
+       :func:`stable_leaf_source`, :func:`terminated_source`
+     - Describe cold-init, hot-entry, stable-leaf, and terminated source
+       profiles without reading initial ``where`` predicates or building
+       solver relations.
+   * - Macro-step case data
+     - :class:`BoolTemplate`, :class:`EventUse`,
+       :class:`GuardRequirement`, :class:`PriorityExclusion`,
+       :class:`ActionBlock`, :class:`CycleCase`,
+       :class:`MacroStepFormal`, :class:`PartitionCheckResult`
+     - Freeze case labels, control-path conditions, anchored guards,
+       runtime action blocks, ordered event consumption, source-local buckets,
+       and build-time partition summaries.
+   * - Macro-step case helpers
+     - :func:`case_path_condition`, :func:`terminated_absorb_case`,
+       :func:`build_fallback_case`, :func:`build_semantic_delta_case`,
+       :func:`verify_boolean_partition`, :func:`verify_source_partition`
+     - Construct terminated absorb, fallback, and semantic-delta cases while
+       keeping partition self-checks outside formal trace formulas.
+   * - Macro-step expansion
+     - :class:`MacroExpansionOptions`, :func:`expand_macro_step_cases`
+     - Expand source profiles into runtime-aligned, solver-independent macro-step
+       cases consumed by later relation builders.
+   * - BMC engine preparation
+     - :class:`BmcOptions`, :class:`BmcPreparedContext`,
+       :class:`BmcEngine`, :func:`prepare_bmc_query`
+     - Prepare ``StateMachine + .fbmcq`` inputs into bound query and domain
+       context without solver, witness, CLI, or verify-registry coupling.
+   * - BMC relation builder
+     - :class:`BmcAbstractCallRecord`, :class:`BmcTraceSymbols`,
+       :class:`BmcCaseRelation`, :class:`BmcStepRelation`, :class:`BmcCoreFormula`,
+       :func:`build_bmc_core_formula`
+     - Lower prepared contexts and macro-step cases into ``Core_N`` while
+       exposing selected-case abstract-call records and leaving health gates,
+       objectives, solving, and witness replay to later modules.
+   * - BMC property compiler
+     - :class:`BmcPropertyFormula`, :func:`compile_bmc_property`
+     - Compile the bound query ``check`` clause into a solver objective layered
+       on top of ``Core_N`` without solving or witness replay.
+   * - BMC query compilation facade
+     - :func:`compile_bmc_query`
+     - Compose query preparation, ``Core_N`` construction, and property
+       compilation into a solve-ready formula without starting a solver.
+   * - BMC solver and witness decoding
+     - :class:`BmcSolveResult`, :class:`BmcWitnessTrace`,
+       :class:`BmcWitnessFrame`, :class:`BmcWitnessStep`,
+       :class:`BmcWitnessEvent`, :class:`BmcWitnessCallRecord`,
+       :func:`solve_bmc_property`, :func:`decode_bmc_witness`
+     - Solve compiled property formulas and decode SAT models into JSON-stable
+       macro-step witness traces with complete cycle event accounting.
+   * - BMC witness replay
+     - :class:`BmcReplayResult`, :class:`BmcReplayMismatch`,
+       :func:`replay_bmc_witness`
+     - Replay decoded witnesses through ``SimulationRuntime`` and return
+       structured mismatch diagnostics.
+   * - Query root model
+     - :class:`InitialVariablePolicy`, :class:`InitialSpec`,
+       :class:`BmcAssumption`, :class:`FrameAssumption`, :class:`EventAssumption`,
+       :class:`EventCardinalityAssumption`, :class:`BmcProperty`,
+       :class:`BmcQuery`
+     - Capture top-level ``*.fbmcq`` query structure, including initial
+       variable initializer policy, before parser, binder, or solver-specific
+       phases.
+
+Example::
+
+    >>> from pyfcstm.bmc import Active, BmcProperty, BmcQuery
+    >>> query = BmcQuery(property=BmcProperty("reach", 2, predicate=Active("Root.Done")))
+    >>> query.to_canonical()["property"]["kind"]
+    'reach'
+"""
+
+from .ast import (
+    Active,
+    BmcCondExpr,
+    BmcExpr,
+    BmcNumExpr,
+    BoolLiteral,
+    CallCount,
+    CallFilter,
+    CallStepPoint,
+    CallStepSelector,
+    Called,
+    Case,
+    CondBinaryOp,
+    CondConditionalOp,
+    CondUnaryOp,
+    Cycle,
+    Event,
+    FloatLiteral,
+    FrameVar,
+    IntLiteral,
+    MathConst,
+    NameRef,
+    NumBinaryOp,
+    NumConditionalOp,
+    NumUnaryOp,
+    NumericComparison,
+    Terminated,
+    UFuncCall,
+)
+from .errors import (
+    BmcBuildError,
+    BmcError,
+    BmcQueryParseError,
+    InvalidBmcDomain,
+    InvalidBmcEncoding,
+    InvalidBmcQuery,
+    UnsupportedBmcQuery,
+)
+from .parse import (
+    build_bmc_ast_from_parse_tree,
+    parse_bmc_cond_expression,
+    parse_bmc_num_expression,
+    parse_bmc_query,
+    parse_with_bmc_grammar_entry,
+)
+from .query import (
+    BmcAssumption,
+    BmcProperty,
+    BmcQuery,
+    EventAssumption,
+    EventCardinalityAssumption,
+    FrameAssumption,
+    InitialVariablePolicy,
+    InitialSpec,
+)
+
+_BINDING_EXPORTS = {
+    "BmcBindingDiagnostic",
+    "BoundReference",
+    "BoundInitialSpec",
+    "BoundAssumption",
+    "BoundProperty",
+    "BoundBmcQuery",
+    "bind_bmc_query_structure",
+    "bind_bmc_query",
+}
+
+_DOMAIN_EXPORTS = {
+    "STATE_INIT_ID",
+    "STATE_TERMINATE_ID",
+    "StateDomainEntry",
+    "EventDomainEntry",
+    "VarDomainEntry",
+    "FrameRef",
+    "StepRef",
+    "EventInputRef",
+    "BmcDomain",
+    "build_bmc_domain",
+}
+
+_SOURCE_EXPORTS = {
+    "INIT_CASE_PATH",
+    "TERMINATE_CASE_PATH",
+    "MacroStepSource",
+    "init_source",
+    "entry_source",
+    "stable_leaf_source",
+    "terminated_source",
+    "source_from_initial_spec",
+}
+
+_EXPAND_EXPORTS = {
+    "MacroExpansionOptions",
+    "expand_macro_step_cases",
+}
+
+_MACRO_EXPORTS = {
+    "BoolTemplate",
+    "EventUse",
+    "GuardRequirement",
+    "PriorityExclusion",
+    "ActionBlock",
+    "CycleCase",
+    "PartitionCheckResult",
+    "MacroStepFormal",
+    "case_path_condition",
+    "terminated_absorb_case",
+    "build_fallback_case",
+    "build_semantic_delta_case",
+    "verify_boolean_partition",
+    "verify_source_partition",
+}
+
+_ENGINE_EXPORTS = {
+    "BmcOptions",
+    "BmcPreparedContext",
+    "BmcEngine",
+    "prepare_bmc_query",
+}
+
+_RELATION_EXPORTS = {
+    "BmcAbstractCallRecord",
+    "BmcTraceSymbols",
+    "BmcCaseRelation",
+    "BmcStepRelation",
+    "BmcCoreFormula",
+    "build_bmc_core_formula",
+}
+
+_PROPERTY_EXPORTS = {
+    "BmcPropertyFormula",
+    "compile_bmc_property",
+}
+
+_PIPELINE_EXPORTS = {
+    "compile_bmc_query",
+}
+
+_WITNESS_EXPORTS = {
+    "BmcSolveStatus",
+    "BmcEventDecodePolicy",
+    "BmcSolveResult",
+    "BmcWitnessEvent",
+    "BmcWitnessCallRecord",
+    "BmcWitnessFrame",
+    "BmcWitnessStep",
+    "BmcWitnessTrace",
+    "BmcRuntimeFrame",
+    "BmcRuntimeStep",
+    "BmcRuntimeTrace",
+    "BmcReplayMismatch",
+    "BmcReplayResult",
+    "solve_bmc_property",
+    "decode_bmc_witness",
+    "replay_bmc_witness",
+}
+
+_LAZY_EXPORT_MODULES = {
+    "pyfcstm.bmc.binding": _BINDING_EXPORTS,
+    "pyfcstm.bmc.domain": _DOMAIN_EXPORTS,
+    "pyfcstm.bmc.source": _SOURCE_EXPORTS,
+    "pyfcstm.bmc.macro": _MACRO_EXPORTS,
+    "pyfcstm.bmc.expand": _EXPAND_EXPORTS,
+    "pyfcstm.bmc.engine": _ENGINE_EXPORTS,
+    "pyfcstm.bmc.relation": _RELATION_EXPORTS,
+    "pyfcstm.bmc.properties": _PROPERTY_EXPORTS,
+    "pyfcstm.bmc.pipeline": _PIPELINE_EXPORTS,
+    "pyfcstm.bmc.witness": _WITNESS_EXPORTS,
+}
+
+
+def __getattr__(name: str):
+    """Lazily resolve model-aware binding, compilation, and solver exports.
+
+    Binding, domain numbering, macro-step helpers, and the preparation engine
+    are kept behind lazy exports so parser-only callers can import
+    :mod:`pyfcstm.bmc` without loading model-aware or later BMC layers. This
+    preserves the convenience API while keeping parse/query data structures
+    independent from solver and verify-registry wiring.
+
+    :param name: Attribute name requested from :mod:`pyfcstm.bmc`.
+    :type name: str
+    :return: The requested lazy export.
+    :rtype: object
+    :raises AttributeError: If ``name`` is not a public lazy export.
+
+    Example::
+
+        >>> import pyfcstm.bmc as bmc
+        >>> bmc.STATE_TERMINATE_ID
+        -1
+        >>> callable(bmc.bind_bmc_query_structure)
+        True
+    """
+    import importlib
+
+    for module_name, exports in _LAZY_EXPORT_MODULES.items():
+        if name in exports:
+            value = getattr(importlib.import_module(module_name), name)
+            globals()[name] = value
+            return value
+    raise AttributeError("module 'pyfcstm.bmc' has no attribute %r" % name)
+
+
+def __dir__():
+    """Return public module attributes including lazy BMC layer exports.
+
+    :return: Sorted attribute names for interactive discovery.
+    :rtype: list
+
+    Example::
+
+        >>> import pyfcstm.bmc as bmc
+        >>> 'BmcDomain' in dir(bmc)
+        True
+    """
+    return sorted(
+        set(globals())
+        | _BINDING_EXPORTS
+        | _DOMAIN_EXPORTS
+        | _SOURCE_EXPORTS
+        | _MACRO_EXPORTS
+        | _EXPAND_EXPORTS
+        | _ENGINE_EXPORTS
+        | _RELATION_EXPORTS
+        | _PROPERTY_EXPORTS
+        | _PIPELINE_EXPORTS
+        | _WITNESS_EXPORTS
+    )
+
+
+__all__ = [
+    "BmcError",
+    "BmcQueryParseError",
+    "InvalidBmcQuery",
+    "UnsupportedBmcQuery",
+    "InvalidBmcEncoding",
+    "InvalidBmcDomain",
+    "BmcBuildError",
+    "parse_bmc_query",
+    "parse_bmc_num_expression",
+    "parse_bmc_cond_expression",
+    "parse_with_bmc_grammar_entry",
+    "build_bmc_ast_from_parse_tree",
+    "BmcExpr",
+    "BmcNumExpr",
+    "BmcCondExpr",
+    "IntLiteral",
+    "FloatLiteral",
+    "BoolLiteral",
+    "NameRef",
+    "MathConst",
+    "NumUnaryOp",
+    "NumBinaryOp",
+    "NumConditionalOp",
+    "UFuncCall",
+    "CondUnaryOp",
+    "NumericComparison",
+    "CondBinaryOp",
+    "CondConditionalOp",
+    "FrameVar",
+    "Cycle",
+    "CallStepPoint",
+    "CallStepSelector",
+    "CallFilter",
+    "CallCount",
+    "Active",
+    "Terminated",
+    "Event",
+    "Case",
+    "Called",
+    "InitialVariablePolicy",
+    "InitialSpec",
+    "BmcAssumption",
+    "FrameAssumption",
+    "EventAssumption",
+    "EventCardinalityAssumption",
+    "BmcProperty",
+    "BmcQuery",
+    "BmcBindingDiagnostic",
+    "BoundReference",
+    "BoundInitialSpec",
+    "BoundAssumption",
+    "BoundProperty",
+    "BoundBmcQuery",
+    "bind_bmc_query_structure",
+    "bind_bmc_query",
+    "STATE_INIT_ID",
+    "STATE_TERMINATE_ID",
+    "StateDomainEntry",
+    "EventDomainEntry",
+    "VarDomainEntry",
+    "FrameRef",
+    "StepRef",
+    "EventInputRef",
+    "BmcDomain",
+    "build_bmc_domain",
+    "INIT_CASE_PATH",
+    "TERMINATE_CASE_PATH",
+    "MacroStepSource",
+    "init_source",
+    "entry_source",
+    "stable_leaf_source",
+    "terminated_source",
+    "source_from_initial_spec",
+    "MacroExpansionOptions",
+    "expand_macro_step_cases",
+    "BoolTemplate",
+    "EventUse",
+    "GuardRequirement",
+    "PriorityExclusion",
+    "ActionBlock",
+    "CycleCase",
+    "PartitionCheckResult",
+    "MacroStepFormal",
+    "case_path_condition",
+    "terminated_absorb_case",
+    "build_fallback_case",
+    "build_semantic_delta_case",
+    "verify_boolean_partition",
+    "verify_source_partition",
+    "BmcOptions",
+    "BmcPreparedContext",
+    "BmcEngine",
+    "prepare_bmc_query",
+    "BmcAbstractCallRecord",
+    "BmcTraceSymbols",
+    "BmcCaseRelation",
+    "BmcStepRelation",
+    "BmcCoreFormula",
+    "build_bmc_core_formula",
+    "BmcPropertyFormula",
+    "compile_bmc_property",
+    "compile_bmc_query",
+    "BmcSolveStatus",
+    "BmcEventDecodePolicy",
+    "BmcSolveResult",
+    "BmcWitnessEvent",
+    "BmcWitnessCallRecord",
+    "BmcWitnessFrame",
+    "BmcWitnessStep",
+    "BmcWitnessTrace",
+    "BmcRuntimeFrame",
+    "BmcRuntimeStep",
+    "BmcRuntimeTrace",
+    "BmcReplayMismatch",
+    "BmcReplayResult",
+    "solve_bmc_property",
+    "decode_bmc_witness",
+    "replay_bmc_witness",
+]

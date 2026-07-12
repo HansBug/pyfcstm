@@ -33,15 +33,6 @@ GROUP2_SMT_LOCAL = (
     "composite_init_guards_incomplete",
 )
 
-GROUP3_BMC_PLACEHOLDERS = (
-    "bounded_reachability",
-    "symbolic_bfs",
-    "bounded_safety",
-    "bounded_invariant",
-    "path_witness",
-)
-
-
 def _parse(src: str) -> StateMachine:
     ast = parse_with_grammar_entry(src, "state_machine_dsl")
     return cast(StateMachine, parse_dsl_node_to_state_machine(ast))
@@ -906,7 +897,7 @@ def test_event_emission_to_consumer_reachable_handles_init_event_source_as_reach
     assert topology.event_emission_to_consumer_reachable(machine) == tuple()
 
 
-def test_registry_wires_group1_impls_and_preserves_later_placeholders():
+def test_registry_wires_group1_topology_implementations():
     topology = _import_topology()
 
     expected_impls = {
@@ -923,13 +914,6 @@ def test_registry_wires_group1_impls_and_preserves_later_placeholders():
     }
     for name in GROUP1_TOPOLOGY:
         assert REGISTRY[name].impl is expected_impls[name]
-
-
-def test_registry_preserves_group3_placeholders_after_topology_and_smt_local():
-    for name in GROUP3_BMC_PLACEHOLDERS:
-        assert REGISTRY[name].impl is None
-
-
 def test_topology_module_stays_independent_from_diagnostics_package():
     topology = _import_topology()
 

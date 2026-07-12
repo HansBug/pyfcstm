@@ -63,11 +63,8 @@ from ..verify.taxonomy import (
 )
 
 
-_INSPECT_COMPLEXITY_CHOICES = tuple(COMPLEXITY_TIER_ORDER) + ("bmc_search",)
-_INSPECT_CALL_COUNT_CHOICES = CALL_COUNT_SCALING_ORDER + (
-    "k_unrollings",
-    "k_unrollings_times_branching",
-)
+_INSPECT_COMPLEXITY_CHOICES = tuple(COMPLEXITY_TIER_ORDER)
+_INSPECT_CALL_COUNT_CHOICES = tuple(CALL_COUNT_SCALING_ORDER)
 _INSPECT_OUTPUT_FORMAT_CHOICES = ("human", "json", "llm-json", "llm-md")
 _INSPECT_COLOR_CHOICES = ("auto", "always", "never")
 
@@ -106,10 +103,9 @@ def _validate_inspect_policy(
 ) -> None:
     """Validate inspect policy knobs before the CLI reads an input model.
 
-    The Click layer accepts the full taxonomy labels so forbidden labels can
-    produce the same domain-specific policy error as the inspect adapter.  The
-    CLI must still reject those labels before parsing a user file, even when
-    ``--enable-verify`` is not passed.
+    The Click layer rejects values outside the public choices before invoking
+    this function. Programmatic callers still receive controlled errors before
+    any input file is read.
 
     :param max_complexity_tier: Maximum verify complexity tier requested by
         the caller.
@@ -125,34 +121,24 @@ def _validate_inspect_policy(
     Examples::
 
         >>> _validate_inspect_policy("structural", "linear_in_transitions")
-        >>> _validate_inspect_policy("bmc_search", "linear_in_transitions")
+        >>> _validate_inspect_policy("unknown_tier", "linear_in_transitions")
         Traceback (most recent call last):
         ...
-        pyfcstm.verify.inspect_adapter.InspectAccessForbiddenError: bmc_search algorithms are not allowed in automatic inspect runs
-        >>> _validate_inspect_policy("structural", "k_unrollings")
+        pyfcstm.verify.inspect_adapter.InspectAccessForbiddenError: unknown inspect complexity tier: 'unknown_tier'
+        >>> _validate_inspect_policy("structural", "unknown_scaling")
         Traceback (most recent call last):
         ...
-        pyfcstm.verify.inspect_adapter.InspectAccessForbiddenError: call-count scaling 'k_unrollings' is not allowed in automatic inspect runs
+        pyfcstm.verify.inspect_adapter.InspectAccessForbiddenError: unknown inspect call-count scaling: 'unknown_scaling'
     """
-    if max_complexity_tier == "bmc_search":
-        raise InspectAccessForbiddenError(
-            "bmc_search algorithms are not allowed in automatic inspect runs"
-        )
     if max_complexity_tier not in COMPLEXITY_TIER_ORDER:
         raise InspectAccessForbiddenError(
             "unknown inspect complexity tier: {maximum!r}".format(
                 maximum=max_complexity_tier
             )
         )
-    if max_call_count_scaling not in _INSPECT_CALL_COUNT_CHOICES:
-        raise InspectAccessForbiddenError(
-            "unknown inspect call-count scaling: {maximum!r}".format(
-                maximum=max_call_count_scaling
-            )
-        )
     if max_call_count_scaling not in CALL_COUNT_SCALING_ORDER:
         raise InspectAccessForbiddenError(
-            "call-count scaling {maximum!r} is not allowed in automatic inspect runs".format(
+            "unknown inspect call-count scaling: {maximum!r}".format(
                 maximum=max_call_count_scaling
             )
         )
@@ -322,7 +308,7 @@ def build_inspect_json(
         )
     except InspectAccessForbiddenError as err:
         # _validate_inspect_policy and inspect_model reject forbidden automatic
-        # inspect verify policies such as BMC search.
+        # inspect verify policies such as unknown tiers or scaling values.
         raise ClickErrorException(str(err))
 
     return (
@@ -443,7 +429,7 @@ def build_inspect_output(
         )
     except InspectAccessForbiddenError as err:
         # _validate_inspect_policy and inspect_model reject forbidden
-        # automatic inspect verify policies such as BMC search.
+        # automatic inspect verify policies such as unknown tiers or scaling values.
         raise ClickErrorException(str(err))
 
     if output_format == "human":
@@ -527,20 +513,14 @@ def _add_inspect_subcommand(cli: click.Group) -> click.Group:
         type=click.Choice(_INSPECT_COMPLEXITY_CHOICES, case_sensitive=True),
         default="structural",
         show_default=True,
-        help=(
-            "Maximum verify complexity tier accepted by inspect; bmc_search is "
-            "parsed only to report a policy error."
-        ),
+        help="Maximum verify complexity tier accepted by inspect.",
     )
     @click.option(
         "--max-call-count-scaling",
         type=click.Choice(_INSPECT_CALL_COUNT_CHOICES, case_sensitive=True),
         default="linear_in_transitions",
         show_default=True,
-        help=(
-            "Maximum verify call-count scaling accepted by inspect; "
-            "k_unrollings values are parsed only to report a policy error."
-        ),
+        help="Maximum verify call-count scaling accepted by inspect.",
     )
     @click.option(
         "--smt-timeout-ms",

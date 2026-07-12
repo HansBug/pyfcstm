@@ -124,6 +124,18 @@
           ".fcstm"
         ],
         "configuration": "./language-configuration.json"
+      },
+      {
+        "id": "fcstm-bmc-query",
+        "aliases": [
+          "FCSTM BMC Query",
+          "fbmcq",
+          "fcstm-bmc-query"
+        ],
+        "extensions": [
+          ".fbmcq"
+        ],
+        "configuration": "./language-configuration.json"
       }
     ],
     "grammars": [
@@ -131,6 +143,11 @@
         "language": "fcstm",
         "scopeName": "source.fcstm",
         "path": "./syntaxes/fcstm.tmLanguage.json"
+      },
+      {
+        "language": "fcstm-bmc-query",
+        "scopeName": "source.fcstm.bmc.query",
+        "path": "./syntaxes/fcstm-bmc-query.tmLanguage.json"
       }
     ],
     "snippets": [

@@ -35,7 +35,7 @@ import argparse
 import shlex
 import sys
 from pathlib import Path
-from typing import Dict, List, Mapping, MutableMapping, Sequence, Set, Tuple
+from typing import Dict, FrozenSet, List, Mapping, MutableMapping, Sequence, Set, Tuple
 
 import click
 
@@ -53,6 +53,11 @@ _LANG_FILES = {
     "zh": _REPO_ROOT / "docs/source/reference/cli/index_zh.rst",
 }
 
+_BMC_LANG_FILES = {
+    "en": _REPO_ROOT / "docs/source/reference/bmc_results/index.rst",
+    "zh": _REPO_ROOT / "docs/source/reference/bmc_results/index_zh.rst",
+}
+
 _MARKER_SCHEMAS = {
     "cli-ref-command": (frozenset(("name",)), frozenset()),
     "cli-ref-option": (
@@ -63,6 +68,28 @@ _MARKER_SCHEMAS = {
 }
 
 _REQUIRED_BOUNDARIES = {
+    "bmc": frozenset(
+        (
+            "stdout",
+            "stderr",
+            "exit-status",
+            "side-effects",
+            "success-signal",
+            "failure-taxonomy",
+            "human",
+            "json",
+            "atomic-output",
+            "witness",
+            "replay",
+            "dual-check",
+            "response-cause",
+            "packaging",
+            "property-verdict",
+            "color",
+            "timing",
+            "llm-consumption",
+        )
+    ),
     "generate": frozenset(
         (
             "stdout",
@@ -272,7 +299,11 @@ def _boundary_markers(
 
 
 def _check_one(
-    path: Path, command_facts: Mapping[str, Mapping[str, _OptionFact]]
+    path: Path,
+    command_facts: Mapping[str, Mapping[str, _OptionFact]],
+    *,
+    required_boundaries: Mapping[str, FrozenSet[str]],
+    include_top_level_options: bool,
 ) -> List[str]:
     errors: List[str] = []
     try:
@@ -299,9 +330,10 @@ def _check_one(
         for command, options in command_facts.items()
         for option in options
     }
-    expected_options.update(
-        ("top-level", option) for option in _MANUAL_TOP_LEVEL_OPTIONS
-    )
+    if include_top_level_options:
+        expected_options.update(
+            ("top-level", option) for option in _MANUAL_TOP_LEVEL_OPTIONS
+        )
     for command, option in sorted(expected_options - found_options):
         errors.append(
             "%s missing cli-ref-option command=%s option=%s" % (path, command, option)
@@ -353,7 +385,7 @@ def _check_one(
             )
 
     found_boundaries = _boundary_markers(markers)
-    for command, required in sorted(_REQUIRED_BOUNDARIES.items()):
+    for command, required in sorted(required_boundaries.items()):
         missing = required - found_boundaries.get(command, set())
         if missing:
             errors.append(
@@ -363,12 +395,63 @@ def _check_one(
     return errors
 
 
+def _marker_fingerprint(
+    path: Path,
+) -> Set[Tuple[str, Tuple[str, ...], Tuple[str, ...]]]:
+    markers = _collect_markers(path)
+    result: Set[Tuple[str, Tuple[str, ...], Tuple[str, ...]]] = set()
+    for group, entries in markers.items():
+        for values, flags in entries:
+            value_tokens = tuple(
+                "%s=%s" % (key, value) for key, value in sorted(values.items())
+            )
+            result.add((group, value_tokens, tuple(sorted(flags))))
+    return result
+
+
 def check() -> None:
     """Run all CLI reference marker checks."""
     errors: List[str] = []
     command_facts = _command_option_facts()
+    core_facts = {
+        command: facts for command, facts in command_facts.items() if command != "bmc"
+    }
+    core_boundaries = {
+        command: boundaries
+        for command, boundaries in _REQUIRED_BOUNDARIES.items()
+        if command != "bmc"
+    }
     for path in _LANG_FILES.values():
-        errors.extend(_check_one(path, command_facts))
+        errors.extend(
+            _check_one(
+                path,
+                core_facts,
+                required_boundaries=core_boundaries,
+                include_top_level_options=True,
+            )
+        )
+    bmc_facts = {"bmc": command_facts["bmc"]}
+    bmc_boundaries = {"bmc": _REQUIRED_BOUNDARIES["bmc"]}
+    for path in _BMC_LANG_FILES.values():
+        errors.extend(
+            _check_one(
+                path,
+                bmc_facts,
+                required_boundaries=bmc_boundaries,
+                include_top_level_options=False,
+            )
+        )
+    try:
+        en_markers = _marker_fingerprint(_BMC_LANG_FILES["en"])
+        zh_markers = _marker_fingerprint(_BMC_LANG_FILES["zh"])
+    except CheckFailure as err:
+        # CheckFailure: malformed BMC markers cannot participate in parity.
+        errors.append(str(err))
+    else:
+        if en_markers != zh_markers:
+            errors.append(
+                "BMC CLI reference marker sets differ between English and Chinese."
+            )
     if errors:
         raise CheckFailure(
             "CLI reference documentation is out of sync:\n" + "\n".join(errors)

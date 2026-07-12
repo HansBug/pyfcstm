@@ -21,8 +21,8 @@ Examples::
     >>> names = [result.algorithm_name for result in run_inspect_algorithms(machine)]
     >>> "topological_reachable_set" in names
     True
-    >>> "bounded_reachability" in names
-    False
+    >>> all(name in names for name in ("unreachable_states", "topological_finite"))
+    True
 
 Module map:
 
@@ -187,30 +187,20 @@ def _order_allows(order, value, maximum):
 def _validate_max_complexity_tier(maximum: ComplexityTier) -> None:
     """Validate an inspect complexity-tier limit.
 
-    Automatic inspect runs are intentionally forbidden from enabling
-    ``"bmc_search"`` through the generic limit knob.  BMC-style algorithms
-    require explicit user queries because their cost depends on search depth and
-    branching rather than a bounded local model dimension.
-
     :param maximum: Maximum complexity tier requested by the caller.
     :type maximum: ComplexityTier
     :return: ``None``.
     :rtype: None
-    :raises InspectAccessForbiddenError: If ``maximum`` is unknown or requests
-        the forbidden ``"bmc_search"`` tier.
+    :raises InspectAccessForbiddenError: If ``maximum`` is unknown.
 
     Examples::
 
         >>> _validate_max_complexity_tier("structural")
-        >>> _validate_max_complexity_tier("bmc_search")
+        >>> _validate_max_complexity_tier("unknown_tier")
         Traceback (most recent call last):
         ...
-        pyfcstm.verify.inspect_adapter.InspectAccessForbiddenError: bmc_search algorithms are not allowed in automatic inspect runs
+        pyfcstm.verify.inspect_adapter.InspectAccessForbiddenError: unknown inspect complexity tier: 'unknown_tier'
     """
-    if maximum == "bmc_search":
-        raise InspectAccessForbiddenError(
-            "bmc_search algorithms are not allowed in automatic inspect runs"
-        )
     if maximum not in COMPLEXITY_TIER_ORDER:
         raise InspectAccessForbiddenError(
             "unknown inspect complexity tier: {maximum!r}".format(maximum=maximum)
@@ -224,22 +214,19 @@ def _validate_max_call_count_scaling(maximum: CallCountScaling) -> None:
     :type maximum: CallCountScaling
     :return: ``None``.
     :rtype: None
-    :raises InspectAccessForbiddenError: If ``maximum`` is outside the automatic
-        inspect ordering.
+    :raises InspectAccessForbiddenError: If ``maximum`` is unknown.
 
     Examples::
 
         >>> _validate_max_call_count_scaling("linear_in_transitions")
-        >>> _validate_max_call_count_scaling("k_unrollings")
+        >>> _validate_max_call_count_scaling("unknown_scaling")
         Traceback (most recent call last):
         ...
-        pyfcstm.verify.inspect_adapter.InspectAccessForbiddenError: call-count scaling 'k_unrollings' is not allowed in automatic inspect runs
+        pyfcstm.verify.inspect_adapter.InspectAccessForbiddenError: unknown inspect call-count scaling: 'unknown_scaling'
     """
     if maximum not in CALL_COUNT_SCALING_ORDER:
         raise InspectAccessForbiddenError(
-            "call-count scaling {maximum!r} is not allowed in automatic inspect runs".format(
-                maximum=maximum
-            )
+            "unknown inspect call-count scaling: {maximum!r}".format(maximum=maximum)
         )
 
 
@@ -284,29 +271,30 @@ def eligible_for_inspect(
 
     :param meta: Algorithm metadata to evaluate.
     :type meta: VerifyAlgorithmMeta
-    :param max_complexity_tier: Maximum allowed non-BMC complexity tier.
+    :param max_complexity_tier: Maximum allowed complexity tier.
     :type max_complexity_tier: ComplexityTier
     :param max_call_count_scaling: Maximum allowed inspect call-count scaling.
     :type max_call_count_scaling: CallCountScaling
     :return: ``True`` if the algorithm is eligible for inspect automation.
     :rtype: bool
-    :raises InspectAccessForbiddenError: If ``max_complexity_tier`` is
-        ``'bmc_search'`` or if either inspect limit is outside the automatic
-        inspect ordering.
+    :raises InspectAccessForbiddenError: If either inspect limit is outside the
+        automatic inspect ordering.
 
     Examples::
 
+        >>> from dataclasses import replace
         >>> from pyfcstm.verify.registry import REGISTRY
         >>> eligible_for_inspect(REGISTRY["topological_reachable_set"])
         True
-        >>> eligible_for_inspect(REGISTRY["bounded_reachability"])
+        >>> queried = replace(
+        ...     REGISTRY["topological_reachable_set"], closedness="queried"
+        ... )
+        >>> eligible_for_inspect(queried)
         False
     """
     _validate_max_complexity_tier(max_complexity_tier)
     _validate_max_call_count_scaling(max_call_count_scaling)
     if meta.closedness != "closed":
-        return False
-    if meta.complexity_tier == "bmc_search":
         return False
     if not _order_allows(
         COMPLEXITY_TIER_ORDER,
@@ -327,7 +315,7 @@ def iter_inspect_eligible(
     """
     Iterate over registry algorithms eligible for inspect automation.
 
-    :param max_complexity_tier: Maximum allowed non-BMC complexity tier.
+    :param max_complexity_tier: Maximum complexity tier accepted by inspect.
     :type max_complexity_tier: ComplexityTier
     :param max_call_count_scaling: Maximum allowed inspect call-count scaling.
     :type max_call_count_scaling: CallCountScaling
@@ -441,8 +429,16 @@ def _missing_impl_result(meta: VerifyAlgorithmMeta) -> InspectRunResult:
 
     Examples::
 
+        >>> from dataclasses import replace
         >>> from pyfcstm.verify.registry import REGISTRY
-        >>> result = _missing_impl_result(REGISTRY["bounded_reachability"])
+        >>> meta = replace(
+        ...     REGISTRY["topological_reachable_set"],
+        ...     name="custom_missing",
+        ...     impl=None,
+        ... )
+        >>> result = _missing_impl_result(meta)
+        >>> result.algorithm_name
+        'custom_missing'
         >>> result.result_kind
         'undecidable_skip'
     """
@@ -697,13 +693,13 @@ def run_inspect_algorithms(
 
     The function is the execution half of the inspect adapter.  It reuses
     :func:`eligible_for_inspect` as the only admission policy, runs algorithms
-    in registry order, keeps planned ``impl=None`` entries as controlled skip
+    in registry order, keeps custom ``impl=None`` entries as controlled skip
     results when they are otherwise eligible, and never emits diagnostics-layer
     objects directly.
 
     :param machine: State machine to verify.
     :type machine: StateMachine
-    :param max_complexity_tier: Maximum non-BMC complexity tier allowed by the
+    :param max_complexity_tier: Maximum complexity tier allowed by the
         inspect policy, defaults to ``"structural"``.
     :type max_complexity_tier: ComplexityTier, optional
     :param max_call_count_scaling: Maximum call-count scaling allowed by the

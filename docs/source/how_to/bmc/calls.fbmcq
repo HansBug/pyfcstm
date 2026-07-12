@@ -1,0 +1,4 @@
+init state("Root.Idle");
+check reach <= 1:
+    called("Root.Idle.Tick", step=0, role="leaf_during", where x == 0)
+    && call_count("Root.Idle.Tick", step=*) == 1;

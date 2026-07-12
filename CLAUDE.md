@@ -70,7 +70,8 @@ Broad `except Exception:` (Python) / `} catch {` / `} catch (e) {` (TypeScript /
 
 Applies to all code in [pyfcstm/](pyfcstm/), [editors/jsfcstm/src/](editors/jsfcstm/src/),
 [editors/vscode/src/](editors/vscode/src/), and any new code under those trees. Auto-generated grammar files
-([pyfcstm/dsl/grammar/](pyfcstm/dsl/grammar/), [editors/jsfcstm/src/dsl/grammar/](editors/jsfcstm/src/dsl/grammar/))
+([pyfcstm/dsl/grammar/](pyfcstm/dsl/grammar/), [pyfcstm/bmc/grammar/](pyfcstm/bmc/grammar/),
+[editors/jsfcstm/src/dsl/grammar/](editors/jsfcstm/src/dsl/grammar/))
 are exempt — they are produced by ANTLR.
 
 ## Conversation Language
@@ -98,6 +99,7 @@ As of 2026-03, the repository is no longer only a generic template experiment. T
 - Expression rendering and statement rendering infrastructure under [pyfcstm/render/](pyfcstm/render/), with built-in statement styles for `dsl`, `c`, `cpp`, `python`, `java`, `js`, `ts`, `rust`, and `go`
 - Dedicated template tests under [test/template/](test/template/), including generated-runtime tests and runtime-alignment tests for the built-in `python` template
 - A render/template tutorial path in [docs/source/tutorials/render/](docs/source/tutorials/render/) that now reflects the current renderer, template packaging, and testing model
+- A bounded model checking kernel under [pyfcstm/bmc/](pyfcstm/bmc/) plus the `pyfcstm bmc` CLI, stable `bmc-cli/v1` JSON envelope, mandatory SAT witness replay, and bilingual Tutorial/How-to/Explanation/Reference documentation
 
 When updating repository guidance, do not describe built-in templates, statement rendering, or CLI `--template` support as planned-only features. They are current behavior.
 
@@ -265,8 +267,10 @@ make docs_auto AUTO_OPTIONS="--model-name deepseek-V3 --param max_tokens=200000"
 ### ANTLR Grammar Development
 
 ```bash
-make antlr        # Download ANTLR jar and setup (requires Java)
-make antlr_build  # Regenerate parser from grammar files after modifying GrammarParser.g4 or GrammarLexer.g4
+make antlr              # Download ANTLR jar and setup (requires Java)
+make antlr_build        # Regenerate both FCSTM and FBMCQ parser files
+make fcstm_antlr_build  # Regenerate FCSTM parser from GrammarParser.g4 or GrammarLexer.g4
+make fbmcq_antlr_build  # Regenerate FBMCQ parser from BmcQueryParser.g4 or BmcQueryLexer.g4
 ```
 
 ### Sample Test Generation
@@ -297,6 +301,8 @@ pyfcstm generate -i input.fcstm -t template_dir/ -o output_dir/ --clear
 pyfcstm simulate -i input.fcstm                                      # Interactive mode
 pyfcstm simulate -i input.fcstm -e "cycle; cycle Start; current"     # Batch mode
 pyfcstm simulate -i input.fcstm -e "init System.Active counter=10; cycle 5"  # Hot start batch
+pyfcstm bmc -i input.fcstm -q property.fbmcq                       # Human BMC report
+pyfcstm bmc -i input.fcstm -q property.fbmcq --json -o result.json # Stable JSON result
 
 # Interactive hot start:
 # > init System.Active counter=10 flag=1
@@ -479,6 +485,13 @@ Mandatory completion rule for built-in template work:
 - [solve.py](pyfcstm/solver/solve.py): Z3-based constraint solving for guard reachability analysis
 - [operation.py](pyfcstm/solver/operation.py): Converts state machine operations into solver constraints
 - Uses `z3-solver` library; enables static analysis of transition guard satisfiability
+
+**Bounded Model Checking** ([pyfcstm/bmc/](pyfcstm/bmc/), [pyfcstm/entry/bmc.py](pyfcstm/entry/bmc.py))
+
+- Compiles one `.fbmcq` query into a bounded transition relation and one of seven property objectives
+- Exposes `pyfcstm bmc` with polarity-aware human verdicts, per-check solver timing, optional ANSI terminal color, and stable `bmc-cli/v1` JSON
+- Requires every SAT model to decode into a `bmc-witness/v1` trace and pass `SimulationRuntime` replay before the CLI reports a trusted verdict
+- Keeps bounded conclusions explicit: SAT/UNSAT describe the solver objective, while `property_satisfied` / `outcome` describe whether the user property holds within the requested bound
 
 **Entry Points** ([pyfcstm/entry/](pyfcstm/entry/))
 
@@ -1045,7 +1058,7 @@ When modifying [pyfcstm/dsl/grammar/GrammarParser.g4](pyfcstm/dsl/grammar/Gramma
 
 1. Ensure Java is installed
 2. `make antlr` - download ANTLR jar (only needed once)
-3. `make antlr_build` - regenerate parser code
+3. `make antlr_build` - regenerate both FCSTM and FBMCQ parser code, or `make fcstm_antlr_build` when intentionally refreshing only the FCSTM generated files
 4. Update [pyfcstm/dsl/listener.py](pyfcstm/dsl/listener.py) and [pyfcstm/dsl/node.py](pyfcstm/dsl/node.py) if grammar structure changes
 5. Update syntax highlighting:
    - [pyfcstm/highlight/pygments_lexer.py](pyfcstm/highlight/pygments_lexer.py) (Pygments lexer, reference implementation)
@@ -1060,6 +1073,19 @@ When modifying [pyfcstm/dsl/grammar/GrammarParser.g4](pyfcstm/dsl/grammar/Gramma
 update [pyfcstm/highlight/pygments_lexer.py](pyfcstm/highlight/pygments_lexer.py) (appropriate `words()` group) →
 update [editors/fcstm.tmLanguage.json](editors/fcstm.tmLanguage.json) (keywords repository section) →
 `python editors/validate.py`.
+
+When modifying [pyfcstm/bmc/grammar/BmcQueryParser.g4](pyfcstm/bmc/grammar/BmcQueryParser.g4) or
+[pyfcstm/bmc/grammar/BmcQueryLexer.g4](pyfcstm/bmc/grammar/BmcQueryLexer.g4):
+
+1. Ensure Java is installed.
+2. `make antlr` - download the shared ANTLR jar and install the matching Python runtime.
+3. `make antlr_build` - regenerate both FCSTM and FBMCQ parser code so routine grammar refreshes keep both generated sets current; use `make fbmcq_antlr_build` only when intentionally refreshing just the FBMCQ generated files.
+4. Keep `pyfcstm/bmc/grammar/` generated files in the commit together with the grammar source changes.
+5. Run the BMC query grammar tests, for example `pytest test/bmc/test_query_grammar.py -v`.
+
+The BMC query grammar is intentionally independent from the main FCSTM DSL grammar. Do not modify
+[pyfcstm/dsl/grammar/](pyfcstm/dsl/grammar/) when the task only changes `.fbmcq` parsing, and keep editor
+highlighting or jsfcstm grammar support with the editor-facing implementation work instead of the core query grammar.
 
 ### Template Development
 
@@ -1210,6 +1236,12 @@ Apply the whole guide as written, including newly added module-specific or langu
 only the convenient parts of [docs/documentation_authoring.md](docs/documentation_authoring.md): if a changed Chinese page,
 reference table, how-to task, explanation trace, generated resource, migration note, or verification record falls under a
 documented requirement, that requirement must be checked and satisfied before ready/merge.
+
+For BMC documentation and CLI-facing examples, property truth is the primary user conclusion. Never present raw
+SAT/UNSAT as though it universally meant success or failure; translate through property polarity and preserve the
+bounded-result caveat. Human terminal examples must cover `--color auto|always|never`, including `NO_COLOR`, TTY, and
+forced-pipe behavior; files and JSON remain ANSI-free. Machine and LLM examples consume the versioned JSON contract
+instead of scraping human text or timing.
 
 #### Documentation Structure
 

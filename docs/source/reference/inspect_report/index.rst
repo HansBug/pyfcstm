@@ -61,10 +61,10 @@ CLI options affecting reports
      - Adds inspect-eligible verify algorithms within the configured policy.
    * - ``--max-complexity-tier``
      - verify policy
-     - Accepts bounded tiers; ``bmc_search`` is parsed only so inspect can reject it explicitly.
+     - Selects the highest structural or SMT-local complexity tier accepted by inspect.
    * - ``--max-call-count-scaling``
      - verify policy
-     - Rejects ``k_unrollings`` labels for automatic inspect runs.
+     - Selects the highest model-derived call-count scaling accepted by inspect.
    * - ``--smt-timeout-ms``
      - solver-backed verify
      - ``None`` leaves no CLI timeout override; ``0`` is forwarded to Z3 as no finite timeout.

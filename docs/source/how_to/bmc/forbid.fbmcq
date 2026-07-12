@@ -1,0 +1,2 @@
+init state("Root.Idle");
+check forbid <= 1: active("Root.Done");

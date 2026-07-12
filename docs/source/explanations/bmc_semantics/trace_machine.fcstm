@@ -1,0 +1,19 @@
+def int counter = 0;
+def float ratio = 0.5;
+def int keep = 5;
+
+state Root {
+    event Go;
+
+    state A;
+    state B {
+        during {
+            counter = counter + 1;
+        }
+    }
+
+    [*] -> A;
+    A -> B : Go effect {
+        counter = counter + 10;
+    }
+}

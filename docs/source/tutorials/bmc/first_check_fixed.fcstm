@@ -1,0 +1,29 @@
+def int latch_engaged = 1;
+
+state Door {
+    event Unlock;
+    event OpenDoor;
+    event Close;
+    event Lock;
+    event ServiceOverride;
+
+    state Locked;
+    state Unlocked;
+    state Open;
+
+    [*] -> Locked;
+
+    Locked -> Unlocked : Unlock effect {
+        latch_engaged = 0;
+    }
+    Unlocked -> Open : OpenDoor;
+    Open -> Unlocked : Close;
+    Unlocked -> Locked : Lock effect {
+        latch_engaged = 1;
+    }
+
+    // Repair: every path to Open releases the physical latch.
+    Locked -> Open : ServiceOverride effect {
+        latch_engaged = 0;
+    }
+}

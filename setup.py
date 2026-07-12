@@ -130,6 +130,7 @@ setup(
         "console_scripts": ["pyfcstm=pyfcstm.entry:pyfcstmcli"],
         "pygments.lexers": [
             "fcstm = pyfcstm.highlight.pygments_lexer:FcstmLexer",
+            "fbmcq = pyfcstm.highlight.bmc_query_lexer:FcstmBmcQueryLexer",
         ],
     },
     project_urls={

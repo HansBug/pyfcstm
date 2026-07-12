@@ -1,0 +1,1 @@
+check reach <= 2: active("Root.Idle");

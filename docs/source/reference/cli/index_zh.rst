@@ -34,8 +34,8 @@
 .. cli-ref-option: command=inspect option=--format choices=human,json,llm-json,llm-md default=human
 .. cli-ref-option: command=inspect option=--color choices=auto,always,never default=auto
 .. cli-ref-option: command=inspect option=--enable-verify
-.. cli-ref-option: command=inspect option=--max-complexity-tier choices=structural,smt_linear,smt_nonlinear_decidable,smt_undecidable_heuristic,bmc_search default=structural
-.. cli-ref-option: command=inspect option=--max-call-count-scaling choices=none,one,linear_in_states,linear_in_transitions,linear_in_vars,linear_in_leaves,quadratic_in_outgoing_per_state,quadratic_in_states,vars_times_transitions,k_unrollings,k_unrollings_times_branching default=linear_in_transitions
+.. cli-ref-option: command=inspect option=--max-complexity-tier choices=structural,smt_linear,smt_nonlinear_decidable,smt_undecidable_heuristic default=structural
+.. cli-ref-option: command=inspect option=--max-call-count-scaling choices=none,one,linear_in_states,linear_in_transitions,linear_in_vars,linear_in_leaves,quadratic_in_outgoing_per_state,quadratic_in_states,vars_times_transitions default=linear_in_transitions
 .. cli-ref-option: command=inspect option=--smt-timeout-ms
 .. cli-ref-option: command=inspect option=--help
 .. cli-ref-command: name=plantuml
@@ -121,7 +121,11 @@
    * - ``inspect``
      - FCSTM DSL 文件
      - 人类文本、JSON、面向大语言模型（LLM）的 JSON 或 Markdown
-     - 查看解析器和模型事实、诊断，以及可选的有界验证诊断。
+     - 查看解析器和模型事实、诊断，以及可选的结构或局部 SMT 验证诊断。
+   * - ``bmc``
+     - FCSTM DSL 文件加一份 FBMCQ 查询文件
+     - 已按极性换算的人类性质结论或版本化 JSON
+     - 获取有界可达、安全、响应、覆盖或调用证据，并强制重放 SAT 见证。
    * - ``generate``
      - FCSTM DSL 文件加内置模板或自定义模板
      - 输出目录里的渲染文件
@@ -140,11 +144,12 @@
 
 命令行接口有意区分“只产出源码/事实”的命令和“可能依赖外部工具”的命令：
 
-* ``simulate``、``inspect``、``generate`` 和 ``plantuml`` 读取 DSL 并使用 Python 侧 pyfcstm 功能；它们不需要
+* ``simulate``、``inspect``、``bmc``、``generate`` 和 ``plantuml`` 读取 DSL 并使用 Python 侧 pyfcstm 功能；它们不需要
   Java、PlantUML jar 或网络渲染器。
 * ``visualize`` 先构造 PlantUML 源码，再调用 ``plantumlcli``；本地渲染可能需要 Java 和 PlantUML jar，远程渲染
   需要可访问的 PlantUML 服务。
-* 成功命令退出码为 ``0``。Click 参数错误、缺失文件、解析错误、模型验证错误、渲染失败和策略拒绝会产生非零退出码。
+* 大多数成功命令以 ``0`` 退出。有界模型检查还用 ``1``、``3``、``4`` 分别表示有界性质
+  否定结论、无定论和重放不匹配。Click 参数错误、缺失文件、解析错误、模型验证错误、渲染失败和策略拒绝会产生非零退出码。
 * 面向用户的进度和成功消息写入标准输出；Click 格式化的错误写入标准错误。
 * 写文件命令只创建或替换请求的输出路径或目录。这里唯一会有意删除已有输出目录内容的选项是 ``generate --clear``。
 
@@ -171,6 +176,11 @@
      - 输出文件包含 ``"root_state_path": "TrafficLight"`` 和 ``"diagnostics": []``。
      - ``pyfcstm inspect -i docs/source/tutorials/quick_start/traffic_light.fcstm --format xml``
      - Click 在写报告前拒绝封闭的 ``--format`` 取值。
+   * - ``bmc``
+     - ``pyfcstm bmc -i docs/source/tutorials/bmc/first_check.fcstm -q docs/source/tutorials/bmc/reach_door.fbmcq``
+     - 第一行是 ``BMC reach <= 1: PROPERTY HOLDS``，且重放通过。
+     - ``pyfcstm bmc -i docs/source/tutorials/bmc/first_check.fcstm -q /tmp/missing.fbmcq``
+     - 查询文件在编译前读取失败，不输出半成品报告。
    * - ``generate``
      - ``pyfcstm generate -i docs/source/tutorials/quick_start/traffic_light.fcstm --template python -o /tmp/traffic-python --clear``
      - 输出目录被替换，并由打包 Python 模板填充。
@@ -193,6 +203,15 @@
      - Click 在渲染前拒绝封闭的渲染类型取值。
 
 这些示例不能替代下方完整选项表。它们展示的是契约形状：合法示例、可观察成功信号、非法示例，以及失败归属层。
+
+``bmc``
+-------
+
+有界模型检查命令使用独立的完整协议参考，因为 SAT/UNSAT 必须通过性质极性换算，且每个
+SAT 结果都必须经过见证与重放可信门禁。全部选项、颜色行为、输出流、性质结论、耗时、
+退出状态、JSON 字段、诊断、见证/重放记录和打包事实见
+:doc:`/reference/bmc_results/index_zh`；FBMCQ 语言见
+:doc:`/reference/bmc_query/index_zh`。
 
 ``simulate``
 ------------
@@ -283,12 +302,12 @@
      - 加入 inspect 允许范围内的验证诊断。
    * - ``--max-complexity-tier``
      - ``structural``
-     - ``structural``、``smt_linear``、``smt_nonlinear_decidable``、``smt_undecidable_heuristic``、``bmc_search``
-     - inspect 接受的最高验证复杂度。``bmc_search`` 只用于报告策略错误。
+     - ``structural``、``smt_linear``、``smt_nonlinear_decidable``、``smt_undecidable_heuristic``
+     - inspect 接受的最高结构或局部 SMT 验证复杂度。
    * - ``--max-call-count-scaling``
      - ``linear_in_transitions``
-     - ``none``、``one``、``linear_in_states``、``linear_in_transitions``、``linear_in_vars``、``linear_in_leaves``、``quadratic_in_outgoing_per_state``、``quadratic_in_states``、``vars_times_transitions``、``k_unrollings``、``k_unrollings_times_branching``
-     - inspect 允许的最高调用次数规模。``k_unrollings`` 标签只用于报告策略错误。
+     - ``none``、``one``、``linear_in_states``、``linear_in_transitions``、``linear_in_vars``、``linear_in_leaves``、``quadratic_in_outgoing_per_state``、``quadratic_in_states``、``vars_times_transitions``
+     - inspect 接受的最高模型派生验证调用次数规模。
    * - ``--smt-timeout-ms``
      - 未设置
      - ``>= 0`` 的整数
@@ -633,7 +652,7 @@
      - ``pyfcstm inspect -i machine.fcstm --format llm-md -o machine.inspect.md``
      - 文件包含面向修复的紧凑事实和诊断。
      - 写出请求的 Markdown 文件。
-   * - 有界验证报告
+   * - 结构与局部 SMT 验证报告
      - ``pyfcstm inspect -i machine.fcstm --enable-verify --smt-timeout-ms 2000``
      - 报告包含 inspect 允许范围内的验证诊断。
      - 除非使用 -o，否则没有文件副作用。
@@ -653,10 +672,6 @@
      - ``pyfcstm inspect -i machine.fcstm --format xml``
      - Click 报告 xml 不是 human/json/llm-json/llm-md 之一。
      - 选择文档列出的格式。
-   * - 被拒绝的验证策略
-     - ``pyfcstm inspect -i machine.fcstm --enable-verify --max-complexity-tier bmc_search``
-     - inspect 策略在解析模型前拒绝高成本层级。
-     - 把日常检查限制在允许层级内。
    * - 后缀不匹配警告
      - ``pyfcstm inspect -i machine.fcstm --format json -o machine.txt``
      - 格式仍为 json；后缀警告只是提示信息。
@@ -889,16 +904,16 @@
      - 只应在人类可读标准输出模式中检查 ANSI 序列。
    * - ``--enable-verify``
      - 当确实需要结构性或 SMT 本地 verify 事实时使用。
-     - 默认关闭；开启它也不允许使用被策略禁止的层级。
+     - 默认关闭；开启它也不会加载 :mod:`pyfcstm.bmc` 或解析 ``.fbmcq`` 查询。
      - 诊断部分可能包含 verify 派生条目，但 inspect 仍受策略边界限制。
    * - ``--max-complexity-tier``
      - ``structural``；``smt_linear``；调用者接受成本时可用 ``smt_nonlinear_decidable``。
-     - ``bmc_search`` 只由 Click 接收，以便 inspect 给出策略拒绝消息。
-     - 策略失败可在不依赖模型解析的情况下诊断。
+     - Click 会在解析模型前拒绝文档选项之外的值。
+     - CLI 帮助会列出精确的合法层级；成功报告只包含所选层级预算内的算法。
    * - ``--max-call-count-scaling``
      - ``none``；``one``；``linear_in_transitions``；其他受允许的有限 taxonomy 值。
-     - ``k_unrollings`` 和 ``k_unrollings_times_branching`` 会在自动 inspect 运行中被策略拒绝。
-     - 错误会点名被禁止的 scaling 标签。
+     - Click 会在解析模型前拒绝文档选项之外的值。
+     - CLI 帮助会列出精确的合法规模值；验证结果保持在所选调用次数预算内。
    * - ``--smt-timeout-ms``
      - ``--smt-timeout-ms 2000``；``--smt-timeout-ms 0``；省略则使用默认求解器行为。
      - 负数会被 Click 整数范围校验拒绝。

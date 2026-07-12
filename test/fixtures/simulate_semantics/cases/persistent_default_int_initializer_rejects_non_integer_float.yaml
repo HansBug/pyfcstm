@@ -7,6 +7,8 @@ origin:
 categories:
 - runtime
 - template_alignment
+exclude_runners:
+- bmc_core
 initial:
   state: null
   vars: null

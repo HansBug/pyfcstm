@@ -99,6 +99,7 @@ show the whole learning path directly from this home page.
     tutorials/inspect/index
     tutorials/generation/index
     tutorials/visualization/index
+    tutorials/bmc/index
 
 * :doc:`Tutorial roadmap <tutorials/index>`
 * :doc:`tutorials/quick_start/index`
@@ -107,6 +108,7 @@ show the whole learning path directly from this home page.
 * :doc:`tutorials/inspect/index`
 * :doc:`tutorials/generation/index`
 * :doc:`tutorials/visualization/index`
+* :doc:`tutorials/bmc/index`
 
 How-to Guides
 -------------
@@ -123,6 +125,7 @@ extra click through a category page.
     How-to roadmap <how_to/index>
     how_to/installation/index
     how_to/cli_workflows/index
+    how_to/bmc/index
     how_to/dsl/index
     how_to/simulation/index
     how_to/inspect/index
@@ -134,6 +137,7 @@ extra click through a category page.
 * :doc:`How-to roadmap <how_to/index>`
 * :doc:`how_to/installation/index`
 * :doc:`how_to/cli_workflows/index`
+* :doc:`how_to/bmc/index`
 * :doc:`how_to/dsl/index`
 * :doc:`how_to/simulation/index`
 * :doc:`how_to/inspect/index`
@@ -158,6 +162,9 @@ in the global navigation.
     explanations/architecture/index
     explanations/dsl_semantics/index
     explanations/execution_semantics/index
+    explanations/bmc_semantics/index
+    explanations/bmc_properties/index
+    explanations/bmc_solving/index
     explanations/diagnostics/index
     explanations/template_rendering/index
     explanations/grammar_tooling/index
@@ -166,6 +173,9 @@ in the global navigation.
 * :doc:`explanations/architecture/index`
 * :doc:`explanations/dsl_semantics/index`
 * :doc:`explanations/execution_semantics/index`
+* :doc:`explanations/bmc_semantics/index`
+* :doc:`explanations/bmc_properties/index`
+* :doc:`explanations/bmc_solving/index`
 * :doc:`explanations/diagnostics/index`
 * :doc:`explanations/template_rendering/index`
 * :doc:`explanations/grammar_tooling/index`
@@ -191,6 +201,8 @@ generated API documentation remains the last item in this reference area.
     reference/template_config/index
     reference/grammar_tooling/index
     reference/builtin_templates/index
+    reference/bmc_query/index
+    reference/bmc_results/index
     API Documentation <api_doc_en>
 
 * :doc:`Reference map <reference/index>`
@@ -203,6 +215,8 @@ generated API documentation remains the last item in this reference area.
 * :doc:`reference/template_config/index`
 * :doc:`reference/grammar_tooling/index`
 * :doc:`reference/builtin_templates/index`
+* :doc:`reference/bmc_query/index`
+* :doc:`reference/bmc_results/index`
 * :doc:`API Documentation <api_doc_en>`
 
 Release Notes

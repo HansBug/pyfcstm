@@ -1,6 +1,55 @@
 Release Notes
 =============
 
+Unreleased
+----------
+
+Bounded Model Checking
+~~~~~~~~~~~~~~~~~~~~~~
+
+- Added ``pyfcstm bmc`` for one FCSTM model and one FBMCQ query. The default
+  terminal report states whether the bounded property holds before showing the
+  SAT/UNSAT solver diagnostic, uses optional ANSI color, and requires decoded
+  SAT witnesses to pass runtime replay.
+- Added the stable ``bmc-cli/v1`` JSON envelope for CI, tools, and LLM
+  consumers, with a downloadable schema in the BMC result protocol reference.
+  The envelope preserves polarity-aware outcomes, solver timing, witness and
+  replay records, diagnostics, and the matching process exit code.
+- Added bilingual Tutorial, How-to, three mathematical Explanation pages, and
+  two exhaustive Reference pages. The explanations derive 40 labelled,
+  implementation-traceable equations and are verified in MathJax HTML and
+  XeLaTeX PDF output.
+
+Compatibility Notes
+~~~~~~~~~~~~~~~~~~~
+
+BMC results are bounded by the query's ``<= N`` and are not unbounded proofs.
+Scripts must consume ``--json`` instead of parsing human wording, color, or
+live timing. SAT means a witness for witness-polarity properties and a
+counterexample for counterexample-polarity properties; use the reported
+property verdict or ``result.outcome`` rather than treating SAT as success.
+
+Verification and Inspect
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+- Removed the unimplemented ``bounded_reachability``, ``symbolic_bfs``,
+  ``bounded_safety``, ``bounded_invariant``, and ``path_witness`` entries from
+  :data:`pyfcstm.verify.REGISTRY`. The registry now contains only its 14
+  callable structural and SMT-local algorithms.
+- Removed the verify-only taxonomy values ``bmc_search``, ``k_unrollings``,
+  ``k_unrollings_times_branching``, and ``bmc_unrolled``. BMC queries and
+  witnesses are exposed by :mod:`pyfcstm.bmc`, not through verify or inspect.
+
+Compatibility Notes
+~~~~~~~~~~~~~~~~~~~
+
+Code that referenced the removed verify registry keys or taxonomy values must
+migrate to the public :mod:`pyfcstm.bmc` query APIs. The ``inspect`` CLI no
+longer accepts the removed BMC-only values merely to reject them in application
+code; Click now reports them as invalid choices with usage exit status ``2``
+instead of the former policy-error status ``1``. This public API contraction
+requires a minor-version bump in the next package release.
+
 v0.5.0
 ------
 

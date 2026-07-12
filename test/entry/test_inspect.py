@@ -1,6 +1,8 @@
 import json
 import os
 import re
+import subprocess
+import sys
 import textwrap
 from tempfile import TemporaryDirectory
 
@@ -325,54 +327,30 @@ class TestEntryInspect:
         assert "0 keeps Z3 without a finite timeout" in result.stdout
         assert "return before a non-trivial proof search" not in result.stdout
 
-    def test_inspect_rejects_bmc_search_in_automatic_verify(
-        self,
-        inspect_code_file,
+    @pytest.mark.parametrize(
+        ("option", "obsolete_choice"),
+        [
+            ("--max-complexity-tier", "bmc_search"),
+            ("--max-call-count-scaling", "k_unrollings"),
+            ("--max-call-count-scaling", "k_unrollings_times_branching"),
+        ],
+    )
+    def test_inspect_rejects_obsolete_policy_as_click_usage_error(
+        self, option, obsolete_choice
     ):
-        result = _run_inspect(
-            "-i",
-            inspect_code_file,
-            "--format",
-            "json",
-            "--enable-verify",
-            "--max-complexity-tier",
-            "bmc_search",
-        )
-
-        assert result.exitcode != 0
-        assert "bmc_search algorithms are not allowed" in (
-            result.stderr or result.stdout
-        )
-
-    def test_inspect_rejects_bmc_search_without_enable_verify(
-        self,
-        inspect_code_file,
-    ):
-        result = _run_inspect(
-            "-i",
-            inspect_code_file,
-            "--max-complexity-tier",
-            "bmc_search",
-        )
-
-        assert result.exitcode != 0
-        assert "bmc_search algorithms are not allowed" in (
-            result.stderr or result.stdout
-        )
-
-    def test_inspect_rejects_forbidden_policy_before_reading_input(self):
         result = _run_inspect(
             "-i",
             "/missing/inspect_case.fcstm",
-            "--max-complexity-tier",
-            "bmc_search",
+            option,
+            obsolete_choice,
         )
 
-        assert result.exitcode != 0
-        assert "bmc_search algorithms are not allowed" in (
-            result.stderr or result.stdout
-        )
-        assert "Input DSL file not found" not in (result.stderr or result.stdout)
+        output = result.stderr or result.stdout
+        assert result.exitcode == 2
+        assert "Invalid value for" in output
+        assert obsolete_choice in output
+        assert "Input DSL file not found" not in output
+        assert "not allowed in automatic inspect runs" not in output
 
     def test_build_inspect_json_rejects_unknown_policy_before_reading_input(self):
         with pytest.raises(
@@ -392,43 +370,6 @@ class TestEntryInspect:
                 max_call_count_scaling="unknown_scaling",
             )
 
-    @pytest.mark.parametrize(
-        "call_count_scaling",
-        [
-            "k_unrollings",
-            "k_unrollings_times_branching",
-        ],
-    )
-    def test_inspect_rejects_invalid_call_count_scaling(
-        self,
-        inspect_code_file,
-        call_count_scaling,
-    ):
-        result = _run_inspect(
-            "-i",
-            inspect_code_file,
-            "--enable-verify",
-            "--max-call-count-scaling",
-            call_count_scaling,
-        )
-
-        assert result.exitcode != 0
-        assert call_count_scaling in (result.stderr or result.stdout)
-
-    def test_inspect_rejects_invalid_call_count_scaling_without_enable_verify(
-        self,
-        inspect_code_file,
-    ):
-        result = _run_inspect(
-            "-i",
-            inspect_code_file,
-            "--max-call-count-scaling",
-            "k_unrollings",
-        )
-
-        assert result.exitcode != 0
-        assert "k_unrollings" in (result.stderr or result.stdout)
-
     def test_inspect_accepts_zero_smt_timeout(self, inspect_code_file):
         result = _run_inspect(
             "-i",
@@ -445,6 +386,40 @@ class TestEntryInspect:
         assert result.exitcode == 0
         payload = _json_from_stdout(result)
         assert payload["root_state_path"] == "Root"
+
+    def test_successful_highest_budget_cli_does_not_load_bmc(self, inspect_code_file):
+        script = """
+import json
+import sys
+
+from hbutils.testing import simulate_entry
+from pyfcstm.entry import pyfcstmcli
+
+result = simulate_entry(pyfcstmcli, [
+    'pyfcstm', 'inspect', '-i', sys.argv[1], '--format', 'json',
+    '--enable-verify', '--max-complexity-tier', 'smt_undecidable_heuristic',
+    '--max-call-count-scaling', 'vars_times_transitions',
+    '--smt-timeout-ms', '1000',
+])
+if result.exitcode != 0:
+    raise SystemExit(result.stdout + result.stderr)
+json.loads(result.stdout)
+loaded = sorted(
+    name for name in sys.modules
+    if name == 'pyfcstm.bmc' or name.startswith('pyfcstm.bmc.')
+)
+if loaded:
+    raise SystemExit('\\n'.join(loaded))
+"""
+        result = subprocess.run(
+            [sys.executable, "-c", script, inspect_code_file],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
 
     def test_inspect_writes_json_to_output_file(self, inspect_code_file):
         with isolated_directory():

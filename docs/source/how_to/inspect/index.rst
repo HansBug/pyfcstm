@@ -6,7 +6,7 @@ Inspect tasks
 Use these recipes when you already know what you want ``pyfcstm inspect`` to
 do. The tutorial at :doc:`../../tutorials/inspect/index` shows the walkthrough;
 this page is the task desk for CI, triage, repair handoffs, suffix warnings,
-and bounded verify integration.
+and structural/SMT-local verify integration.
 
 The recipes use ``docs/source/tutorials/inspect/inspect_diagnostics.fcstm``. It
 is valid FCSTM DSL and intentionally contains suspicious but inspectable design
@@ -337,8 +337,8 @@ previous run.
 :doc:`../../reference/inspect_report/index` and the diagnostic explanation page
 :doc:`../../explanations/diagnostics/index`.
 
-11. Enable bounded verify-backed diagnostics
---------------------------------------------
+11. Enable structural and SMT-local verify diagnostics
+------------------------------------------------------
 
 **Input.** A valid model and a reason to include inspect-eligible verification
 algorithms.
@@ -365,44 +365,15 @@ checks when verify integration is enabled.
 
 **First failure check.** If no verify-backed codes appear, confirm
 ``--enable-verify`` was present. Raising ``--max-complexity-tier`` can allow
-more bounded algorithms, not BMC search.
+additional model-derived structural or SMT-local algorithms. It does not load
+:mod:`pyfcstm.bmc` or parse a ``.fbmcq`` query.
 
 **Reference link.** Verify tier meaning is explained in
 :doc:`../../explanations/diagnostics/index`; code details are in
 :doc:`../../reference/diagnostics_codes/index`.
 
-12. Recognize verify policy rejections
---------------------------------------
-
-**Input.** A command line that asks automatic inspect to run outside its bounded
-policy envelope.
-
-**Command or code.** These labels are accepted by Click so inspect can reject
-them with a controlled message:
-
-.. code-block:: bash
-
-   pyfcstm inspect -i docs/source/tutorials/inspect/inspect_diagnostics.fcstm \
-       --max-complexity-tier bmc_search
-   for scaling in k_unrollings k_unrollings_times_branching; do
-       pyfcstm inspect -i docs/source/tutorials/inspect/inspect_diagnostics.fcstm --max-call-count-scaling "$scaling"
-   done
-
-**Expected signal.** Each command exits with status ``1``. The first stderr
-says ``bmc_search algorithms are not allowed in automatic inspect runs``; the
-call-count examples say their requested scaling is not allowed.
-
-**File side effect.** No successful report is produced.
-
-**First failure check.** If a CI job accidentally requests these labels, remove
-the policy knob instead of hiding the error. BMC-style checks require explicit
-user-driven verification workflows, not automatic inspect.
-
-**Reference link.** The allowed and forbidden policy values are in
-:doc:`../../reference/inspect_report/index`.
-
-13. Keep target and deployment warnings precise
------------------------------------------------
+12. Keep target and deployment warnings precise
+------------------------------------------------
 
 **Input.** A task-4 full JSON report and a diagnostic whose message mentions a
 target family or generated runtime profile.
@@ -471,6 +442,5 @@ Verification evidence for this page
 The short excerpts above are grounded in checked tutorial resources:
 ``inspect_human.demo.sh.txt`` for human output, ``inspect_formats.demo.sh.txt``
 for JSON/LLM shape, ``inspect_cli_edges.demo.sh.txt`` for color/suffix behavior,
-``inspect_invalid.demo.sh.txt`` for parse failure, and
-``inspect_verify_policy.demo.sh.txt`` for policy rejection. Re-run scripts only
-when those source resources change.
+and ``inspect_invalid.demo.sh.txt`` for parse failure. Re-run scripts only when
+those source resources change.

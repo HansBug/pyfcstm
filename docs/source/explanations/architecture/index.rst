@@ -43,7 +43,7 @@ the importer did not produce.
      - Generated target-language runtime implementation details.
    * - Diagnostics and verify integration
      - ``pyfcstm/diagnostics/``, ``pyfcstm/verify/``, ``pyfcstm/solver/``
-     - Structured model facts, diagnostic messages, bounded verification checks, SMT translation.
+     - Structured model facts, diagnostic messages, model-derived structural and SMT-local checks, SMT translation.
      - Unbounded proofs hidden inside everyday inspect commands.
    * - Rendering and templates
      - ``pyfcstm/render/``, ``templates/``, ``pyfcstm/template/``

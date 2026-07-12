@@ -8,6 +8,8 @@ categories:
 - runtime
 - pseudo_chain
 - validation
+exclude_runners:
+- bmc_core
 steps:
 - cycle: []
   expect:

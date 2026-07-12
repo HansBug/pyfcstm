@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# fmt: off
 """
 Comprehensive validation script for FCSTM syntax-highlighting assets.
 
@@ -21,11 +22,50 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pygments.token import Token
 
-from pyfcstm.highlight.pygments_lexer import FcstmLexer
+from pyfcstm.highlight import FcstmBmcQueryLexer, FcstmLexer
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TEXTMATE_GRAMMAR_FILE = os.path.join(ROOT_DIR, 'editors', 'fcstm.tmLanguage.json')
 VSCODE_TEXTMATE_GRAMMAR_FILE = os.path.join(ROOT_DIR, 'editors', 'vscode', 'syntaxes', 'fcstm.tmLanguage.json')
+FBMCQ_TEXTMATE_GRAMMAR_FILE = os.path.join(ROOT_DIR, 'editors', 'fcstm-bmc-query.tmLanguage.json')
+VSCODE_FBMCQ_TEXTMATE_GRAMMAR_FILE = os.path.join(
+    ROOT_DIR, 'editors', 'vscode', 'syntaxes', 'fcstm-bmc-query.tmLanguage.json'
+)
+VSCODE_PACKAGE_FILE = os.path.join(ROOT_DIR, 'editors', 'vscode', 'package.json')
+
+
+FBMCQ_TEST_CODE = """
+// FCSTM BMC Query syntax-highlighting fixture.
+init state("Root.System.A") where x >= 0 and active("Root.System.A");
+
+assume always: terminated(current) or var("x") <= 1000 and cycle >= 0 or not called("Hook", current);
+assume at 0: sin(pi) + 0xFF + 3.5e-1 + .5 + 1. + (flags ** 2) + (flags >> 1) + (flags * 2 / 3 % 4) + (flags | 1) + (flags ^ 2) == var("x");
+assume event("Root.System.A.Tick", 0..3) != false;
+assume events cardinality at_most_one {
+    "Root.System.A.Tick",
+    "Root.System.A.Reset"
+};
+assume events cardinality any {
+    "Root.System.A.Tick",
+    "Root.System.A.Reset"
+};
+
+check reach <= 2: active("Root.Done");
+check forbid <= 2: terminated(current);
+check invariant <= 2: var("x") >= 0;
+check must_reach <= 4: active("Root.Recovering");
+check exists_always <= 4: active("Root.Safe");
+check response <= 10:
+    trigger event("Root.System.A.Tick", current) && active("Root.System.A")
+    -> within 3 active("Root.Recovering") iff true xor !false implies true;
+
+check cover <= 6:
+    ((~flags & 0xFF) == 0) || (cycle << 1) >= +2 && (-x <= 3.5e-1) => case("Root.System.A::transition::Root.System.B::1");
+
+# hash comment
+/* block comment */
+assume always: 'Root.System.A' == 'Root.System.A';
+"""
 
 COMPREHENSIVE_TEST_CODE = """
 // ============================================================================
@@ -384,6 +424,7 @@ class SharedExpectation:
     textmate_scope: str
     capture_group: Optional[int] = None
     mode: str = 'auto'
+    textmate_sample: Optional[str] = None
 
 
 SHARED_CHECKPOINT_SPECS: List[Dict[str, Any]] = [
@@ -628,6 +669,124 @@ SHARED_CHECKPOINT_SPECS: List[Dict[str, Any]] = [
     },
 ]
 
+
+FBMCQ_CHECKPOINT_SPECS: List[Dict[str, Any]] = [
+    {
+        'name': 'FBMCQ Query Clauses',
+        'description': 'init, assume, check, and query clause keywords',
+        'items': [
+            SharedExpectation('init', Token.Keyword.Declaration, 'clauses', 'keyword.control.fcstm.bmc.query'),
+            SharedExpectation('state', Token.Keyword.Declaration, 'clauses', 'keyword.control.fcstm.bmc.query'),
+            SharedExpectation('where', Token.Keyword.Reserved, 'clauses', 'keyword.other.query-clause.fcstm.bmc.query'),
+            SharedExpectation('assume', Token.Keyword.Declaration, 'clauses', 'keyword.control.fcstm.bmc.query'),
+            SharedExpectation('always', Token.Keyword.Reserved, 'clauses', 'keyword.other.query-clause.fcstm.bmc.query'),
+            SharedExpectation('at', Token.Keyword.Reserved, 'clauses', 'keyword.other.query-clause.fcstm.bmc.query'),
+            SharedExpectation('events', Token.Keyword.Declaration, 'clauses', 'keyword.control.fcstm.bmc.query'),
+            SharedExpectation('cardinality', Token.Keyword.Reserved, 'clauses', 'keyword.other.query-clause.fcstm.bmc.query'),
+            SharedExpectation('any', Token.Keyword.Reserved, 'clauses', 'keyword.other.query-clause.fcstm.bmc.query'),
+            SharedExpectation('check', Token.Keyword.Declaration, 'clauses', 'keyword.control.fcstm.bmc.query'),
+            SharedExpectation('reach', Token.Keyword.Reserved, 'clauses', 'keyword.other.query-clause.fcstm.bmc.query'),
+            SharedExpectation('forbid', Token.Keyword.Reserved, 'clauses', 'keyword.other.query-clause.fcstm.bmc.query'),
+            SharedExpectation('invariant', Token.Keyword.Reserved, 'clauses', 'keyword.other.query-clause.fcstm.bmc.query'),
+            SharedExpectation('must_reach', Token.Keyword.Reserved, 'clauses', 'keyword.other.query-clause.fcstm.bmc.query'),
+            SharedExpectation('exists_always', Token.Keyword.Reserved, 'clauses', 'keyword.other.query-clause.fcstm.bmc.query'),
+            SharedExpectation('response', Token.Keyword.Reserved, 'clauses', 'keyword.other.query-clause.fcstm.bmc.query'),
+            SharedExpectation('cover', Token.Keyword.Reserved, 'clauses', 'keyword.other.query-clause.fcstm.bmc.query'),
+            SharedExpectation('trigger', Token.Keyword.Reserved, 'clauses', 'keyword.other.query-clause.fcstm.bmc.query'),
+            SharedExpectation('within', Token.Keyword.Reserved, 'clauses', 'keyword.other.query-clause.fcstm.bmc.query'),
+            SharedExpectation('current', Token.Keyword.Reserved, 'clauses', 'keyword.other.query-clause.fcstm.bmc.query'),
+        ],
+    },
+    {
+        'name': 'FBMCQ BMC Atoms',
+        'description': 'BMC atom names and helpers',
+        'items': [
+            SharedExpectation('var', Token.Name.Builtin, 'atoms', 'support.function.bmc-atom.fcstm.bmc.query', textmate_sample='var('),
+            SharedExpectation('cycle', Token.Name.Builtin, 'atoms', 'support.function.bmc-atom.fcstm.bmc.query'),
+            SharedExpectation('active', Token.Name.Builtin, 'atoms', 'support.function.bmc-atom.fcstm.bmc.query', textmate_sample='active('),
+            SharedExpectation('terminated', Token.Name.Builtin, 'atoms', 'support.function.bmc-atom.fcstm.bmc.query', textmate_sample='terminated('),
+            SharedExpectation('event', Token.Name.Builtin, 'atoms', 'support.function.bmc-atom.fcstm.bmc.query', textmate_sample='event('),
+            SharedExpectation('case', Token.Name.Builtin, 'atoms', 'support.function.bmc-atom.fcstm.bmc.query', textmate_sample='case('),
+            SharedExpectation('called', Token.Name.Builtin, 'atoms', 'support.function.bmc-atom.fcstm.bmc.query', textmate_sample='called('),
+            SharedExpectation('at_most_one', Token.Name.Builtin, 'atoms', 'support.function.bmc-atom.fcstm.bmc.query'),
+        ],
+    },
+    {
+        'name': 'FBMCQ Logical Operators',
+        'description': 'symbol and word logical operators',
+        'items': [
+            SharedExpectation('and', Token.Operator.Word, 'keywords', 'keyword.operator.word.fcstm.bmc.query'),
+            SharedExpectation('or', Token.Operator.Word, 'keywords', 'keyword.operator.word.fcstm.bmc.query'),
+            SharedExpectation('not', Token.Operator.Word, 'keywords', 'keyword.operator.word.fcstm.bmc.query'),
+            SharedExpectation('implies', Token.Operator.Word, 'keywords', 'keyword.operator.word.fcstm.bmc.query'),
+            SharedExpectation('xor', Token.Operator.Word, 'keywords', 'keyword.operator.word.fcstm.bmc.query'),
+            SharedExpectation('iff', Token.Operator.Word, 'keywords', 'keyword.operator.word.fcstm.bmc.query'),
+            SharedExpectation('&&', Token.Operator, 'operators', 'keyword.operator.logical.fcstm.bmc.query'),
+            SharedExpectation('||', Token.Operator, 'operators', 'keyword.operator.logical.fcstm.bmc.query'),
+            SharedExpectation('=>', Token.Operator, 'operators', 'keyword.operator.logical.fcstm.bmc.query'),
+            SharedExpectation('!', Token.Operator.Word, 'operators', 'keyword.operator.logical.fcstm.bmc.query'),
+        ],
+    },
+    {
+        'name': 'FBMCQ Response and Ranges',
+        'description': 'response arrow and event range operators',
+        'items': [
+            SharedExpectation('->', Token.Operator, 'operators', 'keyword.operator.response.fcstm.bmc.query'),
+            SharedExpectation('..', Token.Operator, 'operators', 'keyword.operator.range.fcstm.bmc.query'),
+        ],
+    },
+    {
+        'name': 'FBMCQ Numeric Operators',
+        'description': 'FCSTM-compatible arithmetic and bitwise operators',
+        'items': [
+            SharedExpectation('**', Token.Operator, 'operators', 'keyword.operator.arithmetic.fcstm.bmc.query'),
+            SharedExpectation('<<', Token.Operator, 'operators', 'keyword.operator.bitshift.fcstm.bmc.query'),
+            SharedExpectation('>>', Token.Operator, 'operators', 'keyword.operator.bitshift.fcstm.bmc.query'),
+            SharedExpectation('+', Token.Operator, 'operators', 'keyword.operator.arithmetic.fcstm.bmc.query'),
+            SharedExpectation('-', Token.Operator, 'operators', 'keyword.operator.arithmetic.fcstm.bmc.query'),
+            SharedExpectation('*', Token.Operator, 'operators', 'keyword.operator.arithmetic.fcstm.bmc.query'),
+            SharedExpectation('/', Token.Operator, 'operators', 'keyword.operator.arithmetic.fcstm.bmc.query'),
+            SharedExpectation('%', Token.Operator, 'operators', 'keyword.operator.arithmetic.fcstm.bmc.query'),
+            SharedExpectation('&', Token.Operator, 'operators', 'keyword.operator.arithmetic.fcstm.bmc.query'),
+            SharedExpectation('|', Token.Operator, 'operators', 'keyword.operator.arithmetic.fcstm.bmc.query'),
+            SharedExpectation('^', Token.Operator, 'operators', 'keyword.operator.arithmetic.fcstm.bmc.query'),
+            SharedExpectation('~', Token.Operator, 'operators', 'keyword.operator.arithmetic.fcstm.bmc.query'),
+            SharedExpectation('<=', Token.Operator, 'operators', 'keyword.operator.comparison.fcstm.bmc.query'),
+            SharedExpectation('>=', Token.Operator, 'operators', 'keyword.operator.comparison.fcstm.bmc.query'),
+            SharedExpectation('==', Token.Operator, 'operators', 'keyword.operator.comparison.fcstm.bmc.query'),
+            SharedExpectation('!=', Token.Operator, 'operators', 'keyword.operator.comparison.fcstm.bmc.query'),
+        ],
+    },
+    {
+        'name': 'FBMCQ Literals and Functions',
+        'description': 'numbers, strings, booleans, math constants, and ufuncs',
+        'items': [
+            SharedExpectation('0', Token.Number.Integer, 'numbers', 'constant.numeric.integer.fcstm.bmc.query'),
+            SharedExpectation('1000', Token.Number.Integer, 'numbers', 'constant.numeric.integer.fcstm.bmc.query'),
+            SharedExpectation('0xFF', Token.Number.Hex, 'numbers', 'constant.numeric.hex.fcstm.bmc.query'),
+            SharedExpectation('3.5e-1', Token.Number.Float, 'numbers', 'constant.numeric.float.fcstm.bmc.query'),
+            SharedExpectation('.5', Token.Number.Float, 'numbers', 'constant.numeric.float.fcstm.bmc.query'),
+            SharedExpectation('1.', Token.Number.Float, 'numbers', 'constant.numeric.float.fcstm.bmc.query'),
+            SharedExpectation('true', Token.Keyword.Constant, 'constants', 'constant.language.boolean.fcstm.bmc.query'),
+            SharedExpectation('false', Token.Keyword.Constant, 'constants', 'constant.language.boolean.fcstm.bmc.query'),
+            SharedExpectation('pi', Token.Name.Constant, 'constants', 'constant.language.math.fcstm.bmc.query'),
+            SharedExpectation('sin', Token.Name.Builtin, 'constants', 'support.function.builtin.fcstm.bmc.query'),
+            SharedExpectation('"Root.System.A"', Token.String.Double, 'strings', 'string.quoted.double.fcstm.bmc.query'),
+            SharedExpectation("'Root.System.A'", Token.String.Single, 'strings', 'string.quoted.single.fcstm.bmc.query'),
+        ],
+    },
+    {
+        'name': 'FBMCQ Comments',
+        'description': 'single-line, hash, and block comments',
+        'items': [
+            SharedExpectation('// FCSTM BMC Query syntax-highlighting fixture.', Token.Comment.Single, 'comments', 'comment.line.double-slash.fcstm.bmc.query'),
+            SharedExpectation('# hash comment', Token.Comment.Single, 'comments', 'comment.line.number-sign.fcstm.bmc.query'),
+            SharedExpectation('/*', Token.Comment.Multiline, 'comments', 'comment.block.fcstm.bmc.query', mode='begin'),
+            SharedExpectation('*/', Token.Comment.Multiline, 'comments', 'comment.block.fcstm.bmc.query', mode='end'),
+        ],
+    },
+]
+
 TEXTMATE_STRUCTURE_SPECS: List[Dict[str, Any]] = [
     {
         'name': 'Grammar Sync',
@@ -683,6 +842,7 @@ def _find_textmate_match(
 ) -> Tuple[bool, str]:
     repository = grammar.get('repository', {})
     patterns = repository.get(expectation.textmate_section, {}).get('patterns', [])
+    sample_text = expectation.textmate_sample or expectation.text
     candidate_details = []
 
     for pattern in patterns:
@@ -694,7 +854,7 @@ def _find_textmate_match(
         if expectation.capture_group is not None:
             if not regex:
                 continue
-            match = _compile_pattern(regex).search(expectation.text)
+            match = _compile_pattern(regex).search(sample_text)
             if not match:
                 continue
 
@@ -709,7 +869,7 @@ def _find_textmate_match(
             continue
 
         if regex:
-            if _compile_pattern(regex).search(expectation.text):
+            if _compile_pattern(regex).search(sample_text):
                 if scope_name == expectation.textmate_scope:
                     return True, ''
                 candidate_details.append(
@@ -718,7 +878,7 @@ def _find_textmate_match(
             continue
 
         if begin and end and expectation.mode == 'begin':
-            if _compile_pattern(begin).search(expectation.text):
+            if _compile_pattern(begin).search(sample_text):
                 if scope_name == expectation.textmate_scope:
                     return True, ''
                 candidate_details.append(
@@ -727,7 +887,7 @@ def _find_textmate_match(
             continue
 
         if begin and end and expectation.mode == 'end':
-            if _compile_pattern(end).search(expectation.text):
+            if _compile_pattern(end).search(sample_text):
                 if scope_name == expectation.textmate_scope:
                     return True, ''
                 candidate_details.append(
@@ -736,8 +896,8 @@ def _find_textmate_match(
             continue
 
         if begin and end:
-            begin_match = _compile_pattern(begin).search(expectation.text)
-            end_match = _compile_pattern(end).search(expectation.text)
+            begin_match = _compile_pattern(begin).search(sample_text)
+            end_match = _compile_pattern(end).search(sample_text)
             if begin_match and end_match and begin_match.start() <= end_match.start():
                 if scope_name == expectation.textmate_scope:
                     return True, ''
@@ -749,7 +909,7 @@ def _find_textmate_match(
         return False, '; '.join(candidate_details)
 
     return False, (
-        f"no pattern in repository section {expectation.textmate_section!r} matched {expectation.text!r} "
+        f"no pattern in repository section {expectation.textmate_section!r} matched {sample_text!r} "
         f"with expected scope {expectation.textmate_scope!r}"
     )
 
@@ -989,6 +1149,275 @@ def _validate_textmate_structure(grammar: Dict[str, Any], vscode_copy: Dict[str,
     return checkpoints
 
 
+
+def _validate_fbmcq_pygments(code: str) -> Tuple[List[ValidationCheckpoint], int, float]:
+    lexer = FcstmBmcQueryLexer()
+    tokens = list(lexer.get_tokens(code))
+    token_map = _token_map(tokens)
+    detection_score = FcstmBmcQueryLexer.analyse_text(code)
+
+    checkpoints: List[ValidationCheckpoint] = []
+
+    metadata_checkpoint = ValidationCheckpoint(
+        name='FBMCQ Pygments Metadata',
+        description='the lexer exposes stable aliases, filenames, and MIME types',
+    )
+    metadata_expectations = [
+        ('name', FcstmBmcQueryLexer.name, 'FCSTM BMC Query'),
+        ('aliases', FcstmBmcQueryLexer.aliases, ['fbmcq', 'fcstm-bmc-query']),
+        ('filenames', FcstmBmcQueryLexer.filenames, ['*.fbmcq']),
+        ('mimetypes', FcstmBmcQueryLexer.mimetypes, ['text/x-fcstm-bmc-query']),
+    ]
+    for label, actual, expected in metadata_expectations:
+        if actual != expected:
+            metadata_checkpoint.failures.append(f'{label} expected {expected!r}, got {actual!r}')
+    metadata_checkpoint.passed = not metadata_checkpoint.failures
+    checkpoints.append(metadata_checkpoint)
+
+    tokenization_checkpoint = ValidationCheckpoint(
+        name='FBMCQ Tokenization',
+        description='the lexer emits tokens for the shared BMC query test corpus',
+    )
+    if tokens:
+        tokenization_checkpoint.passed = True
+    else:
+        tokenization_checkpoint.failures.append('lexer returned zero tokens for the BMC query test corpus')
+    checkpoints.append(tokenization_checkpoint)
+
+    detection_checkpoint = ValidationCheckpoint(
+        name='FBMCQ Language Detection',
+        description='analyse_text reports a confident BMC query detection score',
+    )
+    if detection_score >= 0.5:
+        detection_checkpoint.passed = True
+    else:
+        detection_checkpoint.failures.append(
+            f'detection score {detection_score:.2f} is below the required threshold 0.50'
+        )
+    checkpoints.append(detection_checkpoint)
+
+    for spec in FBMCQ_CHECKPOINT_SPECS:
+        checkpoint = ValidationCheckpoint(name=spec['name'], description=spec['description'])
+
+        for item in spec['items']:
+            actual_types = token_map.get(item.text)
+            if actual_types is None:
+                checkpoint.failures.append(f"token {item.text!r} was not found in the token stream")
+                continue
+            if item.pygments_token not in actual_types:
+                actual_text = ', '.join(str(token_type) for token_type in actual_types)
+                checkpoint.failures.append(
+                    f"token {item.text!r} expected {item.pygments_token}, got {actual_text}"
+                )
+
+        checkpoint.passed = not checkpoint.failures
+        checkpoints.append(checkpoint)
+
+    return checkpoints, len(tokens), detection_score
+
+
+def _validate_fbmcq_textmate_shared(grammar: Dict[str, Any]) -> List[ValidationCheckpoint]:
+    checkpoints: List[ValidationCheckpoint] = []
+
+    for spec in FBMCQ_CHECKPOINT_SPECS:
+        checkpoint = ValidationCheckpoint(name=spec['name'], description=spec['description'])
+
+        for item in spec['items']:
+            matched, failure_detail = _find_textmate_match(grammar, item)
+            if not matched:
+                checkpoint.failures.append(failure_detail)
+
+        checkpoint.passed = not checkpoint.failures
+        checkpoints.append(checkpoint)
+
+    return checkpoints
+
+
+
+def _match_textmate_root_token(grammar: Dict[str, Any], source: str, position: int = 0) -> Tuple[Optional[str], Optional[str]]:
+    repository = grammar.get('repository', {})
+    for include in grammar.get('patterns', []):
+        include_name = include.get('include')
+        if not include_name or not include_name.startswith('#'):
+            continue
+        section = repository.get(include_name[1:], {})
+        for pattern in section.get('patterns', []):
+            regex = pattern.get('match') or pattern.get('begin')
+            if not regex:
+                continue
+            match = _compile_pattern(regex).match(source, position)
+            if match:
+                return pattern.get('name'), match.group(0)
+    return None, None
+
+
+def _validate_fbmcq_textmate_structure(
+    grammar: Dict[str, Any],
+    vscode_copy: Dict[str, Any],
+    package_json: Dict[str, Any],
+) -> List[ValidationCheckpoint]:
+    checkpoints: List[ValidationCheckpoint] = []
+
+    sync_checkpoint = ValidationCheckpoint(
+        name='FBMCQ Grammar Sync',
+        description='canonical and VSCode-packaged BMC query grammars are identical',
+    )
+    if grammar == vscode_copy:
+        sync_checkpoint.passed = True
+    else:
+        sync_checkpoint.failures.append('canonical BMC query grammar and VSCode-packaged grammar differ')
+    checkpoints.append(sync_checkpoint)
+
+    includes_checkpoint = ValidationCheckpoint(
+        name='FBMCQ Top-Level Includes',
+        description='expected BMC query repository includes are present in pattern order',
+    )
+    expected_includes = [
+        '#comments',
+        '#atoms',
+        '#clauses',
+        '#keywords',
+        '#constants',
+        '#strings',
+        '#numbers',
+        '#operators',
+        '#identifiers',
+    ]
+    actual_includes = [item.get('include') for item in grammar.get('patterns', [])]
+    if actual_includes == expected_includes:
+        includes_checkpoint.passed = True
+    else:
+        includes_checkpoint.failures.append(
+            f'expected includes {expected_includes!r}, got {actual_includes!r}'
+        )
+    checkpoints.append(includes_checkpoint)
+
+    sections_checkpoint = ValidationCheckpoint(
+        name='FBMCQ Repository Sections',
+        description='expected BMC query repository sections are present',
+    )
+    expected_sections = [
+        'comments', 'atoms', 'clauses', 'keywords', 'operators',
+        'constants', 'strings', 'numbers', 'identifiers',
+    ]
+    repository = grammar.get('repository', {})
+    for section in expected_sections:
+        if section not in repository:
+            sections_checkpoint.failures.append(f'missing repository section {section!r}')
+    sections_checkpoint.passed = not sections_checkpoint.failures
+    checkpoints.append(sections_checkpoint)
+
+    numeric_root_checkpoint = ValidationCheckpoint(
+        name='FBMCQ Numeric Root Matching',
+        description='root include order lets BMC query numbers win over accessor punctuation when appropriate',
+    )
+    numeric_root_expectations = [
+        ('.5', 0, 'constant.numeric.float.fcstm.bmc.query', '.5'),
+        ('1.', 0, 'constant.numeric.float.fcstm.bmc.query', '1.'),
+        ('0..3', 0, 'constant.numeric.integer.fcstm.bmc.query', '0'),
+        ('0..3', 1, 'keyword.operator.range.fcstm.bmc.query', '..'),
+        ('0..3', 3, 'constant.numeric.integer.fcstm.bmc.query', '3'),
+    ]
+    for sample_text, position, expected_scope, expected_text in numeric_root_expectations:
+        actual_scope, actual_text = _match_textmate_root_token(grammar, sample_text, position)
+        if (actual_scope, actual_text) != (expected_scope, expected_text):
+            numeric_root_checkpoint.failures.append(
+                f"sample {sample_text!r} at {position} expected {(expected_scope, expected_text)!r}, "
+                f"got {(actual_scope, actual_text)!r}"
+            )
+    numeric_root_checkpoint.passed = not numeric_root_checkpoint.failures
+    checkpoints.append(numeric_root_checkpoint)
+
+    operator_checkpoint = ValidationCheckpoint(
+        name='FBMCQ Operator Order',
+        description='multi-character BMC query operators stay in safe matching order',
+    )
+    expected_operator_order = [
+        '\\*\\*',
+        '>>|<<',
+        '<=|>=|==|!=',
+        '&&|\\|\\|',
+        '=>',
+        '->',
+        '\\.\\.',
+        '!',
+        '[+\\-*/%&|^~<>]',
+        '=|\\?',
+        ',|;|:',
+        '\\{|\\}|\\(|\\)|\\[|\\]',
+        '\\.',
+    ]
+    operator_patterns = repository.get('operators', {}).get('patterns', [])
+    actual_operator_order = [item.get('match') for item in operator_patterns]
+    if actual_operator_order == expected_operator_order:
+        operator_checkpoint.passed = True
+    else:
+        operator_checkpoint.failures.append(
+            f'expected operator order {expected_operator_order!r}, got {actual_operator_order!r}'
+        )
+    checkpoints.append(operator_checkpoint)
+
+    contribution_checkpoint = ValidationCheckpoint(
+        name='FBMCQ VSCode Contribution',
+        description='package.json registers the BMC query language and grammar',
+    )
+    contributes = package_json.get('contributes', {})
+    languages = contributes.get('languages', [])
+    grammars = contributes.get('grammars', [])
+    language = next((item for item in languages if item.get('id') == 'fcstm-bmc-query'), None)
+    if language is None:
+        contribution_checkpoint.failures.append('missing language contribution id "fcstm-bmc-query"')
+    else:
+        if language.get('extensions') != ['.fbmcq']:
+            contribution_checkpoint.failures.append(
+                f'language extensions expected [\'.fbmcq\'], got {language.get("extensions")!r}'
+            )
+        expected_aliases = ['FCSTM BMC Query', 'fbmcq', 'fcstm-bmc-query']
+        if language.get('aliases') != expected_aliases:
+            contribution_checkpoint.failures.append(
+                f'language aliases expected {expected_aliases!r}, got {language.get("aliases")!r}'
+            )
+    grammar_entry = next((item for item in grammars if item.get('language') == 'fcstm-bmc-query'), None)
+    if grammar_entry is None:
+        contribution_checkpoint.failures.append('missing grammar contribution for language "fcstm-bmc-query"')
+    else:
+        if grammar_entry.get('scopeName') != 'source.fcstm.bmc.query':
+            contribution_checkpoint.failures.append(
+                f'grammar scope expected source.fcstm.bmc.query, got {grammar_entry.get("scopeName")!r}'
+            )
+        expected_path = './syntaxes/fcstm-bmc-query.tmLanguage.json'
+        if grammar_entry.get('path') != expected_path:
+            contribution_checkpoint.failures.append(
+                f'grammar path expected {expected_path!r}, got {grammar_entry.get("path")!r}'
+            )
+    contribution_checkpoint.passed = not contribution_checkpoint.failures
+    checkpoints.append(contribution_checkpoint)
+
+    negative_checkpoint = ValidationCheckpoint(
+        name='FBMCQ VSCode Negative Integration',
+        description='BMC query files do not activate FCSTM preview or language-server surfaces',
+    )
+    suspicious_needles = ('fcstm-bmc-query', '.fbmcq')
+    for activation in package_json.get('activationEvents', []):
+        if any(needle in activation for needle in suspicious_needles):
+            negative_checkpoint.failures.append(f'activation event must not target BMC query files: {activation!r}')
+    for menu_name, menu_items in contributes.get('menus', {}).items():
+        for item in menu_items:
+            when_clause = item.get('when', '')
+            if any(needle in when_clause for needle in suspicious_needles):
+                negative_checkpoint.failures.append(
+                    f'menu {menu_name!r} must not target BMC query files: {when_clause!r}'
+                )
+    for item in contributes.get('keybindings', []):
+        when_clause = item.get('when', '')
+        if any(needle in when_clause for needle in suspicious_needles):
+            negative_checkpoint.failures.append(f'keybinding must not target BMC query files: {when_clause!r}')
+    negative_checkpoint.passed = not negative_checkpoint.failures
+    checkpoints.append(negative_checkpoint)
+
+    return checkpoints
+
+
 def _print_section(title: str, checkpoints: List[ValidationCheckpoint]) -> None:
     print(f'\n🧪 {title}')
     for checkpoint in checkpoints:
@@ -1018,26 +1447,58 @@ def main() -> int:
     textmate_structure_checkpoints = _validate_textmate_structure(canonical_grammar, vscode_grammar)
     textmate_checkpoints = textmate_shared_checkpoints + textmate_structure_checkpoints
 
-    _print_section('Pygments Validation', pygments_checkpoints)
+    fbmcq_pygments_checkpoints, fbmcq_token_count, fbmcq_detection_score = _validate_fbmcq_pygments(FBMCQ_TEST_CODE)
+    fbmcq_canonical_grammar = _load_json(FBMCQ_TEXTMATE_GRAMMAR_FILE)
+    fbmcq_vscode_grammar = _load_json(VSCODE_FBMCQ_TEXTMATE_GRAMMAR_FILE)
+    vscode_package = _load_json(VSCODE_PACKAGE_FILE)
+    fbmcq_textmate_shared_checkpoints = _validate_fbmcq_textmate_shared(fbmcq_canonical_grammar)
+    fbmcq_textmate_structure_checkpoints = _validate_fbmcq_textmate_structure(
+        fbmcq_canonical_grammar,
+        fbmcq_vscode_grammar,
+        vscode_package,
+    )
+    fbmcq_textmate_checkpoints = fbmcq_textmate_shared_checkpoints + fbmcq_textmate_structure_checkpoints
+
+    _print_section('FCSTM Pygments Validation', pygments_checkpoints)
     print(
-        f'ℹ️ Pygments summary: {_count_passed(pygments_checkpoints)}/{len(pygments_checkpoints)} passed, '
+        f'ℹ️ FCSTM Pygments summary: {_count_passed(pygments_checkpoints)}/{len(pygments_checkpoints)} passed, '
         f'tokens={token_count}, detection={detection_score:.2f}'
     )
 
-    _print_section('TextMate Validation', textmate_checkpoints)
+    _print_section('FCSTM TextMate Validation', textmate_checkpoints)
     print(
-        f'ℹ️ TextMate summary: {_count_passed(textmate_checkpoints)}/{len(textmate_checkpoints)} passed'
+        f'ℹ️ FCSTM TextMate summary: {_count_passed(textmate_checkpoints)}/{len(textmate_checkpoints)} passed'
     )
 
-    all_checkpoints = pygments_checkpoints + textmate_checkpoints
+    _print_section('FBMCQ Pygments Validation', fbmcq_pygments_checkpoints)
+    print(
+        f'ℹ️ FBMCQ Pygments summary: '
+        f'{_count_passed(fbmcq_pygments_checkpoints)}/{len(fbmcq_pygments_checkpoints)} passed, '
+        f'tokens={fbmcq_token_count}, detection={fbmcq_detection_score:.2f}'
+    )
+
+    _print_section('FBMCQ TextMate and VSCode Validation', fbmcq_textmate_checkpoints)
+    print(
+        f'ℹ️ FBMCQ TextMate summary: '
+        f'{_count_passed(fbmcq_textmate_checkpoints)}/{len(fbmcq_textmate_checkpoints)} passed'
+    )
+
+    all_checkpoints = (
+        pygments_checkpoints
+        + textmate_checkpoints
+        + fbmcq_pygments_checkpoints
+        + fbmcq_textmate_checkpoints
+    )
     all_passed = all(checkpoint.passed for checkpoint in all_checkpoints)
 
     print('\n======================================================================')
     print('SUMMARY')
     print('======================================================================')
     print(
-        f'Pygments: {_count_passed(pygments_checkpoints)}/{len(pygments_checkpoints)} passed | '
-        f'TextMate: {_count_passed(textmate_checkpoints)}/{len(textmate_checkpoints)} passed'
+        f'FCSTM Pygments: {_count_passed(pygments_checkpoints)}/{len(pygments_checkpoints)} passed | '
+        f'FCSTM TextMate: {_count_passed(textmate_checkpoints)}/{len(textmate_checkpoints)} passed | '
+        f'FBMCQ Pygments: {_count_passed(fbmcq_pygments_checkpoints)}/{len(fbmcq_pygments_checkpoints)} passed | '
+        f'FBMCQ TextMate: {_count_passed(fbmcq_textmate_checkpoints)}/{len(fbmcq_textmate_checkpoints)} passed'
     )
 
     if all_passed:
@@ -1050,3 +1511,5 @@ def main() -> int:
 
 if __name__ == '__main__':
     sys.exit(main())
+
+# fmt: on

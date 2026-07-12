@@ -88,12 +88,14 @@ from pyfcstm.config.meta import __TITLE__, __AUTHOR__, __VERSION__
 
 # Register FCSTM Pygments lexer for syntax highlighting
 from pygments.lexers import get_lexer_by_name
-from pyfcstm.highlight.pygments_lexer import FcstmLexer
+from pyfcstm.highlight import FcstmBmcQueryLexer, FcstmLexer
 from sphinx.highlighting import lexers
 
 # Register the lexer with Sphinx
 lexers['fcstm'] = FcstmLexer()
 lexers['fcsm'] = FcstmLexer()  # Alternative alias
+lexers['fbmcq'] = FcstmBmcQueryLexer()
+lexers['fcstm-bmc-query'] = FcstmBmcQueryLexer()
 
 print("✓ FCSTM Pygments lexer registered successfully")
 

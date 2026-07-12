@@ -46,6 +46,9 @@ Follow this route if you have not used pyfcstm before.
    same model.
 5. Finish the first learning loop with :doc:`visualization/index` so the model
    can be explained with a diagram.
+6. Treat :doc:`bmc/index` as the advanced capstone after you can already read
+   an FCSTM model and one concrete runtime trace. It replaces one chosen event
+   sequence with a bounded symbolic search over all allowed sequences.
 
 Experienced-user path
 ---------------------
@@ -59,6 +62,8 @@ that refreshes one workflow.
   :doc:`simulation/index` and then to :doc:`/how_to/simulation/index`.
 * Already know the model and need output files: jump to :doc:`generation/index`
   or :doc:`visualization/index` and then to the matching how-to page.
+* Already understand concrete traces and need evidence about every behavior up
+  to a finite bound: finish with :doc:`bmc/index`.
 * Already need exact syntax, command options, or schema fields: skip tutorials
   and start at :doc:`/reference/index`.
 
@@ -112,21 +117,6 @@ semantics behind state-machine execution.
 Next step: read :doc:`dsl/index` when you want to understand the input file, or
 jump to :doc:`/how_to/cli_workflows/index` when you only need repeatable command
 recipes.
-
-Bounded model checking: :doc:`bmc/index`
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Prerequisites: the CLI is installed and you can read a one-state FCSTM model.
-
-Outcome: you run one bounded reachability query, read the property verdict
-before the solver status, save stable JSON, and confirm SAT witness replay.
-
-Non-goal: it does not enumerate the FBMCQ grammar or derive the transition
-relation and property objectives.
-
-Next step: repeat practical checks with :doc:`/how_to/bmc/index`, understand
-the mathematics through :doc:`/explanations/bmc_semantics/index`, or look up
-exact query forms in :doc:`/reference/bmc_query/index`.
 
 DSL tutorial: :doc:`dsl/index`
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -206,6 +196,25 @@ rule, or headless/CI boundary.
 Next step: use :doc:`/how_to/visualization/index` for diagram tasks and
 :doc:`/reference/visualization_options/index` for exact option behavior.
 
+Bounded model checking: :doc:`bmc/index`
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Prerequisites: you have completed the DSL tutorial and can interpret at least
+one concrete trace from Simulation or Inspect. You understand that a cycle can
+change both the active state and persistent variables.
+
+Outcome: you replace one hand-picked execution with a bounded symbolic search,
+state a meaningful safety property, read a counterexample trace, repair the
+model, and understand why the repaired bounded result is not an unbounded
+proof.
+
+Non-goal: it does not enumerate the FBMCQ grammar or derive every transition
+relation and property objective.
+
+Next step: repeat practical checks with :doc:`/how_to/bmc/index`, understand
+the mathematics through :doc:`/explanations/bmc_semantics/index`, or look up
+exact query forms in :doc:`/reference/bmc_query/index`.
+
 Where the tutorial path stops
 -----------------------------
 
@@ -219,7 +228,7 @@ Compatibility landing pages
 
 The following old tutorial URLs remain reachable as compatibility landing notes.
 They protect old links and point to the current owner pages, but they are not
-part of the six sibling tutorial cards above.
+part of the seven sibling tutorial cards above.
 
 * :doc:`installation/index`
 * :doc:`cli/index`

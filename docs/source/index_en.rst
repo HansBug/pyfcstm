@@ -94,21 +94,21 @@ show the whole learning path directly from this home page.
 
     Tutorial roadmap <tutorials/index>
     tutorials/quick_start/index
-    tutorials/bmc/index
     tutorials/dsl/index
     tutorials/simulation/index
     tutorials/inspect/index
     tutorials/generation/index
     tutorials/visualization/index
+    tutorials/bmc/index
 
 * :doc:`Tutorial roadmap <tutorials/index>`
 * :doc:`tutorials/quick_start/index`
-* :doc:`tutorials/bmc/index`
 * :doc:`tutorials/dsl/index`
 * :doc:`tutorials/simulation/index`
 * :doc:`tutorials/inspect/index`
 * :doc:`tutorials/generation/index`
 * :doc:`tutorials/visualization/index`
+* :doc:`tutorials/bmc/index`
 
 How-to Guides
 -------------

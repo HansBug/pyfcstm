@@ -8,7 +8,32 @@ skinparam state {
   FontStyle<<pseudo>> italic
 }
 
-state "Door" as door
+legend top left
+|= Variable |= Type |= Initial Value |
+| latch_engaged | int | 1 |
+endlegend
+
+state "Door" as door <<composite>> {
+    state "Locked" as door__locked
+    state "Unlocked" as door__unlocked
+    state "Open" as door__open
+    [*] --> door__locked
+    door__locked --> door__unlocked : Unlock
+    note on link
+    effect {
+        latch_engaged = 0;
+    }
+    end note
+    door__unlocked --> door__open : OpenDoor
+    door__open --> door__unlocked : Close
+    door__unlocked --> door__locked : Lock
+    note on link
+    effect {
+        latch_engaged = 1;
+    }
+    end note
+    door__locked --> door__open : ServiceOverride
+}
 [*] --> door
 door --> [*]
 @enduml

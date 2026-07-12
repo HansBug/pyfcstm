@@ -22,6 +22,8 @@ state Door {
         latch_engaged = 1;
     }
 
-    // Defect: this path opens the door without releasing the latch.
-    Locked -> Open : ServiceOverride;
+    // Repair: every path to Open releases the physical latch.
+    Locked -> Open : ServiceOverride effect {
+        latch_engaged = 0;
+    }
 }

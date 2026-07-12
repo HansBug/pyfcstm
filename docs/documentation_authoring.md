@@ -424,6 +424,19 @@ The four page roles have separate hard floors:
 | Explanation | Define symbols before use; derive the core relation, objectives, solver checks, verdict mapping, witness projection, and replay boundary. Every major equation maps to implementation, test, and a trace. |
 | Reference | Close over grammar, defaults, legal and illegal contexts, CLI options, streams, atomic file effects, exits, JSON nullability, witness/replay, packaging, and unsupported behavior. Every property kind and high-impact family needs at least three non-equivalent legal examples plus a boundary example. |
 
+Reader-facing BMC examples are also a hard gate. Each prose code block should
+demonstrate one claim with the shortest meaningful model, query, command, or
+output excerpt that preserves that claim. Explain the block immediately: name
+what each relevant line contributes, state the expected observation, and say
+what conclusion the reader may and may not draw. Keep complete models and long
+reproduction flows as downloadable checked-in resources, but do not make a
+reader reverse-engineer those resources to understand the page. A generated
+multi-function program, an unexplained helper script, or a long shell/Python
+pipeline is not an acceptable substitute for a focused example, even when it
+runs successfully. When a script is retained for regression or resource
+generation, show the direct user command first and describe the script as
+optional verification infrastructure rather than a prerequisite.
+
 Mathematical pages use inline `:math:` and labelled `.. math::` blocks referenced
 through `:eq:`. Maintain an equation ledger containing label, claim, literal
 LaTeX, implementation symbol, test, working query, and trace. Equivalent
@@ -630,7 +643,15 @@ For Sphinx source changes, run language-appropriate HTML checks. For broad or bi
 NO_CONTENTS_BUILD=1 READTHEDOCS_LANGUAGE=en sphinx-build -b html docs/source /tmp/pyfcstm-html-check-en
 NO_CONTENTS_BUILD=1 READTHEDOCS_LANGUAGE=zh sphinx-build -b html docs/source /tmp/pyfcstm-html-check-zh
 rg -n 'class="problematic"|<span class="problematic"' /tmp/pyfcstm-html-check-en /tmp/pyfcstm-html-check-zh -g '*.html'
+rg -n '``' /tmp/pyfcstm-html-check-en/{tutorials,how_to,explanations,reference} /tmp/pyfcstm-html-check-zh/{tutorials,how_to,explanations,reference} -g '*.html'
 ```
+
+The second scan catches a different reST failure mode: docutils can absorb bad
+inline-literal boundaries into one malformed ``<code>`` element without
+emitting ``class="problematic"``.  Inspect every hit in user-authored pages and
+either fix the leaked double backticks or document why the literal characters
+are intentional.  Do not use generated ``_modules`` source views as evidence
+for this check.
 
 `rg` is the preferred local scan tool because it is already used throughout this repository's maintainer guidance. If it is not available, use an equivalent recursive grep command, for example:
 

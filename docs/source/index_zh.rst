@@ -92,21 +92,21 @@ pyfcstm 遵循三阶段流水线：
 
     教程路线图 <tutorials/index_zh>
     tutorials/quick_start/index_zh
-    tutorials/bmc/index_zh
     tutorials/dsl/index_zh
     tutorials/simulation/index_zh
     tutorials/inspect/index_zh
     tutorials/generation/index_zh
     tutorials/visualization/index_zh
+    tutorials/bmc/index_zh
 
 * :doc:`教程路线图 <tutorials/index_zh>`
 * :doc:`tutorials/quick_start/index_zh`
-* :doc:`tutorials/bmc/index_zh`
 * :doc:`tutorials/dsl/index_zh`
 * :doc:`tutorials/simulation/index_zh`
 * :doc:`tutorials/inspect/index_zh`
 * :doc:`tutorials/generation/index_zh`
 * :doc:`tutorials/visualization/index_zh`
+* :doc:`tutorials/bmc/index_zh`
 
 任务指南
 --------

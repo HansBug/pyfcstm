@@ -1,40 +1,156 @@
 BMC Task Recipes
 ================
 
-Use these recipes after completing :doc:`../../tutorials/bmc/index`.  Every
-task uses the independent fixtures in this directory and can be run from the
-repository root.  The model is:
+Use these recipes after completing :doc:`../../tutorials/bmc/index`.  Start in
+an empty working directory and :download:`download the task model
+<bmc_tasks.fcstm>` there.  Save each task's short FBMCQ block under the filename
+shown by its command, then run that command from the same directory.  The model
+is small on purpose:
 
 .. literalinclude:: bmc_tasks.fcstm
    :language: text
-   :caption: ``docs/source/how_to/bmc/bmc_tasks.fcstm``
+   :caption: ``bmc_tasks.fcstm``
 
 It has one persistent variable, one event, one abstract ``during`` action, and
-one event-driven transition.  These are enough to exercise the public BMC CLI
-without importing resources from ``test/``.
+one event-driven transition.  The examples below show the direct CLI command
+first, then the complete short ``.fbmcq`` text to save, then the explanation,
+expected output, and failure boundary.  A block that compares alternatives
+labels each alternative as a separate file.
+
+How to choose a property kind
+-----------------------------
+
+SAT has different meaning for witness properties and counterexample
+properties.  Pick the query kind from the user question first, then read the
+solver status through that polarity.
+
+.. list-table:: BMC property selection guide
+   :header-rows: 1
+   :widths: 16 30 22 22 28
+
+   * - Kind
+     - User intent
+     - Quantification
+     - SAT meaning
+     - Use when
+   * - ``reach``
+     - Find at least one bounded execution where a predicate becomes true.
+     - Existential over traces and frames.
+     - A witness was found; property holds for the search goal.
+     - You want a concrete path to a state, value, call, or event condition.
+   * - ``forbid``
+     - Reject any bounded execution that reaches a bad predicate.
+     - Universal safety check encoded as counterexample search.
+     - A counterexample was found; property is violated.
+     - You know the unsafe condition and want CI to fail when it is reachable.
+   * - ``invariant``
+     - Require a predicate on every searched frame.
+     - Universal over frames in every bounded trace.
+     - A counterexample frame was found; property is violated.
+     - You need a bounded safety condition, such as ``x >= 0`` always.
+   * - ``must_reach``
+     - Require every bounded execution to reach a predicate.
+     - Universal over traces, existential over frames per trace.
+     - A trace that never reaches the predicate was found; property is violated.
+     - You need guaranteed bounded progress rather than one successful example.
+   * - ``exists_always``
+     - Find one execution where a predicate stays true for the whole bound.
+     - Existential over traces, universal over frames on that trace.
+     - A witness trace was found; property holds for the search goal.
+     - You want to prove a stable scenario is possible, not mandatory.
+   * - ``response``
+     - Check that every trigger is followed by a response within a window.
+     - Universal over trigger steps and bounded successor-frame windows.
+     - A violating trigger was found; property is violated.
+     - You need request/acknowledge, command/effect, or alarm/clear behavior.
+   * - ``cover``
+     - Hit a named transition case label.
+     - Existential over traces and case labels.
+     - A witness hit the case label.
+     - You need coverage for a specific generated transition branch.
+
+How to handle inconclusive outcomes
+-----------------------------------
+
+Use this table when the CLI exits ``3`` or when a JSON report has an outcome
+that is neither ``property_satisfied`` nor ``property_violated``.
+
+.. list-table:: Timeout, unknown, and incomplete handling
+   :header-rows: 1
+   :widths: 18 24 30 30
+
+   * - Outcome
+     - Where it appears
+     - Meaning
+     - First response
+   * - ``timeout``
+     - ``result.status`` and ``result.outcome`` can both be ``timeout``.
+     - Z3 did not finish a single ``check()`` within ``--timeout-ms``.
+     - Raise ``--timeout-ms``, simplify assumptions, or reduce the bound; do not treat it as safe.
+   * - ``unknown``
+     - ``result.status`` may be ``unknown`` when the backend cannot decide.
+     - The solver returned an indeterminate answer that is not SAT or UNSAT.
+     - Inspect diagnostics, simplify the query, or lower the bound; do not use it as proof.
+   * - ``incomplete``
+     - ``result.outcome`` is ``incomplete`` and ``result.incomplete`` is true.
+     - The primary objective was UNSAT, but the separate response-horizon check
+       was SAT, ``unknown``, ``timeout``, or not run.
+     - Inspect ``result.incomplete_status``.  Increase the bound for SAT;
+       diagnose the solver or timeout for ``unknown``/``timeout``.
 
 How to read the task cards
 --------------------------
 
-Each card states its input, command, expected output, file side effect, first
-failure boundary, and reference destination.  Solver verdicts are reports,
-including expected nonzero verdicts.  Controlled input errors instead write a
-short message to stderr and do not create a partial report.
+Each task card includes a direct CLI command, the relevant query snippet, a
+short explanation, expected output, side effects, failure boundary, and a link
+to the reference page for exhaustive syntax or result facts.  Solver verdicts
+are reports, including expected nonzero verdicts.  Controlled input errors write
+a short message to stderr and do not create a partial report.
 
-1. Choose among the seven property kinds
------------------------------------------
+1. Run the chosen property kind
+-------------------------------
 
-**Input.** ``bmc_tasks.fcstm`` and the seven query fixtures named after
-``reach``, ``forbid``, ``invariant``, ``must_reach``, ``exists_always``,
-``response``, and ``cover``.
-
-**Command.** Run the checked demo and keep its first seven summaries:
+**CLI.** Replace ``reach.fbmcq`` with the query file for the property you chose.
 
 .. code-block:: bash
 
-   bash docs/source/how_to/bmc/bmc_tasks.demo.sh | sed -n '1,7p'
+   python -m pyfcstm bmc \
+       -i bmc_tasks.fcstm \
+       -q reach.fbmcq --json
 
-**Expected output.**
+**FBMCQ.** These are seven separate query files, not seven ``check`` clauses in
+one file.  Every file starts with ``init state("Root.Idle");`` and contains
+exactly one row from this table:
+
+.. list-table:: One ``check`` clause per property file
+   :header-rows: 1
+   :widths: 19 81
+
+   * - File
+     - Clause after the common ``init`` line
+   * - ``reach.fbmcq``
+     - ``check reach <= 1: active("Root.Idle");``
+   * - ``forbid.fbmcq``
+     - ``check forbid <= 1: active("Root.Done");``
+   * - ``invariant.fbmcq``
+     - ``check invariant <= 1: x == 0;``
+   * - ``must_reach.fbmcq``
+     - ``check must_reach <= 1: active("Root.Idle");``
+   * - ``exists_always.fbmcq``
+     - ``check exists_always <= 1: x == 0;``
+   * - ``response.fbmcq``
+     - ``check response <= 1: trigger false -> within 1 active("Root.Done");``
+   * - ``cover.fbmcq``
+     - ``check cover <= 1: case("Root.Idle::transition::Root.Done::0");``
+
+**What it does.** The command asks one bounded question about the model.  The
+query kind controls whether SAT means a positive witness or a counterexample.
+The shared hot-start line makes frame zero ``Root.Idle``; it is required for
+the bound-one ``forbid`` and ``cover`` results shown below.
+
+**Expected output.** For the direct ``reach`` command, JSON contains
+``"kind": "reach"``, ``"status": "sat"``, ``"outcome": "witness_found"``,
+and ``"exit_code": 0``.  The verified fixture matrix is:
 
 .. code-block:: text
 
@@ -46,15 +162,11 @@ short message to stderr and do not create a partial report.
    response unsat property_satisfied exit=0
    cover sat witness_found exit=0
 
-The first, fifth, and seventh kinds have witness polarity; the other four have
-counterexample polarity.  SAT therefore does not have one universal meaning.
-
-**File side effect.** The demo uses ``.bmc_tasks.tmp`` beside itself and removes
-it on exit.
+**File side effect.** None unless you add ``-o``.
 
 **Failure boundary.** ``cover`` accepts only a naked, known, coverable
-``case("...")`` label.  A transition edit can change that label.  A bounded
-success or failure says nothing beyond the selected bound.
+``case("...")`` label.  A bounded result says nothing beyond the selected
+bound.
 
 **Reference.** See :doc:`../../reference/bmc_query/index` for exact property
 forms and :doc:`../../explanations/bmc_properties/index` for their objectives.
@@ -62,20 +174,23 @@ forms and :doc:`../../explanations/bmc_properties/index` for their objectives.
 2. Set a state and replace selected initializers
 ------------------------------------------------
 
-**Input.** ``init_havoc_where.fbmcq``, which starts at ``Root.Idle``, removes
-only ``x`` from the initializer constraints, and constrains frame zero to
-``x == 7``.
-
-.. literalinclude:: init_havoc_where.fbmcq
-   :language: text
-
-**Command.**
+**CLI.**
 
 .. code-block:: bash
 
    python -m pyfcstm bmc \
-       -i docs/source/how_to/bmc/bmc_tasks.fcstm \
-       -q docs/source/how_to/bmc/init_havoc_where.fbmcq --json
+       -i bmc_tasks.fcstm \
+       -q init_havoc_where.fbmcq --json
+
+**FBMCQ.**
+
+.. code-block:: text
+
+   init state("Root.Idle") havoc { x } where x == 7;
+   check reach <= 1: x == 7;
+
+**What it does.** The query starts from ``Root.Idle``, removes only ``x`` from
+the initializer constraints, and constrains frame zero to ``x == 7``.
 
 **Expected output.** JSON contains ``"kind": "reach"``,
 ``"outcome": "witness_found"``, and a witness frame whose ``vars.x`` is ``7``;
@@ -94,21 +209,28 @@ persistent initializer, so prefer a named set when possible.
 3. Constrain frames and event inputs
 ------------------------------------
 
-**Input.** ``assumptions.fbmcq`` constrains ``x`` on every frame, disables
-``Root.Go`` at step zero, and requests at-most-one cardinality for the event
-set.
-
-.. literalinclude:: assumptions.fbmcq
-   :language: text
-
-**Command.**
+**CLI.**
 
 .. code-block:: bash
 
    python -m pyfcstm bmc \
-       -i docs/source/how_to/bmc/bmc_tasks.fcstm \
-       -q docs/source/how_to/bmc/assumptions.fbmcq --json \
+       -i bmc_tasks.fcstm \
+       -q assumptions.fbmcq --json \
        -o /tmp/bmc-assumptions.json
+
+**FBMCQ.**
+
+.. code-block:: text
+
+   init state("Root.Idle");
+   assume always: x == 0;
+   assume event("Root.Go", 0) == false;
+   assume events cardinality at_most_one {"Root.Go"};
+   check invariant <= 1: x == 0;
+
+**What it does.** The assumptions constrain ``x`` on every frame, disable
+``Root.Go`` at step zero, and require at most one event from the selected event
+set.
 
 **Expected output.** The payload reports ``invariant``, ``unsat``,
 ``property_satisfied``, and exit ``0``.  ``witness`` and ``replay`` are null
@@ -117,9 +239,9 @@ because no counterexample exists under these assumptions.
 **File side effect.** ``/tmp/bmc-assumptions.json`` is atomically created or
 replaced.
 
-**Failure boundary.** Assumptions restrict the searched environment and can
-make an otherwise possible behavior disappear.  Event paths are fully
-qualified; an unknown path is a binding error, not an UNSAT verdict.
+**Failure boundary.** Assumptions restrict the searched environment and can make
+an otherwise possible behavior disappear.  Event paths are fully qualified; an
+unknown path is a binding error, not an UNSAT verdict.
 
 **Reference.** See :doc:`../../reference/bmc_query/index` for ``always``,
 ``at``, event selectors, ranges, and cardinality.
@@ -127,25 +249,31 @@ qualified; an unknown path is a binding error, not an UNSAT verdict.
 4. Match abstract calls and snapshots
 -------------------------------------
 
-**Input.** ``calls.fbmcq`` selects the ``Root.Idle.Tick`` call at step zero,
-requires its runtime role, checks the call-time ``x`` snapshot, and counts it.
-
-.. literalinclude:: calls.fbmcq
-   :language: text
-
-**Command.**
+**CLI.**
 
 .. code-block:: bash
 
    python -m pyfcstm bmc \
-       -i docs/source/how_to/bmc/bmc_tasks.fcstm \
-       -q docs/source/how_to/bmc/calls.fbmcq --json \
+       -i bmc_tasks.fcstm \
+       -q calls.fbmcq --json \
        -o /tmp/bmc-calls.json
 
-**Expected output.** Exit ``0`` with ``outcome`` equal to ``witness_found``.
-The first witness step contains one ``abstract_calls`` record with
-``action_name`` ``Root.Idle.Tick``, ``role`` ``leaf_during``, and ``snapshot.x``
-equal to ``0``.
+**FBMCQ.**
+
+.. code-block:: text
+
+   init state("Root.Idle");
+   check reach <= 1:
+       called("Root.Idle.Tick", step=0, role="leaf_during", where x == 0)
+       && call_count("Root.Idle.Tick", step=*) == 1;
+
+**What it does.** The query selects the ``Root.Idle.Tick`` call at step zero,
+requires its runtime role, checks the call-time ``x`` snapshot, and counts the
+call within the one-step bound.
+
+**Expected output.** Exit ``0`` with ``outcome`` equal to ``witness_found``.  The
+first witness step contains one ``abstract_calls`` record with ``action_name``
+``Root.Idle.Tick``, ``role`` ``leaf_during``, and ``snapshot.x`` equal to ``0``.
 
 **File side effect.** ``/tmp/bmc-calls.json`` is atomically created or replaced.
 
@@ -160,22 +288,32 @@ key and allowed ``where`` expression.
 5. Audit a human witness and replay
 -----------------------------------
 
-**Input.** The model and ``calls.fbmcq``.
-
-**Command.**
+**CLI.**
 
 .. code-block:: bash
 
    python -m pyfcstm bmc \
-       -i docs/source/how_to/bmc/bmc_tasks.fcstm \
-       -q docs/source/how_to/bmc/calls.fbmcq
+       -i bmc_tasks.fcstm \
+       -q calls.fbmcq
 
-**Expected output.** The first line is
-``BMC reach <= 3: PROPERTY HOLDS``.  ``Solver: SAT`` follows as diagnostic
-evidence, ``Replay: verified`` reports the runtime trust gate, and the compact
-``Trace`` lists source, target, selected case, events, and calls.  The process
-exits ``0``.  Use ``--color always`` to force ANSI terminal decoration or
-``--color never`` for a stable plain-text transcript.
+**FBMCQ.**
+
+.. code-block:: text
+
+   init state("Root.Idle");
+   check reach <= 1:
+       called("Root.Idle.Tick", step=0, role="leaf_during", where x == 0)
+       && call_count("Root.Idle.Tick", step=*) == 1;
+
+**What it does.** Human mode prints the same witness in a compact form and runs
+the mandatory replay trust gate before reporting success.
+
+**Expected output.** The first line is ``BMC reach <= 1: PROPERTY HOLDS``.
+``Solver: SAT`` follows as diagnostic evidence, ``Replay: verified`` reports
+the runtime trust gate, and the compact ``Trace`` lists source, target, selected
+case, events, and calls.  The process exits ``0``.  Use ``--color always`` to
+force ANSI terminal decoration or ``--color never`` for a stable plain-text
+transcript.
 
 **File side effect.** None; the human summary goes to stdout.  Use ``--json``
 for the complete witness and replay records.
@@ -191,33 +329,30 @@ witness columns, replay mismatches, and exit precedence.
 6. Gate CI with JSON and exit status
 ------------------------------------
 
-**Input.** ``forbid.fbmcq`` intentionally finds a forbidden-state
-counterexample, so this card demonstrates a valid report with nonzero exit.
-
-**Command.**
+**CLI.**
 
 .. code-block:: bash
 
-   set +e
    python -m pyfcstm bmc \
-       -i docs/source/how_to/bmc/bmc_tasks.fcstm \
-       -q docs/source/how_to/bmc/forbid.fbmcq --json \
+       -i bmc_tasks.fcstm \
+       -q forbid.fbmcq --json \
        -o /tmp/bmc-ci.json
-   rc=$?
-   set -e
-   BMC_RC="$rc" BMC_JSON=/tmp/bmc-ci.json python - <<'PY'
-   import json
-   import os
-   from pathlib import Path
 
-   payload = json.loads(Path(os.environ["BMC_JSON"]).read_text(encoding="utf-8"))
-   assert payload["exit_code"] == int(os.environ["BMC_RC"])
-   print(payload["result"]["outcome"], payload["exit_code"])
-   PY
+**FBMCQ.**
 
-**Expected output.** ``property_violated 1``.  CI should fail or allow this
-according to project policy, but it must not confuse the report with a CLI
-input error.
+.. code-block:: text
+
+   init state("Root.Idle");
+   check forbid <= 1: active("Root.Done");
+
+**What it does.** This valid query intentionally finds a forbidden-state
+counterexample.  It demonstrates a machine-readable report whose process exit
+is nonzero because the property is violated.
+
+**Expected output.** The command exits ``1`` and still creates JSON containing
+``"status": "sat"``, ``"outcome": "property_violated"``, and
+``"exit_code": 1``.  CI should fail or allow that verdict according to project
+policy, but it must not confuse it with a CLI input error.
 
 **File side effect.** ``/tmp/bmc-ci.json`` is created even though the verdict
 exit is ``1``.
@@ -233,28 +368,33 @@ matrix and stable JSON schema.
 7. Write a completed report atomically
 --------------------------------------
 
-**Input.** Any valid single query; this example uses ``invariant.fbmcq`` and an
-already existing parent directory.
-
-**Command.**
+**CLI.**
 
 .. code-block:: bash
 
    mkdir -p /tmp/pyfcstm-bmc
    python -m pyfcstm bmc \
-       -i docs/source/how_to/bmc/bmc_tasks.fcstm \
-       -q docs/source/how_to/bmc/invariant.fbmcq \
+       -i bmc_tasks.fcstm \
+       -q invariant.fbmcq \
        --json -o /tmp/pyfcstm-bmc/result.json
-   test -s /tmp/pyfcstm-bmc/result.json
 
-**Expected output.** No stdout; ``test`` exits ``0`` and the file contains
-``"exit_code": 0``.
+**FBMCQ.**
 
-**File side effect.** The target is atomically replaced using a same-directory
-temporary file.
+.. code-block:: text
 
-**Failure boundary.** Parent directories are not created by ``pyfcstm bmc``.
-If reading, compiling, solving internally, or writing fails before a complete
+   init state("Root.Idle");
+   check invariant <= 1: x == 0;
+
+**What it does.** The CLI writes a complete JSON payload through a
+same-directory temporary file, then replaces the target path.
+
+**Expected output.** No stdout; the file contains ``"exit_code": 0``.
+
+**File side effect.** The target is atomically created or replaced.  The parent
+directory must already exist.
+
+**Failure boundary.** Parent directories are not created by ``pyfcstm bmc``.  If
+reading, compiling, solving internally, or writing fails before a complete
 payload exists, the command must not claim a successful output file.
 
 **Reference.** See :doc:`../../reference/bmc_results/index` for overwrite,
@@ -263,20 +403,26 @@ stdout, stderr, and UTF-8 rules.
 8. Enforce a maximum bound policy
 ---------------------------------
 
-**Input.** ``reach_bound_2.fbmcq`` requests bound 2 while the command policy
-allows at most 1.
-
-**Command.**
+**CLI.**
 
 .. code-block:: bash
 
    python -m pyfcstm bmc \
-       -i docs/source/how_to/bmc/bmc_tasks.fcstm \
-       -q docs/source/how_to/bmc/reach_bound_2.fbmcq \
+       -i bmc_tasks.fcstm \
+       -q reach_bound_2.fbmcq \
        --max-bound 1
 
-**Expected output.** A concise ``Failed to compile BMC query`` message on
-stderr containing ``query_bound=2`` and ``max_bound=1``; exit ``1``.
+**FBMCQ.**
+
+.. code-block:: text
+
+   check reach <= 2: active("Root.Idle");
+
+**What it does.** The query requests bound 2, while the command-line policy
+allows at most 1.
+
+**Expected output.** stderr contains ``Failed to compile BMC query``,
+``query_bound=2``, and ``max_bound=1``; the command exits ``1``.
 
 **File side effect.** None.  With ``-o``, no report would be created or modified
 because policy rejection happens before report construction.
@@ -291,41 +437,35 @@ error classification details.
 9. Apply a per-check solver timeout
 -----------------------------------
 
-**Input.** A valid query.  The small fixture may finish before the one
-millisecond timeout; the task verifies propagation rather than forcing a
-machine-dependent timeout.
-
-**Command.**
+**CLI.**
 
 .. code-block:: bash
 
-   set +e
    python -m pyfcstm bmc \
-       -i docs/source/how_to/bmc/bmc_tasks.fcstm \
-       -q docs/source/how_to/bmc/reach_bound_2.fbmcq \
+       -i bmc_tasks.fcstm \
+       -q reach_bound_2.fbmcq \
        --timeout-ms 1 --json -o /tmp/bmc-timeout.json
-   rc=$?
-   set -e
-   BMC_JSON=/tmp/bmc-timeout.json python - <<'PY'
-   import json
-   import os
-   from pathlib import Path
 
-   payload = json.loads(Path(os.environ["BMC_JSON"]).read_text(encoding="utf-8"))
-   print("timeout_ms:", payload["result"]["timeout_ms"])
-   print("outcome:", payload["result"]["outcome"])
-   PY
+**FBMCQ.**
 
-**Expected output.** ``timeout_ms: 1`` followed by either a decisive outcome or
-``outcome: timeout``.  A real timeout exits ``3``; a fast decisive solve keeps
-its ordinary exit.
+.. code-block:: text
+
+   check reach <= 2: active("Root.Idle");
+
+**What it does.** The command passes a one-millisecond timeout to each solver
+``check()``.  This fixture normally reports a timeout on a loaded development
+machine, but very fast machines may produce a decisive result before the limit.
+
+**Expected output.** On the verified run, the command exited ``3`` and JSON
+contained ``"timeout_ms": 1``, ``"status": "timeout"``, and
+``"outcome": "timeout"``.  If the solve finishes first, the JSON still records
+``"timeout_ms": 1`` and uses the ordinary decisive exit.
 
 **File side effect.** ``/tmp/bmc-timeout.json`` contains the completed verdict.
 
-**Failure boundary.** The value applies independently to each Z3 ``check()``;
-it is not a wall-clock budget for parsing, expansion, formula construction, or
-the whole CLI.  ``response`` may execute a second incomplete-horizon check,
-also with the full timeout.
+**Failure boundary.** The timeout is not a wall-clock budget for parsing,
+expansion, formula construction, or the whole CLI.  ``response`` may execute a
+second incomplete-horizon check, also with the full timeout.
 
 **Reference.** See :doc:`../../reference/bmc_results/index` for timeout fields
 and :doc:`../../explanations/bmc_solving/index` for the solve sequence.
@@ -333,40 +473,41 @@ and :doc:`../../explanations/bmc_solving/index` for the solve sequence.
 10. Distinguish response violations from an incomplete horizon
 --------------------------------------------------------------
 
-**Input.** ``response_missing.fbmcq`` has a defined trigger and no response;
-``response_trigger_undefined.fbmcq`` divides by ``x == 0`` in its trigger;
-``response_incomplete.fbmcq`` has bound 1 but asks for a response within 2
-successor frames.
-
-.. literalinclude:: response_incomplete.fbmcq
-   :language: text
-
-**Command.**
+**CLI.** Run the missing-response case first; use ``response_incomplete.fbmcq``
+with the same command shape when you need the short-horizon case.
 
 .. code-block:: bash
 
-   set +e
-   for name in response_missing response_trigger_undefined; do
-       python -m pyfcstm bmc \
-           -i docs/source/how_to/bmc/bmc_tasks.fcstm \
-           -q "docs/source/how_to/bmc/$name.fbmcq" --json \
-           -o "/tmp/$name.json"
-       echo "$name exit=$?"
-   done
    python -m pyfcstm bmc \
-       -i docs/source/how_to/bmc/bmc_tasks.fcstm \
-       -q docs/source/how_to/bmc/response_incomplete.fbmcq --json \
-       -o /tmp/bmc-incomplete.json
-   echo "response_incomplete exit=$?"
-   set -e
+       -i bmc_tasks.fcstm \
+       -q response_missing.fbmcq --json \
+       -o /tmp/bmc-response.json
 
-**Expected output.** The first two lines end in ``exit=1``; both JSON reports
-have ``status`` ``sat`` and ``outcome`` ``property_violated``.  The last line is
-``response_incomplete exit=3``.  Its JSON has primary ``status`` ``unsat``, but
-``outcome`` ``incomplete``, ``incomplete`` true, and ``incomplete_status``
-``sat``; witness and replay are null.
+**FBMCQ file:** ``response_missing.fbmcq``
 
-**File side effect.** Three complete JSON reports are created under ``/tmp``.
+.. code-block:: text
+
+   check response <= 1: trigger true -> within 1 false;
+
+**FBMCQ file:** ``response_incomplete.fbmcq``
+
+.. code-block:: text
+
+   check response <= 1: trigger true -> within 2 false;
+
+**What it does.** The first query is a decisive violation: a trigger exists and
+no response can satisfy the one-step window.  The second shape is inconclusive
+at bound 1 because a two-successor response window extends beyond the checked
+suffix.
+
+**Expected output.** ``response_missing.fbmcq`` exits ``1`` with ``status``
+``sat`` and ``outcome`` ``property_violated``.  ``response_incomplete.fbmcq``
+exits ``3`` with primary ``status`` ``unsat``, ``outcome`` ``incomplete``,
+``incomplete`` true, and ``incomplete_status`` ``sat``; witness and replay are
+null.
+
+**File side effect.** The selected output file under ``/tmp`` is atomically
+created or replaced.
 
 **Failure boundary.** Current outcome and witness schemas do not classify
 whether a decisive response counterexample came from an undefined trigger or
@@ -381,16 +522,22 @@ fields.
 11. Diagnose parse, binding, and unsupported input
 --------------------------------------------------
 
-**Input.** ``invalid_state.fbmcq`` is syntactically valid but names the missing
-state ``Root.Missing``.
-
-**Command.**
+**CLI.**
 
 .. code-block:: bash
 
    python -m pyfcstm bmc \
-       -i docs/source/how_to/bmc/bmc_tasks.fcstm \
-       -q docs/source/how_to/bmc/invalid_state.fbmcq
+       -i bmc_tasks.fcstm \
+       -q invalid_state.fbmcq
+
+**FBMCQ.**
+
+.. code-block:: text
+
+   check reach <= 1: active("Root.Missing");
+
+**What it does.** The query is syntactically valid but names a state that the
+model does not contain.
 
 **Expected output.** stderr starts with ``Failed to compile BMC query`` and
 identifies ``Root.Missing``; exit ``1``.  stdout is empty.
@@ -399,39 +546,10 @@ identifies ``Root.Missing``; exit ``1``.  stdout is empty.
 create a partial payload.
 
 **Failure boundary.** A malformed ``.fbmcq`` fails during parsing; an unknown
-model path fails during binding; a parsed but unsupported expression reports
-an unsupported query.  These are controlled user-input errors.  A traceback
-with an internal BMC sentinel is an implementation failure and should be
-reported as a bug rather than rewritten until it becomes UNSAT.
+model object path fails during binding; a parsed but unsupported expression reports an
+unsupported query.  These are controlled user-input errors.  A traceback with an
+internal BMC sentinel is an implementation failure and should be reported as a
+bug rather than rewritten until it becomes UNSAT.
 
 **Reference.** See :doc:`../../reference/bmc_query/index` for legal and illegal
 forms and :doc:`../../reference/bmc_results/index` for error streams.
-
-12. Re-run the primary fixture matrix after an upgrade
-------------------------------------------------------
-
-**Input.** The model, the query fixtures, and ``bmc_tasks.demo.sh`` in this
-directory.  The script owns its expected exit matrix.
-
-**Command.**
-
-.. code-block:: bash
-
-   bash docs/source/how_to/bmc/bmc_tasks.demo.sh
-
-**Expected output.** Eleven verdict summaries ending with
-``response unsat incomplete exit=3``, followed by
-``invalid_state controlled_error exit=1``.  The script itself exits ``0`` only
-when every nested command matches the frozen expectation.
-
-**File side effect.** Temporary JSON reports are created under
-``docs/source/how_to/bmc/.bmc_tasks.tmp`` and removed by the exit trap.
-
-**Failure boundary.** Live ``elapsed_ms`` values are never compared.  If the
-script fails, run the named query directly in human mode, then compare its
-property polarity, outcome, replay status, and process exit before changing an
-expectation.
-
-**Reference.** See :doc:`../../reference/bmc_results/index` for stable versus
-non-deterministic fields.  The script is a documentation smoke check, not a
-replacement for the repository BMC unit tests.

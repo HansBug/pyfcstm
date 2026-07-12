@@ -9,6 +9,15 @@ selects an initial frame, optionally constrains the environment, and declares
 exactly one bounded property.  This page is a lookup reference: examples are
 small enough to use as parser or binder test cases.
 
+Use the local contents below to jump directly to file grammar, initialization,
+assumptions, expressions, atoms, call filters, properties, or the legality
+summary.  For command output, exit status, JSON, witness, and replay fields,
+use :doc:`../bmc_results/index` instead.
+
+.. contents:: On this page
+   :local:
+   :depth: 2
+
 Validity has three distinct levels.  A query can pass one level and fail at a
 later one.
 

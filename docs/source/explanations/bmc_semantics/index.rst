@@ -12,16 +12,37 @@ compile a property objective, interpret SAT as a property verdict, or claim an
 unbounded proof.  The relation builder deliberately stops at :math:`Core_N`;
 property compilation and witness/replay are later layers.
 
+Start with a small door-latch trace.  Suppose a door controller starts with
+``Door.Locked`` active and ``latch_engaged=1``.  A maintenance event opens the
+door without clearing the latch.  At bound 2, the encoded horizon has frames
+:math:`F_0,F_1,F_2` and steps :math:`0,1`: :math:`F_0` is the snapshot before
+the first encoded cycle, step 0 is the whole runtime cycle from :math:`F_0` to
+:math:`F_1`, and step 1 is the whole runtime cycle from :math:`F_1` to
+:math:`F_2`.  In this page, **step means one FCSTM macro-step**: one symbolic
+edge between neighboring observable frames, including the selected transition
+and any ordered entry, exit, effect, or ``during`` actions executed inside that
+cycle.
+
 The derivation uses the following sets throughout:
 
 * :math:`N` is the query bound; frames use indices :math:`0..N`, while steps
-  use :math:`0..N-1`.
+  use :math:`0..N-1`.  Example: the door bound :math:`N=2` has three frames
+  and two macro-steps.
 * :math:`V` is the set of persistent FCSTM variables and :math:`\tau(v)` is
-  the Z3 sort selected for variable :math:`v`.
-* :math:`\mathcal{A}` is the set of fully qualified event paths.
+  the Z3 sort selected for variable :math:`v`.  Example: ``latch_engaged`` is
+  one member of :math:`V`.
+* :math:`\mathcal{A}` is the set of fully qualified event paths.  Example:
+  ``Door.MaintenanceOpen`` contributes one event input per step.
 * :math:`K_i` is the finite macro-case set expanded for step :math:`i`.
+  Example: a step may choose the maintenance transition case or a fallback
+  case, but not both.
 * :math:`\mathbb{B}` is the Boolean domain.  :math:`S_0` and
   :math:`S_{\mathrm{rec}}` are the legal frame-0 and recurrence state-id sets.
+
+The door trace fixes the vocabulary.  The next table uses a checked-in
+concrete trace with small numeric values so the formulas can be audited without
+long code.  Section 1 then replaces each concrete observation with the
+symbolic families that Z3 actually solves.
 
 A concrete trace used by every section
 ----------------------------------------
@@ -328,7 +349,9 @@ Case antecedent
 For case :math:`k` at step :math:`i`, macro expansion has already assembled a
 Boolean template from event atoms, transition guards, priority masks, and any
 accepted-case dependencies.  Relation lowering combines that condition with
-the source-state equality.
+the source-state equality.  The formula below names the condition only; its
+runtime-definedness is carried by :eq:`bmc-case-relation` so a
+total Z3 division cannot hide a runtime division-by-zero.
 
 .. math::
    :label: bmc-case-antecedent
@@ -345,6 +368,25 @@ step-0 transition antecedent is true because :math:`s_0` is ``Root.A`` and
 
 Counterexample: a true ``Go`` input cannot activate an ``A -> B`` case when
 :math:`s_i` is ``B``.  Event truth alone omits the source-state conjunct.
+
+Selected-case definedness
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A selected case must be executable, not merely Boolean-selectable.  Let
+:math:`\mathcal{D}^{Q}_{i,k}` be the path-sensitive definedness needed to
+decide the macro condition :math:`Q_{i,k}`, including guard atoms reached
+through priority or accepted-case dependencies.  Let
+:math:`\mathcal{D}^{R}_{i,k}` be the definedness accumulated while
+symbolically executing the selected case's ordered action blocks.  Their union
+is the selected-case definedness payload.  The exact union and conjunction are
+defined alongside the guarded relation in :eq:`bmc-case-relation`.
+
+Example: if the door maintenance case has guard ``latch_engaged / y > 0`` and
+:math:`y=0`, then :math:`\mathcal{D}^{Q}_{i,k}` contains :math:`y\ne0`.  If
+its effect writes ``latch_engaged = 1 / 0``, then
+:math:`\mathcal{D}^{R}_{i,k}` contains :math:`0\ne0`.  Either conjunct makes
+the selected case UNSAT; an unselected case does not impose that conjunct on
+the current step.
 
 Selector equivalence
 ~~~~~~~~~~~~~~~~~~~~
@@ -379,22 +421,33 @@ case's postcondition, not optional diagnostics.
 .. math::
    :label: bmc-case-relation
 
-   T_{i,k}\equiv
-   \left(C_{i,k}\leftrightarrow A_{i,k}\right)\land
+   \begin{aligned}
+   \mathcal{D}_{i,k}
+   &\equiv \mathcal{D}^{Q}_{i,k}\cup\mathcal{D}^{R}_{i,k},\\
+   \operatorname{DefCase}_{i,k}
+   &\equiv \bigwedge_{d\in\mathcal{D}_{i,k}}d,\\
+   T_{i,k}
+   &\equiv \left(C_{i,k}\leftrightarrow A_{i,k}\right)\land
    \left(A_{i,k}\Rightarrow
-   \left(R_{i,k}\land
-   \bigwedge_{d\in\mathcal{D}_{i,k}}d\right)\right).
+   \left(R_{i,k}\land\operatorname{DefCase}_{i,k}\right)\right).
+   \end{aligned}
 
 ``BmcCaseRelation.formula`` is the conjunction shown above.
 ``test_case_relation_uses_implication_not_global_and_and_carries_vars`` fixes
 ``Go`` true and obtains the transition target, then fixes it false and obtains
 the fallback target.  The separate runtime-alignment suite checks transition
-effects against ``SimulationRuntime``.  ``_prepare_case_lowering`` accumulates
-guard and action definedness, and ``_build_case_relation`` appends those
+effects against ``SimulationRuntime``.  ``_lower_bool_template`` contributes
+:math:`\mathcal{D}^{Q}_{i,k}` for condition and accepted-case guard
+definedness, ``_prepare_case_lowering`` contributes
+:math:`\mathcal{D}^{R}_{i,k}` for ordered action execution, and
+``_build_case_relation`` appends the resulting :math:`\operatorname{DefCase}_{i,k}`
 constraints to ``consequent``.  For example, a selected transition effect
-``x = 1 / 0`` contributes :math:`0\ne0`; the case, and therefore that attempted
-execution, is UNSAT.  The same impossible operation in an unselected case does
-not constrain the step because the conjunction remains under the implication.
+``x = 1 / 0`` contributes :math:`0\ne0`; because :math:`0\ne0` is false,
+:math:`A_{i,k}\Rightarrow(R_{i,k}\land\operatorname{DefCase}_{i,k})` cannot be
+satisfied when :math:`A_{i,k}` is true.  The selected case, and therefore that
+attempted execution, is UNSAT.  The same impossible operation in an unselected
+case does not constrain the step because the conjunction remains under the
+implication.
 
 Counterexample: replacing the implication with a global conjunction
 :math:`A_{i,k}\land R_{i,k}` would require every expanded case to be selected
@@ -486,13 +539,18 @@ transition cases, and it may execute ``during`` actions.
    T_i^{\mathrm{fb}}\equiv
    \bigwedge_{k\in K_i^{\mathrm{fb}}}
    \left[\left(C_{i,k}\leftrightarrow A_{i,k}\right)\land
-   \left(A_{i,k}\Rightarrow R_{i,k}\right)\right],\qquad
+   \left(A_{i,k}\Rightarrow
+   \left(R_{i,k}\land\operatorname{DefCase}_{i,k}\right)\right)\right],\qquad
    A_{i,k}\Rightarrow\bigwedge_{j\prec k}\neg A_{i,j}.
 
-``_build_step_relation`` lowers fallback cases exactly like other cases.
+``_build_step_relation`` lowers fallback cases exactly like other cases,
+including :math:`\operatorname{DefCase}_{i,k}`.
 ``test_relation_fallback_negates_failed_guard_and_runs_during`` sees the
 negated accepted atom and observes the ``during`` update.  Working steps 1 and
-2 select the ``Root.B`` fallback and increment ``counter``.
+2 select the ``Root.B`` fallback and increment ``counter``.  Short example:
+if a prior transition guard needs ``x / y`` and :math:`y=0`, the fallback
+cannot use that undefined guard as evidence that the transition simply failed;
+the selected fallback inherits the guard definedness and the step is UNSAT.
 
 Counterexample: fallback does not necessarily stutter every variable.  In the
 working model it changes ``counter`` on each idle cycle; only ``ratio`` and
@@ -628,10 +686,10 @@ checking theorem.
 Formula ledger and review anchors
 ----------------------------------
 
-The table is the forward audit map for the first 21 frozen equations.  Function
-names refer to ``pyfcstm/bmc/relation.py``; tests are repository-local semantic
-regressions, while the downloadable files above are independent documentation
-resources.
+The table is the forward audit map for the frozen equations on this page.
+Function names refer to ``pyfcstm/bmc/relation.py``; tests are repository-local
+semantic regressions, while the downloadable files above are independent
+documentation resources.
 
 .. list-table:: Frozen relation-equation ledger
    :header-rows: 1
@@ -686,9 +744,10 @@ resources.
      - selector truth checks
      - One selected label per shown step
    * - :eq:`bmc-case-relation`
-     - ``_build_case_relation``
-     - implication and runtime-alignment tests
-     - Selected-case-only writes
+     - ``_lower_bool_template`` / ``_prepare_case_lowering`` /
+       ``_build_case_relation``
+     - implication, definedness, and runtime-alignment tests
+     - Selected-case-only writes; undefined selected case is UNSAT
    * - :eq:`bmc-case-post-control`
      - ``_build_case_relation``
      - event transition alignment test

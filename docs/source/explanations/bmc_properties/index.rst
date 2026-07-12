@@ -16,6 +16,68 @@ by ``test/bmc/test_call_predicate_guards.py``.  This is an explanation of the
 current bounded semantics, not a claim that UNSAT proves an unbounded temporal
 property.
 
+
+One door-latch example for all seven properties
+-----------------------------------------------
+
+Use one bounded door-latch story to separate user intent from solver polarity.
+Assume the trace starts in ``Door.Locked``.  The event ``Door.Unlock`` may move
+the latch to ``Door.Unlocked`` in the next macro step, and the public transition
+case is ``Door.Locked::transition::Door.Unlocked::0``.  The examples below are
+short property shapes, not a full model listing.
+
+.. list-table:: Seven property kinds at one glance
+   :header-rows: 1
+   :widths: 13 26 16 24 21
+
+   * - Kind
+     - Finite quantifier in the main objective
+     - SAT polarity
+     - User intent
+     - Door-latch shape
+   * - ``reach``
+     - :math:`\exists` trace, :math:`\exists` frame with :math:`G_i(p)`
+     - witness
+     - Show that a desired state can occur.
+     - ``reach active("Door.Unlocked")``
+   * - ``forbid``
+     - :math:`\exists` trace, :math:`\exists` forbidden or undefined frame
+     - counterexample
+     - Reject any trace that visits a forbidden state.
+     - ``forbid active("Door.Unlocked")``
+   * - ``invariant``
+     - :math:`\exists` trace, :math:`\exists` false or undefined frame
+     - counterexample
+     - Require every visible frame to satisfy a condition.
+     - ``invariant active("Door.Locked")``
+   * - ``must_reach``
+     - :math:`\exists` complete trace with no good matching frame
+     - counterexample
+     - Require every bounded trace to reach the target.
+     - ``must_reach active("Door.Unlocked")``
+   * - ``exists_always``
+     - :math:`\exists` trace where every frame is good
+     - witness
+     - Show that some behavior can keep a condition true throughout.
+     - ``exists_always active("Door.Locked")``
+   * - ``cover``
+     - :math:`\exists` trace, :math:`\exists` public case selector
+     - witness
+     - Show that a named transition or fallback case can be selected.
+     - ``cover case("Door.Locked::transition::Door.Unlocked::0")``
+   * - ``response``
+     - :math:`\exists` trigger step with a complete missing-response window
+     - counterexample
+     - Require a future response after each trigger within the bound.
+     - ``response trigger event("Door.Unlock", current) -> within 1 active("Door.Unlocked")``
+
+The table uses property fragments to keep the example readable.  In a complete
+``.fbmcq`` query each fragment appears after ``check <kind> <= N:`` and any
+needed initial clause, for example ``init state("Door.Locked");``.  The
+important point is the polarity: the decoded SAT model is a desired witness for
+``reach``, ``exists_always``, and ``cover``, but a violation trace for
+``forbid``, ``invariant``, ``must_reach``, and ``response``.
+
 Notation and three recurring traces
 ------------------------------------
 
@@ -232,8 +294,8 @@ and call-snapshot ``where`` filters.
    \;\Longleftrightarrow\;
    \operatorname{call\_count}_a(f)>0.
 
-``_lower_call_count`` implements formula 31; ``_call_match_expr`` evaluates a
-``where`` clause on the record snapshot.  The tested query counts one
+``_lower_call_count`` implements :eq:`bmc-call-count`; ``_call_match_expr``
+evaluates a ``where`` clause on the record snapshot.  The tested query counts one
 ``Before`` call where ``x == 0`` and one ``After`` call where ``x == 1``.  The
 counterexample ``call_count("Root.A.After", step=*, where x == 0) >= 1`` is
 UNSAT.  See ``test_compile_call_count_filters_use_call_time_snapshots`` and the

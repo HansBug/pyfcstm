@@ -16,6 +16,30 @@ witness without proving anything beyond the selected bound.  A successful
 replay can expose agreement between the SMT encoding and the runtime without
 proving that either implementation is complete for every possible trace.
 
+
+The claim ladder is deliberately one-way:
+
+.. list-table:: Solve/decode/replay claim ladder
+   :header-rows: 1
+   :widths: 14 24 30 32
+
+   * - Layer
+     - Input
+     - Claim it can make
+     - Claim it cannot make
+   * - Solve
+     - :math:`C_N`, the property objective, and optional tail observation
+     - The bounded SMT formula is SAT, UNSAT, unknown, or timed out.
+     - It does not expose a public trace or prove runtime agreement.
+   * - Decode
+     - A SAT model from the main solve
+     - The model can be projected into a ``bmc-witness/v1`` macro-step trace.
+     - It does not decide whether the trace is a desired behavior or a violation; polarity does that.
+   * - Replay
+     - The decoded public trace
+     - The decoded observations agree with ``SimulationRuntime`` on this finite trace.
+     - It does not prove all models decode, all cases are encoded correctly, or the property holds beyond :math:`N`.
+
 Two formulas, two Z3 checks
 ---------------------------
 
@@ -63,27 +87,32 @@ requested by the property.  ``forbid``, ``invariant``, ``must_reach``, and
 Write :math:`p \in \{W,C\}` for witness or counterexample polarity,
 :math:`q` for the property kind, :math:`s` for the main solver status, and
 :math:`t` for the response-tail solver status.  The incomplete condition is
-deliberately narrow: a tail result cannot weaken a main SAT response
-counterexample and cannot affect any other property kind.  The public
-three-valued property verdict is:
+deliberately narrow: only counterexample-polarity ``response`` with a main
+UNSAT result and a bad tail status is incomplete.  A tail result cannot weaken a
+main SAT response counterexample and cannot affect any other property kind.  The
+public three-valued property verdict is:
 
 .. math::
    :label: bmc-verdict-map
 
-   H(q,s,t)&\equiv
-   (q=\mathrm{response})\land(s=\mathrm{unsat})\land
-   \left(t\in\{\mathrm{sat},\mathrm{unknown},\mathrm{timeout},
-   \mathrm{unchecked}\}\right),\\[0.4em]
+   \begin{aligned}
+   T_{\mathrm{bad}}(t)&\equiv
+   t\in\{\mathrm{sat},\mathrm{unknown},\mathrm{timeout},
+   \mathrm{unchecked}\},\\[0.4em]
+   H(p,q,s,t)&\equiv
+   (p=C)\land(q=\mathrm{response})\land(s=\mathrm{unsat})\land
+   T_{\mathrm{bad}}(t),\\[0.4em]
    V(p,q,s,t)&=
    \begin{cases}
    \top,
       & (p=W \land s=\mathrm{sat})
-        \lor (p=C \land s=\mathrm{unsat} \land \neg H(q,s,t)), \\
+        \lor (p=C \land s=\mathrm{unsat} \land \neg H(p,q,s,t)), \\
    \bot,
       & (p=W \land s=\mathrm{unsat})
         \lor (p=C \land s=\mathrm{sat}), \\
-   ?, & s \in \{\mathrm{unknown},\mathrm{timeout}\} \lor H(q,s,t).
+   ?, & s \in \{\mathrm{unknown},\mathrm{timeout}\} \lor H(p,q,s,t).
    \end{cases}
+   \end{aligned}
 
 This is the implementation behind ``BmcSolveResult.property_satisfied``.  The
 stable ``outcome`` strings refine the same map:
@@ -107,13 +136,13 @@ stable ``outcome`` strings refine the same map:
      - ``sat``
      - irrelevant
      - ``property_violated``
-   * - counterexample except an incomplete response
+   * - counterexample
      - ``unsat``
-     - absent or proved UNSAT
+     - absent, irrelevant, or tail proved UNSAT
      - ``property_satisfied``
-   * - response
+   * - counterexample ``response``
      - ``unsat``
-     - tail unchecked, SAT, unknown, or timed out
+     - tail bad: unchecked, SAT, unknown, or timed out
      - ``incomplete``
    * - either
      - ``unknown`` / ``timeout``
@@ -125,6 +154,23 @@ simultaneously satisfiable tail observation does not weaken that concrete
 violation.  The asymmetric special case exists only for main UNSAT: before
 claiming satisfaction, the implementation must exclude a trigger whose full
 response window falls beyond frame :math:`N`.
+
+
+Generic witnesses and counterexamples
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The witness schema is generic: it records a SAT model for the main objective.
+For witness-polarity properties, that generic witness is the behavior the user
+asked to find.  For counterexample-polarity properties, the same decoded schema
+records a counterexample because SAT means the violation objective was
+satisfied.  The word ``counterexample`` therefore names the interpretation of a
+primary SAT result, not a separate trace format.
+
+A tail SAT model for ``response`` incompleteness is different.  It supports the
+``incomplete`` horizon diagnostic, but it is not decoded and replayed as the
+primary user witness because the main objective was UNSAT.  Conversely, when the
+main response objective is SAT, the decoded primary trace remains a decisive
+counterexample even if a separate tail observation is also satisfiable.
 
 From a model to a public witness
 --------------------------------
@@ -301,11 +347,11 @@ Equation :eq:`bmc-symbol-growth` therefore gives
 :math:`|X_1|=2+2+2=6`: two frame-state symbols, delta and gamma, and two case
 selectors.
 
-The table is the forward audit map for frozen equations 36--40.  Literal LaTeX
-is the labelled block at each equation target; the English and Chinese files
-carry identical blocks.
+The table is the forward audit map for the labelled equations in this page.
+Literal LaTeX is the labelled block at each labelled equation target; the
+English and Chinese files carry identical blocks.
 
-.. list-table:: Frozen solving-equation ledger
+.. list-table:: Solving-equation ledger
    :header-rows: 1
    :widths: 21 27 28 24
 

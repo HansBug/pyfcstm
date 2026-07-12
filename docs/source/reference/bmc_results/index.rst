@@ -9,11 +9,20 @@ one FCSTM model and one FBMCQ query per invocation, the human report, the
 errors, and the downloadable reference schema.  It is a bounded result
 protocol: a successful bounded verdict is not an unbounded proof.
 
-The source facts for this page are :mod:`pyfcstm.entry.bmc`,
-``bmc_cli_v1.schema.json`` beside this page, :mod:`pyfcstm.bmc.witness`, and the
-entry behavior tests.  The schema is authoritative for
+The source facts for this page are :mod:`pyfcstm.entry.bmc`, the
+``bmc_cli_v1.schema.json`` maintained beside this page's reST source,
+:mod:`pyfcstm.bmc.witness`, and the entry behavior tests.  The schema is authoritative for
 JSON types and required keys; the entry module is authoritative for process
 ordering, streams, file effects, and exit status.
+
+Use the local contents below to look up the option surface, output transaction,
+verdict matrix, human report, JSON envelope, witness, replay, errors, or
+consumer rules.  For ``.fbmcq`` syntax and contextual legality, use
+:doc:`../bmc_query/index` instead.
+
+.. contents:: On this page
+   :local:
+   :depth: 2
 
 The following comments are synchronization markers for the CLI reference
 checker.  The English and Chinese pages intentionally carry identical marker
@@ -706,11 +715,12 @@ Schema download and consumer checks
 :download:`Download the normative bmc-cli/v1 JSON Schema
 <bmc_cli_v1.schema.json>`.
 
-The schema is a reference artifact, not a runtime dependency.  It is maintained
-beside this page and deliberately is not shipped inside ``pyfcstm`` wheels,
-source distributions, or standalone executables.  Consumers that need
-structural validation should download or vendor the versioned schema with their
-integration and load that local copy:
+The schema is a reference artifact, not a runtime dependency.  Sphinx publishes
+it through the download link above; do not infer a schema URL from this page's
+rendered URL.  It deliberately is not shipped inside ``pyfcstm`` wheels, source
+distributions, or standalone executables.  Consumers that need structural
+validation should download or vendor the versioned schema with their integration
+and load that local copy:
 
 .. code-block:: python
 

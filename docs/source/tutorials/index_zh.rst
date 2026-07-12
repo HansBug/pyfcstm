@@ -32,6 +32,8 @@
    想看结构和诊断反馈就读 :doc:`inspect/index_zh`。
 4. 想从同一个模型产出代码时读 :doc:`generation/index_zh`。
 5. 想用图向别人解释模型结构时读 :doc:`visualization/index_zh`。
+6. 最后把 :doc:`bmc/index_zh` 作为高级收官。此时你已经能读懂 FCSTM 模型和一条
+   具体运行轨迹，再学习怎样把一组手工事件替换为对有限范围内全部允许事件序列的符号搜索。
 
 有经验用户路径
 ---------------------
@@ -41,6 +43,7 @@
 * 已有 FCSTM 文件但不确定模型是否可靠：跳到 :doc:`inspect/index_zh`，再查 :doc:`/reference/diagnostics_codes/index_zh`。
 * 模型合法但需要行为证据：跳到 :doc:`simulation/index_zh`，再看 :doc:`/how_to/simulation/index_zh`。
 * 已经理解模型，只需要输出文件：跳到 :doc:`generation/index_zh` 或 :doc:`visualization/index_zh`。
+* 已经理解具体轨迹，需要检查有限边界内的全部行为：最后读 :doc:`bmc/index_zh`。
 * 需要精确语法、命令选项或报告字段：直接从 :doc:`/reference/index_zh` 开始。
 
 维护者路径
@@ -84,20 +87,6 @@
 
 下一步：想理解输入文件就读 :doc:`dsl/index_zh`；
 只想重复命令流程就读 :doc:`/how_to/cli_workflows/index_zh`。
-
-有界模型检查：:doc:`bmc/index_zh`
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-读前条件：命令行已经安装，并且你能读懂一个只含单状态的 FCSTM 模型。
-
-读后能力：你能运行一条有界可达查询，先读性质结论、再看求解状态，保存稳定 JSON，
-并确认 SAT 见证通过运行时重放。
-
-不负责内容：它不枚举 FBMCQ 文法，也不推导转换关系和性质目标。
-
-下一步：重复检查任务看 :doc:`/how_to/bmc/index_zh`；数学原理从
-:doc:`/explanations/bmc_semantics/index_zh` 开始；精确查询形式查
-:doc:`/reference/bmc_query/index_zh`。
 
 语言教程：:doc:`dsl/index_zh`
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -163,6 +152,21 @@
 下一步：图任务看 :doc:`/how_to/visualization/index_zh`；
 精确选项行为查 :doc:`/reference/visualization_options/index_zh`。
 
+有界模型检查：:doc:`bmc/index_zh`
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+读前条件：已经完成语言教程，并且能从仿真或检查结果中读懂至少一条具体轨迹；知道一个周期既可能改变
+活跃状态，也可能更新持久变量。
+
+读后能力：你能把一条手工选择的执行替换为有界符号搜索，写出有实际意义的安全性质，读懂反例轨迹，
+修复模型，并说明为什么修复后的有界结果仍不是无界证明。
+
+不负责内容：它不枚举 FBMCQ 文法，也不推导每一条转换关系和性质目标。
+
+下一步：重复检查任务看 :doc:`/how_to/bmc/index_zh`；数学原理从
+:doc:`/explanations/bmc_semantics/index_zh` 开始；精确查询形式查
+:doc:`/reference/bmc_query/index_zh`。
+
 教程路径在哪里停止
 ---------------------------
 
@@ -172,7 +176,7 @@
 兼容入口页
 ----------------
 
-下面这些旧教程 URL 继续作为兼容入口保留。它们保护旧链接并指向当前负责内容的页面，但不属于上面的六张同级教程卡片。
+下面这些旧教程 URL 继续作为兼容入口保留。它们保护旧链接并指向当前负责内容的页面，但不属于上面的七张同级教程卡片。
 
 * :doc:`installation/index_zh`
 * :doc:`cli/index_zh`

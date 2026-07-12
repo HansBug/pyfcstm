@@ -7,6 +7,64 @@
 
 实现事实来自 ``pyfcstm/bmc/properties.py`` 和 ``pyfcstm/bmc/relation.py`` 中的表达式下沉。主要可执行规约是 ``test/bmc/test_properties.py``；调用过滤器的防御边界还由 ``test/bmc/test_call_predicate_guards.py`` 覆盖。本页解释当前有界语义，不声称 UNSAT 能证明无界时序性质。
 
+
+同一个门锁例子看七类性质
+------------------------
+
+先用一个有界门锁故事区分用户意图和求解极性。假设轨迹从 ``Door.Locked`` 开始，事件
+``Door.Unlock`` 可以在下一个宏步骤把门锁移动到 ``Door.Unlocked``，公开转换分支为
+``Door.Locked::transition::Door.Unlocked::0``。下表只给短性质形状，不展开完整模型。
+
+.. list-table:: 七类性质速览
+   :header-rows: 1
+   :widths: 13 26 16 24 21
+
+   * - 类别
+     - 主目标中的有限量词
+     - SAT 极性
+     - 用户意图
+     - 门锁形状
+   * - ``reach``
+     - 存在轨迹，且存在满足 :math:`G_i(p)` 的帧
+     - 见证
+     - 说明期望状态能够出现。
+     - ``reach active("Door.Unlocked")``
+   * - ``forbid``
+     - 存在轨迹，且存在被禁止或未定义的帧
+     - 反例
+     - 排除访问被禁止状态的轨迹。
+     - ``forbid active("Door.Unlocked")``
+   * - ``invariant``
+     - 存在轨迹，且存在为假或未定义的帧
+     - 反例
+     - 要求每个可见帧都满足条件。
+     - ``invariant active("Door.Locked")``
+   * - ``must_reach``
+     - 存在一条完整轨迹，其中没有满足条件的帧
+     - 反例
+     - 要求每条有界轨迹都到达目标。
+     - ``must_reach active("Door.Unlocked")``
+   * - ``exists_always``
+     - 存在一条轨迹，其中每一帧都满足条件
+     - 见证
+     - 说明存在一种行为能全程保持条件为真。
+     - ``exists_always active("Door.Locked")``
+   * - ``cover``
+     - 存在轨迹，且存在为真的公开分支选择变量
+     - 见证
+     - 说明具名转换或回退分支能够被选中。
+     - ``cover case("Door.Locked::transition::Door.Unlocked::0")``
+   * - ``response``
+     - 存在一个触发步，其完整窗口内没有响应
+     - 反例
+     - 要求每次触发后在边界内出现未来响应。
+     - ``response trigger event("Door.Unlock", current) -> within 1 active("Door.Unlocked")``
+
+表中使用性质片段以保持例子简短。完整 ``.fbmcq`` 查询会把每个片段放在 ``check <kind> <= N:``
+和所需初始子句之后，例如 ``init state("Door.Locked");``。关键点是极性：解码出的 SAT 模型对
+``reach``、``exists_always`` 与 ``cover`` 是期望见证，对 ``forbid``、``invariant``、``must_reach``
+与 ``response`` 则是违反轨迹。
+
 符号与三条贯穿轨迹
 ------------------
 

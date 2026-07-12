@@ -4,6 +4,11 @@ This module composes the public BMC pipeline into the ``pyfcstm bmc`` command.
 It keeps query compilation, solving, witness decoding, and runtime replay
 explicit while providing stable human and JSON process contracts.
 
+The normative ``bmc-cli/v1`` JSON Schema is published as a download from the
+`BMC result protocol reference
+<https://pyfcstm.readthedocs.io/en/latest/reference/bmc_results/index.html>`_
+rather than shipped as a runtime package resource.
+
 Module map:
 
 .. list-table::
@@ -461,7 +466,9 @@ def build_bmc_output(
     :param query_file: FBMCQ query file path.
     :type query_file: str
     :param json_output: Whether to emit ``bmc-cli/v1`` JSON, defaults to
-        ``False``.
+        ``False``. Its normative JSON Schema is linked from the `BMC result
+        protocol reference
+        <https://pyfcstm.readthedocs.io/en/latest/reference/bmc_results/index.html>`_.
     :type json_output: bool, optional
     :param timeout_ms: Per-Z3-check timeout in milliseconds, defaults to
         ``None``.

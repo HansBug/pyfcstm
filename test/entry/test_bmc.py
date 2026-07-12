@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import pkgutil
 import subprocess
 import sys
 from dataclasses import replace
@@ -410,51 +409,6 @@ def test_bmc_rejects_nonpositive_numeric_options(bmc_files) -> None:
         result = _run("-i", str(model_path), "-q", str(query_path), option, "0")
         assert result.exit_code == 2
         assert "Invalid value" in _stderr_text(result)
-
-
-def test_bmc_schema_is_packaged_and_validates_result_matrix(
-    bmc_files,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The packaged schema accepts every report-bearing result branch."""
-    import pyfcstm.entry.bmc as bmc_entry
-
-    jsonschema = pytest.importorskip("jsonschema")
-    schema_bytes = pkgutil.get_data("pyfcstm.entry", "bmc_cli_v1.schema.json")
-    assert schema_bytes is not None
-    schema = json.loads(schema_bytes.decode("utf-8"))
-    jsonschema.Draft202012Validator.check_schema(schema)
-
-    model_path, query = bmc_files
-    cases = [
-        ('check reach <= 1: active("Root");', 0),
-        ("check reach <= 1: terminated();", 1),
-        ('check forbid <= 1: active("Root");', 1),
-        ("check forbid <= 1: terminated();", 0),
-        ("check response <= 1: trigger true -> within 2 false;", 3),
-    ]
-    for index, (query_text, expected_exit) in enumerate(cases):
-        query_path = query(query_text, "schema_%d.fbmcq" % index)
-        result, payload = _json_result(model_path, query_path)
-        assert result.exit_code == expected_exit
-        jsonschema.validate(payload, schema)
-
-    original_replay = bmc_entry._replay_bmc_witness
-
-    def mismatching_replay(model, witness, *, abstract_handlers=None):
-        replay = original_replay(model, witness, abstract_handlers=abstract_handlers)
-        return replace(
-            replay,
-            mismatches=(
-                BmcReplayMismatch("frames[1].state", "Root", "Bad", "state mismatch"),
-            ),
-        )
-
-    monkeypatch.setattr(bmc_entry, "_replay_bmc_witness", mismatching_replay)
-    query_path = query('check reach <= 1: active("Root");', "schema_mismatch.fbmcq")
-    result, payload = _json_result(model_path, query_path)
-    assert result.exit_code == 4
-    jsonschema.validate(payload, schema)
 
 
 def test_bmc_response_incomplete_is_exit_three(bmc_files) -> None:

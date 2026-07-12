@@ -6,12 +6,12 @@ BMC CLI and Result Protocol Reference
 This page freezes the process and data contract of ``pyfcstm bmc``.  It covers
 one FCSTM model and one FBMCQ query per invocation, the human report, the
 ``bmc-cli/v1`` JSON envelope, witness decoding, runtime replay, exit status,
-errors, and packaged schema discovery.  It is a bounded result protocol: a
-successful bounded verdict is not an unbounded proof.
+errors, and the downloadable reference schema.  It is a bounded result
+protocol: a successful bounded verdict is not an unbounded proof.
 
 The source facts for this page are :mod:`pyfcstm.entry.bmc`,
-``pyfcstm/entry/bmc_cli_v1.schema.json``, :mod:`pyfcstm.bmc.witness`, and the
-entry tests in ``test/entry/test_bmc.py``.  The schema is authoritative for
+``bmc_cli_v1.schema.json`` beside this page, :mod:`pyfcstm.bmc.witness`, and the
+entry behavior tests.  The schema is authoritative for
 JSON types and required keys; the entry module is authoritative for process
 ordering, streams, file effects, and exit status.
 
@@ -658,7 +658,7 @@ file containing exactly the shown statement.
 
 The excerpt is schematic because sorted pretty JSON places keys between these
 lines and live timing varies.  The complete payload validates against the
-packaged schema.
+downloadable reference schema.
 
 **Example 2: a counterexample is a negative verdict, not a CLI error.**  Put
 ``check forbid <= 1: active("Root");`` in ``forbid.fbmcq``:
@@ -700,32 +700,32 @@ The command exits ``1``; it emits no JSON and leaves the old ``result.json``
 unchanged.  A missing parent directory for ``-o`` similarly fails instead of
 being created.
 
-Schema packaging and consumer checks
-------------------------------------
+Schema download and consumer checks
+-----------------------------------
 
-The schema resource is ``pyfcstm/entry/bmc_cli_v1.schema.json``.  Setuptools
-package data includes package ``*.json`` files, and ``MANIFEST.in`` recursively
-includes ``pyfcstm`` JSON files, so both wheels and source distributions carry
-it.  Consumers should resolve the resource through the installed package, not
-through a repository-relative path.  For Python 3.7-compatible code,
-``pkgutil.get_data`` is sufficient:
+:download:`Download the normative bmc-cli/v1 JSON Schema
+<bmc_cli_v1.schema.json>`.
+
+The schema is a reference artifact, not a runtime dependency.  It is maintained
+beside this page and deliberately is not shipped inside ``pyfcstm`` wheels,
+source distributions, or standalone executables.  Consumers that need
+structural validation should download or vendor the versioned schema with their
+integration and load that local copy:
 
 .. code-block:: python
 
    import json
-   import pkgutil
+   from pathlib import Path
 
-   schema_bytes = pkgutil.get_data("pyfcstm.entry", "bmc_cli_v1.schema.json")
-   if schema_bytes is None:
-       raise RuntimeError("packaged BMC schema is missing")
-   schema = json.loads(schema_bytes.decode("utf-8"))
+   schema = json.loads(
+       Path("bmc_cli_v1.schema.json").read_text(encoding="utf-8")
+   )
 
 With ``jsonschema``, validate the schema itself as Draft 2020-12 and then
 validate representative envelopes for all report-bearing matrix branches.
-At minimum, packaging smoke tests must read the resource from the source tree,
-an installed wheel, and any standalone distribution that claims CLI parity.
-The schema's ``$id`` is an identifier; installed consumers should not require
-network access to fetch it.
+The tools-only BMC documentation check validates the artifact and rejects any
+copy under ``pyfcstm/entry``.  The schema's ``$id`` is an identifier; consumers
+should not require network access to fetch it at validation time.
 
 Consumer rules
 --------------

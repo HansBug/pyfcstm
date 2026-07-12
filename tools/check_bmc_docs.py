@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import textwrap
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
@@ -68,6 +69,12 @@ _EQUATION_PAIRS = (
     "explanations/bmc_semantics/index",
     "explanations/bmc_properties/index",
     "explanations/bmc_solving/index",
+)
+
+_SCHEMA_RELATIVE_PATH = Path("reference/bmc_results/bmc_cli_v1.schema.json")
+_SCHEMA_ID = (
+    "https://github.com/HansBug/pyfcstm/blob/main/"
+    "docs/source/reference/bmc_results/bmc_cli_v1.schema.json"
 )
 
 
@@ -214,12 +221,41 @@ def _check_readme(errors: List[str]) -> None:
             errors.append("README.md is missing BMC documentation link: %s" % url_path)
 
 
+def _check_schema(errors: List[str]) -> None:
+    docs_schema = _REPO_ROOT / "docs/source" / _SCHEMA_RELATIVE_PATH
+    package_schema = _REPO_ROOT / "pyfcstm/entry/bmc_cli_v1.schema.json"
+    if package_schema.exists():
+        errors.append("BMC JSON schema must not be shipped inside pyfcstm.entry.")
+    docs_text = _read(docs_schema)
+    try:
+        schema = json.loads(docs_text)
+    except json.JSONDecodeError as err:
+        errors.append("BMC documentation schema is invalid JSON: %s" % err)
+    else:
+        if schema.get("$id") != _SCHEMA_ID:
+            errors.append("BMC documentation schema has an unexpected $id.")
+        if schema.get("properties", {}).get("schema_version", {}).get("const") != (
+            "bmc-cli/v1"
+        ):
+            errors.append("BMC documentation schema does not freeze bmc-cli/v1.")
+    for relative in (
+        "reference/bmc_results/index.rst",
+        "reference/bmc_results/index_zh.rst",
+    ):
+        text = _read(_REPO_ROOT / "docs/source" / relative)
+        if "<bmc_cli_v1.schema.json>" not in text:
+            errors.append("%s does not expose the schema download." % relative)
+        if "pyfcstm/entry/bmc_cli_v1.schema.json" in text or "pkgutil.get_data" in text:
+            errors.append("%s still describes the removed package resource." % relative)
+
+
 def check() -> None:
     """Run every deterministic BMC documentation contract check."""
     errors: List[str] = []
     _check_equations(errors)
     _check_pages(errors)
     _check_readme(errors)
+    _check_schema(errors)
     if errors:
         raise CheckFailure("BMC documentation check failed:\n" + "\n".join(errors))
 

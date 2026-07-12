@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/HansBug/pyfcstm/blob/main/pyfcstm/entry/bmc_cli_v1.schema.json",
+  "$id": "https://github.com/HansBug/pyfcstm/blob/main/docs/source/reference/bmc_results/bmc_cli_v1.schema.json",
   "title": "PyFCSTM BMC CLI result",
   "description": "Stable bmc-cli/v1 envelope emitted by pyfcstm bmc --json.",
   "type": "object",

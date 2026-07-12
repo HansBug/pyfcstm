@@ -11,9 +11,10 @@ Bounded Model Checking
   terminal report states whether the bounded property holds before showing the
   SAT/UNSAT solver diagnostic, uses optional ANSI color, and requires decoded
   SAT witnesses to pass runtime replay.
-- Added the packaged ``bmc-cli/v1`` JSON schema for CI, tools, and LLM
-  consumers. The envelope preserves polarity-aware outcomes, solver timing,
-  witness and replay records, diagnostics, and the matching process exit code.
+- Added the stable ``bmc-cli/v1`` JSON envelope for CI, tools, and LLM
+  consumers, with a downloadable schema in the BMC result protocol reference.
+  The envelope preserves polarity-aware outcomes, solver timing, witness and
+  replay records, diagnostics, and the matching process exit code.
 - Added bilingual Tutorial, How-to, three mathematical Explanation pages, and
   two exhaustive Reference pages. The explanations derive 40 labelled,
   implementation-traceable equations and are verified in MathJax HTML and

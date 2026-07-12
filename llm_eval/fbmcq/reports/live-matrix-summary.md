@@ -21,5 +21,9 @@ provider success logs, and superseded runs.
 - Smoke run: `20260712-final-v16-smoke`, `12/12` live passed
 - Smoke aggregate: `20260712-final-v16-smoke-smoke-live.json`
 - Smoke aggregate SHA-256: `f97fff73936cab3dcb2ba58fb69b5adaefbb7970366056c23b5dcb740e7f260d`
-- Replay status: recorded after the live evidence is committed, so replay can
-  verify source ancestry and a clean tracked working tree.
+- Core replay aggregate: `20260712-final-v15-core-core-replay.json`
+- Core replay aggregate SHA-256: `9cbeea95faaaaefe4a6fe249162eba964d01090874133aa2e8454dc5c1dd17e3`
+- Core replay result: `42/42` passed
+- Smoke replay aggregate: `20260712-final-v16-smoke-smoke-replay.json`
+- Smoke replay aggregate SHA-256: `49cfd97036d97b19ea68201d317c3f3377d60ee81177462c5d3f6281644c0336`
+- Smoke replay result: `12/12` passed

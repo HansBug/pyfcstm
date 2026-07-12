@@ -1,4 +1,4 @@
-.PHONY: docs docs_en docs_zh docs_pdf docs_pdf_en docs_pdf_zh test unittest template_unittest resource antlr antlr_build fcstm_antlr_build fbmcq_antlr_build build package clean docs_auto todos_auto tests_auto rst_auto sha256 jsfcstm jsfcstm_clean vscode vscode_clean vscode_install vscode_uninstall logos logos_clean app_icons app_icons_clean help tpl tpl_clean templates_package template_packaging_check template_source_install_check docs_terminology_check test_boundary_check
+.PHONY: docs docs_en docs_zh docs_pdf docs_pdf_en docs_pdf_zh test unittest template_unittest resource antlr antlr_build fcstm_antlr_build fbmcq_antlr_build build build_onefile build_onedir build_info build_info_clean package clean docs_auto todos_auto tests_auto rst_auto sha256 jsfcstm jsfcstm_clean vscode vscode_clean vscode_install vscode_uninstall logos logos_clean app_icons app_icons_clean help tpl tpl_clean templates_package template_packaging_check template_source_install_check docs_terminology_check test_boundary_check
 
 PYTHON := $(shell which python)
 
@@ -50,9 +50,20 @@ APP_ICON_SOURCE := ${LOGOS_DIR}/logo.png
 PYINSTALLER_ICON_ICO := ${APP_ICON_DIR}/pyfcstm.ico
 PYINSTALLER_ICON_ICNS := ${APP_ICON_DIR}/pyfcstm.icns
 PYINSTALLER_BUNDLE_ICON := ${APP_ICON_DIR}/pyfcstm.png
-PYINSTALLER_BIN := ${DIST_DIR}/pyfcstm$(if ${IS_WIN},.exe,)
 VSCODE_ICON := ${VSCODE_EXT_DIR}/resources/icon.png
 APP_ICON_STAMP := ${APP_ICON_DIR}/.stamp
+BUILD_INFO_FILE := ${SRC_DIR}/config/build_info.py
+BUILD_INFO_OPTIONS ?=
+BUILD_MODE ?= onefile
+PYINSTALLER_OUTPUT := ${DIST_DIR}/pyfcstm
+
+ifeq (${BUILD_MODE},onedir)
+PYINSTALLER_BIN := ${DIST_DIR}/pyfcstm/pyfcstm$(if ${IS_WIN},.exe,)
+else ifeq (${BUILD_MODE},onefile)
+PYINSTALLER_BIN := ${DIST_DIR}/pyfcstm$(if ${IS_WIN},.exe,)
+else
+$(error BUILD_MODE must be onefile or onedir)
+endif
 
 # Sample test generation related variables
 MODEL_TEST_DIR   := ${TEST_DIR}/model
@@ -83,6 +94,8 @@ help:
 	@echo "Building and Packaging:"
 	@echo "  make package      - Build Python package (sdist and wheel)"
 	@echo "  make build        - Build standalone executable with PyInstaller"
+	@echo "                      Options: BUILD_MODE=onefile|onedir (default: onefile)"
+	@echo "  make build_info   - Generate validated package build identity"
 	@echo "  make clean        - Remove build artifacts"
 	@echo ""
 	@echo "Testing:"
@@ -152,21 +165,39 @@ help:
 	@echo "  AUTO_OPTIONS=...  - LLM generation options"
 	@echo ""
 
-package: tpl
+build_info: tpl
+	$(PYTHON) -m tools.write_build_info ${BUILD_INFO_OPTIONS}
+
+build_info_clean:
+	$(PYTHON) -c "from pathlib import Path; target = Path('${BUILD_INFO_FILE}'); target.unlink() if target.exists() else None"
+
+package: build_info
 	$(PYTHON) -m build --sdist --wheel --outdir ${DIST_DIR}
-build: tpl ${APP_ICON_STAMP}
-	$(PYTHON) -m tools.generate_spec -o pyfcstm.spec --icon-dir ${APP_ICON_DIR}
-	pyinstaller pyfcstm.spec
+build: build_info ${APP_ICON_STAMP}
+	$(PYTHON) -m tools.generate_spec -o pyfcstm.spec --icon-dir ${APP_ICON_DIR} --mode ${BUILD_MODE}
+	$(PYTHON) -c "import shutil; from pathlib import Path; target = Path('${PYINSTALLER_OUTPUT}'); shutil.rmtree(str(target)) if target.is_dir() else target.unlink() if target.exists() else None"
+	pyinstaller --noconfirm pyfcstm.spec
 	@echo "Verifying bundled PyInstaller icon asset..."
-	@pyi-archive_viewer -l ${PYINSTALLER_BIN} | grep -q "pyfcstm.png" && echo "✓ Bundled icon asset included in PyInstaller executable" || (echo "✗ Bundled icon asset missing from PyInstaller executable" && exit 1)
+	@if [ "${BUILD_MODE}" = "onefile" ]; then \
+		pyi-archive_viewer -l ${PYINSTALLER_BIN} | grep -q "pyfcstm.png" && echo "✓ Bundled icon asset included in PyInstaller executable" || (echo "✗ Bundled icon asset missing from PyInstaller executable" && exit 1); \
+	else \
+		test -f ${PYINSTALLER_BIN} && echo "✓ Onedir executable built" || (echo "✗ Onedir executable missing" && exit 1); \
+	fi
+
+build_onefile:
+	$(MAKE) build BUILD_MODE=onefile
+
+build_onedir:
+	$(MAKE) build BUILD_MODE=onedir
 
 test_cli:
-	python -m tools.test_cli dist/pyfcstm \
+	$(PYTHON) -m tools.test_cli ${PYINSTALLER_BIN} \
 		--test-dsl docs/source/tutorials/cli/simple_machine.fcstm \
 		--template-dir test/testfile/template_1
 clean:
 	rm -rf ${DIST_DIR} ${BUILD_DIR} *.egg-info
 	rm -rf build dist pyfcstm.spec
+	$(MAKE) build_info_clean
 	rm -f ${VSCODE_ICON}
 	@rmdir --ignore-fail-on-non-empty ${VSCODE_EXT_DIR}/resources 2>/dev/null || true
 

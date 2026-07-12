@@ -836,6 +836,19 @@ jobs:
         shell: bash
         run: |
           python -m tools.test_cli dist/pyfcstm.exe --test-dsl docs/source/tutorials/cli/simple_machine.fcstm --template-dir test/testfile/template_1
+      - name: Verify onedir CLI identity and command graph
+        shell: bash
+        run: |
+          make build_onedir
+          if [ "${{ env.OS_NAME }}" = "Windows" ]; then
+            CLI_PATH=dist/pyfcstm/pyfcstm.exe
+          else
+            CLI_PATH=dist/pyfcstm/pyfcstm
+          fi
+          VERSION_OUTPUT="$($CLI_PATH --version)"
+          printf '%s\n' "$VERSION_OUTPUT"
+          printf '%s\n' "$VERSION_OUTPUT" | grep -F "Commit: $(git rev-parse HEAD)"
+          "$CLI_PATH" bmc --help
       - uses: actions/upload-artifact@v4
         with:
           name: pyfcstm-v${{ env.PACKAGE_VERSION }}-${{ env.OS_NAME }}-${{ env.CPU_ARCH }}-${{ env.GIT_COMMIT_ID }}

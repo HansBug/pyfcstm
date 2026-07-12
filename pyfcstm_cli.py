@@ -1,4 +1,4 @@
-from pyfcstm.entry import pyfcstmcli
+from pyfcstm._bootstrap import main
 
-if __name__ == '__main__':
-    pyfcstmcli()
+if __name__ == "__main__":
+    raise SystemExit(main())

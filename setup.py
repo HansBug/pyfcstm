@@ -2,10 +2,6 @@ import os
 import re
 
 from setuptools import find_packages, setup
-from setuptools.command.build_py import build_py as _build_py
-from setuptools.command.sdist import sdist as _sdist
-
-from pyfcstm.config._build_identity import ensure_build_identity
 
 _MODULE_NAME = "pyfcstm"
 _PACKAGE_NAME = "pyfcstm"
@@ -47,26 +43,6 @@ if os.path.isdir(templates_source_dir):
         packaged_template_dir,
         verbose=os.environ.get("PYFCSTM_SETUP_TPL_VERBOSE") == "1",
     )
-
-
-_BUILD_INFO_FILE = os.path.join(here, _MODULE_NAME, "config", "build_info.py")
-
-
-class _BuildPyWithIdentity(_build_py):
-    """Generate or carry build identity before copying package modules."""
-
-    def run(self):
-        ensure_build_identity(_BUILD_INFO_FILE, cwd=here)
-        super().run()
-
-
-class _SdistWithIdentity(_sdist):
-    """Generate build identity before setuptools freezes the source file list."""
-
-    def run(self):
-        ensure_build_identity(_BUILD_INFO_FILE, cwd=here)
-        super().run()
-
 
 package_data = {
     package_name: [
@@ -151,15 +127,11 @@ setup(
         "Natural Language :: English",
     ],
     entry_points={
-        "console_scripts": ["pyfcstm=pyfcstm._bootstrap:main"],
+        "console_scripts": ["pyfcstm=pyfcstm.entry:pyfcstmcli"],
         "pygments.lexers": [
             "fcstm = pyfcstm.highlight.pygments_lexer:FcstmLexer",
             "fbmcq = pyfcstm.highlight.bmc_query_lexer:FcstmBmcQueryLexer",
         ],
-    },
-    cmdclass={
-        "build_py": _BuildPyWithIdentity,
-        "sdist": _SdistWithIdentity,
     },
     project_urls={
         "Homepage": "https://github.com/hansbug/pyfcstm",

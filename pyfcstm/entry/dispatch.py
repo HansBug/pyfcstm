@@ -65,15 +65,9 @@ def print_version(ctx: Context, param: Option, value: bool) -> None:
 
 
 @click.group(context_settings=CONTEXT_SETTINGS, help=__DESCRIPTION__)
-@click.option(
-    "-v",
-    "--version",
-    is_flag=True,
-    callback=print_version,
-    expose_value=False,
-    is_eager=True,
-    help="Show pyfcstm's version information.",
-)
+@click.option('-v', '--version', is_flag=True,
+              callback=print_version, expose_value=False, is_eager=True,
+              help="Show pyfcstm's version information.")
 def pyfcstmcli() -> None:
     """
     Main Click command group for the :mod:`pyfcstm` CLI.

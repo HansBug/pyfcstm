@@ -32,24 +32,7 @@ from typing import Optional, Tuple
 from ._build_identity import BuildIdentity, load_build_identity_file
 
 
-_BUILD_INFO_FILENAME = "build_info.py"
-_FROZEN_BUILD_INFO_DIRNAME = "_pyfcstm_build"
-
-
-def _resolve_build_info_path(config_module_path: Path) -> Path:
-    """Locate package-local identity data or its private frozen-bundle copy."""
-    package_local = config_module_path.with_name(_BUILD_INFO_FILENAME)
-    if package_local.is_file():
-        return package_local
-
-    bundle_root = config_module_path.parents[2]
-    frozen_copy = bundle_root / _FROZEN_BUILD_INFO_DIRNAME / _BUILD_INFO_FILENAME
-    if frozen_copy.is_file():
-        return frozen_copy
-    return package_local
-
-
-_BUILD_INFO_PATH = _resolve_build_info_path(Path(__file__))
+_BUILD_INFO_PATH = Path(__file__).with_name("build_info.py")
 
 
 def _load_build_identity(path: Path) -> Tuple[BuildIdentity, Optional[str]]:

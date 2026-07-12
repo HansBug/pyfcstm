@@ -222,7 +222,6 @@ CMakeFiles
 # Generated application icons
 /build/icons/
 /editors/vscode/resources/
-/pyfcstm/config/build_info.py
 CMakeScripts
 Testing
 cmake_install.cmake

@@ -223,9 +223,12 @@ def _check_readme(errors: List[str]) -> None:
 
 def _check_schema(errors: List[str]) -> None:
     docs_schema = _REPO_ROOT / "docs/source" / _SCHEMA_RELATIVE_PATH
-    package_schema = _REPO_ROOT / "pyfcstm/entry/bmc_cli_v1.schema.json"
-    if package_schema.exists():
-        errors.append("BMC JSON schema must not be shipped inside pyfcstm.entry.")
+    package_schemas = sorted((_REPO_ROOT / "pyfcstm").rglob("bmc_cli_v1.schema.json"))
+    for package_schema in package_schemas:
+        errors.append(
+            "BMC JSON schema must not be shipped inside pyfcstm: %s"
+            % package_schema.relative_to(_REPO_ROOT)
+        )
     docs_text = _read(docs_schema)
     try:
         schema = json.loads(docs_text)

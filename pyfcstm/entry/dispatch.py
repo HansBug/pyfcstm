@@ -26,24 +26,8 @@ import click
 from click.core import Context, Option
 
 from .base import CONTEXT_SETTINGS
-from ..config.meta import __TITLE__, __VERSION__, __AUTHOR__, __AUTHOR_EMAIL__, __DESCRIPTION__
-
-_raw_authors = [item.strip() for item in __AUTHOR__.split(',') if item.strip()]
-_raw_emails = [item.strip() for item in __AUTHOR_EMAIL__.split(',')]
-if len(_raw_emails) < len(_raw_authors):  # pragma: no cover
-    _raw_emails += [None] * (len(_raw_authors) - len(_raw_emails))
-elif len(_raw_emails) > len(_raw_authors):  # pragma: no cover
-    _raw_emails[len(_raw_authors) - 1] = tuple(_raw_emails[len(_raw_authors) - 1:])
-    del _raw_emails[len(_raw_authors):]
-
-_author_tuples = [
-    (author, tuple([item for item in (email if isinstance(email, tuple) else ((email,) if email else ())) if item]))
-    for author, email in zip(_raw_authors, _raw_emails)
-]
-_authors = [
-    author if not emails else '{author} ({emails})'.format(author=author, emails=', '.join(emails))
-    for author, emails in _author_tuples
-]
+from .._bootstrap import format_version_info
+from ..config.meta import __DESCRIPTION__
 
 
 # noinspection PyUnusedLocal
@@ -76,9 +60,7 @@ def print_version(ctx: Context, param: Option, value: bool) -> None:
     """
     if not value or ctx.resilient_parsing:
         return  # pragma: no cover
-    click.echo('{title}, version {version}.'.format(title=__TITLE__.capitalize(), version=__VERSION__))
-    if _authors:
-        click.echo('Developed by {authors}.'.format(authors=', '.join(_authors)))
+    click.echo(format_version_info())
     ctx.exit()
 
 

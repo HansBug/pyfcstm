@@ -127,7 +127,7 @@ setup(
         "Natural Language :: English",
     ],
     entry_points={
-        "console_scripts": ["pyfcstm=pyfcstm.entry:pyfcstmcli"],
+        "console_scripts": ["pyfcstm=pyfcstm.__main__:main"],
         "pygments.lexers": [
             "fcstm = pyfcstm.highlight.pygments_lexer:FcstmLexer",
             "fbmcq = pyfcstm.highlight.bmc_query_lexer:FcstmBmcQueryLexer",

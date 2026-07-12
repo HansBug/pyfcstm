@@ -804,6 +804,7 @@ jobs:
         if: ${{ env.OS_NAME != 'Windows' }}
         shell: bash
         run: |
+          make build_info
           make build
           mkdir -p dist/${{ env.CLI_NAME }}
           cp dist/pyfcstm dist/${{ env.CLI_NAME }}/pyfcstm
@@ -822,6 +823,7 @@ jobs:
         if: ${{ env.OS_NAME == 'Windows' }}
         shell: bash
         run: |
+          make build_info
           make build
           mkdir -p dist/${{ env.CLI_NAME }}
           cp dist/pyfcstm.exe dist/${{ env.CLI_NAME }}/pyfcstm.exe

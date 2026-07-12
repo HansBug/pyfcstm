@@ -35,6 +35,7 @@ jobs:
           pip install --upgrade build
       - name: Build packages
         run: |
+          make build_info
           make package
       - name: Publish distribution 📦 to real PyPI
         uses: pypa/gh-action-pypi-publish@v1.13.0
@@ -197,6 +198,7 @@ jobs:
         if: ${{ env.OS_NAME != 'Windows' }}
         shell: bash
         run: |
+          make build_info
           make build
           mkdir -p dist/${{ env.CLI_NAME }}
           cp dist/pyfcstm dist/${{ env.CLI_NAME }}/pyfcstm
@@ -215,6 +217,7 @@ jobs:
         if: ${{ env.OS_NAME == 'Windows' }}
         shell: bash
         run: |
+          make build_info
           make build
           mkdir -p dist/${{ env.CLI_NAME }}
           cp dist/pyfcstm.exe dist/${{ env.CLI_NAME }}/pyfcstm.exe

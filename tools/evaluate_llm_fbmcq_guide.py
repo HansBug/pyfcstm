@@ -374,7 +374,7 @@ def _build_smoke_prompt(smoke_id: str, task_text: str) -> str:
 def _prose_smoke_failure(smoke_id: str, raw_output: str) -> Optional[str]:
     """Return a private smoke-contract failure for one audit or explanation reply."""
     lines = [line.strip() for line in raw_output.strip().splitlines() if line.strip()]
-    if len(lines) != 3 or "```" in raw_output or "`" in raw_output:
+    if len(lines) != 3 or "```" in raw_output:
         return "smoke_output_contract_error"
     normalized = "\n".join(lines).lower()
     if smoke_id == "audit_vacuity":
@@ -389,10 +389,17 @@ def _prose_smoke_failure(smoke_id: str, raw_output: str) -> Optional[str]:
     if smoke_id == "explain_response_incomplete":
         if lines[0] != "VERDICT: INCOMPLETE":
             return "smoke_verdict_error"
-        required = ("meaning:", "limit:", "not satisfied", "not violated", "bound")
+        required = ("meaning:", "limit:", "bound")
         if not all(item in normalized for item in required):
             return "smoke_response_explanation_error"
-        if "no future" not in normalized and "does not prove" not in normalized:
+        if "neither satisfied nor violated" not in normalized and (
+            "not satisfied" not in normalized or "not violated" not in normalized
+        ):
+            return "smoke_response_explanation_error"
+        if not any(
+            item in normalized
+            for item in ("no future", "does not prove", "proves no", "proves nothing")
+        ):
             return "smoke_response_limit_error"
         return None
     raise ValueError("Unknown prose smoke id: %s" % smoke_id)

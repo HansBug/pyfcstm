@@ -108,6 +108,24 @@ def test_grammar_guide_prompt_reports_missing_checksum_resource(monkeypatch):
 
 
 @pytest.mark.unittest
+def test_grammar_guide_prompt_can_warn_on_missing_checksum_resource(monkeypatch):
+    """Warning mode returns the guide when its packaged checksum is unavailable."""
+    monkeypatch.setattr(
+        guide_resources.pkgutil,
+        "get_data",
+        _resource_loader({"fcstm_grammar_guide.md": b"# FCSTM\n"}),
+    )
+
+    with pytest.warns(RuntimeWarning) as warnings:
+        guide = llm.get_grammar_guide_prompt_for_llm(
+            raise_on_integrity_error=False
+        )
+
+    assert guide == "# FCSTM\n"
+    assert "fcstm_grammar_guide.md.sha256" in str(warnings[0].message)
+
+
+@pytest.mark.unittest
 def test_grammar_guide_prompt_reports_malformed_checksum_resource(monkeypatch):
     monkeypatch.setattr(
         guide_resources.pkgutil,
@@ -127,6 +145,52 @@ def test_grammar_guide_prompt_reports_malformed_checksum_resource(monkeypatch):
     assert "integrity verification failed" in message
     assert "malformed" in message
     assert "64-character SHA-256" in message
+
+
+@pytest.mark.unittest
+def test_grammar_guide_prompt_can_warn_on_malformed_checksum_resource(monkeypatch):
+    """Warning mode keeps a malformed checksum visible without blocking the guide."""
+    monkeypatch.setattr(
+        guide_resources.pkgutil,
+        "get_data",
+        _resource_loader(
+            {
+                "fcstm_grammar_guide.md": b"# FCSTM\n",
+                "fcstm_grammar_guide.md.sha256": b"not-a-sha256\n",
+            }
+        ),
+    )
+
+    with pytest.warns(RuntimeWarning) as warnings:
+        guide = llm.get_grammar_guide_prompt_for_llm(
+            raise_on_integrity_error=False
+        )
+
+    assert guide == "# FCSTM\n"
+    assert "malformed" in str(warnings[0].message)
+
+
+@pytest.mark.unittest
+def test_grammar_guide_prompt_can_warn_on_non_utf8_checksum_resource(monkeypatch):
+    """Warning mode reports a checksum resource that cannot be decoded as UTF-8."""
+    monkeypatch.setattr(
+        guide_resources.pkgutil,
+        "get_data",
+        _resource_loader(
+            {
+                "fcstm_grammar_guide.md": b"# FCSTM\n",
+                "fcstm_grammar_guide.md.sha256": b"\xff",
+            }
+        ),
+    )
+
+    with pytest.warns(RuntimeWarning) as warnings:
+        guide = llm.get_grammar_guide_prompt_for_llm(
+            raise_on_integrity_error=False
+        )
+
+    assert guide == "# FCSTM\n"
+    assert "not valid UTF-8" in str(warnings[0].message)
 
 
 @pytest.mark.unittest

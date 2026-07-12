@@ -1,0 +1,27 @@
+@startuml
+skinparam backgroundColor transparent
+skinparam shadowing false
+skinparam defaultTextAlignment center
+skinparam rectangle {
+  BackgroundColor #F8FAFC
+  BorderColor #475569
+  FontColor #0F172A
+}
+skinparam ArrowColor #334155
+
+rectangle "FCSTM 模型\n+ FBMCQ 性质" as input
+rectangle "边界 N\nN + 1 帧\nN 个宏步" as horizon
+rectangle "核心转换公式\n+ 性质目标" as formula
+rectangle "Z3\n可满足 / 不可满足 / 未知" as solver
+rectangle "把可满足赋值解码为\n公开见证" as decode
+rectangle "使用 SimulationRuntime\n重放见证" as replay
+rectangle "性质结论\n+ 进程退出状态" as verdict
+
+input --> horizon
+horizon --> formula
+formula --> solver
+solver --> decode : 可满足
+decode --> replay
+replay --> verdict
+solver --> verdict : 不可满足 / 未知
+@enduml

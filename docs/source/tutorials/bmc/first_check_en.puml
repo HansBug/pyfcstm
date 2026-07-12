@@ -1,0 +1,30 @@
+@startuml
+top to bottom direction
+hide empty description
+skinparam backgroundColor transparent
+skinparam shadowing false
+skinparam state {
+  BackgroundColor #F8FAFC
+  BorderColor #475569
+  FontColor #0F172A
+}
+skinparam ArrowColor #334155
+
+legend top left
+|= Variable |= Initial value |
+| latch_engaged | 1 |
+endlegend
+
+state "Door" as door {
+    state "Locked" as locked
+    state "Unlocked" as unlocked
+    state "Open" as open
+
+    [*] -down-> locked
+    locked -down-> unlocked : Unlock\nlatch_engaged = 0
+    unlocked -up-> locked : Lock\nlatch_engaged = 1
+    unlocked -down-> open : OpenDoor
+    open -up-> unlocked : Close
+    locked -right-> open : ServiceOverride\nlatch not updated
+}
+@enduml

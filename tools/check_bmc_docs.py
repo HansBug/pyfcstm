@@ -77,6 +77,11 @@ _SCHEMA_ID = (
     "docs/source/reference/bmc_results/bmc_cli_v1.schema.json"
 )
 
+_TUTORIAL_DIAGRAMS = (
+    ("bmc_pipeline.puml", "bmc_pipeline_zh.puml"),
+    ("first_check_en.puml", "first_check_zh.puml"),
+)
+
 
 class CheckFailure(Exception):
     """Raised when one or more BMC documentation contracts fail."""
@@ -221,6 +226,26 @@ def _check_readme(errors: List[str]) -> None:
             errors.append("README.md is missing BMC documentation link: %s" % url_path)
 
 
+def _check_localized_diagrams(errors: List[str]) -> None:
+    source = _REPO_ROOT / "docs/source/tutorials/bmc"
+    english = _read(source / "index.rst")
+    chinese = _read(source / "index_zh.rst")
+    for english_name, chinese_name in _TUTORIAL_DIAGRAMS:
+        if english_name + ".svg" not in english:
+            errors.append("English BMC tutorial does not use %s.svg." % english_name)
+        if chinese_name + ".svg" not in chinese:
+            errors.append("Chinese BMC tutorial does not use %s.svg." % chinese_name)
+        if chinese_name + ".svg" in english:
+            errors.append("English BMC tutorial uses Chinese diagram %s." % chinese_name)
+        if english_name + ".svg" in chinese:
+            errors.append("Chinese BMC tutorial uses English diagram %s." % english_name)
+        for name in (english_name, chinese_name):
+            for suffix in ("", ".png", ".svg"):
+                path = source / (name + suffix)
+                if not path.is_file():
+                    errors.append("BMC tutorial diagram asset is missing: %s" % path)
+
+
 def _check_schema(errors: List[str]) -> None:
     docs_schema = _REPO_ROOT / "docs/source" / _SCHEMA_RELATIVE_PATH
     package_schemas = sorted((_REPO_ROOT / "pyfcstm").rglob("bmc_cli_v1.schema.json"))
@@ -258,6 +283,7 @@ def check() -> None:
     _check_equations(errors)
     _check_pages(errors)
     _check_readme(errors)
+    _check_localized_diagrams(errors)
     _check_schema(errors)
     if errors:
         raise CheckFailure("BMC documentation check failed:\n" + "\n".join(errors))
@@ -276,7 +302,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         # CheckFailure: one or more deterministic documentation contracts failed.
         print(str(err))
         return 1
-    print("BMC documentation structure and equation ledger are up to date.")
+    print("BMC documentation structure, diagrams, and equation ledger are up to date.")
     return 0
 
 

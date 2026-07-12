@@ -23,7 +23,7 @@ before the CLI reports a trusted trace.
 .. image:: bmc_pipeline.puml.svg
    :alt: FCSTM and FBMCQ inputs become a bounded formula, solver result, decoded witness, replay, and property verdict
    :align: center
-   :width: 96%
+   :width: 330px
 
 Keep the layers separate:
 
@@ -75,10 +75,10 @@ The transition changes the logical state to ``Open`` and leaves
 merely “the door opens”; it is the combination “the door is open **and** the
 physical latch is still engaged.”
 
-.. image:: first_check.fcstm.puml.svg
+.. image:: first_check_en.puml.svg
    :alt: Door controller with normal unlock and direct service override paths
    :align: center
-   :width: 82%
+   :width: 569px
 
 :download:`Download the complete faulty model <first_check.fcstm>` rather than
 reconstructing it from the three focused excerpts above.

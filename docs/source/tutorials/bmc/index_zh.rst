@@ -15,10 +15,10 @@
 再交给 Z3 检查。若公式可满足，系统把求解结果解码为公开轨迹，并在命令行报告可信轨迹之前，
 先用 :class:`pyfcstm.simulate.SimulationRuntime` 重放。
 
-.. image:: bmc_pipeline.puml.svg
+.. image:: bmc_pipeline_zh.puml.svg
    :alt: FCSTM 模型和 FBMCQ 性质经过有界公式、求解、见证解码、运行时重放，最终得到性质结论
    :align: center
-   :width: 96%
+   :width: 330px
 
 先分清各层职责：
 
@@ -66,10 +66,10 @@
 这条转换把逻辑状态改成 ``Open``，却让 ``latch_engaged`` 保持 ``1``。真正危险的不是“门打开”本身，
 而是“门已打开 **并且** 物理锁舌仍然啮合”的状态与数据组合。
 
-.. image:: first_check.fcstm.puml.svg
+.. image:: first_check_zh.puml.svg
    :alt: 包含正常解锁路径和维护直达路径的门控制器
    :align: center
-   :width: 82%
+   :width: 569px
 
 正文只展示理解所需的短片段；:download:`完整缺陷模型可在此下载 <first_check.fcstm>`。
 

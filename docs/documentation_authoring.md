@@ -151,6 +151,20 @@ Diagrams are subject to visual review. If a diagram is added or materially reuse
 check that the image is readable at the chosen width, and state what the figure proves. A figure that merely decorates the
 page is not acceptable evidence.
 
+Diagrams with reader-facing natural-language labels are bilingual artifacts.
+An English and Chinese page must not share one English-labelled Mermaid,
+PlantUML, Graphviz, or equivalent rendered diagram. Maintain separate source
+and rendered assets for both languages, use Chinese explanatory labels in the
+Chinese asset and English labels in the English asset, and make each page
+reference its matching version. Code identifiers, DSL keywords, API names, and
+other literals may remain verbatim inside the Chinese diagram; introduce their
+Chinese meaning in the same label when that improves comprehension. Language-
+neutral logos, raw screenshots whose text is the behavior under test, and
+diagrams containing no natural-language labels may be shared only when the PR
+records why localization is not applicable. Visual review must inspect both
+rendered language variants rather than assuming that translated source has an
+equivalent layout.
+
 ### Strict review rule
 
 Reviewers must apply this section as a merge gate. Missing reference rows, missing examples, missing outputs, missing

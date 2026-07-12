@@ -1,0 +1,30 @@
+@startuml
+top to bottom direction
+hide empty description
+skinparam backgroundColor transparent
+skinparam shadowing false
+skinparam state {
+  BackgroundColor #F8FAFC
+  BorderColor #475569
+  FontColor #0F172A
+}
+skinparam ArrowColor #334155
+
+legend top left
+|= 变量 |= 初始值 |
+| latch_engaged | 1 |
+endlegend
+
+state "门控制器\nDoor" as door {
+    state "锁定\nLocked" as locked
+    state "已解锁\nUnlocked" as unlocked
+    state "打开\nOpen" as open
+
+    [*] -down-> locked
+    locked -down-> unlocked : 解锁 / Unlock\nlatch_engaged = 0
+    unlocked -up-> locked : 上锁 / Lock\nlatch_engaged = 1
+    unlocked -down-> open : 开门 / OpenDoor
+    open -up-> unlocked : 关闭 / Close
+    locked -right-> open : 维护旁路 / ServiceOverride\n未更新锁舌
+}
+@enduml

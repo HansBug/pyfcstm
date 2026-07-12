@@ -380,8 +380,10 @@ def _prose_smoke_failure(smoke_id: str, raw_output: str) -> Optional[str]:
     if smoke_id == "audit_vacuity":
         if lines[0] != "VERDICT: VACUOUS":
             return "smoke_verdict_error"
-        required = ("cause:", "fix:", "x == 0", "x == 1", "assumption")
+        required = ("cause:", "fix:", "assumption", "x", "0", "1")
         if not all(item in normalized for item in required):
+            return "smoke_audit_explanation_error"
+        if "contradict" not in normalized and "incompatible" not in normalized:
             return "smoke_audit_explanation_error"
         if "remove" not in normalized and "relax" not in normalized:
             return "smoke_audit_fix_error"

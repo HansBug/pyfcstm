@@ -122,6 +122,10 @@
      - FCSTM DSL 文件
      - 人类文本、JSON、面向大语言模型（LLM）的 JSON 或 Markdown
      - 查看解析器和模型事实、诊断，以及可选的结构或局部 SMT 验证诊断。
+   * - ``bmc``
+     - FCSTM DSL 文件加一份 FBMCQ 查询文件
+     - 已按极性换算的人类性质结论或版本化 JSON
+     - 获取有界可达、安全、响应、覆盖或调用证据，并强制重放 SAT 见证。
    * - ``generate``
      - FCSTM DSL 文件加内置模板或自定义模板
      - 输出目录里的渲染文件
@@ -140,11 +144,12 @@
 
 命令行接口有意区分“只产出源码/事实”的命令和“可能依赖外部工具”的命令：
 
-* ``simulate``、``inspect``、``generate`` 和 ``plantuml`` 读取 DSL 并使用 Python 侧 pyfcstm 功能；它们不需要
+* ``simulate``、``inspect``、``bmc``、``generate`` 和 ``plantuml`` 读取 DSL 并使用 Python 侧 pyfcstm 功能；它们不需要
   Java、PlantUML jar 或网络渲染器。
 * ``visualize`` 先构造 PlantUML 源码，再调用 ``plantumlcli``；本地渲染可能需要 Java 和 PlantUML jar，远程渲染
   需要可访问的 PlantUML 服务。
-* 成功命令退出码为 ``0``。Click 参数错误、缺失文件、解析错误、模型验证错误、渲染失败和策略拒绝会产生非零退出码。
+* 大多数成功命令以 ``0`` 退出。有界模型检查还用 ``1``、``3``、``4`` 分别表示有界性质
+  否定结论、无定论和重放不匹配。Click 参数错误、缺失文件、解析错误、模型验证错误、渲染失败和策略拒绝会产生非零退出码。
 * 面向用户的进度和成功消息写入标准输出；Click 格式化的错误写入标准错误。
 * 写文件命令只创建或替换请求的输出路径或目录。这里唯一会有意删除已有输出目录内容的选项是 ``generate --clear``。
 
@@ -171,6 +176,11 @@
      - 输出文件包含 ``"root_state_path": "TrafficLight"`` 和 ``"diagnostics": []``。
      - ``pyfcstm inspect -i docs/source/tutorials/quick_start/traffic_light.fcstm --format xml``
      - Click 在写报告前拒绝封闭的 ``--format`` 取值。
+   * - ``bmc``
+     - ``pyfcstm bmc -i docs/source/tutorials/bmc/first_check.fcstm -q docs/source/tutorials/bmc/reach_door.fbmcq``
+     - 第一行是 ``BMC reach <= 1: PROPERTY HOLDS``，且重放通过。
+     - ``pyfcstm bmc -i docs/source/tutorials/bmc/first_check.fcstm -q /tmp/missing.fbmcq``
+     - 查询文件在编译前读取失败，不输出半成品报告。
    * - ``generate``
      - ``pyfcstm generate -i docs/source/tutorials/quick_start/traffic_light.fcstm --template python -o /tmp/traffic-python --clear``
      - 输出目录被替换，并由打包 Python 模板填充。
@@ -193,6 +203,15 @@
      - Click 在渲染前拒绝封闭的渲染类型取值。
 
 这些示例不能替代下方完整选项表。它们展示的是契约形状：合法示例、可观察成功信号、非法示例，以及失败归属层。
+
+``bmc``
+-------
+
+有界模型检查命令使用独立的完整协议参考，因为 SAT/UNSAT 必须通过性质极性换算，且每个
+SAT 结果都必须经过见证与重放可信门禁。全部选项、颜色行为、输出流、性质结论、耗时、
+退出状态、JSON 字段、诊断、见证/重放记录和打包事实见
+:doc:`/reference/bmc_results/index_zh`；FBMCQ 语言见
+:doc:`/reference/bmc_query/index_zh`。
 
 ``simulate``
 ------------

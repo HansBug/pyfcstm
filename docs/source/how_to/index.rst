@@ -120,6 +120,24 @@ status fact.
 Next step: use :doc:`/reference/cli/index` for command facts and the feature
 specific how-to page when a workflow becomes deep.
 
+BMC tasks: :doc:`bmc/index`
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Prerequisites: you have an FCSTM model, know the bounded question to ask, and
+can create one ``.fbmcq`` file.
+
+Outcome: you can run all seven property kinds, choose initial state and
+assumptions, filter abstract calls, gate CI with JSON and exit status, diagnose
+timeout or incomplete horizons, and distinguish property failure from replay
+failure.
+
+Non-goal: it does not define every grammar production, JSON field, or
+mathematical objective.
+
+Next step: query facts live in :doc:`/reference/bmc_query/index`, result and
+CLI facts in :doc:`/reference/bmc_results/index`, and the derivation starts at
+:doc:`/explanations/bmc_semantics/index`.
+
 DSL tasks: :doc:`dsl/index`
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

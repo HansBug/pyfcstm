@@ -1,0 +1,726 @@
+"""Tests for the user-facing BMC command-line entry point."""
+
+from __future__ import annotations
+
+import json
+import subprocess
+import sys
+from dataclasses import replace
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+from click.testing import CliRunner
+
+from pyfcstm.bmc import BmcBuildError
+from pyfcstm.bmc.witness import BmcReplayMismatch, BmcSolveResult
+from pyfcstm.dsl import GrammarParseError
+from pyfcstm.entry import pyfcstmcli
+from pyfcstm.entry.base import ClickErrorException
+from pyfcstm.utils import ModelValidationError
+
+
+pytestmark = pytest.mark.unittest
+
+
+@pytest.fixture()
+def bmc_files(tmp_path: Path):
+    """Create entry-owned model and query fixtures."""
+    model_path = tmp_path / "machine.fcstm"
+    model_path.write_text("state Root;\n", encoding="utf-8")
+
+    def query(text: str, name: str = "property.fbmcq") -> Path:
+        path = tmp_path / name
+        path.write_text(text + "\n", encoding="utf-8")
+        return path
+
+    return model_path, query
+
+
+def _run(*args: str):
+    return CliRunner().invoke(pyfcstmcli, ["bmc", *args])
+
+
+def _json_result(model_path: Path, query_path: Path, *args: str):
+    result = _run("-i", str(model_path), "-q", str(query_path), "--json", *args)
+    return result, json.loads(result.stdout) if result.stdout else None
+
+
+def _stderr_text(result) -> str:
+    """Return stderr across Click versions with and without split capture."""
+    try:
+        return result.stderr
+    except ValueError:
+        # Older Click releases merge stderr into output and reject the stderr
+        # property instead of exposing a separately captured stream.
+        return result.output
+
+
+def _assert_stderr_only(result, fragment: str) -> None:
+    """Check an error message and strict stdout separation when available."""
+    try:
+        stderr = result.stderr
+    except ValueError:
+        # Older Click cannot prove stream separation; output still proves the
+        # user-facing error while surrounding assertions cover side effects.
+        assert fragment in result.output
+    else:
+        assert result.stdout == ""
+        assert fragment in stderr
+
+
+def test_importing_entry_does_not_eagerly_load_bmc() -> None:
+    """Registering CLI commands leaves the optional BMC stack unloaded."""
+    script = """
+import sys
+from pyfcstm.entry import pyfcstmcli
+
+assert pyfcstmcli.name == "pyfcstmcli"
+loaded = sorted(
+    name for name in sys.modules
+    if name == "pyfcstm.bmc" or name.startswith("pyfcstm.bmc.")
+)
+if loaded:
+    raise SystemExit("\\n".join(loaded))
+"""
+
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        universal_newlines=True,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_bmc_help_registers_frozen_options() -> None:
+    """The root CLI exposes the complete frozen BMC option surface."""
+    result = _run("--help")
+
+    assert result.exit_code == 0
+    assert "-i, --input-code" in result.output
+    assert "-q, --query-file" in result.output
+    assert "-o, --output" in result.output
+    assert "--json" in result.output
+    assert "--timeout-ms" in result.output
+    assert "--max-bound" in result.output
+    assert "--color" in result.output
+
+
+@pytest.mark.parametrize(
+    ("query_text", "expected_exit", "status", "outcome", "has_trace"),
+    [
+        ('check reach <= 1: active("Root");', 0, "sat", "witness_found", True),
+        ("check reach <= 1: terminated();", 1, "unsat", "no_witness", False),
+        (
+            'check forbid <= 1: active("Root");',
+            1,
+            "sat",
+            "property_violated",
+            True,
+        ),
+        (
+            "check forbid <= 1: terminated();",
+            0,
+            "unsat",
+            "property_satisfied",
+            False,
+        ),
+    ],
+)
+def test_bmc_json_verdict_matrix(
+    bmc_files,
+    query_text: str,
+    expected_exit: int,
+    status: str,
+    outcome: str,
+    has_trace: bool,
+) -> None:
+    """JSON mirrors process verdicts across witness and counterexample polarity."""
+    model_path, query = bmc_files
+    query_path = query(query_text)
+
+    result, payload = _json_result(model_path, query_path)
+
+    assert result.exit_code == expected_exit
+    assert payload["schema_version"] == "bmc-cli/v1"
+    assert payload["exit_code"] == result.exit_code
+    assert payload["result"]["status"] == status
+    assert payload["result"]["outcome"] == outcome
+    assert (payload["witness"] is not None) is has_trace
+    assert (payload["replay"] is not None) is has_trace
+    if has_trace:
+        assert payload["replay"]["ok"] is True
+    assert "formulas" not in json.dumps(payload)
+
+
+def test_bmc_human_report_prioritizes_verdict_and_diagnostics(bmc_files) -> None:
+    """Default human output explains the verdict before compact trace details."""
+    model_path, query = bmc_files
+    query_path = query('check reach <= 1: active("Root");')
+
+    result = _run("-i", str(model_path), "-q", str(query_path))
+
+    assert result.exit_code == 0
+    assert result.stdout.startswith("BMC reach <= 1: PROPERTY HOLDS\n")
+    assert "A satisfying execution was found within the bound." in result.stdout
+    assert "Solver: SAT in " in result.stdout
+    assert "Replay: verified (2 frames, 1 step)." in result.stdout
+    assert "\nTrace\n  0: init -> Root [initial]" in result.stdout
+    assert "This is a bounded result" in result.stdout
+    assert "Use --json for the complete" in result.stdout
+    assert "BmcSolveResult" not in result.stdout
+    assert "BmcWitnessTrace" not in result.stdout
+    assert result.stdout.endswith("\n")
+
+
+@pytest.mark.parametrize(
+    ("query_text", "heading", "explanation"),
+    [
+        (
+            "check reach <= 1: terminated();",
+            "BMC reach <= 1: PROPERTY DOES NOT HOLD",
+            "No execution satisfying the reach objective was found within the bound.",
+        ),
+        (
+            'check forbid <= 1: active("Root");',
+            "BMC forbid <= 1: PROPERTY DOES NOT HOLD",
+            "A counterexample violating the bounded property was found.",
+        ),
+        (
+            "check forbid <= 1: terminated();",
+            "BMC forbid <= 1: PROPERTY HOLDS",
+            "No counterexample was found within the bound.",
+        ),
+        (
+            "check response <= 1: trigger true -> within 2 false;",
+            "BMC response <= 1: PROPERTY INCONCLUSIVE",
+            "The visible horizon cannot decide every response window.",
+        ),
+    ],
+)
+def test_bmc_human_report_explains_each_verdict_family(
+    bmc_files, query_text: str, heading: str, explanation: str
+) -> None:
+    """Human reports distinguish negative, positive, and incomplete outcomes."""
+    model_path, query = bmc_files
+    query_path = query(query_text)
+
+    result = _run("-i", str(model_path), "-q", str(query_path))
+
+    assert heading in result.stdout
+    assert explanation in result.stdout
+
+
+def test_bmc_human_color_is_terminal_only(bmc_files) -> None:
+    """ANSI decoration is explicit for terminals and absent from JSON/files."""
+    model_path, query = bmc_files
+    query_path = query('check reach <= 1: active("Root");')
+
+    colored = _run("-i", str(model_path), "-q", str(query_path), "--color", "always")
+    assert "\x1b[" in colored.stdout
+    assert "PROPERTY HOLDS" in colored.stdout
+
+    json_result = _run(
+        "-i",
+        str(model_path),
+        "-q",
+        str(query_path),
+        "--json",
+        "--color",
+        "always",
+    )
+    assert "\x1b[" not in json_result.stdout
+    json.loads(json_result.stdout)
+
+    output_path = model_path.parent / "human.txt"
+    file_result = _run(
+        "-i",
+        str(model_path),
+        "-q",
+        str(query_path),
+        "--color",
+        "always",
+        "-o",
+        str(output_path),
+    )
+    assert file_result.stdout == ""
+    assert "\x1b[" not in output_path.read_text(encoding="utf-8")
+
+
+def test_bmc_auto_color_honors_terminal_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Auto color follows TTY, NO_COLOR, and dumb-terminal conventions."""
+    import pyfcstm.entry.bmc as bmc_entry
+
+    monkeypatch.setattr(bmc_entry.sys.stdout, "isatty", lambda: True)
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    monkeypatch.setenv("TERM", "xterm-256color")
+    assert bmc_entry._resolve_bmc_color_enabled(
+        "auto", json_output=False, output_file=None
+    )
+
+    monkeypatch.setenv("NO_COLOR", "1")
+    assert not bmc_entry._resolve_bmc_color_enabled(
+        "auto", json_output=False, output_file=None
+    )
+
+    assert not bmc_entry._resolve_bmc_color_enabled(
+        "always", json_output=True, output_file=None
+    )
+    assert not bmc_entry._resolve_bmc_color_enabled(
+        "always", json_output=False, output_file="report.txt"
+    )
+
+
+def test_bmc_output_file_receives_nonzero_verdict_atomically(bmc_files) -> None:
+    """A deterministic negative result writes its report and leaves stdout empty."""
+    model_path, query = bmc_files
+    query_path = query("check reach <= 1: terminated();")
+    output_path = model_path.parent / "result.json"
+    output_path.write_text("old", encoding="utf-8")
+
+    result = _run(
+        "-i",
+        str(model_path),
+        "-q",
+        str(query_path),
+        "--json",
+        "-o",
+        str(output_path),
+    )
+
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert payload["exit_code"] == 1
+    assert not list(output_path.parent.glob(".result.json.*.tmp"))
+
+
+def test_bmc_input_error_does_not_modify_output(bmc_files) -> None:
+    """A query read failure is stderr-only and preserves an existing target."""
+    model_path, _query = bmc_files
+    output_path = model_path.parent / "result.json"
+    output_path.write_text("keep", encoding="utf-8")
+
+    result = _run(
+        "-i",
+        str(model_path),
+        "-q",
+        str(model_path.parent / "missing.fbmcq"),
+        "--json",
+        "-o",
+        str(output_path),
+    )
+
+    assert result.exit_code == 1
+    _assert_stderr_only(result, "Query file not found")
+    assert output_path.read_text(encoding="utf-8") == "keep"
+
+
+def test_bmc_structured_replay_mismatch_is_exit_four(
+    bmc_files, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A returned replay mismatch produces a complete payload and exit four."""
+    import pyfcstm.entry.bmc as bmc_entry
+
+    model_path, query = bmc_files
+    query_path = query('check reach <= 1: active("Root");')
+    original = bmc_entry._replay_bmc_witness
+
+    def mismatching_replay(model, witness, *, abstract_handlers=None):
+        replay = original(model, witness, abstract_handlers=abstract_handlers)
+        return replace(
+            replay,
+            mismatches=(
+                BmcReplayMismatch("frames[1].state", "Root", "Bad", "state mismatch"),
+            ),
+        )
+
+    monkeypatch.setattr(bmc_entry, "_replay_bmc_witness", mismatching_replay)
+    result, payload = _json_result(model_path, query_path)
+
+    assert result.exit_code == 4
+    assert payload["exit_code"] == 4
+    assert payload["witness"] is not None
+    assert payload["replay"]["ok"] is False
+    assert payload["replay"]["mismatches"][0]["path"] == "frames[1].state"
+
+    human = _run("-i", str(model_path), "-q", str(query_path), "--color", "always")
+    assert human.exit_code == 4
+    assert "REPLAY MISMATCH; PROPERTY VERDICT UNTRUSTED" in human.stdout
+    assert "could not be reproduced by the runtime" in human.stdout
+    assert "Replay:\x1b[0m FAILED (1 mismatches)." in human.stdout
+    assert "Mismatch frames[1].state: state mismatch" in human.stdout
+
+
+def test_bmc_internal_witness_error_keeps_traceback(
+    bmc_files, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Internal witness consistency failures are not downgraded to CLI input errors."""
+    import pyfcstm.entry.bmc as bmc_entry
+
+    model_path, query = bmc_files
+    query_path = query('check reach <= 1: active("Root");')
+
+    def fail_decode(formula, model):
+        raise BmcBuildError(
+            "This is an internal BMC witness consistency error; please open an issue."
+        )
+
+    monkeypatch.setattr(bmc_entry, "_decode_bmc_witness", fail_decode)
+    result = _run("-i", str(model_path), "-q", str(query_path), "--json")
+
+    assert result.exit_code == 1
+    _assert_stderr_only(result, "Unexpected error found when running pyfcstm!")
+    assert "internal BMC witness consistency error" in _stderr_text(result)
+
+
+@pytest.mark.parametrize("stage", ["decode", "replay"])
+def test_bmc_unexpected_witness_pipeline_error_keeps_traceback(
+    bmc_files, monkeypatch: pytest.MonkeyPatch, stage: str
+) -> None:
+    """Unexpected decode and replay failures retain the process traceback."""
+    import pyfcstm.entry.bmc as bmc_entry
+
+    model_path, query = bmc_files
+    query_path = query('check reach <= 1: active("Root");')
+
+    def fail_pipeline(*args, **kwargs):
+        raise ValueError("forged %s failure" % stage)
+
+    monkeypatch.setattr(bmc_entry, "_%s_bmc_witness" % stage, fail_pipeline)
+    result = _run("-i", str(model_path), "-q", str(query_path), "--json")
+
+    assert result.exit_code == 1
+    _assert_stderr_only(result, "Unexpected error found when running pyfcstm!")
+    assert "ValueError: forged %s failure" % stage in _stderr_text(result)
+
+
+def test_bmc_rejects_nonpositive_numeric_options(bmc_files) -> None:
+    """Click rejects nonpositive timeout and maximum bound values as usage errors."""
+    model_path, query = bmc_files
+    query_path = query('check reach <= 1: active("Root");')
+
+    for option in ("--timeout-ms", "--max-bound"):
+        result = _run("-i", str(model_path), "-q", str(query_path), option, "0")
+        assert result.exit_code == 2
+        assert "Invalid value" in _stderr_text(result)
+
+
+def test_bmc_response_incomplete_is_exit_three(bmc_files) -> None:
+    """A satisfiable tail observation remains an explicit incomplete verdict."""
+    model_path, query = bmc_files
+    query_path = query("check response <= 1: trigger true -> within 2 false;")
+
+    result, payload = _json_result(model_path, query_path)
+
+    assert result.exit_code == 3
+    assert payload["exit_code"] == 3
+    assert payload["result"]["status"] == "unsat"
+    assert payload["result"]["incomplete"] is True
+    assert payload["result"]["outcome"] == "incomplete"
+    assert payload["result"]["incomplete_status"] == "sat"
+    assert payload["witness"] is None
+    assert payload["replay"] is None
+
+
+@pytest.mark.parametrize(
+    ("status", "reason"), [("timeout", "timeout"), ("unknown", "incomplete")]
+)
+def test_bmc_solver_inconclusive_is_exit_three(
+    bmc_files,
+    monkeypatch: pytest.MonkeyPatch,
+    status: str,
+    reason: str,
+) -> None:
+    """Timeout and unknown outcomes remain report-bearing exit-three results."""
+    import pyfcstm.entry.bmc as bmc_entry
+
+    model_path, query = bmc_files
+    query_path = query('check reach <= 1: active("Root");')
+
+    def inconclusive(formula, *, timeout_ms=None):
+        return BmcSolveResult(
+            formula,
+            status,
+            reason=reason,
+            timeout_ms=timeout_ms,
+        )
+
+    monkeypatch.setattr(bmc_entry, "_solve_bmc_property", inconclusive)
+    result, payload = _json_result(model_path, query_path, "--timeout-ms", "25")
+
+    assert result.exit_code == 3
+    assert payload["exit_code"] == 3
+    assert payload["result"]["status"] == status
+    assert payload["result"]["outcome"] == status
+    assert payload["result"]["timeout_ms"] == 25
+    assert payload["witness"] is None
+    assert payload["replay"] is None
+
+    human = _run(
+        "-i",
+        str(model_path),
+        "-q",
+        str(query_path),
+        "--timeout-ms",
+        "25",
+    )
+    assert human.exit_code == 3
+    assert "Timeout: 25 ms for each solver check" in human.stdout
+    assert "Solver reason: %s" % reason in human.stdout
+
+
+def test_bmc_max_bound_is_a_controlled_compile_error(bmc_files) -> None:
+    """The maximum-bound policy rejects larger queries without writing a report."""
+    model_path, query = bmc_files
+    query_path = query('check reach <= 2: active("Root");')
+
+    result = _run(
+        "-i",
+        str(model_path),
+        "-q",
+        str(query_path),
+        "--max-bound",
+        "1",
+    )
+
+    assert result.exit_code == 1
+    _assert_stderr_only(
+        result, "max_bound policy rejected query_bound=2 with max_bound=1"
+    )
+
+
+@pytest.mark.parametrize(
+    ("query_text", "message"),
+    [
+        ("check reach <= 1 true;", "Failed to compile BMC query"),
+        ('check reach <= 1: active("Missing");', "unknown_state"),
+    ],
+)
+def test_bmc_query_parse_and_binding_errors_are_controlled(
+    bmc_files, query_text: str, message: str
+) -> None:
+    """Malformed text and invalid model references remain concise user errors."""
+    model_path, query = bmc_files
+    query_path = query(query_text)
+
+    result = _run("-i", str(model_path), "-q", str(query_path))
+
+    assert result.exit_code == 1
+    _assert_stderr_only(result, message)
+    assert "Unexpected error found" not in _stderr_text(result)
+
+
+def test_bmc_missing_output_parent_is_controlled(bmc_files) -> None:
+    """Atomic output creation does not create missing parent directories."""
+    model_path, query = bmc_files
+    query_path = query('check reach <= 1: active("Root");')
+    output_path = model_path.parent / "missing" / "result.json"
+
+    result = _run(
+        "-i",
+        str(model_path),
+        "-q",
+        str(query_path),
+        "--json",
+        "-o",
+        str(output_path),
+    )
+
+    assert result.exit_code == 1
+    _assert_stderr_only(result, "Failed to write BMC output file")
+    assert not output_path.parent.exists()
+
+
+@pytest.mark.parametrize(
+    ("error", "message"),
+    [
+        (UnicodeDecodeError("utf-8", b"x", 0, 1, "bad"), "decode BMC query"),
+        (PermissionError("denied"), "read BMC query"),
+    ],
+)
+def test_bmc_query_read_errors_are_controlled(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    error: Exception,
+    message: str,
+) -> None:
+    """Query decoding and filesystem failures become concise CLI errors."""
+    import pyfcstm.entry.bmc as bmc_entry
+
+    query_path = tmp_path / "query.fbmcq"
+    query_path.write_bytes(b"x")
+
+    def fail_decode(data):
+        raise error
+
+    monkeypatch.setattr(bmc_entry, "auto_decode", fail_decode)
+    with pytest.raises(ClickErrorException, match=message):
+        bmc_entry._read_query_file(str(query_path))
+
+
+@pytest.mark.parametrize(
+    ("error", "message"),
+    [
+        (FileNotFoundError("missing"), "Input DSL file not found"),
+        (UnicodeDecodeError("utf-8", b"x", 0, 1, "bad"), "decode FCSTM model"),
+        (GrammarParseError([]), "parse FCSTM model"),
+        (ModelValidationError(message="bad model"), "Invalid FCSTM model"),
+        (PermissionError("denied"), "read FCSTM model"),
+    ],
+)
+def test_bmc_model_load_errors_are_controlled(
+    monkeypatch: pytest.MonkeyPatch,
+    error: Exception,
+    message: str,
+) -> None:
+    """Import-aware loader failures retain a precise user-facing category."""
+    import pyfcstm.entry.bmc as bmc_entry
+
+    def fail_load(path):
+        raise error
+
+    monkeypatch.setattr(bmc_entry, "load_state_machine_from_file", fail_load)
+    with pytest.raises(ClickErrorException, match=message):
+        bmc_entry._load_model("machine.fcstm")
+
+
+def test_bmc_internal_compile_and_solve_errors_keep_internal_identity(
+    bmc_files, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Internal compile and solve guards are never downgraded to input errors."""
+    import pyfcstm.entry.bmc as bmc_entry
+
+    model_path, query = bmc_files
+    query_path = query('check reach <= 1: active("Root");')
+
+    def fail_compile(model, query_text, *, options=None):
+        raise BmcBuildError("forged compile invariant failure")
+
+    monkeypatch.setattr(bmc_entry, "_compile_bmc_query", fail_compile)
+    result = _run("-i", str(model_path), "-q", str(query_path))
+    assert result.exit_code == 1
+    assert "forged compile invariant failure" in _stderr_text(result)
+    assert "Unexpected error found when running pyfcstm!" in _stderr_text(result)
+
+    monkeypatch.undo()
+
+    def fail_solve(formula, *, timeout_ms=None):
+        raise BmcBuildError("solver bundle is inconsistent")
+
+    monkeypatch.setattr(bmc_entry, "_solve_bmc_property", fail_solve)
+    result = _run("-i", str(model_path), "-q", str(query_path))
+    assert result.exit_code == 1
+    assert "solver bundle is inconsistent" in _stderr_text(result)
+
+
+def test_atomic_writer_reports_replace_and_cleanup_failures(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Atomic output failures remove temporary files or expose cleanup errors."""
+    import pyfcstm.entry.bmc as bmc_entry
+
+    target = tmp_path / "result.txt"
+
+    def fail_replace(source, destination):
+        raise OSError("replace denied")
+
+    monkeypatch.setattr(bmc_entry.os, "replace", fail_replace)
+    with pytest.raises(OSError, match="replace denied"):
+        bmc_entry.write_bmc_output(str(target), "payload\n")
+    assert not list(tmp_path.glob(".result.txt.*.tmp"))
+
+    def missing_unlink(path):
+        raise FileNotFoundError(path)
+
+    monkeypatch.setattr(bmc_entry.os, "unlink", missing_unlink)
+    with pytest.raises(OSError, match="replace denied"):
+        bmc_entry.write_bmc_output(str(target), "payload\n")
+
+    def fail_unlink(path):
+        raise OSError("cleanup denied")
+
+    monkeypatch.setattr(bmc_entry.os, "unlink", fail_unlink)
+    with pytest.raises(OSError, match="additionally failed.*cleanup denied"):
+        bmc_entry.write_bmc_output(str(target), "payload\n")
+
+
+def test_human_formatter_covers_event_call_and_diagnostic_edges(
+    tmp_path: Path,
+) -> None:
+    """Compact human rendering covers event/call previews and rare diagnostics."""
+    import pyfcstm.entry.bmc as bmc_entry
+    from pyfcstm.bmc import BmcEngine, build_bmc_core_formula, compile_bmc_property
+    from pyfcstm.bmc.witness import BmcSolveResult
+    from pyfcstm.model import load_state_machine_from_text
+
+    model_path = tmp_path / "calls.fcstm"
+    model_path.write_text(
+        """def int x = 0;
+state Root {
+    event Go;
+    state Idle { during abstract Tick; }
+    state Done;
+    [*] -> Idle;
+    Idle -> Done : Go;
+}
+""",
+        encoding="utf-8",
+    )
+    query_path = tmp_path / "calls.fbmcq"
+    query_path.write_text(
+        """init state("Root.Idle");
+check reach <= 1:
+    called("Root.Idle.Tick", step=0, role="leaf_during", where x == 0)
+    && call_count("Root.Idle.Tick", step=*) == 1;
+""",
+        encoding="utf-8",
+    )
+    result = _run("-i", str(model_path), "-q", str(query_path))
+    assert "calls=Root.Idle.Tick" in result.stdout
+
+    event_query = tmp_path / "event.fbmcq"
+    event_query.write_text(
+        """init state("Root.Idle");
+assume event("Root.Go", 0) == true;
+check reach <= 1: active("Root.Done");
+""",
+        encoding="utf-8",
+    )
+    result = _run("-i", str(model_path), "-q", str(event_query))
+    assert "events=Root.Go" in result.stdout
+
+    assert bmc_entry._human_compact_values(("a", "b", "c", "d")) == ("a,b,c,+1 more")
+    unknown_witness = SimpleNamespace(
+        frames=(SimpleNamespace(state=None, sentinel=None),)
+    )
+    assert bmc_entry._human_frame_label(unknown_witness, 0) == "unknown"
+
+    assert "\x1b[33m" in bmc_entry._colorize_human_report(
+        "BMC response <= 1: PROPERTY INCONCLUSIVE\nSolver: UNSAT\n"
+    )
+    assert "\x1b[31m" in bmc_entry._colorize_human_report(
+        "BMC reach <= 1: PROPERTY DOES NOT HOLD\nSolver: UNSAT\n"
+    )
+
+    model = load_state_machine_from_text("state Root;")
+    prepared = BmcEngine(model).prepare(
+        "check response <= 1: trigger true -> within 2 false;"
+    )
+    formula = compile_bmc_property(build_bmc_core_formula(prepared))
+    solve_result = BmcSolveResult(
+        formula,
+        "unsat",
+        incomplete_status="unknown",
+        incomplete_reason="incomplete",
+        diagnostics=("custom_diagnostic=1",),
+    )
+    execution = bmc_entry._BmcExecution(formula, solve_result, None, None, 3)
+    diagnostics = bmc_entry._human_diagnostics(execution)
+    assert "Horizon reason: incomplete" in diagnostics
+    assert "Diagnostic: custom_diagnostic=1" in diagnostics

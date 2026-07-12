@@ -1,0 +1,2 @@
+init state("Root.Idle");
+check response <= 1: trigger false -> within 1 active("Root.Done");

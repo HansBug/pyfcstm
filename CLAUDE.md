@@ -99,6 +99,7 @@ As of 2026-03, the repository is no longer only a generic template experiment. T
 - Expression rendering and statement rendering infrastructure under [pyfcstm/render/](pyfcstm/render/), with built-in statement styles for `dsl`, `c`, `cpp`, `python`, `java`, `js`, `ts`, `rust`, and `go`
 - Dedicated template tests under [test/template/](test/template/), including generated-runtime tests and runtime-alignment tests for the built-in `python` template
 - A render/template tutorial path in [docs/source/tutorials/render/](docs/source/tutorials/render/) that now reflects the current renderer, template packaging, and testing model
+- A bounded model checking kernel under [pyfcstm/bmc/](pyfcstm/bmc/) plus the `pyfcstm bmc` CLI, stable `bmc-cli/v1` JSON envelope, mandatory SAT witness replay, and bilingual Tutorial/How-to/Explanation/Reference documentation
 
 When updating repository guidance, do not describe built-in templates, statement rendering, or CLI `--template` support as planned-only features. They are current behavior.
 
@@ -300,6 +301,8 @@ pyfcstm generate -i input.fcstm -t template_dir/ -o output_dir/ --clear
 pyfcstm simulate -i input.fcstm                                      # Interactive mode
 pyfcstm simulate -i input.fcstm -e "cycle; cycle Start; current"     # Batch mode
 pyfcstm simulate -i input.fcstm -e "init System.Active counter=10; cycle 5"  # Hot start batch
+pyfcstm bmc -i input.fcstm -q property.fbmcq                       # Human BMC report
+pyfcstm bmc -i input.fcstm -q property.fbmcq --json -o result.json # Stable JSON result
 
 # Interactive hot start:
 # > init System.Active counter=10 flag=1
@@ -482,6 +485,13 @@ Mandatory completion rule for built-in template work:
 - [solve.py](pyfcstm/solver/solve.py): Z3-based constraint solving for guard reachability analysis
 - [operation.py](pyfcstm/solver/operation.py): Converts state machine operations into solver constraints
 - Uses `z3-solver` library; enables static analysis of transition guard satisfiability
+
+**Bounded Model Checking** ([pyfcstm/bmc/](pyfcstm/bmc/), [pyfcstm/entry/bmc.py](pyfcstm/entry/bmc.py))
+
+- Compiles one `.fbmcq` query into a bounded transition relation and one of seven property objectives
+- Exposes `pyfcstm bmc` with polarity-aware human verdicts, per-check solver timing, optional ANSI terminal color, and stable `bmc-cli/v1` JSON
+- Requires every SAT model to decode into a `bmc-witness/v1` trace and pass `SimulationRuntime` replay before the CLI reports a trusted verdict
+- Keeps bounded conclusions explicit: SAT/UNSAT describe the solver objective, while `property_satisfied` / `outcome` describe whether the user property holds within the requested bound
 
 **Entry Points** ([pyfcstm/entry/](pyfcstm/entry/))
 
@@ -1226,6 +1236,12 @@ Apply the whole guide as written, including newly added module-specific or langu
 only the convenient parts of [docs/documentation_authoring.md](docs/documentation_authoring.md): if a changed Chinese page,
 reference table, how-to task, explanation trace, generated resource, migration note, or verification record falls under a
 documented requirement, that requirement must be checked and satisfied before ready/merge.
+
+For BMC documentation and CLI-facing examples, property truth is the primary user conclusion. Never present raw
+SAT/UNSAT as though it universally meant success or failure; translate through property polarity and preserve the
+bounded-result caveat. Human terminal examples must cover `--color auto|always|never`, including `NO_COLOR`, TTY, and
+forced-pipe behavior; files and JSON remain ANSI-free. Machine and LLM examples consume the versioned JSON contract
+instead of scraping human text or timing.
 
 #### Documentation Structure
 

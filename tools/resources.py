@@ -1,7 +1,11 @@
 import logging
 import os.path
+import sys
 
-import importlib_metadata
+if sys.version_info >= (3, 8):
+    from importlib import metadata as importlib_metadata
+else:  # pragma: no cover - exercised by the Python 3.7 build matrix.
+    import importlib_metadata
 from hbutils.reflection import quick_import_object
 
 

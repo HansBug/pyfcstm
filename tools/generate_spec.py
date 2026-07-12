@@ -15,6 +15,18 @@ HIDDEN_IMPORTS = [
     # the CI Build matrix green across the rename / refactor.
     'pyfcstm.diagnostics',
     'pyfcstm.diagnostics.codes',
+    # pyfcstm.bmc exposes model-aware layers through importlib-based lazy
+    # exports. PyInstaller cannot discover those module names statically.
+    'pyfcstm.bmc.binding',
+    'pyfcstm.bmc.domain',
+    'pyfcstm.bmc.source',
+    'pyfcstm.bmc.macro',
+    'pyfcstm.bmc.expand',
+    'pyfcstm.bmc.engine',
+    'pyfcstm.bmc.relation',
+    'pyfcstm.bmc.properties',
+    'pyfcstm.bmc.pipeline',
+    'pyfcstm.bmc.witness',
 ]
 
 

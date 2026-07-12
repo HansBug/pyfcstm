@@ -87,6 +87,34 @@ model behaves a certain way.
 Next step: use :doc:`/how_to/cli_workflows/index` for recipes and the relevant
 feature explanation when command output surprises you.
 
+FBMCQ query language: :doc:`bmc_query/index`
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Prerequisites: you need an exact query, initialization, assumption, predicate,
+call filter, property, default, or invalid-form fact.
+
+Outcome: you can look up the complete language and three validity layers with
+multiple legal examples and explicit boundaries for every high-impact family.
+
+Non-goal: it does not explain solver mathematics or teach the first check.
+
+Next step: use :doc:`/how_to/bmc/index` for tasks and
+:doc:`/explanations/bmc_properties/index` for objective semantics.
+
+BMC CLI and result protocol: :doc:`bmc_results/index`
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Prerequisites: you need exact command, stream, color, exit-status, JSON,
+witness, replay, timing, diagnostic, or packaging facts.
+
+Outcome: you can distinguish the property verdict from SAT/UNSAT, consume the
+versioned JSON schema, and handle every report-bearing and error branch.
+
+Non-goal: it does not define FBMCQ syntax or derive the bounded formulas.
+
+Next step: query forms live in :doc:`bmc_query/index`; solver and replay
+reasoning lives in :doc:`/explanations/bmc_solving/index`.
+
 DSL syntax: :doc:`dsl/index`
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

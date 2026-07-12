@@ -52,7 +52,9 @@ class TestMainModule:
                 sys.executable,
                 "-c",
                 "import sys; from pyfcstm._bootstrap import main; "
-                "raise SystemExit(main(['--version']) if 'click' not in sys.modules else 99)",
+                "code = main(['--version']); "
+                "raise SystemExit(code if 'click' not in sys.modules and "
+                "'pyfcstm.entry' not in sys.modules else 99)",
             ],
             capture_output=True,
             text=True,
@@ -60,3 +62,56 @@ class TestMainModule:
         )
         assert result.returncode == 0
         assert "Revision:" in result.stdout
+
+    @pytest.mark.parametrize(
+        ("arguments", "expected"),
+        [
+            (("-v",), True),
+            (("-V",), True),
+            (("--version",), True),
+            ((), False),
+            (("--version", "bmc"), False),
+            (("bmc",), False),
+        ],
+    )
+    def test_version_request_detection_is_exact(self, arguments, expected):
+        """Only one root version flag bypasses the ordinary CLI graph."""
+        from pyfcstm._bootstrap import is_version_request
+
+        assert is_version_request(arguments) is expected
+
+    def test_bootstrap_dispatches_non_version_commands(self, monkeypatch):
+        """Ordinary commands still use the established Click entry point."""
+        from pyfcstm import _bootstrap
+        from pyfcstm import entry
+
+        invoked = []
+
+        def _record_cli(args, prog_name):
+            invoked.append((args, prog_name))
+
+        monkeypatch.setattr(entry, "pyfcstmcli", _record_cli)
+
+        assert _bootstrap.main(("bmc", "--help")) == 0
+        assert invoked == [(["bmc", "--help"], "pyfcstm")]
+
+    def test_version_formatter_includes_available_identity(self, monkeypatch):
+        """Build identity lines appear only when a build supplied them."""
+        from pyfcstm import _bootstrap
+
+        monkeypatch.setattr(_bootstrap, "BUILD_REVISION", "a" * 40)
+        monkeypatch.setattr(_bootstrap, "BUILD_COMMIT", "a" * 40)
+        monkeypatch.setattr(_bootstrap, "BUILD_TIME_UTC", "2026-07-12T00:00:00Z")
+
+        output = _bootstrap.format_version_info()
+
+        assert "Revision: " + "a" * 40 in output
+        assert "Commit: " + "a" * 40 in output
+        assert "Built: 2026-07-12T00:00:00Z" in output
+
+    def test_bootstrap_prints_root_version_request(self, capsys):
+        """A direct version request prints and returns before CLI dispatch."""
+        from pyfcstm import _bootstrap
+
+        assert _bootstrap.main(("--version",)) == 0
+        assert "Revision:" in capsys.readouterr().out

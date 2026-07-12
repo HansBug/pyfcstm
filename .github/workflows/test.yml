@@ -836,6 +836,10 @@ jobs:
         shell: bash
         run: |
           python -m tools.test_cli dist/pyfcstm.exe --test-dsl docs/source/tutorials/cli/simple_machine.fcstm --template-dir test/testfile/template_1
+      - name: Verify wheel and sdist build identity lifecycle
+        shell: bash
+        run: |
+          make build_identity_packaging_check
       - name: Verify onedir CLI identity and command graph
         shell: bash
         run: |

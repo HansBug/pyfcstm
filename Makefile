@@ -1,4 +1,4 @@
-.PHONY: docs docs_en docs_zh docs_pdf docs_pdf_en docs_pdf_zh test unittest template_unittest resource antlr antlr_build fcstm_antlr_build fbmcq_antlr_build build build_onefile build_onedir build_info build_info_clean package clean docs_auto todos_auto tests_auto rst_auto sha256 jsfcstm jsfcstm_clean vscode vscode_clean vscode_install vscode_uninstall logos logos_clean app_icons app_icons_clean help tpl tpl_clean templates_package template_packaging_check template_source_install_check docs_terminology_check test_boundary_check
+.PHONY: docs docs_en docs_zh docs_pdf docs_pdf_en docs_pdf_zh test unittest template_unittest resource antlr antlr_build fcstm_antlr_build fbmcq_antlr_build build build_onefile build_onedir build_info build_info_clean build_identity_packaging_check package clean docs_auto todos_auto tests_auto rst_auto sha256 jsfcstm jsfcstm_clean vscode vscode_clean vscode_install vscode_uninstall logos logos_clean app_icons app_icons_clean help tpl tpl_clean templates_package template_packaging_check template_source_install_check docs_terminology_check test_boundary_check
 
 PYTHON := $(shell which python)
 
@@ -96,6 +96,7 @@ help:
 	@echo "  make build        - Build standalone executable with PyInstaller"
 	@echo "                      Options: BUILD_MODE=onefile|onedir (default: onefile)"
 	@echo "  make build_info   - Generate validated package build identity"
+	@echo "  make build_identity_packaging_check - Validate wheel/sdist identity lifecycle"
 	@echo "  make clean        - Remove build artifacts"
 	@echo ""
 	@echo "Testing:"
@@ -170,6 +171,9 @@ build_info: tpl
 
 build_info_clean:
 	$(PYTHON) -c "from pathlib import Path; target = Path('${BUILD_INFO_FILE}'); target.unlink() if target.exists() else None"
+
+build_identity_packaging_check:
+	$(PYTHON) -m tools.check_build_identity_packaging --check
 
 package: build_info
 	$(PYTHON) -m build --sdist --wheel --outdir ${DIST_DIR}

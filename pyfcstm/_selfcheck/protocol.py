@@ -54,7 +54,7 @@ def build_start_gate(nonce: str) -> bytes:
 
     :param nonce: Lowercase 32-character worker nonce.
     :type nonce: str
-    :return: ``GO `` + nonce + one real LF byte.
+    :return: Bytes containing ``b"GO "`` + nonce + one real LF byte.
     :rtype: bytes
     :raises ValueError: If the nonce is not valid.
 

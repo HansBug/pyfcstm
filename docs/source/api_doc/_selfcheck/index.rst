@@ -1,6 +1,8 @@
 pyfcstm.\_selfcheck
 ========================================================
 
+:orphan:
+
 .. currentmodule:: pyfcstm._selfcheck
 
 .. automodule:: pyfcstm._selfcheck

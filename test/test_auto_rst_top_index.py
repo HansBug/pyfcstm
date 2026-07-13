@@ -21,3 +21,17 @@ def test_private_selfcheck_package_is_not_in_public_top_index(tmp_path):
     text = Path(output).read_text(encoding="utf-8")
     assert "api_doc/_selfcheck" not in text
     assert "api_doc/_bootstrap" in text
+
+
+@pytest.mark.unittest
+def test_private_selfcheck_index_is_marked_orphan(tmp_path):
+    """Generated private API docs remain available without a public toctree entry."""
+    from auto_rst import convert_code_to_rst
+
+    package = tmp_path / "pyfcstm" / "_selfcheck"
+    package.mkdir(parents=True)
+    source = package / "__init__.py"
+    source.write_text('"""Private package."""\n', encoding="utf-8")
+    output = tmp_path / "index.rst"
+    convert_code_to_rst(str(source), str(output), lib_dir=str(tmp_path))
+    assert ":orphan:" in output.read_text(encoding="utf-8")

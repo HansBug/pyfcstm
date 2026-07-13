@@ -94,17 +94,31 @@ def test_color_environment_overrides_are_deterministic(monkeypatch):
 @pytest.mark.unittest
 def test_emergency_writer_uses_raw_fd_fallback(monkeypatch):
     """A broken text/buffer stream still reaches the raw descriptor."""
+    import pyfcstm._selfcheck.report as report_module
     from pyfcstm._selfcheck.report import emergency_write
 
+    class BrokenStream:
+        def write(self, message):
+            del message
+            raise OSError("closed")
+
+        def flush(self):
+            raise OSError("closed")
+
+        @property
+        def buffer(self):
+            return self
+
+    class FakeSys:
+        stdout = BrokenStream()
+        stderr = BrokenStream()
+
     calls = []
+    monkeypatch.setattr(report_module, "sys", FakeSys())
     monkeypatch.setattr(
-        "sys.stdout.write", lambda message: (_ for _ in ()).throw(OSError("closed"))
-    )
-    monkeypatch.setattr(
-        "sys.stderr.buffer.write", lambda data: (_ for _ in ()).throw(OSError("closed"))
-    )
-    monkeypatch.setattr(
-        "os.write", lambda fd, data: calls.append((fd, data)) or len(data)
+        report_module.os,
+        "write",
+        lambda fd, data: calls.append((fd, data)) or len(data),
     )
     emergency_write("diagnostic\n")
     assert calls and calls[0][0] == 2

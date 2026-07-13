@@ -591,6 +591,12 @@ def convert_code_to_rst(code_file: str, rst_file: str, lib_dir: str = "."):
         print("========================================================", file=buffer)
         print("", file=buffer)
 
+        if module_name == "pyfcstm._selfcheck":
+            # The private package is intentionally excluded from the public API
+            # top-level toctree, so mark its generated index as an orphan.
+            print(":orphan:", file=buffer)
+            print("", file=buffer)
+
         print(f".. currentmodule:: {module_name}", file=buffer)
         print("", file=buffer)
         print(f".. automodule:: {module_name}", file=buffer)

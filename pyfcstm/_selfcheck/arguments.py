@@ -9,6 +9,43 @@ class SelfCheckArgumentError(ValueError):
     """Raised when a self-check or worker argument contract is invalid."""
 
 
+def _requested_output_format(arguments: Sequence[str]) -> str:
+    """
+    Infer the emergency output format without crossing option boundaries.
+
+    :param arguments: Supervisor arguments after the root dispatch token.
+    :type arguments: Sequence[str]
+    :return: ``json`` only when an active format option requests it; otherwise
+        ``human``.
+    :rtype: str
+
+    Example::
+
+        >>> _requested_output_format(("--report", "--format=json"))
+        'human'
+    """
+    value_options = {"--profile", "--report", "--color", "--timeout-scale"}
+    index = 0
+    while index < len(arguments):
+        argument = arguments[index]
+        if argument == "--":
+            break
+        if argument in value_options:
+            index += 2
+            continue
+        if argument.startswith("--report="):
+            index += 1
+            continue
+        if argument == "--format=json":
+            return "json"
+        if argument == "--format":
+            if index + 1 >= len(arguments):
+                return "json"
+            return "json" if arguments[index + 1] == "json" else "human"
+        index += 1
+    return "human"
+
+
 @dataclass(frozen=True)
 class SelfCheckOptions:
     """

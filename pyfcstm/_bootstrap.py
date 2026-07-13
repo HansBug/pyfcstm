@@ -21,6 +21,7 @@ from typing import Optional, Sequence
 
 from .config import BUILD_COMMIT, BUILD_REVISION, BUILD_TIME_UTC
 from .config.meta import __AUTHOR__, __AUTHOR_EMAIL__, __TITLE__, __VERSION__
+from ._selfcheck.arguments import _requested_output_format
 
 
 _VERSION_ARGUMENTS = ("-v", "-V", "--version")
@@ -158,30 +159,6 @@ def _emit_bootstrap_error(message: str, output_format: str = "human") -> int:
     return 3
 
 
-def _requested_output_format(arguments: Sequence[str]) -> str:
-    """Read the format token without crossing argparse option boundaries."""
-    value_options = {"--profile", "--report", "--color", "--timeout-scale"}
-    index = 0
-    while index < len(arguments):
-        argument = arguments[index]
-        if argument == "--":
-            break
-        if argument in value_options:
-            index += 2
-            continue
-        if argument.startswith("--report="):
-            index += 1
-            continue
-        if argument == "--format=json":
-            return "json"
-        if argument == "--format":
-            if index + 1 >= len(arguments):
-                return "json"
-            return "json" if arguments[index + 1] == "json" else "human"
-        index += 1
-    return "human"
-
-
 def format_version_info() -> str:
     """
     Format human-readable package and optional build identity information.
@@ -231,7 +208,10 @@ def main(arguments: Optional[Sequence[str]] = None) -> int:
         return 2
     if command_arguments and command_arguments[0] == "--self-check":
         if "--_pyfcstm-selfcheck-worker-v1" in command_arguments[1:]:
-            return 3
+            return _emit_bootstrap_error(
+                "--self-check and --_pyfcstm-selfcheck-worker-v1 are mutually exclusive",
+                _requested_output_format(command_arguments[1:]),
+            )
         try:
             return run_selfcheck(command_arguments[1:])
         except KeyboardInterrupt:
@@ -254,7 +234,10 @@ def main(arguments: Optional[Sequence[str]] = None) -> int:
             )
     if command_arguments and command_arguments[0] == "--_pyfcstm-selfcheck-worker-v1":
         if "--self-check" in command_arguments[1:]:
-            return 3
+            return _emit_bootstrap_error(
+                "--self-check and --_pyfcstm-selfcheck-worker-v1 are mutually exclusive",
+                _requested_output_format(command_arguments[1:]),
+            )
         try:
             return run_worker(command_arguments[1:])
         except KeyboardInterrupt:

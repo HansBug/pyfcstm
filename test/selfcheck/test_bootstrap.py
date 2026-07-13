@@ -33,6 +33,23 @@ def test_hidden_worker_dispatch_is_exact_and_pre_click(monkeypatch):
     assert invoked == [("--nonce", "x")]
 
 
+@pytest.mark.parametrize(
+    "arguments",
+    (
+        ("--self-check", "--_pyfcstm-selfcheck-worker-v1"),
+        ("--_pyfcstm-selfcheck-worker-v1", "--self-check"),
+    ),
+)
+@pytest.mark.unittest
+def test_mutually_exclusive_dispatch_emits_diagnostic(capfd, arguments):
+    """Mutually exclusive root dispatch tokens never fail silently."""
+    from pyfcstm import _bootstrap
+
+    assert _bootstrap.main(arguments) == 3
+    captured = capfd.readouterr()
+    assert "mutually exclusive" in captured.err
+
+
 @pytest.mark.unittest
 def test_bootstrap_runtime_failure_keeps_json_stdout_machine_readable(
     monkeypatch, capsys

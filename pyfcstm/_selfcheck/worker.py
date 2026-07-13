@@ -144,6 +144,11 @@ def run_worker(arguments: Mapping[str, Any]) -> int:
         candidate_mode = os.environ.pop(_TEST_MODE_ENV, None)
         if hook_nonce == nonce:
             injected_mode = candidate_mode
+            if injected_mode is not None:
+                # Keep the nonce-authorized test mode visible to the registry
+                # callback; the child process boundary prevents production
+                # environment leakage.
+                os.environ[_TEST_MODE_ENV] = str(injected_mode)
     else:
         # Direct in-process tests may still pass the private mapping value.
         os.environ.pop(_TEST_HOOK_ENV, None)

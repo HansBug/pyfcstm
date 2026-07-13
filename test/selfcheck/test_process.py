@@ -117,6 +117,8 @@ def test_worker_session_files_are_removed_after_completion(monkeypatch, tmp_path
 @pytest.mark.parametrize(
     ("mode", "status"),
     [
+        ("warn", "WARN"),
+        ("fail", "ERROR"),
         ("crash", "CRASH"),
         ("abort", "CRASH"),
         ("system_exit", "ERROR"),

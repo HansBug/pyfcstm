@@ -7,6 +7,7 @@ import uuid
 from typing import Sequence
 
 from .arguments import SelfCheckArgumentError
+from .arguments import _requested_output_format
 from .arguments import parse_selfcheck_args
 from .environment import collect_environment
 from .model import CheckResult
@@ -69,30 +70,6 @@ def _make_infrastructure_snapshot(phase: str, error: BaseException):
         reason="infrastructure_error",
     )
     return ReportSnapshot((result,), {"phase": phase, "exit_code": 2}, {"ERROR": 1})
-
-
-def _requested_output_format(arguments: Sequence[str]) -> str:
-    """Infer JSON emergency mode without crossing option-value boundaries."""
-    value_options = {"--profile", "--report", "--color", "--timeout-scale"}
-    index = 0
-    while index < len(arguments):
-        argument = arguments[index]
-        if argument == "--":
-            break
-        if argument in value_options:
-            index += 2
-            continue
-        if argument.startswith("--report="):
-            index += 1
-            continue
-        if argument == "--format=json":
-            return "json"
-        if argument == "--format":
-            if index + 1 >= len(arguments):
-                return "json"
-            return "json" if arguments[index + 1] == "json" else "human"
-        index += 1
-    return "human"
 
 
 def _with_exit_code(snapshot, options):

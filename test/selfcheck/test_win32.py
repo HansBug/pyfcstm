@@ -17,6 +17,10 @@ def test_job_handle_without_native_handle_is_safe():
 @pytest.mark.unittest
 def test_attach_process_is_noop_outside_windows():
     """The helper does not import ctypes on POSIX."""
+    import os
+
+    if os.name == "nt":
+        pytest.skip("Windows uses the Job Object path instead of the no-op path.")
     from pyfcstm._selfcheck._win32 import attach_process
 
     assert attach_process(None) is None

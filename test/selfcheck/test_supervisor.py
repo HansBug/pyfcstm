@@ -12,8 +12,12 @@ def test_supervisor_default_profile_returns_json_snapshot(capsys):
 
     code = run_supervisor(("--format", "json"))
     captured = capsys.readouterr()
-    assert code == 0
     payload = json.loads(captured.out)
+    if payload["checks"][0].get("reason") == "isolation_unavailable":
+        assert code == 1
+        assert payload["counts"]["ERROR"] == 1
+        return
+    assert code == 0
     assert payload["schema"] == "pyfcstm-selfcheck/v1"
     assert payload["counts"]["PASS"] == 1
 
@@ -21,9 +25,18 @@ def test_supervisor_default_profile_returns_json_snapshot(capsys):
 @pytest.mark.unittest
 def test_fail_on_warn_changes_exit_only(monkeypatch, capsys):
     """The warning result is preserved while the policy changes the exit code."""
-    monkeypatch.setenv("PYFCSTM_SELFCHECK_TEST_MODE", "warn")
+    from pyfcstm._selfcheck.model import CheckResult
     from pyfcstm._selfcheck.supervisor import run_supervisor
 
+    monkeypatch.setattr(
+        "pyfcstm._selfcheck.supervisor.run_check_process",
+        lambda spec, timeout: CheckResult(
+            spec.check_id,
+            "WARN",
+            spec.required,
+            summary="injected warning",
+        ),
+    )
     assert run_supervisor(("--format", "json")) == 0
     capsys.readouterr()
     assert run_supervisor(("--format", "json", "--fail-on-warn")) == 1
@@ -31,9 +44,19 @@ def test_fail_on_warn_changes_exit_only(monkeypatch, capsys):
 
 
 @pytest.mark.unittest
-def test_supervisor_argument_and_report_failures_are_stable(tmp_path, capsys):
+def test_supervisor_argument_and_report_failures_are_stable(
+    tmp_path, capsys, monkeypatch
+):
     """Bad arguments return 2 and report failures become synthetic ERROR."""
     from pyfcstm._selfcheck.supervisor import run_supervisor
+    from pyfcstm._selfcheck.model import CheckResult
+
+    monkeypatch.setattr(
+        "pyfcstm._selfcheck.supervisor.run_check_process",
+        lambda spec, timeout: CheckResult(
+            spec.check_id, "PASS", spec.required, summary="injected pass"
+        ),
+    )
 
     assert run_supervisor(("--network",)) == 2
     capsys.readouterr()

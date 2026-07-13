@@ -29,6 +29,11 @@ def test_attach_process_is_noop_outside_windows():
 @pytest.mark.unittest
 def test_kill_on_close_configuration_reports_api_result():
     """The Win32 helper exposes success and explicit-fallback outcomes."""
+    try:
+        __import__("ctypes.wintypes")
+    except ValueError as err:
+        # Python 3.7 POSIX cannot load the Windows VARIANT_BOOL ctypes type.
+        pytest.skip("ctypes.wintypes unavailable: {}".format(err))
     from pyfcstm._selfcheck._win32 import _enable_kill_on_close
 
     class Setter:
@@ -50,6 +55,11 @@ def test_kill_on_close_configuration_reports_api_result():
 @pytest.mark.unittest
 def test_windows_job_handle_and_attach_paths_use_native_calls(monkeypatch):
     """Fake Win32 calls exercise termination, assignment, and fallback modes."""
+    try:
+        __import__("ctypes.wintypes")
+    except ValueError as err:
+        # Python 3.7 POSIX cannot load the Windows VARIANT_BOOL ctypes type.
+        pytest.skip("ctypes.wintypes unavailable: {}".format(err))
     import ctypes
     from types import SimpleNamespace
 

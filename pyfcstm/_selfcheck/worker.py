@@ -18,16 +18,6 @@ from .protocol import is_valid_nonce
 
 
 START_GATE_TIMEOUT = 2.0
-_EXPECTED_CHECK_ERRORS = (
-    AttributeError,
-    ImportError,
-    KeyError,
-    OSError,
-    RuntimeError,
-    TypeError,
-    ValueError,
-    UnicodeError,
-)
 
 
 def _read_start_gate(nonce: str, timeout: float = START_GATE_TIMEOUT) -> Optional[str]:
@@ -38,6 +28,11 @@ def _read_start_gate(nonce: str, timeout: float = START_GATE_TIMEOUT) -> Optiona
     def read_gate() -> None:
         try:
             received = sys.stdin.buffer.readline(len(expected) + 1)
+            if received == expected:
+                trailing = sys.stdin.buffer.read(1)
+                if trailing:
+                    result.put("start_gate_trailing_data")
+                    return
         except (AttributeError, OSError, ValueError) as err:
             # Closed or invalid stdin is a protocol-level startup failure.
             result.put("start_gate_read:{}".format(type(err).__name__))
@@ -119,8 +114,8 @@ def run_worker(arguments: Mapping[str, Any]) -> int:
         return 3
     try:
         faulthandler.enable(file=sys.stderr, all_threads=True)
-    except (OSError, ValueError):
-        # Some embedded stderr streams cannot be registered with faulthandler; protocol output remains valid.
+    except (OSError, RuntimeError, ValueError):
+        # Embedded or restricted stderr streams can reject faulthandler; protocol output remains valid.
         pass
 
     start_error = _read_start_gate(nonce)
@@ -138,7 +133,13 @@ def run_worker(arguments: Mapping[str, Any]) -> int:
         _write_frame(result_mode, result_file, frame)
         return 3
 
-    injected_mode = os.environ.get("PYFCSTM_SELFCHECK_TEST_MODE")
+    injected_mode = arguments.get("test_mode")
+    # Direct hidden-worker invocations never inherit the test hook.  The
+    # explicit private argument is only added by the test harness.
+    if injected_mode is None:
+        os.environ.pop("PYFCSTM_SELFCHECK_TEST_MODE", None)
+    else:
+        os.environ["PYFCSTM_SELFCHECK_TEST_MODE"] = str(injected_mode)
     if injected_mode == "crash":
         os._exit(37)
     if injected_mode == "abort":
@@ -212,8 +213,12 @@ def run_worker(arguments: Mapping[str, Any]) -> int:
         )
         write_error = _write_frame(result_mode, result_file, frame)
         return 130 if write_error is None else 3
-    except _EXPECTED_CHECK_ERRORS as err:
-        # Registered checks document these import, I/O, and validation failures; unknown errors crash the worker.
+    except BaseException as err:
+        if not isinstance(err, Exception):
+            raise
+        # Registered check callbacks may raise any ordinary Exception subclass;
+        # every such callback failure is deliberately serialized at this worker
+        # boundary, while non-Exception control sentinels remain visible.
         frame = encode_result_frame(
             _envelope(
                 check_id,

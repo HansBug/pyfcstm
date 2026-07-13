@@ -84,12 +84,15 @@ def test_windows_job_handle_and_attach_paths_use_native_calls(monkeypatch):
             self.CloseHandle = Call(1)
 
     kernel = Kernel(True)
-    monkeypatch.setattr(win32.os, "name", "nt")
+    # Replace the module seam instead of mutating the process-global ``os.name``;
+    # pytest itself still needs to construct POSIX paths while reporting errors.
+    monkeypatch.setattr(win32, "os", SimpleNamespace(name="nt"))
     monkeypatch.setattr(
         ctypes, "windll", SimpleNamespace(kernel32=kernel), raising=False
     )
     job = win32.attach_process(SimpleNamespace(pid=7))
     assert job.kill_on_close is True
+    assert kernel.OpenProcess.calls[0][0] == 0x0001 | 0x0100
     job.terminate(4)
     job.close()
     assert kernel.AssignProcessToJobObject.calls
@@ -103,3 +106,71 @@ def test_windows_job_handle_and_attach_paths_use_native_calls(monkeypatch):
     assert fallback.kill_on_close is False
     fallback.close()
     assert fallback_kernel.TerminateJobObject.calls
+
+
+@pytest.mark.unittest
+def test_assign_failure_closes_created_job_handle(monkeypatch):
+    """A failed assignment closes both native handles before raising."""
+    try:
+        __import__("ctypes.wintypes")
+    except ValueError as err:
+        pytest.skip("ctypes.wintypes unavailable: {}".format(err))
+    import ctypes
+    from types import SimpleNamespace
+
+    import pyfcstm._selfcheck._win32 as win32
+
+    class Call:
+        def __init__(self, result):
+            self.result = result
+            self.calls = []
+
+        def __call__(self, *args):
+            self.calls.append(args)
+            return self.result
+
+    class Kernel:
+        CreateJobObjectW = Call(101)
+        OpenProcess = Call(202)
+        AssignProcessToJobObject = Call(0)
+        CloseHandle = Call(1)
+
+    kernel = Kernel()
+    monkeypatch.setattr(win32, "os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr(
+        ctypes, "windll", SimpleNamespace(kernel32=kernel), raising=False
+    )
+    monkeypatch.setattr(ctypes, "get_last_error", lambda: 5, raising=False)
+    with pytest.raises(win32.JobAssignmentError):
+        win32.attach_process(SimpleNamespace(pid=7))
+    assert len(kernel.CloseHandle.calls) == 2
+
+
+@pytest.mark.unittest
+def test_native_setup_errors_are_wrapped_as_job_assignment_errors(monkeypatch):
+    """Unexpected ctypes setup failures do not escape the Win32 seam."""
+    try:
+        __import__("ctypes.wintypes")
+    except ValueError as err:
+        pytest.skip("ctypes.wintypes unavailable: {}".format(err))
+    import ctypes
+    from types import SimpleNamespace
+
+    import pyfcstm._selfcheck._win32 as win32
+
+    class CreateJob:
+        restype = None
+
+        def __call__(self, *args):
+            del args
+            raise OSError("native setup")
+
+    class Kernel:
+        CreateJobObjectW = CreateJob()
+
+    monkeypatch.setattr(win32, "os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr(
+        ctypes, "windll", SimpleNamespace(kernel32=Kernel()), raising=False
+    )
+    with pytest.raises(win32.JobAssignmentError, match="native setup"):
+        win32.attach_process(SimpleNamespace(pid=7))

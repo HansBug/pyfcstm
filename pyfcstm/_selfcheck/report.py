@@ -38,7 +38,7 @@ def _color_enabled(mode: str) -> bool:
         return False
     if mode == "always":
         return _windows_vt_supported(sys.stdout)
-    if os.environ.get("NO_COLOR") is not None:
+    if os.environ.get("NO_COLOR", "").strip():
         return False
     if os.environ.get("FORCE_COLOR") == "1":
         return _windows_vt_supported(sys.stdout)

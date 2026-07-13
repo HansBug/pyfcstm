@@ -75,6 +75,27 @@ def test_worker_flag_value_is_not_treated_as_mode_token():
 
 
 @pytest.mark.unittest
+def test_worker_parser_rejects_abbreviated_option_names():
+    """Hidden worker argv uses exact option names, never argparse abbreviations."""
+    from pyfcstm._selfcheck.arguments import SelfCheckArgumentError
+    from pyfcstm._selfcheck.arguments import parse_worker_args
+
+    with pytest.raises(SelfCheckArgumentError):
+        parse_worker_args(
+            (
+                "--check",
+                "demo",
+                "--worker-key",
+                "self_dispatch",
+                "--nonce",
+                "0" * 32,
+                "--result-mode",
+                "stdout",
+            )
+        )
+
+
+@pytest.mark.unittest
 def test_argument_errors_cover_bounds_and_mode_exclusivity():
     """Bounds, unknown options, and result-mode combinations are rejected."""
     from pyfcstm._selfcheck.arguments import SelfCheckArgumentError

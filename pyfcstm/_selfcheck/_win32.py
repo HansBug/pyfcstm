@@ -12,6 +12,12 @@ class JobAssignmentError(RuntimeError):
     """Raised when a worker cannot be assigned to a Windows Job Object."""
 
 
+# ``AssignProcessToJobObject`` requires both PROCESS_TERMINATE and
+# PROCESS_SET_QUOTA access on the process handle.
+_PROCESS_TERMINATE = 0x0001
+_PROCESS_SET_QUOTA = 0x0100
+
+
 class JobHandle:
     """
     Best-effort Job Object wrapper with explicit termination fallback.
@@ -54,27 +60,53 @@ def attach_process(process) -> Optional[JobHandle]:
     if os.name != "nt":
         return None
     import ctypes
-    from ctypes import wintypes
 
-    kernel32 = ctypes.windll.kernel32
-    kernel32.CreateJobObjectW.restype = wintypes.HANDLE
-    handle = kernel32.CreateJobObjectW(None, None)
-    if not handle:
-        raise JobAssignmentError("CreateJobObject failed")
-    process_handle = kernel32.OpenProcess(0x0200 | 0x0400, False, process.pid)
-    if not process_handle:
-        kernel32.CloseHandle(handle)
-        raise JobAssignmentError("OpenProcess failed")
+    handle = None
+    process_handle = None
     try:
+        from ctypes import wintypes
+
+        kernel32 = ctypes.windll.kernel32
+        kernel32.CreateJobObjectW.restype = wintypes.HANDLE
+        handle = kernel32.CreateJobObjectW(None, None)
+        if not handle:
+            raise JobAssignmentError("CreateJobObject failed")
+        process_handle = kernel32.OpenProcess(
+            _PROCESS_TERMINATE | _PROCESS_SET_QUOTA, False, process.pid
+        )
+        if not process_handle:
+            raise JobAssignmentError("OpenProcess failed")
         if not kernel32.AssignProcessToJobObject(handle, process_handle):
             error = ctypes.get_last_error()
             raise JobAssignmentError(
                 "AssignProcessToJobObject failed: {}".format(error)
             )
+        kill_on_close = _enable_kill_on_close(kernel32, handle)
+        job = JobHandle(handle, kill_on_close=kill_on_close)
+        handle = None
+        return job
+    except JobAssignmentError:
+        # The job handle is owned by this function until JobHandle takes it.
+        if handle is not None:
+            kernel32.CloseHandle(handle)
+        raise
+    except (
+        AttributeError,
+        ImportError,
+        OSError,
+        TypeError,
+        ValueError,
+        ctypes.ArgumentError,
+    ) as err:
+        # ctypes setup and native calls are normalized before the supervisor sees them.
+        if handle is not None:
+            kernel32.CloseHandle(handle)
+        raise JobAssignmentError(
+            "Windows Job Object setup raised {}: {}".format(type(err).__name__, err)
+        )
     finally:
-        kernel32.CloseHandle(process_handle)
-    kill_on_close = _enable_kill_on_close(kernel32, handle)
-    return JobHandle(handle, kill_on_close=kill_on_close)
+        if process_handle is not None:
+            kernel32.CloseHandle(process_handle)
 
 
 def _enable_kill_on_close(kernel32, handle) -> bool:

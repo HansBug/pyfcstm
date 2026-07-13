@@ -91,6 +91,38 @@ def test_worker_keyboard_interrupt_is_an_error_envelope(monkeypatch, tmp_path):
 
 
 @pytest.mark.unittest
+def test_worker_unexpected_exception_is_an_error_envelope(monkeypatch, tmp_path):
+    """An arbitrary check exception is still serialized at the worker boundary."""
+    from pyfcstm._selfcheck import registry
+    from pyfcstm._selfcheck.protocol import read_result_file
+    from pyfcstm._selfcheck.worker import run_worker
+
+    def fail_unexpectedly():
+        raise ZeroDivisionError("injected division failure")
+
+    registry.register_test_override("unexpected", fail_unexpectedly)
+    nonce = "c" * 32
+    result_file = tmp_path / "result.log"
+    result_file.touch()
+    monkeypatch.setattr(
+        "sys.stdin", io.TextIOWrapper(io.BytesIO(b"GO " + nonce.encode() + b"\n"))
+    )
+    code = run_worker(
+        {
+            "check_id": "fixture.unexpected",
+            "worker_key": "unexpected",
+            "nonce": nonce,
+            "result_mode": "file",
+            "result_file": str(result_file),
+        }
+    )
+    outcome = read_result_file(str(result_file), nonce)
+    assert code == 1
+    assert outcome.envelope["status"] == "ERROR"
+    assert "ZeroDivisionError" in outcome.envelope["details"]
+
+
+@pytest.mark.unittest
 def test_worker_protocol_failures_are_reported(monkeypatch, tmp_path):
     """Invalid nonce, gate, and worker key never execute a check."""
     from pyfcstm._selfcheck.protocol import read_result_file
@@ -167,6 +199,21 @@ def test_worker_start_gate_read_has_a_deadline(monkeypatch):
 
 
 @pytest.mark.unittest
+def test_worker_rejects_start_gate_trailing_data(monkeypatch):
+    """The hidden worker accepts exactly one GO frame and no trailing bytes."""
+    import io
+
+    from pyfcstm._selfcheck.worker import _read_start_gate
+
+    nonce = "7" * 32
+    monkeypatch.setattr(
+        "sys.stdin",
+        io.TextIOWrapper(io.BytesIO(b"GO " + nonce.encode() + b"\ntrailing")),
+    )
+    assert _read_start_gate(nonce, timeout=1.0) == "start_gate_trailing_data"
+
+
+@pytest.mark.unittest
 def test_worker_write_failures_are_reported(monkeypatch):
     """Missing file targets and broken stdout are protocol diagnostics."""
     from pyfcstm._selfcheck.worker import _write_frame
@@ -235,6 +282,37 @@ def test_worker_survives_faulthandler_registration_failure(monkeypatch, tmp_path
     assert read_result_file(str(result_file), nonce).envelope["status"] == "PASS"
 
 
+@pytest.mark.unittest
+def test_worker_survives_faulthandler_runtime_failure(monkeypatch, tmp_path):
+    """A runtime faulthandler restriction does not suppress the envelope."""
+    from pyfcstm._selfcheck.protocol import read_result_file
+    from pyfcstm._selfcheck.worker import run_worker
+
+    monkeypatch.setattr(
+        "faulthandler.enable",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("unsupported")),
+    )
+    nonce = "8" * 32
+    result_file = tmp_path / "result.log"
+    result_file.touch()
+    monkeypatch.setattr(
+        "sys.stdin", io.TextIOWrapper(io.BytesIO(b"GO " + nonce.encode() + b"\n"))
+    )
+    assert (
+        run_worker(
+            {
+                "check_id": "fixture.faulthandler",
+                "worker_key": "self_dispatch",
+                "nonce": nonce,
+                "result_mode": "file",
+                "result_file": str(result_file),
+            }
+        )
+        == 0
+    )
+    assert read_result_file(str(result_file), nonce).envelope["status"] == "PASS"
+
+
 @pytest.mark.parametrize(
     "mode",
     [
@@ -256,7 +334,6 @@ def test_worker_injected_modes_are_exercisable_in_process(monkeypatch, tmp_path,
     nonce = "3" * 32
     result_file = tmp_path / (mode + ".log")
     result_file.touch()
-    monkeypatch.setenv("PYFCSTM_SELFCHECK_TEST_MODE", mode)
     monkeypatch.setattr(
         "sys.stdin", io.TextIOWrapper(io.BytesIO(b"GO " + nonce.encode() + b"\n"))
     )
@@ -267,6 +344,7 @@ def test_worker_injected_modes_are_exercisable_in_process(monkeypatch, tmp_path,
             "nonce": nonce,
             "result_mode": "file",
             "result_file": str(result_file),
+            "test_mode": mode,
         }
     )
     assert code == (
@@ -335,7 +413,6 @@ def test_worker_hard_exit_paths_reach_isolation_boundary(monkeypatch, mode):
     from pyfcstm._selfcheck.worker import run_worker
 
     nonce = "a" * 32
-    monkeypatch.setenv("PYFCSTM_SELFCHECK_TEST_MODE", mode)
     monkeypatch.setattr(
         "sys.stdin", io.TextIOWrapper(io.BytesIO(b"GO " + nonce.encode() + b"\n"))
     )
@@ -354,5 +431,6 @@ def test_worker_hard_exit_paths_reach_isolation_boundary(monkeypatch, mode):
                 "worker_key": "self_dispatch",
                 "nonce": nonce,
                 "result_mode": "stdout",
+                "test_mode": mode,
             }
         )

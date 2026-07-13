@@ -79,6 +79,44 @@ def test_ledger_rejects_duplicate_specs_unknown_results_and_pending_snapshot():
 
 
 @pytest.mark.unittest
+def test_ledger_tracks_running_state_before_terminal_commit():
+    """The ledger distinguishes a running check from an unstarted check."""
+    from pyfcstm._selfcheck.model import CheckResult
+    from pyfcstm._selfcheck.model import CheckSpec
+    from pyfcstm._selfcheck.model import Ledger
+
+    ledger = Ledger()
+    ledger.reserve((CheckSpec("demo", "demo"),))
+    with pytest.raises(KeyError):
+        ledger.mark_running("missing")
+    assert ledger.get_state("demo") == "PENDING"
+    assert ledger.mark_running("demo") is True
+    assert ledger.get_state("demo") == "RUNNING"
+    assert any(event.kind == "running" for event in ledger.events)
+    assert ledger.commit(CheckResult("demo", "PASS", True)) is True
+    assert ledger.get_state("demo") == "PASS"
+    assert ledger.mark_running("demo") is False
+
+    ledger.reserve((CheckSpec("other", "other"),))
+    assert ledger.mark_running("other") is True
+    with pytest.raises(RuntimeError, match="not pending"):
+        ledger.mark_running("other")
+
+
+@pytest.mark.unittest
+def test_ledger_ensure_reserved_is_idempotent():
+    """Emergency cleanup can register a spec without retrying bulk reserve."""
+    from pyfcstm._selfcheck.model import CheckSpec, Ledger
+
+    ledger = Ledger()
+    spec = CheckSpec("demo", "demo")
+    ledger.ensure_reserved(spec)
+    ledger.ensure_reserved(spec)
+    assert ledger.get_state("demo") == "PENDING"
+    assert [event.kind for event in ledger.events] == ["pending"]
+
+
+@pytest.mark.unittest
 def test_check_result_rejects_unknown_status():
     """Result construction cannot introduce a non-contract status."""
     from pyfcstm._selfcheck.model import CheckResult

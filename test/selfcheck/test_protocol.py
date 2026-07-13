@@ -101,6 +101,27 @@ def test_valid_frame_uses_real_lf_and_nonce(tmp_path):
 
 
 @pytest.mark.unittest
+def test_result_file_rejects_crlf_frame_line_endings(tmp_path):
+    """The worker wire format accepts only one canonical LF byte."""
+    from pyfcstm._selfcheck.protocol import FRAME_PREFIX
+    from pyfcstm._selfcheck.protocol import read_result_file
+
+    nonce = "5" * 32
+    payload = {
+        "schema": "pyfcstm-selfcheck-worker/v1",
+        "nonce": nonce,
+        "check_id": "demo",
+        "status": "PASS",
+    }
+    raw = FRAME_PREFIX + json.dumps(payload, separators=(",", ":")).encode("ascii")
+    path = tmp_path / "result.log"
+    path.write_bytes(raw + b"\r\n")
+    assert (
+        read_result_file(str(path), nonce, "demo").error_code == "invalid_line_ending"
+    )
+
+
+@pytest.mark.unittest
 def test_expected_check_id_is_part_of_frame_validation(tmp_path):
     """A same-nonce frame for another check cannot be credited to this check."""
     from pyfcstm._selfcheck.protocol import encode_result_frame
@@ -204,6 +225,19 @@ def test_protocol_rejects_invalid_json_prefix_schema_and_status(tmp_path):
     ):
         path.write_bytes(raw)
         assert read_result_file(str(path), "0" * 32).error_code == expected
+
+
+@pytest.mark.unittest
+def test_protocol_reports_invalid_prefix_and_missing_result(tmp_path):
+    """Private frame decoding and empty files remain explicit errors."""
+    from pyfcstm._selfcheck.protocol import _decode_frame
+    from pyfcstm._selfcheck.protocol import read_result_file
+
+    with pytest.raises(ValueError, match="invalid_prefix"):
+        _decode_frame(b"not-a-frame\n", "0" * 32)
+    path = tmp_path / "empty.log"
+    path.write_bytes(b"")
+    assert read_result_file(str(path), "0" * 32).error_code == "missing_result"
 
 
 @pytest.mark.unittest

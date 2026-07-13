@@ -35,8 +35,9 @@ def test_timeout_terminates_process_group(monkeypatch):
     from pyfcstm._selfcheck.model import CheckSpec
     from pyfcstm._selfcheck.process import run_check_process
 
-    monkeypatch.setenv("PYFCSTM_SELFCHECK_TEST_MODE", "hang")
-    result = run_check_process(CheckSpec("fixture.hang", "self_dispatch"), timeout=0.2)
+    result = run_check_process(
+        CheckSpec("fixture.hang", "self_dispatch"), timeout=0.2, test_mode="hang"
+    )
     if _is_windows_isolation_error(result):
         return
     assert result.status == "TIMEOUT"
@@ -71,11 +72,10 @@ def test_worker_session_files_are_removed_after_completion(monkeypatch, tmp_path
     from pyfcstm._selfcheck.process import run_check_process
 
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
-    if mode is not None:
-        monkeypatch.setenv("PYFCSTM_SELFCHECK_TEST_MODE", mode)
     result = run_check_process(
         CheckSpec("fixture.cleanup", "self_dispatch"),
         timeout=0.2 if mode else 5.0,
+        test_mode=mode,
     )
     if _is_windows_isolation_error(result):
         return
@@ -103,9 +103,8 @@ def test_fault_modes_are_normalized_without_parent_crash(monkeypatch, mode, stat
     from pyfcstm._selfcheck.model import CheckSpec
     from pyfcstm._selfcheck.process import run_check_process
 
-    monkeypatch.setenv("PYFCSTM_SELFCHECK_TEST_MODE", mode)
     result = run_check_process(
-        CheckSpec("fixture." + mode, "self_dispatch"), timeout=5.0
+        CheckSpec("fixture." + mode, "self_dispatch"), timeout=5.0, test_mode=mode
     )
     if _is_windows_isolation_error(result):
         return
@@ -118,9 +117,10 @@ def test_stream_capture_is_bounded(monkeypatch):
     from pyfcstm._selfcheck.model import CheckSpec
     from pyfcstm._selfcheck.process import run_check_process
 
-    monkeypatch.setenv("PYFCSTM_SELFCHECK_TEST_MODE", "huge_output")
     result = run_check_process(
-        CheckSpec("fixture.huge_output", "self_dispatch"), timeout=5.0
+        CheckSpec("fixture.huge_output", "self_dispatch"),
+        timeout=5.0,
+        test_mode="huge_output",
     )
     if _is_windows_isolation_error(result):
         return
@@ -134,8 +134,11 @@ def test_invalid_utf8_diagnostics_do_not_break_result(monkeypatch):
     from pyfcstm._selfcheck.model import CheckSpec
     from pyfcstm._selfcheck.process import run_check_process
 
-    monkeypatch.setenv("PYFCSTM_SELFCHECK_TEST_MODE", "invalid_utf8")
-    result = run_check_process(CheckSpec("fixture.invalid_utf8", "self_dispatch"), 5.0)
+    result = run_check_process(
+        CheckSpec("fixture.invalid_utf8", "self_dispatch"),
+        5.0,
+        test_mode="invalid_utf8",
+    )
     if _is_windows_isolation_error(result):
         return
     assert result.status == "PASS"
@@ -148,9 +151,10 @@ def test_valid_envelope_is_authoritative_over_nonzero_return_code(monkeypatch):
     from pyfcstm._selfcheck.model import CheckSpec
     from pyfcstm._selfcheck.process import run_check_process
 
-    monkeypatch.setenv("PYFCSTM_SELFCHECK_TEST_MODE", "nonzero_envelope")
     result = run_check_process(
-        CheckSpec("fixture.nonzero_envelope", "self_dispatch"), 5.0
+        CheckSpec("fixture.nonzero_envelope", "self_dispatch"),
+        5.0,
+        test_mode="nonzero_envelope",
     )
     if _is_windows_isolation_error(result):
         return
@@ -228,6 +232,147 @@ def test_capture_handles_oversized_protocol_and_pending_data():
 
 
 @pytest.mark.unittest
+def test_capture_preserves_all_bytes_before_limit():
+    """Streams below the cap retain their complete diagnostic payload."""
+    from pyfcstm._selfcheck.process import _BoundedCapture
+
+    capture = _BoundedCapture(limit=20)
+    capture.append(b"abcdefghijklm")
+    assert capture.truncated_bytes == 0
+    assert capture.raw() == b"abcdefghijklm"
+
+
+@pytest.mark.unittest
+def test_stdout_protocol_frame_can_follow_unterminated_business_output():
+    """Protocol extraction does not require business output to end in LF."""
+    from pyfcstm._selfcheck.process import _BoundedCapture
+    from pyfcstm._selfcheck.protocol import _decode_frame
+    from pyfcstm._selfcheck.protocol import encode_result_frame
+
+    nonce = "1" * 32
+    frame = encode_result_frame(
+        {
+            "schema": "pyfcstm-selfcheck-worker/v1",
+            "check_id": "fixture.stdout",
+            "nonce": nonce,
+            "status": "PASS",
+        }
+    )
+    capture = _BoundedCapture(limit=128, capture_protocol=True)
+    capture.append(b"business-output-without-lf" + frame)
+    capture.finish()
+    assert (
+        _decode_frame(capture.protocol_bytes(), nonce, "fixture.stdout")["status"]
+        == "PASS"
+    )
+    assert capture.raw() == b"business-output-without-lf"
+    assert capture.truncated_bytes == 0
+
+
+@pytest.mark.unittest
+def test_protocol_capture_flushes_partial_and_oversized_frames():
+    """EOF turns incomplete protocol candidates into bounded parse failures."""
+    from pyfcstm._selfcheck.process import _BoundedCapture
+    from pyfcstm._selfcheck.process import FRAME_PREFIX
+    from pyfcstm._selfcheck.process import MAX_ENVELOPE_BYTES
+
+    noise = _BoundedCapture(capture_protocol=True)
+    noise.append(b"partial-noise")
+    noise.finish()
+    assert noise.raw() == b"partial-noise"
+
+    partial = _BoundedCapture(capture_protocol=True)
+    partial.append(b"prefix-noise" + FRAME_PREFIX + b"partial")
+    partial.finish()
+    assert partial.protocol_frames
+    assert partial.raw() == b"prefix-noise"
+
+    oversized = _BoundedCapture(capture_protocol=True)
+    oversized.append(FRAME_PREFIX + b"x" * (MAX_ENVELOPE_BYTES + 2))
+    assert oversized.protocol_frames
+    assert len(oversized._protocol_pending) <= MAX_ENVELOPE_BYTES + 1
+
+
+@pytest.mark.unittest
+def test_windows_job_termination_waits_for_process_exit():
+    """Job cleanup waits even when the native job path reports success."""
+    from pyfcstm._selfcheck.process import _terminate
+
+    calls = []
+
+    class Job:
+        def terminate(self, code):
+            calls.append(("job_terminate", code))
+
+        def close(self):
+            calls.append(("job_close",))
+
+    class Process:
+        pid = 11
+
+        def wait(self, timeout=None):
+            calls.append(("wait", timeout))
+            return 0
+
+        def kill(self):
+            calls.append(("kill",))
+
+    assert _terminate(Process(), Job(), False) is None
+    assert [item[0] for item in calls] == ["job_terminate", "job_close", "wait"]
+
+
+@pytest.mark.unittest
+def test_keyboard_interrupt_terminates_started_worker(monkeypatch):
+    """A parent interrupt cleans the worker before propagating to supervisor."""
+    import os
+    from types import SimpleNamespace
+
+    import pyfcstm._selfcheck.process as process_module
+    from pyfcstm._selfcheck.model import CheckSpec
+
+    class Stream:
+        def read(self, size):
+            del size
+            return b""
+
+    class Process:
+        pid = 4242
+        returncode = None
+        stdin = Stream()
+        stdout = Stream()
+        stderr = Stream()
+
+    process = Process()
+    fake_os = SimpleNamespace(
+        name="posix",
+        path=os.path,
+        environ=os.environ,
+        unlink=os.unlink,
+        rmdir=os.rmdir,
+        write=os.write,
+        killpg=lambda *args: None,
+    )
+    terminated = []
+    monkeypatch.setattr(process_module, "os", fake_os)
+    monkeypatch.setattr(process_module.subprocess, "Popen", lambda *a, **k: process)
+    monkeypatch.setattr(
+        process_module,
+        "_send_start_gate",
+        lambda *args: (_ for _ in ()).throw(KeyboardInterrupt()),
+    )
+    monkeypatch.setattr(
+        process_module,
+        "_terminate",
+        lambda *args, **kwargs: terminated.append(args) or None,
+    )
+    with pytest.raises(KeyboardInterrupt):
+        process_module.run_check_process(
+            CheckSpec("fixture.interrupt", "self_dispatch"), timeout=1.0
+        )
+    assert terminated and terminated[0][0] is process
+
+
+@pytest.mark.unittest
 def test_stream_reader_records_pipe_errors():
     """Reader-thread pipe errors are converted into queue events."""
     import queue
@@ -258,6 +403,81 @@ def test_worker_command_switches_to_frozen_dispatch(monkeypatch):
     command = _command_for_worker(CheckSpec("demo", "demo"), "7" * 32, "stdout", None)
     assert "-m" not in command
     assert "--_pyfcstm-selfcheck-worker-v1" in command
+
+
+@pytest.mark.unittest
+def test_stale_test_mode_environment_is_not_forwarded(monkeypatch):
+    """A caller's test-injection environment cannot alter a production run."""
+    from pyfcstm._selfcheck.model import CheckSpec
+    from pyfcstm._selfcheck.process import run_check_process
+
+    monkeypatch.setenv("PYFCSTM_SELFCHECK_TEST_MODE", "hang")
+    result = run_check_process(
+        CheckSpec("fixture.stale_mode", "self_dispatch"), timeout=2.0
+    )
+    if _is_windows_isolation_error(result):
+        return
+    assert result.status == "PASS"
+
+
+@pytest.mark.parametrize("error_type", [OSError, MemoryError, RuntimeError])
+@pytest.mark.unittest
+def test_native_attach_error_terminates_started_worker(monkeypatch, error_type):
+    """Native setup failures still terminate the already-created worker."""
+    import os
+    from types import SimpleNamespace
+
+    import pyfcstm._selfcheck.process as process_module
+    from pyfcstm._selfcheck.model import CheckSpec
+
+    class Stream:
+        def read(self, size):
+            del size
+            return b""
+
+    class Process:
+        pid = 4242
+        returncode = None
+
+        def __init__(self):
+            self.calls = []
+            self.stdin = Stream()
+            self.stdout = Stream()
+            self.stderr = Stream()
+
+        def terminate(self):
+            self.calls.append("terminate")
+
+        def kill(self):
+            self.calls.append("kill")
+
+        def wait(self, timeout=None):
+            self.calls.append(("wait", timeout))
+            self.returncode = 1
+            return 1
+
+    process = Process()
+    fake_os = SimpleNamespace(
+        name="nt",
+        path=os.path,
+        unlink=os.unlink,
+        rmdir=os.rmdir,
+        write=os.write,
+        environ=os.environ,
+    )
+    monkeypatch.setattr(process_module, "os", fake_os)
+    monkeypatch.setattr(process_module.subprocess, "Popen", lambda *a, **k: process)
+    monkeypatch.setattr(
+        process_module,
+        "attach_process",
+        lambda child: (_ for _ in ()).throw(error_type("native attach")),
+    )
+    result = process_module.run_check_process(
+        CheckSpec("fixture.native", "self_dispatch"), timeout=0.1
+    )
+    assert result.status == "ERROR"
+    assert result.reason == "isolation_unavailable"
+    assert "terminate" in process.calls
 
 
 @pytest.mark.unittest
@@ -363,9 +583,10 @@ def test_timeout_cleans_up_grandchild_on_posix(monkeypatch, tmp_path):
     from pyfcstm._selfcheck.process import run_check_process
 
     pid_file = tmp_path / "child.pid"
-    monkeypatch.setenv("PYFCSTM_SELFCHECK_TEST_MODE", "spawn")
     monkeypatch.setenv("PYFCSTM_SELFCHECK_CHILD_PID_FILE", str(pid_file))
-    result = run_check_process(CheckSpec("fixture.spawn", "self_dispatch"), 0.3)
+    result = run_check_process(
+        CheckSpec("fixture.spawn", "self_dispatch"), 0.3, test_mode="spawn"
+    )
     assert result.status == "TIMEOUT"
     child_pid = int(pid_file.read_text(encoding="ascii"))
     deadline = time.time() + 2.0
@@ -385,9 +606,10 @@ def test_protocol_frame_survives_oversized_business_stdout(monkeypatch):
     from pyfcstm._selfcheck.model import CheckSpec
     from pyfcstm._selfcheck.process import run_check_process
 
-    monkeypatch.setenv("PYFCSTM_SELFCHECK_TEST_MODE", "huge_stdout")
     result = run_check_process(
-        CheckSpec("fixture.huge_stdout", "self_dispatch"), timeout=5.0
+        CheckSpec("fixture.huge_stdout", "self_dispatch"),
+        timeout=5.0,
+        test_mode="huge_stdout",
     )
     if _is_windows_isolation_error(result):
         return

@@ -138,8 +138,12 @@ def _emit_bootstrap_error(message: str, output_format: str = "human") -> int:
 
 def _requested_output_format(arguments: Sequence[str]) -> str:
     """Read the exact ``--format`` value without invoking argparse."""
-    for index, argument in enumerate(arguments[:-1]):
-        if argument == "--format" and arguments[index + 1] == "json":
+    for index, argument in enumerate(arguments):
+        if argument == "--format=json" or (
+            argument == "--format"
+            and index + 1 < len(arguments)
+            and arguments[index + 1] == "json"
+        ):
             return "json"
     return "human"
 

@@ -76,6 +76,7 @@ def test_report_write_handles_atomic_write_failures(monkeypatch, tmp_path):
 @pytest.mark.unittest
 def test_color_environment_overrides_are_deterministic(monkeypatch):
     """NO_COLOR and FORCE_COLOR are honored only in auto mode."""
+    import pyfcstm._selfcheck.report as report_module
     from pyfcstm._selfcheck.model import CheckResult
     from pyfcstm._selfcheck.model import ReportSnapshot
     from pyfcstm._selfcheck.report import render_human
@@ -85,6 +86,8 @@ def test_color_environment_overrides_are_deterministic(monkeypatch):
     )
     monkeypatch.delenv("NO_COLOR", raising=False)
     monkeypatch.setenv("FORCE_COLOR", "1")
+    # This test isolates FORCE_COLOR from the separate Win7/no-VT fallback.
+    monkeypatch.setattr(report_module, "_windows_vt_supported", lambda stream: True)
     assert "\x1b[" not in render_human(snapshot, color="never")
     assert "\x1b[" in render_human(snapshot, color="auto")
     monkeypatch.setenv("NO_COLOR", "1")

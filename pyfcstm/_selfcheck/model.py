@@ -204,9 +204,37 @@ class Ledger:
             for spec in specs:
                 if spec.check_id in self._specs:
                     raise ValueError("duplicate check id: {}".format(spec.check_id))
-                self._specs[spec.check_id] = spec
-                self._states[spec.check_id] = "PENDING"
-                self._append("pending", spec.check_id, {"worker_key": spec.worker_key})
+                self._reserve_one(spec)
+
+    def _reserve_one(self, spec: CheckSpec) -> None:
+        """Register one previously unseen spec while the ledger lock is held."""
+        self._specs[spec.check_id] = spec
+        self._states[spec.check_id] = "PENDING"
+        self._append("pending", spec.check_id, {"worker_key": spec.worker_key})
+
+    def ensure_reserved(self, spec: CheckSpec) -> None:
+        """
+        Ensure one selected spec exists in the ledger during emergency cleanup.
+
+        This method is intentionally separate from :meth:`reserve`: an interrupt
+        can arrive while the bulk reservation is running, and cleanup must not
+        retry that interrupted operation.
+
+        :param spec: Selected check specification to register if missing.
+        :type spec: CheckSpec
+        :return: ``None``.
+        :rtype: None
+
+        Example::
+
+            >>> ledger = Ledger()
+            >>> ledger.ensure_reserved(CheckSpec("demo", "demo"))
+            >>> ledger.get_state("demo")
+            'PENDING'
+        """
+        with self._lock:
+            if spec.check_id not in self._specs:
+                self._reserve_one(spec)
 
     def commit(self, result: CheckResult) -> bool:
         """Commit one terminal result and return whether it won the CAS."""
@@ -220,6 +248,47 @@ class Ledger:
             self._states[result.check_id] = result.status
             self._append("terminal", result.check_id, result.to_dict())
             return True
+
+    def mark_running(self, check_id: str) -> bool:
+        """
+        Mark a reserved check as running before starting its worker.
+
+        :param check_id: Stable identifier reserved in this ledger.
+        :type check_id: str
+        :return: ``True`` when the state changed to ``RUNNING``.
+        :rtype: bool
+        :raises KeyError: If the check was not reserved.
+        :raises RuntimeError: If the check is no longer pending.
+
+        Example::
+
+            >>> ledger = Ledger()
+            >>> ledger.reserve((CheckSpec("demo", "demo"),))
+            >>> ledger.mark_running("demo")
+            True
+        """
+        with self._lock:
+            if check_id not in self._specs:
+                raise KeyError(check_id)
+            if check_id in self._results:
+                return False
+            if self._states.get(check_id) != "PENDING":
+                raise RuntimeError("check is not pending: {}".format(check_id))
+            self._states[check_id] = "RUNNING"
+            self._append("running", check_id, {})
+            return True
+
+    def get_state(self, check_id: str) -> Optional[str]:
+        """
+        Return the current lifecycle state for a reserved check.
+
+        :param check_id: Stable identifier reserved in this ledger.
+        :type check_id: str
+        :return: ``PENDING``, ``RUNNING``, a terminal status, or ``None``.
+        :rtype: Optional[str]
+        """
+        with self._lock:
+            return self._states.get(check_id)
 
     def has_result(self, check_id: str) -> bool:
         """Return whether a check already owns a terminal result."""

@@ -99,6 +99,8 @@ def _decode_frame(
         raise ValueError("envelope_too_large")
     if not frame.endswith(b"\x0a"):
         raise ValueError("missing_lf")
+    if frame.endswith(b"\r\n"):
+        raise ValueError("invalid_line_ending")
     body = frame[:-1]
     if not body.startswith(FRAME_PREFIX):
         raise ValueError("invalid_prefix")

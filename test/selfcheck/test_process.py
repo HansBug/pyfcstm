@@ -61,6 +61,28 @@ def test_temp_failure_uses_stdout_frame_fallback(monkeypatch):
     assert result.transport == "stdout"
 
 
+@pytest.mark.parametrize("mode", [None, "hang"])
+@pytest.mark.unittest
+def test_worker_session_files_are_removed_after_completion(monkeypatch, tmp_path, mode):
+    """Normal and timeout paths remove result files and their private directory."""
+    import tempfile
+
+    from pyfcstm._selfcheck.model import CheckSpec
+    from pyfcstm._selfcheck.process import run_check_process
+
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    if mode is not None:
+        monkeypatch.setenv("PYFCSTM_SELFCHECK_TEST_MODE", mode)
+    result = run_check_process(
+        CheckSpec("fixture.cleanup", "self_dispatch"),
+        timeout=0.2 if mode else 5.0,
+    )
+    if _is_windows_isolation_error(result):
+        return
+    assert result.status in ("PASS", "TIMEOUT")
+    assert list(tmp_path.iterdir()) == []
+
+
 @pytest.mark.parametrize(
     ("mode", "status"),
     [
@@ -199,6 +221,8 @@ def test_capture_handles_oversized_protocol_and_pending_data():
     capture = _BoundedCapture(capture_protocol=True)
     capture.append(FRAME_PREFIX + b"x" * MAX_ENVELOPE_BYTES + b"\n")
     assert capture.protocol_frames
+    capture.append(FRAME_PREFIX + b"y\n" * 20)
+    assert len(capture.protocol_frames) <= 2
     capture.append(b"y" * (MAX_ENVELOPE_BYTES + 1))
     assert len(capture._protocol_pending) <= MAX_ENVELOPE_BYTES + 1
 
@@ -262,6 +286,26 @@ def test_cleanup_failures_are_returned_as_diagnostics():
             return self.returncode
 
     assert "job_terminate" in (_terminate(Process(), Job(), False) or "")
+
+
+@pytest.mark.unittest
+def test_explicit_job_cleanup_terminates_before_close():
+    """Windows 7 fallback cleanup terminates descendants on normal return."""
+    from pyfcstm._selfcheck.process import _close_job
+
+    calls = []
+
+    class Job:
+        kill_on_close = False
+
+        def terminate(self, code):
+            calls.append(("terminate", code))
+
+        def close(self):
+            calls.append(("close",))
+
+    assert _close_job(Job()) is None
+    assert calls == [("terminate", 1), ("close",)]
 
 
 @pytest.mark.unittest

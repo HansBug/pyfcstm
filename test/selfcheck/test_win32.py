@@ -99,5 +99,7 @@ def test_windows_job_handle_and_attach_paths_use_native_calls(monkeypatch):
         ctypes, "windll", SimpleNamespace(kernel32=fallback_kernel), raising=False
     )
     fallback = win32.attach_process(SimpleNamespace(pid=8))
+    fallback.terminate(9)
     assert fallback.kill_on_close is False
     fallback.close()
+    assert fallback_kernel.TerminateJobObject.calls

@@ -16,6 +16,7 @@ Example::
 import os
 import platform
 import sys
+import json
 from typing import Optional, Sequence
 
 from .config import BUILD_COMMIT, BUILD_REVISION, BUILD_TIME_UTC
@@ -23,6 +24,16 @@ from .config.meta import __AUTHOR__, __AUTHOR_EMAIL__, __TITLE__, __VERSION__
 
 
 _VERSION_ARGUMENTS = ("-v", "-V", "--version")
+_BOOTSTRAP_ERRORS = (
+    OSError,
+    RuntimeError,
+    ValueError,
+    KeyError,
+    TypeError,
+    ImportError,
+    AttributeError,
+    UnicodeError,
+)
 
 
 def is_version_request(arguments: Sequence[str]) -> bool:
@@ -76,8 +87,44 @@ def run_worker(arguments: Sequence[str]) -> int:
     return execute_worker(options.__dict__)
 
 
-def _emit_bootstrap_error(message: str) -> int:
+def _emit_bootstrap_error(message: str, output_format: str = "human") -> int:
     """Write a last-resort diagnostic without importing the normal CLI graph."""
+    if output_format == "json":
+        data = (
+            json.dumps(
+                {
+                    "schema": "pyfcstm-selfcheck/v1",
+                    "metadata": {"phase": "bootstrap"},
+                    "checks": [
+                        {
+                            "check_id": "selfcheck.infrastructure",
+                            "status": "ERROR",
+                            "required": True,
+                            "summary": "self-check bootstrap error",
+                            "details": message,
+                            "reason": "bootstrap_error",
+                        }
+                    ],
+                    "counts": {"ERROR": 1},
+                },
+                ensure_ascii=True,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            + "\n"
+        ).encode("ascii")
+        try:
+            sys.stdout.buffer.write(data)
+            sys.stdout.buffer.flush()
+            return 3
+        except (AttributeError, OSError, ValueError):
+            try:
+                sys.stdout.write(data.decode("ascii"))
+                sys.stdout.flush()
+                return 3
+            except (AttributeError, OSError, UnicodeError, ValueError):
+                # Fall through to the raw stderr channel when stdout is unavailable.
+                pass
     data = ("self-check bootstrap error: " + message + "\n").encode(
         "utf-8", "backslashreplace"
     )
@@ -87,6 +134,14 @@ def _emit_bootstrap_error(message: str) -> int:
         # There is no stronger channel if the process has lost stderr.
         pass
     return 3
+
+
+def _requested_output_format(arguments: Sequence[str]) -> str:
+    """Read the exact ``--format`` value without invoking argparse."""
+    for index, argument in enumerate(arguments[:-1]):
+        if argument == "--format" and arguments[index + 1] == "json":
+            return "json"
+    return "human"
 
 
 def format_version_info() -> str:
@@ -142,9 +197,20 @@ def main(arguments: Optional[Sequence[str]] = None) -> int:
             return run_selfcheck(command_arguments[1:])
         except KeyboardInterrupt:
             return 130
-        except Exception as err:
-            # The self-check boundary converts ordinary import/runtime failures to infrastructure code 3.
-            return _emit_bootstrap_error("{}: {}".format(type(err).__name__, err))
+        except _BOOTSTRAP_ERRORS as err:
+            # These failures arise from the standard-library dispatch boundary; unknown errors propagate.
+            return _emit_bootstrap_error(
+                "{}: {}".format(type(err).__name__, err),
+                _requested_output_format(command_arguments[1:]),
+            )
+        except BaseException as err:
+            # Any other ordinary Exception/SystemExit is still a runtime failure; non-runtime sentinels propagate.
+            if not isinstance(err, (Exception, SystemExit)):
+                raise
+            return _emit_bootstrap_error(
+                "{}: {}".format(type(err).__name__, err),
+                _requested_output_format(command_arguments[1:]),
+            )
     if command_arguments and command_arguments[0] == "--_pyfcstm-selfcheck-worker-v1":
         if "--self-check" in command_arguments[1:]:
             return 3
@@ -152,8 +218,13 @@ def main(arguments: Optional[Sequence[str]] = None) -> int:
             return run_worker(command_arguments[1:])
         except KeyboardInterrupt:
             return 130
-        except Exception as err:
-            # The hidden worker must never load Click after a normal protocol/runtime exception.
+        except _BOOTSTRAP_ERRORS as err:
+            # Worker dispatch errors are protocol failures; unknown errors remain visible to the parent.
+            return _emit_bootstrap_error("{}: {}".format(type(err).__name__, err))
+        except BaseException as err:
+            # Preserve the same guard for unexpected worker callback exceptions.
+            if not isinstance(err, (Exception, SystemExit)):
+                raise
             return _emit_bootstrap_error("{}: {}".format(type(err).__name__, err))
 
     from .entry import pyfcstmcli

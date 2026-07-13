@@ -92,6 +92,41 @@ def test_color_environment_overrides_are_deterministic(monkeypatch):
 
 
 @pytest.mark.unittest
+def test_windows_without_vt_support_falls_back_to_plain_status_labels(monkeypatch):
+    """Win7-style consoles do not receive raw ANSI escape sequences."""
+    import ctypes
+    from types import SimpleNamespace
+
+    import pyfcstm._selfcheck.report as report_module
+    from pyfcstm._selfcheck.model import CheckResult
+    from pyfcstm._selfcheck.model import ReportSnapshot
+    from pyfcstm._selfcheck.report import render_human
+
+    class Kernel:
+        def GetStdHandle(self, value):
+            del value
+            return 1
+
+        def GetConsoleMode(self, handle, mode):
+            del handle, mode
+            return 0
+
+    monkeypatch.setattr(report_module.os, "name", "nt")
+    monkeypatch.setattr(
+        ctypes,
+        "windll",
+        SimpleNamespace(kernel32=Kernel()),
+        raising=False,
+    )
+    snapshot = ReportSnapshot(
+        (CheckResult("ok", "PASS", True, summary="ready"),), {}, {"PASS": 1}
+    )
+    output = render_human(snapshot, color="always")
+    assert "\x1b[" not in output
+    assert "PASS ok: ready" in output
+
+
+@pytest.mark.unittest
 def test_emergency_writer_uses_raw_fd_fallback(monkeypatch):
     """A broken text/buffer stream still reaches the raw descriptor."""
     import pyfcstm._selfcheck.report as report_module
@@ -122,3 +157,43 @@ def test_emergency_writer_uses_raw_fd_fallback(monkeypatch):
     )
     emergency_write("diagnostic\n")
     assert calls and calls[0][0] == 2
+
+
+@pytest.mark.unittest
+def test_emergency_writer_uses_safe_temp_report_when_all_streams_fail(monkeypatch):
+    """The final emergency layer leaves a durable diagnostic when descriptors fail."""
+    import pyfcstm._selfcheck.report as report_module
+
+    class BrokenStream:
+        def write(self, message):
+            del message
+            raise OSError("closed")
+
+        def flush(self):
+            raise OSError("closed")
+
+        @property
+        def buffer(self):
+            return self
+
+    class FakeSys:
+        stdout = BrokenStream()
+        stderr = BrokenStream()
+
+    monkeypatch.setattr(report_module, "sys", FakeSys())
+    original_write = report_module.os.write
+
+    def fail_stderr(fd, data):
+        if fd == 2:
+            raise OSError("closed")
+        return original_write(fd, data)
+
+    monkeypatch.setattr(report_module.os, "write", fail_stderr)
+    path = report_module.emergency_write("diagnostic\n")
+    assert path is not None
+    try:
+        assert report_module.tempfile is not None
+        with open(path, "rb") as stream:
+            assert stream.read() == b"diagnostic\n"
+    finally:
+        report_module.os.unlink(path)

@@ -108,4 +108,52 @@ def test_supervisor_infrastructure_failure_returns_three(monkeypatch, capsys):
         lambda profile: (_ for _ in ()).throw(RuntimeError("registry broken")),
     )
     assert run_supervisor(("--format", "json")) == 3
-    assert "infrastructure error" in capsys.readouterr().err
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["counts"] == {"ERROR": 1}
+    assert payload["checks"][0]["reason"] == "infrastructure_error"
+
+
+@pytest.mark.unittest
+def test_supervisor_unexpected_named_setup_error_has_json_snapshot(monkeypatch, capsys):
+    """Named setup failures never leave JSON mode without a machine-readable result."""
+    from pyfcstm._selfcheck.supervisor import run_supervisor
+
+    monkeypatch.setattr(
+        "pyfcstm._selfcheck.supervisor.collect_environment",
+        lambda redact: (_ for _ in ()).throw(TypeError("environment shape")),
+    )
+    assert run_supervisor(("--format", "json")) == 3
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["checks"][0]["reason"] == "infrastructure_error"
+    assert "environment shape" in payload["checks"][0]["details"]
+
+
+@pytest.mark.unittest
+def test_supervisor_global_deadline_blocks_unstarted_checks(monkeypatch, capsys):
+    """A depleted global budget finalizes every selected check as BLOCKED."""
+    from pyfcstm._selfcheck.model import CheckSpec
+    from pyfcstm._selfcheck.supervisor import run_supervisor
+
+    monkeypatch.setitem(
+        __import__(
+            "pyfcstm._selfcheck.supervisor", fromlist=["_PROFILE_DEADLINES"]
+        ).__dict__["_PROFILE_DEADLINES"],
+        "default",
+        0.0,
+    )
+    monkeypatch.setattr(
+        "pyfcstm._selfcheck.supervisor.selected_specs",
+        lambda profile: (
+            CheckSpec("first", "first"),
+            CheckSpec("second", "second"),
+        ),
+    )
+    called = []
+    monkeypatch.setattr(
+        "pyfcstm._selfcheck.supervisor.run_check_process",
+        lambda *args, **kwargs: called.append((args, kwargs)),
+    )
+    assert run_supervisor(("--format", "json")) == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert called == []
+    assert payload["counts"] == {"BLOCKED": 2}

@@ -31,3 +31,23 @@ def test_hidden_worker_dispatch_is_exact_and_pre_click(monkeypatch):
     )
     assert _bootstrap.main(("--_pyfcstm-selfcheck-worker-v1", "--nonce", "x")) == 0
     assert invoked == [("--nonce", "x")]
+
+
+@pytest.mark.unittest
+def test_bootstrap_runtime_failure_keeps_json_stdout_machine_readable(
+    monkeypatch, capsys
+):
+    """A bootstrap boundary failure still emits the canonical JSON shape."""
+    import json
+
+    from pyfcstm import _bootstrap
+
+    monkeypatch.setattr(
+        _bootstrap,
+        "run_selfcheck",
+        lambda args: (_ for _ in ()).throw(ZeroDivisionError("boom")),
+    )
+    assert _bootstrap.main(("--self-check", "--format", "json")) == 3
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["counts"] == {"ERROR": 1}
+    assert "boom" in payload["checks"][0]["details"]

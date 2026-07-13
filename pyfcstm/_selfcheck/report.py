@@ -9,17 +9,42 @@ from typing import Optional
 from .model import ReportSnapshot
 
 
+def _windows_vt_supported(stream) -> bool:
+    """Return whether the current Windows console accepts VT sequences.
+
+    Windows 7 consoles do not expose ``ENABLE_VIRTUAL_TERMINAL_PROCESSING``;
+    those consoles deliberately fall back to stable uncoloured status labels.
+    """
+    if os.name != "nt":
+        return True
+    try:
+        import ctypes
+    except ImportError:
+        return False
+    try:
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.GetStdHandle(-11)
+        mode = ctypes.c_uint32()
+        if not kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
+            return False
+        return bool(mode.value & 0x0004)
+    except (AttributeError, OSError, TypeError, ValueError, ctypes.ArgumentError):
+        return False
+
+
 def _color_enabled(mode: str) -> bool:
     """Resolve color mode with the documented environment overrides."""
     if mode == "never":
         return False
     if mode == "always":
-        return True
+        return _windows_vt_supported(sys.stdout)
     if os.environ.get("NO_COLOR") is not None:
         return False
     if os.environ.get("FORCE_COLOR") == "1":
-        return True
-    return bool(getattr(sys.stdout, "isatty", lambda: False)())
+        return _windows_vt_supported(sys.stdout)
+    return bool(
+        getattr(sys.stdout, "isatty", lambda: False)()
+    ) and _windows_vt_supported(sys.stdout)
 
 
 def render_json(snapshot: ReportSnapshot) -> str:
@@ -120,7 +145,7 @@ def write_report(path: str, snapshot: ReportSnapshot) -> Optional[str]:
                 pass
 
 
-def emergency_write(message: str, output_format: str = "human") -> None:
+def emergency_write(message: str, output_format: str = "human") -> Optional[str]:
     """
     Attempt the documented stdout/stderr/raw-fd emergency chain.
 
@@ -129,8 +154,9 @@ def emergency_write(message: str, output_format: str = "human") -> None:
     :param output_format: ``human`` or ``json``; JSON preserves stdout purity,
         defaults to ``'human'``.
     :type output_format: str, optional
-    :return: ``None``.
-    :rtype: None
+    :return: Emergency report path when every stream is unavailable, otherwise
+        ``None``.
+    :rtype: Optional[str]
     """
     encoded = message.encode("utf-8", "backslashreplace")
     try:
@@ -149,4 +175,26 @@ def emergency_write(message: str, output_format: str = "human") -> None:
     try:
         os.write(2, encoded)
     except OSError:
-        pass
+        descriptor = None
+        temporary = None
+        try:
+            descriptor, temporary = tempfile.mkstemp(
+                prefix="pyfcstm-selfcheck-emergency-", suffix=".log"
+            )
+            os.write(descriptor, encoded)
+            os.fsync(descriptor)
+            os.close(descriptor)
+            descriptor = None
+            return temporary
+        except (OSError, ValueError):
+            if descriptor is not None:
+                try:
+                    os.close(descriptor)
+                except OSError:
+                    pass
+            if temporary is not None:
+                try:
+                    os.unlink(temporary)
+                except OSError:
+                    pass
+            return None

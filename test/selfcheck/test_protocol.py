@@ -17,6 +17,16 @@ def test_start_gate_is_exactly_36_bytes_with_real_lf():
 
 
 @pytest.mark.unittest
+def test_nonce_rejects_trailing_newline_and_other_non_hex_bytes():
+    """Nonce validation is a full-string wire check, not a prefix check."""
+    from pyfcstm._selfcheck.protocol import build_start_gate
+
+    for invalid in ("0" * 32 + "\n", "0" * 32 + "\r\n", "0" * 31 + "g"):
+        with pytest.raises(ValueError, match="invalid self-check nonce"):
+            build_start_gate(invalid)
+
+
+@pytest.mark.unittest
 def test_protocol_rejects_invalid_nonce_and_oversized_envelope():
     """Nonce and raw-frame limits are enforced before transport use."""
     from pyfcstm._selfcheck.protocol import MAX_ENVELOPE_BYTES
@@ -88,6 +98,32 @@ def test_valid_frame_uses_real_lf_and_nonce(tmp_path):
     path.write_bytes(frame)
     outcome = read_result_file(str(path), nonce)
     assert outcome.envelope["status"] == "PASS"
+
+
+@pytest.mark.unittest
+def test_expected_check_id_is_part_of_frame_validation(tmp_path):
+    """A same-nonce frame for another check cannot be credited to this check."""
+    from pyfcstm._selfcheck.protocol import encode_result_frame
+    from pyfcstm._selfcheck.protocol import read_result_file
+
+    nonce = "4" * 32
+    path = tmp_path / "result.log"
+    path.write_bytes(
+        encode_result_frame(
+            {
+                "schema": "pyfcstm-selfcheck-worker/v1",
+                "check_id": "other.check",
+                "nonce": nonce,
+                "status": "PASS",
+            }
+        )
+    )
+    assert (
+        read_result_file(
+            str(path), nonce, expected_check_id="expected.check"
+        ).error_code
+        == "wrong_check_id"
+    )
 
 
 @pytest.mark.unittest

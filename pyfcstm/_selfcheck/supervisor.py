@@ -1,6 +1,7 @@
 """Supervisor orchestration for the standard-library self-check command."""
 
 import time
+import traceback
 import uuid
 from typing import Sequence
 
@@ -18,6 +19,23 @@ from .report import render_json
 from .report import write_report
 
 
+_PROFILE_DEADLINES = {
+    "default": 180.0,
+    "full": 300.0,
+    "visualize": 300.0,
+}
+_EXPECTED_INFRA_ERRORS = (
+    OSError,
+    RuntimeError,
+    ValueError,
+    KeyError,
+    TypeError,
+    ImportError,
+    AttributeError,
+    UnicodeError,
+)
+
+
 def _exit_code(snapshot, fail_on_warn: bool) -> int:
     """Compute the stable public exit code from one snapshot."""
     for result in snapshot.checks:
@@ -32,6 +50,38 @@ def _exit_code(snapshot, fail_on_warn: bool) -> int:
         if fail_on_warn and result.required and result.status == "WARN":
             return 1
     return 0
+
+
+def _make_infrastructure_snapshot(phase: str, error: BaseException):
+    """Return a serializable :class:`ReportSnapshot` for setup failures."""
+    from .model import ReportSnapshot
+
+    result = CheckResult(
+        "selfcheck.infrastructure",
+        "ERROR",
+        True,
+        summary="self-check infrastructure error",
+        details="{}: {}\n{}".format(phase, error, traceback.format_exc()),
+        reason="infrastructure_error",
+    )
+    return ReportSnapshot((result,), {"phase": phase}, {"ERROR": 1})
+
+
+def _emit_snapshot(snapshot, options) -> bool:
+    """Render one snapshot while preserving the selected output channel."""
+    try:
+        output = (
+            render_json(snapshot)
+            if options.output_format == "json"
+            else render_human(snapshot, options.color)
+        )
+        print(output, end="")
+        return True
+    except (OSError, UnicodeError, ValueError, TypeError) as err:
+        emergency_write(
+            "self-check render error: {}\n".format(err), options.output_format
+        )
+        return False
 
 
 def run_supervisor(arguments: Sequence[str]) -> int:
@@ -51,18 +101,82 @@ def run_supervisor(arguments: Sequence[str]) -> int:
 
     started = time.time()
     ledger = Ledger()
+    specs = ()
     try:
         specs = selected_specs(options.profile)
         ledger.reserve(specs)
         metadata = {
             "session_id": uuid.uuid4().hex,
             "profile": options.profile,
+            "timeout_scale": options.timeout_scale,
             "registry_coverage": 1,
             "environment": collect_environment(options.redact),
             "started_at": started,
         }
+        global_deadline = time.monotonic() + _PROFILE_DEADLINES[options.profile] * (
+            options.timeout_scale
+        )
+        metadata["global_deadline_seconds"] = _PROFILE_DEADLINES[options.profile] * (
+            options.timeout_scale
+        )
         for spec in specs:
-            result = run_check_process(spec, timeout=30.0 * options.timeout_scale)
+            prerequisite_results = [
+                ledger.get_result(item) for item in spec.prerequisites
+            ]
+            if any(result is None for result in prerequisite_results):
+                ledger.commit(
+                    CheckResult(
+                        spec.check_id,
+                        "BLOCKED",
+                        spec.required,
+                        summary="prerequisite did not complete",
+                        reason="prerequisite_pending",
+                    )
+                )
+                continue
+            if any(
+                result.status not in ("PASS", "WARN", "SKIP")
+                for result in prerequisite_results
+            ):
+                ledger.commit(
+                    CheckResult(
+                        spec.check_id,
+                        "BLOCKED",
+                        spec.required,
+                        summary="prerequisite failed",
+                        reason="prerequisite_failed",
+                    )
+                )
+                continue
+            remaining = global_deadline - time.monotonic()
+            if remaining <= 0.0:
+                ledger.commit(
+                    CheckResult(
+                        spec.check_id,
+                        "BLOCKED",
+                        spec.required,
+                        summary="global self-check deadline exceeded",
+                        reason="global_deadline",
+                    )
+                )
+                continue
+            timeout = min(30.0 * options.timeout_scale, remaining)
+            try:
+                if options.timeout_scale == 1.0:
+                    result = run_check_process(spec, timeout=timeout)
+                else:
+                    result = run_check_process(
+                        spec, timeout=timeout, timeout_scale=options.timeout_scale
+                    )
+            except _EXPECTED_INFRA_ERRORS as err:
+                result = CheckResult(
+                    spec.check_id,
+                    "ERROR",
+                    spec.required,
+                    summary="worker supervisor error",
+                    details="{}: {}".format(type(err).__name__, err),
+                    reason="worker_supervisor_error",
+                )
             if result.status == "PASS" and result.summary.startswith(
                 "__SELFCHECK_WARN__:"
             ):
@@ -104,11 +218,17 @@ def run_supervisor(arguments: Sequence[str]) -> int:
             )
         emergency_write("self-check interrupted\n", options.output_format)
         return 130
-    except (OSError, RuntimeError, ValueError, KeyError) as err:
-        # Bootstrap, registry, ledger, and snapshot failures are infrastructure failures.
-        emergency_write(
-            "self-check infrastructure error: {}\n".format(err), options.output_format
-        )
+    except _EXPECTED_INFRA_ERRORS as err:
+        # Setup/snapshot failures still emit a canonical JSON or human snapshot.
+        snapshot = _make_infrastructure_snapshot("supervisor", err)
+        _emit_snapshot(snapshot, options)
+        return 3
+    except BaseException as err:
+        # Third-party checks may raise any Exception subclass; non-runtime sentinels remain visible.
+        if not isinstance(err, (Exception, SystemExit)):
+            raise
+        snapshot = _make_infrastructure_snapshot("supervisor", err)
+        _emit_snapshot(snapshot, options)
         return 3
 
     if options.report:
@@ -129,16 +249,6 @@ def run_supervisor(arguments: Sequence[str]) -> int:
             metadata["report_error"] = report_error
             snapshot = ledger.freeze(metadata)
 
-    try:
-        output = (
-            render_json(snapshot)
-            if options.output_format == "json"
-            else render_human(snapshot, options.color)
-        )
-        print(output, end="")
-    except (OSError, UnicodeError, ValueError) as err:
-        emergency_write(
-            "self-check render error: {}\n".format(err), options.output_format
-        )
+    if not _emit_snapshot(snapshot, options):
         return 1
     return _exit_code(snapshot, options.fail_on_warn)

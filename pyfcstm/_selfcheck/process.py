@@ -1,5 +1,6 @@
 """Fresh subprocess execution, bounded stream capture, and timeout cleanup."""
 
+import errno
 import os
 import queue
 import signal
@@ -23,6 +24,7 @@ from .protocol import read_stdout_frames
 STREAM_LIMIT = 2 * 1024 * 1024
 START_GATE_TIMEOUT = 2.0
 SIGTERM_GRACE = 0.5
+MAX_PROTOCOL_FRAMES = 2
 
 
 class _BoundedCapture:
@@ -52,10 +54,11 @@ class _BoundedCapture:
                 self._protocol_pending = bytearray(remainder)
                 frame = bytes(line) + b"\x0a"
                 if frame.startswith(FRAME_PREFIX):
-                    if len(frame) <= MAX_ENVELOPE_BYTES:
-                        self.protocol_frames.append(frame)
-                    else:
-                        self.protocol_frames.append(frame[: MAX_ENVELOPE_BYTES + 1])
+                    if len(self.protocol_frames) < MAX_PROTOCOL_FRAMES:
+                        if len(frame) <= MAX_ENVELOPE_BYTES:
+                            self.protocol_frames.append(frame)
+                        else:
+                            self.protocol_frames.append(frame[: MAX_ENVELOPE_BYTES + 1])
             if len(self._protocol_pending) > MAX_ENVELOPE_BYTES:
                 self._protocol_pending = self._protocol_pending[
                     -(MAX_ENVELOPE_BYTES + 1) :
@@ -95,7 +98,9 @@ def _drain(stream, capture: _BoundedCapture, events) -> None:
         events.put("stream_done")
 
 
-def _terminate(process, job, posix_group: bool) -> Optional[str]:
+def _terminate(
+    process, job, posix_group: bool, grace: float = SIGTERM_GRACE
+) -> Optional[str]:
     """Terminate a worker and report cleanup diagnostics without raising."""
     errors = []
 
@@ -121,14 +126,14 @@ def _terminate(process, job, posix_group: bool) -> Optional[str]:
         except (OSError, ProcessLookupError) as err:
             record("sigterm", err)
         try:
-            process.wait(timeout=SIGTERM_GRACE)
+            process.wait(timeout=grace)
         except subprocess.TimeoutExpired:
             try:
                 os.killpg(process.pid, signal.SIGKILL)
             except (OSError, ProcessLookupError) as err:
                 record("sigkill", err)
             try:
-                process.wait(timeout=SIGTERM_GRACE)
+                process.wait(timeout=grace)
             except (OSError, subprocess.TimeoutExpired, ChildProcessError) as err:
                 record("process_wait", err)
         except (OSError, ChildProcessError, ValueError) as err:
@@ -139,18 +144,33 @@ def _terminate(process, job, posix_group: bool) -> Optional[str]:
         except (OSError, ProcessLookupError, ValueError) as err:
             record("process_terminate", err)
         try:
-            process.wait(timeout=SIGTERM_GRACE)
+            process.wait(timeout=grace)
         except subprocess.TimeoutExpired:
             try:
                 process.kill()
             except (OSError, ProcessLookupError, ValueError) as err:
                 record("process_kill", err)
             try:
-                process.wait(timeout=SIGTERM_GRACE)
+                process.wait(timeout=grace)
             except (OSError, subprocess.TimeoutExpired, ChildProcessError) as err:
                 record("process_wait", err)
         except (OSError, ChildProcessError, ValueError) as err:
             record("process_wait", err)
+    return "; ".join(errors) if errors else None
+
+
+def _close_job(job) -> Optional[str]:
+    """Terminate explicit-fallback jobs before releasing their native handle."""
+    errors = []
+    if not getattr(job, "kill_on_close", True):
+        try:
+            job.terminate(1)
+        except (JobAssignmentError, OSError, ValueError) as err:
+            errors.append("job_terminate:{}".format(type(err).__name__))
+    try:
+        job.close()
+    except (OSError, ValueError) as err:
+        errors.append("job_close:{}".format(type(err).__name__))
     return "; ".join(errors) if errors else None
 
 
@@ -211,7 +231,34 @@ def _command_for_worker(
     return command
 
 
-def run_check_process(check: CheckSpec, timeout: float) -> CheckResult:
+def _cleanup_session(session_dir: Optional[str], result_file: Optional[str]) -> None:
+    """Remove worker transport files before deleting the private session directory."""
+    errors = []
+    if result_file is not None:
+        try:
+            os.unlink(result_file)
+        except OSError as err:
+            if err.errno != errno.ENOENT:
+                errors.append("result_unlink:{}".format(type(err).__name__))
+    if session_dir is not None:
+        try:
+            os.rmdir(session_dir)
+        except OSError as err:
+            errors.append("session_rmdir:{}".format(type(err).__name__))
+    if errors:
+        diagnostic = "self-check cleanup: {}\n".format("; ".join(errors)).encode(
+            "utf-8", "backslashreplace"
+        )
+        try:
+            os.write(2, diagnostic)
+        except OSError:
+            # The raw descriptor is the final diagnostic channel when normal stderr is unavailable.
+            return
+
+
+def run_check_process(
+    check: CheckSpec, timeout: float, timeout_scale: float = 1.0
+) -> CheckResult:
     """
     Run one check in a fresh process and classify its terminal result.
 
@@ -219,6 +266,9 @@ def run_check_process(check: CheckSpec, timeout: float) -> CheckResult:
     :type check: CheckSpec
     :param timeout: Monotonic deadline in seconds.
     :type timeout: float
+    :param timeout_scale: Multiplier for start-gate and termination grace,
+        defaults to ``1.0``.
+    :type timeout_scale: float, optional
     :return: A terminal result, including bounded process diagnostics.
     :rtype: CheckResult
 
@@ -229,6 +279,8 @@ def run_check_process(check: CheckSpec, timeout: float) -> CheckResult:
     """
     started = time.monotonic()
     nonce = make_nonce()
+    scaled_gate_timeout = min(START_GATE_TIMEOUT * timeout_scale, max(0.0, timeout))
+    scaled_grace = min(5.0, max(0.1, SIGTERM_GRACE * timeout_scale))
     session_dir = None
     result_file = None
     result_mode = "file"
@@ -258,6 +310,7 @@ def run_check_process(check: CheckSpec, timeout: float) -> CheckResult:
     try:
         process = subprocess.Popen(command, **popen_kwargs)
     except (OSError, ValueError) as err:
+        _cleanup_session(session_dir, result_file)
         return CheckResult(
             check.check_id,
             "ERROR",
@@ -268,12 +321,13 @@ def run_check_process(check: CheckSpec, timeout: float) -> CheckResult:
         )
 
     job = None
+    job_cleaned = False
     try:
         if os.name == "nt":
             try:
                 job = attach_process(process)
             except JobAssignmentError as err:
-                _terminate(process, None, False)
+                _terminate(process, None, False, scaled_grace)
                 return CheckResult(
                     check.check_id,
                     "ERROR",
@@ -294,12 +348,11 @@ def run_check_process(check: CheckSpec, timeout: float) -> CheckResult:
         )
         stdout_thread.start()
         stderr_thread.start()
-        gate_error, gate_thread = _send_start_gate(
-            process, nonce, min(START_GATE_TIMEOUT, max(0.0, timeout))
-        )
+        gate_error, gate_thread = _send_start_gate(process, nonce, scaled_gate_timeout)
         if gate_error is not None:
-            cleanup_error = _terminate(process, job, posix_group)
-            gate_thread.join(timeout=SIGTERM_GRACE)
+            cleanup_error = _terminate(process, job, posix_group, scaled_grace)
+            job_cleaned = job is not None
+            gate_thread.join(timeout=scaled_grace)
             details = gate_error
             if cleanup_error:
                 details += "; cleanup=" + cleanup_error
@@ -319,9 +372,10 @@ def run_check_process(check: CheckSpec, timeout: float) -> CheckResult:
             timed_out = False
         except subprocess.TimeoutExpired:
             timed_out = True
-            cleanup_error = _terminate(process, job, posix_group)
+            cleanup_error = _terminate(process, job, posix_group, scaled_grace)
+            job_cleaned = job is not None
             try:
-                return_code = process.wait(timeout=SIGTERM_GRACE)
+                return_code = process.wait(timeout=scaled_grace)
             except (OSError, ValueError, ChildProcessError, subprocess.TimeoutExpired):
                 return_code = process.returncode
         stdout_thread.join(timeout=2.0)
@@ -344,9 +398,11 @@ def run_check_process(check: CheckSpec, timeout: float) -> CheckResult:
             )
 
         outcome = (
-            read_result_file(result_file, nonce)
+            read_result_file(result_file, nonce, check.check_id)
             if result_mode == "file"
-            else read_stdout_frames(stdout_capture.protocol_bytes(), nonce)
+            else read_stdout_frames(
+                stdout_capture.protocol_bytes(), nonce, check.check_id
+            )
         )
         if outcome.envelope is not None:
             status = outcome.envelope["status"]
@@ -392,12 +448,17 @@ def run_check_process(check: CheckSpec, timeout: float) -> CheckResult:
         )
     finally:
         if job is not None:
-            try:
-                job.close()
-            except (OSError, ValueError):
-                pass
-        if session_dir is not None:
-            try:
-                os.rmdir(session_dir)
-            except OSError:
-                pass
+            if not job_cleaned:
+                cleanup_error = _close_job(job)
+                if cleanup_error:
+                    try:
+                        os.write(
+                            2,
+                            ("self-check job cleanup: " + cleanup_error + "\n").encode(
+                                "ascii", "backslashreplace"
+                            ),
+                        )
+                    except OSError:
+                        # The process result remains authoritative when stderr is unavailable.
+                        pass
+        _cleanup_session(session_dir, result_file)

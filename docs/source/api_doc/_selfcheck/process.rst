@@ -24,6 +24,12 @@ SIGTERM\_GRACE
 .. autodata:: SIGTERM_GRACE
 
 
+MAX\_PROTOCOL\_FRAMES
+-----------------------------------------------------
+
+.. autodata:: MAX_PROTOCOL_FRAMES
+
+
 run\_check\_process
 -----------------------------------------------------
 

@@ -18,6 +18,16 @@ from .protocol import is_valid_nonce
 
 
 START_GATE_TIMEOUT = 2.0
+_EXPECTED_CHECK_ERRORS = (
+    AttributeError,
+    ImportError,
+    KeyError,
+    OSError,
+    RuntimeError,
+    TypeError,
+    ValueError,
+    UnicodeError,
+)
 
 
 def _read_start_gate(nonce: str, timeout: float = START_GATE_TIMEOUT) -> Optional[str]:
@@ -202,8 +212,8 @@ def run_worker(arguments: Mapping[str, Any]) -> int:
         )
         write_error = _write_frame(result_mode, result_file, frame)
         return 130 if write_error is None else 3
-    except Exception as err:
-        # Any ordinary registered-check exception is intentionally normalized with its full traceback.
+    except _EXPECTED_CHECK_ERRORS as err:
+        # Registered checks document these import, I/O, and validation failures; unknown errors crash the worker.
         frame = encode_result_frame(
             _envelope(
                 check_id,

@@ -44,4 +44,4 @@ Ledger
 -----------------------------------------------------
 
 .. autoclass:: Ledger
-    :members: __init__,events,reserve,commit,has_result,freeze
+    :members: __init__,events,reserve,commit,has_result,get_result,freeze

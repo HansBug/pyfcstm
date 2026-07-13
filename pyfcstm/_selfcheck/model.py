@@ -226,6 +226,25 @@ class Ledger:
         with self._lock:
             return check_id in self._results
 
+    def get_result(self, check_id: str) -> Optional[CheckResult]:
+        """
+        Return a committed result, or ``None`` while the check is pending.
+
+        :param check_id: Stable identifier reserved in this ledger.
+        :type check_id: str
+        :return: The terminal result, or ``None`` before terminal commit.
+        :rtype: Optional[CheckResult]
+
+        Example::
+
+            >>> ledger = Ledger()
+            >>> ledger.reserve((CheckSpec("demo", "demo"),))
+            >>> ledger.get_result("demo") is None
+            True
+        """
+        with self._lock:
+            return self._results.get(check_id)
+
     def freeze(self, metadata: Mapping[str, Any]) -> ReportSnapshot:
         """Freeze all selected results into one deterministic snapshot."""
         with self._lock:

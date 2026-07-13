@@ -297,6 +297,12 @@ def test_termination_fallback_paths_are_bounded(monkeypatch):
         lambda *args: (_ for _ in ()).throw(OSError("killpg")),
         raising=False,
     )
+    monkeypatch.setattr(
+        process_module.signal,
+        "SIGKILL",
+        getattr(process_module.signal, "SIGTERM", 15),
+        raising=False,
+    )
     assert process_module._terminate(Process(), None, True) is not None
     assert process_module._terminate(Process(), None, False) is not None
 

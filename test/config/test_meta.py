@@ -10,5 +10,5 @@ class TestConfigMeta:
         assert __TITLE__ == "pyfcstm"
 
     def test_package_version_export_matches_release_version(self):
-        assert __VERSION__ == "0.5.0"
+        assert __VERSION__ == "0.6.0"
         assert pyfcstm.__version__ == __VERSION__

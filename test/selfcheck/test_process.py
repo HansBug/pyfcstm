@@ -737,7 +737,11 @@ def test_termination_reports_job_and_process_failures():
 @pytest.mark.unittest
 def test_posix_termination_reports_group_and_wait_failures(monkeypatch):
     """POSIX cleanup records signal, group-probe, and reap diagnostics."""
+    import os
     import subprocess
+
+    if os.name != "posix":
+        pytest.skip("POSIX process-group cleanup is tested on POSIX")
 
     import pyfcstm._selfcheck.process as process_module
 
@@ -879,6 +883,10 @@ def test_run_check_process_start_gate_failure_keeps_cleanup_diagnostic(monkeypat
     import pyfcstm._selfcheck.process as process_module
     from pyfcstm._selfcheck.model import CheckSpec
 
+    # This fake process is intended to exercise the start-gate branch, not native
+    # Windows Job Object setup, which is unavailable on the synthetic object.
+    monkeypatch.setattr(process_module, "attach_process", lambda child: None)
+
     class EmptyStream:
         def read(self, size):
             del size
@@ -925,6 +933,9 @@ def test_run_check_process_interrupt_writes_best_effort_cleanup(monkeypatch):
     """Parent interruption preserves the original exception if stderr is broken."""
     import pyfcstm._selfcheck.process as process_module
     from pyfcstm._selfcheck.model import CheckSpec
+
+    # Keep the synthetic process on the interruption path on Windows too.
+    monkeypatch.setattr(process_module, "attach_process", lambda child: None)
 
     class EmptyStream:
         def read(self, size):

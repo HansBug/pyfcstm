@@ -67,6 +67,16 @@ def test_supervisor_argument_and_report_failures_are_stable(
 
 
 @pytest.mark.unittest
+def test_supervisor_argument_error_keeps_json_stdout_valid(capsys):
+    """Invalid JSON-mode options still produce a canonical machine result."""
+    from pyfcstm._selfcheck.supervisor import run_supervisor
+
+    assert run_supervisor(("--format", "json", "--unknown")) == 2
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["checks"][0]["reason"] == "infrastructure_error"
+
+
+@pytest.mark.unittest
 def test_supervisor_ctrl_c_returns_partial_summary(monkeypatch, capsys):
     """A first supervisor KeyboardInterrupt maps to 130."""
     from pyfcstm._selfcheck.supervisor import run_supervisor

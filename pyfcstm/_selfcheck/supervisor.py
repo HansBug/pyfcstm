@@ -84,6 +84,20 @@ def _emit_snapshot(snapshot, options) -> bool:
         return False
 
 
+def _emit_argument_error(arguments: Sequence[str], error: BaseException) -> None:
+    """Emit argument failures through the requested human or JSON channel."""
+    output_format = "human"
+    for index, argument in enumerate(arguments[:-1]):
+        if argument == "--format" and arguments[index + 1] == "json":
+            output_format = "json"
+            break
+    if output_format == "json":
+        snapshot = _make_infrastructure_snapshot("arguments", error)
+        print(render_json(snapshot))
+    else:
+        emergency_write("self-check argument error: {}\n".format(error), output_format)
+
+
 def run_supervisor(arguments: Sequence[str]) -> int:
     """
     Run selected checks and emit one final report.
@@ -96,7 +110,7 @@ def run_supervisor(arguments: Sequence[str]) -> int:
     try:
         options = parse_selfcheck_args(arguments)
     except SelfCheckArgumentError as err:
-        emergency_write("self-check argument error: {}\n".format(err), "json")
+        _emit_argument_error(arguments, err)
         return 2
 
     started = time.time()

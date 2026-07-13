@@ -92,7 +92,17 @@ class CheckResult:
             raise ValueError("unknown self-check status: {}".format(self.status))
 
     def to_dict(self) -> Dict[str, Any]:
-        """Return a JSON-compatible result mapping."""
+        """
+        Return a JSON-compatible result mapping.
+
+        :return: JSON-compatible result fields.
+        :rtype: Dict[str, Any]
+
+        Example::
+
+            >>> CheckResult("demo", "PASS", True).to_dict()["status"]
+            'PASS'
+        """
         return {
             "check_id": self.check_id,
             "status": self.status,
@@ -159,7 +169,17 @@ class ReportSnapshot:
     counts: Mapping[str, int]
 
     def to_dict(self) -> Dict[str, Any]:
-        """Return a stable JSON-compatible report mapping."""
+        """
+        Return a stable JSON-compatible report mapping.
+
+        :return: Snapshot schema, metadata, checks, and status counts.
+        :rtype: Dict[str, Any]
+
+        Example::
+
+            >>> ReportSnapshot((), {}, {}).to_dict()["schema"]
+            'pyfcstm-selfcheck/v1'
+        """
         return {
             "schema": "pyfcstm-selfcheck/v1",
             "metadata": dict(self.metadata),
@@ -199,7 +219,22 @@ class Ledger:
         self._events.append(LedgerEvent(self._sequence, kind, check_id, dict(payload)))
 
     def reserve(self, specs: Iterable[CheckSpec]) -> None:
-        """Reserve selected checks as pending, rejecting duplicate IDs."""
+        """
+        Reserve selected checks as pending, rejecting duplicate IDs.
+
+        :param specs: Check specifications to register.
+        :type specs: Iterable[CheckSpec]
+        :return: ``None``.
+        :rtype: None
+        :raises ValueError: If a check ID is already reserved.
+
+        Example::
+
+            >>> ledger = Ledger()
+            >>> ledger.reserve((CheckSpec("demo", "demo"),))
+            >>> ledger.get_state("demo")
+            'PENDING'
+        """
         with self._lock:
             for spec in specs:
                 if spec.check_id in self._specs:
@@ -237,7 +272,22 @@ class Ledger:
                 self._reserve_one(spec)
 
     def commit(self, result: CheckResult) -> bool:
-        """Commit one terminal result and return whether it won the CAS."""
+        """
+        Commit one terminal result and return whether it won the CAS.
+
+        :param result: Terminal result to commit.
+        :type result: CheckResult
+        :return: ``True`` for the first commit, ``False`` for a duplicate.
+        :rtype: bool
+        :raises KeyError: If the result ID was not reserved.
+
+        Example::
+
+            >>> ledger = Ledger()
+            >>> ledger.reserve((CheckSpec("demo", "demo"),))
+            >>> ledger.commit(CheckResult("demo", "PASS", True))
+            True
+        """
         with self._lock:
             if result.check_id not in self._specs:
                 raise KeyError(result.check_id)
@@ -291,7 +341,21 @@ class Ledger:
             return self._states.get(check_id)
 
     def has_result(self, check_id: str) -> bool:
-        """Return whether a check already owns a terminal result."""
+        """
+        Return whether a check already owns a terminal result.
+
+        :param check_id: Stable check identifier.
+        :type check_id: str
+        :return: ``True`` after a terminal commit, otherwise ``False``.
+        :rtype: bool
+
+        Example::
+
+            >>> ledger = Ledger()
+            >>> ledger.reserve((CheckSpec("demo", "demo"),))
+            >>> ledger.has_result("demo")
+            False
+        """
         with self._lock:
             return check_id in self._results
 
@@ -315,7 +379,23 @@ class Ledger:
             return self._results.get(check_id)
 
     def freeze(self, metadata: Mapping[str, Any]) -> ReportSnapshot:
-        """Freeze all selected results into one deterministic snapshot."""
+        """
+        Freeze all selected results into one deterministic snapshot.
+
+        :param metadata: Immutable report metadata to copy into the snapshot.
+        :type metadata: Mapping[str, Any]
+        :return: Frozen snapshot containing every terminal result.
+        :rtype: ReportSnapshot
+        :raises RuntimeError: If any reserved check lacks a terminal result.
+
+        Example::
+
+            >>> ledger = Ledger()
+            >>> ledger.reserve((CheckSpec("demo", "demo"),))
+            >>> ledger.commit(CheckResult("demo", "PASS", True))
+            >>> ledger.freeze({}).counts
+            {'PASS': 1}
+        """
         with self._lock:
             missing = [
                 check_id for check_id in self._specs if check_id not in self._results

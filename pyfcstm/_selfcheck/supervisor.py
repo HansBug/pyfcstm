@@ -151,14 +151,25 @@ def _finalize_infrastructure(
 
 def _emit_snapshot(snapshot, options, ledger=None, metadata=None) -> bool:
     """Render one snapshot and retain a machine-readable fallback on failure."""
+    snapshot, output, rendered = _render_snapshot(
+        snapshot, options, ledger=ledger, metadata=metadata
+    )
+    del snapshot
+    if output is None:
+        return False
+    print(output, end="")
+    return rendered
+
+
+def _render_snapshot(snapshot, options, ledger=None, metadata=None):
+    """Prepare output while returning the final ledger-backed snapshot."""
     try:
         output = (
             render_json(snapshot)
             if options.output_format == "json"
             else render_human(snapshot, options.color)
         )
-        print(output, end="")
-        return True
+        return snapshot, output, True
     except BaseException as err:
         if not isinstance(err, (Exception, SystemExit)):
             raise
@@ -180,7 +191,7 @@ def _emit_snapshot(snapshot, options, ledger=None, metadata=None) -> bool:
                 if options.output_format == "json"
                 else _fallback_human(snapshot)
             )
-            print(output, end="")
+            return snapshot, output, False
         except BaseException as fallback_error:
             if not isinstance(fallback_error, (Exception, SystemExit)):
                 raise
@@ -188,7 +199,7 @@ def _emit_snapshot(snapshot, options, ledger=None, metadata=None) -> bool:
                 "self-check render error: {}\n".format(fallback_error),
                 options.output_format,
             )
-        return False
+        return snapshot, None, False
 
 
 def _emit_argument_error(arguments: Sequence[str], error: BaseException) -> None:
@@ -199,6 +210,11 @@ def _emit_argument_error(arguments: Sequence[str], error: BaseException) -> None
             argument == "--format"
             and index + 1 < len(arguments)
             and arguments[index + 1] == "json"
+        ):
+            output_format = "json"
+            break
+        if argument == "--format" and (
+            index + 1 == len(arguments) or arguments[index + 1].startswith("--")
         ):
             output_format = "json"
             break
@@ -378,7 +394,13 @@ def run_supervisor(arguments: Sequence[str]) -> int:
         return 3
 
     try:
+        output = None
         if options.report:
+            # Render first so renderer diagnostics enter the ledger before the
+            # report is serialized; both channels then use one final snapshot.
+            snapshot, output, _ = _render_snapshot(
+                snapshot, options, ledger=ledger, metadata=metadata
+            )
             try:
                 report_error = write_report(options.report, snapshot)
             except BaseException as error:
@@ -399,9 +421,17 @@ def run_supervisor(arguments: Sequence[str]) -> int:
                 )
                 metadata["report_error"] = report_error
                 snapshot = ledger.freeze(metadata)
+                snapshot, output, _ = _render_snapshot(
+                    snapshot, options, ledger=ledger, metadata=metadata
+                )
+        else:
+            snapshot, output, _ = _render_snapshot(
+                snapshot, options, ledger=ledger, metadata=metadata
+            )
 
-        if not _emit_snapshot(snapshot, options, ledger=ledger, metadata=metadata):
+        if output is None:
             return 1
+        print(output, end="")
     except KeyboardInterrupt:
         interrupted_metadata = dict(metadata)
         interrupted_metadata["interrupted"] = True

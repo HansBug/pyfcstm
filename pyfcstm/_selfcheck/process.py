@@ -500,6 +500,12 @@ def run_check_process(
                 return_code = process.wait(timeout=scaled_grace)
             except (OSError, ValueError, ChildProcessError, subprocess.TimeoutExpired):
                 return_code = process.returncode
+        cleanup_error = None
+        if return_code:
+            # A crashed/non-zero worker may have left descendants in its process
+            # group even though the group leader has already exited.
+            cleanup_error = _terminate(process, job, posix_group, scaled_grace)
+            job_cleaned = job is not None
         stdout_thread.join(timeout=2.0)
         stderr_thread.join(timeout=2.0)
         if timed_out:
@@ -528,13 +534,17 @@ def run_check_process(
         )
         if outcome.envelope is not None:
             status = outcome.envelope["status"]
+            details = str(outcome.envelope.get("details", ""))
+            if stderr_capture.total:
+                details += ("\n" if details else "") + stderr_capture.text()
+            if cleanup_error:
+                details += ("\n" if details else "") + "cleanup=" + cleanup_error
             return CheckResult(
                 check.check_id,
                 status,
                 check.required,
                 summary=str(outcome.envelope.get("summary", "")),
-                details=str(outcome.envelope.get("details", ""))
-                + ("\n" + stderr_capture.text() if stderr_capture.total else ""),
+                details=details,
                 reason=outcome.envelope.get("reason"),
                 return_code=return_code,
                 transport=result_mode,
@@ -560,7 +570,12 @@ def run_check_process(
             status,
             check.required,
             summary="worker result unavailable",
-            details=stderr_capture.text(),
+            details=stderr_capture.text()
+            + (
+                ("\n" if stderr_capture.total else "") + "cleanup=" + cleanup_error
+                if cleanup_error
+                else ""
+            ),
             reason=reason,
             return_code=return_code,
             transport=result_mode,

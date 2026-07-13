@@ -142,6 +142,19 @@ def run_worker(arguments: Mapping[str, Any]) -> int:
         os.environ["PYFCSTM_SELFCHECK_TEST_MODE"] = str(injected_mode)
     if injected_mode == "crash":
         os._exit(37)
+    if injected_mode == "crash_spawn":
+        child = subprocess.Popen(
+            [sys.executable, "-c", "import time; time.sleep(60)"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        child_pid_file = os.environ.get("PYFCSTM_SELFCHECK_CHILD_PID_FILE")
+        if child_pid_file:
+            with open(child_pid_file, "w", encoding="ascii") as stream:
+                stream.write(str(child.pid))
+                stream.flush()
+        os._exit(37)
     if injected_mode == "abort":
         os.abort()
     if injected_mode == "huge_output":

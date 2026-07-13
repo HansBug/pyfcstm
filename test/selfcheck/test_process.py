@@ -112,6 +112,35 @@ def test_fault_modes_are_normalized_without_parent_crash(monkeypatch, mode, stat
 
 
 @pytest.mark.unittest
+def test_crash_cleans_up_grandchild_on_posix(monkeypatch, tmp_path):
+    """A crashed group leader cannot leave a descendant behind."""
+    import os
+    import time
+
+    if os.name != "posix":
+        pytest.skip("POSIX process groups are tested on POSIX")
+    from pyfcstm._selfcheck.model import CheckSpec
+    from pyfcstm._selfcheck.process import run_check_process
+
+    pid_file = tmp_path / "crash-child.pid"
+    monkeypatch.setenv("PYFCSTM_SELFCHECK_CHILD_PID_FILE", str(pid_file))
+    result = run_check_process(
+        CheckSpec("fixture.crash_spawn", "self_dispatch"), 5.0, test_mode="crash_spawn"
+    )
+    assert result.status == "CRASH"
+    child_pid = int(pid_file.read_text(encoding="ascii"))
+    deadline = time.time() + 2.0
+    while time.time() < deadline:
+        try:
+            os.kill(child_pid, 0)
+        except OSError:
+            break
+        time.sleep(0.05)
+    else:
+        pytest.fail("spawned child survived crash cleanup")
+
+
+@pytest.mark.unittest
 def test_stream_capture_is_bounded(monkeypatch):
     """Oversized stderr is drained and reported with truncation metadata."""
     from pyfcstm._selfcheck.model import CheckSpec

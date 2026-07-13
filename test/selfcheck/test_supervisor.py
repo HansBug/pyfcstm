@@ -113,6 +113,40 @@ def test_supervisor_renderer_exception_keeps_json_stdout_valid(monkeypatch, caps
 
 
 @pytest.mark.unittest
+def test_report_and_stdout_share_renderer_diagnostic_snapshot(
+    monkeypatch, capsys, tmp_path
+):
+    """A renderer failure is present in both report and stdout snapshots."""
+    from pyfcstm._selfcheck.model import CheckResult
+    from pyfcstm._selfcheck.report import render_json as canonical_render_json
+    from pyfcstm._selfcheck.supervisor import run_supervisor
+
+    monkeypatch.setattr(
+        "pyfcstm._selfcheck.supervisor.run_check_process",
+        lambda spec, timeout: CheckResult(
+            spec.check_id, "PASS", spec.required, summary="injected pass"
+        ),
+    )
+    calls = []
+
+    def fail_once(snapshot):
+        if not calls:
+            calls.append(snapshot)
+            raise OSError("renderer broken")
+        return canonical_render_json(snapshot)
+
+    monkeypatch.setattr("pyfcstm._selfcheck.supervisor.render_json", fail_once)
+    report_path = tmp_path / "report.json"
+    assert run_supervisor(("--format", "json", "--report", str(report_path))) == 1
+    stdout_payload = json.loads(capsys.readouterr().out)
+    report_payload = json.loads(report_path.read_text(encoding="utf-8"))
+    assert stdout_payload == report_payload
+    assert any(
+        item["check_id"] == "selfcheck.render" for item in stdout_payload["checks"]
+    )
+
+
+@pytest.mark.unittest
 def test_supervisor_renderer_exception_has_human_fallback(monkeypatch, capsys):
     """Human mode retains a readable diagnostic when its renderer fails."""
     from pyfcstm._selfcheck.model import CheckResult
@@ -183,6 +217,16 @@ def test_supervisor_equals_format_keeps_json_stdout_valid(capsys):
     from pyfcstm._selfcheck.supervisor import run_supervisor
 
     assert run_supervisor(("--unknown", "--format=json")) == 2
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["checks"][0]["reason"] == "infrastructure_error"
+
+
+@pytest.mark.unittest
+def test_supervisor_missing_format_value_keeps_json_stdout_valid(capsys):
+    """A malformed trailing format flag still uses the machine channel."""
+    from pyfcstm._selfcheck.supervisor import run_supervisor
+
+    assert run_supervisor(("--unknown", "--format")) == 2
     payload = json.loads(capsys.readouterr().out)
     assert payload["checks"][0]["reason"] == "infrastructure_error"
 

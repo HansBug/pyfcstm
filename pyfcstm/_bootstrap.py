@@ -145,6 +145,10 @@ def _requested_output_format(arguments: Sequence[str]) -> str:
             and arguments[index + 1] == "json"
         ):
             return "json"
+        if argument == "--format" and (
+            index + 1 == len(arguments) or arguments[index + 1].startswith("--")
+        ):
+            return "json"
     return "human"
 
 
@@ -192,7 +196,8 @@ def main(arguments: Optional[Sequence[str]] = None) -> int:
         return 0
 
     if command_arguments and command_arguments[0] in _VERSION_ARGUMENTS:
-        # Root version flags never fall through to Click when combined with other options.
+        # Root version flags never fall through to Click when combined with
+        # other options.
         return 2
     if command_arguments and command_arguments[0] == "--self-check":
         if "--_pyfcstm-selfcheck-worker-v1" in command_arguments[1:]:
@@ -202,13 +207,15 @@ def main(arguments: Optional[Sequence[str]] = None) -> int:
         except KeyboardInterrupt:
             return 130
         except _BOOTSTRAP_ERRORS as err:
-            # These failures arise from the standard-library dispatch boundary; unknown errors propagate.
+            # These failures arise from the standard-library dispatch
+            # boundary; unknown errors propagate.
             return _emit_bootstrap_error(
                 "{}: {}".format(type(err).__name__, err),
                 _requested_output_format(command_arguments[1:]),
             )
         except BaseException as err:
-            # Any other ordinary Exception/SystemExit is still a runtime failure; non-runtime sentinels propagate.
+            # Any other ordinary Exception/SystemExit is still a runtime
+            # failure; non-runtime sentinels propagate.
             if not isinstance(err, (Exception, SystemExit)):
                 raise
             return _emit_bootstrap_error(

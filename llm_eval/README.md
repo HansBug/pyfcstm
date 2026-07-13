@@ -65,6 +65,7 @@ papers or long external documents.
 ```text
 llm_eval/
   fixtures/              # Natural-language prompt inputs.
+  fbmcq/                 # Independent FBMCQ-query Guide evaluation.
   inspect_repair/        # FCSTM+inspect -> repaired FCSTM evaluation.
   outputs/<provider>/    # Raw provider output, extracted FCSTM, per-case reports.
   reports/               # Aggregated replay/live JSON summaries.
@@ -100,6 +101,15 @@ The repair track has its own fixture manifest, prompt template, isolation
 rules, failure categories, and artifacts. Its runner must execute the repair
 generation stage in an isolated temporary working directory so the provider can
 see only the prompt packet and fixture source, not the repository tree.
+
+## FBMCQ Query Evaluation
+
+`fbmcq/` is an independent track for the packaged FBMCQ language guide. It
+evaluates raw `.fbmcq` authoring against seven property kinds, full-source and
+known-fact task inputs, nominal outcomes, one-defect mutations, and mandatory
+witness replay. Its private fixture convention is not a public input schema.
+See [fbmcq/README.md](fbmcq/README.md) for the strict 42-case matrix and
+offline replay contract.
 
 ## Fixture Coverage Matrix
 

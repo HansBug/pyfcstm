@@ -9,7 +9,6 @@ pyfcstm.verify.encoding
 .. toctree::
     :maxdepth: 3
 
-    _core
     expr
     guard
     initial

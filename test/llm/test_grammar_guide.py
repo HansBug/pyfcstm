@@ -6,6 +6,7 @@ import re
 import pytest
 
 import pyfcstm.llm as llm
+from pyfcstm.llm import _resources as guide_resources
 from pyfcstm.dsl.error import GrammarParseError
 from pyfcstm.model import load_state_machine_from_text
 
@@ -53,7 +54,7 @@ def test_grammar_guide_prompt_normalizes_crlf_resource(monkeypatch):
     expected_digest = hashlib.sha256(expected_text.encode("utf-8")).hexdigest()
 
     monkeypatch.setattr(
-        llm.pkgutil,
+        guide_resources.pkgutil,
         "get_data",
         _resource_loader(
             {
@@ -77,7 +78,7 @@ def test_grammar_guide_prompt_normalizes_crlf_resource(monkeypatch):
 
 @pytest.mark.unittest
 def test_grammar_guide_prompt_reports_missing_packaged_resource(monkeypatch):
-    monkeypatch.setattr(llm.pkgutil, "get_data", _resource_loader({}))
+    monkeypatch.setattr(guide_resources.pkgutil, "get_data", _resource_loader({}))
 
     with pytest.raises(FileNotFoundError) as err_info:
         llm.get_grammar_guide_prompt_for_llm()
@@ -91,7 +92,7 @@ def test_grammar_guide_prompt_reports_missing_packaged_resource(monkeypatch):
 def test_grammar_guide_prompt_reports_missing_checksum_resource(monkeypatch):
     guide = "# FCSTM\n"
     monkeypatch.setattr(
-        llm.pkgutil,
+        guide_resources.pkgutil,
         "get_data",
         _resource_loader({"fcstm_grammar_guide.md": guide.encode("utf-8")}),
     )
@@ -107,9 +108,27 @@ def test_grammar_guide_prompt_reports_missing_checksum_resource(monkeypatch):
 
 
 @pytest.mark.unittest
+def test_grammar_guide_prompt_can_warn_on_missing_checksum_resource(monkeypatch):
+    """Warning mode returns the guide when its packaged checksum is unavailable."""
+    monkeypatch.setattr(
+        guide_resources.pkgutil,
+        "get_data",
+        _resource_loader({"fcstm_grammar_guide.md": b"# FCSTM\n"}),
+    )
+
+    with pytest.warns(RuntimeWarning) as warnings:
+        guide = llm.get_grammar_guide_prompt_for_llm(
+            raise_on_integrity_error=False
+        )
+
+    assert guide == "# FCSTM\n"
+    assert "fcstm_grammar_guide.md.sha256" in str(warnings[0].message)
+
+
+@pytest.mark.unittest
 def test_grammar_guide_prompt_reports_malformed_checksum_resource(monkeypatch):
     monkeypatch.setattr(
-        llm.pkgutil,
+        guide_resources.pkgutil,
         "get_data",
         _resource_loader(
             {
@@ -129,9 +148,55 @@ def test_grammar_guide_prompt_reports_malformed_checksum_resource(monkeypatch):
 
 
 @pytest.mark.unittest
+def test_grammar_guide_prompt_can_warn_on_malformed_checksum_resource(monkeypatch):
+    """Warning mode keeps a malformed checksum visible without blocking the guide."""
+    monkeypatch.setattr(
+        guide_resources.pkgutil,
+        "get_data",
+        _resource_loader(
+            {
+                "fcstm_grammar_guide.md": b"# FCSTM\n",
+                "fcstm_grammar_guide.md.sha256": b"not-a-sha256\n",
+            }
+        ),
+    )
+
+    with pytest.warns(RuntimeWarning) as warnings:
+        guide = llm.get_grammar_guide_prompt_for_llm(
+            raise_on_integrity_error=False
+        )
+
+    assert guide == "# FCSTM\n"
+    assert "malformed" in str(warnings[0].message)
+
+
+@pytest.mark.unittest
+def test_grammar_guide_prompt_can_warn_on_non_utf8_checksum_resource(monkeypatch):
+    """Warning mode reports a checksum resource that cannot be decoded as UTF-8."""
+    monkeypatch.setattr(
+        guide_resources.pkgutil,
+        "get_data",
+        _resource_loader(
+            {
+                "fcstm_grammar_guide.md": b"# FCSTM\n",
+                "fcstm_grammar_guide.md.sha256": b"\xff",
+            }
+        ),
+    )
+
+    with pytest.warns(RuntimeWarning) as warnings:
+        guide = llm.get_grammar_guide_prompt_for_llm(
+            raise_on_integrity_error=False
+        )
+
+    assert guide == "# FCSTM\n"
+    assert "not valid UTF-8" in str(warnings[0].message)
+
+
+@pytest.mark.unittest
 def test_grammar_guide_prompt_reports_checksum_mismatch(monkeypatch):
     monkeypatch.setattr(
-        llm.pkgutil,
+        guide_resources.pkgutil,
         "get_data",
         _resource_loader(
             {
@@ -153,7 +218,7 @@ def test_grammar_guide_prompt_reports_checksum_mismatch(monkeypatch):
 @pytest.mark.unittest
 def test_grammar_guide_prompt_can_warn_on_checksum_mismatch(monkeypatch):
     monkeypatch.setattr(
-        llm.pkgutil,
+        guide_resources.pkgutil,
         "get_data",
         _resource_loader(
             {
@@ -173,7 +238,7 @@ def test_grammar_guide_prompt_can_warn_on_checksum_mismatch(monkeypatch):
 @pytest.mark.unittest
 def test_grammar_guide_metadata_can_warn_on_checksum_mismatch(monkeypatch):
     monkeypatch.setattr(
-        llm.pkgutil,
+        guide_resources.pkgutil,
         "get_data",
         _resource_loader(
             {
@@ -203,7 +268,7 @@ def test_grammar_guide_prompt_path_points_to_packaged_markdown():
 
 @pytest.mark.unittest
 def test_grammar_guide_prompt_path_error_is_actionable(monkeypatch):
-    monkeypatch.setattr(llm.os.path, "isfile", lambda path: False)
+    monkeypatch.setattr(guide_resources.os.path, "isfile", lambda path: False)
 
     with pytest.raises(llm.GrammarGuidePromptPathUnavailableError) as err_info:
         llm.get_grammar_guide_prompt_path_for_llm()

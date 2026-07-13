@@ -1,0 +1,3085 @@
+{
+  "case_count": 42,
+  "guide_metadata": {
+    "byte_size": 27747,
+    "chapter_count": 18,
+    "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+    "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+    "line_count": 544,
+    "pyfcstm_version": "0.5.0",
+    "resource_name": "fbmcq_language_guide.md",
+    "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+  },
+  "mode": "replay",
+  "passed_count": 42,
+  "reports": [
+    {
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "cover_complete",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "replay",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex",
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex/cover_complete/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "a62312012f31151bf4e6489ee6dbc0ee58b03937e0e709744d24488c0e1ec252"
+    },
+    {
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "cover_complete",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "replay",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        }
+      ],
+      "provider": "claude",
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/claude/cover_complete/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "a62312012f31151bf4e6489ee6dbc0ee58b03937e0e709744d24488c0e1ec252"
+    },
+    {
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "cover_complete",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "replay",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex-deepseek",
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex-deepseek/cover_complete/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "a62312012f31151bf4e6489ee6dbc0ee58b03937e0e709744d24488c0e1ec252"
+    },
+    {
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "cover_facts",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "replay",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex",
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex/cover_facts/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "c2cec1e39a1c1981fe10c46ca96ab1ebd16dadd7db023d927b356162b2cfb97c"
+    },
+    {
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "cover_facts",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "replay",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        }
+      ],
+      "provider": "claude",
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/claude/cover_facts/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "c2cec1e39a1c1981fe10c46ca96ab1ebd16dadd7db023d927b356162b2cfb97c"
+    },
+    {
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "cover_facts",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "replay",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex-deepseek",
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex-deepseek/cover_facts/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "c2cec1e39a1c1981fe10c46ca96ab1ebd16dadd7db023d927b356162b2cfb97c"
+    },
+    {
+      "discriminator_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "expected_discriminator_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "exists_always_complete",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "task_semantic_discriminator",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "replay",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex",
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex/exists_always_complete/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "116be2b434cc188628170a030dd760d21a8500e8cb8a9fce90d2ac1f071baf46"
+    },
+    {
+      "discriminator_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "expected_discriminator_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "exists_always_complete",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "task_semantic_discriminator",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "replay",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "claude",
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/claude/exists_always_complete/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "116be2b434cc188628170a030dd760d21a8500e8cb8a9fce90d2ac1f071baf46"
+    },
+    {
+      "discriminator_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "expected_discriminator_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "exists_always_complete",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "task_semantic_discriminator",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "replay",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex-deepseek",
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex-deepseek/exists_always_complete/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "116be2b434cc188628170a030dd760d21a8500e8cb8a9fce90d2ac1f071baf46"
+    },
+    {
+      "discriminator_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "expected_discriminator_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "exists_always_facts",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "task_semantic_discriminator",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "replay",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex",
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex/exists_always_facts/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "1cd776d24e191ccf1880b06088a5f766da731b54688ff81f96664550cca588a3"
+    },
+    {
+      "discriminator_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "expected_discriminator_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "exists_always_facts",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "task_semantic_discriminator",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "replay",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "claude",
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/claude/exists_always_facts/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "1cd776d24e191ccf1880b06088a5f766da731b54688ff81f96664550cca588a3"
+    },
+    {
+      "discriminator_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "expected_discriminator_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "exists_always_facts",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "task_semantic_discriminator",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "replay",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex-deepseek",
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex-deepseek/exists_always_facts/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "1cd776d24e191ccf1880b06088a5f766da731b54688ff81f96664550cca588a3"
+    },
+    {
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "forbid_complete",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "replay",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex",
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex/forbid_complete/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "88923b48a1448bc1808957d6de33f4324717ff91f363d724321336cfd6a57a8c"
+    },
+    {
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "forbid_complete",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "replay",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "claude",
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/claude/forbid_complete/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "88923b48a1448bc1808957d6de33f4324717ff91f363d724321336cfd6a57a8c"
+    },
+    {
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "forbid_complete",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "replay",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex-deepseek",
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex-deepseek/forbid_complete/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "88923b48a1448bc1808957d6de33f4324717ff91f363d724321336cfd6a57a8c"
+    },
+    {
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "forbid_facts",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "replay",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex",
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex/forbid_facts/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "558725e629f67d54bab5e2539d21735bfef40b62d9af70295e5f4360bae5e2f3"
+    },
+    {
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "forbid_facts",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "replay",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "claude",
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/claude/forbid_facts/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "558725e629f67d54bab5e2539d21735bfef40b62d9af70295e5f4360bae5e2f3"
+    },
+    {
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "forbid_facts",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "replay",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex-deepseek",
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex-deepseek/forbid_facts/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "558725e629f67d54bab5e2539d21735bfef40b62d9af70295e5f4360bae5e2f3"
+    },
+    {
+      "discriminator_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "expected_discriminator_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "invariant_complete",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "task_semantic_discriminator",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "replay",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex",
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex/invariant_complete/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "8c56853190bb0e350a3744090952488278e712ef412acd7009a719c55cbcc364"
+    },
+    {
+      "discriminator_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "expected_discriminator_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "invariant_complete",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "task_semantic_discriminator",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "replay",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "claude",
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/claude/invariant_complete/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "8c56853190bb0e350a3744090952488278e712ef412acd7009a719c55cbcc364"
+    },
+    {
+      "discriminator_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "expected_discriminator_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "invariant_complete",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "task_semantic_discriminator",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "replay",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex-deepseek",
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex-deepseek/invariant_complete/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "8c56853190bb0e350a3744090952488278e712ef412acd7009a719c55cbcc364"
+    },
+    {
+      "discriminator_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "expected_discriminator_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "invariant_facts",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "task_semantic_discriminator",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "replay",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex",
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex/invariant_facts/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "caa0f33993a27bf9c7e98ffadef9a35a52d472ebe227988ce4eb7ed42aaf7769"
+    },
+    {
+      "discriminator_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "expected_discriminator_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "invariant_facts",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "task_semantic_discriminator",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "replay",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "claude",
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/claude/invariant_facts/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "caa0f33993a27bf9c7e98ffadef9a35a52d472ebe227988ce4eb7ed42aaf7769"
+    },
+    {
+      "discriminator_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "expected_discriminator_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "invariant_facts",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "task_semantic_discriminator",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "replay",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex-deepseek",
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex-deepseek/invariant_facts/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "caa0f33993a27bf9c7e98ffadef9a35a52d472ebe227988ce4eb7ed42aaf7769"
+    },
+    {
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "must_reach_complete",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "replay",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex",
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex/must_reach_complete/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "47af77ee1721488a559db2c4a28553b4d7fa37e23cf985ff93470c0f6ca34c08"
+    },
+    {
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "must_reach_complete",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "replay",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        }
+      ],
+      "provider": "claude",
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/claude/must_reach_complete/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "47af77ee1721488a559db2c4a28553b4d7fa37e23cf985ff93470c0f6ca34c08"
+    },
+    {
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "must_reach_complete",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "replay",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex-deepseek",
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex-deepseek/must_reach_complete/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "47af77ee1721488a559db2c4a28553b4d7fa37e23cf985ff93470c0f6ca34c08"
+    },
+    {
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "must_reach_facts",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "replay",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex",
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex/must_reach_facts/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "b8910c64229012e59926e11849de1d55ea83792be38f1206428d8cd35b42364a"
+    },
+    {
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "must_reach_facts",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "replay",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        }
+      ],
+      "provider": "claude",
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/claude/must_reach_facts/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "b8910c64229012e59926e11849de1d55ea83792be38f1206428d8cd35b42364a"
+    },
+    {
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "must_reach_facts",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "replay",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex-deepseek",
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex-deepseek/must_reach_facts/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "b8910c64229012e59926e11849de1d55ea83792be38f1206428d8cd35b42364a"
+    },
+    {
+      "discriminator_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "expected_discriminator_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "reach_complete",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "task_semantic_discriminator",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "replay",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex",
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex/reach_complete/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "177113fa8c02d7eeacdf7bcfd9129b10b0fb3a76935f18d9e54150b8c059c2b8"
+    },
+    {
+      "discriminator_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "expected_discriminator_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "reach_complete",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "task_semantic_discriminator",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "replay",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "claude",
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/claude/reach_complete/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "177113fa8c02d7eeacdf7bcfd9129b10b0fb3a76935f18d9e54150b8c059c2b8"
+    },
+    {
+      "discriminator_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "expected_discriminator_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "reach_complete",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "task_semantic_discriminator",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "replay",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex-deepseek",
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex-deepseek/reach_complete/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "177113fa8c02d7eeacdf7bcfd9129b10b0fb3a76935f18d9e54150b8c059c2b8"
+    },
+    {
+      "discriminator_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "expected_discriminator_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "reach_facts",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "task_semantic_discriminator",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "replay",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex",
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex/reach_facts/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "89f47b801d522bdf0a99838eb2f551c6d8c36424f5239c00b9f40ffbde91bd75"
+    },
+    {
+      "discriminator_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "expected_discriminator_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "reach_facts",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "task_semantic_discriminator",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "replay",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "claude",
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/claude/reach_facts/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "89f47b801d522bdf0a99838eb2f551c6d8c36424f5239c00b9f40ffbde91bd75"
+    },
+    {
+      "discriminator_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "expected_discriminator_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "reach_facts",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "task_semantic_discriminator",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "replay",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex-deepseek",
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex-deepseek/reach_facts/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "89f47b801d522bdf0a99838eb2f551c6d8c36424f5239c00b9f40ffbde91bd75"
+    },
+    {
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "response_complete",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "replay",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex",
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex/response_complete/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "b705a0e34835d84d19d51f331d08105b3b0a95e455bfc2d235bdf012b010c02d"
+    },
+    {
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "response_complete",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "replay",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "claude",
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/claude/response_complete/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "b705a0e34835d84d19d51f331d08105b3b0a95e455bfc2d235bdf012b010c02d"
+    },
+    {
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "response_complete",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "replay",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex-deepseek",
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex-deepseek/response_complete/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "b705a0e34835d84d19d51f331d08105b3b0a95e455bfc2d235bdf012b010c02d"
+    },
+    {
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "response_facts",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "replay",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex",
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex/response_facts/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "5b692f990704ffa2bc3681b201df0f7464542f79c79a082060113f3dfd5cf46d"
+    },
+    {
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "response_facts",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "replay",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "claude",
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/claude/response_facts/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "5b692f990704ffa2bc3681b201df0f7464542f79c79a082060113f3dfd5cf46d"
+    },
+    {
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "response_facts",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "replay",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex-deepseek",
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex-deepseek/response_facts/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "5b692f990704ffa2bc3681b201df0f7464542f79c79a082060113f3dfd5cf46d"
+    }
+  ],
+  "run_id": "20260712-final-v15-core",
+  "scope": "core"
+}

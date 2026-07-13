@@ -1,0 +1,9 @@
+def int x = 0;
+
+state Root {
+    state Idle;
+    state Done;
+
+    [*] -> Idle;
+    Idle -> Done : if [x < 0];
+}

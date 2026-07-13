@@ -182,7 +182,9 @@ def _render_snapshot(snapshot, options, ledger=None, metadata=None):
                 details,
                 "render_error",
             )
-            final_metadata = dict(metadata or snapshot.metadata)
+            final_metadata = dict(
+                metadata if metadata is not None else snapshot.metadata
+            )
             final_metadata["finished_at"] = time.time()
             snapshot = ledger.freeze(final_metadata)
         try:

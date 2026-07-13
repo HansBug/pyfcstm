@@ -59,6 +59,7 @@ def test_worker_system_exit_is_an_error_envelope(monkeypatch, tmp_path):
     outcome = read_result_file(str(result_file), nonce)
     assert outcome.envelope["status"] == "ERROR"
     assert outcome.envelope["return_code"] == 7
+    assert outcome.envelope["reason"] == "worker_system_exit"
 
 
 @pytest.mark.unittest
@@ -87,7 +88,9 @@ def test_worker_keyboard_interrupt_is_an_error_envelope(monkeypatch, tmp_path):
         }
     )
     assert code == 130
-    assert read_result_file(str(result_file), nonce).envelope["return_code"] == 130
+    outcome = read_result_file(str(result_file), nonce)
+    assert outcome.envelope["return_code"] == 130
+    assert outcome.envelope["reason"] == "worker_interrupted"
 
 
 @pytest.mark.unittest
@@ -119,6 +122,7 @@ def test_worker_unexpected_exception_is_an_error_envelope(monkeypatch, tmp_path)
     outcome = read_result_file(str(result_file), nonce)
     assert code == 1
     assert outcome.envelope["status"] == "ERROR"
+    assert outcome.envelope["reason"] == "worker_exception"
     assert "ZeroDivisionError" in outcome.envelope["details"]
 
 
@@ -233,6 +237,14 @@ def test_worker_write_failures_are_reported(monkeypatch):
 
     monkeypatch.setattr("sys.stdout", BrokenStdout())
     assert _write_frame("stdout", None, b"frame").startswith("result_write:")
+
+    class MissingBuffer:
+        pass
+
+    monkeypatch.setattr("sys.stdout", MissingBuffer())
+    assert _write_frame("stdout", None, b"frame").startswith(
+        "result_write:AttributeError"
+    )
 
 
 @pytest.mark.unittest
@@ -383,6 +395,9 @@ def test_worker_unknown_key_and_exception_are_enveloped(monkeypatch, tmp_path):
         )
         == 3
     )
+    assert (
+        read_result_file(str(result_file), nonce).envelope["reason"] == "unknown_worker"
+    )
     result_file.unlink()
     result_file.touch()
     registry.register_test_override(
@@ -403,7 +418,9 @@ def test_worker_unknown_key_and_exception_are_enveloped(monkeypatch, tmp_path):
         )
         == 1
     )
-    assert read_result_file(str(result_file), nonce).envelope["status"] == "ERROR"
+    outcome = read_result_file(str(result_file), nonce)
+    assert outcome.envelope["status"] == "ERROR"
+    assert outcome.envelope["reason"] == "worker_exception"
 
 
 @pytest.mark.parametrize("mode", ["crash", "abort"])

@@ -22,6 +22,16 @@ The package contains:
      - Map stable worker keys to built-in checks.
    * - :mod:`pyfcstm._selfcheck.supervisor`
      - Coordinate checks, reporting, and exit status.
+   * - :mod:`pyfcstm._selfcheck.environment`
+     - Collect redacted runtime and package environment metadata.
+   * - :mod:`pyfcstm._selfcheck.process`
+     - Spawn workers, drain bounded streams, and clean up process trees.
+   * - :mod:`pyfcstm._selfcheck.report`
+     - Render human/JSON reports and emergency diagnostics.
+   * - :mod:`pyfcstm._selfcheck.worker`
+     - Run one static check and emit one validated result envelope.
+   * - :mod:`pyfcstm._selfcheck._win32`
+     - Provide Windows Job Object and console compatibility helpers.
 
 The implementation must remain compatible with Python 3.7 and must not import
 Click or other optional CLI dependencies during bootstrap.

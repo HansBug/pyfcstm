@@ -31,6 +31,16 @@ def test_timeout_scale_and_profile_defaults_are_stable():
 
 
 @pytest.mark.unittest
+def test_supervisor_parser_rejects_abbreviated_option_names():
+    """Public self-check options require their exact long names."""
+    from pyfcstm._selfcheck.arguments import SelfCheckArgumentError
+    from pyfcstm._selfcheck.arguments import parse_selfcheck_args
+
+    with pytest.raises(SelfCheckArgumentError):
+        parse_selfcheck_args(("--pro", "visualize"))
+
+
+@pytest.mark.unittest
 def test_worker_parser_requires_exact_protocol_fields():
     """Hidden worker parsing rejects missing or extra protocol fields."""
     from pyfcstm._selfcheck.arguments import SelfCheckArgumentError

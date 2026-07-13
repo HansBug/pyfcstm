@@ -245,14 +245,36 @@ def _terminate(
     return "; ".join(errors) if errors else None
 
 
-def _close_job(job) -> Optional[str]:
-    """Terminate explicit-fallback jobs before releasing their native handle."""
+def _close_job(job, process=None, grace: float = SIGTERM_GRACE) -> Optional[str]:
+    """Terminate fallback jobs and wait for the associated process to settle.
+
+    :param job: Windows Job Object wrapper to close.
+    :type job: object
+    :param process: Optional worker process whose leader should be reaped,
+        defaults to ``None``.
+    :type process: Optional[subprocess.Popen], optional
+    :param grace: Maximum wait after explicit termination, defaults to
+        ``SIGTERM_GRACE``.
+    :type grace: float, optional
+    :return: Semicolon-separated cleanup diagnostics, or ``None``.
+    :rtype: Optional[str]
+    """
     errors = []
     if not getattr(job, "kill_on_close", True):
         try:
             job.terminate(1)
         except (JobAssignmentError, OSError, ValueError) as err:
             errors.append("job_terminate:{}".format(type(err).__name__))
+    if process is not None and not getattr(process, "returncode", None):
+        try:
+            process.wait(timeout=grace)
+        except (
+            OSError,
+            ChildProcessError,
+            ValueError,
+            subprocess.TimeoutExpired,
+        ) as err:
+            errors.append("process_wait:{}".format(type(err).__name__))
     try:
         job.close()
     except (OSError, ValueError) as err:
@@ -488,6 +510,7 @@ def run_check_process(
             )
 
         deadline = started + timeout
+        cleanup_error = None
         try:
             remaining = max(0.0, deadline - time.monotonic())
             return_code = process.wait(timeout=remaining)
@@ -500,8 +523,7 @@ def run_check_process(
                 return_code = process.wait(timeout=scaled_grace)
             except (OSError, ValueError, ChildProcessError, subprocess.TimeoutExpired):
                 return_code = process.returncode
-        cleanup_error = None
-        if return_code:
+        if return_code and not timed_out:
             # A crashed/non-zero worker may have left descendants in its process
             # group even though the group leader has already exited.
             cleanup_error = _terminate(process, job, posix_group, scaled_grace)
@@ -518,6 +540,7 @@ def run_check_process(
                 check.required,
                 summary="worker deadline exceeded",
                 details=details,
+                reason="worker_deadline_exceeded",
                 return_code=return_code,
                 transport=result_mode,
                 truncated_bytes=stdout_capture.truncated_bytes
@@ -607,7 +630,7 @@ def run_check_process(
     finally:
         if job is not None:
             if not job_cleaned:
-                cleanup_error = _close_job(job)
+                cleanup_error = _close_job(job, process=process, grace=scaled_grace)
                 if cleanup_error:
                     try:
                         os.write(

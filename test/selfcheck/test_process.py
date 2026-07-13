@@ -41,6 +41,8 @@ def test_timeout_terminates_process_group(monkeypatch):
     if _is_windows_isolation_error(result):
         return
     assert result.status == "TIMEOUT"
+    assert result.reason == "worker_deadline_exceeded"
+    assert "sigterm:ProcessLookupError" not in result.details
 
 
 @pytest.mark.unittest
@@ -555,6 +557,33 @@ def test_explicit_job_cleanup_terminates_before_close():
 
     assert _close_job(Job()) is None
     assert calls == [("terminate", 1), ("close",)]
+
+
+@pytest.mark.unittest
+def test_explicit_job_cleanup_reaps_unsettled_worker():
+    """Fallback Job cleanup waits for a worker that has not reported exit."""
+    from pyfcstm._selfcheck.process import _close_job
+
+    calls = []
+
+    class Job:
+        kill_on_close = False
+
+        def terminate(self, code):
+            calls.append(("terminate", code))
+
+        def close(self):
+            calls.append(("close",))
+
+    class Process:
+        returncode = None
+
+        def wait(self, timeout=None):
+            calls.append(("wait", timeout))
+            self.returncode = 1
+
+    assert _close_job(Job(), process=Process(), grace=0.25) is None
+    assert calls == [("terminate", 1), ("wait", 0.25), ("close",)]
 
 
 @pytest.mark.unittest

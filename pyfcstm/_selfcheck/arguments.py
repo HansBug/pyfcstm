@@ -80,7 +80,9 @@ class WorkerOptions:
 
 
 def _build_supervisor_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(add_help=False, prog="pyfcstm --self-check")
+    parser = argparse.ArgumentParser(
+        add_help=False, allow_abbrev=False, prog="pyfcstm --self-check"
+    )
     parser.add_argument(
         "--profile", choices=("default", "full", "visualize"), default="default"
     )

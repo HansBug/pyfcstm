@@ -70,7 +70,7 @@ def _write_frame(mode: str, result_file: Optional[str], frame: bytes) -> Optiona
         output.write(frame)
         output.flush()
         return None
-    except (OSError, ValueError) as err:
+    except (AttributeError, OSError, ValueError) as err:
         # Pipe/file failures are observable protocol diagnostics, never silent PASS.
         return "result_write:{}".format(type(err).__name__)
 
@@ -187,7 +187,12 @@ def run_worker(arguments: Mapping[str, Any]) -> int:
     except KeyError:
         frame = encode_result_frame(
             _envelope(
-                check_id, nonce, "ERROR", summary="unknown worker key", return_code=3
+                check_id,
+                nonce,
+                "ERROR",
+                summary="unknown worker key",
+                reason="unknown_worker",
+                return_code=3,
             )
         )
         _write_frame(result_mode, result_file, frame)
@@ -208,6 +213,7 @@ def run_worker(arguments: Mapping[str, Any]) -> int:
                 "ERROR",
                 summary="worker raised SystemExit",
                 details=traceback.format_exc(),
+                reason="worker_system_exit",
                 return_code=code,
             )
         )
@@ -221,6 +227,7 @@ def run_worker(arguments: Mapping[str, Any]) -> int:
                 "ERROR",
                 summary="worker interrupted",
                 details=traceback.format_exc(),
+                reason="worker_interrupted",
                 return_code=130,
             )
         )
@@ -239,6 +246,7 @@ def run_worker(arguments: Mapping[str, Any]) -> int:
                 "ERROR",
                 summary="worker exception: {}".format(err),
                 details=traceback.format_exc(),
+                reason="worker_exception",
                 return_code=1,
             )
         )

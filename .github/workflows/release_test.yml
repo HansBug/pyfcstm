@@ -61,6 +61,109 @@ jobs:
           name: build-artifacts-source-pack
           path: ./dist/*
 
+  release_docs_pdf:
+    name: Bilingual Docs PDF
+    runs-on: ubuntu-24.04
+    services:
+      plantuml:
+        image: plantuml/plantuml-server:jetty-v1.2023.6
+        ports:
+          - 18080:8080
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3.3.0
+        with:
+          fetch-depth: 20
+          submodules: 'recursive'
+      - name: Set up python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Install docs PDF dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            graphviz \
+            fonts-freefont-otf \
+            latexmk \
+            librsvg2-bin \
+            make \
+            pandoc \
+            poppler-utils \
+            qpdf \
+            ripgrep \
+            texlive-fonts-recommended \
+            texlive-lang-chinese \
+            texlive-latex-base \
+            texlive-latex-extra \
+            texlive-latex-recommended \
+            texlive-xetex
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt -r requirements-doc.txt
+          python -m pip install -e . --no-deps
+      - name: Verify XeLaTeX and PDF toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          xelatex --version | head -n 1
+          latexmk -v
+          qpdf --version
+          pdfinfo -v 2>&1 | head -n 1
+          kpsewhich xeCJK.sty
+          kpsewhich FandolSong-Regular.otf
+          fc-match -f '%{family}\n' FreeSerif | grep -F FreeSerif
+      - name: Run PDF validator adversarial self-check
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tools/check_docs_pdf.py --check
+      - name: Build and stage bilingual PDFs
+        env:
+          PLANTUML_HOST: http://localhost:18080
+        shell: bash
+        run: |
+          set -euo pipefail
+          plantumlcli -c
+          make docs_pdf
+
+          package_version="$(python -c 'from pyfcstm.config.meta import __VERSION__; print(__VERSION__)')"
+          rm -rf release-docs
+          mkdir -p release-docs
+          for language in en zh; do
+            tex_files=("docs/build/pdf/${language}/latex/"*.tex)
+            if (( ${#tex_files[@]} != 1 )); then
+              echo "Expected exactly one primary TeX file for ${language}, found ${#tex_files[@]}" >&2
+              exit 1
+            fi
+            source_pdf="${tex_files[0]%.tex}.pdf"
+            if [[ ! -s "${source_pdf}" ]]; then
+              echo "Primary PDF is missing or empty: ${source_pdf}" >&2
+              exit 1
+            fi
+            output_pdf="release-docs/pyfcstm-v${package_version}-docs-${language}.pdf"
+            cp "${source_pdf}" "${output_pdf}"
+            qpdf --check "${output_pdf}"
+            pdfinfo "${output_pdf}" | awk '$1 == "Pages:" && $2 > 0 { found = 1 } END { exit found ? 0 : 1 }'
+          done
+
+          staged_pdfs=(release-docs/*.pdf)
+          if (( ${#staged_pdfs[@]} != 2 )); then
+            echo "Expected exactly two staged PDFs, found ${#staged_pdfs[@]}" >&2
+            exit 1
+          fi
+          if cmp -s "${staged_pdfs[0]}" "${staged_pdfs[1]}"; then
+            echo 'English and Chinese PDFs must not be byte-identical' >&2
+            exit 1
+          fi
+          sha256sum "${staged_pdfs[@]}"
+      - name: Upload bilingual PDFs to artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts-docs-pdf
+          if-no-files-found: error
+          path: release-docs/*.pdf
+
   release_cli:
     name: CLI Build And Release
     runs-on: ${{ matrix.os }}

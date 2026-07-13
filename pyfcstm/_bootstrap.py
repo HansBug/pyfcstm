@@ -13,6 +13,7 @@ Example::
     True
 """
 
+import os
 import platform
 import sys
 from typing import Optional, Sequence
@@ -34,6 +35,58 @@ def is_version_request(arguments: Sequence[str]) -> bool:
     :rtype: bool
     """
     return len(arguments) == 1 and arguments[0] in _VERSION_ARGUMENTS
+
+
+def run_selfcheck(arguments: Sequence[str]) -> int:
+    """
+    Lazily dispatch the standard-library self-check supervisor.
+
+    :param arguments: Arguments after ``--self-check``.
+    :type arguments: Sequence[str]
+    :return: Stable self-check exit code.
+    :rtype: int
+
+    Example::
+
+        >>> run_selfcheck(("--format", "json")) in (0, 1, 2, 3, 130)
+        True
+    """
+    from ._selfcheck.supervisor import run_supervisor
+
+    return run_supervisor(arguments)
+
+
+def run_worker(arguments: Sequence[str]) -> int:
+    """
+    Lazily parse and dispatch the hidden worker without importing Click.
+
+    :param arguments: Arguments after the hidden worker token.
+    :type arguments: Sequence[str]
+    :return: Worker process exit code.
+    :rtype: int
+    """
+    from ._selfcheck.arguments import SelfCheckArgumentError
+    from ._selfcheck.arguments import parse_worker_args
+    from ._selfcheck.worker import run_worker as execute_worker
+
+    try:
+        options = parse_worker_args(arguments)
+    except SelfCheckArgumentError:
+        return 3
+    return execute_worker(options.__dict__)
+
+
+def _emit_bootstrap_error(message: str) -> int:
+    """Write a last-resort diagnostic without importing the normal CLI graph."""
+    data = ("self-check bootstrap error: " + message + "\n").encode(
+        "utf-8", "backslashreplace"
+    )
+    try:
+        os.write(2, data)
+    except OSError:
+        # There is no stronger channel if the process has lost stderr.
+        pass
+    return 3
 
 
 def format_version_info() -> str:
@@ -78,6 +131,30 @@ def main(arguments: Optional[Sequence[str]] = None) -> int:
     if is_version_request(command_arguments):
         sys.stdout.write(format_version_info() + "\n")
         return 0
+
+    if command_arguments and command_arguments[0] in _VERSION_ARGUMENTS:
+        # Root version flags never fall through to Click when combined with other options.
+        return 2
+    if command_arguments and command_arguments[0] == "--self-check":
+        if "--_pyfcstm-selfcheck-worker-v1" in command_arguments[1:]:
+            return 3
+        try:
+            return run_selfcheck(command_arguments[1:])
+        except KeyboardInterrupt:
+            return 130
+        except Exception as err:
+            # The self-check boundary converts ordinary import/runtime failures to infrastructure code 3.
+            return _emit_bootstrap_error("{}: {}".format(type(err).__name__, err))
+    if command_arguments and command_arguments[0] == "--_pyfcstm-selfcheck-worker-v1":
+        if "--self-check" in command_arguments[1:]:
+            return 3
+        try:
+            return run_worker(command_arguments[1:])
+        except KeyboardInterrupt:
+            return 130
+        except Exception as err:
+            # The hidden worker must never load Click after a normal protocol/runtime exception.
+            return _emit_bootstrap_error("{}: {}".format(type(err).__name__, err))
 
     from .entry import pyfcstmcli
 

@@ -1,0 +1,30 @@
+"""
+Private standard-library self-check implementation.
+
+This package is an internal execution boundary for ``python -m pyfcstm
+--self-check``. It is intentionally not re-exported from :mod:`pyfcstm` and
+does not provide a third-party check plug-in API.
+
+The package contains:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Module
+     - Responsibility
+   * - :mod:`pyfcstm._selfcheck.arguments`
+     - Parse supervisor and hidden-worker options.
+   * - :mod:`pyfcstm._selfcheck.model`
+     - Store immutable results and the append-only ledger.
+   * - :mod:`pyfcstm._selfcheck.protocol`
+     - Encode and validate worker frames.
+   * - :mod:`pyfcstm._selfcheck.registry`
+     - Map stable worker keys to built-in checks.
+   * - :mod:`pyfcstm._selfcheck.supervisor`
+     - Coordinate checks, reporting, and exit status.
+
+The implementation must remain compatible with Python 3.7 and must not import
+Click or other optional CLI dependencies during bootstrap.
+"""
+
+__all__ = []

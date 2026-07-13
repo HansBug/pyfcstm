@@ -12,6 +12,18 @@ is\_version\_request
 .. autofunction:: is_version_request
 
 
+run\_selfcheck
+-----------------------------------------------------
+
+.. autofunction:: run_selfcheck
+
+
+run\_worker
+-----------------------------------------------------
+
+.. autofunction:: run_worker
+
+
 format\_version\_info
 -----------------------------------------------------
 

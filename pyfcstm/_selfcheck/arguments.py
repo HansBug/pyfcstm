@@ -62,8 +62,6 @@ class WorkerOptions:
     :type result_mode: str
     :param result_file: Append-only path for file mode, defaults to ``None``.
     :type result_file: Optional[str], optional
-    :param test_mode: Internal test-only fault mode, defaults to ``None``.
-    :type test_mode: Optional[str], optional
 
     Example::
 
@@ -76,7 +74,6 @@ class WorkerOptions:
     nonce: str
     result_mode: str
     result_file: Optional[str] = None
-    test_mode: Optional[str] = None
 
 
 def _build_supervisor_parser() -> argparse.ArgumentParser:
@@ -107,7 +104,6 @@ def _build_worker_parser() -> argparse.ArgumentParser:
     parser.add_argument("--nonce", required=True)
     parser.add_argument("--result-mode", choices=("file", "stdout"), required=True)
     parser.add_argument("--result-file")
-    parser.add_argument("--test-mode")
     return parser
 
 
@@ -183,5 +179,4 @@ def parse_worker_args(arguments: Sequence[str]) -> WorkerOptions:
         nonce=namespace.nonce,
         result_mode=namespace.result_mode,
         result_file=namespace.result_file,
-        test_mode=namespace.test_mode,
     )

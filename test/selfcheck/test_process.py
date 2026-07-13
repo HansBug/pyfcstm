@@ -46,6 +46,35 @@ def test_timeout_terminates_process_group(monkeypatch):
 
 
 @pytest.mark.unittest
+def test_timeout_preserves_stdout_diagnostics(monkeypatch, tmp_path):
+    """Timeout results retain bounded business stdout as well as stderr."""
+    import sys
+
+    import pyfcstm._selfcheck.process as process_module
+    from pyfcstm._selfcheck.model import CheckSpec
+
+    script = tmp_path / "stdout_hang.py"
+    script.write_text(
+        "import sys, time\n"
+        "sys.stdin.buffer.readline()\n"
+        "sys.stdout.write('stdout-diagnostic\\n')\n"
+        "sys.stdout.flush()\n"
+        "time.sleep(10)\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        process_module,
+        "_command_for_worker",
+        lambda *args: [sys.executable, str(script)],
+    )
+    result = process_module.run_check_process(
+        CheckSpec("fixture.stdout_hang", "self_dispatch"), 0.2
+    )
+    assert result.status == "TIMEOUT"
+    assert "stdout-diagnostic" in result.details
+
+
+@pytest.mark.unittest
 def test_temp_failure_uses_stdout_frame_fallback(monkeypatch):
     """When the session directory cannot be created, both sides use stdout mode."""
     from pyfcstm._selfcheck.model import CheckSpec
@@ -420,6 +449,107 @@ def test_stream_reader_records_pipe_errors():
     _drain(BrokenStream(), _BoundedCapture(), events)
     assert events.get_nowait().startswith("stream_error:")
     assert events.get_nowait() == "stream_done"
+
+
+@pytest.mark.unittest
+def test_stream_reader_errors_are_consumed_as_diagnostics():
+    """Reader failures are surfaced by the supervisor event collector."""
+    import queue
+
+    from pyfcstm._selfcheck.process import _BoundedCapture
+    from pyfcstm._selfcheck.process import _drain
+    from pyfcstm._selfcheck.process import _drain_stream_errors
+
+    class BrokenStream:
+        def read(self, size):
+            del size
+            raise OSError("closed")
+
+    events = queue.Queue()
+    _drain(BrokenStream(), _BoundedCapture(), events)
+    assert _drain_stream_errors(events) == ["stream_error:OSError"]
+
+
+@pytest.mark.unittest
+def test_worker_does_not_import_from_caller_working_directory(monkeypatch, tmp_path):
+    """A cwd shadow package cannot forge the artifact self-dispatch result."""
+    from pyfcstm._selfcheck.model import CheckSpec
+    from pyfcstm._selfcheck.process import run_check_process
+
+    shadow = tmp_path / "pyfcstm"
+    shadow.mkdir()
+    (shadow / "__init__.py").write_text("__version__ = 'evil'\n", encoding="utf-8")
+    (shadow / "__main__.py").write_text(
+        "import json, sys\n"
+        "sys.stdin.buffer.readline()\n"
+        "nonce = sys.argv[sys.argv.index('--nonce') + 1]\n"
+        "path = sys.argv[sys.argv.index('--result-file') + 1]\n"
+        "payload = {'schema': 'pyfcstm-selfcheck-worker/v1', 'check_id': 'artifact.self_dispatch',\n"
+        "           'nonce': nonce, 'status': 'PASS', 'summary': 'EVIL MODULE'}\n"
+        "with open(path, 'ab') as stream:\n"
+        "    stream.write(b'PYFCSTM_SELF_CHECK_RESULT_V1 ' + json.dumps(payload).encode() + b'\\n')\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    result = run_check_process(
+        CheckSpec("artifact.self_dispatch", "self_dispatch"), timeout=5.0
+    )
+    assert result.status == "PASS"
+    assert result.summary != "EVIL MODULE"
+
+
+@pytest.mark.unittest
+def test_windows_cleanup_error_retries_job_close(monkeypatch):
+    """A failed Windows cleanup remains eligible for the finally retry."""
+    from types import SimpleNamespace
+
+    import pyfcstm._selfcheck.process as process_module
+    from pyfcstm._selfcheck.model import CheckSpec
+
+    class Stream:
+        def read(self, size):
+            del size
+            return b""
+
+    class Process:
+        pid = 1001
+        stdin = Stream()
+        stdout = Stream()
+        stderr = Stream()
+        returncode = None
+
+    calls = []
+    fake_os = SimpleNamespace(
+        name="nt",
+        path=process_module.os.path,
+        environ=process_module.os.environ,
+        unlink=process_module.os.unlink,
+        rmdir=process_module.os.rmdir,
+        write=process_module.os.write,
+    )
+    monkeypatch.setattr(process_module, "os", fake_os)
+    monkeypatch.setattr(process_module.subprocess, "Popen", lambda *a, **k: Process())
+    monkeypatch.setattr(process_module, "attach_process", lambda child: object())
+    monkeypatch.setattr(
+        process_module,
+        "_send_start_gate",
+        lambda *args: ("gate failed", SimpleNamespace(join=lambda timeout=None: None)),
+    )
+    monkeypatch.setattr(
+        process_module,
+        "_terminate",
+        lambda *args, **kwargs: "job_close:OSError",
+    )
+    monkeypatch.setattr(
+        process_module,
+        "_close_job",
+        lambda *args, **kwargs: calls.append("retry") or None,
+    )
+    result = process_module.run_check_process(
+        CheckSpec("fixture.cleanup", "self_dispatch"), timeout=1.0
+    )
+    assert result.reason == "start_gate"
+    assert calls == ["retry"]
 
 
 @pytest.mark.unittest

@@ -18,6 +18,8 @@ from .protocol import is_valid_nonce
 
 
 START_GATE_TIMEOUT = 2.0
+_TEST_MODE_ENV = "PYFCSTM_SELFCHECK_TEST_MODE"
+_TEST_HOOK_ENV = "PYFCSTM_SELFCHECK_TEST_HOOK"
 
 
 def _read_start_gate(nonce: str, timeout: float = START_GATE_TIMEOUT) -> Optional[str]:
@@ -134,12 +136,18 @@ def run_worker(arguments: Mapping[str, Any]) -> int:
         return 3
 
     injected_mode = arguments.get("test_mode")
-    # Direct hidden-worker invocations never inherit the test hook.  The
-    # explicit private argument is only added by the test harness.
     if injected_mode is None:
-        os.environ.pop("PYFCSTM_SELFCHECK_TEST_MODE", None)
+        # The production hidden CLI has no test-mode argument.  The parent
+        # supervisor uses a nonce-bound environment hook only for test fault
+        # injection; stale user environments are discarded before dispatch.
+        hook_nonce = os.environ.pop(_TEST_HOOK_ENV, None)
+        candidate_mode = os.environ.pop(_TEST_MODE_ENV, None)
+        if hook_nonce == nonce:
+            injected_mode = candidate_mode
     else:
-        os.environ["PYFCSTM_SELFCHECK_TEST_MODE"] = str(injected_mode)
+        # Direct in-process tests may still pass the private mapping value.
+        os.environ.pop(_TEST_HOOK_ENV, None)
+        os.environ[_TEST_MODE_ENV] = str(injected_mode)
     if injected_mode == "crash":
         os._exit(37)
     if injected_mode == "crash_spawn":

@@ -12,6 +12,7 @@ from typing import Optional
 
 from ._win32 import JobAssignmentError
 from ._win32 import attach_process
+from ._win32 import format_ntstatus
 from .model import CheckResult, CheckSpec
 from .protocol import build_start_gate
 from .protocol import FRAME_PREFIX
@@ -25,6 +26,8 @@ STREAM_LIMIT = 2 * 1024 * 1024
 START_GATE_TIMEOUT = 2.0
 SIGTERM_GRACE = 0.5
 MAX_PROTOCOL_FRAMES = 2
+_TEST_MODE_ENV = "PYFCSTM_SELFCHECK_TEST_MODE"
+_TEST_HOOK_ENV = "PYFCSTM_SELFCHECK_TEST_HOOK"
 
 
 class _BoundedCapture:
@@ -140,6 +143,39 @@ def _drain(stream, capture: _BoundedCapture, events) -> None:
     finally:
         capture.finish()
         events.put("stream_done")
+
+
+def _drain_stream_errors(events) -> list:
+    """Collect reader-thread failures after both bounded pipes are joined."""
+    errors = []
+    while True:
+        try:
+            event = events.get_nowait()
+        except queue.Empty:
+            return errors
+        if event.startswith("stream_error:"):
+            errors.append(event)
+
+
+def _capture_diagnostics(
+    stdout_capture: _BoundedCapture,
+    stderr_capture: _BoundedCapture,
+    stream_errors,
+    base: str = "",
+    cleanup_error: Optional[str] = None,
+) -> str:
+    """Combine bounded stdout/stderr and cleanup diagnostics in stable order."""
+    parts = [base] if base else []
+    stdout = stdout_capture.text()
+    stderr = stderr_capture.text()
+    if stdout:
+        parts.append("stdout:\n" + stdout)
+    if stderr:
+        parts.append("stderr:\n" + stderr)
+    parts.extend(stream_errors)
+    if cleanup_error:
+        parts.append("cleanup=" + cleanup_error)
+    return "\n".join(parts)
 
 
 def _terminate(
@@ -265,6 +301,21 @@ def _close_job(job, process=None, grace: float = SIGTERM_GRACE) -> Optional[str]
             job.terminate(1)
         except (JobAssignmentError, OSError, ValueError) as err:
             errors.append("job_terminate:{}".format(type(err).__name__))
+            if process is not None:
+                try:
+                    process.terminate()
+                except (
+                    AttributeError,
+                    OSError,
+                    ProcessLookupError,
+                    ValueError,
+                ) as fallback_err:
+                    # Popen exposes terminate; synthetic test doubles may not.
+                    errors.append(
+                        "process_terminate_fallback:{}".format(
+                            type(fallback_err).__name__
+                        )
+                    )
     if process is not None and not getattr(process, "returncode", None):
         try:
             process.wait(timeout=grace)
@@ -325,7 +376,6 @@ def _command_for_worker(
     nonce: str,
     result_mode: str,
     result_file: Optional[str],
-    test_mode: Optional[str] = None,
 ):
     import sys
 
@@ -347,8 +397,6 @@ def _command_for_worker(
     )
     if result_file is not None:
         command.extend(["--result-file", result_file])
-    if test_mode is not None:
-        command.extend(["--test-mode", test_mode])
     return command
 
 
@@ -419,13 +467,12 @@ def run_check_process(
         result_mode = "stdout"
         result_file = None
 
-    command = _command_for_worker(
-        check, nonce, result_mode, result_file, test_mode=test_mode
-    )
+    command = _command_for_worker(check, nonce, result_mode, result_file)
     child_environment = os.environ.copy()
     # Test fault injection is opt-in through this private function argument;
     # a stale caller environment must never change a normal release worker.
-    child_environment.pop("PYFCSTM_SELFCHECK_TEST_MODE", None)
+    child_environment.pop(_TEST_MODE_ENV, None)
+    child_environment.pop(_TEST_HOOK_ENV, None)
     popen_kwargs = {
         "stdin": subprocess.PIPE,
         "stdout": subprocess.PIPE,
@@ -434,7 +481,14 @@ def run_check_process(
         "env": child_environment,
     }
     if test_mode is not None:
-        child_environment["PYFCSTM_SELFCHECK_TEST_MODE"] = test_mode
+        child_environment[_TEST_MODE_ENV] = test_mode
+        child_environment[_TEST_HOOK_ENV] = nonce
+    package_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    package_parent = os.path.dirname(package_dir)
+    # Do not let the caller's cwd/PYTHONPATH shadow the package under test.
+    # The worker must exercise this exact source/wheel/frozen artifact.
+    child_environment["PYTHONPATH"] = package_parent
+    popen_kwargs["cwd"] = session_dir or package_dir
     posix_group = os.name == "posix"
     if posix_group:
         popen_kwargs["start_new_session"] = True
@@ -495,7 +549,7 @@ def run_check_process(
         gate_error, gate_thread = _send_start_gate(process, nonce, scaled_gate_timeout)
         if gate_error is not None:
             cleanup_error = _terminate(process, job, posix_group, scaled_grace)
-            job_cleaned = job is not None
+            job_cleaned = job is not None and cleanup_error is None
             gate_thread.join(timeout=scaled_grace)
             details = gate_error
             if cleanup_error:
@@ -518,7 +572,7 @@ def run_check_process(
         except subprocess.TimeoutExpired:
             timed_out = True
             cleanup_error = _terminate(process, job, posix_group, scaled_grace)
-            job_cleaned = job is not None
+            job_cleaned = job is not None and cleanup_error is None
             try:
                 return_code = process.wait(timeout=scaled_grace)
             except (OSError, ValueError, ChildProcessError, subprocess.TimeoutExpired):
@@ -527,13 +581,17 @@ def run_check_process(
             # A crashed/non-zero worker may have left descendants in its process
             # group even though the group leader has already exited.
             cleanup_error = _terminate(process, job, posix_group, scaled_grace)
-            job_cleaned = job is not None
+            job_cleaned = job is not None and cleanup_error is None
         stdout_thread.join(timeout=2.0)
         stderr_thread.join(timeout=2.0)
+        stream_errors = _drain_stream_errors(events)
         if timed_out:
-            details = stderr_capture.text()
-            if cleanup_error:
-                details += ("\n" if details else "") + "cleanup=" + cleanup_error
+            details = _capture_diagnostics(
+                stdout_capture,
+                stderr_capture,
+                stream_errors,
+                cleanup_error=cleanup_error,
+            )
             return CheckResult(
                 check.check_id,
                 "TIMEOUT",
@@ -546,6 +604,15 @@ def run_check_process(
                 truncated_bytes=stdout_capture.truncated_bytes
                 + stderr_capture.truncated_bytes,
                 duration_ms=(time.monotonic() - started) * 1000,
+                pid=getattr(process, "pid", None),
+                signal=(
+                    -return_code
+                    if return_code is not None and return_code < 0
+                    else None
+                ),
+                timeout=True,
+                stdout=stdout_capture.text(),
+                stderr=stderr_capture.text(),
             )
 
         outcome = (
@@ -557,11 +624,13 @@ def run_check_process(
         )
         if outcome.envelope is not None:
             status = outcome.envelope["status"]
-            details = str(outcome.envelope.get("details", ""))
-            if stderr_capture.total:
-                details += ("\n" if details else "") + stderr_capture.text()
-            if cleanup_error:
-                details += ("\n" if details else "") + "cleanup=" + cleanup_error
+            details = _capture_diagnostics(
+                stdout_capture,
+                stderr_capture,
+                stream_errors,
+                base=str(outcome.envelope.get("details", "")),
+                cleanup_error=cleanup_error,
+            )
             return CheckResult(
                 check.check_id,
                 status,
@@ -574,7 +643,24 @@ def run_check_process(
                 truncated_bytes=stdout_capture.truncated_bytes
                 + stderr_capture.truncated_bytes,
                 duration_ms=(time.monotonic() - started) * 1000,
+                pid=getattr(process, "pid", None),
+                signal=(
+                    -return_code
+                    if return_code is not None and return_code < 0
+                    else None
+                ),
+                stdout=stdout_capture.text(),
+                stderr=stderr_capture.text(),
             )
+        details = _capture_diagnostics(
+            stdout_capture,
+            stderr_capture,
+            stream_errors,
+            cleanup_error=cleanup_error,
+        )
+        ntstatus = format_ntstatus(return_code) if os.name == "nt" else None
+        if ntstatus:
+            details = (details + "\n" if details else "") + "ntstatus=" + ntstatus
         if outcome.error_code is not None:
             if outcome.error_code in ("missing_result",) and return_code:
                 status = "CRASH"
@@ -584,7 +670,11 @@ def run_check_process(
                 reason = outcome.error_code
         elif return_code:
             status = "CRASH"
-            reason = "worker_exit_without_envelope"
+            reason = (
+                "worker_ntstatus_{}".format(ntstatus.split("(", 1)[1][:-1].lower())
+                if ntstatus and "(" in ntstatus
+                else "worker_exit_without_envelope"
+            )
         else:
             status = "ERROR"
             reason = "missing_result"
@@ -593,24 +683,26 @@ def run_check_process(
             status,
             check.required,
             summary="worker result unavailable",
-            details=stderr_capture.text()
-            + (
-                ("\n" if stderr_capture.total else "") + "cleanup=" + cleanup_error
-                if cleanup_error
-                else ""
-            ),
+            details=details,
             reason=reason,
             return_code=return_code,
             transport=result_mode,
             truncated_bytes=stdout_capture.truncated_bytes
             + stderr_capture.truncated_bytes,
             duration_ms=(time.monotonic() - started) * 1000,
+            pid=getattr(process, "pid", None),
+            signal=(
+                -return_code if return_code is not None and return_code < 0 else None
+            ),
+            ntstatus=ntstatus,
+            stdout=stdout_capture.text(),
+            stderr=stderr_capture.text(),
         )
     except BaseException as err:
         # Interrupts and unexpected callback/setup exceptions must not leave a
         # worker or descendant process alive after the parent unwinds.
         cleanup_error = _terminate(process, job, posix_group, scaled_grace)
-        job_cleaned = job is not None
+        job_cleaned = job is not None and cleanup_error is None
         if cleanup_error:
             try:
                 os.write(

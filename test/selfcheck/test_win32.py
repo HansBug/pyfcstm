@@ -27,6 +27,16 @@ def test_attach_process_is_noop_outside_windows():
 
 
 @pytest.mark.unittest
+def test_ntstatus_format_is_unsigned_and_symbolic():
+    """Known Windows crash codes retain their hex and symbolic diagnostics."""
+    from pyfcstm._selfcheck._win32 import format_ntstatus
+
+    assert format_ntstatus(0xC0000005) == "0xC0000005 (ACCESS_VIOLATION)"
+    assert format_ntstatus(-1073741819) == "0xC0000005 (ACCESS_VIOLATION)"
+    assert format_ntstatus(7) is None
+
+
+@pytest.mark.unittest
 def test_kill_on_close_configuration_reports_api_result():
     """The Win32 helper exposes success and explicit-fallback outcomes."""
     try:

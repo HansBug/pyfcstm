@@ -51,3 +51,15 @@ def test_bootstrap_runtime_failure_keeps_json_stdout_machine_readable(
     payload = json.loads(capsys.readouterr().out)
     assert payload["counts"] == {"ERROR": 1}
     assert "boom" in payload["checks"][0]["details"]
+    assert payload["schema_version"] == "pyfcstm-selfcheck/v1"
+    assert payload["exit_code"] == 3
+
+
+@pytest.mark.unittest
+def test_requested_output_format_respects_option_values_and_separator():
+    """Emergency format detection does not scan consumed values or ``--`` args."""
+    from pyfcstm import _bootstrap
+
+    assert _bootstrap._requested_output_format(("--format", "json")) == "json"
+    assert _bootstrap._requested_output_format(("--report", "--format=json")) == "human"
+    assert _bootstrap._requested_output_format(("--", "--format=json")) == "human"

@@ -106,6 +106,29 @@ def test_worker_parser_rejects_abbreviated_option_names():
 
 
 @pytest.mark.unittest
+def test_worker_parser_rejects_test_fault_mode_argument():
+    """Production hidden-worker argv does not expose test-only fault injection."""
+    from pyfcstm._selfcheck.arguments import SelfCheckArgumentError
+    from pyfcstm._selfcheck.arguments import parse_worker_args
+
+    with pytest.raises(SelfCheckArgumentError):
+        parse_worker_args(
+            (
+                "--check-id",
+                "demo",
+                "--worker-key",
+                "demo",
+                "--nonce",
+                "0" * 32,
+                "--result-mode",
+                "stdout",
+                "--test-mode",
+                "hang",
+            )
+        )
+
+
+@pytest.mark.unittest
 def test_argument_errors_cover_bounds_and_mode_exclusivity():
     """Bounds, unknown options, and result-mode combinations are rejected."""
     from pyfcstm._selfcheck.arguments import SelfCheckArgumentError

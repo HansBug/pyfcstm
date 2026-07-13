@@ -23,7 +23,7 @@ WorkerOptions
 -----------------------------------------------------
 
 .. autoclass:: WorkerOptions
-    :members: check_id,worker_key,nonce,result_mode,result_file,test_mode
+    :members: check_id,worker_key,nonce,result_mode,result_file
 
 
 parse\_selfcheck\_args

@@ -19,6 +19,12 @@ JobHandle
     :members: __init__,terminate,close
 
 
+format\_ntstatus
+-----------------------------------------------------
+
+.. autofunction:: format_ntstatus
+
+
 attach\_process
 -----------------------------------------------------
 

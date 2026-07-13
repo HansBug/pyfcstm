@@ -23,7 +23,7 @@ CheckResult
 -----------------------------------------------------
 
 .. autoclass:: CheckResult
-    :members: __post_init__,to_dict,check_id,status,required,summary,details,reason,return_code,transport,truncated_bytes,duration_ms
+    :members: __post_init__,to_dict,check_id,status,required,summary,details,reason,return_code,transport,truncated_bytes,duration_ms,pid,signal,ntstatus,stdout,stderr,encoding,timeout,prerequisites
 
 
 LedgerEvent

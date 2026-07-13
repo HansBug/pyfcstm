@@ -25,6 +25,10 @@ def test_json_report_is_stable_and_round_trippable(tmp_path):
     assert (
         json.loads(path.read_text(encoding="utf-8"))["schema"] == "pyfcstm-selfcheck/v1"
     )
+    report = json.loads(payload)
+    assert report["schema_version"] == "pyfcstm-selfcheck/v1"
+    assert report["results"][0]["id"] == "artifact.self_dispatch"
+    assert report["profile"] is None
 
 
 @pytest.mark.unittest

@@ -12,6 +12,38 @@ class JobAssignmentError(RuntimeError):
     """Raised when a worker cannot be assigned to a Windows Job Object."""
 
 
+_NTSTATUS_NAMES = {
+    0xC0000005: "ACCESS_VIOLATION",
+    0xC000001D: "ILLEGAL_INSTRUCTION",
+    0xC0000094: "INTEGER_DIVIDE_BY_ZERO",
+    0xC0000095: "INTEGER_OVERFLOW",
+    0xC00000FD: "STACK_OVERFLOW",
+}
+
+
+def format_ntstatus(return_code: Optional[int]) -> Optional[str]:
+    """
+    Format a Windows process exit code as an unsigned NTSTATUS diagnostic.
+
+    :param return_code: Process return code, defaults to ``None``.
+    :type return_code: Optional[int], optional
+    :return: Hexadecimal status and symbolic name when known, otherwise ``None``.
+    :rtype: Optional[str]
+
+    Example::
+
+        >>> format_ntstatus(0xC0000005)
+        '0xC0000005 (ACCESS_VIOLATION)'
+    """
+    if return_code is None:
+        return None
+    value = int(return_code) & 0xFFFFFFFF
+    if value < 0xC0000000:
+        return None
+    name = _NTSTATUS_NAMES.get(value)
+    return "0x{:08X}{}".format(value, " (" + name + ")" if name else "")
+
+
 # ``AssignProcessToJobObject`` requires both PROCESS_TERMINATE and
 # PROCESS_SET_QUOTA access on the process handle.
 _PROCESS_TERMINATE = 0x0001

@@ -93,7 +93,29 @@ def _emit_bootstrap_error(message: str, output_format: str = "human") -> int:
         data = (
             json.dumps(
                 {
+                    "schema_version": "pyfcstm-selfcheck/v1",
                     "schema": "pyfcstm-selfcheck/v1",
+                    "report_id": None,
+                    "started_at": None,
+                    "profile": None,
+                    "environment": {},
+                    "artifact": {},
+                    "dependencies": [],
+                    "capabilities": {},
+                    "results": [
+                        {
+                            "id": "selfcheck.infrastructure",
+                            "group": "selfcheck",
+                            "title": "self-check bootstrap error",
+                            "status": "ERROR",
+                            "required": True,
+                            "summary": "self-check bootstrap error",
+                            "details": message,
+                            "reason": "bootstrap_error",
+                        }
+                    ],
+                    "summary": {"ERROR": 1},
+                    "exit_code": 3,
                     "metadata": {"phase": "bootstrap"},
                     "checks": [
                         {
@@ -137,18 +159,26 @@ def _emit_bootstrap_error(message: str, output_format: str = "human") -> int:
 
 
 def _requested_output_format(arguments: Sequence[str]) -> str:
-    """Read the exact ``--format`` value without invoking argparse."""
-    for index, argument in enumerate(arguments):
-        if argument == "--format=json" or (
-            argument == "--format"
-            and index + 1 < len(arguments)
-            and arguments[index + 1] == "json"
-        ):
+    """Read the format token without crossing argparse option boundaries."""
+    value_options = {"--profile", "--report", "--color", "--timeout-scale"}
+    index = 0
+    while index < len(arguments):
+        argument = arguments[index]
+        if argument == "--":
+            break
+        if argument in value_options:
+            index += 2
+            continue
+        if argument.startswith("--report="):
+            index += 1
+            continue
+        if argument == "--format=json":
             return "json"
-        if argument == "--format" and (
-            index + 1 == len(arguments) or arguments[index + 1].startswith("--")
-        ):
-            return "json"
+        if argument == "--format":
+            if index + 1 >= len(arguments):
+                return "json"
+            return "json" if arguments[index + 1] == "json" else "human"
+        index += 1
     return "human"
 
 

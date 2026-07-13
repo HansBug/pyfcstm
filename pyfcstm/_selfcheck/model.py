@@ -69,6 +69,22 @@ class CheckResult:
     :type truncated_bytes: int, optional
     :param duration_ms: Worker duration in milliseconds, defaults to ``0.0``.
     :type duration_ms: float, optional
+    :param pid: Worker process identifier, defaults to ``None``.
+    :type pid: Optional[int], optional
+    :param signal: POSIX signal that terminated the worker, defaults to ``None``.
+    :type signal: Optional[int], optional
+    :param ntstatus: Windows NTSTATUS diagnostic, defaults to ``None``.
+    :type ntstatus: Optional[str], optional
+    :param stdout: Captured worker stdout, defaults to ``''``.
+    :type stdout: str, optional
+    :param stderr: Captured worker stderr, defaults to ``''``.
+    :type stderr: str, optional
+    :param encoding: Encoding used for captured streams, defaults to ``'utf-8'``.
+    :type encoding: str, optional
+    :param timeout: Whether the result came from a deadline timeout, defaults to ``False``.
+    :type timeout: bool, optional
+    :param prerequisites: Prerequisite check IDs, defaults to ``()``.
+    :type prerequisites: Tuple[str, ...], optional
 
     Example::
 
@@ -86,6 +102,14 @@ class CheckResult:
     transport: Optional[str] = None
     truncated_bytes: int = 0
     duration_ms: float = 0.0
+    pid: Optional[int] = None
+    signal: Optional[int] = None
+    ntstatus: Optional[str] = None
+    stdout: str = ""
+    stderr: str = ""
+    encoding: str = "utf-8"
+    timeout: bool = False
+    prerequisites: Tuple[str, ...] = ()
 
     def __post_init__(self):
         if self.status not in TERMINAL_STATUSES:
@@ -103,7 +127,7 @@ class CheckResult:
             >>> CheckResult("demo", "PASS", True).to_dict()["status"]
             'PASS'
         """
-        return {
+        result = {
             "check_id": self.check_id,
             "status": self.status,
             "required": self.required,
@@ -115,6 +139,32 @@ class CheckResult:
             "truncated_bytes": self.truncated_bytes,
             "duration_ms": self.duration_ms,
         }
+        # Keep the original compact fields above while exposing the stable
+        # umbrella-schema names used by downstream report consumers.
+        result.update(
+            {
+                "id": self.check_id,
+                "group": self.check_id.split(".", 1)[0],
+                "title": self.summary or self.check_id,
+                "expected": None,
+                "observed": self.summary,
+                "evidence": self.details,
+                "remediation": None,
+                "prerequisite": list(self.prerequisites),
+                "exception": self.details
+                if self.status in ("ERROR", "CRASH")
+                else None,
+                "pid": self.pid,
+                "returncode": self.return_code,
+                "signal": self.signal,
+                "ntstatus": self.ntstatus,
+                "timeout": self.timeout,
+                "stdout": self.stdout,
+                "stderr": self.stderr,
+                "encoding": self.encoding,
+            }
+        )
+        return result
 
 
 @dataclass(frozen=True)
@@ -177,14 +227,29 @@ class ReportSnapshot:
 
         Example::
 
-            >>> ReportSnapshot((), {}, {}).to_dict()["schema"]
+            >>> ReportSnapshot((), {}, {}).to_dict()["schema_version"]
             'pyfcstm-selfcheck/v1'
         """
+        metadata = dict(self.metadata)
+        results = [check.to_dict() for check in self.checks]
+        summary = dict(self.counts)
         return {
+            "schema_version": "pyfcstm-selfcheck/v1",
             "schema": "pyfcstm-selfcheck/v1",
-            "metadata": dict(self.metadata),
-            "checks": [check.to_dict() for check in self.checks],
-            "counts": dict(self.counts),
+            "report_id": metadata.get("session_id"),
+            "started_at": metadata.get("started_at"),
+            "profile": metadata.get("profile"),
+            "environment": metadata.get("environment", {}),
+            "artifact": metadata.get("artifact", {}),
+            "dependencies": metadata.get("dependencies", []),
+            "capabilities": metadata.get("capabilities", {}),
+            "results": results,
+            "summary": summary,
+            "exit_code": metadata.get("exit_code"),
+            # Compatibility aliases retained for the PR-2 consumers.
+            "metadata": metadata,
+            "checks": results,
+            "counts": summary,
         }
 
 

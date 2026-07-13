@@ -12,6 +12,7 @@ from .environment import collect_environment
 from .model import CheckResult
 from .model import CheckSpec
 from .model import Ledger
+from .model import ReportSnapshot
 from .process import run_check_process
 from .registry import selected_specs
 from .report import emergency_write
@@ -59,8 +60,6 @@ def _make_infrastructure_snapshot(phase: str, error: BaseException):
     This path is intentionally separate from :func:`_finalize_infrastructure`,
     which must preserve a populated ledger after checks have been reserved.
     """
-    from .model import ReportSnapshot
-
     result = CheckResult(
         "selfcheck.infrastructure",
         "ERROR",
@@ -69,7 +68,41 @@ def _make_infrastructure_snapshot(phase: str, error: BaseException):
         details="{}: {}\n{}".format(phase, error, traceback.format_exc()),
         reason="infrastructure_error",
     )
-    return ReportSnapshot((result,), {"phase": phase}, {"ERROR": 1})
+    return ReportSnapshot((result,), {"phase": phase, "exit_code": 2}, {"ERROR": 1})
+
+
+def _requested_output_format(arguments: Sequence[str]) -> str:
+    """Infer JSON emergency mode without crossing option-value boundaries."""
+    value_options = {"--profile", "--report", "--color", "--timeout-scale"}
+    index = 0
+    while index < len(arguments):
+        argument = arguments[index]
+        if argument == "--":
+            break
+        if argument in value_options:
+            index += 2
+            continue
+        if argument.startswith("--report="):
+            index += 1
+            continue
+        if argument == "--format=json":
+            return "json"
+        if argument == "--format":
+            if index + 1 >= len(arguments):
+                return "json"
+            return "json" if arguments[index + 1] == "json" else "human"
+        index += 1
+    return "human"
+
+
+def _with_exit_code(snapshot, options):
+    """Return a snapshot carrying the exit code used for its rendering."""
+    metadata = dict(snapshot.metadata)
+    if "exit_code" not in metadata:
+        metadata["exit_code"] = _exit_code(
+            snapshot, getattr(options, "fail_on_warn", False)
+        )
+    return ReportSnapshot(snapshot.checks, metadata, snapshot.counts)
 
 
 def _append_synthetic(
@@ -146,6 +179,7 @@ def _finalize_infrastructure(
     metadata = dict(metadata)
     metadata["phase"] = phase
     metadata["finished_at"] = time.time()
+    metadata["exit_code"] = 3
     return ledger.freeze(metadata)
 
 
@@ -163,6 +197,8 @@ def _emit_snapshot(snapshot, options, ledger=None, metadata=None) -> bool:
 
 def _render_snapshot(snapshot, options, ledger=None, metadata=None):
     """Prepare output while returning the final ledger-backed snapshot."""
+    if ledger is not None or "exit_code" in snapshot.metadata:
+        snapshot = _with_exit_code(snapshot, options)
     try:
         output = (
             render_json(snapshot)
@@ -187,6 +223,7 @@ def _render_snapshot(snapshot, options, ledger=None, metadata=None):
             )
             final_metadata["finished_at"] = time.time()
             snapshot = ledger.freeze(final_metadata)
+            snapshot = _with_exit_code(snapshot, options)
         try:
             output = (
                 _fallback_json(snapshot)
@@ -206,20 +243,7 @@ def _render_snapshot(snapshot, options, ledger=None, metadata=None):
 
 def _emit_argument_error(arguments: Sequence[str], error: BaseException) -> None:
     """Emit argument failures through the requested human or JSON channel."""
-    output_format = "human"
-    for index, argument in enumerate(arguments):
-        if argument == "--format=json" or (
-            argument == "--format"
-            and index + 1 < len(arguments)
-            and arguments[index + 1] == "json"
-        ):
-            output_format = "json"
-            break
-        if argument == "--format" and (
-            index + 1 == len(arguments) or arguments[index + 1].startswith("--")
-        ):
-            output_format = "json"
-            break
+    output_format = _requested_output_format(arguments)
     if output_format == "json":
         snapshot = _make_infrastructure_snapshot("arguments", error)
         try:
@@ -365,6 +389,7 @@ def run_supervisor(arguments: Sequence[str]) -> int:
             interrupted_metadata = dict(metadata)
             interrupted_metadata["interrupted"] = True
             interrupted_metadata["finished_at"] = time.time()
+            interrupted_metadata["exit_code"] = 130
             snapshot = ledger.freeze(interrupted_metadata)
             _emit_snapshot(
                 snapshot,
@@ -438,6 +463,7 @@ def run_supervisor(arguments: Sequence[str]) -> int:
         interrupted_metadata = dict(metadata)
         interrupted_metadata["interrupted"] = True
         interrupted_metadata["finished_at"] = time.time()
+        interrupted_metadata["exit_code"] = 130
         snapshot = ledger.freeze(interrupted_metadata)
         _emit_snapshot(snapshot, options, ledger=ledger, metadata=interrupted_metadata)
         return 130

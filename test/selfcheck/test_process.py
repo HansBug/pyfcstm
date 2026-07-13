@@ -687,3 +687,282 @@ def test_spawn_failure_is_an_error(monkeypatch):
     monkeypatch.setattr("subprocess.Popen", fail_popen)
     result = run_check_process(CheckSpec("fixture.spawn", "self_dispatch"), timeout=1.0)
     assert result.status == "ERROR"
+
+
+@pytest.mark.unittest
+def test_termination_reports_job_and_process_failures():
+    """Job cleanup records every bounded fallback failure without raising."""
+    import subprocess
+
+    from pyfcstm._selfcheck.process import _terminate
+
+    calls = {"wait": 0}
+
+    class Job:
+        def terminate(self, code):
+            del code
+            raise OSError("job terminate")
+
+        def close(self):
+            raise ValueError("job close")
+
+    class Process:
+        pid = 99
+
+        def terminate(self):
+            raise ProcessLookupError("already gone")
+
+        def kill(self):
+            raise ValueError("kill failed")
+
+        def wait(self, timeout=None):
+            del timeout
+            calls["wait"] += 1
+            if calls["wait"] == 1:
+                raise subprocess.TimeoutExpired("worker", 0.1)
+            raise ChildProcessError("not a child")
+
+    details = _terminate(Process(), Job(), False, grace=0.1)
+    assert details is not None
+    for label in (
+        "job_terminate",
+        "process_terminate",
+        "job_close",
+        "process_kill",
+        "process_wait",
+    ):
+        assert label in details
+
+
+@pytest.mark.unittest
+def test_posix_termination_reports_group_and_wait_failures(monkeypatch):
+    """POSIX cleanup records signal, group-probe, and reap diagnostics."""
+    import subprocess
+
+    import pyfcstm._selfcheck.process as process_module
+
+    calls = []
+
+    class Process:
+        pid = 101
+
+        def wait(self, timeout=None):
+            del timeout
+            calls.append("wait")
+            if calls.count("wait") == 1:
+                raise subprocess.TimeoutExpired("worker", 0.1)
+            return 0
+
+    def killpg(pid, sig):
+        del pid
+        calls.append(sig)
+        if sig == process_module.signal.SIGTERM:
+            return None
+        if sig == process_module.signal.SIGKILL:
+            return None
+        raise OSError("group probe")
+
+    monkeypatch.setattr(process_module.os, "killpg", killpg)
+    details = process_module._terminate(Process(), None, True, grace=0.1)
+    assert details == "group_probe:OSError"
+
+
+@pytest.mark.unittest
+def test_non_posix_termination_reports_reap_failure():
+    """The non-group fallback reports terminate and wait failures."""
+    from pyfcstm._selfcheck.process import _terminate
+
+    class Process:
+        pid = 102
+
+        def terminate(self):
+            raise ValueError("terminate failed")
+
+        def wait(self, timeout=None):
+            del timeout
+            raise ChildProcessError("reap failed")
+
+    details = _terminate(Process(), None, False, grace=0.1)
+    assert "process_terminate:ValueError" in details
+    assert "process_wait:ChildProcessError" in details
+
+
+@pytest.mark.unittest
+def test_explicit_job_cleanup_reports_all_failures():
+    """Fallback Job cleanup keeps termination, wait, and close diagnostics."""
+    import subprocess
+
+    from pyfcstm._selfcheck.process import _close_job
+
+    class Job:
+        kill_on_close = False
+
+        def terminate(self, code):
+            del code
+            raise OSError("terminate failed")
+
+        def close(self):
+            raise ValueError("close failed")
+
+    class Process:
+        returncode = None
+
+        def wait(self, timeout=None):
+            del timeout
+            raise subprocess.TimeoutExpired("worker", 0.1)
+
+    details = _close_job(Job(), process=Process(), grace=0.1)
+    assert "job_terminate:OSError" in details
+    assert "process_wait:TimeoutExpired" in details
+    assert "job_close:ValueError" in details
+
+
+@pytest.mark.unittest
+def test_start_gate_timeout_handles_broken_close():
+    """A blocked gate writer remains bounded when closing stdin also fails."""
+    import threading
+
+    from pyfcstm._selfcheck.process import _send_start_gate
+
+    release = threading.Event()
+
+    class BlockingStdin:
+        def write(self, data):
+            del data
+            release.wait(2.0)
+
+        def flush(self):
+            return None
+
+        def close(self):
+            raise OSError("close failed")
+
+    class Process:
+        stdin = BlockingStdin()
+
+    error, writer = _send_start_gate(Process(), "a" * 32, 0.01)
+    assert error == "start_gate_timeout"
+    release.set()
+    writer.join(timeout=1.0)
+
+
+@pytest.mark.unittest
+def test_cleanup_session_reports_unlink_and_descriptor_failures(monkeypatch):
+    """Transport cleanup keeps filesystem failures observable."""
+    import errno
+
+    import pyfcstm._selfcheck.process as process_module
+
+    def unlink(path):
+        del path
+        error = OSError("unlink failed")
+        error.errno = errno.EACCES
+        raise error
+
+    monkeypatch.setattr(process_module.os, "unlink", unlink)
+    monkeypatch.setattr(
+        process_module.os,
+        "rmdir",
+        lambda path: (_ for _ in ()).throw(OSError("rmdir failed")),
+    )
+    monkeypatch.setattr(
+        process_module.os,
+        "write",
+        lambda fd, data: (_ for _ in ()).throw(OSError("stderr failed")),
+    )
+    process_module._cleanup_session("session", "result")
+
+
+@pytest.mark.unittest
+def test_run_check_process_start_gate_failure_keeps_cleanup_diagnostic(monkeypatch):
+    """A start-gate error is terminal and includes cleanup evidence."""
+    import pyfcstm._selfcheck.process as process_module
+    from pyfcstm._selfcheck.model import CheckSpec
+
+    class EmptyStream:
+        def read(self, size):
+            del size
+            return b""
+
+    class FakeStdin:
+        def close(self):
+            return None
+
+    class Process:
+        stdin = FakeStdin()
+        stdout = EmptyStream()
+        stderr = EmptyStream()
+        pid = 103
+
+    class GateThread:
+        def join(self, timeout=None):
+            del timeout
+
+    monkeypatch.setattr(
+        process_module.tempfile,
+        "mkdtemp",
+        lambda **kwargs: (_ for _ in ()).throw(OSError("temp")),
+    )
+    monkeypatch.setattr(
+        process_module.subprocess, "Popen", lambda *args, **kwargs: Process()
+    )
+    monkeypatch.setattr(
+        process_module, "_send_start_gate", lambda *args: ("gate failed", GateThread())
+    )
+    monkeypatch.setattr(
+        process_module, "_terminate", lambda *args, **kwargs: "cleanup failed"
+    )
+    result = process_module.run_check_process(
+        CheckSpec("fixture.gate", "self_dispatch"), timeout=1.0
+    )
+    assert result.status == "ERROR"
+    assert result.reason == "start_gate"
+    assert "cleanup=cleanup failed" in result.details
+
+
+@pytest.mark.unittest
+def test_run_check_process_interrupt_writes_best_effort_cleanup(monkeypatch):
+    """Parent interruption preserves the original exception if stderr is broken."""
+    import pyfcstm._selfcheck.process as process_module
+    from pyfcstm._selfcheck.model import CheckSpec
+
+    class EmptyStream:
+        def read(self, size):
+            del size
+            return b""
+
+    class FakeStdin:
+        def close(self):
+            return None
+
+    class Process:
+        stdin = FakeStdin()
+        stdout = EmptyStream()
+        stderr = EmptyStream()
+        pid = 104
+
+    monkeypatch.setattr(
+        process_module.tempfile,
+        "mkdtemp",
+        lambda **kwargs: (_ for _ in ()).throw(OSError("temp")),
+    )
+    monkeypatch.setattr(
+        process_module.subprocess, "Popen", lambda *args, **kwargs: Process()
+    )
+    monkeypatch.setattr(
+        process_module,
+        "_send_start_gate",
+        lambda *args: (_ for _ in ()).throw(KeyboardInterrupt()),
+    )
+    monkeypatch.setattr(
+        process_module, "_terminate", lambda *args, **kwargs: "cleanup failed"
+    )
+    monkeypatch.setattr(
+        process_module.os,
+        "write",
+        lambda fd, data: (_ for _ in ()).throw(OSError("stderr failed")),
+    )
+    with pytest.raises(KeyboardInterrupt):
+        process_module.run_check_process(
+            CheckSpec("fixture.interrupt", "self_dispatch"), timeout=1.0
+        )

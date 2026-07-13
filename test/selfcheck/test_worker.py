@@ -451,3 +451,139 @@ def test_worker_hard_exit_paths_reach_isolation_boundary(monkeypatch, mode):
                 "test_mode": mode,
             }
         )
+
+
+@pytest.mark.parametrize("mode", ["system_exit", "keyboard_interrupt"])
+@pytest.mark.unittest
+def test_worker_injected_control_modes_write_error_envelopes(
+    monkeypatch, tmp_path, mode
+):
+    """Injected control sentinels use the same stable envelope reasons."""
+    from pyfcstm._selfcheck.protocol import read_result_file
+    from pyfcstm._selfcheck.worker import run_worker
+
+    nonce = "d" * 32
+    result_file = tmp_path / (mode + ".log")
+    result_file.touch()
+    monkeypatch.setattr(
+        "sys.stdin", io.TextIOWrapper(io.BytesIO(b"GO " + nonce.encode() + b"\n"))
+    )
+    code = run_worker(
+        {
+            "check_id": "fixture." + mode,
+            "worker_key": "self_dispatch",
+            "nonce": nonce,
+            "result_mode": "file",
+            "result_file": str(result_file),
+            "test_mode": mode,
+        }
+    )
+    envelope = read_result_file(str(result_file), nonce).envelope
+    assert code == (7 if mode == "system_exit" else 130)
+    assert envelope["reason"] == (
+        "worker_system_exit" if mode == "system_exit" else "worker_interrupted"
+    )
+
+
+@pytest.mark.unittest
+def test_worker_crash_spawn_path_reaches_isolation_boundary(monkeypatch, tmp_path):
+    """The crash-with-descendant fixture executes its child bookkeeping path."""
+    from pyfcstm._selfcheck.worker import run_worker
+
+    class Child:
+        pid = 777
+
+    monkeypatch.setattr("subprocess.Popen", lambda *args, **kwargs: Child())
+    monkeypatch.setenv("PYFCSTM_SELFCHECK_CHILD_PID_FILE", str(tmp_path / "child.pid"))
+    monkeypatch.setattr(
+        "os._exit", lambda code: (_ for _ in ()).throw(RuntimeError(code))
+    )
+    nonce = "e" * 32
+    monkeypatch.setattr(
+        "sys.stdin", io.TextIOWrapper(io.BytesIO(b"GO " + nonce.encode() + b"\n"))
+    )
+    with pytest.raises(RuntimeError):
+        run_worker(
+            {
+                "check_id": "fixture.crash_spawn",
+                "worker_key": "self_dispatch",
+                "nonce": nonce,
+                "result_mode": "stdout",
+                "test_mode": "crash_spawn",
+            }
+        )
+    assert (tmp_path / "child.pid").read_text(encoding="ascii") == "777"
+
+
+@pytest.mark.unittest
+def test_worker_spawn_and_hang_modes_leave_loop_at_test_boundary(monkeypatch, tmp_path):
+    """Looping fault fixtures remain testable without sleeping indefinitely."""
+    from pyfcstm._selfcheck.worker import run_worker
+
+    class Child:
+        pid = 778
+
+    monkeypatch.setattr("subprocess.Popen", lambda *args, **kwargs: Child())
+    monkeypatch.setenv("PYFCSTM_SELFCHECK_CHILD_PID_FILE", str(tmp_path / "child.pid"))
+    monkeypatch.setattr(
+        "time.sleep", lambda seconds: (_ for _ in ()).throw(RuntimeError(seconds))
+    )
+    for mode in ("spawn", "hang"):
+        nonce = ("f" if mode == "spawn" else "0") * 32
+        monkeypatch.setattr(
+            "sys.stdin", io.TextIOWrapper(io.BytesIO(b"GO " + nonce.encode() + b"\n"))
+        )
+        with pytest.raises(RuntimeError):
+            run_worker(
+                {
+                    "check_id": "fixture." + mode,
+                    "worker_key": "self_dispatch",
+                    "nonce": nonce,
+                    "result_mode": "stdout",
+                    "test_mode": mode,
+                }
+            )
+
+
+@pytest.mark.parametrize("mode", ["huge_output", "huge_stdout", "invalid_utf8"])
+@pytest.mark.unittest
+def test_worker_diagnostic_output_modes_are_bounded(monkeypatch, tmp_path, mode):
+    """Diagnostic output fixtures execute without changing the result contract."""
+    from pyfcstm._selfcheck.protocol import read_result_file
+    from pyfcstm._selfcheck.worker import run_worker
+
+    if mode != "huge_stdout":
+        import os
+
+        real_write = os.write
+
+        def bounded_write(descriptor, data):
+            if descriptor == 2:
+                return len(data)
+            return real_write(descriptor, data)
+
+        monkeypatch.setattr("os.write", bounded_write)
+    else:
+
+        class Output:
+            buffer = io.BytesIO()
+
+        monkeypatch.setattr("sys.stdout", Output())
+    nonce = "1" * 32
+    result_file = tmp_path / (mode + ".log")
+    result_file.touch()
+    monkeypatch.setattr(
+        "sys.stdin", io.TextIOWrapper(io.BytesIO(b"GO " + nonce.encode() + b"\n"))
+    )
+    code = run_worker(
+        {
+            "check_id": "fixture." + mode,
+            "worker_key": "self_dispatch",
+            "nonce": nonce,
+            "result_mode": "file",
+            "result_file": str(result_file),
+            "test_mode": mode,
+        }
+    )
+    assert code == 0
+    assert read_result_file(str(result_file), nonce).envelope["status"] == "PASS"

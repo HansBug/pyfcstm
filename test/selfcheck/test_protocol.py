@@ -177,6 +177,17 @@ def test_stdout_reader_allows_business_noise_around_frame():
 
 
 @pytest.mark.unittest
+def test_stdout_reader_rejects_noise_without_a_frame():
+    """Business output alone cannot be credited as a worker result."""
+    from pyfcstm._selfcheck.protocol import read_stdout_frames
+
+    assert (
+        read_stdout_frames(b"diagnostic only\n", "3" * 32).error_code
+        == "missing_result"
+    )
+
+
+@pytest.mark.unittest
 def test_wrong_nonce_and_missing_lf_are_protocol_errors(tmp_path):
     """Nonce mismatch and a missing real LF never become PASS."""
     from pyfcstm._selfcheck.protocol import FRAME_PREFIX

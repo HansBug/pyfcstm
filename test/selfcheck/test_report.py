@@ -130,6 +130,127 @@ def test_windows_without_vt_support_falls_back_to_plain_status_labels(monkeypatc
 
 
 @pytest.mark.unittest
+def test_windows_vt_probe_handles_native_attribute_failure(monkeypatch):
+    """A partial Win32 ctypes surface falls back without raising."""
+    import ctypes
+    from types import SimpleNamespace
+
+    import pyfcstm._selfcheck.report as report_module
+
+    class Kernel:
+        def GetStdHandle(self, value):
+            del value
+            raise OSError("console unavailable")
+
+    monkeypatch.setattr(report_module.os, "name", "nt")
+    monkeypatch.setattr(
+        ctypes, "windll", SimpleNamespace(kernel32=Kernel()), raising=False
+    )
+    assert report_module._windows_vt_supported(object()) is False
+
+
+@pytest.mark.unittest
+def test_auto_color_requires_a_tty_when_force_color_is_absent(monkeypatch):
+    """Auto mode stays plain for redirected output."""
+    from types import SimpleNamespace
+
+    import pyfcstm._selfcheck.report as report_module
+
+    class Stream:
+        def isatty(self):
+            return False
+
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    monkeypatch.delenv("FORCE_COLOR", raising=False)
+    monkeypatch.setattr(report_module, "sys", SimpleNamespace(stdout=Stream()))
+    assert report_module._color_enabled("auto") is False
+
+
+@pytest.mark.unittest
+def test_json_emergency_writer_uses_binary_stderr(monkeypatch):
+    """JSON emergency output bypasses text stdout to preserve machine purity."""
+    from types import SimpleNamespace
+
+    import pyfcstm._selfcheck.report as report_module
+
+    class Buffer:
+        def __init__(self):
+            self.data = b""
+
+        def write(self, data):
+            self.data += data
+
+        def flush(self):
+            return None
+
+    stderr = Buffer()
+    monkeypatch.setattr(
+        report_module, "sys", SimpleNamespace(stderr=SimpleNamespace(buffer=stderr))
+    )
+    assert report_module.emergency_write("diagnostic\n", "json") is None
+    assert stderr.data == b"diagnostic\n"
+
+
+@pytest.mark.unittest
+def test_report_cleanup_failure_is_best_effort(monkeypatch, tmp_path):
+    """A failed temporary-file unlink never escapes the report writer."""
+    import pyfcstm._selfcheck.report as report_module
+    from pyfcstm._selfcheck.model import ReportSnapshot
+
+    monkeypatch.setattr(
+        report_module.os,
+        "replace",
+        lambda *args: (_ for _ in ()).throw(OSError("busy")),
+    )
+    monkeypatch.setattr(
+        report_module.os,
+        "unlink",
+        lambda *args: (_ for _ in ()).throw(OSError("locked")),
+    )
+    error = report_module.write_report(
+        str(tmp_path / "report.json"), ReportSnapshot((), {}, {})
+    )
+    assert "busy" in error
+
+
+@pytest.mark.unittest
+def test_emergency_writer_returns_none_when_temp_fallback_fails(monkeypatch):
+    """The emergency chain reports no path when every final sink is broken."""
+    from types import SimpleNamespace
+
+    import pyfcstm._selfcheck.report as report_module
+
+    class BrokenStream:
+        def write(self, message):
+            del message
+            raise OSError("closed")
+
+        def flush(self):
+            raise OSError("closed")
+
+        @property
+        def buffer(self):
+            return self
+
+    monkeypatch.setattr(
+        report_module,
+        "sys",
+        SimpleNamespace(stdout=BrokenStream(), stderr=BrokenStream()),
+    )
+    monkeypatch.setattr(
+        report_module.os,
+        "write",
+        lambda fd, data: (_ for _ in ()).throw(OSError("fd closed")),
+    )
+    monkeypatch.setattr(
+        report_module.tempfile, "mkstemp", lambda **kwargs: (9, "/tmp/no-report")
+    )
+    monkeypatch.setattr(report_module.os, "close", lambda fd: None)
+    monkeypatch.setattr(report_module.os, "unlink", lambda path: None)
+    assert report_module.emergency_write("diagnostic\n") is None
+
+
+@pytest.mark.unittest
 def test_emergency_writer_uses_raw_fd_fallback(monkeypatch):
     """A broken text/buffer stream still reaches the raw descriptor."""
     import pyfcstm._selfcheck.report as report_module

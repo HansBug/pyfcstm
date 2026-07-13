@@ -522,3 +522,74 @@ def test_supervisor_global_deadline_blocks_unstarted_checks(monkeypatch, capsys)
     payload = json.loads(capsys.readouterr().out)
     assert called == []
     assert payload["counts"] == {"BLOCKED": 2}
+
+
+@pytest.mark.unittest
+def test_supervisor_scaled_timeout_passes_scale_to_worker(monkeypatch, capsys):
+    """Non-default timeout scaling uses the explicit worker scale parameter."""
+    from pyfcstm._selfcheck.model import CheckResult
+    from pyfcstm._selfcheck.supervisor import run_supervisor
+
+    calls = []
+
+    def run_worker(spec, timeout, timeout_scale):
+        calls.append((spec.check_id, timeout, timeout_scale))
+        return CheckResult(spec.check_id, "PASS", spec.required, summary="scaled")
+
+    monkeypatch.setattr("pyfcstm._selfcheck.supervisor.run_check_process", run_worker)
+    assert run_supervisor(("--format", "json", "--timeout-scale", "0.5")) == 0
+    capsys.readouterr()
+    assert calls and calls[0][2] == 0.5
+
+
+@pytest.mark.unittest
+def test_render_snapshot_fallback_failure_uses_emergency_writer(monkeypatch):
+    """If both renderers fail, the final emergency channel still runs."""
+    from types import SimpleNamespace
+
+    import pyfcstm._selfcheck.supervisor as supervisor_module
+    from pyfcstm._selfcheck.model import ReportSnapshot
+
+    options = SimpleNamespace(output_format="json", color="never")
+    snapshot = ReportSnapshot((), {}, {})
+    monkeypatch.setattr(
+        supervisor_module,
+        "render_json",
+        lambda current: (_ for _ in ()).throw(RuntimeError("primary")),
+    )
+    monkeypatch.setattr(
+        supervisor_module,
+        "_fallback_json",
+        lambda current: (_ for _ in ()).throw(ValueError("fallback")),
+    )
+    messages = []
+    monkeypatch.setattr(
+        supervisor_module,
+        "emergency_write",
+        lambda message, output_format: messages.append((message, output_format)),
+    )
+    result, output, rendered = supervisor_module._render_snapshot(snapshot, options)
+    assert result is snapshot
+    assert output is None
+    assert rendered is False
+    assert messages and "fallback" in messages[0][0]
+
+
+@pytest.mark.unittest
+def test_render_snapshot_preserves_non_exception_control_sentinel(monkeypatch):
+    """Unexpected BaseException sentinels are not silently swallowed."""
+    from types import SimpleNamespace
+
+    import pyfcstm._selfcheck.supervisor as supervisor_module
+    from pyfcstm._selfcheck.model import ReportSnapshot
+
+    monkeypatch.setattr(
+        supervisor_module,
+        "render_json",
+        lambda snapshot: (_ for _ in ()).throw(BaseException("sentinel")),
+    )
+    with pytest.raises(BaseException, match="sentinel"):
+        supervisor_module._render_snapshot(
+            ReportSnapshot((), {}, {}),
+            SimpleNamespace(output_format="json", color="never"),
+        )

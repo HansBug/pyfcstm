@@ -6,6 +6,7 @@ last-resort stdout/stderr/raw-fd/temporary-file diagnostic chain.
 """
 
 import json
+import errno
 import os
 import sys
 import tempfile
@@ -28,6 +29,33 @@ _STATUS_ORDER = (
 _FAILURE_STATUSES = ("BLOCKED", "FAIL", "ERROR", "TIMEOUT", "CRASH")
 _STATUS_COLORS = {status: "\x1b[31m" for status in _FAILURE_STATUSES}
 _STATUS_COLORS.update({"PASS": "\x1b[32m", "WARN": "\x1b[33m", "SKIP": "\x1b[36m"})
+
+
+def _silence_broken_stdout(error: BaseException) -> None:
+    """Redirect a broken stdout descriptor so interpreter shutdown stays stable."""
+    if (
+        not isinstance(error, BrokenPipeError)
+        and getattr(error, "errno", None) != errno.EPIPE
+    ):
+        return
+    replacement = None
+    descriptor = None
+    try:
+        descriptor = sys.stdout.fileno()
+        replacement = os.open(os.devnull, os.O_WRONLY)
+        if replacement != descriptor:
+            os.dup2(replacement, descriptor)
+    except (AttributeError, OSError, ValueError):
+        # StringIO lacks fileno, fd operations can fail, and closed streams can
+        # reject fileno with ValueError; the emergency channel still continues.
+        return
+    finally:
+        if replacement is not None and replacement != descriptor:
+            try:
+                os.close(replacement)
+            except OSError:
+                # The replacement may already be closed after a failed dup2.
+                pass
 
 
 def _windows_vt_supported(stream) -> bool:
@@ -328,7 +356,8 @@ def emergency_write(message: str, output_format: str = "human") -> Optional[str]
             sys.stdout.write(message)
             sys.stdout.flush()
             return
-    except (OSError, UnicodeError, ValueError):
+    except (OSError, UnicodeError, ValueError) as err:
+        _silence_broken_stdout(err)
         pass
     try:
         sys.stderr.buffer.write(encoded)

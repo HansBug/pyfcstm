@@ -8,7 +8,7 @@ to the next check. It owns the ledger, final snapshot, report, and exit code.
 import time
 import traceback
 import uuid
-from typing import Iterable, Sequence
+from typing import Iterable, Optional, Sequence, Tuple
 
 from .arguments import SelfCheckArgumentError
 from .arguments import _requested_output_format
@@ -18,6 +18,7 @@ from .model import CheckOutcome, CheckResult, CheckSpec, Ledger, ReportSnapshot
 from .process import run_check_process
 from .registry import get_worker, selected_specs
 from .report import emergency_write, render_json, write_human, write_report
+from .report import _silence_broken_stdout, render_human
 
 
 _PROFILE_DEADLINES = {"default": 180.0, "full": 300.0, "visualize": 300.0}
@@ -165,6 +166,95 @@ def _argument_snapshot(error: BaseException) -> ReportSnapshot:
     return ReportSnapshot((result,), metadata, {"ERROR": 1})
 
 
+def _emit_snapshot(
+    snapshot: ReportSnapshot, output_format: str, color: str
+) -> Optional[Tuple[BaseException, str]]:
+    """Emit one snapshot or return the ordinary output failure and traceback."""
+    try:
+        if output_format == "json":
+            print(render_json(snapshot), flush=True)
+        else:
+            write_human(snapshot, color)
+    except KeyboardInterrupt:
+        raise
+    except BaseException as err:
+        # Renderer and stream Exceptions plus SystemExit become reportable
+        # output failures; other control sentinels still propagate.
+        if not isinstance(err, (Exception, SystemExit)):
+            raise
+        return err, traceback.format_exc()
+    return None
+
+
+def _output_failure_snapshot(snapshot: ReportSnapshot, evidence: str) -> ReportSnapshot:
+    """Append one synthetic output error to an otherwise final snapshot."""
+    result = _terminal_result(
+        CheckSpec(
+            "selfcheck.output",
+            "synthetic",
+            title="self-check output",
+        ),
+        "ERROR",
+        "self-check output failed",
+        "output_failure",
+        evidence,
+    )
+    metadata = dict(snapshot.metadata)
+    metadata["finished_at"] = time.time()
+    metadata["exit_code"] = 130 if metadata.get("exit_code") == 130 else 3
+    counts = dict(snapshot.counts)
+    counts["ERROR"] = counts.get("ERROR", 0) + 1
+    return ReportSnapshot(snapshot.checks + (result,), metadata, counts)
+
+
+def _emit_output_failure(
+    snapshot: ReportSnapshot,
+    output_format: str,
+    error: BaseException,
+    evidence: str,
+) -> None:
+    """Send an output-failure snapshot through the last-resort channel."""
+    try:
+        message = (
+            render_json(snapshot) + "\n"
+            if output_format == "json"
+            else render_human(snapshot, color="never")
+        )
+    except KeyboardInterrupt:
+        raise
+    except BaseException as render_error:
+        # A second renderer failure must still leave a compact diagnostic.
+        if not isinstance(render_error, (Exception, SystemExit)):
+            raise
+        message = (
+            "self-check output failure:\n{}\nemergency render failure: {}: {}\n".format(
+                evidence,
+                type(render_error).__name__,
+                render_error,
+            )
+        )
+    try:
+        emergency_write(message, output_format)
+    finally:
+        _silence_broken_stdout(error)
+
+
+def _emit_final(snapshot: ReportSnapshot, output_format: str, color: str) -> int:
+    """Emit one final snapshot and normalize any output failure."""
+    output_failure = _emit_snapshot(snapshot, output_format, color)
+    if output_failure is None:
+        return int(snapshot.metadata["exit_code"])
+    output_error, output_evidence = output_failure
+    failed_snapshot = _output_failure_snapshot(snapshot, output_evidence)
+    _emit_output_failure(
+        failed_snapshot,
+        output_format,
+        output_error,
+        output_evidence,
+    )
+    return int(failed_snapshot.metadata["exit_code"])
+
+
 def _run_selected_checks(
     ledger: Ledger, specs, options, global_deadline: float
 ) -> None:
@@ -252,11 +342,8 @@ def run_supervisor(arguments: Sequence[str]) -> int:
     try:
         options = parse_selfcheck_args(arguments)
     except SelfCheckArgumentError as err:
-        if _requested_output_format(arguments) == "json":
-            print(render_json(_argument_snapshot(err)))
-        else:
-            emergency_write("self-check argument error: {}\n".format(err), "human")
-        return 2
+        output_format = _requested_output_format(arguments)
+        return _emit_final(_argument_snapshot(err), output_format, "never")
 
     ledger = Ledger()
     specs = ()
@@ -339,8 +426,4 @@ def run_supervisor(arguments: Sequence[str]) -> int:
             snapshot = ledger.freeze(metadata)
             exit_code = metadata["exit_code"]
 
-    if options.output_format == "json":
-        print(render_json(snapshot))
-    else:
-        write_human(snapshot, options.color)
-    return exit_code
+    return _emit_final(snapshot, options.output_format, options.color)

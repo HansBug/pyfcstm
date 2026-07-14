@@ -1,6 +1,9 @@
 """Behavioral tests for the contracted single-writer supervisor."""
 
 import json
+import os
+import subprocess
+import sys
 
 import pytest
 
@@ -96,6 +99,67 @@ def test_argument_errors_keep_json_stdout_parseable(capsys):
 
 
 @pytest.mark.unittest
+def test_human_output_failure_becomes_a_terminal_diagnostic(monkeypatch, capfd):
+    """A failed final human write returns exit 3 instead of escaping."""
+    spec = CheckSpec("demo", "demo")
+    _install_worker_specs(monkeypatch, (spec,))
+    monkeypatch.setattr(
+        supervisor,
+        "write_human",
+        lambda *args: (_ for _ in ()).throw(OSError("stdout failed")),
+    )
+
+    assert supervisor.run_supervisor(()) == 3
+    captured = capfd.readouterr()
+    assert "selfcheck.output" in captured.out + captured.err
+    assert "output_failure" in captured.out + captured.err
+
+
+@pytest.mark.unittest
+def test_json_render_failure_keeps_stdout_clean(monkeypatch, capfd):
+    """A broken JSON renderer falls back to stderr and returns exit 3."""
+    spec = CheckSpec("demo", "demo")
+    _install_worker_specs(monkeypatch, (spec,))
+    monkeypatch.setattr(
+        supervisor,
+        "render_json",
+        lambda *args: (_ for _ in ()).throw(ValueError("renderer failed")),
+    )
+
+    assert supervisor.run_supervisor(("--format", "json")) == 3
+    captured = capfd.readouterr()
+    assert captured.out == ""
+    assert "self-check output failure" in captured.err
+    assert "renderer failed" in captured.err
+
+
+@pytest.mark.unittest
+@pytest.mark.skipif(os.name != "posix", reason="POSIX broken-pipe contract")
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ("--self-check", "--color", "never"),
+        ("--self-check", "--format", "json", "--network"),
+    ],
+)
+def test_closed_stdout_pipe_returns_stable_output_error(arguments):
+    """A real closed stdout pipe yields exit 3 and an emergency diagnostic."""
+    read_descriptor, write_descriptor = os.pipe()
+    os.close(read_descriptor)
+    try:
+        process = subprocess.run(
+            [sys.executable, "-m", "pyfcstm"] + list(arguments),
+            stdout=write_descriptor,
+            stderr=subprocess.PIPE,
+            timeout=15.0,
+        )
+    finally:
+        os.close(write_descriptor)
+    assert process.returncode == 3
+    assert b"selfcheck.output" in process.stderr
+
+
+@pytest.mark.unittest
 @pytest.mark.parametrize("raises", [False, True])
 def test_report_write_failure_becomes_one_synthetic_result(
     monkeypatch, capsys, tmp_path, raises
@@ -152,6 +216,37 @@ def test_misordered_prerequisite_is_blocked_without_reordering(monkeypatch, caps
     assert [item["id"] for item in payload["results"]] == ["dependent", "base"]
     assert payload["results"][0]["status"] == "BLOCKED"
     assert payload["results"][0]["reason"] == "prerequisite_unresolved"
+
+
+@pytest.mark.unittest
+def test_worker_checks_finish_one_at_a_time_in_registry_order(monkeypatch, capsys):
+    """A worker result is committed before the next registry entry starts."""
+    specs = (CheckSpec("first", "first"), CheckSpec("second", "second"))
+    events = []
+    active = []
+
+    def run(spec, timeout, timeout_scale):
+        del timeout, timeout_scale
+        assert not active
+        active.append(spec.check_id)
+        events.append(("start", spec.check_id))
+        result = _result(spec)
+        events.append(("finish", spec.check_id))
+        active.pop()
+        return result
+
+    _install_worker_specs(monkeypatch, specs, run)
+    assert supervisor.run_supervisor(("--format", "json")) == 0
+    assert [item["id"] for item in _payload(capsys)["results"]] == [
+        "first",
+        "second",
+    ]
+    assert events == [
+        ("start", "first"),
+        ("finish", "first"),
+        ("start", "second"),
+        ("finish", "second"),
+    ]
 
 
 @pytest.mark.unittest

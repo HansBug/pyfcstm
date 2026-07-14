@@ -178,8 +178,8 @@ def _run_guarded(action, arguments: Sequence[str], output_format: str) -> int:
     except KeyboardInterrupt:
         return 130
     except BaseException as err:
-        # Import/runtime Exceptions and SystemExit are reportable bootstrap
-        # failures. GeneratorExit and other control sentinels still propagate.
+        # Import/runtime Exceptions and SystemExit are reportable; other
+        # control sentinels propagate from this final boundary.
         if not isinstance(err, (Exception, SystemExit)):
             raise
         return _emit_bootstrap_error(

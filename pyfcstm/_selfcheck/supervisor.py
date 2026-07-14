@@ -10,8 +10,7 @@ import traceback
 import uuid
 from typing import Iterable, Optional, Sequence, Tuple
 
-from .arguments import SelfCheckArgumentError
-from .arguments import _requested_output_format
+from .arguments import SelfCheckArgumentError, _requested_output_format
 from .arguments import parse_selfcheck_args
 from .environment import collect_environment
 from .model import CheckOutcome, CheckResult, CheckSpec, Ledger, ReportSnapshot
@@ -66,15 +65,13 @@ def _run_local_check(spec: CheckSpec) -> CheckResult:
             outcome = worker()
             if not isinstance(outcome, CheckOutcome):
                 raise TypeError("self-check worker must return CheckOutcome")
-        except KeyboardInterrupt:
-            raise
         except SystemExit:
             outcome = _error_outcome(
                 "local check raised SystemExit", "local_check_system_exit"
             )
         except BaseException as err:
-            # A local check may raise any ordinary Exception. Control sentinels
-            # remain visible to the supervisor's outer boundary.
+            # Callback failures are ordinary Exceptions; control sentinels
+            # remain visible to the caller.
             if not isinstance(err, Exception):
                 raise
             outcome = _error_outcome(
@@ -105,6 +102,19 @@ def _terminal_result(
     )
 
 
+def _commit_terminal(
+    ledger: Ledger,
+    spec: CheckSpec,
+    status: str,
+    summary: str,
+    reason: str,
+    evidence: str = "",
+) -> None:
+    """Build and commit one terminal result through the single writer."""
+    ledger.ensure_reserved(spec)
+    ledger.commit(_terminal_result(spec, status, summary, reason, evidence))
+
+
 def _terminalize_unfinished(
     ledger: Ledger,
     specs: Iterable[CheckSpec],
@@ -118,7 +128,6 @@ def _terminalize_unfinished(
     )
     reason = "supervisor_interrupted" if interrupted else "supervisor_infrastructure"
     for spec in specs:
-        ledger.ensure_reserved(spec)
         if ledger.get_result(spec.check_id) is not None:
             continue
         status = (
@@ -126,7 +135,7 @@ def _terminalize_unfinished(
             if ledger.get_state(spec.check_id) == "RUNNING"
             else "BLOCKED"
         )
-        ledger.commit(_terminal_result(spec, status, summary, reason, evidence))
+        _commit_terminal(ledger, spec, status, summary, reason, evidence)
 
 
 def _commit_synthetic(
@@ -139,30 +148,22 @@ def _commit_synthetic(
 ) -> None:
     """Commit one supervisor-owned synthetic error at most once."""
     spec = CheckSpec(check_id, "synthetic", title=title)
-    ledger.ensure_reserved(spec)
-    ledger.commit(_terminal_result(spec, "ERROR", summary, reason, evidence))
+    _commit_terminal(ledger, spec, "ERROR", summary, reason, evidence)
 
 
 def _argument_snapshot(error: BaseException) -> ReportSnapshot:
     """Build a canonical pre-ledger snapshot for argument errors."""
     now = time.time()
-    spec = CheckSpec(
+    result = CheckResult(
         "selfcheck.arguments",
-        "synthetic",
-        title="self-check arguments",
-    )
-    result = _terminal_result(
-        spec,
         "ERROR",
-        "invalid self-check arguments",
-        "argument_error",
+        True,
+        summary="invalid self-check arguments",
+        title="self-check arguments",
+        reason="argument_error",
         evidence="{}: {}".format(type(error).__name__, error),
     )
-    metadata = {
-        "started_at": now,
-        "finished_at": now,
-        "exit_code": 2,
-    }
+    metadata = {"started_at": now, "finished_at": now, "exit_code": 2}
     return ReportSnapshot((result,), metadata, {"ERROR": 1})
 
 
@@ -175,11 +176,9 @@ def _emit_snapshot(
             print(render_json(snapshot), flush=True)
         else:
             write_human(snapshot, color)
-    except KeyboardInterrupt:
-        raise
     except BaseException as err:
-        # Renderer and stream Exceptions plus SystemExit become reportable
-        # output failures; other control sentinels still propagate.
+        # Renderer/stream Exceptions and SystemExit are reportable; other
+        # control sentinels propagate.
         if not isinstance(err, (Exception, SystemExit)):
             raise
         return err, traceback.format_exc()
@@ -220,10 +219,8 @@ def _emit_output_failure(
             if output_format == "json"
             else render_human(snapshot, color="never")
         )
-    except KeyboardInterrupt:
-        raise
     except BaseException as render_error:
-        # A second renderer failure must still leave a compact diagnostic.
+        # A second renderer failure still leaves a compact diagnostic.
         if not isinstance(render_error, (Exception, SystemExit)):
             raise
         message = (
@@ -262,36 +259,33 @@ def _run_selected_checks(
     for spec in specs:
         prerequisites = [ledger.get_result(item) for item in spec.prerequisites]
         if any(result is None for result in prerequisites):
-            ledger.commit(
-                _terminal_result(
-                    spec,
-                    "BLOCKED",
-                    "prerequisite was never resolved",
-                    "prerequisite_unresolved",
-                )
+            _commit_terminal(
+                ledger,
+                spec,
+                "BLOCKED",
+                "prerequisite was never resolved",
+                "prerequisite_unresolved",
             )
             continue
         if any(
             result.status not in ("PASS", "WARN", "SKIP") for result in prerequisites
         ):
-            ledger.commit(
-                _terminal_result(
-                    spec,
-                    "BLOCKED",
-                    "prerequisite failed",
-                    "prerequisite_failed",
-                )
+            _commit_terminal(
+                ledger,
+                spec,
+                "BLOCKED",
+                "prerequisite failed",
+                "prerequisite_failed",
             )
             continue
         remaining = global_deadline - time.monotonic()
         if remaining <= 0.0:
-            ledger.commit(
-                _terminal_result(
-                    spec,
-                    "BLOCKED",
-                    "global self-check deadline exceeded",
-                    "global_deadline",
-                )
+            _commit_terminal(
+                ledger,
+                spec,
+                "BLOCKED",
+                "global self-check deadline exceeded",
+                "global_deadline",
             )
             continue
         ledger.mark_running(spec.check_id)
@@ -304,11 +298,8 @@ def _run_selected_checks(
                     spec, timeout=timeout, timeout_scale=options.timeout_scale
                 )
             )
-        except KeyboardInterrupt:
-            raise
         except BaseException as err:
-            # Process supervision failures are isolated to their selected
-            # check so independent checks can continue.
+            # Process failures are isolated so independent checks continue.
             if not isinstance(err, Exception):
                 raise
             evidence = traceback.format_exc()
@@ -424,6 +415,5 @@ def run_supervisor(arguments: Sequence[str]) -> int:
             )
             metadata["exit_code"] = 1 if forced_exit is None else forced_exit
             snapshot = ledger.freeze(metadata)
-            exit_code = metadata["exit_code"]
 
     return _emit_final(snapshot, options.output_format, options.color)

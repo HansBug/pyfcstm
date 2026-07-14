@@ -14,9 +14,7 @@ import tempfile
 import time
 from typing import Optional
 
-from ._win32 import JobAssignmentError
-from ._win32 import attach_process
-from ._win32 import format_ntstatus
+from ._win32 import JobAssignmentError, attach_process, format_ntstatus
 from .model import CheckResult, CheckSpec
 from .arguments import _WORKER_DISPATCH_ARGUMENT
 from .protocol import build_start_gate

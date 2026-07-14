@@ -307,7 +307,6 @@ class Ledger:
     """
 
     def __init__(self) -> None:
-        self._specs: Dict[str, CheckSpec] = {}
         self._order = []
         self._states: Dict[str, str] = {}
         self._results: Dict[str, CheckResult] = {}
@@ -320,19 +319,16 @@ class Ledger:
         :raises ValueError: If an ID is reserved more than once.
         """
         for spec in specs:
-            if spec.check_id in self._specs:
+            if spec.check_id in self._states:
                 raise ValueError("duplicate check id: {}".format(spec.check_id))
-            self._reserve_one(spec)
-
-    def _reserve_one(self, spec: CheckSpec) -> None:
-        self._specs[spec.check_id] = spec
-        self._order.append(spec.check_id)
-        self._states[spec.check_id] = "PENDING"
+            self._order.append(spec.check_id)
+            self._states[spec.check_id] = "PENDING"
 
     def ensure_reserved(self, spec: CheckSpec) -> None:
         """Reserve *spec* if setup was interrupted before bulk reservation."""
-        if spec.check_id not in self._specs:
-            self._reserve_one(spec)
+        if spec.check_id not in self._states:
+            self._order.append(spec.check_id)
+            self._states[spec.check_id] = "PENDING"
 
     def mark_running(self, check_id: str) -> None:
         """Move one pending check to ``RUNNING``.
@@ -342,7 +338,7 @@ class Ledger:
         :raises KeyError: If the check was not reserved.
         :raises RuntimeError: If the check is not pending.
         """
-        if check_id not in self._specs:
+        if check_id not in self._states:
             raise KeyError(check_id)
         if self._states[check_id] != "PENDING":
             raise RuntimeError("check is not pending: {}".format(check_id))
@@ -356,7 +352,7 @@ class Ledger:
         :raises KeyError: If the result ID was not reserved.
         :raises RuntimeError: If a terminal result already exists.
         """
-        if result.check_id not in self._specs:
+        if result.check_id not in self._states:
             raise KeyError(result.check_id)
         if result.check_id in self._results:
             raise RuntimeError("duplicate terminal result: {}".format(result.check_id))

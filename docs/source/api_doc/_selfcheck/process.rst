@@ -12,12 +12,6 @@ STREAM\_LIMIT
 .. autodata:: STREAM_LIMIT
 
 
-START\_GATE\_TIMEOUT
------------------------------------------------------
-
-.. autodata:: START_GATE_TIMEOUT
-
-
 SIGTERM\_GRACE
 -----------------------------------------------------
 

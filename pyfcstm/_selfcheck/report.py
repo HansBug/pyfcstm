@@ -94,10 +94,8 @@ def _windows_vt_supported(stream) -> bool:
 
 def _color_requested(mode: str) -> bool:
     """Resolve whether the user/environment requested colored human output."""
-    if mode == "never":
-        return False
-    if mode == "always":
-        return True
+    if mode in ("never", "always"):
+        return mode == "always"
     if os.environ.get("NO_COLOR", "").strip():
         return False
     if os.environ.get("FORCE_COLOR") == "1":
@@ -162,7 +160,7 @@ def _failure_detail_lines(check) -> list:
 
 def _render_human(snapshot: ReportSnapshot, use_color: bool) -> str:
     """Render one human report with a fixed, terminal-friendly layout."""
-    counts = {status: int(snapshot.counts.get(status, 0)) for status in _STATUS_ORDER}
+    counts = snapshot.counts
     total = len(snapshot.checks)
     environment = snapshot.metadata.get("environment", {})
     version = environment.get("version") or "unavailable"

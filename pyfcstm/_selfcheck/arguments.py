@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Optional, Sequence
 
 
-_WORKER_DISPATCH_ARGUMENT = "--pyfcstm-self-check-worker"
+_WORKER_DISPATCH_ARGUMENT = "--self-check-worker"
 
 
 class SelfCheckArgumentError(ValueError):

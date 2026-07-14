@@ -565,7 +565,7 @@ def test_worker_command_switches_to_frozen_dispatch(monkeypatch):
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     command = _command_for_worker(CheckSpec("demo", "demo"), "7" * 32, "stdout", None)
     assert "-m" not in command
-    assert "--pyfcstm-self-check-worker" in command
+    assert "--self-check-worker" in command
     assert not any("worker-v1" in item for item in command)
 
 

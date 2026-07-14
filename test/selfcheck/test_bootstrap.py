@@ -29,15 +29,15 @@ def test_hidden_worker_dispatch_is_exact_and_pre_click(monkeypatch):
     monkeypatch.setattr(
         _bootstrap, "run_worker", lambda args: invoked.append(tuple(args)) or 0
     )
-    assert _bootstrap.main(("--pyfcstm-self-check-worker", "--nonce", "x")) == 0
+    assert _bootstrap.main(("--self-check-worker", "--nonce", "x")) == 0
     assert invoked == [("--nonce", "x")]
 
 
 @pytest.mark.parametrize(
     "arguments",
     (
-        ("--self-check", "--pyfcstm-self-check-worker"),
-        ("--pyfcstm-self-check-worker", "--self-check"),
+        ("--self-check", "--self-check-worker"),
+        ("--self-check-worker", "--self-check"),
     ),
 )
 @pytest.mark.unittest
@@ -91,4 +91,4 @@ def test_selfcheck_help_is_available_before_click(capsys):
     output = capsys.readouterr().out
     assert "pyfcstm --self-check" in output
     assert "--profile" in output
-    assert "--pyfcstm-self-check-worker" not in output
+    assert "--self-check-worker" not in output

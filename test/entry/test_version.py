@@ -24,4 +24,4 @@ class TestEntryVersion:
         result = CliRunner().invoke(pyfcstmcli, ["--help"])
         assert result.exit_code == 0
         assert "--self-check" in result.output
-        assert "--pyfcstm-self-check-worker" not in result.output
+        assert "--self-check-worker" not in result.output

@@ -28,16 +28,6 @@ from ._selfcheck.arguments import format_worker_help
 
 
 _VERSION_ARGUMENTS = ("-v", "-V", "--version")
-_BOOTSTRAP_ERRORS = (
-    OSError,
-    RuntimeError,
-    ValueError,
-    KeyError,
-    TypeError,
-    ImportError,
-    AttributeError,
-    UnicodeError,
-)
 
 
 def is_version_request(arguments: Sequence[str]) -> bool:
@@ -48,6 +38,11 @@ def is_version_request(arguments: Sequence[str]) -> bool:
     :type arguments: Sequence[str]
     :return: Whether the bootstrap should print version information itself.
     :rtype: bool
+
+    Example::
+
+        >>> is_version_request(("--version",))
+        True
     """
     return len(arguments) == 1 and arguments[0] in _VERSION_ARGUMENTS
 
@@ -63,8 +58,12 @@ def run_selfcheck(arguments: Sequence[str]) -> int:
 
     Example::
 
-        >>> run_selfcheck(("--format", "json")) in (0, 1, 2, 3, 130)
-        True
+        >>> import contextlib
+        >>> import io
+        >>> with contextlib.redirect_stdout(io.StringIO()):
+        ...     code = run_selfcheck(("--format", "json", "--network"))
+        >>> code
+        2
     """
     from ._selfcheck.supervisor import run_supervisor
 
@@ -79,6 +78,12 @@ def run_worker(arguments: Sequence[str]) -> int:
     :type arguments: Sequence[str]
     :return: Worker process exit code.
     :rtype: int
+
+    Example::
+
+        >>> run_worker(("--check-id", "demo", "--worker-key", "demo",
+        ...             "--nonce", "invalid", "--result-mode", "stdout"))
+        3
     """
     from ._selfcheck.arguments import SelfCheckArgumentError
     from ._selfcheck.arguments import parse_worker_args
@@ -98,9 +103,9 @@ def _emit_bootstrap_error(message: str, output_format: str = "human") -> int:
             json.dumps(
                 {
                     "schema_version": "pyfcstm-selfcheck/v1",
-                    "schema": "pyfcstm-selfcheck/v1",
                     "report_id": None,
                     "started_at": None,
+                    "finished_at": None,
                     "profile": None,
                     "environment": {},
                     "artifact": {},
@@ -113,25 +118,29 @@ def _emit_bootstrap_error(message: str, output_format: str = "human") -> int:
                             "title": "self-check bootstrap error",
                             "status": "ERROR",
                             "required": True,
+                            "duration_ms": 0.0,
                             "summary": "self-check bootstrap error",
-                            "details": message,
                             "reason": "bootstrap_error",
+                            "expected": None,
+                            "observed": None,
+                            "evidence": message,
+                            "remediation": None,
+                            "prerequisite": [],
+                            "exception": message,
+                            "pid": None,
+                            "returncode": None,
+                            "signal": None,
+                            "ntstatus": None,
+                            "timeout": False,
+                            "transport": None,
+                            "stdout": "",
+                            "stderr": "",
+                            "encoding": "utf-8",
+                            "truncated_bytes": 0,
                         }
                     ],
                     "summary": {"ERROR": 1},
                     "exit_code": 3,
-                    "metadata": {"phase": "bootstrap"},
-                    "checks": [
-                        {
-                            "check_id": "selfcheck.infrastructure",
-                            "status": "ERROR",
-                            "required": True,
-                            "summary": "self-check bootstrap error",
-                            "details": message,
-                            "reason": "bootstrap_error",
-                        }
-                    ],
-                    "counts": {"ERROR": 1},
                 },
                 ensure_ascii=True,
                 sort_keys=True,
@@ -162,12 +171,33 @@ def _emit_bootstrap_error(message: str, output_format: str = "human") -> int:
     return 3
 
 
+def _run_guarded(action, arguments: Sequence[str], output_format: str) -> int:
+    """Run one bootstrap action behind the final diagnostic boundary."""
+    try:
+        return action(arguments)
+    except KeyboardInterrupt:
+        return 130
+    except BaseException as err:
+        # Import/runtime Exceptions and SystemExit are reportable bootstrap
+        # failures. GeneratorExit and other control sentinels still propagate.
+        if not isinstance(err, (Exception, SystemExit)):
+            raise
+        return _emit_bootstrap_error(
+            "{}: {}".format(type(err).__name__, err), output_format
+        )
+
+
 def format_version_info() -> str:
     """
     Format human-readable package and optional build identity information.
 
     :return: Multi-line version information without a trailing newline.
     :rtype: str
+
+    Example::
+
+        >>> "Python:" in format_version_info()
+        True
     """
     lines = [
         "{0}, version {1}.".format(__TITLE__.capitalize(), __VERSION__),
@@ -199,6 +229,11 @@ def main(arguments: Optional[Sequence[str]] = None) -> int:
     :type arguments: Optional[Sequence[str]]
     :return: ``0`` when the bootstrap handled a version request.
     :rtype: int
+
+    Example::
+
+        >>> main(("--version", "unexpected"))
+        2
     """
     command_arguments = tuple(sys.argv[1:] if arguments is None else arguments)
     if is_version_request(command_arguments):
@@ -220,26 +255,11 @@ def main(arguments: Optional[Sequence[str]] = None) -> int:
                 ),
                 _requested_output_format(command_arguments[1:]),
             )
-        try:
-            return run_selfcheck(command_arguments[1:])
-        except KeyboardInterrupt:
-            return 130
-        except _BOOTSTRAP_ERRORS as err:
-            # These failures arise from the standard-library dispatch
-            # boundary; unknown errors propagate.
-            return _emit_bootstrap_error(
-                "{}: {}".format(type(err).__name__, err),
-                _requested_output_format(command_arguments[1:]),
-            )
-        except BaseException as err:
-            # Any other ordinary Exception/SystemExit is still a runtime
-            # failure; non-runtime sentinels propagate.
-            if not isinstance(err, (Exception, SystemExit)):
-                raise
-            return _emit_bootstrap_error(
-                "{}: {}".format(type(err).__name__, err),
-                _requested_output_format(command_arguments[1:]),
-            )
+        return _run_guarded(
+            run_selfcheck,
+            command_arguments[1:],
+            _requested_output_format(command_arguments[1:]),
+        )
     if command_arguments and command_arguments[0] == _WORKER_DISPATCH_ARGUMENT:
         if any(item in ("-h", "--help") for item in command_arguments[1:]):
             sys.stdout.write(format_worker_help())
@@ -251,18 +271,7 @@ def main(arguments: Optional[Sequence[str]] = None) -> int:
                 ),
                 _requested_output_format(command_arguments[1:]),
             )
-        try:
-            return run_worker(command_arguments[1:])
-        except KeyboardInterrupt:
-            return 130
-        except _BOOTSTRAP_ERRORS as err:
-            # Worker dispatch errors are protocol failures; unknown errors remain visible to the parent.
-            return _emit_bootstrap_error("{}: {}".format(type(err).__name__, err))
-        except BaseException as err:
-            # Preserve the same guard for unexpected worker callback exceptions.
-            if not isinstance(err, (Exception, SystemExit)):
-                raise
-            return _emit_bootstrap_error("{}: {}".format(type(err).__name__, err))
+        return _run_guarded(run_worker, command_arguments[1:], "human")
 
     from .entry import pyfcstmcli
 

@@ -14,7 +14,7 @@ def test_selfcheck_dispatch_does_not_import_click(monkeypatch):
     monkeypatch.setattr(
         _bootstrap, "run_selfcheck", lambda args: invoked.append(tuple(args)) or 0
     )
-    sys.modules.pop("click", None)
+    monkeypatch.delitem(sys.modules, "click", raising=False)
     assert _bootstrap.main(("--self-check", "--format", "json")) == 0
     assert invoked == [("--format", "json")]
     assert "click" not in sys.modules
@@ -66,8 +66,9 @@ def test_bootstrap_runtime_failure_keeps_json_stdout_machine_readable(
     )
     assert _bootstrap.main(("--self-check", "--format", "json")) == 3
     payload = json.loads(capsys.readouterr().out)
-    assert payload["counts"] == {"ERROR": 1}
-    assert "boom" in payload["checks"][0]["details"]
+    assert payload["summary"] == {"ERROR": 1}
+    assert "boom" in payload["results"][0]["evidence"]
+    assert "checks" not in payload and "counts" not in payload
     assert payload["schema_version"] == "pyfcstm-selfcheck/v1"
     assert payload["exit_code"] == 3
 

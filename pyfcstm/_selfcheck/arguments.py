@@ -1,4 +1,8 @@
-"""Argument parsing for the private self-check supervisor and worker."""
+"""Parse the public supervisor options and hidden one-shot worker protocol.
+
+This module uses only :mod:`argparse` and converts its ``SystemExit`` behavior
+into stable self-check argument diagnostics before Click is imported.
+"""
 
 import argparse
 from dataclasses import dataclass
@@ -9,7 +13,13 @@ _WORKER_DISPATCH_ARGUMENT = "--self-check-worker"
 
 
 class SelfCheckArgumentError(ValueError):
-    """Raised when a self-check or worker argument contract is invalid."""
+    """Raised when a self-check or worker argument contract is invalid.
+
+    Example::
+
+        >>> isinstance(SelfCheckArgumentError("invalid"), ValueError)
+        True
+    """
 
 
 def _requested_output_format(arguments: Sequence[str]) -> str:
@@ -36,15 +46,11 @@ def _requested_output_format(arguments: Sequence[str]) -> str:
         if argument in value_options:
             index += 2
             continue
-        if argument.startswith("--report="):
-            index += 1
-            continue
         if argument == "--format=json":
             return "json"
         if argument == "--format":
-            if index + 1 >= len(arguments):
-                return "json"
-            return "json" if arguments[index + 1] == "json" else "human"
+            value = arguments[index + 1] if index + 1 < len(arguments) else "json"
+            return "json" if value == "json" else "human"
         index += 1
     return "human"
 
@@ -144,6 +150,11 @@ def format_selfcheck_help() -> str:
 
     :return: Formatted command-line help text.
     :rtype: str
+
+    Example::
+
+        >>> "--profile" in format_selfcheck_help()
+        True
     """
     return _build_supervisor_parser(add_help=True).format_help()
 
@@ -172,6 +183,11 @@ def format_worker_help() -> str:
 
     :return: Formatted worker command-line help text.
     :rtype: str
+
+    Example::
+
+        >>> "--worker-key" in format_worker_help()
+        True
     """
     return _build_worker_parser().format_help()
 

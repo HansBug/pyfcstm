@@ -1,200 +1,194 @@
-"""Tests for self-check human, JSON, and emergency reports."""
+"""Tests for canonical JSON, human diagnostics, and emergency output."""
 
 import json
 
 import pytest
 
+from pyfcstm._selfcheck.model import CheckResult, ReportSnapshot
+from pyfcstm._selfcheck.report import (
+    _color_requested,
+    emergency_write,
+    render_human,
+    render_json,
+    write_human,
+    write_report,
+)
+
+
+def _metadata(exit_code=0):
+    return {
+        "session_id": "session",
+        "started_at": 1.0,
+        "finished_at": 2.0,
+        "profile": "default",
+        "environment": {
+            "version": "0.5.0",
+            "revision": "abc123",
+            "frozen": False,
+            "platform": "TestOS-1.0",
+            "architecture": "64bit",
+            "python_version": "3.10.10",
+            "implementation": "CPython",
+            "stdout_encoding": "utf-8",
+        },
+        "artifact": {},
+        "dependencies": [],
+        "capabilities": {},
+        "exit_code": exit_code,
+    }
+
 
 @pytest.mark.unittest
-def test_json_report_is_stable_and_round_trippable(tmp_path):
-    """JSON stdout/report payloads share one canonical schema."""
-    from pyfcstm._selfcheck.model import CheckResult
-    from pyfcstm._selfcheck.model import ReportSnapshot
-    from pyfcstm._selfcheck.report import render_json
-    from pyfcstm._selfcheck.report import write_report
-
+def test_json_report_is_canonical_and_round_trippable(tmp_path):
+    """Stdout and atomically written reports share one exact schema."""
     snapshot = ReportSnapshot(
-        (CheckResult("artifact.self_dispatch", "PASS", True, summary="worker ok"),),
-        {"session_id": "s1"},
+        (CheckResult("runtime.metadata", "PASS", True, summary="ready"),),
+        _metadata(),
         {"PASS": 1},
     )
-    payload = render_json(snapshot)
-    assert json.loads(payload)["counts"] == {"PASS": 1}
-    path = tmp_path / "report.json"
-    assert write_report(str(path), snapshot) is None
-    assert (
-        json.loads(path.read_text(encoding="utf-8"))["schema"] == "pyfcstm-selfcheck/v1"
-    )
-    report = json.loads(payload)
-    assert report["schema_version"] == "pyfcstm-selfcheck/v1"
-    assert report["results"][0]["id"] == "artifact.self_dispatch"
-    assert report["profile"] is None
+    payload = json.loads(render_json(snapshot))
+    assert payload["summary"] == {"PASS": 1}
+    assert "checks" not in payload and "counts" not in payload
+    destination = tmp_path / "report.json"
+    assert write_report(str(destination), snapshot) is None
+    assert json.loads(destination.read_text(encoding="utf-8")) == payload
 
 
 @pytest.mark.unittest
-def test_human_failure_output_contains_full_details():
-    """Human output expands failure details while PASS stays concise."""
-    from pyfcstm._selfcheck.model import CheckResult
-    from pyfcstm._selfcheck.model import ReportSnapshot
-    from pyfcstm._selfcheck.report import render_human
-
+def test_human_report_contains_environment_header_and_failure_evidence():
+    """Copied human output identifies the runtime and expands failed checks."""
     snapshot = ReportSnapshot(
         (
             CheckResult("ok", "PASS", True, summary="ready"),
             CheckResult(
-                "bad", "ERROR", True, summary="broken", details="full traceback"
+                "bad",
+                "ERROR",
+                True,
+                summary="broken",
+                reason="worker_exception",
+                evidence="full traceback",
+                stdout="child stdout",
+                stderr="child stderr",
             ),
         ),
-        {},
+        _metadata(exit_code=1),
         {"PASS": 1, "ERROR": 1},
     )
     output = render_human(snapshot, color="never")
+    assert "pyfcstm self-check 0.5.0  revision=abc123  mode=source" in output
+    assert "System: TestOS-1.0 64bit  Python=3.10.10 (CPython)" in output
     assert "[1/2] PASS ok (ready)" in output
     assert "[2/2] ERROR bad (broken)" in output
     assert "full traceback" in output
-    assert "PASS = 1" in output
-    assert "ERROR = 1" in output
-    assert "WARN = 0" not in output
+    assert "child stdout" in output and "child stderr" in output
     assert "Conclusion: [ FAILED ]" in output
 
 
 @pytest.mark.unittest
-def test_human_summary_lists_positive_status_counts_and_colors_them(monkeypatch):
-    """Human summaries omit zero counts and color every emitted status."""
-    import pyfcstm._selfcheck.report as report_module
-    from pyfcstm._selfcheck.model import CheckResult
-    from pyfcstm._selfcheck.model import ReportSnapshot
-    from pyfcstm._selfcheck.report import render_human
-
+def test_human_summary_omits_zero_counts_and_colors_emitted_statuses(monkeypatch):
+    """Only positive status counts are shown and each keeps its color role."""
+    monkeypatch.setattr("pyfcstm._selfcheck.report._color_requested", lambda mode: True)
+    monkeypatch.setattr(
+        "pyfcstm._selfcheck.report._windows_vt_supported", lambda stream: True
+    )
     snapshot = ReportSnapshot(
         (
             CheckResult("ok", "PASS", True, summary="ready"),
-            CheckResult("warning", "WARN", False, summary="optional"),
+            CheckResult("warn", "WARN", False, summary="optional"),
         ),
-        {},
+        _metadata(),
         {"PASS": 1, "WARN": 1},
     )
-    monkeypatch.setattr(report_module, "_windows_vt_supported", lambda stream: True)
     output = render_human(snapshot, color="always")
     assert "\x1b[32mPASS\x1b[0m = 1" in output
     assert "\x1b[33mWARN\x1b[0m = 1" in output
     assert "SKIP = 0" not in output
-    assert "BLOCKED = 0" not in output
     assert "\x1b[1;33m[ WARNINGS ]\x1b[0m" in output
 
 
 @pytest.mark.unittest
-def test_human_check_lines_align_variable_width_indices():
-    """Human check positions use spaces, not leading zeroes, for alignment."""
-    from pyfcstm._selfcheck.model import CheckResult
-    from pyfcstm._selfcheck.model import ReportSnapshot
-    from pyfcstm._selfcheck.report import render_human
-
+def test_human_positions_use_equal_numeric_widths():
+    """The numerator is left-padded to the denominator width without zeros."""
     checks = tuple(
         CheckResult("check{:02d}".format(index), "PASS", True, summary="ready")
-        for index in range(1, 13)
+        for index in range(12)
     )
     output = render_human(
-        ReportSnapshot(checks, {}, {"PASS": len(checks)}), color="never"
+        ReportSnapshot(checks, _metadata(), {"PASS": 12}), color="never"
     )
-    assert "[ 1/12] PASS check01 (ready)" in output
-    assert "[10/12] PASS check10 (ready)" in output
-    assert "[12/12] PASS check12 (ready)" in output
+    assert "[ 1/12] PASS" in output
+    assert "[12/12] PASS" in output
     assert "[01/12]" not in output
 
 
 @pytest.mark.unittest
 def test_report_write_failure_returns_diagnostic(tmp_path):
-    """An unwritable target is reported without raising from the writer."""
-    from pyfcstm._selfcheck.model import ReportSnapshot
-    from pyfcstm._selfcheck.report import write_report
-
-    snapshot = ReportSnapshot((), {}, {})
+    """Missing destination directories remain observable without raising."""
+    snapshot = ReportSnapshot((), _metadata(), {})
     error = write_report(str(tmp_path / "missing" / "report.json"), snapshot)
-    assert error is not None
+    assert error == "report_directory_missing"
 
 
 @pytest.mark.unittest
-def test_report_write_handles_atomic_write_failures(monkeypatch, tmp_path):
-    """Atomic replacement errors are returned and temporary files are cleaned."""
-    from pyfcstm._selfcheck.model import ReportSnapshot
-    from pyfcstm._selfcheck.report import write_report
-
+def test_report_atomic_replace_failure_is_diagnostic(monkeypatch, tmp_path):
+    """A failed final replace cleans its temporary file and returns evidence."""
+    snapshot = ReportSnapshot((), _metadata(), {})
     monkeypatch.setattr(
-        "os.replace", lambda *args: (_ for _ in ()).throw(OSError("busy"))
+        "os.replace", lambda source, target: (_ for _ in ()).throw(OSError("replace"))
     )
-    error = write_report(str(tmp_path / "report.json"), ReportSnapshot((), {}, {}))
-    assert "busy" in error
+    error = write_report(str(tmp_path / "report.json"), snapshot)
+    assert error.startswith("OSError: replace")
+    assert not list(tmp_path.glob(".pyfcstm-selfcheck-*.tmp"))
 
 
 @pytest.mark.unittest
-def test_color_environment_overrides_are_deterministic(monkeypatch):
-    """NO_COLOR and FORCE_COLOR are honored only in auto mode."""
-    import pyfcstm._selfcheck.report as report_module
-    from pyfcstm._selfcheck.model import CheckResult
-    from pyfcstm._selfcheck.model import ReportSnapshot
-    from pyfcstm._selfcheck.report import render_human
-
-    snapshot = ReportSnapshot(
-        (CheckResult("ok", "PASS", True, summary="ok"),), {}, {"PASS": 1}
-    )
+def test_color_environment_precedence(monkeypatch):
+    """Explicit never wins; FORCE_COLOR only affects automatic mode."""
+    monkeypatch.setattr("sys.stdout.isatty", lambda: False)
     monkeypatch.delenv("NO_COLOR", raising=False)
     monkeypatch.setenv("FORCE_COLOR", "1")
-    # This test isolates FORCE_COLOR from the separate Win7/no-VT fallback.
-    monkeypatch.setattr(report_module, "_windows_vt_supported", lambda stream: True)
-    assert "\x1b[" not in render_human(snapshot, color="never")
-    assert "\x1b[" in render_human(snapshot, color="auto")
+    assert _color_requested("auto") is True
+    assert _color_requested("never") is False
+    monkeypatch.delenv("FORCE_COLOR")
     monkeypatch.setenv("NO_COLOR", "1")
-    assert "\x1b[" not in render_human(snapshot, color="auto")
+    assert _color_requested("auto") is False
 
 
 @pytest.mark.unittest
-def test_windows_without_vt_support_falls_back_to_plain_status_labels(monkeypatch):
-    """Win7-style consoles do not receive raw ANSI escape sequences."""
-    import ctypes
-    from types import SimpleNamespace
-
-    import pyfcstm._selfcheck.report as report_module
-    from pyfcstm._selfcheck.model import CheckResult
-    from pyfcstm._selfcheck.model import ReportSnapshot
-    from pyfcstm._selfcheck.report import render_human
-
-    class Kernel:
-        def GetStdHandle(self, value):
-            del value
-            return 1
-
-        def GetConsoleMode(self, handle, mode):
-            del handle, mode
-            return 0
-
-    monkeypatch.setattr(report_module.os, "name", "nt")
-    monkeypatch.setattr(
-        ctypes,
-        "windll",
-        SimpleNamespace(kernel32=Kernel()),
-        raising=False,
-    )
+def test_windows_without_vt_uses_console_attribute_fallback(monkeypatch, capsys):
+    """Requested Win7 colors are translated instead of silently discarded."""
     snapshot = ReportSnapshot(
-        (CheckResult("ok", "PASS", True, summary="ready"),), {}, {"PASS": 1}
+        (CheckResult("ok", "PASS", True, summary="ready"),),
+        _metadata(),
+        {"PASS": 1},
     )
-    output = render_human(snapshot, color="always")
-    assert "\x1b[" not in output
-    assert "[1/1] PASS ok (ready)" in output
+    observed = []
+    monkeypatch.setattr("pyfcstm._selfcheck.report.os.name", "nt")
+    monkeypatch.setattr(
+        "pyfcstm._selfcheck.report._windows_vt_supported", lambda stream: False
+    )
+    monkeypatch.setattr(
+        "pyfcstm._selfcheck.report.write_console_ansi",
+        lambda text, stream: observed.append(text) or True,
+    )
+
+    write_human(snapshot, color="always")
+    assert capsys.readouterr().out == ""
+    assert observed and "\x1b[32mPASS\x1b[0m" in observed[0]
 
 
 @pytest.mark.unittest
-def test_windows_vt_probe_declares_pointer_sized_handles(monkeypatch):
-    """The Win32 console probe preserves 64-bit HANDLE values."""
-    import ctypes
-    from types import SimpleNamespace
-
+def test_windows_console_probe_uses_pointer_sized_handle(monkeypatch):
+    """The VT probe preserves 64-bit handles and reads the console mode bit."""
     try:
-        from ctypes import wintypes
+        __import__("ctypes.wintypes")
     except ValueError as err:
         pytest.skip("ctypes.wintypes unavailable: {}".format(err))
+    import ctypes
+    from ctypes import wintypes
+    from types import SimpleNamespace
 
-    import pyfcstm._selfcheck.report as report_module
+    from pyfcstm._selfcheck import report
 
     class Function:
         def __init__(self, callback):
@@ -205,221 +199,115 @@ def test_windows_vt_probe_declares_pointer_sized_handles(monkeypatch):
         def __call__(self, *args):
             return self.callback(*args)
 
-    get_std_handle = Function(lambda value: 0x123456789 if value == -11 else 0)
+    get_handle = Function(lambda value: 0x123456789 if value == -11 else 0)
 
-    def set_console_mode(handle, mode):
-        del handle
-        assert isinstance(mode._obj, wintypes.DWORD)
-        mode._obj.value = 0x0004
+    def get_mode(handle, pointer):
+        assert handle == 0x123456789
+        pointer._obj.value = 0x0004
         return 1
 
-    get_console_mode = Function(set_console_mode)
     kernel = SimpleNamespace(
-        GetStdHandle=get_std_handle,
-        GetConsoleMode=get_console_mode,
+        GetStdHandle=get_handle,
+        GetConsoleMode=Function(get_mode),
     )
-    monkeypatch.setattr(report_module.os, "name", "nt")
+    monkeypatch.setattr(report, "os", SimpleNamespace(name="nt"))
     monkeypatch.setattr(
-        ctypes,
-        "windll",
-        SimpleNamespace(kernel32=kernel),
-        raising=False,
+        ctypes, "windll", SimpleNamespace(kernel32=kernel), raising=False
     )
-
-    assert report_module._windows_vt_supported(object()) is True
-    assert get_std_handle.restype is wintypes.HANDLE
-    assert get_console_mode.restype is wintypes.BOOL
+    assert report._windows_vt_supported(object()) is True
+    assert get_handle.restype is wintypes.HANDLE
 
 
 @pytest.mark.unittest
-def test_windows_vt_probe_handles_native_attribute_failure(monkeypatch):
-    """A partial Win32 ctypes surface falls back without raising."""
-    import ctypes
-    from types import SimpleNamespace
-
-    import pyfcstm._selfcheck.report as report_module
-
-    class Kernel:
-        def GetStdHandle(self, value):
-            del value
-            raise OSError("console unavailable")
-
-    monkeypatch.setattr(report_module.os, "name", "nt")
+def test_windows_console_fallback_failure_writes_one_plain_report(monkeypatch, capsys):
+    """A failed native color preflight falls back to one complete plain report."""
+    snapshot = ReportSnapshot(
+        (CheckResult("ok", "PASS", True, summary="ready"),),
+        _metadata(),
+        {"PASS": 1},
+    )
+    monkeypatch.setattr("pyfcstm._selfcheck.report.os.name", "nt")
     monkeypatch.setattr(
-        ctypes, "windll", SimpleNamespace(kernel32=Kernel()), raising=False
+        "pyfcstm._selfcheck.report._windows_vt_supported", lambda stream: False
     )
-    assert report_module._windows_vt_supported(object()) is False
+    monkeypatch.setattr(
+        "pyfcstm._selfcheck.report.write_console_ansi", lambda text, stream: False
+    )
+    write_human(snapshot, color="always")
+    output = capsys.readouterr().out
+    assert output.count("pyfcstm self-check 0.5.0") == 1
+    assert "\x1b[" not in output
 
 
 @pytest.mark.unittest
-def test_auto_color_requires_a_tty_when_force_color_is_absent(monkeypatch):
-    """Auto mode stays plain for redirected output."""
-    from types import SimpleNamespace
-
-    import pyfcstm._selfcheck.report as report_module
-
-    class Stream:
-        def isatty(self):
-            return False
-
-    monkeypatch.delenv("NO_COLOR", raising=False)
-    monkeypatch.delenv("FORCE_COLOR", raising=False)
-    monkeypatch.setattr(report_module, "sys", SimpleNamespace(stdout=Stream()))
-    assert report_module._color_enabled("auto") is False
+def test_json_emergency_output_preserves_stdout_purity(monkeypatch, capfd):
+    """JSON-mode emergency text bypasses stdout and uses binary stderr."""
+    assert emergency_write("emergency\n", "json") is None
+    captured = capfd.readouterr()
+    assert captured.out == ""
+    assert "emergency" in captured.err
 
 
 @pytest.mark.unittest
-def test_json_emergency_writer_uses_binary_stderr(monkeypatch):
-    """JSON emergency output bypasses text stdout to preserve machine purity."""
-    from types import SimpleNamespace
+def test_emergency_writer_uses_raw_fd_after_stream_failures(monkeypatch, capfd):
+    """Broken Python streams fall through to raw descriptor two."""
 
-    import pyfcstm._selfcheck.report as report_module
-
-    class Buffer:
-        def __init__(self):
-            self.data = b""
-
-        def write(self, data):
-            self.data += data
+    class BrokenStdout:
+        def write(self, value):
+            raise OSError("stdout")
 
         def flush(self):
-            return None
+            raise OSError("stdout")
 
-    stderr = Buffer()
-    monkeypatch.setattr(
-        report_module, "sys", SimpleNamespace(stderr=SimpleNamespace(buffer=stderr))
-    )
-    assert report_module.emergency_write("diagnostic\n", "json") is None
-    assert stderr.data == b"diagnostic\n"
+    class BrokenStderr:
+        class Buffer:
+            def write(self, value):
+                raise OSError("stderr")
 
+            def flush(self):
+                raise OSError("stderr")
 
-@pytest.mark.unittest
-def test_report_cleanup_failure_is_best_effort(monkeypatch, tmp_path):
-    """A failed temporary-file unlink never escapes the report writer."""
-    import pyfcstm._selfcheck.report as report_module
-    from pyfcstm._selfcheck.model import ReportSnapshot
+        buffer = Buffer()
 
-    monkeypatch.setattr(
-        report_module.os,
-        "replace",
-        lambda *args: (_ for _ in ()).throw(OSError("busy")),
-    )
-    monkeypatch.setattr(
-        report_module.os,
-        "unlink",
-        lambda *args: (_ for _ in ()).throw(OSError("locked")),
-    )
-    error = report_module.write_report(
-        str(tmp_path / "report.json"), ReportSnapshot((), {}, {})
-    )
-    assert "busy" in error
+    with monkeypatch.context() as stream_patch:
+        stream_patch.setattr("sys.stdout", BrokenStdout())
+        stream_patch.setattr("sys.stderr", BrokenStderr())
+        emergency_write("raw fallback\n", "human")
+    assert "raw fallback" in capfd.readouterr().err
 
 
 @pytest.mark.unittest
-def test_emergency_writer_returns_none_when_temp_fallback_fails(monkeypatch):
-    """The emergency chain reports no path when every final sink is broken."""
-    from types import SimpleNamespace
+def test_emergency_writer_uses_temp_file_when_all_channels_fail(monkeypatch, tmp_path):
+    """The final fallback records evidence in a private temporary file."""
 
-    import pyfcstm._selfcheck.report as report_module
-
-    class BrokenStream:
-        def write(self, message):
-            del message
-            raise OSError("closed")
+    class Broken:
+        def write(self, value):
+            raise OSError("broken")
 
         def flush(self):
-            raise OSError("closed")
+            raise OSError("broken")
 
-        @property
-        def buffer(self):
-            return self
+        buffer = None
 
+    emergency = tmp_path / "emergency.log"
+    monkeypatch.setattr("sys.stdout", Broken())
+    monkeypatch.setattr("sys.stderr", Broken())
+    real_write = __import__("os").write
+
+    def write(descriptor, data):
+        if descriptor == 2:
+            raise OSError("fd")
+        return real_write(descriptor, data)
+
+    monkeypatch.setattr("os.write", write)
     monkeypatch.setattr(
-        report_module,
-        "sys",
-        SimpleNamespace(stdout=BrokenStream(), stderr=BrokenStream()),
+        "tempfile.mkstemp",
+        lambda **kwargs: (
+            __import__("os").open(
+                str(emergency), __import__("os").O_CREAT | __import__("os").O_WRONLY
+            ),
+            str(emergency),
+        ),
     )
-    monkeypatch.setattr(
-        report_module.os,
-        "write",
-        lambda fd, data: (_ for _ in ()).throw(OSError("fd closed")),
-    )
-    monkeypatch.setattr(
-        report_module.tempfile, "mkstemp", lambda **kwargs: (9, "/tmp/no-report")
-    )
-    monkeypatch.setattr(report_module.os, "close", lambda fd: None)
-    monkeypatch.setattr(report_module.os, "unlink", lambda path: None)
-    assert report_module.emergency_write("diagnostic\n") is None
-
-
-@pytest.mark.unittest
-def test_emergency_writer_uses_raw_fd_fallback(monkeypatch):
-    """A broken text/buffer stream still reaches the raw descriptor."""
-    import pyfcstm._selfcheck.report as report_module
-    from pyfcstm._selfcheck.report import emergency_write
-
-    class BrokenStream:
-        def write(self, message):
-            del message
-            raise OSError("closed")
-
-        def flush(self):
-            raise OSError("closed")
-
-        @property
-        def buffer(self):
-            return self
-
-    class FakeSys:
-        stdout = BrokenStream()
-        stderr = BrokenStream()
-
-    calls = []
-    monkeypatch.setattr(report_module, "sys", FakeSys())
-    monkeypatch.setattr(
-        report_module.os,
-        "write",
-        lambda fd, data: calls.append((fd, data)) or len(data),
-    )
-    emergency_write("diagnostic\n")
-    assert calls and calls[0][0] == 2
-
-
-@pytest.mark.unittest
-def test_emergency_writer_uses_safe_temp_report_when_all_streams_fail(monkeypatch):
-    """The final emergency layer leaves a durable diagnostic when descriptors fail."""
-    import pyfcstm._selfcheck.report as report_module
-
-    class BrokenStream:
-        def write(self, message):
-            del message
-            raise OSError("closed")
-
-        def flush(self):
-            raise OSError("closed")
-
-        @property
-        def buffer(self):
-            return self
-
-    class FakeSys:
-        stdout = BrokenStream()
-        stderr = BrokenStream()
-
-    monkeypatch.setattr(report_module, "sys", FakeSys())
-    original_write = report_module.os.write
-
-    def fail_stderr(fd, data):
-        if fd == 2:
-            raise OSError("closed")
-        return original_write(fd, data)
-
-    monkeypatch.setattr(report_module.os, "write", fail_stderr)
-    path = report_module.emergency_write("diagnostic\n")
-    assert path is not None
-    try:
-        assert report_module.tempfile is not None
-        with open(path, "rb") as stream:
-            assert stream.read() == b"diagnostic\n"
-    finally:
-        report_module.os.unlink(path)
+    assert emergency_write("saved\n", "human") == str(emergency)
+    assert emergency.read_text(encoding="utf-8") == "saved\n"

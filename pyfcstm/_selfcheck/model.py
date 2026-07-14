@@ -1,105 +1,142 @@
-"""Immutable self-check results and a single-writer append-only ledger."""
+"""Typed self-check contracts and the ordered single-writer result ledger.
 
-import threading
-import time
-from dataclasses import dataclass, field
+The module contains the semantic boundary shared by local checks, isolated
+workers, the supervisor, and report renderers.  It intentionally contains no
+thread synchronization: the supervisor is the only ledger writer.
+
+The module contains:
+
+* :class:`CheckSpec` - Static identity and execution policy for one check.
+* :class:`CheckOutcome` - Typed semantic result returned by a check callback.
+* :class:`CheckResult` - Semantic outcome plus optional process diagnostics.
+* :class:`ReportSnapshot` - Immutable report input derived from the ledger.
+* :class:`Ledger` - Ordered lifecycle state owned by the supervisor.
+"""
+
+from dataclasses import dataclass
 from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
 
 
-TERMINAL_STATUSES = (
-    "PASS",
-    "WARN",
-    "SKIP",
-    "BLOCKED",
-    "FAIL",
-    "ERROR",
-    "TIMEOUT",
-    "CRASH",
-)
+CHECK_OUTCOME_STATUSES = ("PASS", "WARN", "SKIP", "FAIL", "ERROR")
+TERMINAL_STATUSES = CHECK_OUTCOME_STATUSES + ("BLOCKED", "TIMEOUT", "CRASH")
 
 
 @dataclass(frozen=True)
 class CheckSpec:
-    """
-    Describe one statically registered self-check.
+    """Describe one statically registered self-check.
 
     :param check_id: Stable result identifier.
     :type check_id: str
-    :param worker_key: Static registry key used by the hidden worker.
+    :param worker_key: Static registry key used by local or worker execution.
     :type worker_key: str
-    :param required: Whether a non-PASS status affects the public exit code.
-    :type required: bool
-    :param prerequisites: Check IDs that must complete first, defaults to ``()``.
+    :param title: Human-facing check title, defaults to the check ID.
+    :type title: str, optional
+    :param required: Whether a failing result affects the exit code.
+    :type required: bool, optional
+    :param prerequisites: Check IDs that must finish first.
     :type prerequisites: Tuple[str, ...], optional
-    :param execution: Execution boundary, either ``'local'`` for a pure
-        supervisor check or ``'worker'`` for a fresh isolated process, defaults
-        to ``'worker'``.
+    :param execution: ``'local'`` or ``'worker'``.
     :type execution: str, optional
+    :param timeout_seconds: Base worker deadline before scaling.
+    :type timeout_seconds: float, optional
 
     Example::
 
-        >>> CheckSpec("artifact.self_dispatch", "self_dispatch").required
-        True
+        >>> CheckSpec("runtime.metadata", "runtime_metadata").group
+        'runtime'
     """
 
     check_id: str
     worker_key: str
+    title: str = ""
     required: bool = True
     prerequisites: Tuple[str, ...] = ()
     execution: str = "worker"
+    timeout_seconds: float = 30.0
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
+        if not self.check_id:
+            raise ValueError("self-check ID must not be empty")
+        if not self.worker_key:
+            raise ValueError("self-check worker key must not be empty")
         if self.execution not in ("local", "worker"):
             raise ValueError(
                 "unknown self-check execution boundary: {}".format(self.execution)
+            )
+        if self.timeout_seconds <= 0.0:
+            raise ValueError("self-check timeout must be positive")
+        if not self.title:
+            object.__setattr__(self, "title", self.check_id)
+
+    @property
+    def group(self) -> str:
+        """Return the stable group prefix derived from :attr:`check_id`."""
+        return self.check_id.split(".", 1)[0]
+
+
+@dataclass(frozen=True)
+class CheckOutcome:
+    """Represent the typed semantic result returned by a check callback.
+
+    :param status: Callback-owned status such as ``PASS`` or ``FAIL``.
+    :type status: str
+    :param summary: Concise human-facing result summary.
+    :type summary: str
+    :param reason: Stable machine-readable reason.
+    :type reason: Optional[str], optional
+    :param expected: Expected condition or value.
+    :type expected: Optional[str], optional
+    :param observed: Observed condition or value.
+    :type observed: Optional[str], optional
+    :param evidence: Full diagnostic evidence or traceback.
+    :type evidence: str, optional
+    :param remediation: Suggested corrective action.
+    :type remediation: Optional[str], optional
+    :param exception: Full exception traceback when applicable.
+    :type exception: Optional[str], optional
+
+    Example::
+
+        >>> CheckOutcome("PASS", "runtime metadata is available").status
+        'PASS'
+    """
+
+    status: str
+    summary: str
+    reason: Optional[str] = None
+    expected: Optional[str] = None
+    observed: Optional[str] = None
+    evidence: str = ""
+    remediation: Optional[str] = None
+    exception: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        if self.status not in CHECK_OUTCOME_STATUSES:
+            raise ValueError(
+                "check callback cannot return status: {}".format(self.status)
             )
 
 
 @dataclass(frozen=True)
 class CheckResult:
-    """
-    Represent one terminal check result.
+    """Represent one terminal check result and its process diagnostics.
 
     :param check_id: Stable check identifier.
     :type check_id: str
     :param status: One value from :data:`TERMINAL_STATUSES`.
     :type status: str
-    :param required: Whether this result is required for exit status.
+    :param required: Whether this result affects the public exit code.
     :type required: bool
-    :param summary: Concise human-facing summary, defaults to ``''``.
+    :param summary: Concise result summary.
     :type summary: str, optional
-    :param details: Full diagnostic text, defaults to ``''``.
-    :type details: str, optional
-    :param reason: Stable machine-readable reason, defaults to ``None``.
-    :type reason: Optional[str], optional
-    :param return_code: Worker return code, defaults to ``None``.
-    :type return_code: Optional[int], optional
-    :param transport: ``file`` or ``stdout``, defaults to ``None``.
-    :type transport: Optional[str], optional
-    :param truncated_bytes: Number of discarded stream bytes, defaults to ``0``.
-    :type truncated_bytes: int, optional
-    :param duration_ms: Worker duration in milliseconds, defaults to ``0.0``.
-    :type duration_ms: float, optional
-    :param pid: Worker process identifier, defaults to ``None``.
-    :type pid: Optional[int], optional
-    :param signal: POSIX signal that terminated the worker, defaults to ``None``.
-    :type signal: Optional[int], optional
-    :param ntstatus: Windows NTSTATUS diagnostic, defaults to ``None``.
-    :type ntstatus: Optional[str], optional
-    :param stdout: Captured worker stdout, defaults to ``''``.
-    :type stdout: str, optional
-    :param stderr: Captured worker stderr, defaults to ``''``.
-    :type stderr: str, optional
-    :param encoding: Encoding used for captured streams, defaults to ``'utf-8'``.
-    :type encoding: str, optional
-    :param timeout: Whether the result came from a deadline timeout, defaults to ``False``.
-    :type timeout: bool, optional
-    :param prerequisites: Prerequisite check IDs, defaults to ``()``.
+    :param title: Human-facing check title.
+    :type title: str, optional
+    :param prerequisites: Selected prerequisite IDs.
     :type prerequisites: Tuple[str, ...], optional
 
     Example::
 
-        >>> CheckResult("demo", "PASS", True).status
+        >>> CheckResult("runtime.metadata", "PASS", True).status
         'PASS'
     """
 
@@ -107,8 +144,14 @@ class CheckResult:
     status: str
     required: bool
     summary: str = ""
-    details: str = ""
+    title: str = ""
+    prerequisites: Tuple[str, ...] = ()
     reason: Optional[str] = None
+    expected: Optional[str] = None
+    observed: Optional[str] = None
+    evidence: str = ""
+    remediation: Optional[str] = None
+    exception: Optional[str] = None
     return_code: Optional[int] = None
     transport: Optional[str] = None
     truncated_bytes: int = 0
@@ -120,109 +163,105 @@ class CheckResult:
     stderr: str = ""
     encoding: str = "utf-8"
     timeout: bool = False
-    prerequisites: Tuple[str, ...] = ()
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.status not in TERMINAL_STATUSES:
             raise ValueError("unknown self-check status: {}".format(self.status))
+        if not self.title:
+            object.__setattr__(self, "title", self.check_id)
 
-    def to_dict(self) -> Dict[str, Any]:
-        """
-        Return a JSON-compatible result mapping.
+    @property
+    def group(self) -> str:
+        """Return the stable group prefix derived from :attr:`check_id`."""
+        return self.check_id.split(".", 1)[0]
 
-        :return: JSON-compatible result fields.
-        :rtype: Dict[str, Any]
+    @classmethod
+    def from_outcome(
+        cls, spec: CheckSpec, outcome: CheckOutcome, **diagnostics: Any
+    ) -> "CheckResult":
+        """Combine a static specification, semantic outcome, and diagnostics.
+
+        :param spec: Selected check specification.
+        :type spec: CheckSpec
+        :param outcome: Typed callback outcome.
+        :type outcome: CheckOutcome
+        :param diagnostics: Optional process diagnostic fields.
+        :type diagnostics: Any
+        :return: A complete terminal result.
+        :rtype: CheckResult
 
         Example::
 
-            >>> CheckResult("demo", "PASS", True).to_dict()["status"]
-            'PASS'
+            >>> spec = CheckSpec("runtime.metadata", "runtime_metadata")
+            >>> CheckResult.from_outcome(spec, CheckOutcome("PASS", "ok")).title
+            'runtime.metadata'
         """
-        result = {
-            "check_id": self.check_id,
+        return cls(
+            check_id=spec.check_id,
+            status=outcome.status,
+            required=spec.required,
+            summary=outcome.summary,
+            title=spec.title,
+            prerequisites=spec.prerequisites,
+            reason=outcome.reason,
+            expected=outcome.expected,
+            observed=outcome.observed,
+            evidence=outcome.evidence,
+            remediation=outcome.remediation,
+            exception=outcome.exception,
+            **diagnostics,
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Return the canonical JSON-compatible result mapping.
+
+        :return: Canonical result fields without compatibility aliases.
+        :rtype: Dict[str, Any]
+        """
+        return {
+            "id": self.check_id,
+            "group": self.group,
+            "title": self.title,
             "status": self.status,
             "required": self.required,
-            "summary": self.summary,
-            "details": self.details,
-            "reason": self.reason,
-            "return_code": self.return_code,
-            "transport": self.transport,
-            "truncated_bytes": self.truncated_bytes,
             "duration_ms": self.duration_ms,
+            "summary": self.summary,
+            "reason": self.reason,
+            "expected": self.expected,
+            "observed": self.observed,
+            "evidence": self.evidence,
+            "remediation": self.remediation,
+            "prerequisite": list(self.prerequisites),
+            "exception": self.exception,
+            "pid": self.pid,
+            "returncode": self.return_code,
+            "signal": self.signal,
+            "ntstatus": self.ntstatus,
+            "timeout": self.timeout,
+            "transport": self.transport,
+            "stdout": self.stdout,
+            "stderr": self.stderr,
+            "encoding": self.encoding,
+            "truncated_bytes": self.truncated_bytes,
         }
-        # Keep the original compact fields above while exposing the stable
-        # umbrella-schema names used by downstream report consumers.
-        result.update(
-            {
-                "id": self.check_id,
-                "group": self.check_id.split(".", 1)[0],
-                "title": self.summary or self.check_id,
-                "expected": None,
-                "observed": self.summary,
-                "evidence": self.details,
-                "remediation": None,
-                "prerequisite": list(self.prerequisites),
-                "exception": self.details
-                if self.status in ("ERROR", "CRASH")
-                else None,
-                "pid": self.pid,
-                "returncode": self.return_code,
-                "signal": self.signal,
-                "ntstatus": self.ntstatus,
-                "timeout": self.timeout,
-                "stdout": self.stdout,
-                "stderr": self.stderr,
-                "encoding": self.encoding,
-            }
-        )
-        return result
-
-
-@dataclass(frozen=True)
-class LedgerEvent:
-    """
-    Represent one append-only ledger event.
-
-    :param sequence: Monotonic event sequence number.
-    :type sequence: int
-    :param kind: Event kind such as ``terminal`` or ``duplicate_terminal``.
-    :type kind: str
-    :param check_id: Related check ID, defaults to ``None``.
-    :type check_id: Optional[str], optional
-    :param payload: JSON-compatible event payload, defaults to ``{}``.
-    :type payload: Mapping[str, Any], optional
-    :param timestamp_ns: Monotonic timestamp, defaults to the current clock.
-    :type timestamp_ns: int, optional
-
-    Example::
-
-        >>> LedgerEvent(1, "pending", "demo").kind
-        'pending'
-    """
-
-    sequence: int
-    kind: str
-    check_id: Optional[str]
-    payload: Mapping[str, Any] = field(default_factory=dict)
-    timestamp_ns: int = field(default_factory=time.monotonic_ns)
 
 
 @dataclass(frozen=True)
 class ReportSnapshot:
-    """
-    Frozen report view derived from one ledger check tuple.
+    """Store the immutable report view derived from one ledger.
 
-    :param checks: Terminal results in deterministic check-ID order.
+    :param checks: Terminal results in stable registry order.
     :type checks: Tuple[CheckResult, ...]
-    :param metadata: Session and environment metadata.
+    :param metadata: Session, environment, and output metadata.
     :type metadata: Mapping[str, Any]
-    :param counts: Counts derived from ``checks``.
+    :param counts: Positive status counts derived from ``checks``.
     :type counts: Mapping[str, int]
 
     Example::
 
-        >>> ReportSnapshot((), {}, {}).counts
-        {}
+        >>> snapshot = ReportSnapshot((), {"exit_code": 0}, {})
+        >>> snapshot.to_dict()["schema_version"]
+        'pyfcstm-selfcheck/v1'
     """
 
     checks: Tuple[CheckResult, ...]
@@ -230,258 +269,124 @@ class ReportSnapshot:
     counts: Mapping[str, int]
 
     def to_dict(self) -> Dict[str, Any]:
-        """
-        Return a stable JSON-compatible report mapping.
+        """Return the canonical ``pyfcstm-selfcheck/v1`` report mapping.
 
-        :return: Snapshot schema, metadata, checks, and status counts.
+        :return: Canonical top-level report fields.
         :rtype: Dict[str, Any]
-
-        Example::
-
-            >>> ReportSnapshot((), {}, {}).to_dict()["schema_version"]
-            'pyfcstm-selfcheck/v1'
         """
         metadata = dict(self.metadata)
-        results = [check.to_dict() for check in self.checks]
-        summary = dict(self.counts)
         return {
             "schema_version": "pyfcstm-selfcheck/v1",
-            "schema": "pyfcstm-selfcheck/v1",
             "report_id": metadata.get("session_id"),
             "started_at": metadata.get("started_at"),
+            "finished_at": metadata.get("finished_at"),
             "profile": metadata.get("profile"),
             "environment": metadata.get("environment", {}),
             "artifact": metadata.get("artifact", {}),
             "dependencies": metadata.get("dependencies", []),
             "capabilities": metadata.get("capabilities", {}),
-            "results": results,
-            "summary": summary,
+            "results": [check.to_dict() for check in self.checks],
+            "summary": dict(self.counts),
             "exit_code": metadata.get("exit_code"),
-            # Compatibility aliases retained for the PR-2 consumers.
-            "metadata": metadata,
-            "checks": results,
-            "counts": summary,
         }
 
 
 class Ledger:
-    """
-    Single-writer ledger with terminal-result compare-and-set semantics.
+    """Track selected checks in stable order for one supervisor session.
+
+    The supervisor is the only writer. Duplicate terminal commits are
+    programming errors; duplicate worker frames are rejected by the protocol
+    before reaching this class.
 
     Example::
 
         >>> ledger = Ledger()
         >>> ledger.reserve((CheckSpec("demo", "demo"),))
-        >>> ledger.has_result("demo")
-        False
+        >>> ledger.get_state("demo")
+        'PENDING'
     """
 
-    def __init__(self):
-        self._lock = threading.RLock()
+    def __init__(self) -> None:
         self._specs: Dict[str, CheckSpec] = {}
+        self._order = []
         self._states: Dict[str, str] = {}
         self._results: Dict[str, CheckResult] = {}
-        self._events = []
-        self._sequence = 0
-
-    @property
-    def events(self) -> Tuple[LedgerEvent, ...]:
-        """Return an immutable event view."""
-        with self._lock:
-            return tuple(self._events)
-
-    def _append(self, kind: str, check_id: Optional[str], payload: Mapping[str, Any]):
-        self._sequence += 1
-        self._events.append(LedgerEvent(self._sequence, kind, check_id, dict(payload)))
 
     def reserve(self, specs: Iterable[CheckSpec]) -> None:
-        """
-        Reserve selected checks as pending, rejecting duplicate IDs.
+        """Reserve selected checks as pending.
 
-        :param specs: Check specifications to register.
+        :param specs: Check specifications in execution/report order.
         :type specs: Iterable[CheckSpec]
-        :return: ``None``.
-        :rtype: None
-        :raises ValueError: If a check ID is already reserved.
-
-        Example::
-
-            >>> ledger = Ledger()
-            >>> ledger.reserve((CheckSpec("demo", "demo"),))
-            >>> ledger.get_state("demo")
-            'PENDING'
+        :raises ValueError: If an ID is reserved more than once.
         """
-        with self._lock:
-            for spec in specs:
-                if spec.check_id in self._specs:
-                    raise ValueError("duplicate check id: {}".format(spec.check_id))
-                self._reserve_one(spec)
+        for spec in specs:
+            if spec.check_id in self._specs:
+                raise ValueError("duplicate check id: {}".format(spec.check_id))
+            self._reserve_one(spec)
 
     def _reserve_one(self, spec: CheckSpec) -> None:
-        """Register one previously unseen spec while the ledger lock is held."""
         self._specs[spec.check_id] = spec
+        self._order.append(spec.check_id)
         self._states[spec.check_id] = "PENDING"
-        self._append("pending", spec.check_id, {"worker_key": spec.worker_key})
 
     def ensure_reserved(self, spec: CheckSpec) -> None:
-        """
-        Ensure one selected spec exists in the ledger during emergency cleanup.
+        """Reserve *spec* if setup was interrupted before bulk reservation."""
+        if spec.check_id not in self._specs:
+            self._reserve_one(spec)
 
-        This method is intentionally separate from :meth:`reserve`: an interrupt
-        can arrive while the bulk reservation is running, and cleanup must not
-        retry that interrupted operation.
+    def mark_running(self, check_id: str) -> None:
+        """Move one pending check to ``RUNNING``.
 
-        :param spec: Selected check specification to register if missing.
-        :type spec: CheckSpec
-        :return: ``None``.
-        :rtype: None
-
-        Example::
-
-            >>> ledger = Ledger()
-            >>> ledger.ensure_reserved(CheckSpec("demo", "demo"))
-            >>> ledger.get_state("demo")
-            'PENDING'
-        """
-        with self._lock:
-            if spec.check_id not in self._specs:
-                self._reserve_one(spec)
-
-    def commit(self, result: CheckResult) -> bool:
-        """
-        Commit one terminal result and return whether it won the CAS.
-
-        :param result: Terminal result to commit.
-        :type result: CheckResult
-        :return: ``True`` for the first commit, ``False`` for a duplicate.
-        :rtype: bool
-        :raises KeyError: If the result ID was not reserved.
-
-        Example::
-
-            >>> ledger = Ledger()
-            >>> ledger.reserve((CheckSpec("demo", "demo"),))
-            >>> ledger.commit(CheckResult("demo", "PASS", True))
-            True
-        """
-        with self._lock:
-            if result.check_id not in self._specs:
-                raise KeyError(result.check_id)
-            if result.check_id in self._results:
-                self._append("duplicate_terminal", result.check_id, result.to_dict())
-                return False
-            self._results[result.check_id] = result
-            self._states[result.check_id] = result.status
-            self._append("terminal", result.check_id, result.to_dict())
-            return True
-
-    def mark_running(self, check_id: str) -> bool:
-        """
-        Mark a reserved check as running before starting its worker.
-
-        :param check_id: Stable identifier reserved in this ledger.
+        :param check_id: Reserved check identifier.
         :type check_id: str
-        :return: ``True`` when the state changed to ``RUNNING``.
-        :rtype: bool
         :raises KeyError: If the check was not reserved.
-        :raises RuntimeError: If the check is no longer pending.
-
-        Example::
-
-            >>> ledger = Ledger()
-            >>> ledger.reserve((CheckSpec("demo", "demo"),))
-            >>> ledger.mark_running("demo")
-            True
+        :raises RuntimeError: If the check is not pending.
         """
-        with self._lock:
-            if check_id not in self._specs:
-                raise KeyError(check_id)
-            if check_id in self._results:
-                return False
-            if self._states.get(check_id) != "PENDING":
-                raise RuntimeError("check is not pending: {}".format(check_id))
-            self._states[check_id] = "RUNNING"
-            self._append("running", check_id, {})
-            return True
+        if check_id not in self._specs:
+            raise KeyError(check_id)
+        if self._states[check_id] != "PENDING":
+            raise RuntimeError("check is not pending: {}".format(check_id))
+        self._states[check_id] = "RUNNING"
+
+    def commit(self, result: CheckResult) -> None:
+        """Commit exactly one terminal result.
+
+        :param result: Terminal result to store.
+        :type result: CheckResult
+        :raises KeyError: If the result ID was not reserved.
+        :raises RuntimeError: If a terminal result already exists.
+        """
+        if result.check_id not in self._specs:
+            raise KeyError(result.check_id)
+        if result.check_id in self._results:
+            raise RuntimeError("duplicate terminal result: {}".format(result.check_id))
+        self._results[result.check_id] = result
+        self._states[result.check_id] = result.status
 
     def get_state(self, check_id: str) -> Optional[str]:
-        """
-        Return the current lifecycle state for a reserved check.
-
-        :param check_id: Stable identifier reserved in this ledger.
-        :type check_id: str
-        :return: ``PENDING``, ``RUNNING``, a terminal status, or ``None``.
-        :rtype: Optional[str]
-        """
-        with self._lock:
-            return self._states.get(check_id)
-
-    def has_result(self, check_id: str) -> bool:
-        """
-        Return whether a check already owns a terminal result.
-
-        :param check_id: Stable check identifier.
-        :type check_id: str
-        :return: ``True`` after a terminal commit, otherwise ``False``.
-        :rtype: bool
-
-        Example::
-
-            >>> ledger = Ledger()
-            >>> ledger.reserve((CheckSpec("demo", "demo"),))
-            >>> ledger.has_result("demo")
-            False
-        """
-        with self._lock:
-            return check_id in self._results
+        """Return the lifecycle state for *check_id*, if reserved."""
+        return self._states.get(check_id)
 
     def get_result(self, check_id: str) -> Optional[CheckResult]:
-        """
-        Return a committed result, or ``None`` while the check is pending.
-
-        :param check_id: Stable identifier reserved in this ledger.
-        :type check_id: str
-        :return: The terminal result, or ``None`` before terminal commit.
-        :rtype: Optional[CheckResult]
-
-        Example::
-
-            >>> ledger = Ledger()
-            >>> ledger.reserve((CheckSpec("demo", "demo"),))
-            >>> ledger.get_result("demo") is None
-            True
-        """
-        with self._lock:
-            return self._results.get(check_id)
+        """Return the committed result for *check_id*, if available."""
+        return self._results.get(check_id)
 
     def freeze(self, metadata: Mapping[str, Any]) -> ReportSnapshot:
-        """
-        Freeze all selected results into one deterministic snapshot.
+        """Freeze all selected terminal results into one snapshot.
 
-        :param metadata: Immutable report metadata to copy into the snapshot.
+        :param metadata: Report metadata copied into the snapshot.
         :type metadata: Mapping[str, Any]
-        :return: Frozen snapshot containing every terminal result.
+        :return: Immutable result tuple and derived positive counts.
         :rtype: ReportSnapshot
-        :raises RuntimeError: If any reserved check lacks a terminal result.
-
-        Example::
-
-            >>> ledger = Ledger()
-            >>> ledger.reserve((CheckSpec("demo", "demo"),))
-            >>> ledger.commit(CheckResult("demo", "PASS", True))
-            >>> ledger.freeze({}).counts
-            {'PASS': 1}
+        :raises RuntimeError: If any selected check lacks a terminal result.
         """
-        with self._lock:
-            missing = [
-                check_id for check_id in self._specs if check_id not in self._results
-            ]
-            if missing:
-                raise RuntimeError(
-                    "pending self-checks: {}".format(", ".join(sorted(missing)))
-                )
-            checks = tuple(self._results[key] for key in sorted(self._results))
-            counts: Dict[str, int] = {}
-            for result in checks:
-                counts[result.status] = counts.get(result.status, 0) + 1
-            return ReportSnapshot(checks, dict(metadata), counts)
+        missing = [key for key in self._order if key not in self._results]
+        if missing:
+            raise RuntimeError(
+                "pending self-checks: {}".format(", ".join(sorted(missing)))
+            )
+        checks = tuple(self._results[key] for key in self._order)
+        counts: Dict[str, int] = {}
+        for result in checks:
+            counts[result.status] = counts.get(result.status, 0) + 1
+        return ReportSnapshot(checks, dict(metadata), counts)

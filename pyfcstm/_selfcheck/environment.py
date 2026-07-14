@@ -1,42 +1,84 @@
-"""Best-effort environment collection for self-check diagnostics."""
+"""Field-isolated environment collection for self-check diagnostics."""
 
+import locale
 import os
 import platform
 import sys
-from typing import Any, Dict
+import tempfile
+from typing import Any, Callable, Dict
+
+
+_FIELD_ERRORS = (
+    OSError,
+    RuntimeError,
+    ValueError,
+    TypeError,
+    AttributeError,
+    UnicodeError,
+)
+
+
+def _collect_field(
+    data: Dict[str, Any], errors: Dict[str, str], name: str, callback: Callable[[], Any]
+) -> None:
+    """Collect one diagnostic field without discarding successful siblings."""
+    try:
+        data[name] = callback()
+    except _FIELD_ERRORS as err:
+        # Platform, locale, filesystem, and generated identity access can raise
+        # these documented ordinary failures on damaged installations.
+        data[name] = None
+        errors[name] = "{}: {}".format(type(err).__name__, err)
 
 
 def collect_environment(redact: bool = True) -> Dict[str, Any]:
-    """
-    Collect stable process and package environment fields.
+    """Collect stable allowlisted runtime and package fields independently.
 
-    :param redact: Hide the current working directory and executable path when true.
+    :param redact: Hide absolute executable, cwd, and temp paths when true.
     :type redact: bool
-    :return: JSON-compatible environment mapping.
+    :return: JSON-compatible environment fields plus collection errors.
     :rtype: Dict[str, Any]
 
     Example::
 
-        >>> "python" in collect_environment()
+        >>> data = collect_environment()
+        >>> "python_version" in data and "collection_errors" in data
         True
     """
     from pyfcstm import __commit__, __revision__, __version__
 
-    data = {
-        "python": sys.version,
-        "python_executable": sys.executable,
-        "implementation": platform.python_implementation(),
-        "platform": platform.platform(),
-        "machine": platform.machine(),
-        "architecture": platform.architecture()[0],
-        "encoding": getattr(sys.stdout, "encoding", None),
-        "version": __version__,
-        "commit": __commit__,
-        "revision": __revision__,
-        "frozen": bool(getattr(sys, "frozen", False)),
-    }
+    data: Dict[str, Any] = {}
+    errors: Dict[str, str] = {}
+    fields = (
+        ("python", lambda: sys.version),
+        ("python_version", platform.python_version),
+        ("implementation", platform.python_implementation),
+        ("platform", platform.platform),
+        ("system", platform.system),
+        ("release", platform.release),
+        ("machine", platform.machine),
+        ("architecture", lambda: platform.architecture()[0]),
+        ("stdout_encoding", lambda: getattr(sys.stdout, "encoding", None)),
+        ("filesystem_encoding", sys.getfilesystemencoding),
+        ("preferred_encoding", lambda: locale.getpreferredencoding(False)),
+        ("python_executable", lambda: sys.executable),
+        ("cwd", os.getcwd),
+        ("temp_directory", tempfile.gettempdir),
+    )
+    for name, callback in fields:
+        _collect_field(data, errors, name, callback)
+
+    data.update(
+        {
+            "version": __version__,
+            "commit": __commit__,
+            "revision": __revision__,
+            "frozen": bool(getattr(sys, "frozen", False)),
+        }
+    )
     if redact:
-        data["python_executable"] = "<redacted>"
-    else:
-        data["cwd"] = os.getcwd()
+        for name in ("python_executable", "cwd", "temp_directory"):
+            if data.get(name) is not None:
+                data[name] = "<redacted>"
+    data["collection_errors"] = errors
     return data

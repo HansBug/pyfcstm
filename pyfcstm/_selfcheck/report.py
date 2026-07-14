@@ -1,4 +1,9 @@
-"""Human, JSON, and emergency self-check reporting."""
+"""Render one frozen self-check snapshot through bounded output channels.
+
+Human and JSON output share the same immutable snapshot. The module also owns
+atomic JSON report replacement, Windows 7 console color fallback, and the
+last-resort stdout/stderr/raw-fd/temporary-file diagnostic chain.
+"""
 
 import json
 import os
@@ -6,6 +11,7 @@ import sys
 import tempfile
 from typing import Optional
 
+from ._win32 import write_console_ansi
 from .model import ReportSnapshot
 
 
@@ -19,17 +25,9 @@ _STATUS_ORDER = (
     "TIMEOUT",
     "CRASH",
 )
-_STATUS_COLORS = {
-    "PASS": "\x1b[32m",
-    "WARN": "\x1b[33m",
-    "SKIP": "\x1b[36m",
-    "BLOCKED": "\x1b[31m",
-    "FAIL": "\x1b[31m",
-    "ERROR": "\x1b[31m",
-    "TIMEOUT": "\x1b[31m",
-    "CRASH": "\x1b[31m",
-}
 _FAILURE_STATUSES = ("BLOCKED", "FAIL", "ERROR", "TIMEOUT", "CRASH")
+_STATUS_COLORS = {status: "\x1b[31m" for status in _FAILURE_STATUSES}
+_STATUS_COLORS.update({"PASS": "\x1b[32m", "WARN": "\x1b[33m", "SKIP": "\x1b[36m"})
 
 
 def _windows_vt_supported(stream) -> bool:
@@ -66,19 +64,17 @@ def _windows_vt_supported(stream) -> bool:
         return False
 
 
-def _color_enabled(mode: str) -> bool:
-    """Resolve color mode with the documented environment overrides."""
+def _color_requested(mode: str) -> bool:
+    """Resolve whether the user/environment requested colored human output."""
     if mode == "never":
         return False
     if mode == "always":
-        return _windows_vt_supported(sys.stdout)
+        return True
     if os.environ.get("NO_COLOR", "").strip():
         return False
     if os.environ.get("FORCE_COLOR") == "1":
-        return _windows_vt_supported(sys.stdout)
-    return bool(
-        getattr(sys.stdout, "isatty", lambda: False)()
-    ) and _windows_vt_supported(sys.stdout)
+        return True
+    return bool(getattr(sys.stdout, "isatty", lambda: False)())
 
 
 def render_json(snapshot: ReportSnapshot) -> str:
@@ -109,61 +105,68 @@ def _paint_status(status: str, use_color: bool) -> str:
 
 def _failure_detail_lines(check) -> list:
     """Return indented diagnostics for a non-successful check."""
-    lines = []
-    if check.reason:
-        lines.append("reason: {}".format(check.reason))
-    if check.return_code is not None:
-        lines.append("return_code: {}".format(check.return_code))
-    if check.pid is not None:
-        lines.append("pid: {}".format(check.pid))
-    if check.signal is not None:
-        lines.append("signal: {}".format(check.signal))
-    if check.ntstatus:
-        lines.append("ntstatus: {}".format(check.ntstatus))
-    if check.timeout:
-        lines.append("timeout: true")
-    if check.truncated_bytes:
-        lines.append("truncated_bytes: {}".format(check.truncated_bytes))
-    if check.duration_ms:
-        lines.append("duration_ms: {:.1f}".format(check.duration_ms))
-    if check.details:
-        lines.append("details:")
-        lines.extend("  " + line for line in check.details.splitlines())
-    if check.stdout and "stdout:\n" not in check.details:
-        lines.append("stdout:")
-        lines.extend("  " + line for line in check.stdout.splitlines())
-    if check.stderr and "stderr:\n" not in check.details:
-        lines.append("stderr:")
-        lines.extend("  " + line for line in check.stderr.splitlines())
-    return ["  " + line for line in lines]
-
-
-def _conclusion(snapshot, counts: dict) -> str:
-    """Derive a human conclusion while preserving required-check exit policy."""
-    exit_code = snapshot.metadata.get("exit_code")
-    failed = (
-        exit_code != 0
-        if exit_code is not None
-        else any(counts[status] for status in _FAILURE_STATUSES)
+    fields = (
+        ("reason", check.reason),
+        ("return_code", check.return_code),
+        ("pid", check.pid),
+        ("signal", check.signal),
+        ("ntstatus", check.ntstatus),
+        ("timeout", "true" if check.timeout else None),
+        ("truncated_bytes", check.truncated_bytes or None),
+        (
+            "duration_ms",
+            "{:.1f}".format(check.duration_ms) if check.duration_ms else None,
+        ),
     )
-    if failed:
-        return "FAILED"
-    if any(counts[status] for status in ("WARN", "SKIP", "BLOCKED")):
-        return "WARNINGS"
-    return "PASSED"
+    lines = [
+        "{}: {}".format(name, value) for name, value in fields if value is not None
+    ]
+    for name, value in (
+        ("evidence", check.evidence),
+        ("stdout", check.stdout),
+        ("stderr", check.stderr),
+    ):
+        if value:
+            lines.append(name + ":")
+            lines.extend("  " + line for line in value.splitlines())
+    return ["  " + line for line in lines]
 
 
 def _render_human(snapshot: ReportSnapshot, use_color: bool) -> str:
     """Render one human report with a fixed, terminal-friendly layout."""
     counts = {status: int(snapshot.counts.get(status, 0)) for status in _STATUS_ORDER}
     total = len(snapshot.checks)
+    environment = snapshot.metadata.get("environment", {})
+    version = environment.get("version") or "unavailable"
+    revision = environment.get("revision") or "unavailable"
+    mode = "frozen" if environment.get("frozen") else "source"
+    platform_name = environment.get("platform") or "unavailable"
+    architecture = environment.get("architecture") or environment.get("machine")
+    python_version = environment.get("python_version") or "unavailable"
+    implementation = environment.get("implementation") or "unavailable"
+    encoding = (
+        environment.get("stdout_encoding")
+        or environment.get("preferred_encoding")
+        or environment.get("filesystem_encoding")
+        or "unavailable"
+    )
     cyan = "\x1b[36m" if use_color else ""
     reset = "\x1b[0m" if use_color else ""
     lines = [
-        "{}pyfcstm self-check: running {} checks{}".format(cyan, total, reset),
+        "{}pyfcstm self-check {}  revision={}  mode={}{}".format(
+            cyan, version, revision, mode, reset
+        ),
+        "System: {} {}  Python={} ({})  encoding={}".format(
+            platform_name,
+            architecture or "unavailable",
+            python_version,
+            implementation,
+            encoding,
+        ),
+        "pyfcstm self-check: running {} checks".format(total),
         "",
     ]
-    index_width = max(1, len(str(total)))
+    index_width = len(str(max(1, total)))
     for index, check in enumerate(snapshot.checks, 1):
         summary = check.summary or check.reason or "no summary"
         position = "[{:>{}}/{}]".format(index, index_width, total)
@@ -174,12 +177,20 @@ def _render_human(snapshot: ReportSnapshot, use_color: bool) -> str:
 
     lines.extend(("", "Summary:"))
     for status in _STATUS_ORDER:
-        count = counts[status]
+        count = counts.get(status, 0)
         if count <= 0:
             continue
         label = _paint_status(status, use_color)
         lines.append("  {} = {}".format(label, count))
-    conclusion = _conclusion(snapshot, counts)
+    exit_code = snapshot.metadata.get("exit_code")
+    failed = exit_code not in (None, 0) or (
+        exit_code is None and any(counts.get(status, 0) for status in _FAILURE_STATUSES)
+    )
+    conclusion = "FAILED" if failed else "PASSED"
+    if not failed and any(
+        counts.get(status, 0) for status in ("WARN", "SKIP", "BLOCKED")
+    ):
+        conclusion = "WARNINGS"
     if use_color:
         conclusion_style = {
             "PASSED": "\x1b[1;32m",
@@ -191,11 +202,6 @@ def _render_human(snapshot: ReportSnapshot, use_color: bool) -> str:
         conclusion = "[ {} ]".format(conclusion)
     lines.append("Conclusion: {}".format(conclusion))
     return "\n".join(lines) + "\n"
-
-
-def _render_human_fallback(snapshot: ReportSnapshot) -> str:
-    """Render the same layout without ANSI when the primary path is broken."""
-    return _render_human(snapshot, use_color=False)
 
 
 def render_human(snapshot: ReportSnapshot, color: str = "auto") -> str:
@@ -211,10 +217,40 @@ def render_human(snapshot: ReportSnapshot, color: str = "auto") -> str:
 
     Example::
 
-        >>> render_human(ReportSnapshot((), {}, {}), color="never").splitlines()[0]
-        'pyfcstm self-check: running 0 checks'
+        >>> "running 0 checks" in render_human(ReportSnapshot((), {}, {}), color="never")
+        True
     """
-    return _render_human(snapshot, use_color=_color_enabled(color))
+    use_color = _color_requested(color) and _windows_vt_supported(sys.stdout)
+    return _render_human(snapshot, use_color=use_color)
+
+
+def write_human(snapshot: ReportSnapshot, color: str = "auto") -> None:
+    """Write a human report with ANSI or the Windows 7 attribute fallback.
+
+    :param snapshot: Frozen snapshot to render and emit.
+    :type snapshot: ReportSnapshot
+    :param color: ``auto``, ``always``, or ``never``.
+    :type color: str
+    :return: ``None``.
+    :rtype: None
+
+    Example::
+
+        >>> import contextlib
+        >>> import io
+        >>> stream = io.StringIO()
+        >>> with contextlib.redirect_stdout(stream):
+        ...     write_human(ReportSnapshot((), {}, {}), color="never")
+        >>> "running 0 checks" in stream.getvalue()
+        True
+    """
+    requested = _color_requested(color)
+    ansi = requested and _windows_vt_supported(sys.stdout)
+    if requested and os.name == "nt" and not ansi:
+        if write_console_ansi(_render_human(snapshot, use_color=True), sys.stdout):
+            return
+    sys.stdout.write(_render_human(snapshot, use_color=ansi))
+    sys.stdout.flush()
 
 
 def write_report(path: str, snapshot: ReportSnapshot) -> Optional[str]:
@@ -227,6 +263,14 @@ def write_report(path: str, snapshot: ReportSnapshot) -> Optional[str]:
     :type snapshot: ReportSnapshot
     :return: ``None`` on success or a diagnostic string on failure.
     :rtype: Optional[str]
+
+    Example::
+
+        >>> with tempfile.TemporaryDirectory() as directory:
+        ...     path = os.path.join(directory, "report.json")
+        ...     error = write_report(path, ReportSnapshot((), {}, {}))
+        >>> error is None
+        True
     """
     parent = os.path.dirname(os.path.abspath(path)) or "."
     temporary = None
@@ -244,7 +288,7 @@ def write_report(path: str, snapshot: ReportSnapshot) -> Optional[str]:
         os.replace(temporary, path)
         temporary = None
         return None
-    except (OSError, IOError, UnicodeError, ValueError) as err:
+    except (OSError, UnicodeError, ValueError) as err:
         # Permission, encoding, and atomic-replace errors must remain diagnostic.
         return "{}: {}".format(type(err).__name__, err)
     finally:
@@ -267,6 +311,16 @@ def emergency_write(message: str, output_format: str = "human") -> Optional[str]
     :return: Emergency report path when every stream is unavailable, otherwise
         ``None``.
     :rtype: Optional[str]
+
+    Example::
+
+        >>> import contextlib
+        >>> import io
+        >>> stream = io.StringIO()
+        >>> with contextlib.redirect_stdout(stream):
+        ...     result = emergency_write("diagnostic\\n")
+        >>> result is None and stream.getvalue() == "diagnostic\\n"
+        True
     """
     encoded = message.encode("utf-8", "backslashreplace")
     try:
@@ -285,23 +339,18 @@ def emergency_write(message: str, output_format: str = "human") -> Optional[str]
     try:
         os.write(2, encoded)
     except OSError:
-        descriptor = None
         temporary = None
         try:
             descriptor, temporary = tempfile.mkstemp(
                 prefix="pyfcstm-selfcheck-emergency-", suffix=".log"
             )
-            os.write(descriptor, encoded)
-            os.fsync(descriptor)
-            os.close(descriptor)
-            descriptor = None
+            try:
+                os.write(descriptor, encoded)
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
             return temporary
         except (OSError, ValueError):
-            if descriptor is not None:
-                try:
-                    os.close(descriptor)
-                except OSError:
-                    pass
             if temporary is not None:
                 try:
                     os.unlink(temporary)

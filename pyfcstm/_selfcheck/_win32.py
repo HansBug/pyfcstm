@@ -5,11 +5,19 @@ only when :data:`os.name` is ``"nt"``.
 """
 
 import os
+import re
+import sys
 from typing import Optional
 
 
 class JobAssignmentError(RuntimeError):
-    """Raised when a worker cannot be assigned to a Windows Job Object."""
+    """Raised when a worker cannot be assigned to a Windows Job Object.
+
+    Example::
+
+        >>> isinstance(JobAssignmentError("unavailable"), RuntimeError)
+        True
+    """
 
 
 _NTSTATUS_NAMES = {
@@ -48,6 +56,16 @@ def format_ntstatus(return_code: Optional[int]) -> Optional[str]:
 # PROCESS_SET_QUOTA access on the process handle.
 _PROCESS_TERMINATE = 0x0001
 _PROCESS_SET_QUOTA = 0x0100
+_ANSI_RE = re.compile(r"\x1b\[([0-9;]*)m")
+_ANSI_ATTRIBUTES = {
+    "31": 0x000C,
+    "32": 0x000A,
+    "33": 0x000E,
+    "36": 0x000B,
+    "1;32": 0x000A,
+    "1;33": 0x000E,
+    "1;97;41": 0x00CF,
+}
 
 
 class JobHandle:
@@ -96,7 +114,19 @@ class JobHandle:
 
 
 def attach_process(process) -> Optional[JobHandle]:
-    """Create and assign a Job Object for *process* on Windows."""
+    """Create and assign a Job Object for *process* on Windows.
+
+    :param process: Spawned worker exposing a numeric ``pid`` attribute.
+    :type process: subprocess.Popen
+    :return: Assigned Job Object wrapper, or ``None`` outside Windows.
+    :rtype: Optional[JobHandle]
+    :raises JobAssignmentError: If Windows containment cannot be established.
+
+    Example::
+
+        >>> if os.name != "nt":
+        ...     assert attach_process(None) is None
+    """
     if os.name != "nt":
         return None
     import ctypes
@@ -222,4 +252,108 @@ def _enable_kill_on_close(kernel32, handle) -> bool:
         )
     except (AttributeError, OSError, TypeError, ValueError, ctypes.ArgumentError):
         # Older Windows or a restricted API surface uses explicit termination.
+        return False
+
+
+def write_console_ansi(text: str, stream=None) -> bool:
+    """Write the self-check ANSI roles through Windows console attributes.
+
+    This fallback is used by Windows 7 consoles that do not support virtual
+    terminal sequences. Only the color roles emitted by the self-check human
+    renderer are translated; unknown sequences restore the original attribute.
+
+    :param text: Human report containing ANSI SGR sequences.
+    :type text: str
+    :param stream: Text stream to receive non-control text, defaults to stdout.
+    :type stream: object, optional
+    :return: Whether the complete report was written through a console handle.
+    :rtype: bool
+
+    Example::
+
+        >>> write_console_ansi("plain") if os.name == "nt" else False
+        False
+    """
+    if os.name != "nt":
+        return False
+    import ctypes
+
+    try:
+        from ctypes import wintypes
+
+        class _Coord(ctypes.Structure):
+            _fields_ = [("X", ctypes.c_short), ("Y", ctypes.c_short)]
+
+        class _SmallRect(ctypes.Structure):
+            _fields_ = [
+                ("Left", ctypes.c_short),
+                ("Top", ctypes.c_short),
+                ("Right", ctypes.c_short),
+                ("Bottom", ctypes.c_short),
+            ]
+
+        class _ConsoleScreenBufferInfo(ctypes.Structure):
+            _fields_ = [
+                ("dwSize", _Coord),
+                ("dwCursorPosition", _Coord),
+                ("wAttributes", wintypes.WORD),
+                ("srWindow", _SmallRect),
+                ("dwMaximumWindowSize", _Coord),
+            ]
+
+        kernel32 = ctypes.windll.kernel32
+        get_handle = kernel32.GetStdHandle
+        get_handle.argtypes = [wintypes.DWORD]
+        get_handle.restype = wintypes.HANDLE
+        get_info = kernel32.GetConsoleScreenBufferInfo
+        get_info.argtypes = [
+            wintypes.HANDLE,
+            ctypes.POINTER(_ConsoleScreenBufferInfo),
+        ]
+        get_info.restype = wintypes.BOOL
+        set_attribute = kernel32.SetConsoleTextAttribute
+        set_attribute.argtypes = [wintypes.HANDLE, wintypes.WORD]
+        set_attribute.restype = wintypes.BOOL
+        handle = get_handle(-11)
+        info = _ConsoleScreenBufferInfo()
+        if not handle or not get_info(handle, ctypes.byref(info)):
+            return False
+        original = int(info.wAttributes)
+        target = stream if stream is not None else sys.stdout
+        segments = []
+        position = 0
+        for match in _ANSI_RE.finditer(text):
+            code = match.group(1)
+            attribute = original if code in ("", "0") else _ANSI_ATTRIBUTES.get(code)
+            if attribute is None:
+                return False
+            segments.append((text[position : match.start()], attribute))
+            position = match.end()
+        segments.append((text[position:], None))
+
+        # Validate every requested role before writing. A stable native failure
+        # can then fall back to one complete plain report instead of duplicating
+        # a partially colored prefix.
+        for _, attribute in segments:
+            if attribute is not None and not set_attribute(handle, attribute):
+                set_attribute(handle, original)
+                return False
+        if not set_attribute(handle, original):
+            return False
+
+        for segment, attribute in segments:
+            target.write(segment)
+            if attribute is not None:
+                set_attribute(handle, attribute)
+        set_attribute(handle, original)
+        target.flush()
+        return True
+    except (
+        AttributeError,
+        ImportError,
+        OSError,
+        TypeError,
+        ValueError,
+        ctypes.ArgumentError,
+    ):
         return False

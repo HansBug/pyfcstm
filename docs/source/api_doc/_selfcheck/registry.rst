@@ -12,12 +12,6 @@ Worker
 .. autodata:: Worker
 
 
-register\_test\_override
------------------------------------------------------
-
-.. autofunction:: register_test_override
-
-
 get\_worker
 -----------------------------------------------------
 

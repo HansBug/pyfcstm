@@ -15,17 +15,17 @@ The package contains:
    * - :mod:`pyfcstm._selfcheck.arguments`
      - Parse supervisor and hidden-worker options.
    * - :mod:`pyfcstm._selfcheck.model`
-     - Store immutable results and the append-only ledger.
+     - Store typed results and the ordered single-writer ledger.
    * - :mod:`pyfcstm._selfcheck.protocol`
      - Encode and validate worker frames.
    * - :mod:`pyfcstm._selfcheck.registry`
      - Map stable worker keys to built-in checks.
    * - :mod:`pyfcstm._selfcheck.supervisor`
-     - Coordinate checks, reporting, and exit status.
+     - Run checks serially and coordinate reporting and exit status.
    * - :mod:`pyfcstm._selfcheck.environment`
      - Collect redacted runtime and package environment metadata.
    * - :mod:`pyfcstm._selfcheck.process`
-     - Spawn workers, drain bounded streams, and clean up process trees.
+     - Run one worker, drain bounded pipes, and clean up its process tree.
    * - :mod:`pyfcstm._selfcheck.report`
      - Render human/JSON reports and emergency diagnostics.
    * - :mod:`pyfcstm._selfcheck.worker`

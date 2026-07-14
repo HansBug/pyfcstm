@@ -1,529 +1,346 @@
-"""Supervisor orchestration for the standard-library self-check command."""
+"""Run selected self-checks serially under one single-writer supervisor.
 
-import json
+The supervisor resolves prerequisites, executes exactly one local callback or
+isolated worker at a time, commits its terminal result, and only then advances
+to the next check. It owns the ledger, final snapshot, report, and exit code.
+"""
+
 import time
 import traceback
 import uuid
-from typing import Sequence
+from typing import Iterable, Sequence
 
 from .arguments import SelfCheckArgumentError
 from .arguments import _requested_output_format
 from .arguments import parse_selfcheck_args
 from .environment import collect_environment
-from .model import CheckResult
-from .model import CheckSpec
-from .model import Ledger
-from .model import ReportSnapshot
+from .model import CheckOutcome, CheckResult, CheckSpec, Ledger, ReportSnapshot
 from .process import run_check_process
-from .registry import selected_specs
-from .report import emergency_write
-from .report import _render_human_fallback
-from .report import render_human
-from .report import render_json
-from .report import write_report
-from .registry import get_worker
+from .registry import get_worker, selected_specs
+from .report import emergency_write, render_json, write_human, write_report
 
 
-_PROFILE_DEADLINES = {
-    "default": 180.0,
-    "full": 300.0,
-    "visualize": 300.0,
-}
-_EXPECTED_INFRA_ERRORS = (
-    OSError,
-    RuntimeError,
-    ValueError,
-    KeyError,
-    TypeError,
-    ImportError,
-    AttributeError,
-    UnicodeError,
-)
+_PROFILE_DEADLINES = {"default": 180.0, "full": 300.0, "visualize": 300.0}
+_FAILING_STATUSES = ("BLOCKED", "FAIL", "ERROR", "TIMEOUT", "CRASH")
 
 
-def _exit_code(snapshot, fail_on_warn: bool) -> int:
-    """Compute the stable public exit code from one snapshot."""
+def _exit_code(snapshot: ReportSnapshot, fail_on_warn: bool) -> int:
+    """Compute the stable public exit code for *snapshot*."""
     for result in snapshot.checks:
-        if result.required and result.status in (
-            "FAIL",
-            "BLOCKED",
-            "ERROR",
-            "TIMEOUT",
-            "CRASH",
+        if result.required and (
+            result.status in _FAILING_STATUSES
+            or (fail_on_warn and result.status == "WARN")
         ):
-            return 1
-        if fail_on_warn and result.required and result.status == "WARN":
             return 1
     return 0
 
 
-def _make_infrastructure_snapshot(phase: str, error: BaseException):
-    """Return a pre-ledger snapshot for argument/bootstrap failures.
-
-    This path is intentionally separate from :func:`_finalize_infrastructure`,
-    which must preserve a populated ledger after checks have been reserved.
-    """
-    result = CheckResult(
-        "selfcheck.infrastructure",
+def _error_outcome(summary: str, reason: str) -> CheckOutcome:
+    """Build an ``ERROR`` outcome with the active exception traceback."""
+    evidence = traceback.format_exc()
+    return CheckOutcome(
         "ERROR",
-        True,
-        summary="self-check infrastructure error",
-        details="{}: {}\n{}".format(phase, error, traceback.format_exc()),
-        reason="infrastructure_error",
+        summary,
+        reason=reason,
+        evidence=evidence,
+        exception=evidence,
     )
-    return ReportSnapshot((result,), {"phase": phase, "exit_code": 2}, {"ERROR": 1})
-
-
-def _with_exit_code(snapshot, options):
-    """Return a snapshot carrying the exit code used for its rendering."""
-    metadata = dict(snapshot.metadata)
-    if "exit_code" not in metadata:
-        metadata["exit_code"] = _exit_code(
-            snapshot, getattr(options, "fail_on_warn", False)
-        )
-    return ReportSnapshot(snapshot.checks, metadata, snapshot.counts)
-
-
-def _append_synthetic(
-    ledger: Ledger,
-    check_id: str,
-    summary: str,
-    details: str,
-    reason: str,
-) -> None:
-    """Append one synthetic terminal diagnostic without replacing the ledger."""
-    if ledger.get_state(check_id) is None:
-        ledger.reserve((CheckSpec(check_id, "synthetic"),))
-    if not ledger.has_result(check_id):
-        ledger.commit(
-            CheckResult(
-                check_id,
-                "ERROR",
-                True,
-                summary=summary,
-                details=details,
-                reason=reason,
-            )
-        )
 
 
 def _run_local_check(spec: CheckSpec) -> CheckResult:
-    """Run a pure check in the supervisor and normalize callback failures."""
+    """Run a bootstrap-safe callback in the supervisor process.
+
+    :param spec: Selected local check specification.
+    :type spec: CheckSpec
+    :return: Terminal typed result with elapsed time.
+    :rtype: CheckResult
+    """
     started = time.monotonic()
     try:
         worker = get_worker(spec.worker_key)
-    except KeyError as err:
-        return CheckResult(
-            spec.check_id,
-            "ERROR",
-            spec.required,
-            summary="local check is not registered",
-            details="{}: {}".format(type(err).__name__, err),
-            reason="unknown_local_check",
-            duration_ms=(time.monotonic() - started) * 1000,
-        )
-
-    try:
-        summary = str(worker())
-    except KeyboardInterrupt:
-        # A check callback must not abort the supervisor's final report.
-        return CheckResult(
-            spec.check_id,
-            "ERROR",
-            spec.required,
-            summary="local check interrupted",
-            details=traceback.format_exc(),
-            reason="local_check_interrupted",
-            duration_ms=(time.monotonic() - started) * 1000,
-        )
-    except SystemExit as err:
-        # A callback can call sys.exit; preserve its diagnostic as a check error.
-        return CheckResult(
-            spec.check_id,
-            "ERROR",
-            spec.required,
-            summary="local check raised SystemExit",
-            details=traceback.format_exc(),
-            reason="local_check_system_exit",
-            return_code=err.code if isinstance(err.code, int) else 1,
-            duration_ms=(time.monotonic() - started) * 1000,
-        )
-    except BaseException as err:
-        # Third-party local callbacks may raise any ordinary Exception; keep
-        # non-runtime control sentinels visible instead of swallowing them.
-        if not isinstance(err, Exception):
-            raise
-        return CheckResult(
-            spec.check_id,
-            "ERROR",
-            spec.required,
-            summary="local check raised an exception",
-            details=traceback.format_exc(),
-            reason="local_check_exception",
-            duration_ms=(time.monotonic() - started) * 1000,
-        )
-
-    if summary.startswith("__SELFCHECK_WARN__:"):
-        summary = summary.split(":", 1)[1]
-        status = "WARN"
+    except KeyError:
+        outcome = _error_outcome("local check is not registered", "unknown_local_check")
     else:
-        status = "PASS"
+        try:
+            outcome = worker()
+            if not isinstance(outcome, CheckOutcome):
+                raise TypeError("self-check worker must return CheckOutcome")
+        except KeyboardInterrupt:
+            raise
+        except SystemExit:
+            outcome = _error_outcome(
+                "local check raised SystemExit", "local_check_system_exit"
+            )
+        except BaseException as err:
+            # A local check may raise any ordinary Exception. Control sentinels
+            # remain visible to the supervisor's outer boundary.
+            if not isinstance(err, Exception):
+                raise
+            outcome = _error_outcome(
+                "local check raised an exception", "local_check_exception"
+            )
+    return CheckResult.from_outcome(
+        spec, outcome, duration_ms=(time.monotonic() - started) * 1000
+    )
+
+
+def _terminal_result(
+    spec: CheckSpec,
+    status: str,
+    summary: str,
+    reason: str,
+    evidence: str = "",
+) -> CheckResult:
+    """Build a supervisor-owned terminal result for *spec*."""
     return CheckResult(
         spec.check_id,
         status,
         spec.required,
         summary=summary,
-        duration_ms=(time.monotonic() - started) * 1000,
+        title=spec.title,
+        prerequisites=spec.prerequisites,
+        reason=reason,
+        evidence=evidence,
     )
 
 
-def _fallback_json(snapshot) -> str:
-    """Serialize a snapshot without calling the primary renderer again."""
-    return json.dumps(
-        snapshot.to_dict(), ensure_ascii=True, sort_keys=True, separators=(",", ":")
+def _terminalize_unfinished(
+    ledger: Ledger,
+    specs: Iterable[CheckSpec],
+    interrupted: bool,
+    evidence: str = "",
+) -> None:
+    """Give every selected unfinished check one terminal result."""
+    running_status = "CRASH" if interrupted else "ERROR"
+    summary = (
+        "self-check interrupted" if interrupted else "self-check infrastructure error"
     )
-
-
-def _fallback_human(snapshot) -> str:
-    """Render the fixed human layout when the configured renderer is broken."""
-    return _render_human_fallback(snapshot)
-
-
-def _finalize_infrastructure(
-    ledger: Ledger, specs, metadata, phase: str, error: BaseException
-):
-    """Finalize reserved checks before adding one infrastructure diagnostic."""
-    details = "{}: {}\n{}".format(phase, error, traceback.format_exc())
+    reason = "supervisor_interrupted" if interrupted else "supervisor_infrastructure"
     for spec in specs:
-        state = ledger.get_state(spec.check_id)
-        if state is None:
-            ledger.ensure_reserved(spec)
-            state = ledger.get_state(spec.check_id)
-        if state is None or ledger.has_result(spec.check_id):
+        ledger.ensure_reserved(spec)
+        if ledger.get_result(spec.check_id) is not None:
             continue
-        status = "ERROR" if state == "RUNNING" else "BLOCKED"
-        ledger.commit(
-            CheckResult(
-                spec.check_id,
-                status,
-                spec.required,
-                summary="self-check infrastructure error",
-                details=details,
-                reason="supervisor_infrastructure",
+        status = (
+            running_status
+            if ledger.get_state(spec.check_id) == "RUNNING"
+            else "BLOCKED"
+        )
+        ledger.commit(_terminal_result(spec, status, summary, reason, evidence))
+
+
+def _commit_synthetic(
+    ledger: Ledger,
+    check_id: str,
+    title: str,
+    summary: str,
+    reason: str,
+    evidence: str,
+) -> None:
+    """Commit one supervisor-owned synthetic error at most once."""
+    spec = CheckSpec(check_id, "synthetic", title=title)
+    ledger.ensure_reserved(spec)
+    ledger.commit(_terminal_result(spec, "ERROR", summary, reason, evidence))
+
+
+def _argument_snapshot(error: BaseException) -> ReportSnapshot:
+    """Build a canonical pre-ledger snapshot for argument errors."""
+    now = time.time()
+    spec = CheckSpec(
+        "selfcheck.arguments",
+        "synthetic",
+        title="self-check arguments",
+    )
+    result = _terminal_result(
+        spec,
+        "ERROR",
+        "invalid self-check arguments",
+        "argument_error",
+        evidence="{}: {}".format(type(error).__name__, error),
+    )
+    metadata = {
+        "started_at": now,
+        "finished_at": now,
+        "exit_code": 2,
+    }
+    return ReportSnapshot((result,), metadata, {"ERROR": 1})
+
+
+def _run_selected_checks(
+    ledger: Ledger, specs, options, global_deadline: float
+) -> None:
+    """Execute selected checks once, in registry order."""
+    for spec in specs:
+        prerequisites = [ledger.get_result(item) for item in spec.prerequisites]
+        if any(result is None for result in prerequisites):
+            ledger.commit(
+                _terminal_result(
+                    spec,
+                    "BLOCKED",
+                    "prerequisite was never resolved",
+                    "prerequisite_unresolved",
+                )
             )
-        )
-    _append_synthetic(
-        ledger,
-        "selfcheck.infrastructure",
-        "self-check infrastructure error",
-        details,
-        "infrastructure_error",
-    )
-    metadata = dict(metadata)
-    metadata["phase"] = phase
-    metadata["finished_at"] = time.time()
-    metadata["exit_code"] = 3
-    return ledger.freeze(metadata)
-
-
-def _emit_snapshot(snapshot, options, ledger=None, metadata=None) -> bool:
-    """Render one snapshot and retain a machine-readable fallback on failure."""
-    snapshot, output, rendered = _render_snapshot(
-        snapshot, options, ledger=ledger, metadata=metadata
-    )
-    del snapshot
-    if output is None:
-        return False
-    print(output, end="")
-    return rendered
-
-
-def _render_snapshot(snapshot, options, ledger=None, metadata=None):
-    """Prepare output while returning the final ledger-backed snapshot."""
-    if ledger is not None or "exit_code" in snapshot.metadata:
-        snapshot = _with_exit_code(snapshot, options)
-    try:
-        output = (
-            render_json(snapshot)
-            if options.output_format == "json"
-            else render_human(snapshot, options.color)
-        )
-        return snapshot, output, True
-    except BaseException as err:
-        if not isinstance(err, (Exception, SystemExit)):
+            continue
+        if any(
+            result.status not in ("PASS", "WARN", "SKIP") for result in prerequisites
+        ):
+            ledger.commit(
+                _terminal_result(
+                    spec,
+                    "BLOCKED",
+                    "prerequisite failed",
+                    "prerequisite_failed",
+                )
+            )
+            continue
+        remaining = global_deadline - time.monotonic()
+        if remaining <= 0.0:
+            ledger.commit(
+                _terminal_result(
+                    spec,
+                    "BLOCKED",
+                    "global self-check deadline exceeded",
+                    "global_deadline",
+                )
+            )
+            continue
+        ledger.mark_running(spec.check_id)
+        timeout = min(spec.timeout_seconds * options.timeout_scale, remaining)
+        try:
+            result = (
+                _run_local_check(spec)
+                if spec.execution == "local"
+                else run_check_process(
+                    spec, timeout=timeout, timeout_scale=options.timeout_scale
+                )
+            )
+        except KeyboardInterrupt:
             raise
-        details = "{}: {}\n{}".format(type(err).__name__, err, traceback.format_exc())
-        if ledger is not None:
-            _append_synthetic(
-                ledger,
-                "selfcheck.render",
-                "self-check renderer failed",
-                details,
-                "render_error",
-            )
-            final_metadata = dict(
-                metadata if metadata is not None else snapshot.metadata
-            )
-            final_metadata["finished_at"] = time.time()
-            snapshot = ledger.freeze(final_metadata)
-            snapshot = _with_exit_code(snapshot, options)
-        try:
-            output = (
-                _fallback_json(snapshot)
-                if options.output_format == "json"
-                else _fallback_human(snapshot)
-            )
-            return snapshot, output, False
-        except BaseException as fallback_error:
-            if not isinstance(fallback_error, (Exception, SystemExit)):
+        except BaseException as err:
+            # Process supervision failures are isolated to their selected
+            # check so independent checks can continue.
+            if not isinstance(err, Exception):
                 raise
-            emergency_write(
-                "self-check render error: {}\n".format(fallback_error),
-                options.output_format,
+            evidence = traceback.format_exc()
+            result = _terminal_result(
+                spec,
+                "ERROR",
+                "worker supervisor error",
+                "worker_supervisor_error",
+                evidence,
             )
-        return snapshot, None, False
-
-
-def _emit_argument_error(arguments: Sequence[str], error: BaseException) -> None:
-    """Emit argument failures through the requested human or JSON channel."""
-    output_format = _requested_output_format(arguments)
-    if output_format == "json":
-        snapshot = _make_infrastructure_snapshot("arguments", error)
-        try:
-            print(render_json(snapshot))
-        except BaseException as render_error:
-            if not isinstance(render_error, (Exception, SystemExit)):
-                raise
-            print(_fallback_json(snapshot))
-    else:
-        emergency_write("self-check argument error: {}\n".format(error), output_format)
+        ledger.commit(result)
 
 
 def run_supervisor(arguments: Sequence[str]) -> int:
-    """
-    Run selected checks and emit one final report.
+    """Run selected checks and emit one final report.
 
     :param arguments: Arguments after the public ``--self-check`` token.
     :type arguments: Sequence[str]
     :return: Stable self-check exit code.
     :rtype: int
+
+    Example::
+
+        >>> import contextlib
+        >>> import io
+        >>> with contextlib.redirect_stdout(io.StringIO()):
+        ...     code = run_supervisor(("--format", "json", "--network"))
+        >>> code
+        2
     """
     try:
         options = parse_selfcheck_args(arguments)
     except SelfCheckArgumentError as err:
-        _emit_argument_error(arguments, err)
+        if _requested_output_format(arguments) == "json":
+            print(render_json(_argument_snapshot(err)))
+        else:
+            emergency_write("self-check argument error: {}\n".format(err), "human")
         return 2
 
-    started = time.time()
     ledger = Ledger()
     specs = ()
     metadata = {
         "session_id": uuid.uuid4().hex,
         "profile": options.profile,
-        "timeout_scale": options.timeout_scale,
-        "registry_coverage": 1,
-        "started_at": started,
+        "started_at": time.time(),
     }
+    forced_exit = None
     try:
         specs = selected_specs(options.profile)
         ledger.reserve(specs)
+        metadata["dependencies"] = [
+            {"id": spec.check_id, "prerequisite": list(spec.prerequisites)}
+            for spec in specs
+        ]
         metadata["environment"] = collect_environment(options.redact)
-        global_deadline = time.monotonic() + _PROFILE_DEADLINES[options.profile] * (
-            options.timeout_scale
+        deadline_seconds = _PROFILE_DEADLINES[options.profile] * options.timeout_scale
+        _run_selected_checks(
+            ledger, specs, options, time.monotonic() + deadline_seconds
         )
-        metadata["global_deadline_seconds"] = _PROFILE_DEADLINES[options.profile] * (
-            options.timeout_scale
-        )
-        unresolved = list(specs)
-        while unresolved:
-            progressed = False
-            deferred = []
-            for spec in unresolved:
-                prerequisite_results = [
-                    ledger.get_result(item) for item in spec.prerequisites
-                ]
-                if any(result is None for result in prerequisite_results):
-                    deferred.append(spec)
-                    continue
-                if any(
-                    result.status not in ("PASS", "WARN", "SKIP")
-                    for result in prerequisite_results
-                ):
-                    ledger.commit(
-                        CheckResult(
-                            spec.check_id,
-                            "BLOCKED",
-                            spec.required,
-                            summary="prerequisite failed",
-                            reason="prerequisite_failed",
-                        )
-                    )
-                    progressed = True
-                    continue
-                remaining = global_deadline - time.monotonic()
-                if remaining <= 0.0:
-                    ledger.commit(
-                        CheckResult(
-                            spec.check_id,
-                            "BLOCKED",
-                            spec.required,
-                            summary="global self-check deadline exceeded",
-                            reason="global_deadline",
-                        )
-                    )
-                    progressed = True
-                    continue
-                ledger.mark_running(spec.check_id)
-                timeout = min(30.0 * options.timeout_scale, remaining)
-                try:
-                    if spec.execution == "local":
-                        result = _run_local_check(spec)
-                    elif options.timeout_scale == 1.0:
-                        result = run_check_process(spec, timeout=timeout)
-                    else:
-                        result = run_check_process(
-                            spec, timeout=timeout, timeout_scale=options.timeout_scale
-                        )
-                except _EXPECTED_INFRA_ERRORS as err:
-                    result = CheckResult(
-                        spec.check_id,
-                        "ERROR",
-                        spec.required,
-                        summary="worker supervisor error",
-                        details="{}: {}".format(type(err).__name__, err),
-                        reason="worker_supervisor_error",
-                    )
-                ledger.commit(result)
-                progressed = True
-            if not progressed:
-                for spec in deferred:
-                    ledger.commit(
-                        CheckResult(
-                            spec.check_id,
-                            "BLOCKED",
-                            spec.required,
-                            summary="prerequisite was never resolved",
-                            reason="prerequisite_unresolved",
-                        )
-                    )
-                unresolved = []
-            else:
-                unresolved = deferred
-        metadata["finished_at"] = time.time()
-        snapshot = ledger.freeze(metadata)
     except KeyboardInterrupt:
-        for spec in specs:
-            if ledger.get_state(spec.check_id) is None:
-                ledger.ensure_reserved(spec)
-            if not ledger.has_result(spec.check_id):
-                status = (
-                    "CRASH"
-                    if ledger.get_state(spec.check_id) == "RUNNING"
-                    else "BLOCKED"
-                )
-                ledger.commit(
-                    CheckResult(
-                        spec.check_id,
-                        status,
-                        spec.required,
-                        summary="self-check interrupted",
-                        reason="supervisor_interrupted",
-                    )
-                )
-        try:
-            interrupted_metadata = dict(metadata)
-            interrupted_metadata["interrupted"] = True
-            interrupted_metadata["finished_at"] = time.time()
-            interrupted_metadata["exit_code"] = 130
-            snapshot = ledger.freeze(interrupted_metadata)
-            _emit_snapshot(
-                snapshot,
-                options,
-                ledger=ledger,
-                metadata=interrupted_metadata,
-            )
-        except BaseException as report_error:
-            if not isinstance(report_error, (Exception, SystemExit)):
-                raise
-            emergency_write(
-                "self-check interrupted before report completion: {}\n".format(
-                    report_error
-                ),
-                options.output_format,
-            )
-        return 130
-    except _EXPECTED_INFRA_ERRORS as err:
-        # Setup/snapshot failures still emit a canonical JSON or human snapshot.
-        snapshot = _finalize_infrastructure(ledger, specs, metadata, "supervisor", err)
-        _emit_snapshot(snapshot, options)
-        return 3
+        forced_exit = 130
+        _terminalize_unfinished(
+            ledger,
+            specs,
+            interrupted=True,
+        )
     except BaseException as err:
-        # Third-party checks may raise any Exception subclass; non-runtime sentinels remain visible.
         if not isinstance(err, (Exception, SystemExit)):
             raise
-        snapshot = _finalize_infrastructure(ledger, specs, metadata, "supervisor", err)
-        _emit_snapshot(snapshot, options)
-        return 3
-
-    try:
-        output = None
-        if options.report:
-            # Render first so renderer diagnostics enter the ledger before the
-            # report is serialized; both channels then use one final snapshot.
-            snapshot, output, _ = _render_snapshot(
-                snapshot, options, ledger=ledger, metadata=metadata
-            )
-            try:
-                report_error = write_report(options.report, snapshot)
-            except BaseException as error:
-                if isinstance(error, (KeyboardInterrupt, SystemExit)):
-                    raise
-                if not isinstance(error, Exception):
-                    raise
-                report_error = "{}: {}\n{}".format(
-                    type(error).__name__, error, traceback.format_exc()
-                )
-            if report_error is not None:
-                _append_synthetic(
-                    ledger,
-                    "selfcheck.report_write",
-                    "report write failed",
-                    report_error,
-                    "report_write",
-                )
-                metadata["report_error"] = report_error
-                snapshot = ledger.freeze(metadata)
-                snapshot, output, _ = _render_snapshot(
-                    snapshot, options, ledger=ledger, metadata=metadata
-                )
-        else:
-            snapshot, output, _ = _render_snapshot(
-                snapshot, options, ledger=ledger, metadata=metadata
-            )
-
-        if output is None:
-            return 1
-        print(output, end="")
-    except KeyboardInterrupt:
-        interrupted_metadata = dict(metadata)
-        interrupted_metadata["interrupted"] = True
-        interrupted_metadata["finished_at"] = time.time()
-        interrupted_metadata["exit_code"] = 130
-        snapshot = ledger.freeze(interrupted_metadata)
-        _emit_snapshot(snapshot, options, ledger=ledger, metadata=interrupted_metadata)
-        return 130
-    except BaseException as error:
-        if not isinstance(error, (Exception, SystemExit)):
-            raise
-        _append_synthetic(
+        forced_exit = 3
+        evidence = traceback.format_exc()
+        _terminalize_unfinished(
             ledger,
-            "selfcheck.finalization",
-            "self-check finalization failed",
-            "{}: {}\n{}".format(type(error).__name__, error, traceback.format_exc()),
-            "finalization_error",
+            specs,
+            interrupted=False,
+            evidence=evidence,
         )
-        metadata["finished_at"] = time.time()
-        snapshot = ledger.freeze(metadata)
-        _emit_snapshot(snapshot, options, ledger=ledger, metadata=metadata)
-        return 3
-    return _exit_code(snapshot, options.fail_on_warn)
+        _commit_synthetic(
+            ledger,
+            "selfcheck.infrastructure",
+            "self-check infrastructure",
+            "self-check infrastructure error",
+            "infrastructure_error",
+            evidence,
+        )
+
+    metadata["finished_at"] = time.time()
+    provisional = ledger.freeze(metadata)
+    exit_code = (
+        forced_exit
+        if forced_exit is not None
+        else _exit_code(provisional, options.fail_on_warn)
+    )
+    metadata["exit_code"] = exit_code
+    snapshot = ledger.freeze(metadata)
+
+    if options.report:
+        try:
+            report_error = write_report(options.report, snapshot)
+        except BaseException as err:
+            if isinstance(err, (KeyboardInterrupt, SystemExit)):
+                raise
+            if not isinstance(err, Exception):
+                raise
+            report_error = "{}: {}\n{}".format(
+                type(err).__name__, err, traceback.format_exc()
+            )
+        if report_error is not None:
+            _commit_synthetic(
+                ledger,
+                "selfcheck.report_write",
+                "self-check report write",
+                "report write failed",
+                "report_write",
+                report_error,
+            )
+            metadata["exit_code"] = 1 if forced_exit is None else forced_exit
+            snapshot = ledger.freeze(metadata)
+            exit_code = metadata["exit_code"]
+
+    if options.output_format == "json":
+        print(render_json(snapshot))
+    else:
+        write_human(snapshot, options.color)
+    return exit_code

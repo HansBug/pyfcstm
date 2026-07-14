@@ -18,6 +18,12 @@ render\_human
 .. autofunction:: render_human
 
 
+write\_human
+-----------------------------------------------------
+
+.. autofunction:: write_human
+
+
 write\_report
 -----------------------------------------------------
 

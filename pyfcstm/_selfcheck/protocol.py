@@ -1,9 +1,15 @@
-"""Wire-level framing and validation for self-check worker results."""
+"""Encode and validate nonce-bound frames for one-shot self-check workers.
+
+The protocol has fixed byte limits and accepts exactly one canonical result
+envelope. It never interprets ordinary stdout as a successful result.
+"""
 
 import json
 import re
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
+
+from .model import TERMINAL_STATUSES
 
 
 FRAME_PREFIX = b"PYFCSTM_SELF_CHECK_RESULT_V1 "
@@ -37,14 +43,34 @@ class FrameReadOutcome:
 
 
 def make_nonce() -> str:
-    """Return a cryptographically random 32-character lowercase nonce."""
+    """Return a cryptographically random 32-character lowercase nonce.
+
+    :return: Lowercase hexadecimal worker-correlation nonce.
+    :rtype: str
+
+    Example::
+
+        >>> is_valid_nonce(make_nonce())
+        True
+    """
     import secrets
 
     return secrets.token_hex(16)
 
 
 def is_valid_nonce(nonce: str) -> bool:
-    """Return whether *nonce* has the fixed wire representation."""
+    """Return whether *nonce* has the fixed wire representation.
+
+    :param nonce: Candidate nonce text.
+    :type nonce: str
+    :return: Whether the value is exactly 32 lowercase hexadecimal characters.
+    :rtype: bool
+
+    Example::
+
+        >>> is_valid_nonce("a" * 32)
+        True
+    """
     return isinstance(nonce, str) and _NONCE_RE.fullmatch(nonce) is not None
 
 
@@ -117,16 +143,7 @@ def _decode_frame(
         raise ValueError("wrong_nonce")
     if expected_check_id is not None and payload.get("check_id") != expected_check_id:
         raise ValueError("wrong_check_id")
-    if payload.get("status") not in (
-        "PASS",
-        "WARN",
-        "SKIP",
-        "BLOCKED",
-        "FAIL",
-        "ERROR",
-        "TIMEOUT",
-        "CRASH",
-    ):
+    if payload.get("status") not in TERMINAL_STATUSES:
         raise ValueError("invalid_status")
     return payload
 

@@ -190,3 +190,99 @@ def test_native_setup_errors_are_wrapped_as_job_assignment_errors(monkeypatch):
     )
     with pytest.raises(win32.JobAssignmentError, match="native setup"):
         win32.attach_process(SimpleNamespace(pid=7))
+
+
+@pytest.mark.unittest
+def test_win7_console_fallback_translates_known_ansi_roles(monkeypatch):
+    """A non-VT Windows console receives text plus native color attributes."""
+    try:
+        __import__("ctypes.wintypes")
+    except ValueError as err:
+        pytest.skip("ctypes.wintypes unavailable: {}".format(err))
+    import ctypes
+    import io
+    from types import SimpleNamespace
+
+    import pyfcstm._selfcheck._win32 as win32
+
+    class Call:
+        def __init__(self, result=1):
+            self.result = result
+            self.calls = []
+
+        def __call__(self, *args):
+            self.calls.append(args)
+            return self.result
+
+    class GetInfo(Call):
+        def __call__(self, handle, pointer):
+            self.calls.append((handle, pointer))
+            pointer._obj.wAttributes = 7
+            return 1
+
+    class Kernel:
+        GetStdHandle = Call(101)
+        GetConsoleScreenBufferInfo = GetInfo()
+        SetConsoleTextAttribute = Call(1)
+
+    kernel = Kernel()
+    monkeypatch.setattr(win32, "os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr(
+        ctypes, "windll", SimpleNamespace(kernel32=kernel), raising=False
+    )
+    stream = io.StringIO()
+    assert win32.write_console_ansi("\x1b[32mPASS\x1b[0m\n", stream) is True
+    assert stream.getvalue() == "PASS\n"
+    attributes = [call[1] for call in kernel.SetConsoleTextAttribute.calls]
+    assert 0x000A in attributes
+    assert attributes[-1] == 7
+
+
+@pytest.mark.unittest
+def test_win7_console_fallback_preflights_attributes_before_output(monkeypatch):
+    """A native color failure leaves the stream untouched for plain fallback."""
+    try:
+        __import__("ctypes.wintypes")
+    except ValueError as err:
+        pytest.skip("ctypes.wintypes unavailable: {}".format(err))
+    import ctypes
+    import io
+    from types import SimpleNamespace
+
+    import pyfcstm._selfcheck._win32 as win32
+
+    class Call:
+        def __init__(self, result=1):
+            self.result = result
+
+        def __call__(self, *args):
+            del args
+            return self.result
+
+    class GetInfo(Call):
+        def __call__(self, handle, pointer):
+            del handle
+            pointer._obj.wAttributes = 7
+            return 1
+
+    class SetAttribute:
+        def __init__(self):
+            self.calls = 0
+
+        def __call__(self, handle, attribute):
+            del handle, attribute
+            self.calls += 1
+            return 0 if self.calls == 2 else 1
+
+    class Kernel:
+        GetStdHandle = Call(101)
+        GetConsoleScreenBufferInfo = GetInfo()
+        SetConsoleTextAttribute = SetAttribute()
+
+    monkeypatch.setattr(win32, "os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr(
+        ctypes, "windll", SimpleNamespace(kernel32=Kernel()), raising=False
+    )
+    stream = io.StringIO()
+    assert win32.write_console_ansi("\x1b[32mPASS\x1b[0m\n", stream) is False
+    assert stream.getvalue() == ""

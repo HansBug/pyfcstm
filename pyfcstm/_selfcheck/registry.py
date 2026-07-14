@@ -1,35 +1,30 @@
-"""Static self-check registry and the built-in runtime probes."""
+"""Declare the static self-check inventory and built-in callbacks.
+
+Worker keys map only to callables defined by the package. The hidden worker
+does not accept module paths, source text, or third-party plug-ins.
+"""
 
 from typing import Callable, Dict, Tuple
 
-from .model import CheckSpec
+from .model import CheckOutcome, CheckSpec
 
 
-Worker = Callable[[], object]
+Worker = Callable[[], CheckOutcome]
 _WORKERS: Dict[str, Worker] = {}
 
 
-def _artifact_self_dispatch() -> str:
+def _artifact_self_dispatch() -> CheckOutcome:
     """Confirm the worker can import the package without recursing into the CLI."""
     import pyfcstm
-    import os
-    import time
-
-    mode = os.environ.get("PYFCSTM_SELFCHECK_TEST_MODE")
-    if mode == "hang":
-        while True:
-            time.sleep(1.0)
-    if mode == "fail":
-        raise RuntimeError("injected self-check failure")
-    if mode == "warn":
-        return "__SELFCHECK_WARN__:injected warning"
 
     if not getattr(pyfcstm, "__version__", None):
         raise RuntimeError("package version is unavailable")
-    return "worker imported pyfcstm and stopped at the hidden dispatch"
+    return CheckOutcome(
+        "PASS", "worker imported pyfcstm and stopped at the hidden dispatch"
+    )
 
 
-def _runtime_metadata() -> str:
+def _runtime_metadata() -> CheckOutcome:
     """Validate cheap runtime metadata without crossing a process boundary."""
     import platform
     import sys
@@ -38,27 +33,19 @@ def _runtime_metadata() -> str:
 
     if not __VERSION__:
         raise RuntimeError("package version is unavailable")
-    return "pyfcstm {} on Python {} ({})".format(
+    summary = "pyfcstm {} on Python {} ({})".format(
         __VERSION__, platform.python_version(), sys.platform
+    )
+    return CheckOutcome(
+        "PASS",
+        summary,
+        expected="package and Python runtime metadata are available",
+        observed=summary,
     )
 
 
 _WORKERS["self_dispatch"] = _artifact_self_dispatch
 _WORKERS["runtime_metadata"] = _runtime_metadata
-
-
-def register_test_override(worker_key: str, worker: Worker) -> None:
-    """
-    Register a test-only callable without exposing production CLI parsing.
-
-    :param worker_key: Temporary registry key.
-    :type worker_key: str
-    :param worker: Zero-argument callable used by a test.
-    :type worker: Worker
-    :return: ``None``.
-    :rtype: None
-    """
-    _WORKERS[worker_key] = worker
 
 
 def get_worker(worker_key: str) -> Worker:
@@ -70,6 +57,11 @@ def get_worker(worker_key: str) -> Worker:
     :return: Registered callable.
     :rtype: Worker
     :raises KeyError: If the key is not registered.
+
+    Example::
+
+        >>> callable(get_worker("runtime_metadata"))
+        True
     """
     return _WORKERS[worker_key]
 
@@ -82,18 +74,25 @@ def selected_specs(profile: str) -> Tuple[CheckSpec, ...]:
     :type profile: str
     :return: Stable check specifications.
     :rtype: Tuple[CheckSpec, ...]
+
+    Example::
+
+        >>> [spec.check_id for spec in selected_specs("default")]
+        ['runtime.metadata', 'artifact.self_dispatch']
     """
     del profile
     return (
         CheckSpec(
             "runtime.metadata",
             "runtime_metadata",
+            title="runtime metadata",
             required=True,
             execution="local",
         ),
         CheckSpec(
             "artifact.self_dispatch",
             "self_dispatch",
+            title="isolated self-dispatch",
             required=True,
             prerequisites=("runtime.metadata",),
             execution="worker",

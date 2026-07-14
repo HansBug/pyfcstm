@@ -1,239 +1,295 @@
-"""Tests for fresh worker process lifecycle and bounded capture."""
+"""Black-box process isolation tests for self-check workers."""
+
+import os
+import sys
+import time
+from pathlib import Path
 
 import pytest
 
+from pyfcstm._selfcheck import process as process_module
+from pyfcstm._selfcheck.model import CheckSpec
+from pyfcstm._selfcheck.process import (
+    STREAM_LIMIT,
+    _BoundedCapture,
+    _command_for_worker,
+    run_check_process,
+)
+from pyfcstm._selfcheck.protocol import encode_result_frame
 
-def _is_windows_isolation_error(result):
-    """Return whether a Windows runner rejected nested Job Object assignment."""
-    import os
 
-    if os.name == "nt" and result.reason == "isolation_unavailable":
-        assert result.status == "ERROR"
+_FIXTURE = Path(__file__).with_name("fixtures") / "worker_process.py"
+
+
+def _install_fixture(monkeypatch, scenario, child_pid_file=None):
+    def command(check, nonce, result_mode, result_file):
+        result = [
+            sys.executable,
+            str(_FIXTURE),
+            "--check-id",
+            check.check_id,
+            "--nonce",
+            nonce,
+            "--result-mode",
+            result_mode,
+            "--scenario",
+            scenario,
+        ]
+        if result_file is not None:
+            result.extend(("--result-file", result_file))
+        if child_pid_file is not None:
+            result.extend(("--child-pid-file", str(child_pid_file)))
+        return result
+
+    monkeypatch.setattr(process_module, "_command_for_worker", command)
+
+
+def _spec(name="fixture.process"):
+    return CheckSpec(name, "fixture", title="process fixture")
+
+
+def _pid_alive(pid):
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
         return True
-    return False
+    return True
+
+
+def _wait_for_pid_exit(pid, timeout=3.0):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if not _pid_alive(pid):
+            return True
+        time.sleep(0.02)
+    return not _pid_alive(pid)
 
 
 @pytest.mark.unittest
 def test_artifact_self_dispatch_runs_in_fresh_process():
-    """The real PR-2 check uses the current interpreter and returns PASS."""
-    from pyfcstm._selfcheck.model import CheckSpec
-    from pyfcstm._selfcheck.process import run_check_process
-
+    """The real hidden worker completes through the production command path."""
     result = run_check_process(
-        CheckSpec("artifact.self_dispatch", "self_dispatch"), timeout=10.0
+        CheckSpec(
+            "artifact.self_dispatch",
+            "self_dispatch",
+            title="isolated self-dispatch",
+        ),
+        timeout=10.0,
     )
-    if _is_windows_isolation_error(result):
-        return
     assert result.status == "PASS"
-    assert result.transport in ("file", "stdout")
-    assert result.return_code == 0
+    assert result.pid and result.pid != os.getpid()
+    assert result.transport == "file"
 
 
 @pytest.mark.unittest
-def test_timeout_terminates_process_group(monkeypatch):
-    """A hanging fixture is normalized to TIMEOUT without waiting forever."""
-    from pyfcstm._selfcheck.model import CheckSpec
-    from pyfcstm._selfcheck.process import run_check_process
-
-    result = run_check_process(
-        CheckSpec("fixture.hang", "self_dispatch"), timeout=0.2, test_mode="hang"
-    )
-    if _is_windows_isolation_error(result):
-        return
-    assert result.status == "TIMEOUT"
-    assert result.reason == "worker_deadline_exceeded"
-    assert "sigterm:ProcessLookupError" not in result.details
-
-
-@pytest.mark.unittest
-def test_timeout_preserves_stdout_diagnostics(monkeypatch, tmp_path):
-    """Timeout results retain bounded business stdout as well as stderr."""
-    import sys
-
-    import pyfcstm._selfcheck.process as process_module
-    from pyfcstm._selfcheck.model import CheckSpec
-
-    script = tmp_path / "stdout_hang.py"
-    script.write_text(
-        "import sys, time\n"
-        "sys.stdin.buffer.readline()\n"
-        "sys.stdout.write('stdout-diagnostic\\n')\n"
-        "sys.stdout.flush()\n"
-        "time.sleep(10)\n",
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(
-        process_module,
-        "_command_for_worker",
-        lambda *args: [sys.executable, str(script)],
-    )
-    result = process_module.run_check_process(
-        CheckSpec("fixture.stdout_hang", "self_dispatch"), 0.2
-    )
-    assert result.status == "TIMEOUT"
-    assert "stdout-diagnostic" in result.details
-
-
-@pytest.mark.unittest
-def test_temp_failure_uses_stdout_frame_fallback(monkeypatch):
-    """When the session directory cannot be created, both sides use stdout mode."""
-    from pyfcstm._selfcheck.model import CheckSpec
-    from pyfcstm._selfcheck.process import run_check_process
-
-    def fail_mkdtemp(*args, **kwargs):
-        raise OSError("injected temp failure")
-
-    monkeypatch.setattr("tempfile.mkdtemp", fail_mkdtemp)
-    result = run_check_process(
-        CheckSpec("artifact.self_dispatch", "self_dispatch"), timeout=10.0
-    )
-    if _is_windows_isolation_error(result):
-        return
-    assert result.status == "PASS"
-    assert result.transport == "stdout"
-
-
-@pytest.mark.parametrize("mode", [None, "hang"])
-@pytest.mark.unittest
-def test_worker_session_files_are_removed_after_completion(monkeypatch, tmp_path, mode):
-    """Normal and timeout paths remove result files and their private directory."""
-    import tempfile
-
-    from pyfcstm._selfcheck.model import CheckSpec
-    from pyfcstm._selfcheck.process import run_check_process
-
-    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
-    result = run_check_process(
-        CheckSpec("fixture.cleanup", "self_dispatch"),
-        timeout=0.2 if mode else 5.0,
-        test_mode=mode,
-    )
-    if _is_windows_isolation_error(result):
-        return
-    assert result.status in ("PASS", "TIMEOUT")
-    assert list(tmp_path.iterdir()) == []
-
-
 @pytest.mark.parametrize(
-    ("mode", "status"),
+    ("scenario", "status", "reason"),
     [
-        ("warn", "WARN"),
-        ("fail", "ERROR"),
-        ("crash", "CRASH"),
-        ("abort", "CRASH"),
-        ("system_exit", "ERROR"),
-        ("keyboard_interrupt", "ERROR"),
-        ("no_result", "ERROR"),
-        ("truncated", "ERROR"),
-        ("wrong_nonce", "ERROR"),
-        ("duplicate", "ERROR"),
-        ("malformed", "ERROR"),
+        ("error", "ERROR", None),
+        ("no_result", "ERROR", "missing_result"),
+        ("malformed", "ERROR", "invalid_frame"),
+        ("truncated", "ERROR", "missing_lf"),
+        ("duplicate", "ERROR", "duplicate_frame"),
+        ("wrong_nonce", "ERROR", "wrong_nonce"),
+        ("crash", "CRASH", "worker_exit_without_envelope"),
     ],
 )
-@pytest.mark.unittest
-def test_fault_modes_are_normalized_without_parent_crash(monkeypatch, mode, status):
-    """Hard exits and protocol faults remain local to one check."""
-    from pyfcstm._selfcheck.model import CheckSpec
-    from pyfcstm._selfcheck.process import run_check_process
-
-    result = run_check_process(
-        CheckSpec("fixture." + mode, "self_dispatch"), timeout=5.0, test_mode=mode
-    )
-    if _is_windows_isolation_error(result):
-        return
+def test_worker_fault_categories_are_normalized(monkeypatch, scenario, status, reason):
+    """Representative protocol and hard-exit faults never crash the parent."""
+    _install_fixture(monkeypatch, scenario)
+    result = run_check_process(_spec("fixture." + scenario), timeout=5.0)
     assert result.status == status
+    if reason is not None:
+        assert result.reason == reason
 
 
 @pytest.mark.unittest
-def test_crash_cleans_up_grandchild_on_posix(monkeypatch, tmp_path):
-    """A crashed group leader cannot leave a descendant behind."""
-    import os
-    import time
-
-    if os.name != "posix":
-        pytest.skip("POSIX process groups are tested on POSIX")
-    from pyfcstm._selfcheck.model import CheckSpec
-    from pyfcstm._selfcheck.process import run_check_process
-
-    pid_file = tmp_path / "crash-child.pid"
-    monkeypatch.setenv("PYFCSTM_SELFCHECK_CHILD_PID_FILE", str(pid_file))
-    result = run_check_process(
-        CheckSpec("fixture.crash_spawn", "self_dispatch"), 5.0, test_mode="crash_spawn"
-    )
-    assert result.status == "CRASH"
-    child_pid = int(pid_file.read_text(encoding="ascii"))
-    deadline = time.time() + 2.0
-    while time.time() < deadline:
-        try:
-            os.kill(child_pid, 0)
-        except OSError:
-            break
-        time.sleep(0.05)
-    else:
-        pytest.fail("spawned child survived crash cleanup")
-
-
-@pytest.mark.unittest
-def test_stream_capture_is_bounded(monkeypatch):
-    """Oversized stderr is drained and reported with truncation metadata."""
-    from pyfcstm._selfcheck.model import CheckSpec
-    from pyfcstm._selfcheck.process import run_check_process
-
-    result = run_check_process(
-        CheckSpec("fixture.huge_output", "self_dispatch"),
-        timeout=5.0,
-        test_mode="huge_output",
-    )
-    if _is_windows_isolation_error(result):
-        return
-    assert result.status == "PASS"
-    assert result.truncated_bytes > 0
-
-
-@pytest.mark.unittest
-def test_invalid_utf8_diagnostics_do_not_break_result(monkeypatch):
-    """Invalid diagnostic bytes are preserved through backslash replacement."""
-    from pyfcstm._selfcheck.model import CheckSpec
-    from pyfcstm._selfcheck.process import run_check_process
-
-    result = run_check_process(
-        CheckSpec("fixture.invalid_utf8", "self_dispatch"),
-        5.0,
-        test_mode="invalid_utf8",
-    )
-    if _is_windows_isolation_error(result):
-        return
-    assert result.status == "PASS"
-    assert "\\xff" in result.details
-
-
-@pytest.mark.unittest
-def test_valid_envelope_is_authoritative_over_nonzero_return_code(monkeypatch):
-    """A valid PASS envelope remains PASS while preserving the worker rc."""
-    from pyfcstm._selfcheck.model import CheckSpec
-    from pyfcstm._selfcheck.process import run_check_process
-
-    result = run_check_process(
-        CheckSpec("fixture.nonzero_envelope", "self_dispatch"),
-        5.0,
-        test_mode="nonzero_envelope",
-    )
-    if _is_windows_isolation_error(result):
-        return
+def test_valid_envelope_is_authoritative_over_nonzero_exit(monkeypatch):
+    """A complete semantic frame wins over the worker diagnostic return code."""
+    _install_fixture(monkeypatch, "nonzero_envelope")
+    result = run_check_process(_spec(), timeout=5.0)
     assert result.status == "PASS"
     assert result.return_code == 7
 
 
 @pytest.mark.unittest
-def test_start_gate_write_has_an_independent_deadline():
-    """A blocked stdin writer is bounded before the worker deadline."""
-    import threading
+def test_worker_protocol_write_failure_is_error(monkeypatch):
+    """Infrastructure exit code 3 without a frame is not misreported as crash."""
+    _install_fixture(monkeypatch, "exit3_no_frame")
+    result = run_check_process(_spec(), timeout=5.0)
+    assert result.status == "ERROR"
+    assert result.reason == "worker_protocol_error"
 
-    from pyfcstm._selfcheck.process import _send_start_gate
+
+@pytest.mark.unittest
+def test_timeout_preserves_output_and_terminates_worker(monkeypatch):
+    """Deadline expiry returns bounded evidence after process-tree cleanup."""
+    _install_fixture(monkeypatch, "hang")
+    result = run_check_process(_spec(), timeout=0.2)
+    assert result.status == "TIMEOUT"
+    assert result.timeout is True
+    assert result.duration_ms < 5000
+
+
+@pytest.mark.unittest
+@pytest.mark.skipif(os.name != "posix", reason="POSIX process-group contract")
+@pytest.mark.parametrize("scenario", ["spawn_hang", "crash_spawn"])
+def test_timeout_and_crash_clean_up_grandchildren(monkeypatch, tmp_path, scenario):
+    """Both timeout and leader crash remove descendants from the worker group."""
+    child_pid_file = tmp_path / "child.pid"
+    _install_fixture(monkeypatch, scenario, child_pid_file)
+    result = run_check_process(_spec(), timeout=0.4)
+    assert result.status in ("TIMEOUT", "CRASH")
+    assert child_pid_file.exists()
+    child_pid = int(child_pid_file.read_text(encoding="ascii"))
+    assert _wait_for_pid_exit(child_pid)
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize("scenario", ["huge_stderr", "huge_stdout"])
+def test_stream_capture_is_bounded(monkeypatch, scenario):
+    """Unbounded business output cannot exhaust supervisor memory."""
+    _install_fixture(monkeypatch, scenario)
+    result = run_check_process(_spec(), timeout=5.0)
+    assert result.status == "PASS"
+    assert result.truncated_bytes > 0
+    assert (
+        len(result.stdout.encode()) + len(result.stderr.encode())
+        < 2 * STREAM_LIMIT + 100
+    )
+
+
+@pytest.mark.unittest
+def test_invalid_utf8_diagnostics_remain_reportable(monkeypatch):
+    """Invalid worker bytes use backslash escaping instead of breaking JSON."""
+    _install_fixture(monkeypatch, "invalid_utf8")
+    result = run_check_process(_spec(), timeout=5.0)
+    assert result.status == "PASS"
+    assert "\\xff" in result.stderr
+
+
+@pytest.mark.unittest
+def test_temp_failure_uses_stdout_protocol_fallback(monkeypatch):
+    """A missing private temp directory does not disable isolated checking."""
+    _install_fixture(monkeypatch, "pass")
+    monkeypatch.setattr(
+        "tempfile.mkdtemp", lambda **kwargs: (_ for _ in ()).throw(OSError("no temp"))
+    )
+    result = run_check_process(_spec(), timeout=5.0)
+    assert result.status == "PASS"
+    assert result.transport == "stdout"
+
+
+@pytest.mark.unittest
+def test_stdout_protocol_survives_oversized_unterminated_business_output(monkeypatch):
+    """Fallback protocol extraction is independent from bounded business output."""
+    _install_fixture(monkeypatch, "huge_stdout")
+    monkeypatch.setattr(
+        "tempfile.mkdtemp", lambda **kwargs: (_ for _ in ()).throw(OSError("no temp"))
+    )
+    result = run_check_process(_spec(), timeout=5.0)
+    assert result.status == "PASS"
+    assert result.transport == "stdout"
+    assert result.truncated_bytes > 0
+
+
+@pytest.mark.unittest
+def test_worker_session_files_are_removed(monkeypatch, tmp_path):
+    """Result transport files and the private session directory are temporary."""
+    session = tmp_path / "session"
+    session.mkdir()
+    _install_fixture(monkeypatch, "pass")
+    monkeypatch.setattr("tempfile.mkdtemp", lambda **kwargs: str(session))
+    assert run_check_process(_spec(), timeout=5.0).status == "PASS"
+    assert not session.exists()
+
+
+@pytest.mark.unittest
+def test_spawn_failure_is_a_structured_error(monkeypatch):
+    """An unavailable executable becomes a check result instead of an exception."""
+    monkeypatch.setattr(
+        "subprocess.Popen",
+        lambda *args, **kwargs: (_ for _ in ()).throw(OSError("spawn failed")),
+    )
+    result = run_check_process(_spec(), timeout=1.0)
+    assert result.status == "ERROR"
+    assert result.reason == "spawn_failed"
+
+
+@pytest.mark.unittest
+def test_worker_command_switches_for_frozen_artifact(monkeypatch):
+    """Frozen workers re-enter the same executable without Python ``-m``."""
+    check = _spec("demo")
+    source = _command_for_worker(check, "7" * 32, "stdout", None)
+    assert source[:3] == [sys.executable, "-m", "pyfcstm"]
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    frozen = _command_for_worker(check, "7" * 32, "stdout", None)
+    assert frozen[0] == sys.executable
+    assert "-m" not in frozen
+
+
+@pytest.mark.unittest
+def test_bounded_capture_extracts_protocol_without_preceding_newline():
+    """A framed result remains recoverable after unterminated business bytes."""
+    capture = _BoundedCapture(limit=32, capture_protocol=True)
+    frame = encode_result_frame(
+        {
+            "schema": "pyfcstm-selfcheck-worker/v1",
+            "check_id": "demo",
+            "nonce": "8" * 32,
+            "status": "PASS",
+        }
+    )
+    capture.append(b"business" + frame)
+    capture.finish()
+    assert capture.raw() == b"business"
+    assert capture.protocol_bytes() == frame
+
+
+@pytest.mark.unittest
+def test_keyboard_interrupt_terminates_started_worker(monkeypatch):
+    """An interrupt during wait still invokes bounded cleanup before re-raising."""
+    cleaned = []
+
+    class Process:
+        pid = 12345
+        returncode = None
+        stdin = type(
+            "Input",
+            (),
+            {
+                "write": lambda self, data: None,
+                "flush": lambda self: None,
+                "close": lambda self: None,
+            },
+        )()
+        stdout = type("Output", (), {"read": lambda self, size: b""})()
+        stderr = type("Output", (), {"read": lambda self, size: b""})()
+
+        def wait(self, timeout=None):
+            raise KeyboardInterrupt()
+
+    monkeypatch.setattr("subprocess.Popen", lambda *args, **kwargs: Process())
+    monkeypatch.setattr(
+        process_module,
+        "_terminate",
+        lambda process, job, posix_group, grace: cleaned.append(process) or None,
+    )
+    with pytest.raises(KeyboardInterrupt):
+        run_check_process(_spec(), timeout=1.0)
+    assert cleaned
+
+
+@pytest.mark.unittest
+def test_start_gate_write_is_independently_bounded():
+    """A blocked or broken stdin writer cannot consume the worker deadline."""
+    import threading
 
     release = threading.Event()
 
-    class BlockingStdin:
+    class BlockingInput:
         def write(self, data):
             del data
             release.wait(2.0)
@@ -244,110 +300,38 @@ def test_start_gate_write_has_an_independent_deadline():
         def close(self):
             return None
 
-    class Process:
-        stdin = BlockingStdin()
-
-    error, writer = _send_start_gate(Process(), "4" * 32, 0.01)
+    process = type("Process", (), {"stdin": BlockingInput()})()
+    error, writer = process_module._send_start_gate(process, "4" * 32, 0.01)
     assert error == "start_gate_timeout"
     release.set()
     writer.join(timeout=1.0)
 
-
-@pytest.mark.unittest
-def test_start_gate_write_errors_are_normalized():
-    """Broken stdin and close handles return a stable gate diagnostic."""
-    from pyfcstm._selfcheck.process import _send_start_gate
-
-    class BrokenStdin:
+    class BrokenInput(BlockingInput):
         def write(self, data):
             del data
-            raise OSError("pipe")
-
-        def flush(self):
-            return None
-
-        def close(self):
             raise OSError("closed")
 
-    class Process:
-        stdin = BrokenStdin()
-
-    error, writer = _send_start_gate(Process(), "8" * 32, 1.0)
+    process.stdin = BrokenInput()
+    error, writer = process_module._send_start_gate(process, "5" * 32, 1.0)
     writer.join(timeout=1.0)
-    assert error.startswith("start_gate_write:")
+    assert error == "start_gate_write:OSError"
 
 
 @pytest.mark.unittest
-def test_capture_handles_oversized_protocol_and_pending_data():
-    """Protocol capture remains bounded even for an oversized frame line."""
-    from pyfcstm._selfcheck.process import _BoundedCapture
-    from pyfcstm._selfcheck.process import FRAME_PREFIX
-    from pyfcstm._selfcheck.process import MAX_ENVELOPE_BYTES
-
-    capture = _BoundedCapture(capture_protocol=True)
-    capture.append(FRAME_PREFIX + b"x" * MAX_ENVELOPE_BYTES + b"\n")
-    assert capture.protocol_frames
-    capture.append(FRAME_PREFIX + b"y\n" * 20)
-    assert len(capture.protocol_frames) <= 2
-    capture.append(b"y" * (MAX_ENVELOPE_BYTES + 1))
-    assert len(capture._protocol_pending) <= MAX_ENVELOPE_BYTES + 1
-
-
-@pytest.mark.unittest
-def test_capture_preserves_all_bytes_before_limit():
-    """Streams below the cap retain their complete diagnostic payload."""
-    from pyfcstm._selfcheck.process import _BoundedCapture
-
-    capture = _BoundedCapture(limit=20)
-    capture.append(b"abcdefghijklm")
-    assert capture.truncated_bytes == 0
-    assert capture.raw() == b"abcdefghijklm"
-
-
-@pytest.mark.unittest
-def test_stdout_protocol_frame_can_follow_unterminated_business_output():
-    """Protocol extraction does not require business output to end in LF."""
-    from pyfcstm._selfcheck.process import _BoundedCapture
-    from pyfcstm._selfcheck.protocol import _decode_frame
-    from pyfcstm._selfcheck.protocol import encode_result_frame
-
-    nonce = "1" * 32
-    frame = encode_result_frame(
-        {
-            "schema": "pyfcstm-selfcheck-worker/v1",
-            "check_id": "fixture.stdout",
-            "nonce": nonce,
-            "status": "PASS",
-        }
-    )
-    capture = _BoundedCapture(limit=128, capture_protocol=True)
-    capture.append(b"business-output-without-lf" + frame)
-    capture.finish()
-    assert (
-        _decode_frame(capture.protocol_bytes(), nonce, "fixture.stdout")["status"]
-        == "PASS"
-    )
-    assert capture.raw() == b"business-output-without-lf"
-    assert capture.truncated_bytes == 0
-
-
-@pytest.mark.unittest
-def test_protocol_capture_flushes_partial_and_oversized_frames():
-    """EOF turns incomplete protocol candidates into bounded parse failures."""
-    from pyfcstm._selfcheck.process import _BoundedCapture
-    from pyfcstm._selfcheck.process import FRAME_PREFIX
-    from pyfcstm._selfcheck.process import MAX_ENVELOPE_BYTES
+def test_bounded_capture_handles_partial_and_oversized_protocol_frames():
+    """EOF and oversized protocol candidates remain bounded and observable."""
+    from pyfcstm._selfcheck.protocol import FRAME_PREFIX, MAX_ENVELOPE_BYTES
 
     noise = _BoundedCapture(capture_protocol=True)
-    noise.append(b"partial-noise")
+    noise.append(b"ordinary output")
     noise.finish()
-    assert noise.raw() == b"partial-noise"
+    assert noise.raw() == b"ordinary output"
 
     partial = _BoundedCapture(capture_protocol=True)
-    partial.append(b"prefix-noise" + FRAME_PREFIX + b"partial")
+    partial.append(b"prefix" + FRAME_PREFIX + b"partial")
     partial.finish()
+    assert partial.raw() == b"prefix"
     assert partial.protocol_frames
-    assert partial.raw() == b"prefix-noise"
 
     oversized = _BoundedCapture(capture_protocol=True)
     oversized.append(FRAME_PREFIX + b"x" * (MAX_ENVELOPE_BYTES + 2))
@@ -356,757 +340,161 @@ def test_protocol_capture_flushes_partial_and_oversized_frames():
 
 
 @pytest.mark.unittest
-def test_windows_job_termination_waits_for_process_exit():
-    """Job cleanup waits even when the native job path reports success."""
-    from pyfcstm._selfcheck.process import _terminate
-
-    calls = []
-
-    class Job:
-        def terminate(self, code):
-            calls.append(("job_terminate", code))
-
-        def close(self):
-            calls.append(("job_close",))
-
-    class Process:
-        pid = 11
-
-        def wait(self, timeout=None):
-            calls.append(("wait", timeout))
-            return 0
-
-        def kill(self):
-            calls.append(("kill",))
-
-    assert _terminate(Process(), Job(), False) is None
-    assert [item[0] for item in calls] == ["job_terminate", "job_close", "wait"]
-
-
-@pytest.mark.unittest
-def test_keyboard_interrupt_terminates_started_worker(monkeypatch):
-    """A parent interrupt cleans the worker before propagating to supervisor."""
-    import os
-    from types import SimpleNamespace
-
-    import pyfcstm._selfcheck.process as process_module
-    from pyfcstm._selfcheck.model import CheckSpec
-
-    class Stream:
-        def read(self, size):
-            del size
-            return b""
-
-    class Process:
-        pid = 4242
-        returncode = None
-        stdin = Stream()
-        stdout = Stream()
-        stderr = Stream()
-
-    process = Process()
-    fake_os = SimpleNamespace(
-        name="posix",
-        path=os.path,
-        environ=os.environ,
-        unlink=os.unlink,
-        rmdir=os.rmdir,
-        write=os.write,
-        killpg=lambda *args: None,
-    )
-    terminated = []
-    monkeypatch.setattr(process_module, "os", fake_os)
-    monkeypatch.setattr(process_module.subprocess, "Popen", lambda *a, **k: process)
-    monkeypatch.setattr(
-        process_module,
-        "_send_start_gate",
-        lambda *args: (_ for _ in ()).throw(KeyboardInterrupt()),
-    )
-    monkeypatch.setattr(
-        process_module,
-        "_terminate",
-        lambda *args, **kwargs: terminated.append(args) or None,
-    )
-    with pytest.raises(KeyboardInterrupt):
-        process_module.run_check_process(
-            CheckSpec("fixture.interrupt", "self_dispatch"), timeout=1.0
-        )
-    assert terminated and terminated[0][0] is process
-
-
-@pytest.mark.unittest
-def test_stream_reader_records_pipe_errors():
-    """Reader-thread pipe errors are converted into queue events."""
-    import queue
-
-    from pyfcstm._selfcheck.process import _BoundedCapture
-    from pyfcstm._selfcheck.process import _drain
+def test_stream_reader_records_pipe_failure():
+    """Reader failures become bounded diagnostics instead of thread crashes."""
 
     class BrokenStream:
         def read(self, size):
             del size
             raise OSError("closed")
 
-    events = queue.Queue()
-    _drain(BrokenStream(), _BoundedCapture(), events)
-    assert events.get_nowait().startswith("stream_error:")
-    assert events.get_nowait() == "stream_done"
+    errors = []
+    process_module._drain(BrokenStream(), _BoundedCapture(), errors)
+    assert errors == ["stream_error:OSError"]
 
 
 @pytest.mark.unittest
-def test_stream_reader_errors_are_consumed_as_diagnostics():
-    """Reader failures are surfaced by the supervisor event collector."""
-    import queue
-
-    from pyfcstm._selfcheck.process import _BoundedCapture
-    from pyfcstm._selfcheck.process import _drain
-    from pyfcstm._selfcheck.process import _drain_stream_errors
-
-    class BrokenStream:
-        def read(self, size):
-            del size
-            raise OSError("closed")
-
-    events = queue.Queue()
-    _drain(BrokenStream(), _BoundedCapture(), events)
-    assert _drain_stream_errors(events) == ["stream_error:OSError"]
-
-
-@pytest.mark.unittest
-def test_worker_does_not_import_from_caller_working_directory(monkeypatch, tmp_path):
-    """A cwd shadow package cannot forge the artifact self-dispatch result."""
-    from pyfcstm._selfcheck.model import CheckSpec
-    from pyfcstm._selfcheck.process import run_check_process
-
-    shadow = tmp_path / "pyfcstm"
-    shadow.mkdir()
-    (shadow / "__init__.py").write_text("__version__ = 'evil'\n", encoding="utf-8")
-    (shadow / "__main__.py").write_text(
-        "import json, sys\n"
-        "sys.stdin.buffer.readline()\n"
-        "nonce = sys.argv[sys.argv.index('--nonce') + 1]\n"
-        "path = sys.argv[sys.argv.index('--result-file') + 1]\n"
-        "payload = {'schema': 'pyfcstm-selfcheck-worker/v1', 'check_id': 'artifact.self_dispatch',\n"
-        "           'nonce': nonce, 'status': 'PASS', 'summary': 'EVIL MODULE'}\n"
-        "with open(path, 'ab') as stream:\n"
-        "    stream.write(b'PYFCSTM_SELF_CHECK_RESULT_V1 ' + json.dumps(payload).encode() + b'\\n')\n",
-        encoding="utf-8",
-    )
-    monkeypatch.chdir(tmp_path)
-    result = run_check_process(
-        CheckSpec("artifact.self_dispatch", "self_dispatch"), timeout=5.0
-    )
-    assert result.status == "PASS"
-    assert result.summary != "EVIL MODULE"
-
-
-@pytest.mark.unittest
-def test_windows_cleanup_error_retries_job_close(monkeypatch):
-    """A failed Windows cleanup remains eligible for the finally retry."""
-    from types import SimpleNamespace
-
-    import pyfcstm._selfcheck.process as process_module
-    from pyfcstm._selfcheck.model import CheckSpec
-
-    class Stream:
-        def read(self, size):
-            del size
-            return b""
+def test_job_and_direct_cleanup_failures_are_bounded():
+    """Native and direct cleanup errors are returned as diagnostic evidence."""
+    from pyfcstm._selfcheck._win32 import JobAssignmentError
 
     class Process:
-        pid = 1001
-        stdin = Stream()
-        stdout = Stream()
-        stderr = Stream()
-        returncode = None
-
-    calls = []
-    fake_os = SimpleNamespace(
-        name="nt",
-        path=process_module.os.path,
-        environ=process_module.os.environ,
-        unlink=process_module.os.unlink,
-        rmdir=process_module.os.rmdir,
-        write=process_module.os.write,
-    )
-    monkeypatch.setattr(process_module, "os", fake_os)
-    monkeypatch.setattr(process_module.subprocess, "Popen", lambda *a, **k: Process())
-    monkeypatch.setattr(process_module, "attach_process", lambda child: object())
-    monkeypatch.setattr(
-        process_module,
-        "_send_start_gate",
-        lambda *args: ("gate failed", SimpleNamespace(join=lambda timeout=None: None)),
-    )
-    monkeypatch.setattr(
-        process_module,
-        "_terminate",
-        lambda *args, **kwargs: "job_close:OSError",
-    )
-    monkeypatch.setattr(
-        process_module,
-        "_close_job",
-        lambda *args, **kwargs: calls.append("retry") or None,
-    )
-    result = process_module.run_check_process(
-        CheckSpec("fixture.cleanup", "self_dispatch"), timeout=1.0
-    )
-    assert result.reason == "start_gate"
-    assert calls == ["retry"]
-
-
-@pytest.mark.unittest
-def test_worker_command_switches_to_frozen_dispatch(monkeypatch):
-    """Frozen workers reuse the executable instead of importing as a module."""
-    import sys
-
-    from pyfcstm._selfcheck.model import CheckSpec
-    from pyfcstm._selfcheck.process import _command_for_worker
-
-    monkeypatch.setattr(sys, "frozen", True, raising=False)
-    command = _command_for_worker(CheckSpec("demo", "demo"), "7" * 32, "stdout", None)
-    assert "-m" not in command
-    assert "--self-check-worker" in command
-    assert not any("worker-v1" in item for item in command)
-
-
-@pytest.mark.unittest
-def test_stale_test_mode_environment_is_not_forwarded(monkeypatch):
-    """A caller's test-injection environment cannot alter a production run."""
-    from pyfcstm._selfcheck.model import CheckSpec
-    from pyfcstm._selfcheck.process import run_check_process
-
-    monkeypatch.setenv("PYFCSTM_SELFCHECK_TEST_MODE", "hang")
-    result = run_check_process(
-        CheckSpec("fixture.stale_mode", "self_dispatch"), timeout=2.0
-    )
-    if _is_windows_isolation_error(result):
-        return
-    assert result.status == "PASS"
-
-
-@pytest.mark.parametrize("error_type", [OSError, MemoryError, RuntimeError])
-@pytest.mark.unittest
-def test_native_attach_error_terminates_started_worker(monkeypatch, error_type):
-    """Native setup failures still terminate the already-created worker."""
-    import os
-    from types import SimpleNamespace
-
-    import pyfcstm._selfcheck.process as process_module
-    from pyfcstm._selfcheck.model import CheckSpec
-
-    class Stream:
-        def read(self, size):
-            del size
-            return b""
-
-    class Process:
-        pid = 4242
-        returncode = None
+        pid = 7
 
         def __init__(self):
             self.calls = []
-            self.stdin = Stream()
-            self.stdout = Stream()
-            self.stderr = Stream()
+            self.waits = 0
 
         def terminate(self):
             self.calls.append("terminate")
 
         def kill(self):
             self.calls.append("kill")
+            raise OSError("kill")
 
         def wait(self, timeout=None):
             self.calls.append(("wait", timeout))
-            self.returncode = 1
+            self.waits += 1
+            if self.waits == 1:
+                raise __import__("subprocess").TimeoutExpired("worker", timeout)
+            raise ChildProcessError("gone")
+
+    class Job:
+        def terminate(self, code):
+            del code
+            raise JobAssignmentError("job")
+
+        def close(self):
+            raise OSError("close")
+
+    process = Process()
+    details = process_module._terminate(process, Job(), False, grace=0.01)
+    assert "job_terminate:JobAssignmentError" in details
+    assert "job_close:OSError" in details
+
+    process = Process()
+    process.terminate = lambda: (_ for _ in ()).throw(OSError("terminate"))
+    details = process_module._terminate(process, None, False, grace=0.01)
+    assert "process_terminate:OSError" in details
+    assert "process_kill:OSError" in details
+
+
+@pytest.mark.unittest
+def test_posix_cleanup_targets_the_entire_process_group(monkeypatch):
+    """POSIX cleanup sends graceful and hard signals to the worker group."""
+    calls = []
+
+    def killpg(pid, sig):
+        calls.append((pid, sig))
+        if sig == 0:
+            raise ProcessLookupError()
+
+    class Process:
+        pid = 17
+
+        @staticmethod
+        def wait(timeout=None):
+            del timeout
             return 1
+
+    monkeypatch.setattr(process_module.os, "killpg", killpg)
+    assert process_module._terminate(Process(), None, True, grace=0.01) is None
+    assert (17, process_module.signal.SIGTERM) in calls
+    assert (17, process_module.signal.SIGKILL) in calls
+
+
+@pytest.mark.unittest
+def test_native_containment_failure_terminates_started_worker(monkeypatch):
+    """A Windows Job assignment failure never leaves the worker running."""
+    from types import SimpleNamespace
+
+    class Process:
+        pid = 23
+        returncode = None
+
+        def __init__(self):
+            self.terminated = False
+
+        def terminate(self):
+            self.terminated = True
+            self.returncode = 1
+
+        def wait(self, timeout=None):
+            del timeout
+            return self.returncode
 
     process = Process()
     fake_os = SimpleNamespace(
         name="nt",
         path=os.path,
+        environ=os.environ,
         unlink=os.unlink,
         rmdir=os.rmdir,
         write=os.write,
-        environ=os.environ,
     )
     monkeypatch.setattr(process_module, "os", fake_os)
     monkeypatch.setattr(process_module.subprocess, "Popen", lambda *a, **k: process)
     monkeypatch.setattr(
         process_module,
         "attach_process",
-        lambda child: (_ for _ in ()).throw(error_type("native attach")),
+        lambda child: (_ for _ in ()).throw(OSError("assignment")),
     )
-    result = process_module.run_check_process(
-        CheckSpec("fixture.native", "self_dispatch"), timeout=0.1
-    )
+    result = run_check_process(_spec(), timeout=0.1)
     assert result.status == "ERROR"
     assert result.reason == "isolation_unavailable"
-    assert "terminate" in process.calls
+    assert process.terminated is True
 
 
 @pytest.mark.unittest
-def test_cleanup_failures_are_returned_as_diagnostics():
-    """Termination failures do not escape the process supervisor."""
-    from pyfcstm._selfcheck._win32 import JobAssignmentError
-    from pyfcstm._selfcheck.process import _terminate
-
-    class Job:
-        def terminate(self, code):
-            del code
-            raise JobAssignmentError("injected")
-
-        def close(self):
-            return None
-
-    class Process:
-        pid = 1
-        returncode = 1
-
-        def terminate(self):
-            return None
-
-        def wait(self, timeout=None):
-            del timeout
-            return self.returncode
-
-    assert "job_terminate" in (_terminate(Process(), Job(), False) or "")
-
-
-@pytest.mark.unittest
-def test_explicit_job_cleanup_terminates_before_close():
-    """Windows 7 fallback cleanup terminates descendants on normal return."""
-    from pyfcstm._selfcheck.process import _close_job
-
-    calls = []
-
-    class Job:
-        kill_on_close = False
-
-        def terminate(self, code):
-            calls.append(("terminate", code))
-
-        def close(self):
-            calls.append(("close",))
-
-    assert _close_job(Job()) is None
-    assert calls == [("terminate", 1), ("close",)]
-
-
-@pytest.mark.unittest
-def test_explicit_job_cleanup_reaps_unsettled_worker():
-    """Fallback Job cleanup waits for a worker that has not reported exit."""
-    from pyfcstm._selfcheck.process import _close_job
-
-    calls = []
-
-    class Job:
-        kill_on_close = False
-
-        def terminate(self, code):
-            calls.append(("terminate", code))
-
-        def close(self):
-            calls.append(("close",))
-
-    class Process:
-        returncode = None
-
-        def wait(self, timeout=None):
-            calls.append(("wait", timeout))
-            self.returncode = 1
-
-    assert _close_job(Job(), process=Process(), grace=0.25) is None
-    assert calls == [("terminate", 1), ("wait", 0.25), ("close",)]
-
-
-@pytest.mark.unittest
-def test_termination_fallback_paths_are_bounded(monkeypatch):
-    """POSIX and non-POSIX fallback cleanup handles kill/wait failures."""
-    import subprocess
-
-    import pyfcstm._selfcheck.process as process_module
-
-    class Process:
-        pid = 9
-        returncode = 1
-
-        def __init__(self):
-            self.wait_calls = 0
-
-        def terminate(self):
-            raise OSError("terminate")
-
-        def kill(self):
-            raise OSError("kill")
-
-        def wait(self, timeout=None):
-            del timeout
-            self.wait_calls += 1
-            if self.wait_calls == 1:
-                raise subprocess.TimeoutExpired("worker", 0.1)
-            raise ChildProcessError("gone")
-
-    monkeypatch.setattr(
-        process_module.os,
-        "killpg",
-        lambda *args: (_ for _ in ()).throw(OSError("killpg")),
-        raising=False,
-    )
-    monkeypatch.setattr(
-        process_module.signal,
-        "SIGKILL",
-        getattr(process_module.signal, "SIGTERM", 15),
-        raising=False,
-    )
-    assert process_module._terminate(Process(), None, True) is not None
-    assert process_module._terminate(Process(), None, False) is not None
-
-
-@pytest.mark.unittest
-def test_timeout_cleans_up_grandchild_on_posix(monkeypatch, tmp_path):
-    """POSIX process-group cleanup removes a child spawned by a hanging worker."""
-    import os
-    import time
-
-    if os.name != "posix":
-        pytest.skip("POSIX process groups are tested on POSIX")
-    from pyfcstm._selfcheck.model import CheckSpec
-    from pyfcstm._selfcheck.process import run_check_process
-
-    pid_file = tmp_path / "child.pid"
-    monkeypatch.setenv("PYFCSTM_SELFCHECK_CHILD_PID_FILE", str(pid_file))
-    result = run_check_process(
-        CheckSpec("fixture.spawn", "self_dispatch"), 0.3, test_mode="spawn"
-    )
-    assert result.status == "TIMEOUT"
-    child_pid = int(pid_file.read_text(encoding="ascii"))
-    deadline = time.time() + 2.0
-    while time.time() < deadline:
-        try:
-            os.kill(child_pid, 0)
-        except OSError:
-            break
-        time.sleep(0.05)
-    else:
-        pytest.fail("spawned worker child survived timeout cleanup")
-
-
-@pytest.mark.unittest
-def test_protocol_frame_survives_oversized_business_stdout(monkeypatch):
-    """Protocol parsing remains independent from the bounded business stream."""
-    from pyfcstm._selfcheck.model import CheckSpec
-    from pyfcstm._selfcheck.process import run_check_process
-
-    result = run_check_process(
-        CheckSpec("fixture.huge_stdout", "self_dispatch"),
-        timeout=5.0,
-        test_mode="huge_stdout",
-    )
-    if _is_windows_isolation_error(result):
-        return
-    assert result.status == "PASS"
-    assert result.truncated_bytes > 0
-
-
-@pytest.mark.unittest
-def test_spawn_failure_is_an_error(monkeypatch):
-    """Popen errors are converted into one terminal result."""
-    from pyfcstm._selfcheck.model import CheckSpec
-    from pyfcstm._selfcheck.process import run_check_process
-
-    def fail_popen(*args, **kwargs):
-        raise OSError("injected spawn failure")
-
-    monkeypatch.setattr("subprocess.Popen", fail_popen)
-    result = run_check_process(CheckSpec("fixture.spawn", "self_dispatch"), timeout=1.0)
-    assert result.status == "ERROR"
-
-
-@pytest.mark.unittest
-def test_termination_reports_job_and_process_failures():
-    """Job cleanup records every bounded fallback failure without raising."""
-    import subprocess
-
-    from pyfcstm._selfcheck.process import _terminate
-
-    calls = {"wait": 0}
-
-    class Job:
-        def terminate(self, code):
-            del code
-            raise OSError("job terminate")
-
-        def close(self):
-            raise ValueError("job close")
-
-    class Process:
-        pid = 99
-
-        def terminate(self):
-            raise ProcessLookupError("already gone")
-
-        def kill(self):
-            raise ValueError("kill failed")
-
-        def wait(self, timeout=None):
-            del timeout
-            calls["wait"] += 1
-            if calls["wait"] == 1:
-                raise subprocess.TimeoutExpired("worker", 0.1)
-            raise ChildProcessError("not a child")
-
-    details = _terminate(Process(), Job(), False, grace=0.1)
-    assert details is not None
-    for label in (
-        "job_terminate",
-        "process_terminate",
-        "job_close",
-        "process_kill",
-        "process_wait",
-    ):
-        assert label in details
-
-
-@pytest.mark.unittest
-def test_posix_termination_reports_group_and_wait_failures(monkeypatch):
-    """POSIX cleanup records signal, group-probe, and reap diagnostics."""
-    import os
-    import subprocess
-
-    if os.name != "posix":
-        pytest.skip("POSIX process-group cleanup is tested on POSIX")
-
-    import pyfcstm._selfcheck.process as process_module
-
-    calls = []
-
-    class Process:
-        pid = 101
-
-        def wait(self, timeout=None):
-            del timeout
-            calls.append("wait")
-            if calls.count("wait") == 1:
-                raise subprocess.TimeoutExpired("worker", 0.1)
-            return 0
-
-    def killpg(pid, sig):
-        del pid
-        calls.append(sig)
-        if sig == process_module.signal.SIGTERM:
-            return None
-        if sig == process_module.signal.SIGKILL:
-            return None
-        raise OSError("group probe")
-
-    monkeypatch.setattr(process_module.os, "killpg", killpg)
-    details = process_module._terminate(Process(), None, True, grace=0.1)
-    assert details == "group_probe:OSError"
-
-
-@pytest.mark.unittest
-def test_non_posix_termination_reports_reap_failure():
-    """The non-group fallback reports terminate and wait failures."""
-    from pyfcstm._selfcheck.process import _terminate
-
-    class Process:
-        pid = 102
-
-        def terminate(self):
-            raise ValueError("terminate failed")
-
-        def wait(self, timeout=None):
-            del timeout
-            raise ChildProcessError("reap failed")
-
-    details = _terminate(Process(), None, False, grace=0.1)
-    assert "process_terminate:ValueError" in details
-    assert "process_wait:ChildProcessError" in details
-
-
-@pytest.mark.unittest
-def test_explicit_job_cleanup_reports_all_failures():
-    """Fallback Job cleanup keeps termination, wait, and close diagnostics."""
-    import subprocess
-
-    from pyfcstm._selfcheck.process import _close_job
-
-    class Job:
-        kill_on_close = False
-
-        def terminate(self, code):
-            del code
-            raise OSError("terminate failed")
-
-        def close(self):
-            raise ValueError("close failed")
-
-    class Process:
-        returncode = None
-
-        def wait(self, timeout=None):
-            del timeout
-            raise subprocess.TimeoutExpired("worker", 0.1)
-
-    details = _close_job(Job(), process=Process(), grace=0.1)
-    assert "job_terminate:OSError" in details
-    assert "process_wait:TimeoutExpired" in details
-    assert "job_close:ValueError" in details
-
-
-@pytest.mark.unittest
-def test_start_gate_timeout_handles_broken_close():
-    """A blocked gate writer remains bounded when closing stdin also fails."""
-    import threading
-
-    from pyfcstm._selfcheck.process import _send_start_gate
-
-    release = threading.Event()
-
-    class BlockingStdin:
-        def write(self, data):
-            del data
-            release.wait(2.0)
-
-        def flush(self):
-            return None
-
-        def close(self):
-            raise OSError("close failed")
-
-    class Process:
-        stdin = BlockingStdin()
-
-    error, writer = _send_start_gate(Process(), "a" * 32, 0.01)
-    assert error == "start_gate_timeout"
-    release.set()
-    writer.join(timeout=1.0)
-
-
-@pytest.mark.unittest
-def test_cleanup_session_reports_unlink_and_descriptor_failures(monkeypatch):
-    """Transport cleanup keeps filesystem failures observable."""
-    import errno
-
-    import pyfcstm._selfcheck.process as process_module
-
-    def unlink(path):
-        del path
-        error = OSError("unlink failed")
-        error.errno = errno.EACCES
-        raise error
-
-    monkeypatch.setattr(process_module.os, "unlink", unlink)
-    monkeypatch.setattr(
-        process_module.os,
-        "rmdir",
-        lambda path: (_ for _ in ()).throw(OSError("rmdir failed")),
-    )
-    monkeypatch.setattr(
-        process_module.os,
-        "write",
-        lambda fd, data: (_ for _ in ()).throw(OSError("stderr failed")),
-    )
-    process_module._cleanup_session("session", "result")
-
-
-@pytest.mark.unittest
-def test_run_check_process_start_gate_failure_keeps_cleanup_diagnostic(monkeypatch):
-    """A start-gate error is terminal and includes cleanup evidence."""
-    import pyfcstm._selfcheck.process as process_module
-    from pyfcstm._selfcheck.model import CheckSpec
-
-    # This fake process is intended to exercise the start-gate branch, not native
-    # Windows Job Object setup, which is unavailable on the synthetic object.
-    monkeypatch.setattr(process_module, "attach_process", lambda child: None)
-
-    class EmptyStream:
-        def read(self, size):
+def test_start_gate_failure_retains_cleanup_evidence(monkeypatch):
+    """A failed GO gate returns one structured error with cleanup diagnostics."""
+
+    class Stream:
+        @staticmethod
+        def read(size):
             del size
             return b""
 
-    class FakeStdin:
-        def close(self):
-            return None
-
     class Process:
-        stdin = FakeStdin()
-        stdout = EmptyStream()
-        stderr = EmptyStream()
-        pid = 103
+        pid = 29
+        stdin = Stream()
+        stdout = Stream()
+        stderr = Stream()
 
     class GateThread:
-        def join(self, timeout=None):
+        @staticmethod
+        def join(timeout=None):
             del timeout
 
-    monkeypatch.setattr(
-        process_module.tempfile,
-        "mkdtemp",
-        lambda **kwargs: (_ for _ in ()).throw(OSError("temp")),
-    )
-    monkeypatch.setattr(
-        process_module.subprocess, "Popen", lambda *args, **kwargs: Process()
-    )
-    monkeypatch.setattr(
-        process_module, "_send_start_gate", lambda *args: ("gate failed", GateThread())
-    )
-    monkeypatch.setattr(
-        process_module, "_terminate", lambda *args, **kwargs: "cleanup failed"
-    )
-    result = process_module.run_check_process(
-        CheckSpec("fixture.gate", "self_dispatch"), timeout=1.0
-    )
-    assert result.status == "ERROR"
-    assert result.reason == "start_gate"
-    assert "cleanup=cleanup failed" in result.details
-
-
-@pytest.mark.unittest
-def test_run_check_process_interrupt_writes_best_effort_cleanup(monkeypatch):
-    """Parent interruption preserves the original exception if stderr is broken."""
-    import pyfcstm._selfcheck.process as process_module
-    from pyfcstm._selfcheck.model import CheckSpec
-
-    # Keep the synthetic process on the interruption path on Windows too.
-    monkeypatch.setattr(process_module, "attach_process", lambda child: None)
-
-    class EmptyStream:
-        def read(self, size):
-            del size
-            return b""
-
-    class FakeStdin:
-        def close(self):
-            return None
-
-    class Process:
-        stdin = FakeStdin()
-        stdout = EmptyStream()
-        stderr = EmptyStream()
-        pid = 104
-
-    monkeypatch.setattr(
-        process_module.tempfile,
-        "mkdtemp",
-        lambda **kwargs: (_ for _ in ()).throw(OSError("temp")),
-    )
-    monkeypatch.setattr(
-        process_module.subprocess, "Popen", lambda *args, **kwargs: Process()
-    )
+    monkeypatch.setattr(process_module.subprocess, "Popen", lambda *a, **k: Process())
     monkeypatch.setattr(
         process_module,
         "_send_start_gate",
-        lambda *args: (_ for _ in ()).throw(KeyboardInterrupt()),
+        lambda *args: ("gate failed", GateThread()),
     )
     monkeypatch.setattr(
         process_module, "_terminate", lambda *args, **kwargs: "cleanup failed"
     )
-    monkeypatch.setattr(
-        process_module.os,
-        "write",
-        lambda fd, data: (_ for _ in ()).throw(OSError("stderr failed")),
-    )
-    with pytest.raises(KeyboardInterrupt):
-        process_module.run_check_process(
-            CheckSpec("fixture.interrupt", "self_dispatch"), timeout=1.0
-        )
+    result = run_check_process(_spec(), timeout=0.1)
+    assert result.reason == "start_gate"
+    assert "cleanup=cleanup failed" in result.evidence

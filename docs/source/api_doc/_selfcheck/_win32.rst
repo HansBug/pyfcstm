@@ -29,3 +29,9 @@ attach\_process
 -----------------------------------------------------
 
 .. autofunction:: attach_process
+
+
+write\_console\_ansi
+-----------------------------------------------------
+
+.. autofunction:: write_console_ansi

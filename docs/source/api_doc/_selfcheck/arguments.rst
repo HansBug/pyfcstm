@@ -32,6 +32,12 @@ format\_selfcheck\_help
 .. autofunction:: format_selfcheck_help
 
 
+format\_worker\_help
+-----------------------------------------------------
+
+.. autofunction:: format_worker_help
+
+
 parse\_selfcheck\_args
 -----------------------------------------------------
 

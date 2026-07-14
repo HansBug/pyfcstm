@@ -92,3 +92,16 @@ def test_selfcheck_help_is_available_before_click(capsys):
     assert "pyfcstm --self-check" in output
     assert "--profile" in output
     assert "--self-check-worker" not in output
+
+
+@pytest.mark.unittest
+def test_hidden_worker_help_is_available_before_click(capsys):
+    """The private worker entry point documents its protocol options."""
+    from pyfcstm import _bootstrap
+
+    assert _bootstrap.main(("--self-check-worker", "--help")) == 0
+    output = capsys.readouterr().out
+    assert "pyfcstm --self-check-worker" in output
+    assert "internal entry point" in output
+    assert "--check-id" in output
+    assert "--result-mode" in output

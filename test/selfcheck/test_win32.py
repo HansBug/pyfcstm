@@ -102,6 +102,12 @@ def test_windows_job_handle_and_attach_paths_use_native_calls(monkeypatch):
     )
     job = win32.attach_process(SimpleNamespace(pid=7))
     assert job.kill_on_close is True
+    from ctypes import wintypes
+
+    assert kernel.CreateJobObjectW.restype is wintypes.HANDLE
+    assert kernel.OpenProcess.restype is wintypes.HANDLE
+    assert kernel.AssignProcessToJobObject.restype is wintypes.BOOL
+    assert kernel.CloseHandle.restype is wintypes.BOOL
     assert kernel.OpenProcess.calls[0][0] == 0x0001 | 0x0100
     job.terminate(4)
     job.close()

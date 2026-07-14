@@ -150,7 +150,13 @@ def format_selfcheck_help() -> str:
 
 def _build_worker_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        add_help=False, allow_abbrev=False, prog="pyfcstm worker"
+        add_help=True,
+        allow_abbrev=False,
+        prog="pyfcstm --self-check-worker",
+        description=(
+            "Run one isolated self-check worker. This is an internal entry "
+            "point launched by the self-check supervisor."
+        ),
     )
     parser.add_argument("--check-id", required=True)
     parser.add_argument("--worker-key", required=True)
@@ -158,6 +164,16 @@ def _build_worker_parser() -> argparse.ArgumentParser:
     parser.add_argument("--result-mode", choices=("file", "stdout"), required=True)
     parser.add_argument("--result-file")
     return parser
+
+
+def format_worker_help() -> str:
+    """
+    Return help text for the hidden self-check worker entry point.
+
+    :return: Formatted worker command-line help text.
+    :rtype: str
+    """
+    return _build_worker_parser().format_help()
 
 
 def _parse(parser: argparse.ArgumentParser, arguments: Sequence[str]):

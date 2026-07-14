@@ -74,16 +74,24 @@ class JobHandle:
         """Terminate every process currently assigned to the job."""
         if self.handle and os.name == "nt":
             import ctypes
+            from ctypes import wintypes
 
-            if not ctypes.windll.kernel32.TerminateJobObject(self.handle, exit_code):
+            terminate = ctypes.windll.kernel32.TerminateJobObject
+            terminate.argtypes = [wintypes.HANDLE, wintypes.UINT]
+            terminate.restype = wintypes.BOOL
+            if not terminate(self.handle, exit_code):
                 raise JobAssignmentError("TerminateJobObject failed")
 
     def close(self) -> None:
         """Close the native handle."""
         if self.handle and os.name == "nt":
             import ctypes
+            from ctypes import wintypes
 
-            ctypes.windll.kernel32.CloseHandle(self.handle)
+            close_handle = ctypes.windll.kernel32.CloseHandle
+            close_handle.argtypes = [wintypes.HANDLE]
+            close_handle.restype = wintypes.BOOL
+            close_handle(self.handle)
         self.handle = None
 
 
@@ -99,10 +107,20 @@ def attach_process(process) -> Optional[JobHandle]:
         from ctypes import wintypes
 
         kernel32 = ctypes.windll.kernel32
+        kernel32.CreateJobObjectW.argtypes = [ctypes.c_void_p, wintypes.LPCWSTR]
         kernel32.CreateJobObjectW.restype = wintypes.HANDLE
         handle = kernel32.CreateJobObjectW(None, None)
         if not handle:
             raise JobAssignmentError("CreateJobObject failed")
+        kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.AssignProcessToJobObject.argtypes = [
+            wintypes.HANDLE,
+            wintypes.HANDLE,
+        ]
+        kernel32.AssignProcessToJobObject.restype = wintypes.BOOL
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel32.CloseHandle.restype = wintypes.BOOL
         process_handle = kernel32.OpenProcess(
             _PROCESS_TERMINATE | _PROCESS_SET_QUOTA, False, process.pid
         )

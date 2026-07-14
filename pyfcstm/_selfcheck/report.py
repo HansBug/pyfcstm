@@ -42,13 +42,24 @@ def _windows_vt_supported(stream) -> bool:
         return True
     try:
         import ctypes
-    except ImportError:
+        from ctypes import wintypes
+    except (ImportError, ValueError):
+        # Python 3.7 POSIX builds may reject ctypes.wintypes during import.
         return False
     try:
         kernel32 = ctypes.windll.kernel32
-        handle = kernel32.GetStdHandle(-11)
+        get_std_handle = kernel32.GetStdHandle
+        get_std_handle.argtypes = [wintypes.DWORD]
+        get_std_handle.restype = wintypes.HANDLE
+        get_console_mode = kernel32.GetConsoleMode
+        get_console_mode.argtypes = [
+            wintypes.HANDLE,
+            ctypes.POINTER(wintypes.DWORD),
+        ]
+        get_console_mode.restype = wintypes.BOOL
+        handle = get_std_handle(-11)
         mode = ctypes.c_uint32()
-        if not kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
+        if not get_console_mode(handle, ctypes.byref(mode)):
             return False
         return bool(mode.value & 0x0004)
     except (AttributeError, OSError, TypeError, ValueError, ctypes.ArgumentError):

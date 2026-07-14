@@ -164,6 +164,53 @@ def test_windows_without_vt_support_falls_back_to_plain_status_labels(monkeypatc
 
 
 @pytest.mark.unittest
+def test_windows_vt_probe_declares_pointer_sized_handles(monkeypatch):
+    """The Win32 console probe preserves 64-bit HANDLE values."""
+    import ctypes
+    from types import SimpleNamespace
+
+    try:
+        from ctypes import wintypes
+    except ValueError as err:
+        pytest.skip("ctypes.wintypes unavailable: {}".format(err))
+
+    import pyfcstm._selfcheck.report as report_module
+
+    class Function:
+        def __init__(self, callback):
+            self.callback = callback
+            self.argtypes = None
+            self.restype = None
+
+        def __call__(self, *args):
+            return self.callback(*args)
+
+    get_std_handle = Function(lambda value: 0x123456789 if value == -11 else 0)
+
+    def set_console_mode(handle, mode):
+        del handle
+        mode._obj.value = 0x0004
+        return 1
+
+    get_console_mode = Function(set_console_mode)
+    kernel = SimpleNamespace(
+        GetStdHandle=get_std_handle,
+        GetConsoleMode=get_console_mode,
+    )
+    monkeypatch.setattr(report_module.os, "name", "nt")
+    monkeypatch.setattr(
+        ctypes,
+        "windll",
+        SimpleNamespace(kernel32=kernel),
+        raising=False,
+    )
+
+    assert report_module._windows_vt_supported(object()) is True
+    assert get_std_handle.restype is wintypes.HANDLE
+    assert get_console_mode.restype is wintypes.BOOL
+
+
+@pytest.mark.unittest
 def test_windows_vt_probe_handles_native_attribute_failure(monkeypatch):
     """A partial Win32 ctypes surface falls back without raising."""
     import ctypes

@@ -24,6 +24,7 @@ from .config.meta import __AUTHOR__, __AUTHOR_EMAIL__, __TITLE__, __VERSION__
 from ._selfcheck.arguments import _WORKER_DISPATCH_ARGUMENT
 from ._selfcheck.arguments import _requested_output_format
 from ._selfcheck.arguments import format_selfcheck_help
+from ._selfcheck.arguments import format_worker_help
 
 
 _VERSION_ARGUMENTS = ("-v", "-V", "--version")
@@ -240,6 +241,9 @@ def main(arguments: Optional[Sequence[str]] = None) -> int:
                 _requested_output_format(command_arguments[1:]),
             )
     if command_arguments and command_arguments[0] == _WORKER_DISPATCH_ARGUMENT:
+        if any(item in ("-h", "--help") for item in command_arguments[1:]):
+            sys.stdout.write(format_worker_help())
+            return 0
         if "--self-check" in command_arguments[1:]:
             return _emit_bootstrap_error(
                 "--self-check and {} are mutually exclusive".format(

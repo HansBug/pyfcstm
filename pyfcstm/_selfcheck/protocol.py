@@ -9,7 +9,7 @@ import re
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from .model import TERMINAL_STATUSES
+from .model import CHECK_OUTCOME_STATUSES
 
 
 FRAME_PREFIX = b"PYFCSTM_SELF_CHECK_RESULT_V1 "
@@ -143,7 +143,7 @@ def _decode_frame(
         raise ValueError("wrong_nonce")
     if expected_check_id is not None and payload.get("check_id") != expected_check_id:
         raise ValueError("wrong_check_id")
-    if payload.get("status") not in TERMINAL_STATUSES:
+    if payload.get("status") not in CHECK_OUTCOME_STATUSES:
         raise ValueError("invalid_status")
     return payload
 

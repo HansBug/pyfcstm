@@ -42,8 +42,8 @@ class CheckSpec:
 
     Example::
 
-        >>> CheckSpec("runtime.metadata", "runtime_metadata").group
-        'runtime'
+        >>> CheckSpec("runtime.metadata", "runtime_metadata").execution
+        'worker'
     """
 
     check_id: str
@@ -67,11 +67,6 @@ class CheckSpec:
             raise ValueError("self-check timeout must be positive")
         if not self.title:
             object.__setattr__(self, "title", self.check_id)
-
-    @property
-    def group(self) -> str:
-        """Return the stable group prefix derived from :attr:`check_id`."""
-        return self.check_id.split(".", 1)[0]
 
 
 @dataclass(frozen=True)
@@ -170,11 +165,6 @@ class CheckResult:
         if not self.title:
             object.__setattr__(self, "title", self.check_id)
 
-    @property
-    def group(self) -> str:
-        """Return the stable group prefix derived from :attr:`check_id`."""
-        return self.check_id.split(".", 1)[0]
-
     @classmethod
     def from_outcome(
         cls, spec: CheckSpec, outcome: CheckOutcome, **diagnostics: Any
@@ -220,7 +210,7 @@ class CheckResult:
         """
         return {
             "id": self.check_id,
-            "group": self.group,
+            "group": self.check_id.split(".", 1)[0],
             "title": self.title,
             "status": self.status,
             "required": self.required,
@@ -325,7 +315,7 @@ class Ledger:
             self._states[spec.check_id] = "PENDING"
 
     def ensure_reserved(self, spec: CheckSpec) -> None:
-        """Reserve *spec* if setup was interrupted before bulk reservation."""
+        """Reserve one spec when bulk setup stopped part-way through."""
         if spec.check_id not in self._states:
             self._order.append(spec.check_id)
             self._states[spec.check_id] = "PENDING"

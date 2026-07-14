@@ -19,7 +19,6 @@ def test_spec_and_typed_outcome_build_canonical_result():
         title="isolated self-dispatch",
         prerequisites=("runtime.metadata",),
     )
-    assert spec.group == "artifact"
     outcome = CheckOutcome(
         "PASS",
         "worker ready",
@@ -107,16 +106,6 @@ def test_ledger_rejects_invalid_lifecycle_operations():
         ledger.commit(result)
     with pytest.raises(RuntimeError, match="not pending"):
         ledger.mark_running(spec.check_id)
-
-
-@pytest.mark.unittest
-def test_ensure_reserved_repairs_interrupted_bulk_reservation():
-    """Emergency cleanup can idempotently reserve a missed selected spec."""
-    ledger = Ledger()
-    spec = CheckSpec("demo", "demo")
-    ledger.ensure_reserved(spec)
-    ledger.ensure_reserved(spec)
-    assert ledger.get_state(spec.check_id) == "PENDING"
 
 
 @pytest.mark.unittest

@@ -13,10 +13,12 @@ Example::
     True
 """
 
+import errno
 import os
 import platform
 import sys
 import json
+import tempfile
 from typing import Optional, Sequence
 
 from .config import BUILD_COMMIT, BUILD_REVISION, BUILD_TIME_UTC
@@ -99,6 +101,30 @@ def run_worker(arguments: Sequence[str]) -> int:
 def _emit_bootstrap_error(message: str, output_format: str = "human") -> int:
     """Write a last-resort diagnostic without importing the normal CLI graph."""
     if output_format == "json":
+        result = dict.fromkeys(
+            "id group title status required duration_ms summary reason expected "
+            "observed evidence remediation prerequisite exception pid returncode "
+            "signal ntstatus timeout transport stdout stderr encoding truncated_bytes".split(),
+            None,
+        )
+        result.update(
+            id="selfcheck.infrastructure",
+            group="selfcheck",
+            title="self-check bootstrap error",
+            status="ERROR",
+            required=True,
+            duration_ms=0.0,
+            summary="self-check bootstrap error",
+            reason="bootstrap_error",
+            evidence=message,
+            exception=message,
+            prerequisite=[],
+            timeout=False,
+            stdout="",
+            stderr="",
+            encoding="utf-8",
+            truncated_bytes=0,
+        )
         data = (
             json.dumps(
                 {
@@ -111,34 +137,7 @@ def _emit_bootstrap_error(message: str, output_format: str = "human") -> int:
                     "artifact": {},
                     "dependencies": [],
                     "capabilities": {},
-                    "results": [
-                        {
-                            "id": "selfcheck.infrastructure",
-                            "group": "selfcheck",
-                            "title": "self-check bootstrap error",
-                            "status": "ERROR",
-                            "required": True,
-                            "duration_ms": 0.0,
-                            "summary": "self-check bootstrap error",
-                            "reason": "bootstrap_error",
-                            "expected": None,
-                            "observed": None,
-                            "evidence": message,
-                            "remediation": None,
-                            "prerequisite": [],
-                            "exception": message,
-                            "pid": None,
-                            "returncode": None,
-                            "signal": None,
-                            "ntstatus": None,
-                            "timeout": False,
-                            "transport": None,
-                            "stdout": "",
-                            "stderr": "",
-                            "encoding": "utf-8",
-                            "truncated_bytes": 0,
-                        }
-                    ],
+                    "results": [result],
                     "summary": {"ERROR": 1},
                     "exit_code": 3,
                 },
@@ -152,22 +151,21 @@ def _emit_bootstrap_error(message: str, output_format: str = "human") -> int:
             sys.stdout.buffer.write(data)
             sys.stdout.buffer.flush()
             return 3
-        except (AttributeError, OSError, ValueError):
+        except (AttributeError, OSError, ValueError) as err:
+            _silence_broken_stdout(err)
             try:
                 sys.stdout.write(data.decode("ascii"))
                 sys.stdout.flush()
                 return 3
-            except (AttributeError, OSError, UnicodeError, ValueError):
+            except (AttributeError, OSError, UnicodeError, ValueError) as text_error:
                 # Fall through to the raw stderr channel when stdout is unavailable.
+                _silence_broken_stdout(text_error)
                 pass
-    data = ("self-check bootstrap error: " + message + "\n").encode(
-        "utf-8", "backslashreplace"
+    _emergency_write(
+        ("self-check bootstrap error: " + message + "\n").encode(
+            "utf-8", "backslashreplace"
+        )
     )
-    try:
-        os.write(2, data)
-    except OSError:
-        # There is no stronger channel if the process has lost stderr.
-        pass
     return 3
 
 
@@ -182,9 +180,66 @@ def _run_guarded(action, arguments: Sequence[str], output_format: str) -> int:
         # control sentinels propagate from this final boundary.
         if not isinstance(err, (Exception, SystemExit)):
             raise
+        _silence_broken_stdout(err)
         return _emit_bootstrap_error(
             "{}: {}".format(type(err).__name__, err), output_format
         )
+
+
+def _silence_broken_stdout(error: BaseException) -> None:
+    """Redirect an EPIPE stdout descriptor before interpreter shutdown."""
+    if (
+        not isinstance(error, BrokenPipeError)
+        and getattr(error, "errno", None) != errno.EPIPE
+    ):
+        return
+    replacement = None
+    descriptor = None
+    try:
+        descriptor = sys.stdout.fileno()
+        replacement = os.open(os.devnull, os.O_WRONLY)
+        if replacement != descriptor:
+            os.dup2(replacement, descriptor)
+    except (AttributeError, OSError, ValueError):
+        return
+    finally:
+        if replacement is not None and replacement != descriptor:
+            try:
+                os.close(replacement)
+            except OSError:
+                pass
+
+
+def _emergency_write(data: bytes) -> Optional[str]:
+    """Write bytes through stderr, raw fd two, then a private temp file."""
+    try:
+        sys.stderr.buffer.write(data)
+        sys.stderr.buffer.flush()
+        return None
+    except (AttributeError, OSError, ValueError):
+        pass
+    try:
+        os.write(2, data)
+        return None
+    except OSError:
+        temporary = None
+        try:
+            descriptor, temporary = tempfile.mkstemp(
+                prefix="pyfcstm-selfcheck-emergency-", suffix=".log"
+            )
+            try:
+                os.write(descriptor, data)
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+            return temporary
+        except (OSError, ValueError):
+            if temporary is not None:
+                try:
+                    os.unlink(temporary)
+                except OSError:
+                    pass
+            return None
 
 
 def format_version_info() -> str:
@@ -244,34 +299,33 @@ def main(arguments: Optional[Sequence[str]] = None) -> int:
         # Root version flags never fall through to Click when combined with
         # other options.
         return 2
-    if command_arguments and command_arguments[0] == "--self-check":
-        if any(item in ("-h", "--help") for item in command_arguments[1:]):
-            sys.stdout.write(format_selfcheck_help())
+    if command_arguments and command_arguments[0] in (
+        "--self-check",
+        _WORKER_DISPATCH_ARGUMENT,
+    ):
+        dispatch, rest = command_arguments[0], command_arguments[1:]
+        if any(item in ("-h", "--help") for item in rest):
+            sys.stdout.write(
+                format_selfcheck_help()
+                if dispatch == "--self-check"
+                else format_worker_help()
+            )
             return 0
-        if _WORKER_DISPATCH_ARGUMENT in command_arguments[1:]:
+        conflict = "--self-check" in rest or (
+            dispatch == "--self-check" and _WORKER_DISPATCH_ARGUMENT in rest
+        )
+        if conflict:
             return _emit_bootstrap_error(
                 "--self-check and {} are mutually exclusive".format(
                     _WORKER_DISPATCH_ARGUMENT
                 ),
-                _requested_output_format(command_arguments[1:]),
+                _requested_output_format(rest),
             )
         return _run_guarded(
-            run_selfcheck,
-            command_arguments[1:],
-            _requested_output_format(command_arguments[1:]),
+            run_selfcheck if dispatch == "--self-check" else run_worker,
+            rest,
+            _requested_output_format(rest) if dispatch == "--self-check" else "human",
         )
-    if command_arguments and command_arguments[0] == _WORKER_DISPATCH_ARGUMENT:
-        if any(item in ("-h", "--help") for item in command_arguments[1:]):
-            sys.stdout.write(format_worker_help())
-            return 0
-        if "--self-check" in command_arguments[1:]:
-            return _emit_bootstrap_error(
-                "--self-check and {} are mutually exclusive".format(
-                    _WORKER_DISPATCH_ARGUMENT
-                ),
-                _requested_output_format(command_arguments[1:]),
-            )
-        return _run_guarded(run_worker, command_arguments[1:], "human")
 
     from .entry import pyfcstmcli
 

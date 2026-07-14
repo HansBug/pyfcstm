@@ -31,7 +31,7 @@ def test_job_handle_without_native_handle_is_safe():
     """Non-Windows test environments can exercise the no-handle cleanup path."""
     from pyfcstm._selfcheck._win32 import JobHandle
 
-    job = JobHandle(None, False)
+    job = JobHandle(None)
     job.terminate()
     job.close()
     assert job.handle is None
@@ -81,34 +81,12 @@ def test_job_handle_native_termination_failure_is_typed(monkeypatch):
         ctypes, "windll", SimpleNamespace(kernel32=kernel), raising=False
     )
     with pytest.raises(win32.JobAssignmentError):
-        win32.JobHandle(7, False).terminate()
-
-
-@pytest.mark.unittest
-def test_kill_on_close_configuration_reports_api_result(monkeypatch):
-    """The Win32 helper exposes success and explicit-fallback outcomes."""
-    _ctypes_for_native_seam(monkeypatch)
-    from pyfcstm._selfcheck._win32 import _enable_kill_on_close
-
-    class Setter:
-        def __init__(self, result):
-            self.result = result
-
-        def __call__(self, *args):
-            del args
-            return self.result
-
-    class Kernel:
-        def __init__(self, result):
-            self.SetInformationJobObject = Setter(result)
-
-    assert _enable_kill_on_close(Kernel(1), object()) is True
-    assert _enable_kill_on_close(Kernel(0), object()) is False
+        win32.JobHandle(7).terminate()
 
 
 @pytest.mark.unittest
 def test_windows_job_handle_and_attach_paths_use_native_calls(monkeypatch):
-    """Fake Win32 calls exercise termination, assignment, and fallback modes."""
+    """Fake Win32 calls exercise termination, assignment, and cleanup."""
     ctypes = _ctypes_for_native_seam(monkeypatch)
     from types import SimpleNamespace
 
@@ -124,15 +102,14 @@ def test_windows_job_handle_and_attach_paths_use_native_calls(monkeypatch):
             return self.result
 
     class Kernel:
-        def __init__(self, kill_on_close):
+        def __init__(self):
             self.CreateJobObjectW = Call(101)
             self.OpenProcess = Call(202)
             self.AssignProcessToJobObject = Call(1)
-            self.SetInformationJobObject = Call(1 if kill_on_close else 0)
             self.TerminateJobObject = Call(1)
             self.CloseHandle = Call(1)
 
-    kernel = Kernel(True)
+    kernel = Kernel()
     # Replace the module seam instead of mutating the process-global ``os.name``;
     # pytest itself still needs to construct POSIX paths while reporting errors.
     monkeypatch.setattr(win32, "os", SimpleNamespace(name="nt"))
@@ -140,7 +117,7 @@ def test_windows_job_handle_and_attach_paths_use_native_calls(monkeypatch):
         ctypes, "windll", SimpleNamespace(kernel32=kernel), raising=False
     )
     job = win32.attach_process(SimpleNamespace(pid=7))
-    assert job.kill_on_close is True
+    assert job.handle == 101
     from ctypes import wintypes
 
     assert kernel.CreateJobObjectW.restype is wintypes.HANDLE
@@ -151,27 +128,6 @@ def test_windows_job_handle_and_attach_paths_use_native_calls(monkeypatch):
     job.terminate(4)
     job.close()
     assert kernel.AssignProcessToJobObject.calls
-
-    fallback_kernel = Kernel(False)
-    monkeypatch.setattr(
-        ctypes, "windll", SimpleNamespace(kernel32=fallback_kernel), raising=False
-    )
-    fallback = win32.attach_process(SimpleNamespace(pid=8))
-    fallback.terminate(9)
-    assert fallback.kill_on_close is False
-    fallback.close()
-    assert fallback_kernel.TerminateJobObject.calls
-
-    error_kernel = Kernel(True)
-    error_kernel.SetInformationJobObject = lambda *args: (_ for _ in ()).throw(
-        OSError("unsupported")
-    )
-    monkeypatch.setattr(
-        ctypes, "windll", SimpleNamespace(kernel32=error_kernel), raising=False
-    )
-    error_job = win32.attach_process(SimpleNamespace(pid=9))
-    assert error_job.kill_on_close is False
-    error_job.close()
 
 
 @pytest.mark.unittest

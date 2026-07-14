@@ -648,12 +648,7 @@ def run_check_process(
         raise
     finally:
         if job is not None:
-            cleanup_error = _finish_job(
-                job,
-                process,
-                scaled_grace,
-                terminate=not getattr(job, "kill_on_close", True),
-            )
+            cleanup_error = _finish_job(job, process, scaled_grace, terminate=True)
             _write_cleanup_diagnostic("job cleanup", cleanup_error)
         _cleanup_session(session_dir, result_file)
         _close_capture_stream(stdout_spool)

@@ -1,8 +1,6 @@
 """Behavioral tests for the contracted single-writer supervisor."""
 
 import json
-import errno
-import contextlib
 import os
 import subprocess
 import sys
@@ -48,6 +46,17 @@ def test_default_profile_returns_one_canonical_snapshot(capsys):
     assert payload["summary"] == {"PASS": 2}
     assert payload["dependencies"][1]["prerequisite"] == ["runtime.metadata"]
     assert "checks" not in payload and "counts" not in payload
+
+
+@pytest.mark.unittest
+def test_human_supervisor_emits_the_frozen_snapshot(monkeypatch, capsys):
+    """Human mode uses the same final snapshot without a second recovery path."""
+    spec = CheckSpec("demo", "demo")
+    _install_worker_specs(monkeypatch, (spec,))
+    assert supervisor.run_supervisor(("--color", "never")) == 0
+    output = capsys.readouterr().out
+    assert "[1/1] PASS demo" in output
+    assert "Conclusion: [ PASSED ]" in output
 
 
 @pytest.mark.unittest
@@ -164,169 +173,20 @@ def test_argument_errors_keep_json_stdout_parseable(capsys):
 
 
 @pytest.mark.unittest
-def test_human_output_failure_becomes_a_terminal_diagnostic(monkeypatch, capfd):
-    """A failed final human write returns exit 3 instead of escaping."""
-    spec = CheckSpec("demo", "demo")
-    _install_worker_specs(monkeypatch, (spec,))
+def test_final_output_failure_is_owned_by_bootstrap(monkeypatch, capfd):
+    """A renderer failure escapes the supervisor to one bootstrap boundary."""
+    from pyfcstm import _bootstrap
+
     monkeypatch.setattr(
-        supervisor,
-        "write_human",
-        lambda *args: (_ for _ in ()).throw(OSError("stdout failed")),
+        _bootstrap,
+        "run_selfcheck",
+        lambda args: (_ for _ in ()).throw(OSError("renderer failed")),
     )
-
-    assert supervisor.run_supervisor(()) == 3
-    captured = capfd.readouterr()
-    assert "selfcheck.output" in captured.out + captured.err
-    assert "self-check output failure" in captured.out + captured.err
-
-
-@pytest.mark.unittest
-def test_public_supervisor_broken_pipe_keeps_shutdown_stable(monkeypatch, capfd):
-    """A real human-output broken pipe reaches the emergency diagnostic chain."""
-
-    class BrokenStdout:
-        def write(self, value):
-            del value
-            raise BrokenPipeError(errno.EPIPE, "closed")
-
-        def flush(self):
-            return None
-
-        def fileno(self):
-            # Python 3.14's argparse probes stdout during parser creation;
-            # an invalid descriptor keeps that probe non-throwing while still
-            # forcing the emergency path after the write failure.
-            return -1
-
-    spec = CheckSpec("demo", "demo")
-    _install_worker_specs(monkeypatch, (spec,))
-    with contextlib.redirect_stdout(BrokenStdout()):
-        assert supervisor.run_supervisor(("--color", "never")) == 3
-    captured = capfd.readouterr().err
-    assert "selfcheck.output" in captured
-    assert "self-check output failure" in captured
-
-
-@pytest.mark.unittest
-def test_json_render_failure_keeps_stdout_clean(monkeypatch, capfd):
-    """A broken JSON renderer falls back to stderr and returns exit 3."""
-    spec = CheckSpec("demo", "demo")
-    _install_worker_specs(monkeypatch, (spec,))
-    monkeypatch.setattr(
-        supervisor,
-        "render_json",
-        lambda *args: (_ for _ in ()).throw(ValueError("renderer failed")),
-    )
-
-    assert supervisor.run_supervisor(("--format", "json")) == 3
-    captured = capfd.readouterr()
-    assert captured.out == ""
-    payload = json.loads(captured.err)
+    assert _bootstrap.main(("--self-check", "--format", "json")) == 3
+    payload = json.loads(capfd.readouterr().out)
     assert payload["exit_code"] == 3
-    assert payload["results"][-1]["id"] == "selfcheck.output"
-    assert "renderer failed" in payload["results"][-1]["evidence"]
-
-
-@pytest.mark.unittest
-def test_json_output_failure_serialization_falls_back_to_text(monkeypatch, capfd):
-    """A broken emergency serializer still leaves a readable diagnostic."""
-    spec = CheckSpec("demo", "demo")
-    _install_worker_specs(monkeypatch, (spec,))
-    monkeypatch.setattr(
-        supervisor,
-        "render_json",
-        lambda *args: (_ for _ in ()).throw(ValueError("renderer failed")),
-    )
-    monkeypatch.setattr(
-        supervisor.json,
-        "dumps",
-        lambda *args, **kwargs: (_ for _ in ()).throw(TypeError("json failed")),
-    )
-
-    assert supervisor.run_supervisor(("--format", "json")) == 3
-    captured = capfd.readouterr()
-    assert captured.out == ""
-    assert "json failed" in captured.err
-    assert "renderer failed" in captured.err
-
-
-@pytest.mark.unittest
-def test_output_failure_rewrites_successful_report_with_synthetic_result(
-    monkeypatch, capfd, tmp_path
-):
-    """A report written before output failure is updated to the same emergency snapshot."""
-    spec = CheckSpec("demo", "demo")
-    _install_worker_specs(monkeypatch, (spec,))
-    report = tmp_path / "report.json"
-    monkeypatch.setattr(
-        supervisor,
-        "render_json",
-        lambda *args: (_ for _ in ()).throw(ValueError("renderer failed")),
-    )
-
-    assert supervisor.run_supervisor(("--format", "json", "--report", str(report))) == 3
-    payload = json.loads(report.read_text(encoding="utf-8"))
-    assert payload["exit_code"] == 3
-    assert payload["results"][-1]["id"] == "selfcheck.output"
-    assert "renderer failed" in payload["results"][-1]["evidence"]
-    assert "selfcheck.output" in capfd.readouterr().err
-
-
-@pytest.mark.unittest
-def test_output_failure_report_rewrite_error_stays_in_human_emergency(
-    monkeypatch, capfd, tmp_path
-):
-    """A failed emergency report rewrite remains visible in human diagnostics."""
-    spec = CheckSpec("demo", "demo")
-    _install_worker_specs(monkeypatch, (spec,))
-    calls = []
-
-    def rewrite(path, snapshot):
-        del path, snapshot
-        calls.append(True)
-        if len(calls) == 1:
-            return None
-        raise RuntimeError("rewrite failed")
-
-    monkeypatch.setattr(supervisor, "write_report", rewrite)
-    monkeypatch.setattr(
-        supervisor,
-        "write_human",
-        lambda *args: (_ for _ in ()).throw(OSError("stdout failed")),
-    )
-
-    assert supervisor.run_supervisor(("--report", str(tmp_path / "report.json"))) == 3
-    captured = capfd.readouterr()
-    output = captured.out + captured.err
-    assert "selfcheck.output" in output
-    assert "report rewrite failed: RuntimeError: rewrite failed" in output
-
-
-@pytest.mark.unittest
-def test_output_failure_report_rewrite_preserves_control_sentinel(
-    monkeypatch, tmp_path
-):
-    """Unexpected control sentinels from emergency report rewrite propagate."""
-    spec = CheckSpec("demo", "demo")
-    _install_worker_specs(monkeypatch, (spec,))
-    calls = []
-
-    def rewrite(path, snapshot):
-        del path, snapshot
-        calls.append(True)
-        if len(calls) == 1:
-            return None
-        raise GeneratorExit()
-
-    monkeypatch.setattr(supervisor, "write_report", rewrite)
-    monkeypatch.setattr(
-        supervisor,
-        "write_human",
-        lambda *args: (_ for _ in ()).throw(OSError("stdout failed")),
-    )
-
-    with pytest.raises(GeneratorExit):
-        supervisor.run_supervisor(("--report", str(tmp_path / "report.json")))
+    assert payload["results"][0]["reason"] == "bootstrap_error"
+    assert "renderer failed" in payload["results"][0]["evidence"]
 
 
 @pytest.mark.unittest
@@ -352,8 +212,11 @@ def test_closed_stdout_pipe_returns_stable_output_error(arguments):
     finally:
         os.close(write_descriptor)
     assert process.returncode == 3
-    assert b"selfcheck.output" in process.stderr
-    assert b"self-check output failure" in process.stderr
+    if "--format" in arguments:
+        assert process.stderr == b""
+    else:
+        assert b"self-check bootstrap error" in process.stderr
+        assert b"BrokenPipeError" in process.stderr
 
 
 @pytest.mark.unittest
@@ -367,7 +230,7 @@ def test_report_write_failure_becomes_one_synthetic_result(
 
     def fail(*args):
         if raises:
-            raise RuntimeError("writer broken")
+            raise OSError("writer broken")
         return "writer broken"
 
     monkeypatch.setattr(supervisor, "write_report", fail)

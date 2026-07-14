@@ -22,7 +22,7 @@ CheckSpec
 -----------------------------------------------------
 
 .. autoclass:: CheckSpec
-    :members: __post_init__,group,check_id,worker_key,title,required,prerequisites,execution,timeout_seconds
+    :members: __post_init__,check_id,worker_key,title,required,prerequisites,execution,timeout_seconds
 
 
 CheckOutcome
@@ -36,7 +36,7 @@ CheckResult
 -----------------------------------------------------
 
 .. autoclass:: CheckResult
-    :members: __post_init__,group,from_outcome,to_dict,check_id,status,required,summary,title,prerequisites,reason,expected,observed,evidence,remediation,exception,return_code,transport,truncated_bytes,duration_ms,pid,signal,ntstatus,stdout,stderr,encoding,timeout
+    :members: __post_init__,from_outcome,to_dict,check_id,status,required,summary,title,prerequisites,reason,expected,observed,evidence,remediation,exception,return_code,transport,truncated_bytes,duration_ms,pid,signal,ntstatus,stdout,stderr,encoding,timeout
 
 
 ReportSnapshot

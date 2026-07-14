@@ -901,7 +901,7 @@ def test_non_runtime_parser_sentinel_is_re_raised_after_cleanup(monkeypatch):
 
 
 @pytest.mark.unittest
-def test_final_job_cleanup_runs_for_non_kill_on_close_job(monkeypatch):
+def test_final_job_cleanup_closes_successful_windows_job(monkeypatch):
     """A successful Windows worker still closes its Job Object in ``finally``."""
     from types import SimpleNamespace
 
@@ -920,7 +920,8 @@ def test_final_job_cleanup_runs_for_non_kill_on_close_job(monkeypatch):
             return 0
 
     class Job:
-        kill_on_close = True
+        def terminate(self, code):
+            del code
 
         def __init__(self):
             self.closed = False

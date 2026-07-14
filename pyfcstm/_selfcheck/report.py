@@ -1,12 +1,11 @@
 """Render one frozen self-check snapshot through bounded output channels.
 
 Human and JSON output share the same immutable snapshot. The module also owns
-atomic JSON report replacement, Windows 7 console color fallback, and the
-last-resort stdout/stderr/raw-fd/temporary-file diagnostic chain.
+atomic JSON report replacement and the Windows 7 console color fallback; the
+bootstrap owns last-resort output recovery.
 """
 
 import json
-import errno
 import os
 import sys
 import tempfile
@@ -29,33 +28,6 @@ _STATUS_ORDER = (
 _FAILURE_STATUSES = ("BLOCKED", "FAIL", "ERROR", "TIMEOUT", "CRASH")
 _STATUS_COLORS = {status: "\x1b[31m" for status in _FAILURE_STATUSES}
 _STATUS_COLORS.update({"PASS": "\x1b[32m", "WARN": "\x1b[33m", "SKIP": "\x1b[36m"})
-
-
-def _silence_broken_stdout(error: BaseException) -> None:
-    """Redirect a broken stdout descriptor so interpreter shutdown stays stable."""
-    if (
-        not isinstance(error, BrokenPipeError)
-        and getattr(error, "errno", None) != errno.EPIPE
-    ):
-        return
-    replacement = None
-    descriptor = None
-    try:
-        descriptor = sys.stdout.fileno()
-        replacement = os.open(os.devnull, os.O_WRONLY)
-        if replacement != descriptor:
-            os.dup2(replacement, descriptor)
-    except (AttributeError, OSError, ValueError):
-        # StringIO lacks fileno, fd operations can fail, and closed streams can
-        # reject fileno with ValueError; the emergency channel still continues.
-        return
-    finally:
-        if replacement is not None and replacement != descriptor:
-            try:
-                os.close(replacement)
-            except OSError:
-                # The replacement may already be closed after a failed dup2.
-                pass
 
 
 def _windows_vt_supported(stream) -> bool:
@@ -163,19 +135,24 @@ def _render_human(snapshot: ReportSnapshot, use_color: bool) -> str:
     counts = snapshot.counts
     total = len(snapshot.checks)
     environment = snapshot.metadata.get("environment", {})
-    version = environment.get("version") or "unavailable"
-    revision = environment.get("revision") or "unavailable"
-    commit = environment.get("commit") or "unavailable"
+    version, revision, commit = (
+        environment.get(key) or "unavailable"
+        for key in ("version", "revision", "commit")
+    )
     mode = "frozen" if environment.get("frozen") else "source"
     platform_name = environment.get("platform") or "unavailable"
     architecture = environment.get("architecture") or environment.get("machine")
-    python_version = environment.get("python_version") or "unavailable"
-    implementation = environment.get("implementation") or "unavailable"
-    encoding = (
-        environment.get("stdout_encoding")
-        or environment.get("preferred_encoding")
-        or environment.get("filesystem_encoding")
-        or "unavailable"
+    python_version, implementation = (
+        environment.get(key) or "unavailable"
+        for key in ("python_version", "implementation")
+    )
+    encoding = next(
+        (
+            environment.get(key)
+            for key in ("stdout_encoding", "preferred_encoding", "filesystem_encoding")
+            if environment.get(key)
+        ),
+        "unavailable",
     )
     cyan = "\x1b[36m" if use_color else ""
     reset = "\x1b[0m" if use_color else ""
@@ -324,64 +301,3 @@ def write_report(path: str, snapshot: ReportSnapshot) -> Optional[str]:
                 os.unlink(temporary)
             except OSError:
                 pass
-
-
-def emergency_write(message: str, output_format: str = "human") -> Optional[str]:
-    """
-    Attempt the documented stdout/stderr/raw-fd emergency chain.
-
-    :param message: Diagnostic text to emit.
-    :type message: str
-    :param output_format: ``human`` or ``json``; JSON preserves stdout purity,
-        defaults to ``'human'``.
-    :type output_format: str, optional
-    :return: Emergency report path when every stream is unavailable, otherwise
-        ``None``.
-    :rtype: Optional[str]
-
-    Example::
-
-        >>> import contextlib
-        >>> import io
-        >>> stream = io.StringIO()
-        >>> with contextlib.redirect_stdout(stream):
-        ...     result = emergency_write("diagnostic\\n")
-        >>> result is None and stream.getvalue() == "diagnostic\\n"
-        True
-    """
-    encoded = message.encode("utf-8", "backslashreplace")
-    try:
-        if output_format != "json":
-            sys.stdout.write(message)
-            sys.stdout.flush()
-            return
-    except (OSError, UnicodeError, ValueError) as err:
-        _silence_broken_stdout(err)
-        pass
-    try:
-        sys.stderr.buffer.write(encoded)
-        sys.stderr.buffer.flush()
-        return
-    except (OSError, AttributeError, ValueError):
-        pass
-    try:
-        os.write(2, encoded)
-    except OSError:
-        temporary = None
-        try:
-            descriptor, temporary = tempfile.mkstemp(
-                prefix="pyfcstm-selfcheck-emergency-", suffix=".log"
-            )
-            try:
-                os.write(descriptor, encoded)
-                os.fsync(descriptor)
-            finally:
-                os.close(descriptor)
-            return temporary
-        except (OSError, ValueError):
-            if temporary is not None:
-                try:
-                    os.unlink(temporary)
-                except OSError:
-                    pass
-            return None

@@ -28,9 +28,3 @@ write\_report
 -----------------------------------------------------
 
 .. autofunction:: write_report
-
-
-emergency\_write
------------------------------------------------------
-
-.. autofunction:: emergency_write

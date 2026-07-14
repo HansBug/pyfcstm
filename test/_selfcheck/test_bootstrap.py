@@ -75,6 +75,32 @@ def test_bootstrap_runtime_failure_keeps_json_stdout_machine_readable(
     assert "checks" not in payload and "counts" not in payload
     assert payload["schema_version"] == "pyfcstm-selfcheck/v1"
     assert payload["exit_code"] == 3
+    assert set(payload["results"][0]) == {
+        "id",
+        "group",
+        "title",
+        "status",
+        "required",
+        "duration_ms",
+        "summary",
+        "reason",
+        "expected",
+        "observed",
+        "evidence",
+        "remediation",
+        "prerequisite",
+        "exception",
+        "pid",
+        "returncode",
+        "signal",
+        "ntstatus",
+        "timeout",
+        "transport",
+        "stdout",
+        "stderr",
+        "encoding",
+        "truncated_bytes",
+    }
 
 
 @pytest.mark.unittest
@@ -220,6 +246,77 @@ def test_public_bootstrap_reports_human_failure_when_stdout_is_unavailable(
     with contextlib.redirect_stdout(_closed_stdout()):
         assert _bootstrap.main(("--self-check",)) == 3
     assert "broken bootstrap" in capfd.readouterr().err
+
+
+@pytest.mark.unittest
+def test_public_bootstrap_emergency_temp_file_is_last_resort(monkeypatch, tmp_path):
+    """The public boundary persists diagnostics when stderr and fd two fail."""
+    from pyfcstm import _bootstrap
+
+    class Broken:
+        buffer = None
+
+        def write(self, value):
+            del value
+            raise OSError("stream closed")
+
+        def flush(self):
+            raise OSError("stream closed")
+
+    destination = tmp_path / "emergency.log"
+    real_write = _bootstrap.os.write
+
+    def write(fd, data):
+        if fd == 2:
+            raise OSError("fd closed")
+        return real_write(fd, data)
+
+    monkeypatch.setattr(
+        _bootstrap,
+        "run_selfcheck",
+        lambda args: (_ for _ in ()).throw(RuntimeError("fatal")),
+    )
+    monkeypatch.setattr(_bootstrap.sys, "stderr", Broken())
+    monkeypatch.setattr(_bootstrap.os, "write", write)
+    monkeypatch.setattr(
+        _bootstrap.tempfile,
+        "mkstemp",
+        lambda **kwargs: (
+            _bootstrap.os.open(
+                str(destination), _bootstrap.os.O_CREAT | _bootstrap.os.O_WRONLY
+            ),
+            str(destination),
+        ),
+    )
+
+    assert _bootstrap.main(("--self-check",)) == 3
+    assert "fatal" in destination.read_text(encoding="utf-8")
+
+
+@pytest.mark.unittest
+def test_public_bootstrap_broken_pipe_keeps_emergency_boundary(monkeypatch, capfd):
+    """A public EPIPE result is silenced before interpreter shutdown."""
+    from pyfcstm import _bootstrap
+
+    class Broken:
+        def write(self, value):
+            del value
+            raise BrokenPipeError("closed")
+
+        def flush(self):
+            return None
+
+        def fileno(self):
+            return -1
+
+    monkeypatch.setattr(
+        _bootstrap,
+        "run_selfcheck",
+        lambda args: (_ for _ in ()).throw(BrokenPipeError("closed")),
+    )
+    with contextlib.redirect_stdout(Broken()):
+        assert _bootstrap.main(("--self-check",)) == 3
+    assert "BrokenPipeError" in capfd.readouterr().err
 
 
 @pytest.mark.unittest

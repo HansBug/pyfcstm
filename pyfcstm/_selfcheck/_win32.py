@@ -71,21 +71,19 @@ _MISSING = object()
 
 def _call_with_ctypes_signature(function, argtypes, restype, *arguments):
     """Call one shared ctypes function without leaking signature mutations."""
-    previous_argtypes = getattr(function, "argtypes", _MISSING)
-    previous_restype = getattr(function, "restype", _MISSING)
+    previous = tuple(
+        getattr(function, name, _MISSING) for name in ("argtypes", "restype")
+    )
     try:
         function.argtypes = argtypes
         function.restype = restype
         return function(*arguments)
     finally:
-        if previous_argtypes is _MISSING:
-            del function.argtypes
-        else:
-            function.argtypes = previous_argtypes
-        if previous_restype is _MISSING:
-            del function.restype
-        else:
-            function.restype = previous_restype
+        for name, value in zip(("argtypes", "restype"), previous):
+            if value is _MISSING:
+                delattr(function, name)
+            else:
+                setattr(function, name, value)
 
 
 class JobHandle:
@@ -94,19 +92,15 @@ class JobHandle:
 
     :param handle: Native Windows Job Object handle.
     :type handle: object
-    :param kill_on_close: Whether the kernel kill-on-close flag was enabled.
-    :type kill_on_close: bool
-
     Example::
 
-        >>> JobHandle(None, False).kill_on_close
-        False
+        >>> JobHandle(None).handle is None
+        True
     """
 
-    def __init__(self, handle, kill_on_close: bool):
+    def __init__(self, handle):
         """Initialize a Job Object wrapper."""
         self.handle = handle
-        self.kill_on_close = kill_on_close
 
     def terminate(self, exit_code: int = 1) -> None:
         """Terminate every process currently assigned to the job."""
@@ -181,8 +175,7 @@ def attach_process(process) -> Optional[JobHandle]:
             raise JobAssignmentError(
                 "AssignProcessToJobObject failed: {}".format(error)
             )
-        kill_on_close = _enable_kill_on_close(kernel32, handle)
-        job = JobHandle(handle, kill_on_close=kill_on_close)
+        job = JobHandle(handle)
         handle = None
         return job
     except JobAssignmentError:
@@ -207,72 +200,6 @@ def attach_process(process) -> Optional[JobHandle]:
     finally:
         if process_handle is not None:
             kernel32.CloseHandle(process_handle)
-
-
-def _enable_kill_on_close(kernel32, handle) -> bool:
-    """Enable ``KILL_ON_JOB_CLOSE`` when the target Windows exposes it.
-
-    The explicit :meth:`JobHandle.terminate` path remains the compatibility
-    fallback for Windows 7 or restricted/nested Job Object environments.
-    """
-    import ctypes
-    from ctypes import wintypes
-
-    class _BasicLimitInformation(ctypes.Structure):
-        _fields_ = [
-            ("PerProcessUserTimeLimit", ctypes.c_longlong),
-            ("PerJobUserTimeLimit", ctypes.c_longlong),
-            ("LimitFlags", ctypes.c_uint32),
-            ("MinimumWorkingSetSize", ctypes.c_size_t),
-            ("MaximumWorkingSetSize", ctypes.c_size_t),
-            ("ActiveProcessLimit", ctypes.c_uint32),
-            ("Affinity", ctypes.c_size_t),
-            ("PriorityClass", ctypes.c_uint32),
-            ("SchedulingClass", ctypes.c_uint32),
-        ]
-
-    class _IoCounters(ctypes.Structure):
-        _fields_ = [
-            ("ReadOperationCount", ctypes.c_uint64),
-            ("WriteOperationCount", ctypes.c_uint64),
-            ("OtherOperationCount", ctypes.c_uint64),
-            ("ReadTransferCount", ctypes.c_uint64),
-            ("WriteTransferCount", ctypes.c_uint64),
-            ("OtherTransferCount", ctypes.c_uint64),
-        ]
-
-    class _ExtendedLimitInformation(ctypes.Structure):
-        _fields_ = [
-            ("BasicLimitInformation", _BasicLimitInformation),
-            ("IoInfo", _IoCounters),
-            ("ProcessMemoryLimit", ctypes.c_size_t),
-            ("JobMemoryLimit", ctypes.c_size_t),
-            ("PeakProcessMemoryUsed", ctypes.c_size_t),
-            ("PeakJobMemoryUsed", ctypes.c_size_t),
-        ]
-
-    information = _ExtendedLimitInformation()
-    information.BasicLimitInformation.LimitFlags = 0x00002000
-    try:
-        setter = kernel32.SetInformationJobObject
-        setter.restype = wintypes.BOOL
-        setter.argtypes = [
-            wintypes.HANDLE,
-            wintypes.DWORD,
-            ctypes.c_void_p,
-            wintypes.DWORD,
-        ]
-        return bool(
-            setter(
-                handle,
-                9,
-                ctypes.byref(information),
-                ctypes.sizeof(information),
-            )
-        )
-    except (AttributeError, OSError, TypeError, ValueError, ctypes.ArgumentError):
-        # Older Windows or a restricted API surface uses explicit termination.
-        return False
 
 
 def write_console_ansi(text: str, stream=None) -> bool:

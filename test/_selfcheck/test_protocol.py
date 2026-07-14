@@ -232,6 +232,13 @@ def test_protocol_rejects_invalid_json_prefix_schema_and_status(tmp_path):
             + b'","status":"NOPE"}\n',
             "invalid_status",
         ),
+        (
+            FRAME_PREFIX
+            + b'{"schema":"pyfcstm-selfcheck-worker/v1","nonce":"'
+            + b"0" * 32
+            + b'","status":"BLOCKED"}\n',
+            "invalid_status",
+        ),
         (FRAME_PREFIX + b"[]\n", "invalid_envelope"),
     ):
         path.write_bytes(raw)

@@ -434,6 +434,7 @@ def test_group_cleanup_probe_errors_and_deadlines_are_reportable(monkeypatch):
         process_module.os,
         "killpg",
         lambda pid, signal: (_ for _ in ()).throw(OSError("probe")),
+        raising=False,
     )
     process_module._wait_for_group_exit(17, 0.01, errors)
     assert "group_probe:OSError" in errors
@@ -441,7 +442,9 @@ def test_group_cleanup_probe_errors_and_deadlines_are_reportable(monkeypatch):
     clock = iter((0.0, 1.0))
     monkeypatch.setattr(process_module.time, "monotonic", lambda: next(clock))
     monkeypatch.setattr(process_module.time, "sleep", lambda interval: None)
-    monkeypatch.setattr(process_module.os, "killpg", lambda pid, signal: None)
+    monkeypatch.setattr(
+        process_module.os, "killpg", lambda pid, signal: None, raising=False
+    )
     errors = []
     process_module._wait_for_group_exit(17, 0.01, errors)
     assert "group_wait:TimeoutExpired" in errors
@@ -492,7 +495,7 @@ def test_posix_cleanup_records_non_esrch_sigkill_failure(monkeypatch):
             del timeout
             return 0
 
-    monkeypatch.setattr(process_module.os, "killpg", killpg)
+    monkeypatch.setattr(process_module.os, "killpg", killpg, raising=False)
     details = process_module._terminate(Process(), None, True, grace=0.01)
     assert "sigkill:OSError" in details
     assert calls == [process_module.signal.SIGTERM, process_module.signal.SIGKILL]
@@ -768,6 +771,7 @@ def test_worker_drain_failure_is_normalized_as_timeout(monkeypatch):
             raise OSError("drain")
 
     process = Process()
+    monkeypatch.setattr(process_module.os, "name", "posix")
     monkeypatch.setattr(process_module.subprocess, "Popen", lambda *a, **k: process)
     monkeypatch.setattr(process_module, "_terminate", lambda *args: None)
     result = run_check_process(_spec(), timeout=0.01)
@@ -792,6 +796,7 @@ def test_worker_drain_timeout_is_normalized_as_timeout(monkeypatch):
             raise subprocess.TimeoutExpired("worker", 0.01, output=b"partial")
 
     process = Process()
+    monkeypatch.setattr(process_module.os, "name", "posix")
     monkeypatch.setattr(process_module.subprocess, "Popen", lambda *a, **k: process)
     monkeypatch.setattr(process_module, "_terminate", lambda *args: None)
     result = run_check_process(_spec(), timeout=0.01)

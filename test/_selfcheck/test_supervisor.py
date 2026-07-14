@@ -192,7 +192,10 @@ def test_public_supervisor_broken_pipe_keeps_shutdown_stable(monkeypatch, capfd)
             return None
 
         def fileno(self):
-            raise ValueError("closed")
+            # Python 3.14's argparse probes stdout during parser creation;
+            # an invalid descriptor keeps that probe non-throwing while still
+            # forcing the emergency path after the write failure.
+            return -1
 
     spec = CheckSpec("demo", "demo")
     _install_worker_specs(monkeypatch, (spec,))

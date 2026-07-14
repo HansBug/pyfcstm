@@ -481,10 +481,13 @@ def test_job_cleanup_records_direct_termination_failure():
 def test_posix_cleanup_records_non_esrch_sigkill_failure(monkeypatch):
     """A non-ESRCH hard-kill error remains explicit cleanup evidence."""
     calls = []
+    sigkill = getattr(process_module.signal, "SIGKILL", process_module.signal.SIGTERM)
+    if not hasattr(process_module.signal, "SIGKILL"):
+        monkeypatch.setattr(process_module.signal, "SIGKILL", sigkill, raising=False)
 
     def killpg(pid, signal):
         calls.append(signal)
-        if signal == process_module.signal.SIGKILL:
+        if signal == sigkill:
             raise OSError("killpg")
 
     class Process:
@@ -498,7 +501,7 @@ def test_posix_cleanup_records_non_esrch_sigkill_failure(monkeypatch):
     monkeypatch.setattr(process_module.os, "killpg", killpg, raising=False)
     details = process_module._terminate(Process(), None, True, grace=0.01)
     assert "sigkill:OSError" in details
-    assert calls == [process_module.signal.SIGTERM, process_module.signal.SIGKILL]
+    assert calls == [process_module.signal.SIGTERM, sigkill]
 
 
 @pytest.mark.unittest

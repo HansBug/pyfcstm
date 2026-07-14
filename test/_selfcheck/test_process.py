@@ -271,7 +271,9 @@ def test_keyboard_interrupt_terminates_started_worker(monkeypatch):
         def wait(self, timeout=None):
             raise KeyboardInterrupt()
 
+    monkeypatch.setattr(process_module.os, "name", "nt")
     monkeypatch.setattr("subprocess.Popen", lambda *args, **kwargs: Process())
+    monkeypatch.setattr(process_module, "attach_process", lambda process: object())
     monkeypatch.setattr(
         process_module,
         "_terminate",
@@ -402,6 +404,8 @@ def test_job_and_direct_cleanup_failures_are_bounded():
 @pytest.mark.unittest
 def test_posix_cleanup_targets_the_entire_process_group(monkeypatch):
     """POSIX cleanup sends graceful and hard signals to the worker group."""
+    if os.name != "posix":
+        pytest.skip("POSIX process groups are unavailable")
     calls = []
 
     def killpg(pid, sig):
@@ -486,7 +490,9 @@ def test_start_gate_failure_retains_cleanup_evidence(monkeypatch):
         def join(timeout=None):
             del timeout
 
+    monkeypatch.setattr(process_module.os, "name", "nt")
     monkeypatch.setattr(process_module.subprocess, "Popen", lambda *a, **k: Process())
+    monkeypatch.setattr(process_module, "attach_process", lambda process: object())
     monkeypatch.setattr(
         process_module,
         "_send_start_gate",

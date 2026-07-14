@@ -14,6 +14,7 @@ from ._win32 import JobAssignmentError
 from ._win32 import attach_process
 from ._win32 import format_ntstatus
 from .model import CheckResult, CheckSpec
+from .arguments import _WORKER_DISPATCH_ARGUMENT
 from .protocol import build_start_gate
 from .protocol import FRAME_PREFIX
 from .protocol import MAX_ENVELOPE_BYTES
@@ -384,7 +385,7 @@ def _command_for_worker(
         command.extend(["-m", "pyfcstm"])
     command.extend(
         [
-            "--_pyfcstm-selfcheck-worker-v1",
+            _WORKER_DISPATCH_ARGUMENT,
             "--check-id",
             check.check_id,
             "--worker-key",

@@ -21,7 +21,9 @@ from typing import Optional, Sequence
 
 from .config import BUILD_COMMIT, BUILD_REVISION, BUILD_TIME_UTC
 from .config.meta import __AUTHOR__, __AUTHOR_EMAIL__, __TITLE__, __VERSION__
+from ._selfcheck.arguments import _WORKER_DISPATCH_ARGUMENT
 from ._selfcheck.arguments import _requested_output_format
+from ._selfcheck.arguments import format_selfcheck_help
 
 
 _VERSION_ARGUMENTS = ("-v", "-V", "--version")
@@ -207,9 +209,14 @@ def main(arguments: Optional[Sequence[str]] = None) -> int:
         # other options.
         return 2
     if command_arguments and command_arguments[0] == "--self-check":
-        if "--_pyfcstm-selfcheck-worker-v1" in command_arguments[1:]:
+        if any(item in ("-h", "--help") for item in command_arguments[1:]):
+            sys.stdout.write(format_selfcheck_help())
+            return 0
+        if _WORKER_DISPATCH_ARGUMENT in command_arguments[1:]:
             return _emit_bootstrap_error(
-                "--self-check and --_pyfcstm-selfcheck-worker-v1 are mutually exclusive",
+                "--self-check and {} are mutually exclusive".format(
+                    _WORKER_DISPATCH_ARGUMENT
+                ),
                 _requested_output_format(command_arguments[1:]),
             )
         try:
@@ -232,10 +239,12 @@ def main(arguments: Optional[Sequence[str]] = None) -> int:
                 "{}: {}".format(type(err).__name__, err),
                 _requested_output_format(command_arguments[1:]),
             )
-    if command_arguments and command_arguments[0] == "--_pyfcstm-selfcheck-worker-v1":
+    if command_arguments and command_arguments[0] == _WORKER_DISPATCH_ARGUMENT:
         if "--self-check" in command_arguments[1:]:
             return _emit_bootstrap_error(
-                "--self-check and --_pyfcstm-selfcheck-worker-v1 are mutually exclusive",
+                "--self-check and {} are mutually exclusive".format(
+                    _WORKER_DISPATCH_ARGUMENT
+                ),
                 _requested_output_format(command_arguments[1:]),
             )
         try:

@@ -31,6 +31,10 @@ class CheckSpec:
     :type required: bool
     :param prerequisites: Check IDs that must complete first, defaults to ``()``.
     :type prerequisites: Tuple[str, ...], optional
+    :param execution: Execution boundary, either ``'local'`` for a pure
+        supervisor check or ``'worker'`` for a fresh isolated process, defaults
+        to ``'worker'``.
+    :type execution: str, optional
 
     Example::
 
@@ -42,6 +46,13 @@ class CheckSpec:
     worker_key: str
     required: bool = True
     prerequisites: Tuple[str, ...] = ()
+    execution: str = "worker"
+
+    def __post_init__(self):
+        if self.execution not in ("local", "worker"):
+            raise ValueError(
+                "unknown self-check execution boundary: {}".format(self.execution)
+            )
 
 
 @dataclass(frozen=True)

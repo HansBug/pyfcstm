@@ -1,4 +1,4 @@
-"""Static self-check registry and the PR-2 artifact probe."""
+"""Static self-check registry and the built-in runtime probes."""
 
 from typing import Callable, Dict, Tuple
 
@@ -29,7 +29,22 @@ def _artifact_self_dispatch() -> str:
     return "worker imported pyfcstm and stopped at the hidden dispatch"
 
 
+def _runtime_metadata() -> str:
+    """Validate cheap runtime metadata without crossing a process boundary."""
+    import platform
+    import sys
+
+    from pyfcstm.config.meta import __VERSION__
+
+    if not __VERSION__:
+        raise RuntimeError("package version is unavailable")
+    return "pyfcstm {} on Python {} ({})".format(
+        __VERSION__, platform.python_version(), sys.platform
+    )
+
+
 _WORKERS["self_dispatch"] = _artifact_self_dispatch
+_WORKERS["runtime_metadata"] = _runtime_metadata
 
 
 def register_test_override(worker_key: str, worker: Worker) -> None:
@@ -69,4 +84,18 @@ def selected_specs(profile: str) -> Tuple[CheckSpec, ...]:
     :rtype: Tuple[CheckSpec, ...]
     """
     del profile
-    return (CheckSpec("artifact.self_dispatch", "self_dispatch", required=True),)
+    return (
+        CheckSpec(
+            "runtime.metadata",
+            "runtime_metadata",
+            required=True,
+            execution="local",
+        ),
+        CheckSpec(
+            "artifact.self_dispatch",
+            "self_dispatch",
+            required=True,
+            prerequisites=("runtime.metadata",),
+            execution="worker",
+        ),
+    )

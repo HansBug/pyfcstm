@@ -17,9 +17,11 @@ from .model import ReportSnapshot
 from .process import run_check_process
 from .registry import selected_specs
 from .report import emergency_write
+from .report import _render_human_fallback
 from .report import render_human
 from .report import render_json
 from .report import write_report
+from .registry import get_worker
 
 
 _PROFILE_DEADLINES = {
@@ -105,6 +107,76 @@ def _append_synthetic(
         )
 
 
+def _run_local_check(spec: CheckSpec) -> CheckResult:
+    """Run a pure check in the supervisor and normalize callback failures."""
+    started = time.monotonic()
+    try:
+        worker = get_worker(spec.worker_key)
+    except KeyError as err:
+        return CheckResult(
+            spec.check_id,
+            "ERROR",
+            spec.required,
+            summary="local check is not registered",
+            details="{}: {}".format(type(err).__name__, err),
+            reason="unknown_local_check",
+            duration_ms=(time.monotonic() - started) * 1000,
+        )
+
+    try:
+        summary = str(worker())
+    except KeyboardInterrupt:
+        # A check callback must not abort the supervisor's final report.
+        return CheckResult(
+            spec.check_id,
+            "ERROR",
+            spec.required,
+            summary="local check interrupted",
+            details=traceback.format_exc(),
+            reason="local_check_interrupted",
+            duration_ms=(time.monotonic() - started) * 1000,
+        )
+    except SystemExit as err:
+        # A callback can call sys.exit; preserve its diagnostic as a check error.
+        return CheckResult(
+            spec.check_id,
+            "ERROR",
+            spec.required,
+            summary="local check raised SystemExit",
+            details=traceback.format_exc(),
+            reason="local_check_system_exit",
+            return_code=err.code if isinstance(err.code, int) else 1,
+            duration_ms=(time.monotonic() - started) * 1000,
+        )
+    except BaseException as err:
+        # Third-party local callbacks may raise any ordinary Exception; keep
+        # non-runtime control sentinels visible instead of swallowing them.
+        if not isinstance(err, Exception):
+            raise
+        return CheckResult(
+            spec.check_id,
+            "ERROR",
+            spec.required,
+            summary="local check raised an exception",
+            details=traceback.format_exc(),
+            reason="local_check_exception",
+            duration_ms=(time.monotonic() - started) * 1000,
+        )
+
+    if summary.startswith("__SELFCHECK_WARN__:"):
+        summary = summary.split(":", 1)[1]
+        status = "WARN"
+    else:
+        status = "PASS"
+    return CheckResult(
+        spec.check_id,
+        status,
+        spec.required,
+        summary=summary,
+        duration_ms=(time.monotonic() - started) * 1000,
+    )
+
+
 def _fallback_json(snapshot) -> str:
     """Serialize a snapshot without calling the primary renderer again."""
     return json.dumps(
@@ -113,14 +185,8 @@ def _fallback_json(snapshot) -> str:
 
 
 def _fallback_human(snapshot) -> str:
-    """Render a minimal human report when the configured renderer is broken."""
-    lines = ["pyfcstm self-check", "=================="]
-    for result in snapshot.checks:
-        lines.append("{} {}: {}".format(result.status, result.check_id, result.summary))
-        if result.status not in ("PASS", "WARN", "SKIP") and result.details:
-            lines.append(result.details)
-    lines.append("Counts: {}".format(json.dumps(dict(snapshot.counts), sort_keys=True)))
-    return "\n".join(lines) + "\n"
+    """Render the fixed human layout when the configured renderer is broken."""
+    return _render_human_fallback(snapshot)
 
 
 def _finalize_infrastructure(
@@ -310,7 +376,9 @@ def run_supervisor(arguments: Sequence[str]) -> int:
                 ledger.mark_running(spec.check_id)
                 timeout = min(30.0 * options.timeout_scale, remaining)
                 try:
-                    if options.timeout_scale == 1.0:
+                    if spec.execution == "local":
+                        result = _run_local_check(spec)
+                    elif options.timeout_scale == 1.0:
                         result = run_check_process(spec, timeout=timeout)
                     else:
                         result = run_check_process(

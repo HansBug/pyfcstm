@@ -16,7 +16,7 @@ CheckSpec
 -----------------------------------------------------
 
 .. autoclass:: CheckSpec
-    :members: check_id,worker_key,required,prerequisites
+    :members: __post_init__,check_id,worker_key,required,prerequisites,execution
 
 
 CheckResult

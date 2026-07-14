@@ -29,15 +29,15 @@ def test_hidden_worker_dispatch_is_exact_and_pre_click(monkeypatch):
     monkeypatch.setattr(
         _bootstrap, "run_worker", lambda args: invoked.append(tuple(args)) or 0
     )
-    assert _bootstrap.main(("--_pyfcstm-selfcheck-worker-v1", "--nonce", "x")) == 0
+    assert _bootstrap.main(("--pyfcstm-self-check-worker", "--nonce", "x")) == 0
     assert invoked == [("--nonce", "x")]
 
 
 @pytest.mark.parametrize(
     "arguments",
     (
-        ("--self-check", "--_pyfcstm-selfcheck-worker-v1"),
-        ("--_pyfcstm-selfcheck-worker-v1", "--self-check"),
+        ("--self-check", "--pyfcstm-self-check-worker"),
+        ("--pyfcstm-self-check-worker", "--self-check"),
     ),
 )
 @pytest.mark.unittest
@@ -80,3 +80,15 @@ def test_requested_output_format_respects_option_values_and_separator():
     assert _bootstrap._requested_output_format(("--format", "json")) == "json"
     assert _bootstrap._requested_output_format(("--report", "--format=json")) == "human"
     assert _bootstrap._requested_output_format(("--", "--format=json")) == "human"
+
+
+@pytest.mark.unittest
+def test_selfcheck_help_is_available_before_click(capsys):
+    """The self-check options have a dedicated help path before Click."""
+    from pyfcstm import _bootstrap
+
+    assert _bootstrap.main(("--self-check", "--help")) == 0
+    output = capsys.readouterr().out
+    assert "pyfcstm --self-check" in output
+    assert "--profile" in output
+    assert "--pyfcstm-self-check-worker" not in output

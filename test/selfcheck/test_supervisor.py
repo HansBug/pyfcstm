@@ -13,13 +13,18 @@ def test_supervisor_default_profile_returns_json_snapshot(capsys):
     code = run_supervisor(("--format", "json"))
     captured = capsys.readouterr()
     payload = json.loads(captured.out)
-    if payload["checks"][0].get("reason") == "isolation_unavailable":
+    artifact = next(
+        item
+        for item in payload["checks"]
+        if item["check_id"] == "artifact.self_dispatch"
+    )
+    if artifact.get("reason") == "isolation_unavailable":
         assert code == 1
         assert payload["counts"]["ERROR"] == 1
         return
     assert code == 0
     assert payload["schema"] == "pyfcstm-selfcheck/v1"
-    assert payload["counts"]["PASS"] == 1
+    assert payload["counts"]["PASS"] == 2
 
 
 @pytest.mark.unittest
@@ -41,6 +46,29 @@ def test_fail_on_warn_changes_exit_only(monkeypatch, capsys):
     capsys.readouterr()
     assert run_supervisor(("--format", "json", "--fail-on-warn")) == 1
     assert json.loads(capsys.readouterr().out)["counts"]["WARN"] == 1
+
+
+@pytest.mark.unittest
+def test_supervisor_runs_local_checks_without_spawning_worker(monkeypatch, capsys):
+    """A local check uses the registry callback in the supervisor process."""
+    from pyfcstm._selfcheck.model import CheckResult, CheckSpec
+    from pyfcstm._selfcheck.supervisor import run_supervisor
+
+    monkeypatch.setattr(
+        "pyfcstm._selfcheck.supervisor.selected_specs",
+        lambda profile: (CheckSpec("local.demo", "local_demo", execution="local"),),
+    )
+    monkeypatch.setattr(
+        "pyfcstm._selfcheck.supervisor.get_worker",
+        lambda key: (lambda: "local callback") if key == "local_demo" else None,
+    )
+    monkeypatch.setattr(
+        "pyfcstm._selfcheck.supervisor.run_check_process",
+        lambda *args, **kwargs: CheckResult("local.demo", "ERROR", True),
+    )
+    assert run_supervisor(("--format", "json")) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["checks"][0]["summary"] == "local callback"
 
 
 @pytest.mark.unittest
@@ -357,7 +385,7 @@ def test_supervisor_preserves_status_for_legacy_warning_marker(monkeypatch, caps
         ),
     )
     assert run_supervisor(("--format", "json")) == 0
-    assert json.loads(capsys.readouterr().out)["counts"] == {"PASS": 1}
+    assert json.loads(capsys.readouterr().out)["counts"] == {"PASS": 2}
 
 
 @pytest.mark.unittest

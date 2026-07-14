@@ -26,6 +26,12 @@ WorkerOptions
     :members: check_id,worker_key,nonce,result_mode,result_file
 
 
+format\_selfcheck\_help
+-----------------------------------------------------
+
+.. autofunction:: format_selfcheck_help
+
+
 parse\_selfcheck\_args
 -----------------------------------------------------
 

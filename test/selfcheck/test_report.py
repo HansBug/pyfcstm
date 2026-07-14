@@ -49,8 +49,38 @@ def test_human_failure_output_contains_full_details():
         {"PASS": 1, "ERROR": 1},
     )
     output = render_human(snapshot, color="never")
-    assert "PASS ok: ready" in output
+    assert "[PASS] [01/02] ok (ready)" in output
+    assert "[ERROR] [02/02] bad (broken)" in output
     assert "full traceback" in output
+    assert "PASS = 1" in output
+    assert "ERROR = 1" in output
+    assert "WARN = 0" not in output
+    assert "Conclusion: [ FAILED ]" in output
+
+
+@pytest.mark.unittest
+def test_human_summary_only_lists_positive_status_counts_and_colors_them(monkeypatch):
+    """Human summaries omit zero counts and color every emitted status."""
+    import pyfcstm._selfcheck.report as report_module
+    from pyfcstm._selfcheck.model import CheckResult
+    from pyfcstm._selfcheck.model import ReportSnapshot
+    from pyfcstm._selfcheck.report import render_human
+
+    snapshot = ReportSnapshot(
+        (
+            CheckResult("ok", "PASS", True, summary="ready"),
+            CheckResult("warning", "WARN", False, summary="optional"),
+        ),
+        {},
+        {"PASS": 1, "WARN": 1},
+    )
+    monkeypatch.setattr(report_module, "_windows_vt_supported", lambda stream: True)
+    output = render_human(snapshot, color="always")
+    assert "\x1b[32mPASS\x1b[0m = 1" in output
+    assert "\x1b[33mWARN\x1b[0m = 1" in output
+    assert "SKIP = 0" not in output
+    assert "BLOCKED = 0" not in output
+    assert "\x1b[1;33m[ WARNINGS ]\x1b[0m" in output
 
 
 @pytest.mark.unittest
@@ -130,7 +160,7 @@ def test_windows_without_vt_support_falls_back_to_plain_status_labels(monkeypatc
     )
     output = render_human(snapshot, color="always")
     assert "\x1b[" not in output
-    assert "PASS ok: ready" in output
+    assert "[PASS] [01/01] ok (ready)" in output
 
 
 @pytest.mark.unittest

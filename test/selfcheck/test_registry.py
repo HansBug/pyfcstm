@@ -19,12 +19,25 @@ def test_registry_worker_modes_and_package_version(monkeypatch):
 
 @pytest.mark.unittest
 def test_registry_profiles_are_stable():
-    """All PR-2 profiles expose exactly the implemented probe."""
+    """All profiles expose local metadata and isolated artifact probes."""
     from pyfcstm._selfcheck.registry import selected_specs
 
     for profile in ("default", "full", "visualize"):
         specs = selected_specs(profile)
-        assert [spec.check_id for spec in specs] == ["artifact.self_dispatch"]
+        assert [spec.check_id for spec in specs] == [
+            "runtime.metadata",
+            "artifact.self_dispatch",
+        ]
+        assert specs[0].execution == "local"
+        assert specs[1].execution == "worker"
+
+
+@pytest.mark.unittest
+def test_check_spec_exposes_local_execution_boundary():
+    """Pure checks can opt into supervisor execution explicitly."""
+    from pyfcstm._selfcheck.model import CheckSpec
+
+    assert CheckSpec("demo", "demo", execution="local").execution == "local"
 
 
 @pytest.mark.unittest

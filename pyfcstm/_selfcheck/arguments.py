@@ -5,6 +5,9 @@ from dataclasses import dataclass
 from typing import Optional, Sequence
 
 
+_WORKER_DISPATCH_ARGUMENT = "--pyfcstm-self-check-worker"
+
+
 class SelfCheckArgumentError(ValueError):
     """Raised when a self-check or worker argument contract is invalid."""
 
@@ -113,9 +116,12 @@ class WorkerOptions:
     result_file: Optional[str] = None
 
 
-def _build_supervisor_parser() -> argparse.ArgumentParser:
+def _build_supervisor_parser(add_help: bool = False) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        add_help=False, allow_abbrev=False, prog="pyfcstm --self-check"
+        add_help=add_help,
+        allow_abbrev=False,
+        prog="pyfcstm --self-check",
+        description="Run installation and runtime self-checks.",
     )
     parser.add_argument(
         "--profile", choices=("default", "full", "visualize"), default="default"
@@ -130,6 +136,16 @@ def _build_supervisor_parser() -> argparse.ArgumentParser:
     parser.add_argument("--fail-on-warn", action="store_true")
     parser.add_argument("--no-redact", action="store_true")
     return parser
+
+
+def format_selfcheck_help() -> str:
+    """
+    Return the public help text for the self-check supervisor.
+
+    :return: Formatted command-line help text.
+    :rtype: str
+    """
+    return _build_supervisor_parser(add_help=True).format_help()
 
 
 def _build_worker_parser() -> argparse.ArgumentParser:

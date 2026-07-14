@@ -189,6 +189,7 @@ def test_windows_vt_probe_declares_pointer_sized_handles(monkeypatch):
 
     def set_console_mode(handle, mode):
         del handle
+        assert isinstance(mode._obj, wintypes.DWORD)
         mode._obj.value = 0x0004
         return 1
 

@@ -58,7 +58,7 @@ def _windows_vt_supported(stream) -> bool:
         ]
         get_console_mode.restype = wintypes.BOOL
         handle = get_std_handle(-11)
-        mode = ctypes.c_uint32()
+        mode = wintypes.DWORD()
         if not get_console_mode(handle, ctypes.byref(mode)):
             return False
         return bool(mode.value & 0x0004)

@@ -168,11 +168,7 @@ def _render_human(snapshot: ReportSnapshot, use_color: bool) -> str:
         summary = check.summary or check.reason or "no summary"
         position = "[{:>{}}/{}]".format(index, index_width, total)
         status = _paint_status(check.status, use_color)
-        lines.append(
-            "{} {} {} ({})".format(
-                position, status, check.check_id, summary
-            )
-        )
+        lines.append("{} {} {} ({})".format(position, status, check.check_id, summary))
         if check.status in _FAILURE_STATUSES:
             lines.extend(_failure_detail_lines(check))
 

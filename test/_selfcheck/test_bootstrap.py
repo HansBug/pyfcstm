@@ -416,3 +416,127 @@ def test_public_bootstrap_returns_after_ordinary_cli_dispatch(monkeypatch):
     )
     assert _bootstrap.main(("status",)) == 0
     assert invoked == [{"args": ["status"], "prog_name": "pyfcstm"}]
+
+
+@pytest.mark.unittest
+def test_public_main_uses_raw_stderr_fd_when_stderr_stream_is_broken(monkeypatch):
+    """The module entry point keeps diagnostics observable after stream failure."""
+    from pyfcstm import _bootstrap
+    from pyfcstm.__main__ import main
+
+    class BrokenStderr:
+        buffer = None
+
+        def write(self, value):
+            del value
+            raise OSError("stderr closed")
+
+        def flush(self):
+            raise OSError("stderr closed")
+
+    writes = []
+
+    monkeypatch.setattr(
+        _bootstrap,
+        "run_selfcheck",
+        lambda args: (_ for _ in ()).throw(RuntimeError("raw fd fallback")),
+    )
+    monkeypatch.setattr(_bootstrap.sys, "stderr", BrokenStderr())
+    monkeypatch.setattr(
+        _bootstrap.os,
+        "write",
+        lambda descriptor, data: writes.append((descriptor, data)) or len(data),
+    )
+
+    assert main(("--self-check",)) == 3
+    assert writes and writes[0][0] == 2
+    assert b"raw fd fallback" in writes[0][1]
+
+
+@pytest.mark.unittest
+def test_public_main_survives_unwritable_emergency_temp_file(monkeypatch, tmp_path):
+    """The final diagnostic boundary also survives temp-file and unlink failures."""
+    import os
+
+    from pyfcstm import _bootstrap
+    from pyfcstm.__main__ import main
+
+    class BrokenStderr:
+        buffer = None
+
+        def write(self, value):
+            del value
+            raise OSError("stderr closed")
+
+        def flush(self):
+            raise OSError("stderr closed")
+
+    destination = tmp_path / "emergency.log"
+    unlink_attempts = []
+
+    def make_temp_file(**kwargs):
+        del kwargs
+        return os.open(str(destination), os.O_CREAT | os.O_WRONLY), str(destination)
+
+    def fail_write(descriptor, data):
+        del descriptor, data
+        raise OSError("emergency file closed")
+
+    def fail_unlink(path):
+        unlink_attempts.append(path)
+        raise OSError("unlink denied")
+
+    monkeypatch.setattr(
+        _bootstrap,
+        "run_selfcheck",
+        lambda args: (_ for _ in ()).throw(RuntimeError("unrecoverable")),
+    )
+    monkeypatch.setattr(_bootstrap.sys, "stderr", BrokenStderr())
+    monkeypatch.setattr(_bootstrap.os, "write", fail_write)
+    monkeypatch.setattr(_bootstrap.tempfile, "mkstemp", make_temp_file)
+    monkeypatch.setattr(_bootstrap.os, "unlink", fail_unlink)
+
+    assert main(("--self-check",)) == 3
+    assert unlink_attempts == [str(destination)]
+
+
+@pytest.mark.unittest
+def test_public_main_ignores_devnull_close_failure(monkeypatch):
+    """A failure while closing the EPIPE replacement cannot abort diagnostics."""
+    import contextlib
+
+    from pyfcstm import _bootstrap
+    from pyfcstm.__main__ import main
+
+    class BrokenStdout:
+        def write(self, value):
+            del value
+            raise BrokenPipeError("stdout closed")
+
+        def flush(self):
+            return None
+
+        def fileno(self):
+            return 41
+
+    real_close = _bootstrap.os.close
+    closed = []
+
+    def close(descriptor):
+        closed.append(descriptor)
+        if descriptor == 42:
+            raise OSError("replacement close failed")
+        return real_close(descriptor)
+
+    monkeypatch.setattr(
+        _bootstrap,
+        "run_selfcheck",
+        lambda args: (_ for _ in ()).throw(BrokenPipeError("stdout closed")),
+    )
+    monkeypatch.setattr(_bootstrap.os, "open", lambda path, flags: 42)
+    monkeypatch.setattr(_bootstrap.os, "dup2", lambda source, target: None)
+    monkeypatch.setattr(_bootstrap.os, "close", close)
+
+    with contextlib.redirect_stdout(BrokenStdout()):
+        assert main(("--self-check",)) == 3
+    assert closed == [42]

@@ -84,6 +84,23 @@ def test_artifact_self_dispatch_runs_in_fresh_process():
 
 
 @pytest.mark.unittest
+def test_process_supervision_does_not_create_threads(monkeypatch):
+    """One isolated check is supervised synchronously by the calling thread."""
+
+    class ForbiddenThreading:
+        @staticmethod
+        def Thread(*args, **kwargs):
+            del args, kwargs
+            raise AssertionError("self-check created a thread")
+
+    _install_fixture(monkeypatch, "pass")
+    monkeypatch.setattr(
+        process_module, "threading", ForbiddenThreading(), raising=False
+    )
+    assert run_check_process(_spec(), timeout=5.0).status == "PASS"
+
+
+@pytest.mark.unittest
 @pytest.mark.parametrize(
     ("scenario", "status", "reason"),
     [
@@ -150,7 +167,7 @@ def test_timeout_and_crash_clean_up_grandchildren(monkeypatch, tmp_path, scenari
 @pytest.mark.unittest
 @pytest.mark.parametrize("scenario", ["huge_stderr", "huge_stdout"])
 def test_stream_capture_is_bounded(monkeypatch, scenario):
-    """Unbounded business output cannot exhaust supervisor memory."""
+    """Large business output is bounded before entering the final report."""
     _install_fixture(monkeypatch, scenario)
     result = run_check_process(_spec(), timeout=5.0)
     assert result.status == "PASS"
@@ -256,19 +273,9 @@ def test_keyboard_interrupt_terminates_started_worker(monkeypatch):
     class Process:
         pid = 12345
         returncode = None
-        stdin = type(
-            "Input",
-            (),
-            {
-                "write": lambda self, data: None,
-                "flush": lambda self: None,
-                "close": lambda self: None,
-            },
-        )()
-        stdout = type("Output", (), {"read": lambda self, size: b""})()
-        stderr = type("Output", (), {"read": lambda self, size: b""})()
 
-        def wait(self, timeout=None):
+        def communicate(self, input=None, timeout=None):
+            del input, timeout
             raise KeyboardInterrupt()
 
     monkeypatch.setattr(process_module.os, "name", "nt")
@@ -282,41 +289,6 @@ def test_keyboard_interrupt_terminates_started_worker(monkeypatch):
     with pytest.raises(KeyboardInterrupt):
         run_check_process(_spec(), timeout=1.0)
     assert cleaned
-
-
-@pytest.mark.unittest
-def test_start_gate_write_is_independently_bounded():
-    """A blocked or broken stdin writer cannot consume the worker deadline."""
-    import threading
-
-    release = threading.Event()
-
-    class BlockingInput:
-        def write(self, data):
-            del data
-            release.wait(2.0)
-
-        def flush(self):
-            return None
-
-        def close(self):
-            return None
-
-    process = type("Process", (), {"stdin": BlockingInput()})()
-    error, writer = process_module._send_start_gate(process, "4" * 32, 0.01)
-    assert error == "start_gate_timeout"
-    release.set()
-    writer.join(timeout=1.0)
-
-    class BrokenInput(BlockingInput):
-        def write(self, data):
-            del data
-            raise OSError("closed")
-
-    process.stdin = BrokenInput()
-    error, writer = process_module._send_start_gate(process, "5" * 32, 1.0)
-    writer.join(timeout=1.0)
-    assert error == "start_gate_write:OSError"
 
 
 @pytest.mark.unittest
@@ -339,20 +311,6 @@ def test_bounded_capture_handles_partial_and_oversized_protocol_frames():
     oversized.append(FRAME_PREFIX + b"x" * (MAX_ENVELOPE_BYTES + 2))
     assert oversized.protocol_frames
     assert len(oversized._protocol_pending) <= MAX_ENVELOPE_BYTES + 1
-
-
-@pytest.mark.unittest
-def test_stream_reader_records_pipe_failure():
-    """Reader failures become bounded diagnostics instead of thread crashes."""
-
-    class BrokenStream:
-        def read(self, size):
-            del size
-            raise OSError("closed")
-
-    errors = []
-    process_module._drain(BrokenStream(), _BoundedCapture(), errors)
-    assert errors == ["stream_error:OSError"]
 
 
 @pytest.mark.unittest
@@ -470,37 +428,24 @@ def test_native_containment_failure_terminates_started_worker(monkeypatch):
 
 
 @pytest.mark.unittest
-def test_start_gate_failure_retains_cleanup_evidence(monkeypatch):
-    """A failed GO gate returns one structured error with cleanup diagnostics."""
-
-    class Stream:
-        @staticmethod
-        def read(size):
-            del size
-            return b""
+def test_worker_communication_failure_retains_cleanup_evidence(monkeypatch):
+    """A subprocess communication failure retains cleanup diagnostics."""
 
     class Process:
         pid = 29
-        stdin = Stream()
-        stdout = Stream()
-        stderr = Stream()
+        returncode = None
 
-    class GateThread:
         @staticmethod
-        def join(timeout=None):
-            del timeout
+        def communicate(input=None, timeout=None):
+            del input, timeout
+            raise OSError("pipe failed")
 
     monkeypatch.setattr(process_module.os, "name", "nt")
     monkeypatch.setattr(process_module.subprocess, "Popen", lambda *a, **k: Process())
     monkeypatch.setattr(process_module, "attach_process", lambda process: object())
     monkeypatch.setattr(
-        process_module,
-        "_send_start_gate",
-        lambda *args: ("gate failed", GateThread()),
-    )
-    monkeypatch.setattr(
         process_module, "_terminate", lambda *args, **kwargs: "cleanup failed"
     )
     result = run_check_process(_spec(), timeout=0.1)
-    assert result.reason == "start_gate"
+    assert result.reason == "worker_communication"
     assert "cleanup=cleanup failed" in result.evidence

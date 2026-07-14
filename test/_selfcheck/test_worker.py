@@ -7,6 +7,7 @@ import pytest
 from pyfcstm._selfcheck.model import CheckOutcome
 from pyfcstm._selfcheck.protocol import read_result_file, read_stdout_frames
 from pyfcstm._selfcheck import registry
+from pyfcstm._selfcheck import worker as worker_module
 from pyfcstm._selfcheck.worker import _read_start_gate, _write_frame, run_worker
 
 
@@ -124,6 +125,24 @@ def test_start_gate_rejects_mismatch_and_trailing_data(monkeypatch, payload):
         "start_gate_mismatch",
         "start_gate_trailing_data",
     )
+
+
+@pytest.mark.unittest
+def test_start_gate_read_does_not_create_a_thread(monkeypatch):
+    """The hidden worker reads its one gate synchronously."""
+
+    class ForbiddenThreading:
+        @staticmethod
+        def Thread(*args, **kwargs):
+            del args, kwargs
+            raise AssertionError("self-check created a thread")
+
+    nonce = "9" * 32
+    monkeypatch.setattr(
+        "sys.stdin", io.TextIOWrapper(io.BytesIO(b"GO " + nonce.encode() + b"\n"))
+    )
+    monkeypatch.setattr(worker_module, "threading", ForbiddenThreading(), raising=False)
+    assert _read_start_gate(nonce) is None
 
 
 @pytest.mark.unittest

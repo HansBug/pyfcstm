@@ -7,9 +7,7 @@ or recursively starts another worker.
 
 import faulthandler
 import os
-import queue
 import sys
-import threading
 import traceback
 from typing import Any, Mapping, Optional
 
@@ -21,36 +19,20 @@ from .protocol import encode_result_frame
 from .protocol import is_valid_nonce
 
 
-START_GATE_TIMEOUT = 2.0
-
-
-def _read_start_gate(nonce: str, timeout: float = START_GATE_TIMEOUT) -> Optional[str]:
+def _read_start_gate(nonce: str) -> Optional[str]:
     """Read one exact nonce-bound GO frame from worker stdin."""
     expected = build_start_gate(nonce)
-    result = queue.Queue(maxsize=1)
-
-    def read_gate() -> None:
-        try:
-            received = sys.stdin.buffer.readline(len(expected) + 1)
-            if received == expected and sys.stdin.buffer.read(1):
-                result.put("start_gate_trailing_data")
-                return
-        except (AttributeError, OSError, ValueError) as err:
-            result.put("start_gate_read:{}".format(type(err).__name__))
-            return
-        result.put(None if received == expected else "start_gate_mismatch")
-
-    reader = threading.Thread(
-        target=read_gate, name="selfcheck-start-gate", daemon=True
-    )
-    reader.start()
-    reader.join(timeout=max(0.0, timeout))
-    if reader.is_alive():
-        return "start_gate_timeout"
     try:
-        return result.get_nowait()
-    except queue.Empty:
-        return "start_gate_read:missing_result"
+        received = sys.stdin.buffer.read(len(expected) + 1)
+    except (AttributeError, OSError, ValueError) as err:
+        # Redirected stdin can lack a binary buffer, native reads can fail, and
+        # closed streams reject reads with ValueError.
+        return "start_gate_read:{}".format(type(err).__name__)
+    if received == expected:
+        return None
+    if received.startswith(expected):
+        return "start_gate_trailing_data"
+    return "start_gate_mismatch"
 
 
 def _write_frame(mode: str, result_file: Optional[str], frame: bytes) -> Optional[str]:

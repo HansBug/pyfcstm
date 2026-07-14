@@ -1,9 +1,9 @@
-"""Execute one isolated check process with bounded transport handling.
+"""Execute one isolated check synchronously under the supervisor.
 
-Checks are never scheduled concurrently. The module uses two short-lived
-reader threads only to drain one worker's stdout and stderr without Windows
-anonymous-pipe deadlocks, plus a bounded writer thread for the 36-byte GO gate.
-Only the calling supervisor thread receives the result and writes the ledger.
+The caller starts one worker, exchanges the fixed gate and output through one
+``subprocess.communicate`` call, commits its terminal result, and only then can
+advance to the next registry entry. This module does not create threads or
+schedule checks concurrently.
 """
 
 import errno
@@ -11,7 +11,6 @@ import os
 import signal
 import subprocess
 import tempfile
-import threading
 import time
 from typing import Optional
 
@@ -29,7 +28,6 @@ from .protocol import read_stdout_frames
 
 
 STREAM_LIMIT = 2 * 1024 * 1024
-START_GATE_TIMEOUT = 2.0
 SIGTERM_GRACE = 0.5
 MAX_PROTOCOL_FRAMES = 2
 
@@ -131,21 +129,6 @@ class _BoundedCapture:
     @property
     def truncated_bytes(self) -> int:
         return max(0, self.total - self.limit)
-
-
-def _drain(stream, capture: _BoundedCapture, errors) -> None:
-    """Drain one pipe in a dedicated thread, including Windows anonymous pipes."""
-    try:
-        while True:
-            data = stream.read(65536)
-            if not data:
-                break
-            capture.append(data)
-    except (OSError, ValueError) as err:
-        # Pipe closure and invalid stream handles are recorded, not propagated from a reader thread.
-        errors.append("stream_error:{}".format(type(err).__name__))
-    finally:
-        capture.finish()
 
 
 def _diagnostics(
@@ -264,41 +247,6 @@ def _terminate(
             _record_error(errors, "process_terminate", err)
         _wait_process(process, grace, errors, kill_on_timeout=True)
     return "; ".join(errors) if errors else None
-
-
-def _send_start_gate(process, nonce: str, timeout: float):
-    """Write and close the GO frame within a bounded cross-platform window."""
-    outcome = []
-
-    def write_gate() -> None:
-        error = None
-        try:
-            process.stdin.write(build_start_gate(nonce))
-            process.stdin.flush()
-        except (AttributeError, OSError, ValueError) as err:
-            error = "start_gate_write:{}".format(type(err).__name__)
-        finally:
-            try:
-                process.stdin.close()
-            except (AttributeError, OSError, ValueError):
-                pass
-            outcome.append(error)
-
-    writer = threading.Thread(
-        target=write_gate, name="selfcheck-start-gate", daemon=True
-    )
-    writer.start()
-    writer.join(timeout=max(0.0, timeout))
-    if writer.is_alive():
-        try:
-            process.stdin.close()
-        except (AttributeError, OSError, ValueError):
-            # Closing the pipe is the only portable way to wake a blocked writer.
-            pass
-        # Do not spend a second full gate budget waiting for a broken stream.
-        writer.join(timeout=0.0)
-        return "start_gate_timeout", writer
-    return (outcome[0] if outcome else "start_gate_missing_result"), writer
 
 
 def _command_for_worker(
@@ -440,7 +388,6 @@ def run_check_process(
     """
     started = time.monotonic()
     nonce = make_nonce()
-    scaled_gate_timeout = min(START_GATE_TIMEOUT * timeout_scale, max(0.0, timeout))
     scaled_grace = min(5.0, max(0.1, SIGTERM_GRACE * timeout_scale))
     session_dir = None
     result_file = None
@@ -515,71 +462,75 @@ def run_check_process(
                     process=process,
                 )
 
+        stdout_data = b""
+        stderr_data = b""
+        communication_errors = []
+        cleanup_error = None
+        timed_out = False
+        deadline = started + timeout
+        try:
+            stdout_data, stderr_data = process.communicate(
+                input=build_start_gate(nonce),
+                timeout=max(0.0, deadline - time.monotonic()),
+            )
+        except subprocess.TimeoutExpired as err:
+            timed_out = True
+            stdout_data = err.output or b""
+            stderr_data = err.stderr or b""
+            cleanup_error = _terminate(process, job, posix_group, scaled_grace)
+            job = None
+            try:
+                stdout_data, stderr_data = process.communicate(timeout=scaled_grace)
+            except subprocess.TimeoutExpired as drain_error:
+                communication_errors.append("output_drain:TimeoutExpired")
+                stdout_data = drain_error.output or stdout_data
+                stderr_data = drain_error.stderr or stderr_data
+            except (OSError, ValueError) as drain_error:
+                # Pipe reads can fail with OSError after tree termination;
+                # communicate rejects already-closed streams with ValueError.
+                communication_errors.append(
+                    "output_drain:{}".format(type(drain_error).__name__)
+                )
+        except (OSError, ValueError) as err:
+            # communicate surfaces native pipe failures as OSError and invalid
+            # stream lifecycle state as ValueError.
+            cleanup_error = _terminate(process, job, posix_group, scaled_grace)
+            job = None
+            details = "worker_communication:{}".format(type(err).__name__)
+            if cleanup_error:
+                details += "; cleanup=" + cleanup_error
+            return _make_result(
+                check,
+                "ERROR",
+                "worker communication failed",
+                "worker_communication",
+                started,
+                evidence=details,
+                process=process,
+                result_mode=result_mode,
+            )
+
         stdout_capture = _BoundedCapture(capture_protocol=result_mode == "stdout")
+        stdout_capture.append(stdout_data or b"")
+        stdout_capture.finish()
         stderr_capture = _BoundedCapture()
-        stream_errors = []
-        stdout_thread = threading.Thread(
-            target=_drain,
-            args=(process.stdout, stdout_capture, stream_errors),
-            daemon=True,
-        )
-        stderr_thread = threading.Thread(
-            target=_drain,
-            args=(process.stderr, stderr_capture, stream_errors),
-            daemon=True,
-        )
-        stdout_thread.start()
-        stderr_thread.start()
+        stderr_capture.append(stderr_data or b"")
+        stderr_capture.finish()
         process_fields = {
             "process": process,
             "result_mode": result_mode,
             "stdout_capture": stdout_capture,
             "stderr_capture": stderr_capture,
         }
-        gate_error, gate_thread = _send_start_gate(process, nonce, scaled_gate_timeout)
-        if gate_error is not None:
-            cleanup_error = _terminate(process, job, posix_group, scaled_grace)
-            job = None
-            gate_thread.join(timeout=scaled_grace)
-            stdout_thread.join(timeout=scaled_grace)
-            stderr_thread.join(timeout=scaled_grace)
-            details = gate_error
-            if cleanup_error:
-                details += "; cleanup=" + cleanup_error
-            return _make_result(
-                check,
-                "ERROR",
-                "start gate failed",
-                "start_gate",
-                started,
-                evidence=details,
-                **process_fields,
-            )
-
-        deadline = started + timeout
-        cleanup_error = None
-        try:
-            remaining = max(0.0, deadline - time.monotonic())
-            return_code = process.wait(timeout=remaining)
-            timed_out = False
-        except subprocess.TimeoutExpired:
-            timed_out = True
-            cleanup_error = _terminate(process, job, posix_group, scaled_grace)
-            job = None
-            try:
-                return_code = process.wait(timeout=scaled_grace)
-            except (OSError, ValueError, ChildProcessError, subprocess.TimeoutExpired):
-                return_code = process.returncode
+        return_code = process.returncode
         if return_code and not timed_out:
             # A crashed/non-zero worker may have left descendants in its process
             # group even though the group leader has already exited.
             cleanup_error = _terminate(process, job, posix_group, scaled_grace)
             job = None
-        stdout_thread.join(timeout=2.0)
-        stderr_thread.join(timeout=2.0)
         process_fields["return_code"] = return_code
         if timed_out:
-            details = _diagnostics(stream_errors, cleanup_error=cleanup_error)
+            details = _diagnostics(communication_errors, cleanup_error=cleanup_error)
             return _make_result(
                 check,
                 "TIMEOUT",
@@ -600,7 +551,7 @@ def run_check_process(
         )
         if outcome.envelope is not None:
             details = _diagnostics(
-                stream_errors,
+                communication_errors,
                 base=str(outcome.envelope.get("evidence", "")),
                 cleanup_error=cleanup_error,
             )
@@ -614,7 +565,7 @@ def run_check_process(
                 envelope=outcome.envelope,
                 **process_fields,
             )
-        details = _diagnostics(stream_errors, cleanup_error=cleanup_error)
+        details = _diagnostics(communication_errors, cleanup_error=cleanup_error)
         ntstatus = format_ntstatus(return_code) if os.name == "nt" else None
         if ntstatus:
             details = (details + "\n" if details else "") + "ntstatus=" + ntstatus

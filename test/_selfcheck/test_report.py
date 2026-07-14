@@ -41,6 +41,7 @@ def _metadata(exit_code=0):
         "environment": {
             "version": "0.5.0",
             "revision": "abc123",
+            "commit": "def456",
             "frozen": False,
             "platform": "TestOS-1.0",
             "architecture": "64bit",
@@ -92,7 +93,10 @@ def test_human_report_contains_environment_header_and_failure_evidence():
         {"PASS": 1, "ERROR": 1},
     )
     output = render_human(snapshot, color="never")
-    assert "pyfcstm self-check 0.5.0  revision=abc123  mode=source" in output
+    assert (
+        "pyfcstm self-check 0.5.0  revision=abc123  commit=def456  mode=source"
+        in output
+    )
     assert "System: TestOS-1.0 64bit  Python=3.10.10 (CPython)" in output
     assert "[1/2] PASS ok (ready)" in output
     assert "[2/2] ERROR bad (broken)" in output

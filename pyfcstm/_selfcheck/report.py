@@ -165,6 +165,7 @@ def _render_human(snapshot: ReportSnapshot, use_color: bool) -> str:
     environment = snapshot.metadata.get("environment", {})
     version = environment.get("version") or "unavailable"
     revision = environment.get("revision") or "unavailable"
+    commit = environment.get("commit") or "unavailable"
     mode = "frozen" if environment.get("frozen") else "source"
     platform_name = environment.get("platform") or "unavailable"
     architecture = environment.get("architecture") or environment.get("machine")
@@ -179,8 +180,8 @@ def _render_human(snapshot: ReportSnapshot, use_color: bool) -> str:
     cyan = "\x1b[36m" if use_color else ""
     reset = "\x1b[0m" if use_color else ""
     lines = [
-        "{}pyfcstm self-check {}  revision={}  mode={}{}".format(
-            cyan, version, revision, mode, reset
+        "{}pyfcstm self-check {}  revision={}  commit={}  mode={}{}".format(
+            cyan, version, revision, commit, mode, reset
         ),
         "System: {} {}  Python={} ({})  encoding={}".format(
             platform_name,

@@ -177,9 +177,8 @@ def _render_human(snapshot: ReportSnapshot, use_color: bool) -> str:
     lines.extend(("", "Summary:"))
     for status in _STATUS_ORDER:
         count = counts[status]
-        if count <= 0:
-            continue
-        label = _paint_status(status, use_color)
+        # Zero-count statuses stay plain; observed statuses use their semantic color.
+        label = _paint_status(status, use_color and count > 0)
         lines.append("  {} = {}".format(label, count))
     conclusion = _conclusion(snapshot, counts)
     if use_color:

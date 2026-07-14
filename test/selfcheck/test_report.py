@@ -54,13 +54,13 @@ def test_human_failure_output_contains_full_details():
     assert "full traceback" in output
     assert "PASS = 1" in output
     assert "ERROR = 1" in output
-    assert "WARN = 0" not in output
+    assert "WARN = 0" in output
     assert "Conclusion: [ FAILED ]" in output
 
 
 @pytest.mark.unittest
-def test_human_summary_only_lists_positive_status_counts_and_colors_them(monkeypatch):
-    """Human summaries omit zero counts and color every emitted status."""
+def test_human_summary_lists_all_status_counts_and_colors_observed_them(monkeypatch):
+    """Human summaries list every status and color only observed statuses."""
     import pyfcstm._selfcheck.report as report_module
     from pyfcstm._selfcheck.model import CheckResult
     from pyfcstm._selfcheck.model import ReportSnapshot
@@ -78,8 +78,11 @@ def test_human_summary_only_lists_positive_status_counts_and_colors_them(monkeyp
     output = render_human(snapshot, color="always")
     assert "\x1b[32mPASS\x1b[0m = 1" in output
     assert "\x1b[33mWARN\x1b[0m = 1" in output
-    assert "SKIP = 0" not in output
-    assert "BLOCKED = 0" not in output
+    assert "\x1b[36mSKIP\x1b[0m = 0" not in output
+    assert "  SKIP = 0" in output
+    assert "  BLOCKED = 0" in output
+    assert "  FAIL = 0" in output
+    assert "  CRASH = 0" in output
     assert "\x1b[1;33m[ WARNINGS ]\x1b[0m" in output
 
 

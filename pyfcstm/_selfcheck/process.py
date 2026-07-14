@@ -1,9 +1,10 @@
 """Execute one isolated check synchronously under the supervisor.
 
-The caller starts one worker, exchanges the fixed gate and output through one
+The caller starts one worker, exchanges the fixed gate through one
 ``subprocess.communicate`` call, commits its terminal result, and only then can
-advance to the next registry entry. This module does not create threads or
-schedule checks concurrently.
+advance to the next registry entry. Worker output is spooled to temporary files
+and fed to a bounded capture after process completion. This module does not
+create threads or schedule checks concurrently.
 """
 
 import errno
@@ -28,6 +29,7 @@ from .protocol import read_stdout_frames
 STREAM_LIMIT = 2 * 1024 * 1024
 SIGTERM_GRACE = 0.5
 MAX_PROTOCOL_FRAMES = 2
+_CAPTURE_CHUNK_SIZE = 64 * 1024
 
 
 class _BoundedCapture:
@@ -126,6 +128,40 @@ class _BoundedCapture:
     @property
     def truncated_bytes(self) -> int:
         return max(0, self.total - self.limit)
+
+
+def _capture_stream(stream, data, capture_protocol: bool) -> _BoundedCapture:
+    """Build a bounded capture from a spool or an already returned byte string."""
+    capture = _BoundedCapture(capture_protocol=capture_protocol)
+    if data is not None:
+        capture.append(data or b"")
+    elif stream is not None:
+        try:
+            stream.seek(0)
+            while True:
+                chunk = stream.read(_CAPTURE_CHUNK_SIZE)
+                if not chunk:
+                    break
+                capture.append(chunk)
+        except (OSError, ValueError) as err:
+            capture.append(
+                ("self-check output read failed: {}".format(err)).encode(
+                    "utf-8", "backslashreplace"
+                )
+            )
+    capture.finish()
+    return capture
+
+
+def _close_capture_stream(stream) -> None:
+    """Close one optional parent-owned output spool without escaping cleanup."""
+    if stream is None:
+        return
+    try:
+        stream.close()
+    except (OSError, ValueError):
+        # The subprocess module may already have closed an inherited handle.
+        pass
 
 
 def _diagnostics(
@@ -400,10 +436,20 @@ def run_check_process(
 
     command = _command_for_worker(check, nonce, result_mode, result_file)
     child_environment = os.environ.copy()
+    stdout_spool = None
+    stderr_spool = None
+    try:
+        stdout_spool = tempfile.TemporaryFile(mode="w+b")
+        stderr_spool = tempfile.TemporaryFile(mode="w+b")
+    except (OSError, ValueError):
+        _close_capture_stream(stdout_spool)
+        _close_capture_stream(stderr_spool)
+        stdout_spool = None
+        stderr_spool = None
     popen_kwargs = {
         "stdin": subprocess.PIPE,
-        "stdout": subprocess.PIPE,
-        "stderr": subprocess.PIPE,
+        "stdout": stdout_spool or subprocess.PIPE,
+        "stderr": stderr_spool or subprocess.PIPE,
         "bufsize": 0,
         "env": child_environment,
     }
@@ -423,6 +469,8 @@ def run_check_process(
     try:
         process = subprocess.Popen(command, **popen_kwargs)
     except (OSError, ValueError) as err:
+        _close_capture_stream(stdout_spool)
+        _close_capture_stream(stderr_spool)
         _cleanup_session(session_dir, result_file)
         return _make_result(
             check,
@@ -459,8 +507,8 @@ def run_check_process(
                     process=process,
                 )
 
-        stdout_data = b""
-        stderr_data = b""
+        stdout_data = None if stdout_spool is not None else b""
+        stderr_data = None if stderr_spool is not None else b""
         communication_errors = []
         cleanup_error = None
         timed_out = False
@@ -472,16 +520,18 @@ def run_check_process(
             )
         except subprocess.TimeoutExpired as err:
             timed_out = True
-            stdout_data = err.output or b""
-            stderr_data = err.stderr or b""
+            stdout_data = err.output if stdout_spool is None else None
+            stderr_data = err.stderr if stderr_spool is None else None
             cleanup_error = _terminate(process, job, posix_group, scaled_grace)
             job = None
             try:
                 stdout_data, stderr_data = process.communicate(timeout=scaled_grace)
             except subprocess.TimeoutExpired as drain_error:
                 communication_errors.append("output_drain:TimeoutExpired")
-                stdout_data = drain_error.output or stdout_data
-                stderr_data = drain_error.stderr or stderr_data
+                if stdout_spool is None:
+                    stdout_data = drain_error.output or stdout_data
+                if stderr_spool is None:
+                    stderr_data = drain_error.stderr or stderr_data
             except (OSError, ValueError) as drain_error:
                 # Pipe reads can fail with OSError after tree termination;
                 # communicate rejects already-closed streams with ValueError.
@@ -507,12 +557,12 @@ def run_check_process(
                 result_mode=result_mode,
             )
 
-        stdout_capture = _BoundedCapture(capture_protocol=result_mode == "stdout")
-        stdout_capture.append(stdout_data or b"")
-        stdout_capture.finish()
-        stderr_capture = _BoundedCapture()
-        stderr_capture.append(stderr_data or b"")
-        stderr_capture.finish()
+        stdout_capture = _capture_stream(
+            stdout_spool, stdout_data, capture_protocol=result_mode == "stdout"
+        )
+        stderr_capture = _capture_stream(
+            stderr_spool, stderr_data, capture_protocol=False
+        )
         process_fields = {
             "process": process,
             "result_mode": result_mode,
@@ -606,3 +656,5 @@ def run_check_process(
             )
             _write_cleanup_diagnostic("job cleanup", cleanup_error)
         _cleanup_session(session_dir, result_file)
+        _close_capture_stream(stdout_spool)
+        _close_capture_stream(stderr_spool)

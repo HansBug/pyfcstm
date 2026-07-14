@@ -5,6 +5,7 @@ isolated worker at a time, commits its terminal result, and only then advances
 to the next check. It owns the ledger, final snapshot, report, and exit code.
 """
 
+import json
 import time
 import traceback
 import uuid
@@ -172,7 +173,30 @@ def _argument_snapshot(error: BaseException) -> ReportSnapshot:
     return ReportSnapshot((result,), metadata, {"ERROR": 1})
 
 
-def _emit_final(snapshot: ReportSnapshot, output_format: str, color: str) -> int:
+def _output_failure_snapshot(snapshot: ReportSnapshot, evidence: str) -> ReportSnapshot:
+    """Add one emergency-only output diagnostic to a frozen snapshot."""
+    result = CheckResult(
+        "selfcheck.output",
+        "ERROR",
+        True,
+        summary="self-check output failure",
+        title="self-check output",
+        reason="output_failure",
+        evidence=evidence,
+    )
+    metadata = dict(snapshot.metadata)
+    metadata["exit_code"] = 130 if metadata.get("exit_code") == 130 else 3
+    counts = dict(snapshot.counts)
+    counts["ERROR"] = counts.get("ERROR", 0) + 1
+    return ReportSnapshot(snapshot.checks + (result,), metadata, counts)
+
+
+def _emit_final(
+    snapshot: ReportSnapshot,
+    output_format: str,
+    color: str,
+    report_path: str = None,
+) -> int:
     """Emit one final snapshot, using one emergency diagnostic on failure."""
     try:
         if output_format == "json":
@@ -180,16 +204,57 @@ def _emit_final(snapshot: ReportSnapshot, output_format: str, color: str) -> int
         else:
             write_human(snapshot, color)
     except (Exception, SystemExit) as err:
-        # Do not mutate or rerender the snapshot after a deterministic output
-        # failure. The bootstrap boundary remains the final recovery layer.
         evidence = traceback.format_exc()
-        try:
-            emergency_write(
-                "self-check output failure:\n{}".format(evidence), output_format
+        emergency_snapshot = _output_failure_snapshot(snapshot, evidence)
+        report_error = None
+        if report_path:
+            try:
+                report_error = write_report(report_path, emergency_snapshot)
+            except BaseException as report_exception:
+                # A report rewrite can fail independently after output failed;
+                # keep that diagnostic in the emergency channel, but preserve
+                # non-runtime control sentinels for the outer bootstrap.
+                if not isinstance(report_exception, (Exception, SystemExit)):
+                    raise
+                report_error = "{}: {}".format(
+                    type(report_exception).__name__, report_exception
+                )
+        if report_error:
+            emergency_snapshot = _output_failure_snapshot(
+                snapshot,
+                evidence + "\nreport rewrite failed: " + report_error,
             )
+        try:
+            if output_format == "json":
+                try:
+                    message = json.dumps(
+                        emergency_snapshot.to_dict(),
+                        ensure_ascii=True,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    )
+                except (TypeError, ValueError) as serialization_error:
+                    # The emergency snapshot contains only built-in values; keep
+                    # a plain diagnostic if a future field violates that rule.
+                    message = "self-check output failure [selfcheck.output ERROR]: {}\n{}".format(
+                        serialization_error, evidence
+                    )
+                emergency_write(message + "\n", "json")
+            else:
+                message = (
+                    "self-check output failure [selfcheck.output ERROR]:\n{}".format(
+                        evidence
+                    )
+                )
+                if report_error:
+                    message += "report rewrite failed: {}\n".format(report_error)
+                emergency_write(
+                    message,
+                    output_format,
+                )
         finally:
             _silence_broken_stdout(err)
-        return 3
+        return int(emergency_snapshot.metadata["exit_code"])
     return int(snapshot.metadata["exit_code"])
 
 
@@ -346,4 +411,4 @@ def run_supervisor(arguments: Sequence[str]) -> int:
             metadata["exit_code"] = 1 if forced_exit is None else forced_exit
             snapshot = ledger.freeze(metadata)
 
-    return _emit_final(snapshot, options.output_format, options.color)
+    return _emit_final(snapshot, options.output_format, options.color, options.report)

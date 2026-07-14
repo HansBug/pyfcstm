@@ -335,6 +335,12 @@ def test_win7_console_fallback_translates_known_ansi_roles(monkeypatch):
         SetConsoleTextAttribute = Call(1)
 
     kernel = Kernel()
+    kernel.GetStdHandle.argtypes = ["old_handle"]
+    kernel.GetStdHandle.restype = "old_handle_result"
+    kernel.GetConsoleScreenBufferInfo.argtypes = ["old_info"]
+    kernel.GetConsoleScreenBufferInfo.restype = "old_info_result"
+    kernel.SetConsoleTextAttribute.argtypes = ["old_attribute"]
+    kernel.SetConsoleTextAttribute.restype = "old_attribute_result"
     monkeypatch.setattr(win32, "os", SimpleNamespace(name="nt"))
     monkeypatch.setattr(
         ctypes, "windll", SimpleNamespace(kernel32=kernel), raising=False
@@ -345,6 +351,9 @@ def test_win7_console_fallback_translates_known_ansi_roles(monkeypatch):
     attributes = [call[1] for call in kernel.SetConsoleTextAttribute.calls]
     assert 0x000A in attributes
     assert attributes[-1] == 7
+    assert kernel.GetStdHandle.argtypes == ["old_handle"]
+    assert kernel.GetConsoleScreenBufferInfo.argtypes == ["old_info"]
+    assert kernel.SetConsoleTextAttribute.argtypes == ["old_attribute"]
 
 
 @pytest.mark.unittest

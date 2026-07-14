@@ -344,6 +344,24 @@ def test_bounded_capture_handles_partial_and_oversized_protocol_frames():
 
 
 @pytest.mark.unittest
+def test_capture_and_spool_cleanup_failures_are_bounded(monkeypatch):
+    """Output spool read/close failures become bounded diagnostic bytes."""
+
+    class BrokenStream:
+        def seek(self, position):
+            del position
+            raise OSError("seek")
+
+        def close(self):
+            raise ValueError("closed")
+
+    capture = process_module._capture_stream(BrokenStream(), None, False)
+    assert "output read failed: seek" in capture.text()
+    process_module._close_capture_stream(None)
+    process_module._close_capture_stream(BrokenStream())
+
+
+@pytest.mark.unittest
 def test_job_and_direct_cleanup_failures_are_bounded():
     """Native and direct cleanup errors are returned as diagnostic evidence."""
     from pyfcstm._selfcheck._win32 import JobAssignmentError
@@ -775,6 +793,11 @@ def test_worker_drain_failure_is_normalized_as_timeout(monkeypatch):
 
     process = Process()
     monkeypatch.setattr(process_module.os, "name", "posix")
+    monkeypatch.setattr(
+        process_module.tempfile,
+        "TemporaryFile",
+        lambda *args, **kwargs: (_ for _ in ()).throw(OSError("spool")),
+    )
     monkeypatch.setattr(process_module.subprocess, "Popen", lambda *a, **k: process)
     monkeypatch.setattr(process_module, "_terminate", lambda *args: None)
     result = run_check_process(_spec(), timeout=0.01)
@@ -800,6 +823,11 @@ def test_worker_drain_timeout_is_normalized_as_timeout(monkeypatch):
 
     process = Process()
     monkeypatch.setattr(process_module.os, "name", "posix")
+    monkeypatch.setattr(
+        process_module.tempfile,
+        "TemporaryFile",
+        lambda *args, **kwargs: (_ for _ in ()).throw(OSError("spool")),
+    )
     monkeypatch.setattr(process_module.subprocess, "Popen", lambda *a, **k: process)
     monkeypatch.setattr(process_module, "_terminate", lambda *args: None)
     result = run_check_process(_spec(), timeout=0.01)

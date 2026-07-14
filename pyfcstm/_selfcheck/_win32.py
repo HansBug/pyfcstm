@@ -66,6 +66,26 @@ _ANSI_ATTRIBUTES = {
     "1;33": 0x000E,
     "1;97;41": 0x00CF,
 }
+_MISSING = object()
+
+
+def _call_with_ctypes_signature(function, argtypes, restype, *arguments):
+    """Call one shared ctypes function without leaking signature mutations."""
+    previous_argtypes = getattr(function, "argtypes", _MISSING)
+    previous_restype = getattr(function, "restype", _MISSING)
+    try:
+        function.argtypes = argtypes
+        function.restype = restype
+        return function(*arguments)
+    finally:
+        if previous_argtypes is _MISSING:
+            del function.argtypes
+        else:
+            function.argtypes = previous_argtypes
+        if previous_restype is _MISSING:
+            del function.restype
+        else:
+            function.restype = previous_restype
 
 
 class JobHandle:
@@ -303,20 +323,20 @@ def write_console_ansi(text: str, stream=None) -> bool:
 
         kernel32 = ctypes.windll.kernel32
         get_handle = kernel32.GetStdHandle
-        get_handle.argtypes = [wintypes.DWORD]
-        get_handle.restype = wintypes.HANDLE
         get_info = kernel32.GetConsoleScreenBufferInfo
-        get_info.argtypes = [
+        get_info_argtypes = [
             wintypes.HANDLE,
             ctypes.POINTER(_ConsoleScreenBufferInfo),
         ]
-        get_info.restype = wintypes.BOOL
         set_attribute = kernel32.SetConsoleTextAttribute
-        set_attribute.argtypes = [wintypes.HANDLE, wintypes.WORD]
-        set_attribute.restype = wintypes.BOOL
-        handle = get_handle(-11)
+        set_attribute_argtypes = [wintypes.HANDLE, wintypes.WORD]
+        handle = _call_with_ctypes_signature(
+            get_handle, [wintypes.DWORD], wintypes.HANDLE, -11
+        )
         info = _ConsoleScreenBufferInfo()
-        if not handle or not get_info(handle, ctypes.byref(info)):
+        if not handle or not _call_with_ctypes_signature(
+            get_info, get_info_argtypes, wintypes.BOOL, handle, ctypes.byref(info)
+        ):
             return False
         original = int(info.wAttributes)
         target = stream if stream is not None else sys.stdout
@@ -335,17 +355,47 @@ def write_console_ansi(text: str, stream=None) -> bool:
         # can then fall back to one complete plain report instead of duplicating
         # a partially colored prefix.
         for _, attribute in segments:
-            if attribute is not None and not set_attribute(handle, attribute):
-                set_attribute(handle, original)
+            if attribute is not None and not _call_with_ctypes_signature(
+                set_attribute,
+                set_attribute_argtypes,
+                wintypes.BOOL,
+                handle,
+                attribute,
+            ):
+                _call_with_ctypes_signature(
+                    set_attribute,
+                    set_attribute_argtypes,
+                    wintypes.BOOL,
+                    handle,
+                    original,
+                )
                 return False
-        if not set_attribute(handle, original):
+        if not _call_with_ctypes_signature(
+            set_attribute,
+            set_attribute_argtypes,
+            wintypes.BOOL,
+            handle,
+            original,
+        ):
             return False
 
         for segment, attribute in segments:
             target.write(segment)
             if attribute is not None:
-                set_attribute(handle, attribute)
-        set_attribute(handle, original)
+                _call_with_ctypes_signature(
+                    set_attribute,
+                    set_attribute_argtypes,
+                    wintypes.BOOL,
+                    handle,
+                    attribute,
+                )
+        _call_with_ctypes_signature(
+            set_attribute,
+            set_attribute_argtypes,
+            wintypes.BOOL,
+            handle,
+            original,
+        )
         target.flush()
         return True
     except (

@@ -134,6 +134,9 @@ def test_argument_errors_cover_bounds_and_mode_exclusivity():
     from pyfcstm._selfcheck.arguments import SelfCheckArgumentError
     from pyfcstm._selfcheck.arguments import parse_selfcheck_args
     from pyfcstm._selfcheck.arguments import parse_worker_args
+    from pyfcstm._selfcheck.arguments import _requested_output_format
+
+    assert _requested_output_format(("--format=json",)) == "json"
 
     with pytest.raises(SelfCheckArgumentError):
         parse_selfcheck_args(("--timeout-scale", "0.01"))

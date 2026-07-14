@@ -93,6 +93,12 @@ def main():
     if scenario == "huge_stdout":
         sys.stdout.buffer.write(b"x" * (2 * 1024 * 1024 + 4096))
         sys.stdout.buffer.flush()
+    if scenario == "stdout_noise":
+        _write(options, b"x" * 64)
+        return 0
+    if scenario == "stdout_short_noise":
+        _write(options, b"x")
+        return 0
     if scenario == "invalid_utf8":
         os.write(2, b"diagnostic-\xff-\xfe\n")
     if scenario == "no_result":

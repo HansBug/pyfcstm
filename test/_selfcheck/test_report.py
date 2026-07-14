@@ -1,6 +1,7 @@
 """Tests for canonical JSON, human diagnostics, and emergency output."""
 
 import json
+from types import SimpleNamespace
 
 import pytest
 
@@ -13,6 +14,22 @@ from pyfcstm._selfcheck.report import (
     write_human,
     write_report,
 )
+
+
+def _ctypes_for_native_seam(monkeypatch):
+    """Provide scalar ctypes aliases when Python 3.7 cannot import wintypes."""
+    import ctypes
+
+    try:
+        from ctypes import wintypes
+    except ValueError:
+        wintypes = SimpleNamespace(
+            BOOL=ctypes.c_int,
+            DWORD=ctypes.c_uint32,
+            HANDLE=ctypes.c_void_p,
+        )
+        monkeypatch.setattr(ctypes, "wintypes", wintypes, raising=False)
+    return ctypes
 
 
 def _metadata(exit_code=0):
@@ -142,6 +159,23 @@ def test_report_atomic_replace_failure_is_diagnostic(monkeypatch, tmp_path):
 
 
 @pytest.mark.unittest
+def test_report_cleanup_failure_is_bounded(monkeypatch, tmp_path):
+    """A temporary-file unlink failure does not escape report writing."""
+    snapshot = ReportSnapshot((), _metadata(), {})
+    monkeypatch.setattr(
+        "pyfcstm._selfcheck.report.os.replace",
+        lambda source, target: (_ for _ in ()).throw(OSError("replace")),
+    )
+    monkeypatch.setattr(
+        "pyfcstm._selfcheck.report.os.unlink",
+        lambda path: (_ for _ in ()).throw(OSError("unlink")),
+    )
+    assert write_report(str(tmp_path / "report.json"), snapshot).startswith(
+        "OSError: replace"
+    )
+
+
+@pytest.mark.unittest
 def test_color_environment_precedence(monkeypatch):
     """Explicit never wins; FORCE_COLOR only affects automatic mode."""
     monkeypatch.setattr("sys.stdout.isatty", lambda: False)
@@ -240,6 +274,138 @@ def test_windows_console_fallback_failure_writes_one_plain_report(monkeypatch, c
 
 
 @pytest.mark.unittest
+def test_windows_console_probe_reports_unavailable_api(monkeypatch):
+    """The Windows probe degrades cleanly when native APIs are unavailable."""
+    import pyfcstm._selfcheck.report as report
+
+    ctypes = _ctypes_for_native_seam(monkeypatch)
+    monkeypatch.setattr(report, "os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr(
+        ctypes, "windll", SimpleNamespace(kernel32=object()), raising=False
+    )
+    assert report._windows_vt_supported(object()) is False
+
+
+@pytest.mark.unittest
+def test_windows_console_probe_rejects_non_vt_mode(monkeypatch):
+    """A console without the VT mode bit uses the Win7 fallback."""
+    import pyfcstm._selfcheck.report as report
+
+    ctypes = _ctypes_for_native_seam(monkeypatch)
+
+    class Function:
+        def __call__(self, *args):
+            if len(args) == 1:
+                return 10
+            return 0
+
+    kernel = SimpleNamespace(GetStdHandle=Function(), GetConsoleMode=Function())
+    monkeypatch.setattr(report, "os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr(
+        ctypes, "windll", SimpleNamespace(kernel32=kernel), raising=False
+    )
+    assert report._windows_vt_supported(object()) is False
+
+
+@pytest.mark.unittest
+def test_windows_console_probe_accepts_vt_mode(monkeypatch):
+    """The probe returns true when the console exposes VT processing."""
+    import pyfcstm._selfcheck.report as report
+
+    ctypes = _ctypes_for_native_seam(monkeypatch)
+
+    class Function:
+        def __init__(self, result):
+            self.result = result
+
+        def __call__(self, *args):
+            if len(args) == 2:
+                args[1]._obj.value = 0x0004
+            return self.result
+
+    kernel = SimpleNamespace(GetStdHandle=Function(10), GetConsoleMode=Function(1))
+    monkeypatch.setattr(report, "os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr(
+        ctypes, "windll", SimpleNamespace(kernel32=kernel), raising=False
+    )
+    assert report._windows_vt_supported(object()) is True
+
+
+@pytest.mark.unittest
+def test_windows_console_probe_import_failure_is_supported(monkeypatch):
+    """Python 3.7's unavailable wintypes module selects the safe fallback."""
+    import ctypes
+    import pyfcstm._selfcheck.report as report
+
+    monkeypatch.setattr(report, "os", SimpleNamespace(name="nt"))
+    monkeypatch.delattr(ctypes, "wintypes", raising=False)
+    assert report._windows_vt_supported(object()) is False
+
+
+@pytest.mark.unittest
+def test_auto_color_uses_terminal_detection(monkeypatch):
+    """Automatic color mode consults the current stdout TTY state."""
+    import pyfcstm._selfcheck.report as report
+
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    monkeypatch.delenv("FORCE_COLOR", raising=False)
+    monkeypatch.setattr(
+        report,
+        "sys",
+        SimpleNamespace(stdout=SimpleNamespace(isatty=lambda: True)),
+    )
+    assert report._color_requested("auto") is True
+
+
+@pytest.mark.unittest
+def test_broken_stdout_descriptor_is_redirected(monkeypatch):
+    """Broken-pipe shutdown redirects a real descriptor to the null device."""
+    import pyfcstm._selfcheck.report as report
+
+    calls = []
+
+    class Stream:
+        @staticmethod
+        def fileno():
+            return 11
+
+    fake_os = SimpleNamespace(
+        devnull="NUL",
+        O_WRONLY=1,
+        open=lambda path, flags: calls.append(("open", path, flags)) or 12,
+        dup2=lambda source, target: calls.append(("dup2", source, target)),
+        close=lambda descriptor: calls.append(("close", descriptor)),
+    )
+    monkeypatch.setattr(report, "os", fake_os)
+    monkeypatch.setattr(report, "sys", SimpleNamespace(stdout=Stream()))
+    report._silence_broken_stdout(BrokenPipeError("closed"))
+    assert ("dup2", 12, 11) in calls
+    assert ("close", 12) in calls
+
+
+@pytest.mark.unittest
+def test_broken_stdout_cleanup_failure_is_ignored(monkeypatch):
+    """A failed null-device close does not escape shutdown diagnostics."""
+    import pyfcstm._selfcheck.report as report
+
+    class Stream:
+        @staticmethod
+        def fileno():
+            return 11
+
+    fake_os = SimpleNamespace(
+        devnull="NUL",
+        O_WRONLY=1,
+        open=lambda path, flags: 12,
+        dup2=lambda source, target: None,
+        close=lambda descriptor: (_ for _ in ()).throw(OSError("close")),
+    )
+    monkeypatch.setattr(report, "os", fake_os)
+    monkeypatch.setattr(report, "sys", SimpleNamespace(stdout=Stream()))
+    report._silence_broken_stdout(BrokenPipeError("closed"))
+
+
+@pytest.mark.unittest
 def test_json_emergency_output_preserves_stdout_purity(monkeypatch, capfd):
     """JSON-mode emergency text bypasses stdout and uses binary stderr."""
     assert emergency_write("emergency\n", "json") is None
@@ -311,3 +477,38 @@ def test_emergency_writer_uses_temp_file_when_all_channels_fail(monkeypatch, tmp
     )
     assert emergency_write("saved\n", "human") == str(emergency)
     assert emergency.read_text(encoding="utf-8") == "saved\n"
+
+
+@pytest.mark.unittest
+def test_emergency_writer_tolerates_last_resort_cleanup_failure(monkeypatch, tmp_path):
+    """Even an unavailable temporary-file cleanup remains non-throwing."""
+
+    class Broken:
+        def write(self, value):
+            raise OSError("broken")
+
+        def flush(self):
+            raise OSError("broken")
+
+        buffer = None
+
+    emergency = tmp_path / "emergency.log"
+    with monkeypatch.context() as stream_patch:
+        stream_patch.setattr("sys.stdout", Broken())
+        stream_patch.setattr("sys.stderr", Broken())
+        stream_patch.setattr(
+            "pyfcstm._selfcheck.report.os.write",
+            lambda descriptor, data: (_ for _ in ()).throw(OSError("fd")),
+        )
+        stream_patch.setattr(
+            "pyfcstm._selfcheck.report.os.close", lambda descriptor: None
+        )
+        stream_patch.setattr(
+            "pyfcstm._selfcheck.report.os.unlink",
+            lambda path: (_ for _ in ()).throw(OSError("unlink")),
+        )
+        stream_patch.setattr(
+            "pyfcstm._selfcheck.report.tempfile.mkstemp",
+            lambda **kwargs: (9, str(emergency)),
+        )
+        assert emergency_write("lost\n", "human") is None

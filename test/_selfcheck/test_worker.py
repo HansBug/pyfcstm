@@ -160,6 +160,27 @@ def test_worker_start_gate_failure_is_an_error_frame(monkeypatch):
 
 
 @pytest.mark.unittest
+def test_worker_start_gate_read_failure_is_reported(monkeypatch):
+    """A closed worker stdin produces a typed protocol error."""
+    nonce = "5" * 32
+    output = io.BytesIO()
+
+    class BrokenBuffer:
+        def read(self, size):
+            del size
+            raise OSError("stdin closed")
+
+    class BrokenStdin:
+        buffer = BrokenBuffer()
+
+    monkeypatch.setattr("sys.stdin", BrokenStdin())
+    monkeypatch.setattr("sys.stdout", io.TextIOWrapper(output, write_through=True))
+    assert run_worker(_arguments(nonce)) == 3
+    result = read_stdout_frames(output.getvalue(), nonce, "fixture.worker")
+    assert result.envelope["reason"].startswith("start_gate_read:")
+
+
+@pytest.mark.unittest
 def test_worker_file_transport_appends_one_frame(monkeypatch, tmp_path):
     """File transport remains append-only and fsynced by the worker."""
     nonce = "6" * 32
@@ -193,6 +214,73 @@ def test_worker_result_write_failure_is_reported(monkeypatch, capfd):
 
 
 @pytest.mark.unittest
+def test_worker_file_mode_requires_a_result_path(monkeypatch, capfd):
+    """The public worker rejects file transport without a destination."""
+    nonce = "7" * 32
+    with monkeypatch.context() as worker_patch:
+        output = _install_streams(worker_patch, nonce)
+        _register(
+            worker_patch,
+            "test_missing_file",
+            lambda: CheckOutcome("PASS", "ready"),
+        )
+        arguments = _arguments(
+            nonce,
+            mode="file",
+            result_file=None,
+            worker_key="test_missing_file",
+        )
+        assert run_worker(arguments) == 3
+        assert output.getvalue() == b""
+    assert "missing_result_file" in capfd.readouterr().err
+
+
+@pytest.mark.unittest
+def test_worker_stdout_write_failure_is_reported(monkeypatch, capfd):
+    """A broken stdout transport is normalized without raising."""
+    nonce = "8" * 32
+
+    class BrokenBuffer:
+        def write(self, value):
+            del value
+            raise OSError("stdout closed")
+
+        def flush(self):
+            raise OSError("stdout closed")
+
+    class BrokenStdout:
+        buffer = BrokenBuffer()
+
+    with monkeypatch.context() as worker_patch:
+        worker_patch.setattr(
+            "sys.stdin", io.TextIOWrapper(io.BytesIO(b"GO " + nonce.encode() + b"\n"))
+        )
+        worker_patch.setattr("sys.stdout", BrokenStdout())
+        _register(
+            worker_patch,
+            "test_stdout_failure",
+            lambda: CheckOutcome("PASS", "ready"),
+        )
+        assert run_worker(_arguments(nonce, worker_key="test_stdout_failure")) == 3
+    assert "result_write:OSError" in capfd.readouterr().err
+
+
+@pytest.mark.unittest
+def test_worker_error_channel_failure_still_returns_protocol_exit(monkeypatch):
+    """A broken stderr does not turn a transport error into an exception."""
+    nonce = "8" * 32
+    _install_streams(monkeypatch, nonce)
+    _register(monkeypatch, "test_error_channel", lambda: CheckOutcome("PASS", "ready"))
+    monkeypatch.setattr(worker_module, "_write_frame", lambda *args: "write failed")
+    monkeypatch.setattr(
+        worker_module.os,
+        "write",
+        lambda descriptor, data: (_ for _ in ()).throw(OSError("stderr closed")),
+    )
+    assert run_worker(_arguments(nonce, worker_key="test_error_channel")) == 3
+
+
+@pytest.mark.unittest
 def test_worker_survives_faulthandler_registration_failure(monkeypatch):
     """Restricted stderr does not prevent a valid result frame."""
     nonce = "8" * 32
@@ -218,3 +306,23 @@ def test_file_frame_transport_requests_binary_append_mode(monkeypatch):
 
     assert _write_frame("file", "result.log", b"frame") is None
     assert calls and calls[0] & getattr(__import__("os"), "O_APPEND")
+
+
+@pytest.mark.unittest
+def test_worker_rejects_invalid_nonce_before_start_gate(monkeypatch):
+    """Malformed nonce input never reaches stdin or a callback."""
+    assert run_worker(_arguments("invalid")) == 3
+
+
+@pytest.mark.unittest
+def test_worker_preserves_generator_exit_from_callback(monkeypatch):
+    """Non-runtime callback sentinels are not converted to error envelopes."""
+    nonce = "9" * 32
+    _install_streams(monkeypatch, nonce)
+    _register(
+        monkeypatch,
+        "test_generator_exit",
+        lambda: (_ for _ in ()).throw(GeneratorExit()),
+    )
+    with pytest.raises(GeneratorExit):
+        run_worker(_arguments(nonce, worker_key="test_generator_exit"))

@@ -34,3 +34,18 @@ def test_unknown_registry_key_is_not_dynamically_imported():
     """Arbitrary module/callable paths are rejected by the static map."""
     with pytest.raises(KeyError):
         get_worker("package.module:callable")
+
+
+@pytest.mark.unittest
+def test_builtin_workers_report_missing_runtime_identity(monkeypatch):
+    """Public registry callbacks diagnose missing package metadata."""
+    import pyfcstm
+    import pyfcstm.config.meta as meta
+
+    monkeypatch.setattr(pyfcstm, "__version__", None)
+    with pytest.raises(RuntimeError, match="version is unavailable"):
+        get_worker("self_dispatch")()
+
+    monkeypatch.setattr(meta, "__VERSION__", "")
+    with pytest.raises(RuntimeError, match="version is unavailable"):
+        get_worker("runtime_metadata")()

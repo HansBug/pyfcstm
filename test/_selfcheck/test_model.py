@@ -19,6 +19,7 @@ def test_spec_and_typed_outcome_build_canonical_result():
         title="isolated self-dispatch",
         prerequisites=("runtime.metadata",),
     )
+    assert spec.group == "artifact"
     outcome = CheckOutcome(
         "PASS",
         "worker ready",
@@ -48,10 +49,16 @@ def test_callback_rejects_supervisor_and_parent_owned_statuses(status):
 @pytest.mark.unittest
 def test_spec_validates_execution_and_timeout():
     """Invalid execution policy fails during static registry construction."""
+    with pytest.raises(ValueError, match="ID must not be empty"):
+        CheckSpec("", "demo")
+    with pytest.raises(ValueError, match="worker key must not be empty"):
+        CheckSpec("demo", "")
     with pytest.raises(ValueError, match="execution boundary"):
         CheckSpec("demo", "demo", execution="thread")
     with pytest.raises(ValueError, match="timeout"):
         CheckSpec("demo", "demo", timeout_seconds=0.0)
+    with pytest.raises(ValueError, match="unknown self-check status"):
+        CheckResult("demo", "UNKNOWN", True)
 
 
 @pytest.mark.unittest
@@ -84,6 +91,8 @@ def test_ledger_rejects_invalid_lifecycle_operations():
     spec = CheckSpec("demo", "demo")
     ledger = Ledger()
     ledger.reserve((spec,))
+    with pytest.raises(KeyError):
+        ledger.mark_running("missing")
     with pytest.raises(ValueError, match="duplicate check id"):
         ledger.reserve((spec,))
     with pytest.raises(KeyError):

@@ -1,6 +1,8 @@
 """Behavioral tests for the contracted single-writer supervisor."""
 
 import json
+import errno
+import contextlib
 import os
 import subprocess
 import sys
@@ -9,7 +11,13 @@ import pytest
 
 from pyfcstm._selfcheck import supervisor
 from pyfcstm._selfcheck import registry
-from pyfcstm._selfcheck.model import CheckOutcome, CheckResult, CheckSpec, Ledger
+from pyfcstm._selfcheck.model import (
+    CheckOutcome,
+    CheckResult,
+    CheckSpec,
+    Ledger,
+    ReportSnapshot,
+)
 
 
 def _payload(capsys):
@@ -76,6 +84,82 @@ def test_local_typed_check_does_not_spawn(monkeypatch, capsys):
 
 
 @pytest.mark.unittest
+@pytest.mark.parametrize(
+    ("worker_key", "callback", "reason"),
+    [
+        ("missing_local", None, "unknown_local_check"),
+        ("local_invalid", lambda: "not typed", "local_check_exception"),
+        (
+            "local_error",
+            lambda: (_ for _ in ()).throw(ValueError("broken")),
+            "local_check_exception",
+        ),
+        (
+            "local_exit",
+            lambda: (_ for _ in ()).throw(SystemExit(2)),
+            "local_check_system_exit",
+        ),
+    ],
+)
+def test_local_public_supervisor_faults_are_structured(
+    monkeypatch, capsys, worker_key, callback, reason
+):
+    """Real local callback faults become typed results without spawning."""
+    spec = CheckSpec("local.fault", worker_key, execution="local")
+    if callback is not None:
+        monkeypatch.setitem(registry._WORKERS, worker_key, callback)
+    monkeypatch.setattr(supervisor, "selected_specs", lambda profile: (spec,))
+    assert supervisor.run_supervisor(("--format", "json")) == 1
+    payload = _payload(capsys)
+    assert payload["results"][0]["status"] == "ERROR"
+    assert payload["results"][0]["reason"] == reason
+
+
+@pytest.mark.unittest
+def test_local_generator_exit_is_not_swallowed(monkeypatch):
+    """Non-runtime control sentinels remain visible at the local boundary."""
+    spec = CheckSpec("local.exit", "local_exit", execution="local")
+    monkeypatch.setitem(
+        registry._WORKERS,
+        "local_exit",
+        lambda: (_ for _ in ()).throw(GeneratorExit()),
+    )
+    monkeypatch.setattr(supervisor, "selected_specs", lambda profile: (spec,))
+    with pytest.raises(GeneratorExit):
+        supervisor.run_supervisor(("--format", "json"))
+
+
+@pytest.mark.unittest
+def test_terminalize_unfinished_skips_already_committed_results():
+    """Infrastructure cleanup does not duplicate an existing terminal result."""
+    spec = CheckSpec("demo.done", "demo")
+    ledger = Ledger()
+    ledger.reserve((spec,))
+    ledger.mark_running(spec.check_id)
+    ledger.commit(_result(spec))
+    supervisor._terminalize_unfinished(ledger, (spec,), interrupted=False)
+    assert len(ledger.freeze({}).checks) == 1
+
+
+@pytest.mark.unittest
+def test_output_failure_non_runtime_renderer_sentinel_is_re_raised(monkeypatch):
+    """A non-runtime renderer sentinel is not rewritten as a diagnostic."""
+    snapshot = ReportSnapshot((), {}, {})
+    monkeypatch.setattr(
+        supervisor,
+        "render_human",
+        lambda snapshot, color: (_ for _ in ()).throw(GeneratorExit()),
+    )
+    with pytest.raises(GeneratorExit):
+        supervisor._emit_output_failure(
+            snapshot,
+            "human",
+            OSError("write"),
+            "trace",
+        )
+
+
+@pytest.mark.unittest
 def test_argument_errors_keep_json_stdout_parseable(capsys):
     """Syntax/profile failures return exit 2 with the canonical schema."""
     assert supervisor.run_supervisor(("--format", "json", "--network")) == 2
@@ -113,6 +197,28 @@ def test_human_output_failure_becomes_a_terminal_diagnostic(monkeypatch, capfd):
     captured = capfd.readouterr()
     assert "selfcheck.output" in captured.out + captured.err
     assert "output_failure" in captured.out + captured.err
+
+
+@pytest.mark.unittest
+def test_public_supervisor_broken_pipe_keeps_shutdown_stable(monkeypatch, capfd):
+    """A real human-output broken pipe reaches the emergency diagnostic chain."""
+
+    class BrokenStdout:
+        def write(self, value):
+            del value
+            raise BrokenPipeError(errno.EPIPE, "closed")
+
+        def flush(self):
+            return None
+
+        def fileno(self):
+            raise ValueError("closed")
+
+    spec = CheckSpec("demo", "demo")
+    _install_worker_specs(monkeypatch, (spec,))
+    with contextlib.redirect_stdout(BrokenStdout()):
+        assert supervisor.run_supervisor(("--color", "never")) == 3
+    assert "selfcheck.output" in capfd.readouterr().err
 
 
 @pytest.mark.unittest

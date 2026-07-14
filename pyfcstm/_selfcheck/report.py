@@ -98,9 +98,9 @@ def _color_requested(mode: str) -> bool:
         return mode == "always"
     if os.environ.get("NO_COLOR", "").strip():
         return False
-    if os.environ.get("FORCE_COLOR") == "1":
-        return True
-    return bool(getattr(sys.stdout, "isatty", lambda: False)())
+    return os.environ.get("FORCE_COLOR") == "1" or bool(
+        getattr(sys.stdout, "isatty", lambda: False)()
+    )
 
 
 def render_json(snapshot: ReportSnapshot) -> str:

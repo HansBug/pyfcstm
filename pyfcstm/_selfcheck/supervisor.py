@@ -8,7 +8,7 @@ to the next check. It owns the ledger, final snapshot, report, and exit code.
 import time
 import traceback
 import uuid
-from typing import Iterable, Optional, Sequence, Tuple
+from typing import Iterable, Sequence
 
 from .arguments import SelfCheckArgumentError, _requested_output_format
 from .arguments import parse_selfcheck_args
@@ -17,7 +17,7 @@ from .model import CheckOutcome, CheckResult, CheckSpec, Ledger, ReportSnapshot
 from .process import run_check_process
 from .registry import get_worker, selected_specs
 from .report import emergency_write, render_json, write_human, write_report
-from .report import _silence_broken_stdout, render_human
+from .report import _silence_broken_stdout
 
 
 _PROFILE_DEADLINES = {"default": 180.0, "full": 300.0, "visualize": 300.0}
@@ -115,6 +115,11 @@ def _commit_terminal(
     ledger.commit(_terminal_result(spec, status, summary, reason, evidence))
 
 
+def _commit_blocked(ledger: Ledger, spec: CheckSpec, summary: str, reason: str) -> None:
+    """Commit one supervisor-owned blocked result."""
+    _commit_terminal(ledger, spec, "BLOCKED", summary, reason)
+
+
 def _terminalize_unfinished(
     ledger: Ledger,
     specs: Iterable[CheckSpec],
@@ -167,89 +172,25 @@ def _argument_snapshot(error: BaseException) -> ReportSnapshot:
     return ReportSnapshot((result,), metadata, {"ERROR": 1})
 
 
-def _emit_snapshot(
-    snapshot: ReportSnapshot, output_format: str, color: str
-) -> Optional[Tuple[BaseException, str]]:
-    """Emit one snapshot or return the ordinary output failure and traceback."""
+def _emit_final(snapshot: ReportSnapshot, output_format: str, color: str) -> int:
+    """Emit one final snapshot, using one emergency diagnostic on failure."""
     try:
         if output_format == "json":
             print(render_json(snapshot), flush=True)
         else:
             write_human(snapshot, color)
-    except BaseException as err:
-        # Renderer/stream Exceptions and SystemExit are reportable; other
-        # control sentinels propagate.
-        if not isinstance(err, (Exception, SystemExit)):
-            raise
-        return err, traceback.format_exc()
-    return None
-
-
-def _output_failure_snapshot(snapshot: ReportSnapshot, evidence: str) -> ReportSnapshot:
-    """Append one synthetic output error to an otherwise final snapshot."""
-    result = _terminal_result(
-        CheckSpec(
-            "selfcheck.output",
-            "synthetic",
-            title="self-check output",
-        ),
-        "ERROR",
-        "self-check output failed",
-        "output_failure",
-        evidence,
-    )
-    metadata = dict(snapshot.metadata)
-    metadata["finished_at"] = time.time()
-    metadata["exit_code"] = 130 if metadata.get("exit_code") == 130 else 3
-    counts = dict(snapshot.counts)
-    counts["ERROR"] = counts.get("ERROR", 0) + 1
-    return ReportSnapshot(snapshot.checks + (result,), metadata, counts)
-
-
-def _emit_output_failure(
-    snapshot: ReportSnapshot,
-    output_format: str,
-    error: BaseException,
-    evidence: str,
-) -> None:
-    """Send an output-failure snapshot through the last-resort channel."""
-    try:
-        message = (
-            render_json(snapshot) + "\n"
-            if output_format == "json"
-            else render_human(snapshot, color="never")
-        )
-    except BaseException as render_error:
-        # A second renderer failure still leaves a compact diagnostic.
-        if not isinstance(render_error, (Exception, SystemExit)):
-            raise
-        message = (
-            "self-check output failure:\n{}\nemergency render failure: {}: {}\n".format(
-                evidence,
-                type(render_error).__name__,
-                render_error,
+    except (Exception, SystemExit) as err:
+        # Do not mutate or rerender the snapshot after a deterministic output
+        # failure. The bootstrap boundary remains the final recovery layer.
+        evidence = traceback.format_exc()
+        try:
+            emergency_write(
+                "self-check output failure:\n{}".format(evidence), output_format
             )
-        )
-    try:
-        emergency_write(message, output_format)
-    finally:
-        _silence_broken_stdout(error)
-
-
-def _emit_final(snapshot: ReportSnapshot, output_format: str, color: str) -> int:
-    """Emit one final snapshot and normalize any output failure."""
-    output_failure = _emit_snapshot(snapshot, output_format, color)
-    if output_failure is None:
-        return int(snapshot.metadata["exit_code"])
-    output_error, output_evidence = output_failure
-    failed_snapshot = _output_failure_snapshot(snapshot, output_evidence)
-    _emit_output_failure(
-        failed_snapshot,
-        output_format,
-        output_error,
-        output_evidence,
-    )
-    return int(failed_snapshot.metadata["exit_code"])
+        finally:
+            _silence_broken_stdout(err)
+        return 3
+    return int(snapshot.metadata["exit_code"])
 
 
 def _run_selected_checks(
@@ -259,10 +200,9 @@ def _run_selected_checks(
     for spec in specs:
         prerequisites = [ledger.get_result(item) for item in spec.prerequisites]
         if any(result is None for result in prerequisites):
-            _commit_terminal(
+            _commit_blocked(
                 ledger,
                 spec,
-                "BLOCKED",
                 "prerequisite was never resolved",
                 "prerequisite_unresolved",
             )
@@ -270,22 +210,12 @@ def _run_selected_checks(
         if any(
             result.status not in ("PASS", "WARN", "SKIP") for result in prerequisites
         ):
-            _commit_terminal(
-                ledger,
-                spec,
-                "BLOCKED",
-                "prerequisite failed",
-                "prerequisite_failed",
-            )
+            _commit_blocked(ledger, spec, "prerequisite failed", "prerequisite_failed")
             continue
         remaining = global_deadline - time.monotonic()
         if remaining <= 0.0:
-            _commit_terminal(
-                ledger,
-                spec,
-                "BLOCKED",
-                "global self-check deadline exceeded",
-                "global_deadline",
+            _commit_blocked(
+                ledger, spec, "global self-check deadline exceeded", "global_deadline"
             )
             continue
         ledger.mark_running(spec.check_id)

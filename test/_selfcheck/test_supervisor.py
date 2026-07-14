@@ -16,7 +16,6 @@ from pyfcstm._selfcheck.model import (
     CheckResult,
     CheckSpec,
     Ledger,
-    ReportSnapshot,
 )
 
 
@@ -142,24 +141,6 @@ def test_terminalize_unfinished_skips_already_committed_results():
 
 
 @pytest.mark.unittest
-def test_output_failure_non_runtime_renderer_sentinel_is_re_raised(monkeypatch):
-    """A non-runtime renderer sentinel is not rewritten as a diagnostic."""
-    snapshot = ReportSnapshot((), {}, {})
-    monkeypatch.setattr(
-        supervisor,
-        "render_human",
-        lambda snapshot, color: (_ for _ in ()).throw(GeneratorExit()),
-    )
-    with pytest.raises(GeneratorExit):
-        supervisor._emit_output_failure(
-            snapshot,
-            "human",
-            OSError("write"),
-            "trace",
-        )
-
-
-@pytest.mark.unittest
 def test_argument_errors_keep_json_stdout_parseable(capsys):
     """Syntax/profile failures return exit 2 with the canonical schema."""
     assert supervisor.run_supervisor(("--format", "json", "--network")) == 2
@@ -195,8 +176,7 @@ def test_human_output_failure_becomes_a_terminal_diagnostic(monkeypatch, capfd):
 
     assert supervisor.run_supervisor(()) == 3
     captured = capfd.readouterr()
-    assert "selfcheck.output" in captured.out + captured.err
-    assert "output_failure" in captured.out + captured.err
+    assert "self-check output failure" in captured.out + captured.err
 
 
 @pytest.mark.unittest
@@ -218,7 +198,7 @@ def test_public_supervisor_broken_pipe_keeps_shutdown_stable(monkeypatch, capfd)
     _install_worker_specs(monkeypatch, (spec,))
     with contextlib.redirect_stdout(BrokenStdout()):
         assert supervisor.run_supervisor(("--color", "never")) == 3
-    assert "selfcheck.output" in capfd.readouterr().err
+    assert "self-check output failure" in capfd.readouterr().err
 
 
 @pytest.mark.unittest
@@ -262,7 +242,7 @@ def test_closed_stdout_pipe_returns_stable_output_error(arguments):
     finally:
         os.close(write_descriptor)
     assert process.returncode == 3
-    assert b"selfcheck.output" in process.stderr
+    assert b"self-check output failure" in process.stderr
 
 
 @pytest.mark.unittest

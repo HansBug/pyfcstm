@@ -4,6 +4,7 @@ import io
 import json
 import sys
 import contextlib
+from types import SimpleNamespace
 
 import pytest
 
@@ -135,6 +136,20 @@ class _BinaryTextStream:
         return None
 
 
+def _closed_stdout():
+    """Return a stdout facade whose binary and text writes fail."""
+
+    def fail(*args):
+        del args
+        raise OSError("closed")
+
+    return SimpleNamespace(
+        buffer=SimpleNamespace(write=fail, flush=fail),
+        write=fail,
+        flush=fail,
+    )
+
+
 @pytest.mark.unittest
 def test_public_worker_dispatch_runs_real_registry_callback(monkeypatch):
     """The hidden dispatch accepts the real nonce gate and emits one frame."""
@@ -197,32 +212,61 @@ def test_public_bootstrap_reports_human_failure_when_stdout_is_unavailable(
     """The final bootstrap boundary falls through to stderr without raising."""
     from pyfcstm import _bootstrap
 
-    class BrokenStdout:
-        class Buffer:
-            def write(self, value):
-                del value
-                raise OSError("closed")
+    monkeypatch.setattr(
+        _bootstrap,
+        "run_selfcheck",
+        lambda args: (_ for _ in ()).throw(RuntimeError("broken bootstrap")),
+    )
+    with contextlib.redirect_stdout(_closed_stdout()):
+        assert _bootstrap.main(("--self-check",)) == 3
+    assert "broken bootstrap" in capfd.readouterr().err
 
-            def flush(self):
-                raise OSError("closed")
 
-        buffer = Buffer()
-
-        def write(self, value):
-            del value
-            raise OSError("closed")
-
-        def flush(self):
-            raise OSError("closed")
+@pytest.mark.unittest
+def test_public_bootstrap_json_fallback_handles_unavailable_text_and_stderr(
+    monkeypatch,
+):
+    """JSON diagnostics survive binary/text stdout and stderr failures."""
+    from pyfcstm import _bootstrap
 
     monkeypatch.setattr(
         _bootstrap,
         "run_selfcheck",
         lambda args: (_ for _ in ()).throw(RuntimeError("broken bootstrap")),
     )
-    with contextlib.redirect_stdout(BrokenStdout()):
-        assert _bootstrap.main(("--self-check",)) == 3
-    assert "broken bootstrap" in capfd.readouterr().err
+    monkeypatch.setattr(
+        _bootstrap,
+        "os",
+        type(
+            "BrokenOS",
+            (),
+            {
+                "write": staticmethod(
+                    lambda fd, data: (_ for _ in ()).throw(OSError("closed"))
+                )
+            },
+        )(),
+    )
+    with contextlib.redirect_stdout(_closed_stdout()):
+        assert _bootstrap.main(("--self-check", "--format", "json")) == 3
+
+    import os
+
+    fallback_text = []
+
+    def fail_binary(*args):
+        del args
+        raise OSError("binary stream closed")
+
+    fallback_stdout = SimpleNamespace(
+        buffer=SimpleNamespace(write=fail_binary, flush=fail_binary),
+        write=fallback_text.append,
+        flush=lambda: None,
+    )
+    monkeypatch.setattr(_bootstrap, "os", os)
+    with contextlib.redirect_stdout(fallback_stdout):
+        assert _bootstrap.main(("--self-check", "--format", "json")) == 3
+    assert '"schema_version":"pyfcstm-selfcheck/v1"' in "".join(fallback_text)
 
 
 @pytest.mark.unittest
@@ -256,3 +300,22 @@ def test_version_formatter_reports_all_build_identity_fields(monkeypatch):
     assert "Revision: " + "r" * 40 in output
     assert "Commit: " + "c" * 40 in output
     assert "Built: 2026-07-14T00:00:00Z" in output
+
+    monkeypatch.setattr(_bootstrap, "BUILD_REVISION", None)
+    assert "Revision: unavailable" in _bootstrap.format_version_info()
+
+
+@pytest.mark.unittest
+def test_public_bootstrap_returns_after_ordinary_cli_dispatch(monkeypatch):
+    """A normal command delegates to Click and returns when it does."""
+    from pyfcstm import _bootstrap
+    from pyfcstm import entry
+
+    invoked = []
+    monkeypatch.setattr(
+        entry,
+        "pyfcstmcli",
+        lambda **kwargs: invoked.append(kwargs),
+    )
+    assert _bootstrap.main(("status",)) == 0
+    assert invoked == [{"args": ["status"], "prog_name": "pyfcstm"}]

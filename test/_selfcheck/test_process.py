@@ -723,6 +723,33 @@ def test_transport_cleanup_failures_are_reported(capfd, monkeypatch):
 
 
 @pytest.mark.unittest
+def test_cleanup_diagnostic_failure_does_not_escape(monkeypatch):
+    """Unavailable raw stderr does not replace the structured spawn result."""
+    monkeypatch.setattr(
+        "subprocess.Popen",
+        lambda *args, **kwargs: (_ for _ in ()).throw(OSError("spawn")),
+    )
+    monkeypatch.setattr(
+        process_module.os,
+        "unlink",
+        lambda path: (_ for _ in ()).throw(OSError("unlink")),
+    )
+    monkeypatch.setattr(
+        process_module.os,
+        "rmdir",
+        lambda path: (_ for _ in ()).throw(OSError("rmdir")),
+    )
+    monkeypatch.setattr(
+        process_module.os,
+        "write",
+        lambda descriptor, data: (_ for _ in ()).throw(OSError("stderr")),
+    )
+    result = run_check_process(_spec(), timeout=1.0)
+    assert result.status == "ERROR"
+    assert result.reason == "spawn_failed"
+
+
+@pytest.mark.unittest
 def test_worker_drain_failure_is_normalized_as_timeout(monkeypatch):
     """Pipe drain failures after timeout stay in the timeout result."""
 

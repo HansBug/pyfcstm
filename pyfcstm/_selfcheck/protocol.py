@@ -166,15 +166,17 @@ def _read_frames(
                 return FrameReadOutcome(
                     error_code="invalid_frame", frame_count=len(frames)
                 )
-            continue
-        try:
-            frames.append(_decode_frame(line, expected_nonce, expected_check_id))
-        except ValueError as err:
-            return FrameReadOutcome(error_code=str(err), frame_count=len(frames) + 1)
-        if len(frames) > 1:
-            return FrameReadOutcome(
-                error_code="duplicate_frame", frame_count=len(frames)
-            )
+        else:
+            try:
+                frames.append(_decode_frame(line, expected_nonce, expected_check_id))
+            except ValueError as err:
+                return FrameReadOutcome(
+                    error_code=str(err), frame_count=len(frames) + 1
+                )
+            if len(frames) > 1:
+                return FrameReadOutcome(
+                    error_code="duplicate_frame", frame_count=len(frames)
+                )
     if not frames:
         return FrameReadOutcome(error_code="missing_result")
     return FrameReadOutcome(envelope=frames[0], frame_count=1)

@@ -469,6 +469,45 @@ def test_win7_console_fallback_reports_restore_failure(monkeypatch):
 
 
 @pytest.mark.unittest
+def test_win7_console_fallback_reports_final_restore_failure(monkeypatch):
+    """A final native attribute restore failure is reported before output."""
+    ctypes = _ctypes_for_native_seam(monkeypatch)
+    import io
+    from types import SimpleNamespace
+
+    import pyfcstm._selfcheck._win32 as win32
+
+    class GetInfo:
+        def __call__(self, handle, pointer):
+            del handle
+            pointer._obj.wAttributes = 7
+            return 1
+
+    class SetAttribute:
+        def __init__(self):
+            self.calls = 0
+
+        def __call__(self, handle, attribute):
+            del handle, attribute
+            self.calls += 1
+            return self.calls != 3
+
+    setter = SetAttribute()
+    kernel = SimpleNamespace(
+        GetStdHandle=lambda value: 101,
+        GetConsoleScreenBufferInfo=GetInfo(),
+        SetConsoleTextAttribute=setter,
+    )
+    monkeypatch.setattr(win32, "os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr(
+        ctypes, "windll", SimpleNamespace(kernel32=kernel), raising=False
+    )
+    stream = io.StringIO()
+    assert win32.write_console_ansi("\x1b[32mPASS\x1b[0m", stream) is False
+    assert stream.getvalue() == ""
+
+
+@pytest.mark.unittest
 def test_console_fallback_rejects_unknown_roles_and_native_exceptions(monkeypatch):
     """Unknown ANSI roles and ctypes failures return plain-fallback control."""
     import io

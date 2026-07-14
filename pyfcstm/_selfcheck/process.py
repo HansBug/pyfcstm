@@ -97,13 +97,12 @@ class _BoundedCapture:
         if not self.capture_protocol or not self._protocol_pending:
             return
         self._extract_protocol_frames()
-        if not self._protocol_pending:
-            return
         start = self._protocol_pending.find(FRAME_PREFIX)
         if start < 0:
             self._append_business(bytes(self._protocol_pending))
-        elif start:
-            self._append_business(bytes(self._protocol_pending[:start]))
+        # ``_extract_protocol_frames`` removes business bytes before every
+        # protocol prefix, so a remaining candidate is either absent or starts
+        # at offset zero.
         if start >= 0 and len(self.protocol_frames) < MAX_PROTOCOL_FRAMES:
             self.protocol_frames.append(
                 bytes(self._protocol_pending[start : start + MAX_ENVELOPE_BYTES + 1])

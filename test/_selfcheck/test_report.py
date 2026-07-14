@@ -124,6 +124,47 @@ def test_human_summary_omits_zero_counts_and_colors_emitted_statuses(monkeypatch
 
 
 @pytest.mark.unittest
+def test_public_human_render_uses_posix_vt_path(monkeypatch):
+    """The public human renderer enables ANSI output on POSIX terminals."""
+    import pyfcstm._selfcheck.report as report
+
+    snapshot = ReportSnapshot(
+        (CheckResult("ok", "PASS", True, summary="ready"),),
+        _metadata(),
+        {"PASS": 1},
+    )
+    monkeypatch.setattr(report.os, "name", "posix")
+    output = report.render_human(snapshot, color="always")
+    assert "\x1b[32mPASS\x1b[0m" in output
+
+
+@pytest.mark.unittest
+def test_public_human_render_handles_vt_probe_import_failure(monkeypatch):
+    """A native console import failure degrades to plain public output."""
+    import builtins
+
+    import pyfcstm._selfcheck.report as report
+
+    snapshot = ReportSnapshot(
+        (CheckResult("ok", "PASS", True, summary="ready"),),
+        _metadata(),
+        {"PASS": 1},
+    )
+    real_import = builtins.__import__
+
+    def fail_ctypes(name, *args, **kwargs):
+        if name == "ctypes":
+            raise ValueError("ctypes unavailable")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(report.os, "name", "nt")
+    monkeypatch.setattr(builtins, "__import__", fail_ctypes)
+    output = report.render_human(snapshot, color="always")
+    assert "\x1b[32mPASS\x1b[0m" not in output
+    assert "PASS ok (ready)" in output
+
+
+@pytest.mark.unittest
 def test_human_positions_use_equal_numeric_widths():
     """The numerator is left-padded to the denominator width without zeros."""
     checks = tuple(
@@ -214,15 +255,13 @@ def test_windows_without_vt_uses_console_attribute_fallback(monkeypatch, capsys)
 @pytest.mark.unittest
 def test_windows_console_probe_uses_pointer_sized_handle(monkeypatch):
     """The VT probe preserves 64-bit handles and reads the console mode bit."""
-    try:
-        __import__("ctypes.wintypes")
-    except ValueError as err:
-        pytest.skip("ctypes.wintypes unavailable: {}".format(err))
     import ctypes
-    from ctypes import wintypes
     from types import SimpleNamespace
 
     from pyfcstm._selfcheck import report
+
+    _ctypes_for_native_seam(monkeypatch)
+    from ctypes import wintypes
 
     class Function:
         def __init__(self, callback):

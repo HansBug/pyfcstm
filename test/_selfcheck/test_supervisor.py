@@ -278,6 +278,41 @@ def test_report_write_failure_becomes_one_synthetic_result(
 
 
 @pytest.mark.unittest
+@pytest.mark.parametrize("error", [KeyboardInterrupt(), SystemExit(9)])
+def test_report_control_sentinels_are_re_raised(monkeypatch, error):
+    """Report finalization preserves interpreter-control sentinels."""
+    spec = CheckSpec("demo", "demo")
+    _install_worker_specs(monkeypatch, (spec,))
+
+    def fail(*args):
+        del args
+        raise error
+
+    monkeypatch.setattr(supervisor, "write_report", fail)
+    with pytest.raises(type(error)):
+        supervisor.run_supervisor(("--format", "json", "--report", "report.json"))
+
+
+@pytest.mark.unittest
+def test_report_non_runtime_control_sentinel_is_re_raised(monkeypatch):
+    """Unexpected BaseException subclasses remain visible to callers."""
+
+    class UnexpectedControl(BaseException):
+        pass
+
+    spec = CheckSpec("demo", "demo")
+    _install_worker_specs(monkeypatch, (spec,))
+
+    def fail(*args):
+        del args
+        raise UnexpectedControl("report control")
+
+    monkeypatch.setattr(supervisor, "write_report", fail)
+    with pytest.raises(UnexpectedControl):
+        supervisor.run_supervisor(("--format", "json", "--report", "report.json"))
+
+
+@pytest.mark.unittest
 def test_report_file_and_stdout_share_the_same_snapshot(monkeypatch, capsys, tmp_path):
     """Successful report and stdout JSON serialize one frozen snapshot."""
     spec = CheckSpec("demo", "demo")

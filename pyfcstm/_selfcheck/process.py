@@ -119,7 +119,13 @@ class _BoundedCapture:
         """Return bounded bytes without duplicating short streams."""
         if self.total <= self.limit:
             return bytes(self._complete)
-        return bytes(self.head + b"\n...[truncated]...\n" + self.tail)
+        marker = b"\n...[truncated]...\n"
+        if self.limit <= len(marker):
+            return marker[: self.limit]
+        payload_limit = self.limit - len(marker)
+        head_limit = min(len(self.head), payload_limit // 2)
+        tail_limit = payload_limit - head_limit
+        return bytes(self.head[:head_limit] + marker + self.tail[-tail_limit:])
 
     def protocol_bytes(self) -> bytes:
         """Return protocol-prefixed lines independently of business-output capture."""

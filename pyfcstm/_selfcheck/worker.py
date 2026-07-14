@@ -19,6 +19,26 @@ from .protocol import encode_result_frame
 from .protocol import is_valid_nonce
 
 
+def _write_stream_all(stream, data) -> None:
+    """Write all bytes/text or report a diagnostic-channel short write."""
+    offset = 0
+    while offset < len(data):
+        written = stream.write(data[offset:])
+        if not isinstance(written, int) or written <= 0:
+            raise OSError("worker output short write")
+        offset += written
+
+
+def _write_fd_all(descriptor: int, data: bytes) -> None:
+    """Write all bytes to a worker descriptor."""
+    offset = 0
+    while offset < len(data):
+        written = os.write(descriptor, data[offset:])
+        if not isinstance(written, int) or written <= 0:
+            raise OSError("worker descriptor short write")
+        offset += written
+
+
 def _read_start_gate(nonce: str) -> Optional[str]:
     """Read one exact nonce-bound GO frame from worker stdin."""
     expected = build_start_gate(nonce)
@@ -44,12 +64,12 @@ def _write_frame(mode: str, result_file: Optional[str], frame: bytes) -> Optiona
             flags = os.O_WRONLY | os.O_APPEND | getattr(os, "O_BINARY", 0)
             descriptor = os.open(result_file, flags)
             try:
-                os.write(descriptor, frame)
+                _write_fd_all(descriptor, frame)
                 os.fsync(descriptor)
             finally:
                 os.close(descriptor)
         else:
-            sys.stdout.buffer.write(frame)
+            _write_stream_all(sys.stdout.buffer, frame)
             sys.stdout.buffer.flush()
         return None
     except (AttributeError, OSError, ValueError) as err:
@@ -100,7 +120,7 @@ def _emit_outcome(
     if write_error is None:
         return return_code
     try:
-        os.write(2, (write_error + "\n").encode("ascii", "backslashreplace"))
+        _write_fd_all(2, (write_error + "\n").encode("ascii", "backslashreplace"))
     except OSError:
         pass
     return 3

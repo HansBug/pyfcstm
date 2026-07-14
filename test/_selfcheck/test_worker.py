@@ -309,6 +309,77 @@ def test_file_frame_transport_requests_binary_append_mode(monkeypatch):
 
 
 @pytest.mark.unittest
+def test_worker_frame_transport_retries_short_writes(monkeypatch):
+    """File transport waits for every frame byte after a short native write."""
+    writes = []
+
+    def short_write(descriptor, data):
+        del descriptor
+        writes.append(bytes(data))
+        return 1
+
+    monkeypatch.setattr("os.open", lambda path, flags: 9)
+    monkeypatch.setattr("os.write", short_write)
+    monkeypatch.setattr("os.fsync", lambda descriptor: None)
+    monkeypatch.setattr("os.close", lambda descriptor: None)
+
+    assert _write_frame("file", "result.log", b"frame") is None
+    assert b"".join(chunk[:1] for chunk in writes) == b"frame"
+
+
+@pytest.mark.unittest
+def test_public_worker_reports_short_stdout_write(monkeypatch):
+    """The hidden worker converts an unavailable stdout transport to exit 3."""
+    nonce = "5" * 32
+    _install_streams(monkeypatch, nonce)
+    _register(
+        monkeypatch,
+        "test_short_stdout",
+        lambda: CheckOutcome("PASS", "worker ready"),
+    )
+
+    class ShortBuffer:
+        def write(self, data):
+            del data
+            return 0
+
+        def flush(self):
+            return None
+
+    monkeypatch.setattr(
+        "sys.stdout", type("BrokenStdout", (), {"buffer": ShortBuffer()})()
+    )
+    monkeypatch.setattr(worker_module.os, "write", lambda descriptor, data: len(data))
+    assert run_worker(_arguments(nonce, worker_key="test_short_stdout")) == 3
+
+
+@pytest.mark.unittest
+def test_public_worker_reports_short_file_write(monkeypatch, tmp_path):
+    """The hidden worker converts an unavailable file transport to exit 3."""
+    nonce = "6" * 32
+    _install_streams(monkeypatch, nonce)
+    _register(
+        monkeypatch,
+        "test_short_file",
+        lambda: CheckOutcome("PASS", "worker ready"),
+    )
+    monkeypatch.setattr(worker_module.os, "write", lambda descriptor, data: 0)
+
+    result_file = str(tmp_path / "result.log")
+    assert (
+        run_worker(
+            _arguments(
+                nonce,
+                mode="file",
+                result_file=result_file,
+                worker_key="test_short_file",
+            )
+        )
+        == 3
+    )
+
+
+@pytest.mark.unittest
 def test_worker_rejects_invalid_nonce_before_start_gate(monkeypatch):
     """Malformed nonce input never reaches stdin or a callback."""
     assert run_worker(_arguments("invalid")) == 3

@@ -72,6 +72,7 @@ def test_bootstrap_runtime_failure_keeps_json_stdout_machine_readable(
     payload = json.loads(capsys.readouterr().out)
     assert payload["summary"] == {"ERROR": 1}
     assert "boom" in payload["results"][0]["evidence"]
+    assert "Traceback (most recent call last)" in payload["results"][0]["evidence"]
     assert "checks" not in payload and "counts" not in payload
     assert payload["schema_version"] == "pyfcstm-selfcheck/v1"
     assert payload["exit_code"] == 3
@@ -101,6 +102,26 @@ def test_bootstrap_runtime_failure_keeps_json_stdout_machine_readable(
         "encoding",
         "truncated_bytes",
     }
+
+
+@pytest.mark.unittest
+def test_bootstrap_renderer_failure_keeps_traceback_in_canonical_json(
+    monkeypatch, capsys
+):
+    """A final renderer failure retains its traceback in the emergency result."""
+    from pyfcstm import _bootstrap
+    from pyfcstm._selfcheck import supervisor
+
+    def fail_renderer(snapshot):
+        del snapshot
+        raise RuntimeError("renderer failed")
+
+    monkeypatch.setattr(supervisor, "render_json", fail_renderer)
+    assert _bootstrap.main(("--self-check", "--format", "json")) == 3
+    payload = json.loads(capsys.readouterr().out)
+    evidence = payload["results"][0]["evidence"]
+    assert "renderer failed" in evidence
+    assert "Traceback (most recent call last)" in evidence
 
 
 @pytest.mark.unittest
@@ -355,9 +376,13 @@ def test_public_bootstrap_json_fallback_handles_unavailable_text_and_stderr(
         del args
         raise OSError("binary stream closed")
 
+    def write_text(value):
+        fallback_text.append(value)
+        return len(value)
+
     fallback_stdout = SimpleNamespace(
-        buffer=SimpleNamespace(write=fail_binary, flush=fail_binary),
-        write=fallback_text.append,
+        buffer=SimpleNamespace(write=lambda value: 0, flush=lambda: None),
+        write=write_text,
         flush=lambda: None,
     )
     monkeypatch.setattr(_bootstrap, "os", os)
@@ -451,6 +476,38 @@ def test_public_main_uses_raw_stderr_fd_when_stderr_stream_is_broken(monkeypatch
     assert main(("--self-check",)) == 3
     assert writes and writes[0][0] == 2
     assert b"raw fd fallback" in writes[0][1]
+
+
+@pytest.mark.unittest
+def test_public_main_survives_short_raw_stderr_write(monkeypatch):
+    """A zero-byte raw diagnostic write falls through without escaping."""
+    from pyfcstm import _bootstrap
+    from pyfcstm.__main__ import main
+
+    class BrokenStderr:
+        buffer = None
+
+        def write(self, value):
+            del value
+            raise OSError("stderr closed")
+
+        def flush(self):
+            raise OSError("stderr closed")
+
+    monkeypatch.setattr(
+        _bootstrap,
+        "run_selfcheck",
+        lambda args: (_ for _ in ()).throw(RuntimeError("short raw write")),
+    )
+    monkeypatch.setattr(_bootstrap.sys, "stderr", BrokenStderr())
+    monkeypatch.setattr(_bootstrap.os, "write", lambda descriptor, data: 0)
+    monkeypatch.setattr(
+        _bootstrap.tempfile,
+        "mkstemp",
+        lambda **kwargs: (_ for _ in ()).throw(OSError("temp unavailable")),
+    )
+
+    assert main(("--self-check",)) == 3
 
 
 @pytest.mark.unittest

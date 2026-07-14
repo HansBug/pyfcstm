@@ -291,6 +291,19 @@ def test_bounded_capture_extracts_protocol_without_preceding_newline():
 
 
 @pytest.mark.unittest
+def test_bounded_capture_raw_output_never_exceeds_configured_limit():
+    """The human-readable truncation marker is included inside the byte limit."""
+    capture = _BoundedCapture(limit=32)
+    capture.append(b"x" * 64)
+    assert len(capture.raw()) <= 32
+    assert b"truncated" in capture.raw()
+
+    tiny = _BoundedCapture(limit=4)
+    tiny.append(b"x" * 64)
+    assert tiny.raw() == b"\n...[truncated]...\n"[:4]
+
+
+@pytest.mark.unittest
 def test_keyboard_interrupt_terminates_started_worker(monkeypatch):
     """An interrupt during wait still invokes bounded cleanup before re-raising."""
     cleaned = []

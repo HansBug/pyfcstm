@@ -19,6 +19,7 @@ import platform
 import sys
 import json
 import tempfile
+import traceback
 from typing import Optional, Sequence
 
 from .config import BUILD_COMMIT, BUILD_REVISION, BUILD_TIME_UTC
@@ -30,6 +31,26 @@ from ._selfcheck.arguments import format_worker_help
 
 
 _VERSION_ARGUMENTS = ("-v", "-V", "--version")
+
+
+def _write_stream_all(stream, data) -> None:
+    """Write all bytes/text or raise when the diagnostic channel short-writes."""
+    offset = 0
+    while offset < len(data):
+        written = stream.write(data[offset:])
+        if not isinstance(written, int) or written <= 0:
+            raise OSError(errno.EIO, "diagnostic stream short write")
+        offset += written
+
+
+def _write_fd_all(descriptor: int, data: bytes) -> None:
+    """Write all bytes to a raw descriptor or raise on a short write."""
+    offset = 0
+    while offset < len(data):
+        written = os.write(descriptor, data[offset:])
+        if not isinstance(written, int) or written <= 0:
+            raise OSError(errno.EIO, "diagnostic descriptor short write")
+        offset += written
 
 
 def is_version_request(arguments: Sequence[str]) -> bool:
@@ -148,13 +169,13 @@ def _emit_bootstrap_error(message: str, output_format: str = "human") -> int:
             + "\n"
         ).encode("ascii")
         try:
-            sys.stdout.buffer.write(data)
+            _write_stream_all(sys.stdout.buffer, data)
             sys.stdout.buffer.flush()
             return 3
         except (AttributeError, OSError, ValueError) as err:
             _silence_broken_stdout(err)
             try:
-                sys.stdout.write(data.decode("ascii"))
+                _write_stream_all(sys.stdout, data.decode("ascii"))
                 sys.stdout.flush()
                 return 3
             except (AttributeError, OSError, UnicodeError, ValueError) as text_error:
@@ -181,8 +202,10 @@ def _run_guarded(action, arguments: Sequence[str], output_format: str) -> int:
         if not isinstance(err, (Exception, SystemExit)):
             raise
         _silence_broken_stdout(err)
+        traceback_text = traceback.format_exc()
         return _emit_bootstrap_error(
-            "{}: {}".format(type(err).__name__, err), output_format
+            "{}: {}\n{}".format(type(err).__name__, err, traceback_text),
+            output_format,
         )
 
 
@@ -213,13 +236,13 @@ def _silence_broken_stdout(error: BaseException) -> None:
 def _emergency_write(data: bytes) -> Optional[str]:
     """Write bytes through stderr, raw fd two, then a private temp file."""
     try:
-        sys.stderr.buffer.write(data)
+        _write_stream_all(sys.stderr.buffer, data)
         sys.stderr.buffer.flush()
         return None
     except (AttributeError, OSError, ValueError):
         pass
     try:
-        os.write(2, data)
+        _write_fd_all(2, data)
         return None
     except OSError:
         temporary = None
@@ -228,7 +251,7 @@ def _emergency_write(data: bytes) -> Optional[str]:
                 prefix="pyfcstm-selfcheck-emergency-", suffix=".log"
             )
             try:
-                os.write(descriptor, data)
+                _write_fd_all(descriptor, data)
                 os.fsync(descriptor)
             finally:
                 os.close(descriptor)

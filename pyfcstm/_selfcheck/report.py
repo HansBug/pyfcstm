@@ -163,12 +163,14 @@ def _render_human(snapshot: ReportSnapshot, use_color: bool) -> str:
         "{}pyfcstm self-check: running {} checks{}".format(cyan, total, reset),
         "",
     ]
+    index_width = max(1, len(str(total)))
     for index, check in enumerate(snapshot.checks, 1):
         summary = check.summary or check.reason or "no summary"
-        status = "[{}]".format(_paint_status(check.status, use_color))
+        position = "[{:>{}}/{}]".format(index, index_width, total)
+        status = _paint_status(check.status, use_color)
         lines.append(
-            "{} [{:02d}/{:02d}] {} ({})".format(
-                status, index, total, check.check_id, summary
+            "{} {} {} ({})".format(
+                position, status, check.check_id, summary
             )
         )
         if check.status in _FAILURE_STATUSES:
@@ -177,8 +179,9 @@ def _render_human(snapshot: ReportSnapshot, use_color: bool) -> str:
     lines.extend(("", "Summary:"))
     for status in _STATUS_ORDER:
         count = counts[status]
-        # Zero-count statuses stay plain; observed statuses use their semantic color.
-        label = _paint_status(status, use_color and count > 0)
+        if count <= 0:
+            continue
+        label = _paint_status(status, use_color)
         lines.append("  {} = {}".format(label, count))
     conclusion = _conclusion(snapshot, counts)
     if use_color:

@@ -49,18 +49,18 @@ def test_human_failure_output_contains_full_details():
         {"PASS": 1, "ERROR": 1},
     )
     output = render_human(snapshot, color="never")
-    assert "[PASS] [01/02] ok (ready)" in output
-    assert "[ERROR] [02/02] bad (broken)" in output
+    assert "[1/2] PASS ok (ready)" in output
+    assert "[2/2] ERROR bad (broken)" in output
     assert "full traceback" in output
     assert "PASS = 1" in output
     assert "ERROR = 1" in output
-    assert "WARN = 0" in output
+    assert "WARN = 0" not in output
     assert "Conclusion: [ FAILED ]" in output
 
 
 @pytest.mark.unittest
-def test_human_summary_lists_all_status_counts_and_colors_observed_them(monkeypatch):
-    """Human summaries list every status and color only observed statuses."""
+def test_human_summary_lists_positive_status_counts_and_colors_them(monkeypatch):
+    """Human summaries omit zero counts and color every emitted status."""
     import pyfcstm._selfcheck.report as report_module
     from pyfcstm._selfcheck.model import CheckResult
     from pyfcstm._selfcheck.model import ReportSnapshot
@@ -78,12 +78,29 @@ def test_human_summary_lists_all_status_counts_and_colors_observed_them(monkeypa
     output = render_human(snapshot, color="always")
     assert "\x1b[32mPASS\x1b[0m = 1" in output
     assert "\x1b[33mWARN\x1b[0m = 1" in output
-    assert "\x1b[36mSKIP\x1b[0m = 0" not in output
-    assert "  SKIP = 0" in output
-    assert "  BLOCKED = 0" in output
-    assert "  FAIL = 0" in output
-    assert "  CRASH = 0" in output
+    assert "SKIP = 0" not in output
+    assert "BLOCKED = 0" not in output
     assert "\x1b[1;33m[ WARNINGS ]\x1b[0m" in output
+
+
+@pytest.mark.unittest
+def test_human_check_lines_align_variable_width_indices():
+    """Human check positions use spaces, not leading zeroes, for alignment."""
+    from pyfcstm._selfcheck.model import CheckResult
+    from pyfcstm._selfcheck.model import ReportSnapshot
+    from pyfcstm._selfcheck.report import render_human
+
+    checks = tuple(
+        CheckResult("check{:02d}".format(index), "PASS", True, summary="ready")
+        for index in range(1, 13)
+    )
+    output = render_human(
+        ReportSnapshot(checks, {}, {"PASS": len(checks)}), color="never"
+    )
+    assert "[ 1/12] PASS check01 (ready)" in output
+    assert "[10/12] PASS check10 (ready)" in output
+    assert "[12/12] PASS check12 (ready)" in output
+    assert "[01/12]" not in output
 
 
 @pytest.mark.unittest
@@ -163,7 +180,7 @@ def test_windows_without_vt_support_falls_back_to_plain_status_labels(monkeypatc
     )
     output = render_human(snapshot, color="always")
     assert "\x1b[" not in output
-    assert "[PASS] [01/01] ok (ready)" in output
+    assert "[1/1] PASS ok (ready)" in output
 
 
 @pytest.mark.unittest

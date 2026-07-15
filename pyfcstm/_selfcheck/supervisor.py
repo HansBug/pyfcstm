@@ -81,26 +81,6 @@ def _run_local_check(spec: CheckSpec) -> CheckResult:
     )
 
 
-def _terminal_result(
-    spec: CheckSpec,
-    status: str,
-    summary: str,
-    reason: str,
-    evidence: str = "",
-) -> CheckResult:
-    """Build a supervisor-owned terminal result for *spec*."""
-    return CheckResult(
-        spec.check_id,
-        status,
-        spec.required,
-        summary=summary,
-        title=spec.title,
-        prerequisites=spec.prerequisites,
-        reason=reason,
-        evidence=evidence,
-    )
-
-
 def _commit_terminal(
     ledger: Ledger,
     spec: CheckSpec,
@@ -111,7 +91,18 @@ def _commit_terminal(
 ) -> None:
     """Build and commit one terminal result through the single writer."""
     ledger.ensure_reserved(spec)
-    ledger.commit(_terminal_result(spec, status, summary, reason, evidence))
+    ledger.commit(
+        CheckResult(
+            spec.check_id,
+            status,
+            spec.required,
+            summary=summary,
+            title=spec.title,
+            prerequisites=spec.prerequisites,
+            reason=reason,
+            evidence=evidence,
+        )
+    )
 
 
 def _terminalize_unfinished(
@@ -210,13 +201,15 @@ def _run_selected_checks(
             if not isinstance(err, Exception):
                 raise
             evidence = traceback.format_exc()
-            result = _terminal_result(
+            _commit_terminal(
+                ledger,
                 spec,
                 "ERROR",
                 "worker supervisor error",
                 "worker_supervisor_error",
                 evidence,
             )
+            continue
         ledger.commit(result)
 
 

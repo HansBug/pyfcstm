@@ -33,24 +33,24 @@ from ._selfcheck.arguments import format_worker_help
 _VERSION_ARGUMENTS = ("-v", "-V", "--version")
 
 
-def _write_stream_all(stream, data) -> None:
-    """Write all bytes/text or raise when the diagnostic channel short-writes."""
+def _write_all(writer, data) -> None:
+    """Write all bytes/text or raise when a diagnostic channel short-writes."""
     offset = 0
     while offset < len(data):
-        written = stream.write(data[offset:])
+        written = writer(data[offset:])
         if not isinstance(written, int) or written <= 0 or written > len(data) - offset:
             raise OSError(errno.EIO, "diagnostic stream short write")
         offset += written
 
 
+def _write_stream_all(stream, data) -> None:
+    """Write all bytes/text through a stream."""
+    _write_all(stream.write, data)
+
+
 def _write_fd_all(descriptor: int, data: bytes) -> None:
     """Write all bytes to a raw descriptor or raise on a short write."""
-    offset = 0
-    while offset < len(data):
-        written = os.write(descriptor, data[offset:])
-        if not isinstance(written, int) or written <= 0 or written > len(data) - offset:
-            raise OSError(errno.EIO, "diagnostic descriptor short write")
-        offset += written
+    _write_all(lambda chunk: os.write(descriptor, chunk), data)
 
 
 def is_version_request(arguments: Sequence[str]) -> bool:
@@ -172,10 +172,9 @@ def _emit_bootstrap_error(message: str, output_format: str = "human") -> int:
             _write_stream_all(sys.stdout.buffer, data)
             sys.stdout.buffer.flush()
             return 3
-        except AttributeError as err:
+        except AttributeError:
             # A text-only stdout has no binary buffer, so the complete payload
             # can safely use its text interface.
-            _silence_broken_stdout(err)
             try:
                 _write_stream_all(sys.stdout, data.decode("ascii"))
                 sys.stdout.flush()

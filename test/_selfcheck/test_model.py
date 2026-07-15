@@ -36,7 +36,32 @@ def test_spec_and_typed_outcome_build_canonical_result():
     assert payload["prerequisite"] == ["runtime.metadata"]
     assert payload["expected"] == "worker starts"
     assert payload["pid"] == 42
-    assert "check_id" not in payload
+    assert set(payload) == {
+        "id",
+        "group",
+        "title",
+        "status",
+        "required",
+        "duration_ms",
+        "summary",
+        "reason",
+        "expected",
+        "observed",
+        "evidence",
+        "remediation",
+        "prerequisite",
+        "exception",
+        "pid",
+        "returncode",
+        "signal",
+        "ntstatus",
+        "timeout",
+        "transport",
+        "stdout",
+        "stderr",
+        "encoding",
+        "truncated_bytes",
+    }
 
 
 @pytest.mark.unittest

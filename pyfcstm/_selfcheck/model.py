@@ -13,14 +13,20 @@ The module contains:
 * :class:`Ledger` - Ordered lifecycle state owned by the supervisor.
 """
 
+from collections import Counter
 from collections.abc import Mapping as MappingABC
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from types import MappingProxyType
 from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
 
 
 CHECK_OUTCOME_STATUSES = ("PASS", "WARN", "SKIP", "FAIL", "ERROR")
 TERMINAL_STATUSES = CHECK_OUTCOME_STATUSES + ("BLOCKED", "TIMEOUT", "CRASH")
+_RESULT_KEYS = (
+    "id group title status required duration_ms summary reason expected observed "
+    "evidence remediation prerequisite exception pid returncode signal ntstatus "
+    "timeout transport stdout stderr encoding truncated_bytes"
+).split()
 
 
 def _freeze_value(value: Any) -> Any:
@@ -232,32 +238,15 @@ class CheckResult:
         :return: Canonical result fields without compatibility aliases.
         :rtype: Dict[str, Any]
         """
-        return {
-            "id": self.check_id,
-            "group": self.check_id.split(".", 1)[0],
-            "title": self.title,
-            "status": self.status,
-            "required": self.required,
-            "duration_ms": self.duration_ms,
-            "summary": self.summary,
-            "reason": self.reason,
-            "expected": self.expected,
-            "observed": self.observed,
-            "evidence": self.evidence,
-            "remediation": self.remediation,
-            "prerequisite": list(self.prerequisites),
-            "exception": self.exception,
-            "pid": self.pid,
-            "returncode": self.return_code,
-            "signal": self.signal,
-            "ntstatus": self.ntstatus,
-            "timeout": self.timeout,
-            "transport": self.transport,
-            "stdout": self.stdout,
-            "stderr": self.stderr,
-            "encoding": self.encoding,
-            "truncated_bytes": self.truncated_bytes,
-        }
+        payload = asdict(self)
+        check_id = payload.pop("check_id")
+        payload.update(
+            id=check_id,
+            group=check_id.split(".", 1)[0],
+            prerequisite=list(payload.pop("prerequisites")),
+            returncode=payload.pop("return_code"),
+        )
+        return {key: payload[key] for key in _RESULT_KEYS}
 
 
 @dataclass(frozen=True)
@@ -344,7 +333,7 @@ class Ledger:
             self._states[spec.check_id] = "PENDING"
 
     def ensure_reserved(self, spec: CheckSpec) -> None:
-        """Reserve one spec when bulk setup stopped part-way through."""
+        """Reserve one spec without re-entering bulk setup."""
         if spec.check_id not in self._states:
             self._order.append(spec.check_id)
             self._states[spec.check_id] = "PENDING"
@@ -401,7 +390,5 @@ class Ledger:
                 "pending self-checks: {}".format(", ".join(sorted(missing)))
             )
         checks = tuple(self._results[key] for key in self._order)
-        counts: Dict[str, int] = {}
-        for result in checks:
-            counts[result.status] = counts.get(result.status, 0) + 1
+        counts = dict(Counter(result.status for result in checks))
         return ReportSnapshot(checks, metadata, counts)

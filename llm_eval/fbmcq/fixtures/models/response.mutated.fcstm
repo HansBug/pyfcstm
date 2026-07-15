@@ -1,0 +1,9 @@
+state Root {
+    event Go;
+
+    state Idle;
+    state Done;
+
+    [*] -> Idle;
+    Idle -> Idle : Go;
+}

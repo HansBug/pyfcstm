@@ -1,0 +1,87 @@
+{
+  "evidence_snapshot": {
+    "asset_sha256": {
+      "expected": "98307146faf8e9711b84f56497da0a9ed6edcc780b419edf4670357b01dcaad9",
+      "mutated": "7c6b5740429f4e922a400cdec1e7b23d782191708ee06a0a2b663400a18f957f",
+      "nominal": "9d0bdd892f222b3f5127496f38aac5dc63036349c06f3acacaf87677ecccc625"
+    },
+    "evaluator_sha256": "37abf1915b28d0626d15e4ef42d1011caa1e18df6a890cf7ed561723e8807707",
+    "git_commit": "64207b9d3b7092012a9db6ded1d04f52939dd572",
+    "git_dirty": false,
+    "guide_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+    "prompt_sha256": "0909c21d72eaccce54c767a63294486655f05c42d150743f9836c734bf9f41c2",
+    "query_sha256": "b2ba9016e725b3834d2571fc138e6a1ede037d8908356e18aa943e5e36797972",
+    "raw_output_sha256": "b2ba9016e725b3834d2571fc138e6a1ede037d8908356e18aa943e5e36797972",
+    "run_id": "20260712-final-v15-core",
+    "schema_version": "fbmcq-evaluator/v3",
+    "semantic_source_sha256": "f6cd22d3743ac7619b4ce8eadb65a03e0000d8342e478552bac254cc78335d04",
+    "task_sha256": "47af77ee1721488a559db2c4a28553b4d7fa37e23cf985ff93470c0f6ca34c08"
+  },
+  "expected_mutated_result": {
+    "incomplete": false,
+    "outcome": "property_violated",
+    "primary_replay": "passed",
+    "property_satisfied": false,
+    "status": "sat"
+  },
+  "expected_nominal_result": {
+    "incomplete": false,
+    "outcome": "property_satisfied",
+    "property_satisfied": true,
+    "status": "unsat"
+  },
+  "failure_category": null,
+  "failures": [],
+  "fixture_id": "must_reach_complete",
+  "gates": [
+    "parse",
+    "canonical_round_trip",
+    "structure_binding",
+    "model_binding",
+    "compile",
+    "query_precondition",
+    "solve_and_replay",
+    "semantic_oracle",
+    "mutation_discrimination"
+  ],
+  "guide_metadata": {
+    "byte_size": 27747,
+    "chapter_count": 18,
+    "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+    "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+    "line_count": 544,
+    "pyfcstm_version": "0.5.0",
+    "resource_name": "fbmcq_language_guide.md",
+    "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+  },
+  "mode": "live",
+  "mutated_result": {
+    "incomplete": false,
+    "outcome": "property_violated",
+    "primary_replay": "passed",
+    "property_satisfied": false,
+    "status": "sat"
+  },
+  "nominal_result": {
+    "incomplete": false,
+    "outcome": "property_satisfied",
+    "property_satisfied": true,
+    "status": "unsat"
+  },
+  "precondition_probes": [
+    {
+      "assumption_count": 0,
+      "status": "sat"
+    }
+  ],
+  "provider": "claude",
+  "provider_command": [
+    "claude",
+    "-p"
+  ],
+  "provider_returncode": 0,
+  "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/claude/must_reach_complete/raw_output.md",
+  "run_id": "20260712-final-v15-core",
+  "success": true,
+  "task_sha256": "47af77ee1721488a559db2c4a28553b4d7fa37e23cf985ff93470c0f6ca34c08"
+}

@@ -1,0 +1,83 @@
+{
+  "discriminator_result": {
+    "incomplete": false,
+    "outcome": "property_violated",
+    "primary_replay": "passed",
+    "property_satisfied": false,
+    "status": "sat"
+  },
+  "expected_discriminator_result": {
+    "incomplete": false,
+    "outcome": "property_violated",
+    "primary_replay": "passed",
+    "property_satisfied": false,
+    "status": "sat"
+  },
+  "expected_mutated_result": {
+    "incomplete": false,
+    "outcome": "property_satisfied",
+    "property_satisfied": true,
+    "status": "unsat"
+  },
+  "expected_nominal_result": {
+    "incomplete": false,
+    "outcome": "property_violated",
+    "primary_replay": "passed",
+    "property_satisfied": false,
+    "status": "sat"
+  },
+  "failure_category": null,
+  "failures": [],
+  "fixture_id": "invariant_facts",
+  "gates": [
+    "parse",
+    "canonical_round_trip",
+    "structure_binding",
+    "model_binding",
+    "compile",
+    "query_precondition",
+    "solve_and_replay",
+    "semantic_oracle",
+    "task_semantic_discriminator",
+    "mutation_discrimination"
+  ],
+  "guide_metadata": {
+    "byte_size": 27747,
+    "chapter_count": 18,
+    "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+    "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+    "line_count": 544,
+    "pyfcstm_version": "0.5.0",
+    "resource_name": "fbmcq_language_guide.md",
+    "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+  },
+  "mode": "replay",
+  "mutated_result": {
+    "incomplete": false,
+    "outcome": "property_satisfied",
+    "property_satisfied": true,
+    "status": "unsat"
+  },
+  "nominal_result": {
+    "incomplete": false,
+    "outcome": "property_violated",
+    "primary_replay": "passed",
+    "property_satisfied": false,
+    "status": "sat"
+  },
+  "precondition_probes": [
+    {
+      "assumption_count": 0,
+      "status": "sat"
+    },
+    {
+      "assumption_count": 1,
+      "status": "sat"
+    }
+  ],
+  "provider": "codex",
+  "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex/invariant_facts/raw_output.md",
+  "run_id": "20260712-final-v15-core",
+  "success": true,
+  "task_sha256": "caa0f33993a27bf9c7e98ffadef9a35a52d472ebe227988ce4eb7ed42aaf7769"
+}

@@ -1,33 +1,106 @@
 Release Notes
 =============
 
-Unreleased
-----------
+v0.6.0
+------
 
-Bounded Model Checking
-~~~~~~~~~~~~~~~~~~~~~~
+This minor release adds an end-to-end FBMCQ bounded model checking workflow,
+makes inspect reports useful to both people and LLM repair loops, expands the
+built-in runtime templates to Python, C, C Poll, C++, and C++ Poll, and ships
+substantially expanded bilingual documentation. It also contains public API and
+CLI compatibility changes that require callers to review the migration notes.
 
+FBMCQ and Bounded Model Checking
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+- Added the FBMCQ property language, parser, model binding, macro expansion,
+  transition-relation compiler, Z3 solving pipeline, and public
+  :mod:`pyfcstm.bmc` APIs. The language covers reachability, coverage, safety,
+  bounded liveness, response, assumptions, and initial-state constraints.
 - Added ``pyfcstm bmc`` for one FCSTM model and one FBMCQ query. The default
   terminal report states whether the bounded property holds before showing the
-  SAT/UNSAT solver diagnostic, uses optional ANSI color, and requires decoded
-  SAT witnesses to pass runtime replay.
+  SAT/UNSAT solver diagnostic, supports optional ANSI color, and requires every
+  decoded SAT witness to pass structural validation and simulator replay.
 - Added the stable ``bmc-cli/v1`` JSON envelope for CI, tools, and LLM
   consumers, with a downloadable schema in the BMC result protocol reference.
   The envelope preserves polarity-aware outcomes, solver timing, witness and
   replay records, diagnostics, and the matching process exit code.
-- Added bilingual Tutorial, How-to, three mathematical Explanation pages, and
-  two exhaustive Reference pages. The explanations derive 40 labelled,
-  implementation-traceable equations and are verified in MathJax HTML and
-  XeLaTeX PDF output.
 
-Compatibility Notes
-~~~~~~~~~~~~~~~~~~~
+Inspect and Diagnostics
+~~~~~~~~~~~~~~~~~~~~~~~
 
-BMC results are bounded by the query's ``<= N`` and are not unbounded proofs.
-Scripts must consume ``--json`` instead of parsing human wording, color, or
-live timing. SAT means a witness for witness-polarity properties and a
-counterexample for counterexample-polarity properties; use the reported
-property verdict or ``result.outcome`` rather than treating SAT as success.
+- Changed ``pyfcstm inspect`` to default to a checker-style human report with
+  aligned source spans, nearby source context, compact severity labels, and
+  ``--color auto|always|never``. Files, pipes, and machine formats remain free
+  of ANSI escapes.
+- Kept the stable machine report under ``--format json`` and added
+  ``--format llm-json`` and ``--format llm-md`` using schema
+  ``pyfcstm.inspect.llm.v1``. LLM reports carry source context, provenance,
+  repair guidance, and explicit do-not notes.
+- Expanded static and verify-backed diagnostics, including numeric and guard
+  reasoning, while keeping solver-backed inspect checks behind the existing
+  explicit enablement and safety gates.
+- Added isolated multi-provider repair evaluations that test whether a consumer
+  can locate, explain, repair, and replay real diagnostics without access to
+  hidden repository context.
+
+Simulation and Runtime Semantics
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+- Hardened hot start, pseudo-state routing, DFS limits, stack stabilization,
+  speculative rollback, expression short-circuiting, persistent-variable
+  normalization, event ownership, history resizing, and terminal queries.
+- Added :class:`pyfcstm.simulate.CycleResult` event accounting and strengthened
+  abstract-handler registration, decorator scanning, execution context, named
+  action references, warning metadata, and session-copy behavior.
+- Extended the shared semantic fixture corpus so the simulator and generated
+  runtimes are checked against the same cycle-by-cycle state, variable, event,
+  history, callback, and failure behavior.
+
+Built-In Templates and DSL
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+- Added the first-class ``cpp`` and ``cpp_poll`` built-in templates alongside
+  ``python``, ``c``, and ``c_poll``. C-family templates use CMake-driven native
+  checks, simulator-alignment fixtures, wrapper smoke tests, and explicit
+  deployment profiles without requiring heap allocation in the runtime core.
+- Added ordered combo-transition triggers that combine event and guard terms in
+  one cycle. They expand into traceable pseudo relay states while preserving
+  source metadata, guard/effect order, rollback, PlantUML output, inspect
+  reports, simulation behavior, and generated-runtime alignment.
+- Added template-suite detection and dedicated representative/full-suite jobs
+  so source-template dependencies and native toolchain coverage fail closed
+  without forcing every ordinary change through every expensive native suite.
+
+LLM Prompt Resources
+~~~~~~~~~~~~~~~~~~~~
+
+- Added the packaged FBMCQ authoring guide and integrity-checked public APIs:
+  :func:`pyfcstm.llm.get_fbmcq_language_guide_prompt_for_llm`,
+  :func:`pyfcstm.llm.get_fbmcq_language_guide_prompt_path_for_llm`, and
+  :func:`pyfcstm.llm.get_fbmcq_language_guide_prompt_metadata_for_llm`.
+- The FCSTM and FBMCQ guide APIs now live in dedicated modules while
+  :mod:`pyfcstm.llm` remains the compact public import surface. Both Guide
+  resources use adjacent SHA-256 sidecars generated by ``make sha256``.
+- Added standalone FBMCQ Guide evaluation fixtures for seven property kinds,
+  full-source and known-fact task forms, oracle checks, anti-vacuity checks,
+  mutation discrimination, and trace replay. Provider transcripts remain
+  repository evidence rather than package data.
+
+Documentation and Release Artifacts
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+- Reorganized the bilingual documentation around Tutorials, How-to Guides,
+  Explanations, and Reference material, with runnable examples and dedicated
+  coverage for the DSL, simulation, inspect, templates, and BMC workflows.
+- Added bilingual BMC Tutorial and How-to material, three mathematical
+  Explanation pages, and exhaustive query/result Reference pages. The
+  explanations derive 40 labelled, implementation-traceable equations and are
+  verified in MathJax HTML and XeLaTeX PDF output.
+- Hardened the bilingual Sphinx PDF path with isolated builds, XeLaTeX/CJK font
+  checks, structural/content validation, adversarial self-checks, and complete
+  contents/index verification. GitHub Releases now attach validated English and
+  Chinese PDF manuals in addition to package, CLI, and VSIX artifacts.
 
 Verification and Inspect
 ~~~~~~~~~~~~~~~~~~~~~~~~
@@ -43,12 +116,26 @@ Verification and Inspect
 Compatibility Notes
 ~~~~~~~~~~~~~~~~~~~
 
+BMC results are bounded by the query's ``<= N`` and are not unbounded proofs.
+Scripts must consume ``--json`` instead of parsing human wording, color, or
+live timing. SAT means a witness for witness-polarity properties and a
+counterexample for counterexample-polarity properties; use the reported
+property verdict or ``result.outcome`` rather than treating SAT as success.
+
+The default ``inspect`` output is now intended for humans. Existing scripts
+that parsed the former default JSON output must pass ``--format json``. LLM
+automation should use ``llm-json`` or ``llm-md`` rather than parsing the human
+report.
+
 Code that referenced the removed verify registry keys or taxonomy values must
 migrate to the public :mod:`pyfcstm.bmc` query APIs. The ``inspect`` CLI no
 longer accepts the removed BMC-only values merely to reject them in application
 code; Click now reports them as invalid choices with usage exit status ``2``
-instead of the former policy-error status ``1``. This public API contraction
-requires a minor-version bump in the next package release.
+instead of the former policy-error status ``1``.
+
+The five built-in templates remain marked experimental. The VSCode extension
+continues to use its own independent version line and is not versioned as
+``0.6.0`` by this Python package release.
 
 v0.5.0
 ------
@@ -80,12 +167,9 @@ Diagnostics and CLI
 - Expanded the structured diagnostics catalog to 59 codes: 20 errors,
   32 warnings, and 7 infos.
 - Added verify-backed diagnostic coverage while keeping the default inspect
-  analysis path static unless verification is explicitly enabled.
-- Added ``pyfcstm inspect`` as a default human-readable diagnostic report, with
-  ``--format json`` preserving stable JSON output matching
+  path static unless verification is explicitly enabled.
+- Added ``pyfcstm inspect`` for stable JSON output matching
   ``inspect_model(model).to_json()``.
-- Improved the default human inspect report into a checker-style diagnostic layout with nearby source context, and added ``--color auto|always|never`` for ANSI color control while keeping files, pipes, and machine formats ANSI-free.
-- Added stable LLM inspect report formats, ``--format llm-json`` and ``--format llm-md``, using schema ``pyfcstm.inspect.llm.v1`` with source context, provenance, repair guidance, and do-not notes for repair loops.
 - Preserved Python / jsfcstm diagnostic-surface parity for normalized code,
   severity, and reference payloads used by editor integrations.
 

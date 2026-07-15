@@ -1,0 +1,4125 @@
+{
+  "case_count": 42,
+  "guide_metadata": {
+    "byte_size": 27747,
+    "chapter_count": 18,
+    "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+    "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+    "line_count": 544,
+    "pyfcstm_version": "0.5.0",
+    "resource_name": "fbmcq_language_guide.md",
+    "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+  },
+  "mode": "live",
+  "passed_count": 42,
+  "reports": [
+    {
+      "evidence_snapshot": {
+        "asset_sha256": {
+          "expected": "dea3acc94fdc882857d91efd9b45851a49f16fc5b0ce3639b0149ab39c6c0c51",
+          "mutated": "de3466709d0ba09ac8d94085e626afb6eedcc4d390cc3d9914edab1b2dc961de",
+          "nominal": "e307819150697135287ca9da79ee491d122f4cfede11c9a46bff7c4c4155e028"
+        },
+        "evaluator_sha256": "37abf1915b28d0626d15e4ef42d1011caa1e18df6a890cf7ed561723e8807707",
+        "git_commit": "64207b9d3b7092012a9db6ded1d04f52939dd572",
+        "git_dirty": false,
+        "guide_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "prompt_sha256": "585fd1a2c0ae7493b1e23a7225a1470c6a38105f3945078a35626ccf282b6506",
+        "query_sha256": "cec952d74de9f8124e00f50a9033e1ec3f1b5c569fa1c06b25c5f1978dc47779",
+        "raw_output_sha256": "cec952d74de9f8124e00f50a9033e1ec3f1b5c569fa1c06b25c5f1978dc47779",
+        "run_id": "20260712-final-v15-core",
+        "schema_version": "fbmcq-evaluator/v3",
+        "semantic_source_sha256": "f6cd22d3743ac7619b4ce8eadb65a03e0000d8342e478552bac254cc78335d04",
+        "task_sha256": "a62312012f31151bf4e6489ee6dbc0ee58b03937e0e709744d24488c0e1ec252"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "cover_complete",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "live",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex",
+      "provider_command": [
+        "codex",
+        "exec",
+        "--skip-git-repo-check",
+        "-"
+      ],
+      "provider_returncode": 0,
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex/cover_complete/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "a62312012f31151bf4e6489ee6dbc0ee58b03937e0e709744d24488c0e1ec252"
+    },
+    {
+      "evidence_snapshot": {
+        "asset_sha256": {
+          "expected": "dea3acc94fdc882857d91efd9b45851a49f16fc5b0ce3639b0149ab39c6c0c51",
+          "mutated": "de3466709d0ba09ac8d94085e626afb6eedcc4d390cc3d9914edab1b2dc961de",
+          "nominal": "e307819150697135287ca9da79ee491d122f4cfede11c9a46bff7c4c4155e028"
+        },
+        "evaluator_sha256": "37abf1915b28d0626d15e4ef42d1011caa1e18df6a890cf7ed561723e8807707",
+        "git_commit": "64207b9d3b7092012a9db6ded1d04f52939dd572",
+        "git_dirty": false,
+        "guide_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "prompt_sha256": "585fd1a2c0ae7493b1e23a7225a1470c6a38105f3945078a35626ccf282b6506",
+        "query_sha256": "b9091af63146e7ec5a6571c01632a6a14e46131f12941d207a9a865d1154a374",
+        "raw_output_sha256": "b9091af63146e7ec5a6571c01632a6a14e46131f12941d207a9a865d1154a374",
+        "run_id": "20260712-final-v15-core",
+        "schema_version": "fbmcq-evaluator/v3",
+        "semantic_source_sha256": "f6cd22d3743ac7619b4ce8eadb65a03e0000d8342e478552bac254cc78335d04",
+        "task_sha256": "a62312012f31151bf4e6489ee6dbc0ee58b03937e0e709744d24488c0e1ec252"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "cover_complete",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "live",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        }
+      ],
+      "provider": "claude",
+      "provider_command": [
+        "claude",
+        "-p"
+      ],
+      "provider_returncode": 0,
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/claude/cover_complete/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "a62312012f31151bf4e6489ee6dbc0ee58b03937e0e709744d24488c0e1ec252"
+    },
+    {
+      "evidence_snapshot": {
+        "asset_sha256": {
+          "expected": "dea3acc94fdc882857d91efd9b45851a49f16fc5b0ce3639b0149ab39c6c0c51",
+          "mutated": "de3466709d0ba09ac8d94085e626afb6eedcc4d390cc3d9914edab1b2dc961de",
+          "nominal": "e307819150697135287ca9da79ee491d122f4cfede11c9a46bff7c4c4155e028"
+        },
+        "evaluator_sha256": "37abf1915b28d0626d15e4ef42d1011caa1e18df6a890cf7ed561723e8807707",
+        "git_commit": "64207b9d3b7092012a9db6ded1d04f52939dd572",
+        "git_dirty": false,
+        "guide_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "prompt_sha256": "585fd1a2c0ae7493b1e23a7225a1470c6a38105f3945078a35626ccf282b6506",
+        "query_sha256": "cec952d74de9f8124e00f50a9033e1ec3f1b5c569fa1c06b25c5f1978dc47779",
+        "raw_output_sha256": "cec952d74de9f8124e00f50a9033e1ec3f1b5c569fa1c06b25c5f1978dc47779",
+        "run_id": "20260712-final-v15-core",
+        "schema_version": "fbmcq-evaluator/v3",
+        "semantic_source_sha256": "f6cd22d3743ac7619b4ce8eadb65a03e0000d8342e478552bac254cc78335d04",
+        "task_sha256": "a62312012f31151bf4e6489ee6dbc0ee58b03937e0e709744d24488c0e1ec252"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "cover_complete",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "live",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex-deepseek",
+      "provider_command": [
+        "codex-deepseek",
+        "exec",
+        "--skip-git-repo-check",
+        "-"
+      ],
+      "provider_returncode": 0,
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex-deepseek/cover_complete/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "a62312012f31151bf4e6489ee6dbc0ee58b03937e0e709744d24488c0e1ec252"
+    },
+    {
+      "evidence_snapshot": {
+        "asset_sha256": {
+          "expected": "dea3acc94fdc882857d91efd9b45851a49f16fc5b0ce3639b0149ab39c6c0c51",
+          "mutated": "de3466709d0ba09ac8d94085e626afb6eedcc4d390cc3d9914edab1b2dc961de",
+          "nominal": "e307819150697135287ca9da79ee491d122f4cfede11c9a46bff7c4c4155e028"
+        },
+        "evaluator_sha256": "37abf1915b28d0626d15e4ef42d1011caa1e18df6a890cf7ed561723e8807707",
+        "git_commit": "64207b9d3b7092012a9db6ded1d04f52939dd572",
+        "git_dirty": false,
+        "guide_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "prompt_sha256": "6ec456bed4cde030aed7457c0126b567a0ae3b97fdfa050b960ad2b4148e0cce",
+        "query_sha256": "cec952d74de9f8124e00f50a9033e1ec3f1b5c569fa1c06b25c5f1978dc47779",
+        "raw_output_sha256": "cec952d74de9f8124e00f50a9033e1ec3f1b5c569fa1c06b25c5f1978dc47779",
+        "run_id": "20260712-final-v15-core",
+        "schema_version": "fbmcq-evaluator/v3",
+        "semantic_source_sha256": "f6cd22d3743ac7619b4ce8eadb65a03e0000d8342e478552bac254cc78335d04",
+        "task_sha256": "c2cec1e39a1c1981fe10c46ca96ab1ebd16dadd7db023d927b356162b2cfb97c"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "cover_facts",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "live",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex",
+      "provider_command": [
+        "codex",
+        "exec",
+        "--skip-git-repo-check",
+        "-"
+      ],
+      "provider_returncode": 0,
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex/cover_facts/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "c2cec1e39a1c1981fe10c46ca96ab1ebd16dadd7db023d927b356162b2cfb97c"
+    },
+    {
+      "evidence_snapshot": {
+        "asset_sha256": {
+          "expected": "dea3acc94fdc882857d91efd9b45851a49f16fc5b0ce3639b0149ab39c6c0c51",
+          "mutated": "de3466709d0ba09ac8d94085e626afb6eedcc4d390cc3d9914edab1b2dc961de",
+          "nominal": "e307819150697135287ca9da79ee491d122f4cfede11c9a46bff7c4c4155e028"
+        },
+        "evaluator_sha256": "37abf1915b28d0626d15e4ef42d1011caa1e18df6a890cf7ed561723e8807707",
+        "git_commit": "64207b9d3b7092012a9db6ded1d04f52939dd572",
+        "git_dirty": false,
+        "guide_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "prompt_sha256": "6ec456bed4cde030aed7457c0126b567a0ae3b97fdfa050b960ad2b4148e0cce",
+        "query_sha256": "b9091af63146e7ec5a6571c01632a6a14e46131f12941d207a9a865d1154a374",
+        "raw_output_sha256": "b9091af63146e7ec5a6571c01632a6a14e46131f12941d207a9a865d1154a374",
+        "run_id": "20260712-final-v15-core",
+        "schema_version": "fbmcq-evaluator/v3",
+        "semantic_source_sha256": "f6cd22d3743ac7619b4ce8eadb65a03e0000d8342e478552bac254cc78335d04",
+        "task_sha256": "c2cec1e39a1c1981fe10c46ca96ab1ebd16dadd7db023d927b356162b2cfb97c"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "cover_facts",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "live",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        }
+      ],
+      "provider": "claude",
+      "provider_command": [
+        "claude",
+        "-p"
+      ],
+      "provider_returncode": 0,
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/claude/cover_facts/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "c2cec1e39a1c1981fe10c46ca96ab1ebd16dadd7db023d927b356162b2cfb97c"
+    },
+    {
+      "evidence_snapshot": {
+        "asset_sha256": {
+          "expected": "dea3acc94fdc882857d91efd9b45851a49f16fc5b0ce3639b0149ab39c6c0c51",
+          "mutated": "de3466709d0ba09ac8d94085e626afb6eedcc4d390cc3d9914edab1b2dc961de",
+          "nominal": "e307819150697135287ca9da79ee491d122f4cfede11c9a46bff7c4c4155e028"
+        },
+        "evaluator_sha256": "37abf1915b28d0626d15e4ef42d1011caa1e18df6a890cf7ed561723e8807707",
+        "git_commit": "64207b9d3b7092012a9db6ded1d04f52939dd572",
+        "git_dirty": false,
+        "guide_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "prompt_sha256": "6ec456bed4cde030aed7457c0126b567a0ae3b97fdfa050b960ad2b4148e0cce",
+        "query_sha256": "cec952d74de9f8124e00f50a9033e1ec3f1b5c569fa1c06b25c5f1978dc47779",
+        "raw_output_sha256": "cec952d74de9f8124e00f50a9033e1ec3f1b5c569fa1c06b25c5f1978dc47779",
+        "run_id": "20260712-final-v15-core",
+        "schema_version": "fbmcq-evaluator/v3",
+        "semantic_source_sha256": "f6cd22d3743ac7619b4ce8eadb65a03e0000d8342e478552bac254cc78335d04",
+        "task_sha256": "c2cec1e39a1c1981fe10c46ca96ab1ebd16dadd7db023d927b356162b2cfb97c"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "cover_facts",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "live",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex-deepseek",
+      "provider_command": [
+        "codex-deepseek",
+        "exec",
+        "--skip-git-repo-check",
+        "-"
+      ],
+      "provider_returncode": 0,
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex-deepseek/cover_facts/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "c2cec1e39a1c1981fe10c46ca96ab1ebd16dadd7db023d927b356162b2cfb97c"
+    },
+    {
+      "discriminator_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "evidence_snapshot": {
+        "asset_sha256": {
+          "discriminator": "02ec0710a7299c21ba9d9b8120764bae409cba4afcd9fb66bed0c0012ed5e208",
+          "expected": "e3c9b4b7eca449fdc6bed6480bc0c0d3cbccaf031c728a9fada667934aa65deb",
+          "mutated": "9d0bdd892f222b3f5127496f38aac5dc63036349c06f3acacaf87677ecccc625",
+          "nominal": "2539aea98fbec0ab2fd125637bb1fafe851e5ed1a918261a337a0a8382d58f5f"
+        },
+        "evaluator_sha256": "37abf1915b28d0626d15e4ef42d1011caa1e18df6a890cf7ed561723e8807707",
+        "git_commit": "64207b9d3b7092012a9db6ded1d04f52939dd572",
+        "git_dirty": false,
+        "guide_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "prompt_sha256": "51d6e38b68b4efd39d4f8a7ddf5a7dfee3f6d59ade53c18339ee8a4d18cd0595",
+        "query_sha256": "3f0e6724502d1e430decae05ba5d51514e60a493c3f718520c0b53eebdfedcc9",
+        "raw_output_sha256": "3f0e6724502d1e430decae05ba5d51514e60a493c3f718520c0b53eebdfedcc9",
+        "run_id": "20260712-final-v15-core",
+        "schema_version": "fbmcq-evaluator/v3",
+        "semantic_source_sha256": "f6cd22d3743ac7619b4ce8eadb65a03e0000d8342e478552bac254cc78335d04",
+        "task_sha256": "116be2b434cc188628170a030dd760d21a8500e8cb8a9fce90d2ac1f071baf46"
+      },
+      "expected_discriminator_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "exists_always_complete",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "task_semantic_discriminator",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "live",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex",
+      "provider_command": [
+        "codex",
+        "exec",
+        "--skip-git-repo-check",
+        "-"
+      ],
+      "provider_returncode": 0,
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex/exists_always_complete/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "116be2b434cc188628170a030dd760d21a8500e8cb8a9fce90d2ac1f071baf46"
+    },
+    {
+      "discriminator_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "evidence_snapshot": {
+        "asset_sha256": {
+          "discriminator": "02ec0710a7299c21ba9d9b8120764bae409cba4afcd9fb66bed0c0012ed5e208",
+          "expected": "e3c9b4b7eca449fdc6bed6480bc0c0d3cbccaf031c728a9fada667934aa65deb",
+          "mutated": "9d0bdd892f222b3f5127496f38aac5dc63036349c06f3acacaf87677ecccc625",
+          "nominal": "2539aea98fbec0ab2fd125637bb1fafe851e5ed1a918261a337a0a8382d58f5f"
+        },
+        "evaluator_sha256": "37abf1915b28d0626d15e4ef42d1011caa1e18df6a890cf7ed561723e8807707",
+        "git_commit": "64207b9d3b7092012a9db6ded1d04f52939dd572",
+        "git_dirty": false,
+        "guide_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "prompt_sha256": "51d6e38b68b4efd39d4f8a7ddf5a7dfee3f6d59ade53c18339ee8a4d18cd0595",
+        "query_sha256": "3f0e6724502d1e430decae05ba5d51514e60a493c3f718520c0b53eebdfedcc9",
+        "raw_output_sha256": "3f0e6724502d1e430decae05ba5d51514e60a493c3f718520c0b53eebdfedcc9",
+        "run_id": "20260712-final-v15-core",
+        "schema_version": "fbmcq-evaluator/v3",
+        "semantic_source_sha256": "f6cd22d3743ac7619b4ce8eadb65a03e0000d8342e478552bac254cc78335d04",
+        "task_sha256": "116be2b434cc188628170a030dd760d21a8500e8cb8a9fce90d2ac1f071baf46"
+      },
+      "expected_discriminator_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "exists_always_complete",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "task_semantic_discriminator",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "live",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "claude",
+      "provider_command": [
+        "claude",
+        "-p"
+      ],
+      "provider_returncode": 0,
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/claude/exists_always_complete/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "116be2b434cc188628170a030dd760d21a8500e8cb8a9fce90d2ac1f071baf46"
+    },
+    {
+      "discriminator_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "evidence_snapshot": {
+        "asset_sha256": {
+          "discriminator": "02ec0710a7299c21ba9d9b8120764bae409cba4afcd9fb66bed0c0012ed5e208",
+          "expected": "e3c9b4b7eca449fdc6bed6480bc0c0d3cbccaf031c728a9fada667934aa65deb",
+          "mutated": "9d0bdd892f222b3f5127496f38aac5dc63036349c06f3acacaf87677ecccc625",
+          "nominal": "2539aea98fbec0ab2fd125637bb1fafe851e5ed1a918261a337a0a8382d58f5f"
+        },
+        "evaluator_sha256": "37abf1915b28d0626d15e4ef42d1011caa1e18df6a890cf7ed561723e8807707",
+        "git_commit": "64207b9d3b7092012a9db6ded1d04f52939dd572",
+        "git_dirty": false,
+        "guide_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "prompt_sha256": "51d6e38b68b4efd39d4f8a7ddf5a7dfee3f6d59ade53c18339ee8a4d18cd0595",
+        "query_sha256": "3f0e6724502d1e430decae05ba5d51514e60a493c3f718520c0b53eebdfedcc9",
+        "raw_output_sha256": "3f0e6724502d1e430decae05ba5d51514e60a493c3f718520c0b53eebdfedcc9",
+        "run_id": "20260712-final-v15-core",
+        "schema_version": "fbmcq-evaluator/v3",
+        "semantic_source_sha256": "f6cd22d3743ac7619b4ce8eadb65a03e0000d8342e478552bac254cc78335d04",
+        "task_sha256": "116be2b434cc188628170a030dd760d21a8500e8cb8a9fce90d2ac1f071baf46"
+      },
+      "expected_discriminator_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "exists_always_complete",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "task_semantic_discriminator",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "live",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex-deepseek",
+      "provider_command": [
+        "codex-deepseek",
+        "exec",
+        "--skip-git-repo-check",
+        "-"
+      ],
+      "provider_returncode": 0,
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex-deepseek/exists_always_complete/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "116be2b434cc188628170a030dd760d21a8500e8cb8a9fce90d2ac1f071baf46"
+    },
+    {
+      "discriminator_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "evidence_snapshot": {
+        "asset_sha256": {
+          "discriminator": "02ec0710a7299c21ba9d9b8120764bae409cba4afcd9fb66bed0c0012ed5e208",
+          "expected": "e3c9b4b7eca449fdc6bed6480bc0c0d3cbccaf031c728a9fada667934aa65deb",
+          "mutated": "9d0bdd892f222b3f5127496f38aac5dc63036349c06f3acacaf87677ecccc625",
+          "nominal": "2539aea98fbec0ab2fd125637bb1fafe851e5ed1a918261a337a0a8382d58f5f"
+        },
+        "evaluator_sha256": "37abf1915b28d0626d15e4ef42d1011caa1e18df6a890cf7ed561723e8807707",
+        "git_commit": "64207b9d3b7092012a9db6ded1d04f52939dd572",
+        "git_dirty": false,
+        "guide_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "prompt_sha256": "9098b4615fb0c2240a9c291892231572cebca60a2a5a8adcb6c64dd0df03d483",
+        "query_sha256": "3f0e6724502d1e430decae05ba5d51514e60a493c3f718520c0b53eebdfedcc9",
+        "raw_output_sha256": "3f0e6724502d1e430decae05ba5d51514e60a493c3f718520c0b53eebdfedcc9",
+        "run_id": "20260712-final-v15-core",
+        "schema_version": "fbmcq-evaluator/v3",
+        "semantic_source_sha256": "f6cd22d3743ac7619b4ce8eadb65a03e0000d8342e478552bac254cc78335d04",
+        "task_sha256": "1cd776d24e191ccf1880b06088a5f766da731b54688ff81f96664550cca588a3"
+      },
+      "expected_discriminator_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "exists_always_facts",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "task_semantic_discriminator",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "live",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex",
+      "provider_command": [
+        "codex",
+        "exec",
+        "--skip-git-repo-check",
+        "-"
+      ],
+      "provider_returncode": 0,
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex/exists_always_facts/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "1cd776d24e191ccf1880b06088a5f766da731b54688ff81f96664550cca588a3"
+    },
+    {
+      "discriminator_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "evidence_snapshot": {
+        "asset_sha256": {
+          "discriminator": "02ec0710a7299c21ba9d9b8120764bae409cba4afcd9fb66bed0c0012ed5e208",
+          "expected": "e3c9b4b7eca449fdc6bed6480bc0c0d3cbccaf031c728a9fada667934aa65deb",
+          "mutated": "9d0bdd892f222b3f5127496f38aac5dc63036349c06f3acacaf87677ecccc625",
+          "nominal": "2539aea98fbec0ab2fd125637bb1fafe851e5ed1a918261a337a0a8382d58f5f"
+        },
+        "evaluator_sha256": "37abf1915b28d0626d15e4ef42d1011caa1e18df6a890cf7ed561723e8807707",
+        "git_commit": "64207b9d3b7092012a9db6ded1d04f52939dd572",
+        "git_dirty": false,
+        "guide_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "prompt_sha256": "9098b4615fb0c2240a9c291892231572cebca60a2a5a8adcb6c64dd0df03d483",
+        "query_sha256": "3f0e6724502d1e430decae05ba5d51514e60a493c3f718520c0b53eebdfedcc9",
+        "raw_output_sha256": "3f0e6724502d1e430decae05ba5d51514e60a493c3f718520c0b53eebdfedcc9",
+        "run_id": "20260712-final-v15-core",
+        "schema_version": "fbmcq-evaluator/v3",
+        "semantic_source_sha256": "f6cd22d3743ac7619b4ce8eadb65a03e0000d8342e478552bac254cc78335d04",
+        "task_sha256": "1cd776d24e191ccf1880b06088a5f766da731b54688ff81f96664550cca588a3"
+      },
+      "expected_discriminator_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "exists_always_facts",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "task_semantic_discriminator",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "live",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "claude",
+      "provider_command": [
+        "claude",
+        "-p"
+      ],
+      "provider_returncode": 0,
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/claude/exists_always_facts/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "1cd776d24e191ccf1880b06088a5f766da731b54688ff81f96664550cca588a3"
+    },
+    {
+      "discriminator_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "evidence_snapshot": {
+        "asset_sha256": {
+          "discriminator": "02ec0710a7299c21ba9d9b8120764bae409cba4afcd9fb66bed0c0012ed5e208",
+          "expected": "e3c9b4b7eca449fdc6bed6480bc0c0d3cbccaf031c728a9fada667934aa65deb",
+          "mutated": "9d0bdd892f222b3f5127496f38aac5dc63036349c06f3acacaf87677ecccc625",
+          "nominal": "2539aea98fbec0ab2fd125637bb1fafe851e5ed1a918261a337a0a8382d58f5f"
+        },
+        "evaluator_sha256": "37abf1915b28d0626d15e4ef42d1011caa1e18df6a890cf7ed561723e8807707",
+        "git_commit": "64207b9d3b7092012a9db6ded1d04f52939dd572",
+        "git_dirty": false,
+        "guide_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "prompt_sha256": "9098b4615fb0c2240a9c291892231572cebca60a2a5a8adcb6c64dd0df03d483",
+        "query_sha256": "3f0e6724502d1e430decae05ba5d51514e60a493c3f718520c0b53eebdfedcc9",
+        "raw_output_sha256": "3f0e6724502d1e430decae05ba5d51514e60a493c3f718520c0b53eebdfedcc9",
+        "run_id": "20260712-final-v15-core",
+        "schema_version": "fbmcq-evaluator/v3",
+        "semantic_source_sha256": "f6cd22d3743ac7619b4ce8eadb65a03e0000d8342e478552bac254cc78335d04",
+        "task_sha256": "1cd776d24e191ccf1880b06088a5f766da731b54688ff81f96664550cca588a3"
+      },
+      "expected_discriminator_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "exists_always_facts",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "task_semantic_discriminator",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "live",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex-deepseek",
+      "provider_command": [
+        "codex-deepseek",
+        "exec",
+        "--skip-git-repo-check",
+        "-"
+      ],
+      "provider_returncode": 0,
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex-deepseek/exists_always_facts/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "1cd776d24e191ccf1880b06088a5f766da731b54688ff81f96664550cca588a3"
+    },
+    {
+      "evidence_snapshot": {
+        "asset_sha256": {
+          "expected": "ee51fe7f78c81b08af9f5dec820247ff800d7a1685b04285cac7b0f3f751f89f",
+          "mutated": "f07b52adacce3e3d6deafcc4ea55c3ae766e32944fe3be078bfdfd33e3eab2d3",
+          "nominal": "9d0bdd892f222b3f5127496f38aac5dc63036349c06f3acacaf87677ecccc625"
+        },
+        "evaluator_sha256": "37abf1915b28d0626d15e4ef42d1011caa1e18df6a890cf7ed561723e8807707",
+        "git_commit": "64207b9d3b7092012a9db6ded1d04f52939dd572",
+        "git_dirty": false,
+        "guide_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "prompt_sha256": "9229cc3ba95d83051aa8b2ed5c31d8a71579c0ec7df49ac99e990da6d7fe05ba",
+        "query_sha256": "6e2540d7cd9609773f955ecbdfc1863e21d3e07f2ffcb3d991016278dbb42eae",
+        "raw_output_sha256": "6e2540d7cd9609773f955ecbdfc1863e21d3e07f2ffcb3d991016278dbb42eae",
+        "run_id": "20260712-final-v15-core",
+        "schema_version": "fbmcq-evaluator/v3",
+        "semantic_source_sha256": "f6cd22d3743ac7619b4ce8eadb65a03e0000d8342e478552bac254cc78335d04",
+        "task_sha256": "88923b48a1448bc1808957d6de33f4324717ff91f363d724321336cfd6a57a8c"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "forbid_complete",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "live",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex",
+      "provider_command": [
+        "codex",
+        "exec",
+        "--skip-git-repo-check",
+        "-"
+      ],
+      "provider_returncode": 0,
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex/forbid_complete/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "88923b48a1448bc1808957d6de33f4324717ff91f363d724321336cfd6a57a8c"
+    },
+    {
+      "evidence_snapshot": {
+        "asset_sha256": {
+          "expected": "ee51fe7f78c81b08af9f5dec820247ff800d7a1685b04285cac7b0f3f751f89f",
+          "mutated": "f07b52adacce3e3d6deafcc4ea55c3ae766e32944fe3be078bfdfd33e3eab2d3",
+          "nominal": "9d0bdd892f222b3f5127496f38aac5dc63036349c06f3acacaf87677ecccc625"
+        },
+        "evaluator_sha256": "37abf1915b28d0626d15e4ef42d1011caa1e18df6a890cf7ed561723e8807707",
+        "git_commit": "64207b9d3b7092012a9db6ded1d04f52939dd572",
+        "git_dirty": false,
+        "guide_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "prompt_sha256": "9229cc3ba95d83051aa8b2ed5c31d8a71579c0ec7df49ac99e990da6d7fe05ba",
+        "query_sha256": "6e2540d7cd9609773f955ecbdfc1863e21d3e07f2ffcb3d991016278dbb42eae",
+        "raw_output_sha256": "6e2540d7cd9609773f955ecbdfc1863e21d3e07f2ffcb3d991016278dbb42eae",
+        "run_id": "20260712-final-v15-core",
+        "schema_version": "fbmcq-evaluator/v3",
+        "semantic_source_sha256": "f6cd22d3743ac7619b4ce8eadb65a03e0000d8342e478552bac254cc78335d04",
+        "task_sha256": "88923b48a1448bc1808957d6de33f4324717ff91f363d724321336cfd6a57a8c"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "forbid_complete",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "live",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "claude",
+      "provider_command": [
+        "claude",
+        "-p"
+      ],
+      "provider_returncode": 0,
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/claude/forbid_complete/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "88923b48a1448bc1808957d6de33f4324717ff91f363d724321336cfd6a57a8c"
+    },
+    {
+      "evidence_snapshot": {
+        "asset_sha256": {
+          "expected": "ee51fe7f78c81b08af9f5dec820247ff800d7a1685b04285cac7b0f3f751f89f",
+          "mutated": "f07b52adacce3e3d6deafcc4ea55c3ae766e32944fe3be078bfdfd33e3eab2d3",
+          "nominal": "9d0bdd892f222b3f5127496f38aac5dc63036349c06f3acacaf87677ecccc625"
+        },
+        "evaluator_sha256": "37abf1915b28d0626d15e4ef42d1011caa1e18df6a890cf7ed561723e8807707",
+        "git_commit": "64207b9d3b7092012a9db6ded1d04f52939dd572",
+        "git_dirty": false,
+        "guide_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "prompt_sha256": "9229cc3ba95d83051aa8b2ed5c31d8a71579c0ec7df49ac99e990da6d7fe05ba",
+        "query_sha256": "6e2540d7cd9609773f955ecbdfc1863e21d3e07f2ffcb3d991016278dbb42eae",
+        "raw_output_sha256": "6e2540d7cd9609773f955ecbdfc1863e21d3e07f2ffcb3d991016278dbb42eae",
+        "run_id": "20260712-final-v15-core",
+        "schema_version": "fbmcq-evaluator/v3",
+        "semantic_source_sha256": "f6cd22d3743ac7619b4ce8eadb65a03e0000d8342e478552bac254cc78335d04",
+        "task_sha256": "88923b48a1448bc1808957d6de33f4324717ff91f363d724321336cfd6a57a8c"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "forbid_complete",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "live",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex-deepseek",
+      "provider_command": [
+        "codex-deepseek",
+        "exec",
+        "--skip-git-repo-check",
+        "-"
+      ],
+      "provider_returncode": 0,
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex-deepseek/forbid_complete/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "88923b48a1448bc1808957d6de33f4324717ff91f363d724321336cfd6a57a8c"
+    },
+    {
+      "evidence_snapshot": {
+        "asset_sha256": {
+          "expected": "ee51fe7f78c81b08af9f5dec820247ff800d7a1685b04285cac7b0f3f751f89f",
+          "mutated": "f07b52adacce3e3d6deafcc4ea55c3ae766e32944fe3be078bfdfd33e3eab2d3",
+          "nominal": "9d0bdd892f222b3f5127496f38aac5dc63036349c06f3acacaf87677ecccc625"
+        },
+        "evaluator_sha256": "37abf1915b28d0626d15e4ef42d1011caa1e18df6a890cf7ed561723e8807707",
+        "git_commit": "64207b9d3b7092012a9db6ded1d04f52939dd572",
+        "git_dirty": false,
+        "guide_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "prompt_sha256": "936118fe64a94b1a8f71c37c65a352aada15b2f2c79a79399d8993196963ca54",
+        "query_sha256": "6e2540d7cd9609773f955ecbdfc1863e21d3e07f2ffcb3d991016278dbb42eae",
+        "raw_output_sha256": "6e2540d7cd9609773f955ecbdfc1863e21d3e07f2ffcb3d991016278dbb42eae",
+        "run_id": "20260712-final-v15-core",
+        "schema_version": "fbmcq-evaluator/v3",
+        "semantic_source_sha256": "f6cd22d3743ac7619b4ce8eadb65a03e0000d8342e478552bac254cc78335d04",
+        "task_sha256": "558725e629f67d54bab5e2539d21735bfef40b62d9af70295e5f4360bae5e2f3"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "forbid_facts",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "live",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex",
+      "provider_command": [
+        "codex",
+        "exec",
+        "--skip-git-repo-check",
+        "-"
+      ],
+      "provider_returncode": 0,
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex/forbid_facts/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "558725e629f67d54bab5e2539d21735bfef40b62d9af70295e5f4360bae5e2f3"
+    },
+    {
+      "evidence_snapshot": {
+        "asset_sha256": {
+          "expected": "ee51fe7f78c81b08af9f5dec820247ff800d7a1685b04285cac7b0f3f751f89f",
+          "mutated": "f07b52adacce3e3d6deafcc4ea55c3ae766e32944fe3be078bfdfd33e3eab2d3",
+          "nominal": "9d0bdd892f222b3f5127496f38aac5dc63036349c06f3acacaf87677ecccc625"
+        },
+        "evaluator_sha256": "37abf1915b28d0626d15e4ef42d1011caa1e18df6a890cf7ed561723e8807707",
+        "git_commit": "64207b9d3b7092012a9db6ded1d04f52939dd572",
+        "git_dirty": false,
+        "guide_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "prompt_sha256": "936118fe64a94b1a8f71c37c65a352aada15b2f2c79a79399d8993196963ca54",
+        "query_sha256": "6e2540d7cd9609773f955ecbdfc1863e21d3e07f2ffcb3d991016278dbb42eae",
+        "raw_output_sha256": "6e2540d7cd9609773f955ecbdfc1863e21d3e07f2ffcb3d991016278dbb42eae",
+        "run_id": "20260712-final-v15-core",
+        "schema_version": "fbmcq-evaluator/v3",
+        "semantic_source_sha256": "f6cd22d3743ac7619b4ce8eadb65a03e0000d8342e478552bac254cc78335d04",
+        "task_sha256": "558725e629f67d54bab5e2539d21735bfef40b62d9af70295e5f4360bae5e2f3"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "forbid_facts",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "live",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "claude",
+      "provider_command": [
+        "claude",
+        "-p"
+      ],
+      "provider_returncode": 0,
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/claude/forbid_facts/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "558725e629f67d54bab5e2539d21735bfef40b62d9af70295e5f4360bae5e2f3"
+    },
+    {
+      "evidence_snapshot": {
+        "asset_sha256": {
+          "expected": "ee51fe7f78c81b08af9f5dec820247ff800d7a1685b04285cac7b0f3f751f89f",
+          "mutated": "f07b52adacce3e3d6deafcc4ea55c3ae766e32944fe3be078bfdfd33e3eab2d3",
+          "nominal": "9d0bdd892f222b3f5127496f38aac5dc63036349c06f3acacaf87677ecccc625"
+        },
+        "evaluator_sha256": "37abf1915b28d0626d15e4ef42d1011caa1e18df6a890cf7ed561723e8807707",
+        "git_commit": "64207b9d3b7092012a9db6ded1d04f52939dd572",
+        "git_dirty": false,
+        "guide_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "prompt_sha256": "936118fe64a94b1a8f71c37c65a352aada15b2f2c79a79399d8993196963ca54",
+        "query_sha256": "6e2540d7cd9609773f955ecbdfc1863e21d3e07f2ffcb3d991016278dbb42eae",
+        "raw_output_sha256": "6e2540d7cd9609773f955ecbdfc1863e21d3e07f2ffcb3d991016278dbb42eae",
+        "run_id": "20260712-final-v15-core",
+        "schema_version": "fbmcq-evaluator/v3",
+        "semantic_source_sha256": "f6cd22d3743ac7619b4ce8eadb65a03e0000d8342e478552bac254cc78335d04",
+        "task_sha256": "558725e629f67d54bab5e2539d21735bfef40b62d9af70295e5f4360bae5e2f3"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "forbid_facts",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "live",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex-deepseek",
+      "provider_command": [
+        "codex-deepseek",
+        "exec",
+        "--skip-git-repo-check",
+        "-"
+      ],
+      "provider_returncode": 0,
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex-deepseek/forbid_facts/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "558725e629f67d54bab5e2539d21735bfef40b62d9af70295e5f4360bae5e2f3"
+    },
+    {
+      "discriminator_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "evidence_snapshot": {
+        "asset_sha256": {
+          "discriminator": "02ec0710a7299c21ba9d9b8120764bae409cba4afcd9fb66bed0c0012ed5e208",
+          "expected": "a2367b771d8afc0cc6d0cc0c1f7c387f07eefb25940727d06ec84704ef5cd1e0",
+          "mutated": "2539aea98fbec0ab2fd125637bb1fafe851e5ed1a918261a337a0a8382d58f5f",
+          "nominal": "9d0bdd892f222b3f5127496f38aac5dc63036349c06f3acacaf87677ecccc625"
+        },
+        "evaluator_sha256": "37abf1915b28d0626d15e4ef42d1011caa1e18df6a890cf7ed561723e8807707",
+        "git_commit": "64207b9d3b7092012a9db6ded1d04f52939dd572",
+        "git_dirty": false,
+        "guide_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "prompt_sha256": "76c0f11b37586938a3f5fbf04d37628e155f60419612c144591103dd51e450c9",
+        "query_sha256": "84c65cce34d02881cea5693139afaaebc70141b9a39701257e829f413310073f",
+        "raw_output_sha256": "84c65cce34d02881cea5693139afaaebc70141b9a39701257e829f413310073f",
+        "run_id": "20260712-final-v15-core",
+        "schema_version": "fbmcq-evaluator/v3",
+        "semantic_source_sha256": "f6cd22d3743ac7619b4ce8eadb65a03e0000d8342e478552bac254cc78335d04",
+        "task_sha256": "8c56853190bb0e350a3744090952488278e712ef412acd7009a719c55cbcc364"
+      },
+      "expected_discriminator_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "invariant_complete",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "task_semantic_discriminator",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "live",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex",
+      "provider_command": [
+        "codex",
+        "exec",
+        "--skip-git-repo-check",
+        "-"
+      ],
+      "provider_returncode": 0,
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex/invariant_complete/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "8c56853190bb0e350a3744090952488278e712ef412acd7009a719c55cbcc364"
+    },
+    {
+      "discriminator_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "evidence_snapshot": {
+        "asset_sha256": {
+          "discriminator": "02ec0710a7299c21ba9d9b8120764bae409cba4afcd9fb66bed0c0012ed5e208",
+          "expected": "a2367b771d8afc0cc6d0cc0c1f7c387f07eefb25940727d06ec84704ef5cd1e0",
+          "mutated": "2539aea98fbec0ab2fd125637bb1fafe851e5ed1a918261a337a0a8382d58f5f",
+          "nominal": "9d0bdd892f222b3f5127496f38aac5dc63036349c06f3acacaf87677ecccc625"
+        },
+        "evaluator_sha256": "37abf1915b28d0626d15e4ef42d1011caa1e18df6a890cf7ed561723e8807707",
+        "git_commit": "64207b9d3b7092012a9db6ded1d04f52939dd572",
+        "git_dirty": false,
+        "guide_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "prompt_sha256": "76c0f11b37586938a3f5fbf04d37628e155f60419612c144591103dd51e450c9",
+        "query_sha256": "84c65cce34d02881cea5693139afaaebc70141b9a39701257e829f413310073f",
+        "raw_output_sha256": "84c65cce34d02881cea5693139afaaebc70141b9a39701257e829f413310073f",
+        "run_id": "20260712-final-v15-core",
+        "schema_version": "fbmcq-evaluator/v3",
+        "semantic_source_sha256": "f6cd22d3743ac7619b4ce8eadb65a03e0000d8342e478552bac254cc78335d04",
+        "task_sha256": "8c56853190bb0e350a3744090952488278e712ef412acd7009a719c55cbcc364"
+      },
+      "expected_discriminator_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "invariant_complete",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "task_semantic_discriminator",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "live",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "claude",
+      "provider_command": [
+        "claude",
+        "-p"
+      ],
+      "provider_returncode": 0,
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/claude/invariant_complete/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "8c56853190bb0e350a3744090952488278e712ef412acd7009a719c55cbcc364"
+    },
+    {
+      "discriminator_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "evidence_snapshot": {
+        "asset_sha256": {
+          "discriminator": "02ec0710a7299c21ba9d9b8120764bae409cba4afcd9fb66bed0c0012ed5e208",
+          "expected": "a2367b771d8afc0cc6d0cc0c1f7c387f07eefb25940727d06ec84704ef5cd1e0",
+          "mutated": "2539aea98fbec0ab2fd125637bb1fafe851e5ed1a918261a337a0a8382d58f5f",
+          "nominal": "9d0bdd892f222b3f5127496f38aac5dc63036349c06f3acacaf87677ecccc625"
+        },
+        "evaluator_sha256": "37abf1915b28d0626d15e4ef42d1011caa1e18df6a890cf7ed561723e8807707",
+        "git_commit": "64207b9d3b7092012a9db6ded1d04f52939dd572",
+        "git_dirty": false,
+        "guide_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "prompt_sha256": "76c0f11b37586938a3f5fbf04d37628e155f60419612c144591103dd51e450c9",
+        "query_sha256": "84c65cce34d02881cea5693139afaaebc70141b9a39701257e829f413310073f",
+        "raw_output_sha256": "84c65cce34d02881cea5693139afaaebc70141b9a39701257e829f413310073f",
+        "run_id": "20260712-final-v15-core",
+        "schema_version": "fbmcq-evaluator/v3",
+        "semantic_source_sha256": "f6cd22d3743ac7619b4ce8eadb65a03e0000d8342e478552bac254cc78335d04",
+        "task_sha256": "8c56853190bb0e350a3744090952488278e712ef412acd7009a719c55cbcc364"
+      },
+      "expected_discriminator_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "invariant_complete",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "task_semantic_discriminator",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "live",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex-deepseek",
+      "provider_command": [
+        "codex-deepseek",
+        "exec",
+        "--skip-git-repo-check",
+        "-"
+      ],
+      "provider_returncode": 0,
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex-deepseek/invariant_complete/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "8c56853190bb0e350a3744090952488278e712ef412acd7009a719c55cbcc364"
+    },
+    {
+      "discriminator_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "evidence_snapshot": {
+        "asset_sha256": {
+          "discriminator": "02ec0710a7299c21ba9d9b8120764bae409cba4afcd9fb66bed0c0012ed5e208",
+          "expected": "a2367b771d8afc0cc6d0cc0c1f7c387f07eefb25940727d06ec84704ef5cd1e0",
+          "mutated": "2539aea98fbec0ab2fd125637bb1fafe851e5ed1a918261a337a0a8382d58f5f",
+          "nominal": "9d0bdd892f222b3f5127496f38aac5dc63036349c06f3acacaf87677ecccc625"
+        },
+        "evaluator_sha256": "37abf1915b28d0626d15e4ef42d1011caa1e18df6a890cf7ed561723e8807707",
+        "git_commit": "64207b9d3b7092012a9db6ded1d04f52939dd572",
+        "git_dirty": false,
+        "guide_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "prompt_sha256": "788a6afc307cdaabe7887996cc514627aef7f840b3e1bebf8ea859951c13d6dd",
+        "query_sha256": "84c65cce34d02881cea5693139afaaebc70141b9a39701257e829f413310073f",
+        "raw_output_sha256": "84c65cce34d02881cea5693139afaaebc70141b9a39701257e829f413310073f",
+        "run_id": "20260712-final-v15-core",
+        "schema_version": "fbmcq-evaluator/v3",
+        "semantic_source_sha256": "f6cd22d3743ac7619b4ce8eadb65a03e0000d8342e478552bac254cc78335d04",
+        "task_sha256": "caa0f33993a27bf9c7e98ffadef9a35a52d472ebe227988ce4eb7ed42aaf7769"
+      },
+      "expected_discriminator_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "invariant_facts",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "task_semantic_discriminator",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "live",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex",
+      "provider_command": [
+        "codex",
+        "exec",
+        "--skip-git-repo-check",
+        "-"
+      ],
+      "provider_returncode": 0,
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex/invariant_facts/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "caa0f33993a27bf9c7e98ffadef9a35a52d472ebe227988ce4eb7ed42aaf7769"
+    },
+    {
+      "discriminator_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "evidence_snapshot": {
+        "asset_sha256": {
+          "discriminator": "02ec0710a7299c21ba9d9b8120764bae409cba4afcd9fb66bed0c0012ed5e208",
+          "expected": "a2367b771d8afc0cc6d0cc0c1f7c387f07eefb25940727d06ec84704ef5cd1e0",
+          "mutated": "2539aea98fbec0ab2fd125637bb1fafe851e5ed1a918261a337a0a8382d58f5f",
+          "nominal": "9d0bdd892f222b3f5127496f38aac5dc63036349c06f3acacaf87677ecccc625"
+        },
+        "evaluator_sha256": "37abf1915b28d0626d15e4ef42d1011caa1e18df6a890cf7ed561723e8807707",
+        "git_commit": "64207b9d3b7092012a9db6ded1d04f52939dd572",
+        "git_dirty": false,
+        "guide_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "prompt_sha256": "788a6afc307cdaabe7887996cc514627aef7f840b3e1bebf8ea859951c13d6dd",
+        "query_sha256": "84c65cce34d02881cea5693139afaaebc70141b9a39701257e829f413310073f",
+        "raw_output_sha256": "84c65cce34d02881cea5693139afaaebc70141b9a39701257e829f413310073f",
+        "run_id": "20260712-final-v15-core",
+        "schema_version": "fbmcq-evaluator/v3",
+        "semantic_source_sha256": "f6cd22d3743ac7619b4ce8eadb65a03e0000d8342e478552bac254cc78335d04",
+        "task_sha256": "caa0f33993a27bf9c7e98ffadef9a35a52d472ebe227988ce4eb7ed42aaf7769"
+      },
+      "expected_discriminator_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "invariant_facts",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "task_semantic_discriminator",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "live",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "claude",
+      "provider_command": [
+        "claude",
+        "-p"
+      ],
+      "provider_returncode": 0,
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/claude/invariant_facts/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "caa0f33993a27bf9c7e98ffadef9a35a52d472ebe227988ce4eb7ed42aaf7769"
+    },
+    {
+      "discriminator_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "evidence_snapshot": {
+        "asset_sha256": {
+          "discriminator": "02ec0710a7299c21ba9d9b8120764bae409cba4afcd9fb66bed0c0012ed5e208",
+          "expected": "a2367b771d8afc0cc6d0cc0c1f7c387f07eefb25940727d06ec84704ef5cd1e0",
+          "mutated": "2539aea98fbec0ab2fd125637bb1fafe851e5ed1a918261a337a0a8382d58f5f",
+          "nominal": "9d0bdd892f222b3f5127496f38aac5dc63036349c06f3acacaf87677ecccc625"
+        },
+        "evaluator_sha256": "37abf1915b28d0626d15e4ef42d1011caa1e18df6a890cf7ed561723e8807707",
+        "git_commit": "64207b9d3b7092012a9db6ded1d04f52939dd572",
+        "git_dirty": false,
+        "guide_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "prompt_sha256": "788a6afc307cdaabe7887996cc514627aef7f840b3e1bebf8ea859951c13d6dd",
+        "query_sha256": "84c65cce34d02881cea5693139afaaebc70141b9a39701257e829f413310073f",
+        "raw_output_sha256": "84c65cce34d02881cea5693139afaaebc70141b9a39701257e829f413310073f",
+        "run_id": "20260712-final-v15-core",
+        "schema_version": "fbmcq-evaluator/v3",
+        "semantic_source_sha256": "f6cd22d3743ac7619b4ce8eadb65a03e0000d8342e478552bac254cc78335d04",
+        "task_sha256": "caa0f33993a27bf9c7e98ffadef9a35a52d472ebe227988ce4eb7ed42aaf7769"
+      },
+      "expected_discriminator_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "invariant_facts",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "task_semantic_discriminator",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "live",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex-deepseek",
+      "provider_command": [
+        "codex-deepseek",
+        "exec",
+        "--skip-git-repo-check",
+        "-"
+      ],
+      "provider_returncode": 0,
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex-deepseek/invariant_facts/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "caa0f33993a27bf9c7e98ffadef9a35a52d472ebe227988ce4eb7ed42aaf7769"
+    },
+    {
+      "evidence_snapshot": {
+        "asset_sha256": {
+          "expected": "98307146faf8e9711b84f56497da0a9ed6edcc780b419edf4670357b01dcaad9",
+          "mutated": "7c6b5740429f4e922a400cdec1e7b23d782191708ee06a0a2b663400a18f957f",
+          "nominal": "9d0bdd892f222b3f5127496f38aac5dc63036349c06f3acacaf87677ecccc625"
+        },
+        "evaluator_sha256": "37abf1915b28d0626d15e4ef42d1011caa1e18df6a890cf7ed561723e8807707",
+        "git_commit": "64207b9d3b7092012a9db6ded1d04f52939dd572",
+        "git_dirty": false,
+        "guide_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "prompt_sha256": "0909c21d72eaccce54c767a63294486655f05c42d150743f9836c734bf9f41c2",
+        "query_sha256": "5471d38ab98253c0ce7d71bc332934491435604e6fe56f27195cbb851050d44c",
+        "raw_output_sha256": "5471d38ab98253c0ce7d71bc332934491435604e6fe56f27195cbb851050d44c",
+        "run_id": "20260712-final-v15-core",
+        "schema_version": "fbmcq-evaluator/v3",
+        "semantic_source_sha256": "f6cd22d3743ac7619b4ce8eadb65a03e0000d8342e478552bac254cc78335d04",
+        "task_sha256": "47af77ee1721488a559db2c4a28553b4d7fa37e23cf985ff93470c0f6ca34c08"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "must_reach_complete",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "live",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex",
+      "provider_command": [
+        "codex",
+        "exec",
+        "--skip-git-repo-check",
+        "-"
+      ],
+      "provider_returncode": 0,
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex/must_reach_complete/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "47af77ee1721488a559db2c4a28553b4d7fa37e23cf985ff93470c0f6ca34c08"
+    },
+    {
+      "evidence_snapshot": {
+        "asset_sha256": {
+          "expected": "98307146faf8e9711b84f56497da0a9ed6edcc780b419edf4670357b01dcaad9",
+          "mutated": "7c6b5740429f4e922a400cdec1e7b23d782191708ee06a0a2b663400a18f957f",
+          "nominal": "9d0bdd892f222b3f5127496f38aac5dc63036349c06f3acacaf87677ecccc625"
+        },
+        "evaluator_sha256": "37abf1915b28d0626d15e4ef42d1011caa1e18df6a890cf7ed561723e8807707",
+        "git_commit": "64207b9d3b7092012a9db6ded1d04f52939dd572",
+        "git_dirty": false,
+        "guide_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "prompt_sha256": "0909c21d72eaccce54c767a63294486655f05c42d150743f9836c734bf9f41c2",
+        "query_sha256": "b2ba9016e725b3834d2571fc138e6a1ede037d8908356e18aa943e5e36797972",
+        "raw_output_sha256": "b2ba9016e725b3834d2571fc138e6a1ede037d8908356e18aa943e5e36797972",
+        "run_id": "20260712-final-v15-core",
+        "schema_version": "fbmcq-evaluator/v3",
+        "semantic_source_sha256": "f6cd22d3743ac7619b4ce8eadb65a03e0000d8342e478552bac254cc78335d04",
+        "task_sha256": "47af77ee1721488a559db2c4a28553b4d7fa37e23cf985ff93470c0f6ca34c08"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "must_reach_complete",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "live",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        }
+      ],
+      "provider": "claude",
+      "provider_command": [
+        "claude",
+        "-p"
+      ],
+      "provider_returncode": 0,
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/claude/must_reach_complete/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "47af77ee1721488a559db2c4a28553b4d7fa37e23cf985ff93470c0f6ca34c08"
+    },
+    {
+      "evidence_snapshot": {
+        "asset_sha256": {
+          "expected": "98307146faf8e9711b84f56497da0a9ed6edcc780b419edf4670357b01dcaad9",
+          "mutated": "7c6b5740429f4e922a400cdec1e7b23d782191708ee06a0a2b663400a18f957f",
+          "nominal": "9d0bdd892f222b3f5127496f38aac5dc63036349c06f3acacaf87677ecccc625"
+        },
+        "evaluator_sha256": "37abf1915b28d0626d15e4ef42d1011caa1e18df6a890cf7ed561723e8807707",
+        "git_commit": "64207b9d3b7092012a9db6ded1d04f52939dd572",
+        "git_dirty": false,
+        "guide_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "prompt_sha256": "0909c21d72eaccce54c767a63294486655f05c42d150743f9836c734bf9f41c2",
+        "query_sha256": "b2ba9016e725b3834d2571fc138e6a1ede037d8908356e18aa943e5e36797972",
+        "raw_output_sha256": "b2ba9016e725b3834d2571fc138e6a1ede037d8908356e18aa943e5e36797972",
+        "run_id": "20260712-final-v15-core",
+        "schema_version": "fbmcq-evaluator/v3",
+        "semantic_source_sha256": "f6cd22d3743ac7619b4ce8eadb65a03e0000d8342e478552bac254cc78335d04",
+        "task_sha256": "47af77ee1721488a559db2c4a28553b4d7fa37e23cf985ff93470c0f6ca34c08"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "must_reach_complete",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "live",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex-deepseek",
+      "provider_command": [
+        "codex-deepseek",
+        "exec",
+        "--skip-git-repo-check",
+        "-"
+      ],
+      "provider_returncode": 0,
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex-deepseek/must_reach_complete/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "47af77ee1721488a559db2c4a28553b4d7fa37e23cf985ff93470c0f6ca34c08"
+    },
+    {
+      "evidence_snapshot": {
+        "asset_sha256": {
+          "expected": "98307146faf8e9711b84f56497da0a9ed6edcc780b419edf4670357b01dcaad9",
+          "mutated": "7c6b5740429f4e922a400cdec1e7b23d782191708ee06a0a2b663400a18f957f",
+          "nominal": "9d0bdd892f222b3f5127496f38aac5dc63036349c06f3acacaf87677ecccc625"
+        },
+        "evaluator_sha256": "37abf1915b28d0626d15e4ef42d1011caa1e18df6a890cf7ed561723e8807707",
+        "git_commit": "64207b9d3b7092012a9db6ded1d04f52939dd572",
+        "git_dirty": false,
+        "guide_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "prompt_sha256": "5eea703b14be5342b44fb0360bda1216fea4b8d0a2e5b90a83388d1a13ad050a",
+        "query_sha256": "5471d38ab98253c0ce7d71bc332934491435604e6fe56f27195cbb851050d44c",
+        "raw_output_sha256": "5471d38ab98253c0ce7d71bc332934491435604e6fe56f27195cbb851050d44c",
+        "run_id": "20260712-final-v15-core",
+        "schema_version": "fbmcq-evaluator/v3",
+        "semantic_source_sha256": "f6cd22d3743ac7619b4ce8eadb65a03e0000d8342e478552bac254cc78335d04",
+        "task_sha256": "b8910c64229012e59926e11849de1d55ea83792be38f1206428d8cd35b42364a"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "must_reach_facts",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "live",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex",
+      "provider_command": [
+        "codex",
+        "exec",
+        "--skip-git-repo-check",
+        "-"
+      ],
+      "provider_returncode": 0,
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex/must_reach_facts/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "b8910c64229012e59926e11849de1d55ea83792be38f1206428d8cd35b42364a"
+    },
+    {
+      "evidence_snapshot": {
+        "asset_sha256": {
+          "expected": "98307146faf8e9711b84f56497da0a9ed6edcc780b419edf4670357b01dcaad9",
+          "mutated": "7c6b5740429f4e922a400cdec1e7b23d782191708ee06a0a2b663400a18f957f",
+          "nominal": "9d0bdd892f222b3f5127496f38aac5dc63036349c06f3acacaf87677ecccc625"
+        },
+        "evaluator_sha256": "37abf1915b28d0626d15e4ef42d1011caa1e18df6a890cf7ed561723e8807707",
+        "git_commit": "64207b9d3b7092012a9db6ded1d04f52939dd572",
+        "git_dirty": false,
+        "guide_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "prompt_sha256": "5eea703b14be5342b44fb0360bda1216fea4b8d0a2e5b90a83388d1a13ad050a",
+        "query_sha256": "b2ba9016e725b3834d2571fc138e6a1ede037d8908356e18aa943e5e36797972",
+        "raw_output_sha256": "b2ba9016e725b3834d2571fc138e6a1ede037d8908356e18aa943e5e36797972",
+        "run_id": "20260712-final-v15-core",
+        "schema_version": "fbmcq-evaluator/v3",
+        "semantic_source_sha256": "f6cd22d3743ac7619b4ce8eadb65a03e0000d8342e478552bac254cc78335d04",
+        "task_sha256": "b8910c64229012e59926e11849de1d55ea83792be38f1206428d8cd35b42364a"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "must_reach_facts",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "live",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        }
+      ],
+      "provider": "claude",
+      "provider_command": [
+        "claude",
+        "-p"
+      ],
+      "provider_returncode": 0,
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/claude/must_reach_facts/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "b8910c64229012e59926e11849de1d55ea83792be38f1206428d8cd35b42364a"
+    },
+    {
+      "evidence_snapshot": {
+        "asset_sha256": {
+          "expected": "98307146faf8e9711b84f56497da0a9ed6edcc780b419edf4670357b01dcaad9",
+          "mutated": "7c6b5740429f4e922a400cdec1e7b23d782191708ee06a0a2b663400a18f957f",
+          "nominal": "9d0bdd892f222b3f5127496f38aac5dc63036349c06f3acacaf87677ecccc625"
+        },
+        "evaluator_sha256": "37abf1915b28d0626d15e4ef42d1011caa1e18df6a890cf7ed561723e8807707",
+        "git_commit": "64207b9d3b7092012a9db6ded1d04f52939dd572",
+        "git_dirty": false,
+        "guide_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "prompt_sha256": "5eea703b14be5342b44fb0360bda1216fea4b8d0a2e5b90a83388d1a13ad050a",
+        "query_sha256": "b2ba9016e725b3834d2571fc138e6a1ede037d8908356e18aa943e5e36797972",
+        "raw_output_sha256": "b2ba9016e725b3834d2571fc138e6a1ede037d8908356e18aa943e5e36797972",
+        "run_id": "20260712-final-v15-core",
+        "schema_version": "fbmcq-evaluator/v3",
+        "semantic_source_sha256": "f6cd22d3743ac7619b4ce8eadb65a03e0000d8342e478552bac254cc78335d04",
+        "task_sha256": "b8910c64229012e59926e11849de1d55ea83792be38f1206428d8cd35b42364a"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "must_reach_facts",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "live",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex-deepseek",
+      "provider_command": [
+        "codex-deepseek",
+        "exec",
+        "--skip-git-repo-check",
+        "-"
+      ],
+      "provider_returncode": 0,
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex-deepseek/must_reach_facts/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "b8910c64229012e59926e11849de1d55ea83792be38f1206428d8cd35b42364a"
+    },
+    {
+      "discriminator_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "evidence_snapshot": {
+        "asset_sha256": {
+          "discriminator": "0c49de49172bddd7be44b0384cf622cfd8ec5e4d00c361b7019303fba435d740",
+          "expected": "a37d2f1ee9dc6ba7f5da0dfb12527fbb35a383a6214fa31fcd05751114c2c705",
+          "mutated": "f07b52adacce3e3d6deafcc4ea55c3ae766e32944fe3be078bfdfd33e3eab2d3",
+          "nominal": "9d0bdd892f222b3f5127496f38aac5dc63036349c06f3acacaf87677ecccc625"
+        },
+        "evaluator_sha256": "37abf1915b28d0626d15e4ef42d1011caa1e18df6a890cf7ed561723e8807707",
+        "git_commit": "64207b9d3b7092012a9db6ded1d04f52939dd572",
+        "git_dirty": false,
+        "guide_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "prompt_sha256": "adf9e44371daab0e186be578fbb1c642ea4475f45b0d30b34c3ebc9268b94bbd",
+        "query_sha256": "771c68e060624e1777b2e84e91393482c886f0e4b6d122d0a1a00ad5acff798a",
+        "raw_output_sha256": "771c68e060624e1777b2e84e91393482c886f0e4b6d122d0a1a00ad5acff798a",
+        "run_id": "20260712-final-v15-core",
+        "schema_version": "fbmcq-evaluator/v3",
+        "semantic_source_sha256": "f6cd22d3743ac7619b4ce8eadb65a03e0000d8342e478552bac254cc78335d04",
+        "task_sha256": "177113fa8c02d7eeacdf7bcfd9129b10b0fb3a76935f18d9e54150b8c059c2b8"
+      },
+      "expected_discriminator_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "reach_complete",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "task_semantic_discriminator",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "live",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex",
+      "provider_command": [
+        "codex",
+        "exec",
+        "--skip-git-repo-check",
+        "-"
+      ],
+      "provider_returncode": 0,
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex/reach_complete/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "177113fa8c02d7eeacdf7bcfd9129b10b0fb3a76935f18d9e54150b8c059c2b8"
+    },
+    {
+      "discriminator_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "evidence_snapshot": {
+        "asset_sha256": {
+          "discriminator": "0c49de49172bddd7be44b0384cf622cfd8ec5e4d00c361b7019303fba435d740",
+          "expected": "a37d2f1ee9dc6ba7f5da0dfb12527fbb35a383a6214fa31fcd05751114c2c705",
+          "mutated": "f07b52adacce3e3d6deafcc4ea55c3ae766e32944fe3be078bfdfd33e3eab2d3",
+          "nominal": "9d0bdd892f222b3f5127496f38aac5dc63036349c06f3acacaf87677ecccc625"
+        },
+        "evaluator_sha256": "37abf1915b28d0626d15e4ef42d1011caa1e18df6a890cf7ed561723e8807707",
+        "git_commit": "64207b9d3b7092012a9db6ded1d04f52939dd572",
+        "git_dirty": false,
+        "guide_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "prompt_sha256": "adf9e44371daab0e186be578fbb1c642ea4475f45b0d30b34c3ebc9268b94bbd",
+        "query_sha256": "771c68e060624e1777b2e84e91393482c886f0e4b6d122d0a1a00ad5acff798a",
+        "raw_output_sha256": "771c68e060624e1777b2e84e91393482c886f0e4b6d122d0a1a00ad5acff798a",
+        "run_id": "20260712-final-v15-core",
+        "schema_version": "fbmcq-evaluator/v3",
+        "semantic_source_sha256": "f6cd22d3743ac7619b4ce8eadb65a03e0000d8342e478552bac254cc78335d04",
+        "task_sha256": "177113fa8c02d7eeacdf7bcfd9129b10b0fb3a76935f18d9e54150b8c059c2b8"
+      },
+      "expected_discriminator_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "reach_complete",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "task_semantic_discriminator",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "live",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "claude",
+      "provider_command": [
+        "claude",
+        "-p"
+      ],
+      "provider_returncode": 0,
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/claude/reach_complete/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "177113fa8c02d7eeacdf7bcfd9129b10b0fb3a76935f18d9e54150b8c059c2b8"
+    },
+    {
+      "discriminator_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "evidence_snapshot": {
+        "asset_sha256": {
+          "discriminator": "0c49de49172bddd7be44b0384cf622cfd8ec5e4d00c361b7019303fba435d740",
+          "expected": "a37d2f1ee9dc6ba7f5da0dfb12527fbb35a383a6214fa31fcd05751114c2c705",
+          "mutated": "f07b52adacce3e3d6deafcc4ea55c3ae766e32944fe3be078bfdfd33e3eab2d3",
+          "nominal": "9d0bdd892f222b3f5127496f38aac5dc63036349c06f3acacaf87677ecccc625"
+        },
+        "evaluator_sha256": "37abf1915b28d0626d15e4ef42d1011caa1e18df6a890cf7ed561723e8807707",
+        "git_commit": "64207b9d3b7092012a9db6ded1d04f52939dd572",
+        "git_dirty": false,
+        "guide_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "prompt_sha256": "adf9e44371daab0e186be578fbb1c642ea4475f45b0d30b34c3ebc9268b94bbd",
+        "query_sha256": "771c68e060624e1777b2e84e91393482c886f0e4b6d122d0a1a00ad5acff798a",
+        "raw_output_sha256": "771c68e060624e1777b2e84e91393482c886f0e4b6d122d0a1a00ad5acff798a",
+        "run_id": "20260712-final-v15-core",
+        "schema_version": "fbmcq-evaluator/v3",
+        "semantic_source_sha256": "f6cd22d3743ac7619b4ce8eadb65a03e0000d8342e478552bac254cc78335d04",
+        "task_sha256": "177113fa8c02d7eeacdf7bcfd9129b10b0fb3a76935f18d9e54150b8c059c2b8"
+      },
+      "expected_discriminator_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "reach_complete",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "task_semantic_discriminator",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "live",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex-deepseek",
+      "provider_command": [
+        "codex-deepseek",
+        "exec",
+        "--skip-git-repo-check",
+        "-"
+      ],
+      "provider_returncode": 0,
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex-deepseek/reach_complete/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "177113fa8c02d7eeacdf7bcfd9129b10b0fb3a76935f18d9e54150b8c059c2b8"
+    },
+    {
+      "discriminator_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "evidence_snapshot": {
+        "asset_sha256": {
+          "discriminator": "0c49de49172bddd7be44b0384cf622cfd8ec5e4d00c361b7019303fba435d740",
+          "expected": "a37d2f1ee9dc6ba7f5da0dfb12527fbb35a383a6214fa31fcd05751114c2c705",
+          "mutated": "f07b52adacce3e3d6deafcc4ea55c3ae766e32944fe3be078bfdfd33e3eab2d3",
+          "nominal": "9d0bdd892f222b3f5127496f38aac5dc63036349c06f3acacaf87677ecccc625"
+        },
+        "evaluator_sha256": "37abf1915b28d0626d15e4ef42d1011caa1e18df6a890cf7ed561723e8807707",
+        "git_commit": "64207b9d3b7092012a9db6ded1d04f52939dd572",
+        "git_dirty": false,
+        "guide_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "prompt_sha256": "aed4858411c44724491e3537a7633fc5742b45c37c4c57016dfa0a88ac573d1d",
+        "query_sha256": "771c68e060624e1777b2e84e91393482c886f0e4b6d122d0a1a00ad5acff798a",
+        "raw_output_sha256": "771c68e060624e1777b2e84e91393482c886f0e4b6d122d0a1a00ad5acff798a",
+        "run_id": "20260712-final-v15-core",
+        "schema_version": "fbmcq-evaluator/v3",
+        "semantic_source_sha256": "f6cd22d3743ac7619b4ce8eadb65a03e0000d8342e478552bac254cc78335d04",
+        "task_sha256": "89f47b801d522bdf0a99838eb2f551c6d8c36424f5239c00b9f40ffbde91bd75"
+      },
+      "expected_discriminator_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "reach_facts",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "task_semantic_discriminator",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "live",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex",
+      "provider_command": [
+        "codex",
+        "exec",
+        "--skip-git-repo-check",
+        "-"
+      ],
+      "provider_returncode": 0,
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex/reach_facts/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "89f47b801d522bdf0a99838eb2f551c6d8c36424f5239c00b9f40ffbde91bd75"
+    },
+    {
+      "discriminator_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "evidence_snapshot": {
+        "asset_sha256": {
+          "discriminator": "0c49de49172bddd7be44b0384cf622cfd8ec5e4d00c361b7019303fba435d740",
+          "expected": "a37d2f1ee9dc6ba7f5da0dfb12527fbb35a383a6214fa31fcd05751114c2c705",
+          "mutated": "f07b52adacce3e3d6deafcc4ea55c3ae766e32944fe3be078bfdfd33e3eab2d3",
+          "nominal": "9d0bdd892f222b3f5127496f38aac5dc63036349c06f3acacaf87677ecccc625"
+        },
+        "evaluator_sha256": "37abf1915b28d0626d15e4ef42d1011caa1e18df6a890cf7ed561723e8807707",
+        "git_commit": "64207b9d3b7092012a9db6ded1d04f52939dd572",
+        "git_dirty": false,
+        "guide_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "prompt_sha256": "aed4858411c44724491e3537a7633fc5742b45c37c4c57016dfa0a88ac573d1d",
+        "query_sha256": "771c68e060624e1777b2e84e91393482c886f0e4b6d122d0a1a00ad5acff798a",
+        "raw_output_sha256": "771c68e060624e1777b2e84e91393482c886f0e4b6d122d0a1a00ad5acff798a",
+        "run_id": "20260712-final-v15-core",
+        "schema_version": "fbmcq-evaluator/v3",
+        "semantic_source_sha256": "f6cd22d3743ac7619b4ce8eadb65a03e0000d8342e478552bac254cc78335d04",
+        "task_sha256": "89f47b801d522bdf0a99838eb2f551c6d8c36424f5239c00b9f40ffbde91bd75"
+      },
+      "expected_discriminator_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "reach_facts",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "task_semantic_discriminator",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "live",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "claude",
+      "provider_command": [
+        "claude",
+        "-p"
+      ],
+      "provider_returncode": 0,
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/claude/reach_facts/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "89f47b801d522bdf0a99838eb2f551c6d8c36424f5239c00b9f40ffbde91bd75"
+    },
+    {
+      "discriminator_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "evidence_snapshot": {
+        "asset_sha256": {
+          "discriminator": "0c49de49172bddd7be44b0384cf622cfd8ec5e4d00c361b7019303fba435d740",
+          "expected": "a37d2f1ee9dc6ba7f5da0dfb12527fbb35a383a6214fa31fcd05751114c2c705",
+          "mutated": "f07b52adacce3e3d6deafcc4ea55c3ae766e32944fe3be078bfdfd33e3eab2d3",
+          "nominal": "9d0bdd892f222b3f5127496f38aac5dc63036349c06f3acacaf87677ecccc625"
+        },
+        "evaluator_sha256": "37abf1915b28d0626d15e4ef42d1011caa1e18df6a890cf7ed561723e8807707",
+        "git_commit": "64207b9d3b7092012a9db6ded1d04f52939dd572",
+        "git_dirty": false,
+        "guide_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "prompt_sha256": "aed4858411c44724491e3537a7633fc5742b45c37c4c57016dfa0a88ac573d1d",
+        "query_sha256": "771c68e060624e1777b2e84e91393482c886f0e4b6d122d0a1a00ad5acff798a",
+        "raw_output_sha256": "771c68e060624e1777b2e84e91393482c886f0e4b6d122d0a1a00ad5acff798a",
+        "run_id": "20260712-final-v15-core",
+        "schema_version": "fbmcq-evaluator/v3",
+        "semantic_source_sha256": "f6cd22d3743ac7619b4ce8eadb65a03e0000d8342e478552bac254cc78335d04",
+        "task_sha256": "89f47b801d522bdf0a99838eb2f551c6d8c36424f5239c00b9f40ffbde91bd75"
+      },
+      "expected_discriminator_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "reach_facts",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "task_semantic_discriminator",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "live",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "witness_found",
+        "primary_replay": "passed",
+        "property_satisfied": true,
+        "status": "sat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex-deepseek",
+      "provider_command": [
+        "codex-deepseek",
+        "exec",
+        "--skip-git-repo-check",
+        "-"
+      ],
+      "provider_returncode": 0,
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex-deepseek/reach_facts/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "89f47b801d522bdf0a99838eb2f551c6d8c36424f5239c00b9f40ffbde91bd75"
+    },
+    {
+      "evidence_snapshot": {
+        "asset_sha256": {
+          "expected": "48ed3d739546fc5b47215232e0a2d315250bad511800c3849864f5d2880e9ed2",
+          "mutated": "1c27a9b90af921cfc0588ccea9cb24a3b195e1cd4fa1612fd2141892a248469c",
+          "nominal": "fb8d315778f59763042ade2fe0e7b72d2cb1c52201afd97ae35764ce435c30f9"
+        },
+        "evaluator_sha256": "37abf1915b28d0626d15e4ef42d1011caa1e18df6a890cf7ed561723e8807707",
+        "git_commit": "64207b9d3b7092012a9db6ded1d04f52939dd572",
+        "git_dirty": false,
+        "guide_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "prompt_sha256": "48654eee55f902f8e5fc67c11d670f32466f29b75eda06842c4d10a65b841c14",
+        "query_sha256": "0eab5db159cd6d3f82b042d1916c0557dfde36256c54a803e1e5ba087e9bd5b4",
+        "raw_output_sha256": "0eab5db159cd6d3f82b042d1916c0557dfde36256c54a803e1e5ba087e9bd5b4",
+        "run_id": "20260712-final-v15-core",
+        "schema_version": "fbmcq-evaluator/v3",
+        "semantic_source_sha256": "f6cd22d3743ac7619b4ce8eadb65a03e0000d8342e478552bac254cc78335d04",
+        "task_sha256": "b705a0e34835d84d19d51f331d08105b3b0a95e455bfc2d235bdf012b010c02d"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "response_complete",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "live",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex",
+      "provider_command": [
+        "codex",
+        "exec",
+        "--skip-git-repo-check",
+        "-"
+      ],
+      "provider_returncode": 0,
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex/response_complete/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "b705a0e34835d84d19d51f331d08105b3b0a95e455bfc2d235bdf012b010c02d"
+    },
+    {
+      "evidence_snapshot": {
+        "asset_sha256": {
+          "expected": "48ed3d739546fc5b47215232e0a2d315250bad511800c3849864f5d2880e9ed2",
+          "mutated": "1c27a9b90af921cfc0588ccea9cb24a3b195e1cd4fa1612fd2141892a248469c",
+          "nominal": "fb8d315778f59763042ade2fe0e7b72d2cb1c52201afd97ae35764ce435c30f9"
+        },
+        "evaluator_sha256": "37abf1915b28d0626d15e4ef42d1011caa1e18df6a890cf7ed561723e8807707",
+        "git_commit": "64207b9d3b7092012a9db6ded1d04f52939dd572",
+        "git_dirty": false,
+        "guide_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "prompt_sha256": "48654eee55f902f8e5fc67c11d670f32466f29b75eda06842c4d10a65b841c14",
+        "query_sha256": "b6ba21d58b23a89209d9756002b1cc282ea8004943f226b81176fae1149aafc4",
+        "raw_output_sha256": "b6ba21d58b23a89209d9756002b1cc282ea8004943f226b81176fae1149aafc4",
+        "run_id": "20260712-final-v15-core",
+        "schema_version": "fbmcq-evaluator/v3",
+        "semantic_source_sha256": "f6cd22d3743ac7619b4ce8eadb65a03e0000d8342e478552bac254cc78335d04",
+        "task_sha256": "b705a0e34835d84d19d51f331d08105b3b0a95e455bfc2d235bdf012b010c02d"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "response_complete",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "live",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "claude",
+      "provider_command": [
+        "claude",
+        "-p"
+      ],
+      "provider_returncode": 0,
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/claude/response_complete/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "b705a0e34835d84d19d51f331d08105b3b0a95e455bfc2d235bdf012b010c02d"
+    },
+    {
+      "evidence_snapshot": {
+        "asset_sha256": {
+          "expected": "48ed3d739546fc5b47215232e0a2d315250bad511800c3849864f5d2880e9ed2",
+          "mutated": "1c27a9b90af921cfc0588ccea9cb24a3b195e1cd4fa1612fd2141892a248469c",
+          "nominal": "fb8d315778f59763042ade2fe0e7b72d2cb1c52201afd97ae35764ce435c30f9"
+        },
+        "evaluator_sha256": "37abf1915b28d0626d15e4ef42d1011caa1e18df6a890cf7ed561723e8807707",
+        "git_commit": "64207b9d3b7092012a9db6ded1d04f52939dd572",
+        "git_dirty": false,
+        "guide_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "prompt_sha256": "48654eee55f902f8e5fc67c11d670f32466f29b75eda06842c4d10a65b841c14",
+        "query_sha256": "b6ba21d58b23a89209d9756002b1cc282ea8004943f226b81176fae1149aafc4",
+        "raw_output_sha256": "b6ba21d58b23a89209d9756002b1cc282ea8004943f226b81176fae1149aafc4",
+        "run_id": "20260712-final-v15-core",
+        "schema_version": "fbmcq-evaluator/v3",
+        "semantic_source_sha256": "f6cd22d3743ac7619b4ce8eadb65a03e0000d8342e478552bac254cc78335d04",
+        "task_sha256": "b705a0e34835d84d19d51f331d08105b3b0a95e455bfc2d235bdf012b010c02d"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "response_complete",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "live",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex-deepseek",
+      "provider_command": [
+        "codex-deepseek",
+        "exec",
+        "--skip-git-repo-check",
+        "-"
+      ],
+      "provider_returncode": 0,
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex-deepseek/response_complete/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "b705a0e34835d84d19d51f331d08105b3b0a95e455bfc2d235bdf012b010c02d"
+    },
+    {
+      "evidence_snapshot": {
+        "asset_sha256": {
+          "expected": "48ed3d739546fc5b47215232e0a2d315250bad511800c3849864f5d2880e9ed2",
+          "mutated": "1c27a9b90af921cfc0588ccea9cb24a3b195e1cd4fa1612fd2141892a248469c",
+          "nominal": "fb8d315778f59763042ade2fe0e7b72d2cb1c52201afd97ae35764ce435c30f9"
+        },
+        "evaluator_sha256": "37abf1915b28d0626d15e4ef42d1011caa1e18df6a890cf7ed561723e8807707",
+        "git_commit": "64207b9d3b7092012a9db6ded1d04f52939dd572",
+        "git_dirty": false,
+        "guide_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "prompt_sha256": "86be1cad9a897fe22c8f5719731bf9e58090bd3c140cbbe279363145edfbaecd",
+        "query_sha256": "b6ba21d58b23a89209d9756002b1cc282ea8004943f226b81176fae1149aafc4",
+        "raw_output_sha256": "b6ba21d58b23a89209d9756002b1cc282ea8004943f226b81176fae1149aafc4",
+        "run_id": "20260712-final-v15-core",
+        "schema_version": "fbmcq-evaluator/v3",
+        "semantic_source_sha256": "f6cd22d3743ac7619b4ce8eadb65a03e0000d8342e478552bac254cc78335d04",
+        "task_sha256": "5b692f990704ffa2bc3681b201df0f7464542f79c79a082060113f3dfd5cf46d"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "response_facts",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "live",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex",
+      "provider_command": [
+        "codex",
+        "exec",
+        "--skip-git-repo-check",
+        "-"
+      ],
+      "provider_returncode": 0,
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex/response_facts/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "5b692f990704ffa2bc3681b201df0f7464542f79c79a082060113f3dfd5cf46d"
+    },
+    {
+      "evidence_snapshot": {
+        "asset_sha256": {
+          "expected": "48ed3d739546fc5b47215232e0a2d315250bad511800c3849864f5d2880e9ed2",
+          "mutated": "1c27a9b90af921cfc0588ccea9cb24a3b195e1cd4fa1612fd2141892a248469c",
+          "nominal": "fb8d315778f59763042ade2fe0e7b72d2cb1c52201afd97ae35764ce435c30f9"
+        },
+        "evaluator_sha256": "37abf1915b28d0626d15e4ef42d1011caa1e18df6a890cf7ed561723e8807707",
+        "git_commit": "64207b9d3b7092012a9db6ded1d04f52939dd572",
+        "git_dirty": false,
+        "guide_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "prompt_sha256": "86be1cad9a897fe22c8f5719731bf9e58090bd3c140cbbe279363145edfbaecd",
+        "query_sha256": "b6ba21d58b23a89209d9756002b1cc282ea8004943f226b81176fae1149aafc4",
+        "raw_output_sha256": "b6ba21d58b23a89209d9756002b1cc282ea8004943f226b81176fae1149aafc4",
+        "run_id": "20260712-final-v15-core",
+        "schema_version": "fbmcq-evaluator/v3",
+        "semantic_source_sha256": "f6cd22d3743ac7619b4ce8eadb65a03e0000d8342e478552bac254cc78335d04",
+        "task_sha256": "5b692f990704ffa2bc3681b201df0f7464542f79c79a082060113f3dfd5cf46d"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "response_facts",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "live",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "claude",
+      "provider_command": [
+        "claude",
+        "-p"
+      ],
+      "provider_returncode": 0,
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/claude/response_facts/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "5b692f990704ffa2bc3681b201df0f7464542f79c79a082060113f3dfd5cf46d"
+    },
+    {
+      "evidence_snapshot": {
+        "asset_sha256": {
+          "expected": "48ed3d739546fc5b47215232e0a2d315250bad511800c3849864f5d2880e9ed2",
+          "mutated": "1c27a9b90af921cfc0588ccea9cb24a3b195e1cd4fa1612fd2141892a248469c",
+          "nominal": "fb8d315778f59763042ade2fe0e7b72d2cb1c52201afd97ae35764ce435c30f9"
+        },
+        "evaluator_sha256": "37abf1915b28d0626d15e4ef42d1011caa1e18df6a890cf7ed561723e8807707",
+        "git_commit": "64207b9d3b7092012a9db6ded1d04f52939dd572",
+        "git_dirty": false,
+        "guide_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "prompt_sha256": "86be1cad9a897fe22c8f5719731bf9e58090bd3c140cbbe279363145edfbaecd",
+        "query_sha256": "b6ba21d58b23a89209d9756002b1cc282ea8004943f226b81176fae1149aafc4",
+        "raw_output_sha256": "b6ba21d58b23a89209d9756002b1cc282ea8004943f226b81176fae1149aafc4",
+        "run_id": "20260712-final-v15-core",
+        "schema_version": "fbmcq-evaluator/v3",
+        "semantic_source_sha256": "f6cd22d3743ac7619b4ce8eadb65a03e0000d8342e478552bac254cc78335d04",
+        "task_sha256": "5b692f990704ffa2bc3681b201df0f7464542f79c79a082060113f3dfd5cf46d"
+      },
+      "expected_mutated_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "expected_nominal_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "failure_category": null,
+      "failures": [],
+      "fixture_id": "response_facts",
+      "gates": [
+        "parse",
+        "canonical_round_trip",
+        "structure_binding",
+        "model_binding",
+        "compile",
+        "query_precondition",
+        "solve_and_replay",
+        "semantic_oracle",
+        "mutation_discrimination"
+      ],
+      "guide_metadata": {
+        "byte_size": 27747,
+        "chapter_count": 18,
+        "checksum_resource_name": "fbmcq_language_guide.md.sha256",
+        "expected_sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a",
+        "line_count": 544,
+        "pyfcstm_version": "0.5.0",
+        "resource_name": "fbmcq_language_guide.md",
+        "sha256": "45328169d44ace8c972496f54ac8d3aba33c1442dd8eb4a442e6e5d22f39271a"
+      },
+      "mode": "live",
+      "mutated_result": {
+        "incomplete": false,
+        "outcome": "property_violated",
+        "primary_replay": "passed",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "nominal_result": {
+        "incomplete": false,
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "precondition_probes": [
+        {
+          "assumption_count": 0,
+          "status": "sat"
+        },
+        {
+          "assumption_count": 1,
+          "status": "sat"
+        }
+      ],
+      "provider": "codex-deepseek",
+      "provider_command": [
+        "codex-deepseek",
+        "exec",
+        "--skip-git-repo-check",
+        "-"
+      ],
+      "provider_returncode": 0,
+      "raw_output_path": "llm_eval/fbmcq/outputs/runs/20260712-final-v15-core/codex-deepseek/response_facts/raw_output.md",
+      "run_id": "20260712-final-v15-core",
+      "success": true,
+      "task_sha256": "5b692f990704ffa2bc3681b201df0f7464542f79c79a082060113f3dfd5cf46d"
+    }
+  ],
+  "run_id": "20260712-final-v15-core",
+  "scope": "core"
+}

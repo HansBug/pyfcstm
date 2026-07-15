@@ -34,6 +34,9 @@ def _escape_rst(text: str) -> str:
     return escape(text)
 
 
+_RST_MEMBER_TITLE_MIN_WIDTH = 53
+
+
 def normalize_rst_document(text: str) -> str:
     """
     Normalize generated reStructuredText document endings.
@@ -502,16 +505,18 @@ def print_extracted_members(f, members: Dict[str, List[Dict[str, Any]]]):
     """
 
     for var in members["variables"]:
-        print(f"{rst_to_text(var['name'])}", file=f)
-        print("-----------------------------------------------------", file=f)
+        title = rst_to_text(var["name"])
+        print(title, file=f)
+        print("-" * max(_RST_MEMBER_TITLE_MIN_WIDTH, len(title)), file=f)
         print("", file=f)
         print(f".. autodata:: {var['name']}", file=f)
         print("", file=f)
         print("", file=f)
 
     for cls in members["classes"]:
-        print(f"{rst_to_text(cls['name'])}", file=f)
-        print("-----------------------------------------------------", file=f)
+        title = rst_to_text(cls["name"])
+        print(title, file=f)
+        print("-" * max(_RST_MEMBER_TITLE_MIN_WIDTH, len(title)), file=f)
         print("", file=f)
         print(f".. autoclass:: {cls['name']}", file=f)
         member_names = []
@@ -525,8 +530,9 @@ def print_extracted_members(f, members: Dict[str, List[Dict[str, Any]]]):
         print("", file=f)
 
     for func in members["functions"]:
-        print(f"{rst_to_text(func['name'])}", file=f)
-        print("-----------------------------------------------------", file=f)
+        title = rst_to_text(func["name"])
+        print(title, file=f)
+        print("-" * max(_RST_MEMBER_TITLE_MIN_WIDTH, len(title)), file=f)
         print("", file=f)
         print(f".. autofunction:: {func['name']}", file=f)
         print("", file=f)
@@ -554,6 +560,7 @@ def print_package_toctree(f, code_file: str):
             and code_rel_file.endswith(".py")
             and not (code_rel_base.startswith("__") and code_rel_base.endswith("__"))
             and code_rel_file != "build_info.py"
+            and not code_rel_base.startswith("_")
         ):
             code_rels.append(code_rel_base)
         elif os.path.isdir(code_abs_file) and os.path.exists(
@@ -598,11 +605,21 @@ def convert_code_to_rst(code_file: str, rst_file: str, lib_dir: str = "."):
         if module_name.split(".")[-1] == "__init__":
             module_name = ".".join(module_name.split(".")[:-1])
 
+        module_base = os.path.splitext(os.path.basename(code_file))[0]
+        is_private_module = module_base.startswith("_") and not (
+            module_base.startswith("__") and module_base.endswith("__")
+        )
+
         normalized_rel_file = rel_file.replace("\\", "/")
         is_root_package_index = (
             normalized_rel_file.endswith("/__init__.py")
             and normalized_rel_file.count("/") == 1
         )
+
+        if is_private_module:
+            # Sphinx recognizes this document metadata only before its title.
+            print(":orphan:", file=buffer)
+            print("", file=buffer)
 
         print(f"{rst_to_text(module_name)}", file=buffer)
         print("========================================================", file=buffer)

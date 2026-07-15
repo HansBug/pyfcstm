@@ -1,0 +1,3 @@
+init state("Root.Idle") havoc { x } where x == 0;
+assume event("Root.Go", 0) == true;
+check invariant <= 1: x == 0;

@@ -1,0 +1,3 @@
+init state("Root.Idle");
+assume event("Root.Go", 0) == true;
+check forbid <= 1: active("Root.Done");

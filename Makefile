@@ -13,7 +13,9 @@ SRC_DIR       := ${PROJ_DIR}/pyfcstm
 TEMPLATES_DIR := ${PROJ_DIR}/templates
 RESOURCE_DIR  := ${PROJ_DIR}/resource
 LOGOS_DIR     := ${PROJ_DIR}/logos
-SHA256_SOURCE_FILES := ${SRC_DIR}/llm/fcstm_grammar_guide.md
+SHA256_SOURCE_FILES := \
+	${SRC_DIR}/llm/fcstm_grammar_guide.md \
+	${SRC_DIR}/llm/fbmcq_language_guide.md
 SHA256_FILES := $(addsuffix .sha256,${SHA256_SOURCE_FILES})
 
 RANGE_DIR      ?= .

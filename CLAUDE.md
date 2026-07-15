@@ -530,9 +530,9 @@ aspect-oriented programming via `>> during before/after` actions.
 
 **Event Scoping**: Local (`::` source state), chain (`:` parent state), absolute (`/` root state).
 
-## DSL Language Reference
+## LLM Guide Resources
 
-The detailed prompt-facing FCSTM language guide now lives in
+The detailed prompt-facing FCSTM language guide lives in
 [pyfcstm/llm/fcstm_grammar_guide.md](pyfcstm/llm/fcstm_grammar_guide.md). Downstream prompt builders should read it
 through the public API instead of copying long DSL snippets from this file:
 
@@ -544,16 +544,39 @@ from pyfcstm.llm import (
 )
 ```
 
-When changing DSL syntax, model semantics, or LLM-facing parse rules, update
-the packaged guide, its Markdown example tests, and the standalone
-[llm_eval/](llm_eval/) fixtures or reports when the change affects LLM
-generation behavior.
+The FBMCQ authoring guide lives in
+[pyfcstm/llm/fbmcq_language_guide.md](pyfcstm/llm/fbmcq_language_guide.md):
 
-The packaged LLM guide is protected by
-[pyfcstm/llm/fcstm_grammar_guide.md.sha256](pyfcstm/llm/fcstm_grammar_guide.md.sha256). After editing
-[pyfcstm/llm/fcstm_grammar_guide.md](pyfcstm/llm/fcstm_grammar_guide.md), run `make sha256` and commit the guide and
-checksum together. The hash is computed from LF-normalized UTF-8 prompt text to keep Windows and Unix checkouts
-consistent.
+```python
+from pyfcstm.llm import (
+    get_fbmcq_language_guide_prompt_for_llm,
+    get_fbmcq_language_guide_prompt_metadata_for_llm,
+    get_fbmcq_language_guide_prompt_path_for_llm,
+)
+```
+
+It teaches good and bad user-visible FBMCQ query patterns. Do not turn it into
+a BMC algorithm, SAT/SMT, solver, encoding, or internal-class tutorial. Do not
+bind it to a provider, fixture answer, task-specific prompt format, or one
+natural-language scenario.
+
+When changing FCSTM syntax, model semantics, or LLM-facing parse rules, update
+the FCSTM guide, its Markdown example tests, and [llm_eval/](llm_eval/) when
+the change affects LLM generation. When changing FBMCQ grammar, binding,
+property semantics, visible atoms, polarity, or response-incomplete behavior,
+update the FBMCQ guide, its tests, and [llm_eval/fbmcq/](llm_eval/fbmcq/).
+
+Each packaged LLM guide is protected by its adjacent `.sha256` file. After
+editing either guide, run `make sha256` and commit that guide with its checksum.
+The hash is computed from LF-normalized UTF-8 prompt text to keep Windows and
+Unix checkouts consistent. Do not run providers from pytest: standalone LLM
+evaluation assets remain outside `test/` and package data.
+
+For FBMCQ Guide live evidence, create a new immutable evaluator run under
+`llm_eval/fbmcq/outputs/runs/` from a clean tracked working tree. Do not
+overwrite a saved run or repair a provider result in place: each snapshot must
+bind the submitted prompt, task, Guide, evaluator, nominal/mutation/oracle
+assets, source commit, and clean-state evidence before replay can be accepted.
 
 Before committing repository code or public Python API changes, run `make rst_auto` and include any intentional generated
 RST updates in the same commit.
@@ -987,7 +1010,9 @@ pyfcstm/
 - Merge commits should keep the generated style used in history, such as `Merge branch 'main' into dev/...` or
   `Merge pull request #52 from HansBug/dev/fixed`.
 
-See [pyfcstm/llm/fcstm_grammar_guide.md](pyfcstm/llm/fcstm_grammar_guide.md) for the packaged LLM grammar guide.
+See [pyfcstm/llm/fcstm_grammar_guide.md](pyfcstm/llm/fcstm_grammar_guide.md) and
+[pyfcstm/llm/fbmcq_language_guide.md](pyfcstm/llm/fbmcq_language_guide.md) for
+the packaged LLM guides.
 
 ### `gh` / `glab` Identity Rule
 

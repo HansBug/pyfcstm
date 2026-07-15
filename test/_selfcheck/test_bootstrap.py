@@ -74,6 +74,23 @@ def test_bootstrap_option_peek_respects_argument_separator():
 
 
 @pytest.mark.unittest
+def test_bootstrap_option_peek_marks_incomplete_values_unavailable():
+    """Malformed early options do not masquerade as the default profile."""
+    from pyfcstm import _bootstrap
+
+    assert (
+        _bootstrap._peek_selfcheck_option(("--profile",), "--profile", "default")
+        == "unavailable"
+    )
+    assert (
+        _bootstrap._peek_selfcheck_option(
+            ("--profile", "--color", "never"), "--profile", "default"
+        )
+        == "unavailable"
+    )
+
+
+@pytest.mark.unittest
 def test_hidden_worker_dispatch_is_exact_and_pre_click(monkeypatch):
     """Hidden worker mode is separate from supervisor and ordinary Click."""
     from pyfcstm import _bootstrap

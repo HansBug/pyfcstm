@@ -128,6 +128,9 @@ def _peek_selfcheck_option(
             value = arguments[index + 1]
             if not value.startswith("--"):
                 return value
+            return "unavailable"
+        if argument == name:
+            return "unavailable"
     return default
 
 

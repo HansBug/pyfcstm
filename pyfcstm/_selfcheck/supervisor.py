@@ -118,8 +118,11 @@ def _artifact_metadata(redact: bool = True):
     Example::
 
         >>> data = _artifact_metadata()
-        >>> data["kind"] in ("source", "wheel", "sdist", "frozen-onefile", "frozen-onedir", "frozen-unknown")
+        >>> data["kind"] in ("source", "wheel", "frozen-onefile", "frozen-onedir", "frozen-unknown")
         True
+
+    ``sdist`` is selected by the artifact build context, not inferred from a
+    live runtime package directory.
     """
     package_root = os.path.dirname(os.path.abspath(__file__))
     package_parent = os.path.dirname(os.path.dirname(package_root))

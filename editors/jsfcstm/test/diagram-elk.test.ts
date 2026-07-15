@@ -1,4 +1,8 @@
 import assert from 'node:assert/strict';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+
+import ELK from 'elkjs/lib/elk.bundled.js';
 
 import {createDocument} from './support';
 import {
@@ -7,7 +11,52 @@ import {
     buildFcstmElkGraph,
     renderFcstmDiagramSvg,
     resolveFcstmDiagramPreviewOptions,
+    terminalApproach,
 } from '@pyfcstm/jsfcstm/diagram';
+
+interface Point {
+    x: number;
+    y: number;
+}
+
+interface NodeBox {
+    left: number;
+    right: number;
+    top: number;
+    bottom: number;
+}
+
+const MIN_TERMINAL_SEGMENT = 18;
+
+function collectLayoutGeometry(graph: any): {
+    boxes: Map<string, NodeBox>;
+    edgeOffsets: Map<string, Point>;
+} {
+    const boxes = new Map<string, NodeBox>();
+    const edgeOffsets = new Map<string, Point>();
+
+    function visit(node: any, offsetX = 0, offsetY = 0): void {
+        const x = offsetX + (node.x || 0);
+        const y = offsetY + (node.y || 0);
+        if (node.fcstm?.kind !== 'canvas') {
+            boxes.set(node.id, {
+                left: x,
+                right: x + (node.width || 0),
+                top: y,
+                bottom: y + (node.height || 0),
+            });
+        }
+        for (const edge of node.edges || []) {
+            edgeOffsets.set(edge.id, {x, y});
+        }
+        for (const child of node.children || []) {
+            visit(child, x, y);
+        }
+    }
+
+    visit(graph);
+    return {boxes, edgeOffsets};
+}
 
 describe('jsfcstm ELK-based diagram pipeline', () => {
     const sampleSource = [
@@ -255,6 +304,129 @@ describe('jsfcstm ELK-based diagram pipeline', () => {
             'nodeNode spacing should be at least 72 for a non-cramped diagram');
         assert.ok(Number(graph.layoutOptions['elk.layered.spacing.nodeNodeBetweenLayers']) >= 96,
             'between-layer spacing should be at least 96');
+        const fleet = graph.children.find(child => child.fcstm?.qualifiedName === 'Fleet');
+        const running = (fleet?.children || []).find(child => child.fcstm?.qualifiedName === 'Fleet.Running');
+        assert.equal(
+            fleet?.layoutOptions?.['elk.layered.spacing.edgeNodeBetweenLayers'],
+            '18',
+            'root-state composite must reserve a visible edge-to-target approach'
+        );
+        assert.equal(
+            running?.layoutOptions?.['elk.layered.spacing.edgeNodeBetweenLayers'],
+            '18',
+            'nested composites must restate spacing because ELK does not inherit it'
+        );
+        assert.equal(
+            running?.layoutOptions?.['elk.layered.spacing.edgeEdgeBetweenLayers'],
+            '32',
+            'nested composites must restate parallel-edge spacing because ELK does not inherit it'
+        );
+    });
+
+    it('rejects a terminal segment that ends at a target corner', () => {
+        const box = {left: 0, right: 100, top: 0, bottom: 100};
+        assert.equal(
+            terminalApproach({x: -18, y: 0}, {x: 0, y: 0}, box),
+            null,
+            'a horizontal line ending at the top-left corner is not a normal entry'
+        );
+        assert.equal(
+            terminalApproach({x: 0, y: -18}, {x: 0, y: 0}, box),
+            null,
+            'a vertical line ending at the top-left corner is not a normal entry'
+        );
+    });
+
+    it('routes every non-self arrow into its target border along a visible outward normal', async () => {
+        const fixtureDir = path.join(__dirname, 'fixtures', 'visual');
+        const fixtureNames = fs.readdirSync(fixtureDir)
+            .filter(name => name.endsWith('.fcstm'))
+            .sort();
+        const elk = new ELK();
+        let checkedSections = 0;
+        let checkedNormalTransitions = 0;
+        let checkedForcedSections = 0;
+        const fixtureCoverage = new Map<string, {sections: number; normal: number}>();
+
+        for (const fixtureName of fixtureNames) {
+            const fixturePath = path.join(fixtureDir, fixtureName);
+            const source = fs.readFileSync(fixturePath, 'utf8');
+            const diagram = await buildFcstmDiagramFromDocument(createDocument(source, fixturePath));
+            assert.ok(diagram, `${fixtureName}: diagram IR should be produced`);
+
+            for (const direction of ['TB', 'LR'] as const) {
+                const coverageKey = `${fixtureName}/${direction}`;
+                fixtureCoverage.set(coverageKey, {sections: 0, normal: 0});
+                const options = resolveFcstmDiagramPreviewOptions({detailLevel: 'normal', direction});
+                const graph = buildFcstmElkGraph(diagram!, options);
+                const laid = await elk.layout(JSON.parse(JSON.stringify(graph))) as any;
+                const {boxes, edgeOffsets} = collectLayoutGeometry(laid);
+
+                function checkNode(node: any): void {
+                    for (const edge of node.edges || []) {
+                        const sourceId = edge.sources?.[0];
+                        const targetId = edge.targets?.[0];
+                        if (!sourceId || !targetId || sourceId === targetId) {
+                            continue;
+                        }
+                        const targetBox = boxes.get(targetId);
+                        const offset = edgeOffsets.get(edge.id);
+                        assert.ok(targetBox, `${fixtureName}/${direction}/${edge.id}: target box ${targetId} missing`);
+                        assert.ok(offset, `${fixtureName}/${direction}/${edge.id}: edge owner offset missing`);
+                        assert.ok((edge.sections || []).length > 0,
+                            `${fixtureName}/${direction}/${edge.id}: ELK returned no edge section`);
+
+                        if (edge.fcstm?.transitionKind === 'normal') {
+                            checkedNormalTransitions += 1;
+                            fixtureCoverage.get(coverageKey)!.normal += 1;
+                        }
+                        if (edge.fcstm?.transitionKind === 'normalAll') {
+                            checkedForcedSections += (edge.sections || []).length;
+                        }
+                        for (const section of edge.sections || []) {
+                            const points = [
+                                section.startPoint,
+                                ...(section.bendPoints || []),
+                                section.endPoint,
+                            ].map(point => ({x: point.x + offset!.x, y: point.y + offset!.y}));
+                            assert.ok(points.length >= 2,
+                                `${fixtureName}/${direction}/${edge.id}: section must contain two endpoints`);
+                            const previous = points[points.length - 2];
+                            const end = points[points.length - 1];
+                            const approach = terminalApproach(previous, end, targetBox!);
+                            const context = `${fixtureName}/${direction}/${edge.id}`;
+                            assert.ok(
+                                approach,
+                                `${context}: arrow must approach ${targetId} from outside, perpendicular to its border; ` +
+                                `previous=${JSON.stringify(previous)}, end=${JSON.stringify(end)}, ` +
+                                `box=${JSON.stringify(targetBox)}`
+                            );
+                            assert.ok(
+                                approach!.length >= MIN_TERMINAL_SEGMENT,
+                                `${context}: ${approach!.side} terminal segment is only ${approach!.length}px; ` +
+                                `expected at least ${MIN_TERMINAL_SEGMENT}px`
+                            );
+                            checkedSections += 1;
+                            fixtureCoverage.get(coverageKey)!.sections += 1;
+                        }
+                    }
+                    for (const child of node.children || []) {
+                        checkNode(child);
+                    }
+                }
+
+                checkNode(laid);
+            }
+        }
+
+        assert.ok(checkedSections >= 100,
+            `expected broad geometry coverage, checked only ${checkedSections} sections`);
+        assert.ok(checkedNormalTransitions >= 50,
+            `expected direct A -> B coverage, checked only ${checkedNormalTransitions} transitions`);
+        assert.ok(checkedForcedSections > 0, 'forced-expansion sections must be part of the geometry corpus');
+        for (const [coverageKey, coverage] of fixtureCoverage) {
+            assert.ok(coverage.sections > 0, `${coverageKey}: expected at least one checked edge section`);
+        }
     });
 
     it('returns null payload when the document has no state machine', async () => {

@@ -24,6 +24,58 @@ const LINE_HEIGHT = 18;
 const STATE_TITLE_HEIGHT = 30;
 const LEAF_MIN_WIDTH = 140;
 const LEAF_MIN_HEIGHT = 58;
+const GEOMETRY_EPSILON = 0.75;
+
+export interface FcstmElkPoint {
+    x: number;
+    y: number;
+}
+
+export interface FcstmElkNodeBox {
+    left: number;
+    right: number;
+    top: number;
+    bottom: number;
+}
+
+/**
+ * Classify the final orthogonal edge segment entering a target node.
+ *
+ * Endpoints in a corner tolerance are rejected deliberately: a segment that
+ * arrives at a corner can be parallel to one border while visually belonging
+ * to the adjacent border, so it is not a reliable normal entry.
+ */
+export function terminalApproach(
+    previous: FcstmElkPoint,
+    end: FcstmElkPoint,
+    box: FcstmElkNodeBox
+): {side: 'top' | 'right' | 'bottom' | 'left'; length: number} | null {
+    const horizontal = Math.abs(previous.y - end.y) <= GEOMETRY_EPSILON;
+    const vertical = Math.abs(previous.x - end.x) <= GEOMETRY_EPSILON;
+    const nearLeft = Math.abs(end.x - box.left) <= GEOMETRY_EPSILON;
+    const nearRight = Math.abs(end.x - box.right) <= GEOMETRY_EPSILON;
+    const nearTop = Math.abs(end.y - box.top) <= GEOMETRY_EPSILON;
+    const nearBottom = Math.abs(end.y - box.bottom) <= GEOMETRY_EPSILON;
+    const withinX = end.x >= box.left - GEOMETRY_EPSILON && end.x <= box.right + GEOMETRY_EPSILON;
+    const withinY = end.y >= box.top - GEOMETRY_EPSILON && end.y <= box.bottom + GEOMETRY_EPSILON;
+
+    if ((nearLeft || nearRight) && (nearTop || nearBottom)) {
+        return null;
+    }
+    if (vertical && withinX && nearTop && previous.y < box.top - GEOMETRY_EPSILON) {
+        return {side: 'top', length: box.top - previous.y};
+    }
+    if (horizontal && withinY && nearRight && previous.x > box.right + GEOMETRY_EPSILON) {
+        return {side: 'right', length: previous.x - box.right};
+    }
+    if (vertical && withinX && nearBottom && previous.y > box.bottom + GEOMETRY_EPSILON) {
+        return {side: 'bottom', length: previous.y - box.bottom};
+    }
+    if (horizontal && withinY && nearLeft && previous.x < box.left - GEOMETRY_EPSILON) {
+        return {side: 'left', length: box.left - previous.x};
+    }
+    return null;
+}
 
 /**
  * Glyphs used to visually distinguish transition-label components from
@@ -342,11 +394,20 @@ export function buildFcstmElkGraph(
             edges,
             layoutOptions: {
                 'elk.padding': '[top=54,left=28,bottom=28,right=28]',
-                // Repeat nodeSelfLoop on composites because ELK's
-                // ``INCLUDE_CHILDREN`` mode does not propagate this
-                // spacing into nested layouts — without this copy
-                // self-loops on states nested inside a composite
-                // collapse to the default 10-unit spacing.
+                // ELK does not propagate parent spacing into nested layouts
+                // under ``INCLUDE_CHILDREN``. Keep enough room between an
+                // edge layer and its target node so the arrow approaches the
+                // node along a visible normal segment instead of turning on,
+                // or running along, the node border. This also gives direct
+                // two-point entry edges enough room; the post-layout smoother
+                // cannot repair a section that has no bend point.
+                'elk.layered.spacing.edgeNodeBetweenLayers': '18',
+                // Keep parallel edge lanes separated inside nested composites;
+                // canvas-level spacing is not inherited by INCLUDE_CHILDREN.
+                'elk.layered.spacing.edgeEdgeBetweenLayers': '32',
+                // Repeat nodeSelfLoop for the same non-propagation reason;
+                // otherwise loops nested inside a composite collapse to ELK's
+                // default 10-unit spacing.
                 'elk.spacing.nodeSelfLoop': '28',
             },
             fcstm: {

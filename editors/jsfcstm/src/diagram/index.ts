@@ -18,7 +18,9 @@ export {
 export {
     buildFcstmElkGraph,
     measureLabel as measureFcstmElkLabel,
+    terminalApproach,
 } from './elk-graph';
+export type {FcstmElkNodeBox, FcstmElkPoint} from './elk-graph';
 export {
     renderFcstmDiagramSvg,
 } from './svg-renderer';

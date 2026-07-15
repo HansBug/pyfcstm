@@ -179,8 +179,10 @@ function clone<T>(value: T): T {
 
 function removeNestedSpacing(node: any, isCanvas = true): void {
     if (!isCanvas && node.layoutOptions) {
+        delete node.layoutOptions['elk.layered.spacing.nodeNodeBetweenLayers'];
         delete node.layoutOptions['elk.layered.spacing.edgeNodeBetweenLayers'];
         delete node.layoutOptions['elk.layered.spacing.edgeEdgeBetweenLayers'];
+        delete node.layoutOptions['elk.spacing.nodeSelfLoop'];
     }
     for (const child of node.children || []) removeNestedSpacing(child, false);
 }

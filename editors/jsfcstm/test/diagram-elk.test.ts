@@ -275,6 +275,11 @@ describe('jsfcstm ELK-based diagram pipeline', () => {
             'nested composites must restate spacing because ELK does not inherit it'
         );
         assert.equal(
+            running?.layoutOptions?.['elk.layered.spacing.nodeNodeBetweenLayers'],
+            '116',
+            'nested composites must pin layer spacing to the canvas contract'
+        );
+        assert.equal(
             running?.layoutOptions?.['elk.layered.spacing.edgeEdgeBetweenLayers'],
             '32',
             'nested composites must restate parallel-edge spacing because ELK does not inherit it'

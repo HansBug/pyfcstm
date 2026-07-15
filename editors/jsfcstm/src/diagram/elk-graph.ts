@@ -53,7 +53,9 @@ function terminalSegmentLength(previous: FcstmElkPoint, end: FcstmElkPoint): num
  *
  * Endpoints in a corner tolerance are rejected deliberately: a segment that
  * arrives at a corner can be parallel to one border while visually belonging
- * to the adjacent border, so it is not a reliable normal entry.
+ * to the adjacent border, so it is not a reliable normal entry. Callers must
+ * provide sections produced by the configured ``ORTHOGONAL`` ELK router;
+ * polyline or spline sections are intentionally rejected as non-normal.
  */
 export function terminalApproach(
     previous: FcstmElkPoint,
@@ -452,6 +454,7 @@ export function buildFcstmElkGraph(
                 // or running along, the node border. This also gives direct
                 // two-point entry edges enough room; the post-layout smoother
                 // cannot repair a section that has no bend point.
+                'elk.layered.spacing.nodeNodeBetweenLayers': '116',
                 'elk.layered.spacing.edgeNodeBetweenLayers': String(MIN_TERMINAL_SEGMENT),
                 // Keep parallel edge lanes separated inside nested composites;
                 // canvas-level spacing is not inherited by INCLUDE_CHILDREN.

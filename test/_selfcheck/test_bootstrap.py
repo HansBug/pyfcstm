@@ -428,6 +428,34 @@ def test_public_bootstrap_json_fallback_handles_unavailable_text_and_stderr(
 
 
 @pytest.mark.unittest
+def test_public_bootstrap_json_fallback_reports_text_stdout_failure(monkeypatch):
+    """A text-only stdout failure still reaches the emergency channel."""
+    from pyfcstm import _bootstrap
+
+    def fail(*args):
+        del args
+        raise OSError("text stdout closed")
+
+    stderr = _BinaryTextStream()
+    monkeypatch.setattr(
+        _bootstrap,
+        "run_selfcheck",
+        lambda args: (_ for _ in ()).throw(RuntimeError("text fallback")),
+    )
+    monkeypatch.setattr(
+        _bootstrap,
+        "sys",
+        SimpleNamespace(
+            stdout=SimpleNamespace(write=fail, flush=fail),
+            stderr=stderr,
+        ),
+    )
+
+    assert _bootstrap.main(("--self-check", "--format", "json")) == 3
+    assert b"text fallback" in stderr.buffer.getvalue()
+
+
+@pytest.mark.unittest
 def test_public_bootstrap_does_not_append_json_after_binary_short_write(
     monkeypatch, capfd
 ):
@@ -503,6 +531,12 @@ def test_version_formatter_reports_all_build_identity_fields(monkeypatch):
 
     monkeypatch.setattr(_bootstrap, "BUILD_REVISION", None)
     assert "Revision: unavailable" in _bootstrap.format_version_info()
+
+    monkeypatch.setattr(_bootstrap, "BUILD_COMMIT", None)
+    monkeypatch.setattr(_bootstrap, "BUILD_TIME_UTC", None)
+    output = _bootstrap.format_version_info()
+    assert "Commit:" not in output
+    assert "Built:" not in output
 
 
 @pytest.mark.unittest
@@ -675,3 +709,53 @@ def test_public_main_ignores_devnull_close_failure(monkeypatch):
     with contextlib.redirect_stdout(BrokenStdout()):
         assert main(("--self-check",)) == 3
     assert closed == [42]
+
+
+@pytest.mark.unittest
+def test_public_main_handles_devnull_reusing_stdout_descriptor(monkeypatch):
+    """An EPIPE replacement that reuses stdout needs no duplicate close."""
+    from pyfcstm import _bootstrap
+    from pyfcstm.__main__ import main
+
+    class BrokenStdout:
+        def write(self, value):
+            del value
+            raise BrokenPipeError("stdout closed")
+
+        def flush(self):
+            return None
+
+        def fileno(self):
+            return 41
+
+    monkeypatch.setattr(
+        _bootstrap,
+        "run_selfcheck",
+        lambda args: (_ for _ in ()).throw(BrokenPipeError("stdout closed")),
+    )
+
+    def reuse_stdout(path, flags):
+        del path, flags
+        return 41
+
+    def unexpected_dup2(source, target):
+        del source, target
+        raise AssertionError("same descriptor must not be duplicated")
+
+    monkeypatch.setattr(
+        _bootstrap,
+        "os",
+        SimpleNamespace(
+            devnull=os.devnull,
+            O_WRONLY=os.O_WRONLY,
+            open=reuse_stdout,
+            dup2=unexpected_dup2,
+            close=os.close,
+        ),
+    )
+
+    stderr = _BinaryTextStream()
+    with contextlib.redirect_stdout(BrokenStdout()), contextlib.redirect_stderr(stderr):
+        assert main(("--self-check",)) == 3
+    assert not sys.stdout.closed
+    assert b"BrokenPipeError" in stderr.buffer.getvalue()

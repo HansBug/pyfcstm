@@ -161,22 +161,31 @@ def _read_frames(
     lines = data.splitlines(keepends=True)
     frames: List[Dict[str, Any]] = []
     for line in lines:
-        if not line.startswith(FRAME_PREFIX):
+        marker = (
+            0
+            if line.startswith(FRAME_PREFIX)
+            else (line.find(FRAME_PREFIX) if allow_non_frame_lines else -1)
+        )
+        if marker < 0:
+            if not allow_non_frame_lines and frames:
+                return FrameReadOutcome(
+                    error_code="trailing_data", frame_count=len(frames)
+                )
             if not allow_non_frame_lines:
                 return FrameReadOutcome(
                     error_code="invalid_frame", frame_count=len(frames)
                 )
-        else:
-            try:
-                frames.append(_decode_frame(line, expected_nonce, expected_check_id))
-            except ValueError as err:
-                return FrameReadOutcome(
-                    error_code=str(err), frame_count=len(frames) + 1
-                )
-            if len(frames) > 1:
-                return FrameReadOutcome(
-                    error_code="duplicate_frame", frame_count=len(frames)
-                )
+            continue  # pragma: no cover - coverage.py omits Python 3.7 continue arcs
+        try:
+            frames.append(
+                _decode_frame(line[marker:], expected_nonce, expected_check_id)
+            )
+        except ValueError as err:
+            return FrameReadOutcome(error_code=str(err), frame_count=len(frames) + 1)
+        if len(frames) > 1:
+            return FrameReadOutcome(
+                error_code="duplicate_frame", frame_count=len(frames)
+            )
     if not frames:
         return FrameReadOutcome(error_code="missing_result")
     return FrameReadOutcome(envelope=frames[0], frame_count=1)

@@ -159,7 +159,7 @@ def test_result_file_rejects_non_frame_bytes_after_valid_frame(tmp_path):
     )
     path = tmp_path / "result.log"
     path.write_bytes(frame + b"corrupt\n")
-    assert read_result_file(str(path), nonce).error_code == "invalid_frame"
+    assert read_result_file(str(path), nonce).error_code == "trailing_data"
 
 
 @pytest.mark.unittest
@@ -174,6 +174,45 @@ def test_stdout_reader_allows_business_noise_around_frame():
     )
     outcome = read_stdout_frames(b"noise\n" + frame + b"tail\n", nonce)
     assert outcome.envelope["status"] == "PASS"
+
+
+@pytest.mark.unittest
+def test_stdout_reader_recovers_frame_after_unterminated_noise():
+    """A frame embedded after noise without a preceding newline remains readable."""
+    from pyfcstm._selfcheck.protocol import encode_result_frame, read_stdout_frames
+
+    nonce = "2" * 32
+    frame = encode_result_frame(
+        {
+            "schema": "pyfcstm-selfcheck-worker/v1",
+            "check_id": "demo",
+            "nonce": nonce,
+            "status": "PASS",
+        }
+    )
+    outcome = read_stdout_frames(b"diagnostic: " + frame, nonce, "demo")
+    assert outcome.envelope["status"] == "PASS"
+
+
+@pytest.mark.unittest
+def test_result_file_reports_trailing_data_after_valid_frame(tmp_path):
+    """File transport distinguishes valid frame plus trailing bytes from no frame."""
+    from pyfcstm._selfcheck.protocol import encode_result_frame, read_result_file
+
+    nonce = "3" * 32
+    frame = encode_result_frame(
+        {
+            "schema": "pyfcstm-selfcheck-worker/v1",
+            "check_id": "demo",
+            "nonce": nonce,
+            "status": "PASS",
+        }
+    )
+    path = tmp_path / "result.log"
+    path.write_bytes(frame + b"garbage\n")
+    outcome = read_result_file(str(path), nonce, "demo")
+    assert outcome.error_code == "trailing_data"
+    assert outcome.frame_count == 1
 
 
 @pytest.mark.unittest

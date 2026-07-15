@@ -88,6 +88,42 @@ def test_missing_install_metadata_is_failure_for_wheel(monkeypatch):
 
 
 @pytest.mark.unittest
+def test_frozen_distribution_version_mismatch_is_failure(monkeypatch):
+    """A frozen executable cannot report stale distribution metadata as valid."""
+    class StaleMetadata:
+        @staticmethod
+        def version(name):
+            assert name == "pyfcstm"
+            return "0.5.0"
+
+    monkeypatch.setitem(registry.sys.modules, "importlib.metadata", StaleMetadata)
+    monkeypatch.setattr(registry.importlib, "metadata", StaleMetadata, raising=False)
+    monkeypatch.setattr(registry.sys, "frozen", True, raising=False)
+    assert registry._distribution_metadata().reason == "metadata_version_mismatch"
+
+
+@pytest.mark.unittest
+def test_editable_egg_info_direct_url_is_recognized(tmp_path, monkeypatch):
+    """Legacy egg-info direct_url metadata receives the same parser as dist-info."""
+    egg = tmp_path / "pyfcstm.egg-info"
+    egg.mkdir()
+    (egg / "direct_url.json").write_text(
+        '{"url": "file:///src/pyfcstm", "dir_info": {"editable": true}}',
+        encoding="utf-8",
+    )
+    (egg / "INSTALLER").write_text("pip\n", encoding="utf-8")
+    monkeypatch.setattr(registry, "_distribution_root", lambda: tmp_path)
+    monkeypatch.setattr(
+        registry,
+        "_distribution_file",
+        lambda *_args, **_kwargs: registry._pass("metadata"),
+    )
+    outcome = registry._distribution_requirements()
+    assert outcome.status == "PASS"
+    assert outcome.observed == "editable_direct_url"
+
+
+@pytest.mark.unittest
 def test_source_checkout_keeps_identity_checks_optional():
     """A source checkout keeps missing generated identity metadata diagnostic-only."""
     specs = {item.check_id: item for item in selected_specs("default", artifact_kind="source")}

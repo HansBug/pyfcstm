@@ -53,7 +53,30 @@ def test_default_profile_returns_one_canonical_snapshot(capsys):
     assert all(item["status"] in ("PASS", "WARN", "SKIP") for item in payload["results"])
     assert payload["capabilities"]["registry"]["expected_ids"] == list(EXPECTED_CHECK_IDS)
     assert payload["dependencies"][0]["id"] == "runtime.metadata"
+    assert payload["artifact"]["kind"] == "source"
+    assert payload["artifact"]["frozen"] is False
+    assert payload["artifact"]["root"] == "<redacted>"
     assert "checks" not in payload and "counts" not in payload
+
+
+@pytest.mark.unittest
+def test_artifact_metadata_can_include_paths_when_redaction_is_disabled():
+    """The report exposes artifact paths only when explicitly requested."""
+    metadata = supervisor._artifact_metadata(redact=False)
+    assert metadata["kind"] == "source"
+    assert metadata["frozen"] is False
+    assert os.path.isabs(metadata["root"])
+    assert os.path.isabs(metadata["executable"])
+
+
+@pytest.mark.unittest
+def test_physical_output_limit_is_a_posix_worker_only_probe(monkeypatch):
+    """Windows bypasses RLIMIT_FSIZE and relies on the parent spool monitor."""
+    import pyfcstm._selfcheck.worker as worker_module
+
+    monkeypatch.setattr(worker_module.os, "name", "nt")
+    monkeypatch.setenv("PYFCSTM_SELFCHECK_WORKER_PROCESS", "1")
+    assert worker_module._install_physical_output_limit() == (None, None)
 
 
 @pytest.mark.unittest
@@ -165,11 +188,23 @@ def test_runtime_artifact_kind_distinguishes_source_installed_and_frozen(
     (tmp_path / "site" / "pyfcstm-1.0.dist-info").mkdir()
     assert supervisor._runtime_artifact_kind() == "wheel"
 
-    (tmp_path / "site" / "pyfcstm" / "_build_info.json").write_text(
+    (tmp_path / "site" / "pyfcstm" / "_selfcheck" / "_build_info.json").write_text(
         '{"artifact_kind": "frozen-onedir"}', encoding="utf-8"
     )
     monkeypatch.setattr(supervisor.sys, "frozen", True, raising=False)
     assert supervisor._runtime_artifact_kind() == "frozen-onedir"
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize("artifact_kind", ["frozen-onefile", "frozen-onedir"])
+def test_frozen_artifact_kind_reads_metadata_from_package_root(tmp_path, artifact_kind):
+    """Onefile and onedir markers live beside the frozen package resources."""
+    package = tmp_path / "bundle" / "pyfcstm"
+    package.mkdir(parents=True)
+    (package / "_build_info.json").write_text(
+        '{{"artifact_kind": "{}"}}'.format(artifact_kind), encoding="utf-8"
+    )
+    assert supervisor._frozen_artifact_kind(str(package)) == artifact_kind
 
 
 @pytest.mark.unittest
@@ -490,7 +525,7 @@ def test_frozen_artifact_context_reads_generated_kind(tmp_path, monkeypatch):
     """Frozen context preserves an onedir marker without touching the spec."""
     package = tmp_path / "bundle" / "pyfcstm" / "_selfcheck"
     package.mkdir(parents=True)
-    (tmp_path / "bundle" / "pyfcstm" / "_build_info.json").write_text(
+    (tmp_path / "bundle" / "pyfcstm" / "_selfcheck" / "_build_info.json").write_text(
         '{"artifact_kind": "frozen-onedir"}', encoding="utf-8"
     )
     assert supervisor._frozen_artifact_kind(str(package)) == "frozen-onedir"

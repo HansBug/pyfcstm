@@ -385,6 +385,17 @@ def _distribution_metadata() -> CheckOutcome:
                 observed=str(err),
             )
         return _skip("installed distribution metadata is not applicable", observed=str(err))
+    import pyfcstm
+
+    expected_version = getattr(pyfcstm, "__version__", None)
+    if expected_version and version != expected_version:
+        outcome = _fail if getattr(sys, "frozen", False) or _runtime_install_required() else _warn
+        return outcome(
+            "installed distribution version disagrees with the package",
+            "metadata_version_mismatch",
+            expected=expected_version,
+            observed=version,
+        )
     return _pass("installed distribution metadata is readable", observed=version)
 
 
@@ -392,10 +403,19 @@ def _distribution_root() -> Path:
     return _package_root().parent
 
 
+def _distribution_metadata_path(filename: str) -> Optional[Path]:
+    """Find one distribution metadata file in dist-info or legacy egg-info."""
+    for directory in sorted(_distribution_root().glob("*.dist-info")) + sorted(
+        _distribution_root().glob("*.egg-info")
+    ):
+        candidate = directory / filename
+        if candidate.is_file():
+            return candidate
+    return None
+
+
 def _record_path() -> Optional[Path]:
-    root = _distribution_root()
-    matches = sorted(root.glob("*.dist-info/RECORD"))
-    return matches[0] if matches else None
+    return _distribution_metadata_path("RECORD")
 
 
 def _record_allowed_roots(record_root: Path) -> Tuple[Path, ...]:
@@ -497,8 +517,7 @@ def _distribution_requirements() -> CheckOutcome:
     installer_metadata = _distribution_file("INSTALLER", required=required)
     if installer_metadata.status not in ("PASS", "SKIP"):
         return installer_metadata
-    direct_url = _distribution_root().glob("*.dist-info/direct_url.json")
-    direct_url_path = next(iter(direct_url), None)
+    direct_url_path = _distribution_metadata_path("direct_url.json")
     mode = "direct_url" if direct_url_path is not None else "installed"
     if direct_url_path is not None:
         try:
@@ -512,7 +531,7 @@ def _distribution_requirements() -> CheckOutcome:
                 mode = "editable_direct_url"
         except (OSError, UnicodeError, ValueError) as err:
             return _fail("direct_url.json is invalid", "direct_url_invalid", observed=str(err))
-    installer_path = next(iter(_distribution_root().glob("*.dist-info/INSTALLER")), None)
+    installer_path = _distribution_metadata_path("INSTALLER")
     if installer_path is not None:
         try:
             if not installer_path.read_text(encoding="utf-8").strip():
@@ -1766,6 +1785,11 @@ def selected_specs(
             required = True
         else:
             required = check_id not in _OPTIONAL_IDS or profile == "visualize"
+        artifact_skip = (
+            artifact_kind.startswith("frozen-")
+            and check_id in _INSTALL_IDS
+            and check_id != "install.metadata"
+        )
         if check_id in skipped:
             required = False
         specs.append(
@@ -1779,7 +1803,7 @@ def selected_specs(
                 timeout_seconds=_timeout_for(check_id),
                 safety=("external" if check_id.startswith("visualize.remote") else "blocking" if check_id.startswith("visualize") else "pure"),
                 prerequisite_policy=("skip_on_warn" if _prerequisites(check_id) else "allow_warn"),
-                explicit_skip=check_id in skipped,
+                explicit_skip=check_id in skipped or artifact_skip,
             )
         )
     return tuple(specs)

@@ -28,6 +28,52 @@ def test_selfcheck_dispatch_does_not_import_click(monkeypatch):
 
 
 @pytest.mark.unittest
+def test_bootstrap_emits_human_header_before_supervisor_work(monkeypatch, capsys):
+    """Human self-check mode reports startup before the supervisor runs."""
+    from pyfcstm import _bootstrap
+    from pyfcstm._selfcheck import supervisor
+
+    observed = {}
+
+    def fake_supervisor(arguments, start_emitted=False):
+        observed["arguments"] = tuple(arguments)
+        observed["start_emitted"] = start_emitted
+        observed["output"] = capsys.readouterr().out
+        return 0
+
+    monkeypatch.setattr(supervisor, "run_supervisor", fake_supervisor)
+    assert _bootstrap.run_selfcheck(("--profile", "full", "--color", "never")) == 0
+    assert observed["start_emitted"] is True
+    assert observed["arguments"] == ("--profile", "full", "--color", "never")
+    assert observed["output"].startswith("pyfcstm self-check 0.6.0")
+    assert "profile=full" in observed["output"]
+
+
+@pytest.mark.unittest
+def test_bootstrap_keeps_json_output_machine_readable(monkeypatch, capsys):
+    """JSON mode does not receive the human startup line."""
+    from pyfcstm import _bootstrap
+    from pyfcstm._selfcheck import supervisor
+
+    monkeypatch.setattr(supervisor, "run_supervisor", lambda args, start_emitted=False: 0)
+    assert _bootstrap.run_selfcheck(("--format", "json")) == 0
+    assert capsys.readouterr().out == ""
+
+
+@pytest.mark.unittest
+def test_bootstrap_option_peek_respects_argument_separator():
+    """The early header probe does not inspect values after ``--``."""
+    from pyfcstm import _bootstrap
+
+    assert (
+        _bootstrap._peek_selfcheck_option(
+            ("--", "--profile=full"), "--profile", "default"
+        )
+        == "default"
+    )
+
+
+@pytest.mark.unittest
 def test_hidden_worker_dispatch_is_exact_and_pre_click(monkeypatch):
     """Hidden worker mode is separate from supervisor and ordinary Click."""
     from pyfcstm import _bootstrap

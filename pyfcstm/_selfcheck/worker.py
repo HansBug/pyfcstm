@@ -128,7 +128,14 @@ def _install_output_limiters():
 
 
 def _install_physical_output_limit():
-    """Apply the OS quota after a frozen bootloader has finished startup."""
+    """Apply the OS quota after a frozen bootloader has finished startup.
+
+    The environment guard distinguishes a real isolated worker process from
+    direct in-process calls used by the supervisor and unit tests. Real
+    workers receive the guard from :mod:`pyfcstm._selfcheck.process`; POSIX
+    workers created there are protected earlier by ``preexec_fn`` (or here for
+    frozen bootloaders), while Windows uses the parent's spool monitor.
+    """
     if os.name != "posix" or os.environ.get("PYFCSTM_SELFCHECK_WORKER_PROCESS") != "1":
         return None, None
     try:

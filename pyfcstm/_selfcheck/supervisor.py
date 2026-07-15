@@ -100,7 +100,42 @@ def _runtime_artifact_kind() -> str:
     for name in entries:
         if name.startswith("pyfcstm-") and name.endswith(".dist-info"):
             return "wheel"
+        if name.startswith("pyfcstm") and name.endswith(".egg-info"):
+            # Editable installs expose legacy egg-info beside the package and
+            # do not provide the wheel RECORD closure.
+            return "source"
     return "source"
+
+
+def _artifact_metadata(redact: bool = True):
+    """Return stable artifact identity fields for every report mode.
+
+    :param redact: Hide filesystem paths when true.
+    :type redact: bool
+    :return: JSON-compatible artifact identity metadata.
+    :rtype: Dict[str, object]
+
+    Example::
+
+        >>> data = _artifact_metadata()
+        >>> data["kind"] in ("source", "wheel", "sdist", "frozen-onefile", "frozen-onedir", "frozen-unknown")
+        True
+    """
+    package_root = os.path.dirname(os.path.abspath(__file__))
+    package_parent = os.path.dirname(os.path.dirname(package_root))
+    kind = _runtime_artifact_kind()
+    executable = getattr(sys, "executable", None)
+    data = {
+        "kind": kind,
+        "frozen": bool(getattr(sys, "frozen", False)),
+        "root": package_parent,
+        "executable": os.path.abspath(executable) if executable else None,
+    }
+    if redact:
+        data["root"] = "<redacted>"
+        if data["executable"] is not None:
+            data["executable"] = "<redacted>"
+    return data
 
 
 def _site_package_roots():
@@ -144,7 +179,7 @@ def _site_package_roots():
 
 def _frozen_artifact_kind(package_root):
     """Read the generated frozen artifact kind without changing the spec."""
-    candidate = Path(package_root).parent / "_build_info.json"
+    candidate = Path(package_root) / "_build_info.json"
     try:
         with candidate.open("r", encoding="utf-8") as stream:
             kind = json.load(stream).get("artifact_kind")
@@ -460,11 +495,14 @@ def _run_selected_checks(
         commit_result(_normalize_required_warning(spec, result))
 
 
-def run_supervisor(arguments: Sequence[str]) -> int:
+def run_supervisor(arguments: Sequence[str], start_emitted: bool = False) -> int:
     """Run selected checks and emit one final report.
 
     :param arguments: Arguments after the public ``--self-check`` token.
     :type arguments: Sequence[str]
+    :param start_emitted: Whether the bootstrap already emitted the immediate
+        human-mode header, defaults to ``False``.
+    :type start_emitted: bool, optional
     :return: Stable self-check exit code.
     :rtype: int
 
@@ -484,7 +522,7 @@ def run_supervisor(arguments: Sequence[str]) -> int:
         return _emit_snapshot(_argument_snapshot(err), output_format, "never")
 
     streaming_human = options.output_format == "human"
-    if streaming_human:
+    if streaming_human and not start_emitted:
         # This line intentionally runs before registry/dependency discovery so
         # a slow import or native probe cannot look like a hung command.
         write_human_start(options.profile, options.color)
@@ -495,6 +533,7 @@ def run_supervisor(arguments: Sequence[str]) -> int:
         "session_id": uuid.uuid4().hex,
         "profile": options.profile,
         "started_at": time.time(),
+        "artifact": _artifact_metadata(options.redact),
     }
     forced_exit = None
     try:

@@ -448,6 +448,9 @@ def test_worker_callback_output_limit_is_restored_after_overflow(monkeypatch):
 def test_physical_output_limit_probe_is_scoped_and_fail_closed(monkeypatch):
     """The OS quota probe is scoped for direct calls and reports setup errors."""
     calls = []
+    # This probe exercises the POSIX-only ``resource`` branch. Windows uses
+    # the supervisor's spool-size monitor instead of ``RLIMIT_FSIZE``.
+    monkeypatch.setattr(worker_module.os, "name", "posix")
 
     class Resource:
         RLIMIT_FSIZE = 1

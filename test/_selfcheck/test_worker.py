@@ -1,6 +1,8 @@
 """Contract tests for the hidden one-shot self-check worker."""
 
 import io
+import os
+from types import SimpleNamespace
 
 import pytest
 
@@ -9,6 +11,22 @@ from pyfcstm._selfcheck.protocol import read_result_file, read_stdout_frames
 from pyfcstm._selfcheck import registry
 from pyfcstm._selfcheck import worker as worker_module
 from pyfcstm._selfcheck.worker import _read_start_gate, _write_frame, run_worker
+
+
+@pytest.fixture(autouse=True)
+def isolated_worker_os(monkeypatch):
+    """Keep worker transport fault injection away from the interpreter-wide ``os``."""
+    isolated_os = SimpleNamespace(**vars(worker_module.os))
+    monkeypatch.setattr(worker_module, "os", isolated_os)
+    return isolated_os
+
+
+@pytest.mark.unittest
+def test_worker_os_fault_injection_is_module_local(monkeypatch):
+    """Worker transport fault injection never replaces global ``os`` functions."""
+    original_write = os.write
+    monkeypatch.setattr(worker_module.os, "write", lambda descriptor, data: 0)
+    assert os.write is original_write
 
 
 def _arguments(nonce, mode="stdout", result_file=None, worker_key="test_pass"):
@@ -299,10 +317,12 @@ def test_worker_survives_faulthandler_registration_failure(monkeypatch):
 def test_file_frame_transport_requests_binary_append_mode(monkeypatch):
     """Windows file transport requests binary append semantics."""
     calls = []
-    monkeypatch.setattr("os.open", lambda path, flags: calls.append(flags) or 9)
-    monkeypatch.setattr("os.write", lambda descriptor, data: len(data))
-    monkeypatch.setattr("os.fsync", lambda descriptor: None)
-    monkeypatch.setattr("os.close", lambda descriptor: None)
+    monkeypatch.setattr(
+        worker_module.os, "open", lambda path, flags: calls.append(flags) or 9
+    )
+    monkeypatch.setattr(worker_module.os, "write", lambda descriptor, data: len(data))
+    monkeypatch.setattr(worker_module.os, "fsync", lambda descriptor: None)
+    monkeypatch.setattr(worker_module.os, "close", lambda descriptor: None)
 
     assert _write_frame("file", "result.log", b"frame") is None
     assert calls and calls[0] & getattr(__import__("os"), "O_APPEND")
@@ -318,10 +338,10 @@ def test_worker_frame_transport_retries_short_writes(monkeypatch):
         writes.append(bytes(data))
         return 1
 
-    monkeypatch.setattr("os.open", lambda path, flags: 9)
-    monkeypatch.setattr("os.write", short_write)
-    monkeypatch.setattr("os.fsync", lambda descriptor: None)
-    monkeypatch.setattr("os.close", lambda descriptor: None)
+    monkeypatch.setattr(worker_module.os, "open", lambda path, flags: 9)
+    monkeypatch.setattr(worker_module.os, "write", short_write)
+    monkeypatch.setattr(worker_module.os, "fsync", lambda descriptor: None)
+    monkeypatch.setattr(worker_module.os, "close", lambda descriptor: None)
 
     assert _write_frame("file", "result.log", b"frame") is None
     assert b"".join(chunk[:1] for chunk in writes) == b"frame"

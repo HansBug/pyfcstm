@@ -5,6 +5,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -20,6 +21,22 @@ from pyfcstm._selfcheck.protocol import encode_result_frame
 
 
 _FIXTURE = Path(__file__).with_name("fixtures") / "worker_process.py"
+
+
+@pytest.fixture(autouse=True)
+def isolated_process_os(monkeypatch):
+    """Keep process-test fault injection away from the interpreter-wide ``os``."""
+    isolated_os = SimpleNamespace(**vars(process_module.os))
+    monkeypatch.setattr(process_module, "os", isolated_os)
+    return isolated_os
+
+
+@pytest.mark.unittest
+def test_process_os_fault_injection_is_module_local(monkeypatch):
+    """Process cleanup fault injection never replaces global ``os`` functions."""
+    original_unlink = os.unlink
+    monkeypatch.setattr(process_module.os, "unlink", lambda path: None)
+    assert os.unlink is original_unlink
 
 
 def _install_fixture(monkeypatch, scenario, child_pid_file=None):

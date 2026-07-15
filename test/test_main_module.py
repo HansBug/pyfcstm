@@ -34,7 +34,8 @@ class TestMainModule:
             [sys.executable, "-m", "pyfcstm", "--self-check", "--format", "json"],
             capture_output=True,
             text=True,
-            timeout=30,
+            # The full serial registry is materially slower on Windows/Python 3.8.
+            timeout=120,
         )
         assert result.returncode == 0
         payload = json.loads(result.stdout)

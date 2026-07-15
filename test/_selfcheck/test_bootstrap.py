@@ -203,7 +203,8 @@ def test_module_entry_runs_public_selfcheck_in_a_fresh_process():
         env=environment,
         capture_output=True,
         text=True,
-        timeout=30,
+        # The full serial registry is materially slower on Windows/Python 3.8.
+        timeout=120,
     )
     assert result.returncode == 0
     payload = json.loads(result.stdout)

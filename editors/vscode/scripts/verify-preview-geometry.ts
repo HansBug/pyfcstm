@@ -7,12 +7,12 @@ import ELK from 'elkjs/lib/elk.bundled.js';
 import {
     buildFcstmDiagramFromDocument,
     buildFcstmElkGraph,
-    renderFcstmDiagramSvg,
     resolveFcstmDiagramPreviewOptions,
     terminalApproach,
 } from '../../jsfcstm/dist/diagram';
 import {smoothGraphEdges} from '../src/preview-webview/render/edge-smoother';
 import {buildCrossingIndex, collectSegments} from '../src/preview-webview/render/crossings';
+import {renderSvg} from '../src/preview-webview/render/svg';
 
 interface Point { x: number; y: number }
 interface Box { left: number; right: number; top: number; bottom: number }
@@ -189,8 +189,8 @@ async function main(): Promise<void> {
             const stem = `${path.basename(fixtureName, '.fcstm')}.${direction}`;
             const baselineSvg = path.join(outputDir, `${stem}.baseline.svg`);
             const fixedSvg = path.join(outputDir, `${stem}.fixed.svg`);
-            fs.writeFileSync(baselineSvg, renderFcstmDiagramSvg(baseline, options));
-            fs.writeFileSync(fixedSvg, renderFcstmDiagramSvg(fixed, options));
+            fs.writeFileSync(baselineSvg, renderSvg(baseline, options as any).svg);
+            fs.writeFileSync(fixedSvg, renderSvg(fixed, options as any).svg);
             if (chrome) {
                 screenshot(chrome, baselineSvg, baselineSvg.replace(/\.svg$/, '.png'));
                 screenshot(chrome, fixedSvg, fixedSvg.replace(/\.svg$/, '.png'));

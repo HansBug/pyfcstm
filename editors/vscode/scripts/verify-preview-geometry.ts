@@ -588,7 +588,7 @@ async function captureWebviewScreenshot(
         if (browser.exitCode === null) {
             await new Promise<void>(resolve => browser.once('exit', () => resolve()));
         }
-        fs.rmSync(profileDir, {recursive: true, force: true});
+        fs.rmSync(profileDir, {recursive: true, force: true, maxRetries: 10, retryDelay: 100});
     }
 }
 

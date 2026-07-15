@@ -7,15 +7,17 @@ import ELK from 'elkjs/lib/elk.bundled.js';
 import {
     buildFcstmDiagramFromDocument,
     buildFcstmElkGraph,
+    collectElkLayoutGeometry,
+    MIN_TERMINAL_SEGMENT,
     resolveFcstmDiagramPreviewOptions,
     terminalApproach,
 } from '../../jsfcstm/dist/diagram';
 import {smoothGraphEdges} from '../src/preview-webview/render/edge-smoother';
 import {buildCrossingIndex, collectSegments} from '../src/preview-webview/render/crossings';
 import {renderSvg} from '../src/preview-webview/render/svg';
+import type {PreviewResolvedOptions} from '../src/preview-webview/types';
 
 interface Point { x: number; y: number }
-interface Box { left: number; right: number; top: number; bottom: number }
 
 interface GeometryMetrics {
     sections: number;
@@ -66,31 +68,8 @@ function removeNestedSpacing(node: any, isCanvas = true): void {
     for (const child of node.children || []) removeNestedSpacing(child, false);
 }
 
-function collectGeometry(graph: any): {boxes: Map<string, Box>; edgeOffsets: Map<string, Point>} {
-    const boxes = new Map<string, Box>();
-    const edgeOffsets = new Map<string, Point>();
-
-    function visit(node: any, parentX = 0, parentY = 0): void {
-        const x = parentX + (node.x ?? 0);
-        const y = parentY + (node.y ?? 0);
-        if (node.fcstm?.kind !== 'canvas') {
-            boxes.set(node.id, {
-                left: x,
-                right: x + (node.width ?? 0),
-                top: y,
-                bottom: y + (node.height ?? 0),
-            });
-        }
-        for (const edge of node.edges || []) edgeOffsets.set(edge.id, {x, y});
-        for (const child of node.children || []) visit(child, x, y);
-    }
-
-    visit(graph);
-    return {boxes, edgeOffsets};
-}
-
 function measure(graph: any): GeometryMetrics {
-    const {boxes, edgeOffsets} = collectGeometry(graph);
+    const {boxes, edgeOffsets} = collectElkLayoutGeometry(graph);
     const result: GeometryMetrics = {sections: 0, malformed: 0, short: 0, minTerminal: null};
 
     function visit(node: any): void {
@@ -100,13 +79,16 @@ function measure(graph: any): GeometryMetrics {
             if (!sourceId || !targetId || sourceId === targetId) continue;
             const box = boxes.get(targetId);
             const offset = edgeOffsets.get(edge.id);
+            if (!offset) {
+                throw new Error(`edge ${edge.id}: owner offset missing during geometry collection`);
+            }
             for (const section of edge.sections || []) {
                 result.sections += 1;
                 const points: Point[] = [
                     section.startPoint,
                     ...(section.bendPoints || []),
                     section.endPoint,
-                ].map(point => ({x: point.x + (offset?.x ?? 0), y: point.y + (offset?.y ?? 0)}));
+                ].map(point => ({x: point.x + offset.x, y: point.y + offset.y}));
                 const approach = box && points.length >= 2
                     ? terminalApproach(points[points.length - 2], points[points.length - 1], box)
                     : null;
@@ -116,7 +98,7 @@ function measure(graph: any): GeometryMetrics {
                     result.minTerminal = result.minTerminal === null
                         ? approach.length
                         : Math.min(result.minTerminal, approach.length);
-                    if (approach.length < 18) result.short += 1;
+                    if (approach.length < MIN_TERMINAL_SEGMENT) result.short += 1;
                 }
             }
         }
@@ -125,6 +107,26 @@ function measure(graph: any): GeometryMetrics {
 
     visit(graph);
     return result;
+}
+
+function toPreviewOptions(options: ReturnType<typeof resolveFcstmDiagramPreviewOptions>): PreviewResolvedOptions {
+    return {
+        detailLevel: options.detailLevel,
+        direction: options.direction,
+        showVariableDefinitions: options.showVariableDefinitions,
+        showEvents: options.showEvents,
+        showTransitionGuards: options.showTransitionGuards,
+        showTransitionEffects: options.showTransitionEffects,
+        transitionEffectMode: options.transitionEffectMode,
+        eventVisualizationMode: options.eventVisualizationMode,
+        showStateEvents: options.showStateEvents,
+        showStateActions: options.showStateActions,
+        eventNameFormat: [...options.eventNameFormat],
+        maxStateEvents: options.maxStateEvents,
+        maxStateActions: options.maxStateActions,
+        maxTransitionEffectLines: options.maxTransitionEffectLines,
+        maxLabelLength: options.maxLabelLength,
+    };
 }
 
 function countCrossings(graph: any): number {
@@ -163,6 +165,7 @@ async function main(): Promise<void> {
         path.resolve(process.cwd(), '../jsfcstm/test/fixtures/visual'));
     const outputDir = path.resolve(process.env.PYFCSTM_GEOMETRY_OUTPUT ||
         path.resolve(process.cwd(), '../../artifacts/preview-geometry'));
+    fs.rmSync(outputDir, {recursive: true, force: true});
     fs.mkdirSync(outputDir, {recursive: true});
     const fixtureNames = fs.readdirSync(fixtureDir).filter(name => name.endsWith('.fcstm')).sort();
     if (fixtureNames.length < 10) {
@@ -189,8 +192,9 @@ async function main(): Promise<void> {
             const stem = `${path.basename(fixtureName, '.fcstm')}.${direction}`;
             const baselineSvg = path.join(outputDir, `${stem}.baseline.svg`);
             const fixedSvg = path.join(outputDir, `${stem}.fixed.svg`);
-            fs.writeFileSync(baselineSvg, renderSvg(baseline, options as any).svg);
-            fs.writeFileSync(fixedSvg, renderSvg(fixed, options as any).svg);
+            const previewOptions = toPreviewOptions(options);
+            fs.writeFileSync(baselineSvg, renderSvg(baseline, previewOptions).svg);
+            fs.writeFileSync(fixedSvg, renderSvg(fixed, previewOptions).svg);
             if (chrome) {
                 screenshot(chrome, baselineSvg, baselineSvg.replace(/\.svg$/, '.png'));
                 screenshot(chrome, fixedSvg, fixedSvg.replace(/\.svg$/, '.png'));

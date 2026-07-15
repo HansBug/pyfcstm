@@ -9,54 +9,12 @@ import {
     buildFcstmDiagramFromDocument,
     buildFcstmDiagramWebviewPayload,
     buildFcstmElkGraph,
+    collectElkLayoutGeometry,
+    MIN_TERMINAL_SEGMENT,
     renderFcstmDiagramSvg,
     resolveFcstmDiagramPreviewOptions,
     terminalApproach,
 } from '@pyfcstm/jsfcstm/diagram';
-
-interface Point {
-    x: number;
-    y: number;
-}
-
-interface NodeBox {
-    left: number;
-    right: number;
-    top: number;
-    bottom: number;
-}
-
-const MIN_TERMINAL_SEGMENT = 18;
-
-function collectLayoutGeometry(graph: any): {
-    boxes: Map<string, NodeBox>;
-    edgeOffsets: Map<string, Point>;
-} {
-    const boxes = new Map<string, NodeBox>();
-    const edgeOffsets = new Map<string, Point>();
-
-    function visit(node: any, offsetX = 0, offsetY = 0): void {
-        const x = offsetX + (node.x || 0);
-        const y = offsetY + (node.y || 0);
-        if (node.fcstm?.kind !== 'canvas') {
-            boxes.set(node.id, {
-                left: x,
-                right: x + (node.width || 0),
-                top: y,
-                bottom: y + (node.height || 0),
-            });
-        }
-        for (const edge of node.edges || []) {
-            edgeOffsets.set(edge.id, {x, y});
-        }
-        for (const child of node.children || []) {
-            visit(child, x, y);
-        }
-    }
-
-    visit(graph);
-    return {boxes, edgeOffsets};
-}
 
 describe('jsfcstm ELK-based diagram pipeline', () => {
     const sampleSource = [
@@ -325,6 +283,22 @@ describe('jsfcstm ELK-based diagram pipeline', () => {
 
     it('rejects a terminal segment that ends at a target corner', () => {
         const box = {left: 0, right: 100, top: 0, bottom: 100};
+        assert.deepEqual(
+            terminalApproach({x: 50, y: -20}, {x: 50, y: 0}, box),
+            {side: 'top', length: 20}
+        );
+        assert.deepEqual(
+            terminalApproach({x: 120, y: 50}, {x: 100, y: 50}, box),
+            {side: 'right', length: 20}
+        );
+        assert.deepEqual(
+            terminalApproach({x: 50, y: 120}, {x: 50, y: 100}, box),
+            {side: 'bottom', length: 20}
+        );
+        assert.deepEqual(
+            terminalApproach({x: -20, y: 50}, {x: 0, y: 50}, box),
+            {side: 'left', length: 20}
+        );
         assert.equal(
             terminalApproach({x: -18, y: 0}, {x: 0, y: 0}, box),
             null,
@@ -360,7 +334,7 @@ describe('jsfcstm ELK-based diagram pipeline', () => {
                 const options = resolveFcstmDiagramPreviewOptions({detailLevel: 'normal', direction});
                 const graph = buildFcstmElkGraph(diagram!, options);
                 const laid = await elk.layout(JSON.parse(JSON.stringify(graph))) as any;
-                const {boxes, edgeOffsets} = collectLayoutGeometry(laid);
+                const {boxes, edgeOffsets} = collectElkLayoutGeometry(laid);
 
                 function checkNode(node: any): void {
                     for (const edge of node.edges || []) {

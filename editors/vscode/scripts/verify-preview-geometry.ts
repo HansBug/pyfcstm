@@ -1098,7 +1098,7 @@ async function main(): Promise<void> {
             gitHead: process.env.PYFCSTM_GEOMETRY_GIT_HEAD || null,
             rightPaneModel: 'VSCode workbench shell with preview mounted in a 50% right editor group',
             sourceAndBundleHashes: {
-                jsfcstmDiagramBundle: sha256File(path.resolve(process.cwd(), '../../jsfcstm/dist/diagram/index.js')),
+                jsfcstmDiagramBundle: sha256File(path.resolve(process.cwd(), '../jsfcstm/dist/diagram/index.js')),
                 previewWebviewBundle: sha256File(path.resolve(process.cwd(), 'dist/preview-webview.js')),
                 previewWebviewCss: sha256File(path.resolve(process.cwd(), 'dist/preview-webview.css')),
             },

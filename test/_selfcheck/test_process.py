@@ -438,6 +438,18 @@ def test_frozen_worker_spawn_omits_rlimit_preexec(monkeypatch):
 
 
 @pytest.mark.unittest
+def test_file_spool_monitor_bounds_worker_without_rlimit(monkeypatch):
+    """The parent monitor covers frozen/Windows-like workers without RLIMIT_FSIZE."""
+    monkeypatch.setattr(process_module, "_should_limit_worker_output", lambda: False)
+    result = run_check_process(
+        CheckSpec("chaos.large_output", "_chaos.large_output"), timeout=5.0
+    )
+    assert result.status == "ERROR"
+    assert result.reason == "output_capture_limit"
+    assert result.truncated_bytes > 0
+
+
+@pytest.mark.unittest
 def test_bounded_capture_discards_protocol_frames_after_the_cap():
     """Only the configured number of protocol frames are retained."""
     from pyfcstm._selfcheck.protocol import FRAME_PREFIX, MAX_ENVELOPE_BYTES

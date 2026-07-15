@@ -7,3 +7,4 @@ recursive-include pyfcstm/template *.zip *.json
 recursive-include pyfcstm/dsl *.g4 *.interp *.tokens
 recursive-include pyfcstm/bmc/grammar *.g4 *.interp *.tokens
 recursive-include pyfcstm/llm *.md *.sha256
+include tools/write_build_info.py

@@ -65,7 +65,10 @@ _STRICT_WARN_REASONS = frozenset(
 
 def _artifact_context_for(spec: CheckSpec):
     """Return the current package boundary for artifact-specific checks."""
-    if not spec.check_id.startswith("artifact."):
+    if not (
+        spec.check_id.startswith("artifact.")
+        or spec.check_id.startswith("install.")
+    ):
         return None
     package_root = os.path.dirname(os.path.abspath(__file__))
     package_parent = os.path.dirname(os.path.dirname(package_root))
@@ -73,7 +76,7 @@ def _artifact_context_for(spec: CheckSpec):
         kind = _frozen_artifact_kind(package_root)
         return ArtifactContext(kind, package_parent, (package_parent,))
     return ArtifactContext(
-        "source",
+        _runtime_artifact_kind(),
         package_parent,
         (package_parent,) + _site_package_roots(),
         allow_site_packages=True,
@@ -94,8 +97,6 @@ def _runtime_artifact_kind() -> str:
         return "source"
     for name in entries:
         if name.startswith("pyfcstm-") and name.endswith(".dist-info"):
-            return "wheel"
-        if name.startswith("pyfcstm") and name.endswith(".egg-info"):
             return "wheel"
     return "source"
 

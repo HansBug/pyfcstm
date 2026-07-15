@@ -654,50 +654,104 @@ def run_check_process(
         communication_errors = []
         cleanup_error = None
         timed_out = False
+        monitored_limit = False
         deadline = started + timeout
-        try:
-            stdout_data, stderr_data = process.communicate(
-                input=build_start_gate(nonce),
-                timeout=max(0.0, deadline - time.monotonic()),
-            )
-        except subprocess.TimeoutExpired as err:
-            timed_out = True
-            stdout_data = err.output if stdout_spool is None else None
-            stderr_data = err.stderr if stderr_spool is None else None
-            cleanup_error = _terminate(process, job, posix_group, scaled_grace)
-            job = None
+        if (
+            stdout_spool is not None
+            and stderr_spool is not None
+            and getattr(process, "stdin", None) is not None
+            and callable(getattr(process, "poll", None))
+        ):
+            # File-backed workers have no pipe-drain hazard.  Send the gate once,
+            # then poll the two files so Windows/frozen workers are bounded even
+            # when native code writes directly to inherited stdout/stderr.
             try:
-                stdout_data, stderr_data = process.communicate(timeout=scaled_grace)
-            except subprocess.TimeoutExpired as drain_error:
-                communication_errors.append("output_drain:TimeoutExpired")
-                if stdout_spool is None:
-                    stdout_data = drain_error.output or stdout_data
-                if stderr_spool is None:
-                    stderr_data = drain_error.stderr or stderr_data
-            except (OSError, ValueError) as drain_error:
-                # Pipe reads can fail with OSError after tree termination;
-                # communicate rejects already-closed streams with ValueError.
-                communication_errors.append(
-                    "output_drain:{}".format(type(drain_error).__name__)
+                process.stdin.write(build_start_gate(nonce))
+                process.stdin.flush()
+                process.stdin.close()
+            except (AttributeError, OSError, ValueError) as err:
+                cleanup_error = _terminate(process, job, posix_group, scaled_grace)
+                job = None
+                details = "worker_communication:{}".format(type(err).__name__)
+                if cleanup_error:
+                    details += "; cleanup=" + cleanup_error
+                return _make_result(
+                    check,
+                    "ERROR",
+                    "worker communication failed",
+                    "worker_communication",
+                    started,
+                    evidence=details,
+                    process=process,
+                    result_mode=result_mode,
                 )
-        except (OSError, ValueError) as err:
-            # communicate surfaces native pipe failures as OSError and invalid
-            # stream lifecycle state as ValueError.
-            cleanup_error = _terminate(process, job, posix_group, scaled_grace)
-            job = None
-            details = "worker_communication:{}".format(type(err).__name__)
-            if cleanup_error:
-                details += "; cleanup=" + cleanup_error
-            return _make_result(
-                check,
-                "ERROR",
-                "worker communication failed",
-                "worker_communication",
-                started,
-                evidence=details,
-                process=process,
-                result_mode=result_mode,
-            )
+            while process.poll() is None:
+                physical_output = (
+                    _spool_size(stdout_spool),
+                    _spool_size(stderr_spool),
+                )
+                if any(
+                    size is not None and size >= SPOOL_LIMIT
+                    for size in physical_output
+                ):
+                    monitored_limit = True
+                    cleanup_error = _terminate(process, job, posix_group, scaled_grace)
+                    job = None
+                    break
+                remaining = deadline - time.monotonic()
+                if remaining <= 0.0:
+                    timed_out = True
+                    cleanup_error = _terminate(process, job, posix_group, scaled_grace)
+                    job = None
+                    break
+                time.sleep(min(0.01, remaining))
+            if process.poll() is None:
+                _wait_process(process, scaled_grace, communication_errors, kill_on_timeout=True)
+            stdout_data = stderr_data = None
+        else:
+            try:
+                stdout_data, stderr_data = process.communicate(
+                    input=build_start_gate(nonce),
+                    timeout=max(0.0, deadline - time.monotonic()),
+                )
+            except subprocess.TimeoutExpired as err:
+                timed_out = True
+                stdout_data = err.output if stdout_spool is None else None
+                stderr_data = err.stderr if stderr_spool is None else None
+                cleanup_error = _terminate(process, job, posix_group, scaled_grace)
+                job = None
+                try:
+                    stdout_data, stderr_data = process.communicate(timeout=scaled_grace)
+                except subprocess.TimeoutExpired as drain_error:
+                    communication_errors.append("output_drain:TimeoutExpired")
+                    if stdout_spool is None:
+                        stdout_data = drain_error.output or stdout_data
+                    if stderr_spool is None:
+                        stderr_data = drain_error.stderr or stderr_data
+                except (OSError, ValueError) as drain_error:
+                    # Pipe reads can fail with OSError after tree termination;
+                    # communicate rejects already-closed streams with ValueError.
+                    communication_errors.append(
+                        "output_drain:{}".format(type(drain_error).__name__)
+                    )
+            except (OSError, ValueError) as err:
+                # communicate surfaces native pipe failures as OSError and invalid
+                # stream lifecycle state as ValueError.
+                cleanup_error = _terminate(process, job, posix_group, scaled_grace)
+                job = None
+                details = "worker_communication:{}".format(type(err).__name__)
+                if cleanup_error:
+                    details += "; cleanup=" + cleanup_error
+                return _make_result(
+                    check,
+                    "ERROR",
+                    "worker communication failed",
+                    "worker_communication",
+                    started,
+                    evidence=details,
+                    process=process,
+                    result_mode=result_mode,
+                )
 
         stdout_capture = _capture_stream(
             stdout_spool, stdout_data, capture_protocol=result_mode == "stdout"
@@ -722,7 +776,7 @@ def run_check_process(
             if size is not None and size >= SPOOL_LIMIT
         }
         quota_signal = _output_limit_signal(return_code)
-        if quota_signal or oversized:
+        if monitored_limit or quota_signal or oversized:
             for name, capture in (
                 ("stdout", stdout_capture),
                 ("stderr", stderr_capture),

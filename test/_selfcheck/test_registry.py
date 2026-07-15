@@ -59,6 +59,34 @@ def test_release_artifacts_require_identity_checks(artifact_kind):
 
 
 @pytest.mark.unittest
+def test_installable_artifacts_require_distribution_contract():
+    """Wheel and sdist workers cannot downgrade missing install metadata."""
+    source = {item.check_id: item for item in selected_specs("default", artifact_kind="source")}
+    wheel = {item.check_id: item for item in selected_specs("default", artifact_kind="wheel")}
+    for check_id in ("install.metadata", "install.record", "install.requirements", "install.entrypoints"):
+        assert source[check_id].required is False
+        assert wheel[check_id].required is True
+
+
+@pytest.mark.unittest
+def test_missing_install_metadata_is_failure_for_wheel(monkeypatch):
+    """A wheel worker treats absent distribution metadata as a required failure."""
+    class MissingMetadata:
+        @staticmethod
+        def version(name):
+            raise KeyError(name)
+
+        @staticmethod
+        def files(name):
+            raise KeyError(name)
+
+    monkeypatch.setenv("PYFCSTM_SELFCHECK_ARTIFACT_KIND", "wheel")
+    monkeypatch.setattr(registry.importlib, "metadata", MissingMetadata, raising=False)
+    assert registry._distribution_metadata().status == "FAIL"
+    assert registry._distribution_metadata().reason == "metadata_unavailable"
+
+
+@pytest.mark.unittest
 def test_source_checkout_keeps_identity_checks_optional():
     """A source checkout keeps missing generated identity metadata diagnostic-only."""
     specs = {item.check_id: item for item in selected_specs("default", artifact_kind="source")}
@@ -89,7 +117,7 @@ def test_builtin_callbacks_return_typed_outcomes():
     for spec in selected_specs("default"):
         outcome = get_worker(spec.worker_key)()
         assert isinstance(outcome, CheckOutcome)
-        assert outcome.status in ("PASS", "WARN", "FAIL")
+        assert outcome.status in ("PASS", "WARN", "SKIP", "FAIL")
 
 
 @pytest.mark.unittest
@@ -124,6 +152,34 @@ def test_source_identity_reports_stale_live_head(monkeypatch):
     assert isinstance(outcome, CheckOutcome)
     assert outcome.status == "WARN"
     assert outcome.reason == "identity_stale"
+
+
+@pytest.mark.unittest
+def test_source_identity_reports_invalid_and_unavailable_states(monkeypatch, tmp_path):
+    """Source identity diagnostics preserve invalid, unavailable, and no-git states."""
+    import pyfcstm.config as config
+
+    monkeypatch.setattr(config, "BUILD_INFO_ERROR", "broken identity")
+    assert registry._identity_source().reason == "identity_invalid"
+    monkeypatch.setattr(config, "BUILD_INFO_ERROR", None)
+    monkeypatch.setattr(registry, "_live_source_identity", lambda: (_ for _ in ()).throw(OSError("git unavailable")))
+    assert registry._identity_source().reason == "identity_unavailable"
+    monkeypatch.setattr(registry, "_package_root", lambda: tmp_path / "pyfcstm")
+    (tmp_path / "pyfcstm").mkdir()
+    assert registry._identity_source().status == "PASS"
+
+
+@pytest.mark.unittest
+def test_build_info_module_import_failure_is_structured(monkeypatch):
+    """Missing generated modules are reported without leaking ImportError."""
+    monkeypatch.setattr(
+        registry.importlib,
+        "import_module",
+        lambda name: (_ for _ in ()).throw(ImportError(name)),
+    )
+    outcome = registry._identity_build_info_module()
+    assert outcome.status == "WARN"
+    assert outcome.reason == "identity_unavailable"
 
 
 @pytest.mark.unittest
@@ -184,6 +240,35 @@ def test_install_requirements_distinguishes_editable_direct_url(tmp_path, monkey
     outcome = registry._distribution_requirements()
     assert outcome.status == "PASS"
     assert outcome.observed == "editable_direct_url"
+
+
+@pytest.mark.unittest
+def test_install_requirements_rejects_invalid_direct_url_and_empty_installer(tmp_path, monkeypatch):
+    """Direct URL and installer metadata are validated through the real file parser."""
+    dist = tmp_path / "pyfcstm-1.0.dist-info"
+    dist.mkdir()
+    (dist / "direct_url.json").write_text("[]", encoding="utf-8")
+    (dist / "INSTALLER").write_text("\n", encoding="utf-8")
+    monkeypatch.setattr(registry, "_distribution_root", lambda: tmp_path)
+    monkeypatch.setattr(registry, "_distribution_file", lambda *_args, **_kwargs: registry._pass("metadata"))
+    assert registry._distribution_requirements().reason == "direct_url_invalid"
+    (dist / "direct_url.json").write_text('{"url": "file:///src"}', encoding="utf-8")
+    assert registry._distribution_requirements().reason == "install_metadata_invalid"
+
+
+@pytest.mark.unittest
+def test_required_entrypoint_metadata_missing_is_failure(monkeypatch):
+    """A wheel without the pyfcstm console entry point is not healthy."""
+    class EmptyEntryPoints:
+        @staticmethod
+        def entry_points():
+            return []
+
+    monkeypatch.setenv("PYFCSTM_SELFCHECK_ARTIFACT_KIND", "wheel")
+    monkeypatch.setattr(registry.importlib, "metadata", EmptyEntryPoints, raising=False)
+    outcome = registry._distribution_entrypoints()
+    assert outcome.status == "FAIL"
+    assert outcome.reason == "entrypoint_missing"
 
 
 @pytest.mark.unittest
@@ -256,6 +341,7 @@ def test_registry_small_probe_helpers_cover_missing_and_optional_paths(monkeypat
     monkeypatch.setattr(pyfcstm, "__version__", original_version + ".mismatch")
     assert registry._identity_package().reason == "identity_mismatch"
     monkeypatch.setattr(sys, "platform", "win32")
+    assert registry._platform_specific("linux").status == "SKIP"
     assert registry._platform_specific("linux").reason == "not_applicable"
     assert registry._platform_specific("win").status == "PASS"
 
@@ -292,7 +378,7 @@ def test_registry_distribution_and_manifest_missing_paths(monkeypatch, tmp_path)
         MissingDistributionMetadata,
         raising=False,
     )
-    assert registry._distribution_file("METADATA", required=True).reason == "not_applicable"
+    assert registry._distribution_file("METADATA", required=True).reason == "metadata_unavailable"
 
     class MissingDistributionImportError:
         """Emulate modern importlib metadata's missing-package exception."""
@@ -310,7 +396,7 @@ def test_registry_distribution_and_manifest_missing_paths(monkeypatch, tmp_path)
         MissingDistributionImportError,
         raising=False,
     )
-    assert registry._distribution_file("METADATA", required=True).reason == "not_applicable"
+    assert registry._distribution_file("METADATA", required=True).reason == "metadata_unavailable"
 
     missing = tmp_path / "missing.json"
     monkeypatch.setattr(registry, "_resource", lambda name: missing)
@@ -324,3 +410,65 @@ def test_frozen_install_record_is_not_applicable(monkeypatch):
     outcome = registry._distribution_record(required=True)
     assert outcome.status == "WARN"
     assert outcome.reason == "not_applicable"
+
+
+@pytest.mark.unittest
+def test_disabled_remote_probe_is_skipped(monkeypatch):
+    """Offline default mode does not execute a remote capability probe."""
+    monkeypatch.delenv("PYFCSTM_SELFCHECK_NETWORK", raising=False)
+    outcome = registry._visual_remote_tls()
+    assert outcome.status == "SKIP"
+    assert outcome.reason == "network_disabled"
+
+
+@pytest.mark.unittest
+def test_native_inventory_and_unidecode_tables_are_real_probes():
+    """Native and table checks exercise their load-bearing runtime assets."""
+    assert registry._artifact_native_inventory().status == "PASS"
+    assert registry._resource_unidecode().status == "PASS"
+
+
+@pytest.mark.unittest
+def test_artifact_metadata_rejects_formal_kind_mismatch(monkeypatch, tmp_path):
+    """A formal wheel cannot carry source-kind build metadata."""
+    import sys
+    import types
+
+    build = tmp_path / "_build_info.json"
+    manifest = tmp_path / "_resource_manifest.json"
+    identity = tmp_path / "config" / "build_info.py"
+    identity.parent.mkdir()
+    for path in (build, manifest, identity):
+        path.write_text("{}", encoding="utf-8")
+    fake_manifest_module = types.SimpleNamespace(
+        verify_build_info_json=lambda *args, **kwargs: {"artifact_kind": "source"}
+    )
+    monkeypatch.setitem(sys.modules, "pyfcstm.config._resource_manifest", fake_manifest_module)
+    monkeypatch.setattr(registry, "_resource", lambda name: tmp_path / name)
+    monkeypatch.setenv("PYFCSTM_SELFCHECK_ARTIFACT_KIND", "wheel")
+    outcome = registry._artifact_metadata()
+    assert outcome.status == "FAIL"
+    assert outcome.reason == "artifact_kind_mismatch"
+
+
+@pytest.mark.unittest
+def test_template_archive_rejects_path_traversal(monkeypatch, tmp_path):
+    """Template ZIP members cannot escape their declared extraction root."""
+    import json
+    import zipfile
+
+    template_root = tmp_path / "template"
+    template_root.mkdir()
+    (template_root / "index.json").write_text(
+        json.dumps({"templates": [{"archive": "bad.zip"}]}), encoding="utf-8"
+    )
+    with zipfile.ZipFile(str(template_root / "bad.zip"), "w") as archive:
+        archive.writestr("../escape.txt", "bad")
+    monkeypatch.setattr(
+        registry,
+        "_resource",
+        lambda name: tmp_path / name,
+    )
+    outcome = registry._template_archives()
+    assert outcome.status == "FAIL"
+    assert outcome.reason == "archive_invalid"

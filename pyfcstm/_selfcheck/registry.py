@@ -276,7 +276,10 @@ def _env_filesystem() -> CheckOutcome:
 def _platform_specific(platform_name: str) -> CheckOutcome:
     if sys.platform.startswith(platform_name):
         return _pass("{} platform capability is applicable".format(platform_name))
-    return _warn("{} platform check is not applicable".format(platform_name), "not_applicable")
+    return CheckOutcome(
+        "SKIP", "{} platform check is not applicable".format(platform_name),
+        reason="not_applicable",
+    )
 
 
 def _identity_package() -> CheckOutcome:
@@ -371,6 +374,12 @@ def _distribution_metadata() -> CheckOutcome:
             import importlib_metadata as metadata
         version = metadata.version("pyfcstm")
     except (ImportError, KeyError, OSError, ValueError) as err:
+        if _runtime_install_required():
+            return _fail(
+                "installed distribution metadata is unavailable",
+                "metadata_unavailable",
+                observed=str(err),
+            )
         return _warn("installed distribution metadata is unavailable", "metadata_unavailable", observed=str(err))
     return _pass("installed distribution metadata is readable", observed=version)
 
@@ -433,6 +442,7 @@ def _path_is_under(path: Path, roots: Tuple[Path, ...]) -> bool:
 def _distribution_file(filename: str, required: bool = False) -> CheckOutcome:
     if filename == "RECORD":
         return _distribution_record(required)
+    required = required or _runtime_install_required()
     package_not_found_error = None
     try:
         try:
@@ -446,10 +456,9 @@ def _distribution_file(filename: str, required: bool = False) -> CheckOutcome:
         # ``PackageNotFoundError`` is a ``KeyError`` on a source checkout that
         # has no installed distribution metadata; that is normal and not a
         # damaged metadata store.
-        return _warn(
-            "distribution file inventory is not applicable",
-            "not_applicable",
-        )
+        if required:
+            return _fail("distribution file inventory is unavailable", "metadata_unavailable")
+        return _warn("distribution file inventory is not applicable", "not_applicable")
     except ImportError as err:
         # Python 3.8+ raises ``PackageNotFoundError`` (an ImportError) when a
         # source checkout has no installed distribution metadata; other
@@ -457,10 +466,9 @@ def _distribution_file(filename: str, required: bool = False) -> CheckOutcome:
         if isinstance(package_not_found_error, type) and isinstance(
             err, package_not_found_error
         ):
-            return _warn(
-                "distribution file inventory is not applicable",
-                "not_applicable",
-            )
+            if required:
+                return _fail("distribution file inventory is unavailable", "metadata_unavailable")
+            return _warn("distribution file inventory is not applicable", "not_applicable")
         return _warn(
             "distribution file inventory is unavailable",
             "metadata_unavailable",
@@ -470,11 +478,12 @@ def _distribution_file(filename: str, required: bool = False) -> CheckOutcome:
         return _warn("distribution file inventory is unavailable", "metadata_unavailable", observed=str(err))
     if found:
         return _pass("distribution contains {}".format(filename))
+    required = required or _runtime_install_required()
     return _warn("distribution does not expose {}".format(filename), "not_applicable") if not required else _fail("distribution file is missing", "record_missing", filename)
 
 
 def _distribution_requirements() -> CheckOutcome:
-    metadata = _distribution_file("METADATA", required=False)
+    metadata = _distribution_file("METADATA", required=_runtime_install_required())
     if metadata.status != "PASS":
         return metadata
     direct_url = _distribution_root().glob("*.dist-info/direct_url.json")
@@ -505,6 +514,7 @@ def _distribution_requirements() -> CheckOutcome:
 def _distribution_record(required: bool = False) -> CheckOutcome:
     if getattr(sys, "frozen", False):
         return _warn("RECORD is not applicable to a frozen executable", "not_applicable")
+    required = required or _runtime_install_required()
     path = _record_path()
     if path is None:
         return _fail("RECORD is missing", "record_missing") if required else _warn("RECORD is not applicable", "not_applicable")
@@ -548,11 +558,20 @@ def _distribution_entrypoints() -> CheckOutcome:
         else:
             entries = list(entries)
     except (ImportError, KeyError, OSError, TypeError, ValueError) as err:
+        if _runtime_install_required():
+            return _fail("entry-point metadata is unavailable", "metadata_unavailable", observed=str(err))
         return _warn("entry-point metadata is unavailable", "metadata_unavailable", observed=str(err))
     for entry in entries:
         if getattr(entry, "name", None) == "pyfcstm":
             return _pass("pyfcstm console entry point is registered")
+    if _runtime_install_required():
+        return _fail("pyfcstm console entry point is not installed", "entrypoint_missing")
     return _warn("pyfcstm console entry point is not installed", "not_applicable")
+
+
+def _runtime_install_required() -> bool:
+    """Return whether the current worker is checking an installable artifact."""
+    return os.environ.get("PYFCSTM_SELFCHECK_ARTIFACT_KIND") in ("wheel", "sdist")
 
 
 def collect_dependency_diagnostics() -> Tuple[Mapping[str, Any], ...]:
@@ -626,6 +645,15 @@ def _json_resource(relative: str, label: str) -> CheckOutcome:
     return _pass("{} is valid".format(label))
 
 
+def _diagnostics_schemas() -> CheckOutcome:
+    """Validate every shipped diagnostics schema, not only the primary one."""
+    for relative in ("diagnostics/schema.json", "diagnostics/inspect_llm_report_schema.json"):
+        outcome = _json_resource(relative, "diagnostic schema {}".format(relative))
+        if outcome.status != "PASS":
+            return outcome
+    return _pass("diagnostic schemas are valid", observed="2 schemas")
+
+
 def _yaml_resource(relative: str, label: str) -> CheckOutcome:
     path = _resource(relative)
     try:
@@ -655,6 +683,7 @@ def _template_index() -> CheckOutcome:
 def _template_archives() -> CheckOutcome:
     index = json.loads(_resource("template/index.json").read_text(encoding="utf-8"))
     missing = []
+    invalid_members = []
     for item in index.get("templates", []):
         archive = _resource("template") / str(item.get("archive", ""))
         if not archive.is_file():
@@ -664,8 +693,23 @@ def _template_archives() -> CheckOutcome:
             with zipfile.ZipFile(str(archive)) as handle:
                 if handle.testzip() is not None:
                     missing.append(str(archive))
+                names = handle.namelist()
+                if len(names) != len(set(names)):
+                    invalid_members.append("{}:duplicate".format(archive.name))
+                for name in names:
+                    normalized = name.replace("\\", "/")
+                    parts = [part for part in normalized.split("/") if part]
+                    drive_prefix = bool(parts and len(parts[0]) == 2 and parts[0][1] == ":")
+                    if normalized.startswith("/") or drive_prefix or ".." in parts:
+                        invalid_members.append("{}:{}".format(archive.name, name))
         except (OSError, zipfile.BadZipFile) as err:
             return _fail("template archive is invalid", "archive_invalid", observed=str(err))
+    if invalid_members:
+        return _fail(
+            "template archive members are unsafe",
+            "archive_invalid",
+            observed=repr(invalid_members),
+        )
     return _fail("template archives are missing", "resource_missing", observed=repr(missing)) if missing else _pass("template archives are readable")
 
 
@@ -1122,7 +1166,26 @@ def _artifact_native_inventory() -> CheckOutcome:
     outcome = _z3_load()
     if outcome.status != "PASS":
         return outcome
-    return _pass("native dependency inventory can load Z3")
+    try:
+        import z3.z3core as z3core
+
+        library_root = getattr(z3core, "_z3_lib_resource_path", None)
+        if library_root is None:
+            return _fail("Z3 native library inventory is unavailable", "native_inventory_missing")
+        library_root = Path(library_root)
+        candidates = sorted(
+            item for item in library_root.iterdir()
+            if item.is_file() and item.suffix.lower() in (".so", ".dylib", ".dll")
+        )
+        if not candidates:
+            return _fail("Z3 native library inventory is empty", "native_inventory_missing")
+        inventory = []
+        for candidate in candidates:
+            digest = hashlib.sha256(candidate.read_bytes()).hexdigest()
+            inventory.append("{}:{}".format(candidate.name, digest))
+    except (ImportError, AttributeError, OSError, TypeError, ValueError) as err:
+        return _fail("Z3 native library inventory failed", "native_inventory_invalid", observed=str(err))
+    return _pass("Z3 native library inventory is readable", observed=repr(inventory))
 
 
 def _artifact_module_closure() -> CheckOutcome:
@@ -1168,13 +1231,21 @@ def _artifact_metadata() -> CheckOutcome:
     try:
         from pyfcstm.config._resource_manifest import verify_build_info_json
 
-        verify_build_info_json(
+        payload = verify_build_info_json(
             build_path,
             _resource("_resource_manifest.json"),
             _resource("config") / "build_info.py",
         )
     except (ImportError, OSError, UnicodeError, ValueError, TypeError) as err:
         return _fail("artifact metadata is invalid", "manifest_invalid", observed=str(err))
+    expected_kind = os.environ.get("PYFCSTM_SELFCHECK_ARTIFACT_KIND")
+    if expected_kind in ("wheel", "sdist", "frozen-onefile", "frozen-onedir") and payload.get("artifact_kind") != expected_kind:
+        return _fail(
+            "artifact metadata kind disagrees with runtime",
+            "artifact_kind_mismatch",
+            expected=expected_kind,
+            observed=str(payload.get("artifact_kind")),
+        )
     return _pass("artifact metadata is valid", expected=str(build_path))
 
 
@@ -1283,8 +1354,10 @@ def _visual_local_render() -> CheckOutcome:
 
 def _visual_remote_tls() -> CheckOutcome:
     if os.environ.get("PYFCSTM_SELFCHECK_NETWORK") != "1":
-        return _warn(
-            "remote network checks are disabled by default", "network_disabled"
+        return CheckOutcome(
+            "SKIP",
+            "remote network checks are disabled by default",
+            reason="network_disabled",
         )
     try:
         context = ssl.create_default_context()
@@ -1298,7 +1371,9 @@ def _visual_remote_tls() -> CheckOutcome:
 
 def _visual_remote_render() -> CheckOutcome:
     if os.environ.get("PYFCSTM_SELFCHECK_NETWORK") != "1":
-        return _warn("remote rendering requires --network", "network_disabled")
+        return CheckOutcome(
+            "SKIP", "remote rendering requires --network", reason="network_disabled"
+        )
     try:
         from urllib.request import urlopen
 
@@ -1322,7 +1397,16 @@ def _resource_pygments() -> CheckOutcome:
 
 
 def _resource_unidecode() -> CheckOutcome:
-    return _probe_import("unidecode")
+    try:
+        from unidecode import unidecode
+
+        samples = ("é", "Ж", "中")
+        observed = tuple(unidecode(item) for item in samples)
+        if not all(observed):
+            return _fail("Unidecode tables returned an empty mapping", "tables_invalid")
+    except (ImportError, AttributeError, TypeError, ValueError) as err:
+        return _fail("Unidecode tables are unavailable", "tables_invalid", observed=str(err))
+    return _pass("Unidecode mapping tables are readable", observed=repr(observed))
 
 
 def _make_probe_worker(check_id: str) -> Worker:
@@ -1358,7 +1442,7 @@ _PROBES: Dict[str, Probe] = {
     "install.entrypoints": _distribution_entrypoints,
     "resource.manifest": _manifest,
     "resource.diagnostics.codes": partial(_yaml_resource, "diagnostics/codes.yaml", "diagnostic codes"),
-    "resource.diagnostics.schemas": partial(_json_resource, "diagnostics/schema.json", "diagnostic schema"),
+    "resource.diagnostics.schemas": _diagnostics_schemas,
     "resource.templates.index": _template_index,
     "resource.templates.archives": _template_archives,
     "resource.templates.extract": _template_extract,
@@ -1448,6 +1532,14 @@ _OPTIONAL_IDS = frozenset(
         "native.ssl.certifi",
     }
     | _VISUAL_IDS
+)
+_INSTALL_IDS = frozenset(
+    {
+        "install.metadata",
+        "install.record",
+        "install.requirements",
+        "install.entrypoints",
+    }
 )
 
 
@@ -1587,6 +1679,8 @@ def selected_specs(
     for check_id in EXPECTED_CHECK_IDS:
         if check_id in ("identity.source", "identity.artifact"):
             required = profile != "default" or artifact_kind != "source"
+        elif check_id in _INSTALL_IDS and artifact_kind in ("wheel", "sdist"):
+            required = True
         else:
             required = check_id not in _OPTIONAL_IDS or profile == "visualize"
         if check_id in skipped:

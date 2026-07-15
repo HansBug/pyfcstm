@@ -263,6 +263,19 @@ def test_registry_small_probe_helpers_cover_missing_and_optional_paths(monkeypat
 @pytest.mark.unittest
 def test_registry_distribution_and_manifest_missing_paths(monkeypatch, tmp_path):
     """Distribution and manifest probes distinguish optional absence from failure."""
+    class EmptyDistributionMetadata:
+        """Provide deterministic installed metadata with no requested files."""
+
+        @staticmethod
+        def files(name):
+            return ()
+
+    monkeypatch.setattr(
+        registry.importlib,
+        "metadata",
+        EmptyDistributionMetadata,
+        raising=False,
+    )
     assert registry._distribution_file("NO_SUCH_RECORD", required=False).reason == "not_applicable"
     assert registry._distribution_file("NO_SUCH_RECORD", required=True).reason == "record_missing"
 

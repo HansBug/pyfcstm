@@ -518,6 +518,24 @@ def test_artifact_metadata_rejects_formal_kind_mismatch(monkeypatch, tmp_path):
 
 
 @pytest.mark.unittest
+def test_artifact_metadata_rejects_corrupt_build_info(monkeypatch, tmp_path):
+    """Corrupt build metadata is diagnosed by the artifact validator."""
+    build = tmp_path / "_build_info.json"
+    manifest = tmp_path / "_resource_manifest.json"
+    identity = tmp_path / "config" / "build_info.py"
+    identity.parent.mkdir()
+    build.write_text("not valid json", encoding="utf-8")
+    manifest.write_text("{}", encoding="utf-8")
+    identity.write_text("BUILD_COMMIT = None\n", encoding="utf-8")
+    monkeypatch.setattr(registry, "_resource", lambda name: tmp_path / name)
+
+    outcome = registry._artifact_metadata()
+
+    assert outcome.status == "FAIL"
+    assert outcome.reason == "manifest_invalid"
+
+
+@pytest.mark.unittest
 def test_template_archive_rejects_path_traversal(monkeypatch, tmp_path):
     """Template ZIP members cannot escape their declared extraction root."""
     import json

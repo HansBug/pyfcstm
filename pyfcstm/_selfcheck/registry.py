@@ -1741,8 +1741,9 @@ def selected_specs(
     """Return stable compatibility and fixed checks for ``profile``.
 
     All 69 fixed IDs remain selected even when optional or explicitly skipped;
-    a later supervisor layer records the resulting ``SKIP`` state.  This keeps
-    the report's result set stable across profiles.
+    the compatibility-only ``runtime.metadata`` result is prepended.  A later
+    supervisor layer records the resulting ``SKIP`` state.  This keeps the
+    report's result set stable across profiles.
 
     :param profile: ``default``, ``full``, or ``visualize``.
     :type profile: str

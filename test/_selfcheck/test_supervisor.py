@@ -1,5 +1,7 @@
 """Behavioral tests for the contracted single-writer supervisor."""
 
+import contextlib
+import io
 import json
 import os
 import subprocess
@@ -63,6 +65,25 @@ def test_human_supervisor_emits_the_frozen_snapshot(monkeypatch, capsys):
     output = capsys.readouterr().out
     assert "[1/1] PASS demo" in output
     assert "Conclusion: [ PASSED ]" in output
+
+
+@pytest.mark.unittest
+def test_human_header_is_flushed_before_registry_discovery(monkeypatch):
+    """The startup line is visible before registry discovery can block."""
+    output = io.StringIO()
+    spec = CheckSpec("demo", "demo")
+
+    def observe_registry(profile, **kwargs):
+        del profile, kwargs
+        assert output.getvalue().splitlines()[0].startswith(
+            "pyfcstm self-check 0.6.0"
+        )
+        return (spec,)
+
+    _install_worker_specs(monkeypatch, (spec,))
+    monkeypatch.setattr(supervisor, "selected_specs", observe_registry)
+    with contextlib.redirect_stdout(output):
+        assert supervisor.run_supervisor(("--color", "never")) == 0
 
 
 @pytest.mark.unittest

@@ -3,6 +3,7 @@
 const os = require('node:os');
 const path = require('node:path');
 const fs = require('node:fs');
+const crypto = require('node:crypto');
 const {spawnSync} = require('node:child_process');
 const esbuild = require('esbuild');
 
@@ -22,25 +23,42 @@ for (const required of [
 }
 const output = path.join(os.tmpdir(), `fcstm-preview-geometry-${process.pid}.cjs`);
 const repoRoot = path.resolve(__dirname, '..', '..', '..');
+function collectSourceFiles(root) {
+    const files = [];
+    function visit(current) {
+        for (const entry of fs.readdirSync(current, {withFileTypes: true})) {
+            const filePath = path.join(current, entry.name);
+            if (entry.isDirectory()) visit(filePath);
+            else if (entry.isFile()) files.push(filePath);
+        }
+    }
+    visit(root);
+    return files.sort();
+}
+function hashFiles(files) {
+    const hash = crypto.createHash('sha256');
+    for (const filePath of files) {
+        hash.update(path.relative(repoRoot, filePath));
+        hash.update('\0');
+        hash.update(fs.readFileSync(filePath));
+        hash.update('\0');
+    }
+    return hash.digest('hex');
+}
+const sourceRoots = {
+    jsfcstmDiagram: path.join(repoRoot, 'editors/jsfcstm/src'),
+    previewWebview: path.join(repoRoot, 'editors/vscode/src/preview-webview'),
+};
 const freshnessChecks = [
     {
         label: 'jsfcstm diagram bundle',
         artifact: jsfcstmEntry,
-        sources: [
-            path.join(repoRoot, 'editors/jsfcstm/src/diagram/elk-graph.ts'),
-            path.join(repoRoot, 'editors/jsfcstm/src/diagram/index.ts'),
-        ],
+        sources: collectSourceFiles(sourceRoots.jsfcstmDiagram),
     },
     {
         label: 'preview webview bundle',
         artifact: path.resolve(__dirname, '..', 'dist', 'preview-webview.js'),
-        sources: [
-            path.resolve(__dirname, '..', 'src/preview-webview/App.vue'),
-            path.resolve(__dirname, '..', 'src/preview-webview/components/Stage.vue'),
-            path.resolve(__dirname, '..', 'src/preview-webview/layout.ts'),
-            path.resolve(__dirname, '..', 'src/preview-webview/render/edge-smoother.ts'),
-            path.resolve(__dirname, '..', 'src/preview-webview/render/svg.ts'),
-        ],
+        sources: collectSourceFiles(sourceRoots.previewWebview),
     },
 ];
 for (const check of freshnessChecks) {
@@ -59,6 +77,8 @@ if (expectedHead && gitHead !== expectedHead) {
     throw new Error(`geometry gate is at ${gitHead || '<unknown>'}, expected ${expectedHead}`);
 }
 if (gitHead) process.env.PYFCSTM_GEOMETRY_GIT_HEAD = gitHead;
+process.env.PYFCSTM_GEOMETRY_JSFCSTM_SOURCE_HASH = hashFiles(freshnessChecks[0].sources);
+process.env.PYFCSTM_GEOMETRY_PREVIEW_SOURCE_HASH = hashFiles(freshnessChecks[1].sources);
 // This command is the evidence-producing right-pane gate.  A missing browser
 // must fail closed instead of silently reducing the run to raw ELK geometry;
 // callers doing a geometry-only smoke test may opt out explicitly.

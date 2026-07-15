@@ -457,6 +457,7 @@ describe('jsfcstm ELK-based diagram pipeline', () => {
         assert.ok(checkedForcedSections > 0, 'forced-expansion sections must be part of the geometry corpus');
         for (const [coverageKey, coverage] of fixtureCoverage) {
             assert.ok(coverage.sections > 0, `${coverageKey}: expected at least one checked edge section`);
+            assert.ok(coverage.normal > 0, `${coverageKey}: expected at least one ordinary A -> B transition`);
         }
     });
 

@@ -513,9 +513,9 @@ body {
     min-height: 0;
 }
 
-/* Bottom drawer: bounded-height container holding DetailsPanel and
-   BottomPanels. Stage above gets the remaining flex space, so clicks
-   into the Details area don't resize the diagram. */
+/* Bottom drawer: bounded-height container holding DetailsPanel. The
+   variables/events panels remain below it; Stage above gets the remaining
+   flex space, so clicks into Details do not resize the diagram. */
 .fcstm-bottom-drawer {
     flex: 0 0 auto;
     display: flex;

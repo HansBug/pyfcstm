@@ -644,6 +644,7 @@ async function main(): Promise<void> {
     const elk = new ELK();
     const reports: FixtureReport[] = [];
     const chrome = locateChrome();
+    let drawerResizeExerciseCount = 0;
     if (!chrome && process.env.PYFCSTM_REQUIRE_PREVIEW_BROWSER === '1') {
         throw new Error('PYFCSTM_REQUIRE_PREVIEW_BROWSER=1 but no Chrome/Chromium executable was found');
     }
@@ -694,10 +695,13 @@ async function main(): Promise<void> {
                             previewState(payload, fixedInput, fixtureName),
                             fixedPng,
                             viewport,
-                            viewport.id === 'desktop-half' && direction === 'TB',
+                            // Keep the drawer contract covered for every
+                            // right-pane size and layout direction.
+                            true,
                         )
                         : null,
                 };
+                if (chrome) drawerResizeExerciseCount += 1;
             }
             const baselineArea = (baseline.width ?? 0) * (baseline.height ?? 0);
             const fixedArea = (fixed.width ?? 0) * (fixed.height ?? 0);
@@ -740,6 +744,7 @@ async function main(): Promise<void> {
         terminalMinimumPx: MIN_TERMINAL_SEGMENT,
         fitToViewMargin: PREVIEW_FIT_MARGIN_PX,
         screenshotEvidence: chrome ? 'production preview-webview App shell' : 'not available',
+        drawerResizeExerciseCount,
         baselineFailures: baselineFailures.length,
         fixedFailures: fixedFailures.length,
         sideEffects: {
@@ -760,6 +765,7 @@ async function main(): Promise<void> {
         crossingRegressions: crossingRegressions.length,
         screenshots: Boolean(chrome),
         screenshotViewports: RIGHT_PANE_VIEWPORTS.map(viewport => viewport.id),
+        drawerResizeExerciseCount,
         outputDir,
     }, null, 2));
     if (fixedFailures.length > 0 || crossingRegressions.length > 0 ||

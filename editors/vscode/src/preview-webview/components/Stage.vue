@@ -38,6 +38,7 @@ const svgBounds = ref({width: 0, height: 0});
 let svgString = '';
 let layoutToken = 0;
 let viewportResizeObserver: ResizeObserver | null = null;
+let resizeFrame: number | null = null;
 
 const viewTransform = {tx: 0, ty: 0, scale: 1};
 let dragState: null | {startX: number; startY: number; tx: number; ty: number} = null;
@@ -70,6 +71,18 @@ function fitToView() {
     const rect = viewportRef.value.getBoundingClientRect();
     const transform = computePreviewFit(rect, svgBounds.value);
     setTransform(transform.tx, transform.ty, transform.scale);
+}
+function scheduleFitToView() {
+    if (!viewportRef.value || !svgBounds.value.width) return;
+    if (resizeFrame !== null) return;
+    if (typeof window.requestAnimationFrame !== 'function') {
+        fitToView();
+        return;
+    }
+    resizeFrame = window.requestAnimationFrame(() => {
+        resizeFrame = null;
+        fitToView();
+    });
 }
 function actualSize() {
     if (!viewportRef.value) return;
@@ -561,7 +574,7 @@ onMounted(() => {
             // Drawer drag/collapse changes the Stage without a window resize.
             // Re-fit against the actual right-pane viewport so the diagram
             // cannot remain at a scale that is now clipped.
-            if (svgBounds.value.width > 0) fitToView();
+            scheduleFitToView();
         });
         viewportResizeObserver.observe(viewportRef.value);
     }
@@ -576,6 +589,10 @@ onUnmounted(() => {
     window.removeEventListener('fcstm-copy-png', onCopyPngEvt as EventListener);
     window.removeEventListener('fcstm-copy-svg', onCopySvgEvt as EventListener);
     window.removeEventListener('resize', onFitEvt);
+    if (resizeFrame !== null && typeof window.cancelAnimationFrame === 'function') {
+        window.cancelAnimationFrame(resizeFrame);
+    }
+    resizeFrame = null;
     viewportResizeObserver?.disconnect();
     viewportResizeObserver = null;
 });

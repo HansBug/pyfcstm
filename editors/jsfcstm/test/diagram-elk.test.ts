@@ -320,6 +320,26 @@ describe('jsfcstm ELK-based diagram pipeline', () => {
             'terminal length must use the actual endpoint-to-endpoint segment');
         assert.ok(epsilonOutsideShortEntry!.length < MIN_TERMINAL_SEGMENT,
             'a 17.25px actual segment must not satisfy the strict 18px threshold');
+        assert.equal(
+            terminalApproach({x: 50, y: -20}, {x: 50, y: 0.5}, box),
+            null,
+            'an endpoint that has crossed inside the top border must be rejected'
+        );
+        assert.equal(
+            terminalApproach({x: 120, y: 50}, {x: 99.5, y: 50}, box),
+            null,
+            'an endpoint that has crossed inside the right border must be rejected'
+        );
+        assert.equal(
+            terminalApproach({x: 50, y: 80}, {x: 50, y: 99.5}, box),
+            null,
+            'an endpoint that has crossed inside the bottom border must be rejected'
+        );
+        assert.equal(
+            terminalApproach({x: -20, y: 50}, {x: 0.5, y: 50}, box),
+            null,
+            'an endpoint that has crossed inside the left border must be rejected'
+        );
     });
 
     it('routes every non-self arrow into its target border along a visible outward normal', async () => {

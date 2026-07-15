@@ -68,20 +68,27 @@ export function terminalApproach(
     const nearBottom = Math.abs(end.y - box.bottom) <= GEOMETRY_EPSILON;
     const withinX = end.x >= box.left - GEOMETRY_EPSILON && end.x <= box.right + GEOMETRY_EPSILON;
     const withinY = end.y >= box.top - GEOMETRY_EPSILON && end.y <= box.bottom + GEOMETRY_EPSILON;
+    // A tolerance admits small ELK rounding drift outside the border, but an
+    // endpoint that has crossed into the node must never be accepted as a
+    // border hit merely because it is numerically close to that border.
+    const onTopBoundary = nearTop && end.y <= box.top;
+    const onRightBoundary = nearRight && end.x >= box.right;
+    const onBottomBoundary = nearBottom && end.y >= box.bottom;
+    const onLeftBoundary = nearLeft && end.x <= box.left;
 
     if ((nearLeft || nearRight) && (nearTop || nearBottom)) {
         return null;
     }
-    if (vertical && withinX && nearTop && previous.y < box.top - GEOMETRY_EPSILON) {
+    if (vertical && withinX && onTopBoundary && previous.y < box.top - GEOMETRY_EPSILON) {
         return {side: 'top', length: terminalSegmentLength(previous, end)};
     }
-    if (horizontal && withinY && nearRight && previous.x > box.right + GEOMETRY_EPSILON) {
+    if (horizontal && withinY && onRightBoundary && previous.x > box.right + GEOMETRY_EPSILON) {
         return {side: 'right', length: terminalSegmentLength(previous, end)};
     }
-    if (vertical && withinX && nearBottom && previous.y > box.bottom + GEOMETRY_EPSILON) {
+    if (vertical && withinX && onBottomBoundary && previous.y > box.bottom + GEOMETRY_EPSILON) {
         return {side: 'bottom', length: terminalSegmentLength(previous, end)};
     }
-    if (horizontal && withinY && nearLeft && previous.x < box.left - GEOMETRY_EPSILON) {
+    if (horizontal && withinY && onLeftBoundary && previous.x < box.left - GEOMETRY_EPSILON) {
         return {side: 'left', length: terminalSegmentLength(previous, end)};
     }
     return null;

@@ -367,7 +367,10 @@ def test_bounded_capture_accepts_empty_tail_after_limit():
 @pytest.mark.unittest
 def test_output_quota_setup_and_spool_probe_fail_closed(monkeypatch):
     """Output quota setup and physical-size probing keep failures bounded."""
-    import resource
+    try:
+        import resource
+    except ImportError:
+        pytest.skip("resource quotas are POSIX-only")
 
     original_setrlimit = resource.setrlimit
     monkeypatch.setattr(resource, "setrlimit", lambda *args: None)

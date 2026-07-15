@@ -309,6 +309,17 @@ describe('jsfcstm ELK-based diagram pipeline', () => {
             null,
             'a vertical line ending at the top-left corner is not a normal entry'
         );
+        const epsilonOutsideShortEntry = terminalApproach(
+            {x: 50, y: -18},
+            {x: 50, y: -0.75},
+            box
+        );
+        assert.ok(epsilonOutsideShortEntry,
+            'an endpoint within position tolerance should still be classified as a top entry');
+        assert.equal(epsilonOutsideShortEntry!.length, 17.25,
+            'terminal length must use the actual endpoint-to-endpoint segment');
+        assert.ok(epsilonOutsideShortEntry!.length < MIN_TERMINAL_SEGMENT,
+            'a 17.25px actual segment must not satisfy the strict 18px threshold');
     });
 
     it('routes every non-self arrow into its target border along a visible outward normal', async () => {

@@ -44,6 +44,10 @@ export interface FcstmElkLayoutGeometry {
     edgeOffsets: Map<string, FcstmElkPoint>;
 }
 
+function terminalSegmentLength(previous: FcstmElkPoint, end: FcstmElkPoint): number {
+    return Math.hypot(end.x - previous.x, end.y - previous.y);
+}
+
 /**
  * Classify the final orthogonal edge segment entering a target node.
  *
@@ -69,16 +73,16 @@ export function terminalApproach(
         return null;
     }
     if (vertical && withinX && nearTop && previous.y < box.top - GEOMETRY_EPSILON) {
-        return {side: 'top', length: box.top - previous.y};
+        return {side: 'top', length: terminalSegmentLength(previous, end)};
     }
     if (horizontal && withinY && nearRight && previous.x > box.right + GEOMETRY_EPSILON) {
-        return {side: 'right', length: previous.x - box.right};
+        return {side: 'right', length: terminalSegmentLength(previous, end)};
     }
     if (vertical && withinX && nearBottom && previous.y > box.bottom + GEOMETRY_EPSILON) {
-        return {side: 'bottom', length: previous.y - box.bottom};
+        return {side: 'bottom', length: terminalSegmentLength(previous, end)};
     }
     if (horizontal && withinY && nearLeft && previous.x < box.left - GEOMETRY_EPSILON) {
-        return {side: 'left', length: box.left - previous.x};
+        return {side: 'left', length: terminalSegmentLength(previous, end)};
     }
     return null;
 }

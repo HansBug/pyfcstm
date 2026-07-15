@@ -35,6 +35,7 @@ interface FixtureReport {
     layout: {
         baseline: {width: number; height: number; crossings: number};
         fixed: {width: number; height: number; crossings: number};
+        areaDeltaPercent: number;
     };
 }
 
@@ -199,6 +200,8 @@ async function main(): Promise<void> {
                 screenshot(chrome, baselineSvg, baselineSvg.replace(/\.svg$/, '.png'));
                 screenshot(chrome, fixedSvg, fixedSvg.replace(/\.svg$/, '.png'));
             }
+            const baselineArea = (baseline.width ?? 0) * (baseline.height ?? 0);
+            const fixedArea = (fixed.width ?? 0) * (fixed.height ?? 0);
             reports.push({
                 fixture: fixtureName,
                 direction,
@@ -216,6 +219,9 @@ async function main(): Promise<void> {
                         height: fixed.height ?? 0,
                         crossings: countCrossings(fixed),
                     },
+                    areaDeltaPercent: baselineArea > 0
+                        ? ((fixedArea - baselineArea) / baselineArea) * 100
+                        : 0,
                 },
             });
         }
@@ -223,6 +229,8 @@ async function main(): Promise<void> {
 
     const fixedFailures = reports.filter(item => item.fixed.malformed > 0 || item.fixed.short > 0);
     const baselineFailures = reports.filter(item => item.baseline.malformed > 0 || item.baseline.short > 0);
+    const crossingRegressions = reports.filter(item => item.layout.fixed.crossings > item.layout.baseline.crossings);
+    const areaDeltas = reports.map(item => item.layout.areaDeltaPercent);
     const report = {
         generatedAt: new Date().toISOString(),
         fixtureCount: fixtureNames.length,
@@ -231,6 +239,13 @@ async function main(): Promise<void> {
         terminalMinimumPx: 18,
         baselineFailures: baselineFailures.length,
         fixedFailures: fixedFailures.length,
+        sideEffects: {
+            crossingRegressions: crossingRegressions.length,
+            meanAreaDeltaPercent: areaDeltas.length > 0
+                ? areaDeltas.reduce((sum, value) => sum + value, 0) / areaDeltas.length
+                : 0,
+            maxAreaDeltaPercent: areaDeltas.length > 0 ? Math.max(...areaDeltas) : 0,
+        },
         reports,
     };
     fs.writeFileSync(path.join(outputDir, 'report.json'), JSON.stringify(report, null, 2));
@@ -239,11 +254,15 @@ async function main(): Promise<void> {
         layoutCount: reports.length,
         baselineFailures: baselineFailures.length,
         fixedFailures: fixedFailures.length,
+        crossingRegressions: crossingRegressions.length,
         screenshots: Boolean(chrome),
         outputDir,
     }, null, 2));
-    if (fixedFailures.length > 0) {
-        throw new Error(`fixed geometry still has ${fixedFailures.length} failing fixture/direction reports`);
+    if (fixedFailures.length > 0 || crossingRegressions.length > 0) {
+        throw new Error(
+            `fixed geometry has ${fixedFailures.length} geometry failures and ` +
+            `${crossingRegressions.length} crossing regressions`
+        );
     }
 }
 

@@ -1,0 +1,30 @@
+def int tick = 0;
+
+state Router {
+    event Forward;
+    event Back;
+    event Reset;
+
+    [*] -> Branch;
+
+    state Branch {
+        state Left {
+            state LeafA;
+            state LeafB;
+            [*] -> LeafA;
+            LeafA -> LeafB :: Forward;
+            LeafB -> LeafA :: Back;
+            LeafA -> LeafA :: Reset;
+        }
+        state Middle;
+        state Right;
+        [*] -> Left;
+        Left -> Middle :: Forward;
+        Middle -> Right :: Forward;
+        Right -> Left :: Reset;
+    }
+
+    state Standby;
+    Branch -> Standby :: Reset;
+    Standby -> Branch :: Forward;
+}

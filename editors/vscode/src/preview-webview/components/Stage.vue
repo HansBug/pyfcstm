@@ -11,6 +11,7 @@ import {smoothGraphEdges} from '../render/edge-smoother';
 import type {PaletteId, PaletteMode} from '../render/palette';
 import {getElk} from '../composables/useElk';
 import {decidePreviewPointerAction, PREVIEW_DRAG_THRESHOLD_PX} from '../interaction';
+import {computePreviewFit} from '../layout';
 import type {PreviewWebviewState, SelectionRef, TextRange, PreviewElkNode, PreviewPayload} from '../types';
 import {jsPDF} from 'jspdf';
 
@@ -36,6 +37,8 @@ const emptyMessage = ref('');
 const svgBounds = ref({width: 0, height: 0});
 let svgString = '';
 let layoutToken = 0;
+let viewportResizeObserver: ResizeObserver | null = null;
+let resizeFrame: number | null = null;
 
 const viewTransform = {tx: 0, ty: 0, scale: 1};
 let dragState: null | {startX: number; startY: number; tx: number; ty: number} = null;
@@ -66,13 +69,20 @@ function setTransform(tx: number, ty: number, scale: number) {
 function fitToView() {
     if (!viewportRef.value || !svgBounds.value.width) return;
     const rect = viewportRef.value.getBoundingClientRect();
-    const margin = 16;
-    const availW = Math.max(40, rect.width - margin * 2);
-    const availH = Math.max(40, rect.height - margin * 2);
-    const scale = Math.min(availW / svgBounds.value.width, availH / svgBounds.value.height, 1);
-    const tx = (rect.width - svgBounds.value.width * scale) / 2;
-    const ty = (rect.height - svgBounds.value.height * scale) / 2;
-    setTransform(tx, ty, scale);
+    const transform = computePreviewFit(rect, svgBounds.value);
+    setTransform(transform.tx, transform.ty, transform.scale);
+}
+function scheduleFitToView() {
+    if (!viewportRef.value || !svgBounds.value.width) return;
+    if (resizeFrame !== null) return;
+    if (typeof window.requestAnimationFrame !== 'function') {
+        fitToView();
+        return;
+    }
+    resizeFrame = window.requestAnimationFrame(() => {
+        resizeFrame = null;
+        fitToView();
+    });
 }
 function actualSize() {
     if (!viewportRef.value) return;
@@ -559,6 +569,15 @@ onMounted(() => {
     window.addEventListener('fcstm-copy-png', onCopyPngEvt as EventListener);
     window.addEventListener('fcstm-copy-svg', onCopySvgEvt as EventListener);
     window.addEventListener('resize', onFitEvt);
+    if (typeof ResizeObserver !== 'undefined' && viewportRef.value) {
+        viewportResizeObserver = new ResizeObserver(() => {
+            // Drawer drag/collapse changes the Stage without a window resize.
+            // Re-fit against the actual right-pane viewport so the diagram
+            // cannot remain at a scale that is now clipped.
+            scheduleFitToView();
+        });
+        viewportResizeObserver.observe(viewportRef.value);
+    }
     void relayout();
 });
 onUnmounted(() => {
@@ -570,6 +589,12 @@ onUnmounted(() => {
     window.removeEventListener('fcstm-copy-png', onCopyPngEvt as EventListener);
     window.removeEventListener('fcstm-copy-svg', onCopySvgEvt as EventListener);
     window.removeEventListener('resize', onFitEvt);
+    if (resizeFrame !== null && typeof window.cancelAnimationFrame === 'function') {
+        window.cancelAnimationFrame(resizeFrame);
+    }
+    resizeFrame = null;
+    viewportResizeObserver?.disconnect();
+    viewportResizeObserver = null;
 });
 
 // Payload reference change → re-layout (different graph geometry).

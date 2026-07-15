@@ -24,6 +24,112 @@ const LINE_HEIGHT = 18;
 const STATE_TITLE_HEIGHT = 30;
 const LEAF_MIN_WIDTH = 140;
 const LEAF_MIN_HEIGHT = 58;
+export const MIN_TERMINAL_SEGMENT = 18;
+export const MIN_SELF_LOOP_SEGMENT = 18;
+const GEOMETRY_EPSILON = 0.75;
+
+export interface FcstmElkPoint {
+    x: number;
+    y: number;
+}
+
+export interface FcstmElkNodeBox {
+    left: number;
+    right: number;
+    top: number;
+    bottom: number;
+}
+
+export interface FcstmElkLayoutGeometry {
+    boxes: Map<string, FcstmElkNodeBox>;
+    edgeOffsets: Map<string, FcstmElkPoint>;
+}
+
+function terminalSegmentLength(previous: FcstmElkPoint, end: FcstmElkPoint): number {
+    return Math.hypot(end.x - previous.x, end.y - previous.y);
+}
+
+/**
+ * Classify the final orthogonal edge segment entering a target node.
+ *
+ * Endpoints in a corner tolerance are rejected deliberately: a segment that
+ * arrives at a corner can be parallel to one border while visually belonging
+ * to the adjacent border, so it is not a reliable normal entry. Callers must
+ * provide sections produced by the configured ``ORTHOGONAL`` ELK router;
+ * polyline or spline sections are intentionally rejected as non-normal.
+ */
+export function terminalApproach(
+    previous: FcstmElkPoint,
+    end: FcstmElkPoint,
+    box: FcstmElkNodeBox
+): {side: 'top' | 'right' | 'bottom' | 'left'; length: number} | null {
+    const horizontal = Math.abs(previous.y - end.y) <= GEOMETRY_EPSILON;
+    const vertical = Math.abs(previous.x - end.x) <= GEOMETRY_EPSILON;
+    const nearLeft = Math.abs(end.x - box.left) <= GEOMETRY_EPSILON;
+    const nearRight = Math.abs(end.x - box.right) <= GEOMETRY_EPSILON;
+    const nearTop = Math.abs(end.y - box.top) <= GEOMETRY_EPSILON;
+    const nearBottom = Math.abs(end.y - box.bottom) <= GEOMETRY_EPSILON;
+    const withinX = end.x >= box.left - GEOMETRY_EPSILON && end.x <= box.right + GEOMETRY_EPSILON;
+    const withinY = end.y >= box.top - GEOMETRY_EPSILON && end.y <= box.bottom + GEOMETRY_EPSILON;
+    // A tolerance admits small ELK rounding drift outside the border, but an
+    // endpoint that has crossed into the node must never be accepted as a
+    // border hit merely because it is numerically close to that border.
+    const onTopBoundary = nearTop && end.y <= box.top;
+    const onRightBoundary = nearRight && end.x >= box.right;
+    const onBottomBoundary = nearBottom && end.y >= box.bottom;
+    const onLeftBoundary = nearLeft && end.x <= box.left;
+
+    if ((nearLeft || nearRight) && (nearTop || nearBottom)) {
+        return null;
+    }
+    if (vertical && withinX && onTopBoundary && previous.y < box.top - GEOMETRY_EPSILON) {
+        return {side: 'top', length: terminalSegmentLength(previous, end)};
+    }
+    if (horizontal && withinY && onRightBoundary && previous.x > box.right + GEOMETRY_EPSILON) {
+        return {side: 'right', length: terminalSegmentLength(previous, end)};
+    }
+    if (vertical && withinX && onBottomBoundary && previous.y > box.bottom + GEOMETRY_EPSILON) {
+        return {side: 'bottom', length: terminalSegmentLength(previous, end)};
+    }
+    if (horizontal && withinY && onLeftBoundary && previous.x < box.left - GEOMETRY_EPSILON) {
+        return {side: 'left', length: terminalSegmentLength(previous, end)};
+    }
+    return null;
+}
+
+/**
+ * Collect node boxes and edge-owner offsets in absolute canvas coordinates.
+ *
+ * ELK stores edge sections relative to the node that owns the edge. Keeping
+ * this traversal beside the graph builder gives tests and external geometry
+ * scanners one coordinate-normalization implementation to share.
+ */
+export function collectElkLayoutGeometry(graph: FcstmElkNode): FcstmElkLayoutGeometry {
+    const boxes = new Map<string, FcstmElkNodeBox>();
+    const edgeOffsets = new Map<string, FcstmElkPoint>();
+
+    function visit(node: FcstmElkNode, parentX = 0, parentY = 0): void {
+        const x = parentX + (node.x ?? 0);
+        const y = parentY + (node.y ?? 0);
+        if (node.fcstm?.kind !== 'canvas') {
+            boxes.set(node.id, {
+                left: x,
+                right: x + (node.width ?? 0),
+                top: y,
+                bottom: y + (node.height ?? 0),
+            });
+        }
+        for (const edge of node.edges || []) {
+            edgeOffsets.set(edge.id, {x, y});
+        }
+        for (const child of node.children || []) {
+            visit(child, x, y);
+        }
+    }
+
+    visit(graph);
+    return {boxes, edgeOffsets};
+}
 
 /**
  * Glyphs used to visually distinguish transition-label components from
@@ -342,11 +448,25 @@ export function buildFcstmElkGraph(
             edges,
             layoutOptions: {
                 'elk.padding': '[top=54,left=28,bottom=28,right=28]',
-                // Repeat nodeSelfLoop on composites because ELK's
-                // ``INCLUDE_CHILDREN`` mode does not propagate this
-                // spacing into nested layouts — without this copy
-                // self-loops on states nested inside a composite
-                // collapse to the default 10-unit spacing.
+                // ELK does not propagate parent spacing into nested layouts
+                // under ``INCLUDE_CHILDREN``. Keep enough room between an
+                // edge layer and its target node so the arrow approaches the
+                // node along a visible normal segment instead of turning on,
+                // or running along, the node border. This also gives direct
+                // two-point entry edges enough room; the post-layout smoother
+                // cannot repair a section that has no bend point.
+                // Nested layouts need an explicit value because
+                // ``INCLUDE_CHILDREN`` does not inherit the canvas setting;
+                // keep ELK's compact default rather than multiplying the
+                // root-level whitespace inside every composite.
+                'elk.layered.spacing.nodeNodeBetweenLayers': '20',
+                'elk.layered.spacing.edgeNodeBetweenLayers': String(MIN_TERMINAL_SEGMENT),
+                // Keep parallel edge lanes separated inside nested composites;
+                // canvas-level spacing is not inherited by INCLUDE_CHILDREN.
+                'elk.layered.spacing.edgeEdgeBetweenLayers': '32',
+                // Repeat nodeSelfLoop for the same non-propagation reason;
+                // otherwise loops nested inside a composite collapse to ELK's
+                // default 10-unit spacing.
                 'elk.spacing.nodeSelfLoop': '28',
             },
             fcstm: {

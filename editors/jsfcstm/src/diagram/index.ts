@@ -17,8 +17,13 @@ export {
 } from './render';
 export {
     buildFcstmElkGraph,
+    collectElkLayoutGeometry,
     measureLabel as measureFcstmElkLabel,
+    MIN_TERMINAL_SEGMENT,
+    MIN_SELF_LOOP_SEGMENT,
+    terminalApproach,
 } from './elk-graph';
+export type {FcstmElkLayoutGeometry, FcstmElkNodeBox, FcstmElkPoint} from './elk-graph';
 export {
     renderFcstmDiagramSvg,
 } from './svg-renderer';

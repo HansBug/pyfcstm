@@ -280,6 +280,7 @@ function previewWebviewHtml(state: PreviewWebviewState): string {
             transform: inner.style.transform,
             svgChildren: svg.children.length,
             stageEmpty: Boolean(document.querySelector('.fcstm-stage__empty')),
+            errors: window.__FCSTM_PREVIEW_ERRORS__ || [],
         };
         root.setAttribute('data-fcstm-right-pane-metrics', btoa(unescape(encodeURIComponent(JSON.stringify(payload)))));
     };
@@ -305,6 +306,7 @@ interface BrowserMetrics {
     transform: string;
     svgChildren: number;
     stageEmpty: boolean;
+    errors?: string[];
 }
 
 function readBrowserMetrics(encoded: string, pngPath: string, viewport: RightPaneViewport): BrowserMetrics {
@@ -329,6 +331,9 @@ function readBrowserMetrics(encoded: string, pngPath: string, viewport: RightPan
         throw new Error(
             `right-pane screenshot is ${png.width}x${png.height}; expected ${viewport.width}x${viewport.height}`
         );
+    }
+    if (metrics.errors && metrics.errors.length > 0) {
+        throw new Error(`preview webview reported runtime errors for ${pngPath}: ${metrics.errors.join('\n')}`);
     }
     if (metrics.stage.width <= 0 || metrics.stage.height <= 0 || metrics.svgWidth <= 0 ||
         metrics.svgHeight <= 0 || metrics.svgChildren === 0 || metrics.stageEmpty) {

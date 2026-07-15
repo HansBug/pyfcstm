@@ -20,7 +20,7 @@ for (const required of [
     }
 }
 const output = path.join(os.tmpdir(), `fcstm-preview-geometry-${process.pid}.cjs`);
-const repoRoot = path.resolve(__dirname, '..', '..');
+const repoRoot = path.resolve(__dirname, '..', '..', '..');
 const freshnessChecks = [
     {
         label: 'jsfcstm diagram bundle',

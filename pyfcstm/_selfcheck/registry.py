@@ -36,7 +36,16 @@ Probe = Callable[[], CheckOutcome]
 REGISTRY_SCHEMA_VERSION = "pyfcstm-selfcheck-registry/v1"
 REGISTRY_VERSION = "pr3-v1"
 _ARTIFACT_KINDS = frozenset(
-    ("source", "wheel", "sdist", "frozen-onefile", "frozen-onedir")
+    (
+        "source",
+        "wheel",
+        "sdist",
+        "frozen-onefile",
+        "frozen-onedir",
+        # Supervisor-only classification used when frozen build metadata is
+        # missing or malformed; it must never be emitted by a build generator.
+        "frozen-unknown",
+    )
 )
 CAPABILITY_CHECK_IDS = frozenset(
     (

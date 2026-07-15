@@ -49,7 +49,7 @@ def test_registry_profiles_keep_results_stable_and_raise_visual_requirements():
 @pytest.mark.unittest
 @pytest.mark.parametrize(
     "artifact_kind",
-    ["wheel", "sdist", "frozen-onefile", "frozen-onedir"],
+    ["wheel", "sdist", "frozen-onefile", "frozen-onedir", "frozen-unknown"],
 )
 def test_release_artifacts_require_identity_checks(artifact_kind):
     """Release and frozen artifacts cannot downgrade stale identity to a warning."""

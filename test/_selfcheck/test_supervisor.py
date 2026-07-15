@@ -66,6 +66,19 @@ def test_human_supervisor_emits_the_frozen_snapshot(monkeypatch, capsys):
 
 
 @pytest.mark.unittest
+def test_human_registry_failure_uses_synthetic_result_count(monkeypatch, capsys):
+    """A malformed registry reports the one synthetic result it will emit."""
+    specs = (CheckSpec("duplicate", "first"), CheckSpec("duplicate", "second"))
+    monkeypatch.setattr(supervisor, "selected_specs", lambda profile, **kwargs: specs)
+
+    assert supervisor.run_supervisor(("--color", "never")) == 1
+    output = capsys.readouterr().out
+    assert "running 1 checks" in output
+    assert "[1/1] ERROR selfcheck.registry" in output
+    assert "[1/2]" not in output
+
+
+@pytest.mark.unittest
 def test_fail_on_warn_only_changes_exit_policy(monkeypatch, capsys):
     """A typed WARN remains WARN when strict exit policy is enabled."""
     spec = CheckSpec("optional.warning", "warning")
@@ -464,8 +477,22 @@ def test_frozen_artifact_context_reads_generated_kind(tmp_path, monkeypatch):
         supervisor._frozen_artifact_kind(
             str(tmp_path / "other" / "pyfcstm" / "_selfcheck")
         )
-        == "frozen-onefile"
+        == "frozen-unknown"
     )
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize("payload", ["{}", "not-json"])
+def test_frozen_artifact_context_does_not_guess_kind_for_bad_metadata(
+    tmp_path, payload
+):
+    """Malformed frozen metadata cannot silently select the onefile boundary."""
+    package = tmp_path / "bundle" / "pyfcstm" / "_selfcheck"
+    package.mkdir(parents=True)
+    (tmp_path / "bundle" / "pyfcstm" / "_build_info.json").write_text(
+        payload, encoding="utf-8"
+    )
+    assert supervisor._frozen_artifact_kind(str(package)) == "frozen-unknown"
 
 
 @pytest.mark.unittest

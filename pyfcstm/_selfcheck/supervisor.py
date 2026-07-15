@@ -48,6 +48,7 @@ from .report import (
 
 _PROFILE_DEADLINES = {"default": 180.0, "full": 300.0, "visualize": 300.0}
 _FAILING_STATUSES = ("BLOCKED", "FAIL", "ERROR", "TIMEOUT", "CRASH")
+_FROZEN_UNKNOWN_ARTIFACT_KIND = "frozen-unknown"
 _STRICT_WARN_REASONS = frozenset(
     (
         "capability_unavailable",
@@ -145,12 +146,12 @@ def _frozen_artifact_kind(package_root):
         with candidate.open("r", encoding="utf-8") as stream:
             kind = json.load(stream).get("artifact_kind")
     except (OSError, UnicodeError, ValueError, TypeError, AttributeError):
-        # Artifact metadata has its own required check; retain a safe default
-        # here so a damaged file still reaches that structured diagnostic.
-        kind = None
+        # Artifact metadata has its own required check; preserve an explicit
+        # unknown boundary so a damaged file cannot masquerade as onefile.
+        return _FROZEN_UNKNOWN_ARTIFACT_KIND
     if kind in ("frozen-onefile", "frozen-onedir"):
         return kind
-    return "frozen-onefile"
+    return _FROZEN_UNKNOWN_ARTIFACT_KIND
 
 
 def _validate_specs(specs):
@@ -498,23 +499,29 @@ def run_supervisor(arguments: Sequence[str]) -> int:
             options.profile, artifact_kind=_runtime_artifact_kind()
         )
         validation_errors = _validate_specs(specs)
-        progress = None
-        if streaming_human:
-            write_human_plan(len(specs), options.profile, options.color)
-            emitted = [0]
-
-            def progress(result):
-                emitted[0] += 1
-                write_human_result(
-                    result, emitted[0], len(specs), options.color
-                )
-
+        registry_spec = None
+        report_specs = specs
         if validation_errors:
             registry_spec = CheckSpec(
                 "selfcheck.registry",
                 "synthetic",
                 title="self-check registry",
             )
+            report_specs = (registry_spec,)
+        progress = None
+        if streaming_human:
+            write_human_plan(len(report_specs), options.profile, options.color)
+            emitted = [0]
+
+            def progress(result):
+                emitted[0] += 1
+                write_human_result(
+                    result, emitted[0], len(report_specs), options.color
+                )
+
+        if validation_errors:
+            # ``report_specs`` is the complete terminal result set for this
+            # branch, so the streamed denominator matches the final snapshot.
             specs = (registry_spec,)
             ledger.reserve(specs)
             metadata["dependencies"] = []
@@ -533,6 +540,8 @@ def run_supervisor(arguments: Sequence[str]) -> int:
                 "registry_invalid",
                 evidence="\n".join(validation_errors),
             )
+            if progress is not None:
+                progress(ledger.get_result(registry_spec.check_id))
             forced_exit = 1
             specs = (registry_spec,)
         else:

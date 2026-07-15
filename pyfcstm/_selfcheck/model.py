@@ -29,6 +29,49 @@ _RESULT_KEYS = (
 ).split()
 
 
+@dataclass(frozen=True)
+class ArtifactContext:
+    """Describe the filesystem boundary used by an artifact worker.
+
+    :param kind: Artifact kind such as ``source`` or ``wheel``.
+    :type kind: str
+    :param root: Absolute root from which the worker may import and read files.
+    :type root: str
+    :param allowed_roots: Additional absolute roots allowed for diagnostics.
+    :type allowed_roots: Tuple[str, ...]
+    :param allow_site_packages: Whether the worker may use user/site packages.
+    :type allow_site_packages: bool
+
+    Example::
+
+        >>> import tempfile
+        >>> with tempfile.TemporaryDirectory() as root:
+        ...     ArtifactContext("source", root, (root,)).kind
+        'source'
+    """
+
+    kind: str
+    root: str
+    allowed_roots: Tuple[str, ...] = ()
+    allow_site_packages: bool = False
+
+    def __post_init__(self) -> None:
+        import os
+
+        if not self.kind:
+            raise ValueError("artifact context kind must not be empty")
+        root = os.path.abspath(os.fspath(self.root))
+        if not os.path.isdir(root):
+            raise ValueError("artifact context root must be a directory")
+        object.__setattr__(self, "root", root)
+        normalized = tuple(
+            os.path.abspath(os.fspath(path)) for path in self.allowed_roots
+        )
+        if root not in normalized:
+            normalized = (root,) + normalized
+        object.__setattr__(self, "allowed_roots", normalized)
+
+
 def _freeze_value(value: Any) -> Any:
     """Recursively freeze report metadata before exposing it to callers."""
     if isinstance(value, MappingABC):
@@ -67,6 +110,14 @@ class CheckSpec:
     :type execution: str, optional
     :param timeout_seconds: Base worker deadline before scaling.
     :type timeout_seconds: float, optional
+    :param safety: Static callback safety class, defaults to ``'pure'``.
+    :type safety: str, optional
+    :param prerequisite_policy: How a warning prerequisite propagates,
+        defaults to ``'allow_warn'``.
+    :type prerequisite_policy: str, optional
+    :param explicit_skip: Whether the caller explicitly selected this check
+        for a terminal ``SKIP`` result, defaults to ``False``.
+    :type explicit_skip: bool, optional
 
     Example::
 
@@ -81,6 +132,9 @@ class CheckSpec:
     prerequisites: Tuple[str, ...] = ()
     execution: str = "worker"
     timeout_seconds: float = 30.0
+    safety: str = "pure"
+    prerequisite_policy: str = "allow_warn"
+    explicit_skip: bool = False
 
     def __post_init__(self) -> None:
         if not self.check_id:
@@ -95,6 +149,18 @@ class CheckSpec:
 
         if not math.isfinite(self.timeout_seconds) or self.timeout_seconds <= 0.0:
             raise ValueError("self-check timeout must be positive")
+        if self.safety not in ("pure", "blocking", "native", "external"):
+            raise ValueError(
+                "unknown self-check safety class: {}".format(self.safety)
+            )
+        if self.prerequisite_policy not in ("allow_warn", "skip_on_warn"):
+            raise ValueError(
+                "unknown self-check prerequisite policy: {}".format(
+                    self.prerequisite_policy
+                )
+            )
+        if self.execution == "local" and self.safety != "pure":
+            raise ValueError("local self-checks must use the pure safety class")
         if not self.title:
             object.__setattr__(self, "title", self.check_id)
 

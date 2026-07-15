@@ -18,11 +18,18 @@ TERMINAL\_STATUSES
 .. autodata:: TERMINAL_STATUSES
 
 
+ArtifactContext
+-----------------------------------------------------
+
+.. autoclass:: ArtifactContext
+    :members: __post_init__,kind,root,allowed_roots,allow_site_packages
+
+
 CheckSpec
 -----------------------------------------------------
 
 .. autoclass:: CheckSpec
-    :members: __post_init__,check_id,worker_key,title,required,prerequisites,execution,timeout_seconds
+    :members: __post_init__,check_id,worker_key,title,required,prerequisites,execution,timeout_seconds,safety,prerequisite_policy,explicit_skip
 
 
 CheckOutcome

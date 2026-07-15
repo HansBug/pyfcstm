@@ -170,7 +170,13 @@ def test_public_selfcheck_dispatch_runs_the_real_supervisor(capsys):
     assert _bootstrap.main(("--self-check", "--format", "json")) == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["exit_code"] == 0
-    assert [item["status"] for item in payload["results"]] == ["PASS", "PASS"]
+    from pyfcstm._selfcheck.registry import EXPECTED_CHECK_IDS
+
+    assert [item["id"] for item in payload["results"]] == [
+        "runtime.metadata",
+        *EXPECTED_CHECK_IDS,
+    ]
+    assert all(item["status"] in ("PASS", "WARN", "SKIP") for item in payload["results"])
 
 
 @pytest.mark.unittest
@@ -203,7 +209,13 @@ def test_module_entry_runs_public_selfcheck_in_a_fresh_process():
     payload = json.loads(result.stdout)
     assert payload["schema_version"] == "pyfcstm-selfcheck/v1"
     assert payload["exit_code"] == 0
-    assert [item["status"] for item in payload["results"]] == ["PASS", "PASS"]
+    from pyfcstm._selfcheck.registry import EXPECTED_CHECK_IDS
+
+    assert [item["id"] for item in payload["results"]] == [
+        "runtime.metadata",
+        *EXPECTED_CHECK_IDS,
+    ]
+    assert all(item["status"] in ("PASS", "WARN", "SKIP") for item in payload["results"])
     assert result.stderr == ""
 
 

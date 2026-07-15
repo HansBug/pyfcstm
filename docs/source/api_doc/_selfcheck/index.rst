@@ -11,7 +11,6 @@ pyfcstm.\_selfcheck
 .. toctree::
     :maxdepth: 3
 
-    _win32
     arguments
     environment
     model

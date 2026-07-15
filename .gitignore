@@ -223,6 +223,8 @@ CMakeFiles
 /build/icons/
 /editors/vscode/resources/
 /pyfcstm/config/build_info.py
+/pyfcstm/_resource_manifest.json
+/pyfcstm/_build_info.json
 CMakeScripts
 Testing
 cmake_install.cmake

@@ -19,6 +19,121 @@ from .protocol import encode_result_frame
 from .protocol import is_valid_nonce
 
 
+OUTPUT_LIMIT = 8 * 1024 * 1024
+
+
+class _OutputLimitExceeded(OSError):
+    """Signal that one worker output stream crossed its physical quota."""
+
+
+class _OutputBudget:
+    """Bound writes to stdout/stderr while preserving the original descriptor."""
+
+    def __init__(self, write, limit: int):
+        """Create a byte budget backed by the original ``os.write``."""
+        self._write = write
+        self._limit = limit
+        self._used = {1: 0, 2: 0}
+
+    def write(self, descriptor: int, data: bytes) -> int:
+        """Write within the descriptor quota or raise on overflow."""
+        if descriptor not in self._used:
+            return self._write(descriptor, data)
+        remaining = self._limit - self._used[descriptor]
+        if remaining <= 0:
+            raise _OutputLimitExceeded("worker output quota exceeded")
+        if len(data) > remaining:
+            written = self._write(descriptor, data[:remaining])
+            self._used[descriptor] += max(0, written)
+            raise _OutputLimitExceeded("worker output quota exceeded")
+        written = self._write(descriptor, data)
+        self._used[descriptor] += max(0, written)
+        return written
+
+
+class _LimitedBinary:
+    """Binary stream facade used by the worker's text output wrappers."""
+
+    def __init__(self, stream, budget: _OutputBudget, descriptor: int):
+        """Wrap a binary stream with a descriptor-specific byte budget."""
+        self._stream = stream
+        self._budget = budget
+        self._descriptor = descriptor
+
+    def write(self, data):
+        """Write bytes through the descriptor quota."""
+        return self._budget.write(self._descriptor, bytes(data))
+
+    def flush(self):
+        """Flush the wrapped stream when it exposes a flush operation."""
+        flush = getattr(self._stream, "flush", None)
+        if flush is not None:
+            return flush()
+        return None
+
+    def fileno(self):
+        """Return the original descriptor number."""
+        return self._stream.fileno()
+
+    def __getattr__(self, name):
+        return getattr(self._stream, name)
+
+
+class _LimitedText:
+    """Text stream facade that routes encoded bytes through a quota."""
+
+    def __init__(self, stream, budget: _OutputBudget, descriptor: int):
+        """Wrap a text stream while preserving its encoding and error policy."""
+        self._stream = stream
+        self.buffer = _LimitedBinary(stream, budget, descriptor)
+        self.encoding = getattr(stream, "encoding", None) or "utf-8"
+        self.errors = getattr(stream, "errors", None) or "backslashreplace"
+
+    def write(self, text):
+        """Encode and write text, returning the normal character count."""
+        self.buffer.write(str(text).encode(self.encoding, self.errors))
+        return len(text)
+
+    def flush(self):
+        """Flush the limited binary facade."""
+        return self.buffer.flush()
+
+    def fileno(self):
+        """Return the original descriptor number."""
+        return self._stream.fileno()
+
+    def isatty(self):
+        """Preserve terminal detection for callbacks that inspect stdout."""
+        return bool(getattr(self._stream, "isatty", lambda: False)())
+
+    def __getattr__(self, name):
+        return getattr(self._stream, name)
+
+
+def _install_output_limiters():
+    """Install temporary cross-platform Python output limits for one callback."""
+    original_write = os.write
+    original_streams = (sys.stdout, sys.stderr)
+    budget = _OutputBudget(original_write, OUTPUT_LIMIT)
+
+    def limited_write(descriptor, data):
+        return budget.write(descriptor, data)
+
+    os.write = limited_write
+    for descriptor, name in ((1, "stdout"), (2, "stderr")):
+        stream = getattr(sys, name, None)
+        if stream is not None:
+            setattr(sys, name, _LimitedText(stream, budget, descriptor))
+    return original_write, original_streams
+
+
+def _restore_output_limiters(state) -> None:
+    """Restore process-global output objects after a direct worker invocation."""
+    original_write, original_streams = state
+    os.write = original_write
+    sys.stdout, sys.stderr = original_streams
+
+
 def _write_stream_all(stream, data) -> None:
     """Write all bytes/text or report a diagnostic-channel short write."""
     offset = 0
@@ -106,6 +221,44 @@ def _exception_outcome(summary: str, reason: str) -> CheckOutcome:
     )
 
 
+def _execute_worker_callback(worker):
+    """Run one callback under a temporary bounded output facade."""
+    state = _install_output_limiters()
+    try:
+        try:
+            outcome = worker()
+            if not isinstance(outcome, CheckOutcome):
+                raise TypeError("self-check worker must return CheckOutcome")
+            return outcome, 0
+        except _OutputLimitExceeded:
+            return (
+                CheckOutcome(
+                    "ERROR",
+                    "worker output capture limit exceeded",
+                    reason="output_capture_limit",
+                ),
+                1,
+            )
+        except SystemExit as err:
+            return_code = err.code if isinstance(err.code, int) else 1
+            return _exception_outcome("worker raised SystemExit", "worker_system_exit"), return_code
+        except KeyboardInterrupt:
+            return _exception_outcome("worker interrupted", "worker_interrupted"), 130
+        except BaseException as err:
+            # Registered checks may raise any ordinary Exception; non-runtime
+            # control sentinels remain visible instead of being swallowed.
+            if not isinstance(err, Exception):
+                raise
+            return (
+                _exception_outcome(
+                    "worker exception: {}".format(err), "worker_exception"
+                ),
+                1,
+            )
+    finally:
+        _restore_output_limiters(state)
+
+
 def _emit_outcome(
     check_id: str,
     nonce: str,
@@ -178,26 +331,7 @@ def run_worker(arguments: Mapping[str, Any]) -> int:
         outcome = CheckOutcome("ERROR", "unknown worker key", reason="unknown_worker")
         return _emit_outcome(check_id, nonce, result_mode, result_file, outcome, 3)
 
-    try:
-        outcome = worker()
-        if not isinstance(outcome, CheckOutcome):
-            raise TypeError("self-check worker must return CheckOutcome")
-        return_code = 0
-    except SystemExit as err:
-        return_code = err.code if isinstance(err.code, int) else 1
-        outcome = _exception_outcome("worker raised SystemExit", "worker_system_exit")
-    except KeyboardInterrupt:
-        return_code = 130
-        outcome = _exception_outcome("worker interrupted", "worker_interrupted")
-    except BaseException as err:
-        # Registered checks may raise any ordinary Exception; non-runtime
-        # control sentinels remain visible instead of being swallowed.
-        if not isinstance(err, Exception):
-            raise
-        return_code = 1
-        outcome = _exception_outcome(
-            "worker exception: {}".format(err), "worker_exception"
-        )
+    outcome, return_code = _execute_worker_callback(worker)
     return _emit_outcome(
         check_id, nonce, result_mode, result_file, outcome, return_code
     )

@@ -10,7 +10,12 @@ from pyfcstm._selfcheck.model import CheckOutcome
 from pyfcstm._selfcheck.protocol import read_result_file, read_stdout_frames
 from pyfcstm._selfcheck import registry
 from pyfcstm._selfcheck import worker as worker_module
-from pyfcstm._selfcheck.worker import _read_start_gate, _write_frame, run_worker
+from pyfcstm._selfcheck.worker import (
+    _execute_worker_callback,
+    _read_start_gate,
+    _write_frame,
+    run_worker,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -417,3 +422,22 @@ def test_worker_preserves_generator_exit_from_callback(monkeypatch):
     )
     with pytest.raises(GeneratorExit):
         run_worker(_arguments(nonce, worker_key="test_generator_exit"))
+
+
+@pytest.mark.unittest
+def test_worker_callback_output_limit_is_restored_after_overflow(monkeypatch):
+    """Python-level stdout overflow is bounded and global streams are restored."""
+    writes = []
+    original_write = worker_module.os.write
+    monkeypatch.setattr(
+        worker_module.os,
+        "write",
+        lambda descriptor, data: writes.append((descriptor, len(data))) or len(data),
+    )
+    outcome, return_code = _execute_worker_callback(
+        lambda: worker_module.os.write(1, b"x" * (worker_module.OUTPUT_LIMIT + 1))
+    )
+    assert outcome.reason == "output_capture_limit"
+    assert return_code == 1
+    assert writes == [(1, worker_module.OUTPUT_LIMIT)]
+    assert worker_module.os.write is not original_write

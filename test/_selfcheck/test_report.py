@@ -9,8 +9,15 @@ from pyfcstm._selfcheck.model import CheckResult, ReportSnapshot
 from pyfcstm._selfcheck.report import (
     _color_requested,
     render_human,
+    render_human_result,
+    render_human_summary,
     render_json,
     write_human,
+    write_human_environment,
+    write_human_plan,
+    write_human_result,
+    write_human_start,
+    write_human_summary,
     write_report,
 )
 
@@ -124,6 +131,27 @@ def test_human_summary_omits_zero_counts_and_colors_emitted_statuses(monkeypatch
     assert "\x1b[33mWARN\x1b[0m = 1" in output
     assert "SKIP = 0" not in output
     assert "\x1b[1;33m[ WARNINGS ]\x1b[0m" in output
+
+
+@pytest.mark.unittest
+def test_incremental_human_output_flushes_header_results_and_summary(capsys):
+    """Human mode exposes each completed result without changing JSON rendering."""
+    check = CheckResult("demo", "PASS", True, summary="ready")
+    snapshot = ReportSnapshot((check,), _metadata(), {"PASS": 1})
+    write_human_start("default", color="never")
+    write_human_plan(1, "default", color="never")
+    write_human_environment(snapshot.metadata["environment"], color="never")
+    write_human_result(check, 1, 1, color="never")
+    write_human_summary(snapshot, color="never")
+    output = capsys.readouterr().out
+    assert output.splitlines()[0].startswith("pyfcstm self-check 0.6.0")
+    assert "running 1 checks" in output
+    assert "revision=abc123  commit=def456" in output
+    assert "[1/1] PASS demo (ready)" in output
+    assert "Conclusion: [ PASSED ]" in output
+    assert "SKIP = 0" not in output
+    assert "[1/1] PASS demo (ready)" in render_human_result(check, 1, 1, "never")
+    assert "Conclusion: [ PASSED ]" in render_human_summary(snapshot, "never")
 
 
 @pytest.mark.unittest

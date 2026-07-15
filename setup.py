@@ -58,6 +58,7 @@ package_data = {
     for package_name in find_packages(include=("*"))
 }
 package_data.setdefault("pyfcstm.llm", []).extend(["*.md", "*.sha256"])
+package_data.setdefault("pyfcstm.diagnostics", []).append("*.md")
 
 setup(
     # information

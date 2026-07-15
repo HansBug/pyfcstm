@@ -6,7 +6,6 @@ import argparse
 import sys
 from pathlib import Path
 
-
 HIDDEN_IMPORTS = [
     # Force-include the diagnostics package so its bundled `codes.yaml`
     # asset is reachable in the standalone build even when no current
@@ -74,16 +73,18 @@ EXCLUDED_MODULES = [
 
 
 def collect_datas(bundle_icon=None):
-    """Collect data files that need to be packaged"""
+    """Collect data files that need to be packaged.
+
+    Resource enumeration is a required build step.  A missing or damaged
+    resource collector therefore propagates ``ResourceCollectionError`` and
+    prevents generation of a spec with an incomplete ``datas`` list.
+    """
     datas = []
 
-    # Try to collect resources from tools.resources
-    try:
-        from tools.resources import get_resource_files
-        for src_file, dst_dir in get_resource_files():
-            datas.append((src_file, dst_dir))
-    except Exception as e:
-        print(f"Warning: Could not collect resources from tools.resources: {e}", file=sys.stderr)
+    from tools.resources import get_resource_files
+
+    for src_file, dst_dir in get_resource_files():
+        datas.append((src_file, dst_dir))
 
     if bundle_icon:
         bundle_icon_path = Path(bundle_icon)

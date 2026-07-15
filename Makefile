@@ -156,12 +156,15 @@ help:
 	@echo ""
 
 package: build_info
-	$(PYTHON) -m build --sdist --wheel --outdir ${DIST_DIR}
+	$(PYTHON) -m tools.write_build_info --artifact-kind sdist --output-root ${PROJ_DIR} --require-manifest
+	$(PYTHON) -m build --sdist --outdir ${DIST_DIR}
+	$(PYTHON) -m tools.write_build_info --artifact-kind wheel --output-root ${PROJ_DIR} --require-manifest
+	$(PYTHON) -m build --wheel --outdir ${DIST_DIR}
 build_info: tpl
-	$(PYTHON) -m tools.write_build_info
+	$(PYTHON) -m tools.write_build_info --artifact-kind wheel --output-root ${PROJ_DIR} --require-manifest
 
-build_info_cli: ${APP_ICON_STAMP}
-	$(MAKE) build_info
+build_info_cli: ${APP_ICON_STAMP} tpl
+	$(PYTHON) -m tools.write_build_info --artifact-kind frozen-onefile --output-root ${PROJ_DIR} --require-manifest
 
 build: build_info_cli
 	$(PYTHON) -m tools.generate_spec -o pyfcstm.spec --icon-dir ${APP_ICON_DIR}
@@ -176,12 +179,13 @@ test_cli:
 clean:
 	rm -rf ${DIST_DIR} ${BUILD_DIR} *.egg-info
 	rm -rf build dist pyfcstm.spec
+	rm -f pyfcstm/_resource_manifest.json pyfcstm/_build_info.json pyfcstm/config/build_info.py
 	rm -f ${VSCODE_ICON}
 	@rmdir --ignore-fail-on-non-empty ${VSCODE_EXT_DIR}/resources 2>/dev/null || true
 
 test: unittest
 
-unittest: tpl
+unittest: tpl selfcheck_manifest
 	UNITTEST=1 \
 		pytest "${RANGE_TEST_DIR}" \
 		-sv -m unittest \
@@ -190,6 +194,9 @@ unittest: tpl
 		--cov="${RANGE_SRC_DIR}" \
 		$(if ${MIN_COVERAGE},--cov-fail-under=${MIN_COVERAGE},) \
 		$(if ${WORKERS},-n ${WORKERS},)
+
+selfcheck_manifest: tpl
+	$(PYTHON) -m tools.write_build_info --artifact-kind source --output-root ${PROJ_DIR} --require-manifest
 
 template_unittest: tpl
 	UNITTEST=1 $(PYTHON) tools/run_template_suites.py --no-package $(TEMPLATE_UNITTEST_ARGS)

@@ -12,6 +12,12 @@ STREAM\_LIMIT
 .. autodata:: STREAM_LIMIT
 
 
+SPOOL\_LIMIT
+-----------------------------------------------------
+
+.. autodata:: SPOOL_LIMIT
+
+
 SIGTERM\_GRACE
 -----------------------------------------------------
 

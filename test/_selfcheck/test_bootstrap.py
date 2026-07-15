@@ -2,8 +2,11 @@
 
 import io
 import json
+import os
+import subprocess
 import sys
 import contextlib
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -168,6 +171,40 @@ def test_public_selfcheck_dispatch_runs_the_real_supervisor(capsys):
     payload = json.loads(capsys.readouterr().out)
     assert payload["exit_code"] == 0
     assert [item["status"] for item in payload["results"]] == ["PASS", "PASS"]
+
+
+@pytest.mark.unittest
+def test_module_entry_runs_public_selfcheck_in_a_fresh_process():
+    """The installed module entry completes self-check without test doubles."""
+    repository_root = Path(__file__).resolve().parents[2]
+    environment = os.environ.copy()
+    inherited_pythonpath = environment.get("PYTHONPATH")
+    environment["PYTHONPATH"] = os.pathsep.join(
+        item for item in (str(repository_root), inherited_pythonpath) if item
+    )
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pyfcstm",
+            "--self-check",
+            "--format",
+            "json",
+            "--color",
+            "never",
+        ],
+        cwd=str(repository_root),
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0
+    payload = json.loads(result.stdout)
+    assert payload["schema_version"] == "pyfcstm-selfcheck/v1"
+    assert payload["exit_code"] == 0
+    assert [item["status"] for item in payload["results"]] == ["PASS", "PASS"]
+    assert result.stderr == ""
 
 
 class _BinaryTextStream:

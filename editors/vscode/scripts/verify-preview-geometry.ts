@@ -50,6 +50,8 @@ interface FixtureReport {
 interface ScreenshotMetrics {
     shellViewportWidth: number;
     shellViewportHeight: number;
+    rightPaneWidth: number;
+    rightPaneHeight: number;
     stageViewportWidth: number;
     stageViewportHeight: number;
     svgWidth: number;
@@ -65,19 +67,52 @@ interface ScreenshotMetrics {
 
 interface RightPaneViewport {
     id: string;
+    /** Full VSCode window CSS width used by the host-shell capture. */
+    windowWidth: number;
+    /** Full VSCode window CSS height used by the host-shell capture. */
+    windowHeight: number;
+    /** Width of the editor group occupied by the preview webview. */
+    paneWidth: number;
+    /** Approximate VSCode title/menu strip above the workbench. */
+    topbarHeight: number;
+    /** Approximate VSCode status bar below the workbench. */
+    statusbarHeight: number;
+}
+
+interface PaneRect {
+    left: number;
+    top: number;
     width: number;
     height: number;
 }
 
-// These are shell dimensions, not a bare browser canvas.  The first case is
-// a typical 1920px-wide VSCode window with a 720px-tall work area; the second
-// is a compact laptop split.  The actual Stage rectangle is measured after the Toolbar, OptionsBar
-// and Details drawer have been mounted by the production webview bundle.
+function rightPaneRect(viewport: RightPaneViewport): PaneRect {
+    return {
+        left: viewport.windowWidth - viewport.paneWidth,
+        top: viewport.topbarHeight,
+        width: viewport.paneWidth,
+        height: viewport.windowHeight - viewport.topbarHeight - viewport.statusbarHeight,
+    };
+}
+
+// These are full VSCode-workbench dimensions.  The preview is mounted in a
+// right editor group that occupies exactly half of the window width; the
+// left half is rendered as an editor placeholder by the evidence shell.  A
+// bare Chrome viewport would miss the half-width constraint that triggers the
+// real OptionsBar wrapping and Stage flex sizing behavior.
 const RIGHT_PANE_VIEWPORTS: RightPaneViewport[] = [
-    {id: 'desktop-half', width: 960, height: 720},
-    {id: 'compact-half', width: 768, height: 600},
-    {id: 'wide-half', width: 1280, height: 800},
+    {id: 'compact-half', windowWidth: 1024, windowHeight: 768, paneWidth: 512, topbarHeight: 40, statusbarHeight: 22},
+    {id: 'laptop-half', windowWidth: 1280, windowHeight: 800, paneWidth: 640, topbarHeight: 40, statusbarHeight: 22},
+    {id: 'desktop-half', windowWidth: 1440, windowHeight: 900, paneWidth: 720, topbarHeight: 40, statusbarHeight: 22},
+    {id: 'wide-half', windowWidth: 1920, windowHeight: 1080, paneWidth: 960, topbarHeight: 40, statusbarHeight: 22},
 ];
+
+for (const viewport of RIGHT_PANE_VIEWPORTS) {
+    const pane = rightPaneRect(viewport);
+    if (viewport.paneWidth * 2 !== viewport.windowWidth || pane.height <= 0) {
+        throw new Error(`invalid VSCode right-pane scenario: ${JSON.stringify(viewport)}`);
+    }
+}
 
 class InMemoryDocument {
     readonly filePath: string;
@@ -239,7 +274,7 @@ function previewState(
     };
 }
 
-function previewWebviewHtml(state: PreviewWebviewState): string {
+function previewWebviewHtml(state: PreviewWebviewState, viewport: RightPaneViewport): string {
     const vscodeStub = '<script>window.acquireVsCodeApi = () => ({ postMessage:()=>{}, getState:()=>null, setState:()=>{} });</script>';
     const initialState = `<script>window.__FCSTM_INITIAL_STATE__ = ${scriptLiteral(state)};</script>`;
     // ``run-preview-geometry.js`` bundles this file into a temporary CJS
@@ -250,6 +285,20 @@ function previewWebviewHtml(state: PreviewWebviewState): string {
     const webviewCss = fs.readFileSync(path.join(vscodeDir, 'dist', 'preview-webview.css'), 'utf8');
     const webviewJs = fs.readFileSync(path.join(vscodeDir, 'dist', 'preview-webview.js'), 'utf8');
     const elkJs = fs.readFileSync(path.join(vscodeDir, 'node_modules', 'elkjs', 'lib', 'elk.bundled.js'), 'utf8');
+    const pane = rightPaneRect(viewport);
+    const shellCss = `<style>
+html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
+body { background: #1e1e1e; color: #cccccc; }
+#vscode-window { display: grid; grid-template-rows: ${viewport.topbarHeight}px minmax(0, 1fr) ${viewport.statusbarHeight}px; width: 100%; height: 100%; }
+#vscode-titlebar { display: flex; align-items: center; padding: 0 14px; box-sizing: border-box; background: #181818; color: #b8b8b8; font: 12px system-ui, sans-serif; }
+#vscode-workbench { display: grid; grid-template-columns: minmax(0, 1fr) ${pane.width}px; min-width: 0; min-height: 0; }
+#vscode-editor-pane { min-width: 0; min-height: 0; border-right: 1px solid #333333; background: #252526; overflow: hidden; }
+#vscode-editor-tabs { height: 34px; box-sizing: border-box; padding: 9px 14px; border-bottom: 1px solid #333333; color: #9d9d9d; font: 12px system-ui, sans-serif; }
+#vscode-editor-body { padding: 24px; color: #6f6f6f; font: 12px monospace; white-space: pre; }
+#vscode-right-pane { min-width: 0; min-height: 0; width: ${pane.width}px; height: ${pane.height}px; overflow: hidden; background: #1e1e1e; }
+#vscode-right-pane > #app { width: 100%; height: 100%; min-width: 0; min-height: 0; }
+#vscode-statusbar { display: flex; align-items: center; padding: 0 12px; box-sizing: border-box; background: #007acc; color: #ffffff; font: 11px system-ui, sans-serif; }
+</style>`;
     // The marker is written by the real webview after Vue + ELK settle.  It
     // records the actual Stage rectangle and the transform produced by the
     // production fitToView path, so screenshots cannot silently fall back to
@@ -275,11 +324,23 @@ function previewWebviewHtml(state: PreviewWebviewState): string {
             windowHeight: window.innerHeight,
             stage: {left: stageRect.left, top: stageRect.top, width: stageRect.width, height: stageRect.height},
             inner: {left: innerRect.left, top: innerRect.top, right: innerRect.right, bottom: innerRect.bottom},
+            rightPane: (() => {
+                const rect = document.querySelector('#vscode-right-pane')?.getBoundingClientRect();
+                return rect ? {left: rect.left, top: rect.top, width: rect.width, height: rect.height} : null;
+            })(),
             svgWidth,
             svgHeight,
             transform: inner.style.transform,
             svgChildren: svg.children.length,
             stageEmpty: Boolean(document.querySelector('.fcstm-stage__empty')),
+            shellScrollWidth: document.documentElement.scrollWidth,
+            shellScrollHeight: document.documentElement.scrollHeight,
+            paneScrollWidth: document.querySelector('#vscode-right-pane')?.scrollWidth || 0,
+            paneScrollHeight: document.querySelector('#vscode-right-pane')?.scrollHeight || 0,
+            shellChildren: Array.from(document.querySelectorAll('.fcstm-preview-shell > *')).map(element => {
+                const rect = element.getBoundingClientRect();
+                return {className: element.className, top: rect.top, height: rect.height, bottom: rect.bottom};
+            }),
             errors: window.__FCSTM_PREVIEW_ERRORS__ || [],
         };
         root.setAttribute('data-fcstm-right-pane-metrics', btoa(unescape(encodeURIComponent(JSON.stringify(payload)))));
@@ -291,9 +352,15 @@ function previewWebviewHtml(state: PreviewWebviewState): string {
         'window.addEventListener("error",e=>window.__FCSTM_PREVIEW_ERRORS__.push(String(e.error||e.message)));' +
         'window.addEventListener("unhandledrejection",e=>window.__FCSTM_PREVIEW_ERRORS__.push(String(e.reason)));</script>';
     return '<!doctype html><html><head><meta charset="utf-8"><style>' + webviewCss +
-        '</style><style>html,body,#app{margin:0;padding:0;width:100%;height:100%;min-height:100%;}</style></head><body>' +
-        errorProbe + vscodeStub + initialState + '<div id="app"></div><script>' + elkJs + '</script><script>' + webviewJs +
-        '</script>' + metricsProbe + '</body></html>';
+        '</style><style>html,body,#app{margin:0;padding:0;width:100%;height:100%;min-height:100%;}</style>' +
+        shellCss + '</head><body>' + errorProbe + vscodeStub + initialState +
+        '<div id="vscode-window">' +
+        '<div id="vscode-titlebar">FCSTM Preview - VSCode workbench</div>' +
+        '<div id="vscode-workbench"><div id="vscode-editor-pane"><div id="vscode-editor-tabs">machine.fcstm</div>' +
+        '<div id="vscode-editor-body">state Machine {\n    // editor group\n}</div></div>' +
+        '<div id="vscode-right-pane"><div id="app"></div></div></div>' +
+        '<div id="vscode-statusbar">FCSTM  |  Preview</div></div>' +
+        '<script>' + elkJs + '</script><script>' + webviewJs + '</script>' + metricsProbe + '</body></html>';
 }
 
 interface BrowserMetrics {
@@ -301,11 +368,17 @@ interface BrowserMetrics {
     windowHeight: number;
     stage: {left: number; top: number; width: number; height: number};
     inner: {left: number; top: number; right: number; bottom: number};
+    rightPane: {left: number; top: number; width: number; height: number} | null;
     svgWidth: number;
     svgHeight: number;
     transform: string;
     svgChildren: number;
     stageEmpty: boolean;
+    shellScrollWidth: number;
+    shellScrollHeight: number;
+    paneScrollWidth: number;
+    paneScrollHeight: number;
+    shellChildren?: Array<{className: string; top: number; height: number; bottom: number}>;
     errors?: string[];
 }
 
@@ -320,16 +393,17 @@ function readBrowserMetrics(encoded: string, pngPath: string, viewport: RightPan
         if (!(error instanceof SyntaxError) && !(error instanceof TypeError)) throw error;
         throw new Error(`invalid right-pane metrics for ${pngPath}: ${String(error)}`);
     }
-    if (metrics.windowWidth !== viewport.width || metrics.windowHeight !== viewport.height) {
+    if (metrics.windowWidth !== viewport.windowWidth || metrics.windowHeight !== viewport.windowHeight) {
         throw new Error(
             `webview viewport is ${metrics.windowWidth}x${metrics.windowHeight}; ` +
-            `expected ${viewport.width}x${viewport.height}`
+            `expected full VSCode window ${viewport.windowWidth}x${viewport.windowHeight}`
         );
     }
     const png = readPngDimensions(pngPath);
-    if (png.width !== viewport.width || png.height !== viewport.height) {
+    if (png.width !== viewport.windowWidth || png.height !== viewport.windowHeight) {
         throw new Error(
-            `right-pane screenshot is ${png.width}x${png.height}; expected ${viewport.width}x${viewport.height}`
+            `VSCode workbench screenshot is ${png.width}x${png.height}; ` +
+            `expected ${viewport.windowWidth}x${viewport.windowHeight}`
         );
     }
     if (metrics.errors && metrics.errors.length > 0) {
@@ -338,6 +412,38 @@ function readBrowserMetrics(encoded: string, pngPath: string, viewport: RightPan
     if (metrics.stage.width <= 0 || metrics.stage.height <= 0 || metrics.svgWidth <= 0 ||
         metrics.svgHeight <= 0 || metrics.svgChildren === 0 || metrics.stageEmpty) {
         throw new Error(`right-pane webview did not render a usable Stage for ${pngPath}: ${JSON.stringify(metrics)}`);
+    }
+    const expectedPane = rightPaneRect(viewport);
+    const close = (actual: number, wanted: number): boolean => Math.abs(actual - wanted) <= 1;
+    if (!metrics.rightPane || !close(metrics.rightPane.left, expectedPane.left) ||
+        !close(metrics.rightPane.top, expectedPane.top) ||
+        !close(metrics.rightPane.width, expectedPane.width) ||
+        !close(metrics.rightPane.height, expectedPane.height)) {
+        throw new Error(
+            `VSCode right-pane host geometry drifted for ${pngPath}: ` +
+            `actual=${JSON.stringify(metrics.rightPane)}, expected=${JSON.stringify(expectedPane)}`
+        );
+    }
+    if (metrics.shellScrollWidth > metrics.windowWidth || metrics.shellScrollHeight > metrics.windowHeight ||
+        metrics.paneScrollWidth > expectedPane.width || metrics.paneScrollHeight > expectedPane.height) {
+        throw new Error(
+            `VSCode right-pane shell overflows its host for ${pngPath}: ` +
+            JSON.stringify({window: [metrics.windowWidth, metrics.windowHeight],
+                shellScroll: [metrics.shellScrollWidth, metrics.shellScrollHeight],
+                pane: [expectedPane.width, expectedPane.height],
+                paneScroll: [metrics.paneScrollWidth, metrics.paneScrollHeight],
+                shellChildren: metrics.shellChildren})
+        );
+    }
+    const paneRight = expectedPane.left + expectedPane.width;
+    const paneBottom = expectedPane.top + expectedPane.height;
+    if (metrics.stage.left < expectedPane.left - 1 || metrics.stage.top < expectedPane.top - 1 ||
+        metrics.stage.left + metrics.stage.width > paneRight + 1 ||
+        metrics.stage.top + metrics.stage.height > paneBottom + 1) {
+        throw new Error(
+            `Stage escapes the VSCode right editor group for ${pngPath}: ` +
+            `pane=${JSON.stringify(expectedPane)}, stage=${JSON.stringify(metrics.stage)}`
+        );
     }
     const transform = metrics.transform.match(
         /translate\(\s*([-+0-9.eE]+)px,\s*([-+0-9.eE]+)px\)\s*scale\(\s*([-+0-9.eE]+)\s*\)/
@@ -349,8 +455,8 @@ function readBrowserMetrics(encoded: string, pngPath: string, viewport: RightPan
     const ty = Number(transform[2]);
     const scale = Number(transform[3]);
     const expected = computePreviewFit(metrics.stage, {width: metrics.svgWidth, height: metrics.svgHeight});
-    const close = (actual: number, wanted: number): boolean => Math.abs(actual - wanted) <= 0.02;
-    if (!close(tx, expected.tx) || !close(ty, expected.ty) || !close(scale, expected.scale)) {
+    const closeTransform = (actual: number, wanted: number): boolean => Math.abs(actual - wanted) <= 0.02;
+    if (!closeTransform(tx, expected.tx) || !closeTransform(ty, expected.ty) || !closeTransform(scale, expected.scale)) {
         throw new Error(
             `production fit transform diverges from shared contract for ${pngPath}: ` +
             `actual=${JSON.stringify({tx, ty, scale})}, expected=${JSON.stringify(expected)}`
@@ -371,6 +477,12 @@ function readBrowserMetrics(encoded: string, pngPath: string, viewport: RightPan
         stage: metrics.stage,
         svgWidth: metrics.svgWidth,
         svgHeight: metrics.svgHeight,
+        rightPane: metrics.rightPane,
+        shellScrollWidth: metrics.shellScrollWidth,
+        shellScrollHeight: metrics.shellScrollHeight,
+        paneScrollWidth: metrics.paneScrollWidth,
+        paneScrollHeight: metrics.paneScrollHeight,
+        shellChildren: metrics.shellChildren,
         transform: metrics.transform,
         tx,
         ty,
@@ -522,7 +634,7 @@ async function captureWebviewScreenshot(
     const browser = spawn(chrome, [
         '--headless=new', '--no-sandbox', '--disable-gpu', '--hide-scrollbars',
         '--disable-dev-shm-usage', `--user-data-dir=${profileDir}`,
-        `--remote-debugging-port=${port}`, `--window-size=${viewport.width},${viewport.height}`, 'about:blank',
+        `--remote-debugging-port=${port}`, `--window-size=${viewport.windowWidth},${viewport.windowHeight}`, 'about:blank',
     ], {stdio: ['ignore', 'ignore', 'pipe']});
     let ws: any = null;
     try {
@@ -550,8 +662,8 @@ async function captureWebviewScreenshot(
         await rpcSend(ws, ++id, 'Runtime.enable');
         await rpcSend(ws, ++id, 'Page.enable');
         await rpcSend(ws, ++id, 'Emulation.setDeviceMetricsOverride', {
-            width: viewport.width,
-            height: viewport.height,
+            width: viewport.windowWidth,
+            height: viewport.windowHeight,
             deviceScaleFactor: 1,
             mobile: false,
         });
@@ -600,13 +712,13 @@ async function screenshot(
     exerciseResize = false,
 ): Promise<ScreenshotMetrics> {
     const htmlPath = pngPath.replace(/\.png$/, '.html');
-    const html = previewWebviewHtml(state);
+    const html = previewWebviewHtml(state, viewport);
     fs.writeFileSync(htmlPath, html);
     let encodedMetrics: string;
     try {
-        // The actual capture uses CDP so ``viewport`` is the webview content
-        // rectangle rather than Chrome's outer window (which includes an
-        // implementation-dependent 87px headless frame offset).
+        // The capture is the full VSCode-workbench shell.  The production
+        // preview is mounted in the right editor group, whose half-width
+        // rectangle is checked separately from the outer window dimensions.
         encodedMetrics = await captureWebviewScreenshot(chrome, htmlPath, pngPath, viewport, exerciseResize);
     } finally {
         fs.rmSync(htmlPath, {force: true});
@@ -615,6 +727,8 @@ async function screenshot(
     return {
         shellViewportWidth: metrics.windowWidth,
         shellViewportHeight: metrics.windowHeight,
+        rightPaneWidth: metrics.rightPane?.width || 0,
+        rightPaneHeight: metrics.rightPane?.height || 0,
         stageViewportWidth: metrics.stage.width,
         stageViewportHeight: metrics.stage.height,
         svgWidth: metrics.svgWidth,
@@ -743,7 +857,7 @@ async function main(): Promise<void> {
         productionPostProcess: 'smoothGraphEdges',
         terminalMinimumPx: MIN_TERMINAL_SEGMENT,
         fitToViewMargin: PREVIEW_FIT_MARGIN_PX,
-        screenshotEvidence: chrome ? 'production preview-webview App shell' : 'not available',
+        screenshotEvidence: chrome ? 'production preview-webview App shell inside VSCode-like right editor group' : 'not available',
         drawerResizeExerciseCount,
         baselineFailures: baselineFailures.length,
         fixedFailures: fixedFailures.length,

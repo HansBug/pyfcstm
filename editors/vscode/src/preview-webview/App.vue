@@ -521,6 +521,13 @@ body {
 @container fcstm-preview (max-height: 760px) {
     .fcstm-stage { min-height: 240px; }
 }
+/* Container queries are unavailable in some older VSCode WebViews covered
+   by the extension's ``^1.60.0`` engine range. The webview viewport itself
+   is the editor-group height, so this media-query fallback preserves the
+   compact right-pane contract there as well. */
+@media (max-height: 760px) {
+    .fcstm-stage { min-height: 240px; }
+}
 
 /* Bottom drawer: bounded-height container holding DetailsPanel. The
    variables/events panels remain below it; Stage above gets the remaining

@@ -25,6 +25,7 @@ const STATE_TITLE_HEIGHT = 30;
 const LEAF_MIN_WIDTH = 140;
 const LEAF_MIN_HEIGHT = 58;
 export const MIN_TERMINAL_SEGMENT = 18;
+export const MIN_SELF_LOOP_SEGMENT = 18;
 const GEOMETRY_EPSILON = 0.75;
 
 export interface FcstmElkPoint {

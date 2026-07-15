@@ -1,4 +1,5 @@
 import * as fs from 'node:fs';
+import * as crypto from 'node:crypto';
 import * as http from 'node:http';
 import {createRequire} from 'node:module';
 import * as os from 'node:os';
@@ -12,6 +13,7 @@ import {
     buildFcstmDiagramWebviewPayload,
     collectElkLayoutGeometry,
     MIN_TERMINAL_SEGMENT,
+    MIN_SELF_LOOP_SEGMENT,
     resolveFcstmDiagramPreviewOptions,
     terminalApproach,
 } from '../../jsfcstm/dist/diagram';
@@ -28,6 +30,10 @@ interface GeometryMetrics {
     malformed: number;
     short: number;
     minTerminal: number | null;
+    selfLoops: number;
+    malformedSelfLoops: number;
+    shortSelfLoops: number;
+    minSelfLoopSegment: number | null;
 }
 
 interface FixtureReport {
@@ -189,25 +195,58 @@ function removeNestedSpacing(node: any, isCanvas = true): void {
 
 function measure(graph: any): GeometryMetrics {
     const {boxes, edgeOffsets} = collectElkLayoutGeometry(graph);
-    const result: GeometryMetrics = {sections: 0, malformed: 0, short: 0, minTerminal: null};
+    const result: GeometryMetrics = {
+        sections: 0,
+        malformed: 0,
+        short: 0,
+        minTerminal: null,
+        selfLoops: 0,
+        malformedSelfLoops: 0,
+        shortSelfLoops: 0,
+        minSelfLoopSegment: null,
+    };
 
     function visit(node: any): void {
         for (const edge of node.edges || []) {
             const sourceId = edge.sources?.[0];
             const targetId = edge.targets?.[0];
-            if (!sourceId || !targetId || sourceId === targetId) continue;
+            if (!sourceId || !targetId) {
+                result.malformed += 1;
+                continue;
+            }
             const box = boxes.get(targetId);
             const offset = edgeOffsets.get(edge.id);
             if (!offset) {
                 throw new Error(`edge ${edge.id}: owner offset missing during geometry collection`);
             }
-            for (const section of edge.sections || []) {
+            if (!edge.sections || edge.sections.length === 0) {
+                result.malformed += 1;
+                continue;
+            }
+            for (const section of edge.sections) {
                 result.sections += 1;
                 const points: Point[] = [
                     section.startPoint,
                     ...(section.bendPoints || []),
                     section.endPoint,
                 ].map(point => ({x: point.x + offset.x, y: point.y + offset.y}));
+                if (sourceId === targetId) {
+                    result.selfLoops += 1;
+                    if (points.length < 4) {
+                        result.malformedSelfLoops += 1;
+                        continue;
+                    }
+                    const lengths = points.slice(1).map((point, index) => Math.hypot(
+                        point.x - points[index].x,
+                        point.y - points[index].y,
+                    ));
+                    const loopMinimum = Math.min(...lengths);
+                    result.minSelfLoopSegment = result.minSelfLoopSegment === null
+                        ? loopMinimum
+                        : Math.min(result.minSelfLoopSegment, loopMinimum);
+                    if (loopMinimum < MIN_SELF_LOOP_SEGMENT) result.shortSelfLoops += 1;
+                    continue;
+                }
                 const approach = box && points.length >= 2
                     ? terminalApproach(points[points.length - 2], points[points.length - 1], box)
                     : null;
@@ -272,6 +311,10 @@ function readPngDimensions(pngPath: string): {width: number; height: number} {
         throw new Error(`invalid PNG signature: ${pngPath}`);
     }
     return {width: data.readUInt32BE(16), height: data.readUInt32BE(20)};
+}
+
+function sha256File(filePath: string): string {
+    return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
 }
 
 function scriptLiteral(value: unknown): string {
@@ -1043,12 +1086,23 @@ async function main(): Promise<void> {
         }
     }
 
-    const fixedFailures = reports.filter(item => item.fixed.malformed > 0 || item.fixed.short > 0);
-    const baselineFailures = reports.filter(item => item.baseline.malformed > 0 || item.baseline.short > 0);
+    const fixedFailures = reports.filter(item => item.fixed.malformed > 0 || item.fixed.short > 0 ||
+        item.fixed.malformedSelfLoops > 0 || item.fixed.shortSelfLoops > 0);
+    const baselineFailures = reports.filter(item => item.baseline.malformed > 0 || item.baseline.short > 0 ||
+        item.baseline.malformedSelfLoops > 0 || item.baseline.shortSelfLoops > 0);
     const crossingRegressions = reports.filter(item => item.layout.fixed.crossings > item.layout.baseline.crossings);
     const areaDeltas = reports.map(item => item.layout.areaDeltaPercent);
     const report = {
         generatedAt: new Date().toISOString(),
+        evidence: {
+            gitHead: process.env.PYFCSTM_GEOMETRY_GIT_HEAD || null,
+            rightPaneModel: 'VSCode workbench shell with preview mounted in a 50% right editor group',
+            sourceAndBundleHashes: {
+                jsfcstmDiagramBundle: sha256File(path.resolve(process.cwd(), '../../jsfcstm/dist/diagram/index.js')),
+                previewWebviewBundle: sha256File(path.resolve(process.cwd(), 'dist/preview-webview.js')),
+                previewWebviewCss: sha256File(path.resolve(process.cwd(), 'dist/preview-webview.css')),
+            },
+        },
         fixtureCount: fixtureNames.length,
         directions: ['TB', 'LR'],
         rightPaneViewports: RIGHT_PANE_VIEWPORTS,

@@ -20,6 +20,44 @@ for (const required of [
     }
 }
 const output = path.join(os.tmpdir(), `fcstm-preview-geometry-${process.pid}.cjs`);
+const repoRoot = path.resolve(__dirname, '..', '..');
+const freshnessChecks = [
+    {
+        label: 'jsfcstm diagram bundle',
+        artifact: jsfcstmEntry,
+        sources: [
+            path.join(repoRoot, 'editors/jsfcstm/src/diagram/elk-graph.ts'),
+            path.join(repoRoot, 'editors/jsfcstm/src/diagram/index.ts'),
+        ],
+    },
+    {
+        label: 'preview webview bundle',
+        artifact: path.resolve(__dirname, '..', 'dist', 'preview-webview.js'),
+        sources: [
+            path.resolve(__dirname, '..', 'src/preview-webview/App.vue'),
+            path.resolve(__dirname, '..', 'src/preview-webview/components/Stage.vue'),
+            path.resolve(__dirname, '..', 'src/preview-webview/layout.ts'),
+            path.resolve(__dirname, '..', 'src/preview-webview/render/edge-smoother.ts'),
+            path.resolve(__dirname, '..', 'src/preview-webview/render/svg.ts'),
+        ],
+    },
+];
+for (const check of freshnessChecks) {
+    const artifactMtime = fs.statSync(check.artifact).mtimeMs;
+    const newestSource = Math.max(...check.sources.map(source => fs.statSync(source).mtimeMs));
+    if (artifactMtime + 1000 < newestSource) {
+        throw new Error(
+            `${check.label} is older than its source inputs; rebuild before running the geometry gate: ` +
+            `${JSON.stringify({artifact: check.artifact, artifactMtime, newestSource})}`
+        );
+    }
+}
+const gitHead = spawnSync('git', ['rev-parse', 'HEAD'], {cwd: repoRoot, encoding: 'utf8'}).stdout.trim();
+const expectedHead = process.env.PYFCSTM_GEOMETRY_EXPECTED_HEAD;
+if (expectedHead && gitHead !== expectedHead) {
+    throw new Error(`geometry gate is at ${gitHead || '<unknown>'}, expected ${expectedHead}`);
+}
+if (gitHead) process.env.PYFCSTM_GEOMETRY_GIT_HEAD = gitHead;
 // This command is the evidence-producing right-pane gate.  A missing browser
 // must fail closed instead of silently reducing the run to raw ELK geometry;
 // callers doing a geometry-only smoke test may opt out explicitly.

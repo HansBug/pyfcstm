@@ -11,6 +11,7 @@ import {
     buildFcstmElkGraph,
     collectElkLayoutGeometry,
     MIN_TERMINAL_SEGMENT,
+    MIN_SELF_LOOP_SEGMENT,
     renderFcstmDiagramSvg,
     resolveFcstmDiagramPreviewOptions,
     terminalApproach,
@@ -376,7 +377,27 @@ describe('jsfcstm ELK-based diagram pipeline', () => {
                     for (const edge of node.edges || []) {
                         const sourceId = edge.sources?.[0];
                         const targetId = edge.targets?.[0];
-                        if (!sourceId || !targetId || sourceId === targetId) {
+                        if (!sourceId || !targetId) {
+                            assert.fail(`${fixtureName}/${direction}/${edge.id}: edge endpoint id missing`);
+                        }
+                        if (sourceId === targetId) {
+                            assert.ok((edge.sections || []).length > 0,
+                                `${fixtureName}/${direction}/${edge.id}: self-loop has no routed section`);
+                            for (const section of edge.sections || []) {
+                                const points = [
+                                    section.startPoint,
+                                    ...(section.bendPoints || []),
+                                    section.endPoint,
+                                ];
+                                assert.ok(points.length >= 4,
+                                    `${fixtureName}/${direction}/${edge.id}: self-loop needs a visible orthogonal route`);
+                                const lengths = points.slice(1).map((point, index) => Math.hypot(
+                                    point.x - points[index].x,
+                                    point.y - points[index].y,
+                                ));
+                                assert.ok(Math.min(...lengths) >= MIN_SELF_LOOP_SEGMENT,
+                                    `${fixtureName}/${direction}/${edge.id}: self-loop segment is too short`);
+                            }
                             continue;
                         }
                         const targetBox = boxes.get(targetId);

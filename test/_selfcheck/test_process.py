@@ -408,6 +408,8 @@ def test_frozen_parent_does_not_inherit_posix_file_size_quota(monkeypatch):
 @pytest.mark.unittest
 def test_frozen_worker_spawn_omits_rlimit_preexec(monkeypatch):
     """A frozen worker still starts without inheriting ``RLIMIT_FSIZE``."""
+    if os.name == "nt":
+        pytest.skip("requires a real frozen executable on Windows")
     observed = {}
     real_popen = process_module.subprocess.Popen
 

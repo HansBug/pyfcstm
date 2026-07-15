@@ -281,6 +281,24 @@ def test_registry_distribution_and_manifest_missing_paths(monkeypatch, tmp_path)
     )
     assert registry._distribution_file("METADATA", required=True).reason == "not_applicable"
 
+    class MissingDistributionImportError:
+        """Emulate modern importlib metadata's missing-package exception."""
+
+        class PackageNotFoundError(ImportError):
+            """Raised when no installed distribution metadata exists."""
+
+        @staticmethod
+        def files(name):
+            raise MissingDistributionImportError.PackageNotFoundError(name)
+
+    monkeypatch.setattr(
+        registry.importlib,
+        "metadata",
+        MissingDistributionImportError,
+        raising=False,
+    )
+    assert registry._distribution_file("METADATA", required=True).reason == "not_applicable"
+
     missing = tmp_path / "missing.json"
     monkeypatch.setattr(registry, "_resource", lambda name: missing)
     assert registry._manifest().reason == "manifest_unavailable"

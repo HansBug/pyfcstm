@@ -433,11 +433,13 @@ def _path_is_under(path: Path, roots: Tuple[Path, ...]) -> bool:
 def _distribution_file(filename: str, required: bool = False) -> CheckOutcome:
     if filename == "RECORD":
         return _distribution_record(required)
+    package_not_found_error = None
     try:
         try:
             from importlib import metadata
         except ImportError:
             import importlib_metadata as metadata
+        package_not_found_error = getattr(metadata, "PackageNotFoundError", None)
         files = metadata.files("pyfcstm") or ()
         found = any(str(item).endswith(filename) for item in files)
     except KeyError:
@@ -448,7 +450,23 @@ def _distribution_file(filename: str, required: bool = False) -> CheckOutcome:
             "distribution file inventory is not applicable",
             "not_applicable",
         )
-    except (ImportError, OSError, ValueError) as err:
+    except ImportError as err:
+        # Python 3.8+ raises ``PackageNotFoundError`` (an ImportError) when a
+        # source checkout has no installed distribution metadata; other
+        # metadata import failures remain an unavailable-metadata warning.
+        if isinstance(package_not_found_error, type) and isinstance(
+            err, package_not_found_error
+        ):
+            return _warn(
+                "distribution file inventory is not applicable",
+                "not_applicable",
+            )
+        return _warn(
+            "distribution file inventory is unavailable",
+            "metadata_unavailable",
+            observed=str(err),
+        )
+    except (OSError, ValueError) as err:
         return _warn("distribution file inventory is unavailable", "metadata_unavailable", observed=str(err))
     if found:
         return _pass("distribution contains {}".format(filename))

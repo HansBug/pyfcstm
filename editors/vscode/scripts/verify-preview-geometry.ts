@@ -32,12 +32,30 @@ interface FixtureReport {
     baseline: GeometryMetrics;
     fixed: GeometryMetrics;
     svg: {baseline: string; fixed: string};
+    screenshots: {
+        baseline: ScreenshotMetrics | null;
+        fixed: ScreenshotMetrics | null;
+    };
     layout: {
         baseline: {width: number; height: number; crossings: number};
         fixed: {width: number; height: number; crossings: number};
         areaDeltaPercent: number;
     };
 }
+
+interface ScreenshotMetrics {
+    viewportWidth: number;
+    viewportHeight: number;
+    scale: number;
+    pngWidth: number;
+    pngHeight: number;
+}
+
+// The preview normally occupies the right half of a 1920px-wide VSCode
+// window. Match Stage.vue's fitToView margin instead of treating Chrome's
+// viewport as an unconstrained full-page canvas.
+const PREVIEW_VIEWPORT = {width: 960, height: 720};
+const PREVIEW_MARGIN = 16;
 
 class InMemoryDocument {
     readonly filePath: string;
@@ -145,20 +163,63 @@ function locateChrome(): string | null {
     return null;
 }
 
-function screenshot(chrome: string, svgPath: string, pngPath: string): void {
+function readPngDimensions(pngPath: string): {width: number; height: number} {
+    const data = fs.readFileSync(pngPath);
+    const validSignature = data.length >= 24 &&
+        data.readUInt32BE(0) === 0x89504e47 &&
+        data.readUInt32BE(4) === 0x0d0a1a0a;
+    if (!validSignature) {
+        throw new Error(`invalid PNG signature: ${pngPath}`);
+    }
+    return {width: data.readUInt32BE(16), height: data.readUInt32BE(20)};
+}
+
+function screenshot(
+    chrome: string,
+    svgPath: string,
+    pngPath: string,
+    svgWidth: number,
+    svgHeight: number,
+): ScreenshotMetrics {
     const htmlPath = svgPath.replace(/\.svg$/, '.html');
+    const availableWidth = Math.max(40, PREVIEW_VIEWPORT.width - PREVIEW_MARGIN * 2);
+    const availableHeight = Math.max(40, PREVIEW_VIEWPORT.height - PREVIEW_MARGIN * 2);
+    const scale = Math.min(availableWidth / svgWidth, availableHeight / svgHeight, 1);
+    const offsetX = (PREVIEW_VIEWPORT.width - svgWidth * scale) / 2;
+    const offsetY = (PREVIEW_VIEWPORT.height - svgHeight * scale) / 2;
     const html = '<!doctype html><meta charset="utf-8"><style>html,body{margin:0;background:#fff}' +
-        '.wrap{padding:16px}svg{display:block}</style><div class="wrap">' +
-        fs.readFileSync(svgPath, 'utf8') + '</div>';
+        `.viewport{position:relative;width:${PREVIEW_VIEWPORT.width}px;height:${PREVIEW_VIEWPORT.height}px;` +
+        'overflow:hidden;background:#fff}' +
+        `.canvas{position:absolute;left:${offsetX}px;top:${offsetY}px;width:${svgWidth}px;` +
+        `height:${svgHeight}px;transform:scale(${scale});transform-origin:0 0}` +
+        'svg{display:block}</style>' +
+        '<div class="viewport"><div class="canvas">' +
+        fs.readFileSync(svgPath, 'utf8') + '</div></div>';
     fs.writeFileSync(htmlPath, html);
     const result = spawnSync(chrome, [
         '--headless=new', '--disable-gpu', '--hide-scrollbars', '--virtual-time-budget=3000',
-        '--window-size=1800,1400', `--screenshot=${pngPath}`, `file://${htmlPath}`,
+        '--force-device-scale-factor=1',
+        `--window-size=${PREVIEW_VIEWPORT.width},${PREVIEW_VIEWPORT.height}`,
+        `--screenshot=${pngPath}`, `file://${htmlPath}`,
     ], {stdio: 'pipe'});
     fs.rmSync(htmlPath, {force: true});
     if (result.status !== 0) {
         throw new Error(`Chrome screenshot failed for ${svgPath}: ${result.stderr?.toString() || ''}`);
     }
+    const png = readPngDimensions(pngPath);
+    if (png.width !== PREVIEW_VIEWPORT.width || png.height !== PREVIEW_VIEWPORT.height) {
+        throw new Error(
+            `preview screenshot has unexpected dimensions ${png.width}x${png.height}; ` +
+            `expected ${PREVIEW_VIEWPORT.width}x${PREVIEW_VIEWPORT.height}`
+        );
+    }
+    return {
+        viewportWidth: PREVIEW_VIEWPORT.width,
+        viewportHeight: PREVIEW_VIEWPORT.height,
+        scale,
+        pngWidth: png.width,
+        pngHeight: png.height,
+    };
 }
 
 async function main(): Promise<void> {
@@ -194,11 +255,27 @@ async function main(): Promise<void> {
             const baselineSvg = path.join(outputDir, `${stem}.baseline.svg`);
             const fixedSvg = path.join(outputDir, `${stem}.fixed.svg`);
             const previewOptions = toPreviewOptions(options);
-            fs.writeFileSync(baselineSvg, renderSvg(baseline, previewOptions).svg);
-            fs.writeFileSync(fixedSvg, renderSvg(fixed, previewOptions).svg);
+            const baselineRendered = renderSvg(baseline, previewOptions);
+            const fixedRendered = renderSvg(fixed, previewOptions);
+            fs.writeFileSync(baselineSvg, baselineRendered.svg);
+            fs.writeFileSync(fixedSvg, fixedRendered.svg);
+            let baselineScreenshot: ScreenshotMetrics | null = null;
+            let fixedScreenshot: ScreenshotMetrics | null = null;
             if (chrome) {
-                screenshot(chrome, baselineSvg, baselineSvg.replace(/\.svg$/, '.png'));
-                screenshot(chrome, fixedSvg, fixedSvg.replace(/\.svg$/, '.png'));
+                baselineScreenshot = screenshot(
+                    chrome,
+                    baselineSvg,
+                    baselineSvg.replace(/\.svg$/, '.png'),
+                    baselineRendered.width,
+                    baselineRendered.height,
+                );
+                fixedScreenshot = screenshot(
+                    chrome,
+                    fixedSvg,
+                    fixedSvg.replace(/\.svg$/, '.png'),
+                    fixedRendered.width,
+                    fixedRendered.height,
+                );
             }
             const baselineArea = (baseline.width ?? 0) * (baseline.height ?? 0);
             const fixedArea = (fixed.width ?? 0) * (fixed.height ?? 0);
@@ -208,6 +285,7 @@ async function main(): Promise<void> {
                 baseline: measure(baseline),
                 fixed: measure(fixed),
                 svg: {baseline: path.basename(baselineSvg), fixed: path.basename(fixedSvg)},
+                screenshots: {baseline: baselineScreenshot, fixed: fixedScreenshot},
                 layout: {
                     baseline: {
                         width: baseline.width ?? 0,
@@ -236,7 +314,12 @@ async function main(): Promise<void> {
         fixtureCount: fixtureNames.length,
         directions: ['TB', 'LR'],
         productionPostProcess: 'smoothGraphEdges',
-        terminalMinimumPx: 18,
+        terminalMinimumPx: MIN_TERMINAL_SEGMENT,
+        screenshotViewport: {
+            width: PREVIEW_VIEWPORT.width,
+            height: PREVIEW_VIEWPORT.height,
+            fitToViewMargin: PREVIEW_MARGIN,
+        },
         baselineFailures: baselineFailures.length,
         fixedFailures: fixedFailures.length,
         sideEffects: {

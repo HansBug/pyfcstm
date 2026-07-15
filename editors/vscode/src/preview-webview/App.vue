@@ -515,8 +515,9 @@ body {
 }
 
 /* A side-by-side VSCode editor group is much shorter than a standalone
-   browser page. Keep the Stage usable after the toolbar, options and details
-   drawer have claimed their fixed space in compact workbench windows. */
+   browser page. The Stage defaults to a 320px minimum, but this compact
+   workbench contract deliberately lowers that floor to 240px after the
+   toolbar, options and details drawer have claimed their fixed space. */
 @container fcstm-preview (max-height: 760px) {
     .fcstm-stage { min-height: 240px; }
 }

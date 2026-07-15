@@ -63,6 +63,47 @@ interface ScreenshotMetrics {
     pngHeight: number;
     png: string;
     svgChildren: number;
+    resize: ResizeExerciseMetrics | null;
+}
+
+interface ResizeExerciseMetrics {
+    drag: {
+        beforeStageHeight: number;
+        draggedStageHeight: number;
+        restoredStageHeight: number;
+        beforeDrawerHeight: number;
+        draggedDrawerHeight: number;
+        restoredDrawerHeight: number;
+        runtime: {
+            before: RuntimeEvidence;
+            dragged: RuntimeEvidence;
+            restored: RuntimeEvidence;
+        };
+    };
+    toggle: {
+        beforeStageHeight: number;
+        collapsedStageHeight: number;
+        restoredStageHeight: number;
+        beforeDrawerHeight: number;
+        collapsedDrawerHeight: number;
+        restoredDrawerHeight: number;
+        runtime: {
+            before: RuntimeEvidence;
+            collapsed: RuntimeEvidence;
+            restored: RuntimeEvidence;
+        };
+    };
+}
+
+interface RuntimeEvidence {
+    pane: {left: number; top: number; width: number; height: number};
+    stage: {left: number; top: number; width: number; height: number};
+    drawer: {top: number; height: number; bottom: number};
+    inner: {left: number; top: number; right: number; bottom: number};
+    svg: {width: number; height: number; children: number};
+    fitTransform: string;
+    shellScroll: {width: number; height: number};
+    paneScroll: {width: number; height: number};
 }
 
 interface RightPaneViewport {
@@ -551,44 +592,162 @@ async function evaluatePage(ws: any, id: number, expression: string): Promise<an
     return result?.result?.value;
 }
 
-interface PageRectSnapshot {
+interface RuntimePageSnapshot {
     stage: {width: number; height: number; left: number; top: number};
     inner: {left: number; top: number; right: number; bottom: number};
+    pane: {left: number; top: number; width: number; height: number};
+    drawer: {top: number; height: number; bottom: number};
+    svgWidth: number;
+    svgHeight: number;
+    svgChildren: number;
+    transform: string;
+    shellScrollWidth: number;
+    shellScrollHeight: number;
+    paneScrollWidth: number;
+    paneScrollHeight: number;
+    errors: string[];
 }
 
-async function readPageRects(ws: any, id: number): Promise<PageRectSnapshot> {
+async function readRuntimePage(ws: any, id: number): Promise<RuntimePageSnapshot> {
     const value = await evaluatePage(ws, id, `(() => {
         const stage = document.querySelector('.fcstm-stage__viewport');
         const inner = document.querySelector('.fcstm-stage__inner');
-        if (!stage || !inner) return '';
+        const pane = document.querySelector('#vscode-right-pane');
+        const drawer = document.querySelector('.fcstm-bottom-drawer');
+        const svg = document.querySelector('.fcstm-stage__inner svg');
+        if (!stage || !inner || !pane || !drawer || !svg) return '';
         const s = stage.getBoundingClientRect();
         const i = inner.getBoundingClientRect();
+        const p = pane.getBoundingClientRect();
+        const d = drawer.getBoundingClientRect();
         return JSON.stringify({
             stage: {width: s.width, height: s.height, left: s.left, top: s.top},
             inner: {left: i.left, top: i.top, right: i.right, bottom: i.bottom},
+            pane: {left: p.left, top: p.top, width: p.width, height: p.height},
+            drawer: {top: d.top, height: d.height, bottom: d.bottom},
+            svgWidth: Number(svg.getAttribute('width') || svg.viewBox.baseVal.width || 0),
+            svgHeight: Number(svg.getAttribute('height') || svg.viewBox.baseVal.height || 0),
+            svgChildren: svg.children.length,
+            transform: inner.style.transform,
+            shellScrollWidth: document.documentElement.scrollWidth,
+            shellScrollHeight: document.documentElement.scrollHeight,
+            paneScrollWidth: pane.scrollWidth,
+            paneScrollHeight: pane.scrollHeight,
+            errors: window.__FCSTM_PREVIEW_ERRORS__ || [],
         });
     })()`);
-    if (!value) throw new Error('preview page did not expose Stage rectangles');
+    if (!value) throw new Error('preview page did not expose runtime geometry');
     try {
-        return JSON.parse(value) as PageRectSnapshot;
+        return JSON.parse(value) as RuntimePageSnapshot;
     } catch (error) {
         if (!(error instanceof SyntaxError)) throw error;
-        throw new Error(`invalid Stage rectangle snapshot: ${String(error)}`);
+        throw new Error(`invalid runtime geometry snapshot: ${String(error)}`);
     }
 }
 
-function assertRectInside(snapshot: PageRectSnapshot, label: string): void {
+function assertRuntimePage(snapshot: RuntimePageSnapshot, viewport: RightPaneViewport, label: string): void {
+    const expectedPane = rightPaneRect(viewport);
+    const close = (actual: number, wanted: number): boolean => Math.abs(actual - wanted) <= 1;
+    if (!close(snapshot.pane.left, expectedPane.left) || !close(snapshot.pane.top, expectedPane.top) ||
+        !close(snapshot.pane.width, expectedPane.width) || !close(snapshot.pane.height, expectedPane.height)) {
+        throw new Error(`${label}: right pane geometry drifted: ${JSON.stringify({snapshot, expectedPane})}`);
+    }
+    if (snapshot.errors.length > 0 || snapshot.svgChildren === 0 || snapshot.svgWidth <= 0 || snapshot.svgHeight <= 0) {
+        throw new Error(`${label}: preview runtime is unhealthy: ${JSON.stringify(snapshot)}`);
+    }
+    if (snapshot.shellScrollWidth > viewport.windowWidth || snapshot.shellScrollHeight > viewport.windowHeight ||
+        snapshot.paneScrollWidth > expectedPane.width || snapshot.paneScrollHeight > expectedPane.height) {
+        throw new Error(`${label}: right pane overflowed after resize: ${JSON.stringify(snapshot)}`);
+    }
+    const paneRight = expectedPane.left + expectedPane.width;
+    const paneBottom = expectedPane.top + expectedPane.height;
+    if (snapshot.stage.left < expectedPane.left - 1 || snapshot.stage.top < expectedPane.top - 1 ||
+        snapshot.stage.left + snapshot.stage.width > paneRight + 1 ||
+        snapshot.stage.top + snapshot.stage.height > paneBottom + 1) {
+        throw new Error(`${label}: Stage escaped right pane: ${JSON.stringify(snapshot)}`);
+    }
     const stageRight = snapshot.stage.left + snapshot.stage.width;
     const stageBottom = snapshot.stage.top + snapshot.stage.height;
     if (snapshot.inner.left < snapshot.stage.left - 1 || snapshot.inner.top < snapshot.stage.top - 1 ||
         snapshot.inner.right > stageRight + 1 || snapshot.inner.bottom > stageBottom + 1) {
         throw new Error(`${label}: transformed diagram is clipped by Stage: ${JSON.stringify(snapshot)}`);
     }
+    const transform = snapshot.transform.match(
+        /translate\(\s*([-+0-9.eE]+)px,\s*([-+0-9.eE]+)px\)\s*scale\(\s*([-+0-9.eE]+)\s*\)/
+    );
+    if (!transform) throw new Error(`${label}: production fit transform is missing: ${snapshot.transform}`);
+    const expected = computePreviewFit(snapshot.stage, {width: snapshot.svgWidth, height: snapshot.svgHeight});
+    if (Math.abs(Number(transform[1]) - expected.tx) > 0.02 ||
+        Math.abs(Number(transform[2]) - expected.ty) > 0.02 ||
+        Math.abs(Number(transform[3]) - expected.scale) > 0.02) {
+        throw new Error(`${label}: fit transform drifted: ${JSON.stringify({snapshot, expected})}`);
+    }
 }
 
-async function exerciseDrawerResize(ws: any, id: number): Promise<number> {
-    const before = await readPageRects(ws, ++id);
-    assertRectInside(before, 'before drawer resize');
+function runtimeEvidence(snapshot: RuntimePageSnapshot): RuntimeEvidence {
+    return {
+        pane: snapshot.pane,
+        stage: snapshot.stage,
+        drawer: snapshot.drawer,
+        inner: snapshot.inner,
+        svg: {width: snapshot.svgWidth, height: snapshot.svgHeight, children: snapshot.svgChildren},
+        fitTransform: snapshot.transform,
+        shellScroll: {width: snapshot.shellScrollWidth, height: snapshot.shellScrollHeight},
+        paneScroll: {width: snapshot.paneScrollWidth, height: snapshot.paneScrollHeight},
+    };
+}
+
+async function dispatchDrawerDrag(ws: any, id: number, deltaY: number): Promise<number> {
+    await evaluatePage(ws, ++id, `(() => {
+        const handle = document.querySelector('.fcstm-bottom-drawer__handle');
+        if (!handle) throw new Error('drawer resize handle missing');
+        const rect = handle.getBoundingClientRect();
+        const x = rect.left + rect.width / 2;
+        const startY = rect.top + rect.height / 2;
+        const endY = startY + ${deltaY};
+        handle.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, button: 0, clientX: x, clientY: startY}));
+        window.dispatchEvent(new MouseEvent('mousemove', {bubbles: true, buttons: 1, clientX: x, clientY: endY}));
+        window.dispatchEvent(new MouseEvent('mouseup', {bubbles: true, button: 0, clientX: x, clientY: endY}));
+        return true;
+    })()`);
+    return id;
+}
+
+interface ResizeExerciseResult {
+    id: number;
+    metrics: ResizeExerciseMetrics;
+}
+
+async function exerciseDrawerResize(
+    ws: any,
+    id: number,
+    viewport: RightPaneViewport,
+): Promise<ResizeExerciseResult> {
+    const before = await readRuntimePage(ws, ++id);
+    assertRuntimePage(before, viewport, 'before drawer resize');
+
+    // Exercise the real handle path first. Dragging down shrinks the drawer
+    // and gives Stage more room, so the assertion remains valid even in the
+    // compact 512px half-pane where Stage has a 240px minimum.  The
+    // production handler computes ``startY - clientY``; therefore a positive
+    // delta is the downward (drawer-shrinking) gesture.
+    const dragDelta = Math.min(60, Math.max(24, Math.floor(before.drawer.height * 0.2)));
+    id = await dispatchDrawerDrag(ws, id, dragDelta);
+    await new Promise(resolve => setTimeout(resolve, 350));
+    const dragged = await readRuntimePage(ws, ++id);
+    assertRuntimePage(dragged, viewport, 'after drawer drag');
+    if (dragged.stage.height <= before.stage.height + 10 || dragged.drawer.height >= before.drawer.height - 10) {
+        throw new Error(`drawer drag did not resize the production layout: ${JSON.stringify({before, dragged})}`);
+    }
+    id = await dispatchDrawerDrag(ws, id, -dragDelta);
+    await new Promise(resolve => setTimeout(resolve, 350));
+    const dragRestored = await readRuntimePage(ws, ++id);
+    assertRuntimePage(dragRestored, viewport, 'after drawer drag restore');
+    if (Math.abs(dragRestored.stage.height - before.stage.height) > 1 ||
+        Math.abs(dragRestored.drawer.height - before.drawer.height) > 1) {
+        throw new Error(`drawer drag restore did not return original layout: ${JSON.stringify({before, dragRestored})}`);
+    }
+
     await evaluatePage(ws, ++id, `(() => {
         const button = document.querySelector('.fcstm-bottom-drawer__toggle');
         if (!button) throw new Error('drawer toggle missing');
@@ -596,11 +755,11 @@ async function exerciseDrawerResize(ws: any, id: number): Promise<number> {
         return true;
     })()`);
     await new Promise(resolve => setTimeout(resolve, 350));
-    const collapsed = await readPageRects(ws, ++id);
+    const collapsed = await readRuntimePage(ws, ++id);
+    assertRuntimePage(collapsed, viewport, 'after drawer collapse');
     if (collapsed.stage.height <= before.stage.height + 20) {
         throw new Error(`drawer collapse did not enlarge Stage: ${JSON.stringify({before, collapsed})}`);
     }
-    assertRectInside(collapsed, 'after drawer collapse');
     await evaluatePage(ws, ++id, `(() => {
         const button = document.querySelector('.fcstm-bottom-drawer__toggle');
         if (!button) throw new Error('drawer toggle missing after collapse');
@@ -608,15 +767,42 @@ async function exerciseDrawerResize(ws: any, id: number): Promise<number> {
         return true;
     })()`);
     await new Promise(resolve => setTimeout(resolve, 350));
-    const restored = await readPageRects(ws, ++id);
+    const restored = await readRuntimePage(ws, ++id);
+    assertRuntimePage(restored, viewport, 'after drawer restore');
     if (Math.abs(restored.stage.height - before.stage.height) > 1) {
         throw new Error(`drawer restore did not return Stage height: ${JSON.stringify({before, restored})}`);
     }
-    // This final assertion is the regression guard: without the production
-    // ResizeObserver, the expanded drawer leaves the larger collapsed-scale
-    // diagram clipped by the smaller Stage.
-    assertRectInside(restored, 'after drawer restore');
-    return id;
+    return {
+        id,
+        metrics: {
+            drag: {
+                beforeStageHeight: before.stage.height,
+                draggedStageHeight: dragged.stage.height,
+                restoredStageHeight: dragRestored.stage.height,
+                beforeDrawerHeight: before.drawer.height,
+                draggedDrawerHeight: dragged.drawer.height,
+                restoredDrawerHeight: dragRestored.drawer.height,
+                runtime: {
+                    before: runtimeEvidence(before),
+                    dragged: runtimeEvidence(dragged),
+                    restored: runtimeEvidence(dragRestored),
+                },
+            },
+            toggle: {
+                beforeStageHeight: before.stage.height,
+                collapsedStageHeight: collapsed.stage.height,
+                restoredStageHeight: restored.stage.height,
+                beforeDrawerHeight: before.drawer.height,
+                collapsedDrawerHeight: collapsed.drawer.height,
+                restoredDrawerHeight: restored.drawer.height,
+                runtime: {
+                    before: runtimeEvidence(before),
+                    collapsed: runtimeEvidence(collapsed),
+                    restored: runtimeEvidence(restored),
+                },
+            },
+        },
+    };
 }
 
 async function captureWebviewScreenshot(
@@ -625,7 +811,7 @@ async function captureWebviewScreenshot(
     pngPath: string,
     viewport: RightPaneViewport,
     exerciseResize: boolean,
-): Promise<string> {
+): Promise<{marker: string; resize: ResizeExerciseMetrics | null}> {
     const vscodeDir = path.resolve(process.env.PYFCSTM_VSCODE_DIR || process.cwd());
     const requireFromVscode = createRequire(path.join(vscodeDir, 'package.json'));
     const WebSocket = requireFromVscode('ws') as any;
@@ -686,14 +872,19 @@ async function captureWebviewScreenshot(
                 'errors:window.__FCSTM_PREVIEW_ERRORS__||[]})');
             throw new Error(`preview webview did not settle before screenshot: ${htmlPath}; diagnostics=${diagnostics}`);
         }
-        if (exerciseResize) id = await exerciseDrawerResize(ws, id);
+        let resize: ResizeExerciseMetrics | null = null;
+        if (exerciseResize) {
+            const exercise = await exerciseDrawerResize(ws, id, viewport);
+            id = exercise.id;
+            resize = exercise.metrics;
+        }
         const shot = await rpcSend(ws, ++id, 'Page.captureScreenshot', {
             format: 'png',
             fromSurface: true,
             captureBeyondViewport: false,
         });
         fs.writeFileSync(pngPath, Buffer.from(shot.data, 'base64'));
-        return marker;
+        return {marker, resize};
     } finally {
         if (ws) ws.close();
         browser.kill('SIGTERM');
@@ -714,16 +905,16 @@ async function screenshot(
     const htmlPath = pngPath.replace(/\.png$/, '.html');
     const html = previewWebviewHtml(state, viewport);
     fs.writeFileSync(htmlPath, html);
-    let encodedMetrics: string;
+    let capture: {marker: string; resize: ResizeExerciseMetrics | null};
     try {
         // The capture is the full VSCode-workbench shell.  The production
         // preview is mounted in the right editor group, whose half-width
         // rectangle is checked separately from the outer window dimensions.
-        encodedMetrics = await captureWebviewScreenshot(chrome, htmlPath, pngPath, viewport, exerciseResize);
+        capture = await captureWebviewScreenshot(chrome, htmlPath, pngPath, viewport, exerciseResize);
     } finally {
         fs.rmSync(htmlPath, {force: true});
     }
-    const metrics = readBrowserMetrics(encodedMetrics, pngPath, viewport) as BrowserMetrics & ScreenshotMetrics;
+    const metrics = readBrowserMetrics(capture.marker, pngPath, viewport) as BrowserMetrics & ScreenshotMetrics;
     return {
         shellViewportWidth: metrics.windowWidth,
         shellViewportHeight: metrics.windowHeight,
@@ -740,6 +931,7 @@ async function screenshot(
         pngHeight: metrics.pngHeight,
         png: path.basename(pngPath),
         svgChildren: metrics.svgChildren,
+        resize: capture.resize,
     };
 }
 
@@ -759,6 +951,7 @@ async function main(): Promise<void> {
     const reports: FixtureReport[] = [];
     const chrome = locateChrome();
     let drawerResizeExerciseCount = 0;
+    let drawerDragExerciseCount = 0;
     if (!chrome && process.env.PYFCSTM_REQUIRE_PREVIEW_BROWSER === '1') {
         throw new Error('PYFCSTM_REQUIRE_PREVIEW_BROWSER=1 but no Chrome/Chromium executable was found');
     }
@@ -815,7 +1008,10 @@ async function main(): Promise<void> {
                         )
                         : null,
                 };
-                if (chrome) drawerResizeExerciseCount += 1;
+                if (chrome) {
+                    drawerResizeExerciseCount += 1;
+                    drawerDragExerciseCount += 1;
+                }
             }
             const baselineArea = (baseline.width ?? 0) * (baseline.height ?? 0);
             const fixedArea = (fixed.width ?? 0) * (fixed.height ?? 0);
@@ -859,6 +1055,7 @@ async function main(): Promise<void> {
         fitToViewMargin: PREVIEW_FIT_MARGIN_PX,
         screenshotEvidence: chrome ? 'production preview-webview App shell inside VSCode-like right editor group' : 'not available',
         drawerResizeExerciseCount,
+        drawerDragExerciseCount,
         baselineFailures: baselineFailures.length,
         fixedFailures: fixedFailures.length,
         sideEffects: {
@@ -880,6 +1077,7 @@ async function main(): Promise<void> {
         screenshots: Boolean(chrome),
         screenshotViewports: RIGHT_PANE_VIEWPORTS.map(viewport => viewport.id),
         drawerResizeExerciseCount,
+        drawerDragExerciseCount,
         outputDir,
     }, null, 2));
     if (fixedFailures.length > 0 || crossingRegressions.length > 0 ||

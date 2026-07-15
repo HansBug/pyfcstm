@@ -549,6 +549,7 @@ def run_check_process(
         if artifact_context is not None
         else os.environ.copy()
     )
+    child_environment["PYFCSTM_SELFCHECK_WORKER_PROCESS"] = "1"
     _set_network_environment(child_environment, network)
     stdout_spool = None
     stderr_spool = None
@@ -602,7 +603,10 @@ def run_check_process(
     posix_group = os.name == "posix"
     if posix_group:
         popen_kwargs["start_new_session"] = True
-        if _should_limit_worker_output():
+        # Non-frozen interpreters can enforce the quota before any callback or
+        # descendant starts.  Frozen bootloaders defer the same limit until the
+        # worker has completed archive extraction (see ``worker.py``).
+        if not getattr(sys, "frozen", False):
             popen_kwargs["preexec_fn"] = _limit_worker_output_files
     elif os.name == "nt":
         popen_kwargs["creationflags"] = getattr(

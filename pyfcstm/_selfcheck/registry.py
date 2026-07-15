@@ -139,6 +139,10 @@ def _pass(summary: str, expected: Optional[str] = None, observed: Optional[str] 
     return CheckOutcome("PASS", summary, expected=expected, observed=observed)
 
 
+def _skip(summary: str, reason: str = "not_applicable", observed=None):
+    return CheckOutcome("SKIP", summary, reason=reason, observed=observed)
+
+
 def _warn(
     summary: str,
     reason: str,
@@ -380,7 +384,7 @@ def _distribution_metadata() -> CheckOutcome:
                 "metadata_unavailable",
                 observed=str(err),
             )
-        return _warn("installed distribution metadata is unavailable", "metadata_unavailable", observed=str(err))
+        return _skip("installed distribution metadata is not applicable", observed=str(err))
     return _pass("installed distribution metadata is readable", observed=version)
 
 
@@ -458,7 +462,7 @@ def _distribution_file(filename: str, required: bool = False) -> CheckOutcome:
         # damaged metadata store.
         if required:
             return _fail("distribution file inventory is unavailable", "metadata_unavailable")
-        return _warn("distribution file inventory is not applicable", "not_applicable")
+        return _skip("distribution file inventory is not applicable")
     except ImportError as err:
         # Python 3.8+ raises ``PackageNotFoundError`` (an ImportError) when a
         # source checkout has no installed distribution metadata; other
@@ -468,7 +472,7 @@ def _distribution_file(filename: str, required: bool = False) -> CheckOutcome:
         ):
             if required:
                 return _fail("distribution file inventory is unavailable", "metadata_unavailable")
-            return _warn("distribution file inventory is not applicable", "not_applicable")
+            return _skip("distribution file inventory is not applicable")
         return _warn(
             "distribution file inventory is unavailable",
             "metadata_unavailable",
@@ -479,13 +483,20 @@ def _distribution_file(filename: str, required: bool = False) -> CheckOutcome:
     if found:
         return _pass("distribution contains {}".format(filename))
     required = required or _runtime_install_required()
-    return _warn("distribution does not expose {}".format(filename), "not_applicable") if not required else _fail("distribution file is missing", "record_missing", filename)
+    return _skip("distribution does not expose {}".format(filename)) if not required else _fail("distribution file is missing", "record_missing", filename)
 
 
 def _distribution_requirements() -> CheckOutcome:
-    metadata = _distribution_file("METADATA", required=_runtime_install_required())
+    required = _runtime_install_required()
+    metadata = _distribution_file("METADATA", required=required)
     if metadata.status != "PASS":
         return metadata
+    wheel = _distribution_file("WHEEL", required=required)
+    if wheel.status != "PASS":
+        return wheel
+    installer_metadata = _distribution_file("INSTALLER", required=required)
+    if installer_metadata.status not in ("PASS", "SKIP"):
+        return installer_metadata
     direct_url = _distribution_root().glob("*.dist-info/direct_url.json")
     direct_url_path = next(iter(direct_url), None)
     mode = "direct_url" if direct_url_path is not None else "installed"
@@ -501,10 +512,10 @@ def _distribution_requirements() -> CheckOutcome:
                 mode = "editable_direct_url"
         except (OSError, UnicodeError, ValueError) as err:
             return _fail("direct_url.json is invalid", "direct_url_invalid", observed=str(err))
-    installer = next(iter(_distribution_root().glob("*.dist-info/INSTALLER")), None)
-    if installer is not None:
+    installer_path = next(iter(_distribution_root().glob("*.dist-info/INSTALLER")), None)
+    if installer_path is not None:
         try:
-            if not installer.read_text(encoding="utf-8").strip():
+            if not installer_path.read_text(encoding="utf-8").strip():
                 return _fail("INSTALLER metadata is empty", "install_metadata_invalid")
         except (OSError, UnicodeError) as err:
             return _fail("INSTALLER metadata is unreadable", "install_metadata_invalid", observed=str(err))
@@ -513,11 +524,11 @@ def _distribution_requirements() -> CheckOutcome:
 
 def _distribution_record(required: bool = False) -> CheckOutcome:
     if getattr(sys, "frozen", False):
-        return _warn("RECORD is not applicable to a frozen executable", "not_applicable")
+        return _skip("RECORD is not applicable to a frozen executable")
     required = required or _runtime_install_required()
     path = _record_path()
     if path is None:
-        return _fail("RECORD is missing", "record_missing") if required else _warn("RECORD is not applicable", "not_applicable")
+        return _fail("RECORD is missing", "record_missing") if required else _skip("RECORD is not applicable")
     root = _distribution_root()
     allowed_roots = _record_allowed_roots(root)
     try:
@@ -560,13 +571,13 @@ def _distribution_entrypoints() -> CheckOutcome:
     except (ImportError, KeyError, OSError, TypeError, ValueError) as err:
         if _runtime_install_required():
             return _fail("entry-point metadata is unavailable", "metadata_unavailable", observed=str(err))
-        return _warn("entry-point metadata is unavailable", "metadata_unavailable", observed=str(err))
+        return _skip("entry-point metadata is not applicable", observed=str(err))
     for entry in entries:
         if getattr(entry, "name", None) == "pyfcstm":
             return _pass("pyfcstm console entry point is registered")
     if _runtime_install_required():
         return _fail("pyfcstm console entry point is not installed", "entrypoint_missing")
-    return _warn("pyfcstm console entry point is not installed", "not_applicable")
+    return _skip("pyfcstm console entry point is not applicable")
 
 
 def _runtime_install_required() -> bool:
@@ -648,9 +659,50 @@ def _json_resource(relative: str, label: str) -> CheckOutcome:
 def _diagnostics_schemas() -> CheckOutcome:
     """Validate every shipped diagnostics schema, not only the primary one."""
     for relative in ("diagnostics/schema.json", "diagnostics/inspect_llm_report_schema.json"):
-        outcome = _json_resource(relative, "diagnostic schema {}".format(relative))
-        if outcome.status != "PASS":
-            return outcome
+        path = _resource(relative)
+        try:
+            document = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, ValueError) as err:
+            return _fail(
+                "diagnostic schema {} is invalid".format(relative),
+                "resource_invalid",
+                observed=str(err),
+            )
+        if not isinstance(document, dict):
+            return _fail(
+                "diagnostic schema {} is not an object".format(relative),
+                "schema_invalid",
+            )
+        if not isinstance(document.get("$schema"), str) or not document["$schema"].startswith(
+            "https://json-schema.org/"
+        ):
+            return _fail(
+                "diagnostic schema {} has no JSON Schema dialect".format(relative),
+                "schema_invalid",
+            )
+        if not isinstance(document.get("$id"), str) or not document["$id"]:
+            return _fail(
+                "diagnostic schema {} has no stable ID".format(relative),
+                "schema_invalid",
+            )
+        if document.get("type") != "object":
+            return _fail(
+                "diagnostic schema {} has an unexpected root type".format(relative),
+                "schema_invalid",
+            )
+        required = document.get("required")
+        properties = document.get("properties")
+        if (
+            not isinstance(required, list)
+            or not required
+            or not all(isinstance(item, str) and item for item in required)
+            or not isinstance(properties, dict)
+            or any(item not in properties for item in required)
+        ):
+            return _fail(
+                "diagnostic schema {} has an invalid required/properties contract".format(relative),
+                "schema_invalid",
+            )
     return _pass("diagnostic schemas are valid", observed="2 schemas")
 
 
@@ -682,13 +734,38 @@ def _template_index() -> CheckOutcome:
 
 def _template_archives() -> CheckOutcome:
     index = json.loads(_resource("template/index.json").read_text(encoding="utf-8"))
+    manifest_hashes = {}
+    manifest_path = _resource("_resource_manifest.json")
+    if manifest_path.is_file():
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            resources = manifest.get("resources", [])
+            if not isinstance(resources, list):
+                return _fail("template resource manifest is invalid", "manifest_invalid")
+            manifest_hashes = {
+                item.get("path"): (item.get("sha256"), item.get("size"))
+                for item in resources
+                if isinstance(item, dict) and item.get("path")
+            }
+        except (OSError, UnicodeError, ValueError, AttributeError, TypeError) as err:
+            return _fail("template resource manifest is invalid", "manifest_invalid", observed=str(err))
     missing = []
     invalid_members = []
+    invalid_hashes = []
     for item in index.get("templates", []):
         archive = _resource("template") / str(item.get("archive", ""))
         if not archive.is_file():
             missing.append(str(archive))
             continue
+        expected_hash, expected_size = manifest_hashes.get(
+            "pyfcstm/template/{}".format(archive.name), (None, None)
+        )
+        if expected_hash:
+            observed_hash = hashlib.sha256(archive.read_bytes()).hexdigest()
+            if observed_hash != expected_hash or (
+                expected_size is not None and archive.stat().st_size != expected_size
+            ):
+                invalid_hashes.append(archive.name)
         try:
             with zipfile.ZipFile(str(archive)) as handle:
                 if handle.testzip() is not None:
@@ -709,6 +786,12 @@ def _template_archives() -> CheckOutcome:
             "template archive members are unsafe",
             "archive_invalid",
             observed=repr(invalid_members),
+        )
+    if invalid_hashes:
+        return _fail(
+            "template archive hash does not match the resource manifest",
+            "archive_hash_mismatch",
+            observed=repr(invalid_hashes),
         )
     return _fail("template archives are missing", "resource_missing", observed=repr(missing)) if missing else _pass("template archives are readable")
 

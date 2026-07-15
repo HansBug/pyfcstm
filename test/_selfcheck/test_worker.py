@@ -2,6 +2,7 @@
 
 import io
 import os
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -441,3 +442,42 @@ def test_worker_callback_output_limit_is_restored_after_overflow(monkeypatch):
     assert return_code == 1
     assert writes == [(1, worker_module.OUTPUT_LIMIT)]
     assert worker_module.os.write is not original_write
+
+
+@pytest.mark.unittest
+def test_physical_output_limit_probe_is_scoped_and_fail_closed(monkeypatch):
+    """The OS quota probe is scoped for direct calls and reports setup errors."""
+    calls = []
+
+    class Resource:
+        RLIMIT_FSIZE = 1
+
+        @staticmethod
+        def getrlimit(limit):
+            assert limit == 1
+            return (4, 8)
+
+        @staticmethod
+        def setrlimit(limit, value):
+            calls.append((limit, value))
+
+    monkeypatch.setitem(sys.modules, "resource", Resource)
+    monkeypatch.setenv("PYFCSTM_SELFCHECK_WORKER_PROCESS", "1")
+    previous, error = worker_module._install_physical_output_limit()
+    assert error is None
+    assert previous == (4, 8)
+    worker_module._restore_physical_output_limit(previous)
+    assert calls == [(1, (8, 8)), (1, (4, 8))]
+
+    class BrokenResource(Resource):
+        @staticmethod
+        def getrlimit(limit):
+            del limit
+            raise OSError("quota unavailable")
+
+    monkeypatch.setitem(sys.modules, "resource", BrokenResource)
+    nonce = "a" * 32
+    output = _install_streams(monkeypatch, nonce)
+    assert run_worker(_arguments(nonce)) == 1
+    result = read_stdout_frames(output.getvalue(), nonce, "fixture.worker")
+    assert result.envelope["reason"] == "output_limit_unavailable"

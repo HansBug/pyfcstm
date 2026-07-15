@@ -1,6 +1,7 @@
 """Tests for the static built-in self-check registry."""
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -257,6 +258,35 @@ def test_install_requirements_rejects_invalid_direct_url_and_empty_installer(tmp
 
 
 @pytest.mark.unittest
+def test_install_requirements_requires_wheel_metadata_for_artifacts(monkeypatch):
+    """A wheel/sdist check cannot pass without its WHEEL metadata file."""
+    monkeypatch.setenv("PYFCSTM_SELFCHECK_ARTIFACT_KIND", "wheel")
+
+    def distribution_file(filename, required=False):
+        del required
+        if filename == "METADATA":
+            return registry._pass("metadata")
+        if filename == "WHEEL":
+            return registry._fail("WHEEL is missing", "record_missing")
+        return registry._pass(filename)
+
+    monkeypatch.setattr(registry, "_distribution_file", distribution_file)
+    outcome = registry._distribution_requirements()
+    assert outcome.status == "FAIL"
+    assert outcome.reason == "record_missing"
+
+
+@pytest.mark.unittest
+def test_diagnostics_schema_probe_rejects_json_that_is_not_a_schema(monkeypatch):
+    """A parseable arbitrary JSON document is not a valid diagnostics schema."""
+    path = Path(__file__).parents[2] / "pyfcstm" / "template" / "index.json"
+    monkeypatch.setattr(registry, "_resource", lambda _name: path)
+    outcome = registry._diagnostics_schemas()
+    assert outcome.status == "FAIL"
+    assert outcome.reason == "schema_invalid"
+
+
+@pytest.mark.unittest
 def test_required_entrypoint_metadata_missing_is_failure(monkeypatch):
     """A wheel without the pyfcstm console entry point is not healthy."""
     class EmptyEntryPoints:
@@ -408,7 +438,7 @@ def test_frozen_install_record_is_not_applicable(monkeypatch):
     """A frozen executable has no wheel RECORD contract to validate."""
     monkeypatch.setattr(registry.sys, "frozen", True, raising=False)
     outcome = registry._distribution_record(required=True)
-    assert outcome.status == "WARN"
+    assert outcome.status == "SKIP"
     assert outcome.reason == "not_applicable"
 
 

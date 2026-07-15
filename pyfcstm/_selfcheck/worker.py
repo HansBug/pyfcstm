@@ -127,6 +127,36 @@ def _install_output_limiters():
     return original_write, original_streams
 
 
+def _install_physical_output_limit():
+    """Apply the OS quota after a frozen bootloader has finished startup."""
+    if os.name != "posix" or os.environ.get("PYFCSTM_SELFCHECK_WORKER_PROCESS") != "1":
+        return None, None
+    try:
+        import resource
+
+        previous = resource.getrlimit(resource.RLIMIT_FSIZE)
+        _, hard_limit = previous
+        limit = OUTPUT_LIMIT if hard_limit < 0 else min(OUTPUT_LIMIT, hard_limit)
+        resource.setrlimit(resource.RLIMIT_FSIZE, (limit, limit))
+    except (AttributeError, ImportError, OSError, ValueError) as err:
+        return None, "{}: {}".format(type(err).__name__, err)
+    return previous, None
+
+
+def _restore_physical_output_limit(previous) -> None:
+    """Restore a directly invoked worker's inherited file-size quota."""
+    if previous is None or os.name != "posix":
+        return
+    try:
+        import resource
+
+        resource.setrlimit(resource.RLIMIT_FSIZE, previous)
+    except (AttributeError, ImportError, OSError, ValueError):
+        # The isolated worker is exiting; an inability to restore its local
+        # process limit cannot affect the supervisor or its parent process.
+        return
+
+
 def _restore_output_limiters(state) -> None:
     """Restore process-global output objects after a direct worker invocation."""
     original_write, original_streams = state
@@ -325,13 +355,32 @@ def run_worker(arguments: Mapping[str, Any]) -> int:
             3,
         )
 
-    try:
-        worker = registry.get_worker(worker_key)
-    except KeyError:
-        outcome = CheckOutcome("ERROR", "unknown worker key", reason="unknown_worker")
-        return _emit_outcome(check_id, nonce, result_mode, result_file, outcome, 3)
+    physical_limit, output_limit_error = _install_physical_output_limit()
+    if output_limit_error is not None:
+        return _emit_outcome(
+            check_id,
+            nonce,
+            result_mode,
+            result_file,
+            CheckOutcome(
+                "ERROR",
+                "worker physical output limit is unavailable",
+                reason="output_limit_unavailable",
+                evidence=output_limit_error,
+            ),
+            1,
+        )
 
-    outcome, return_code = _execute_worker_callback(worker)
-    return _emit_outcome(
-        check_id, nonce, result_mode, result_file, outcome, return_code
-    )
+    try:
+        try:
+            worker = registry.get_worker(worker_key)
+        except KeyError:
+            outcome = CheckOutcome("ERROR", "unknown worker key", reason="unknown_worker")
+            return _emit_outcome(check_id, nonce, result_mode, result_file, outcome, 3)
+
+        outcome, return_code = _execute_worker_callback(worker)
+        return _emit_outcome(
+            check_id, nonce, result_mode, result_file, outcome, return_code
+        )
+    finally:
+        _restore_physical_output_limit(physical_limit)

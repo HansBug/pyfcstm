@@ -53,8 +53,10 @@ _STRICT_WARN_REASONS = frozenset(
     (
         "capability_unavailable",
         "identity_invalid",
+        "identity_incomplete",
         "identity_stale",
         "identity_unavailable",
+        "metadata_unavailable",
         "manifest_unavailable",
         "manifest_invalid",
         "resource_missing",

@@ -46,3 +46,32 @@ def test_environment_can_include_unredacted_cwd():
     data = collect_environment(redact=False)
     assert data["cwd"]
     assert data["python_executable"]
+
+
+@pytest.mark.unittest
+def test_environment_redaction_skips_unavailable_path(monkeypatch):
+    """Redaction preserves a field-specific collection failure."""
+    from pyfcstm._selfcheck.environment import collect_environment
+
+    monkeypatch.setattr(
+        "pyfcstm._selfcheck.environment.os.getcwd",
+        lambda: (_ for _ in ()).throw(OSError("cwd unavailable")),
+    )
+    data = collect_environment(redact=True)
+    assert data["cwd"] is None
+    assert data["collection_errors"]["cwd"] == "OSError: cwd unavailable"
+    assert data["python_executable"] == "<redacted>"
+
+
+@pytest.mark.unittest
+def test_environment_identity_fields_fail_independently(monkeypatch):
+    """A missing package identity field does not discard runtime metadata."""
+    import pyfcstm
+
+    monkeypatch.delattr(pyfcstm, "__commit__", raising=False)
+    from pyfcstm._selfcheck.environment import collect_environment
+
+    data = collect_environment(redact=False)
+    assert data["commit"] is None
+    assert data["collection_errors"]["commit"].startswith("AttributeError:")
+    assert data["python_version"]

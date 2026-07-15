@@ -30,6 +30,7 @@ STREAM_LIMIT = 2 * 1024 * 1024
 SIGTERM_GRACE = 0.5
 MAX_PROTOCOL_FRAMES = 2
 _CAPTURE_CHUNK_SIZE = 64 * 1024
+_PATH_SEPARATOR = os.pathsep
 
 
 class _BoundedCapture:
@@ -461,9 +462,12 @@ def run_check_process(
     }
     package_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     package_parent = os.path.dirname(package_dir)
-    # Do not let the caller's cwd/PYTHONPATH shadow the package under test.
-    # The worker must exercise this exact source/wheel/frozen artifact.
-    child_environment["PYTHONPATH"] = package_parent
+    # Put the package under test first while preserving caller-provided import
+    # roots for worker callbacks and installation diagnostics.
+    inherited_pythonpath = child_environment.get("PYTHONPATH")
+    child_environment["PYTHONPATH"] = _PATH_SEPARATOR.join(
+        path for path in (package_parent, inherited_pythonpath) if path
+    )
     popen_kwargs["cwd"] = session_dir or package_dir
     posix_group = os.name == "posix"
     if posix_group:

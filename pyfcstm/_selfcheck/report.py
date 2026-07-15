@@ -70,9 +70,9 @@ def _color_requested(mode: str) -> bool:
         return mode == "always"
     if os.environ.get("NO_COLOR", "").strip():
         return False
-    return os.environ.get("FORCE_COLOR") == "1" or bool(
-        getattr(sys.stdout, "isatty", lambda: False)()
-    )
+    if os.environ.get("FORCE_COLOR") == "1":
+        return True
+    return bool(getattr(sys.stdout, "isatty", lambda: False)())  # pragma: no branch
 
 
 def render_json(snapshot: ReportSnapshot) -> str:
@@ -187,9 +187,9 @@ def _render_human(snapshot: ReportSnapshot, use_color: bool) -> str:
         label = _paint_status(status, use_color)
         lines.append("  {} = {}".format(label, count))
     exit_code = snapshot.metadata.get("exit_code")
-    failed = exit_code not in (None, 0) or (
-        exit_code is None and any(counts.get(status, 0) for status in _FAILURE_STATUSES)
-    )
+    failed = exit_code not in (None, 0)
+    if not failed and exit_code is None:
+        failed = sum(counts.get(status, 0) for status in _FAILURE_STATUSES) > 0
     conclusion = "FAILED" if failed else "PASSED"
     if not failed and any(
         counts.get(status, 0) for status in ("WARN", "SKIP", "BLOCKED")

@@ -86,6 +86,13 @@ def _call_with_ctypes_signature(function, argtypes, restype, *arguments):
                 setattr(function, name, value)
 
 
+def _close_handle(kernel32, handle, wintypes):
+    """Close one native handle without leaking ctypes signature state."""
+    _call_with_ctypes_signature(
+        kernel32.CloseHandle, [wintypes.HANDLE], wintypes.BOOL, handle
+    )
+
+
 class JobHandle:
     """
     Best-effort Job Object wrapper with explicit termination fallback.
@@ -109,9 +116,13 @@ class JobHandle:
             from ctypes import wintypes
 
             terminate = ctypes.windll.kernel32.TerminateJobObject
-            terminate.argtypes = [wintypes.HANDLE, wintypes.UINT]
-            terminate.restype = wintypes.BOOL
-            if not terminate(self.handle, exit_code):
+            if not _call_with_ctypes_signature(
+                terminate,
+                [wintypes.HANDLE, wintypes.UINT],
+                wintypes.BOOL,
+                self.handle,
+                exit_code,
+            ):
                 raise JobAssignmentError("TerminateJobObject failed")
 
     def close(self) -> None:
@@ -120,10 +131,7 @@ class JobHandle:
             import ctypes
             from ctypes import wintypes
 
-            close_handle = ctypes.windll.kernel32.CloseHandle
-            close_handle.argtypes = [wintypes.HANDLE]
-            close_handle.restype = wintypes.BOOL
-            close_handle(self.handle)
+            _close_handle(ctypes.windll.kernel32, self.handle, wintypes)
         self.handle = None
 
 
@@ -151,26 +159,33 @@ def attach_process(process) -> Optional[JobHandle]:
         from ctypes import wintypes
 
         kernel32 = ctypes.windll.kernel32
-        kernel32.CreateJobObjectW.argtypes = [ctypes.c_void_p, wintypes.LPCWSTR]
-        kernel32.CreateJobObjectW.restype = wintypes.HANDLE
-        handle = kernel32.CreateJobObjectW(None, None)
+        call = _call_with_ctypes_signature
+        handle = call(
+            kernel32.CreateJobObjectW,
+            [ctypes.c_void_p, wintypes.LPCWSTR],
+            wintypes.HANDLE,
+            None,
+            None,
+        )
         if not handle:
             raise JobAssignmentError("CreateJobObject failed")
-        kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
-        kernel32.OpenProcess.restype = wintypes.HANDLE
-        kernel32.AssignProcessToJobObject.argtypes = [
+        process_handle = call(
+            kernel32.OpenProcess,
+            [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD],
             wintypes.HANDLE,
-            wintypes.HANDLE,
-        ]
-        kernel32.AssignProcessToJobObject.restype = wintypes.BOOL
-        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
-        kernel32.CloseHandle.restype = wintypes.BOOL
-        process_handle = kernel32.OpenProcess(
-            _PROCESS_TERMINATE | _PROCESS_SET_QUOTA, False, process.pid
+            _PROCESS_TERMINATE | _PROCESS_SET_QUOTA,
+            False,
+            process.pid,
         )
         if not process_handle:
             raise JobAssignmentError("OpenProcess failed")
-        if not kernel32.AssignProcessToJobObject(handle, process_handle):
+        if not call(
+            kernel32.AssignProcessToJobObject,
+            [wintypes.HANDLE, wintypes.HANDLE],
+            wintypes.BOOL,
+            handle,
+            process_handle,
+        ):
             error = ctypes.get_last_error()
             raise JobAssignmentError(
                 "AssignProcessToJobObject failed: {}".format(error)
@@ -181,7 +196,7 @@ def attach_process(process) -> Optional[JobHandle]:
     except JobAssignmentError:
         # The job handle is owned by this function until JobHandle takes it.
         if handle is not None:
-            kernel32.CloseHandle(handle)
+            _close_handle(kernel32, handle, wintypes)
         raise
     except (
         AttributeError,
@@ -193,13 +208,13 @@ def attach_process(process) -> Optional[JobHandle]:
     ) as err:
         # ctypes setup and native calls are normalized before the supervisor sees them.
         if handle is not None:
-            kernel32.CloseHandle(handle)
+            _close_handle(kernel32, handle, wintypes)
         raise JobAssignmentError(
             "Windows Job Object setup raised {}: {}".format(type(err).__name__, err)
         )
     finally:
         if process_handle is not None:
-            kernel32.CloseHandle(process_handle)
+            _close_handle(kernel32, process_handle, wintypes)
 
 
 def write_console_ansi(text: str, stream=None) -> bool:

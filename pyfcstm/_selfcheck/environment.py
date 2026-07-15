@@ -45,7 +45,7 @@ def collect_environment(redact: bool = True) -> Dict[str, Any]:
         >>> "python_version" in data and "collection_errors" in data
         True
     """
-    from pyfcstm import __commit__, __revision__, __version__
+    import pyfcstm
 
     data: Dict[str, Any] = {}
     errors: Dict[str, str] = {}
@@ -64,18 +64,14 @@ def collect_environment(redact: bool = True) -> Dict[str, Any]:
         ("python_executable", lambda: sys.executable),
         ("cwd", os.getcwd),
         ("temp_directory", tempfile.gettempdir),
+        ("version", lambda: getattr(pyfcstm, "__version__")),
+        ("commit", lambda: getattr(pyfcstm, "__commit__")),
+        ("revision", lambda: getattr(pyfcstm, "__revision__")),
     )
     for name, callback in fields:
         _collect_field(data, errors, name, callback)
 
-    data.update(
-        {
-            "version": __version__,
-            "commit": __commit__,
-            "revision": __revision__,
-            "frozen": bool(getattr(sys, "frozen", False)),
-        }
-    )
+    data["frozen"] = bool(getattr(sys, "frozen", False))
     if redact:
         for name in ("python_executable", "cwd", "temp_directory"):
             if data.get(name) is not None:

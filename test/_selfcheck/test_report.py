@@ -397,3 +397,51 @@ def test_auto_color_uses_terminal_detection(monkeypatch):
         SimpleNamespace(stdout=SimpleNamespace(isatty=lambda: True)),
     )
     assert report._color_requested("auto") is True
+
+
+@pytest.mark.unittest
+def test_auto_color_without_force_or_tty_is_plain(monkeypatch):
+    """Automatic output stays plain when neither environment nor TTY requests color."""
+    import pyfcstm._selfcheck.report as report
+
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    monkeypatch.delenv("FORCE_COLOR", raising=False)
+    monkeypatch.setattr(
+        report,
+        "sys",
+        SimpleNamespace(stdout=SimpleNamespace(isatty=lambda: False)),
+    )
+    assert report._color_requested("auto") is False
+
+
+@pytest.mark.unittest
+def test_failure_details_skip_empty_evidence_and_render_stdout():
+    """Failure detail rendering omits empty fields while retaining child output."""
+    snapshot = ReportSnapshot(
+        (
+            CheckResult(
+                "bad",
+                "ERROR",
+                True,
+                summary="broken",
+                reason="worker_exception",
+                stdout="child stdout",
+            ),
+        ),
+        _metadata(exit_code=0),
+        {"ERROR": 1},
+    )
+    output = render_human(snapshot, color="never")
+    assert "stdout:" in output
+    assert "child stdout" in output
+    assert "evidence:" not in output
+
+
+@pytest.mark.unittest
+def test_human_report_handles_missing_environment_and_explicit_failure_code():
+    """The public renderer remains complete with sparse metadata and exit code 1."""
+    snapshot = ReportSnapshot((), {"environment": {}}, {"ERROR": 1})
+    output = render_human(snapshot, color="never")
+    assert "revision=unavailable" in output
+    assert "encoding=unavailable" in output
+    assert "Conclusion: [ FAILED ]" in output

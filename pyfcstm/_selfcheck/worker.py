@@ -24,7 +24,7 @@ def _write_stream_all(stream, data) -> None:
     offset = 0
     while offset < len(data):
         written = stream.write(data[offset:])
-        if not isinstance(written, int) or written <= 0:
+        if not isinstance(written, int) or written <= 0 or written > len(data) - offset:
             raise OSError("worker output short write")
         offset += written
 
@@ -34,7 +34,7 @@ def _write_fd_all(descriptor: int, data: bytes) -> None:
     offset = 0
     while offset < len(data):
         written = os.write(descriptor, data[offset:])
-        if not isinstance(written, int) or written <= 0:
+        if not isinstance(written, int) or written <= 0 or written > len(data) - offset:
             raise OSError("worker descriptor short write")
         offset += written
 

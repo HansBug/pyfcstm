@@ -381,7 +381,6 @@ def test_public_bootstrap_json_fallback_handles_unavailable_text_and_stderr(
         return len(value)
 
     fallback_stdout = SimpleNamespace(
-        buffer=SimpleNamespace(write=lambda value: 0, flush=lambda: None),
         write=write_text,
         flush=lambda: None,
     )
@@ -389,6 +388,48 @@ def test_public_bootstrap_json_fallback_handles_unavailable_text_and_stderr(
     with contextlib.redirect_stdout(fallback_stdout):
         assert _bootstrap.main(("--self-check", "--format", "json")) == 3
     assert '"schema_version":"pyfcstm-selfcheck/v1"' in "".join(fallback_text)
+
+
+@pytest.mark.unittest
+def test_public_bootstrap_does_not_append_json_after_binary_short_write(
+    monkeypatch, capfd
+):
+    """A binary stdout short write falls through without a second JSON prefix."""
+    from pyfcstm import _bootstrap
+
+    class PartialBinary:
+        def __init__(self):
+            self.data = bytearray()
+            self.calls = 0
+
+        def write(self, value):
+            self.calls += 1
+            if self.calls > 1:
+                return 0
+            self.data.extend(value[:7])
+            return 7
+
+        def flush(self):
+            return None
+
+    binary = PartialBinary()
+    stderr = io.BytesIO()
+    monkeypatch.setattr(
+        _bootstrap,
+        "run_selfcheck",
+        lambda args: (_ for _ in ()).throw(RuntimeError("partial bootstrap")),
+    )
+    monkeypatch.setattr(
+        _bootstrap,
+        "sys",
+        SimpleNamespace(
+            stdout=SimpleNamespace(buffer=binary),
+            stderr=SimpleNamespace(buffer=stderr),
+        ),
+    )
+    assert _bootstrap.main(("--self-check", "--format", "json")) == 3
+    assert bytes(binary.data).count(b'{"schema_version"') == 0
+    assert b"partial bootstrap" in stderr.getvalue()
 
 
 @pytest.mark.unittest

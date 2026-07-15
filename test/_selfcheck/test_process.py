@@ -238,6 +238,18 @@ def test_stdout_noise_without_a_frame_is_reportable(monkeypatch, scenario):
 
 
 @pytest.mark.unittest
+def test_public_stdout_transport_caps_duplicate_frames(monkeypatch):
+    """The public process boundary rejects a third worker frame deterministically."""
+    _install_fixture(monkeypatch, "triple")
+    monkeypatch.setattr(
+        "tempfile.mkdtemp", lambda **kwargs: (_ for _ in ()).throw(OSError("no temp"))
+    )
+    result = run_check_process(_spec(), timeout=5.0)
+    assert result.status == "ERROR"
+    assert result.reason == "duplicate_frame"
+
+
+@pytest.mark.unittest
 def test_worker_session_files_are_removed(monkeypatch, tmp_path):
     """Result transport files and the private session directory are temporary."""
     session = tmp_path / "session"
@@ -255,6 +267,24 @@ def test_spawn_failure_is_a_structured_error(monkeypatch):
         "subprocess.Popen",
         lambda *args, **kwargs: (_ for _ in ()).throw(OSError("spawn failed")),
     )
+    result = run_check_process(_spec(), timeout=1.0)
+    assert result.status == "ERROR"
+    assert result.reason == "spawn_failed"
+
+
+@pytest.mark.unittest
+def test_spawn_cleanup_ignores_already_removed_result_file(monkeypatch):
+    """A missing result file during spawn cleanup is an expected race."""
+    monkeypatch.setattr(
+        "subprocess.Popen",
+        lambda *args, **kwargs: (_ for _ in ()).throw(OSError("spawn failed")),
+    )
+
+    def already_removed(path):
+        del path
+        raise OSError(2, "already removed")
+
+    monkeypatch.setattr(process_module.os, "unlink", already_removed)
     result = run_check_process(_spec(), timeout=1.0)
     assert result.status == "ERROR"
     assert result.reason == "spawn_failed"
@@ -301,6 +331,46 @@ def test_bounded_capture_raw_output_never_exceeds_configured_limit():
     tiny = _BoundedCapture(limit=4)
     tiny.append(b"x" * 64)
     assert tiny.raw() == b"\n...[truncated]...\n"[:4]
+
+
+@pytest.mark.unittest
+def test_bounded_capture_accepts_empty_tail_after_limit():
+    """A capture that exactly reaches its limit remains stable on an empty append."""
+    capture = _BoundedCapture(limit=8)
+    capture.append(b"12345678")
+    capture.append(b"")
+    assert capture.raw() == b"12345678"
+
+    overflowed = _BoundedCapture(limit=8)
+    overflowed.append(b"123456789")
+    overflowed.append(b"x")
+    assert overflowed.truncated_bytes == 2
+
+
+@pytest.mark.unittest
+def test_bounded_capture_discards_protocol_frames_after_the_cap():
+    """Only the configured number of protocol frames are retained."""
+    from pyfcstm._selfcheck.protocol import FRAME_PREFIX, MAX_ENVELOPE_BYTES
+
+    capture = _BoundedCapture(capture_protocol=True)
+    frame = FRAME_PREFIX + b"x" * (MAX_ENVELOPE_BYTES + 2)
+    for _ in range(3):
+        capture.append(frame)
+    assert len(capture.protocol_frames) == 2
+
+    from pyfcstm._selfcheck.protocol import encode_result_frame
+
+    complete = encode_result_frame(
+        {
+            "schema": "pyfcstm-selfcheck-worker/v1",
+            "check_id": "demo",
+            "nonce": "9" * 32,
+            "status": "PASS",
+        }
+    )
+    complete_capture = _BoundedCapture(capture_protocol=True)
+    complete_capture.append(complete + complete + complete)
+    assert len(complete_capture.protocol_frames) == 2
 
 
 @pytest.mark.unittest
@@ -509,6 +579,30 @@ def test_job_cleanup_records_direct_termination_failure():
 
 
 @pytest.mark.unittest
+def test_job_cleanup_without_termination_only_waits_and_closes():
+    """A non-terminating job cleanup path still closes the native wrapper."""
+    closed = []
+
+    class Process:
+        pid = 17
+
+        @staticmethod
+        def wait(timeout=None):
+            del timeout
+            return 0
+
+    class Job:
+        def terminate(self, code):
+            raise AssertionError("termination was not requested")
+
+        def close(self):
+            closed.append(True)
+
+    assert process_module._finish_job(Job(), Process(), 0.01, terminate=False) is None
+    assert closed == [True]
+
+
+@pytest.mark.unittest
 def test_posix_cleanup_records_non_esrch_sigkill_failure(monkeypatch):
     """A non-ESRCH hard-kill error remains explicit cleanup evidence."""
     calls = []
@@ -601,6 +695,35 @@ def test_native_containment_failure_terminates_started_worker(monkeypatch):
     assert result.status == "ERROR"
     assert result.reason == "isolation_unavailable"
     assert process.terminated is True
+
+
+@pytest.mark.unittest
+def test_unknown_platform_uses_standard_subprocess_options(monkeypatch):
+    """A non-POSIX, non-Windows platform keeps the generic subprocess path."""
+    _install_fixture(monkeypatch, "pass")
+    monkeypatch.setattr(process_module.os, "name", "unknown")
+    result = run_check_process(_spec(), timeout=5.0)
+    assert result.status == "PASS"
+
+
+@pytest.mark.unittest
+def test_worker_environment_preserves_inherited_pythonpath(monkeypatch):
+    """The isolated worker keeps caller import roots after package precedence."""
+    _install_fixture(monkeypatch, "pass")
+    observed = {}
+    real_popen = process_module.subprocess.Popen
+
+    def capture_environment(*args, **kwargs):
+        observed["pythonpath"] = kwargs["env"]["PYTHONPATH"]
+        return real_popen(*args, **kwargs)
+
+    monkeypatch.setenv("PYTHONPATH", "/custom-worker-root")
+    monkeypatch.setattr(process_module.subprocess, "Popen", capture_environment)
+    result = run_check_process(_spec(), timeout=5.0)
+    assert result.status == "PASS"
+    assert observed["pythonpath"].endswith(
+        process_module._PATH_SEPARATOR + "/custom-worker-root"
+    )
 
 
 @pytest.mark.unittest
@@ -735,6 +858,58 @@ def test_worker_communication_failure_retains_cleanup_evidence(monkeypatch):
     result = run_check_process(_spec(), timeout=0.1)
     assert result.reason == "worker_communication"
     assert "cleanup=cleanup failed" in result.evidence
+
+
+@pytest.mark.unittest
+def test_worker_communication_failure_without_cleanup_evidence(monkeypatch):
+    """A clean termination after a pipe error does not add a fake cleanup suffix."""
+
+    class Process:
+        pid = 29
+        returncode = None
+
+        @staticmethod
+        def communicate(input=None, timeout=None):
+            del input, timeout
+            raise OSError("pipe failed")
+
+    monkeypatch.setattr(process_module.os, "name", "unknown")
+    monkeypatch.setattr(process_module.subprocess, "Popen", lambda *a, **k: Process())
+    monkeypatch.setattr(process_module, "_terminate", lambda *args, **kwargs: None)
+    result = run_check_process(_spec(), timeout=0.1)
+    assert result.reason == "worker_communication"
+    assert result.evidence == "worker_communication:OSError"
+
+
+@pytest.mark.unittest
+def test_timeout_drain_with_spooled_streams_keeps_spool_buffers(monkeypatch):
+    """A second timeout with real spools does not replace captured spool data."""
+    original_temporary_file = process_module.tempfile.TemporaryFile
+
+    class Process:
+        pid = 29
+        returncode = 0
+
+        def __init__(self):
+            self.calls = 0
+
+        def communicate(self, input=None, timeout=None):
+            del input, timeout
+            self.calls += 1
+            raise subprocess.TimeoutExpired("worker", 0.01, output=b"partial")
+
+    process = Process()
+    monkeypatch.setattr(process_module.os, "name", "unknown")
+    monkeypatch.setattr(
+        process_module.tempfile,
+        "TemporaryFile",
+        lambda *args, **kwargs: original_temporary_file(*args, **kwargs),
+    )
+    monkeypatch.setattr(process_module.subprocess, "Popen", lambda *a, **k: process)
+    monkeypatch.setattr(process_module, "_terminate", lambda *args: None)
+    result = run_check_process(_spec(), timeout=0.01)
+    assert result.status == "TIMEOUT"
+    assert "output_drain:TimeoutExpired" in result.evidence
 
 
 @pytest.mark.unittest

@@ -43,7 +43,7 @@ ReportSnapshot
 -----------------------------------------------------
 
 .. autoclass:: ReportSnapshot
-    :members: to_dict,checks,metadata,counts
+    :members: __post_init__,to_dict,checks,metadata,counts
 
 
 Ledger

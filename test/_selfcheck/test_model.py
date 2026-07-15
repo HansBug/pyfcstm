@@ -1,5 +1,7 @@
 """Contract tests for typed self-check results and the ordered ledger."""
 
+import math
+
 import pytest
 
 from pyfcstm._selfcheck.model import (
@@ -56,6 +58,9 @@ def test_spec_validates_execution_and_timeout():
         CheckSpec("demo", "demo", execution="thread")
     with pytest.raises(ValueError, match="timeout"):
         CheckSpec("demo", "demo", timeout_seconds=0.0)
+    for invalid in (math.inf, math.nan):
+        with pytest.raises(ValueError, match="timeout"):
+            CheckSpec("demo", "demo", timeout_seconds=invalid)
     with pytest.raises(ValueError, match="unknown self-check status"):
         CheckResult("demo", "UNKNOWN", True)
 
@@ -142,3 +147,18 @@ def test_snapshot_uses_one_exact_top_level_schema():
         "summary",
         "exit_code",
     }
+
+
+@pytest.mark.unittest
+def test_report_snapshot_freezes_nested_metadata():
+    """External metadata mutation cannot rewrite a frozen report snapshot."""
+    spec = CheckSpec("demo", "demo")
+    ledger = Ledger()
+    ledger.reserve((spec,))
+    ledger.commit(CheckResult.from_outcome(spec, CheckOutcome("PASS", "ready")))
+    metadata = {"environment": {"paths": ["/private"]}, "exit_code": 0}
+    snapshot = ledger.freeze(metadata)
+    metadata["environment"]["paths"].append("/changed")
+    assert snapshot.to_dict()["environment"]["paths"] == ["/private"]
+    with pytest.raises(TypeError):
+        snapshot.metadata["exit_code"] = 1

@@ -13,12 +13,34 @@ The module contains:
 * :class:`Ledger` - Ordered lifecycle state owned by the supervisor.
 """
 
+from collections.abc import Mapping as MappingABC
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
 
 
 CHECK_OUTCOME_STATUSES = ("PASS", "WARN", "SKIP", "FAIL", "ERROR")
 TERMINAL_STATUSES = CHECK_OUTCOME_STATUSES + ("BLOCKED", "TIMEOUT", "CRASH")
+
+
+def _freeze_value(value: Any) -> Any:
+    """Recursively freeze report metadata before exposing it to callers."""
+    if isinstance(value, MappingABC):
+        return MappingProxyType(
+            {key: _freeze_value(item) for key, item in value.items()}
+        )
+    if isinstance(value, (list, tuple)):
+        return tuple(map(_freeze_value, value))
+    return value
+
+
+def _thaw_value(value: Any) -> Any:
+    """Convert frozen report values back to JSON-compatible containers."""
+    if isinstance(value, MappingABC):
+        return {key: _thaw_value(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return list(map(_thaw_value, value))
+    return value
 
 
 @dataclass(frozen=True)
@@ -63,7 +85,9 @@ class CheckSpec:
             raise ValueError(
                 "unknown self-check execution boundary: {}".format(self.execution)
             )
-        if self.timeout_seconds <= 0.0:
+        import math
+
+        if not math.isfinite(self.timeout_seconds) or self.timeout_seconds <= 0.0:
             raise ValueError("self-check timeout must be positive")
         if not self.title:
             object.__setattr__(self, "title", self.check_id)
@@ -258,13 +282,18 @@ class ReportSnapshot:
     metadata: Mapping[str, Any]
     counts: Mapping[str, int]
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "checks", tuple(self.checks))
+        object.__setattr__(self, "metadata", _freeze_value(self.metadata))
+        object.__setattr__(self, "counts", _freeze_value(self.counts))
+
     def to_dict(self) -> Dict[str, Any]:
         """Return the canonical ``pyfcstm-selfcheck/v1`` report mapping.
 
         :return: Canonical top-level report fields.
         :rtype: Dict[str, Any]
         """
-        metadata = dict(self.metadata)
+        metadata = _thaw_value(self.metadata)
         return {
             "schema_version": "pyfcstm-selfcheck/v1",
             "report_id": metadata.get("session_id"),
@@ -276,7 +305,7 @@ class ReportSnapshot:
             "dependencies": metadata.get("dependencies", []),
             "capabilities": metadata.get("capabilities", {}),
             "results": [check.to_dict() for check in self.checks],
-            "summary": dict(self.counts),
+            "summary": _thaw_value(self.counts),
             "exit_code": metadata.get("exit_code"),
         }
 
@@ -375,4 +404,4 @@ class Ledger:
         counts: Dict[str, int] = {}
         for result in checks:
             counts[result.status] = counts.get(result.status, 0) + 1
-        return ReportSnapshot(checks, dict(metadata), counts)
+        return ReportSnapshot(checks, metadata, counts)

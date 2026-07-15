@@ -120,6 +120,9 @@ def main():
     _write(options, frame)
     if scenario == "duplicate":
         _write(options, frame)
+    if scenario == "triple":
+        _write(options, frame)
+        _write(options, frame)
     if scenario == "nonzero_envelope":
         return 7
     return 0

@@ -68,9 +68,11 @@ def _run_local_check(spec: CheckSpec) -> CheckResult:
             outcome = _error_outcome(
                 "local check raised SystemExit", "local_check_system_exit"
             )
-        except Exception:
-            # Registered callbacks may raise ordinary Exception; control
-            # sentinels remain visible to the supervisor.
+        except BaseException as err:
+            # Registered callbacks may raise any ordinary Exception; control
+            # sentinels remain visible to the supervisor and are re-raised.
+            if not isinstance(err, Exception):
+                raise
             outcome = _error_outcome(
                 "local check raised an exception", "local_check_exception"
             )
@@ -202,8 +204,11 @@ def _run_selected_checks(
                     spec, timeout=timeout, timeout_scale=options.timeout_scale
                 )
             )
-        except Exception:
-            # Process failures are isolated so independent checks continue.
+        except BaseException as err:
+            # Process failures are isolated so independent checks continue;
+            # non-Exception control sentinels must still propagate.
+            if not isinstance(err, Exception):
+                raise
             evidence = traceback.format_exc()
             result = _terminal_result(
                 spec,
@@ -265,9 +270,11 @@ def run_supervisor(arguments: Sequence[str]) -> int:
             specs,
             interrupted=True,
         )
-    except Exception:
+    except BaseException as err:
         # Registry, environment, and process setup failures are recoverable;
-        # KeyboardInterrupt and SystemExit remain outside this boundary.
+        # keyboard/control sentinels remain outside this boundary.
+        if not isinstance(err, Exception):
+            raise
         forced_exit = 3
         evidence = traceback.format_exc()
         _terminalize_unfinished(

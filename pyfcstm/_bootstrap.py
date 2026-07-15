@@ -38,7 +38,7 @@ def _write_stream_all(stream, data) -> None:
     offset = 0
     while offset < len(data):
         written = stream.write(data[offset:])
-        if not isinstance(written, int) or written <= 0:
+        if not isinstance(written, int) or written <= 0 or written > len(data) - offset:
             raise OSError(errno.EIO, "diagnostic stream short write")
         offset += written
 
@@ -48,7 +48,7 @@ def _write_fd_all(descriptor: int, data: bytes) -> None:
     offset = 0
     while offset < len(data):
         written = os.write(descriptor, data[offset:])
-        if not isinstance(written, int) or written <= 0:
+        if not isinstance(written, int) or written <= 0 or written > len(data) - offset:
             raise OSError(errno.EIO, "diagnostic descriptor short write")
         offset += written
 
@@ -172,7 +172,9 @@ def _emit_bootstrap_error(message: str, output_format: str = "human") -> int:
             _write_stream_all(sys.stdout.buffer, data)
             sys.stdout.buffer.flush()
             return 3
-        except (AttributeError, OSError, ValueError) as err:
+        except AttributeError as err:
+            # A text-only stdout has no binary buffer, so the complete payload
+            # can safely use its text interface.
             _silence_broken_stdout(err)
             try:
                 _write_stream_all(sys.stdout, data.decode("ascii"))
@@ -182,6 +184,10 @@ def _emit_bootstrap_error(message: str, output_format: str = "human") -> int:
                 # Fall through to the raw stderr channel when stdout is unavailable.
                 _silence_broken_stdout(text_error)
                 pass
+        except (OSError, ValueError) as err:
+            # A binary short write may have left a partial JSON prefix in the
+            # stream; never append a second JSON document through that channel.
+            _silence_broken_stdout(err)
     _emergency_write(
         ("self-check bootstrap error: " + message + "\n").encode(
             "utf-8", "backslashreplace"

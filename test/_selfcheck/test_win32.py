@@ -118,12 +118,10 @@ def test_windows_job_handle_and_attach_paths_use_native_calls(monkeypatch):
     )
     job = win32.attach_process(SimpleNamespace(pid=7))
     assert job.handle == 101
-    from ctypes import wintypes
-
-    assert kernel.CreateJobObjectW.restype is wintypes.HANDLE
-    assert kernel.OpenProcess.restype is wintypes.HANDLE
-    assert kernel.AssignProcessToJobObject.restype is wintypes.BOOL
-    assert kernel.CloseHandle.restype is wintypes.BOOL
+    assert not hasattr(kernel.CreateJobObjectW, "restype")
+    assert not hasattr(kernel.OpenProcess, "restype")
+    assert not hasattr(kernel.AssignProcessToJobObject, "restype")
+    assert not hasattr(kernel.CloseHandle, "restype")
     assert kernel.OpenProcess.calls[0][0] == 0x0001 | 0x0100
     job.terminate(4)
     job.close()
@@ -226,7 +224,7 @@ def test_native_setup_errors_are_wrapped_as_job_assignment_errors(monkeypatch):
 
 
 @pytest.mark.unittest
-@pytest.mark.parametrize("failure", ["create", "open"])
+@pytest.mark.parametrize("failure", ["create", "create-none", "open"])
 def test_job_creation_failures_close_or_report_native_handles(monkeypatch, failure):
     """Create/Open failures through the public attach API stay typed."""
     ctypes = _ctypes_for_native_seam(monkeypatch)
@@ -245,7 +243,9 @@ def test_job_creation_failures_close_or_report_native_handles(monkeypatch, failu
 
     class Kernel:
         def __init__(self):
-            self.CreateJobObjectW = Call(0 if failure == "create" else 101)
+            self.CreateJobObjectW = Call(
+                None if failure == "create-none" else 0 if failure == "create" else 101
+            )
             self.OpenProcess = Call(0 if failure == "open" else 202)
             self.AssignProcessToJobObject = Call(1)
             self.CloseHandle = Call(1)

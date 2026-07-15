@@ -440,7 +440,15 @@ def _distribution_file(filename: str, required: bool = False) -> CheckOutcome:
             import importlib_metadata as metadata
         files = metadata.files("pyfcstm") or ()
         found = any(str(item).endswith(filename) for item in files)
-    except (ImportError, KeyError, OSError, ValueError) as err:
+    except KeyError:
+        # ``PackageNotFoundError`` is a ``KeyError`` on a source checkout that
+        # has no installed distribution metadata; that is normal and not a
+        # damaged metadata store.
+        return _warn(
+            "distribution file inventory is not applicable",
+            "not_applicable",
+        )
+    except (ImportError, OSError, ValueError) as err:
         return _warn("distribution file inventory is unavailable", "metadata_unavailable", observed=str(err))
     if found:
         return _pass("distribution contains {}".format(filename))

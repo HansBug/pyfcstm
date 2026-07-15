@@ -265,6 +265,22 @@ def test_registry_distribution_and_manifest_missing_paths(monkeypatch, tmp_path)
     """Distribution and manifest probes distinguish optional absence from failure."""
     assert registry._distribution_file("NO_SUCH_RECORD", required=False).reason == "not_applicable"
     assert registry._distribution_file("NO_SUCH_RECORD", required=True).reason == "record_missing"
+
+    class MissingDistributionMetadata:
+        """Emulate importlib metadata when running from an uninstalled checkout."""
+
+        @staticmethod
+        def files(name):
+            raise KeyError(name)
+
+    monkeypatch.setattr(
+        registry.importlib,
+        "metadata",
+        MissingDistributionMetadata,
+        raising=False,
+    )
+    assert registry._distribution_file("METADATA", required=True).reason == "not_applicable"
+
     missing = tmp_path / "missing.json"
     monkeypatch.setattr(registry, "_resource", lambda name: missing)
     assert registry._manifest().reason == "manifest_unavailable"

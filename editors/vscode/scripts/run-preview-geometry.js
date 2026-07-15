@@ -3,6 +3,7 @@
 const os = require('node:os');
 const path = require('node:path');
 const fs = require('node:fs');
+const {spawnSync} = require('node:child_process');
 const esbuild = require('esbuild');
 
 const entry = path.resolve(__dirname, 'verify-preview-geometry.ts');

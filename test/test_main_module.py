@@ -1,5 +1,6 @@
 """Coverage for the ``python -m pyfcstm`` bootstrap entry point."""
 
+import json
 import subprocess
 import sys
 
@@ -26,6 +27,21 @@ class TestMainModule:
         )
         assert result.returncode == 0
         assert "Usage:" in result.stdout or "Commands" in result.stdout
+
+    def test_main_module_invocation_runs_public_selfcheck(self):
+        """The installed module entry runs the complete public self-check path."""
+        result = subprocess.run(
+            [sys.executable, "-m", "pyfcstm", "--self-check", "--format", "json"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0
+        payload = json.loads(result.stdout)
+        assert payload["schema_version"] == "pyfcstm-selfcheck/v1"
+        assert payload["exit_code"] == 0
+        assert [item["status"] for item in payload["results"]] == ["PASS", "PASS"]
+        assert result.stderr == ""
 
     def test_main_module_runpy_executes_bootstrap_branch(self, monkeypatch):
         """Run the module branch with a recording bootstrap implementation."""

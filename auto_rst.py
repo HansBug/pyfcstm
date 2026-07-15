@@ -10,11 +10,28 @@ import argparse
 import ast
 import os
 import pathlib
+import re
 from io import StringIO
 from typing import List, Dict, Any
 
 from natsort import natsorted
-from sphinx.util.rst import escape
+
+
+_RST_SYMBOLS_RE = re.compile(r"([!-\-/:-@\[-`{-~])")
+
+
+def _escape_rst(text: str) -> str:
+    """Escape RST text without making Sphinx a test-time import requirement."""
+    try:
+        from sphinx.util.rst import escape
+    except ModuleNotFoundError as err:
+        # ``sphinx`` is a documentation-only dependency; its absence must not
+        # prevent the source-level RST generator regression tests from running.
+        if err.name != "sphinx":
+            raise
+        escaped = _RST_SYMBOLS_RE.sub(r"\\\1", text)
+        return re.sub(r"^\.", r"\.", escaped)
+    return escape(text)
 
 
 def normalize_rst_document(text: str) -> str:
@@ -54,7 +71,7 @@ def rst_to_text(text: str) -> str:
     :return: The escaped text safe for RST.
     :rtype: str
     """
-    return escape(text)
+    return _escape_rst(text)
 
 
 class PublicMemberExtractor(ast.NodeVisitor):
@@ -590,6 +607,12 @@ def convert_code_to_rst(code_file: str, rst_file: str, lib_dir: str = "."):
         print(f"{rst_to_text(module_name)}", file=buffer)
         print("========================================================", file=buffer)
         print("", file=buffer)
+
+        if module_name == "pyfcstm._selfcheck":
+            # The private package is intentionally excluded from the public API
+            # top-level toctree, so mark its generated index as an orphan.
+            print(":orphan:", file=buffer)
+            print("", file=buffer)
 
         print(f".. currentmodule:: {module_name}", file=buffer)
         print("", file=buffer)

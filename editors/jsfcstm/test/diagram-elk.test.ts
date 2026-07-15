@@ -276,8 +276,8 @@ describe('jsfcstm ELK-based diagram pipeline', () => {
         );
         assert.equal(
             running?.layoutOptions?.['elk.layered.spacing.nodeNodeBetweenLayers'],
-            '116',
-            'nested composites must pin layer spacing to the canvas contract'
+            '20',
+            'nested composites must pin the compact ELK layer-spacing fallback'
         );
         assert.equal(
             running?.layoutOptions?.['elk.layered.spacing.edgeEdgeBetweenLayers'],

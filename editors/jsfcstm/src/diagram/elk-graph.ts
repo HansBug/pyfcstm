@@ -454,7 +454,11 @@ export function buildFcstmElkGraph(
                 // or running along, the node border. This also gives direct
                 // two-point entry edges enough room; the post-layout smoother
                 // cannot repair a section that has no bend point.
-                'elk.layered.spacing.nodeNodeBetweenLayers': '116',
+                // Nested layouts need an explicit value because
+                // ``INCLUDE_CHILDREN`` does not inherit the canvas setting;
+                // keep ELK's compact default rather than multiplying the
+                // root-level whitespace inside every composite.
+                'elk.layered.spacing.nodeNodeBetweenLayers': '20',
                 'elk.layered.spacing.edgeNodeBetweenLayers': String(MIN_TERMINAL_SEGMENT),
                 // Keep parallel edge lanes separated inside nested composites;
                 // canvas-level spacing is not inherited by INCLUDE_CHILDREN.

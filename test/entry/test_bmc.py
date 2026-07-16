@@ -202,6 +202,15 @@ def test_bmc_json_projects_richer_replay_observation_to_v1() -> None:
         },
         "mismatches": [],
     }
+    projected_step = projected["runtime_trace"]["steps"][0]
+    for forbidden_key in (
+        "delta",
+        "cycle_count_before",
+        "cycle_count_after",
+        "history_entry",
+        "future_extra",
+    ):
+        assert forbidden_key not in projected_step
 
 
 def test_bmc_human_report_prioritizes_verdict_and_diagnostics(bmc_files) -> None:

@@ -2416,7 +2416,6 @@ class BmcRuntimeStep(_PrettyPrintableMixin):
 
         >>> BmcRuntimeStep(0, (), (), (), ()).to_canonical()['delta']
         False
-        0
     """
 
     index: int

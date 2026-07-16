@@ -254,6 +254,39 @@ def test_replay_handles_initial_terminated_absorb_trace() -> None:
     )
 
 
+def test_replay_uses_synthetic_observation_for_post_termination_absorb() -> None:
+    """An absorb step after runtime termination has no cycle metadata."""
+    model = load_state_machine_from_text(
+        """
+        state Root {
+            state A;
+            [*] -> A;
+            A -> [*];
+        }
+        """
+    )
+    formula = compile_bmc_property(
+        build_bmc_core_formula(
+            BmcEngine(model).prepare(
+                'init state("Root.A"); check reach <= 2: terminated();'
+            )
+        )
+    )
+    solved = solve_bmc_property(formula)
+    assert solved.status == "sat"
+    trace = decode_bmc_witness(formula, solved.model)
+    assert trace.steps[-1].case_kind == "absorb"
+
+    replay = replay_bmc_witness(model, trace)
+
+    assert replay.ok is True
+    absorb_step = replay.runtime_trace.steps[-1]
+    assert absorb_step.delta is False
+    assert absorb_step.cycle_count_before is None
+    assert absorb_step.cycle_count_after is None
+    assert absorb_step.history_entry is None
+
+
 def test_replay_rejects_tampered_initial_terminated_step_payload() -> None:
     """Synthetic terminated replay still compares step events and calls."""
     model, trace = _trace(

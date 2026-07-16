@@ -47,6 +47,7 @@ jobs:
           git fetch --tags --force --quiet
           commit="$(git rev-parse "${tag}^{commit}")"
           test "$commit" = "$(git rev-parse HEAD)"
+          test "$commit" = "$GITHUB_SHA"
           test "$(git rev-parse --verify "${tag}^{tag}" 2>/dev/null || git rev-parse --verify "${tag}^{commit}")" >/dev/null
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "full_commit=$commit" >> "$GITHUB_OUTPUT"
@@ -120,7 +121,7 @@ jobs:
       - name: Upload staged Python artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: pyfcstm-pr4-release-python
+          name: pyfcstm-release-python
           if-no-files-found: error
           path: dist/*
 
@@ -148,7 +149,7 @@ jobs:
       - name: Download staged Python artifacts only
         uses: actions/download-artifact@v4
         with:
-          name: pyfcstm-pr4-release-python
+          name: pyfcstm-release-python
           path: ${{ runner.temp }}/pyfcstm-release-python
       - name: Install and verify PlantUML JAR
         shell: bash
@@ -290,7 +291,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: pyfcstm-pr4-release-python-selfcheck
+          name: pyfcstm-release-python-selfcheck
           if-no-files-found: error
           path: |
             ${{ runner.temp }}/pyfcstm-release-python-reports
@@ -306,23 +307,23 @@ jobs:
       - name: Download the exact staged Python artifact
         uses: actions/download-artifact@v4
         with:
-          name: pyfcstm-pr4-release-python
+          name: pyfcstm-release-python
           path: ${{ runner.temp }}/pyfcstm-release-gate/python
       - name: Download staged Ubuntu CLI artifact
         uses: actions/download-artifact@v4
         with:
-          name: pyfcstm-pr4-release-cli-ubuntu-22.04
-          path: ${{ runner.temp }}/pyfcstm-release-gate/cli/pyfcstm-pr4-release-cli-ubuntu-22.04
+          name: pyfcstm-release-cli-ubuntu-22.04
+          path: ${{ runner.temp }}/pyfcstm-release-gate/cli/pyfcstm-release-cli-ubuntu-22.04
       - name: Download staged Windows CLI artifact
         uses: actions/download-artifact@v4
         with:
-          name: pyfcstm-pr4-release-cli-windows-2022
-          path: ${{ runner.temp }}/pyfcstm-release-gate/cli/pyfcstm-pr4-release-cli-windows-2022
+          name: pyfcstm-release-cli-windows-2022
+          path: ${{ runner.temp }}/pyfcstm-release-gate/cli/pyfcstm-release-cli-windows-2022
       - name: Download staged macOS CLI artifact
         uses: actions/download-artifact@v4
         with:
-          name: pyfcstm-pr4-release-cli-macos-14
-          path: ${{ runner.temp }}/pyfcstm-release-gate/cli/pyfcstm-pr4-release-cli-macos-14
+          name: pyfcstm-release-cli-macos-14
+          path: ${{ runner.temp }}/pyfcstm-release-gate/cli/pyfcstm-release-cli-macos-14
       - name: Confirm fresh results and staged sidecars
         env:
           TARGET_COMMIT: ${{ needs.resolve_release_target.outputs.full_commit }}
@@ -405,9 +406,9 @@ jobs:
           cli_root = root / "cli"
           cli_directories = sorted(path for path in cli_root.iterdir() if path.is_dir())
           if {path.name for path in cli_directories} != {
-              "pyfcstm-pr4-release-cli-ubuntu-22.04",
-              "pyfcstm-pr4-release-cli-windows-2022",
-              "pyfcstm-pr4-release-cli-macos-14",
+              "pyfcstm-release-cli-ubuntu-22.04",
+              "pyfcstm-release-cli-windows-2022",
+              "pyfcstm-release-cli-macos-14",
           }:
               raise SystemExit("CLI artifact matrix is incomplete: {}".format(cli_directories))
           for directory in cli_directories:
@@ -424,7 +425,7 @@ jobs:
       - name: Download the exact staged artifacts
         uses: actions/download-artifact@v4
         with:
-          name: pyfcstm-pr4-release-python
+          name: pyfcstm-release-python
           path: ${{ runner.temp }}/pyfcstm-release-python
       - name: Verify staged identity and prepare draft release
         id: identity
@@ -796,7 +797,7 @@ jobs:
       - name: Upload staged standalone artifact
         uses: actions/upload-artifact@v4
         with:
-          name: pyfcstm-pr4-release-cli-${{ matrix.os }}
+          name: pyfcstm-release-cli-${{ matrix.os }}
           if-no-files-found: error
           path: |
             dist/${{ env.ZIP_NAME }}.zip
@@ -825,7 +826,7 @@ jobs:
       - name: Download only the staged CLI artifact
         uses: actions/download-artifact@v4
         with:
-          name: pyfcstm-pr4-release-cli-${{ matrix.os }}
+          name: pyfcstm-release-cli-${{ matrix.os }}
           path: ${{ runner.temp }}/pyfcstm-release-cli
       - name: Install and verify PlantUML JAR
         shell: bash
@@ -938,7 +939,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: pyfcstm-pr4-release-cli-selfcheck-${{ matrix.os }}
+          name: pyfcstm-release-cli-selfcheck-${{ matrix.os }}
           if-no-files-found: error
           path: |
             ${{ runner.temp }}/pyfcstm-release-cli-reports
@@ -967,7 +968,7 @@ jobs:
       - name: Download only the staged Ubuntu CLI artifact
         uses: actions/download-artifact@v4
         with:
-          name: pyfcstm-pr4-release-cli-ubuntu-22.04
+          name: pyfcstm-release-cli-ubuntu-22.04
           path: ${{ runner.temp }}/pyfcstm-release-cli
       - name: Install and verify PlantUML JAR
         shell: bash
@@ -1067,7 +1068,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: pyfcstm-pr4-release-cli-controlled-ubuntu
+          name: pyfcstm-release-cli-controlled-ubuntu
           if-no-files-found: error
           path: |
             ${{ runner.temp }}/pyfcstm-controlled-cli-reports
@@ -1090,7 +1091,7 @@ jobs:
       - name: Download the exact verified CLI artifact
         uses: actions/download-artifact@v4
         with:
-          name: pyfcstm-pr4-release-cli-${{ matrix.os }}
+          name: pyfcstm-release-cli-${{ matrix.os }}
           path: ${{ runner.temp }}/pyfcstm-release-cli
       - name: Upload binary to the draft release
         env:

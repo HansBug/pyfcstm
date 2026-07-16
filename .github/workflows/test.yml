@@ -888,7 +888,7 @@ jobs:
           path: dist
       - uses: actions/upload-artifact@v4
         with:
-          name: pyfcstm-pr4-cli-${{ matrix.os }}
+          name: pyfcstm-cli-${{ matrix.os }}
           if-no-files-found: error
           path: |
             dist/${{ env.ZIP_NAME }}.zip
@@ -915,7 +915,7 @@ jobs:
       - name: Download only the built CLI artifact
         uses: actions/download-artifact@v4
         with:
-          name: pyfcstm-pr4-cli-ubuntu-22.04
+          name: pyfcstm-cli-ubuntu-22.04
           path: ${{ runner.temp }}/pyfcstm-cli-artifact
       - name: Install and verify PlantUML JAR
         shell: bash
@@ -1032,7 +1032,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: pyfcstm-pr4-cli-selfcheck-ubuntu
+          name: pyfcstm-cli-selfcheck-ubuntu
           if-no-files-found: error
           path: |
             ${{ runner.temp }}/pyfcstm-selfcheck-reports
@@ -1049,10 +1049,10 @@ jobs:
       matrix:
         include:
           - os: windows-2022
-            artifact: pyfcstm-pr4-cli-windows-2022
+            artifact: pyfcstm-cli-windows-2022
             exe: pyfcstm.exe
           - os: macos-14
-            artifact: pyfcstm-pr4-cli-macos-14
+            artifact: pyfcstm-cli-macos-14
             exe: pyfcstm
     timeout-minutes: 20
     steps:
@@ -1179,7 +1179,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: pyfcstm-pr4-cli-selfcheck-${{ matrix.os }}
+          name: pyfcstm-cli-selfcheck-${{ matrix.os }}
           if-no-files-found: error
           path: |
             ${{ runner.temp }}/pyfcstm-selfcheck-reports

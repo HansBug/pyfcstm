@@ -234,7 +234,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: pyfcstm-pr4-wheel-selfcheck-ubuntu-22.04
+          name: pyfcstm-wheel-selfcheck-ubuntu-22.04
           if-no-files-found: error
           path: |
             ${{ runner.temp }}/pyfcstm-wheel-reports
@@ -414,7 +414,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: pyfcstm-pr4-wheel-selfcheck-${{ matrix.os }}
+          name: pyfcstm-wheel-selfcheck-${{ matrix.os }}
           if-no-files-found: error
           path: |
             ${{ runner.temp }}/pyfcstm-wheel-reports
@@ -571,7 +571,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: pyfcstm-pr4-sdist-selfcheck
+          name: pyfcstm-sdist-selfcheck
           if-no-files-found: error
           path: |
             ${{ runner.temp }}/pyfcstm-sdist-reports
@@ -901,7 +901,7 @@ jobs:
       - name: Upload exact CLI artifact for fresh verification
         uses: actions/upload-artifact@v4
         with:
-          name: pyfcstm-pr4-release-test-cli-${{ matrix.os }}
+          name: pyfcstm-release-test-cli-${{ matrix.os }}
           if-no-files-found: error
           path: |
             dist/${{ env.ZIP_NAME }}.zip
@@ -930,7 +930,7 @@ jobs:
       - name: Download only the built CLI artifact
         uses: actions/download-artifact@v4
         with:
-          name: pyfcstm-pr4-release-test-cli-${{ matrix.os }}
+          name: pyfcstm-release-test-cli-${{ matrix.os }}
           path: ${{ runner.temp }}/pyfcstm-release-test-cli
       - name: Install and verify PlantUML JAR
         shell: bash
@@ -1069,7 +1069,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: pyfcstm-pr4-release-test-cli-selfcheck-${{ matrix.os }}
+          name: pyfcstm-release-test-cli-selfcheck-${{ matrix.os }}
           if-no-files-found: error
           path: |
             ${{ runner.temp }}/pyfcstm-release-test-cli-reports

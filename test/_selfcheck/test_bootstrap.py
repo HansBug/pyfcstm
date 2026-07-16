@@ -127,10 +127,15 @@ def test_mutually_exclusive_dispatch_emits_diagnostic(capfd, arguments):
 
 
 @pytest.mark.unittest
-def test_invalid_human_selfcheck_arguments_reuse_the_immediate_header(capsys):
+def test_invalid_human_selfcheck_arguments_reuse_the_immediate_header(
+    monkeypatch, capsys
+):
     """Argument errors keep one colored startup header and one red result."""
     from pyfcstm import _bootstrap
 
+    monkeypatch.setattr(
+        "pyfcstm._selfcheck.report._windows_vt_supported", lambda stream: True
+    )
     assert (
         _bootstrap.run_selfcheck(
             ("--format", "human", "--bad-option", "--color", "always")

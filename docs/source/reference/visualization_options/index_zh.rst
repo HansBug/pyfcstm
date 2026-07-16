@@ -93,7 +93,7 @@
    * - 预设加窄覆盖。
      - ``pyfcstm plantuml -i docs/source/tutorials/visualization/example.fcstm -l full -c max_action_lines=3 -o /tmp/compact.puml``
      - 保持 full 可见性，同时把每个动作块限制为三行。
-     - ``-c detail_level=full`` 属于错误层次；预设应使用 ``-l full``。
+     - 预设建议使用 ``-l full``；``-c detail_level=full`` 也合法，若与显式 ``-l`` 冲突会输出 warning 并以 ``-l`` 为准。
    * - 事件导向图。
      - ``pyfcstm plantuml -i docs/source/tutorials/visualization/example.fcstm -c event_visualization_mode=both -o /tmp/events.puml``
      - 同时在转换和事件辅助结构中显示事件。
@@ -161,7 +161,7 @@ PlantUML 选项字段
      - ``-l minimal|normal|full``
      - ``normal``
      - ``minimal``、``normal``、``full``
-     - 主预设。命令行使用 ``-l``；不要传 ``-c detail_level=...``，因为命令已经单独传入预设。
+     - 主预设。也可以通过 ``-c detail_level=...`` 提供。如果显式 ``-l/--level`` 与 ``-c`` 的值不一致，CLI 会输出 warning，并以显式 ``-l/--level`` 的值为准。
    * - ``show_variable_definitions``
      - ``-c show_variable_definitions=true``
      - ``None``
@@ -534,7 +534,7 @@ PlantUML 选项字段
    * - ``detail_level``
      - ``-l minimal`` 用于小型层次审查。
      - ``-l full`` 用于生命周期动作主题。
-     - CLI 不要传 ``-c detail_level=full``；应使用 ``-l``。
+     - ``-l normal -c detail_level=full`` 会输出冲突 warning，并使用 ``normal``，因为这里的 ``normal`` 是通过 ``-l`` 显式写出的。省略 ``-l`` 时只是使用 Click 默认值，不会形成第二次显式赋值。
    * - ``show_variable_definitions``
      - ``-c show_variable_definitions=true`` 用于在审查中证明变量声明。
      - ``-c show_variable_definitions=false`` 用于只看结构的图。
@@ -731,7 +731,7 @@ PlantUML 选项字段
    * - 无效键
      - ``-c does_not_exist=true``
      - 命令失败
-     - 未知键会传到 ``PlantUMLOptions`` 构造并被拒绝。
+     - 未知键会在 CLI 配置边界被拒绝，并给出支持键列表；接近的拼写还会给出建议。
    * - 无效值
      - ``-c max_depth=abc``
      - 命令失败

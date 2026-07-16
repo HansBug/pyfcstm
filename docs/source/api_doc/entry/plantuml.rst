@@ -10,6 +10,13 @@ PLANTUML\_OPTION\_TYPES
 -----------------------------------------------------
 
 .. autodata:: PLANTUML_OPTION_TYPES
+   :no-value:
+
+
+resolve\_plantuml\_options
+-----------------------------------------------------
+
+.. autofunction:: resolve_plantuml_options
 
 
 build\_plantuml\_output

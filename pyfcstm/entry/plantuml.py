@@ -428,7 +428,7 @@ def _add_plantuml_subcommand(cli: click.Group) -> click.Group:
         'config_options',
         multiple=True,
         help='Configuration options in key=value format. Can be specified multiple times. '
-             'See the configuration reference linked above.',
+             'Example: -c show_events=true -c max_depth=2',
     )
     def plantuml(
         input_code_file: str,

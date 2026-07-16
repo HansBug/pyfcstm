@@ -481,3 +481,29 @@ def test_bmc_schema_freezes_role_channel_contract():
         assert role in witness_text
     assert '"const": "response"' in result_text
     assert '"const": "unsat"' in witness_text
+
+
+@pytest.mark.unittest
+def test_bmc_schema_freezes_feasibility_localization_contract():
+    """The published schema records cumulative feasibility invariants."""
+    schema_path = (
+        Path(__file__).resolve().parents[2]
+        / "docs"
+        / "source"
+        / "reference"
+        / "bmc_results"
+        / "bmc_cli_v1.schema.json"
+    )
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    feasibility_text = json.dumps(
+        schema["$defs"]["feasibility"]["allOf"], sort_keys=True
+    )
+    inconclusive_text = json.dumps(
+        schema["$defs"]["checkedInconclusiveFeasibilityCheck"], sort_keys=True
+    )
+
+    assert '"infeasible_stage": {"const": "kernel"}' in feasibility_text
+    assert '"infeasible_stage": {"const": "initialization"}' in feasibility_text
+    assert '"infeasible_stage": {"const": "assumptions"}' in feasibility_text
+    assert '"localization_status": {"enum": ["not_checked", "unknown", "timeout"]}' in feasibility_text
+    assert '"status": {"enum": ["unknown", "timeout"]}' in inconclusive_text

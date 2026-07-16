@@ -1837,6 +1837,15 @@ class BmcFeasibilityResult(_PrettyPrintableMixin):
                 "BmcFeasibilityRefinementCheck objects",
             ),
         )
+        inconclusive = any(
+            item.origin == "checked" and item.status in {"unknown", "timeout"}
+            for item in checks
+        )
+        if inconclusive and self.infeasible_stage is not None:
+            raise BmcBuildError(
+                "unknown/timeout feasibility evidence cannot claim a localized "
+                "infeasible_stage."
+            )
         if self.infeasible_stage is not None:
             if self.localization_status != "complete":
                 raise BmcBuildError(
@@ -1847,6 +1856,16 @@ class BmcFeasibilityResult(_PrettyPrintableMixin):
                 raise BmcBuildError(
                     "infeasible_stage requires checked/unsat evidence for the "
                     "selected stage."
+                )
+            if self.infeasible_stage == "initialization" and self.kernel.status != "sat":
+                raise BmcBuildError(
+                    "initialization infeasible_stage requires a SAT prefix."
+                )
+            if self.infeasible_stage == "assumptions" and (
+                self.kernel.status != "sat" or self.initialization.status != "sat"
+            ):
+                raise BmcBuildError(
+                    "assumptions infeasible_stage requires a SAT prefix."
                 )
         elif self.localization_status == "complete":
             raise BmcBuildError(

@@ -1163,6 +1163,56 @@ def test_feasibility_result_rejects_stage_claim_without_checked_unsat() -> None:
         )
 
 
+@pytest.mark.parametrize("status", ["unknown", "timeout"])
+def test_feasibility_result_rejects_localized_inconclusive_stage(status) -> None:
+    """Inconclusive evidence cannot claim a completed localization stage."""
+    sat = BmcFeasibilityCheck("sat", "inferred")
+    inconclusive = BmcFeasibilityCheck(
+        status, "checked", reason="solver stopped", elapsed_ms=1.0
+    )
+    unsat = BmcFeasibilityCheck("unsat", "checked", elapsed_ms=1.0)
+
+    with pytest.raises(BmcBuildError, match="unknown/timeout"):
+        BmcFeasibilityResult(
+            kernel=inconclusive,
+            initialization=sat,
+            assumptions=unsat,
+            infeasible_stage="assumptions",
+            localization_status="complete",
+        )
+
+
+@pytest.mark.parametrize(
+    ("infeasible_stage", "kernel", "initialization", "assumptions"),
+    [
+        (
+            "initialization",
+            BmcFeasibilityCheck("unsat", "checked", elapsed_ms=1.0),
+            BmcFeasibilityCheck("unsat", "checked", elapsed_ms=1.0),
+            BmcFeasibilityCheck("unsat", "checked", elapsed_ms=1.0),
+        ),
+        (
+            "assumptions",
+            BmcFeasibilityCheck("sat", "inferred"),
+            BmcFeasibilityCheck("unsat", "checked", elapsed_ms=1.0),
+            BmcFeasibilityCheck("unsat", "checked", elapsed_ms=1.0),
+        ),
+    ],
+)
+def test_feasibility_result_rejects_non_sat_prefix_for_localized_stage(
+    infeasible_stage, kernel, initialization, assumptions
+) -> None:
+    """A localized stage must preserve the cumulative SAT prefix contract."""
+    with pytest.raises(BmcBuildError, match="SAT prefix"):
+        BmcFeasibilityResult(
+            kernel=kernel,
+            initialization=initialization,
+            assumptions=assumptions,
+            infeasible_stage=infeasible_stage,
+            localization_status="complete",
+        )
+
+
 def test_solve_property_keeps_unchecked_response_suffix_incomplete() -> None:
     """Disabling suffix diagnostics must not report response UNSAT as satisfied."""
     _, formula = _compile(

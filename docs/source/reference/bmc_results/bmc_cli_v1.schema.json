@@ -125,6 +125,14 @@
         }
       ]
     },
+    "checkedInconclusiveFeasibilityCheck": {
+      "type": "object",
+      "required": ["status", "origin"],
+      "properties": {
+        "status": {"enum": ["unknown", "timeout"]},
+        "origin": {"const": "checked"}
+      }
+    },
     "notCheckedFeasibilityCheck": {
       "type": "object",
       "additionalProperties": false,
@@ -166,6 +174,48 @@
         "refinement_checks": {"type": "array", "items": {"$ref": "#/$defs/refinementCheck"}}
       },
       "allOf": [
+        {
+          "if": {
+            "anyOf": [
+              {"properties": {"kernel": {"$ref": "#/$defs/checkedInconclusiveFeasibilityCheck"}}},
+              {"properties": {"initialization": {"$ref": "#/$defs/checkedInconclusiveFeasibilityCheck"}}},
+              {"properties": {"assumptions": {"$ref": "#/$defs/checkedInconclusiveFeasibilityCheck"}}}
+            ]
+          },
+          "then": {
+            "properties": {
+              "infeasible_stage": {"const": null},
+              "localization_status": {"enum": ["not_checked", "unknown", "timeout"]}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"infeasible_stage": {"const": "kernel"}}},
+          "then": {
+            "properties": {
+              "kernel": {"properties": {"status": {"const": "unsat"}, "origin": {"const": "checked"}}}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"infeasible_stage": {"const": "initialization"}}},
+          "then": {
+            "properties": {
+              "kernel": {"properties": {"status": {"const": "sat"}, "origin": {"enum": ["checked", "inferred"]}}},
+              "initialization": {"properties": {"status": {"const": "unsat"}, "origin": {"const": "checked"}}}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"infeasible_stage": {"const": "assumptions"}}},
+          "then": {
+            "properties": {
+              "kernel": {"properties": {"status": {"const": "sat"}, "origin": {"enum": ["checked", "inferred"]}}},
+              "initialization": {"properties": {"status": {"const": "sat"}, "origin": {"enum": ["checked", "inferred"]}}},
+              "assumptions": {"properties": {"status": {"const": "unsat"}, "origin": {"const": "checked"}}}
+            }
+          }
+        },
         {
           "if": {"properties": {"refinement_status": {"enum": ["not_requested", "not_needed", "complete"]}}},
           "then": {"properties": {"refinement_reason": {"const": null}}}

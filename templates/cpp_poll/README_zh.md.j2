@@ -668,6 +668,7 @@ machine 对象在 C 中不是 opaque type，但其中多数字段都属于运行
 | `{{ machine_class_name(model) }}_cycle(machine)` | 使用当前已安装 event-check 表执行一个 cycle |
 | `{{ machine_class_name(model) }}_vars(machine)` | 读取持久变量 |
 | `{{ machine_class_name(model) }}_is_ended(machine)` | 判断状态机是否结束 |
+| `MachineWrapper::last_cycle_was_delta() const` | 读取最近一次成功周期是否为 Delta 无进展周期 |
 | `{{ machine_class_name(model) }}_current_state_id(machine)` | 读取当前叶子状态 id |
 | `{{ machine_class_name(model) }}_current_state_path(machine)` | 读取当前叶子状态完整路径，主要用于诊断 |
 | `{{ machine_class_name(model) }}_current_state_name(machine)` | 读取当前叶子状态短名称 |

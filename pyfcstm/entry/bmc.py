@@ -419,6 +419,41 @@ def _resolve_bmc_color_enabled(
     return bool(sys.stdout.isatty())
 
 
+_BMC_CLI_V1_RUNTIME_STEP_FIELDS = (
+    "index",
+    "input_events",
+    "consumed_events",
+    "unconsumed_events",
+    "abstract_calls",
+)
+
+
+def _project_replay_to_bmc_cli_v1(replay_payload: dict) -> dict:
+    """Project the Python replay payload onto the frozen CLI v1 shape.
+
+    The replay API may expose richer runtime observations than the stable CLI
+    protocol. Keep this projection explicit so newly added canonical fields do
+    not silently change ``bmc-cli/v1``.
+    """
+    runtime_trace = replay_payload["runtime_trace"]
+    runtime_steps = []
+    for step in runtime_trace["steps"]:
+        runtime_steps.append(
+            {
+                key: step[key]
+                for key in _BMC_CLI_V1_RUNTIME_STEP_FIELDS
+            }
+        )
+    return {
+        "ok": replay_payload["ok"],
+        "runtime_trace": {
+            "frames": list(runtime_trace["frames"]),
+            "steps": runtime_steps,
+        },
+        "mismatches": list(replay_payload["mismatches"]),
+    }
+
+
 def _json_report(
     execution: _BmcExecution,
     input_code_file: str,
@@ -436,7 +471,11 @@ def _json_report(
             execution.witness.to_canonical() if execution.witness is not None else None
         ),
         "replay": (
-            execution.replay.to_canonical() if execution.replay is not None else None
+            (
+                _project_replay_to_bmc_cli_v1(execution.replay.to_canonical())
+                if execution.replay is not None
+                else None
+            )
         ),
         "exit_code": execution.exit_code,
     }

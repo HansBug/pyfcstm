@@ -831,6 +831,7 @@ def test_semantic_fixture_schema_rejects_invalid_yaml(tmp_path, mutate, message)
 @pytest.mark.unittest
 def test_shared_fixture_accepts_public_observations(tmp_path):
     data = _shared_case_data()
+    data["steps"][0]["expect"]["delta"] = False
     data["handlers"] = [{"action": "Root.Init", "behavior": "record_call"}]
     data["steps"][0]["expect"]["handler_calls"] = [
         {
@@ -848,6 +849,84 @@ def test_shared_fixture_accepts_public_observations(tmp_path):
 
     load_semantic_case(yaml_path)
     validate_shared_fixture_contract(data, yaml_path)
+
+
+@pytest.mark.unittest
+def test_shared_fixture_delta_must_be_boolean(tmp_path):
+    data = _shared_case_data()
+    data["steps"][0]["expect"]["delta"] = 0
+    yaml_path = _write_fixture(tmp_path, data)
+
+    with pytest.raises(SemanticCaseError, match=r"steps\[0\]\.expect\.delta must be a boolean"):
+        load_semantic_case(yaml_path)
+
+
+@pytest.mark.unittest
+def test_shared_fixture_rejects_delta_without_cycle(tmp_path):
+    data = _shared_case_data()
+    data["steps"][0]["cycle_count"] = 0
+    data["steps"][0]["expect"]["delta"] = False
+    yaml_path = _write_fixture(tmp_path, data)
+
+    with pytest.raises(
+        SemanticCaseError,
+        match=r"steps\[0\]\.expect\.delta requires effective cycle_count > 0",
+    ):
+        load_semantic_case(yaml_path)
+
+
+@pytest.mark.unittest
+def test_shared_fixture_rejects_delta_on_exception_step(tmp_path):
+    data = _shared_case_data()
+    data["steps"][0]["expect"].update(
+        {"raises": {"type": "ValueError"}, "delta": False}
+    )
+    yaml_path = _write_fixture(tmp_path, data)
+
+    with pytest.raises(
+        SemanticCaseError,
+        match=r"steps\[0\]\.expect\.raises cannot be combined with expect\.delta",
+    ):
+        load_semantic_case(yaml_path)
+
+
+@pytest.mark.unittest
+def test_run_step_checks_delta_on_every_repeated_cycle():
+    from test.testings import simulate_semantics
+
+    class _Result:
+        def __init__(self, delta):
+            self.delta = delta
+
+    class _Runtime:
+        vars = {}
+        is_ended = False
+        current_state = None
+
+        def __init__(self):
+            self.results = iter([_Result(False), _Result(True)])
+            self.calls = 0
+
+        def cycle(self, events):
+            self.calls += 1
+            return next(self.results)
+
+    case = load_semantic_case("design_basic_simple_transition")
+    runtime = _Runtime()
+
+    with pytest.raises(AssertionError, match=r"steps\[0\]\.expect delta mismatch"):
+        simulate_semantics._run_step(
+            runtime,
+            {
+                "cycle": [],
+                "cycle_count": 2,
+                "expect": {"delta": True},
+            },
+            case,
+            0,
+        )
+
+    assert runtime.calls == 1
 
 
 @pytest.mark.unittest

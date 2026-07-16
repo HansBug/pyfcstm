@@ -72,8 +72,10 @@ def _assert_wrapper_source_contract(artifacts):
     assert "typedef RootMachineEventId EventId;" in header
     assert "int cycle(const EventId *event_ids, size_t event_count);" in header
     assert "int cycle(EventId event_id);" in header
+    assert "bool last_cycle_was_delta() const;" in header
     assert "RootMachine_cycle(&machine_, event_ids, event_count)" in source
     assert "RootMachine_cycle(&machine_, &event_id, 1u)" in source
+    assert "RootMachine_last_cycle_was_delta(&machine_)" in source
     assert "RootMachine_create" not in source
     assert "RootMachine_create_uninitialized" not in source
 
@@ -179,6 +181,9 @@ def _harness_source():
             }
             if (wrapper.last_error() == NULL) {
                 return 12;
+            }
+            if (wrapper.last_cycle_was_delta()) {
+                return 13;
             }
 
             hooks.on_p4_Root_p4_Boot = boot_hook;

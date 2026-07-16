@@ -58,6 +58,7 @@ state Root {
             "state": "Root.A",
             "vars": {"x": 1, "y": 1.5},
             "events": [],
+            "delta": False,
         }
     ]
 

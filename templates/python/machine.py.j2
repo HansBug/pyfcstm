@@ -487,6 +487,7 @@ class {{ machine_class_name(model) }}:
 {% endfor %}        self._ended = False
         self._entered_root = initial_state is not None
         self.cycle_count = 0
+        self._last_cycle_was_delta = False
         if initial_state is None:
             self._stack = [{"state": self._ROOT_STATE_PATH, "mode": "init_wait"}]
         else:
@@ -515,6 +516,16 @@ class {{ machine_class_name(model) }}:
         if state_path is None:
             return None
         return state_path[-1]
+
+    @property
+    def last_cycle_was_delta(self):
+        """
+        Return whether the most recent successful cycle was a Delta step.
+
+        :return: ``True`` for a successful no-progress cycle, otherwise ``False``.
+        :rtype: bool
+        """
+        return self._last_cycle_was_delta
 
     def info(self):
         return {
@@ -595,105 +606,6 @@ class {{ machine_class_name(model) }}:
                 "the state hierarchy." % (max_structural_depth,)
             )
 
-        if self._is_stoppable_state(target_path):
-            return
-
-        validation_stack = self._clone_stack(self._stack)
-        validation_vars = dict(self._vars)
-        dfs_error = None
-        try:
-            success, _ = self._run_cycle_on_context(
-                validation_stack,
-                validation_vars,
-                set(),
-                is_validation_mode=True,
-            )
-        except SimulationRuntimeDfsError as err:
-            # _run_cycle_on_context can exceed DFS limits while proving that a
-            # hot-start target has no empty-event stable path.
-            dfs_error = err
-            success = False
-        if not success:
-            if self._can_hot_start_wait_for_evented_initial(target_path):
-                if dfs_error is not None:
-                    raise dfs_error
-                return
-            target_display = ".".join(self._STATE_INFO[target_path]["path"])
-            raise ValueError(
-                "Hot start target %r cannot reach a stoppable state" % (target_display,)
-            )
-
-    def _can_hot_start_wait_for_evented_initial(self, target_path):
-        if self._STATE_INFO[target_path]["is_leaf"]:
-            return False
-
-        worklist = [(self._clone_stack(self._stack), dict(self._vars))]
-        seen_signatures = set()
-        steps_taken = 0
-        max_steps = 1000
-        max_structural_depth = 64
-
-        while worklist:
-            current_stack, current_vars = worklist.pop()
-            if not current_stack:
-                continue
-
-            structural_signature = self._create_structural_signature(current_stack)
-            if len(structural_signature) > max_structural_depth:
-                raise SimulationRuntimeDfsError(
-                    "Hot start event-gated initial-chain search exceeded the "
-                    "structural stack-depth safety limit "
-                    "(%s); choose a shallower target state or simplify the state "
-                    "hierarchy." % (max_structural_depth,)
-                )
-
-            signature = self._create_execution_signature(current_stack, current_vars)
-            if signature in seen_signatures:
-                continue
-            seen_signatures.add(signature)
-
-            if steps_taken >= max_steps:
-                raise SimulationRuntimeDfsError(
-                    "Hot start event-gated initial-chain search exceeded the "
-                    "step safety limit (%s); the state machine likely contains "
-                    "an invalid unbounded initial-transition chain." % (max_steps,)
-                )
-            steps_taken += 1
-
-            frame = current_stack[-1]
-            state_path = frame["state"]
-            state_info = self._STATE_INFO[state_path]
-            if state_info["is_leaf"] or frame["mode"] != "init_wait":
-                continue
-
-            for transition_id in state_info["initial_transition_ids"]:
-                transition = self._TRANSITIONS[transition_id]
-                if transition["event_path"] is None:
-                    continue
-                if self._transition_matches_guard(transition, current_vars):
-                    return True
-
-            for transition_id in reversed(state_info["initial_transition_ids"]):
-                transition = self._TRANSITIONS[transition_id]
-                if transition["event_path"] is not None:
-                    continue
-                if not self._transition_matches_guard(transition, current_vars):
-                    continue
-
-                next_stack = self._clone_stack(current_stack)
-                next_vars = dict(current_vars)
-                self._execute_initial_transition_on_context(
-                    next_stack,
-                    next_vars,
-                    transition_id,
-                    set(),
-                    is_validation_mode=True,
-                    attempt_initial_transition=False,
-                )
-                worklist.append((next_stack, next_vars))
-
-        return False
-
     @staticmethod
     def _clone_stack(stack):
         return [dict(frame) for frame in stack]
@@ -739,6 +651,14 @@ class {{ machine_class_name(model) }}:
     def _is_stoppable_state(self, state_path):
         state_info = self._STATE_INFO[state_path]
         return state_info["is_leaf"] and not state_info["is_pseudo"]
+
+    def _is_no_outgoing_pseudo(self, state_path):
+        state_info = self._STATE_INFO[state_path]
+        return bool(
+            state_info["is_pseudo"]
+            and not state_info["transition_ids"]
+            and not state_info["initial_transition_ids"]
+        )
 
     def _parse_event(self, event):
         if hasattr(event, "path_name"):
@@ -872,6 +792,8 @@ class {{ machine_class_name(model) }}:
 
     def _run_leaf_during(self, state_path, vars_, is_validation_mode=False):
         state_info = self._STATE_INFO[state_path]
+        if self._is_no_outgoing_pseudo(state_path):
+            return
         if not state_info["is_pseudo"]:
             for item_path in self._iter_path_to_state(state_path):
                 self._execute_actions(
@@ -964,6 +886,8 @@ class {{ machine_class_name(model) }}:
     ):
         state_info = self._STATE_INFO[state_path]
         stack.append({"state": state_path, "mode": "active"})
+        if self._is_no_outgoing_pseudo(state_path):
+            return
         self._execute_actions(
             state_info["enter_actions"], vars_, is_validation_mode=is_validation_mode
         )
@@ -1380,6 +1304,9 @@ class {{ machine_class_name(model) }}:
             state_path = frame["state"]
             state_info = self._STATE_INFO[state_path]
 
+            if self._is_no_outgoing_pseudo(state_path):
+                return False, False
+
             if state_info["is_leaf"]:
                 if frame["mode"] == "after_entry":
                     frame["mode"] = "active"
@@ -1461,6 +1388,7 @@ class {{ machine_class_name(model) }}:
         :return: ``None``.
         :rtype: None
         """
+        self._last_cycle_was_delta = False
         if self._ended:
             return None
         event_names = self._normalize_events(events)
@@ -1493,6 +1421,8 @@ class {{ machine_class_name(model) }}:
             is_validation_mode=True,
         )
 
+        delta = not success
+
         if success:
             sim_stack = self._clone_stack(snapshot_stack)
             sim_vars = dict(snapshot_vars)
@@ -1514,12 +1444,22 @@ class {{ machine_class_name(model) }}:
                 ended=sim_ended,
             )
 
-        if success:
-            self._stack = [] if sim_ended else sim_stack
-            self._vars = sim_vars
+            if not success:
+                delta = True
+
+        if success or delta:
+            if delta:
+                self._stack = snapshot_stack
+                self._vars = snapshot_vars
+                self._entered_root = snapshot_entered_root
+                self._ended = snapshot_ended
+                self._last_cycle_was_delta = True
+            else:
+                self._stack = [] if sim_ended else sim_stack
+                self._vars = sim_vars
+                self._entered_root = sim_entered_root
+                self._ended = sim_ended
             self.variables = self._vars
-            self._entered_root = sim_entered_root
-            self._ended = sim_ended
             self.cycle_count += 1
         else:
             self._vars = snapshot_vars

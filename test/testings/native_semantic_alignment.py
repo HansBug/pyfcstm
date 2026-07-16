@@ -268,6 +268,7 @@ class _GeneratedNativeAlignmentRuntime:
         self._simulation_runtime = simulation_runtime
         self._native_runtime = native_runtime
         self._dsl_code = dsl_code
+        self._last_simulation_delta = False
 
     @property
     def vars(self) -> Mapping[str, Any]:
@@ -276,6 +277,10 @@ class _GeneratedNativeAlignmentRuntime:
     @property
     def is_ended(self) -> bool:
         return self._native_runtime.is_ended
+
+    @property
+    def last_cycle_was_delta(self) -> bool:
+        return self._native_runtime.last_cycle_was_delta
 
     @property
     def current_state(self) -> Optional[_StateProxy]:
@@ -320,6 +325,16 @@ class _GeneratedNativeAlignmentRuntime:
                 "%s: current state mismatch for DSL:\n%s\nsimulation=%r\nnative=%r"
                 % (when, self._dsl_code, sim_path, native_path)
             )
+        sim_delta = self._last_simulation_delta
+        native_delta = self._native_runtime.last_cycle_was_delta
+        assert isinstance(native_delta, bool), (
+            "%s: native Delta observation must be bool for DSL:\n%s\nvalue=%r"
+            % (when, self._dsl_code, native_delta)
+        )
+        assert sim_delta is native_delta, (
+            "%s: Delta mismatch for DSL:\n%s\nsimulation=%r, native=%r"
+            % (when, self._dsl_code, sim_delta, native_delta)
+        )
 
     def cycle(self, events: Any = None) -> Any:
         sim_exc = None
@@ -327,6 +342,7 @@ class _GeneratedNativeAlignmentRuntime:
         native_events = _normalize_events_for_native(events)
         try:
             sim_result = self._simulation_runtime.cycle(events)
+            self._last_simulation_delta = bool(getattr(sim_result, "delta", False))
         except _SIMULATION_RUNTIME_EXCEPTIONS as err:
             # SimulationRuntime semantic exceptions are compared by class name;
             # unexpected exception classes still propagate and expose harness

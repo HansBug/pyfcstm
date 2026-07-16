@@ -1,7 +1,7 @@
 """
 JSON report contracts for native toolchain semantic alignment.
 
-This module defines the first-version result, command, and observation schema
+This module defines the second-version result, command, and observation schema
 used by the native toolchain pytest helper. The schema is intentionally test
 local: generated C-family artifacts write public observations, and Python-side
 pytest code stores command logs and summary results beside the build artifacts.
@@ -26,7 +26,7 @@ import os
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
 
-SCHEMA_VERSION = "1"
+SCHEMA_VERSION = "2"
 
 COMMAND_REQUIRED_FIELDS = {
     "stage",
@@ -76,6 +76,7 @@ OBSERVATION_REQUIRED_FIELDS = {
     "handler_calls",
     "last_error",
     "api_return",
+    "delta",
 }
 RESULT_STATUS_VALUES = {"passed", "failed", "error", "skipped"}
 RESULT_CLASSIFICATION_VALUES = {
@@ -241,7 +242,7 @@ class NativeToolchainResult:
         ...     "gcc", "gcc 1", "-O2", "passed", "passed", "ok",
         ... )
         >>> result.to_dict()["schema_version"]
-        '1'
+        '2'
     """
 
     case_id: str
@@ -442,11 +443,11 @@ def validate_observation_data(data: Mapping[str, Any]) -> None:
     Example::
 
         >>> validate_observation_data({
-        ...     "schema_version": "1", "case_id": "demo", "template_name": "c",
+        ...     "schema_version": "2", "case_id": "demo", "template_name": "c",
         ...     "phase": "step", "step_index": 0, "cycle_index": 0,
         ...     "events": [], "current_state": "Root.A", "is_ended": False,
         ...     "vars": {}, "handler_calls": [], "last_error": None,
-        ...     "api_return": 1,
+        ...     "api_return": 1, "delta": False,
         ... })
     """
     missing = _missing_fields(data, OBSERVATION_REQUIRED_FIELDS)
@@ -479,6 +480,8 @@ def validate_observation_data(data: Mapping[str, Any]) -> None:
         raise ValueError("observation last_error must be a string or null")
     if data["api_return"] is not None and not isinstance(data["api_return"], int):
         raise ValueError("observation api_return must be an int or null")
+    if not isinstance(data["delta"], bool):
+        raise ValueError("observation delta must be bool")
 
 
 def write_json_file(path: str, data: Any) -> None:
@@ -526,11 +529,11 @@ def read_observations_jsonl(path: str) -> List[Dict[str, Any]]:
         >>> td = tempfile.mkdtemp()
         >>> path = os.path.join(td, "observations.jsonl")
         >>> _ = open(path, "w").write(json.dumps({
-        ...     "schema_version": "1", "case_id": "demo", "template_name": "c",
+        ...     "schema_version": "2", "case_id": "demo", "template_name": "c",
         ...     "phase": "step", "step_index": 0, "cycle_index": 0,
         ...     "events": [], "current_state": "Root.A", "is_ended": False,
         ...     "vars": {}, "handler_calls": [], "last_error": None,
-        ...     "api_return": 1,
+        ...     "api_return": 1, "delta": False,
         ... }) + "\\n")
         >>> read_observations_jsonl(path)[0]["case_id"]
         'demo'

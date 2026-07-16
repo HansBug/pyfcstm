@@ -156,6 +156,54 @@ def test_bmc_json_verdict_matrix(
     assert "formulas" not in json.dumps(payload)
 
 
+def test_bmc_json_projects_richer_replay_observation_to_v1() -> None:
+    """CLI v1 keeps its runtime-step allowlist despite richer Python replay."""
+    import pyfcstm.entry.bmc as bmc_entry
+
+    projected = bmc_entry._project_replay_to_bmc_cli_v1(
+        {
+            "ok": True,
+            "runtime_trace": {
+                "frames": [],
+                "steps": [
+                    {
+                        "index": 0,
+                        "input_events": [],
+                        "consumed_events": [],
+                        "unconsumed_events": [],
+                        "abstract_calls": [],
+                        "delta": True,
+                        "cycle_count_before": 0,
+                        "cycle_count_after": 1,
+                        "history_entry": {"future": True},
+                        "future_extra": "must not leak",
+                    }
+                ],
+                "future_trace_field": True,
+            },
+            "mismatches": [],
+            "future_replay_field": True,
+        }
+    )
+
+    assert projected == {
+        "ok": True,
+        "runtime_trace": {
+            "frames": [],
+            "steps": [
+                {
+                    "index": 0,
+                    "input_events": [],
+                    "consumed_events": [],
+                    "unconsumed_events": [],
+                    "abstract_calls": [],
+                }
+            ],
+        },
+        "mismatches": [],
+    }
+
+
 def test_bmc_human_report_prioritizes_verdict_and_diagnostics(bmc_files) -> None:
     """Default human output explains the verdict before compact trace details."""
     model_path, query = bmc_files

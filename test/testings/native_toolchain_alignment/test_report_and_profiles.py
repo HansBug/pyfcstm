@@ -169,7 +169,7 @@ def test_report_schema_rejects_missing_fields_and_bad_types(tmp_path):
 @pytest.mark.unittest
 def test_observation_schema_requires_version_and_public_fields():
     data = {
-        "schema_version": "1",
+        "schema_version": "2",
         "case_id": "demo",
         "template_name": "c",
         "phase": "step",
@@ -182,14 +182,15 @@ def test_observation_schema_requires_version_and_public_fields():
         "handler_calls": [],
         "last_error": None,
         "api_return": 1,
+        "delta": False,
     }
     validate_observation_data(json.loads(json.dumps(data)))
 
-    data["schema_version"] = "2"
+    data["schema_version"] = "1"
     with pytest.raises(ValueError, match="schema_version"):
         validate_observation_data(data)
 
-    data["schema_version"] = "1"
+    data["schema_version"] = "2"
     data["events"] = ["Root.A.Go", 1]
     with pytest.raises(ValueError, match="events"):
         validate_observation_data(data)
@@ -197,6 +198,11 @@ def test_observation_schema_requires_version_and_public_fields():
     data["events"] = []
     data["phase"] = "unknown"
     with pytest.raises(ValueError, match="phase"):
+        validate_observation_data(data)
+
+    data["phase"] = "step"
+    data["delta"] = 1
+    with pytest.raises(ValueError, match="delta"):
         validate_observation_data(data)
 
 

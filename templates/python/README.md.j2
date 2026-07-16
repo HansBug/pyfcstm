@@ -361,6 +361,7 @@ machine = {{ machine_class_name(model) }}()
 - `vars`
   - returns the live persistent-variable dictionary
 - `is_ended`
+- `last_cycle_was_delta` (the most recent successful cycle was a Delta no-progress step)
   - returns whether the runtime has ended
 - `current_state_path`
   - returns the current leaf state path as a tuple, or `None`

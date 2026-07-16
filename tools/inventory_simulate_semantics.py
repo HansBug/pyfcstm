@@ -81,6 +81,7 @@ PUBLIC_EXPECTATION_FIELDS = (
     "vars_keys",
     "vars_absent",
     "ended",
+    "delta",
     "raises",
     "handler_calls",
 )
@@ -523,7 +524,7 @@ def _render_report(
                             | set(unknown_expectation_hits)
                         )
                     ),
-                    "通过：只出现 state、vars、vars_exact、vars_keys、vars_absent、ended、raises 和 handler_calls 公开观察字段；未出现 event accounting 或其他私有观察字段。",
+                    "通过：只出现 state、vars、vars_exact、vars_keys、vars_absent、ended、delta、raises 和 handler_calls 公开观察字段；未出现 event accounting 或其他私有观察字段。",
                 ),
                 (
                     "长期 Markdown 文件",
@@ -748,7 +749,7 @@ def _field_contract_errors(records: Sequence[SemanticCaseRecord]) -> List[str]:
         case_ids = legacy_cycle_cases[field_name]
         if case_ids:
             errors.append(
-                "shared fixture cycle 旧形态 %s 不属于 schema v2，命中：%s"
+                "shared fixture cycle 旧形态 %s 不属于 schema v3，命中：%s"
                 % (field_name, _case_ids(case_ids))
             )
 
@@ -757,7 +758,7 @@ def _field_contract_errors(records: Sequence[SemanticCaseRecord]) -> List[str]:
         case_ids = legacy_path_cases[field_name]
         if case_ids:
             errors.append(
-                "shared fixture state path 旧形态 %s 不属于 schema v2，命中：%s"
+                "shared fixture state path 旧形态 %s 不属于 schema v3，命中：%s"
                 % (field_name, _case_ids(case_ids))
             )
 
@@ -776,7 +777,7 @@ def _field_contract_errors(records: Sequence[SemanticCaseRecord]) -> List[str]:
     unknown_expectation_cases = _unknown_expectation_field_case_ids(records)
     for field_name, case_ids in sorted(unknown_expectation_cases.items()):
         errors.append(
-            "shared fixture 观察字段 %s 未在 schema v2 公开观察面中声明，命中：%s"
+            "shared fixture 观察字段 %s 未在 schema v3 公开观察面中声明，命中：%s"
             % (field_name, _case_ids(case_ids))
         )
     return errors

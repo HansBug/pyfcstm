@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import copy
 from typing import Iterable, List, Sequence, Tuple
 
 import pytest
@@ -86,8 +87,18 @@ def collect_simulation_trace_for_bmc_fixture(
             _cycle_input_for_step(step, case.id, case.yaml_path, field_path)
         )
         for _ in range(cycle_count):
+            terminated_absorb = runtime.is_ended
+            cycle_count_before = None if terminated_absorb else runtime.cycle_count
             before = len(recorder.calls)
             result = runtime.cycle(cycle_input)
+            cycle_count_after = None if terminated_absorb else runtime.cycle_count
+            history_entry = None
+            if (
+                not terminated_absorb
+                and cycle_count_after > cycle_count_before
+                and runtime.history
+            ):
+                history_entry = copy.deepcopy(runtime.history[-1])
             new_calls = tuple(
                 BmcWitnessCallRecord(
                     ordinal=call_index,
@@ -110,6 +121,10 @@ def collect_simulation_trace_for_bmc_fixture(
                     consumed_events=result.consumed_events,
                     unconsumed_events=result.unconsumed_events,
                     abstract_calls=new_calls,
+                    delta=result.delta,
+                    cycle_count_before=cycle_count_before,
+                    cycle_count_after=cycle_count_after,
+                    history_entry=history_entry,
                 )
             )
             frames.append(_runtime_frame(runtime, len(frames)))
@@ -210,12 +225,12 @@ def test_bmc_witness_fixture_runner_keeps_policy_counts_auditable() -> None:
         policy = policy_for_case(case.id)
         mode_counts[policy.mode] = mode_counts.get(policy.mode, 0) + 1
     assert mode_counts == {
-        "hard_pass": 146,
+        "hard_pass": 148,
         "expected_unsupported": 3,
         "temporary_exclude": 10,
-        "long_term_exclude": 6,
+        "long_term_exclude": 4,
     }
-    assert len(_hard_pass_cases()) == 146
+    assert len(_hard_pass_cases()) == 148
     zero_step_ids = set()
     for case in _hard_pass_cases():
         cycle_count = 0
@@ -296,6 +311,16 @@ def test_duplicate_event_fixture_uses_boolean_presence_without_exclusion() -> No
         "consumed_events": ["Root.A.Tick"],
         "unconsumed_events": ["Root.A.Noise"],
         "abstract_calls": [],
+        "delta": False,
+        "cycle_count_before": 1,
+        "cycle_count_after": 2,
+        "history_entry": {
+            "cycle": 2,
+            "state": "Root.A",
+            "vars": {"counter": 2},
+            "events": ["Root.A.Tick", "Root.A.Noise"],
+            "delta": False,
+        },
     }
 
     model = build_state_machine_from_case(case)

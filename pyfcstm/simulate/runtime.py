@@ -340,6 +340,8 @@ class CycleResult:
     :param unconsumed_events: Canonical input event paths that did not
         correspond to an executed evented transition.
     :type unconsumed_events: Tuple[str, ...]
+    :param delta: Whether this cycle was a successful no-progress Delta step.
+    :type delta: bool
 
     Example::
 
@@ -352,12 +354,15 @@ class CycleResult:
         True
         >>> result.consumed_events
         ('Root.A.Go',)
+        >>> result.delta
+        False
     """
 
     value: Any = None
     input_events: Tuple[str, ...] = ()
     consumed_events: Tuple[str, ...] = ()
     unconsumed_events: Tuple[str, ...] = ()
+    delta: bool = False
 
 
 class SimulationRuntimeExpressionError(ValueError, ArithmeticError):
@@ -1022,21 +1027,17 @@ class SimulationRuntime:
 
     def _validate_hot_start_stack(self, target_state: State) -> None:
         """
-        Validate that a hot-start target can reach a stable boundary.
+        Validate only the structural part of a hot-start stack.
 
-        A non-pseudo leaf target is already a stable boundary, so validation
-        succeeds without executing the leaf's first-cycle ``during`` actions.
-        Other targets are checked by cloning the constructed stack and current
-        variables, then advancing that clone with no events in validation mode.
-        The real runtime therefore remains at the requested target state and no
-        lifecycle or abstract-handler side effects from the preflight are
-        committed.
+        Dynamic reachability belongs to the first real :meth:`cycle` call. The
+        constructor must not evaluate guards, lifecycle actions, pseudo-state
+        ``during`` blocks, or abstract handlers while trying to predict whether
+        a future event can make the target stoppable.
 
         :param target_state: Target state selected by the user.
         :type target_state: State
         :return: ``None``.
         :rtype: None
-        :raises ValueError: If the target cannot reach a stoppable state or end.
         :raises SimulationRuntimeDfsError: If the constructed hot-start stack
             already exceeds the structural depth safety limit.
         """
@@ -1046,119 +1047,6 @@ class SimulationRuntime:
                 f"({self._DFS_STRUCTURAL_DEPTH_LIMIT}) before execution; "
                 "choose a shallower target state or simplify the state hierarchy."
             )
-
-        if target_state.is_stoppable:
-            return
-
-        validation_stack = self._clone_stack(self.stack)
-        validation_vars = copy.deepcopy(self.vars)
-        dfs_error = None
-        try:
-            success, _ = self._run_cycle_on_context(
-                validation_stack,
-                validation_vars,
-                {},
-                is_validation_mode=True,
-            )
-        except SimulationRuntimeDfsError as e:
-            # _run_cycle_on_context preflight can hit DFS limits while proving
-            # that a hot-start target has no empty-event stable path.
-            dfs_error = e
-            success = False
-        if not success:
-            if self._can_hot_start_wait_for_evented_initial(target_state):
-                if dfs_error is not None:
-                    raise dfs_error
-                return
-            target_path = ".".join(target_state.path)
-            raise ValueError(
-                f"Hot start target '{target_path}' cannot reach a stoppable state"
-            )
-
-    def _can_hot_start_wait_for_evented_initial(self, target_state: State) -> bool:
-        """
-        Return whether a composite hot-start target can wait for an evented init.
-
-        Constructor preflight runs without user events, so an initial transition
-        guarded by an event may be legitimately disabled until the first
-        :meth:`cycle` call. The event gate can appear directly on the target
-        composite or after an eventless initial-transition chain. Such targets
-        should remain in ``init_wait`` instead of being rejected during
-        construction.
-
-        :param target_state: Hot-start target state to inspect.
-        :type target_state: State
-        :return: ``True`` when the target has an event-gated initial transition
-            boundary whose non-event guard is currently satisfiable.
-        :rtype: bool
-        :raises SimulationRuntimeDfsError: If the eventless initial-chain search
-            exceeds the runtime safety limits.
-        """
-        if target_state.is_leaf_state:
-            return False
-
-        worklist = [(self._clone_stack(self.stack), copy.deepcopy(self.vars))]
-        seen_signatures = set()
-        steps_taken = 0
-
-        while worklist:
-            current_stack, current_vars = worklist.pop()
-            if not current_stack:
-                continue
-
-            structural_signature = self._create_structural_signature(current_stack)
-            if len(structural_signature) > self._DFS_STRUCTURAL_DEPTH_LIMIT:
-                raise SimulationRuntimeDfsError(
-                    "Hot start event-gated initial-chain search exceeded the "
-                    "structural stack-depth safety limit "
-                    f"({self._DFS_STRUCTURAL_DEPTH_LIMIT}); "
-                    "choose a shallower target state or simplify the state hierarchy."
-                )
-
-            signature = self._create_execution_signature(current_stack, current_vars)
-            if signature in seen_signatures:
-                continue
-            seen_signatures.add(signature)
-
-            if steps_taken >= self._DFS_STEP_LIMIT:
-                raise SimulationRuntimeDfsError(
-                    "Hot start event-gated initial-chain search exceeded the "
-                    f"step safety limit ({self._DFS_STEP_LIMIT}); "
-                    "the state machine likely contains an invalid unbounded "
-                    "initial-transition chain."
-                )
-            steps_taken += 1
-
-            frame = current_stack[-1]
-            state = frame.state
-            if state.is_leaf_state or frame.mode != "init_wait":
-                continue
-
-            for transition in state.init_transitions:
-                if transition.event is None:
-                    continue
-                if self._transition_matches_guard(transition, current_vars):
-                    return True
-
-            for transition in reversed(state.init_transitions):
-                if transition.event is not None:
-                    continue
-                if not self._transition_matches_guard(transition, current_vars):
-                    continue
-
-                next_stack = self._clone_stack(current_stack)
-                next_vars = copy.deepcopy(current_vars)
-                self._execute_initial_transition_on_context(
-                    next_stack,
-                    next_vars,
-                    transition,
-                    {},
-                    is_validation_mode=True,
-                    attempt_initial_transition=False,
-                )
-                worklist.append((next_stack, next_vars))
-
-        return False
 
     def _event_input_error(self, message: str) -> SimulationRuntimeEventError:
         """
@@ -2155,6 +2043,35 @@ class SimulationRuntime:
             transition, d_events
         ) and self._transition_matches_guard(transition, vars_)
 
+    @staticmethod
+    def _is_no_outgoing_pseudo(state: State) -> bool:
+        """
+        Return whether ``state`` is a pseudo source with no control successor.
+
+        A pseudo state with no outgoing initial or normal transition is a
+        structural Delta boundary. The predicate deliberately excludes
+        composite states and pseudo states that still have a candidate path, so
+        callers can use it before executing entry, during, effect, or abstract
+        actions without swallowing a reachable transition.
+
+        :param state: State to classify.
+        :type state: State
+        :return: ``True`` only for a no-outgoing pseudo state.
+        :rtype: bool
+
+        Example::
+
+            >>> from pyfcstm.model import State
+            >>> state = State(name="P", path=("Root", "P"), substates={}, is_pseudo=True)
+            >>> SimulationRuntime._is_no_outgoing_pseudo(state)
+            True
+        """
+        return bool(
+            state.is_pseudo
+            and not state.transitions_from
+            and not state.init_transitions
+        )
+
     def _run_leaf_during(
         self,
         state: State,
@@ -2232,6 +2149,12 @@ class SimulationRuntime:
             exceeds runtime safety limits.
         """
         stack.append(_Frame(state, "active"))
+        if self._is_no_outgoing_pseudo(state):
+            # This source has no control edge to execute. Keep the frame so the
+            # public cycle can report a stuttering Delta, but do not run any
+            # standalone lifecycle action before that classification.
+            return
+
         for on_enter in state.on_enters:
             self._execute_func(on_enter, vars_, is_validation_mode=is_validation_mode)
 
@@ -3150,6 +3073,13 @@ class SimulationRuntime:
             frame = stack[-1]
             state = frame.state
 
+            if self._is_no_outgoing_pseudo(state):
+                self.logger.debug(
+                    "[VALIDATION] No-outgoing pseudo reached Delta boundary: %s",
+                    ".".join(state.path),
+                )
+                return False, False
+
             if state.is_leaf_state:
                 if frame.mode == "after_entry":
                     frame.mode = "active"
@@ -3517,6 +3447,11 @@ class SimulationRuntime:
             is_validation_mode=True,
         )
 
+        # A validation dead end is a successful Delta boundary. The speculative
+        # context is intentionally discarded; the public runtime will commit
+        # the pre-cycle snapshot below and record the macro step.
+        delta = not success
+
         if success:
             sim_stack = self._clone_stack(snapshot_stack)
             sim_vars = copy.deepcopy(snapshot_vars)
@@ -3547,13 +3482,28 @@ class SimulationRuntime:
                     self._warned_anonymous_abstracts = snapshot_warned_anonymous
                     self._abstract_handler_errors = snapshot_handler_errors
 
-        if success:
-            self.stack = [] if sim_ended else sim_stack
+            if not success:
+                # Validation and committed execution must agree. If a
+                # committed-only callback path turns the result into a dead end,
+                # classify it as Delta and discard the speculative context.
+                delta = True
+
+        if success or delta:
+            if delta:
+                self.stack = snapshot_stack
+                self.vars = snapshot_vars
+                self._initialized = snapshot_initialized
+                self._ended = snapshot_ended
+                self._warned_anonymous_abstracts = snapshot_warned_anonymous
+                self._abstract_handler_errors = snapshot_handler_errors
+            else:
+                self.stack = [] if sim_ended else sim_stack
+                self.vars = sim_vars
+                self._initialized = sim_initialized
+                self._ended = sim_ended
+
             old_vars = snapshot_vars
-            self.vars = sim_vars
-            self._initialized = sim_initialized
-            self._ended = sim_ended
-            self.cycle_count += 1  # Increment cycle count on successful cycle
+            self.cycle_count += 1
 
             # Record history entry
             # Get current state path
@@ -3572,6 +3522,7 @@ class SimulationRuntime:
                 "state": state_path,
                 "vars": copy.deepcopy(self.vars),
                 "events": event_names,
+                "delta": delta,
             }
 
             # Add to history and maintain size limit
@@ -3584,11 +3535,20 @@ class SimulationRuntime:
                 "%s=%s" % (name, _safe_runtime_repr(value))
                 for name, value in sorted(self.vars.items())
             )
-            self.logger.info(
-                f"Cycle {self.cycle_count} completed successfully - State: {state_path}{changes}; "
-                f"current values: state={state_path}, vars={{ {current_values} }}"
-            )
+            if delta:
+                self.logger.warning(
+                    f"Cycle {self.cycle_count} completed as Delta - State: {state_path}; "
+                    "no stoppable successor was committed"
+                )
+            else:
+                self.logger.info(
+                    f"Cycle {self.cycle_count} completed successfully - State: {state_path}{changes}; "
+                    f"current values: state={state_path}, vars={{ {current_values} }}"
+                )
         else:
+            # Kept as a defensive fallback for a future internal outcome that is
+            # neither ordinary success nor a classified Delta. Current cycle
+            # execution returns only success, Delta, or raises a concrete error.
             self.vars = snapshot_vars
             self._ended = snapshot_ended
             self._warned_anonymous_abstracts = snapshot_warned_anonymous
@@ -3623,6 +3583,7 @@ class SimulationRuntime:
             unconsumed_events=self._unconsumed_event_names(
                 event_names, consumed_event_names
             ),
+            delta=delta,
         )
         return result
 

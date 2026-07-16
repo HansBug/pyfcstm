@@ -28,7 +28,7 @@ CycleResult
 -----------------------------------------------------
 
 .. autoclass:: CycleResult
-    :members: value,input_events,consumed_events,unconsumed_events
+    :members: value,input_events,consumed_events,unconsumed_events,delta
 
 
 SimulationRuntimeExpressionError

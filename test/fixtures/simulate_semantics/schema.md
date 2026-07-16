@@ -1,4 +1,4 @@
-# Simulate semantic fixture schema v2
+# Simulate semantic fixture schema v3
 
 This directory stores the shared semantic fixture corpus for simulator and
 built-in Python runtime alignment tests. A fixture is a pair of files under
@@ -33,20 +33,24 @@ The shared corpus may assert only public observations:
 - `is_ended`, represented in YAML as `ended`
 - construction or hot-start outcome through `initial`
 - cycle inputs and post-cycle state/vars through `steps`
+- successful no-progress classification through `expect.delta`
 - abstract hook call behavior through `handlers` plus `handler_calls`
 
-Cycle return values and event accounting are simulator-only debug /
-introspection metadata. They belong in ordinary `test/simulate/` pytest coverage
-and must not appear in shared fixture YAML or generated-template alignment
-expectations. Event accounting includes `CycleResult.input_events`,
-`consumed_events`, `unconsumed_events`, or any similar event-ledger field.
+`delta` is the only cycle-return observation promoted into this shared contract.
+It is a required-in-context boolean classification of the immediately preceding
+successful public `cycle()` call. The simulator reads `CycleResult.delta`;
+generated/native adapters read their public `last_cycle_was_delta` observation.
+All other cycle-return metadata remains simulator-only debug / introspection:
+`CycleResult.input_events`, `consumed_events`, `unconsumed_events`, runtime cycle
+counts, history entries, warnings, and logs must not appear in shared fixture
+YAML or generated-template alignment expectations.
 
 These surfaces are not part of the shared fixture contract and must stay in
 ordinary pytest coverage instead of shared YAML: CLI/REPL command transcripts,
 model-construction diagnostics, simulator runtime options, stack snapshots,
 cycle counters, history records, logs, warnings, abstract handler error lists,
-error-state metadata, anonymous-warning dedupe metadata, cycle return metadata,
-event accounting, and top-level expected-failure markers.
+error-state metadata, anonymous-warning dedupe metadata, cycle return metadata
+other than `delta`, event accounting, and top-level expected-failure markers.
 
 ## Top-level fields
 
@@ -187,6 +191,10 @@ omitted or `cycle: []`; non-empty cycle input with `cycle_count: 0` is rejected.
 `cycle: []` with `cycle_count: N` where `N > 0` is legal but usually less clear
 than just writing `cycle_count: N`.
 
+When `expect.delta` is present with `cycle_count > 1`, the same boolean is
+checked after every individual `cycle()` call, not only after the final call.
+Use separate steps to describe a mixed ordinary/Delta sequence.
+
 Rejected v1 cycle shapes include `cycle: {}`, `cycle: null`,
 `cycle: {events: [...]}`, and event-object descriptors such as
 `cycle: [{event: Root.A.Go}]`.
@@ -201,6 +209,7 @@ Rejected v1 cycle shapes include `cycle: {}`, `cycle: null`,
 | `vars_keys` | Exact variable key-set assertion. |
 | `vars_absent` | Variables that must not be present. |
 | `ended` | Expected `runtime.is_ended`. |
+| `delta` | Exact boolean classification of the immediately preceding successful cycle: `true` for no-progress Delta, `false` for ordinary progress. |
 | `raises` | Expected exception class name and optional message/cause match. |
 | `handler_calls` | Exact accumulated fixture-handler call records. |
 
@@ -210,6 +219,13 @@ not a default value.
 Rules:
 
 - Every `expect` mapping must assert at least one public observation field.
+- `delta` must be an exact YAML boolean (`true` or `false`), not a number or
+  string.
+- `delta` is valid only when the step executes at least one cycle. A
+  `cycle_count: 0` checkpoint cannot assert it.
+- `raises` and `delta` are mutually exclusive: an exception has no successful
+  cycle result to classify. Split the behavior into separate steps when both
+  outcomes need coverage.
 - `vars` and `vars_exact` are mutually exclusive.
 - `vars_exact` is mutually exclusive with `vars_keys` and `vars_absent`, because
   a full snapshot already fixes the variable key set.
@@ -220,7 +236,8 @@ Rules:
   not a runtime observation.
 - `return`, `cycle_result`, event accounting, stack, history, logs, warnings,
   error-state metadata, anonymous-warning counters, and generated-template
-  private state IDs remain rejected.
+  private state IDs remain rejected. Runtime count/history and event-ledger
+  fields remain simulator-only; only `delta` is shared.
 
 ## Exceptions
 
@@ -306,8 +323,11 @@ alignment runner checks construction outcomes and, after every step:
 - `is_ended`
 - variables
 - current state path
+- `delta` (simulator `CycleResult.delta` versus the generated runtime's public
+  `last_cycle_was_delta` getter)
 - expected exception class names, messages, and causes
 - public handler call records
 
 It must not depend on private stack shape, cycle counters, history records,
-cycle returns, event accounting, or other simulator internals.
+cycle-return metadata other than `delta`, event accounting, or other simulator
+internals.

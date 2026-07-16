@@ -263,7 +263,7 @@ def test_exit_combo_parent_continuation_failure_rolls_back_to_source():
     )
 
 
-def test_hot_start_to_event_gated_combo_pseudo_is_rejected():
+def test_hot_start_to_event_gated_combo_pseudo_waits_for_event():
     model = parse_machine(
         """
         state Root {
@@ -278,11 +278,18 @@ def test_hot_start_to_event_gated_combo_pseudo_is_rejected():
         state for state in model.root_state.substates.values() if state.is_pseudo
     )
 
-    with pytest.raises(ValueError, match="cannot reach a stoppable state"):
-        SimulationRuntime(model, initial_state=pseudo.path, initial_vars={})
+    runtime = SimulationRuntime(model, initial_state=pseudo.path, initial_vars={})
+
+    delta = runtime.cycle()
+    assert delta.delta is True
+    assert runtime.current_state.path == pseudo.path
+
+    completed = runtime.cycle(["Root.S.E2"])
+    assert completed.delta is False
+    assert runtime.current_state.path == ("Root", "T")
 
 
-def test_plain_pseudo_with_same_event_gate_has_same_hot_start_contract():
+def test_plain_pseudo_with_same_event_gate_waits_for_event():
     model = parse_machine(
         """
         state Root {
@@ -296,10 +303,15 @@ def test_plain_pseudo_with_same_event_gate_has_same_hot_start_contract():
         """
     )
 
-    with pytest.raises(
-        ValueError, match="Hot start target 'Root.P' cannot reach a stoppable state"
-    ):
-        SimulationRuntime(model, initial_state="Root.P", initial_vars={})
+    runtime = SimulationRuntime(model, initial_state="Root.P", initial_vars={})
+
+    delta = runtime.cycle()
+    assert delta.delta is True
+    assert runtime.current_state.path == ("Root", "P")
+
+    completed = runtime.cycle(["Root.S.E2"])
+    assert completed.delta is False
+    assert runtime.current_state.path == ("Root", "T")
 
 
 def test_prefix_reuse_matches_shared_hand_written_pseudo_chain():

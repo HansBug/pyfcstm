@@ -484,8 +484,9 @@ class CommandProcessor:
         # terminated row for user feedback but do not fabricate extra cycles.
         var_names = sorted(self.runtime.vars.keys())
         table_data = []
+        last_delta = False
         if self.runtime.is_ended:
-            table_data.append([self.runtime.cycle_count, "(terminated)"] + [
+            table_data.append([self.runtime.cycle_count, "(terminated)", False] + [
                 self.runtime.vars[var_name] for var_name in var_names
             ])
 
@@ -498,7 +499,8 @@ class CommandProcessor:
 
             cycle_count_before = self.runtime.cycle_count
             was_ended = self.runtime.is_ended
-            self.runtime.cycle(event_list if event_list else None)
+            cycle_result = self.runtime.cycle(event_list if event_list else None)
+            last_delta = bool(getattr(cycle_result, 'delta', False))
             if was_ended and self.runtime.cycle_count == cycle_count_before:
                 break
 
@@ -510,7 +512,7 @@ class CommandProcessor:
                 # raises after termination.
                 state_path = "(terminated)"
 
-            row = [self.runtime.cycle_count, state_path]
+            row = [self.runtime.cycle_count, state_path, last_delta]
             for var_name in sorted(self.runtime.vars.keys()):
                 row.append(self.runtime.vars[var_name])
 
@@ -518,7 +520,7 @@ class CommandProcessor:
             if self.runtime.is_ended:
                 break
 
-        headers = ['Cycle', 'State']
+        headers = ['Cycle', 'State', 'Delta']
         headers.extend(var_names)
 
         if count >= 20 and len(table_data) > 20:
@@ -631,7 +633,7 @@ Keyboard shortcuts (interactive mode):
         entries = self.runtime.history[-count:]
 
         # Prepare table data
-        headers = ['Cycle', 'State']
+        headers = ['Cycle', 'State', 'Delta']
         if entries:
             # Get all variable names from the first entry
             var_names = sorted(entries[0]['vars'].keys())
@@ -640,7 +642,7 @@ Keyboard shortcuts (interactive mode):
             # Build table rows
             table_data = []
             for entry in entries:
-                row = [entry['cycle'], entry['state']]
+                row = [entry['cycle'], entry['state'], entry.get('delta', False)]
                 for var_name in var_names:
                     row.append(entry['vars'].get(var_name, ''))
                 table_data.append(row)
@@ -712,7 +714,7 @@ Keyboard shortcuts (interactive mode):
         Handle export command to export history to file.
 
         Supports multiple formats based on file extension:
-        - .csv: CSV format with columns: cycle, state, var1, var2, ...
+        - .csv: CSV format with columns: cycle, state, delta, events, var1, var2, ...
         - .json: JSON array of history entries
         - .yaml: YAML array of history entries
         - .jsonl: JSON Lines format (one JSON object per line)
@@ -793,7 +795,7 @@ Keyboard shortcuts (interactive mode):
             writer = csv.writer(f)
 
             # Write header
-            header = ['cycle', 'state', 'events'] + var_names
+            header = ['cycle', 'state', 'delta', 'events'] + var_names
             writer.writerow(header)
 
             # Write data
@@ -806,7 +808,7 @@ Keyboard shortcuts (interactive mode):
                 # Join events with semicolon to avoid confusion with CSV commas
                 events_str = ';'.join(events) if events else ''
 
-                row = [cycle_num, state, events_str]
+                row = [cycle_num, state, entry.get('delta', False), events_str]
                 for var_name in var_names:
                     row.append(vars_dict.get(var_name, ''))
 

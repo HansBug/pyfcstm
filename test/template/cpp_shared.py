@@ -249,7 +249,7 @@ static void write_observation(FILE *out, Wrapper *wrapper, int step_index, int c
     const char *state_path = wrapper->current_state_path();
     const Wrapper::Vars *vars = wrapper->vars();
     fputc('{', out);
-    fputs("\"schema_version\":\"1\"", out);
+    fputs("\"schema_version\":\"2\"", out);
     fputs(",\"case_id\":", out);
     json_string(out, {{ context.case_id | tojson }});
     fputs(",\"template_name\":", out);
@@ -275,13 +275,15 @@ static void write_observation(FILE *out, Wrapper *wrapper, int step_index, int c
     fputs(",\"last_error\":", out);
     json_string(out, last_error);
     fputs(",\"api_return\":null", out);
+    fputs(",\"delta\":", out);
+    fputs(wrapper->last_cycle_was_delta() ? "true" : "false", out);
     fputs("}\n", out);
 }
 
 static void write_initial_error(FILE *out, const char *last_error)
 {
     fputc('{', out);
-    fputs("\"schema_version\":\"1\"", out);
+    fputs("\"schema_version\":\"2\"", out);
     fputs(",\"case_id\":", out);
     json_string(out, {{ context.case_id | tojson }});
     fputs(",\"template_name\":", out);
@@ -296,6 +298,7 @@ static void write_initial_error(FILE *out, const char *last_error)
     fputs(",\"last_error\":", out);
     json_string(out, last_error);
     fputs(",\"api_return\":null", out);
+    fputs(",\"delta\":false", out);
     fputs("}\n", out);
 }
 
@@ -601,7 +604,7 @@ static void write_observation(FILE *out, Wrapper *wrapper, int step_index, int c
     const char *state_path = wrapper->current_state_path();
     const Wrapper::Vars *vars = wrapper->vars();
     fputc('{', out);
-    fputs("\"schema_version\":\"1\"", out);
+    fputs("\"schema_version\":\"2\"", out);
     fputs(",\"case_id\":", out);
     json_string(out, {{ context.case_id | tojson }});
     fputs(",\"template_name\":", out);
@@ -627,13 +630,15 @@ static void write_observation(FILE *out, Wrapper *wrapper, int step_index, int c
     fputs(",\"last_error\":", out);
     json_string(out, last_error);
     fputs(",\"api_return\":null", out);
+    fputs(",\"delta\":", out);
+    fputs(wrapper->last_cycle_was_delta() ? "true" : "false", out);
     fputs("}\n", out);
 }
 
 static void write_initial_error(FILE *out, const char *last_error)
 {
     fputc('{', out);
-    fputs("\"schema_version\":\"1\"", out);
+    fputs("\"schema_version\":\"2\"", out);
     fputs(",\"case_id\":", out);
     json_string(out, {{ context.case_id | tojson }});
     fputs(",\"template_name\":", out);
@@ -648,6 +653,7 @@ static void write_initial_error(FILE *out, const char *last_error)
     fputs(",\"last_error\":", out);
     json_string(out, last_error);
     fputs(",\"api_return\":null", out);
+    fputs(",\"delta\":false", out);
     fputs("}\n", out);
 }
 

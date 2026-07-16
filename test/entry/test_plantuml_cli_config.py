@@ -97,6 +97,33 @@ def test_resolve_plantuml_options_keeps_last_repeated_config_value():
     assert '--config[2]' in warnings[0]
 
 
+def test_resolve_plantuml_options_does_not_warn_for_typed_equivalent_duplicates():
+    options, warnings = resolve_plantuml_options(
+        ('show_events=true', 'show_events=1'), dedicated_detail_level=None
+    )
+
+    assert options.show_events is True
+    assert warnings == ()
+
+
+@pytest.mark.parametrize(
+    'assignment, expected_type',
+    [
+        ('show_events=banana', 'bool'),
+        ('max_depth=abc', 'int'),
+    ],
+)
+def test_resolve_plantuml_options_rejects_invalid_scalar_values(assignment, expected_type):
+    with pytest.raises(ClickErrorException) as error:
+        resolve_plantuml_options((assignment,), dedicated_detail_level=None)
+
+    message = str(error.value)
+    assert assignment.split('=', 1)[0] in message
+    assert assignment.split('=', 1)[1] in message
+    assert expected_type in message
+    assert 'Traceback' not in message
+
+
 def test_resolve_plantuml_options_does_not_warn_for_preset_override():
     options, warnings = resolve_plantuml_options(
         ('show_lifecycle_actions=false',), dedicated_detail_level='full'
@@ -212,6 +239,51 @@ def test_plantuml_cli_reports_conflict_on_stderr_only(input_code_file):
     assert 'conflicting' in _stderr(result)
 
 
+def test_plantuml_cli_conflict_token_order_is_invariant(input_code_file, tmp_path):
+    first_output = tmp_path / 'first.puml'
+    second_output = tmp_path / 'second.puml'
+    common = ['pyfcstm', 'plantuml', '-i', input_code_file]
+
+    first = simulate_entry(
+        pyfcstmcli,
+        common + ['-c', 'detail_level=full', '-l', 'minimal', '-o', str(first_output)],
+    )
+    second = simulate_entry(
+        pyfcstmcli,
+        common + ['-l', 'minimal', '-c', 'detail_level=full', '-o', str(second_output)],
+    )
+
+    assert first.exitcode == second.exitcode == 0
+    assert first_output.read_text(encoding='utf-8') == second_output.read_text(encoding='utf-8')
+    assert 'Using' in _stderr(first)
+    assert _stderr(first) == _stderr(second)
+
+
+@pytest.mark.parametrize(
+    'config_option, expected_text',
+    [
+        ('custom_colors=System.Start:#FF0000', 'Python API'),
+        ('show_event=true', 'Supported --config options'),
+    ],
+)
+def test_visualize_config_boundary_matches_plantuml(config_option, expected_text):
+    plantuml = simulate_entry(
+        pyfcstmcli,
+        ['pyfcstm', 'plantuml', '-i', 'missing.fcstm', '-c', config_option],
+    )
+    visualize = simulate_entry(
+        pyfcstmcli,
+        ['pyfcstm', 'visualize', '--check', '-c', config_option],
+    )
+
+    assert plantuml.exitcode != 0
+    assert visualize.exitcode != 0
+    assert expected_text in (_stderr(plantuml) or plantuml.stdout)
+    assert expected_text in (_stderr(visualize) or visualize.stdout)
+    assert 'Traceback' not in (_stderr(plantuml) or plantuml.stdout)
+    assert 'Traceback' not in (_stderr(visualize) or visualize.stdout)
+
+
 def test_plantuml_cli_reports_unknown_key_without_traceback(input_code_file):
     result = simulate_entry(
         pyfcstmcli,
@@ -290,6 +362,25 @@ def test_visualize_invalid_config_does_not_create_cache(monkeypatch, tmp_path, i
     assert result.exitcode != 0
     assert not (cache_home / 'pyfcstm').exists()
     assert output_file.read_text(encoding='utf-8') == 'sentinel'
+
+
+def test_visualize_missing_input_reports_error_before_conflict_warning():
+    result = simulate_entry(
+        pyfcstmcli,
+        [
+            'pyfcstm',
+            'visualize',
+            '-l',
+            'minimal',
+            '-c',
+            'detail_level=full',
+        ],
+    )
+
+    error_output = _stderr(result) or result.stdout
+    assert result.exitcode != 0
+    assert 'Input DSL file is required' in error_output
+    assert 'Warning:' not in error_output
 
 
 @pytest.mark.parametrize('command', ['plantuml', 'visualize'])

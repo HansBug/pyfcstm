@@ -258,7 +258,8 @@ def resolve_plantuml_options(
     :type dedicated_detail_level: str or None
     :return: Effective options and zero or more warning messages.
     :rtype: Tuple[PlantUMLOptions, Tuple[str, ...]]
-    :raises pyfcstm.entry.base.ClickErrorException: If a key or value is invalid.
+    :raises pyfcstm.entry.base.ClickErrorException: If a key/value is invalid or
+        ``PlantUMLOptions`` rejects the effective configuration.
 
     Example::
 

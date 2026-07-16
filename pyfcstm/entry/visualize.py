@@ -33,6 +33,7 @@ from click.core import ParameterSource
 from .base import CONTEXT_SETTINGS, ClickErrorException
 from .plantuml import (
     _emit_plantuml_warnings,
+    # Shared intentionally: visualize must reuse plantuml's validated source path.
     _render_plantuml_source,
     resolve_plantuml_options,
 )
@@ -646,9 +647,9 @@ def _add_visualize_subcommand(cli: click.Group) -> click.Group:
             config_options=config_options,
             dedicated_detail_level=dedicated_detail_level,
         )
-        _emit_plantuml_warnings(warnings)
 
         if check_only:
+            _emit_plantuml_warnings(warnings)
             status = run_plantumlcli_builtin_check(
                 renderer=renderer.lower(),
                 java=java,
@@ -665,6 +666,7 @@ def _add_visualize_subcommand(cli: click.Group) -> click.Group:
         if not input_code_file:
             raise ClickErrorException('Input DSL file is required unless --check is used.')
 
+        _emit_plantuml_warnings(warnings)
         output_path = resolve_visualize_output_path(input_code_file, output_file, render_type.lower())
         plantuml_output = _render_plantuml_source(input_code_file, options)
         effective_renderer = render_plantuml_diagram(

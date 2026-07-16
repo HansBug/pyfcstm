@@ -492,6 +492,23 @@ def test_remote_host_parser_rejects_invalid_scheme(monkeypatch):
 
 
 @pytest.mark.unittest
+def test_remote_https_without_ssl_keeps_core_registry_alive(monkeypatch):
+    """A missing frozen SSL extension becomes a capability warning."""
+    monkeypatch.setenv("PYFCSTM_SELFCHECK_NETWORK", "1")
+    monkeypatch.setenv("PLANTUML_HOST", "https://plantuml.example/plantuml")
+    monkeypatch.setattr(registry, "ssl", None)
+
+    outcome = registry._visual_remote_tls()
+
+    _assert_traceback(
+        outcome,
+        "WARN",
+        "capability_unavailable",
+        "Python ssl module is unavailable",
+    )
+
+
+@pytest.mark.unittest
 def test_remote_host_parser_accepts_explicit_port(monkeypatch):
     """An explicit HTTPS port is used for the TLS probe."""
     monkeypatch.setenv("PYFCSTM_SELFCHECK_NETWORK", "1")

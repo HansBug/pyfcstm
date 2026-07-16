@@ -8,6 +8,10 @@ from pathlib import Path
 
 
 HIDDEN_IMPORTS = [
+    # The self-check supervisor imports the network capability probes lazily;
+    # keep the stdlib TLS extension in frozen onefile artifacts as well.
+    'ssl',
+    '_ssl',
     # Force-include the diagnostics package so its bundled `codes.yaml`
     # asset is reachable in the standalone build even when no current
     # import chain references it. PR-2 of issue #103 will make
@@ -120,6 +124,9 @@ def generate_spec(icon_dir='build/icons'):
     icon_root = Path(icon_dir)
     datas = collect_datas(bundle_icon=icon_root / 'pyfcstm.png')
     executable_icon = resolve_executable_icon(icon_root)
+    # GNU strip can corrupt Windows PE extensions such as _ssl.pyd and the
+    # OpenSSL DLLs; retain the existing stripping policy on POSIX targets.
+    strip_binaries = not sys.platform.startswith('win')
 
     spec_content = f'''# -*- mode: python ; coding: utf-8 -*-
 
@@ -156,7 +163,7 @@ exe = EXE(
     name='pyfcstm',
     debug=False,
     bootloader_ignore_signals=False,
-    strip=True,              # Enable symbol stripping to reduce size
+    strip={strip_binaries!r},
     upx=True,                # Enable UPX compression
     upx_exclude=[],
     runtime_tmpdir=None,

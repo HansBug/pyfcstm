@@ -14,7 +14,6 @@ import os
 import platform
 import socket
 import shutil
-import ssl
 import subprocess
 import sys
 import tempfile
@@ -27,6 +26,14 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, Mapping, Optional, Tuple
 
 from .model import CheckOutcome, CheckSpec
+
+
+try:
+    import ssl
+except ImportError:
+    # Frozen Windows builds may lack a loadable OpenSSL extension; keep the
+    # core registry importable so HTTPS remains an explicit capability WARN.
+    ssl = None
 
 
 Worker = Callable[[], CheckOutcome]
@@ -2238,6 +2245,8 @@ def _visual_remote_tls() -> CheckOutcome:
         host, parsed, port = _remote_host_endpoint()
         address = (parsed.hostname, port)
         if parsed.scheme == "https":
+            if ssl is None:
+                raise ImportError("Python ssl module is unavailable")
             context = ssl.create_default_context()
             with socket.create_connection(address, timeout=5.0) as raw:
                 with context.wrap_socket(raw, server_hostname=parsed.hostname) as tls:
@@ -2247,7 +2256,7 @@ def _visual_remote_tls() -> CheckOutcome:
         else:
             with socket.create_connection(address, timeout=5.0):
                 observed = "transport=plain host={} endpoint=reachable".format(host)
-    except (AttributeError, OSError, ssl.SSLError, ValueError) as err:
+    except (AttributeError, ImportError, OSError, ValueError) as err:
         # URL parsing, socket setup, and TLS certificate validation expose these failures.
         return _exception_diagnostic(
             "WARN",

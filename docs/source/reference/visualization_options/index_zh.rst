@@ -161,7 +161,7 @@ PlantUML 选项字段
      - ``-l minimal|normal|full``
      - ``normal``
      - ``minimal``、``normal``、``full``
-     - 主预设。命令行使用 ``-l``；不要传 ``-c detail_level=...``，因为命令已经单独传入预设。
+     - 主预设。也可以通过 ``-c detail_level=...`` 提供。如果显式 ``-l/--level`` 与 ``-c`` 的值不一致，CLI 会输出 warning，并以显式 ``-l/--level`` 的值为准。
    * - ``show_variable_definitions``
      - ``-c show_variable_definitions=true``
      - ``None``
@@ -534,7 +534,7 @@ PlantUML 选项字段
    * - ``detail_level``
      - ``-l minimal`` 用于小型层次审查。
      - ``-l full`` 用于生命周期动作主题。
-     - CLI 不要传 ``-c detail_level=full``；应使用 ``-l``。
+     - ``-l normal -c detail_level=full`` 会输出冲突 warning，并使用 ``normal``，因为显式 ``-l`` 的值优先。
    * - ``show_variable_definitions``
      - ``-c show_variable_definitions=true`` 用于在审查中证明变量声明。
      - ``-c show_variable_definitions=false`` 用于只看结构的图。
@@ -731,7 +731,7 @@ PlantUML 选项字段
    * - 无效键
      - ``-c does_not_exist=true``
      - 命令失败
-     - 未知键会传到 ``PlantUMLOptions`` 构造并被拒绝。
+     - 未知键会在 CLI 配置边界被拒绝，并给出支持键列表；接近的拼写还会给出建议。
    * - 无效值
      - ``-c max_depth=abc``
      - 命令失败

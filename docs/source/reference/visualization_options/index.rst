@@ -169,7 +169,7 @@ fallback. Parent switches are especially important for lifecycle actions:
      - ``-l minimal|normal|full``
      - ``normal``
      - ``minimal``, ``normal``, ``full``
-     - Main preset. Use ``-l`` on the CLI; do not pass ``-c detail_level=...`` because the command already passes the preset separately.
+     - Main preset. It may also be supplied through ``-c detail_level=...``. If an explicit ``-l/--level`` and ``-c`` value disagree, the CLI emits a warning and the explicit ``-l/--level`` value wins.
    * - ``show_variable_definitions``
      - ``-c show_variable_definitions=true``
      - ``None``
@@ -540,7 +540,7 @@ rather than accidental.
    * - ``detail_level``
      - ``-l minimal`` for a small hierarchy review.
      - ``-l full`` when lifecycle actions are the topic.
-     - Do not pass ``-c detail_level=full`` on the CLI; use ``-l``.
+     - ``-l normal -c detail_level=full`` emits a conflict warning and uses ``normal`` because the explicit ``-l`` value wins.
    * - ``show_variable_definitions``
      - ``-c show_variable_definitions=true`` to prove variable declarations in a review.
      - ``-c show_variable_definitions=false`` for a structure-only diagram.
@@ -738,7 +738,7 @@ same helper used by other pyfcstm configuration paths.
    * - invalid key
      - ``-c does_not_exist=true``
      - command failure
-     - Unknown keys reach ``PlantUMLOptions`` construction and are rejected.
+     - Unknown keys are rejected at the CLI boundary with the supported-key list and, when close, a spelling suggestion.
    * - invalid value
      - ``-c max_depth=abc``
      - command failure

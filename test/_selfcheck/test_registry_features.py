@@ -31,6 +31,7 @@ def _assert_exception(outcome, reason, message):
 @pytest.mark.unittest
 def test_dsl_probe_covers_type_mismatch_semantic_mismatch_and_exception(monkeypatch):
     """The DSL probe diagnoses every branch around the real public parser."""
+    from pyfcstm.dsl.error import GrammarParseError
     import pyfcstm.dsl.parse as dsl_parse
 
     real_parse = dsl_parse.parse_state_machine_dsl
@@ -51,11 +52,20 @@ def test_dsl_probe_covers_type_mismatch_semantic_mismatch_and_exception(monkeypa
         _raiser(ValueError("dsl branch failed")),
     )
     _assert_exception(registry._core_dsl_parse(), "dsl_parse_failed", "dsl branch failed")
+    monkeypatch.setattr(
+        dsl_parse,
+        "parse_state_machine_dsl",
+        _raiser(GrammarParseError([])),
+    )
+    _assert_exception(
+        registry._core_dsl_parse(), "dsl_parse_failed", "Found 0 errors"
+    )
 
 
 @pytest.mark.unittest
 def test_model_probe_covers_type_mismatch_semantic_mismatch_and_exception(monkeypatch):
     """The model probe validates more than a loader return marker."""
+    from pyfcstm.dsl.error import GrammarParseError
     import pyfcstm.model as model_module
 
     real_load = model_module.load_state_machine_from_text
@@ -76,11 +86,20 @@ def test_model_probe_covers_type_mismatch_semantic_mismatch_and_exception(monkey
         _raiser(ValueError("model branch failed")),
     )
     _assert_exception(registry._core_model_build(), "model_build_failed", "model branch failed")
+    monkeypatch.setattr(
+        model_module,
+        "load_state_machine_from_text",
+        _raiser(GrammarParseError([])),
+    )
+    _assert_exception(
+        registry._core_model_build(), "model_build_failed", "Found 0 errors"
+    )
 
 
 @pytest.mark.unittest
 def test_roundtrip_and_render_probes_cover_mismatch_and_exception(monkeypatch):
     """Roundtrip and renderer probes retain exact mismatch diagnostics."""
+    from jinja2 import TemplateError
     import pyfcstm.model as model_module
     import pyfcstm.render as render_module
 
@@ -119,6 +138,14 @@ def test_roundtrip_and_render_probes_cover_mismatch_and_exception(monkeypatch):
         _raiser(ValueError("expression branch failed")),
     )
     _assert_exception(registry._render_expr(), "render_failed", "expression branch failed")
+    monkeypatch.setattr(
+        render_module,
+        "render_expr_node",
+        _raiser(TemplateError("expression template failed")),
+    )
+    _assert_exception(
+        registry._render_expr(), "render_failed", "expression template failed"
+    )
     monkeypatch.setattr(render_module, "render_expr_node", real_expr)
 
     monkeypatch.setattr(render_module, "render_stmt_nodes", lambda *args, **kwargs: "wrong")
@@ -131,11 +158,20 @@ def test_roundtrip_and_render_probes_cover_mismatch_and_exception(monkeypatch):
         _raiser(ValueError("statement branch failed")),
     )
     _assert_exception(registry._render_statement(), "render_failed", "statement branch failed")
+    monkeypatch.setattr(
+        render_module,
+        "render_stmt_nodes",
+        _raiser(TemplateError("statement template failed")),
+    )
+    _assert_exception(
+        registry._render_statement(), "render_failed", "statement template failed"
+    )
 
 
 @pytest.mark.unittest
 def test_template_probes_cover_runtime_catalog_and_exception_failures(monkeypatch):
     """Packaged template probes diagnose missing outputs and runtime drift."""
+    from jinja2 import TemplateError
     import pyfcstm.render as render_module
     import pyfcstm.template as template_module
 
@@ -170,6 +206,20 @@ def test_template_probes_cover_runtime_catalog_and_exception_failures(monkeypatc
     )
     monkeypatch.setattr(template_module, "extract_template", real_extract)
 
+    class FailingRenderer:
+        def __init__(self, template_dir):
+            del template_dir
+
+        def render(self, model, output_dir, clear_previous_directory=False):
+            del model, output_dir, clear_previous_directory
+            raise TemplateError("template render failed")
+
+    monkeypatch.setattr(render_module, "StateMachineCodeRenderer", FailingRenderer)
+    _assert_exception(
+        registry._template_python(), "template_invalid", "template render failed"
+    )
+    monkeypatch.setattr(render_module, "StateMachineCodeRenderer", real_renderer)
+
     real_list = template_module.list_templates
     monkeypatch.setattr(template_module, "list_templates", lambda: [])
     outcome = registry._template_catalog()
@@ -187,6 +237,12 @@ def test_template_probes_cover_runtime_catalog_and_exception_failures(monkeypatc
     outcome = registry._template_catalog()
     assert outcome.reason == "template_invalid"
     assert outcome.observed == "template=python"
+    monkeypatch.setattr(render_module, "StateMachineCodeRenderer", real_renderer)
+
+    monkeypatch.setattr(render_module, "StateMachineCodeRenderer", FailingRenderer)
+    _assert_exception(
+        registry._template_catalog(), "template_invalid", "template render failed"
+    )
     monkeypatch.setattr(render_module, "StateMachineCodeRenderer", real_renderer)
     monkeypatch.setattr(
         template_module,
@@ -355,6 +411,7 @@ def test_cli_probes_cover_nonzero_mismatch_and_exception_paths(monkeypatch):
 def test_bmc_parse_and_prepare_cover_mismatch_solver_start_and_exception(monkeypatch):
     """BMC parse and preparation remain typed and solve-free."""
     import z3
+    from pyfcstm.bmc.errors import BmcBuildError, BmcQueryParseError
     import pyfcstm.bmc.parse as bmc_parse
     import pyfcstm.bmc.pipeline as bmc_pipeline
 
@@ -370,6 +427,16 @@ def test_bmc_parse_and_prepare_cover_mismatch_solver_start_and_exception(monkeyp
         _raiser(ValueError("BMC parse failed")),
     )
     _assert_exception(registry._bmc_query_parse(), "bmc_parse_failed", "BMC parse failed")
+    monkeypatch.setattr(
+        bmc_parse,
+        "parse_bmc_query",
+        _raiser(BmcQueryParseError("BMC query syntax failed")),
+    )
+    _assert_exception(
+        registry._bmc_query_parse(),
+        "bmc_parse_failed",
+        "BMC query syntax failed",
+    )
     monkeypatch.setattr(bmc_parse, "parse_bmc_query", real_parse)
 
     real_compile = bmc_pipeline.compile_bmc_query
@@ -410,6 +477,14 @@ def test_bmc_parse_and_prepare_cover_mismatch_solver_start_and_exception(monkeyp
     _assert_exception(
         registry._bmc_prepare(), "bmc_prepare_failed", "BMC prepare failed"
     )
+    monkeypatch.setattr(
+        bmc_pipeline,
+        "compile_bmc_query",
+        _raiser(BmcBuildError("BMC build failed")),
+    )
+    _assert_exception(
+        registry._bmc_prepare(), "bmc_prepare_failed", "BMC build failed"
+    )
     monkeypatch.setattr(bmc_pipeline, "compile_bmc_query", real_compile)
 
 
@@ -426,6 +501,7 @@ def _bmc_result(status, satisfied, outcome, witness_found=False):
 def test_bmc_solve_and_closure_cover_polarity_cli_and_exception_paths(monkeypatch):
     """BMC solving diagnoses polarity, CLI JSON, and lazy-module failures."""
     import click.testing as click_testing
+    from pyfcstm.bmc.errors import BmcBuildError
     import pyfcstm.bmc.pipeline as bmc_pipeline
     import pyfcstm.bmc.witness as bmc_witness
 
@@ -492,6 +568,14 @@ def test_bmc_solve_and_closure_cover_polarity_cli_and_exception_paths(monkeypatc
     )
     _assert_exception(
         registry._bmc_solve(), "bmc_solve_failed", "BMC compilation failed"
+    )
+    monkeypatch.setattr(
+        bmc_pipeline,
+        "compile_bmc_query",
+        _raiser(BmcBuildError("BMC solve build failed")),
+    )
+    _assert_exception(
+        registry._bmc_solve(), "bmc_solve_failed", "BMC solve build failed"
     )
     monkeypatch.setattr(bmc_pipeline, "compile_bmc_query", real_compile)
 

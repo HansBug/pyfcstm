@@ -35,15 +35,17 @@ def test_bootstrap_emits_human_header_before_supervisor_work(monkeypatch, capsys
 
     observed = {}
 
-    def fake_supervisor(arguments, start_emitted=False):
+    def fake_supervisor(arguments, start_emitted=False, start_color="never"):
         observed["arguments"] = tuple(arguments)
         observed["start_emitted"] = start_emitted
+        observed["start_color"] = start_color
         observed["output"] = capsys.readouterr().out
         return 0
 
     monkeypatch.setattr(supervisor, "run_supervisor", fake_supervisor)
     assert _bootstrap.run_selfcheck(("--profile", "full", "--color", "never")) == 0
     assert observed["start_emitted"] is True
+    assert observed["start_color"] == "never"
     assert observed["arguments"] == ("--profile", "full", "--color", "never")
     assert observed["output"].startswith("pyfcstm self-check 0.6.0")
     assert "profile=full" in observed["output"]
@@ -55,7 +57,11 @@ def test_bootstrap_keeps_json_output_machine_readable(monkeypatch, capsys):
     from pyfcstm import _bootstrap
     from pyfcstm._selfcheck import supervisor
 
-    monkeypatch.setattr(supervisor, "run_supervisor", lambda args, start_emitted=False: 0)
+    monkeypatch.setattr(
+        supervisor,
+        "run_supervisor",
+        lambda args, start_emitted=False, start_color="never": 0,
+    )
     assert _bootstrap.run_selfcheck(("--format", "json")) == 0
     assert capsys.readouterr().out == ""
 
@@ -118,6 +124,25 @@ def test_mutually_exclusive_dispatch_emits_diagnostic(capfd, arguments):
     assert _bootstrap.main(arguments) == 3
     captured = capfd.readouterr()
     assert "mutually exclusive" in captured.err
+
+
+@pytest.mark.unittest
+def test_invalid_human_selfcheck_arguments_reuse_the_immediate_header(capsys):
+    """Argument errors keep one colored startup header and one red result."""
+    from pyfcstm import _bootstrap
+
+    assert (
+        _bootstrap.run_selfcheck(
+            ("--format", "human", "--bad-option", "--color", "always")
+        )
+        == 2
+    )
+    output = capsys.readouterr().out
+    assert output.count("pyfcstm self-check 0.6.0") == 1
+    assert "pyfcstm self-check unavailable" not in output
+    assert "\x1b[31mERROR\x1b[0m selfcheck.arguments" in output
+    assert "unknown self-check arguments: --bad-option" in output
+    assert "\x1b[1;97;41m[ FAILED ]\x1b[0m" in output
 
 
 @pytest.mark.unittest

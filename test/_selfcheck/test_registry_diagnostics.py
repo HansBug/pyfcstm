@@ -2,6 +2,8 @@
 
 import json
 import subprocess
+import sys
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -26,6 +28,59 @@ def _assert_traceback(outcome, status, reason, message):
 
 
 @pytest.mark.unittest
+def test_process_evidence_and_external_capture_are_bounded(tmp_path):
+    """Large text and subprocess pipes keep head/tail diagnostic evidence."""
+    size = registry._PROCESS_OUTPUT_LIMIT * 2
+    evidence = registry._process_evidence(
+        ["fake"], stdout="x" * size, stderr=b"y" * size
+    )
+    assert "stdout_truncated_characters={}".format(size // 2) in evidence
+    assert "stderr_truncated_bytes={}".format(size // 2) in evidence
+    assert len(evidence) < (registry._PROCESS_OUTPUT_LIMIT * 2) + 1000
+
+    command = [
+        sys.executable,
+        "-c",
+        ("import sys; sys.stdout.write('x' * {0}); sys.stderr.write('y' * {0})").format(
+            size
+        ),
+    ]
+    completed = registry._run_subprocess_bounded(command, timeout=10.0)
+    assert completed.returncode == 0
+    assert b"bytes omitted" in completed.stdout
+    assert b"bytes omitted" in completed.stderr
+    assert len(completed.stdout) < registry._PROCESS_OUTPUT_LIMIT + 100
+    assert len(completed.stderr) < registry._PROCESS_OUTPUT_LIMIT + 100
+
+    hard_limit = registry._PROCESS_OUTPUT_HARD_LIMIT
+    pid_file = tmp_path / "hard-limit.pid"
+    command = [
+        sys.executable,
+        "-c",
+        (
+            "import pathlib, os, sys, time; "
+            "pathlib.Path({0!r}).write_text(str(os.getpid())); "
+            "sys.stdout.buffer.write(b'x' * {1}); "
+            "sys.stdout.flush(); time.sleep(30)"
+        ).format(str(pid_file), hard_limit + 1),
+    ]
+    started = time.monotonic()
+    with pytest.raises(registry._ProcessOutputLimitExceeded) as error:
+        registry._run_subprocess_bounded(command, timeout=10.0)
+    assert time.monotonic() - started < 5.0
+    assert b"bytes omitted" in error.value.output
+    assert len(error.value.output) < registry._PROCESS_OUTPUT_LIMIT + 100
+
+    timeout_command = [sys.executable, "-c", "import time; time.sleep(30)"]
+    started = time.monotonic()
+    with pytest.raises(subprocess.TimeoutExpired) as timeout_error:
+        registry._run_subprocess_bounded(timeout_command, timeout=0.1)
+    assert time.monotonic() - started < 2.0
+    assert timeout_error.value.output == b""
+    assert timeout_error.value.stderr == b""
+
+
+@pytest.mark.unittest
 def test_resource_catalog_archive_extract_and_grammar_failures(monkeypatch, tmp_path):
     """Resource probes preserve damaged package paths and parser tracebacks."""
     import pyfcstm.bmc.parse as bmc_parse
@@ -39,6 +94,8 @@ def test_resource_catalog_archive_extract_and_grammar_failures(monkeypatch, tmp_
     outcome = registry._template_index()
     assert outcome.reason == "resource_invalid"
     assert "JSONDecodeError" in outcome.exception
+    outcome = registry._template_archives()
+    _assert_traceback(outcome, "FAIL", "resource_invalid", "Expecting value")
 
     valid = tmp_path / "index.json"
     valid.write_text('{"templates": []}', encoding="utf-8")
@@ -258,7 +315,7 @@ def test_java_and_local_plantuml_diagnostics(monkeypatch, tmp_path):
     timeout = subprocess.TimeoutExpired(
         ["/usr/bin/java", "-version"], 15.0, output=b"partial", stderr=b"hung"
     )
-    monkeypatch.setattr(registry.subprocess, "run", _raiser(timeout))
+    monkeypatch.setattr(registry, "_run_subprocess_bounded", _raiser(timeout))
     outcome = registry._java()
     _assert_traceback(
         outcome, "WARN", "capability_unavailable", "timed out after 15.0 seconds"
@@ -267,15 +324,17 @@ def test_java_and_local_plantuml_diagnostics(monkeypatch, tmp_path):
     assert "stderr:\nhung" in outcome.evidence
 
     nonzero = SimpleNamespace(returncode=2, stdout=b"java out", stderr=b"java err")
-    monkeypatch.setattr(registry.subprocess, "run", lambda *args, **kwargs: nonzero)
+    monkeypatch.setattr(
+        registry, "_run_subprocess_bounded", lambda *args, **kwargs: nonzero
+    )
     outcome = registry._java()
     assert outcome.status == "WARN"
     assert "returncode=2" in outcome.evidence
     assert "java err" in outcome.evidence
 
     monkeypatch.setattr(
-        registry.subprocess,
-        "run",
+        registry,
+        "_run_subprocess_bounded",
         _raiser(OSError("PlantUML version spawn failed")),
     )
     _assert_traceback(
@@ -286,18 +345,22 @@ def test_java_and_local_plantuml_diagnostics(monkeypatch, tmp_path):
     )
 
     empty = SimpleNamespace(returncode=0, stdout=b"", stderr=b"")
-    monkeypatch.setattr(registry.subprocess, "run", lambda *args, **kwargs: empty)
+    monkeypatch.setattr(
+        registry, "_run_subprocess_bounded", lambda *args, **kwargs: empty
+    )
     outcome = registry._visual_local_version()
     assert outcome.status == "WARN"
     assert outcome.observed == "returncode=0 output_bytes=0"
 
     version = SimpleNamespace(returncode=0, stdout=b"PlantUML 1.0", stderr=b"")
-    monkeypatch.setattr(registry.subprocess, "run", lambda *args, **kwargs: version)
+    monkeypatch.setattr(
+        registry, "_run_subprocess_bounded", lambda *args, **kwargs: version
+    )
     assert registry._visual_local_version().status == "PASS"
 
     monkeypatch.setattr(
-        registry.subprocess,
-        "run",
+        registry,
+        "_run_subprocess_bounded",
         _raiser(OSError("PlantUML render spawn failed")),
     )
     _assert_traceback(
@@ -309,14 +372,16 @@ def test_java_and_local_plantuml_diagnostics(monkeypatch, tmp_path):
 
     bad_render = SimpleNamespace(returncode=3, stdout=b"", stderr=b"render err")
     monkeypatch.setattr(
-        registry.subprocess, "run", lambda *args, **kwargs: bad_render
+        registry, "_run_subprocess_bounded", lambda *args, **kwargs: bad_render
     )
     outcome = registry._visual_local_render()
     assert outcome.status == "WARN"
     assert "render err" in outcome.evidence
 
     png = SimpleNamespace(returncode=0, stdout=b"PNG", stderr=b"")
-    monkeypatch.setattr(registry.subprocess, "run", lambda *args, **kwargs: png)
+    monkeypatch.setattr(
+        registry, "_run_subprocess_bounded", lambda *args, **kwargs: png
+    )
     outcome = registry._visual_local_render()
     assert outcome.status == "PASS"
     assert outcome.observed == "3 image bytes"

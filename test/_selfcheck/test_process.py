@@ -242,6 +242,29 @@ def test_temp_failure_uses_stdout_protocol_fallback(monkeypatch):
 
 
 @pytest.mark.unittest
+def test_missing_temp_and_spool_storage_never_falls_back_to_unbounded_pipes(
+    monkeypatch,
+):
+    """No safe result/capture storage returns a structured local error."""
+    _install_fixture(monkeypatch, "huge_stdout")
+    monkeypatch.setattr(
+        process_module.tempfile,
+        "mkdtemp",
+        lambda **kwargs: (_ for _ in ()).throw(OSError("no result directory")),
+    )
+    monkeypatch.setattr(
+        process_module.tempfile,
+        "TemporaryFile",
+        lambda **kwargs: (_ for _ in ()).throw(OSError("no capture storage")),
+    )
+    result = run_check_process(_spec(), timeout=5.0)
+    assert result.status == "ERROR"
+    assert result.reason == "capture_unavailable"
+    assert result.transport == "stdout"
+    assert "OSError: no capture storage" in result.evidence
+
+
+@pytest.mark.unittest
 def test_stdout_protocol_survives_oversized_unterminated_business_output(monkeypatch):
     """Fallback protocol extraction is independent from bounded business output."""
     _install_fixture(monkeypatch, "huge_stdout")

@@ -422,7 +422,11 @@ def _run_selected_checks(
         commit_result(_normalize_required_warning(spec, result))
 
 
-def run_supervisor(arguments: Sequence[str], start_emitted: bool = False) -> int:
+def run_supervisor(
+    arguments: Sequence[str],
+    start_emitted: bool = False,
+    start_color: str = "never",
+) -> int:
     """Run selected checks and emit one final report.
 
     :param arguments: Arguments after the public ``--self-check`` token.
@@ -430,6 +434,9 @@ def run_supervisor(arguments: Sequence[str], start_emitted: bool = False) -> int
     :param start_emitted: Whether the bootstrap already emitted the immediate
         human-mode header, defaults to ``False``.
     :type start_emitted: bool, optional
+    :param start_color: Color mode used by an already emitted human header,
+        defaults to ``'never'``.
+    :type start_color: str, optional
     :return: Stable self-check exit code.
     :rtype: int
 
@@ -446,7 +453,12 @@ def run_supervisor(arguments: Sequence[str], start_emitted: bool = False) -> int
         options = parse_selfcheck_args(arguments)
     except SelfCheckArgumentError as err:
         output_format = _requested_output_format(arguments)
-        return _emit_snapshot(_argument_snapshot(err), output_format, "never")
+        snapshot = _argument_snapshot(err)
+        if output_format == "human" and start_emitted:
+            write_human_result(snapshot.checks[0], 1, 1, start_color)
+            write_human_summary(snapshot, start_color)
+            return int(snapshot.metadata["exit_code"])
+        return _emit_snapshot(snapshot, output_format, "never")
 
     streaming_human = options.output_format == "human"
     if streaming_human and not start_emitted:

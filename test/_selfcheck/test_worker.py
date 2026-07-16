@@ -81,6 +81,31 @@ def test_worker_writes_typed_pass_outcome(monkeypatch):
 
 
 @pytest.mark.unittest
+def test_worker_replaces_oversized_outcome_with_small_error_envelope(monkeypatch):
+    """An oversized callback result still produces one authoritative frame."""
+    nonce = "a" * 32
+    output = _install_streams(monkeypatch, nonce)
+    _register(
+        monkeypatch,
+        "test_oversized",
+        lambda: CheckOutcome(
+            "ERROR",
+            "oversized",
+            reason="probe_failed",
+            evidence="x" * (9 * 1024 * 1024),
+            exception="large exception",
+        ),
+    )
+
+    assert run_worker(_arguments(nonce, worker_key="test_oversized")) == 1
+    result = read_stdout_frames(output.getvalue(), nonce, "fixture.worker")
+    assert result.error_code is None
+    assert result.envelope["status"] == "ERROR"
+    assert result.envelope["reason"] == "result_envelope_too_large"
+    assert "evidence_chars=9437184" in result.envelope["observed"]
+
+
+@pytest.mark.unittest
 @pytest.mark.parametrize(
     ("worker_key", "factory", "reason", "return_code"),
     [

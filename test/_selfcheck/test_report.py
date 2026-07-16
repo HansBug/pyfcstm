@@ -162,7 +162,7 @@ def test_human_traceback_is_indented_and_not_duplicated():
 
 @pytest.mark.unittest
 def test_human_pass_and_optional_results_expose_concrete_facts():
-    """PASS lines stay factual while WARN/SKIP expand their diagnostics."""
+    """PASS stays factual, WARN is moderate, and SKIP stays on one line."""
     passed = CheckResult(
         "native.z3.solve",
         "PASS",
@@ -176,6 +176,19 @@ def test_human_pass_and_optional_results_expose_concrete_facts():
     assert "expected=status=sat model[x]=1" in rendered
     assert "observed=status=sat model[x]=1" in rendered
 
+    multiline = CheckResult(
+        "visualize.java",
+        "PASS",
+        False,
+        summary="run java -version",
+        expected="returncode=0\nand version output",
+        observed="java version\nJava Runtime\nJava VM",
+    )
+    rendered = render_human_result(multiline, 2, 12, color="never")
+    assert rendered.count("\n") == 1
+    assert "expected=returncode=0 and version output" in rendered
+    assert "observed=java version Java Runtime Java VM" in rendered
+
     warned = CheckResult(
         "visualize.java",
         "WARN",
@@ -185,12 +198,18 @@ def test_human_pass_and_optional_results_expose_concrete_facts():
         expected="java on PATH",
         observed="not found",
         remediation="install a JRE",
+        return_code=0,
+        pid=123,
+        duration_ms=42.0,
     )
     rendered = render_human_result(warned, 2, 12, color="never")
     assert "reason: capability_unavailable" in rendered
     assert "expected: java on PATH" in rendered
     assert "observed: not found" in rendered
     assert "remediation: install a JRE" in rendered
+    assert "return_code:" not in rendered
+    assert "pid:" not in rendered
+    assert "duration_ms:" not in rendered
 
     skipped = CheckResult(
         "visualize.local_render",
@@ -201,8 +220,10 @@ def test_human_pass_and_optional_results_expose_concrete_facts():
         prerequisites=("visualize.java", "visualize.plantuml_jar"),
     )
     rendered = render_human_result(skipped, 3, 12, color="never")
-    assert "reason: prerequisite_skipped" in rendered
-    assert "prerequisite: visualize.java, visualize.plantuml_jar" in rendered
+    assert rendered.count("\n") == 1
+    assert "capability prerequisite is unavailable: visualize.java, visualize.plantuml_jar" in rendered
+    assert "reason:" not in rendered
+    assert "prerequisite:" not in rendered
 
 
 @pytest.mark.unittest

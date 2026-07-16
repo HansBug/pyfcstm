@@ -18,6 +18,7 @@ import ssl
 import subprocess
 import sys
 import tempfile
+import time
 import traceback
 import zipfile
 from functools import partial
@@ -41,6 +42,18 @@ state Root {
 _BMC_REACH_QUERY = 'check reach <= 1: active("Root");'
 _BMC_TERMINATED_QUERY = "check reach <= 1: terminated();"
 _BMC_FORBID_QUERY = 'check forbid <= 1: active("Root");'
+_PROCESS_OUTPUT_LIMIT = 64 * 1024
+_PROCESS_OUTPUT_HARD_LIMIT = 2 * 1024 * 1024
+_PROCESS_POLL_INTERVAL = 0.01
+
+
+class _ProcessOutputLimitExceeded(OSError):
+    """Raised after an external probe exceeds its bounded output budget."""
+
+    def __init__(self, stdout: bytes, stderr: bytes) -> None:
+        super().__init__("external process output exceeded 2 MiB")
+        self.output = stdout
+        self.stderr = stderr
 
 REGISTRY_SCHEMA_VERSION = "pyfcstm-selfcheck-registry/v1"
 REGISTRY_VERSION = "pr3-v3"
@@ -205,6 +218,110 @@ def _decode_process_output(value: Any) -> str:
     return str(value)
 
 
+def _bounded_process_output(value: Any) -> Tuple[str, int, str]:
+    """Return bounded head/tail process output and its omitted size."""
+    if value is None:
+        return "", 0, "bytes"
+    if isinstance(value, bytes):
+        total = len(value)
+        unit = "bytes"
+        if total <= _PROCESS_OUTPUT_LIMIT:
+            sample = value
+        else:
+            half = _PROCESS_OUTPUT_LIMIT // 2
+            omitted = total - _PROCESS_OUTPUT_LIMIT
+            marker = "\n...<{} bytes omitted>...\n".format(omitted).encode("ascii")
+            sample = value[:half] + marker + value[-half:]
+        return _decode_process_output(sample), max(0, total - _PROCESS_OUTPUT_LIMIT), unit
+    text = str(value)
+    total = len(text)
+    unit = "characters"
+    if total <= _PROCESS_OUTPUT_LIMIT:
+        return text, 0, unit
+    half = _PROCESS_OUTPUT_LIMIT // 2
+    omitted = total - _PROCESS_OUTPUT_LIMIT
+    marker = "\n...<{} characters omitted>...\n".format(omitted)
+    return text[:half] + marker + text[-half:], omitted, unit
+
+
+def _read_bounded_process_file(stream) -> bytes:
+    """Read bounded head/tail bytes from one seekable process-output file."""
+    stream.flush()
+    stream.seek(0, os.SEEK_END)
+    total = stream.tell()
+    stream.seek(0)
+    if total <= _PROCESS_OUTPUT_LIMIT:
+        return stream.read()
+    half = _PROCESS_OUTPUT_LIMIT // 2
+    head = stream.read(half)
+    stream.seek(-half, os.SEEK_END)
+    tail = stream.read(half)
+    marker = "\n...<{} bytes omitted>...\n".format(
+        total - _PROCESS_OUTPUT_LIMIT
+    ).encode("ascii")
+    return head + marker + tail
+
+
+def _run_subprocess_bounded(command, timeout: float, input_data=None):
+    """Run one external command and kill it when output exceeds a hard limit."""
+    with tempfile.TemporaryFile(prefix="pyfcstm-process-stdout-") as stdout_stream:
+        with tempfile.TemporaryFile(prefix="pyfcstm-process-stderr-") as stderr_stream:
+            process = subprocess.Popen(
+                command,
+                stdin=subprocess.PIPE if input_data is not None else subprocess.DEVNULL,
+                stdout=stdout_stream,
+                stderr=stderr_stream,
+            )
+            if input_data is not None:
+                try:
+                    process.stdin.write(input_data)
+                    process.stdin.close()
+                except (AttributeError, OSError, ValueError):
+                    # PIPE setup, writes, and closes can fail if the child exits
+                    # before consuming the fixed probe input.
+                    if process.poll() is None:
+                        process.kill()
+                        process.wait(timeout=1.0)
+                    raise
+
+            deadline = time.monotonic() + timeout
+            while True:
+                return_code = process.poll()
+                stdout_size = os.fstat(stdout_stream.fileno()).st_size
+                stderr_size = os.fstat(stderr_stream.fileno()).st_size
+                if (
+                    stdout_size > _PROCESS_OUTPUT_HARD_LIMIT
+                    or stderr_size > _PROCESS_OUTPUT_HARD_LIMIT
+                ):
+                    if return_code is None:
+                        process.kill()
+                        process.wait(timeout=1.0)
+                    raise _ProcessOutputLimitExceeded(
+                        _read_bounded_process_file(stdout_stream),
+                        _read_bounded_process_file(stderr_stream),
+                    )
+                if return_code is not None:
+                    break
+                remaining = deadline - time.monotonic()
+                if remaining <= 0.0:
+                    process.kill()
+                    process.wait(timeout=1.0)
+                    raise subprocess.TimeoutExpired(
+                        command,
+                        timeout,
+                        output=_read_bounded_process_file(stdout_stream),
+                        stderr=_read_bounded_process_file(stderr_stream),
+                    )
+                time.sleep(min(_PROCESS_POLL_INTERVAL, remaining))
+
+            return subprocess.CompletedProcess(
+                command,
+                return_code,
+                stdout=_read_bounded_process_file(stdout_stream),
+                stderr=_read_bounded_process_file(stderr_stream),
+            )
+
+
 def _process_evidence(
     command: Iterable[str],
     return_code: Optional[int] = None,
@@ -215,12 +332,16 @@ def _process_evidence(
     lines = ["command={}".format(repr(list(command)))]
     if return_code is not None:
         lines.append("returncode={}".format(return_code))
-    stdout_text = _decode_process_output(stdout)
-    stderr_text = _decode_process_output(stderr)
+    stdout_text, stdout_omitted, stdout_unit = _bounded_process_output(stdout)
+    stderr_text, stderr_omitted, stderr_unit = _bounded_process_output(stderr)
     if stdout_text:
         lines.extend(("stdout:", stdout_text.rstrip()))
+    if stdout_omitted:
+        lines.append("stdout_truncated_{}={}".format(stdout_unit, stdout_omitted))
     if stderr_text:
         lines.extend(("stderr:", stderr_text.rstrip()))
+    if stderr_omitted:
+        lines.append("stderr_truncated_{}={}".format(stderr_unit, stderr_omitted))
     return "\n".join(lines)
 
 
@@ -461,12 +582,10 @@ def _identity_source() -> CheckOutcome:
             "identity_invalid",
             observed=config.BUILD_INFO_ERROR,
         )
-    try:
-        import pyfcstm.config.build_info as build_info
-    except ImportError:
+    if config.BUILD_COMMIT is None:
         return _warn("source build identity is unavailable", "identity_unavailable")
     fields = ("BUILD_COMMIT", "BUILD_DIRTY", "BUILD_REF")
-    missing = [field for field in fields if not hasattr(build_info, field)]
+    missing = [field for field in fields if getattr(config, field, None) is None]
     if missing:
         return _warn("source build identity is incomplete", "identity_incomplete", observed=repr(missing))
     git_dir = _package_root().parent / ".git"
@@ -484,10 +603,9 @@ def _identity_source() -> CheckOutcome:
             remediation="regenerate build_info.py from the current checkout when identity is needed",
         )
     expected = {
-        "commit": getattr(build_info, "BUILD_COMMIT", None),
-        "dirty": getattr(build_info, "BUILD_DIRTY", None),
-        "ref": getattr(build_info, "BUILD_REF", None),
-        "version": getattr(build_info, "BUILD_VERSION", None),
+        "commit": config.BUILD_COMMIT,
+        "dirty": config.BUILD_DIRTY,
+        "ref": config.BUILD_REF,
     }
     mismatch = [key for key in expected if expected[key] is not None and live.get(key) != expected[key]]
     if mismatch:
@@ -518,33 +636,30 @@ def _live_source_identity() -> Dict[str, Any]:
 
 
 def _identity_build_info_module() -> CheckOutcome:
-    try:
-        module = importlib.import_module("pyfcstm.config.build_info")
-    except ImportError as err:
-        # A fresh source checkout intentionally has no ignored generated module.
-        return _exception_diagnostic(
-            "WARN",
-            "generated build-info module is unavailable",
-            "identity_unavailable",
-            expected="pyfcstm.config.build_info",
-            err=err,
-            remediation="run make build_info before packaging or release validation",
-        )
-    except (OSError, SyntaxError, ValueError) as err:
-        # OSError: the generated module cannot be read; SyntaxError: its
-        # source is malformed; ValueError: its loader rejects the file.
-        return _exception_diagnostic(
-            "WARN",
-            "generated build-info module is invalid",
+    from pyfcstm import config
+
+    if config.BUILD_INFO_ERROR:
+        return _warn(
+            "generated build-info data is invalid",
             "identity_invalid",
-            expected="valid pyfcstm.config.build_info",
-            err=err,
+            expected="literal build identity accepted by pyfcstm.config",
+            observed=config.BUILD_INFO_ERROR,
             remediation="remove the damaged generated module and rerun make build_info",
         )
+    if config.BUILD_COMMIT is None:
+        return _warn(
+            "generated build-info data is unavailable",
+            "identity_unavailable",
+            expected="literal build identity parsed by pyfcstm.config",
+            observed="BUILD_COMMIT=None",
+            remediation="run make build_info before packaging or release validation",
+        )
     return _pass(
-        "import the generated build-info module",
-        expected="pyfcstm.config.build_info import succeeds when generated",
-        observed=getattr(module, "__file__", None) or "loader-provided module",
+        "read generated identity through pyfcstm.config without module execution",
+        expected="literal build identity parsed safely",
+        observed="source={} commit={}".format(
+            config.BUILD_SOURCE or "unknown", config.BUILD_COMMIT
+        ),
     )
 
 
@@ -637,7 +752,19 @@ def _template_index() -> CheckOutcome:
 
 
 def _template_archives() -> CheckOutcome:
-    index = json.loads(_resource("template/index.json").read_text(encoding="utf-8"))
+    relative = "template/index.json"
+    try:
+        index = json.loads(_resource(relative).read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, ValueError) as err:
+        # The index can disappear, become undecodable, or contain invalid JSON
+        # after its prerequisite was checked.
+        return _exception_diagnostic(
+            "FAIL",
+            "template archive index is invalid",
+            "resource_invalid",
+            err,
+            expected="readable UTF-8 JSON at {}".format(relative),
+        )
     missing = []
     for item in index.get("templates", []):
         archive = _resource("template") / str(item.get("archive", ""))
@@ -763,11 +890,16 @@ def _grammar_fcstm() -> CheckOutcome:
     if assets.status != "PASS":
         return assets
     try:
+        from pyfcstm.dsl.error import GrammarParseError
         from pyfcstm.dsl.parse import parse_state_machine_dsl
 
         parse_state_machine_dsl("state Root;")
-    except (ImportError, AttributeError, TypeError, ValueError) as err:
-        # Public grammar imports and minimal parsing expose these failures.
+    except ImportError as err:
+        # The packaged public grammar modules can be absent from a damaged install.
+        return _exception_diagnostic("FAIL", "FCSTM grammar probe failed", "grammar_invalid", err)
+    except (GrammarParseError, AttributeError, TypeError, ValueError) as err:
+        # GrammarParseError is the public parser diagnostic; the remaining
+        # classes cover malformed entry points, values, and return shapes.
         return _exception_diagnostic("FAIL", "FCSTM grammar probe failed", "grammar_invalid", err)
     return _pass(
         "load six FCSTM grammar assets and parse state Root",
@@ -781,11 +913,16 @@ def _grammar_fbmcq() -> CheckOutcome:
     if assets.status != "PASS":
         return assets
     try:
+        from pyfcstm.bmc.errors import BmcError
         from pyfcstm.bmc.parse import parse_bmc_query
 
         parse_bmc_query('check reach <= 1: active("Root");')
-    except (ImportError, AttributeError, TypeError, ValueError) as err:
-        # Public grammar imports and minimal parsing expose these failures.
+    except ImportError as err:
+        # The packaged public BMC grammar modules can be absent from a damaged install.
+        return _exception_diagnostic("FAIL", "FBMCQ grammar probe failed", "grammar_invalid", err)
+    except (BmcError, AttributeError, TypeError, ValueError) as err:
+        # BmcError covers public FBMCQ parser diagnostics; the remaining
+        # classes cover malformed entry points, values, and return shapes.
         return _exception_diagnostic("FAIL", "FBMCQ grammar probe failed", "grammar_invalid", err)
     return _pass(
         "load six FBMCQ grammar assets and parse reach bound 1",
@@ -925,6 +1062,7 @@ def _ssl_certifi() -> CheckOutcome:
 
 def _core_dsl_parse() -> CheckOutcome:
     try:
+        from pyfcstm.dsl.error import GrammarParseError
         from pyfcstm.dsl.node import StateMachineDSLProgram
         from pyfcstm.dsl.parse import parse_state_machine_dsl
 
@@ -946,8 +1084,12 @@ def _core_dsl_parse() -> CheckOutcome:
                 expected=repr(required_fragments),
                 observed="missing={}".format(repr(missing)),
             )
-    except (ImportError, AttributeError, TypeError, ValueError) as err:
-        # Imports expose the public parser; parser/type/value errors indicate a broken probe path.
+    except ImportError as err:
+        # Public parser modules can be absent from a damaged installation.
+        return _exception_diagnostic("FAIL", "DSL parser probe failed", "dsl_parse_failed", err)
+    except (GrammarParseError, AttributeError, TypeError, ValueError) as err:
+        # GrammarParseError is the parser's public diagnostic; shape/type/value
+        # failures indicate a broken functional probe path.
         return _exception_diagnostic("FAIL", "DSL parser probe failed", "dsl_parse_failed", err)
     return _pass(
         "parse representative FCSTM text into its typed AST",
@@ -958,7 +1100,9 @@ def _core_dsl_parse() -> CheckOutcome:
 
 def _core_model_build() -> CheckOutcome:
     try:
+        from pyfcstm.dsl.error import GrammarParseError
         from pyfcstm.model import StateMachine, load_state_machine_from_text
+        from pyfcstm.utils.validate import ModelValidationError
 
         model = load_state_machine_from_text(_FUNCTION_DSL)
         if not isinstance(model, StateMachine):
@@ -990,8 +1134,18 @@ def _core_model_build() -> CheckOutcome:
                     state_paths, tuple(model.defines), len(transitions)
                 ),
             )
-    except (ImportError, AttributeError, TypeError, ValueError) as err:
-        # Imports expose the public model loader; malformed model data raises the other classes.
+    except ImportError as err:
+        # Public model/parser modules can be absent from a damaged installation.
+        return _exception_diagnostic("FAIL", "model build probe failed", "model_build_failed", err)
+    except (
+        GrammarParseError,
+        ModelValidationError,
+        AttributeError,
+        TypeError,
+        ValueError,
+    ) as err:
+        # GrammarParseError and ModelValidationError are the documented loader
+        # diagnostics; the remaining classes cover malformed model shapes.
         return _exception_diagnostic("FAIL", "model build probe failed", "model_build_failed", err)
     return _pass(
         "load FCSTM text into a usable StateMachine",
@@ -1002,7 +1156,9 @@ def _core_model_build() -> CheckOutcome:
 
 def _core_model_roundtrip() -> CheckOutcome:
     try:
+        from pyfcstm.dsl.error import GrammarParseError
         from pyfcstm.model import load_state_machine_from_text, parse_dsl_node_to_state_machine
+        from pyfcstm.utils.validate import ModelValidationError
 
         model = load_state_machine_from_text(_FUNCTION_DSL)
         canonical_dsl = str(model.to_ast_node())
@@ -1026,8 +1182,20 @@ def _core_model_roundtrip() -> CheckOutcome:
                     "root__idle --> root__done" in plantuml,
                 ),
             )
-    except (ImportError, AttributeError, TypeError, ValueError) as err:
-        # Public model conversion can fail through imports, attributes, invalid types, or values.
+    except ImportError as err:
+        # Public model/parser modules can be absent from a damaged installation.
+        return _exception_diagnostic(
+            "FAIL", "model roundtrip probe failed", "model_roundtrip_failed", err
+        )
+    except (
+        GrammarParseError,
+        ModelValidationError,
+        AttributeError,
+        TypeError,
+        ValueError,
+    ) as err:
+        # Public parse/model diagnostics and malformed conversion shapes are
+        # semantic probe failures rather than generic worker exceptions.
         return _exception_diagnostic(
             "FAIL", "model roundtrip probe failed", "model_roundtrip_failed", err
         )
@@ -1042,6 +1210,7 @@ def _core_model_roundtrip() -> CheckOutcome:
 
 def _render_expr() -> CheckOutcome:
     try:
+        from jinja2 import TemplateError
         from pyfcstm.dsl import BinaryOp, Integer, Name
         from pyfcstm.render import render_expr_node
 
@@ -1055,8 +1224,12 @@ def _render_expr() -> CheckOutcome:
                 expected="counter + 1",
                 observed=rendered,
             )
-    except (ImportError, AttributeError, TypeError, ValueError) as err:
-        # Public rendering can fail through imports or invalid AST/type/value handling.
+    except ImportError as err:
+        # Public renderer modules can be absent from a damaged installation.
+        return _exception_diagnostic("FAIL", "expression renderer probe failed", "render_failed", err)
+    except (TemplateError, AttributeError, KeyError, TypeError, ValueError, RuntimeError) as err:
+        # TemplateError is the renderer's public template diagnostic; the
+        # remaining classes cover style lookup and malformed AST values.
         return _exception_diagnostic("FAIL", "expression renderer probe failed", "render_failed", err)
     return _pass(
         "render BinaryOp(counter + 1) with the Python expression style",
@@ -1067,6 +1240,7 @@ def _render_expr() -> CheckOutcome:
 
 def _render_statement() -> CheckOutcome:
     try:
+        from jinja2 import TemplateError
         from pyfcstm.dsl import BinaryOp, Integer, Name, OperationAssignment
         from pyfcstm.render import render_stmt_nodes
 
@@ -1081,8 +1255,14 @@ def _render_statement() -> CheckOutcome:
                 expected="counter = counter + 1",
                 observed=rendered,
             )
-    except (ImportError, AttributeError, TypeError, ValueError) as err:
-        # Public statement rendering can fail through imports or invalid AST/type/value handling.
+    except ImportError as err:
+        # Public renderer modules can be absent from a damaged installation.
+        return _exception_diagnostic(
+            "FAIL", "statement rendering environment failed", "render_failed", err
+        )
+    except (TemplateError, AttributeError, KeyError, TypeError, ValueError) as err:
+        # TemplateError is the renderer's public template diagnostic; the
+        # remaining classes cover style lookup and malformed AST values.
         return _exception_diagnostic(
             "FAIL", "statement rendering environment failed", "render_failed", err
         )
@@ -1097,9 +1277,13 @@ def _template_python() -> CheckOutcome:
     try:
         import runpy
 
+        from jinja2 import TemplateError
+        from yaml import YAMLError
+        from pyfcstm.dsl.error import GrammarParseError
         from pyfcstm.model import load_state_machine_from_text
         from pyfcstm.render import StateMachineCodeRenderer
         from pyfcstm.template import extract_template
+        from pyfcstm.utils.validate import ModelValidationError
 
         with tempfile.TemporaryDirectory(prefix="pyfcstm-template-python-") as directory:
             template_dir = extract_template("python", str(Path(directory) / "template"))
@@ -1132,8 +1316,24 @@ def _template_python() -> CheckOutcome:
                     expected="state=Root.Done counter=1",
                     observed=observed,
                 )
-    except (ImportError, OSError, ValueError, KeyError, TypeError, RuntimeError) as err:
-        # Template extraction, rendering, import, and runtime execution expose these failures.
+    except ImportError as err:
+        # Public template/runtime modules can be absent from a damaged installation.
+        return _exception_diagnostic(
+            "FAIL", "python template runtime probe failed", "template_invalid", err
+        )
+    except (
+        TemplateError,
+        YAMLError,
+        GrammarParseError,
+        ModelValidationError,
+        OSError,
+        ValueError,
+        KeyError,
+        TypeError,
+        RuntimeError,
+    ) as err:
+        # Public template, YAML, DSL, and model diagnostics plus filesystem and
+        # generated-runtime failures remain typed functional outcomes.
         return _exception_diagnostic(
             "FAIL", "python template runtime probe failed", "template_invalid", err
         )
@@ -1146,9 +1346,13 @@ def _template_python() -> CheckOutcome:
 
 def _template_catalog() -> CheckOutcome:
     try:
+        from jinja2 import TemplateError
+        from yaml import YAMLError
+        from pyfcstm.dsl.error import GrammarParseError
         from pyfcstm.model import load_state_machine_from_text
         from pyfcstm.render import StateMachineCodeRenderer
         from pyfcstm.template import extract_template, list_templates
+        from pyfcstm.utils.validate import ModelValidationError
 
         names = list_templates()
         if not names:
@@ -1177,8 +1381,23 @@ def _template_catalog() -> CheckOutcome:
                         observed="template={}".format(name),
                     )
                 generated[name] = len(files)
-    except (ImportError, OSError, ValueError, KeyError, TypeError) as err:
-        # Catalog loading, extraction, renderer configuration, and filesystem work can fail here.
+    except ImportError as err:
+        # Public template/renderer modules can be absent from a damaged installation.
+        return _exception_diagnostic(
+            "FAIL", "built-in template catalog probe failed", "template_invalid", err
+        )
+    except (
+        TemplateError,
+        YAMLError,
+        GrammarParseError,
+        ModelValidationError,
+        OSError,
+        ValueError,
+        KeyError,
+        TypeError,
+    ) as err:
+        # Public catalog/template/YAML/model diagnostics and filesystem work
+        # remain typed functional outcomes.
         return _exception_diagnostic(
             "FAIL", "built-in template catalog probe failed", "template_invalid", err
         )
@@ -1191,8 +1410,10 @@ def _template_catalog() -> CheckOutcome:
 
 def _simulate_cycle() -> CheckOutcome:
     try:
+        from pyfcstm.dsl.error import GrammarParseError
         from pyfcstm.model import load_state_machine_from_text
         from pyfcstm.simulate import SimulationRuntime
+        from pyfcstm.utils.validate import ModelValidationError
 
         runtime = SimulationRuntime(load_state_machine_from_text(_FUNCTION_DSL))
         runtime.cycle()
@@ -1214,8 +1435,21 @@ def _simulate_cycle() -> CheckOutcome:
                 expected="Root.Idle/0 -> Go -> Root.Done/1",
                 observed=observed,
             )
-    except (ImportError, AttributeError, TypeError, ValueError, RuntimeError) as err:
-        # Runtime construction and cycle execution expose the documented failure classes.
+    except ImportError as err:
+        # Public model/runtime modules can be absent from a damaged installation.
+        return _exception_diagnostic(
+            "FAIL", "simulation cycle probe failed", "simulation_failed", err
+        )
+    except (
+        GrammarParseError,
+        ModelValidationError,
+        AttributeError,
+        TypeError,
+        ValueError,
+        RuntimeError,
+    ) as err:
+        # Public model/parser diagnostics and runtime construction/cycle errors
+        # remain typed functional outcomes.
         return _exception_diagnostic(
             "FAIL", "simulation cycle probe failed", "simulation_failed", err
         )
@@ -1262,8 +1496,10 @@ def _solver_translation() -> CheckOutcome:
 def _verify_solve() -> CheckOutcome:
     try:
         from click.testing import CliRunner
+        from pyfcstm.dsl.error import GrammarParseError
         from pyfcstm.entry.cli import cli
         from pyfcstm.model import load_state_machine_from_text
+        from pyfcstm.utils.validate import ModelValidationError
         from pyfcstm.verify import run_inspect_algorithms
 
         results = run_inspect_algorithms(
@@ -1306,8 +1542,19 @@ def _verify_solve() -> CheckOutcome:
                     expected="root_state_path=Root",
                     observed=repr(inspect_payload.get("root_state_path")),
                 )
-    except (ImportError, OSError, AttributeError, TypeError, ValueError) as err:
-        # Verify/Click imports, filesystem access, JSON parsing, and typed results fail here.
+    except ImportError as err:
+        # Public verify/CLI/model modules can be absent from a damaged installation.
+        return _exception_diagnostic("FAIL", "verify and inspect probe failed", "verify_failed", err)
+    except (
+        GrammarParseError,
+        ModelValidationError,
+        OSError,
+        AttributeError,
+        TypeError,
+        ValueError,
+    ) as err:
+        # Public parser/model diagnostics, filesystem access, JSON parsing, and
+        # typed verify results remain semantic failures.
         return _exception_diagnostic("FAIL", "verify and inspect probe failed", "verify_failed", err)
     return _pass(
         "run verify SAT/UNSAT algorithms and the inspect CLI",
@@ -1458,6 +1705,7 @@ def _cli_plantuml() -> CheckOutcome:
 
 def _bmc_query_parse() -> CheckOutcome:
     try:
+        from pyfcstm.bmc.errors import BmcError
         from pyfcstm.bmc.query import BmcQuery
         from pyfcstm.bmc.parse import parse_bmc_query
 
@@ -1479,8 +1727,12 @@ def _bmc_query_parse() -> CheckOutcome:
                 expected="BmcQuery kind=reach bound=1 with canonical source",
                 observed=observed,
             )
-    except (ImportError, AttributeError, TypeError, ValueError) as err:
-        # Public BMC parser imports and query validation expose these failures.
+    except ImportError as err:
+        # Public BMC parser modules can be absent from a damaged installation.
+        return _exception_diagnostic("FAIL", "BMC query parser probe failed", "bmc_parse_failed", err)
+    except (BmcError, AttributeError, TypeError, ValueError) as err:
+        # BmcError covers all public BMC parse/query diagnostics; the remaining
+        # classes cover malformed result shapes and primitive arguments.
         return _exception_diagnostic("FAIL", "BMC query parser probe failed", "bmc_parse_failed", err)
     return _pass(
         "parse FBMCQ reach text into a typed query model",
@@ -1493,10 +1745,13 @@ def _bmc_prepare() -> CheckOutcome:
     """Compile a BMC formula while proving no solver is started."""
     try:
         import z3
+        from pyfcstm.bmc.errors import BmcError
         from pyfcstm.bmc.parse import parse_bmc_query
         from pyfcstm.bmc.pipeline import compile_bmc_query
         from pyfcstm.bmc.properties import BmcPropertyFormula
+        from pyfcstm.dsl.error import GrammarParseError
         from pyfcstm.model import load_state_machine_from_text
+        from pyfcstm.utils.validate import ModelValidationError
 
         calls = {"construct": 0, "check": 0}
         original_solver = z3.Solver
@@ -1538,8 +1793,20 @@ def _bmc_prepare() -> CheckOutcome:
                     getattr(formula, "polarity", None),
                 ),
             )
-    except (ImportError, AttributeError, TypeError, ValueError, RuntimeError) as err:
-        # Public BMC preparation and Z3 monitor setup expose these documented failures.
+    except ImportError as err:
+        # Public BMC/Z3 modules can be absent from a damaged installation.
+        return _exception_diagnostic("FAIL", "BMC prepare probe failed", "bmc_prepare_failed", err)
+    except (
+        BmcError,
+        GrammarParseError,
+        ModelValidationError,
+        AttributeError,
+        TypeError,
+        ValueError,
+        RuntimeError,
+    ) as err:
+        # BmcError covers documented query/domain/build failures; the remaining
+        # classes cover malformed objects and the temporary Z3 monitor.
         return _exception_diagnostic("FAIL", "BMC prepare probe failed", "bmc_prepare_failed", err)
     except AssertionError as err:
         # The local monitor raises only when preparation constructs or checks a solver.
@@ -1559,9 +1826,12 @@ def _bmc_solve() -> CheckOutcome:
     try:
         from click.testing import CliRunner
         from pyfcstm.entry.cli import cli
+        from pyfcstm.bmc.errors import BmcError
         from pyfcstm.bmc.pipeline import compile_bmc_query
         from pyfcstm.bmc.witness import solve_bmc_property
+        from pyfcstm.dsl.error import GrammarParseError
         from pyfcstm.model import load_state_machine_from_text
+        from pyfcstm.utils.validate import ModelValidationError
 
         formula = compile_bmc_query(
             load_state_machine_from_text("state Root;"),
@@ -1657,8 +1927,20 @@ def _bmc_solve() -> CheckOutcome:
                         }
                     ),
                 )
-    except (ImportError, AttributeError, TypeError, ValueError, RuntimeError) as err:
-        # Public BMC/CLI imports, compilation, solving, replay, and JSON expose these failures.
+    except ImportError as err:
+        # Public BMC/CLI modules can be absent from a damaged installation.
+        return _exception_diagnostic("FAIL", "BMC solve probe failed", "bmc_solve_failed", err)
+    except (
+        BmcError,
+        GrammarParseError,
+        ModelValidationError,
+        AttributeError,
+        TypeError,
+        ValueError,
+        RuntimeError,
+    ) as err:
+        # BmcError covers documented compile/solve/replay failures; the
+        # remaining classes cover malformed CLI and JSON result shapes.
         return _exception_diagnostic("FAIL", "BMC solve probe failed", "bmc_solve_failed", err)
     return _pass(
         "solve three property polarities and run the BMC CLI",
@@ -1701,10 +1983,8 @@ def _java() -> CheckOutcome:
         )
     command = [executable, "-version"]
     try:
-        completed = subprocess.run(
+        completed = _run_subprocess_bounded(
             command,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
             timeout=15.0,
         )
     except (OSError, subprocess.TimeoutExpired) as err:
@@ -1780,10 +2060,8 @@ def _visual_local_version() -> CheckOutcome:
         )
     command = [java, "-jar", str(jar), "-version"]
     try:
-        completed = subprocess.run(
+        completed = _run_subprocess_bounded(
             command,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
             timeout=15.0,
         )
     except (OSError, subprocess.TimeoutExpired) as err:
@@ -1840,11 +2118,9 @@ def _visual_local_render() -> CheckOutcome:
     source = b"@startuml\nAlice -> Bob\n@enduml\n"
     command = [java, "-jar", str(jar), "-pipe", "-tpng"]
     try:
-        completed = subprocess.run(
+        completed = _run_subprocess_bounded(
             command,
-            input=source,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            input_data=source,
             timeout=15.0,
         )
     except (OSError, subprocess.TimeoutExpired) as err:

@@ -268,7 +268,29 @@ def _emit_outcome(
     return_code: int,
 ) -> int:
     """Encode and write one outcome, returning a stable worker exit code."""
-    frame = encode_result_frame(_envelope(check_id, nonce, outcome, return_code))
+    try:
+        frame = encode_result_frame(_envelope(check_id, nonce, outcome, return_code))
+    except ValueError as err:
+        if str(err) != "envelope_too_large":
+            # encode_result_frame has one documented size failure; unexpected
+            # value errors must remain visible to the worker supervisor.
+            raise
+        outcome = CheckOutcome(
+            "ERROR",
+            "worker result exceeded the protocol envelope limit",
+            reason="result_envelope_too_large",
+            expected="encoded result at most 8 MiB",
+            observed=(
+                "summary_chars={} evidence_chars={} exception_chars={}".format(
+                    len(outcome.summary or ""),
+                    len(outcome.evidence or ""),
+                    len(outcome.exception or ""),
+                )
+            ),
+            remediation="inspect the bounded worker stdout/stderr diagnostics",
+        )
+        return_code = 1
+        frame = encode_result_frame(_envelope(check_id, nonce, outcome, return_code))
     write_error = _write_frame(result_mode, result_file, frame)
     if write_error is None:
         return return_code

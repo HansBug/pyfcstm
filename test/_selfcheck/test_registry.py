@@ -1,9 +1,7 @@
 """Tests for the static built-in self-check registry."""
 
 import json
-import sys
 from pathlib import Path
-from types import ModuleType
 
 import pytest
 
@@ -26,16 +24,13 @@ def _install_build_info(monkeypatch, **overrides):
         "BUILD_COMMIT": "generated-commit",
         "BUILD_DIRTY": False,
         "BUILD_REF": "generated-ref",
-        "BUILD_VERSION": "generated-version",
+        "BUILD_SOURCE": "generated-test",
     }
     values.update(overrides)
-    module = ModuleType("pyfcstm.config.build_info")
     for name, value in values.items():
-        setattr(module, name, value)
-    monkeypatch.setitem(sys.modules, module.__name__, module)
-    monkeypatch.setattr(config, "build_info", module, raising=False)
+        monkeypatch.setattr(config, name, value)
     monkeypatch.setattr(config, "BUILD_INFO_ERROR", None)
-    return module
+    return config
 
 
 @pytest.mark.unittest
@@ -156,12 +151,11 @@ def test_source_identity_reports_invalid_and_unavailable_states(monkeypatch, tmp
 
 @pytest.mark.unittest
 def test_build_info_module_import_failure_is_structured(monkeypatch):
-    """Missing generated modules are reported without leaking ImportError."""
-    monkeypatch.setattr(
-        registry.importlib,
-        "import_module",
-        lambda name: (_ for _ in ()).throw(ImportError(name)),
-    )
+    """Missing generated data is reported without importing its module."""
+    import pyfcstm.config as config
+
+    monkeypatch.setattr(config, "BUILD_COMMIT", None)
+    monkeypatch.setattr(config, "BUILD_INFO_ERROR", None)
     outcome = registry._identity_build_info_module()
     assert outcome.status == "WARN"
     assert outcome.reason == "identity_unavailable"
@@ -169,15 +163,27 @@ def test_build_info_module_import_failure_is_structured(monkeypatch):
 
 @pytest.mark.unittest
 def test_build_info_module_syntax_failure_is_structured(monkeypatch):
-    """Malformed generated modules become identity diagnostics."""
-    monkeypatch.setattr(
-        registry.importlib,
-        "import_module",
-        lambda name: (_ for _ in ()).throw(SyntaxError(name)),
-    )
+    """Malformed generated data becomes a safe identity diagnostic."""
+    import pyfcstm.config as config
+
+    monkeypatch.setattr(config, "BUILD_INFO_ERROR", "SyntaxError: malformed")
     outcome = registry._identity_build_info_module()
     assert outcome.status == "WARN"
     assert outcome.reason == "identity_invalid"
+
+
+@pytest.mark.unittest
+def test_build_info_check_never_imports_or_executes_generated_module(monkeypatch):
+    """Identity checks consume only config's statically parsed literal values."""
+    _install_build_info(monkeypatch)
+    monkeypatch.setattr(
+        registry.importlib,
+        "import_module",
+        lambda name: (_ for _ in ()).throw(AssertionError("module executed")),
+    )
+    outcome = registry._identity_build_info_module()
+    assert outcome.status == "PASS"
+    assert "without module execution" in outcome.summary
 
 
 @pytest.mark.unittest

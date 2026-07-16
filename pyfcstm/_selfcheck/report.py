@@ -26,7 +26,7 @@ _STATUS_ORDER = (
     "CRASH",
 )
 _FAILURE_STATUSES = ("BLOCKED", "FAIL", "ERROR", "TIMEOUT", "CRASH")
-_DETAIL_STATUSES = ("WARN", "SKIP", "BLOCKED", "FAIL", "ERROR", "TIMEOUT", "CRASH")
+_FULL_DETAIL_STATUSES = ("BLOCKED", "FAIL", "ERROR", "TIMEOUT", "CRASH")
 _STATUS_COLORS = {status: "\x1b[31m" for status in _FAILURE_STATUSES}
 _STATUS_COLORS.update({"PASS": "\x1b[32m", "WARN": "\x1b[33m", "SKIP": "\x1b[36m"})
 
@@ -193,8 +193,42 @@ def write_human_environment(environment, color: str = "auto") -> None:
     )
 
 
+def _diagnostic_text_lines(check) -> list:
+    """Return non-empty traceback and process-output diagnostic blocks."""
+    lines = []
+    evidence = check.evidence
+    exception = check.exception
+    if exception and evidence.rstrip().endswith(exception.rstrip()):
+        evidence = evidence[: -len(exception.rstrip())].rstrip()
+    for name, value in (
+        ("evidence", evidence),
+        ("exception", exception),
+        ("stdout", check.stdout),
+        ("stderr", check.stderr),
+    ):
+        if value:
+            lines.append(name + ":")
+            lines.extend("  " + line for line in value.splitlines())
+    return lines
+
+
+def _warning_detail_lines(check) -> list:
+    """Return moderate diagnostics for an optional warning."""
+    fields = (
+        ("reason", check.reason),
+        ("expected", check.expected),
+        ("observed", check.observed),
+        ("remediation", check.remediation),
+    )
+    lines = [
+        "{}: {}".format(name, value) for name, value in fields if value is not None
+    ]
+    lines.extend(_diagnostic_text_lines(check))
+    return ["  " + line for line in lines]
+
+
 def _failure_detail_lines(check) -> list:
-    """Return indented diagnostics for a non-successful check."""
+    """Return complete diagnostics for a failing red-status check."""
     fields = (
         ("reason", check.reason),
         (
@@ -218,33 +252,32 @@ def _failure_detail_lines(check) -> list:
     lines = [
         "{}: {}".format(name, value) for name, value in fields if value is not None
     ]
-    evidence = check.evidence
-    exception = check.exception
-    if exception and evidence.rstrip().endswith(exception.rstrip()):
-        evidence = evidence[: -len(exception.rstrip())].rstrip()
-    for name, value in (
-        ("evidence", evidence),
-        ("exception", exception),
-        ("stdout", check.stdout),
-        ("stderr", check.stderr),
-    ):
-        if value:
-            lines.append(name + ":")
-            lines.extend("  " + line for line in value.splitlines())
+    lines.extend(_diagnostic_text_lines(check))
     return ["  " + line for line in lines]
 
 
 def _result_summary(check) -> str:
     """Return one concrete summary, including PASS expected/observed facts."""
-    summary = check.summary or check.reason or "no summary"
+    summary = " ".join(str(check.summary or check.reason or "no summary").split())
+    if check.status == "SKIP" and check.prerequisites:
+        return "{}: {}".format(summary, ", ".join(check.prerequisites))
     if check.status != "PASS":
         return summary
     facts = []
     if check.expected is not None:
-        facts.append("expected={}".format(check.expected))
+        facts.append("expected={}".format(" ".join(str(check.expected).split())))
     if check.observed is not None:
-        facts.append("observed={}".format(check.observed))
+        facts.append("observed={}".format(" ".join(str(check.observed).split())))
     return "{}; {}".format(summary, "; ".join(facts)) if facts else summary
+
+
+def _result_detail_lines(check) -> list:
+    """Return status-appropriate human diagnostics for one completed check."""
+    if check.status == "WARN":
+        return _warning_detail_lines(check)
+    if check.status in _FULL_DETAIL_STATUSES:
+        return _failure_detail_lines(check)
+    return []
 
 
 def render_human_result(
@@ -265,8 +298,7 @@ def render_human_result(
     status = _paint_status(check.status, use_color)
     summary = _result_summary(check)
     lines = ["{} {} {} ({})".format(position, status, check.check_id, summary)]
-    if check.status in _DETAIL_STATUSES:
-        lines.extend(_failure_detail_lines(check))
+    lines.extend(_result_detail_lines(check))
     return "\n".join(lines) + "\n"
 
 
@@ -362,8 +394,7 @@ def _render_human(snapshot: ReportSnapshot, use_color: bool) -> str:
         position = "[{:>{}}/{}]".format(index, index_width, total)
         status = _paint_status(check.status, use_color)
         lines.append("{} {} {} ({})".format(position, status, check.check_id, summary))
-        if check.status in _DETAIL_STATUSES:
-            lines.extend(_failure_detail_lines(check))
+        lines.extend(_result_detail_lines(check))
 
     lines.extend(_summary_lines(snapshot, use_color)[1:])
     return "\n".join(lines) + "\n"

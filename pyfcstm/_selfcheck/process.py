@@ -459,18 +459,33 @@ def run_check_process(
     _set_network_environment(child_environment, network)
     stdout_spool = None
     stderr_spool = None
+    capture_setup_error = None
     try:
         stdout_spool = tempfile.TemporaryFile(mode="w+b")
         stderr_spool = tempfile.TemporaryFile(mode="w+b")
-    except (OSError, ValueError):
+    except (OSError, ValueError) as err:
+        # Temporary output storage can be unavailable on a damaged or
+        # read-only system; never fall back to unbounded PIPE collection.
+        capture_setup_error = "{}: {}".format(type(err).__name__, err)
         _close_capture_stream(stdout_spool)
         _close_capture_stream(stderr_spool)
         stdout_spool = None
         stderr_spool = None
+    if capture_setup_error and result_mode == "stdout":
+        _cleanup_session(session_dir, result_file)
+        return _make_result(
+            check,
+            "ERROR",
+            "bounded worker output capture is unavailable",
+            "capture_unavailable",
+            started,
+            evidence=capture_setup_error,
+            result_mode=result_mode,
+        )
     popen_kwargs = {
         "stdin": subprocess.PIPE,
-        "stdout": stdout_spool or subprocess.PIPE,
-        "stderr": stderr_spool or subprocess.PIPE,
+        "stdout": stdout_spool or subprocess.DEVNULL,
+        "stderr": stderr_spool or subprocess.DEVNULL,
         "bufsize": 0,
         "env": child_environment,
     }
@@ -531,8 +546,8 @@ def run_check_process(
                     process=process,
                 )
 
-        stdout_data = None if stdout_spool is not None else b""
-        stderr_data = None if stderr_spool is not None else b""
+        stdout_data = None
+        stderr_data = None
         communication_errors = []
         cleanup_error = None
         timed_out = False

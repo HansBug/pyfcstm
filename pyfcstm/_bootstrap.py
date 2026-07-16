@@ -89,6 +89,7 @@ def run_selfcheck(arguments: Sequence[str]) -> int:
         2
     """
     output_format = _requested_output_format(arguments)
+    color = "never"
     if output_format == "human":
         # Emit the first line before importing the registry, process isolation,
         # and optional native probes.  Those imports are intentionally lazy,
@@ -101,7 +102,11 @@ def run_selfcheck(arguments: Sequence[str]) -> int:
 
     from ._selfcheck.supervisor import run_supervisor
 
-    return run_supervisor(arguments, start_emitted=output_format == "human")
+    return run_supervisor(
+        arguments,
+        start_emitted=output_format == "human",
+        start_color=color,
+    )
 
 
 def _peek_selfcheck_option(

@@ -121,7 +121,7 @@ _PLANTUML_PYTHON_ONLY_OPTIONS = frozenset(
 
 # Preserve the pre-existing public mapping for callers that imported it
 # directly; its contents remain derived from the registry above.
-globals()['PLANTUML_OPTION_TYPES'] = _PLANTUML_OPTION_TYPES
+PLANTUML_OPTION_TYPES = _PLANTUML_OPTION_TYPES
 
 
 @dataclass(frozen=True)
@@ -219,8 +219,8 @@ def _parse_plantuml_config_assignment(pair: str, index: int) -> _PlantUMLOptionA
         raise ClickErrorException(_unknown_plantuml_option_error(key))
     if spec.python_only:
         raise ClickErrorException(
-            "PlantUML option 'custom_colors' requires a mapping and is Python API only; "
-            'use PlantUMLOptions(custom_colors={...}) instead.'
+            f'PlantUML option {key!r} requires a mapping and is Python API only; '
+            f'use PlantUMLOptions({key}={{...}}) instead.'
         )
     try:
         parsed = parse_key_value_pairs((pair,), type_hints=_PLANTUML_OPTION_TYPES)[key]

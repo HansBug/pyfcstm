@@ -10,6 +10,7 @@ PLANTUML\_OPTION\_TYPES
 -----------------------------------------------------
 
 .. autodata:: PLANTUML_OPTION_TYPES
+   :no-value:
 
 
 resolve\_plantuml\_options

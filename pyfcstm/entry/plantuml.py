@@ -121,6 +121,8 @@ _PLANTUML_PYTHON_ONLY_OPTIONS = frozenset(
 
 # Preserve the pre-existing public mapping for callers that imported it
 # directly; its contents remain derived from the registry above.
+#: Accepted value types for PlantUML CLI configuration keys, derived from the
+#: PlantUML option registry.
 PLANTUML_OPTION_TYPES = _PLANTUML_OPTION_TYPES
 
 

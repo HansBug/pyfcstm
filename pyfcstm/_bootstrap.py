@@ -88,9 +88,55 @@ def run_selfcheck(arguments: Sequence[str]) -> int:
         >>> code
         2
     """
+    output_format = _requested_output_format(arguments)
+    color = "never"
+    if output_format == "human":
+        # Emit the first line before importing the registry, process isolation,
+        # and optional native probes.  Those imports are intentionally lazy,
+        # but a cold start must still provide immediate operator feedback.
+        from ._selfcheck.report import write_human_start
+
+        profile = _peek_selfcheck_option(arguments, "--profile", "default")
+        color = _peek_selfcheck_option(arguments, "--color", "auto")
+        write_human_start(profile, color)
+
     from ._selfcheck.supervisor import run_supervisor
 
-    return run_supervisor(arguments)
+    return run_supervisor(
+        arguments,
+        start_emitted=output_format == "human",
+        start_color=color,
+    )
+
+
+def _peek_selfcheck_option(
+    arguments: Sequence[str], name: str, default: str
+) -> str:
+    """Read one inexpensive self-check option without importing its supervisor.
+
+    :param arguments: Arguments after the root ``--self-check`` token.
+    :type arguments: Sequence[str]
+    :param name: Long option name to inspect.
+    :type name: str
+    :param default: Value returned when the option is absent or incomplete.
+    :type default: str
+    :return: The raw option value.
+    :rtype: str
+    """
+    prefix = name + "="
+    for index, argument in enumerate(arguments):
+        if argument == "--":
+            break
+        if argument.startswith(prefix):
+            return argument[len(prefix) :]
+        if argument == name and index + 1 < len(arguments):
+            value = arguments[index + 1]
+            if not value.startswith("--"):
+                return value
+            return "unavailable"
+        if argument == name:
+            return "unavailable"
+    return default
 
 
 def run_worker(arguments: Sequence[str]) -> int:

@@ -67,6 +67,14 @@ class CheckSpec:
     :type execution: str, optional
     :param timeout_seconds: Base worker deadline before scaling.
     :type timeout_seconds: float, optional
+    :param safety: Static callback safety class, defaults to ``'pure'``.
+    :type safety: str, optional
+    :param prerequisite_policy: How a warning prerequisite propagates,
+        defaults to ``'allow_warn'``.
+    :type prerequisite_policy: str, optional
+    :param explicit_skip: Whether the caller explicitly selected this check
+        for a terminal ``SKIP`` result, defaults to ``False``.
+    :type explicit_skip: bool, optional
 
     Example::
 
@@ -81,6 +89,9 @@ class CheckSpec:
     prerequisites: Tuple[str, ...] = ()
     execution: str = "worker"
     timeout_seconds: float = 30.0
+    safety: str = "pure"
+    prerequisite_policy: str = "allow_warn"
+    explicit_skip: bool = False
 
     def __post_init__(self) -> None:
         if not self.check_id:
@@ -95,6 +106,18 @@ class CheckSpec:
 
         if not math.isfinite(self.timeout_seconds) or self.timeout_seconds <= 0.0:
             raise ValueError("self-check timeout must be positive")
+        if self.safety not in ("pure", "blocking", "native", "external"):
+            raise ValueError(
+                "unknown self-check safety class: {}".format(self.safety)
+            )
+        if self.prerequisite_policy not in ("allow_warn", "skip_on_warn"):
+            raise ValueError(
+                "unknown self-check prerequisite policy: {}".format(
+                    self.prerequisite_policy
+                )
+            )
+        if self.execution == "local" and self.safety != "pure":
+            raise ValueError("local self-checks must use the pure safety class")
         if not self.title:
             object.__setattr__(self, "title", self.check_id)
 
@@ -364,6 +387,25 @@ class Ledger:
             raise KeyError(result.check_id)
         if result.check_id in self._results:
             raise RuntimeError("duplicate terminal result: {}".format(result.check_id))
+        self._results[result.check_id] = result
+        self._states[result.check_id] = result.status
+
+    def replace(self, result: CheckResult) -> None:
+        """Replace one already committed result during finalization.
+
+        The report writer is itself a last-stage operation.  A provisional
+        result may be committed before attempting an atomic report write and
+        replaced with its concrete failure diagnostics if that write fails.
+
+        :param result: Replacement terminal result.
+        :type result: CheckResult
+        :raises KeyError: If the result ID was not reserved.
+        :raises RuntimeError: If no terminal result exists for the ID.
+        """
+        if result.check_id not in self._states:
+            raise KeyError(result.check_id)
+        if result.check_id not in self._results:
+            raise RuntimeError("cannot replace pending result: {}".format(result.check_id))
         self._results[result.check_id] = result
         self._states[result.check_id] = result.status
 

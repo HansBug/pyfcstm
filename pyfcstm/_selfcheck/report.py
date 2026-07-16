@@ -26,6 +26,7 @@ _STATUS_ORDER = (
     "CRASH",
 )
 _FAILURE_STATUSES = ("BLOCKED", "FAIL", "ERROR", "TIMEOUT", "CRASH")
+_FULL_DETAIL_STATUSES = ("BLOCKED", "FAIL", "ERROR", "TIMEOUT", "CRASH")
 _STATUS_COLORS = {status: "\x1b[31m" for status in _FAILURE_STATUSES}
 _STATUS_COLORS.update({"PASS": "\x1b[32m", "WARN": "\x1b[33m", "SKIP": "\x1b[36m"})
 
@@ -101,10 +102,142 @@ def _paint_status(status: str, use_color: bool) -> str:
     return "{}{}\x1b[0m".format(_STATUS_COLORS.get(status, ""), status)
 
 
-def _failure_detail_lines(check) -> list:
-    """Return indented diagnostics for a non-successful check."""
+def _stream_color_state(color: str):
+    """Return the requested/VT-safe color state for incremental output."""
+    requested = _color_requested(color)
+    return requested and _windows_vt_supported(sys.stdout)
+
+
+def _write_human_text(text: str, color: str = "auto") -> None:
+    """Write a human fragment immediately, including the Win7 fallback."""
+    requested = _color_requested(color)
+    ansi = requested and _windows_vt_supported(sys.stdout)
+    if requested and os.name == "nt" and not ansi:
+        if write_console_ansi(text, sys.stdout):
+            return
+    try:
+        sys.stdout.write(text)
+        sys.stdout.flush()
+    except (UnicodeError, OSError, ValueError) as err:
+        # Legacy Windows consoles and redirected streams can reject a Unicode
+        # diagnostic.  ASCII backslash escapes keep the result observable.
+        fallback = text.encode("ascii", "backslashreplace").decode("ascii")
+        try:
+            sys.stdout.write(fallback)
+            sys.stdout.flush()
+        except (UnicodeError, OSError, ValueError):
+            # The bootstrap's emergency channel handles a completely closed
+            # stdout; do not hide the original encoding/stream failure here.
+            raise err
+
+
+def _stream_version_line(profile: str, use_color: bool) -> str:
+    """Build the cheap first line emitted before dependency discovery."""
+    try:
+        from pyfcstm.config.meta import __VERSION__
+    except (ImportError, AttributeError):
+        # The bootstrap still reports a useful line if package metadata is damaged.
+        version = "unavailable"
+    else:
+        version = __VERSION__
+    mode = "frozen" if getattr(sys, "frozen", False) else "source"
+    cyan = "\x1b[36m" if use_color else ""
+    reset = "\x1b[0m" if use_color else ""
+    return "{}pyfcstm self-check {}  mode={}  profile={}{}\n".format(
+        cyan, version, mode, profile, reset
+    )
+
+
+def write_human_start(profile: str = "default", color: str = "auto") -> None:
+    """Flush the lightweight human-mode header before checks start."""
+    _write_human_text(_stream_version_line(profile, _stream_color_state(color)), color)
+
+
+def write_human_plan(total: int, profile: str, color: str = "auto") -> None:
+    """Flush the selected-check count as soon as the static registry is ready."""
+    _write_human_text(
+        "pyfcstm self-check: running {} checks  profile={}\n".format(
+            total, profile
+        ),
+        color,
+    )
+
+
+def write_human_environment(environment, color: str = "auto") -> None:
+    """Flush the collected system and build identity line before probes run."""
+    revision = environment.get("revision") or "unavailable"
+    commit = environment.get("commit") or "unavailable"
+    platform_name = environment.get("platform") or "unavailable"
+    architecture = environment.get("architecture") or environment.get("machine")
+    python_version = environment.get("python_version") or "unavailable"
+    implementation = environment.get("implementation") or "unavailable"
+    encoding = next(
+        (
+            environment.get(key)
+            for key in ("stdout_encoding", "preferred_encoding", "filesystem_encoding")
+            if environment.get(key)
+        ),
+        "unavailable",
+    )
+    _write_human_text(
+        "System: {} {}  Python={} ({})  encoding={}  revision={}  commit={}\n".format(
+            platform_name,
+            architecture or "unavailable",
+            python_version,
+            implementation,
+            encoding,
+            revision,
+            commit,
+        ),
+        color,
+    )
+
+
+def _diagnostic_text_lines(check) -> list:
+    """Return non-empty traceback and process-output diagnostic blocks."""
+    lines = []
+    evidence = check.evidence
+    exception = check.exception
+    if exception and evidence.rstrip().endswith(exception.rstrip()):
+        evidence = evidence[: -len(exception.rstrip())].rstrip()
+    for name, value in (
+        ("evidence", evidence),
+        ("exception", exception),
+        ("stdout", check.stdout),
+        ("stderr", check.stderr),
+    ):
+        if value:
+            lines.append(name + ":")
+            lines.extend("  " + line for line in value.splitlines())
+    return lines
+
+
+def _warning_detail_lines(check) -> list:
+    """Return moderate diagnostics for an optional warning."""
     fields = (
         ("reason", check.reason),
+        ("expected", check.expected),
+        ("observed", check.observed),
+        ("remediation", check.remediation),
+    )
+    lines = [
+        "{}: {}".format(name, value) for name, value in fields if value is not None
+    ]
+    lines.extend(_diagnostic_text_lines(check))
+    return ["  " + line for line in lines]
+
+
+def _failure_detail_lines(check) -> list:
+    """Return complete diagnostics for a failing red-status check."""
+    fields = (
+        ("reason", check.reason),
+        (
+            "prerequisite",
+            ", ".join(check.prerequisites) if check.prerequisites else None,
+        ),
+        ("expected", check.expected),
+        ("observed", check.observed),
+        ("remediation", check.remediation),
         ("return_code", check.return_code),
         ("pid", check.pid),
         ("signal", check.signal),
@@ -119,20 +252,105 @@ def _failure_detail_lines(check) -> list:
     lines = [
         "{}: {}".format(name, value) for name, value in fields if value is not None
     ]
-    for name, value in (
-        ("evidence", check.evidence),
-        ("stdout", check.stdout),
-        ("stderr", check.stderr),
-    ):
-        if value:
-            lines.append(name + ":")
-            lines.extend("  " + line for line in value.splitlines())
+    lines.extend(_diagnostic_text_lines(check))
     return ["  " + line for line in lines]
+
+
+def _result_summary(check) -> str:
+    """Return one concrete summary, including PASS expected/observed facts."""
+    summary = " ".join(str(check.summary or check.reason or "no summary").split())
+    if check.status == "SKIP" and check.prerequisites:
+        return "{}: {}".format(summary, ", ".join(check.prerequisites))
+    if check.status != "PASS":
+        return summary
+    facts = []
+    if check.expected is not None:
+        facts.append("expected={}".format(" ".join(str(check.expected).split())))
+    if check.observed is not None:
+        facts.append("observed={}".format(" ".join(str(check.observed).split())))
+    return "{}; {}".format(summary, "; ".join(facts)) if facts else summary
+
+
+def _result_detail_lines(check) -> list:
+    """Return status-appropriate human diagnostics for one completed check."""
+    if check.status == "WARN":
+        return _warning_detail_lines(check)
+    if check.status in _FULL_DETAIL_STATUSES:
+        return _failure_detail_lines(check)
+    return []
+
+
+def render_human_result(
+    check, index: int, total: int, color: str = "auto"
+) -> str:
+    """Render one completed check for incremental human output.
+
+    :param check: Completed :class:`CheckResult` instance.
+    :param index: One-based position in the selected registry.
+    :param total: Number of selected checks.
+    :param color: ``auto``, ``always``, or ``never``.
+    :return: One newline-terminated result fragment.
+    :rtype: str
+    """
+    use_color = _color_requested(color) and _windows_vt_supported(sys.stdout)
+    index_width = len(str(max(1, total)))
+    position = "[{:>{}}/{}]".format(index, index_width, total)
+    status = _paint_status(check.status, use_color)
+    summary = _result_summary(check)
+    lines = ["{} {} {} ({})".format(position, status, check.check_id, summary)]
+    lines.extend(_result_detail_lines(check))
+    return "\n".join(lines) + "\n"
+
+
+def write_human_result(check, index: int, total: int, color: str = "auto") -> None:
+    """Flush one completed check and its failure details immediately."""
+    _write_human_text(render_human_result(check, index, total, color), color)
+
+
+def _summary_lines(snapshot: ReportSnapshot, use_color: bool):
+    """Build positive-count summary and the final styled conclusion."""
+    counts = snapshot.counts
+    lines = ["", "Summary:"]
+    for status in _STATUS_ORDER:
+        count = counts.get(status, 0)
+        if count <= 0:
+            continue
+        lines.append("  {} = {}".format(_paint_status(status, use_color), count))
+    exit_code = snapshot.metadata.get("exit_code")
+    failed = exit_code not in (None, 0)
+    if not failed and exit_code is None:
+        failed = sum(counts.get(status, 0) for status in _FAILURE_STATUSES) > 0
+    conclusion = "FAILED" if failed else "PASSED"
+    if not failed and any(
+        counts.get(status, 0) for status in ("WARN", "SKIP", "BLOCKED")
+    ):
+        conclusion = "WARNINGS"
+    if use_color:
+        conclusion_style = {
+            "PASSED": "\x1b[1;32m",
+            "WARNINGS": "\x1b[1;33m",
+            "FAILED": "\x1b[1;97;41m",
+        }[conclusion]
+        conclusion = "{}[ {} ]\x1b[0m".format(conclusion_style, conclusion)
+    else:
+        conclusion = "[ {} ]".format(conclusion)
+    lines.append("Conclusion: {}".format(conclusion))
+    return lines
+
+
+def render_human_summary(snapshot: ReportSnapshot, color: str = "auto") -> str:
+    """Render only the final positive-count summary and conclusion."""
+    use_color = _color_requested(color) and _windows_vt_supported(sys.stdout)
+    return "\n".join(_summary_lines(snapshot, use_color)) + "\n"
+
+
+def write_human_summary(snapshot: ReportSnapshot, color: str = "auto") -> None:
+    """Flush the final summary after all incremental result lines."""
+    _write_human_text(render_human_summary(snapshot, color), color)
 
 
 def _render_human(snapshot: ReportSnapshot, use_color: bool) -> str:
     """Render one human report with a fixed, terminal-friendly layout."""
-    counts = snapshot.counts
     total = len(snapshot.checks)
     environment = snapshot.metadata.get("environment", {})
     version, revision, commit = (
@@ -172,39 +390,13 @@ def _render_human(snapshot: ReportSnapshot, use_color: bool) -> str:
     ]
     index_width = len(str(max(1, total)))
     for index, check in enumerate(snapshot.checks, 1):
-        summary = check.summary or check.reason or "no summary"
+        summary = _result_summary(check)
         position = "[{:>{}}/{}]".format(index, index_width, total)
         status = _paint_status(check.status, use_color)
         lines.append("{} {} {} ({})".format(position, status, check.check_id, summary))
-        if check.status in _FAILURE_STATUSES:
-            lines.extend(_failure_detail_lines(check))
+        lines.extend(_result_detail_lines(check))
 
-    lines.extend(("", "Summary:"))
-    for status in _STATUS_ORDER:
-        count = counts.get(status, 0)
-        if count <= 0:
-            continue
-        label = _paint_status(status, use_color)
-        lines.append("  {} = {}".format(label, count))
-    exit_code = snapshot.metadata.get("exit_code")
-    failed = exit_code not in (None, 0)
-    if not failed and exit_code is None:
-        failed = sum(counts.get(status, 0) for status in _FAILURE_STATUSES) > 0
-    conclusion = "FAILED" if failed else "PASSED"
-    if not failed and any(
-        counts.get(status, 0) for status in ("WARN", "SKIP", "BLOCKED")
-    ):
-        conclusion = "WARNINGS"
-    if use_color:
-        conclusion_style = {
-            "PASSED": "\x1b[1;32m",
-            "WARNINGS": "\x1b[1;33m",
-            "FAILED": "\x1b[1;97;41m",
-        }[conclusion]
-        conclusion = "{}[ {} ]{}".format(conclusion_style, conclusion, reset)
-    else:
-        conclusion = "[ {} ]".format(conclusion)
-    lines.append("Conclusion: {}".format(conclusion))
+    lines.extend(_summary_lines(snapshot, use_color)[1:])
     return "\n".join(lines) + "\n"
 
 

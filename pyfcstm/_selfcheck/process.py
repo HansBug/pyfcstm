@@ -13,6 +13,7 @@ import signal
 import subprocess
 import tempfile
 import time
+import traceback
 from typing import Optional
 
 from ._win32 import JobAssignmentError, attach_process, format_ntstatus
@@ -135,7 +136,6 @@ class _BoundedCapture:
     @property
     def truncated_bytes(self) -> int:
         return max(0, self.total - self.limit)
-
 
 def _capture_stream(stream, data, capture_protocol: bool) -> _BoundedCapture:
     """Build a bounded capture from a spool or an already returned byte string."""
@@ -267,7 +267,8 @@ def _terminate(
             os.killpg(process.pid, signal.SIGTERM)
         except OSError as err:
             # The group may already have exited before graceful termination.
-            _record_error(errors, "sigterm", err)
+            if err.errno != errno.ESRCH:
+                _record_error(errors, "sigterm", err)
         _wait_process(process, grace, errors, kill_on_timeout=False)
         try:
             os.killpg(process.pid, signal.SIGKILL)
@@ -275,7 +276,8 @@ def _terminate(
             pass
         except OSError as err:
             # Non-ESRCH kill failures leave explicit cleanup evidence.
-            _record_error(errors, "sigkill", err)
+            if err.errno != errno.ESRCH:
+                _record_error(errors, "sigkill", err)
         else:
             _wait_for_group_exit(process.pid, grace, errors)
         _wait_process(process, grace, errors, kill_on_timeout=False)
@@ -316,6 +318,11 @@ def _command_for_worker(
     if result_file is not None:
         command.extend(["--result-file", result_file])
     return command
+
+
+def _set_network_environment(environment: dict, enabled: bool) -> None:
+    """Pass the explicit network opt-in to isolated callbacks."""
+    environment["PYFCSTM_SELFCHECK_NETWORK"] = "1" if enabled else "0"
 
 
 def _cleanup_session(session_dir: Optional[str], result_file: Optional[str]) -> None:
@@ -367,6 +374,7 @@ def _make_result(
     timeout: bool = False,
     ntstatus: Optional[str] = None,
     envelope=None,
+    exception: Optional[str] = None,
 ) -> CheckResult:
     """Build one terminal result from semantic and process observations."""
     stdout = stdout_capture.text() if stdout_capture is not None else ""
@@ -389,7 +397,7 @@ def _make_result(
         observed=envelope.get("observed"),
         evidence=evidence,
         remediation=envelope.get("remediation"),
-        exception=envelope.get("exception"),
+        exception=envelope.get("exception") or exception,
         return_code=return_code,
         transport=result_mode,
         truncated_bytes=truncated,
@@ -407,6 +415,7 @@ def run_check_process(
     check: CheckSpec,
     timeout: float,
     timeout_scale: float = 1.0,
+    network: bool = False,
 ) -> CheckResult:
     """
     Run one check in a fresh process and classify its terminal result.
@@ -418,6 +427,9 @@ def run_check_process(
     :param timeout_scale: Multiplier for start-gate and termination grace,
         defaults to ``1.0``.
     :type timeout_scale: float, optional
+    :param network: Whether the caller explicitly enabled network probes,
+        defaults to ``False``.
+    :type network: bool, optional
     :return: A terminal result, including bounded process diagnostics.
     :rtype: CheckResult
 
@@ -443,27 +455,44 @@ def run_check_process(
 
     command = _command_for_worker(check, nonce, result_mode, result_file)
     child_environment = os.environ.copy()
+    child_environment["PYFCSTM_SELFCHECK_WORKER_PROCESS"] = "1"
+    _set_network_environment(child_environment, network)
     stdout_spool = None
     stderr_spool = None
+    capture_setup_error = None
     try:
         stdout_spool = tempfile.TemporaryFile(mode="w+b")
         stderr_spool = tempfile.TemporaryFile(mode="w+b")
-    except (OSError, ValueError):
+    except (OSError, ValueError) as err:
+        # Temporary output storage can be unavailable on a damaged or
+        # read-only system; never fall back to unbounded PIPE collection.
+        capture_setup_error = "{}: {}".format(type(err).__name__, err)
         _close_capture_stream(stdout_spool)
         _close_capture_stream(stderr_spool)
         stdout_spool = None
         stderr_spool = None
+    if capture_setup_error and result_mode == "stdout":
+        _cleanup_session(session_dir, result_file)
+        return _make_result(
+            check,
+            "ERROR",
+            "bounded worker output capture is unavailable",
+            "capture_unavailable",
+            started,
+            evidence=capture_setup_error,
+            result_mode=result_mode,
+        )
     popen_kwargs = {
         "stdin": subprocess.PIPE,
-        "stdout": stdout_spool or subprocess.PIPE,
-        "stderr": stderr_spool or subprocess.PIPE,
+        "stdout": stdout_spool or subprocess.DEVNULL,
+        "stderr": stderr_spool or subprocess.DEVNULL,
         "bufsize": 0,
         "env": child_environment,
     }
     package_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     package_parent = os.path.dirname(package_dir)
     # Put the package under test first while preserving caller-provided import
-    # roots for worker callbacks and installation diagnostics.
+    # roots for worker callbacks and runtime diagnostics.
     inherited_pythonpath = child_environment.get("PYTHONPATH")
     child_environment["PYTHONPATH"] = _PATH_SEPARATOR.join(
         path for path in (package_parent, inherited_pythonpath) if path
@@ -517,8 +546,8 @@ def run_check_process(
                     process=process,
                 )
 
-        stdout_data = None if stdout_spool is not None else b""
-        stderr_data = None if stderr_spool is not None else b""
+        stdout_data = None
+        stderr_data = None
         communication_errors = []
         cleanup_error = None
         timed_out = False
@@ -537,23 +566,31 @@ def run_check_process(
             try:
                 stdout_data, stderr_data = process.communicate(timeout=scaled_grace)
             except subprocess.TimeoutExpired as drain_error:
-                communication_errors.append("output_drain:TimeoutExpired")
+                communication_errors.append(
+                    "output_drain:TimeoutExpired: {}\n{}".format(
+                        drain_error,
+                        traceback.format_exc().rstrip(),
+                    )
+                )
                 if stdout_spool is None:
                     stdout_data = drain_error.output or stdout_data
                 if stderr_spool is None:
                     stderr_data = drain_error.stderr or stderr_data
             except (OSError, ValueError) as drain_error:
-                # Pipe reads can fail with OSError after tree termination;
-                # communicate rejects already-closed streams with ValueError.
                 communication_errors.append(
-                    "output_drain:{}".format(type(drain_error).__name__)
+                    "output_drain:{}: {}\n{}".format(
+                        type(drain_error).__name__,
+                        drain_error,
+                        traceback.format_exc().rstrip(),
+                    )
                 )
         except (OSError, ValueError) as err:
-            # communicate surfaces native pipe failures as OSError and invalid
-            # stream lifecycle state as ValueError.
             cleanup_error = _terminate(process, job, posix_group, scaled_grace)
             job = None
-            details = "worker_communication:{}".format(type(err).__name__)
+            exception = traceback.format_exc()
+            details = "worker_communication:{}: {}\n{}".format(
+                type(err).__name__, err, exception.rstrip()
+            )
             if cleanup_error:
                 details += "; cleanup=" + cleanup_error
             return _make_result(
@@ -565,6 +602,7 @@ def run_check_process(
                 evidence=details,
                 process=process,
                 result_mode=result_mode,
+                exception=exception,
             )
 
         stdout_capture = _capture_stream(
@@ -580,9 +618,9 @@ def run_check_process(
             "stderr_capture": stderr_capture,
         }
         return_code = process.returncode
-        if return_code and not timed_out:
-            # A crashed/non-zero worker may have left descendants in its process
-            # group even though the group leader has already exited.
+        if not timed_out:
+            # A normally returning worker may still leave descendants in its
+            # process group; always close the group before the next check.
             cleanup_error = _terminate(process, job, posix_group, scaled_grace)
             job = None
         process_fields["return_code"] = return_code
@@ -622,7 +660,11 @@ def run_check_process(
                 envelope=outcome.envelope,
                 **process_fields,
             )
-        details = _diagnostics(communication_errors, cleanup_error=cleanup_error)
+        details = _diagnostics(
+            communication_errors,
+            base=outcome.diagnostic or "",
+            cleanup_error=cleanup_error,
+        )
         ntstatus = format_ntstatus(return_code) if os.name == "nt" else None
         if ntstatus:
             details = (details + "\n" if details else "") + "ntstatus=" + ntstatus

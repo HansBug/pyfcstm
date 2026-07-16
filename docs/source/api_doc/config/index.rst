@@ -9,7 +9,6 @@ pyfcstm.config
 .. toctree::
     :maxdepth: 3
 
-    _build_identity
     meta
 
 BUILD\_COMMIT

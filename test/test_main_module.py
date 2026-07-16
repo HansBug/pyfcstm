@@ -34,13 +34,21 @@ class TestMainModule:
             [sys.executable, "-m", "pyfcstm", "--self-check", "--format", "json"],
             capture_output=True,
             text=True,
-            timeout=30,
+            # The full serial registry is materially slower on Windows/Python 3.8.
+            timeout=120,
         )
         assert result.returncode == 0
         payload = json.loads(result.stdout)
         assert payload["schema_version"] == "pyfcstm-selfcheck/v1"
         assert payload["exit_code"] == 0
-        assert [item["status"] for item in payload["results"]] == ["PASS", "PASS"]
+        assert len(payload["results"]) == len(
+            payload["capabilities"]["registry"]["expected_ids"]
+        ) + 1
+        assert all(
+            item["status"] in ("PASS", "WARN", "SKIP")
+            for item in payload["results"]
+        )
+        assert payload["summary"]["PASS"] >= 2
         assert result.stderr == ""
 
     def test_main_module_runpy_executes_bootstrap_branch(self, monkeypatch):

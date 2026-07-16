@@ -22,7 +22,7 @@ CheckSpec
 -----------------------------------------------------
 
 .. autoclass:: CheckSpec
-    :members: __post_init__,check_id,worker_key,title,required,prerequisites,execution,timeout_seconds
+    :members: __post_init__,check_id,worker_key,title,required,prerequisites,execution,timeout_seconds,safety,prerequisite_policy,explicit_skip
 
 
 CheckOutcome
@@ -50,4 +50,4 @@ Ledger
 -----------------------------------------------------
 
 .. autoclass:: Ledger
-    :members: __init__,reserve,ensure_reserved,mark_running,commit,get_state,get_result,freeze
+    :members: __init__,reserve,ensure_reserved,mark_running,commit,replace,get_state,get_result,freeze

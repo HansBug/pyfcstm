@@ -28,6 +28,75 @@ def test_selfcheck_dispatch_does_not_import_click(monkeypatch):
 
 
 @pytest.mark.unittest
+def test_bootstrap_emits_human_header_before_supervisor_work(monkeypatch, capsys):
+    """Human self-check mode reports startup before the supervisor runs."""
+    from pyfcstm import _bootstrap
+    from pyfcstm._selfcheck import supervisor
+
+    observed = {}
+
+    def fake_supervisor(arguments, start_emitted=False, start_color="never"):
+        observed["arguments"] = tuple(arguments)
+        observed["start_emitted"] = start_emitted
+        observed["start_color"] = start_color
+        observed["output"] = capsys.readouterr().out
+        return 0
+
+    monkeypatch.setattr(supervisor, "run_supervisor", fake_supervisor)
+    assert _bootstrap.run_selfcheck(("--profile", "full", "--color", "never")) == 0
+    assert observed["start_emitted"] is True
+    assert observed["start_color"] == "never"
+    assert observed["arguments"] == ("--profile", "full", "--color", "never")
+    assert observed["output"].startswith("pyfcstm self-check 0.6.0")
+    assert "profile=full" in observed["output"]
+
+
+@pytest.mark.unittest
+def test_bootstrap_keeps_json_output_machine_readable(monkeypatch, capsys):
+    """JSON mode does not receive the human startup line."""
+    from pyfcstm import _bootstrap
+    from pyfcstm._selfcheck import supervisor
+
+    monkeypatch.setattr(
+        supervisor,
+        "run_supervisor",
+        lambda args, start_emitted=False, start_color="never": 0,
+    )
+    assert _bootstrap.run_selfcheck(("--format", "json")) == 0
+    assert capsys.readouterr().out == ""
+
+
+@pytest.mark.unittest
+def test_bootstrap_option_peek_respects_argument_separator():
+    """The early header probe does not inspect values after ``--``."""
+    from pyfcstm import _bootstrap
+
+    assert (
+        _bootstrap._peek_selfcheck_option(
+            ("--", "--profile=full"), "--profile", "default"
+        )
+        == "default"
+    )
+
+
+@pytest.mark.unittest
+def test_bootstrap_option_peek_marks_incomplete_values_unavailable():
+    """Malformed early options do not masquerade as the default profile."""
+    from pyfcstm import _bootstrap
+
+    assert (
+        _bootstrap._peek_selfcheck_option(("--profile",), "--profile", "default")
+        == "unavailable"
+    )
+    assert (
+        _bootstrap._peek_selfcheck_option(
+            ("--profile", "--color", "never"), "--profile", "default"
+        )
+        == "unavailable"
+    )
+
+
+@pytest.mark.unittest
 def test_hidden_worker_dispatch_is_exact_and_pre_click(monkeypatch):
     """Hidden worker mode is separate from supervisor and ordinary Click."""
     from pyfcstm import _bootstrap
@@ -55,6 +124,30 @@ def test_mutually_exclusive_dispatch_emits_diagnostic(capfd, arguments):
     assert _bootstrap.main(arguments) == 3
     captured = capfd.readouterr()
     assert "mutually exclusive" in captured.err
+
+
+@pytest.mark.unittest
+def test_invalid_human_selfcheck_arguments_reuse_the_immediate_header(
+    monkeypatch, capsys
+):
+    """Argument errors keep one colored startup header and one red result."""
+    from pyfcstm import _bootstrap
+
+    monkeypatch.setattr(
+        "pyfcstm._selfcheck.report._windows_vt_supported", lambda stream: True
+    )
+    assert (
+        _bootstrap.run_selfcheck(
+            ("--format", "human", "--bad-option", "--color", "always")
+        )
+        == 2
+    )
+    output = capsys.readouterr().out
+    assert output.count("pyfcstm self-check 0.6.0") == 1
+    assert "pyfcstm self-check unavailable" not in output
+    assert "\x1b[31mERROR\x1b[0m selfcheck.arguments" in output
+    assert "unknown self-check arguments: --bad-option" in output
+    assert "\x1b[1;97;41m[ FAILED ]\x1b[0m" in output
 
 
 @pytest.mark.unittest
@@ -170,7 +263,13 @@ def test_public_selfcheck_dispatch_runs_the_real_supervisor(capsys):
     assert _bootstrap.main(("--self-check", "--format", "json")) == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["exit_code"] == 0
-    assert [item["status"] for item in payload["results"]] == ["PASS", "PASS"]
+    from pyfcstm._selfcheck.registry import EXPECTED_CHECK_IDS
+
+    assert [item["id"] for item in payload["results"]] == [
+        "runtime.metadata",
+        *EXPECTED_CHECK_IDS,
+    ]
+    assert all(item["status"] in ("PASS", "WARN", "SKIP") for item in payload["results"])
 
 
 @pytest.mark.unittest
@@ -197,13 +296,20 @@ def test_module_entry_runs_public_selfcheck_in_a_fresh_process():
         env=environment,
         capture_output=True,
         text=True,
-        timeout=30,
+        # The full serial registry is materially slower on Windows/Python 3.8.
+        timeout=120,
     )
     assert result.returncode == 0
     payload = json.loads(result.stdout)
     assert payload["schema_version"] == "pyfcstm-selfcheck/v1"
     assert payload["exit_code"] == 0
-    assert [item["status"] for item in payload["results"]] == ["PASS", "PASS"]
+    from pyfcstm._selfcheck.registry import EXPECTED_CHECK_IDS
+
+    assert [item["id"] for item in payload["results"]] == [
+        "runtime.metadata",
+        *EXPECTED_CHECK_IDS,
+    ]
+    assert all(item["status"] in ("PASS", "WARN", "SKIP") for item in payload["results"])
     assert result.stderr == ""
 
 

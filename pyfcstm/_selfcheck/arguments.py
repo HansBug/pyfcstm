@@ -127,7 +127,7 @@ def _build_supervisor_parser(add_help: bool = False) -> argparse.ArgumentParser:
         add_help=add_help,
         allow_abbrev=False,
         prog="pyfcstm --self-check",
-        description="Run installation and runtime self-checks.",
+        description="Run runtime and packaged-resource self-checks.",
     )
     parser.add_argument(
         "--profile", choices=("default", "full", "visualize"), default="default"

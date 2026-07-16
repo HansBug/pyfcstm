@@ -16,6 +16,7 @@ FRAME_PREFIX = b"PYFCSTM_SELF_CHECK_RESULT_V1 "
 WORKER_SCHEMA = "pyfcstm-selfcheck-worker/v1"
 MAX_ENVELOPE_BYTES = 8 * 1024 * 1024
 MAX_RESULT_FILE_BYTES = MAX_ENVELOPE_BYTES * 2
+MAX_PROTOCOL_DIAGNOSTIC_BYTES = 8 * 1024
 _NONCE_RE = re.compile(r"[0-9a-f]{32}")
 
 
@@ -30,6 +31,8 @@ class FrameReadOutcome:
     :type error_code: Optional[str], optional
     :param frame_count: Number of valid or attempted frames, defaults to ``0``.
     :type frame_count: int, optional
+    :param diagnostic: Bounded raw protocol evidence, defaults to ``None``.
+    :type diagnostic: Optional[str], optional
 
     Example::
 
@@ -40,6 +43,23 @@ class FrameReadOutcome:
     envelope: Optional[Dict[str, Any]] = None
     error_code: Optional[str] = None
     frame_count: int = 0
+    diagnostic: Optional[str] = None
+
+
+def _protocol_diagnostic(data: bytes) -> Optional[str]:
+    """Return bounded head/tail evidence for one malformed protocol stream."""
+    if not data:
+        return None
+    if len(data) <= MAX_PROTOCOL_DIAGNOSTIC_BYTES:
+        sample = data
+        omitted = 0
+    else:
+        half = MAX_PROTOCOL_DIAGNOSTIC_BYTES // 2
+        sample = data[:half] + b"\n...<protocol bytes omitted>...\n" + data[-half:]
+        omitted = len(data) - MAX_PROTOCOL_DIAGNOSTIC_BYTES
+    return "protocol_bytes={} omitted={} raw={}".format(
+        len(data), omitted, repr(sample)
+    )
 
 
 def make_nonce() -> str:
@@ -154,10 +174,17 @@ def _read_frames(
     allow_non_frame_lines: bool,
     expected_check_id: Optional[str] = None,
 ) -> FrameReadOutcome:
+    def failure(error_code: str, frame_count: int = 0) -> FrameReadOutcome:
+        return FrameReadOutcome(
+            error_code=error_code,
+            frame_count=frame_count,
+            diagnostic=_protocol_diagnostic(data),
+        )
+
     if len(data) > MAX_RESULT_FILE_BYTES:
-        return FrameReadOutcome(error_code="result_stream_too_large")
+        return failure("result_stream_too_large")
     if not data:
-        return FrameReadOutcome(error_code="missing_result")
+        return failure("missing_result")
     lines = data.splitlines(keepends=True)
     frames: List[Dict[str, Any]] = []
     for line in lines:
@@ -168,26 +195,20 @@ def _read_frames(
         )
         if marker < 0:
             if not allow_non_frame_lines and frames:
-                return FrameReadOutcome(
-                    error_code="trailing_data", frame_count=len(frames)
-                )
+                return failure("trailing_data", len(frames))
             if not allow_non_frame_lines:
-                return FrameReadOutcome(
-                    error_code="invalid_frame", frame_count=len(frames)
-                )
+                return failure("invalid_frame", len(frames))
             continue  # pragma: no cover - coverage.py omits Python 3.7 continue arcs
         try:
             frames.append(
                 _decode_frame(line[marker:], expected_nonce, expected_check_id)
             )
         except ValueError as err:
-            return FrameReadOutcome(error_code=str(err), frame_count=len(frames) + 1)
+            return failure(str(err), len(frames) + 1)
         if len(frames) > 1:
-            return FrameReadOutcome(
-                error_code="duplicate_frame", frame_count=len(frames)
-            )
+            return failure("duplicate_frame", len(frames))
     if not frames:
-        return FrameReadOutcome(error_code="missing_result")
+        return failure("missing_result")
     return FrameReadOutcome(envelope=frames[0], frame_count=1)
 
 
@@ -217,7 +238,10 @@ def read_result_file(
             data = stream.read(MAX_RESULT_FILE_BYTES + 1)
     except (OSError, IOError) as err:
         # Missing or inaccessible result files are protocol infrastructure failures.
-        return FrameReadOutcome(error_code="result_file:{}".format(type(err).__name__))
+        return FrameReadOutcome(
+            error_code="result_file:{}".format(type(err).__name__),
+            diagnostic="{}: {}".format(type(err).__name__, err),
+        )
     return _read_frames(
         data,
         expected_nonce,

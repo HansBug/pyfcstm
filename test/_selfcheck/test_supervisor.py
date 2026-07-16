@@ -1,5 +1,7 @@
 """Behavioral tests for the contracted single-writer supervisor."""
 
+import contextlib
+import io
 import json
 import os
 import subprocess
@@ -9,6 +11,7 @@ import pytest
 
 from pyfcstm._selfcheck import supervisor
 from pyfcstm._selfcheck import registry
+from pyfcstm._selfcheck.registry import EXPECTED_CHECK_IDS
 from pyfcstm._selfcheck.model import (
     CheckOutcome,
     CheckResult,
@@ -26,7 +29,9 @@ def _result(spec, status="PASS", summary="ready"):
 
 
 def _install_worker_specs(monkeypatch, specs, callback=None):
-    monkeypatch.setattr(supervisor, "selected_specs", lambda profile: tuple(specs))
+    monkeypatch.setattr(
+        supervisor, "selected_specs", lambda profile, **kwargs: tuple(specs)
+    )
     monkeypatch.setattr(
         supervisor,
         "run_check_process",
@@ -36,16 +41,32 @@ def _install_worker_specs(monkeypatch, specs, callback=None):
 
 @pytest.mark.unittest
 def test_default_profile_returns_one_canonical_snapshot(capsys):
-    """The real two-check foundation shares one exact JSON schema."""
+    """The full fixed registry shares one exact JSON schema."""
     assert supervisor.run_supervisor(("--format", "json")) == 0
     payload = _payload(capsys)
     assert [item["id"] for item in payload["results"]] == [
         "runtime.metadata",
-        "artifact.self_dispatch",
+        *EXPECTED_CHECK_IDS,
     ]
-    assert payload["summary"] == {"PASS": 2}
-    assert payload["dependencies"][1]["prerequisite"] == ["runtime.metadata"]
+    assert sum(payload["summary"].values()) == 58
+    assert all(item["status"] in ("PASS", "WARN", "SKIP") for item in payload["results"])
+    assert payload["capabilities"]["registry"]["expected_ids"] == list(EXPECTED_CHECK_IDS)
+    assert payload["dependencies"][0]["id"] == "runtime.metadata"
+    assert payload["artifact"]["kind"] == "source"
+    assert payload["artifact"]["frozen"] is False
+    assert payload["artifact"]["root"] == "<redacted>"
     assert "checks" not in payload and "counts" not in payload
+    assert "dependency_diagnostics" not in payload["capabilities"]
+
+
+@pytest.mark.unittest
+def test_artifact_metadata_can_include_paths_when_redaction_is_disabled():
+    """The report exposes artifact paths only when explicitly requested."""
+    metadata = supervisor._artifact_metadata(redact=False)
+    assert metadata["kind"] == "source"
+    assert metadata["frozen"] is False
+    assert os.path.isabs(metadata["root"])
+    assert os.path.isabs(metadata["executable"])
 
 
 @pytest.mark.unittest
@@ -57,6 +78,78 @@ def test_human_supervisor_emits_the_frozen_snapshot(monkeypatch, capsys):
     output = capsys.readouterr().out
     assert "[1/1] PASS demo" in output
     assert "Conclusion: [ PASSED ]" in output
+
+
+@pytest.mark.unittest
+def test_human_report_write_failure_is_streamed_with_full_diagnostics(
+    monkeypatch, capsys, tmp_path
+):
+    """A final report failure gets its own numbered human result immediately."""
+    spec = CheckSpec("demo", "demo")
+    _install_worker_specs(monkeypatch, (spec,))
+    monkeypatch.setattr(
+        supervisor,
+        "write_report",
+        lambda *args: "OSError: report destination unavailable",
+    )
+
+    assert (
+        supervisor.run_supervisor(
+            ("--color", "never", "--report", str(tmp_path / "report.json"))
+        )
+        == 1
+    )
+    output = capsys.readouterr().out
+    assert "[1/2] PASS demo" in output
+    assert "[2/2] ERROR selfcheck.report_write" in output
+    assert "reason: report_write" in output
+    assert "OSError: report destination unavailable" in output
+    assert "Conclusion: [ FAILED ]" in output
+
+
+@pytest.mark.unittest
+def test_human_header_is_flushed_before_registry_discovery(monkeypatch):
+    """The startup line is visible before registry discovery can block."""
+    output = io.StringIO()
+    spec = CheckSpec("demo", "demo")
+
+    def observe_registry(profile, **kwargs):
+        del profile, kwargs
+        assert output.getvalue().splitlines()[0].startswith(
+            "pyfcstm self-check 0.6.0"
+        )
+        return (spec,)
+
+    _install_worker_specs(monkeypatch, (spec,))
+    monkeypatch.setattr(supervisor, "selected_specs", observe_registry)
+    with contextlib.redirect_stdout(output):
+        assert supervisor.run_supervisor(("--color", "never")) == 0
+
+
+@pytest.mark.unittest
+def test_human_registry_failure_uses_synthetic_result_count(monkeypatch, capsys):
+    """A malformed registry reports the one synthetic result it will emit."""
+    specs = (CheckSpec("duplicate", "first"), CheckSpec("duplicate", "second"))
+    monkeypatch.setattr(supervisor, "selected_specs", lambda profile, **kwargs: specs)
+
+    assert supervisor.run_supervisor(("--color", "never")) == 1
+    output = capsys.readouterr().out
+    assert "running 1 checks" in output
+    assert "[1/1] ERROR selfcheck.registry" in output
+    assert "[1/2]" not in output
+
+
+@pytest.mark.unittest
+def test_malformed_registry_object_is_reported_without_cleanup_escape(
+    monkeypatch, capsys
+):
+    """A non-CheckSpec registry entry cannot break infrastructure recovery."""
+    monkeypatch.setattr(supervisor, "selected_specs", lambda profile: (object(),))
+
+    assert supervisor.run_supervisor(("--color", "never")) == 1
+    output = capsys.readouterr().out
+    assert "[1/1] ERROR selfcheck.registry" in output
+    assert "invalid self-check specification" in output
 
 
 @pytest.mark.unittest
@@ -75,13 +168,47 @@ def test_fail_on_warn_only_changes_exit_policy(monkeypatch, capsys):
 
 
 @pytest.mark.unittest
+def test_failed_capability_blocks_downstream_check(monkeypatch, capsys):
+    """A failed capability prerequisite blocks rather than disguising failure as skip."""
+    capability = CheckSpec(
+        "visualize.java",
+        "visualize_java",
+        required=True,
+        safety="blocking",
+    )
+    downstream = CheckSpec(
+        "visualize.local_render",
+        "visualize_local_render",
+        required=True,
+        prerequisites=(capability.check_id,),
+        safety="blocking",
+        prerequisite_policy="skip_on_warn",
+    )
+    _install_worker_specs(
+        monkeypatch,
+        (capability, downstream),
+        lambda spec, timeout, timeout_scale: _result(
+            spec, "FAIL" if spec.check_id == capability.check_id else "PASS", "forced"
+        ),
+    )
+
+    assert supervisor.run_supervisor(("--format", "json")) == 1
+    results = {
+        item["id"]: item for item in _payload(capsys)["results"]
+    }
+    assert results[capability.check_id]["status"] == "FAIL"
+    assert results[downstream.check_id]["status"] == "BLOCKED"
+    assert results[downstream.check_id]["reason"] == "prerequisite_failed"
+
+
+@pytest.mark.unittest
 def test_local_typed_check_does_not_spawn(monkeypatch, capsys):
     """Bootstrap-safe checks execute locally through the same outcome contract."""
     spec = CheckSpec("local.demo", "local_demo", execution="local")
     monkeypatch.setitem(
         registry._WORKERS, "local_demo", lambda: CheckOutcome("PASS", "local")
     )
-    monkeypatch.setattr(supervisor, "selected_specs", lambda profile: (spec,))
+    monkeypatch.setattr(supervisor, "selected_specs", lambda profile, **kwargs: (spec,))
     monkeypatch.setattr(
         supervisor,
         "run_check_process",
@@ -89,6 +216,22 @@ def test_local_typed_check_does_not_spawn(monkeypatch, capsys):
     )
     assert supervisor.run_supervisor(("--format", "json")) == 0
     assert _payload(capsys)["results"][0]["summary"] == "local"
+
+
+@pytest.mark.unittest
+def test_explicit_skip_is_terminal_without_invoking_the_worker(monkeypatch, capsys):
+    """An explicit registry skip is visible and never calls its callback."""
+    spec = CheckSpec("demo", "demo", explicit_skip=True)
+    monkeypatch.setattr(supervisor, "selected_specs", lambda profile, **kwargs: (spec,))
+    monkeypatch.setattr(
+        supervisor,
+        "run_check_process",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("worker invoked")),
+    )
+    assert supervisor.run_supervisor(("--format", "json")) == 0
+    result = _payload(capsys)["results"][0]
+    assert result["status"] == "SKIP"
+    assert result["reason"] == "explicit_skip"
 
 
 @pytest.mark.unittest
@@ -116,7 +259,7 @@ def test_local_public_supervisor_faults_are_structured(
     spec = CheckSpec("local.fault", worker_key, execution="local")
     if callback is not None:
         monkeypatch.setitem(registry._WORKERS, worker_key, callback)
-    monkeypatch.setattr(supervisor, "selected_specs", lambda profile: (spec,))
+    monkeypatch.setattr(supervisor, "selected_specs", lambda profile, **kwargs: (spec,))
     assert supervisor.run_supervisor(("--format", "json")) == 1
     payload = _payload(capsys)
     assert payload["results"][0]["status"] == "ERROR"
@@ -132,7 +275,7 @@ def test_local_generator_exit_is_not_swallowed(monkeypatch):
         "local_exit",
         lambda: (_ for _ in ()).throw(GeneratorExit()),
     )
-    monkeypatch.setattr(supervisor, "selected_specs", lambda profile: (spec,))
+    monkeypatch.setattr(supervisor, "selected_specs", lambda profile, **kwargs: (spec,))
     with pytest.raises(GeneratorExit):
         supervisor.run_supervisor(("--format", "json"))
 
@@ -207,7 +350,7 @@ def test_closed_stdout_pipe_returns_stable_output_error(arguments):
             [sys.executable, "-m", "pyfcstm"] + list(arguments),
             stdout=write_descriptor,
             stderr=subprocess.PIPE,
-            timeout=15.0,
+            timeout=60.0,
         )
     finally:
         os.close(write_descriptor)
@@ -345,6 +488,18 @@ def test_worker_checks_finish_one_at_a_time_in_registry_order(monkeypatch, capsy
 
 
 @pytest.mark.unittest
+@pytest.mark.unittest
+def test_required_warning_is_normalized_to_failure():
+    """Required capability warnings become failures only at the supervisor edge."""
+    spec = CheckSpec("demo.required", "demo", required=True)
+    result = _result(spec, "WARN", "missing")
+    result = supervisor.replace(result, reason="resource_missing")
+    normalized = supervisor._normalize_required_warning(spec, result)
+    assert normalized.status == "FAIL"
+    assert "required capability" in normalized.summary
+
+
+@pytest.mark.unittest
 def test_failed_prerequisite_blocks_only_its_dependent(monkeypatch, capsys):
     """A semantic FAIL becomes BLOCKED downstream without aborting the session."""
     base = CheckSpec("base", "base")
@@ -393,7 +548,9 @@ def test_interrupt_marks_running_and_pending_checks_distinctly(monkeypatch, caps
 def test_interrupt_during_reservation_repairs_selected_ledger(monkeypatch, capsys):
     """Partially reserved selected IDs are all represented in the final report."""
     specs = (CheckSpec("first", "first"), CheckSpec("second", "second"))
-    monkeypatch.setattr(supervisor, "selected_specs", lambda profile: specs)
+    monkeypatch.setattr(
+        supervisor, "selected_specs", lambda profile, **kwargs: specs
+    )
     original = Ledger.reserve
 
     def interrupted_reserve(self, selected):
@@ -414,7 +571,7 @@ def test_registry_setup_failure_returns_infrastructure_snapshot(monkeypatch, cap
     monkeypatch.setattr(
         supervisor,
         "selected_specs",
-        lambda profile: (_ for _ in ()).throw(RuntimeError("registry broken")),
+        lambda profile, **kwargs: (_ for _ in ()).throw(RuntimeError("registry broken")),
     )
     assert supervisor.run_supervisor(("--format", "json")) == 3
     payload = _payload(capsys)

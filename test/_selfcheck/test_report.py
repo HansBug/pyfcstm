@@ -9,8 +9,15 @@ from pyfcstm._selfcheck.model import CheckResult, ReportSnapshot
 from pyfcstm._selfcheck.report import (
     _color_requested,
     render_human,
+    render_human_result,
+    render_human_summary,
     render_json,
     write_human,
+    write_human_environment,
+    write_human_plan,
+    write_human_result,
+    write_human_start,
+    write_human_summary,
     write_report,
 )
 
@@ -105,6 +112,121 @@ def test_human_report_contains_environment_header_and_failure_evidence():
 
 
 @pytest.mark.unittest
+def test_human_failure_details_include_semantic_diagnostics():
+    """Human failures expose expected, observed, remediation, and exception."""
+    result = CheckResult(
+        "resource.guide",
+        "FAIL",
+        True,
+        summary="guide checksum mismatch",
+        reason="resource_invalid",
+        expected="sha256=abc",
+        observed="sha256=def",
+        remediation="run make sha256",
+        exception="Traceback (most recent call last):\nValueError: mismatch",
+    )
+    rendered = render_human_result(result, 1, 1, color="never")
+    for value in (
+        "expected: sha256=abc",
+        "observed: sha256=def",
+        "remediation: run make sha256",
+        "exception:",
+        "ValueError: mismatch",
+    ):
+        assert value in rendered
+
+
+@pytest.mark.unittest
+def test_human_traceback_is_indented_and_not_duplicated():
+    """Shared evidence/exception tracebacks render once with stable indentation."""
+    traceback_text = (
+        "Traceback (most recent call last):\n"
+        "  File \"probe.py\", line 1, in probe\n"
+        "ValueError: failed"
+    )
+    result = CheckResult(
+        "core.probe",
+        "FAIL",
+        True,
+        summary="probe failed",
+        reason="probe_failed",
+        evidence="command=['probe']\n" + traceback_text,
+        exception=traceback_text,
+    )
+    rendered = render_human_result(result, 1, 1, color="never")
+    assert rendered.count("Traceback (most recent call last)") == 1
+    assert "  evidence:\n    command=['probe']" in rendered
+    assert "  exception:\n    Traceback (most recent call last):" in rendered
+    assert "      File \"probe.py\", line 1, in probe" in rendered
+
+
+@pytest.mark.unittest
+def test_human_pass_and_optional_results_expose_concrete_facts():
+    """PASS stays factual, WARN is moderate, and SKIP stays on one line."""
+    passed = CheckResult(
+        "native.z3.solve",
+        "PASS",
+        True,
+        summary="solve Int x constrained by x == 1",
+        expected="status=sat model[x]=1",
+        observed="status=sat model[x]=1",
+    )
+    rendered = render_human_result(passed, 1, 12, color="never")
+    assert "[ 1/12] PASS native.z3.solve" in rendered
+    assert "expected=status=sat model[x]=1" in rendered
+    assert "observed=status=sat model[x]=1" in rendered
+
+    multiline = CheckResult(
+        "visualize.java",
+        "PASS",
+        False,
+        summary="run java -version",
+        expected="returncode=0\nand version output",
+        observed="java version\nJava Runtime\nJava VM",
+    )
+    rendered = render_human_result(multiline, 2, 12, color="never")
+    assert rendered.count("\n") == 1
+    assert "expected=returncode=0 and version output" in rendered
+    assert "observed=java version Java Runtime Java VM" in rendered
+
+    warned = CheckResult(
+        "visualize.java",
+        "WARN",
+        False,
+        summary="Java is unavailable",
+        reason="capability_unavailable",
+        expected="java on PATH",
+        observed="not found",
+        remediation="install a JRE",
+        return_code=0,
+        pid=123,
+        duration_ms=42.0,
+    )
+    rendered = render_human_result(warned, 2, 12, color="never")
+    assert "reason: capability_unavailable" in rendered
+    assert "expected: java on PATH" in rendered
+    assert "observed: not found" in rendered
+    assert "remediation: install a JRE" in rendered
+    assert "return_code:" not in rendered
+    assert "pid:" not in rendered
+    assert "duration_ms:" not in rendered
+
+    skipped = CheckResult(
+        "visualize.local_render",
+        "SKIP",
+        False,
+        summary="capability prerequisite is unavailable",
+        reason="prerequisite_skipped",
+        prerequisites=("visualize.java", "visualize.plantuml_jar"),
+    )
+    rendered = render_human_result(skipped, 3, 12, color="never")
+    assert rendered.count("\n") == 1
+    assert "capability prerequisite is unavailable: visualize.java, visualize.plantuml_jar" in rendered
+    assert "reason:" not in rendered
+    assert "prerequisite:" not in rendered
+
+
+@pytest.mark.unittest
 def test_human_summary_omits_zero_counts_and_colors_emitted_statuses(monkeypatch):
     """Only positive status counts are shown and each keeps its color role."""
     monkeypatch.setattr("pyfcstm._selfcheck.report._color_requested", lambda mode: True)
@@ -124,6 +246,27 @@ def test_human_summary_omits_zero_counts_and_colors_emitted_statuses(monkeypatch
     assert "\x1b[33mWARN\x1b[0m = 1" in output
     assert "SKIP = 0" not in output
     assert "\x1b[1;33m[ WARNINGS ]\x1b[0m" in output
+
+
+@pytest.mark.unittest
+def test_incremental_human_output_flushes_header_results_and_summary(capsys):
+    """Human mode exposes each completed result without changing JSON rendering."""
+    check = CheckResult("demo", "PASS", True, summary="ready")
+    snapshot = ReportSnapshot((check,), _metadata(), {"PASS": 1})
+    write_human_start("default", color="never")
+    write_human_plan(1, "default", color="never")
+    write_human_environment(snapshot.metadata["environment"], color="never")
+    write_human_result(check, 1, 1, color="never")
+    write_human_summary(snapshot, color="never")
+    output = capsys.readouterr().out
+    assert output.splitlines()[0].startswith("pyfcstm self-check 0.6.0")
+    assert "running 1 checks" in output
+    assert "revision=abc123  commit=def456" in output
+    assert "[1/1] PASS demo (ready)" in output
+    assert "Conclusion: [ PASSED ]" in output
+    assert "SKIP = 0" not in output
+    assert "[1/1] PASS demo (ready)" in render_human_result(check, 1, 1, "never")
+    assert "Conclusion: [ PASSED ]" in render_human_summary(snapshot, "never")
 
 
 @pytest.mark.unittest

@@ -67,6 +67,8 @@ def test_append_only_result_file_counts_duplicate_frames(tmp_path):
     path.write_bytes(frame + frame)
     outcome = read_result_file(str(path), nonce)
     assert outcome.error_code == "duplicate_frame"
+    assert "protocol_bytes=" in outcome.diagnostic
+    assert "PYFCSTM_SELF_CHECK_RESULT_V1" in outcome.diagnostic
 
 
 @pytest.mark.unittest
@@ -213,6 +215,7 @@ def test_result_file_reports_trailing_data_after_valid_frame(tmp_path):
     outcome = read_result_file(str(path), nonce, "demo")
     assert outcome.error_code == "trailing_data"
     assert outcome.frame_count == 1
+    assert "garbage" in outcome.diagnostic
 
 
 @pytest.mark.unittest
@@ -310,8 +313,12 @@ def test_protocol_reader_reports_stream_and_file_errors(monkeypatch, tmp_path):
         "builtins.open",
         lambda *args, **kwargs: (_ for _ in ()).throw(OSError("closed")),
     )
-    assert read_result_file(str(path), "0" * 32).error_code.startswith("result_file:")
-    assert (
-        read_stdout_frames(b"x" * (MAX_RESULT_FILE_BYTES + 1), "0" * 32).error_code
-        == "result_stream_too_large"
+    file_outcome = read_result_file(str(path), "0" * 32)
+    assert file_outcome.error_code.startswith("result_file:")
+    assert "OSError: closed" in file_outcome.diagnostic
+    stream_outcome = read_stdout_frames(
+        b"x" * (MAX_RESULT_FILE_BYTES + 1), "0" * 32
     )
+    assert stream_outcome.error_code == "result_stream_too_large"
+    assert "omitted=" in stream_outcome.diagnostic
+    assert len(stream_outcome.diagnostic) < 9000

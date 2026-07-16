@@ -961,8 +961,11 @@ jobs:
           reports="$RUNNER_TEMP/pyfcstm-selfcheck-reports"
           rm -rf "$root"
           mkdir -p "$root" "$reports"
-          archive=$(find "$RUNNER_TEMP/pyfcstm-cli-artifact" -maxdepth 1 -type f -name '*.zip' -print -quit)
-          test -n "$archive"
+          shopt -s nullglob
+          archives=("$RUNNER_TEMP"/pyfcstm-cli-artifact/*.zip)
+          test "${#archives[@]}" -eq 1
+          archive="${archives[0]}"
+          shopt -u nullglob
           identity=$(find "$RUNNER_TEMP/pyfcstm-cli-artifact" -maxdepth 1 -name build-identity.txt -print -quit)
           digest_file=$(find "$RUNNER_TEMP/pyfcstm-cli-artifact" -maxdepth 1 -name artifact-sha256.txt -print -quit)
           test -n "$identity" -a -n "$digest_file"
@@ -1154,8 +1157,11 @@ jobs:
           reports="$RUNNER_TEMP/pyfcstm-selfcheck-reports"
           rm -rf "$root"
           mkdir -p "$root" "$reports"
-          archive=$(find "$RUNNER_TEMP/pyfcstm-cli-artifact" -maxdepth 1 -type f -name '*.zip' -print -quit)
-          test -n "$archive"
+          shopt -s nullglob
+          archives=("$RUNNER_TEMP"/pyfcstm-cli-artifact/*.zip)
+          test "${#archives[@]}" -eq 1
+          archive="${archives[0]}"
+          shopt -u nullglob
           identity=$(find "$RUNNER_TEMP/pyfcstm-cli-artifact" -maxdepth 1 -name build-identity.txt -print -quit)
           digest_file=$(find "$RUNNER_TEMP/pyfcstm-cli-artifact" -maxdepth 1 -name artifact-sha256.txt -print -quit)
           test -n "$identity" -a -n "$digest_file"

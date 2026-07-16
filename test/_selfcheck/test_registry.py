@@ -127,11 +127,81 @@ def test_source_identity_reports_stale_live_head(monkeypatch):
     import pyfcstm._selfcheck.registry as registry
 
     _install_build_info(monkeypatch)
-    monkeypatch.setattr(registry.subprocess, "check_output", lambda *args, **kwargs: b"deadbeef\n")
+    monkeypatch.setattr(
+        registry,
+        "_live_source_identity",
+        lambda: {
+            "commit": "deadbeef",
+            "dirty": False,
+            "ref": "main",
+            "version": "0.6.0",
+        },
+    )
     outcome = get_worker("check_identity_source")()
     assert isinstance(outcome, CheckOutcome)
     assert outcome.status == "WARN"
     assert outcome.reason == "identity_stale"
+
+
+@pytest.mark.unittest
+def test_live_source_identity_uses_bounded_git_commands(monkeypatch, tmp_path):
+    """Every source identity command uses the shared deadline and output cap."""
+    import subprocess
+
+    package_root = tmp_path / "pyfcstm"
+    package_root.mkdir()
+    monkeypatch.setattr(registry, "_package_root", lambda: package_root)
+    calls = []
+    outputs = {
+        ("rev-parse", "HEAD"): b"deadbeef\n",
+        ("status", "--porcelain"): b" M pyfcstm/file.py\n",
+        ("symbolic-ref", "--short", "HEAD"): b"feature/selfcheck\n",
+    }
+
+    def bounded(command, timeout, input_data=None, cwd=None):
+        calls.append((tuple(command), timeout, input_data, cwd))
+        return subprocess.CompletedProcess(
+            command, 0, stdout=outputs[tuple(command[1:])], stderr=b""
+        )
+
+    monkeypatch.setattr(registry, "_run_subprocess_bounded", bounded)
+    identity = registry._live_source_identity()
+    assert identity["commit"] == "deadbeef"
+    assert identity["dirty"] is True
+    assert identity["ref"] == "feature/selfcheck"
+    assert calls == [
+        (("git", "rev-parse", "HEAD"), 5.0, None, str(tmp_path)),
+        (("git", "status", "--porcelain"), 5.0, None, str(tmp_path)),
+        (("git", "symbolic-ref", "--short", "HEAD"), 5.0, None, str(tmp_path)),
+    ]
+
+
+@pytest.mark.unittest
+def test_source_identity_timeout_preserves_git_output(monkeypatch, tmp_path):
+    """A bounded git timeout becomes a warning with command and partial output."""
+    import subprocess
+
+    _install_build_info(monkeypatch)
+    package_root = tmp_path / "pyfcstm"
+    package_root.mkdir()
+    (tmp_path / ".git").mkdir()
+    monkeypatch.setattr(registry, "_package_root", lambda: package_root)
+    command = ["git", "rev-parse", "HEAD"]
+    timeout = subprocess.TimeoutExpired(
+        command, 5.0, output=b"partial stdout", stderr=b"partial stderr"
+    )
+    monkeypatch.setattr(
+        registry,
+        "_run_subprocess_bounded",
+        lambda *args, **kwargs: (_ for _ in ()).throw(timeout),
+    )
+    outcome = registry._identity_source()
+    assert outcome.status == "WARN"
+    assert outcome.reason == "identity_unavailable"
+    assert "command=['git', 'rev-parse', 'HEAD']" in outcome.evidence
+    assert "stdout:\npartial stdout" in outcome.evidence
+    assert "stderr:\npartial stderr" in outcome.evidence
+    assert "Traceback (most recent call last)" in outcome.exception
 
 
 @pytest.mark.unittest

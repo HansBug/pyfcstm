@@ -50,8 +50,9 @@ _PROCESS_POLL_INTERVAL = 0.01
 class _ProcessOutputLimitExceeded(OSError):
     """Raised after an external probe exceeds its bounded output budget."""
 
-    def __init__(self, stdout: bytes, stderr: bytes) -> None:
+    def __init__(self, command, stdout: bytes, stderr: bytes) -> None:
         super().__init__("external process output exceeded 2 MiB")
+        self.cmd = command
         self.output = stdout
         self.stderr = stderr
 
@@ -262,7 +263,7 @@ def _read_bounded_process_file(stream) -> bytes:
     return head + marker + tail
 
 
-def _run_subprocess_bounded(command, timeout: float, input_data=None):
+def _run_subprocess_bounded(command, timeout: float, input_data=None, cwd=None):
     """Run one external command and kill it when output exceeds a hard limit."""
     with tempfile.TemporaryFile(prefix="pyfcstm-process-stdout-") as stdout_stream:
         with tempfile.TemporaryFile(prefix="pyfcstm-process-stderr-") as stderr_stream:
@@ -271,6 +272,7 @@ def _run_subprocess_bounded(command, timeout: float, input_data=None):
                 stdin=subprocess.PIPE if input_data is not None else subprocess.DEVNULL,
                 stdout=stdout_stream,
                 stderr=stderr_stream,
+                cwd=cwd,
             )
             if input_data is not None:
                 try:
@@ -297,6 +299,7 @@ def _run_subprocess_bounded(command, timeout: float, input_data=None):
                         process.kill()
                         process.wait(timeout=1.0)
                     raise _ProcessOutputLimitExceeded(
+                        command,
                         _read_bounded_process_file(stdout_stream),
                         _read_bounded_process_file(stderr_stream),
                     )
@@ -593,14 +596,32 @@ def _identity_source() -> CheckOutcome:
         return _pass("source build identity is readable")
     try:
         live = _live_source_identity()
-    except (OSError, subprocess.CalledProcessError, UnicodeError, ValueError) as err:
-        # Git commands can fail, and their output may be undecodable or structurally invalid.
+    except (
+        OSError,
+        subprocess.CalledProcessError,
+        subprocess.TimeoutExpired,
+        UnicodeError,
+        ValueError,
+    ) as err:
+        # Git can fail, time out, exceed its output budget, or return malformed text.
+        command = getattr(err, "cmd", None)
+        process_evidence = (
+            _process_evidence(
+                command,
+                return_code=getattr(err, "returncode", None),
+                stdout=getattr(err, "output", None),
+                stderr=getattr(err, "stderr", None),
+            )
+            if command is not None
+            else ""
+        )
         return _exception_diagnostic(
             "WARN",
             "live source identity cannot be read",
             "identity_unavailable",
             err,
             remediation="regenerate build_info.py from the current checkout when identity is needed",
+            evidence_prefix=process_evidence,
         )
     expected = {
         "commit": config.BUILD_COMMIT,
@@ -621,15 +642,24 @@ def _identity_source() -> CheckOutcome:
 def _live_source_identity() -> Dict[str, Any]:
     """Read live git identity and package version for source diagnostics."""
     root = str(_package_root().parent)
-    commit = subprocess.check_output(
-        ["git", "rev-parse", "HEAD"], cwd=root, stderr=subprocess.STDOUT
-    ).decode("ascii").strip()
-    status = subprocess.check_output(
-        ["git", "status", "--porcelain"], cwd=root, stderr=subprocess.STDOUT
-    ).decode("utf-8", "replace")
-    ref = subprocess.check_output(
-        ["git", "symbolic-ref", "--short", "HEAD"], cwd=root, stderr=subprocess.STDOUT
-    ).decode("utf-8", "replace").strip()
+
+    def git_output(*arguments):
+        command = ["git", *arguments]
+        completed = _run_subprocess_bounded(command, timeout=5.0, cwd=root)
+        if completed.returncode != 0:
+            raise subprocess.CalledProcessError(
+                completed.returncode,
+                command,
+                output=completed.stdout,
+                stderr=completed.stderr,
+            )
+        return completed.stdout
+
+    commit = git_output("rev-parse", "HEAD").decode("ascii").strip()
+    status = git_output("status", "--porcelain").decode("utf-8", "replace")
+    ref = git_output("symbolic-ref", "--short", "HEAD").decode(
+        "utf-8", "replace"
+    ).strip()
     from pyfcstm.config.meta import __VERSION__
 
     return {"commit": commit, "dirty": bool(status), "ref": ref, "version": __VERSION__}

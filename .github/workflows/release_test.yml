@@ -1041,8 +1041,30 @@ jobs:
             | tee "$reports/summary.txt"
           test "$version_status" -eq 0
           test "$default_status" -eq 0
+          test "$visualize_status" -eq 0
           test "$readiness_status" -eq 0
           grep -F "Commit: $GITHUB_SHA" "$reports/version.log"
+      - name: Assert configured PlantUML results
+        env:
+          PLANTUML_HOST: http://127.0.0.1:18080
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - "$RUNNER_TEMP/pyfcstm-release-test-cli-reports/visualize.json" "$PLANTUML_HOST" <<'PY'
+          import json
+          import sys
+
+          report_path, host = sys.argv[1:]
+          with open(report_path, "r") as stream:
+              report = json.load(stream)
+          results = {item["id"]: item for item in report["results"]}
+          for check_id in ("visualize.remote_tls", "visualize.remote_render"):
+              result = results.get(check_id)
+              if result is None or result["status"] != "PASS":
+                  raise SystemExit("{} did not PASS: {}".format(check_id, result))
+              if host not in (result.get("observed") or ""):
+                  raise SystemExit("{} did not record configured host: {}".format(check_id, result))
+          PY
       - name: Upload fresh CLI evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v4

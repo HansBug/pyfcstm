@@ -144,6 +144,19 @@ def test_build_info_module_import_failure_is_structured(monkeypatch):
 
 
 @pytest.mark.unittest
+def test_build_info_module_syntax_failure_is_structured(monkeypatch):
+    """Malformed generated modules become identity diagnostics."""
+    monkeypatch.setattr(
+        registry.importlib,
+        "import_module",
+        lambda name: (_ for _ in ()).throw(SyntaxError(name)),
+    )
+    outcome = registry._identity_build_info_module()
+    assert outcome.status == "WARN"
+    assert outcome.reason == "identity_invalid"
+
+
+@pytest.mark.unittest
 def test_resource_callbacks_report_corrupt_json_and_yaml(tmp_path, monkeypatch):
     """Corrupt packaged resource payloads become explicit failures."""
     import pyfcstm._selfcheck.registry as registry

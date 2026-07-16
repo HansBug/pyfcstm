@@ -335,6 +335,15 @@ def _identity_build_info_module() -> CheckOutcome:
             expected="pyfcstm.config.build_info",
             observed="{}: {}".format(type(err).__name__, err),
         )
+    except (OSError, SyntaxError, ValueError) as err:
+        # OSError: the generated module cannot be read; SyntaxError: its
+        # source is malformed; ValueError: its loader rejects the file.
+        return _warn(
+            "generated build-info module is invalid",
+            "identity_invalid",
+            expected="valid pyfcstm.config.build_info",
+            observed="{}: {}".format(type(err).__name__, err),
+        )
     return _pass("generated build-info module is importable")
 
 

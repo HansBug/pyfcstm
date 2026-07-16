@@ -16,18 +16,55 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: pyfcstm-release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
 jobs:
+  resolve_release_target:
+    name: Resolve release tag and commit
+    runs-on: ubuntu-22.04
+    if: ${{ github.repository == 'hansbug/pyfcstm' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+    outputs:
+      tag: ${{ steps.resolve.outputs.tag }}
+      full_commit: ${{ steps.resolve.outputs.full_commit }}
+    steps:
+      - name: Checkout requested release ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+          fetch-depth: 0
+          submodules: 'recursive'
+      - name: Resolve canonical release identity
+        id: resolve
+        env:
+          REQUESTED_TAG: ${{ github.event.inputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${REQUESTED_TAG:-${GITHUB_REF_NAME}}"
+          case "$tag" in v*) ;; *) echo "release tag must start with v: $tag" >&2; exit 1 ;; esac
+          git fetch --tags --force --quiet
+          commit="$(git rev-parse "${tag}^{commit}")"
+          test "$commit" = "$(git rev-parse HEAD)"
+          test "$(git rev-parse --verify "${tag}^{tag}" 2>/dev/null || git rev-parse --verify "${tag}^{commit}")" >/dev/null
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "full_commit=$commit" >> "$GITHUB_OUTPUT"
+          printf 'tag=%s\nfull_commit=%s\n' "$tag" "$commit"
+
   package_stage:
     name: Stage Python release artifacts
     runs-on: ubuntu-22.04
-    if: ${{ github.repository == 'hansbug/pyfcstm' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+    needs: resolve_release_target
+    if: ${{ needs.resolve_release_target.result == 'success' }}
     outputs:
       tag: ${{ steps.identity.outputs.tag }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v3.3.0
         with:
-          fetch-depth: 20
+          ref: ${{ needs.resolve_release_target.outputs.full_commit }}
+          fetch-depth: 0
           submodules: 'recursive'
       - name: Set up Python 3.8
         uses: actions/setup-python@v6
@@ -44,26 +81,40 @@ jobs:
         run: |
           make build_info
           make package
-          sha256sum dist/*.whl dist/*.tar.gz > dist/artifact-sha256.txt
+          python - <<'PY' > dist/artifact-sha256.txt
+          import hashlib
+          import os
+          from glob import glob
+
+          for path in sorted(glob("dist/*.whl") + glob("dist/*.tar.gz")):
+              digest = hashlib.sha256()
+              with open(path, "rb") as stream:
+                  for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                      digest.update(chunk)
+              print("{} {} dist/{}".format(
+                  digest.hexdigest(), os.path.getsize(path), os.path.basename(path)
+              ))
+          PY
       - name: Record release identity
         id: identity
         env:
-          REQUESTED_TAG: ${{ github.event.inputs.tag }}
+          TARGET_TAG: ${{ needs.resolve_release_target.outputs.tag }}
+          TARGET_COMMIT: ${{ needs.resolve_release_target.outputs.full_commit }}
         shell: bash
         run: |
           set -euo pipefail
-          tag="${REQUESTED_TAG:-${GITHUB_REF_NAME}}"
-          case "$tag" in v*) ;; *) echo "release tag must start with v: $tag" >&2; exit 1 ;; esac
+          tag="$TARGET_TAG"
           test -n "$(git rev-parse HEAD)"
           test -z "$(git status --porcelain)"
           git fetch --tags --force --quiet
-          test "$(git rev-list -n 1 "$tag")" = "$(git rev-parse HEAD)"
+          test "$(git rev-parse HEAD)" = "$TARGET_COMMIT"
           {
             echo 'schema=pyfcstm-build-identity/v1'
             echo 'artifact_kind=python-distributions'
-            echo "full_commit=$(git rev-parse HEAD)"
+            echo "full_commit=$TARGET_COMMIT"
             echo 'dirty=0'
             echo "tag=$tag"
+            echo 'platform=ubuntu-22.04'
           } > dist/build-identity.txt
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
       - name: Upload staged Python artifacts
@@ -76,8 +127,8 @@ jobs:
   package_fresh:
     name: Fresh Python release self-check
     runs-on: ubuntu-22.04
-    needs: package_stage
-    if: ${{ needs.package_stage.result == 'success' }}
+    needs: [resolve_release_target, package_stage]
+    if: ${{ needs.resolve_release_target.result == 'success' && needs.package_stage.result == 'success' }}
     services:
       plantuml:
         image: plantuml/plantuml-server@sha256:00b96145a7e2999fd9504b84e26d00c47222b7963a0072ee14ea59449d634e99
@@ -107,9 +158,17 @@ jobs:
           curl --fail --location --silent --show-error \
             https://github.com/plantuml/plantuml/releases/download/v1.2024.6/plantuml-1.2024.6.jar \
             --output "$jar"
-          printf '%s  %s\n' \
-            5a8dc3b37fe133a4744e55be80caf6080a70350aba716d95400a0f0cbd79e846 \
-            "$jar" | sha256sum --check --status
+          actual_digest=$(python - "$jar" <<'PY'
+          import hashlib
+          import sys
+          digest = hashlib.sha256()
+          with open(sys.argv[1], "rb") as stream:
+              for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                  digest.update(chunk)
+          print(digest.hexdigest())
+          PY
+          )
+          test "$actual_digest" = 5a8dc3b37fe133a4744e55be80caf6080a70350aba716d95400a0f0cbd79e846
           java -version 2> "$RUNNER_TEMP/java-version.txt"
           java -jar "$jar" -version 2>&1 | tee "$RUNNER_TEMP/plantuml-version.txt"
       - name: Install wheel and sdist in separate clean venvs
@@ -119,16 +178,31 @@ jobs:
           PYTHONNOUSERSITE: '1'
           PLANTUML_JAR: ${{ runner.temp }}/plantuml.jar
           PLANTUML_HOST: http://127.0.0.1:18080
+          TARGET_COMMIT: ${{ needs.resolve_release_target.outputs.full_commit }}
         run: |
-          set -uo pipefail
+          set -euo pipefail
           reports="$RUNNER_TEMP/pyfcstm-release-python-reports"
           rm -rf "$reports"
           mkdir -p "$reports"
-          sha256sum "$RUNNER_TEMP/pyfcstm-release-python"/* | tee "$reports/downloaded-sha256.txt"
+          python - "$RUNNER_TEMP/pyfcstm-release-python" > "$reports/downloaded-sha256.txt" <<'PY'
+          import hashlib
+          import os
+          import sys
+          directory = sys.argv[1]
+          for name in sorted(os.listdir(directory)):
+              path = os.path.join(directory, name)
+              if not os.path.isfile(path):
+                  continue
+              digest = hashlib.sha256()
+              with open(path, "rb") as stream:
+                  for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                      digest.update(chunk)
+              print("{} {} {}".format(digest.hexdigest(), os.path.getsize(path), name))
+          PY
           identity="$RUNNER_TEMP/pyfcstm-release-python/build-identity.txt"
           digest_file="$RUNNER_TEMP/pyfcstm-release-python/artifact-sha256.txt"
           test -f "$identity" -a -f "$digest_file"
-          grep -F "full_commit=$GITHUB_SHA" "$identity"
+          grep -F "full_commit=$TARGET_COMMIT" "$identity"
           cp "$identity" "$reports/build-identity.txt"
           cp "$digest_file" "$reports/artifact-sha256.txt"
           set +e
@@ -145,9 +219,20 @@ jobs:
             fi
             test -n "$artifact"
             artifact_name=$(basename "$artifact")
-            expected_digest=$(awk -v file="$artifact_name" '$2 == "dist/" file || $2 == file {print $1}' "$digest_file")
-            actual_digest=$(sha256sum "$artifact" | awk '{print $1}')
+            expected_digest=$(awk -v file="$artifact_name" '$3 == "dist/" file || $3 == file {print $1}' "$digest_file")
+            expected_size=$(awk -v file="$artifact_name" '$3 == "dist/" file || $3 == file {print $2}' "$digest_file")
+            actual_digest=$(python - "$artifact" <<'PY'
+          import hashlib
+          import sys
+          digest = hashlib.sha256()
+          with open(sys.argv[1], "rb") as stream:
+              for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                  digest.update(chunk)
+          print(digest.hexdigest())
+          PY
+            )
             test -n "$expected_digest" -a "$expected_digest" = "$actual_digest"
+            test "$expected_size" -eq "$(wc -c < "$artifact")"
             venv="$RUNNER_TEMP/pyfcstm-release-${kind}-venv"
             rm -rf "$venv"
             python -m venv "$venv"
@@ -179,7 +264,7 @@ jobs:
             test "$version_status" -eq 0
             test "$module_version_status" -eq 0
             test "$default_status" -eq 0
-            grep -F "Commit: $GITHUB_SHA" "$reports/${kind}-version.log"
+            grep -F "Commit: $TARGET_COMMIT" "$reports/${kind}-version.log"
             python - "$reports/${kind}-visualize.json" "$PLANTUML_HOST" <<'PY'
             import json
             import sys
@@ -211,8 +296,8 @@ jobs:
   release_gate:
     name: Aggregate fresh artifact gate
     runs-on: ubuntu-22.04
-    needs: [package_fresh, release_cli_fresh, release_cli_controlled_linux]
-    if: ${{ always() && needs.package_fresh.result == 'success' && needs.release_cli_fresh.result == 'success' && needs.release_cli_controlled_linux.result == 'success' }}
+    needs: [resolve_release_target, package_fresh, release_cli_fresh, release_cli_controlled_linux]
+    if: ${{ always() && needs.resolve_release_target.result == 'success' && needs.package_fresh.result == 'success' && needs.release_cli_fresh.result == 'success' && needs.release_cli_controlled_linux.result == 'success' }}
     steps:
       - name: Confirm every staged artifact family passed fresh verification
         shell: bash
@@ -221,13 +306,14 @@ jobs:
           echo 'package_fresh=success'
           echo 'release_cli_fresh=success'
           echo 'release_cli_controlled_linux=success'
+          echo "target_commit=${{ needs.resolve_release_target.outputs.full_commit }}"
           echo 'all fresh artifact gates passed'
 
   package_publish:
     name: Publish verified Python artifacts
     runs-on: ubuntu-22.04
-    needs: [package_stage, release_gate]
-    if: ${{ needs.package_stage.result == 'success' && needs.release_gate.result == 'success' }}
+    needs: [resolve_release_target, package_stage, release_gate]
+    if: ${{ needs.resolve_release_target.result == 'success' && needs.package_stage.result == 'success' && needs.release_gate.result == 'success' }}
     steps:
       - name: Download the exact staged artifacts
         uses: actions/download-artifact@v4
@@ -237,14 +323,15 @@ jobs:
       - name: Verify staged identity and prepare draft release
         id: identity
         env:
-          REQUESTED_TAG: ${{ github.event.inputs.tag }}
+          TARGET_TAG: ${{ needs.resolve_release_target.outputs.tag }}
+          TARGET_COMMIT: ${{ needs.resolve_release_target.outputs.full_commit }}
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          tag="${REQUESTED_TAG:-${GITHUB_REF_NAME}}"
+          tag="$TARGET_TAG"
           test "$(awk -F= '$1 == "tag" {print $2}' "$RUNNER_TEMP/pyfcstm-release-python/build-identity.txt")" = "$tag"
-          test "$(awk -F= '$1 == "full_commit" {print $2}' "$RUNNER_TEMP/pyfcstm-release-python/build-identity.txt")" = "$GITHUB_SHA"
+          test "$(awk -F= '$1 == "full_commit" {print $2}' "$RUNNER_TEMP/pyfcstm-release-python/build-identity.txt")" = "$TARGET_COMMIT"
           gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --draft --title "$tag" --generate-notes
           test "$(gh release view "$tag" --json isDraft --jq '.isDraft')" = true
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
@@ -265,11 +352,11 @@ jobs:
       - name: Upload Python distributions to the draft release
         env:
           GH_TOKEN: ${{ github.token }}
-          REQUESTED_TAG: ${{ github.event.inputs.tag }}
+          TARGET_TAG: ${{ needs.resolve_release_target.outputs.tag }}
         shell: bash
         run: |
           set -euo pipefail
-          tag="${REQUESTED_TAG:-${GITHUB_REF_NAME}}"
+          tag="$TARGET_TAG"
           gh release upload "$tag" "$RUNNER_TEMP/pyfcstm-release-python-publish"/*.whl "$RUNNER_TEMP/pyfcstm-release-python-publish"/*.tar.gz --clobber
 
   release_docs_pdf:
@@ -381,7 +468,8 @@ jobs:
   release_cli_stage:
     name: Stage standalone CLI artifacts
     runs-on: ${{ matrix.os }}
-    if: ${{ github.repository == 'hansbug/pyfcstm' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+    needs: resolve_release_target
+    if: ${{ needs.resolve_release_target.result == 'success' }}
     strategy:
       fail-fast: false
       matrix:
@@ -433,7 +521,8 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3.3.0
         with:
-          fetch-depth: 20
+          ref: ${{ needs.resolve_release_target.outputs.full_commit }}
+          fetch-depth: 0
           submodules: 'recursive'
       - name: Set up system dependencies on Linux
         if: ${{ env.OS_NAME == 'Linux' }}
@@ -510,11 +599,13 @@ jobs:
           pip list
           tree .
       - name: Get package version
+        env:
+          TARGET_COMMIT: ${{ needs.resolve_release_target.outputs.full_commit }}
         shell: bash
         run: |
           python -c 'from pyfcstm.config.meta import __VERSION__;print(__VERSION__)'
           echo "PACKAGE_VERSION=$(python -c 'from pyfcstm.config.meta import __VERSION__;print(__VERSION__)')" >> $GITHUB_ENV
-          echo "GIT_COMMIT_ID=$(echo ${GITHUB_SHA} | cut -c1-7)" >> $GITHUB_ENV
+          echo "GIT_COMMIT_ID=$(echo ${TARGET_COMMIT} | cut -c1-7)" >> $GITHUB_ENV
           echo "PYTHON_VERSION=$(python -V | xargs -n 1 | tail -1)" >> $GITHUB_ENV
           echo "CPU_ARCH=$(uname -m)" >> $GITHUB_ENV
       - name: Get CLI name
@@ -562,21 +653,35 @@ jobs:
           python -m tools.test_cli dist/pyfcstm.exe --test-dsl docs/source/tutorials/cli/simple_machine.fcstm --template-dir test/testfile/template_1
       - name: Record CLI identity and archive digest
         env:
-          REQUESTED_TAG: ${{ github.event.inputs.tag }}
+          TARGET_TAG: ${{ needs.resolve_release_target.outputs.tag }}
+          TARGET_COMMIT: ${{ needs.resolve_release_target.outputs.full_commit }}
         shell: bash
         run: |
           set -euo pipefail
           test -z "$(git status --porcelain)"
-          tag="${REQUESTED_TAG:-${GITHUB_REF_NAME}}"
+          tag="$TARGET_TAG"
           {
             echo 'schema=pyfcstm-build-identity/v1'
             echo 'artifact_kind=standalone'
-            echo "full_commit=$GITHUB_SHA"
+            echo "full_commit=$TARGET_COMMIT"
             echo 'dirty=0'
             echo "tag=$tag"
             echo "platform=${{ matrix.os }}"
           } > dist/build-identity.txt
-          sha256sum "dist/${ZIP_NAME}.zip" > dist/artifact-sha256.txt
+          python - "dist/${ZIP_NAME}.zip" > dist/artifact-sha256.txt <<'PY'
+          import hashlib
+          import os
+          import sys
+
+          path = sys.argv[1]
+          digest = hashlib.sha256()
+          with open(path, "rb") as stream:
+              for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                  digest.update(chunk)
+          print("{} {} dist/{}".format(
+              digest.hexdigest(), os.path.getsize(path), os.path.basename(path)
+          ))
+          PY
       - name: Upload staged standalone artifact
         uses: actions/upload-artifact@v4
         with:
@@ -590,8 +695,8 @@ jobs:
   release_cli_fresh:
     name: Fresh standalone CLI self-check (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    needs: release_cli_stage
-    if: ${{ needs.release_cli_stage.result == 'success' }}
+    needs: [resolve_release_target, release_cli_stage]
+    if: ${{ needs.resolve_release_target.result == 'success' && needs.release_cli_stage.result == 'success' }}
     strategy:
       fail-fast: false
       matrix:
@@ -619,18 +724,45 @@ jobs:
           curl --fail --location --silent --show-error \
             https://github.com/plantuml/plantuml/releases/download/v1.2024.6/plantuml-1.2024.6.jar \
             --output "$jar"
-          printf '%s  %s\n' \
-            5a8dc3b37fe133a4744e55be80caf6080a70350aba716d95400a0f0cbd79e846 \
-            "$jar" | sha256sum --check --status
+          actual_digest=$(python - "$jar" <<'PY'
+          import hashlib
+          import sys
+          digest = hashlib.sha256()
+          with open(sys.argv[1], "rb") as stream:
+              for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                  digest.update(chunk)
+          print(digest.hexdigest())
+          PY
+          )
+          test "$actual_digest" = 5a8dc3b37fe133a4744e55be80caf6080a70350aba716d95400a0f0cbd79e846
           java -version 2> "$RUNNER_TEMP/java-version.txt"
           java -jar "$jar" -version 2>&1 | tee "$RUNNER_TEMP/plantuml-version.txt"
+      - name: Start local PlantUML service on non-Linux runners
+        if: ${{ matrix.os != 'ubuntu-22.04' }}
+        shell: bash
+        env:
+          PLANTUML_HOST: http://127.0.0.1:18080
+        run: |
+          set -euo pipefail
+          log="$RUNNER_TEMP/plantuml-service.log"
+          java -jar "$RUNNER_TEMP/plantuml.jar" -picoweb:18080:127.0.0.1 > "$log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/plantuml-service.pid"
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error --max-time 2 "${PLANTUML_HOST%/}/" > "$RUNNER_TEMP/plantuml-readiness.txt" 2>&1; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat "$log" >&2
+          exit 1
       - name: Run the downloaded CLI without checkout
         shell: bash
         env:
           PLANTUML_JAR: ${{ runner.temp }}/plantuml.jar
-          PLANTUML_HOST: http://www.plantuml.com/plantuml
+          PLANTUML_HOST: http://127.0.0.1:18080
+          TARGET_COMMIT: ${{ needs.resolve_release_target.outputs.full_commit }}
         run: |
-          set -uo pipefail
+          set -euo pipefail
           root="$RUNNER_TEMP/pyfcstm-release-cli-root"
           reports="$RUNNER_TEMP/pyfcstm-release-cli-reports"
           rm -rf "$root" "$reports"
@@ -640,11 +772,22 @@ jobs:
           identity=$(find "$RUNNER_TEMP/pyfcstm-release-cli" -maxdepth 1 -name build-identity.txt -print -quit)
           digest_file=$(find "$RUNNER_TEMP/pyfcstm-release-cli" -maxdepth 1 -name artifact-sha256.txt -print -quit)
           test -n "$identity" -a -n "$digest_file"
-          grep -F "full_commit=$GITHUB_SHA" "$identity"
+          grep -F "full_commit=$TARGET_COMMIT" "$identity"
           archive_name=$(basename "$archive")
-          expected_digest=$(awk -v file="$archive_name" '$2 == "dist/" file || $2 == file {print $1}' "$digest_file")
-          actual_digest=$(sha256sum "$archive" | awk '{print $1}')
+          expected_digest=$(awk -v file="$archive_name" '$3 == "dist/" file || $3 == file {print $1}' "$digest_file")
+          expected_size=$(awk -v file="$archive_name" '$3 == "dist/" file || $3 == file {print $2}' "$digest_file")
+          actual_digest=$(python - "$archive" <<'PY'
+          import hashlib
+          import sys
+          digest = hashlib.sha256()
+          with open(sys.argv[1], "rb") as stream:
+              for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                  digest.update(chunk)
+          print(digest.hexdigest())
+          PY
+          )
           test -n "$expected_digest" -a "$expected_digest" = "$actual_digest"
+          test "$expected_size" -eq "$(wc -c < "$archive")"
           cp "$identity" "$reports/build-identity.txt"
           cp "$digest_file" "$reports/artifact-sha256.txt"
           printf '%s  %s\n' "$actual_digest" "$archive_name" | tee "$reports/artifact.sha256"
@@ -675,10 +818,11 @@ jobs:
           set -e
           printf 'version=%s\ndefault=%s\nvisualize=%s\nplantuml_readiness=%s\nPLANTUML_HOST=%s\nPLANTUML_JAR=%s\n' \
             "$version_status" "$default_status" "$visualize_status" "$readiness_status" "$PLANTUML_HOST" "$PLANTUML_JAR" \
-            | tee "$reports/summary.txt"
+          | tee "$reports/summary.txt"
           test "$version_status" -eq 0
           test "$default_status" -eq 0
-          grep -F "Commit: $GITHUB_SHA" "$reports/version.log"
+          test "$visualize_status" -eq 0
+          grep -F "Commit: $TARGET_COMMIT" "$reports/version.log"
       - name: Upload fresh CLI evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
@@ -693,8 +837,8 @@ jobs:
   release_cli_controlled_linux:
     name: Controlled PlantUML CLI gate (Ubuntu)
     runs-on: ubuntu-22.04
-    needs: release_cli_stage
-    if: ${{ needs.release_cli_stage.result == 'success' }}
+    needs: [resolve_release_target, release_cli_stage]
+    if: ${{ needs.resolve_release_target.result == 'success' && needs.release_cli_stage.result == 'success' }}
     services:
       plantuml:
         image: plantuml/plantuml-server@sha256:00b96145a7e2999fd9504b84e26d00c47222b7963a0072ee14ea59449d634e99
@@ -720,9 +864,17 @@ jobs:
           curl --fail --location --silent --show-error \
             https://github.com/plantuml/plantuml/releases/download/v1.2024.6/plantuml-1.2024.6.jar \
             --output "$jar"
-          printf '%s  %s\n' \
-            5a8dc3b37fe133a4744e55be80caf6080a70350aba716d95400a0f0cbd79e846 \
-            "$jar" | sha256sum --check --status
+          actual_digest=$(python - "$jar" <<'PY'
+          import hashlib
+          import sys
+          digest = hashlib.sha256()
+          with open(sys.argv[1], "rb") as stream:
+              for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                  digest.update(chunk)
+          print(digest.hexdigest())
+          PY
+          )
+          test "$actual_digest" = 5a8dc3b37fe133a4744e55be80caf6080a70350aba716d95400a0f0cbd79e846
           java -version 2> "$RUNNER_TEMP/java-version.txt"
           java -jar "$jar" -version 2>&1 | tee "$RUNNER_TEMP/plantuml-version.txt"
       - name: Run staged Ubuntu CLI against the controlled service
@@ -730,8 +882,9 @@ jobs:
         env:
           PLANTUML_JAR: ${{ runner.temp }}/plantuml.jar
           PLANTUML_HOST: http://127.0.0.1:18080
+          TARGET_COMMIT: ${{ needs.resolve_release_target.outputs.full_commit }}
         run: |
-          set -uo pipefail
+          set -euo pipefail
           root="$RUNNER_TEMP/pyfcstm-controlled-cli-root"
           reports="$RUNNER_TEMP/pyfcstm-controlled-cli-reports"
           rm -rf "$root" "$reports"
@@ -740,11 +893,22 @@ jobs:
           identity="$RUNNER_TEMP/pyfcstm-release-cli/build-identity.txt"
           digest_file="$RUNNER_TEMP/pyfcstm-release-cli/artifact-sha256.txt"
           test -n "$archive" -a -f "$identity" -a -f "$digest_file"
-          grep -F "full_commit=$GITHUB_SHA" "$identity"
+          grep -F "full_commit=$TARGET_COMMIT" "$identity"
           archive_name=$(basename "$archive")
-          expected_digest=$(awk -v file="$archive_name" '$2 == "dist/" file || $2 == file {print $1}' "$digest_file")
-          actual_digest=$(sha256sum "$archive" | awk '{print $1}')
+          expected_digest=$(awk -v file="$archive_name" '$3 == "dist/" file || $3 == file {print $1}' "$digest_file")
+          expected_size=$(awk -v file="$archive_name" '$3 == "dist/" file || $3 == file {print $2}' "$digest_file")
+          actual_digest=$(python - "$archive" <<'PY'
+          import hashlib
+          import sys
+          digest = hashlib.sha256()
+          with open(sys.argv[1], "rb") as stream:
+              for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                  digest.update(chunk)
+          print(digest.hexdigest())
+          PY
+          )
           test -n "$expected_digest" -a "$expected_digest" = "$actual_digest"
+          test "$expected_size" -eq "$(wc -c < "$archive")"
           cp "$identity" "$reports/build-identity.txt"
           cp "$digest_file" "$reports/artifact-sha256.txt"
           set +e
@@ -766,10 +930,11 @@ jobs:
           set -e
           printf 'version=%s\ndefault=%s\nvisualize=%s\nplantuml_readiness=%s\nPLANTUML_HOST=%s\nPLANTUML_JAR=%s\n' \
             "$version_status" "$default_status" "$visualize_status" "$readiness_status" "$PLANTUML_HOST" "$PLANTUML_JAR" \
-            | tee "$reports/summary.txt"
+          | tee "$reports/summary.txt"
           test "$version_status" -eq 0
           test "$default_status" -eq 0
-          grep -F "Commit: $GITHUB_SHA" "$reports/version.log"
+          test "$visualize_status" -eq 0
+          grep -F "Commit: $TARGET_COMMIT" "$reports/version.log"
           python - "$reports/visualize.json" "$PLANTUML_HOST" <<'PY'
           import json
           import sys
@@ -799,8 +964,8 @@ jobs:
   release_cli_publish:
     name: Upload verified standalone artifact (${{ matrix.os }})
     runs-on: ubuntu-22.04
-    needs: [release_gate, release_cli_stage, release_cli_fresh, release_cli_controlled_linux]
-    if: ${{ needs.release_gate.result == 'success' && needs.release_cli_stage.result == 'success' && needs.release_cli_fresh.result == 'success' && needs.release_cli_controlled_linux.result == 'success' }}
+    needs: [resolve_release_target, release_gate, release_cli_stage, release_cli_fresh, release_cli_controlled_linux]
+    if: ${{ needs.resolve_release_target.result == 'success' && needs.release_gate.result == 'success' && needs.release_cli_stage.result == 'success' && needs.release_cli_fresh.result == 'success' && needs.release_cli_controlled_linux.result == 'success' }}
     strategy:
       fail-fast: false
       matrix:
@@ -817,38 +982,50 @@ jobs:
       - name: Upload binary to the draft release
         env:
           GH_TOKEN: ${{ github.token }}
-          REQUESTED_TAG: ${{ github.event.inputs.tag }}
+          TARGET_TAG: ${{ needs.resolve_release_target.outputs.tag }}
+          TARGET_COMMIT: ${{ needs.resolve_release_target.outputs.full_commit }}
         shell: bash
         run: |
           set -euo pipefail
-          tag="${REQUESTED_TAG:-${GITHUB_REF_NAME}}"
+          tag="$TARGET_TAG"
           archive=$(find "$RUNNER_TEMP/pyfcstm-release-cli" -maxdepth 1 -type f -name '*.zip' -print -quit)
           test -n "$archive"
           identity=$(find "$RUNNER_TEMP/pyfcstm-release-cli" -maxdepth 1 -name build-identity.txt -print -quit)
           digest_file=$(find "$RUNNER_TEMP/pyfcstm-release-cli" -maxdepth 1 -name artifact-sha256.txt -print -quit)
           test -n "$identity" -a -n "$digest_file"
-          grep -F "full_commit=$GITHUB_SHA" "$identity"
+          grep -F "full_commit=$TARGET_COMMIT" "$identity"
           grep -F "tag=$tag" "$identity"
           archive_name=$(basename "$archive")
-          expected_digest=$(awk -v file="$archive_name" '$2 == "dist/" file || $2 == file {print $1}' "$digest_file")
-          actual_digest=$(sha256sum "$archive" | awk '{print $1}')
+          expected_digest=$(awk -v file="$archive_name" '$3 == "dist/" file || $3 == file {print $1}' "$digest_file")
+          expected_size=$(awk -v file="$archive_name" '$3 == "dist/" file || $3 == file {print $2}' "$digest_file")
+          actual_digest=$(python - "$archive" <<'PY'
+          import hashlib
+          import sys
+          digest = hashlib.sha256()
+          with open(sys.argv[1], "rb") as stream:
+              for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                  digest.update(chunk)
+          print(digest.hexdigest())
+          PY
+          )
           test -n "$expected_digest" -a "$expected_digest" = "$actual_digest"
+          test "$expected_size" -eq "$(wc -c < "$archive")"
           gh release upload "$tag" "$archive" --clobber
 
   release_finalize:
     name: Finalize verified draft release
     runs-on: ubuntu-22.04
-    needs: [package_publish, release_cli_publish]
-    if: ${{ needs.package_publish.result == 'success' && needs.release_cli_publish.result == 'success' }}
+    needs: [resolve_release_target, package_publish, release_cli_publish]
+    if: ${{ needs.resolve_release_target.result == 'success' && needs.package_publish.result == 'success' && needs.release_cli_publish.result == 'success' }}
     steps:
       - name: Publish the verified draft only
         env:
           GH_TOKEN: ${{ github.token }}
-          REQUESTED_TAG: ${{ github.event.inputs.tag }}
+          TARGET_TAG: ${{ needs.resolve_release_target.outputs.tag }}
         shell: bash
         run: |
           set -euo pipefail
-          tag="${REQUESTED_TAG:-${GITHUB_REF_NAME}}"
+          tag="$TARGET_TAG"
           gh release edit "$tag" --draft=false
 
   release_vscode_extension:

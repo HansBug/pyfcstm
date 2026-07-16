@@ -61,8 +61,22 @@ jobs:
             echo 'artifact_kind=python-distributions'
             echo "full_commit=$GITHUB_SHA"
             echo 'dirty=0'
+            echo 'platform=ubuntu-latest'
           } > dist/build-identity.txt
-          sha256sum dist/*.whl dist/*.tar.gz > dist/artifact-sha256.txt
+          python - <<'PY' > dist/artifact-sha256.txt
+          import hashlib
+          import os
+          from glob import glob
+
+          for path in sorted(glob("dist/*.whl") + glob("dist/*.tar.gz")):
+              digest = hashlib.sha256()
+              with open(path, "rb") as stream:
+                  for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                      digest.update(chunk)
+              print("{} {} dist/{}".format(
+                  digest.hexdigest(), os.path.getsize(path), os.path.basename(path)
+              ))
+          PY
           ls -al dist
       - name: Upload packed files to artifacts
         uses: actions/upload-artifact@v4
@@ -104,9 +118,17 @@ jobs:
           curl --fail --location --silent --show-error \
             https://github.com/plantuml/plantuml/releases/download/v1.2024.6/plantuml-1.2024.6.jar \
             --output "$jar"
-          printf '%s  %s\n' \
-            5a8dc3b37fe133a4744e55be80caf6080a70350aba716d95400a0f0cbd79e846 \
-            "$jar" | sha256sum --check --status
+          actual_digest=$(python - "$jar" <<'PY'
+          import hashlib
+          import sys
+          digest = hashlib.sha256()
+          with open(sys.argv[1], "rb") as stream:
+              for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                  digest.update(chunk)
+          print(digest.hexdigest())
+          PY
+          )
+          test "$actual_digest" = 5a8dc3b37fe133a4744e55be80caf6080a70350aba716d95400a0f0cbd79e846
           java -version 2> "$RUNNER_TEMP/java-version.txt"
           java -jar "$jar" -version 2>&1 | tee "$RUNNER_TEMP/plantuml-version.txt"
       - name: Install exact wheel in a fresh venv and run self-check
@@ -118,7 +140,7 @@ jobs:
           PLANTUML_JAR: ${{ runner.temp }}/plantuml.jar
           PLANTUML_HOST: http://127.0.0.1:18080
         run: |
-          set -uo pipefail
+          set -euo pipefail
           root="$RUNNER_TEMP/pyfcstm-wheel-clean-root"
           reports="$RUNNER_TEMP/pyfcstm-wheel-reports"
           venv="$RUNNER_TEMP/pyfcstm-wheel-venv"
@@ -131,9 +153,20 @@ jobs:
           test -f "$identity" -a -f "$digest_file"
           grep -F "full_commit=$GITHUB_SHA" "$identity"
           wheel_name=$(basename "$wheel")
-          expected_digest=$(awk -v file="$wheel_name" '$2 == "dist/" file || $2 == file {print $1}' "$digest_file")
-          actual_digest=$(sha256sum "$wheel" | awk '{print $1}')
+          actual_digest=$(python - "$wheel" <<'PY'
+          import hashlib
+          import sys
+          digest = hashlib.sha256()
+          with open(sys.argv[1], "rb") as stream:
+              for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                  digest.update(chunk)
+          print(digest.hexdigest())
+          PY
+          )
+          expected_digest=$(awk -v file="$wheel_name" '$3 == "dist/" file || $3 == file {print $1}' "$digest_file")
+          expected_size=$(awk -v file="$wheel_name" '$3 == "dist/" file || $3 == file {print $2}' "$digest_file")
           test -n "$expected_digest" -a "$expected_digest" = "$actual_digest"
+          test "$expected_size" -eq "$(wc -c < "$wheel")"
           cp "$identity" "$reports/build-identity.txt"
           cp "$digest_file" "$reports/artifact-sha256.txt"
           printf '%s  %s\n' "$actual_digest" "$wheel_name" | tee "$reports/artifact.sha256"
@@ -147,7 +180,7 @@ jobs:
           source "$venv/bin/activate"
           python -m pip --isolated install --upgrade 'pip<24.1' 2>&1 | tee "$reports/pip-bootstrap.log"
           set +e
-          python -m pip install --no-cache-dir "$wheel" 2>&1 | tee "$reports/pip-install.log"
+          python -m pip --isolated install --no-cache-dir "$wheel" 2>&1 | tee "$reports/pip-install.log"
           install_status=${PIPESTATUS[0]}
           set -e
           test "$install_status" -eq 0
@@ -245,11 +278,36 @@ jobs:
           curl --fail --location --silent --show-error \
             https://github.com/plantuml/plantuml/releases/download/v1.2024.6/plantuml-1.2024.6.jar \
             --output "$jar"
-          printf '%s  %s\n' \
-            5a8dc3b37fe133a4744e55be80caf6080a70350aba716d95400a0f0cbd79e846 \
-            "$jar" | sha256sum --check --status
+          actual_digest=$(python - "$jar" <<'PY'
+          import hashlib
+          import sys
+          digest = hashlib.sha256()
+          with open(sys.argv[1], "rb") as stream:
+              for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                  digest.update(chunk)
+          print(digest.hexdigest())
+          PY
+          )
+          test "$actual_digest" = 5a8dc3b37fe133a4744e55be80caf6080a70350aba716d95400a0f0cbd79e846
           java -version 2> "$RUNNER_TEMP/java-version.txt"
           java -jar "$jar" -version 2>&1 | tee "$RUNNER_TEMP/plantuml-version.txt"
+      - name: Start local PlantUML service
+        shell: bash
+        env:
+          PLANTUML_HOST: http://127.0.0.1:18080
+        run: |
+          set -euo pipefail
+          log="$RUNNER_TEMP/plantuml-service.log"
+          java -jar "$RUNNER_TEMP/plantuml.jar" -picoweb:18080:127.0.0.1 > "$log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/plantuml-service.pid"
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error --max-time 2 "${PLANTUML_HOST%/}/" > "$RUNNER_TEMP/plantuml-readiness.txt" 2>&1; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat "$log" >&2
+          exit 1
       - name: Install exact wheel in a fresh venv and run self-check
         shell: bash
         env:
@@ -257,9 +315,9 @@ jobs:
           PYTHONNOUSERSITE: '1'
           PIP_CONFIG_FILE: /dev/null
           PLANTUML_JAR: ${{ runner.temp }}/plantuml.jar
-          PLANTUML_HOST: http://www.plantuml.com/plantuml
+          PLANTUML_HOST: http://127.0.0.1:18080
         run: |
-          set -uo pipefail
+          set -euo pipefail
           root="$RUNNER_TEMP/pyfcstm-wheel-clean-root"
           reports="$RUNNER_TEMP/pyfcstm-wheel-reports"
           venv="$RUNNER_TEMP/pyfcstm-wheel-venv"
@@ -272,9 +330,20 @@ jobs:
           test -n "$identity" -a -n "$digest_file"
           grep -F "full_commit=$GITHUB_SHA" "$identity"
           wheel_name=$(basename "$wheel")
-          expected_digest=$(awk -v file="$wheel_name" '$2 == "dist/" file || $2 == file {print $1}' "$digest_file")
-          actual_digest=$(sha256sum "$wheel" | awk '{print $1}')
+          expected_digest=$(awk -v file="$wheel_name" '$3 == "dist/" file || $3 == file {print $1}' "$digest_file")
+          expected_size=$(awk -v file="$wheel_name" '$3 == "dist/" file || $3 == file {print $2}' "$digest_file")
+          actual_digest=$(python - "$wheel" <<'PY'
+          import hashlib
+          import sys
+          digest = hashlib.sha256()
+          with open(sys.argv[1], "rb") as stream:
+              for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                  digest.update(chunk)
+          print(digest.hexdigest())
+          PY
+          )
           test -n "$expected_digest" -a "$expected_digest" = "$actual_digest"
+          test "$expected_size" -eq "$(wc -c < "$wheel")"
           cp "$identity" "$reports/build-identity.txt"
           cp "$digest_file" "$reports/artifact-sha256.txt"
           printf '%s  %s\n' "$actual_digest" "$wheel_name" | tee "$reports/artifact.sha256"
@@ -363,9 +432,17 @@ jobs:
           curl --fail --location --silent --show-error \
             https://github.com/plantuml/plantuml/releases/download/v1.2024.6/plantuml-1.2024.6.jar \
             --output "$jar"
-          printf '%s  %s\n' \
-            5a8dc3b37fe133a4744e55be80caf6080a70350aba716d95400a0f0cbd79e846 \
-            "$jar" | sha256sum --check --status
+          actual_digest=$(python - "$jar" <<'PY'
+          import hashlib
+          import sys
+          digest = hashlib.sha256()
+          with open(sys.argv[1], "rb") as stream:
+              for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                  digest.update(chunk)
+          print(digest.hexdigest())
+          PY
+          )
+          test "$actual_digest" = 5a8dc3b37fe133a4744e55be80caf6080a70350aba716d95400a0f0cbd79e846
           java -version 2> "$RUNNER_TEMP/java-version.txt"
           java -jar "$jar" -version 2>&1 | tee "$RUNNER_TEMP/plantuml-version.txt"
       - name: Install exact sdist in a fresh venv and run self-check
@@ -373,10 +450,11 @@ jobs:
         env:
           PYTHONPATH: ''
           PYTHONNOUSERSITE: '1'
+          PIP_CONFIG_FILE: /dev/null
           PLANTUML_JAR: ${{ runner.temp }}/plantuml.jar
           PLANTUML_HOST: http://127.0.0.1:18080
         run: |
-          set -uo pipefail
+          set -euo pipefail
           root="$RUNNER_TEMP/pyfcstm-sdist-clean-root"
           reports="$RUNNER_TEMP/pyfcstm-sdist-reports"
           venv="$RUNNER_TEMP/pyfcstm-sdist-venv"
@@ -389,9 +467,20 @@ jobs:
           test -n "$identity" -a -n "$digest_file"
           grep -F "full_commit=$GITHUB_SHA" "$identity"
           sdist_name=$(basename "$sdist")
-          expected_digest=$(awk -v file="$sdist_name" '$2 == "dist/" file || $2 == file {print $1}' "$digest_file")
-          actual_digest=$(sha256sum "$sdist" | awk '{print $1}')
+          actual_digest=$(python - "$sdist" <<'PY'
+          import hashlib
+          import sys
+          digest = hashlib.sha256()
+          with open(sys.argv[1], "rb") as stream:
+              for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                  digest.update(chunk)
+          print(digest.hexdigest())
+          PY
+          )
+          expected_digest=$(awk -v file="$sdist_name" '$3 == "dist/" file || $3 == file {print $1}' "$digest_file")
+          expected_size=$(awk -v file="$sdist_name" '$3 == "dist/" file || $3 == file {print $2}' "$digest_file")
           test -n "$expected_digest" -a "$expected_digest" = "$actual_digest"
+          test "$expected_size" -eq "$(wc -c < "$sdist")"
           cp "$identity" "$reports/build-identity.txt"
           cp "$digest_file" "$reports/artifact-sha256.txt"
           printf '%s  %s\n' "$actual_digest" "$sdist_name" | tee "$reports/artifact.sha256"
@@ -748,11 +837,207 @@ jobs:
         shell: bash
         run: |
           python -m tools.test_cli dist/pyfcstm.exe --test-dsl docs/source/tutorials/cli/simple_machine.fcstm --template-dir test/testfile/template_1
+      - name: Record CLI identity and archive digest
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(git status --porcelain)"
+          {
+            echo 'schema=pyfcstm-build-identity/v1'
+            echo 'artifact_kind=standalone'
+            echo "full_commit=$GITHUB_SHA"
+            echo 'dirty=0'
+            echo "platform=${{ matrix.os }}"
+          } > dist/build-identity.txt
+          python - "dist/${ZIP_NAME}.zip" > dist/artifact-sha256.txt <<'PY'
+          import hashlib
+          import os
+          import sys
+          path = sys.argv[1]
+          digest = hashlib.sha256()
+          with open(path, "rb") as stream:
+              for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                  digest.update(chunk)
+          print("{} {} dist/{}".format(
+              digest.hexdigest(), os.path.getsize(path), os.path.basename(path)
+          ))
+          PY
       - name: Upload packed files to artifacts
         uses: actions/upload-artifact@v4
         with:
           name: pyfcstm-v${{ env.PACKAGE_VERSION }}-${{ env.OS_NAME }}-${{ env.CPU_ARCH }}-${{ env.GIT_COMMIT_ID }}
           path: ./dist/*
+      - name: Upload exact CLI artifact for fresh verification
+        uses: actions/upload-artifact@v4
+        with:
+          name: pyfcstm-pr4-release-test-cli-${{ matrix.os }}
+          if-no-files-found: error
+          path: |
+            dist/${{ env.ZIP_NAME }}.zip
+            dist/build-identity.txt
+            dist/artifact-sha256.txt
+
+  fresh_release_cli_selfcheck:
+    name: Fresh release-test CLI self-check (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    needs: release_cli
+    if: ${{ needs.release_cli.result == 'success' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-22.04
+          - windows-2022
+          - macos-14
+    timeout-minutes: 25
+    steps:
+      - name: Set up Java runtime
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Download only the built CLI artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pyfcstm-pr4-release-test-cli-${{ matrix.os }}
+          path: ${{ runner.temp }}/pyfcstm-release-test-cli
+      - name: Install and verify PlantUML JAR
+        shell: bash
+        run: |
+          set -euo pipefail
+          jar="$RUNNER_TEMP/plantuml.jar"
+          curl --fail --location --silent --show-error \
+            https://github.com/plantuml/plantuml/releases/download/v1.2024.6/plantuml-1.2024.6.jar \
+            --output "$jar"
+          actual_digest=$(python - "$jar" <<'PY'
+          import hashlib
+          import sys
+          digest = hashlib.sha256()
+          with open(sys.argv[1], "rb") as stream:
+              for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                  digest.update(chunk)
+          print(digest.hexdigest())
+          PY
+          )
+          test "$actual_digest" = 5a8dc3b37fe133a4744e55be80caf6080a70350aba716d95400a0f0cbd79e846
+          java -version 2> "$RUNNER_TEMP/java-version.txt"
+          java -jar "$jar" -version 2>&1 | tee "$RUNNER_TEMP/plantuml-version.txt"
+      - name: Start local PlantUML service
+        shell: bash
+        env:
+          PLANTUML_HOST: http://127.0.0.1:18080
+        run: |
+          set -euo pipefail
+          log="$RUNNER_TEMP/plantuml-service.log"
+          java -jar "$RUNNER_TEMP/plantuml.jar" -picoweb:18080:127.0.0.1 > "$log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/plantuml-service.pid"
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error --max-time 2 "${PLANTUML_HOST%/}/" > "$RUNNER_TEMP/plantuml-readiness.txt" 2>&1; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat "$log" >&2
+          exit 1
+      - name: Run downloaded CLI without checkout
+        shell: bash
+        env:
+          PLANTUML_JAR: ${{ runner.temp }}/plantuml.jar
+          PLANTUML_HOST: http://127.0.0.1:18080
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/pyfcstm-release-test-cli-root"
+          reports="$RUNNER_TEMP/pyfcstm-release-test-cli-reports"
+          rm -rf "$root" "$reports"
+          mkdir -p "$root" "$reports"
+          archive=$(find "$RUNNER_TEMP/pyfcstm-release-test-cli" -maxdepth 1 -type f -name '*.zip' -print -quit)
+          identity="$RUNNER_TEMP/pyfcstm-release-test-cli/build-identity.txt"
+          digest_file="$RUNNER_TEMP/pyfcstm-release-test-cli/artifact-sha256.txt"
+          test -n "$archive" -a -f "$identity" -a -f "$digest_file"
+          grep -F "full_commit=$GITHUB_SHA" "$identity"
+          archive_name=$(basename "$archive")
+          expected_digest=$(awk -v file="$archive_name" '$3 == "dist/" file || $3 == file {print $1}' "$digest_file")
+          expected_size=$(awk -v file="$archive_name" '$3 == "dist/" file || $3 == file {print $2}' "$digest_file")
+          actual_digest=$(python - "$archive" <<'PY'
+          import hashlib
+          import sys
+          digest = hashlib.sha256()
+          with open(sys.argv[1], "rb") as stream:
+              for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                  digest.update(chunk)
+          print(digest.hexdigest())
+          PY
+          )
+          test "$expected_digest" = "$actual_digest"
+          test "$expected_size" -eq "$(wc -c < "$archive")"
+          cp "$identity" "$reports/build-identity.txt"
+          cp "$digest_file" "$reports/artifact-sha256.txt"
+          unzip -q "$archive" -d "$root"
+          if [ "${{ matrix.os }}" = "windows-2022" ]; then
+            exe=$(find "$root" -type f -name pyfcstm.exe -print -quit)
+          else
+            exe=$(find "$root" -type f -name pyfcstm -print -quit)
+          fi
+          test -n "$exe"
+          set +e
+          "$exe" --version 2>&1 | tee "$reports/version.log"
+          version_status=${PIPESTATUS[0]}
+          "$exe" --self-check --color always --report "$reports/default.json" 2>&1 | tee "$reports/default.log"
+          default_status=${PIPESTATUS[0]}
+          "$exe" --self-check --profile visualize --network --color always --report "$reports/visualize.json" 2>&1 | tee "$reports/visualize.log"
+          visualize_status=${PIPESTATUS[0]}
+          set -e
+          printf 'version=%s\ndefault=%s\nvisualize=%s\nPLANTUML_HOST=%s\nPLANTUML_JAR=%s\n' \
+            "$version_status" "$default_status" "$visualize_status" "$PLANTUML_HOST" "$PLANTUML_JAR" \
+            | tee "$reports/summary.txt"
+          test "$version_status" -eq 0
+          test "$default_status" -eq 0
+          grep -F "Commit: $GITHUB_SHA" "$reports/version.log"
+      - name: Upload fresh CLI evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: pyfcstm-pr4-release-test-cli-selfcheck-${{ matrix.os }}
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/pyfcstm-release-test-cli-reports
+            ${{ runner.temp }}/java-version.txt
+            ${{ runner.temp }}/plantuml-version.txt
+
+  release_test_artifact_gate:
+    name: release-test artifact fresh gate
+    runs-on: ubuntu-22.04
+    needs:
+      - source_release
+      - fresh_wheel_selfcheck_linux
+      - fresh_wheel_selfcheck
+      - fresh_sdist_selfcheck
+      - release_cli
+      - fresh_release_cli_selfcheck
+    if: ${{ always() }}
+    steps:
+      - name: Require every artifact consumer to pass
+        env:
+          SOURCE_RESULT: ${{ needs.source_release.result }}
+          WHEEL_LINUX_RESULT: ${{ needs.fresh_wheel_selfcheck_linux.result }}
+          WHEEL_NONLINUX_RESULT: ${{ needs.fresh_wheel_selfcheck.result }}
+          SDIST_RESULT: ${{ needs.fresh_sdist_selfcheck.result }}
+          CLI_BUILD_RESULT: ${{ needs.release_cli.result }}
+          CLI_FRESH_RESULT: ${{ needs.fresh_release_cli_selfcheck.result }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for pair in \
+            "source=$SOURCE_RESULT" \
+            "wheel_linux=$WHEEL_LINUX_RESULT" \
+            "wheel_nonlinux=$WHEEL_NONLINUX_RESULT" \
+            "sdist=$SDIST_RESULT" \
+            "cli_build=$CLI_BUILD_RESULT" \
+            "cli_fresh=$CLI_FRESH_RESULT"; do
+            echo "$pair"
+            test "${pair#*=}" = success
+          done
+          echo 'all release-test artifact fresh gates passed'
 
   release_vscode_extension:
     name: VSCode Extension Build And Release

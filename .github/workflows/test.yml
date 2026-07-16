@@ -863,7 +863,20 @@ jobs:
             echo 'dirty=0'
             echo "platform=${{ matrix.os }}"
           } > dist/build-identity.txt
-          sha256sum "dist/${ZIP_NAME}.zip" > dist/artifact-sha256.txt
+          python - "dist/${ZIP_NAME}.zip" > dist/artifact-sha256.txt <<'PY'
+          import hashlib
+          import os
+          import sys
+
+          path = sys.argv[1]
+          digest = hashlib.sha256()
+          with open(path, "rb") as stream:
+              for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                  digest.update(chunk)
+          print("{} {} dist/{}".format(
+              digest.hexdigest(), os.path.getsize(path), os.path.basename(path)
+          ))
+          PY
       - uses: actions/upload-artifact@v4
         with:
           name: pyfcstm-v${{ env.PACKAGE_VERSION }}-${{ env.OS_NAME }}-${{ env.CPU_ARCH }}-${{ env.GIT_COMMIT_ID }}
@@ -907,9 +920,17 @@ jobs:
           curl --fail --location --silent --show-error \
             https://github.com/plantuml/plantuml/releases/download/v1.2024.6/plantuml-1.2024.6.jar \
             --output "$jar"
-          printf '%s  %s\n' \
-            5a8dc3b37fe133a4744e55be80caf6080a70350aba716d95400a0f0cbd79e846 \
-            "$jar" | sha256sum --check --status
+          actual_digest=$(python - "$jar" <<'PY'
+          import hashlib
+          import sys
+          digest = hashlib.sha256()
+          with open(sys.argv[1], "rb") as stream:
+              for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                  digest.update(chunk)
+          print(digest.hexdigest())
+          PY
+          )
+          test "$actual_digest" = 5a8dc3b37fe133a4744e55be80caf6080a70350aba716d95400a0f0cbd79e846
           java -version 2> "$RUNNER_TEMP/java-version.txt"
           java -jar "$jar" -version 2>&1 | tee "$RUNNER_TEMP/plantuml-version.txt"
       - name: Run downloaded CLI in a clean directory
@@ -918,7 +939,7 @@ jobs:
           PLANTUML_JAR: ${{ runner.temp }}/plantuml.jar
           PLANTUML_HOST: http://127.0.0.1:18080
         run: |
-          set -uo pipefail
+          set -euo pipefail
           root="$RUNNER_TEMP/pyfcstm-clean-root"
           reports="$RUNNER_TEMP/pyfcstm-selfcheck-reports"
           rm -rf "$root" "$reports"
@@ -930,9 +951,20 @@ jobs:
           test -n "$identity" -a -n "$digest_file"
           grep -F "full_commit=$GITHUB_SHA" "$identity"
           archive_name=$(basename "$archive")
-          expected_digest=$(awk -v file="$archive_name" '$2 == "dist/" file || $2 == file {print $1}' "$digest_file")
-          actual_digest=$(sha256sum "$archive" | awk '{print $1}')
+          expected_digest=$(awk -v file="$archive_name" '$3 == "dist/" file || $3 == file {print $1}' "$digest_file")
+          expected_size=$(awk -v file="$archive_name" '$3 == "dist/" file || $3 == file {print $2}' "$digest_file")
+          actual_digest=$(python - "$archive" <<'PY'
+          import hashlib
+          import sys
+          digest = hashlib.sha256()
+          with open(sys.argv[1], "rb") as stream:
+              for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                  digest.update(chunk)
+          print(digest.hexdigest())
+          PY
+          )
           test -n "$expected_digest" -a "$expected_digest" = "$actual_digest"
+          test "$expected_size" -eq "$(wc -c < "$archive")"
           cp "$identity" "$reports/build-identity.txt"
           cp "$digest_file" "$reports/artifact-sha256.txt"
           printf '%s  %s\n' "$actual_digest" "$archive_name" | tee "$reports/artifact.sha256"
@@ -965,9 +997,10 @@ jobs:
           set -e
           printf 'version=%s\ndefault=%s\nvisualize=%s\nplantuml_readiness=%s\nPLANTUML_HOST=%s\nPLANTUML_JAR=%s\n' \
             "$version_status" "$default_status" "$visualize_status" "$readiness_status" "$PLANTUML_HOST" "$PLANTUML_JAR" \
-            | tee "$reports/summary.txt"
+          | tee "$reports/summary.txt"
           test "$version_status" -eq 0
           test "$default_status" -eq 0
+          test "$visualize_status" -eq 0
           grep -F "Commit: $GITHUB_SHA" "$reports/version.log"
       - name: Assert controlled PlantUML results
         shell: bash
@@ -1036,18 +1069,43 @@ jobs:
           curl --fail --location --silent --show-error \
             https://github.com/plantuml/plantuml/releases/download/v1.2024.6/plantuml-1.2024.6.jar \
             --output "$jar"
-          printf '%s  %s\n' \
-            5a8dc3b37fe133a4744e55be80caf6080a70350aba716d95400a0f0cbd79e846 \
-            "$jar" | sha256sum --check --status
+          actual_digest=$(python - "$jar" <<'PY'
+          import hashlib
+          import sys
+          digest = hashlib.sha256()
+          with open(sys.argv[1], "rb") as stream:
+              for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                  digest.update(chunk)
+          print(digest.hexdigest())
+          PY
+          )
+          test "$actual_digest" = 5a8dc3b37fe133a4744e55be80caf6080a70350aba716d95400a0f0cbd79e846
           java -version 2> "$RUNNER_TEMP/java-version.txt"
           java -jar "$jar" -version 2>&1 | tee "$RUNNER_TEMP/plantuml-version.txt"
+      - name: Start local PlantUML service
+        shell: bash
+        env:
+          PLANTUML_HOST: http://127.0.0.1:18080
+        run: |
+          set -euo pipefail
+          log="$RUNNER_TEMP/plantuml-service.log"
+          java -jar "$RUNNER_TEMP/plantuml.jar" -picoweb:18080:127.0.0.1 > "$log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/plantuml-service.pid"
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error --max-time 2 "${PLANTUML_HOST%/}/" > "$RUNNER_TEMP/plantuml-readiness.txt" 2>&1; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat "$log" >&2
+          exit 1
       - name: Run downloaded CLI in a clean directory
         shell: bash
         env:
           PLANTUML_JAR: ${{ runner.temp }}/plantuml.jar
-          PLANTUML_HOST: http://www.plantuml.com/plantuml
+          PLANTUML_HOST: http://127.0.0.1:18080
         run: |
-          set -uo pipefail
+          set -euo pipefail
           root="$RUNNER_TEMP/pyfcstm-clean-root"
           reports="$RUNNER_TEMP/pyfcstm-selfcheck-reports"
           rm -rf "$root" "$reports"
@@ -1059,9 +1117,20 @@ jobs:
           test -n "$identity" -a -n "$digest_file"
           grep -F "full_commit=$GITHUB_SHA" "$identity"
           archive_name=$(basename "$archive")
-          expected_digest=$(awk -v file="$archive_name" '$2 == "dist/" file || $2 == file {print $1}' "$digest_file")
-          actual_digest=$(sha256sum "$archive" | awk '{print $1}')
+          expected_digest=$(awk -v file="$archive_name" '$3 == "dist/" file || $3 == file {print $1}' "$digest_file")
+          expected_size=$(awk -v file="$archive_name" '$3 == "dist/" file || $3 == file {print $2}' "$digest_file")
+          actual_digest=$(python - "$archive" <<'PY'
+          import hashlib
+          import sys
+          digest = hashlib.sha256()
+          with open(sys.argv[1], "rb") as stream:
+              for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                  digest.update(chunk)
+          print(digest.hexdigest())
+          PY
+          )
           test -n "$expected_digest" -a "$expected_digest" = "$actual_digest"
+          test "$expected_size" -eq "$(wc -c < "$archive")"
           cp "$identity" "$reports/build-identity.txt"
           cp "$digest_file" "$reports/artifact-sha256.txt"
           printf '%s  %s\n' "$actual_digest" "$archive_name" | tee "$reports/artifact.sha256"

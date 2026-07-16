@@ -99,6 +99,13 @@ def _decode_bmc_witness(*args, **kwargs):
     return implementation(*args, **kwargs)
 
 
+def _decode_bmc_result_trace(*args, **kwargs):
+    """Load and call the role-aware result decoder for a selected model."""
+    from ..bmc import decode_bmc_result_trace as implementation
+
+    return implementation(*args, **kwargs)
+
+
 def _replay_bmc_witness(*args, **kwargs):
     """Load and call BMC runtime replay only when a SAT witness exists."""
     from ..bmc import replay_bmc_witness as implementation
@@ -216,17 +223,25 @@ def _execute_bmc(
     replay = None
     if result.status == "sat":
         try:
-            witness = _decode_bmc_witness(formula, result.model)
+            witness = _decode_bmc_result_trace(result, source="primary")
             replay = _replay_bmc_witness(model, witness, abstract_handlers=None)
         except BmcBuildError as err:
             # A SAT model produced by this formula should always decode and
             # replay with the fixed public arguments used here. Failures retain
             # their traceback instead of becoming controlled input errors.
             raise _BmcCliInternalError(str(err)) from err
+    elif result.incomplete_status == "sat":
+        try:
+            witness = _decode_bmc_result_trace(result, source="incomplete_suffix")
+            replay = _replay_bmc_witness(model, witness, abstract_handlers=None)
+        except BmcBuildError as err:
+            # A SAT suffix model must satisfy the same decoder and replay
+            # invariants as a primary model, while retaining its detached role.
+            raise _BmcCliInternalError(str(err)) from err
 
     if replay is not None and not replay.ok:
         exit_code = 4
-    elif result.incomplete:
+    elif result.incomplete or result.property_satisfied is None:
         exit_code = 3
     elif result.property_satisfied:
         exit_code = 0
@@ -248,7 +263,11 @@ def _property_payload(formula: BmcPropertyFormula) -> dict:
 def _human_verdict(execution: _BmcExecution) -> str:
     if execution.replay is not None and not execution.replay.ok:
         return "REPLAY MISMATCH; PROPERTY VERDICT UNTRUSTED"
+    if execution.result.outcome == "scenario_infeasible":
+        return "SCENARIO INFEASIBLE; PROPERTY NOT EVALUATED"
     if execution.result.incomplete:
+        return "PROPERTY INCONCLUSIVE"
+    if execution.result.property_satisfied is None:
         return "PROPERTY INCONCLUSIVE"
     if execution.result.property_satisfied:
         return "PROPERTY HOLDS"
@@ -271,6 +290,15 @@ def _human_outcome(execution: _BmcExecution) -> str:
             "A counterexample violating the bounded property was found."
         ),
         "incomplete": "The visible horizon cannot decide every response window.",
+        "scenario_infeasible": (
+            "The admissible scenario is infeasible; the property was not evaluated."
+        ),
+        "feasibility_timeout": (
+            "The scenario feasibility checks timed out before a property verdict."
+        ),
+        "feasibility_unknown": (
+            "The scenario feasibility checks were inconclusive before a property verdict."
+        ),
         "timeout": "The solver timed out before producing a conclusive result.",
         "unknown": "The solver could not produce a conclusive result.",
     }
@@ -323,13 +351,28 @@ def _human_diagnostics(execution: _BmcExecution) -> Tuple[str, ...]:
     result = execution.result
     lines = ["Solver: %s in %.3f ms" % (result.status.upper(), result.elapsed_ms)]
     if result.timeout_ms is not None:
-        lines.append("Timeout: %d ms for each solver check" % result.timeout_ms)
+        lines.append(
+            "Timeout: %d ms shared by all solver checks in this invocation"
+            % result.timeout_ms
+        )
     if result.incomplete_status is not None:
         lines.append("Horizon check: %s" % result.incomplete_status.upper())
     if result.reason is not None:
         lines.append("Solver reason: %s" % result.reason)
     if result.incomplete_reason is not None:
         lines.append("Horizon reason: %s" % result.incomplete_reason)
+    feasibility = result.feasibility
+    if feasibility is not None:
+        lines.append(
+            "Feasibility: kernel=%s, initialization=%s, assumptions=%s"
+            % (
+                feasibility.kernel.status or "not_checked",
+                feasibility.initialization.status or "not_checked",
+                feasibility.assumptions.status or "not_checked",
+            )
+        )
+        if feasibility.infeasible_stage is not None:
+            lines.append("Infeasible stage: %s" % feasibility.infeasible_stage)
     for item in result.diagnostics:
         if item.startswith("incomplete_elapsed_ms="):
             lines.append("Horizon solve time: %s ms" % item.partition("=")[2])
@@ -470,8 +513,8 @@ def build_bmc_output(
         protocol reference
         <https://pyfcstm.readthedocs.io/en/latest/reference/bmc_results/index.html>`_.
     :type json_output: bool, optional
-    :param timeout_ms: Per-Z3-check timeout in milliseconds, defaults to
-        ``None``.
+    :param timeout_ms: Optional total Z3 budget in milliseconds shared by all
+        staged checks, defaults to ``None``.
     :type timeout_ms: int, optional
     :param max_bound: Maximum accepted query bound, defaults to ``None``.
     :type max_bound: int, optional
@@ -651,7 +694,7 @@ def _add_bmc_subcommand(cli: click.Group) -> click.Group:
         "--timeout-ms",
         type=click.IntRange(min=1),
         default=None,
-        help="Per-Z3-check timeout in milliseconds.",
+        help="Total Z3 timeout budget shared by all staged checks in milliseconds.",
     )
     @click.option(
         "--max-bound",
@@ -690,7 +733,7 @@ def _add_bmc_subcommand(cli: click.Group) -> click.Group:
         :type output_file: str, optional
         :param json_output: Whether to emit JSON.
         :type json_output: bool
-        :param timeout_ms: Per-check solver timeout.
+        :param timeout_ms: Optional total solver budget shared by all checks.
         :type timeout_ms: int, optional
         :param max_bound: Maximum accepted query bound.
         :type max_bound: int, optional

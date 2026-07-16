@@ -521,23 +521,28 @@ def test_public_non_trace_objects_are_field_value_golden_pinned() -> None:
     """Every public witness/replay record type has exact standalone output."""
     expected_solve = """
     BmcSolveResult
-    field                 value
-    kind                  reach
-    polarity              witness
-    status                unknown
-    property_satisfied    -
-    witness_found         false
-    counterexample_found  false
-    incomplete            true
-    outcome               unknown
-    reason                because
-    elapsed_ms            1.25
-    timeout_ms            10
-    has_model             false
-    incomplete_status     unknown
-    incomplete_reason     nope
-    has_incomplete_model  false
-    diagnostics           diag
+    field                  value
+    schema_version         bmc-solve-result/v2
+    kind                   reach
+    polarity               witness
+    status                 unknown
+    property_satisfied     -
+    witness_found          false
+    counterexample_found   false
+    incomplete             true
+    outcome                unknown
+    reason                 because
+    elapsed_ms             1.25
+    timeout_ms             10
+    has_model              false
+    incomplete_status      -
+    incomplete_reason      -
+    incomplete_elapsed_ms  -
+    has_incomplete_model   false
+    total_elapsed_ms       1.25
+    feasibility            assumptions=elapsed_ms=-, origin=not_checked, reason=-, status=-, infeasible_stage=-, initialization=elapsed_ms=-, origin=not_checked, reason=-, status=-, kernel=elapsed_ms=-, origin=not_checked, reason=-, status=-, localization_status=not_checked, refinement_checks=-, refinement_reason=-, refinement_status=not_needed
+    available_model_roles  -
+    diagnostics            diag
     """
     expected_event = """
     BmcWitnessEvent
@@ -601,8 +606,6 @@ def test_public_non_trace_objects_are_field_value_golden_pinned() -> None:
             reason="because",
             elapsed_ms=1.25,
             timeout_ms=10,
-            incomplete_status="unknown",
-            incomplete_reason="nope",
             diagnostics=("diag",),
         ).to_text(tablefmt="plain"),
     )

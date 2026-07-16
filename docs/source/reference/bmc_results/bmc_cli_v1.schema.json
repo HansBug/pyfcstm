@@ -10,9 +10,9 @@
     "schema_version": {"const": "bmc-cli/v1"},
     "input": {"$ref": "#/$defs/input"},
     "property": {"$ref": "#/$defs/property"},
-    "result": {"$ref": "#/$defs/result"},
-    "witness": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/witness"}]},
-    "replay": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/replay"}]},
+    "result": {"oneOf": [{"$ref": "#/$defs/resultV1"}, {"$ref": "#/$defs/resultV2"}]},
+    "witness": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/witnessV1"}, {"$ref": "#/$defs/witnessV2"}]},
+    "replay": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/replayV1"}, {"$ref": "#/$defs/replayV2"}]},
     "exit_code": {"enum": [0, 1, 3, 4]}
   },
   "$defs": {
@@ -32,6 +32,7 @@
     },
     "nullableString": {"type": ["string", "null"]},
     "nullableInteger": {"type": ["integer", "null"]},
+    "nullableNumber": {"type": ["number", "null"], "minimum": 0},
     "input": {
       "type": "object",
       "additionalProperties": false,
@@ -53,7 +54,7 @@
         "response_window": {"$ref": "#/$defs/nullableInteger"}
       }
     },
-    "result": {
+    "resultV1": {
       "type": "object",
       "additionalProperties": false,
       "required": ["node", "kind", "polarity", "status", "property_satisfied", "witness_found", "counterexample_found", "incomplete", "outcome", "reason", "elapsed_ms", "timeout_ms", "has_model", "incomplete_status", "incomplete_reason", "has_incomplete_model", "diagnostics"],
@@ -76,6 +77,240 @@
         "has_incomplete_model": {"type": "boolean"},
         "diagnostics": {"type": "array", "items": {"type": "string"}}
       }
+    },
+    "feasibilityCheck": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "origin", "reason", "elapsed_ms"],
+          "properties": {
+            "status": {"enum": ["sat", "unsat", "unknown", "timeout"]},
+            "origin": {"const": "checked"},
+            "reason": {"$ref": "#/$defs/nullableString"},
+            "elapsed_ms": {"type": "number", "minimum": 0}
+          },
+          "allOf": [
+            {
+              "if": {"properties": {"status": {"enum": ["sat", "unsat"]}}},
+              "then": {"properties": {"reason": {"const": null}}}
+            },
+            {
+              "if": {"properties": {"status": {"enum": ["unknown", "timeout"]}}},
+              "then": {"required": ["reason"], "properties": {"reason": {"type": "string", "minLength": 1}}}
+            }
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "origin", "reason", "elapsed_ms"],
+          "properties": {
+            "status": {"const": "sat"},
+            "origin": {"const": "inferred"},
+            "reason": {"const": null},
+            "elapsed_ms": {"const": null}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "origin", "reason", "elapsed_ms"],
+          "properties": {
+            "status": {"const": null},
+            "origin": {"const": "not_checked"},
+            "reason": {"const": null},
+            "elapsed_ms": {"const": null}
+          }
+        }
+      ]
+    },
+    "notCheckedFeasibilityCheck": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "origin", "reason", "elapsed_ms"],
+      "properties": {
+        "status": {"const": null},
+        "origin": {"const": "not_checked"},
+        "reason": {"const": null},
+        "elapsed_ms": {"const": null}
+      }
+    },
+    "notCheckedFeasibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kernel", "initialization", "assumptions", "infeasible_stage", "localization_status", "refinement_status", "refinement_reason", "refinement_checks"],
+      "properties": {
+        "kernel": {"$ref": "#/$defs/notCheckedFeasibilityCheck"},
+        "initialization": {"$ref": "#/$defs/notCheckedFeasibilityCheck"},
+        "assumptions": {"$ref": "#/$defs/notCheckedFeasibilityCheck"},
+        "infeasible_stage": {"const": null},
+        "localization_status": {"const": "not_checked"},
+        "refinement_status": {"enum": ["not_requested", "not_needed"]},
+        "refinement_reason": {"const": null},
+        "refinement_checks": {"const": []}
+      }
+    },
+    "feasibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kernel", "initialization", "assumptions", "infeasible_stage", "localization_status", "refinement_status", "refinement_reason", "refinement_checks"],
+      "properties": {
+        "kernel": {"$ref": "#/$defs/feasibilityCheck"},
+        "initialization": {"$ref": "#/$defs/feasibilityCheck"},
+        "assumptions": {"$ref": "#/$defs/feasibilityCheck"},
+        "infeasible_stage": {"enum": ["kernel", "initialization", "assumptions", null]},
+        "localization_status": {"enum": ["not_needed", "not_checked", "complete", "unknown", "timeout"]},
+        "refinement_status": {"enum": ["not_requested", "not_needed", "complete", "partial", "unknown", "timeout"]},
+        "refinement_reason": {"$ref": "#/$defs/nullableString"},
+        "refinement_checks": {"type": "array", "items": {"$ref": "#/$defs/refinementCheck"}}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"refinement_status": {"enum": ["not_requested", "not_needed", "complete"]}}},
+          "then": {"properties": {"refinement_reason": {"const": null}}}
+        },
+        {
+          "if": {"properties": {"refinement_status": {"enum": ["unknown", "timeout"]}}},
+          "then": {"required": ["refinement_reason"], "properties": {"refinement_reason": {"type": "string", "minLength": 1}}}
+        }
+      ]
+    },
+    "refinementCheck": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "status", "reason", "elapsed_ms"],
+      "properties": {
+        "name": {"enum": ["component_initialization", "domain_initialization", "component_assumptions", "domain_assumptions", "unsat_core", "unsat_core_minimization"]},
+        "status": {"enum": ["sat", "unsat", "complete", "unknown", "timeout"]},
+        "reason": {"$ref": "#/$defs/nullableString"},
+        "elapsed_ms": {"type": "number", "minimum": 0}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"name": {"enum": ["component_initialization", "domain_initialization", "component_assumptions", "domain_assumptions"]}}},
+          "then": {"properties": {"status": {"enum": ["sat", "unsat", "unknown", "timeout"]}}}
+        },
+        {
+          "if": {"properties": {"status": {"const": "complete"}}},
+          "then": {"properties": {"name": {"enum": ["unsat_core", "unsat_core_minimization"]}, "reason": {"const": null}}}
+        },
+        {
+          "if": {"properties": {"status": {"enum": ["unknown", "timeout"]}}},
+          "then": {"required": ["reason"], "properties": {"reason": {"type": "string", "minLength": 1}}}
+        }
+      ]
+    },
+    "resultV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["node", "schema_version", "kind", "polarity", "status", "property_satisfied", "witness_found", "counterexample_found", "incomplete", "outcome", "reason", "elapsed_ms", "timeout_ms", "has_model", "incomplete_status", "incomplete_reason", "incomplete_elapsed_ms", "has_incomplete_model", "total_elapsed_ms", "feasibility", "available_model_roles", "diagnostics"],
+      "properties": {
+        "node": {"const": "bmc_solve_result"},
+        "schema_version": {"const": "bmc-solve-result/v2"},
+        "kind": {"enum": ["reach", "forbid", "invariant", "must_reach", "exists_always", "response", "cover"]},
+        "polarity": {"enum": ["witness", "counterexample"]},
+        "status": {"enum": ["sat", "unsat", "unknown", "timeout"]},
+        "property_satisfied": {"type": ["boolean", "null"]},
+        "witness_found": {"type": "boolean"},
+        "counterexample_found": {"type": "boolean"},
+        "incomplete": {"type": "boolean"},
+        "outcome": {"enum": ["property_satisfied", "property_violated", "witness_found", "no_witness", "incomplete", "timeout", "unknown", "scenario_infeasible", "feasibility_timeout", "feasibility_unknown"]},
+        "reason": {"$ref": "#/$defs/nullableString"},
+        "elapsed_ms": {"type": "number", "minimum": 0},
+        "timeout_ms": {"$ref": "#/$defs/nullableInteger"},
+        "has_model": {"type": "boolean"},
+        "incomplete_status": {"enum": ["sat", "unsat", "unknown", "timeout", null]},
+        "incomplete_reason": {"$ref": "#/$defs/nullableString"},
+        "incomplete_elapsed_ms": {"$ref": "#/$defs/nullableNumber"},
+        "has_incomplete_model": {"type": "boolean"},
+        "total_elapsed_ms": {"type": "number", "minimum": 0},
+        "feasibility": {"$ref": "#/$defs/feasibility"},
+        "available_model_roles": {"type": "array", "items": {"enum": ["primary_witness", "primary_counterexample", "incomplete_suffix"]}},
+        "diagnostics": {"type": "array", "items": {"type": "string"}}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"kind": {"enum": ["reach", "forbid", "invariant", "must_reach", "exists_always", "cover"]}}},
+          "then": {
+            "properties": {
+              "incomplete_status": {"const": null},
+              "incomplete_reason": {"const": null},
+              "incomplete_elapsed_ms": {"const": null},
+              "has_incomplete_model": {"const": false}
+            },
+            "not": {"properties": {"available_model_roles": {"contains": {"const": "incomplete_suffix"}}}}
+          }
+        },
+        {
+          "if": {"properties": {"status": {"const": "sat"}}},
+          "then": {"oneOf": [
+            {
+              "properties": {
+                "status": {"const": "sat"},
+                "polarity": {"const": "witness"},
+                "property_satisfied": {"const": true},
+                "witness_found": {"const": true},
+                "counterexample_found": {"const": false},
+                "incomplete": {"const": false},
+                "outcome": {"const": "witness_found"},
+                "has_model": {"const": true},
+                "incomplete_status": {"const": null},
+                "has_incomplete_model": {"const": false},
+                "available_model_roles": {"prefixItems": [{"const": "primary_witness"}], "items": false, "minItems": 1, "maxItems": 1}
+              }
+            },
+            {
+              "properties": {
+                "status": {"const": "sat"},
+                "polarity": {"const": "counterexample"},
+                "property_satisfied": {"const": false},
+                "witness_found": {"const": false},
+                "counterexample_found": {"const": true},
+                "incomplete": {"const": false},
+                "outcome": {"const": "property_violated"},
+                "has_model": {"const": true},
+                "incomplete_status": {"const": null},
+                "has_incomplete_model": {"const": false},
+                "available_model_roles": {"prefixItems": [{"const": "primary_counterexample"}], "items": false, "minItems": 1, "maxItems": 1}
+              }
+            }
+          ]}
+        },
+        {
+          "if": {"properties": {"kind": {"const": "response"}, "status": {"const": "unsat"}, "incomplete_status": {"const": "sat"}}},
+          "then": {
+            "properties": {
+              "property_satisfied": {"const": null},
+              "witness_found": {"const": false},
+              "counterexample_found": {"const": false},
+              "incomplete": {"const": true},
+              "outcome": {"const": "incomplete"},
+              "has_model": {"const": false},
+              "has_incomplete_model": {"const": true},
+              "available_model_roles": {"prefixItems": [{"const": "incomplete_suffix"}], "items": false, "minItems": 1, "maxItems": 1}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"status": {"enum": ["unknown", "timeout"]}}},
+          "then": {
+            "properties": {
+              "property_satisfied": {"const": null},
+              "witness_found": {"const": false},
+              "counterexample_found": {"const": false},
+              "incomplete": {"const": true},
+              "has_model": {"const": false},
+              "incomplete_status": {"const": null},
+              "incomplete_reason": {"const": null},
+              "incomplete_elapsed_ms": {"const": null},
+              "has_incomplete_model": {"const": false},
+              "available_model_roles": {"const": []},
+              "feasibility": {"$ref": "#/$defs/notCheckedFeasibility"}
+            }
+          }
+        }
+      ]
     },
     "event": {
       "type": "object",
@@ -137,7 +372,7 @@
         "unconsumed_events": {"type": "array", "items": {"type": "string"}}
       }
     },
-    "witness": {
+    "witnessV1": {
       "type": "object",
       "additionalProperties": false,
       "required": ["schema_version", "property", "solver", "initial", "frames", "steps", "diagnostics"],
@@ -169,6 +404,86 @@
         "steps": {"type": "array", "items": {"$ref": "#/$defs/witnessStep"}},
         "diagnostics": {"type": "array", "items": {"type": "string"}}
       }
+    },
+    "witnessV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "model_role", "verdict", "property", "solver", "initial", "frames", "steps", "diagnostics"],
+      "properties": {
+        "schema_version": {"const": "bmc-witness/v2"},
+        "model_role": {"enum": ["primary_witness", "primary_counterexample", "incomplete_suffix"]},
+        "verdict": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["property_satisfied", "witness_found", "counterexample_found", "incomplete", "outcome"],
+          "properties": {
+            "property_satisfied": {"type": ["boolean", "null"]},
+            "witness_found": {"type": "boolean"},
+            "counterexample_found": {"type": "boolean"},
+            "incomplete": {"type": "boolean"},
+            "outcome": {"enum": ["witness_found", "property_violated", "incomplete"]}
+          }
+        },
+        "property": {"$ref": "#/$defs/property"},
+        "solver": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["model_status", "primary_status", "incomplete_status", "primary_reason", "incomplete_reason", "primary_elapsed_ms", "incomplete_elapsed_ms"],
+          "properties": {
+            "model_status": {"const": "sat"},
+            "primary_status": {"enum": ["sat", "unsat", "unknown", "timeout"]},
+            "incomplete_status": {"enum": ["sat", "unsat", "unknown", "timeout", null]},
+            "primary_reason": {"$ref": "#/$defs/nullableString"},
+            "incomplete_reason": {"$ref": "#/$defs/nullableString"},
+            "primary_elapsed_ms": {"type": "number", "minimum": 0},
+            "incomplete_elapsed_ms": {"$ref": "#/$defs/nullableNumber"}
+          }
+        },
+        "initial": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "state", "sentinel", "vars"],
+          "properties": {
+            "mode": {"type": "string"},
+            "state": {"$ref": "#/$defs/nullableString"},
+            "sentinel": {"enum": ["init", "terminated", null]},
+            "vars": {"$ref": "#/$defs/stringMap"}
+          }
+        },
+        "frames": {"type": "array", "items": {"$ref": "#/$defs/witnessFrame"}},
+        "steps": {"type": "array", "items": {"$ref": "#/$defs/witnessStep"}},
+        "diagnostics": {"type": "array", "items": {"type": "string"}}
+      },
+      "allOf": [
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "model_role": {"const": "primary_witness"},
+                "property": {"properties": {"polarity": {"const": "witness"}}},
+                "solver": {"properties": {"primary_status": {"const": "sat"}, "incomplete_status": {"const": null}}},
+                "verdict": {"properties": {"property_satisfied": {"const": true}, "witness_found": {"const": true}, "counterexample_found": {"const": false}, "incomplete": {"const": false}, "outcome": {"const": "witness_found"}}}
+              }
+            },
+            {
+              "properties": {
+                "model_role": {"const": "primary_counterexample"},
+                "property": {"properties": {"polarity": {"const": "counterexample"}}},
+                "solver": {"properties": {"primary_status": {"const": "sat"}, "incomplete_status": {"const": null}}},
+                "verdict": {"properties": {"property_satisfied": {"const": false}, "witness_found": {"const": false}, "counterexample_found": {"const": true}, "incomplete": {"const": false}, "outcome": {"const": "property_violated"}}}
+              }
+            },
+            {
+              "properties": {
+                "model_role": {"const": "incomplete_suffix"},
+                "property": {"properties": {"kind": {"const": "response"}}},
+                "solver": {"properties": {"primary_status": {"const": "unsat"}, "incomplete_status": {"const": "sat"}}},
+                "verdict": {"properties": {"property_satisfied": {"const": null}, "witness_found": {"const": false}, "counterexample_found": {"const": false}, "incomplete": {"const": true}, "outcome": {"const": "incomplete"}}}
+              }
+            }
+          ]
+        }
+      ]
     },
     "runtimeFrame": {
       "type": "object",
@@ -205,11 +520,30 @@
         "tolerance": {"type": ["number", "null"], "minimum": 0}
       }
     },
-    "replay": {
+    "replayV1": {
       "type": "object",
       "additionalProperties": false,
       "required": ["ok", "runtime_trace", "mismatches"],
       "properties": {
+        "ok": {"type": "boolean"},
+        "runtime_trace": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["frames", "steps"],
+          "properties": {
+            "frames": {"type": "array", "items": {"$ref": "#/$defs/runtimeFrame"}},
+            "steps": {"type": "array", "items": {"$ref": "#/$defs/runtimeStep"}}
+          }
+        },
+        "mismatches": {"type": "array", "items": {"$ref": "#/$defs/mismatch"}}
+      }
+    },
+    "replayV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model_role", "ok", "runtime_trace", "mismatches"],
+      "properties": {
+        "model_role": {"enum": ["primary_witness", "primary_counterexample", "incomplete_suffix"]},
         "ok": {"type": "boolean"},
         "runtime_trace": {
           "type": "object",

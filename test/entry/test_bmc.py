@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import pytest
 from click.testing import CliRunner
 
-from pyfcstm.bmc import BmcBuildError
+from pyfcstm.bmc import BmcBuildError, BmcFeasibilityCheck, BmcFeasibilityResult
 from pyfcstm.bmc.witness import BmcReplayMismatch, BmcSolveResult
 from pyfcstm.dsl import GrammarParseError
 from pyfcstm.entry import pyfcstmcli
@@ -366,12 +366,12 @@ def test_bmc_internal_witness_error_keeps_traceback(
     model_path, query = bmc_files
     query_path = query('check reach <= 1: active("Root");')
 
-    def fail_decode(formula, model):
+    def fail_decode(*args, **kwargs):
         raise BmcBuildError(
             "This is an internal BMC witness consistency error; please open an issue."
         )
 
-    monkeypatch.setattr(bmc_entry, "_decode_bmc_witness", fail_decode)
+    monkeypatch.setattr(bmc_entry, "_decode_bmc_result_trace", fail_decode)
     result = _run("-i", str(model_path), "-q", str(query_path), "--json")
 
     assert result.exit_code == 1
@@ -392,7 +392,8 @@ def test_bmc_unexpected_witness_pipeline_error_keeps_traceback(
     def fail_pipeline(*args, **kwargs):
         raise ValueError("forged %s failure" % stage)
 
-    monkeypatch.setattr(bmc_entry, "_%s_bmc_witness" % stage, fail_pipeline)
+    target = "_decode_bmc_result_trace" if stage == "decode" else "_replay_bmc_witness"
+    monkeypatch.setattr(bmc_entry, target, fail_pipeline)
     result = _run("-i", str(model_path), "-q", str(query_path), "--json")
 
     assert result.exit_code == 1
@@ -424,8 +425,31 @@ def test_bmc_response_incomplete_is_exit_three(bmc_files) -> None:
     assert payload["result"]["incomplete"] is True
     assert payload["result"]["outcome"] == "incomplete"
     assert payload["result"]["incomplete_status"] == "sat"
+    assert payload["witness"]["schema_version"] == "bmc-witness/v2"
+    assert payload["witness"]["model_role"] == "incomplete_suffix"
+    assert payload["replay"]["model_role"] == "incomplete_suffix"
+
+
+def test_bmc_scenario_infeasible_is_not_a_property_failure(bmc_files) -> None:
+    """Contradictory assumptions produce a distinct non-verdict CLI result."""
+    model_path, query = bmc_files
+    model_path.write_text("def int x = 0;\nstate Root;\n", encoding="utf-8")
+    query_path = query(
+        'assume at 0: x == 0;\nassume at 0: x == 1;\ncheck reach <= 1: active("Root");'
+    )
+
+    result, payload = _json_result(model_path, query_path)
+
+    assert result.exit_code == 3
+    assert payload["exit_code"] == 3
+    assert payload["result"]["outcome"] == "scenario_infeasible"
+    assert payload["result"]["property_satisfied"] is None
     assert payload["witness"] is None
     assert payload["replay"] is None
+
+    human = _run("-i", str(model_path), "-q", str(query_path))
+    assert human.exit_code == 3
+    assert "SCENARIO INFEASIBLE; PROPERTY NOT EVALUATED" in human.stdout
 
 
 @pytest.mark.parametrize(
@@ -471,7 +495,7 @@ def test_bmc_solver_inconclusive_is_exit_three(
         "25",
     )
     assert human.exit_code == 3
-    assert "Timeout: 25 ms for each solver check" in human.stdout
+    assert "Timeout: 25 ms shared by all solver checks" in human.stdout
     assert "Solver reason: %s" % reason in human.stdout
 
 
@@ -717,7 +741,14 @@ check reach <= 1: active("Root.Done");
         formula,
         "unsat",
         incomplete_status="unknown",
+        incomplete_elapsed_ms=1.0,
         incomplete_reason="incomplete",
+        feasibility=BmcFeasibilityResult(
+            BmcFeasibilityCheck("sat", "inferred"),
+            BmcFeasibilityCheck("sat", "inferred"),
+            BmcFeasibilityCheck("sat", "inferred"),
+            localization_status="not_needed",
+        ),
         diagnostics=("custom_diagnostic=1",),
     )
     execution = bmc_entry._BmcExecution(formula, solve_result, None, None, 3)

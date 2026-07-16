@@ -18,11 +18,32 @@ BmcSolveStatus
 .. autodata:: __all__
 
 
+BmcFeasibilityCheck
+-----------------------------------------------------
+
+.. autoclass:: BmcFeasibilityCheck
+    :members: __post_init__,to_canonical,pretty_print,to_text,__str__,status,origin,reason,elapsed_ms
+
+
+BmcFeasibilityRefinementCheck
+-----------------------------------------------------
+
+.. autoclass:: BmcFeasibilityRefinementCheck
+    :members: __post_init__,to_canonical,pretty_print,to_text,__str__,name,status,reason,elapsed_ms
+
+
+BmcFeasibilityResult
+-----------------------------------------------------
+
+.. autoclass:: BmcFeasibilityResult
+    :members: __post_init__,scenario_infeasible,to_canonical,pretty_print,to_text,__str__,kernel,initialization,assumptions,infeasible_stage,localization_status,refinement_status,refinement_reason,refinement_checks
+
+
 BmcSolveResult
 -----------------------------------------------------
 
 .. autoclass:: BmcSolveResult
-    :members: __post_init__,kind,polarity,incomplete,witness_found,counterexample_found,property_satisfied,outcome,to_canonical,pretty_print,to_text,__str__,formula,status,model,reason,elapsed_ms,timeout_ms,incomplete_status,incomplete_model,incomplete_reason,diagnostics
+    :members: __post_init__,kind,polarity,incomplete,witness_found,counterexample_found,property_satisfied,outcome,to_canonical,available_model_roles,pretty_print,to_text,__str__,formula,status,model,reason,elapsed_ms,timeout_ms,incomplete_status,incomplete_model,incomplete_reason,diagnostics,incomplete_elapsed_ms,total_elapsed_ms,feasibility
 
 
 BmcEventDecodePolicy
@@ -64,7 +85,7 @@ BmcWitnessTrace
 -----------------------------------------------------
 
 .. autoclass:: BmcWitnessTrace
-    :members: __post_init__,to_canonical,pretty_print,to_text,__str__,property,solver,initial,frames,steps,diagnostics,schema_version
+    :members: __post_init__,to_canonical,pretty_print,to_text,__str__,property,solver,initial,frames,steps,diagnostics,schema_version,model_role,verdict
 
 
 BmcRuntimeFrame
@@ -99,7 +120,7 @@ BmcReplayResult
 -----------------------------------------------------
 
 .. autoclass:: BmcReplayResult
-    :members: __post_init__,ok,to_canonical,pretty_print,to_text,__str__,witness,runtime_trace,mismatches
+    :members: __post_init__,ok,to_canonical,pretty_print,to_text,__str__,witness,runtime_trace,mismatches,model_role
 
 
 solve\_bmc\_property
@@ -112,6 +133,12 @@ decode\_bmc\_witness
 -----------------------------------------------------
 
 .. autofunction:: decode_bmc_witness
+
+
+decode\_bmc\_result\_trace
+-----------------------------------------------------
+
+.. autofunction:: decode_bmc_result_trace
 
 
 replay\_bmc\_witness

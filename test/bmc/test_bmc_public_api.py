@@ -1,8 +1,10 @@
 """Public API tests for the BMC query model package."""
 
 import importlib
+import json
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -116,10 +118,14 @@ def test_bmc_public_api_exports_exact_names():
         "compile_bmc_property",
         "compile_bmc_query",
         "solve_bmc_property",
+        "decode_bmc_result_trace",
         "decode_bmc_witness",
         "replay_bmc_witness",
         "BmcSolveStatus",
         "BmcEventDecodePolicy",
+        "BmcFeasibilityCheck",
+        "BmcFeasibilityRefinementCheck",
+        "BmcFeasibilityResult",
         "BmcSolveResult",
         "BmcWitnessEvent",
         "BmcWitnessCallRecord",
@@ -393,6 +399,9 @@ def test_submodule_all_exports_are_exact():
     assert set(witness.__all__) == {
         "BmcSolveStatus",
         "BmcEventDecodePolicy",
+        "BmcFeasibilityCheck",
+        "BmcFeasibilityRefinementCheck",
+        "BmcFeasibilityResult",
         "BmcSolveResult",
         "BmcWitnessEvent",
         "BmcWitnessCallRecord",
@@ -405,6 +414,7 @@ def test_submodule_all_exports_are_exact():
         "BmcReplayMismatch",
         "BmcReplayResult",
         "solve_bmc_property",
+        "decode_bmc_result_trace",
         "decode_bmc_witness",
         "replay_bmc_witness",
     }
@@ -445,3 +455,29 @@ def test_bmc_import_does_not_load_verify_modules():
     )
 
     assert result.stdout.strip() == "[]"
+
+
+@pytest.mark.unittest
+def test_bmc_schema_freezes_role_channel_contract():
+    """The published schema contains fail-closed role/channel branches."""
+    schema_path = (
+        Path(__file__).resolve().parents[2]
+        / "docs"
+        / "source"
+        / "reference"
+        / "bmc_results"
+        / "bmc_cli_v1.schema.json"
+    )
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    result_v2 = schema["$defs"]["resultV2"]
+    witness_v2 = schema["$defs"]["witnessV2"]
+
+    assert result_v2["allOf"]
+    assert witness_v2["allOf"]
+    result_text = json.dumps(result_v2["allOf"], sort_keys=True)
+    witness_text = json.dumps(witness_v2["allOf"], sort_keys=True)
+    for role in ("primary_witness", "primary_counterexample", "incomplete_suffix"):
+        assert role in result_text
+        assert role in witness_text
+    assert '"const": "response"' in result_text
+    assert '"const": "unsat"' in witness_text

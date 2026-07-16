@@ -258,11 +258,18 @@ def test_visualize_check_validates_config_before_backend_check(monkeypatch):
 
 def test_visualize_invalid_config_does_not_create_cache(monkeypatch, tmp_path, input_code_file):
     cache_home = tmp_path / 'cache-home'
+    output_file = tmp_path / 'existing.png'
+    output_file.write_text('sentinel', encoding='utf-8')
     monkeypatch.setenv('XDG_CACHE_HOME', str(cache_home))
     monkeypatch.setattr(
         visualize_module,
         'render_plantuml_diagram',
         lambda *args, **kwargs: pytest.fail('renderer must not run for invalid config'),
+    )
+    monkeypatch.setattr(
+        visualize_module,
+        '_render_plantuml_source',
+        lambda *args, **kwargs: pytest.fail('DSL rendering must not run for invalid config'),
     )
 
     result = simulate_entry(
@@ -272,6 +279,8 @@ def test_visualize_invalid_config_does_not_create_cache(monkeypatch, tmp_path, i
             'visualize',
             '-i',
             input_code_file,
+            '-o',
+            str(output_file),
             '--no-open',
             '-c',
             'unknown_option=true',
@@ -280,6 +289,7 @@ def test_visualize_invalid_config_does_not_create_cache(monkeypatch, tmp_path, i
 
     assert result.exitcode != 0
     assert not (cache_home / 'pyfcstm').exists()
+    assert output_file.read_text(encoding='utf-8') == 'sentinel'
 
 
 @pytest.mark.parametrize('command', ['plantuml', 'visualize'])

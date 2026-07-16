@@ -7,9 +7,9 @@ file, parses it into an internal model, and emits PlantUML text either to a
 file or to standard output.
 
 The module is intended to be used as part of a larger CLI application that
-manages multiple subcommands. It does not expose any public API directly;
-instead, it contributes functionality through the helper function that
-registers the subcommand.
+manages multiple subcommands. It exposes the shared PlantUML option resolver
+and source builder used by the ``plantuml`` and ``visualize`` entry points,
+alongside the helper that registers the subcommand.
 
 .. note::
    The CLI entry point relies on :func:`pyfcstm.dsl.parse.parse_with_grammar_entry`
@@ -201,6 +201,7 @@ def _canonical_option_value(key: str, value: Any, spec: _PlantUMLOptionSpec) -> 
             try:
                 canonical.append(_canonical_choice(key, element, spec.element_choices))
             except ClickErrorException as err:
+                # _canonical_choice rejects an invalid enum or tuple element.
                 raise ClickErrorException(f'{err} (element {index})')
         return tuple(canonical)
     return value
@@ -225,6 +226,7 @@ def _parse_plantuml_config_assignment(pair: str, index: int) -> _PlantUMLOptionA
     try:
         parsed = parse_key_value_pairs((pair,), type_hints=_PLANTUML_OPTION_TYPES)[key]
     except ValueError as err:
+        # parse_key_value_pairs rejects a value that cannot match the registry type hint.
         raise ClickErrorException(str(err))
     value = _canonical_option_value(key, parsed, spec)
     return _PlantUMLOptionAssignment(key, value, f'--config[{index}]')
@@ -299,6 +301,7 @@ def resolve_plantuml_options(
     try:
         options = PlantUMLOptions(**effective)
     except ValueError as err:
+        # PlantUMLOptions.__post_init__ rejects an invalid cross-field configuration.
         raise ClickErrorException(f'Invalid PlantUML configuration: {err}')
     return options, tuple(warnings)
 
@@ -315,8 +318,10 @@ def _render_plantuml_source(input_code_file: str, options: PlantUMLOptions) -> s
     try:
         code = auto_decode(input_path.read_bytes())
     except FileNotFoundError:
+        # Path.read_bytes raises this when the requested DSL file does not exist.
         raise ClickErrorException(f'Input DSL file not found: {input_code_file}')
     except OSError as err:
+        # Path.read_bytes raises OSError for other filesystem/read failures.
         raise ClickErrorException(f'Failed to read input DSL file {input_code_file}: {err}')
 
     ast_node = parse_with_grammar_entry(code, entry_name='state_machine_dsl')

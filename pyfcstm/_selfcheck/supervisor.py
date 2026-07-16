@@ -76,7 +76,7 @@ def _runtime_artifact_kind() -> str:
             return "wheel"
         if name.startswith("pyfcstm") and name.endswith(".egg-info"):
             # Editable installs expose legacy egg-info beside the package and
-            # do not provide the wheel RECORD closure.
+            # should still be reported as source-backed execution.
             return "source"
     return "source"
 

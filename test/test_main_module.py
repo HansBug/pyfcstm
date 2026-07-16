@@ -41,7 +41,9 @@ class TestMainModule:
         payload = json.loads(result.stdout)
         assert payload["schema_version"] == "pyfcstm-selfcheck/v1"
         assert payload["exit_code"] == 0
-        assert len(payload["results"]) >= 70
+        assert len(payload["results"]) == len(
+            payload["capabilities"]["registry"]["expected_ids"]
+        ) + 1
         assert all(
             item["status"] in ("PASS", "WARN", "SKIP")
             for item in payload["results"]

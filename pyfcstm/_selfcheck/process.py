@@ -475,7 +475,7 @@ def run_check_process(
     package_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     package_parent = os.path.dirname(package_dir)
     # Put the package under test first while preserving caller-provided import
-    # roots for worker callbacks and installation diagnostics.
+    # roots for worker callbacks and runtime diagnostics.
     inherited_pythonpath = child_environment.get("PYTHONPATH")
     child_environment["PYTHONPATH"] = _PATH_SEPARATOR.join(
         path for path in (package_parent, inherited_pythonpath) if path

@@ -503,10 +503,6 @@ def _template_extract() -> CheckOutcome:
     return _pass("python template extracts successfully")
 
 
-def _resource_path(relative: str, label: str) -> CheckOutcome:
-    return _path_probe(_resource(relative), label, required=True)
-
-
 def _resource_llm_guide() -> CheckOutcome:
     """Load both packaged LLM guides through their strict public APIs."""
     try:

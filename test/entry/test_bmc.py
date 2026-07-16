@@ -507,6 +507,141 @@ def test_bmc_schema_rejects_forged_scenario_infeasible_verdict(bmc_files) -> Non
         assert list(validator.iter_errors(forged)), name
 
 
+def test_bmc_schema_rejects_localized_prefix_origin_mutations(bmc_files) -> None:
+    """Schema localization branches require real checked prefix evidence."""
+    jsonschema = pytest.importorskip("jsonschema")
+    model_path, query = bmc_files
+    model_path.write_text("def int x = 0;\nstate Root;\n", encoding="utf-8")
+    query_path = query(
+        'assume at 0: x == 0;\nassume at 0: x == 1;\ncheck reach <= 1: active("Root");'
+    )
+    _, payload = _json_result(model_path, query_path)
+    schema_path = (
+        Path(__file__).resolve().parents[2]
+        / "docs"
+        / "source"
+        / "reference"
+        / "bmc_results"
+        / "bmc_cli_v1.schema.json"
+    )
+    validator = jsonschema.Draft202012Validator(
+        json.loads(schema_path.read_text(encoding="utf-8"))
+    )
+    assert list(validator.iter_errors(payload)) == []
+
+    inferred_initialization = copy.deepcopy(payload)
+    inferred_initialization["result"]["feasibility"]["initialization"].update(
+        origin="inferred", elapsed_ms=None
+    )
+    assert list(validator.iter_errors(inferred_initialization))
+
+    inferred_kernel = copy.deepcopy(payload)
+    feasibility = inferred_kernel["result"]["feasibility"]
+    feasibility["infeasible_stage"] = "initialization"
+    feasibility["initialization"].update(
+        status="unsat", origin="checked", reason=None, elapsed_ms=1.0
+    )
+    feasibility["kernel"].update(
+        status="sat", origin="inferred", reason=None, elapsed_ms=None
+    )
+    assert list(validator.iter_errors(inferred_kernel))
+
+
+def test_bmc_schema_rejects_terminal_verdict_mutations(bmc_files) -> None:
+    """Schema binds feasible primary UNSAT to its polarity truth table."""
+    jsonschema = pytest.importorskip("jsonschema")
+    model_path, query = bmc_files
+    query_path = query("check forbid <= 1: terminated();")
+    _, payload = _json_result(model_path, query_path)
+    schema_path = (
+        Path(__file__).resolve().parents[2]
+        / "docs"
+        / "source"
+        / "reference"
+        / "bmc_results"
+        / "bmc_cli_v1.schema.json"
+    )
+    validator = jsonschema.Draft202012Validator(
+        json.loads(schema_path.read_text(encoding="utf-8"))
+    )
+    assert list(validator.iter_errors(payload)) == []
+
+    mutations = (
+        {"property_satisfied": False, "witness_found": True},
+        {"outcome": "no_witness"},
+        {"incomplete": True},
+        {"exit_code": 0},
+    )
+    for changes in mutations:
+        forged = copy.deepcopy(payload)
+        forged["result"].update(changes)
+        if "exit_code" in changes:
+            forged["exit_code"] = changes["exit_code"]
+        assert list(validator.iter_errors(forged)), changes
+
+
+def test_bmc_schema_rejects_suffix_channel_mutations(bmc_files) -> None:
+    """Schema keeps suffix status, reason, feasibility, and role aligned."""
+    jsonschema = pytest.importorskip("jsonschema")
+    model_path, query = bmc_files
+    query_path = query("check response <= 1: trigger true -> within 2 false;")
+    _, payload = _json_result(model_path, query_path)
+    schema_path = (
+        Path(__file__).resolve().parents[2]
+        / "docs"
+        / "source"
+        / "reference"
+        / "bmc_results"
+        / "bmc_cli_v1.schema.json"
+    )
+    validator = jsonschema.Draft202012Validator(
+        json.loads(schema_path.read_text(encoding="utf-8"))
+    )
+    assert list(validator.iter_errors(payload)) == []
+
+    forged_elapsed = copy.deepcopy(payload)
+    forged_elapsed["result"]["incomplete_reason"] = "forged"
+    forged_elapsed["result"]["incomplete_elapsed_ms"] = None
+    assert list(validator.iter_errors(forged_elapsed))
+
+    forged_feasibility = copy.deepcopy(payload)
+    forged_feasibility["result"]["feasibility"]["assumptions"] = {
+        "status": "unknown",
+        "origin": "checked",
+        "reason": "solver stopped",
+        "elapsed_ms": 1.0,
+    }
+    forged_feasibility["result"]["feasibility"]["localization_status"] = "unknown"
+    assert list(validator.iter_errors(forged_feasibility))
+
+
+def test_bmc_schema_rejects_mismatched_v2_trace_roles(bmc_files) -> None:
+    """Envelope replay role must match the result and witness channel."""
+    jsonschema = pytest.importorskip("jsonschema")
+    model_path, query = bmc_files
+    query_path = query('check reach <= 1: active("Root");')
+    _, payload = _json_result(model_path, query_path)
+    schema_path = (
+        Path(__file__).resolve().parents[2]
+        / "docs"
+        / "source"
+        / "reference"
+        / "bmc_results"
+        / "bmc_cli_v1.schema.json"
+    )
+    validator = jsonschema.Draft202012Validator(
+        json.loads(schema_path.read_text(encoding="utf-8"))
+    )
+    assert list(validator.iter_errors(payload)) == []
+    assert payload["result"]["available_model_roles"] == ["primary_witness"]
+    assert payload["witness"]["model_role"] == "primary_witness"
+    assert payload["replay"]["model_role"] == "primary_witness"
+
+    forged = copy.deepcopy(payload)
+    forged["replay"]["model_role"] = "primary_counterexample"
+    assert list(validator.iter_errors(forged))
+
+
 @pytest.mark.parametrize(
     ("status", "reason"), [("timeout", "timeout"), ("unknown", "incomplete")]
 )

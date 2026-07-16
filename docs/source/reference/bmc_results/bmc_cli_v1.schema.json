@@ -35,6 +35,18 @@
     {
       "if": {"properties": {"result": {"properties": {"schema_version": {"const": "bmc-solve-result/v2"}, "available_model_roles": {"const": []}}}}},
       "then": {"properties": {"witness": {"const": null}, "replay": {"const": null}}}
+    },
+    {
+      "if": {"properties": {"result": {"properties": {"schema_version": {"const": "bmc-solve-result/v2"}, "available_model_roles": {"prefixItems": [{"const": "primary_witness"}], "items": false, "minItems": 1, "maxItems": 1}}}}},
+      "then": {"properties": {"witness": {"$ref": "#/$defs/primaryWitnessV2"}, "replay": {"$ref": "#/$defs/primaryReplayV2"}}}
+    },
+    {
+      "if": {"properties": {"result": {"properties": {"schema_version": {"const": "bmc-solve-result/v2"}, "available_model_roles": {"prefixItems": [{"const": "primary_counterexample"}], "items": false, "minItems": 1, "maxItems": 1}}}}},
+      "then": {"properties": {"witness": {"$ref": "#/$defs/primaryCounterexampleWitnessV2"}, "replay": {"$ref": "#/$defs/primaryCounterexampleReplayV2"}}}
+    },
+    {
+      "if": {"properties": {"result": {"properties": {"schema_version": {"const": "bmc-solve-result/v2"}, "available_model_roles": {"prefixItems": [{"const": "incomplete_suffix"}], "items": false, "minItems": 1, "maxItems": 1}}}}},
+      "then": {"properties": {"witness": {"$ref": "#/$defs/incompleteSuffixWitnessV2"}, "replay": {"$ref": "#/$defs/incompleteSuffixReplayV2"}}}
     }
   ],
   "$defs": {
@@ -223,7 +235,7 @@
           "if": {"properties": {"infeasible_stage": {"const": "initialization"}}},
           "then": {
             "properties": {
-              "kernel": {"properties": {"status": {"const": "sat"}, "origin": {"enum": ["checked", "inferred"]}}},
+              "kernel": {"properties": {"status": {"const": "sat"}, "origin": {"const": "checked"}}},
               "initialization": {"properties": {"status": {"const": "unsat"}, "origin": {"const": "checked"}}}
             }
           }
@@ -233,7 +245,7 @@
           "then": {
             "properties": {
               "kernel": {"properties": {"status": {"const": "sat"}, "origin": {"enum": ["checked", "inferred"]}}},
-              "initialization": {"properties": {"status": {"const": "sat"}, "origin": {"enum": ["checked", "inferred"]}}},
+              "initialization": {"properties": {"status": {"const": "sat"}, "origin": {"const": "checked"}}},
               "assumptions": {"properties": {"status": {"const": "unsat"}, "origin": {"const": "checked"}}}
             }
           }
@@ -315,9 +327,63 @@
           }
         },
         {
+          "if": {"properties": {"incomplete_status": {"const": "sat"}}},
+          "then": {
+            "properties": {
+              "incomplete_reason": {"const": null},
+              "incomplete_elapsed_ms": {"type": "number", "minimum": 0},
+              "has_incomplete_model": {"const": true}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"incomplete_status": {"const": "unsat"}}},
+          "then": {
+            "properties": {
+              "incomplete_reason": {"const": null},
+              "incomplete_elapsed_ms": {"type": "number", "minimum": 0},
+              "has_incomplete_model": {"const": false}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"incomplete_status": {"enum": ["unknown", "timeout"]}}},
+          "then": {
+            "properties": {
+              "incomplete_reason": {"type": "string", "minLength": 1},
+              "incomplete_elapsed_ms": {"type": "number", "minimum": 0},
+              "has_incomplete_model": {"const": false}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"incomplete_status": {"const": null}}},
+          "then": {
+            "oneOf": [
+              {"properties": {"incomplete_reason": {"const": null}}},
+              {"properties": {"incomplete_reason": {"const": "incomplete check disabled"}}}
+            ],
+            "properties": {
+              "incomplete_elapsed_ms": {"const": null},
+              "has_incomplete_model": {"const": false}
+            }
+          }
+        },
+        {
           "if": {"properties": {"status": {"const": "sat"}}},
-          "then": {"oneOf": [
-            {
+          "then": {
+            "properties": {
+              "feasibility": {
+                "properties": {
+                  "kernel": {"properties": {"status": {"const": "sat"}, "origin": {"const": "inferred"}}},
+                  "initialization": {"properties": {"status": {"const": "sat"}, "origin": {"const": "inferred"}}},
+                  "assumptions": {"properties": {"status": {"const": "sat"}, "origin": {"const": "inferred"}}},
+                  "localization_status": {"const": "not_needed"}
+                }
+              }
+            },
+            "oneOf": [
+              {
               "properties": {
                 "status": {"const": "sat"},
                 "polarity": {"const": "witness"},
@@ -331,8 +397,8 @@
                 "has_incomplete_model": {"const": false},
                 "available_model_roles": {"prefixItems": [{"const": "primary_witness"}], "items": false, "minItems": 1, "maxItems": 1}
               }
-            },
-            {
+              },
+              {
               "properties": {
                 "status": {"const": "sat"},
                 "polarity": {"const": "counterexample"},
@@ -346,8 +412,9 @@
                 "has_incomplete_model": {"const": false},
                 "available_model_roles": {"prefixItems": [{"const": "primary_counterexample"}], "items": false, "minItems": 1, "maxItems": 1}
               }
-            }
-          ]}
+              }
+            ]
+          }
         },
         {
           "if": {"properties": {"status": {"const": "unsat"}}},
@@ -367,6 +434,27 @@
           "if": {
             "allOf": [
               {"properties": {"status": {"const": "unsat"}}},
+              {"properties": {"feasibility": {"properties": {"assumptions": {"properties": {"status": {"const": "sat"}}}}}}}
+            ]
+          },
+          "then": {
+            "properties": {
+              "feasibility": {
+                "properties": {
+                  "kernel": {"properties": {"status": {"const": "sat"}}},
+                  "initialization": {"properties": {"status": {"const": "sat"}}},
+                  "assumptions": {"properties": {"origin": {"const": "checked"}}},
+                  "infeasible_stage": {"const": null},
+                  "localization_status": {"const": "not_needed"}
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "allOf": [
+              {"properties": {"status": {"const": "unsat"}}},
               {"not": {"properties": {"incomplete_status": {"const": "sat"}}}}
             ]
           },
@@ -376,6 +464,130 @@
               "has_incomplete_model": {"const": false},
               "available_model_roles": {"const": []}
             }
+          }
+        },
+        {
+          "if": {
+            "allOf": [
+              {"properties": {"status": {"const": "unsat"}}},
+              {"properties": {"feasibility": {"properties": {"assumptions": {"properties": {"status": {"const": "unknown"}}}}}}}
+            ]
+          },
+          "then": {
+            "properties": {
+              "property_satisfied": {"const": null},
+              "witness_found": {"const": false},
+              "counterexample_found": {"const": false},
+              "incomplete": {"const": true},
+              "outcome": {"const": "feasibility_unknown"},
+              "incomplete_status": {"const": null},
+              "incomplete_reason": {"const": null},
+              "incomplete_elapsed_ms": {"const": null},
+              "has_model": {"const": false},
+              "has_incomplete_model": {"const": false},
+              "available_model_roles": {"const": []},
+              "feasibility": {
+                "properties": {
+                  "kernel": {"$ref": "#/$defs/notCheckedFeasibilityCheck"},
+                  "initialization": {"$ref": "#/$defs/notCheckedFeasibilityCheck"},
+                  "assumptions": {"properties": {"origin": {"const": "checked"}}}
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "allOf": [
+              {"properties": {"status": {"const": "unsat"}}},
+              {"properties": {"feasibility": {"properties": {"assumptions": {"properties": {"status": {"const": "timeout"}}}}}}}
+            ]
+          },
+          "then": {
+            "properties": {
+              "property_satisfied": {"const": null},
+              "witness_found": {"const": false},
+              "counterexample_found": {"const": false},
+              "incomplete": {"const": true},
+              "outcome": {"const": "feasibility_timeout"},
+              "incomplete_status": {"const": null},
+              "incomplete_reason": {"const": null},
+              "incomplete_elapsed_ms": {"const": null},
+              "has_model": {"const": false},
+              "has_incomplete_model": {"const": false},
+              "available_model_roles": {"const": []},
+              "feasibility": {
+                "properties": {
+                  "kernel": {"$ref": "#/$defs/notCheckedFeasibilityCheck"},
+                  "initialization": {"$ref": "#/$defs/notCheckedFeasibilityCheck"},
+                  "assumptions": {"properties": {"origin": {"const": "checked"}}}
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "allOf": [
+              {"properties": {"status": {"const": "unsat"}}},
+              {"properties": {"feasibility": {"properties": {"assumptions": {"properties": {"status": {"const": null, "origin": {"const": "not_checked"}}}}}}}}
+            ]
+          },
+          "then": {
+            "properties": {
+              "property_satisfied": {"const": null},
+              "witness_found": {"const": false},
+              "counterexample_found": {"const": false},
+              "incomplete": {"const": true},
+              "outcome": {"const": "feasibility_timeout"},
+              "incomplete_status": {"const": null},
+              "incomplete_reason": {"const": null},
+              "incomplete_elapsed_ms": {"const": null},
+              "has_model": {"const": false},
+              "has_incomplete_model": {"const": false},
+              "available_model_roles": {"const": []},
+              "diagnostics": {"contains": {"const": "feasibility_timeout:deadline_exhausted_before_assumptions_check"}},
+              "feasibility": {"$ref": "#/$defs/notCheckedFeasibility"}
+            }
+          }
+        },
+        {
+          "if": {
+            "allOf": [
+              {"properties": {"status": {"const": "unsat"}}},
+              {"properties": {"feasibility": {"properties": {"assumptions": {"properties": {"status": {"const": "sat"}}}}}}},
+              {"properties": {"incomplete_reason": {"const": null}}},
+              {"not": {"properties": {"incomplete_status": {"enum": ["sat", "unknown", "timeout"]}}}}
+            ]
+          },
+          "then": {
+            "properties": {
+              "has_model": {"const": false},
+              "has_incomplete_model": {"const": false},
+              "available_model_roles": {"const": []}
+            },
+            "oneOf": [
+              {
+                "properties": {
+                  "polarity": {"const": "witness"},
+                  "property_satisfied": {"const": false},
+                  "witness_found": {"const": false},
+                  "counterexample_found": {"const": false},
+                  "incomplete": {"const": false},
+                  "outcome": {"const": "no_witness"}
+                }
+              },
+              {
+                "properties": {
+                  "polarity": {"const": "counterexample"},
+                  "property_satisfied": {"const": true},
+                  "witness_found": {"const": false},
+                  "counterexample_found": {"const": false},
+                  "incomplete": {"const": false},
+                  "outcome": {"const": "property_satisfied"}
+                }
+              }
+            ]
           }
         },
         {
@@ -421,6 +633,53 @@
           }
         },
         {
+          "if": {
+            "allOf": [
+              {"properties": {"kind": {"const": "response"}, "status": {"const": "unsat"}}},
+              {"properties": {"feasibility": {"properties": {"assumptions": {"properties": {"status": {"const": "sat"}}}}}}},
+              {"properties": {"incomplete_status": {"enum": ["unknown", "timeout"]}}}
+            ]
+          },
+          "then": {
+            "properties": {
+              "feasibility": {
+                "properties": {
+                  "assumptions": {"properties": {"status": {"const": "sat", "origin": {"const": "checked"}}}}
+                }
+              },
+              "property_satisfied": {"const": null},
+              "witness_found": {"const": false},
+              "counterexample_found": {"const": false},
+              "incomplete": {"const": true},
+              "outcome": {"const": "incomplete"},
+              "has_model": {"const": false},
+              "has_incomplete_model": {"const": false},
+              "available_model_roles": {"const": []}
+            }
+          }
+        },
+        {
+          "if": {
+            "allOf": [
+              {"properties": {"kind": {"const": "response"}, "status": {"const": "unsat"}}},
+              {"properties": {"feasibility": {"properties": {"assumptions": {"properties": {"status": {"const": "sat"}}}}}}},
+              {"properties": {"incomplete_status": {"const": null}, "incomplete_reason": {"const": "incomplete check disabled"}}}
+            ]
+          },
+          "then": {
+            "properties": {
+              "property_satisfied": {"const": null},
+              "witness_found": {"const": false},
+              "counterexample_found": {"const": false},
+              "incomplete": {"const": true},
+              "outcome": {"const": "incomplete"},
+              "has_model": {"const": false},
+              "has_incomplete_model": {"const": false},
+              "available_model_roles": {"const": []}
+            }
+          }
+        },
+        {
           "if": {"properties": {"status": {"enum": ["unknown", "timeout"]}}},
           "then": {
             "properties": {
@@ -434,7 +693,8 @@
               "incomplete_elapsed_ms": {"const": null},
               "has_incomplete_model": {"const": false},
               "available_model_roles": {"const": []},
-              "feasibility": {"$ref": "#/$defs/notCheckedFeasibility"}
+              "feasibility": {"$ref": "#/$defs/notCheckedFeasibility"},
+              "outcome": {"oneOf": [{"const": "unknown"}, {"const": "timeout"}]}
             }
           }
         }
@@ -613,6 +873,18 @@
         }
       ]
     },
+    "primaryWitnessV2": {
+      "allOf": [
+        {"$ref": "#/$defs/witnessV2"},
+        {"type": "object", "properties": {"model_role": {"const": "primary_witness"}}}
+      ]
+    },
+    "primaryCounterexampleWitnessV2": {
+      "allOf": [
+        {"$ref": "#/$defs/witnessV2"},
+        {"type": "object", "properties": {"model_role": {"const": "primary_counterexample"}}}
+      ]
+    },
     "runtimeFrame": {
       "type": "object",
       "additionalProperties": false,
@@ -684,6 +956,30 @@
         },
         "mismatches": {"type": "array", "items": {"$ref": "#/$defs/mismatch"}}
       }
+    },
+    "primaryReplayV2": {
+      "allOf": [
+        {"$ref": "#/$defs/replayV2"},
+        {"type": "object", "properties": {"model_role": {"const": "primary_witness"}}}
+      ]
+    },
+    "primaryCounterexampleReplayV2": {
+      "allOf": [
+        {"$ref": "#/$defs/replayV2"},
+        {"type": "object", "properties": {"model_role": {"const": "primary_counterexample"}}}
+      ]
+    },
+    "incompleteSuffixWitnessV2": {
+      "allOf": [
+        {"$ref": "#/$defs/witnessV2"},
+        {"type": "object", "properties": {"model_role": {"const": "incomplete_suffix"}}}
+      ]
+    },
+    "incompleteSuffixReplayV2": {
+      "allOf": [
+        {"$ref": "#/$defs/replayV2"},
+        {"type": "object", "properties": {"model_role": {"const": "incomplete_suffix"}}}
+      ]
     }
   }
 }

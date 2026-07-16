@@ -476,6 +476,21 @@ trace is useful for replaying the finite prefix but its detached verdict stays
 single total budget shared by primary, feasibility, localization, and suffix
 checks; a later check is not started after the budget is exhausted.
 
+The schema preserves the evidence boundary for localized infeasibility.  An
+``infeasible_stage == "initialization"`` result requires a checked SAT
+``kernel`` prefix and checked UNSAT ``initialization`` evidence.  An
+``infeasible_stage == "assumptions"`` result requires a SAT ``kernel`` prefix
+(which may be inferred), checked SAT ``initialization`` evidence, and checked
+UNSAT ``assumptions`` evidence.  ``origin == "inferred"`` therefore records a
+SAT fact implied by a trusted stronger result; it cannot replace a solver check
+needed to distinguish the first infeasible stage.
+
+For a v2 result with a non-empty ``available_model_roles`` array, both the
+``witness`` and ``replay`` objects must be v2 objects carrying exactly the same
+role as the result.  An empty role array requires both objects to be ``null``.
+This keeps the external envelope from combining evidence from different model
+channels even when each individual object is structurally valid.
+
 Witness fields
 --------------
 

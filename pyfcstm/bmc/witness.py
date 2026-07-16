@@ -1864,11 +1864,26 @@ class BmcFeasibilityResult(_PrettyPrintableMixin):
                 raise BmcBuildError(
                     "initialization infeasible_stage requires a SAT prefix."
                 )
+            if (
+                self.infeasible_stage == "initialization"
+                and self.kernel.origin != "checked"
+            ):
+                raise BmcBuildError(
+                    "initialization infeasible_stage requires checked kernel evidence."
+                )
             if self.infeasible_stage == "assumptions" and (
                 self.kernel.status != "sat" or self.initialization.status != "sat"
             ):
                 raise BmcBuildError(
                     "assumptions infeasible_stage requires a SAT prefix."
+                )
+            if (
+                self.infeasible_stage == "assumptions"
+                and self.initialization.origin != "checked"
+            ):
+                raise BmcBuildError(
+                    "assumptions infeasible_stage requires checked initialization "
+                    "evidence."
                 )
         elif self.localization_status == "complete":
             raise BmcBuildError(

@@ -1166,10 +1166,11 @@ def test_solve_result_rejects_forged_inconclusive_feasibility() -> None:
     """Primary unknown cannot carry a later-stage UNSAT claim."""
     formula = _verdict_formula("reach")
     sat = BmcFeasibilityCheck("sat", "inferred")
+    checked_initialization = BmcFeasibilityCheck("sat", "checked", elapsed_ms=1.0)
     assumptions = BmcFeasibilityCheck("unsat", "checked", elapsed_ms=1.0)
     feasibility = BmcFeasibilityResult(
         sat,
-        sat,
+        checked_initialization,
         assumptions,
         infeasible_stage="assumptions",
         localization_status="complete",
@@ -1286,6 +1287,43 @@ def test_feasibility_result_rejects_non_sat_prefix_for_localized_stage(
 ) -> None:
     """A localized stage must preserve the cumulative SAT prefix contract."""
     with pytest.raises(BmcBuildError, match="SAT prefix"):
+        BmcFeasibilityResult(
+            kernel=kernel,
+            initialization=initialization,
+            assumptions=assumptions,
+            infeasible_stage=infeasible_stage,
+            localization_status="complete",
+        )
+
+
+@pytest.mark.parametrize(
+    ("infeasible_stage", "kernel", "initialization", "assumptions", "message"),
+    [
+        (
+            "initialization",
+            BmcFeasibilityCheck("sat", "inferred"),
+            BmcFeasibilityCheck("unsat", "checked", elapsed_ms=1.0),
+            BmcFeasibilityCheck("unsat", "checked", elapsed_ms=1.0),
+            "checked kernel",
+        ),
+        (
+            "assumptions",
+            BmcFeasibilityCheck("sat", "inferred"),
+            BmcFeasibilityCheck("sat", "inferred"),
+            BmcFeasibilityCheck("unsat", "checked", elapsed_ms=1.0),
+            "checked initialization",
+        ),
+    ],
+)
+def test_feasibility_result_requires_checked_prefix_for_localization(
+    infeasible_stage,
+    kernel,
+    initialization,
+    assumptions,
+    message,
+) -> None:
+    """Localized stages cannot rely on inferred prefix evidence."""
+    with pytest.raises(BmcBuildError, match=message):
         BmcFeasibilityResult(
             kernel=kernel,
             initialization=initialization,

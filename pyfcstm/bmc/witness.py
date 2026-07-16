@@ -2149,6 +2149,15 @@ class BmcSolveResult(_PrettyPrintableMixin):
                 "primary unknown/timeout results require all feasibility stages "
                 "to be not_checked."
             )
+        if (
+            self.status == "unsat"
+            and _is_not_checked_feasibility(self.feasibility)
+            and not _has_diagnostic(self, _FEASIBILITY_TIMEOUT_BEFORE_ASSUMPTIONS)
+        ):
+            raise BmcBuildError(
+                "primary unsat results with all not_checked feasibility evidence "
+                "require a deadline exhaustion diagnostic."
+            )
         if self.status == "sat" and not (
             self.feasibility.kernel.origin == "inferred"
             and self.feasibility.initialization.origin == "inferred"

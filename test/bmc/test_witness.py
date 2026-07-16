@@ -969,6 +969,46 @@ def test_solve_result_constructor_requires_unsat_feasibility_evidence() -> None:
         BmcSolveResult(formula, "unsat")
 
 
+def test_solve_result_rejects_unchecked_unsat_without_timeout_evidence() -> None:
+    """Primary UNSAT cannot use empty feasibility evidence as a verdict."""
+    formula = _verdict_formula("reach")
+    not_checked = BmcFeasibilityCheck(None, "not_checked")
+    feasibility = BmcFeasibilityResult(
+        not_checked,
+        not_checked,
+        not_checked,
+        localization_status="not_checked",
+        refinement_status="not_needed",
+    )
+
+    with pytest.raises(BmcBuildError, match="deadline exhaustion diagnostic"):
+        BmcSolveResult(formula, "unsat", feasibility=feasibility)
+
+
+def test_solve_result_allows_unchecked_unsat_after_deadline_exhaustion() -> None:
+    """The pre-check deadline branch remains a structured non-verdict."""
+    formula = _verdict_formula("reach")
+    not_checked = BmcFeasibilityCheck(None, "not_checked")
+    feasibility = BmcFeasibilityResult(
+        not_checked,
+        not_checked,
+        not_checked,
+        localization_status="not_checked",
+        refinement_status="not_needed",
+    )
+
+    result = BmcSolveResult(
+        formula,
+        "unsat",
+        diagnostics=(witness_module._FEASIBILITY_TIMEOUT_BEFORE_ASSUMPTIONS,),
+        feasibility=feasibility,
+    )
+
+    assert result.property_satisfied is None
+    assert result.incomplete is True
+    assert result.outcome == "feasibility_timeout"
+
+
 def test_solve_result_rejects_suffix_on_non_response() -> None:
     """An incomplete suffix channel is exclusive to response properties."""
     formula = _verdict_formula("reach")

@@ -2285,7 +2285,12 @@ def _visual_remote_render() -> CheckOutcome:
         from plantumlcli.models.base import PlantumlResourceType
 
         backend = create_remote_plantuml_backend(remote_host=host)
-        backend.check()
+        try:
+            backend.check()
+        except UnicodeDecodeError:
+            # PlantUML PicoWeb may return a binary PNG for its root page;
+            # validate the real render below instead of decoding that page.
+            pass
         with tempfile.TemporaryDirectory(prefix="pyfcstm-plantuml-") as directory:
             output = Path(directory) / "selfcheck.png"
             backend.dump(str(output), PlantumlResourceType.PNG, source)

@@ -291,7 +291,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: pyfcstm-pr4-release-python-selfcheck
-          if-no-files-found: warn
+          if-no-files-found: error
           path: |
             ${{ runner.temp }}/pyfcstm-release-python-reports
             ${{ runner.temp }}/java-version.txt
@@ -939,7 +939,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: pyfcstm-pr4-release-cli-selfcheck-${{ matrix.os }}
-          if-no-files-found: warn
+          if-no-files-found: error
           path: |
             ${{ runner.temp }}/pyfcstm-release-cli-reports
             ${{ runner.temp }}/java-version.txt
@@ -1068,7 +1068,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: pyfcstm-pr4-release-cli-controlled-ubuntu
-          if-no-files-found: warn
+          if-no-files-found: error
           path: |
             ${{ runner.temp }}/pyfcstm-controlled-cli-reports
             ${{ runner.temp }}/java-version.txt

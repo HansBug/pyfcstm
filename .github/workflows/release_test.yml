@@ -235,7 +235,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: pyfcstm-pr4-wheel-selfcheck-ubuntu-22.04
-          if-no-files-found: warn
+          if-no-files-found: error
           path: |
             ${{ runner.temp }}/pyfcstm-wheel-reports
             ${{ runner.temp }}/java-version.txt
@@ -386,13 +386,36 @@ jobs:
           test "$version_status" -eq 0
           test "$module_version_status" -eq 0
           test "$default_status" -eq 0
+          test "$visualize_status" -eq 0
+          test "$readiness_status" -eq 0
           grep -F "Commit: $GITHUB_SHA" "$reports/version.log"
+      - name: Assert configured PlantUML results
+        env:
+          PLANTUML_HOST: http://127.0.0.1:18080
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - "$RUNNER_TEMP/pyfcstm-wheel-reports/visualize.json" "$PLANTUML_HOST" <<'PY'
+          import json
+          import sys
+
+          report_path, host = sys.argv[1:]
+          with open(report_path, "r") as stream:
+              report = json.load(stream)
+          results = {item["id"]: item for item in report["results"]}
+          for check_id in ("visualize.remote_tls", "visualize.remote_render"):
+              result = results.get(check_id)
+              if result is None or result["status"] != "PASS":
+                  raise SystemExit("{} did not PASS: {}".format(check_id, result))
+              if host not in (result.get("observed") or ""):
+                  raise SystemExit("{} did not record configured host: {}".format(check_id, result))
+          PY
       - name: Upload fresh wheel evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: pyfcstm-pr4-wheel-selfcheck-${{ matrix.os }}
-          if-no-files-found: warn
+          if-no-files-found: error
           path: |
             ${{ runner.temp }}/pyfcstm-wheel-reports
             ${{ runner.temp }}/java-version.txt
@@ -549,7 +572,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: pyfcstm-pr4-sdist-selfcheck
-          if-no-files-found: warn
+          if-no-files-found: error
           path: |
             ${{ runner.temp }}/pyfcstm-sdist-reports
             ${{ runner.temp }}/java-version.txt
@@ -1025,7 +1048,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: pyfcstm-pr4-release-test-cli-selfcheck-${{ matrix.os }}
-          if-no-files-found: warn
+          if-no-files-found: error
           path: |
             ${{ runner.temp }}/pyfcstm-release-test-cli-reports
             ${{ runner.temp }}/java-version.txt

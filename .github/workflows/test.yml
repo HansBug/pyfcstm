@@ -1033,7 +1033,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: pyfcstm-pr4-cli-selfcheck-ubuntu
-          if-no-files-found: warn
+          if-no-files-found: error
           path: |
             ${{ runner.temp }}/pyfcstm-selfcheck-reports
             ${{ runner.temp }}/java-version.txt
@@ -1180,7 +1180,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: pyfcstm-pr4-cli-selfcheck-${{ matrix.os }}
-          if-no-files-found: warn
+          if-no-files-found: error
           path: |
             ${{ runner.temp }}/pyfcstm-selfcheck-reports
             ${{ runner.temp }}/java-version.txt

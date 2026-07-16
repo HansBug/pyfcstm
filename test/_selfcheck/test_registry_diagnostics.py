@@ -615,6 +615,30 @@ def test_remote_render_backend_shape_failure_is_a_capability_warning(monkeypatch
     assert "homepage footer is unavailable" in (outcome.exception or "")
 
 
+@pytest.mark.unittest
+def test_remote_render_accepts_binary_picoweb_homepage(monkeypatch):
+    """PicoWeb binary root pages do not prevent a real PNG render probe."""
+    monkeypatch.setenv("PYFCSTM_SELFCHECK_NETWORK", "1")
+
+    class _Backend:
+        def check(self):
+            raise UnicodeDecodeError("utf-8", b"\x89PNG", 0, 1, "binary page")
+
+        def dump(self, path, type_, code):
+            del type_, code
+            with open(path, "wb") as handle:
+                handle.write(_PNG)
+
+    monkeypatch.setattr(
+        "pyfcstm.entry.visualize.create_remote_plantuml_backend",
+        lambda remote_host: _Backend(),
+    )
+    outcome = registry._visual_remote_render()
+
+    assert outcome.status == "PASS"
+    assert "signature=valid" in outcome.observed
+
+
 class _ContextValue:
     def __init__(self, value):
         self.value = value

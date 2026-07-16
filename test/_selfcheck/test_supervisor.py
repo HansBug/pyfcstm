@@ -48,7 +48,7 @@ def test_default_profile_returns_one_canonical_snapshot(capsys):
         "runtime.metadata",
         *EXPECTED_CHECK_IDS,
     ]
-    assert sum(payload["summary"].values()) == 69
+    assert sum(payload["summary"].values()) == 58
     assert all(item["status"] in ("PASS", "WARN", "SKIP") for item in payload["results"])
     assert payload["capabilities"]["registry"]["expected_ids"] == list(EXPECTED_CHECK_IDS)
     assert payload["dependencies"][0]["id"] == "runtime.metadata"
@@ -77,6 +77,33 @@ def test_human_supervisor_emits_the_frozen_snapshot(monkeypatch, capsys):
     output = capsys.readouterr().out
     assert "[1/1] PASS demo" in output
     assert "Conclusion: [ PASSED ]" in output
+
+
+@pytest.mark.unittest
+def test_human_report_write_failure_is_streamed_with_full_diagnostics(
+    monkeypatch, capsys, tmp_path
+):
+    """A final report failure gets its own numbered human result immediately."""
+    spec = CheckSpec("demo", "demo")
+    _install_worker_specs(monkeypatch, (spec,))
+    monkeypatch.setattr(
+        supervisor,
+        "write_report",
+        lambda *args: "OSError: report destination unavailable",
+    )
+
+    assert (
+        supervisor.run_supervisor(
+            ("--color", "never", "--report", str(tmp_path / "report.json"))
+        )
+        == 1
+    )
+    output = capsys.readouterr().out
+    assert "[1/2] PASS demo" in output
+    assert "[2/2] ERROR selfcheck.report_write" in output
+    assert "reason: report_write" in output
+    assert "OSError: report destination unavailable" in output
+    assert "Conclusion: [ FAILED ]" in output
 
 
 @pytest.mark.unittest
@@ -109,6 +136,19 @@ def test_human_registry_failure_uses_synthetic_result_count(monkeypatch, capsys)
     assert "running 1 checks" in output
     assert "[1/1] ERROR selfcheck.registry" in output
     assert "[1/2]" not in output
+
+
+@pytest.mark.unittest
+def test_malformed_registry_object_is_reported_without_cleanup_escape(
+    monkeypatch, capsys
+):
+    """A non-CheckSpec registry entry cannot break infrastructure recovery."""
+    monkeypatch.setattr(supervisor, "selected_specs", lambda profile: (object(),))
+
+    assert supervisor.run_supervisor(("--color", "never")) == 1
+    output = capsys.readouterr().out
+    assert "[1/1] ERROR selfcheck.registry" in output
+    assert "invalid self-check specification" in output
 
 
 @pytest.mark.unittest

@@ -136,11 +136,6 @@ class _BoundedCapture:
     def truncated_bytes(self) -> int:
         return max(0, self.total - self.limit)
 
-    def mark_overflow(self, overflow_bytes: int = 1) -> None:
-        """Record bytes discarded by an external physical quota."""
-        self.total = max(self.total, self.limit + max(1, int(overflow_bytes)))
-
-
 def _capture_stream(stream, data, capture_protocol: bool) -> _BoundedCapture:
     """Build a bounded capture from a spool or an already returned byte string."""
     capture = _BoundedCapture(capture_protocol=capture_protocol)
@@ -271,7 +266,8 @@ def _terminate(
             os.killpg(process.pid, signal.SIGTERM)
         except OSError as err:
             # The group may already have exited before graceful termination.
-            _record_error(errors, "sigterm", err)
+            if err.errno != errno.ESRCH:
+                _record_error(errors, "sigterm", err)
         _wait_process(process, grace, errors, kill_on_timeout=False)
         try:
             os.killpg(process.pid, signal.SIGKILL)
@@ -279,7 +275,8 @@ def _terminate(
             pass
         except OSError as err:
             # Non-ESRCH kill failures leave explicit cleanup evidence.
-            _record_error(errors, "sigkill", err)
+            if err.errno != errno.ESRCH:
+                _record_error(errors, "sigkill", err)
         else:
             _wait_for_group_exit(process.pid, grace, errors)
         _wait_process(process, grace, errors, kill_on_timeout=False)
@@ -591,9 +588,9 @@ def run_check_process(
             "stderr_capture": stderr_capture,
         }
         return_code = process.returncode
-        if return_code and not timed_out:
-            # A crashed/non-zero worker may have left descendants in its process
-            # group even though the group leader has already exited.
+        if not timed_out:
+            # A normally returning worker may still leave descendants in its
+            # process group; always close the group before the next check.
             cleanup_error = _terminate(process, job, posix_group, scaled_grace)
             job = None
         process_fields["return_code"] = return_code

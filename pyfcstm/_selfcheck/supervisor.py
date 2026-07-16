@@ -119,7 +119,14 @@ def _validate_specs(specs):
     """Return registry validation diagnostics before any callback is started."""
     seen = set()
     errors = []
-    for spec in specs:
+    for index, spec in enumerate(specs):
+        if not isinstance(spec, CheckSpec):
+            errors.append(
+                "invalid self-check specification at index {}: {}".format(
+                    index, type(spec).__name__
+                )
+            )
+            continue
         if spec.check_id in seen:
             errors.append("duplicate self-check ID: {}".format(spec.check_id))
         seen.add(spec.check_id)
@@ -212,6 +219,29 @@ def _commit_terminal(
     )
 
 
+def _replace_terminal(
+    ledger: Ledger,
+    spec: CheckSpec,
+    status: str,
+    summary: str,
+    reason: str,
+    evidence: str = "",
+) -> None:
+    """Replace one provisional terminal result with final diagnostics."""
+    ledger.replace(
+        CheckResult(
+            spec.check_id,
+            status,
+            spec.required,
+            summary=summary,
+            title=spec.title,
+            prerequisites=spec.prerequisites,
+            reason=reason,
+            evidence=evidence,
+        )
+    )
+
+
 def _normalize_required_warning(spec: CheckSpec, result: CheckResult) -> CheckResult:
     """Turn strict required warnings into failures without changing optional probes."""
     if (
@@ -242,6 +272,10 @@ def _terminalize_unfinished(
     )
     reason = "supervisor_interrupted" if interrupted else "supervisor_infrastructure"
     for spec in specs:
+        if not isinstance(spec, CheckSpec):
+            # A malformed registry entry is already represented by the
+            # synthetic registry/infrastructure result.
+            continue
         if ledger.get_result(spec.check_id) is not None:
             continue
         status = (
@@ -434,6 +468,10 @@ def run_supervisor(arguments: Sequence[str], start_emitted: bool = False) -> int
 
     ledger = Ledger()
     specs = ()
+    report_specs = ()
+    report_spec = None
+    progress = None
+    emitted = [0]
     metadata = {
         "session_id": uuid.uuid4().hex,
         "profile": options.profile,
@@ -442,12 +480,9 @@ def run_supervisor(arguments: Sequence[str], start_emitted: bool = False) -> int
     }
     forced_exit = None
     try:
-        specs = selected_specs(
-            options.profile, artifact_kind=_runtime_artifact_kind()
-        )
+        specs = selected_specs(options.profile)
         validation_errors = _validate_specs(specs)
         registry_spec = None
-        report_specs = specs
         if validation_errors:
             registry_spec = CheckSpec(
                 "selfcheck.registry",
@@ -455,10 +490,17 @@ def run_supervisor(arguments: Sequence[str], start_emitted: bool = False) -> int
                 title="self-check registry",
             )
             report_specs = (registry_spec,)
-        progress = None
+        else:
+            report_specs = tuple(specs)
+        if options.report:
+            report_spec = CheckSpec(
+                "selfcheck.report_write",
+                "synthetic",
+                title="self-check report write",
+            )
+            report_specs = tuple(report_specs) + (report_spec,)
         if streaming_human:
             write_human_plan(len(report_specs), options.profile, options.color)
-            emitted = [0]
 
             def progress(result):
                 emitted[0] += 1
@@ -527,6 +569,33 @@ def run_supervisor(arguments: Sequence[str], start_emitted: bool = False) -> int
             raise
         forced_exit = 3
         evidence = traceback.format_exc()
+        infrastructure_spec = CheckSpec(
+            "selfcheck.infrastructure",
+            "synthetic",
+            title="self-check infrastructure",
+        )
+        if infrastructure_spec.check_id not in {
+            getattr(item, "check_id", None) for item in report_specs
+        }:
+            report_specs = tuple(report_specs) + (infrastructure_spec,)
+        if options.report and report_spec is None:
+            report_spec = CheckSpec(
+                "selfcheck.report_write",
+                "synthetic",
+                title="self-check report write",
+            )
+            report_specs = tuple(report_specs) + (report_spec,)
+        if streaming_human and progress is None:
+            write_human_plan(len(report_specs), options.profile, options.color)
+
+            def progress(result):
+                emitted[0] += 1
+                write_human_result(
+                    result, emitted[0], len(report_specs), options.color
+                )
+
+            if metadata.get("environment"):
+                write_human_environment(metadata["environment"], options.color)
         _terminalize_unfinished(
             ledger,
             specs,
@@ -535,16 +604,14 @@ def run_supervisor(arguments: Sequence[str], start_emitted: bool = False) -> int
         )
         _commit_terminal(
             ledger,
-            CheckSpec(
-                "selfcheck.infrastructure",
-                "synthetic",
-                title="self-check infrastructure",
-            ),
+            infrastructure_spec,
             "ERROR",
             "self-check infrastructure error",
             "infrastructure_error",
             evidence,
         )
+        if progress is not None:
+            progress(ledger.get_result(infrastructure_spec.check_id))
 
     metadata["finished_at"] = time.time()
     provisional = ledger.freeze(metadata)
@@ -557,6 +624,23 @@ def run_supervisor(arguments: Sequence[str], start_emitted: bool = False) -> int
     snapshot = ledger.freeze(metadata)
 
     if options.report:
+        # Commit a provisional PASS before writing so the on-disk report and
+        # final stdout can share one exact snapshot.  A failed write replaces
+        # this terminal result with its complete diagnostic evidence.
+        if report_spec is None:
+            report_spec = CheckSpec(
+                "selfcheck.report_write",
+                "synthetic",
+                title="self-check report write",
+            )
+        _commit_terminal(
+            ledger,
+            report_spec,
+            "PASS",
+            "report destination is writable",
+            "report_write_pending",
+        )
+        snapshot = ledger.freeze(metadata)
         try:
             report_error = write_report(options.report, snapshot)
         except (OSError, TypeError, UnicodeError, ValueError) as err:
@@ -564,13 +648,9 @@ def run_supervisor(arguments: Sequence[str], start_emitted: bool = False) -> int
                 type(err).__name__, err, traceback.format_exc()
             )
         if report_error is not None:
-            _commit_terminal(
+            _replace_terminal(
                 ledger,
-                CheckSpec(
-                    "selfcheck.report_write",
-                    "synthetic",
-                    title="self-check report write",
-                ),
+                report_spec,
                 "ERROR",
                 "report write failed",
                 "report_write",
@@ -578,6 +658,8 @@ def run_supervisor(arguments: Sequence[str], start_emitted: bool = False) -> int
             )
             metadata["exit_code"] = 1 if forced_exit is None else forced_exit
             snapshot = ledger.freeze(metadata)
+        if progress is not None:
+            progress(ledger.get_result(report_spec.check_id))
 
     if streaming_human:
         write_human_summary(snapshot, options.color)

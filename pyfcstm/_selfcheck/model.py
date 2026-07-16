@@ -390,6 +390,25 @@ class Ledger:
         self._results[result.check_id] = result
         self._states[result.check_id] = result.status
 
+    def replace(self, result: CheckResult) -> None:
+        """Replace one already committed result during finalization.
+
+        The report writer is itself a last-stage operation.  A provisional
+        result may be committed before attempting an atomic report write and
+        replaced with its concrete failure diagnostics if that write fails.
+
+        :param result: Replacement terminal result.
+        :type result: CheckResult
+        :raises KeyError: If the result ID was not reserved.
+        :raises RuntimeError: If no terminal result exists for the ID.
+        """
+        if result.check_id not in self._states:
+            raise KeyError(result.check_id)
+        if result.check_id not in self._results:
+            raise RuntimeError("cannot replace pending result: {}".format(result.check_id))
+        self._results[result.check_id] = result
+        self._states[result.check_id] = result.status
+
     def get_state(self, check_id: str) -> Optional[str]:
         """Return the lifecycle state for *check_id*, if reserved."""
         return self._states.get(check_id)

@@ -194,6 +194,19 @@ def test_timeout_and_crash_clean_up_grandchildren(monkeypatch, tmp_path, scenari
 
 
 @pytest.mark.unittest
+@pytest.mark.skipif(os.name != "posix", reason="POSIX process-group contract")
+def test_successful_worker_also_cleans_up_grandchildren(monkeypatch, tmp_path):
+    """A PASS worker cannot leave a child process behind for later checks."""
+    child_pid_file = tmp_path / "child.pid"
+    _install_fixture(monkeypatch, "spawn_success", child_pid_file)
+    result = run_check_process(_spec(), timeout=2.0)
+    assert result.status == "PASS"
+    assert _wait_for_file(child_pid_file)
+    child_pid = int(child_pid_file.read_text(encoding="ascii"))
+    assert _wait_for_pid_exit(child_pid)
+
+
+@pytest.mark.unittest
 @pytest.mark.parametrize("scenario", ["huge_stderr", "huge_stdout"])
 def test_stream_capture_is_bounded(monkeypatch, scenario):
     """Large business output is bounded before entering the final report."""

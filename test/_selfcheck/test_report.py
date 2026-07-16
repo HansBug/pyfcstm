@@ -112,6 +112,31 @@ def test_human_report_contains_environment_header_and_failure_evidence():
 
 
 @pytest.mark.unittest
+def test_human_failure_details_include_semantic_diagnostics():
+    """Human failures expose expected, observed, remediation, and exception."""
+    result = CheckResult(
+        "resource.guide",
+        "FAIL",
+        True,
+        summary="guide checksum mismatch",
+        reason="resource_invalid",
+        expected="sha256=abc",
+        observed="sha256=def",
+        remediation="run make sha256",
+        exception="Traceback (most recent call last):\nValueError: mismatch",
+    )
+    rendered = render_human_result(result, 1, 1, color="never")
+    for value in (
+        "expected: sha256=abc",
+        "observed: sha256=def",
+        "remediation: run make sha256",
+        "exception:",
+        "ValueError: mismatch",
+    ):
+        assert value in rendered
+
+
+@pytest.mark.unittest
 def test_human_summary_omits_zero_counts_and_colors_emitted_statuses(monkeypatch):
     """Only positive status counts are shown and each keeps its color role."""
     monkeypatch.setattr("pyfcstm._selfcheck.report._color_requested", lambda mode: True)

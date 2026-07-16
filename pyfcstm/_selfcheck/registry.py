@@ -8,7 +8,6 @@ outcomes only; process isolation, report formatting, and exit-code policy stay
 in the supervisor/worker layers.
 """
 
-import csv
 import importlib
 import json
 import os
@@ -31,15 +30,7 @@ Worker = Callable[[], CheckOutcome]
 Probe = Callable[[], CheckOutcome]
 
 REGISTRY_SCHEMA_VERSION = "pyfcstm-selfcheck-registry/v1"
-REGISTRY_VERSION = "pr3-v2"
-_ARTIFACT_KINDS = frozenset(
-    (
-        "source",
-        "wheel",
-        "sdist",
-        "frozen",
-    )
-)
+REGISTRY_VERSION = "pr3-v3"
 CAPABILITY_CHECK_IDS = frozenset(
     (
         "visualize.python_stack",
@@ -67,10 +58,6 @@ EXPECTED_CHECK_IDS = (
     "identity.source",
     "identity.build_info_module",
     "identity.artifact",
-    "install.metadata",
-    "install.record",
-    "install.requirements",
-    "install.entrypoints",
     "resource.diagnostics.codes",
     "resource.diagnostics.schemas",
     "resource.templates.index",
@@ -107,13 +94,6 @@ EXPECTED_CHECK_IDS = (
     "bmc.verification.prepare",
     "bmc.property.solve",
     "bmc.module.closure",
-    "artifact.bootstrap",
-    "artifact.self_dispatch",
-    "artifact.resources",
-    "artifact.native_inventory",
-    "artifact.module_closure",
-    "artifact.metadata",
-    "artifact.executable",
     "visualize.python_stack",
     "visualize.java",
     "visualize.plantuml_jar",
@@ -123,8 +103,8 @@ EXPECTED_CHECK_IDS = (
     "visualize.remote_render",
 )
 
-if len(EXPECTED_CHECK_IDS) != 68:  # pragma: no cover - immutable contract guard
-    raise RuntimeError("self-check registry must contain exactly 68 fixed IDs")
+if len(EXPECTED_CHECK_IDS) != 57:  # pragma: no cover - immutable contract guard
+    raise RuntimeError("self-check registry must contain exactly 57 fixed IDs")
 
 
 def _pass(summary: str, expected: Optional[str] = None, observed: Optional[str] = None):
@@ -362,189 +342,6 @@ def _identity_artifact() -> CheckOutcome:
     return _identity_build_info_module()
 
 
-def _distribution_metadata() -> CheckOutcome:
-    if getattr(sys, "frozen", False):
-        # A frozen executable has no authoritative host distribution metadata;
-        # an unrelated installed pyfcstm distribution must not affect it.
-        return _skip("installed distribution metadata is not applicable to a frozen executable")
-    try:
-        try:
-            from importlib import metadata
-        except ImportError:
-            import importlib_metadata as metadata
-        version = metadata.version("pyfcstm")
-    except (ImportError, KeyError, OSError, ValueError) as err:
-        if _runtime_install_required():
-            return _fail(
-                "installed distribution metadata is unavailable",
-                "metadata_unavailable",
-                observed=str(err),
-            )
-        return _skip("installed distribution metadata is not applicable", observed=str(err))
-    import pyfcstm
-
-    expected_version = getattr(pyfcstm, "__version__", None)
-    if expected_version and version != expected_version:
-        outcome = _fail if getattr(sys, "frozen", False) or _runtime_install_required() else _warn
-        return outcome(
-            "installed distribution version disagrees with the package",
-            "metadata_version_mismatch",
-            expected=expected_version,
-            observed=version,
-        )
-    return _pass("installed distribution metadata is readable", observed=version)
-
-
-def _distribution_root() -> Path:
-    return _package_root().parent
-
-
-def _distribution_metadata_path(filename: str) -> Optional[Path]:
-    """Find one distribution metadata file in dist-info or legacy egg-info."""
-    for directory in sorted(_distribution_root().glob("*.dist-info")) + sorted(
-        _distribution_root().glob("*.egg-info")
-    ):
-        candidate = directory / filename
-        if candidate.is_file():
-            return candidate
-    return None
-
-
-def _record_path() -> Optional[Path]:
-    return _distribution_metadata_path("RECORD")
-
-
-def _distribution_file(filename: str, required: bool = False) -> CheckOutcome:
-    if filename == "RECORD":
-        return _distribution_record(required)
-    required = required or _runtime_install_required()
-    package_not_found_error = None
-    try:
-        try:
-            from importlib import metadata
-        except ImportError:
-            import importlib_metadata as metadata
-        package_not_found_error = getattr(metadata, "PackageNotFoundError", None)
-        files = metadata.files("pyfcstm") or ()
-        found = any(str(item).endswith(filename) for item in files)
-    except KeyError:
-        # ``PackageNotFoundError`` is a ``KeyError`` on a source checkout that
-        # has no installed distribution metadata; that is normal and not a
-        # damaged metadata store.
-        if required:
-            return _fail("distribution file inventory is unavailable", "metadata_unavailable")
-        return _skip("distribution file inventory is not applicable")
-    except ImportError as err:
-        # Python 3.8+ raises ``PackageNotFoundError`` (an ImportError) when a
-        # source checkout has no installed distribution metadata; other
-        # metadata import failures remain an unavailable-metadata warning.
-        if isinstance(package_not_found_error, type) and isinstance(
-            err, package_not_found_error
-        ):
-            if required:
-                return _fail("distribution file inventory is unavailable", "metadata_unavailable")
-            return _skip("distribution file inventory is not applicable")
-        return _warn(
-            "distribution file inventory is unavailable",
-            "metadata_unavailable",
-            observed=str(err),
-        )
-    except (OSError, ValueError) as err:
-        return _warn("distribution file inventory is unavailable", "metadata_unavailable", observed=str(err))
-    if found:
-        return _pass("distribution contains {}".format(filename))
-    required = required or _runtime_install_required()
-    return _skip("distribution does not expose {}".format(filename)) if not required else _fail("distribution file is missing", "record_missing", filename)
-
-
-def _distribution_requirements() -> CheckOutcome:
-    required = _runtime_install_required()
-    metadata = _distribution_file("METADATA", required=required)
-    if metadata.status != "PASS":
-        return metadata
-    wheel = _distribution_file("WHEEL", required=required)
-    if wheel.status != "PASS":
-        return wheel
-    installer_metadata = _distribution_file("INSTALLER", required=required)
-    if installer_metadata.status not in ("PASS", "SKIP"):
-        return installer_metadata
-    direct_url_path = _distribution_metadata_path("direct_url.json")
-    mode = "direct_url" if direct_url_path is not None else "installed"
-    if direct_url_path is not None:
-        try:
-            direct = json.loads(direct_url_path.read_text(encoding="utf-8"))
-            if not isinstance(direct, dict) or not isinstance(direct.get("url"), str):
-                return _fail("direct_url.json has no URL", "direct_url_invalid")
-            dir_info = direct.get("dir_info", {})
-            if dir_info is not None and not isinstance(dir_info, dict):
-                return _fail("direct_url.json dir_info is invalid", "direct_url_invalid")
-            if isinstance(dir_info, dict) and dir_info.get("editable") is True:
-                mode = "editable_direct_url"
-        except (OSError, UnicodeError, ValueError) as err:
-            return _fail("direct_url.json is invalid", "direct_url_invalid", observed=str(err))
-    installer_path = _distribution_metadata_path("INSTALLER")
-    if installer_path is not None:
-        try:
-            if not installer_path.read_text(encoding="utf-8").strip():
-                return _fail("INSTALLER metadata is empty", "install_metadata_invalid")
-        except (OSError, UnicodeError) as err:
-            return _fail("INSTALLER metadata is unreadable", "install_metadata_invalid", observed=str(err))
-    return _pass("installation metadata and source mode are readable", observed=mode)
-
-
-def _distribution_record(required: bool = False) -> CheckOutcome:
-    if getattr(sys, "frozen", False):
-        return _skip("RECORD is not applicable to a frozen executable")
-    required = required or _runtime_install_required()
-    path = _record_path()
-    if path is None:
-        return _fail("RECORD is missing", "record_missing") if required else _skip("RECORD is not applicable")
-    root = _distribution_root()
-    try:
-        with path.open("r", newline="", encoding="utf-8") as stream:
-            rows = list(csv.reader(stream))
-        for row in rows:
-            if len(row) != 3:
-                return _fail("RECORD row is malformed", "record_invalid")
-            relative, _digest, _size_text = row
-            target = root / relative
-            if not target.is_file():
-                return _fail("RECORD file is missing", "record_missing", relative)
-    except (OSError, UnicodeError, ValueError, csv.Error) as err:
-        return _fail("RECORD cannot be validated", "record_invalid", observed=str(err))
-    return _pass("RECORD file list is readable", observed=str(len(rows)))
-
-
-def _distribution_entrypoints() -> CheckOutcome:
-    try:
-        try:
-            from importlib import metadata
-        except ImportError:
-            import importlib_metadata as metadata
-        entries = metadata.entry_points()
-        if hasattr(entries, "select"):
-            entries = list(entries.select(group="console_scripts"))
-        elif isinstance(entries, dict):
-            entries = list(entries.get("console_scripts", ()))
-        else:
-            entries = list(entries)
-    except (ImportError, KeyError, OSError, TypeError, ValueError) as err:
-        if _runtime_install_required():
-            return _fail("entry-point metadata is unavailable", "metadata_unavailable", observed=str(err))
-        return _skip("entry-point metadata is not applicable", observed=str(err))
-    for entry in entries:
-        if getattr(entry, "name", None) == "pyfcstm":
-            return _pass("pyfcstm console entry point is registered")
-    if _runtime_install_required():
-        return _fail("pyfcstm console entry point is not installed", "entrypoint_missing")
-    return _skip("pyfcstm console entry point is not applicable")
-
-
-def _runtime_install_required() -> bool:
-    """Return whether the current worker is checking an installable artifact."""
-    return os.environ.get("PYFCSTM_SELFCHECK_ARTIFACT_KIND") in ("wheel", "sdist")
-
-
 def collect_dependency_diagnostics() -> Tuple[Mapping[str, Any], ...]:
     """Collect version, import path, and absence diagnostics for dependencies."""
     dependencies = (
@@ -745,7 +542,41 @@ def _resource_llm_guide() -> CheckOutcome:
     )
 
 
+_FCSTM_GRAMMAR_ASSETS = (
+    "dsl/grammar/GrammarLexer.g4",
+    "dsl/grammar/GrammarLexer.interp",
+    "dsl/grammar/GrammarLexer.tokens",
+    "dsl/grammar/GrammarParser.g4",
+    "dsl/grammar/GrammarParser.interp",
+    "dsl/grammar/GrammarParser.tokens",
+)
+_FBMCQ_GRAMMAR_ASSETS = (
+    "bmc/grammar/BmcQueryLexer.g4",
+    "bmc/grammar/BmcQueryLexer.interp",
+    "bmc/grammar/BmcQueryLexer.tokens",
+    "bmc/grammar/BmcQueryParser.g4",
+    "bmc/grammar/BmcQueryParser.interp",
+    "bmc/grammar/BmcQueryParser.tokens",
+)
+
+
+def _grammar_assets(assets: Iterable[str], label: str) -> CheckOutcome:
+    """Check the generated grammar data shipped with the package."""
+    assets = tuple(assets)
+    missing = [str(_resource(path)) for path in assets if not _resource(path).is_file()]
+    if missing:
+        return _fail(
+            "{} grammar assets are missing".format(label),
+            "resource_missing",
+            observed=repr(missing),
+        )
+    return _pass("{} grammar assets are present".format(label), observed=str(len(assets)))
+
+
 def _grammar_fcstm() -> CheckOutcome:
+    assets = _grammar_assets(_FCSTM_GRAMMAR_ASSETS, "FCSTM")
+    if assets.status != "PASS":
+        return assets
     try:
         from pyfcstm.dsl.parse import parse_state_machine_dsl
 
@@ -756,6 +587,9 @@ def _grammar_fcstm() -> CheckOutcome:
 
 
 def _grammar_fbmcq() -> CheckOutcome:
+    assets = _grammar_assets(_FBMCQ_GRAMMAR_ASSETS, "FBMCQ")
+    if assets.status != "PASS":
+        return assets
     try:
         from pyfcstm.bmc.parse import parse_bmc_query
 
@@ -1169,81 +1003,6 @@ def _bmc_closure() -> CheckOutcome:
     return _pass("BMC module closure is importable")
 
 
-def _artifact_bootstrap() -> CheckOutcome:
-    return _probe_import("pyfcstm._bootstrap")
-
-
-def _artifact_resources() -> CheckOutcome:
-    resources = (
-        ("diagnostics/codes.yaml", "diagnostic codes"),
-        ("diagnostics/schema.json", "diagnostic schema"),
-        ("template/index.json", "template index"),
-        ("llm/fcstm_grammar_guide.md", "FCSTM grammar guide"),
-        ("llm/fcstm_grammar_guide.md.sha256", "FCSTM grammar guide checksum"),
-        ("llm/fbmcq_language_guide.md", "FBMCQ language guide"),
-        ("llm/fbmcq_language_guide.md.sha256", "FBMCQ language guide checksum"),
-    )
-    missing = [str(_resource(path)) for path, _ in resources if not _resource(path).is_file()]
-    if missing:
-        return _fail("required package assets are missing", "resource_missing", observed=repr(missing))
-    return _pass("required package assets are present", observed=str(len(resources)))
-
-
-def _artifact_native_inventory() -> CheckOutcome:
-    outcome = _z3_load()
-    if outcome.status != "PASS":
-        return outcome
-    try:
-        import z3.z3core as z3core
-
-        library_root = getattr(z3core, "_z3_lib_resource_path", None)
-        if library_root is None:
-            return _fail("Z3 native library inventory is unavailable", "native_inventory_missing")
-        library_root = Path(library_root)
-        candidates = sorted(
-            item for item in library_root.iterdir()
-            if item.is_file() and item.suffix.lower() in (".so", ".dylib", ".dll")
-        )
-        if not candidates:
-            return _fail("Z3 native library inventory is empty", "native_inventory_missing")
-        inventory = [candidate.name for candidate in candidates]
-    except (ImportError, AttributeError, OSError, TypeError, ValueError) as err:
-        return _fail("Z3 native library inventory failed", "native_inventory_invalid", observed=str(err))
-    return _pass("Z3 native library inventory is readable", observed=repr(inventory))
-
-
-def _artifact_module_closure() -> CheckOutcome:
-    modules = ("pygments", "unidecode", "pyfcstm.bmc", "pyfcstm._selfcheck")
-    resolved = []
-    for module in modules:
-        outcome = _probe_import(module)
-        if outcome.status not in ("PASS", "WARN"):
-            return outcome
-        try:
-            imported = importlib.import_module(module)
-            location = getattr(imported, "__file__", None)
-            if location:
-                resolved.append(str(Path(location).resolve()))
-        except (ImportError, OSError, ValueError) as err:
-            return _fail("dynamic module resolution failed", "artifact_resolution_failed", observed=str(err))
-    return _pass("dynamic module closure is importable", observed=repr(resolved))
-
-
-def _artifact_metadata() -> CheckOutcome:
-    outcome = _identity_build_info_module()
-    if outcome.status != "PASS":
-        return outcome
-    return _pass("artifact build identity is available")
-
-
-def _artifact_executable() -> CheckOutcome:
-    import pyfcstm
-
-    main_module = importlib.import_module("pyfcstm.__main__")
-    location = str(getattr(main_module, "__file__", pyfcstm.__file__))
-    return _pass("package module executable entry is available", observed=location)
-
-
 def _java() -> CheckOutcome:
     executable = shutil.which("java")
     if executable is None:
@@ -1423,10 +1182,6 @@ _PROBES: Dict[str, Probe] = {
     "identity.source": _identity_source,
     "identity.build_info_module": _identity_build_info_module,
     "identity.artifact": _identity_artifact,
-    "install.metadata": _distribution_metadata,
-    "install.record": partial(_distribution_file, "RECORD", False),
-    "install.requirements": _distribution_requirements,
-    "install.entrypoints": _distribution_entrypoints,
     "resource.diagnostics.codes": partial(_yaml_resource, "diagnostics/codes.yaml", "diagnostic codes"),
     "resource.diagnostics.schemas": _diagnostics_schemas,
     "resource.templates.index": _template_index,
@@ -1463,13 +1218,6 @@ _PROBES: Dict[str, Probe] = {
     "bmc.verification.prepare": _bmc_prepare,
     "bmc.property.solve": _bmc_solve,
     "bmc.module.closure": _bmc_closure,
-    "artifact.bootstrap": _artifact_bootstrap,
-    "artifact.self_dispatch": _artifact_self_dispatch,
-    "artifact.resources": _artifact_resources,
-    "artifact.native_inventory": _artifact_native_inventory,
-    "artifact.module_closure": _artifact_module_closure,
-    "artifact.metadata": _artifact_metadata,
-    "artifact.executable": _artifact_executable,
     "visualize.python_stack": _python_stack,
     "visualize.java": _java,
     "visualize.plantuml_jar": _plantuml_jar,
@@ -1497,10 +1245,6 @@ _OPTIONAL_IDS = frozenset(
     {
         "identity.source",
         "identity.artifact",
-        "install.metadata",
-        "install.record",
-        "install.requirements",
-        "install.entrypoints",
         "resource.random_user_agent",
         "native.lxml.parse",
         "native.yaml.backend",
@@ -1510,19 +1254,11 @@ _OPTIONAL_IDS = frozenset(
     }
     | _VISUAL_IDS
 )
-_INSTALL_IDS = frozenset(
-    {
-        "install.metadata",
-        "install.record",
-        "install.requirements",
-        "install.entrypoints",
-    }
-)
 
 
 def _timeout_for(check_id: str) -> float:
     group = check_id.split(".", 1)[0]
-    if group in ("env", "identity", "install", "resource", "runtime"):
+    if group in ("env", "identity", "resource", "runtime"):
         return 10.0
     if check_id.startswith("core.cli.") or check_id.startswith("core.template."):
         return 30.0
@@ -1536,9 +1272,6 @@ def _timeout_for(check_id: str) -> float:
 def _prerequisites(check_id: str) -> Tuple[str, ...]:
     explicit = {
         "identity.artifact": ("identity.package",),
-        "install.record": ("install.metadata",),
-        "install.requirements": ("install.metadata",),
-        "install.entrypoints": ("install.metadata",),
         "resource.templates.archives": ("resource.templates.index",),
         "resource.templates.extract": ("resource.templates.archives",),
         "native.z3.solve": ("native.z3.load",),
@@ -1547,11 +1280,6 @@ def _prerequisites(check_id: str) -> Tuple[str, ...]:
         "core.solver.translation": ("native.z3.load",),
         "bmc.verification.prepare": ("bmc.query.parse",),
         "bmc.property.solve": ("bmc.verification.prepare",),
-        "artifact.resources": (),
-        "artifact.native_inventory": ("native.z3.load",),
-        "artifact.module_closure": ("artifact.bootstrap",),
-        "artifact.metadata": ("identity.artifact",),
-        "artifact.executable": ("artifact.bootstrap",),
         "visualize.local_render": ("visualize.java", "visualize.plantuml_jar"),
         "visualize.remote_render": ("visualize.remote_tls",),
     }
@@ -1611,11 +1339,10 @@ def registry_metadata(
 def selected_specs(
     profile: str = "default",
     explicit_skipped_ids: Iterable[str] = (),
-    artifact_kind: str = "source",
 ) -> Tuple[CheckSpec, ...]:
     """Return stable compatibility and fixed checks for ``profile``.
 
-    All 68 fixed IDs remain selected even when optional or explicitly skipped;
+    All 57 fixed IDs remain selected even when optional or explicitly skipped;
     the compatibility-only ``runtime.metadata`` result is prepended.  A later
     supervisor layer records the resulting ``SKIP`` state.  This keeps the
     report's result set stable across profiles.
@@ -1624,21 +1351,16 @@ def selected_specs(
     :type profile: str
     :param explicit_skipped_ids: IDs intentionally skipped by the caller.
     :type explicit_skipped_ids: Iterable[str]
-    :param artifact_kind: Runtime artifact kind used to classify identity
-        checks, defaults to ``'source'``.
-    :type artifact_kind: str, optional
     :return: Ordered check specifications.
     :rtype: Tuple[CheckSpec, ...]
 
     Example::
 
         >>> len(selected_specs("default"))
-        69
+        58
         >>> len([s for s in selected_specs("default") if s.check_id.startswith("visualize.")])
         7
     """
-    if artifact_kind not in _ARTIFACT_KINDS:
-        raise ValueError("unknown artifact kind: {}".format(artifact_kind))
     explicit_skipped_ids = tuple(explicit_skipped_ids)
     metadata = registry_metadata(profile, explicit_skipped_ids)
     del metadata
@@ -1655,17 +1377,7 @@ def selected_specs(
         )
     ]
     for check_id in EXPECTED_CHECK_IDS:
-        if check_id in ("identity.source", "identity.artifact"):
-            required = profile != "default" or artifact_kind != "source"
-        elif check_id in _INSTALL_IDS and artifact_kind in ("wheel", "sdist"):
-            required = True
-        else:
-            required = check_id not in _OPTIONAL_IDS or profile == "visualize"
-        artifact_skip = (
-            artifact_kind == "frozen"
-            and check_id in _INSTALL_IDS
-            and check_id != "install.metadata"
-        )
+        required = check_id not in _OPTIONAL_IDS or profile == "visualize"
         if check_id in skipped:
             required = False
         specs.append(
@@ -1679,7 +1391,7 @@ def selected_specs(
                 timeout_seconds=_timeout_for(check_id),
                 safety=("external" if check_id.startswith("visualize.remote") else "blocking" if check_id.startswith("visualize") else "pure"),
                 prerequisite_policy=("skip_on_warn" if _prerequisites(check_id) else "allow_warn"),
-                explicit_skip=check_id in skipped or artifact_skip,
+                explicit_skip=check_id in skipped,
             )
         )
     return tuple(specs)

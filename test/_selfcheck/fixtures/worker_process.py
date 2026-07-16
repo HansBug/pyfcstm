@@ -82,10 +82,13 @@ def main():
     if scenario == "hang":
         while True:
             time.sleep(1.0)
-    if scenario in ("spawn_hang", "crash_spawn"):
+    if scenario in ("spawn_hang", "crash_spawn", "spawn_success"):
         _spawn_child(options)
         if scenario == "crash_spawn":
             os._exit(37)
+        if scenario == "spawn_success":
+            _write(options, _frame(options))
+            return 0
         while True:
             time.sleep(1.0)
     if scenario == "huge_stderr":

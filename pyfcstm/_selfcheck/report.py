@@ -114,8 +114,20 @@ def _write_human_text(text: str, color: str = "auto") -> None:
     if requested and os.name == "nt" and not ansi:
         if write_console_ansi(text, sys.stdout):
             return
-    sys.stdout.write(text)
-    sys.stdout.flush()
+    try:
+        sys.stdout.write(text)
+        sys.stdout.flush()
+    except (UnicodeError, OSError, ValueError) as err:
+        # Legacy Windows consoles and redirected streams can reject a Unicode
+        # diagnostic.  ASCII backslash escapes keep the result observable.
+        fallback = text.encode("ascii", "backslashreplace").decode("ascii")
+        try:
+            sys.stdout.write(fallback)
+            sys.stdout.flush()
+        except (UnicodeError, OSError, ValueError):
+            # The bootstrap's emergency channel handles a completely closed
+            # stdout; do not hide the original encoding/stream failure here.
+            raise err
 
 
 def _stream_version_line(profile: str, use_color: bool) -> str:
@@ -184,6 +196,10 @@ def _failure_detail_lines(check) -> list:
     """Return indented diagnostics for a non-successful check."""
     fields = (
         ("reason", check.reason),
+        ("expected", check.expected),
+        ("observed", check.observed),
+        ("remediation", check.remediation),
+        ("exception", check.exception),
         ("return_code", check.return_code),
         ("pid", check.pid),
         ("signal", check.signal),

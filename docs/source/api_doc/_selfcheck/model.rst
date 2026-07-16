@@ -18,7 +18,6 @@ TERMINAL\_STATUSES
 .. autodata:: TERMINAL_STATUSES
 
 
-
 CheckSpec
 -----------------------------------------------------
 
@@ -51,4 +50,4 @@ Ledger
 -----------------------------------------------------
 
 .. autoclass:: Ledger
-    :members: __init__,reserve,ensure_reserved,mark_running,commit,get_state,get_result,freeze
+    :members: __init__,reserve,ensure_reserved,mark_running,commit,replace,get_state,get_result,freeze

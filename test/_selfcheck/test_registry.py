@@ -17,10 +17,10 @@ from pyfcstm._selfcheck.registry import (
 
 
 @pytest.mark.unittest
-def test_registry_contains_the_exact_frozen_68_ids():
+def test_registry_contains_the_exact_frozen_57_ids():
     """The fixed result inventory is complete, unique, and ordered."""
-    assert len(EXPECTED_CHECK_IDS) == 68
-    assert len(set(EXPECTED_CHECK_IDS)) == 68
+    assert len(EXPECTED_CHECK_IDS) == 57
+    assert len(set(EXPECTED_CHECK_IDS)) == 57
     specs = selected_specs("default")
     assert [item.check_id for item in specs[1:]] == list(EXPECTED_CHECK_IDS)
     assert specs[0].check_id == "runtime.metadata"
@@ -48,87 +48,9 @@ def test_registry_profiles_keep_results_stable_and_raise_visual_requirements():
 
 
 @pytest.mark.unittest
-@pytest.mark.parametrize(
-    "artifact_kind",
-    ["wheel", "sdist", "frozen"],
-)
-def test_release_artifacts_require_identity_checks(artifact_kind):
-    """Release and frozen artifacts cannot downgrade stale identity to a warning."""
-    specs = {item.check_id: item for item in selected_specs("default", artifact_kind=artifact_kind)}
-    assert specs["identity.source"].required is True
-    assert specs["identity.artifact"].required is True
-
-
-@pytest.mark.unittest
-def test_installable_artifacts_require_distribution_contract():
-    """Wheel and sdist workers cannot downgrade missing install metadata."""
-    source = {item.check_id: item for item in selected_specs("default", artifact_kind="source")}
-    wheel = {item.check_id: item for item in selected_specs("default", artifact_kind="wheel")}
-    for check_id in ("install.metadata", "install.record", "install.requirements", "install.entrypoints"):
-        assert source[check_id].required is False
-        assert wheel[check_id].required is True
-
-
-@pytest.mark.unittest
-def test_missing_install_metadata_is_failure_for_wheel(monkeypatch):
-    """A wheel worker treats absent distribution metadata as a required failure."""
-    class MissingMetadata:
-        @staticmethod
-        def version(name):
-            raise KeyError(name)
-
-        @staticmethod
-        def files(name):
-            raise KeyError(name)
-
-    monkeypatch.setenv("PYFCSTM_SELFCHECK_ARTIFACT_KIND", "wheel")
-    monkeypatch.setattr(registry.importlib, "metadata", MissingMetadata, raising=False)
-    assert registry._distribution_metadata().status == "FAIL"
-    assert registry._distribution_metadata().reason == "metadata_unavailable"
-
-
-@pytest.mark.unittest
-def test_frozen_distribution_metadata_is_not_host_bound(monkeypatch):
-    """A frozen executable ignores stale host distribution metadata."""
-    class StaleMetadata:
-        @staticmethod
-        def version(name):
-            assert name == "pyfcstm"
-            return "0.5.0"
-
-    monkeypatch.setitem(registry.sys.modules, "importlib.metadata", StaleMetadata)
-    monkeypatch.setattr(registry.importlib, "metadata", StaleMetadata, raising=False)
-    monkeypatch.setattr(registry.sys, "frozen", True, raising=False)
-    outcome = registry._distribution_metadata()
-    assert outcome.status == "SKIP"
-    assert outcome.reason == "not_applicable"
-
-
-@pytest.mark.unittest
-def test_editable_egg_info_direct_url_is_recognized(tmp_path, monkeypatch):
-    """Legacy egg-info direct_url metadata receives the same parser as dist-info."""
-    egg = tmp_path / "pyfcstm.egg-info"
-    egg.mkdir()
-    (egg / "direct_url.json").write_text(
-        '{"url": "file:///src/pyfcstm", "dir_info": {"editable": true}}',
-        encoding="utf-8",
-    )
-    (egg / "INSTALLER").write_text("pip\n", encoding="utf-8")
-    monkeypatch.setattr(registry, "_distribution_root", lambda: tmp_path)
-    monkeypatch.setattr(
-        registry,
-        "_distribution_file",
-        lambda *_args, **_kwargs: registry._pass("metadata"),
-    )
-    outcome = registry._distribution_requirements()
-    assert outcome.status == "PASS"
-    assert outcome.observed == "editable_direct_url"
-
-
-@pytest.mark.unittest
 def test_source_checkout_keeps_identity_checks_optional():
     """A source checkout keeps missing generated identity metadata diagnostic-only."""
-    specs = {item.check_id: item for item in selected_specs("default", artifact_kind="source")}
+    specs = {item.check_id: item for item in selected_specs("default")}
     assert specs["identity.source"].required is False
     assert specs["identity.artifact"].required is False
 
@@ -238,31 +160,6 @@ def test_resource_callbacks_report_corrupt_json_and_yaml(tmp_path, monkeypatch):
 
 
 @pytest.mark.unittest
-def test_artifact_resources_report_missing_required_asset(tmp_path, monkeypatch):
-    """The artifact resource probe names a missing required package asset."""
-    required = (
-        "diagnostics/codes.yaml",
-        "diagnostics/schema.json",
-        "template/index.json",
-        "llm/fcstm_grammar_guide.md",
-        "llm/fcstm_grammar_guide.md.sha256",
-        "llm/fbmcq_language_guide.md",
-        "llm/fbmcq_language_guide.md.sha256",
-    )
-    for relative in required[1:]:
-        path = tmp_path / relative
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("present", encoding="utf-8")
-    monkeypatch.setattr(registry, "_resource", lambda relative: tmp_path / relative)
-
-    outcome = registry._artifact_resources()
-
-    assert outcome.status == "FAIL"
-    assert outcome.reason == "resource_missing"
-    assert "codes.yaml" in outcome.observed
-
-
-@pytest.mark.unittest
 def test_resource_llm_guide_reports_sidecar_mismatch_through_public_api(monkeypatch):
     """The registry uses strict public guide APIs for sidecar verification."""
     from pyfcstm.llm import _resources as guide_resources
@@ -296,70 +193,6 @@ def test_dependency_diagnostics_are_structured_without_result_ids():
 
 
 @pytest.mark.unittest
-def test_install_record_checks_declared_files(tmp_path, monkeypatch):
-    """A RECORD row points to a file that is present in the installation."""
-    payload = tmp_path / "module.py"
-    payload.write_text("ok", encoding="utf-8")
-    record = tmp_path / "RECORD"
-    record.write_text("module.py,,\n", encoding="utf-8")
-    monkeypatch.setattr(registry, "_record_path", lambda: record)
-    monkeypatch.setattr(registry, "_distribution_root", lambda: tmp_path)
-    outcome = get_worker("check_install_record")()
-    assert outcome.status == "PASS"
-
-
-@pytest.mark.unittest
-def test_install_requirements_distinguishes_editable_direct_url(tmp_path, monkeypatch):
-    """Editable direct-url metadata is parsed without requiring wheel RECORD semantics."""
-    dist = tmp_path / "pyfcstm-1.0.dist-info"
-    dist.mkdir()
-    (dist / "METADATA").write_text("Name: pyfcstm\n", encoding="utf-8")
-    (dist / "direct_url.json").write_text(
-        '{"url": "file:///src/pyfcstm", "dir_info": {"editable": true}}',
-        encoding="utf-8",
-    )
-    (dist / "INSTALLER").write_text("pip\n", encoding="utf-8")
-    monkeypatch.setattr(registry, "_distribution_root", lambda: tmp_path)
-    monkeypatch.setattr(registry, "_distribution_file", lambda *_args, **_kwargs: registry._pass("metadata"))
-    outcome = registry._distribution_requirements()
-    assert outcome.status == "PASS"
-    assert outcome.observed == "editable_direct_url"
-
-
-@pytest.mark.unittest
-def test_install_requirements_rejects_invalid_direct_url_and_empty_installer(tmp_path, monkeypatch):
-    """Direct URL and installer metadata are validated through the real file parser."""
-    dist = tmp_path / "pyfcstm-1.0.dist-info"
-    dist.mkdir()
-    (dist / "direct_url.json").write_text("[]", encoding="utf-8")
-    (dist / "INSTALLER").write_text("\n", encoding="utf-8")
-    monkeypatch.setattr(registry, "_distribution_root", lambda: tmp_path)
-    monkeypatch.setattr(registry, "_distribution_file", lambda *_args, **_kwargs: registry._pass("metadata"))
-    assert registry._distribution_requirements().reason == "direct_url_invalid"
-    (dist / "direct_url.json").write_text('{"url": "file:///src"}', encoding="utf-8")
-    assert registry._distribution_requirements().reason == "install_metadata_invalid"
-
-
-@pytest.mark.unittest
-def test_install_requirements_requires_wheel_metadata_for_artifacts(monkeypatch):
-    """A wheel/sdist check cannot pass without its WHEEL metadata file."""
-    monkeypatch.setenv("PYFCSTM_SELFCHECK_ARTIFACT_KIND", "wheel")
-
-    def distribution_file(filename, required=False):
-        del required
-        if filename == "METADATA":
-            return registry._pass("metadata")
-        if filename == "WHEEL":
-            return registry._fail("WHEEL is missing", "record_missing")
-        return registry._pass(filename)
-
-    monkeypatch.setattr(registry, "_distribution_file", distribution_file)
-    outcome = registry._distribution_requirements()
-    assert outcome.status == "FAIL"
-    assert outcome.reason == "record_missing"
-
-
-@pytest.mark.unittest
 def test_diagnostics_schema_probe_rejects_json_that_is_not_a_schema(monkeypatch):
     """A parseable arbitrary JSON document is not a valid diagnostics schema."""
     path = Path(__file__).parents[2] / "pyfcstm" / "template" / "index.json"
@@ -367,21 +200,6 @@ def test_diagnostics_schema_probe_rejects_json_that_is_not_a_schema(monkeypatch)
     outcome = registry._diagnostics_schemas()
     assert outcome.status == "FAIL"
     assert outcome.reason == "schema_invalid"
-
-
-@pytest.mark.unittest
-def test_required_entrypoint_metadata_missing_is_failure(monkeypatch):
-    """A wheel without the pyfcstm console entry point is not healthy."""
-    class EmptyEntryPoints:
-        @staticmethod
-        def entry_points():
-            return []
-
-    monkeypatch.setenv("PYFCSTM_SELFCHECK_ARTIFACT_KIND", "wheel")
-    monkeypatch.setattr(registry.importlib, "metadata", EmptyEntryPoints, raising=False)
-    outcome = registry._distribution_entrypoints()
-    assert outcome.status == "FAIL"
-    assert outcome.reason == "entrypoint_missing"
 
 
 @pytest.mark.unittest
@@ -460,76 +278,6 @@ def test_registry_small_probe_helpers_cover_missing_and_optional_paths(monkeypat
 
 
 @pytest.mark.unittest
-def test_registry_distribution_missing_paths(monkeypatch):
-    """Distribution probes distinguish optional absence from failure."""
-    class EmptyDistributionMetadata:
-        """Provide deterministic installed metadata with no requested files."""
-
-        @staticmethod
-        def files(name):
-            return ()
-
-    monkeypatch.setattr(
-        registry.importlib,
-        "metadata",
-        EmptyDistributionMetadata,
-        raising=False,
-    )
-    assert registry._distribution_file("NO_SUCH_RECORD", required=False).reason == "not_applicable"
-    assert registry._distribution_file("NO_SUCH_RECORD", required=True).reason == "record_missing"
-
-    class MissingDistributionMetadata:
-        """Emulate importlib metadata when running from an uninstalled checkout."""
-
-        @staticmethod
-        def files(name):
-            raise KeyError(name)
-
-    monkeypatch.setattr(
-        registry.importlib,
-        "metadata",
-        MissingDistributionMetadata,
-        raising=False,
-    )
-    assert registry._distribution_file("METADATA", required=True).reason == "metadata_unavailable"
-
-    class MissingDistributionImportError:
-        """Emulate modern importlib metadata's missing-package exception."""
-
-        class PackageNotFoundError(ImportError):
-            """Raised when no installed distribution metadata exists."""
-
-        @staticmethod
-        def files(name):
-            raise MissingDistributionImportError.PackageNotFoundError(name)
-
-    monkeypatch.setattr(
-        registry.importlib,
-        "metadata",
-        MissingDistributionImportError,
-        raising=False,
-    )
-    assert registry._distribution_file("METADATA", required=True).reason == "metadata_unavailable"
-
-@pytest.mark.unittest
-def test_frozen_install_record_is_not_applicable(monkeypatch):
-    """A frozen executable has no wheel RECORD contract to validate."""
-    monkeypatch.setattr(registry.sys, "frozen", True, raising=False)
-    outcome = registry._distribution_record(required=True)
-    assert outcome.status == "SKIP"
-    assert outcome.reason == "not_applicable"
-
-
-@pytest.mark.unittest
-def test_frozen_distribution_metadata_ignores_host_install(monkeypatch):
-    """A host-installed pyfcstm version cannot invalidate a frozen bundle."""
-    monkeypatch.setattr(registry.sys, "frozen", True, raising=False)
-    outcome = registry._distribution_metadata()
-    assert outcome.status == "SKIP"
-    assert outcome.reason == "not_applicable"
-
-
-@pytest.mark.unittest
 def test_disabled_remote_probe_is_skipped(monkeypatch):
     """Offline default mode does not execute a remote capability probe."""
     monkeypatch.delenv("PYFCSTM_SELFCHECK_NETWORK", raising=False)
@@ -539,7 +287,25 @@ def test_disabled_remote_probe_is_skipped(monkeypatch):
 
 
 @pytest.mark.unittest
-def test_native_inventory_and_unidecode_tables_are_real_probes():
-    """Native and table checks exercise their load-bearing runtime assets."""
-    assert registry._artifact_native_inventory().status == "PASS"
+def test_grammar_asset_probes_cover_both_generated_grammars():
+    """Grammar checks require the packaged source and generated data files."""
+    assert registry._grammar_assets(registry._FCSTM_GRAMMAR_ASSETS, "FCSTM").status == "PASS"
+    assert registry._grammar_assets(registry._FBMCQ_GRAMMAR_ASSETS, "FBMCQ").status == "PASS"
     assert registry._resource_unidecode().status == "PASS"
+
+
+@pytest.mark.unittest
+def test_grammar_asset_probe_reports_the_missing_relative_path(tmp_path, monkeypatch):
+    """A missing generated grammar asset is named in the failure evidence."""
+    assets = registry._FCSTM_GRAMMAR_ASSETS
+    for relative in assets[:-1]:
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("present", encoding="utf-8")
+    monkeypatch.setattr(registry, "_resource", lambda relative: tmp_path / relative)
+
+    outcome = registry._grammar_assets(assets, "FCSTM")
+
+    assert outcome.status == "FAIL"
+    assert outcome.reason == "resource_missing"
+    assert "GrammarParser.tokens" in outcome.observed

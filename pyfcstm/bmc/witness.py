@@ -2229,10 +2229,12 @@ class BmcSolveResult(_PrettyPrintableMixin):
         Solver ``unknown`` and ``timeout`` statuses are always incomplete.  A
         response property is also incomplete when the primary objective is
         ``"unsat"`` and its suffix diagnostic was not solved, was inconclusive,
-        or can still contain an uncovered trigger window.  If the primary
-        response objective is ``"sat"``, the counterexample verdict is already
-        decisive even when a separate suffix diagnostic would also be
-        satisfiable.
+        or can still contain an uncovered trigger window.  A proven
+        ``scenario_infeasible`` result is not horizon-incomplete because it is a
+        definitive non-verdict, while a feasibility timeout before the
+        assumptions check remains incomplete.  If the primary response
+        objective is ``"sat"``, the counterexample verdict is already decisive
+        even when a separate suffix diagnostic would also be satisfiable.
 
         :return: Whether the solve result carries an incomplete verdict.
         :rtype: bool
@@ -2328,8 +2330,9 @@ class BmcSolveResult(_PrettyPrintableMixin):
         incomplete.
 
         :return: ``True`` if the bounded property is satisfied, ``False`` if it
-            is violated or lacks a required witness, and ``None`` if the result
-            is incomplete.
+            is violated or lacks a required witness, and ``None`` if the
+            property cannot be evaluated because the result is incomplete, the
+            scenario is infeasible, or feasibility timed out.
         :rtype: Optional[bool]
 
         Example::
@@ -2362,7 +2365,8 @@ class BmcSolveResult(_PrettyPrintableMixin):
 
         :return: One of ``"property_satisfied"``, ``"property_violated"``,
             ``"witness_found"``, ``"no_witness"``, ``"incomplete"``,
-            ``"timeout"``, or ``"unknown"``.
+            ``"scenario_infeasible"``, ``"feasibility_timeout"``,
+            ``"feasibility_unknown"``, ``"timeout"``, or ``"unknown"``.
         :rtype: str
 
         Example::

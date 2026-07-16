@@ -3487,6 +3487,10 @@ class SimulationRuntime:
                 # committed-only callback path turns the result into a dead end,
                 # classify it as Delta and discard the speculative context.
                 delta = True
+                # A Delta macro step commits no transition, so event
+                # occurrences collected by the discarded committed pass are
+                # necessarily unconsumed.
+                consumed_event_names.clear()
 
         if success or delta:
             if delta:

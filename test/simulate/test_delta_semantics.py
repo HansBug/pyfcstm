@@ -186,3 +186,40 @@ def test_delta_flag_resets_after_ordinary_success_and_error():
         runtime.cycle("Root.A.Go")
     assert runtime.cycle_count == 1
     assert runtime.history[-1]["delta"] is False
+
+
+def test_committed_only_delta_does_not_report_consumed_events(monkeypatch):
+    runtime = _runtime(
+        """
+        state Root {
+            event Go;
+            state A;
+            [*] -> A;
+        }
+        """
+    )
+    calls = []
+
+    def fake_run_cycle(
+        stack,
+        vars_,
+        d_events,
+        *,
+        ended=False,
+        validate_post_child_exit=True,
+        consumed_events=None,
+        is_validation_mode=False,
+    ):
+        calls.append(is_validation_mode)
+        if not is_validation_mode:
+            consumed_events.append("Root.Go")
+        return is_validation_mode, ended
+
+    monkeypatch.setattr(runtime, "_run_cycle_on_context", fake_run_cycle)
+
+    result = runtime.cycle("Root.Go")
+
+    assert calls == [True, False]
+    assert result.delta is True
+    assert result.consumed_events == ()
+    assert result.unconsumed_events == ("Root.Go",)

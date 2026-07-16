@@ -15,6 +15,9 @@ HIDDEN_IMPORTS = [
     # the CI Build matrix green across the rename / refactor.
     'pyfcstm.diagnostics',
     'pyfcstm.diagnostics.codes',
+    # Built-in C/C++ templates load this renderer through Jinja configuration
+    # strings, so PyInstaller cannot discover it from a static import graph.
+    'pyfcstm.render.c_runtime',
     # pyfcstm.bmc exposes model-aware layers through importlib-based lazy
     # exports. PyInstaller cannot discover those module names statically.
     'pyfcstm.bmc.binding',

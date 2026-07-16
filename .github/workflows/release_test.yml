@@ -36,11 +36,11 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 20
       - name: Set up python ${{ matrix.python-version }}
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
       - name: Set up python dependences
@@ -55,6 +55,14 @@ jobs:
         run: |
           make build_info
           make package
+          test -z "$(git status --porcelain)"
+          {
+            echo 'schema=pyfcstm-build-identity/v1'
+            echo 'artifact_kind=python-distributions'
+            echo "full_commit=$GITHUB_SHA"
+            echo 'dirty=0'
+          } > dist/build-identity.txt
+          sha256sum dist/*.whl dist/*.tar.gz > dist/artifact-sha256.txt
           ls -al dist
       - name: Upload packed files to artifacts
         uses: actions/upload-artifact@v4
@@ -62,12 +70,405 @@ jobs:
           name: build-artifacts-source-pack
           path: ./dist/*
 
+  fresh_wheel_selfcheck_linux:
+    name: Fresh wheel self-check (Ubuntu service)
+    runs-on: ubuntu-22.04
+    needs: source_release
+    if: ${{ needs.source_release.result == 'success' }}
+    services:
+      plantuml:
+        image: plantuml/plantuml-server@sha256:00b96145a7e2999fd9504b84e26d00c47222b7963a0072ee14ea59449d634e99
+        ports:
+          - 18080:8080
+    timeout-minutes: 25
+    steps:
+      - name: Set up Python 3.7
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.7'
+      - name: Set up Java runtime
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Download only the built wheel artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts-source-pack
+          path: ${{ runner.temp }}/pyfcstm-package-artifact
+      - name: Install and verify PlantUML JAR
+        shell: bash
+        run: |
+          set -euo pipefail
+          jar="$RUNNER_TEMP/plantuml.jar"
+          curl --fail --location --silent --show-error \
+            https://github.com/plantuml/plantuml/releases/download/v1.2024.6/plantuml-1.2024.6.jar \
+            --output "$jar"
+          printf '%s  %s\n' \
+            5a8dc3b37fe133a4744e55be80caf6080a70350aba716d95400a0f0cbd79e846 \
+            "$jar" | sha256sum --check --status
+          java -version 2> "$RUNNER_TEMP/java-version.txt"
+          java -jar "$jar" -version 2>&1 | tee "$RUNNER_TEMP/plantuml-version.txt"
+      - name: Install exact wheel in a fresh venv and run self-check
+        shell: bash
+        env:
+          PYTHONPATH: ''
+          PYTHONNOUSERSITE: '1'
+          PIP_CONFIG_FILE: /dev/null
+          PLANTUML_JAR: ${{ runner.temp }}/plantuml.jar
+          PLANTUML_HOST: http://127.0.0.1:18080
+        run: |
+          set -uo pipefail
+          root="$RUNNER_TEMP/pyfcstm-wheel-clean-root"
+          reports="$RUNNER_TEMP/pyfcstm-wheel-reports"
+          venv="$RUNNER_TEMP/pyfcstm-wheel-venv"
+          rm -rf "$root" "$reports" "$venv"
+          mkdir -p "$root" "$reports"
+          wheel=$(find "$RUNNER_TEMP/pyfcstm-package-artifact" -maxdepth 1 -type f -name '*.whl' -print -quit)
+          test -n "$wheel"
+          identity="$RUNNER_TEMP/pyfcstm-package-artifact/build-identity.txt"
+          digest_file="$RUNNER_TEMP/pyfcstm-package-artifact/artifact-sha256.txt"
+          test -f "$identity" -a -f "$digest_file"
+          grep -F "full_commit=$GITHUB_SHA" "$identity"
+          wheel_name=$(basename "$wheel")
+          expected_digest=$(awk -v file="$wheel_name" '$2 == "dist/" file || $2 == file {print $1}' "$digest_file")
+          actual_digest=$(sha256sum "$wheel" | awk '{print $1}')
+          test -n "$expected_digest" -a "$expected_digest" = "$actual_digest"
+          cp "$identity" "$reports/build-identity.txt"
+          cp "$digest_file" "$reports/artifact-sha256.txt"
+          printf '%s  %s\n' "$actual_digest" "$wheel_name" | tee "$reports/artifact.sha256"
+          set +e
+          curl --fail --location --retry 5 --retry-delay 2 --max-time 15 \
+            "${PLANTUML_HOST%/}/" > "$reports/plantuml-readiness.txt" 2>&1
+          readiness_status=$?
+          set -e
+          test "$readiness_status" -eq 0
+          python -m venv "$venv"
+          source "$venv/bin/activate"
+          python -m pip --isolated install --upgrade 'pip<24.1' 2>&1 | tee "$reports/pip-bootstrap.log"
+          set +e
+          python -m pip install --no-cache-dir "$wheel" 2>&1 | tee "$reports/pip-install.log"
+          install_status=${PIPESTATUS[0]}
+          set -e
+          test "$install_status" -eq 0
+          python -m pip check 2>&1 | tee "$reports/pip-check.log"
+          python -m pip list --format=json 2>&1 | tee "$reports/pip-list.json"
+          python -c 'import pyfcstm, sys; print(pyfcstm.__file__); print(sys.executable); print("\\n".join(sys.path))' \
+            | tee "$reports/module-path.txt"
+          if grep -F "$GITHUB_WORKSPACE" "$reports/module-path.txt"; then
+            echo 'installed module came from the checkout workspace' >&2
+            exit 1
+          fi
+          set +e
+          pyfcstm --version 2>&1 | tee "$reports/version.log"
+          version_status=${PIPESTATUS[0]}
+          python -m pyfcstm --version 2>&1 | tee "$reports/module-version.log"
+          module_version_status=${PIPESTATUS[0]}
+          pyfcstm --self-check --color always --report "$reports/default.json" 2>&1 | tee "$reports/default.log"
+          default_status=${PIPESTATUS[0]}
+          pyfcstm --self-check --profile visualize --network --color always --report "$reports/visualize.json" 2>&1 | tee "$reports/visualize.log"
+          visualize_status=${PIPESTATUS[0]}
+          set -e
+          printf 'install=%s\nversion=%s\nmodule_version=%s\ndefault=%s\nvisualize=%s\nplantuml_readiness=%s\nPLANTUML_HOST=%s\nPLANTUML_JAR=%s\n' \
+            "$install_status" "$version_status" "$module_version_status" "$default_status" "$visualize_status" "$readiness_status" "$PLANTUML_HOST" "$PLANTUML_JAR" \
+            | tee "$reports/summary.txt"
+          test "$version_status" -eq 0
+          test "$module_version_status" -eq 0
+          test "$default_status" -eq 0
+          grep -F "Commit: $GITHUB_SHA" "$reports/version.log"
+      - name: Assert controlled PlantUML results
+        env:
+          PLANTUML_HOST: http://127.0.0.1:18080
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - "$RUNNER_TEMP/pyfcstm-wheel-reports/visualize.json" "$PLANTUML_HOST" <<'PY'
+          import json
+          import sys
+
+          report_path, host = sys.argv[1:]
+          with open(report_path, "r") as stream:
+              report = json.load(stream)
+          results = {item["id"]: item for item in report["results"]}
+          for check_id in ("visualize.remote_tls", "visualize.remote_render"):
+              result = results.get(check_id)
+              if result is None or result["status"] != "PASS":
+                  raise SystemExit("{} did not PASS: {}".format(check_id, result))
+              if host not in (result.get("observed") or ""):
+                  raise SystemExit("{} did not record configured host: {}".format(check_id, result))
+          PY
+      - name: Upload fresh Linux wheel evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: pyfcstm-pr4-wheel-selfcheck-ubuntu-22.04
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/pyfcstm-wheel-reports
+            ${{ runner.temp }}/java-version.txt
+            ${{ runner.temp }}/plantuml-version.txt
+
+  fresh_wheel_selfcheck:
+    name: Fresh wheel self-check (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    needs: source_release
+    if: ${{ needs.source_release.result == 'success' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            python-version: '3.7'
+          - os: macos-14
+            python-version: '3.8'
+    timeout-minutes: 25
+    steps:
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Set up Java runtime
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Download only the built wheel artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts-source-pack
+          path: ${{ runner.temp }}/pyfcstm-package-artifact
+      - name: Install and verify PlantUML JAR
+        shell: bash
+        run: |
+          set -euo pipefail
+          jar="$RUNNER_TEMP/plantuml.jar"
+          curl --fail --location --silent --show-error \
+            https://github.com/plantuml/plantuml/releases/download/v1.2024.6/plantuml-1.2024.6.jar \
+            --output "$jar"
+          printf '%s  %s\n' \
+            5a8dc3b37fe133a4744e55be80caf6080a70350aba716d95400a0f0cbd79e846 \
+            "$jar" | sha256sum --check --status
+          java -version 2> "$RUNNER_TEMP/java-version.txt"
+          java -jar "$jar" -version 2>&1 | tee "$RUNNER_TEMP/plantuml-version.txt"
+      - name: Install exact wheel in a fresh venv and run self-check
+        shell: bash
+        env:
+          PYTHONPATH: ''
+          PYTHONNOUSERSITE: '1'
+          PIP_CONFIG_FILE: /dev/null
+          PLANTUML_JAR: ${{ runner.temp }}/plantuml.jar
+          PLANTUML_HOST: http://www.plantuml.com/plantuml
+        run: |
+          set -uo pipefail
+          root="$RUNNER_TEMP/pyfcstm-wheel-clean-root"
+          reports="$RUNNER_TEMP/pyfcstm-wheel-reports"
+          venv="$RUNNER_TEMP/pyfcstm-wheel-venv"
+          rm -rf "$root" "$reports" "$venv"
+          mkdir -p "$root" "$reports"
+          wheel=$(find "$RUNNER_TEMP/pyfcstm-package-artifact" -type f -name '*.whl' -print -quit)
+          test -n "$wheel"
+          identity=$(find "$RUNNER_TEMP/pyfcstm-package-artifact" -type f -name build-identity.txt -print -quit)
+          digest_file=$(find "$RUNNER_TEMP/pyfcstm-package-artifact" -type f -name artifact-sha256.txt -print -quit)
+          test -n "$identity" -a -n "$digest_file"
+          grep -F "full_commit=$GITHUB_SHA" "$identity"
+          wheel_name=$(basename "$wheel")
+          expected_digest=$(awk -v file="$wheel_name" '$2 == "dist/" file || $2 == file {print $1}' "$digest_file")
+          actual_digest=$(sha256sum "$wheel" | awk '{print $1}')
+          test -n "$expected_digest" -a "$expected_digest" = "$actual_digest"
+          cp "$identity" "$reports/build-identity.txt"
+          cp "$digest_file" "$reports/artifact-sha256.txt"
+          printf '%s  %s\n' "$actual_digest" "$wheel_name" | tee "$reports/artifact.sha256"
+          set +e
+          curl --fail --location --retry 3 --retry-delay 2 --max-time 15 \
+            "${PLANTUML_HOST%/}/" > "$reports/plantuml-readiness.txt" 2>&1
+          readiness_status=$?
+          set -e
+          python -m venv "$venv"
+          source "$venv/bin/activate" 2>/dev/null || source "$venv/Scripts/activate"
+          python -m pip --isolated install --upgrade 'pip<24.1' 2>&1 | tee "$reports/pip-bootstrap.log"
+          set +e
+          python -m pip --isolated install --no-cache-dir "$wheel" 2>&1 | tee "$reports/pip-install.log"
+          install_status=${PIPESTATUS[0]}
+          set -e
+          test "$install_status" -eq 0
+          python -m pip check 2>&1 | tee "$reports/pip-check.log"
+          python -m pip list --format=json 2>&1 | tee "$reports/pip-list.json"
+          python -c 'import pyfcstm, sys; print(pyfcstm.__file__); print(sys.executable); print("\\n".join(sys.path))' \
+            | tee "$reports/module-path.txt"
+          if grep -F "$GITHUB_WORKSPACE" "$reports/module-path.txt"; then
+            echo 'installed module came from the checkout workspace' >&2
+            exit 1
+          fi
+          script=pyfcstm
+          if [ "${RUNNER_OS:-}" = "Windows" ]; then script=pyfcstm.exe; fi
+          set +e
+          "$script" --version 2>&1 | tee "$reports/version.log"
+          version_status=${PIPESTATUS[0]}
+          python -m pyfcstm --version 2>&1 | tee "$reports/module-version.log"
+          module_version_status=${PIPESTATUS[0]}
+          "$script" --self-check --color always --report "$reports/default.json" 2>&1 | tee "$reports/default.log"
+          default_status=${PIPESTATUS[0]}
+          "$script" --self-check --profile visualize --network --color always --report "$reports/visualize.json" 2>&1 | tee "$reports/visualize.log"
+          visualize_status=${PIPESTATUS[0]}
+          set -e
+          printf 'install=%s\nversion=%s\nmodule_version=%s\ndefault=%s\nvisualize=%s\nplantuml_readiness=%s\nPLANTUML_HOST=%s\nPLANTUML_JAR=%s\n' \
+            "$install_status" "$version_status" "$module_version_status" "$default_status" "$visualize_status" "$readiness_status" "$PLANTUML_HOST" "$PLANTUML_JAR" \
+            | tee "$reports/summary.txt"
+          test "$version_status" -eq 0
+          test "$module_version_status" -eq 0
+          test "$default_status" -eq 0
+          grep -F "Commit: $GITHUB_SHA" "$reports/version.log"
+      - name: Upload fresh wheel evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: pyfcstm-pr4-wheel-selfcheck-${{ matrix.os }}
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/pyfcstm-wheel-reports
+            ${{ runner.temp }}/java-version.txt
+            ${{ runner.temp }}/plantuml-version.txt
+
+  fresh_sdist_selfcheck:
+    name: Fresh sdist self-check (Ubuntu service)
+    runs-on: ubuntu-22.04
+    needs: source_release
+    if: ${{ needs.source_release.result == 'success' }}
+    services:
+      plantuml:
+        image: plantuml/plantuml-server@sha256:00b96145a7e2999fd9504b84e26d00c47222b7963a0072ee14ea59449d634e99
+        ports:
+          - 18080:8080
+    timeout-minutes: 25
+    steps:
+      - name: Set up Python 3.7
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.7'
+      - name: Set up Java runtime
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Download only the built sdist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts-source-pack
+          path: ${{ runner.temp }}/pyfcstm-package-artifact
+      - name: Install and verify PlantUML JAR
+        shell: bash
+        run: |
+          set -euo pipefail
+          jar="$RUNNER_TEMP/plantuml.jar"
+          curl --fail --location --silent --show-error \
+            https://github.com/plantuml/plantuml/releases/download/v1.2024.6/plantuml-1.2024.6.jar \
+            --output "$jar"
+          printf '%s  %s\n' \
+            5a8dc3b37fe133a4744e55be80caf6080a70350aba716d95400a0f0cbd79e846 \
+            "$jar" | sha256sum --check --status
+          java -version 2> "$RUNNER_TEMP/java-version.txt"
+          java -jar "$jar" -version 2>&1 | tee "$RUNNER_TEMP/plantuml-version.txt"
+      - name: Install exact sdist in a fresh venv and run self-check
+        shell: bash
+        env:
+          PYTHONPATH: ''
+          PYTHONNOUSERSITE: '1'
+          PLANTUML_JAR: ${{ runner.temp }}/plantuml.jar
+          PLANTUML_HOST: http://127.0.0.1:18080
+        run: |
+          set -uo pipefail
+          root="$RUNNER_TEMP/pyfcstm-sdist-clean-root"
+          reports="$RUNNER_TEMP/pyfcstm-sdist-reports"
+          venv="$RUNNER_TEMP/pyfcstm-sdist-venv"
+          rm -rf "$root" "$reports" "$venv"
+          mkdir -p "$root" "$reports"
+          sdist=$(find "$RUNNER_TEMP/pyfcstm-package-artifact" -type f \( -name '*.tar.gz' -o -name '*.zip' \) -print -quit)
+          test -n "$sdist"
+          identity=$(find "$RUNNER_TEMP/pyfcstm-package-artifact" -type f -name build-identity.txt -print -quit)
+          digest_file=$(find "$RUNNER_TEMP/pyfcstm-package-artifact" -type f -name artifact-sha256.txt -print -quit)
+          test -n "$identity" -a -n "$digest_file"
+          grep -F "full_commit=$GITHUB_SHA" "$identity"
+          sdist_name=$(basename "$sdist")
+          expected_digest=$(awk -v file="$sdist_name" '$2 == "dist/" file || $2 == file {print $1}' "$digest_file")
+          actual_digest=$(sha256sum "$sdist" | awk '{print $1}')
+          test -n "$expected_digest" -a "$expected_digest" = "$actual_digest"
+          cp "$identity" "$reports/build-identity.txt"
+          cp "$digest_file" "$reports/artifact-sha256.txt"
+          printf '%s  %s\n' "$actual_digest" "$sdist_name" | tee "$reports/artifact.sha256"
+          set +e
+          curl --fail --location --retry 5 --retry-delay 2 --max-time 15 \
+            "${PLANTUML_HOST%/}/" > "$reports/plantuml-readiness.txt" 2>&1
+          readiness_status=$?
+          set -e
+          test "$readiness_status" -eq 0
+          python -m venv "$venv"
+          source "$venv/bin/activate"
+          python -m pip --isolated install --upgrade 'pip<24.1' 2>&1 | tee "$reports/pip-bootstrap.log"
+          set +e
+          python -m pip --isolated install --no-cache-dir "$sdist" 2>&1 | tee "$reports/pip-install.log"
+          install_status=${PIPESTATUS[0]}
+          set -e
+          test "$install_status" -eq 0
+          python -m pip check 2>&1 | tee "$reports/pip-check.log"
+          python -m pip list --format=json 2>&1 | tee "$reports/pip-list.json"
+          python -c 'import pyfcstm, sys; print(pyfcstm.__file__); print(sys.executable); print("\\n".join(sys.path))' \
+            | tee "$reports/module-path.txt"
+          grep -F "$GITHUB_WORKSPACE" "$reports/module-path.txt" && exit 1 || true
+          set +e
+          pyfcstm --version 2>&1 | tee "$reports/version.log"
+          version_status=${PIPESTATUS[0]}
+          python -m pyfcstm --version 2>&1 | tee "$reports/module-version.log"
+          module_version_status=${PIPESTATUS[0]}
+          pyfcstm --self-check --color always --report "$reports/default.json" 2>&1 | tee "$reports/default.log"
+          default_status=${PIPESTATUS[0]}
+          pyfcstm --self-check --profile visualize --network --color always --report "$reports/visualize.json" 2>&1 | tee "$reports/visualize.log"
+          visualize_status=${PIPESTATUS[0]}
+          set -e
+          printf 'install=%s\nversion=%s\nmodule_version=%s\ndefault=%s\nvisualize=%s\nplantuml_readiness=%s\nPLANTUML_HOST=%s\nPLANTUML_JAR=%s\n' \
+            "$install_status" "$version_status" "$module_version_status" "$default_status" "$visualize_status" "$readiness_status" "$PLANTUML_HOST" "$PLANTUML_JAR" \
+            | tee "$reports/summary.txt"
+          test "$version_status" -eq 0
+          test "$module_version_status" -eq 0
+          test "$default_status" -eq 0
+          grep -F "Commit: $GITHUB_SHA" "$reports/version.log"
+      - name: Assert controlled PlantUML results
+        env:
+          PLANTUML_HOST: http://127.0.0.1:18080
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - "$RUNNER_TEMP/pyfcstm-sdist-reports/visualize.json" "$PLANTUML_HOST" <<'PY'
+          import json
+          import sys
+
+          report_path, host = sys.argv[1:]
+          with open(report_path, "r") as stream:
+              report = json.load(stream)
+          results = {item["id"]: item for item in report["results"]}
+          for check_id in ("visualize.remote_tls", "visualize.remote_render"):
+              result = results.get(check_id)
+              if result is None or result["status"] != "PASS":
+                  raise SystemExit("{} did not PASS: {}".format(check_id, result))
+              if host not in (result.get("observed") or ""):
+                  raise SystemExit("{} did not record configured host: {}".format(check_id, result))
+          PY
+      - name: Upload fresh sdist evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: pyfcstm-pr4-sdist-selfcheck
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/pyfcstm-sdist-reports
+            ${{ runner.temp }}/java-version.txt
+            ${{ runner.temp }}/plantuml-version.txt
+
   release_docs_pdf:
     name: Bilingual Docs PDF
     runs-on: ubuntu-24.04
     services:
       plantuml:
-        image: plantuml/plantuml-server:jetty-v1.2023.6
+        image: plantuml/plantuml-server@sha256:00b96145a7e2999fd9504b84e26d00c47222b7963a0072ee14ea59449d634e99
         ports:
           - 18080:8080
     steps:
@@ -265,7 +666,7 @@ jobs:
           echo "PKG_CONFIG_PATH=${BREW_PREFIX}/lib/pkgconfig${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}" >> $GITHUB_ENV
           echo "DYLD_FALLBACK_LIBRARY_PATH=${BREW_PREFIX}/lib${DYLD_FALLBACK_LIBRARY_PATH:+:${DYLD_FALLBACK_LIBRARY_PATH}}" >> $GITHUB_ENV
       - name: Set up python ${{ matrix.python-version }}
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install dependencies
@@ -360,7 +761,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 20
 
@@ -371,7 +772,7 @@ jobs:
           java-version: '11'
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v6
         with:
           python-version: '3.8'
 

@@ -15,6 +15,28 @@
     "replay": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/replayV1"}, {"$ref": "#/$defs/replayV2"}]},
     "exit_code": {"enum": [0, 1, 3, 4]}
   },
+  "allOf": [
+    {
+      "if": {"properties": {"result": {"properties": {"schema_version": {"const": "bmc-solve-result/v2"}, "outcome": {"enum": ["witness_found", "property_satisfied"]}}}}},
+      "then": {"properties": {"exit_code": {"const": 0}}}
+    },
+    {
+      "if": {"properties": {"result": {"properties": {"schema_version": {"const": "bmc-solve-result/v2"}, "outcome": {"enum": ["property_violated", "no_witness"]}}}}},
+      "then": {"properties": {"exit_code": {"const": 1}}}
+    },
+    {
+      "if": {"properties": {"result": {"properties": {"schema_version": {"const": "bmc-solve-result/v2"}, "outcome": {"enum": ["incomplete", "timeout", "unknown", "scenario_infeasible", "feasibility_timeout", "feasibility_unknown"]}}}}},
+      "then": {"properties": {"exit_code": {"const": 3}}}
+    },
+    {
+      "if": {"properties": {"result": {"properties": {"schema_version": {"const": "bmc-solve-result/v2"}, "outcome": {"const": "scenario_infeasible"}}}}},
+      "then": {"properties": {"witness": {"const": null}, "replay": {"const": null}}}
+    },
+    {
+      "if": {"properties": {"result": {"properties": {"schema_version": {"const": "bmc-solve-result/v2"}, "available_model_roles": {"const": []}}}}},
+      "then": {"properties": {"witness": {"const": null}, "replay": {"const": null}}}
+    }
+  ],
   "$defs": {
     "jsonValue": {
       "oneOf": [
@@ -326,6 +348,62 @@
               }
             }
           ]}
+        },
+        {
+          "if": {"properties": {"status": {"const": "unsat"}}},
+          "then": {
+            "properties": {
+              "feasibility": {
+                "properties": {
+                  "assumptions": {
+                    "properties": {"origin": {"enum": ["checked", "not_checked"]}}
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "allOf": [
+              {"properties": {"status": {"const": "unsat"}}},
+              {"not": {"properties": {"incomplete_status": {"const": "sat"}}}}
+            ]
+          },
+          "then": {
+            "properties": {
+              "has_model": {"const": false},
+              "has_incomplete_model": {"const": false},
+              "available_model_roles": {"const": []}
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {"const": "unsat"},
+              "feasibility": {
+                "properties": {
+                  "assumptions": {"properties": {"status": {"const": "unsat"}}}
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "property_satisfied": {"const": null},
+              "witness_found": {"const": false},
+              "counterexample_found": {"const": false},
+              "incomplete": {"const": false},
+              "outcome": {"const": "scenario_infeasible"},
+              "incomplete_status": {"const": null},
+              "incomplete_reason": {"const": null},
+              "incomplete_elapsed_ms": {"const": null},
+              "has_model": {"const": false},
+              "has_incomplete_model": {"const": false},
+              "available_model_roles": {"const": []}
+            }
+          }
         },
         {
           "if": {"properties": {"kind": {"const": "response"}, "status": {"const": "unsat"}, "incomplete_status": {"const": "sat"}}},

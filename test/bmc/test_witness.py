@@ -66,8 +66,14 @@ def _empty_sat_model():
 
 def _feasible_result_evidence() -> BmcFeasibilityResult:
     """Build explicit SAT feasibility evidence for direct result tests."""
-    sat = BmcFeasibilityCheck("sat", "inferred")
-    return BmcFeasibilityResult(sat, sat, sat, localization_status="not_needed")
+    sat_inferred = BmcFeasibilityCheck("sat", "inferred")
+    assumptions = BmcFeasibilityCheck("sat", "checked", elapsed_ms=1.0)
+    return BmcFeasibilityResult(
+        sat_inferred,
+        sat_inferred,
+        assumptions,
+        localization_status="not_needed",
+    )
 
 
 _VERDICT_DSL = """
@@ -793,6 +799,48 @@ def test_solver_budget_exhaustion_before_assumptions_is_not_checked(
     assert spy.check_count == 1
 
 
+def test_solver_budget_exhaustion_before_suffix_is_not_checked(monkeypatch) -> None:
+    """A response suffix check that never starts has no elapsed result."""
+    _, formula = _compile(
+        """
+        state Root {
+            event trigger;
+            state A;
+            [*] -> A;
+        }
+        """,
+        'init state("Root.A");\n'
+        "check response <= 1:\n"
+        '  trigger event("Root.trigger", current)\n'
+        "  -> within 2 terminated();",
+    )
+    spy = _SolverSpy([z3.unsat, z3.sat], model=_empty_sat_model())
+
+    class _Budget:
+        deadline = 1
+
+        def __init__(self, timeout_ms):
+            self.remaining_calls = 0
+
+        def remaining_ms(self):
+            self.remaining_calls += 1
+            return 100 if self.remaining_calls <= 2 else None
+
+    monkeypatch.setattr(witness_module.z3, "Solver", lambda: spy)
+    monkeypatch.setattr(witness_module, "_SolveBudget", _Budget)
+
+    result = solve_bmc_property(formula, timeout_ms=100)
+
+    assert result.incomplete_status is None
+    assert result.incomplete_reason is None
+    assert result.incomplete_elapsed_ms is None
+    assert (
+        "feasibility_timeout:deadline_exhausted_before_suffix_check"
+        in result.diagnostics
+    )
+    assert spy.check_count == 2
+
+
 def test_solve_property_case_f_incomplete_suffix_role_and_replay() -> None:
     """A response suffix model keeps its role through decode and replay."""
     model, formula = _compile(
@@ -983,6 +1031,40 @@ def test_solve_result_rejects_unchecked_unsat_without_timeout_evidence() -> None
 
     with pytest.raises(BmcBuildError, match="deadline exhaustion diagnostic"):
         BmcSolveResult(formula, "unsat", feasibility=feasibility)
+
+
+def test_solve_result_rejects_inferred_assumptions_for_primary_unsat() -> None:
+    """Primary UNSAT cannot infer admissible assumptions from its own model."""
+    formula = _verdict_formula("reach")
+    sat_inferred = BmcFeasibilityCheck("sat", "inferred")
+    feasibility = BmcFeasibilityResult(
+        sat_inferred,
+        sat_inferred,
+        sat_inferred,
+        localization_status="not_needed",
+        refinement_status="not_needed",
+    )
+
+    with pytest.raises(BmcBuildError, match="assumptions.*inferred"):
+        BmcSolveResult(formula, "unsat", feasibility=feasibility)
+
+
+def test_solve_result_allows_inferred_prefix_before_checked_assumptions() -> None:
+    """Primary UNSAT may infer only the kernel/init SAT prefix."""
+    formula = _verdict_formula("reach")
+    sat_inferred = BmcFeasibilityCheck("sat", "inferred")
+    assumptions = BmcFeasibilityCheck("sat", "checked", elapsed_ms=1.0)
+    feasibility = BmcFeasibilityResult(
+        sat_inferred,
+        sat_inferred,
+        assumptions,
+        localization_status="not_needed",
+        refinement_status="not_needed",
+    )
+
+    result = BmcSolveResult(formula, "unsat", feasibility=feasibility)
+
+    assert result.outcome == "no_witness"
 
 
 def test_solve_result_allows_unchecked_unsat_after_deadline_exhaustion() -> None:

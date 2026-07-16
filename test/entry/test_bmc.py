@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import copy
 import subprocess
 import sys
 from dataclasses import replace
@@ -452,6 +453,60 @@ def test_bmc_scenario_infeasible_is_not_a_property_failure(bmc_files) -> None:
     assert "SCENARIO INFEASIBLE; PROPERTY NOT EVALUATED" in human.stdout
 
 
+def test_bmc_schema_rejects_forged_scenario_infeasible_verdict(bmc_files) -> None:
+    """The published schema rejects terminal verdict and channel mutations."""
+    jsonschema = pytest.importorskip("jsonschema")
+    model_path, query = bmc_files
+    model_path.write_text("def int x = 0;\nstate Root;\n", encoding="utf-8")
+    query_path = query(
+        'assume at 0: x == 0;\nassume at 0: x == 1;\ncheck reach <= 1: active("Root");'
+    )
+    _, payload = _json_result(model_path, query_path)
+    schema_path = (
+        Path(__file__).resolve().parents[2]
+        / "docs"
+        / "source"
+        / "reference"
+        / "bmc_results"
+        / "bmc_cli_v1.schema.json"
+    )
+    validator = jsonschema.Draft202012Validator(
+        json.loads(schema_path.read_text(encoding="utf-8"))
+    )
+
+    assert list(validator.iter_errors(payload)) == []
+    mutations = (
+        ("outcome", lambda item: item["result"].update(outcome="property_satisfied")),
+        (
+            "verdict",
+            lambda item: item["result"].update(
+                property_satisfied=True,
+                witness_found=False,
+                counterexample_found=False,
+                incomplete=False,
+                outcome="property_satisfied",
+            ),
+        ),
+        (
+            "role",
+            lambda item: item["result"].update(
+                available_model_roles=["primary_counterexample"]
+            ),
+        ),
+        (
+            "assumptions origin",
+            lambda item: item["result"]["feasibility"]["assumptions"].update(
+                origin="inferred"
+            ),
+        ),
+        ("exit code", lambda item: item.update(exit_code=0)),
+    )
+    for name, mutate in mutations:
+        forged = copy.deepcopy(payload)
+        mutate(forged)
+        assert list(validator.iter_errors(forged)), name
+
+
 @pytest.mark.parametrize(
     ("status", "reason"), [("timeout", "timeout"), ("unknown", "incomplete")]
 )
@@ -746,7 +801,7 @@ check reach <= 1: active("Root.Done");
         feasibility=BmcFeasibilityResult(
             BmcFeasibilityCheck("sat", "inferred"),
             BmcFeasibilityCheck("sat", "inferred"),
-            BmcFeasibilityCheck("sat", "inferred"),
+            BmcFeasibilityCheck("sat", "checked", elapsed_ms=1.0),
             localization_status="not_needed",
         ),
         diagnostics=("custom_diagnostic=1",),

@@ -1857,7 +1857,10 @@ class BmcFeasibilityResult(_PrettyPrintableMixin):
                     "infeasible_stage requires checked/unsat evidence for the "
                     "selected stage."
                 )
-            if self.infeasible_stage == "initialization" and self.kernel.status != "sat":
+            if (
+                self.infeasible_stage == "initialization"
+                and self.kernel.status != "sat"
+            ):
                 raise BmcBuildError(
                     "initialization infeasible_stage requires a SAT prefix."
                 )
@@ -2187,6 +2190,10 @@ class BmcSolveResult(_PrettyPrintableMixin):
         ):
             raise BmcBuildError(
                 "primary sat results require inferred SAT feasibility evidence."
+            )
+        if self.status != "sat" and self.feasibility.assumptions.origin == "inferred":
+            raise BmcBuildError(
+                "assumptions inferred feasibility evidence requires primary status=sat."
             )
         if self.incomplete_status is not None and self.kind != "response":
             raise BmcBuildError(
@@ -4062,10 +4069,21 @@ def solve_bmc_property(
                     incomplete_model,
                     incomplete_reason,
                     incomplete_elapsed_ms,
-                    _,
+                    incomplete_started,
                 ) = _check_with_budget(solver, budget)
                 solver.pop()
-                diagnostics.append("incomplete_elapsed_ms=%.3f" % incomplete_elapsed_ms)
+                if not incomplete_started:
+                    incomplete_status = None
+                    incomplete_model = None
+                    incomplete_reason = None
+                    incomplete_elapsed_ms = None
+                    diagnostics.append(
+                        "feasibility_timeout:deadline_exhausted_before_suffix_check"
+                    )
+                else:
+                    diagnostics.append(
+                        "incomplete_elapsed_ms=%.3f" % incomplete_elapsed_ms
+                    )
             else:
                 incomplete_reason = "incomplete check disabled"
                 diagnostics.append("incomplete_check=disabled")

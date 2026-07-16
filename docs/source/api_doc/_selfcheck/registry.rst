@@ -6,6 +6,12 @@ pyfcstm.\_selfcheck.registry
 .. automodule:: pyfcstm._selfcheck.registry
 
 
+ssl
+-----------------------------------------------------
+
+.. autodata:: ssl
+
+
 Worker
 -----------------------------------------------------
 

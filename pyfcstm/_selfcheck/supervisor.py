@@ -6,20 +6,17 @@ to the next check. It owns the ledger, final snapshot, report, and exit code.
 """
 
 import os
-import json
 import sys
 import time
 import traceback
 import uuid
 from dataclasses import replace
-from pathlib import Path
 from typing import Iterable, Sequence
 
 from .arguments import SelfCheckArgumentError, _requested_output_format
 from .arguments import parse_selfcheck_args
 from .environment import collect_environment
 from .model import (
-    ArtifactContext,
     CheckOutcome,
     CheckResult,
     CheckSpec,
@@ -48,7 +45,6 @@ from .report import (
 
 _PROFILE_DEADLINES = {"default": 180.0, "full": 300.0, "visualize": 300.0}
 _FAILING_STATUSES = ("BLOCKED", "FAIL", "ERROR", "TIMEOUT", "CRASH")
-_FROZEN_UNKNOWN_ARTIFACT_KIND = "frozen-unknown"
 _STRICT_WARN_REASONS = frozenset(
     (
         "capability_unavailable",
@@ -57,32 +53,10 @@ _STRICT_WARN_REASONS = frozenset(
         "identity_stale",
         "identity_unavailable",
         "metadata_unavailable",
-        "manifest_unavailable",
-        "manifest_invalid",
         "resource_missing",
         "resource_invalid",
     )
 )
-
-
-def _artifact_context_for(spec: CheckSpec):
-    """Return the current package boundary for artifact-specific checks."""
-    if not (
-        spec.check_id.startswith("artifact.")
-        or spec.check_id.startswith("install.")
-    ):
-        return None
-    package_root = os.path.dirname(os.path.abspath(__file__))
-    package_parent = os.path.dirname(os.path.dirname(package_root))
-    if getattr(sys, "frozen", False):
-        kind = _frozen_artifact_kind(package_root)
-        return ArtifactContext(kind, package_parent, (package_parent,))
-    return ArtifactContext(
-        _runtime_artifact_kind(),
-        package_parent,
-        (package_parent,) + _site_package_roots(),
-        allow_site_packages=True,
-    )
 
 
 def _runtime_artifact_kind() -> str:
@@ -90,7 +64,7 @@ def _runtime_artifact_kind() -> str:
     package_root = os.path.dirname(os.path.abspath(__file__))
     package_parent = os.path.dirname(os.path.dirname(package_root))
     if getattr(sys, "frozen", False):
-        return _frozen_artifact_kind(package_root)
+        return "frozen"
     if os.path.exists(os.path.join(package_parent, ".git")):
         return "source"
     try:
@@ -139,60 +113,6 @@ def _artifact_metadata(redact: bool = True):
         if data["executable"] is not None:
             data["executable"] = "<redacted>"
     return data
-
-
-def _site_package_roots():
-    """Return only the current interpreter's real site-package roots.
-
-    Source workers need third-party packages such as ``pygments`` and ``z3``;
-    arbitrary ``sys.path`` entries remain excluded so a contaminated caller
-    cannot make an artifact closure appear valid.
-    """
-    roots = []
-    try:
-        import site
-    except ImportError:
-        # Embedded interpreters may omit the optional ``site`` module.
-        site = None
-    if site is not None:
-        try:
-            getsitepackages = getattr(site, "getsitepackages", None)
-            if getsitepackages is not None:
-                roots.extend(getsitepackages())
-        except (AttributeError, OSError, TypeError, ValueError):
-            # Minimal/embedded Python builds may not expose site-package helpers.
-            pass
-    try:
-        import sysconfig
-
-        paths = sysconfig.get_paths()
-        roots.extend(paths.get(name) for name in ("purelib", "platlib"))
-    except (AttributeError, OSError, TypeError, ValueError):
-        # A missing sysconfig mapping simply leaves source diagnostics stricter.
-        pass
-    normalized = []
-    for path in roots:
-        if not path:
-            continue
-        candidate = os.path.abspath(os.fspath(path))
-        if os.path.isdir(candidate) and candidate not in normalized:
-            normalized.append(candidate)
-    return tuple(normalized)
-
-
-def _frozen_artifact_kind(package_root):
-    """Read the generated frozen artifact kind without changing the spec."""
-    candidate = Path(package_root) / "_build_info.json"
-    try:
-        with candidate.open("r", encoding="utf-8") as stream:
-            kind = json.load(stream).get("artifact_kind")
-    except (OSError, UnicodeError, ValueError, TypeError, AttributeError):
-        # Artifact metadata has its own required check; preserve an explicit
-        # unknown boundary so a damaged file cannot masquerade as onefile.
-        return _FROZEN_UNKNOWN_ARTIFACT_KIND
-    if kind in ("frozen-onefile", "frozen-onedir"):
-        return kind
-    return _FROZEN_UNKNOWN_ARTIFACT_KIND
 
 
 def _validate_specs(specs):
@@ -450,37 +370,19 @@ def _run_selected_checks(
             if spec.execution == "local":
                 result = _run_local_check(spec)
             else:
-                artifact_context = _artifact_context_for(spec)
-                if artifact_context is None:
-                    if options.network:
-                        result = run_check_process(
-                            spec,
-                            timeout=timeout,
-                            timeout_scale=options.timeout_scale,
-                            network=True,
-                        )
-                    else:
-                        result = run_check_process(
-                            spec,
-                            timeout=timeout,
-                            timeout_scale=options.timeout_scale,
-                        )
+                if options.network:
+                    result = run_check_process(
+                        spec,
+                        timeout=timeout,
+                        timeout_scale=options.timeout_scale,
+                        network=True,
+                    )
                 else:
-                    if options.network:
-                        result = run_check_process(
-                            spec,
-                            timeout=timeout,
-                            timeout_scale=options.timeout_scale,
-                            artifact_context=artifact_context,
-                            network=True,
-                        )
-                    else:
-                        result = run_check_process(
-                            spec,
-                            timeout=timeout,
-                            timeout_scale=options.timeout_scale,
-                            artifact_context=artifact_context,
-                        )
+                    result = run_check_process(
+                        spec,
+                        timeout=timeout,
+                        timeout_scale=options.timeout_scale,
+                    )
         except BaseException as err:
             # Process failures are isolated so independent checks continue;
             # non-Exception control sentinels must still propagate.

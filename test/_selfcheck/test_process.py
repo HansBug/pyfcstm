@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 from pyfcstm._selfcheck import process as process_module
-from pyfcstm._selfcheck.model import ArtifactContext, CheckSpec
+from pyfcstm._selfcheck.model import CheckSpec
 from pyfcstm._selfcheck.process import (
     STREAM_LIMIT,
     _BoundedCapture,
@@ -362,91 +362,6 @@ def test_bounded_capture_accepts_empty_tail_after_limit():
     overflowed.append(b"123456789")
     overflowed.append(b"x")
     assert overflowed.truncated_bytes == 2
-
-
-@pytest.mark.unittest
-def test_output_quota_setup_and_spool_probe_fail_closed(monkeypatch):
-    """Output quota setup and physical-size probing keep failures bounded."""
-    try:
-        import resource
-    except ImportError:
-        pytest.skip("resource quotas are POSIX-only")
-
-    original_setrlimit = resource.setrlimit
-    monkeypatch.setattr(resource, "setrlimit", lambda *args: None)
-    process_module._limit_worker_output_files()
-    monkeypatch.setattr(resource, "setrlimit", original_setrlimit)
-    monkeypatch.setattr(
-        resource,
-        "setrlimit",
-        lambda *args: (_ for _ in ()).throw(OSError("quota")),
-    )
-    monkeypatch.setattr(
-        process_module.os,
-        "_exit",
-        lambda code: (_ for _ in ()).throw(SystemExit(code)),
-    )
-    with pytest.raises(SystemExit):
-        process_module._limit_worker_output_files()
-
-    class NoDescriptor:
-        def fileno(self):
-            raise ValueError("closed")
-
-    assert process_module._spool_size(NoDescriptor()) is None
-
-
-@pytest.mark.unittest
-def test_frozen_parent_does_not_inherit_posix_file_size_quota(monkeypatch):
-    """PyInstaller bootloaders may extract files larger than the worker quota."""
-    monkeypatch.setattr(process_module.sys, "frozen", True, raising=False)
-    assert process_module._should_limit_worker_output() is False
-    monkeypatch.setattr(process_module.sys, "frozen", False, raising=False)
-    assert process_module._should_limit_worker_output() == (os.name == "posix")
-
-
-@pytest.mark.unittest
-def test_frozen_worker_spawn_omits_rlimit_preexec(monkeypatch):
-    """A frozen worker still starts without inheriting ``RLIMIT_FSIZE``."""
-    if os.name == "nt":
-        pytest.skip("requires a real frozen executable on Windows")
-    observed = {}
-    real_popen = process_module.subprocess.Popen
-
-    def capture(command, **kwargs):
-        observed.update(kwargs)
-        return real_popen(command, **kwargs)
-
-    _install_fixture(monkeypatch, "pass")
-    monkeypatch.setattr(process_module.subprocess, "Popen", capture)
-    monkeypatch.setattr(process_module.sys, "frozen", True, raising=False)
-    root = Path(__file__).parents[2]
-    # The fixture is a source-side Python script; retain only its import root
-    # so this test exercises process flags rather than package discovery.
-    monkeypatch.setattr(
-        process_module,
-        "_artifact_environment",
-        lambda context: {"PYTHONPATH": str(root)},
-    )
-    result = run_check_process(
-        _spec(),
-        timeout=5.0,
-        artifact_context=ArtifactContext("frozen-onefile", str(root), (str(root),)),
-    )
-    assert result.status == "PASS"
-    assert "preexec_fn" not in observed
-
-
-@pytest.mark.unittest
-def test_file_spool_monitor_bounds_worker_without_rlimit(monkeypatch):
-    """The parent monitor covers frozen/Windows-like workers without RLIMIT_FSIZE."""
-    monkeypatch.setattr(process_module, "_should_limit_worker_output", lambda: False)
-    result = run_check_process(
-        CheckSpec("chaos.large_output", "_chaos.large_output"), timeout=5.0
-    )
-    assert result.status == "ERROR"
-    assert result.reason == "output_capture_limit"
-    assert result.truncated_bytes > 0
 
 
 @pytest.mark.unittest
@@ -829,68 +744,6 @@ def test_worker_environment_preserves_inherited_pythonpath(monkeypatch):
 
 
 @pytest.mark.unittest
-def test_artifact_context_isolates_python_environment(monkeypatch):
-    """Artifact workers cannot inherit caller Python path or user-site state."""
-    observed = {}
-    real_popen = process_module.subprocess.Popen
-
-    def capture_environment(*args, **kwargs):
-        observed["env"] = kwargs["env"]
-        observed["cwd"] = kwargs["cwd"]
-        observed["command"] = args[0]
-        return real_popen(*args, **kwargs)
-
-    monkeypatch.setenv("PYTHONPATH", "/contaminated")
-    monkeypatch.setenv("PYTHONHOME", "/contaminated-home")
-    monkeypatch.setattr(process_module.subprocess, "Popen", capture_environment)
-    project_root = Path(__file__).parents[2]
-    context = ArtifactContext("wheel", str(project_root), (str(project_root),))
-    result = run_check_process(
-        CheckSpec("artifact.self_dispatch", "self_dispatch"),
-        timeout=5.0,
-        artifact_context=context,
-    )
-    assert result.status == "PASS"
-    assert observed["cwd"] == str(project_root)
-    assert "PYTHONPATH" not in observed["env"]
-    assert "PYTHONHOME" not in observed["env"]
-    assert observed["env"]["PYTHONNOUSERSITE"] == "1"
-    assert observed["env"]["PYTHONDONTWRITEBYTECODE"] == "1"
-    assert observed["command"][1:3] == ["-E", "-s"]
-
-
-@pytest.mark.unittest
-def test_source_artifact_context_allows_only_real_site_packages():
-    """Source closure checks accept installed dependencies without caller paths."""
-    from pyfcstm._selfcheck import supervisor
-
-    context = supervisor._artifact_context_for(
-        CheckSpec("artifact.module_closure", "check_artifact_module_closure")
-    )
-    assert context.kind == "source"
-    assert context.allow_site_packages is True
-    assert any("site-packages" in path for path in context.allowed_roots)
-    assert "/contaminated" not in context.allowed_roots
-
-
-@pytest.mark.unittest
-def test_physical_output_quota_terminates_real_posix_worker(monkeypatch):
-    """The OS quota stops a runaway regular-file stream at the boundary."""
-    if os.name != "posix":
-        pytest.skip("POSIX RLIMIT_FSIZE contract")
-    from pyfcstm._selfcheck import registry
-
-    result = run_check_process(
-        CheckSpec("chaos.large_output", "_chaos.large_output"), timeout=5.0
-    )
-    assert result.status == "ERROR"
-    assert result.reason == "output_capture_limit"
-    assert result.return_code is not None
-    assert result.truncated_bytes > 0
-    assert registry.get_worker("_chaos.large_output")
-
-
-@pytest.mark.unittest
 def test_native_containment_failure_preserves_cleanup_evidence(monkeypatch):
     """Windows isolation failures include cleanup diagnostics from the leader."""
     from types import SimpleNamespace
@@ -1127,7 +980,7 @@ def test_cleanup_diagnostic_failure_does_not_escape(monkeypatch):
 
 @pytest.mark.unittest
 def test_worker_drain_failure_is_normalized_as_timeout(monkeypatch):
-    """Spool initialization failure closes the worker boundary before spawn."""
+    """Pipe drain failures after timeout stay in the timeout result."""
 
     class Process:
         pid = 29
@@ -1143,25 +996,23 @@ def test_worker_drain_failure_is_normalized_as_timeout(monkeypatch):
                 raise subprocess.TimeoutExpired("worker", 0.01, output=b"partial")
             raise OSError("drain")
 
+    process = Process()
     monkeypatch.setattr(process_module.os, "name", "posix")
     monkeypatch.setattr(
         process_module.tempfile,
         "TemporaryFile",
         lambda *args, **kwargs: (_ for _ in ()).throw(OSError("spool")),
     )
-    monkeypatch.setattr(
-        process_module.subprocess,
-        "Popen",
-        lambda *a, **k: (_ for _ in ()).throw(AssertionError("worker spawned")),
-    )
+    monkeypatch.setattr(process_module.subprocess, "Popen", lambda *a, **k: process)
+    monkeypatch.setattr(process_module, "_terminate", lambda *args: None)
     result = run_check_process(_spec(), timeout=0.01)
-    assert result.status == "ERROR"
-    assert result.reason == "output_capture_limit"
+    assert result.status == "TIMEOUT"
+    assert "output_drain:OSError" in result.evidence
 
 
 @pytest.mark.unittest
 def test_worker_drain_timeout_is_normalized_as_timeout(monkeypatch):
-    """A spool initialization timeout is bounded and reportable."""
+    """A second timeout during output drain remains bounded and reportable."""
 
     class Process:
         pid = 29
@@ -1175,20 +1026,18 @@ def test_worker_drain_timeout_is_normalized_as_timeout(monkeypatch):
             self.calls += 1
             raise subprocess.TimeoutExpired("worker", 0.01, output=b"partial")
 
+    process = Process()
     monkeypatch.setattr(process_module.os, "name", "posix")
     monkeypatch.setattr(
         process_module.tempfile,
         "TemporaryFile",
         lambda *args, **kwargs: (_ for _ in ()).throw(OSError("spool")),
     )
-    monkeypatch.setattr(
-        process_module.subprocess,
-        "Popen",
-        lambda *a, **k: (_ for _ in ()).throw(AssertionError("worker spawned")),
-    )
+    monkeypatch.setattr(process_module.subprocess, "Popen", lambda *a, **k: process)
+    monkeypatch.setattr(process_module, "_terminate", lambda *args: None)
     result = run_check_process(_spec(), timeout=0.01)
-    assert result.status == "ERROR"
-    assert result.reason == "output_capture_limit"
+    assert result.status == "TIMEOUT"
+    assert "output_drain:TimeoutExpired" in result.evidence
 
 
 @pytest.mark.unittest

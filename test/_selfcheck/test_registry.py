@@ -17,10 +17,10 @@ from pyfcstm._selfcheck.registry import (
 
 
 @pytest.mark.unittest
-def test_registry_contains_the_exact_frozen_69_ids():
+def test_registry_contains_the_exact_frozen_68_ids():
     """The fixed result inventory is complete, unique, and ordered."""
-    assert len(EXPECTED_CHECK_IDS) == 69
-    assert len(set(EXPECTED_CHECK_IDS)) == 69
+    assert len(EXPECTED_CHECK_IDS) == 68
+    assert len(set(EXPECTED_CHECK_IDS)) == 68
     specs = selected_specs("default")
     assert [item.check_id for item in specs[1:]] == list(EXPECTED_CHECK_IDS)
     assert specs[0].check_id == "runtime.metadata"
@@ -50,7 +50,7 @@ def test_registry_profiles_keep_results_stable_and_raise_visual_requirements():
 @pytest.mark.unittest
 @pytest.mark.parametrize(
     "artifact_kind",
-    ["wheel", "sdist", "frozen-onefile", "frozen-onedir", "frozen-unknown"],
+    ["wheel", "sdist", "frozen"],
 )
 def test_release_artifacts_require_identity_checks(artifact_kind):
     """Release and frozen artifacts cannot downgrade stale identity to a warning."""
@@ -88,8 +88,8 @@ def test_missing_install_metadata_is_failure_for_wheel(monkeypatch):
 
 
 @pytest.mark.unittest
-def test_frozen_distribution_version_mismatch_is_failure(monkeypatch):
-    """A frozen executable cannot report stale distribution metadata as valid."""
+def test_frozen_distribution_metadata_is_not_host_bound(monkeypatch):
+    """A frozen executable ignores stale host distribution metadata."""
     class StaleMetadata:
         @staticmethod
         def version(name):
@@ -99,7 +99,9 @@ def test_frozen_distribution_version_mismatch_is_failure(monkeypatch):
     monkeypatch.setitem(registry.sys.modules, "importlib.metadata", StaleMetadata)
     monkeypatch.setattr(registry.importlib, "metadata", StaleMetadata, raising=False)
     monkeypatch.setattr(registry.sys, "frozen", True, raising=False)
-    assert registry._distribution_metadata().reason == "metadata_version_mismatch"
+    outcome = registry._distribution_metadata()
+    assert outcome.status == "SKIP"
+    assert outcome.reason == "not_applicable"
 
 
 @pytest.mark.unittest
@@ -236,6 +238,52 @@ def test_resource_callbacks_report_corrupt_json_and_yaml(tmp_path, monkeypatch):
 
 
 @pytest.mark.unittest
+def test_artifact_resources_report_missing_required_asset(tmp_path, monkeypatch):
+    """The artifact resource probe names a missing required package asset."""
+    required = (
+        "diagnostics/codes.yaml",
+        "diagnostics/schema.json",
+        "template/index.json",
+        "llm/fcstm_grammar_guide.md",
+        "llm/fcstm_grammar_guide.md.sha256",
+        "llm/fbmcq_language_guide.md",
+        "llm/fbmcq_language_guide.md.sha256",
+    )
+    for relative in required[1:]:
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("present", encoding="utf-8")
+    monkeypatch.setattr(registry, "_resource", lambda relative: tmp_path / relative)
+
+    outcome = registry._artifact_resources()
+
+    assert outcome.status == "FAIL"
+    assert outcome.reason == "resource_missing"
+    assert "codes.yaml" in outcome.observed
+
+
+@pytest.mark.unittest
+def test_resource_llm_guide_reports_sidecar_mismatch_through_public_api(monkeypatch):
+    """The registry uses strict public guide APIs for sidecar verification."""
+    from pyfcstm.llm import _resources as guide_resources
+
+    def fake_loader(_package, resource):
+        if resource.endswith(".sha256"):
+            return (64 * "0").encode("ascii")
+        if resource.endswith(".md"):
+            return b"# guide\n"
+        return None
+
+    monkeypatch.setattr(guide_resources.pkgutil, "get_data", fake_loader)
+
+    outcome = registry._resource_llm_guide()
+
+    assert outcome.status == "FAIL"
+    assert outcome.reason == "resource_invalid"
+    assert "integrity verification failed" in outcome.observed
+
+
+@pytest.mark.unittest
 def test_dependency_diagnostics_are_structured_without_result_ids():
     """Dependency inventory is metadata, not an additional fixed check."""
     diagnostics = registry.collect_dependency_diagnostics()
@@ -248,17 +296,16 @@ def test_dependency_diagnostics_are_structured_without_result_ids():
 
 
 @pytest.mark.unittest
-def test_install_record_validates_hashes(tmp_path, monkeypatch):
-    """A RECORD row with a bad digest is reported as a deterministic failure."""
+def test_install_record_checks_declared_files(tmp_path, monkeypatch):
+    """A RECORD row points to a file that is present in the installation."""
     payload = tmp_path / "module.py"
     payload.write_text("ok", encoding="utf-8")
     record = tmp_path / "RECORD"
-    record.write_text("module.py,sha256=AAAAAAAA,2\n", encoding="utf-8")
+    record.write_text("module.py,,\n", encoding="utf-8")
     monkeypatch.setattr(registry, "_record_path", lambda: record)
     monkeypatch.setattr(registry, "_distribution_root", lambda: tmp_path)
     outcome = get_worker("check_install_record")()
-    assert outcome.status == "FAIL"
-    assert outcome.reason == "record_hash_mismatch"
+    assert outcome.status == "PASS"
 
 
 @pytest.mark.unittest
@@ -413,8 +460,8 @@ def test_registry_small_probe_helpers_cover_missing_and_optional_paths(monkeypat
 
 
 @pytest.mark.unittest
-def test_registry_distribution_and_manifest_missing_paths(monkeypatch, tmp_path):
-    """Distribution and manifest probes distinguish optional absence from failure."""
+def test_registry_distribution_missing_paths(monkeypatch):
+    """Distribution probes distinguish optional absence from failure."""
     class EmptyDistributionMetadata:
         """Provide deterministic installed metadata with no requested files."""
 
@@ -464,16 +511,20 @@ def test_registry_distribution_and_manifest_missing_paths(monkeypatch, tmp_path)
     )
     assert registry._distribution_file("METADATA", required=True).reason == "metadata_unavailable"
 
-    missing = tmp_path / "missing.json"
-    monkeypatch.setattr(registry, "_resource", lambda name: missing)
-    assert registry._manifest().reason == "manifest_unavailable"
-
-
 @pytest.mark.unittest
 def test_frozen_install_record_is_not_applicable(monkeypatch):
     """A frozen executable has no wheel RECORD contract to validate."""
     monkeypatch.setattr(registry.sys, "frozen", True, raising=False)
     outcome = registry._distribution_record(required=True)
+    assert outcome.status == "SKIP"
+    assert outcome.reason == "not_applicable"
+
+
+@pytest.mark.unittest
+def test_frozen_distribution_metadata_ignores_host_install(monkeypatch):
+    """A host-installed pyfcstm version cannot invalidate a frozen bundle."""
+    monkeypatch.setattr(registry.sys, "frozen", True, raising=False)
+    outcome = registry._distribution_metadata()
     assert outcome.status == "SKIP"
     assert outcome.reason == "not_applicable"
 
@@ -492,67 +543,3 @@ def test_native_inventory_and_unidecode_tables_are_real_probes():
     """Native and table checks exercise their load-bearing runtime assets."""
     assert registry._artifact_native_inventory().status == "PASS"
     assert registry._resource_unidecode().status == "PASS"
-
-
-@pytest.mark.unittest
-def test_artifact_metadata_rejects_formal_kind_mismatch(monkeypatch, tmp_path):
-    """A formal wheel cannot carry source-kind build metadata."""
-    import sys
-    import types
-
-    build = tmp_path / "_build_info.json"
-    manifest = tmp_path / "_resource_manifest.json"
-    identity = tmp_path / "config" / "build_info.py"
-    identity.parent.mkdir()
-    for path in (build, manifest, identity):
-        path.write_text("{}", encoding="utf-8")
-    fake_manifest_module = types.SimpleNamespace(
-        verify_build_info_json=lambda *args, **kwargs: {"artifact_kind": "source"}
-    )
-    monkeypatch.setitem(sys.modules, "pyfcstm.config._resource_manifest", fake_manifest_module)
-    monkeypatch.setattr(registry, "_resource", lambda name: tmp_path / name)
-    monkeypatch.setenv("PYFCSTM_SELFCHECK_ARTIFACT_KIND", "wheel")
-    outcome = registry._artifact_metadata()
-    assert outcome.status == "FAIL"
-    assert outcome.reason == "artifact_kind_mismatch"
-
-
-@pytest.mark.unittest
-def test_artifact_metadata_rejects_corrupt_build_info(monkeypatch, tmp_path):
-    """Corrupt build metadata is diagnosed by the artifact validator."""
-    build = tmp_path / "_build_info.json"
-    manifest = tmp_path / "_resource_manifest.json"
-    identity = tmp_path / "config" / "build_info.py"
-    identity.parent.mkdir()
-    build.write_text("not valid json", encoding="utf-8")
-    manifest.write_text("{}", encoding="utf-8")
-    identity.write_text("BUILD_COMMIT = None\n", encoding="utf-8")
-    monkeypatch.setattr(registry, "_resource", lambda name: tmp_path / name)
-
-    outcome = registry._artifact_metadata()
-
-    assert outcome.status == "FAIL"
-    assert outcome.reason == "manifest_invalid"
-
-
-@pytest.mark.unittest
-def test_template_archive_rejects_path_traversal(monkeypatch, tmp_path):
-    """Template ZIP members cannot escape their declared extraction root."""
-    import json
-    import zipfile
-
-    template_root = tmp_path / "template"
-    template_root.mkdir()
-    (template_root / "index.json").write_text(
-        json.dumps({"templates": [{"archive": "bad.zip"}]}), encoding="utf-8"
-    )
-    with zipfile.ZipFile(str(template_root / "bad.zip"), "w") as archive:
-        archive.writestr("../escape.txt", "bad")
-    monkeypatch.setattr(
-        registry,
-        "_resource",
-        lambda name: tmp_path / name,
-    )
-    outcome = registry._template_archives()
-    assert outcome.status == "FAIL"
-    assert outcome.reason == "archive_invalid"

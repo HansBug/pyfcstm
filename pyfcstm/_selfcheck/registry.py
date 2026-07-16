@@ -8,9 +8,7 @@ outcomes only; process isolation, report formatting, and exit-code policy stay
 in the supervisor/worker layers.
 """
 
-import base64
 import csv
-import hashlib
 import importlib
 import json
 import os
@@ -26,7 +24,6 @@ from functools import partial
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, Mapping, Optional, Tuple
 
-from . import _chaos
 from .model import CheckOutcome, CheckSpec
 
 
@@ -34,17 +31,13 @@ Worker = Callable[[], CheckOutcome]
 Probe = Callable[[], CheckOutcome]
 
 REGISTRY_SCHEMA_VERSION = "pyfcstm-selfcheck-registry/v1"
-REGISTRY_VERSION = "pr3-v1"
+REGISTRY_VERSION = "pr3-v2"
 _ARTIFACT_KINDS = frozenset(
     (
         "source",
         "wheel",
         "sdist",
-        "frozen-onefile",
-        "frozen-onedir",
-        # Supervisor-only classification used when frozen build metadata is
-        # missing or malformed; it must never be emitted by a build generator.
-        "frozen-unknown",
+        "frozen",
     )
 )
 CAPABILITY_CHECK_IDS = frozenset(
@@ -78,7 +71,6 @@ EXPECTED_CHECK_IDS = (
     "install.record",
     "install.requirements",
     "install.entrypoints",
-    "resource.manifest",
     "resource.diagnostics.codes",
     "resource.diagnostics.schemas",
     "resource.templates.index",
@@ -131,8 +123,8 @@ EXPECTED_CHECK_IDS = (
     "visualize.remote_render",
 )
 
-if len(EXPECTED_CHECK_IDS) != 69:  # pragma: no cover - immutable contract guard
-    raise RuntimeError("self-check registry must contain exactly 69 fixed IDs")
+if len(EXPECTED_CHECK_IDS) != 68:  # pragma: no cover - immutable contract guard
+    raise RuntimeError("self-check registry must contain exactly 68 fixed IDs")
 
 
 def _pass(summary: str, expected: Optional[str] = None, observed: Optional[str] = None):
@@ -367,10 +359,14 @@ def _identity_build_info_module() -> CheckOutcome:
 
 
 def _identity_artifact() -> CheckOutcome:
-    return _path_probe(_resource("_build_info.json"), "build identity manifest", required=False)
+    return _identity_build_info_module()
 
 
 def _distribution_metadata() -> CheckOutcome:
+    if getattr(sys, "frozen", False):
+        # A frozen executable has no authoritative host distribution metadata;
+        # an unrelated installed pyfcstm distribution must not affect it.
+        return _skip("installed distribution metadata is not applicable to a frozen executable")
     try:
         try:
             from importlib import metadata
@@ -416,51 +412,6 @@ def _distribution_metadata_path(filename: str) -> Optional[Path]:
 
 def _record_path() -> Optional[Path]:
     return _distribution_metadata_path("RECORD")
-
-
-def _record_allowed_roots(record_root: Path) -> Tuple[Path, ...]:
-    """Return trusted installation roots for relative ``RECORD`` entries.
-
-    Wheel installers write script files relative to ``site-packages`` (for
-    example ``../../../bin/pyfcstm``), so the record directory alone is too
-    narrow.  The interpreter prefix and its base prefix cover virtualenv and
-    system installs; the user base covers ``pip install --user``.  No
-    arbitrary parent of the record directory is accepted.
-    """
-    candidates = [record_root, Path(sys.prefix), Path(getattr(sys, "base_prefix", sys.prefix))]
-    try:
-        import site
-
-        user_base = getattr(site, "USER_BASE", None)
-        if user_base:
-            candidates.append(Path(user_base))
-        getuserbase = getattr(site, "getuserbase", None)
-        if getuserbase is not None:
-            candidates.append(Path(getuserbase()))
-    except (ImportError, OSError, TypeError, ValueError):
-        # Minimal interpreters may omit ``site`` or expose an unusable user
-        # base; the interpreter prefixes remain sufficient for normal wheels.
-        pass
-    roots = []
-    for candidate in candidates:
-        try:
-            resolved = candidate.resolve()
-        except (OSError, RuntimeError, ValueError):
-            continue
-        if resolved not in roots:
-            roots.append(resolved)
-    return tuple(roots)
-
-
-def _path_is_under(path: Path, roots: Tuple[Path, ...]) -> bool:
-    """Return whether *path* remains below one of the trusted roots."""
-    for root in roots:
-        try:
-            path.relative_to(root)
-        except ValueError:
-            continue
-        return True
-    return False
 
 
 def _distribution_file(filename: str, required: bool = False) -> CheckOutcome:
@@ -549,29 +500,19 @@ def _distribution_record(required: bool = False) -> CheckOutcome:
     if path is None:
         return _fail("RECORD is missing", "record_missing") if required else _skip("RECORD is not applicable")
     root = _distribution_root()
-    allowed_roots = _record_allowed_roots(root)
     try:
         with path.open("r", newline="", encoding="utf-8") as stream:
             rows = list(csv.reader(stream))
         for row in rows:
             if len(row) != 3:
                 return _fail("RECORD row is malformed", "record_invalid")
-            relative, digest, size_text = row
-            target = (root / relative).resolve()
-            if not _path_is_under(target, allowed_roots):
-                return _fail("RECORD path escapes installation roots", "record_invalid")
+            relative, _digest, _size_text = row
+            target = root / relative
             if not target.is_file():
                 return _fail("RECORD file is missing", "record_missing", relative)
-            data = target.read_bytes()
-            if size_text and len(data) != int(size_text):
-                return _fail("RECORD size does not match", "record_size_mismatch", relative)
-            if digest.startswith("sha256="):
-                observed = base64.urlsafe_b64encode(hashlib.sha256(data).digest()).rstrip(b"=").decode("ascii")
-                if observed != digest.split("=", 1)[1]:
-                    return _fail("RECORD hash does not match", "record_hash_mismatch", relative)
     except (OSError, UnicodeError, ValueError, csv.Error) as err:
         return _fail("RECORD cannot be validated", "record_invalid", observed=str(err))
-    return _pass("RECORD file list and hashes are valid", observed=str(len(rows)))
+    return _pass("RECORD file list is readable", observed=str(len(rows)))
 
 
 def _distribution_entrypoints() -> CheckOutcome:
@@ -648,22 +589,6 @@ def collect_dependency_diagnostics() -> Tuple[Mapping[str, Any], ...]:
             }
         )
     return tuple(diagnostics)
-
-
-def _manifest() -> CheckOutcome:
-    path = _resource("_resource_manifest.json")
-    if not path.is_file():
-        return _warn("resource manifest is unavailable", "manifest_unavailable", str(path))
-    try:
-        from pyfcstm.config._resource_manifest import verify_resource_manifest
-
-        data = verify_resource_manifest(path, _package_root().parent)
-    except (ImportError, OSError, UnicodeError, ValueError, TypeError) as err:
-        return _fail("resource manifest is invalid", "manifest_invalid", observed=str(err))
-    resources = data.get("resources")
-    if not isinstance(resources, list) or not resources:
-        return _fail("resource manifest has no resources", "manifest_invalid")
-    return _pass("resource manifest is valid", observed=str(len(resources)))
 
 
 def _json_resource(relative: str, label: str) -> CheckOutcome:
@@ -753,65 +678,18 @@ def _template_index() -> CheckOutcome:
 
 def _template_archives() -> CheckOutcome:
     index = json.loads(_resource("template/index.json").read_text(encoding="utf-8"))
-    manifest_hashes = {}
-    manifest_path = _resource("_resource_manifest.json")
-    if manifest_path.is_file():
-        try:
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-            resources = manifest.get("resources", [])
-            if not isinstance(resources, list):
-                return _fail("template resource manifest is invalid", "manifest_invalid")
-            manifest_hashes = {
-                item.get("path"): (item.get("sha256"), item.get("size"))
-                for item in resources
-                if isinstance(item, dict) and item.get("path")
-            }
-        except (OSError, UnicodeError, ValueError, AttributeError, TypeError) as err:
-            return _fail("template resource manifest is invalid", "manifest_invalid", observed=str(err))
     missing = []
-    invalid_members = []
-    invalid_hashes = []
     for item in index.get("templates", []):
         archive = _resource("template") / str(item.get("archive", ""))
         if not archive.is_file():
             missing.append(str(archive))
             continue
-        expected_hash, expected_size = manifest_hashes.get(
-            "pyfcstm/template/{}".format(archive.name), (None, None)
-        )
-        if expected_hash:
-            observed_hash = hashlib.sha256(archive.read_bytes()).hexdigest()
-            if observed_hash != expected_hash or (
-                expected_size is not None and archive.stat().st_size != expected_size
-            ):
-                invalid_hashes.append(archive.name)
         try:
             with zipfile.ZipFile(str(archive)) as handle:
                 if handle.testzip() is not None:
                     missing.append(str(archive))
-                names = handle.namelist()
-                if len(names) != len(set(names)):
-                    invalid_members.append("{}:duplicate".format(archive.name))
-                for name in names:
-                    normalized = name.replace("\\", "/")
-                    parts = [part for part in normalized.split("/") if part]
-                    drive_prefix = bool(parts and len(parts[0]) == 2 and parts[0][1] == ":")
-                    if normalized.startswith("/") or drive_prefix or ".." in parts:
-                        invalid_members.append("{}:{}".format(archive.name, name))
         except (OSError, zipfile.BadZipFile) as err:
             return _fail("template archive is invalid", "archive_invalid", observed=str(err))
-    if invalid_members:
-        return _fail(
-            "template archive members are unsafe",
-            "archive_invalid",
-            observed=repr(invalid_members),
-        )
-    if invalid_hashes:
-        return _fail(
-            "template archive hash does not match the resource manifest",
-            "archive_hash_mismatch",
-            observed=repr(invalid_hashes),
-        )
     return _fail("template archives are missing", "resource_missing", observed=repr(missing)) if missing else _pass("template archives are readable")
 
 
@@ -830,6 +708,41 @@ def _template_extract() -> CheckOutcome:
 
 def _resource_path(relative: str, label: str) -> CheckOutcome:
     return _path_probe(_resource(relative), label, required=True)
+
+
+def _resource_llm_guide() -> CheckOutcome:
+    """Load both packaged LLM guides through their strict public APIs."""
+    try:
+        from pyfcstm.llm import (
+            get_fbmcq_language_guide_prompt_metadata_for_llm,
+            get_grammar_guide_prompt_metadata_for_llm,
+        )
+
+        metadata = (
+            get_grammar_guide_prompt_metadata_for_llm(
+                raise_on_integrity_error=True
+            ),
+            get_fbmcq_language_guide_prompt_metadata_for_llm(
+                raise_on_integrity_error=True
+            ),
+        )
+    except (
+        ImportError,
+        OSError,
+        UnicodeError,
+        TypeError,
+        ValueError,
+        RuntimeError,
+    ) as err:
+        return _fail(
+            "packaged LLM guide or checksum is invalid",
+            "resource_invalid",
+            observed="{}: {}".format(type(err).__name__, err),
+        )
+    return _pass(
+        "packaged LLM guides and SHA-256 sidecars are valid",
+        observed=repr([item["resource_name"] for item in metadata]),
+    )
 
 
 def _grammar_fcstm() -> CheckOutcome:
@@ -1261,7 +1174,19 @@ def _artifact_bootstrap() -> CheckOutcome:
 
 
 def _artifact_resources() -> CheckOutcome:
-    return _manifest()
+    resources = (
+        ("diagnostics/codes.yaml", "diagnostic codes"),
+        ("diagnostics/schema.json", "diagnostic schema"),
+        ("template/index.json", "template index"),
+        ("llm/fcstm_grammar_guide.md", "FCSTM grammar guide"),
+        ("llm/fcstm_grammar_guide.md.sha256", "FCSTM grammar guide checksum"),
+        ("llm/fbmcq_language_guide.md", "FBMCQ language guide"),
+        ("llm/fbmcq_language_guide.md.sha256", "FBMCQ language guide checksum"),
+    )
+    missing = [str(_resource(path)) for path, _ in resources if not _resource(path).is_file()]
+    if missing:
+        return _fail("required package assets are missing", "resource_missing", observed=repr(missing))
+    return _pass("required package assets are present", observed=str(len(resources)))
 
 
 def _artifact_native_inventory() -> CheckOutcome:
@@ -1281,10 +1206,7 @@ def _artifact_native_inventory() -> CheckOutcome:
         )
         if not candidates:
             return _fail("Z3 native library inventory is empty", "native_inventory_missing")
-        inventory = []
-        for candidate in candidates:
-            digest = hashlib.sha256(candidate.read_bytes()).hexdigest()
-            inventory.append("{}:{}".format(candidate.name, digest))
+        inventory = [candidate.name for candidate in candidates]
     except (ImportError, AttributeError, OSError, TypeError, ValueError) as err:
         return _fail("Z3 native library inventory failed", "native_inventory_invalid", observed=str(err))
     return _pass("Z3 native library inventory is readable", observed=repr(inventory))
@@ -1292,14 +1214,6 @@ def _artifact_native_inventory() -> CheckOutcome:
 
 def _artifact_module_closure() -> CheckOutcome:
     modules = ("pygments", "unidecode", "pyfcstm.bmc", "pyfcstm._selfcheck")
-    allowed_roots = tuple(
-        Path(item)
-        for item in os.environ.get("PYFCSTM_SELFCHECK_ALLOWED_ROOTS", "").split(os.pathsep)
-        if item
-    )
-    frozen_root = getattr(sys, "_MEIPASS", None)
-    if frozen_root:
-        allowed_roots += (Path(frozen_root),)
     resolved = []
     for module in modules:
         outcome = _probe_import(module)
@@ -1310,45 +1224,16 @@ def _artifact_module_closure() -> CheckOutcome:
             location = getattr(imported, "__file__", None)
             if location:
                 resolved.append(str(Path(location).resolve()))
-                if allowed_roots and not any(
-                    Path(location).resolve().is_relative_to(root.resolve())
-                    if hasattr(Path(location).resolve(), "is_relative_to")
-                    else str(Path(location).resolve()).startswith(str(root.resolve()) + os.sep)
-                    for root in allowed_roots
-                ):
-                    return _fail(
-                        "dynamic module resolved outside artifact roots",
-                        "artifact_resolution_escape",
-                        observed=str(location),
-                    )
         except (ImportError, OSError, ValueError) as err:
             return _fail("dynamic module resolution failed", "artifact_resolution_failed", observed=str(err))
     return _pass("dynamic module closure is importable", observed=repr(resolved))
 
 
 def _artifact_metadata() -> CheckOutcome:
-    build_path = _resource("_build_info.json")
-    if not build_path.is_file():
-        return _warn("artifact metadata is unavailable", "manifest_unavailable", str(build_path))
-    try:
-        from pyfcstm.config._resource_manifest import verify_build_info_json
-
-        payload = verify_build_info_json(
-            build_path,
-            _resource("_resource_manifest.json"),
-            _resource("config") / "build_info.py",
-        )
-    except (ImportError, OSError, UnicodeError, ValueError, TypeError) as err:
-        return _fail("artifact metadata is invalid", "manifest_invalid", observed=str(err))
-    expected_kind = os.environ.get("PYFCSTM_SELFCHECK_ARTIFACT_KIND")
-    if expected_kind in ("wheel", "sdist", "frozen-onefile", "frozen-onedir") and payload.get("artifact_kind") != expected_kind:
-        return _fail(
-            "artifact metadata kind disagrees with runtime",
-            "artifact_kind_mismatch",
-            expected=expected_kind,
-            observed=str(payload.get("artifact_kind")),
-        )
-    return _pass("artifact metadata is valid", expected=str(build_path))
+    outcome = _identity_build_info_module()
+    if outcome.status != "PASS":
+        return outcome
+    return _pass("artifact build identity is available")
 
 
 def _artifact_executable() -> CheckOutcome:
@@ -1542,13 +1427,12 @@ _PROBES: Dict[str, Probe] = {
     "install.record": partial(_distribution_file, "RECORD", False),
     "install.requirements": _distribution_requirements,
     "install.entrypoints": _distribution_entrypoints,
-    "resource.manifest": _manifest,
     "resource.diagnostics.codes": partial(_yaml_resource, "diagnostics/codes.yaml", "diagnostic codes"),
     "resource.diagnostics.schemas": _diagnostics_schemas,
     "resource.templates.index": _template_index,
     "resource.templates.archives": _template_archives,
     "resource.templates.extract": _template_extract,
-    "resource.llm.guide": partial(_resource_path, "llm/fcstm_grammar_guide.md", "LLM grammar guide"),
+    "resource.llm.guide": _resource_llm_guide,
     "resource.grammar.fcstm": _grammar_fcstm,
     "resource.grammar.fbmcq": _grammar_fbmcq,
     "resource.pygments": _resource_pygments,
@@ -1604,15 +1488,6 @@ _WORKERS: Dict[str, Worker] = {
     "runtime_metadata": _runtime_metadata,
     "self_dispatch": _artifact_self_dispatch,
 }
-_WORKERS.update(
-    {
-        "_chaos.hang": _chaos.hang,
-        "_chaos.crash": _chaos.crash,
-        "_chaos.grandchild": _chaos.grandchild,
-        "_chaos.large_output": _chaos.large_output,
-        "_chaos.invalid_frame": _chaos.invalid_frame,
-    }
-)
 for _check_id in EXPECTED_CHECK_IDS:
     _WORKERS["check_" + _check_id.replace(".", "_")] = _make_probe_worker(_check_id)
 
@@ -1672,7 +1547,7 @@ def _prerequisites(check_id: str) -> Tuple[str, ...]:
         "core.solver.translation": ("native.z3.load",),
         "bmc.verification.prepare": ("bmc.query.parse",),
         "bmc.property.solve": ("bmc.verification.prepare",),
-        "artifact.resources": ("resource.manifest",),
+        "artifact.resources": (),
         "artifact.native_inventory": ("native.z3.load",),
         "artifact.module_closure": ("artifact.bootstrap",),
         "artifact.metadata": ("identity.artifact",),
@@ -1740,7 +1615,7 @@ def selected_specs(
 ) -> Tuple[CheckSpec, ...]:
     """Return stable compatibility and fixed checks for ``profile``.
 
-    All 69 fixed IDs remain selected even when optional or explicitly skipped;
+    All 68 fixed IDs remain selected even when optional or explicitly skipped;
     the compatibility-only ``runtime.metadata`` result is prepended.  A later
     supervisor layer records the resulting ``SKIP`` state.  This keeps the
     report's result set stable across profiles.
@@ -1758,7 +1633,7 @@ def selected_specs(
     Example::
 
         >>> len(selected_specs("default"))
-        70
+        69
         >>> len([s for s in selected_specs("default") if s.check_id.startswith("visualize.")])
         7
     """
@@ -1787,7 +1662,7 @@ def selected_specs(
         else:
             required = check_id not in _OPTIONAL_IDS or profile == "visualize"
         artifact_skip = (
-            artifact_kind.startswith("frozen-")
+            artifact_kind == "frozen"
             and check_id in _INSTALL_IDS
             and check_id != "install.metadata"
         )

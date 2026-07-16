@@ -18,12 +18,6 @@ TERMINAL\_STATUSES
 .. autodata:: TERMINAL_STATUSES
 
 
-ArtifactContext
------------------------------------------------------
-
-.. autoclass:: ArtifactContext
-    :members: __post_init__,kind,root,allowed_roots,allow_site_packages
-
 
 CheckSpec
 -----------------------------------------------------

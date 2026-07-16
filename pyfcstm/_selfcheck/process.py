@@ -3,23 +3,20 @@
 The caller starts one worker, exchanges the fixed gate through one
 ``subprocess.communicate`` call, commits its terminal result, and only then can
 advance to the next registry entry. Worker output is spooled to temporary files
-and fed to a bounded capture after process completion. POSIX workers also
-receive an operating-system file-size limit so a runaway stream is stopped at
-the physical boundary. This module does not create threads or schedule checks
-concurrently.
+and fed to a bounded capture after process completion. This module does not
+create threads or schedule checks concurrently.
 """
 
 import errno
 import os
 import signal
 import subprocess
-import sys
 import tempfile
 import time
 from typing import Optional
 
 from ._win32 import JobAssignmentError, attach_process, format_ntstatus
-from .model import ArtifactContext, CheckResult, CheckSpec
+from .model import CheckResult, CheckSpec
 from .arguments import _WORKER_DISPATCH_ARGUMENT
 from .protocol import build_start_gate
 from .protocol import FRAME_PREFIX
@@ -30,60 +27,10 @@ from .protocol import read_stdout_frames
 
 
 STREAM_LIMIT = 2 * 1024 * 1024
-SPOOL_LIMIT = 8 * 1024 * 1024
 SIGTERM_GRACE = 0.5
 MAX_PROTOCOL_FRAMES = 2
 _CAPTURE_CHUNK_SIZE = 64 * 1024
 _PATH_SEPARATOR = os.pathsep
-_ISOLATED_ENV = (
-    "PYTHONPATH",
-    "PYTHONHOME",
-    "PYTHONSTARTUP",
-    "PYTHONUSERBASE",
-    "PYTHONPYCACHEPREFIX",
-    "PYTHONMALLOC",
-    "PYTHONFAULTHANDLER",
-    "PYTHONIOENCODING",
-    "PYTHONUTF8",
-    "PYTHONLEGACYWINDOWSSTDIO",
-    "PYTHONLEGACYWINDOWSFSENCODING",
-    "PYTHONINSPECT",
-    "PYTHONWARNINGS",
-)
-
-
-def _limit_worker_output_files() -> None:
-    """Apply the physical output quota inside a POSIX worker process.
-
-    The parent turns a setup failure into a structured child result before any
-    registered callback can run.
-    """
-    try:
-        import resource
-
-        _, hard_limit = resource.getrlimit(resource.RLIMIT_FSIZE)
-        limit = SPOOL_LIMIT if hard_limit < 0 else min(SPOOL_LIMIT, hard_limit)
-        resource.setrlimit(resource.RLIMIT_FSIZE, (limit, limit))
-    except (AttributeError, ImportError, OSError, ValueError):
-        # A worker without an enforceable quota must fail closed before its
-        # callback can emit unbounded output.
-        os._exit(127)
-
-
-def _output_limit_signal(return_code: Optional[int]) -> bool:
-    """Return whether a POSIX worker was killed by its file-size quota."""
-    signal_number = getattr(signal, "SIGXFSZ", None)
-    return signal_number is not None and return_code == -signal_number
-
-
-def _should_limit_worker_output() -> bool:
-    """Return whether the parent may impose ``RLIMIT_FSIZE`` on a worker.
-
-    A frozen PyInstaller executable is itself the bootloader process.  Its
-    child must be allowed to extract the bundled archive before Python starts;
-    the worker-side ``_OutputBudget`` still bounds stdout/stderr after startup.
-    """
-    return os.name == "posix" and not getattr(sys, "frozen", False)
 
 
 class _BoundedCapture:
@@ -375,41 +322,9 @@ def _command_for_worker(
     return command
 
 
-def _artifact_environment(context: ArtifactContext) -> dict:
-    """Build a sanitized environment for one artifact worker."""
-    environment = {}
-    for name in ("PATH", "SystemRoot", "TEMP", "TMP", "COMSPEC"):
-        value = os.environ.get(name)
-        if value:
-            environment[name] = value
-    for name in _ISOLATED_ENV:
-        environment.pop(name, None)
-    environment["PYTHONNOUSERSITE"] = "1"
-    environment["PYTHONDONTWRITEBYTECODE"] = "1"
-    environment["PYFCSTM_SELFCHECK_ARTIFACT_KIND"] = context.kind
-    environment["PYFCSTM_SELFCHECK_ARTIFACT_ROOT"] = context.root
-    environment["PYFCSTM_SELFCHECK_ALLOWED_ROOTS"] = _PATH_SEPARATOR.join(
-        context.allowed_roots
-    )
-    environment["PYFCSTM_SELFCHECK_ALLOW_SITE_PACKAGES"] = (
-        "1" if context.allow_site_packages else "0"
-    )
-    return environment
-
-
 def _set_network_environment(environment: dict, enabled: bool) -> None:
     """Pass the explicit network opt-in to isolated callbacks."""
     environment["PYFCSTM_SELFCHECK_NETWORK"] = "1" if enabled else "0"
-
-
-def _spool_size(stream) -> Optional[int]:
-    """Return one spool's physical size without making cleanup fatal."""
-    if stream is None:
-        return None
-    try:
-        return int(os.fstat(stream.fileno()).st_size)
-    except (AttributeError, OSError, ValueError):
-        return None
 
 
 def _cleanup_session(session_dir: Optional[str], result_file: Optional[str]) -> None:
@@ -501,7 +416,6 @@ def run_check_process(
     check: CheckSpec,
     timeout: float,
     timeout_scale: float = 1.0,
-    artifact_context: Optional[ArtifactContext] = None,
     network: bool = False,
 ) -> CheckResult:
     """
@@ -514,9 +428,6 @@ def run_check_process(
     :param timeout_scale: Multiplier for start-gate and termination grace,
         defaults to ``1.0``.
     :type timeout_scale: float, optional
-    :param artifact_context: Optional import/filesystem boundary for artifact
-        checks, defaults to ``None``.
-    :type artifact_context: ArtifactContext, optional
     :param network: Whether the caller explicitly enabled network probes,
         defaults to ``False``.
     :type network: bool, optional
@@ -544,37 +455,19 @@ def run_check_process(
         result_file = None
 
     command = _command_for_worker(check, nonce, result_mode, result_file)
-    child_environment = (
-        _artifact_environment(artifact_context)
-        if artifact_context is not None
-        else os.environ.copy()
-    )
+    child_environment = os.environ.copy()
     child_environment["PYFCSTM_SELFCHECK_WORKER_PROCESS"] = "1"
     _set_network_environment(child_environment, network)
     stdout_spool = None
     stderr_spool = None
-    spool_error = None
     try:
         stdout_spool = tempfile.TemporaryFile(mode="w+b")
         stderr_spool = tempfile.TemporaryFile(mode="w+b")
-    except (OSError, ValueError) as err:
-        spool_error = err
+    except (OSError, ValueError):
         _close_capture_stream(stdout_spool)
         _close_capture_stream(stderr_spool)
         stdout_spool = None
         stderr_spool = None
-    if spool_error is not None:
-        _cleanup_session(session_dir, result_file)
-        return _make_result(
-            check,
-            "ERROR",
-            "worker output capture is unavailable",
-            "output_capture_limit",
-            started,
-            evidence="temporary output spool initialization failed: {}: {}".format(
-                type(spool_error).__name__, spool_error
-            ),
-        )
     popen_kwargs = {
         "stdin": subprocess.PIPE,
         "stdout": stdout_spool or subprocess.PIPE,
@@ -584,30 +477,16 @@ def run_check_process(
     }
     package_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     package_parent = os.path.dirname(package_dir)
-    if artifact_context is None:
-        # Put the package under test first while preserving caller-provided
-        # import roots for worker callbacks and installation diagnostics.
-        inherited_pythonpath = child_environment.get("PYTHONPATH")
-        child_environment["PYTHONPATH"] = _PATH_SEPARATOR.join(
-            path for path in (package_parent, inherited_pythonpath) if path
-        )
-        popen_kwargs["cwd"] = session_dir or package_dir
-    else:
-        popen_kwargs["cwd"] = artifact_context.root
-        if not artifact_context.allow_site_packages and not getattr(sys, "frozen", False):
-            # ``-E``/``-s`` are Python interpreter switches; passing them to a
-            # PyInstaller executable turns them into application arguments and
-            # prevents its hidden worker dispatch from starting.
-            command.insert(1, "-s")
-            command.insert(1, "-E")
+    # Put the package under test first while preserving caller-provided import
+    # roots for worker callbacks and installation diagnostics.
+    inherited_pythonpath = child_environment.get("PYTHONPATH")
+    child_environment["PYTHONPATH"] = _PATH_SEPARATOR.join(
+        path for path in (package_parent, inherited_pythonpath) if path
+    )
+    popen_kwargs["cwd"] = session_dir or package_dir
     posix_group = os.name == "posix"
     if posix_group:
         popen_kwargs["start_new_session"] = True
-        # Non-frozen interpreters can enforce the quota before any callback or
-        # descendant starts.  Frozen bootloaders defer the same limit until the
-        # worker has completed archive extraction (see ``worker.py``).
-        if not getattr(sys, "frozen", False):
-            popen_kwargs["preexec_fn"] = _limit_worker_output_files
     elif os.name == "nt":
         popen_kwargs["creationflags"] = getattr(
             subprocess, "CREATE_NEW_PROCESS_GROUP", 0
@@ -658,104 +537,46 @@ def run_check_process(
         communication_errors = []
         cleanup_error = None
         timed_out = False
-        monitored_limit = False
         deadline = started + timeout
-        if (
-            stdout_spool is not None
-            and stderr_spool is not None
-            and getattr(process, "stdin", None) is not None
-            and callable(getattr(process, "poll", None))
-        ):
-            # File-backed workers have no pipe-drain hazard.  Send the gate once,
-            # then poll the two files so Windows/frozen workers are bounded even
-            # when native code writes directly to inherited stdout/stderr.
+        try:
+            stdout_data, stderr_data = process.communicate(
+                input=build_start_gate(nonce),
+                timeout=max(0.0, deadline - time.monotonic()),
+            )
+        except subprocess.TimeoutExpired as err:
+            timed_out = True
+            stdout_data = err.output if stdout_spool is None else None
+            stderr_data = err.stderr if stderr_spool is None else None
+            cleanup_error = _terminate(process, job, posix_group, scaled_grace)
+            job = None
             try:
-                process.stdin.write(build_start_gate(nonce))
-                process.stdin.flush()
-                process.stdin.close()
-            except (AttributeError, OSError, ValueError) as err:
-                cleanup_error = _terminate(process, job, posix_group, scaled_grace)
-                job = None
-                details = "worker_communication:{}".format(type(err).__name__)
-                if cleanup_error:
-                    details += "; cleanup=" + cleanup_error
-                return _make_result(
-                    check,
-                    "ERROR",
-                    "worker communication failed",
-                    "worker_communication",
-                    started,
-                    evidence=details,
-                    process=process,
-                    result_mode=result_mode,
+                stdout_data, stderr_data = process.communicate(timeout=scaled_grace)
+            except subprocess.TimeoutExpired as drain_error:
+                communication_errors.append("output_drain:TimeoutExpired")
+                if stdout_spool is None:
+                    stdout_data = drain_error.output or stdout_data
+                if stderr_spool is None:
+                    stderr_data = drain_error.stderr or stderr_data
+            except (OSError, ValueError) as drain_error:
+                communication_errors.append(
+                    "output_drain:{}".format(type(drain_error).__name__)
                 )
-            while process.poll() is None:
-                physical_output = (
-                    _spool_size(stdout_spool),
-                    _spool_size(stderr_spool),
-                )
-                if any(
-                    size is not None and size >= SPOOL_LIMIT
-                    for size in physical_output
-                ):
-                    monitored_limit = True
-                    cleanup_error = _terminate(process, job, posix_group, scaled_grace)
-                    job = None
-                    break
-                remaining = deadline - time.monotonic()
-                if remaining <= 0.0:
-                    timed_out = True
-                    cleanup_error = _terminate(process, job, posix_group, scaled_grace)
-                    job = None
-                    break
-                time.sleep(min(0.01, remaining))
-            if process.poll() is None:
-                _wait_process(process, scaled_grace, communication_errors, kill_on_timeout=True)
-            stdout_data = stderr_data = None
-        else:
-            try:
-                stdout_data, stderr_data = process.communicate(
-                    input=build_start_gate(nonce),
-                    timeout=max(0.0, deadline - time.monotonic()),
-                )
-            except subprocess.TimeoutExpired as err:
-                timed_out = True
-                stdout_data = err.output if stdout_spool is None else None
-                stderr_data = err.stderr if stderr_spool is None else None
-                cleanup_error = _terminate(process, job, posix_group, scaled_grace)
-                job = None
-                try:
-                    stdout_data, stderr_data = process.communicate(timeout=scaled_grace)
-                except subprocess.TimeoutExpired as drain_error:
-                    communication_errors.append("output_drain:TimeoutExpired")
-                    if stdout_spool is None:
-                        stdout_data = drain_error.output or stdout_data
-                    if stderr_spool is None:
-                        stderr_data = drain_error.stderr or stderr_data
-                except (OSError, ValueError) as drain_error:
-                    # Pipe reads can fail with OSError after tree termination;
-                    # communicate rejects already-closed streams with ValueError.
-                    communication_errors.append(
-                        "output_drain:{}".format(type(drain_error).__name__)
-                    )
-            except (OSError, ValueError) as err:
-                # communicate surfaces native pipe failures as OSError and invalid
-                # stream lifecycle state as ValueError.
-                cleanup_error = _terminate(process, job, posix_group, scaled_grace)
-                job = None
-                details = "worker_communication:{}".format(type(err).__name__)
-                if cleanup_error:
-                    details += "; cleanup=" + cleanup_error
-                return _make_result(
-                    check,
-                    "ERROR",
-                    "worker communication failed",
-                    "worker_communication",
-                    started,
-                    evidence=details,
-                    process=process,
-                    result_mode=result_mode,
-                )
+        except (OSError, ValueError) as err:
+            cleanup_error = _terminate(process, job, posix_group, scaled_grace)
+            job = None
+            details = "worker_communication:{}".format(type(err).__name__)
+            if cleanup_error:
+                details += "; cleanup=" + cleanup_error
+            return _make_result(
+                check,
+                "ERROR",
+                "worker communication failed",
+                "worker_communication",
+                started,
+                evidence=details,
+                process=process,
+                result_mode=result_mode,
+            )
 
         stdout_capture = _capture_stream(
             stdout_spool, stdout_data, capture_protocol=result_mode == "stdout"
@@ -770,45 +591,6 @@ def run_check_process(
             "stderr_capture": stderr_capture,
         }
         return_code = process.returncode
-        physical_output = {
-            "stdout": _spool_size(stdout_spool),
-            "stderr": _spool_size(stderr_spool),
-        }
-        oversized = {
-            name: size
-            for name, size in physical_output.items()
-            if size is not None and size >= SPOOL_LIMIT
-        }
-        quota_signal = _output_limit_signal(return_code)
-        if monitored_limit or quota_signal or oversized:
-            for name, capture in (
-                ("stdout", stdout_capture),
-                ("stderr", stderr_capture),
-            ):
-                size = physical_output.get(name)
-                if size is not None and size >= SPOOL_LIMIT:
-                    capture.mark_overflow(
-                        max(1, size - SPOOL_LIMIT) if size > SPOOL_LIMIT else 1
-                    )
-            cleanup_error = _terminate(process, job, posix_group, scaled_grace)
-            job = None
-            details = _diagnostics(
-                communication_errors,
-                base="output capture physical limit exceeded: {} (limit={} bytes)".format(
-                    oversized or {"signal": return_code}, SPOOL_LIMIT
-                ),
-                cleanup_error=cleanup_error,
-            )
-            process_fields["return_code"] = return_code
-            return _make_result(
-                check,
-                "ERROR",
-                "worker output capture limit exceeded",
-                "output_capture_limit",
-                started,
-                evidence=details,
-                **process_fields
-            )
         if return_code and not timed_out:
             # A crashed/non-zero worker may have left descendants in its process
             # group even though the group leader has already exited.

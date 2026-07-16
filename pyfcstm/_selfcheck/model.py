@@ -29,49 +29,6 @@ _RESULT_KEYS = (
 ).split()
 
 
-@dataclass(frozen=True)
-class ArtifactContext:
-    """Describe the filesystem boundary used by an artifact worker.
-
-    :param kind: Artifact kind such as ``source`` or ``wheel``.
-    :type kind: str
-    :param root: Absolute root from which the worker may import and read files.
-    :type root: str
-    :param allowed_roots: Additional absolute roots allowed for diagnostics.
-    :type allowed_roots: Tuple[str, ...]
-    :param allow_site_packages: Whether the worker may use user/site packages.
-    :type allow_site_packages: bool
-
-    Example::
-
-        >>> import tempfile
-        >>> with tempfile.TemporaryDirectory() as root:
-        ...     ArtifactContext("source", root, (root,)).kind
-        'source'
-    """
-
-    kind: str
-    root: str
-    allowed_roots: Tuple[str, ...] = ()
-    allow_site_packages: bool = False
-
-    def __post_init__(self) -> None:
-        import os
-
-        if not self.kind:
-            raise ValueError("artifact context kind must not be empty")
-        root = os.path.abspath(os.fspath(self.root))
-        if not os.path.isdir(root):
-            raise ValueError("artifact context root must be a directory")
-        object.__setattr__(self, "root", root)
-        normalized = tuple(
-            os.path.abspath(os.fspath(path)) for path in self.allowed_roots
-        )
-        if root not in normalized:
-            normalized = (root,) + normalized
-        object.__setattr__(self, "allowed_roots", normalized)
-
-
 def _freeze_value(value: Any) -> Any:
     """Recursively freeze report metadata before exposing it to callers."""
     if isinstance(value, MappingABC):

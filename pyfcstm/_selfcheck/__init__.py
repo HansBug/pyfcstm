@@ -30,8 +30,6 @@ The package contains:
      - Render human/JSON reports and emergency diagnostics.
    * - :mod:`pyfcstm._selfcheck.worker`
      - Run one static check and emit one validated result envelope.
-   * - :mod:`pyfcstm._selfcheck._chaos`
-     - Provide private, statically keyed fault scenarios for artifact replay.
    * - :mod:`pyfcstm._selfcheck._win32`
      - Provide Windows Job Object and console compatibility helpers.
 

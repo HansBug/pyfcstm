@@ -28,9 +28,14 @@ import sys
 from typing import Any, Dict, Optional, Tuple
 
 import click
+from click.core import ParameterSource
 
 from .base import CONTEXT_SETTINGS, ClickErrorException
-from .plantuml import build_plantuml_output
+from .plantuml import (
+    _emit_plantuml_warnings,
+    _render_plantuml_source,
+    resolve_plantuml_options,
+)
 
 _VISUALIZE_RENDER_TYPES = ('png', 'svg', 'pdf')
 _VISUALIZE_RENDERERS = ('local', 'remote', 'auto')
@@ -486,7 +491,11 @@ def _add_visualize_subcommand(cli: click.Group) -> click.Group:
 
     @cli.command(
         'visualize',
-        help='Render a state machine DSL file into a diagram and optionally open it.',
+        help=(
+            'Render a state machine DSL file into a diagram and optionally open it.\n\n'
+            'Configuration reference:\n'
+            'https://pyfcstm.readthedocs.io/en/latest/reference/visualization_options/'
+        ),
         context_settings=CONTEXT_SETTINGS,
     )
     @click.option(
@@ -518,7 +527,8 @@ def _add_visualize_subcommand(cli: click.Group) -> click.Group:
         '--config',
         'config_options',
         multiple=True,
-        help='Configuration options in key=value format. Can be specified multiple times.',
+        help='Configuration options in key=value format. Can be specified multiple times. '
+             'See the configuration reference linked above.',
     )
     @click.option(
         '-t',
@@ -627,6 +637,18 @@ def _add_visualize_subcommand(cli: click.Group) -> click.Group:
         :return: ``None``.
         :rtype: None
         """
+        context = click.get_current_context()
+        dedicated_detail_level = (
+            detail_level
+            if context.get_parameter_source('detail_level') is ParameterSource.COMMANDLINE
+            else None
+        )
+        options, warnings = resolve_plantuml_options(
+            config_options=config_options,
+            dedicated_detail_level=dedicated_detail_level,
+        )
+        _emit_plantuml_warnings(warnings)
+
         if check_only:
             status = run_plantumlcli_builtin_check(
                 renderer=renderer.lower(),
@@ -645,11 +667,7 @@ def _add_visualize_subcommand(cli: click.Group) -> click.Group:
             raise ClickErrorException('Input DSL file is required unless --check is used.')
 
         output_path = resolve_visualize_output_path(input_code_file, output_file, render_type.lower())
-        plantuml_output = build_plantuml_output(
-            input_code_file=input_code_file,
-            detail_level=detail_level,
-            config_options=config_options,
-        )
+        plantuml_output = _render_plantuml_source(input_code_file, options)
         effective_renderer = render_plantuml_diagram(
             plantuml_output=plantuml_output,
             output_file=output_path,

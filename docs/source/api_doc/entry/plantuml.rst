@@ -6,10 +6,10 @@ pyfcstm.entry.plantuml
 .. automodule:: pyfcstm.entry.plantuml
 
 
-PLANTUML\_OPTION\_TYPES
+resolve\_plantuml\_options
 -----------------------------------------------------
 
-.. autodata:: PLANTUML_OPTION_TYPES
+.. autofunction:: resolve_plantuml_options
 
 
 build\_plantuml\_output

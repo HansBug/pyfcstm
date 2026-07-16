@@ -502,7 +502,10 @@ jobs:
           python -m pip list --format=json 2>&1 | tee "$reports/pip-list.json"
           python -c 'import pyfcstm, sys; print(pyfcstm.__file__); print(sys.executable); print("\\n".join(sys.path))' \
             | tee "$reports/module-path.txt"
-          grep -F "$GITHUB_WORKSPACE" "$reports/module-path.txt" && exit 1 || true
+          if grep -F "$GITHUB_WORKSPACE" "$reports/module-path.txt"; then
+            echo 'installed module came from the checkout workspace' >&2
+            exit 1
+          fi
           set +e
           pyfcstm --version 2>&1 | tee "$reports/version.log"
           version_status=${PIPESTATUS[0]}
@@ -804,7 +807,10 @@ jobs:
         shell: bash
         run: |
           make build_info
-          make build
+          # Keep the tracked logo PNG as the build input; otherwise Make's
+          # timestamp rule can rewrite it before the recursive build_info
+          # prerequisite and falsely mark the artifact dirty.
+          make -o logos/logo.png build
           mkdir -p dist/${{ env.CLI_NAME }}
           cp dist/pyfcstm dist/${{ env.CLI_NAME }}/pyfcstm
           cd dist
@@ -823,7 +829,9 @@ jobs:
         shell: bash
         run: |
           make build_info
-          make build
+          # Keep the tracked logo PNG as the build input; see the Linux/macOS
+          # build step above.
+          make -o logos/logo.png build
           mkdir -p dist/${{ env.CLI_NAME }}
           cp dist/pyfcstm.exe dist/${{ env.CLI_NAME }}/pyfcstm.exe
           cd dist
@@ -973,6 +981,24 @@ jobs:
           cp "$identity" "$reports/build-identity.txt"
           cp "$digest_file" "$reports/artifact-sha256.txt"
           unzip -q "$archive" -d "$root"
+          if [ "${{ matrix.os }}" = "macos-14" ]; then
+            xattr -dr com.apple.quarantine "$root" 2>/dev/null || true
+          fi
+          if find "$root" -type d -name pyfcstm -print -quit | grep -q .; then
+            echo "forbidden source package directory found in clean root" >&2
+            exit 1
+          fi
+          for forbidden in setup.py requirements.txt Makefile; do
+            if find "$root" -type f -name "$forbidden" -print -quit | grep -q .; then
+              echo "forbidden source/build file found in clean root: $forbidden" >&2
+              exit 1
+            fi
+          done
+          set +e
+          curl --fail --location --retry 3 --retry-delay 2 --max-time 15 \
+            "${PLANTUML_HOST%/}/" > "$reports/plantuml-readiness.txt" 2>&1
+          readiness_status=$?
+          set -e
           if [ "${{ matrix.os }}" = "windows-2022" ]; then
             exe=$(find "$root" -type f -name pyfcstm.exe -print -quit)
           else
@@ -987,11 +1013,12 @@ jobs:
           "$exe" --self-check --profile visualize --network --color always --report "$reports/visualize.json" 2>&1 | tee "$reports/visualize.log"
           visualize_status=${PIPESTATUS[0]}
           set -e
-          printf 'version=%s\ndefault=%s\nvisualize=%s\nPLANTUML_HOST=%s\nPLANTUML_JAR=%s\n' \
-            "$version_status" "$default_status" "$visualize_status" "$PLANTUML_HOST" "$PLANTUML_JAR" \
+          printf 'version=%s\ndefault=%s\nvisualize=%s\nplantuml_readiness=%s\nPLANTUML_HOST=%s\nPLANTUML_JAR=%s\n' \
+            "$version_status" "$default_status" "$visualize_status" "$readiness_status" "$PLANTUML_HOST" "$PLANTUML_JAR" \
             | tee "$reports/summary.txt"
           test "$version_status" -eq 0
           test "$default_status" -eq 0
+          test "$readiness_status" -eq 0
           grep -F "Commit: $GITHUB_SHA" "$reports/version.log"
       - name: Upload fresh CLI evidence
         if: ${{ always() }}
@@ -1003,6 +1030,8 @@ jobs:
             ${{ runner.temp }}/pyfcstm-release-test-cli-reports
             ${{ runner.temp }}/java-version.txt
             ${{ runner.temp }}/plantuml-version.txt
+            ${{ runner.temp }}/plantuml-readiness.txt
+            ${{ runner.temp }}/plantuml-service.log
 
   release_test_artifact_gate:
     name: release-test artifact fresh gate
@@ -1024,19 +1053,35 @@ jobs:
           SDIST_RESULT: ${{ needs.fresh_sdist_selfcheck.result }}
           CLI_BUILD_RESULT: ${{ needs.release_cli.result }}
           CLI_FRESH_RESULT: ${{ needs.fresh_release_cli_selfcheck.result }}
+          HEAD_COMMIT_MSG: ${{ github.event.head_commit.message }}
         shell: bash
         run: |
           set -euo pipefail
+          skip_cli=false
+          if [[ "$HEAD_COMMIT_MSG" == *"ci skip"* ]]; then
+            skip_cli=true
+          fi
           for pair in \
             "source=$SOURCE_RESULT" \
             "wheel_linux=$WHEEL_LINUX_RESULT" \
             "wheel_nonlinux=$WHEEL_NONLINUX_RESULT" \
-            "sdist=$SDIST_RESULT" \
-            "cli_build=$CLI_BUILD_RESULT" \
-            "cli_fresh=$CLI_FRESH_RESULT"; do
+            "sdist=$SDIST_RESULT"; do
             echo "$pair"
             test "${pair#*=}" = success
           done
+          if [[ "$skip_cli" == true ]]; then
+            echo "cli_build=$CLI_BUILD_RESULT (accepted by ci skip)"
+            echo "cli_fresh=$CLI_FRESH_RESULT (accepted by ci skip)"
+            test "$CLI_BUILD_RESULT" = skipped
+            test "$CLI_FRESH_RESULT" = skipped
+          else
+            for pair in \
+              "cli_build=$CLI_BUILD_RESULT" \
+              "cli_fresh=$CLI_FRESH_RESULT"; do
+              echo "$pair"
+              test "${pair#*=}" = success
+            done
+          fi
           echo 'all release-test artifact fresh gates passed'
 
   release_vscode_extension:

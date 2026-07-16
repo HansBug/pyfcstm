@@ -2281,9 +2281,11 @@ def _visual_remote_render() -> CheckOutcome:
             output = Path(directory) / "selfcheck.png"
             backend.dump(str(output), PlantumlResourceType.PNG, source)
             payload = output.read_bytes()
-    except (ImportError, OSError, ValueError) as err:
-        # Missing optional package, service requests, malformed hosts, and temporary
-        # output failures are expected capability failures; unexpected exceptions propagate.
+    except (AttributeError, ImportError, OSError, ValueError) as err:
+        # AttributeError/ValueError: plantumlcli can reject an unexpected
+        # service homepage shape; ImportError: optional backend unavailable;
+        # OSError: request or temporary output failure. Unexpected classes
+        # still propagate so implementation bugs remain visible.
         return _exception_diagnostic(
             "WARN",
             "remote PlantUML rendering is unavailable",

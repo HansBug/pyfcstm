@@ -579,6 +579,25 @@ def test_remote_render_uses_configured_service_and_validates_png(monkeypatch):
     assert "PNG" in outcome.observed
 
 
+@pytest.mark.unittest
+def test_remote_render_backend_shape_failure_is_a_capability_warning(monkeypatch):
+    """A malformed PlantUML homepage remains a reportable capability warning."""
+    monkeypatch.setenv("PYFCSTM_SELFCHECK_NETWORK", "1")
+
+    class _Backend:
+        def check(self):
+            raise AttributeError("homepage footer is unavailable")
+
+    monkeypatch.setattr(
+        "pyfcstm.entry.visualize.create_remote_plantuml_backend",
+        lambda remote_host: _Backend(),
+    )
+    outcome = registry._visual_remote_render()
+
+    assert outcome.status == "WARN"
+    assert "homepage footer is unavailable" in (outcome.exception or "")
+
+
 class _ContextValue:
     def __init__(self, value):
         self.value = value

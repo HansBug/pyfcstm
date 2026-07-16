@@ -818,7 +818,10 @@ jobs:
         shell: bash
         run: |
           make build_info
-          make build
+          # Keep the tracked logo PNG as the build input; otherwise Make's
+          # timestamp rule can rewrite it before the recursive build_info
+          # prerequisite and falsely mark the artifact dirty.
+          make -o logos/logo.png build
           mkdir -p dist/${{ env.CLI_NAME }}
           cp dist/pyfcstm dist/${{ env.CLI_NAME }}/pyfcstm
           cd dist
@@ -837,7 +840,9 @@ jobs:
         shell: bash
         run: |
           make build_info
-          make build
+          # Keep the tracked logo PNG as the build input; see the Linux/macOS
+          # build step above.
+          make -o logos/logo.png build
           mkdir -p dist/${{ env.CLI_NAME }}
           cp dist/pyfcstm.exe dist/${{ env.CLI_NAME }}/pyfcstm.exe
           cd dist
@@ -1168,6 +1173,7 @@ jobs:
             | tee "$reports/summary.txt"
           test "$version_status" -eq 0
           test "$default_status" -eq 0
+          test "$readiness_status" -eq 0
           grep -F "Commit: $GITHUB_SHA" "$reports/version.log"
       - name: Upload clean CLI evidence
         if: ${{ always() }}
@@ -1179,6 +1185,7 @@ jobs:
             ${{ runner.temp }}/pyfcstm-selfcheck-reports
             ${{ runner.temp }}/java-version.txt
             ${{ runner.temp }}/plantuml-version.txt
+            ${{ runner.temp }}/plantuml-service.log
 
   jsfcstm_test:
     # Run jsfcstm's mocha + c8 suite across the supported Node versions.

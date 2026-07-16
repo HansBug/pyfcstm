@@ -176,6 +176,7 @@ jobs:
         env:
           PYTHONPATH: ''
           PYTHONNOUSERSITE: '1'
+          PIP_CONFIG_FILE: /dev/null
           PLANTUML_JAR: ${{ runner.temp }}/plantuml.jar
           PLANTUML_HOST: http://127.0.0.1:18080
           TARGET_COMMIT: ${{ needs.resolve_release_target.outputs.full_commit }}
@@ -247,7 +248,10 @@ jobs:
             python -m pip --isolated list --format=json 2>&1 | tee "$reports/${kind}-pip-list.json"
             python -c 'import pyfcstm, sys; print(pyfcstm.__file__); print(sys.executable); print("\\n".join(sys.path))' \
               | tee "$reports/${kind}-module-path.txt"
-            grep -F "$GITHUB_WORKSPACE" "$reports/${kind}-module-path.txt" && exit 1 || true
+            if grep -F "$GITHUB_WORKSPACE" "$reports/${kind}-module-path.txt"; then
+              echo 'installed module came from the checkout workspace' >&2
+              exit 1
+            fi
             set +e
             pyfcstm --version 2>&1 | tee "$reports/${kind}-version.log"
             version_status=${PIPESTATUS[0]}
@@ -299,14 +303,116 @@ jobs:
     needs: [resolve_release_target, package_fresh, release_cli_fresh, release_cli_controlled_linux]
     if: ${{ always() && needs.resolve_release_target.result == 'success' && needs.package_fresh.result == 'success' && needs.release_cli_fresh.result == 'success' && needs.release_cli_controlled_linux.result == 'success' }}
     steps:
-      - name: Confirm every staged artifact family passed fresh verification
+      - name: Download the exact staged Python artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pyfcstm-pr4-release-python
+          path: ${{ runner.temp }}/pyfcstm-release-gate/python
+      - name: Download staged Ubuntu CLI artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pyfcstm-pr4-release-cli-ubuntu-22.04
+          path: ${{ runner.temp }}/pyfcstm-release-gate/cli/pyfcstm-pr4-release-cli-ubuntu-22.04
+      - name: Download staged Windows CLI artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pyfcstm-pr4-release-cli-windows-2022
+          path: ${{ runner.temp }}/pyfcstm-release-gate/cli/pyfcstm-pr4-release-cli-windows-2022
+      - name: Download staged macOS CLI artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pyfcstm-pr4-release-cli-macos-14
+          path: ${{ runner.temp }}/pyfcstm-release-gate/cli/pyfcstm-pr4-release-cli-macos-14
+      - name: Confirm fresh results and staged sidecars
+        env:
+          TARGET_COMMIT: ${{ needs.resolve_release_target.outputs.full_commit }}
+          TARGET_TAG: ${{ needs.resolve_release_target.outputs.tag }}
         shell: bash
         run: |
           set -euo pipefail
           echo 'package_fresh=success'
           echo 'release_cli_fresh=success'
           echo 'release_cli_controlled_linux=success'
-          echo "target_commit=${{ needs.resolve_release_target.outputs.full_commit }}"
+          echo "target_commit=$TARGET_COMMIT"
+          python - "$RUNNER_TEMP/pyfcstm-release-gate" "$TARGET_COMMIT" "$TARGET_TAG" <<'PY'
+          import hashlib
+          import re
+          import sys
+          from pathlib import Path
+
+          root = Path(sys.argv[1])
+          target_commit = sys.argv[2]
+          target_tag = sys.argv[3]
+          digest_pattern = re.compile(r"^[0-9a-f]{64}$")
+          commit_pattern = re.compile(r"^[0-9a-f]{40}$")
+
+          def read_identity(path):
+              values = {}
+              for line in path.read_text(encoding="utf-8").splitlines():
+                  key, separator, value = line.partition("=")
+                  if not separator or not key or key in values:
+                      raise SystemExit("invalid identity line: {}".format(line))
+                  values[key] = value
+              required = {"schema", "artifact_kind", "full_commit", "dirty", "platform", "tag"}
+              missing = sorted(required - set(values))
+              if missing:
+                  raise SystemExit("identity missing fields: {}".format(",".join(missing)))
+              if values["schema"] != "pyfcstm-build-identity/v1":
+                  raise SystemExit("unsupported identity schema: {}".format(values["schema"]))
+              if not commit_pattern.fullmatch(values["full_commit"]):
+                  raise SystemExit("invalid full_commit: {}".format(values["full_commit"]))
+              if (
+                  values["full_commit"] != target_commit
+                  or values["dirty"] != "0"
+                  or values["tag"] != target_tag
+              ):
+                  raise SystemExit("identity does not match target clean commit: {}".format(path))
+              return values
+
+          def verify_artifact(directory, expected_kind):
+              identity_path = directory / "build-identity.txt"
+              digest_path = directory / "artifact-sha256.txt"
+              if not identity_path.is_file() or not digest_path.is_file():
+                  raise SystemExit("missing sidecars in {}".format(directory))
+              identity = read_identity(identity_path)
+              if identity["artifact_kind"] != expected_kind:
+                  raise SystemExit("unexpected artifact kind in {}".format(identity_path))
+              rows = []
+              for line in digest_path.read_text(encoding="utf-8").splitlines():
+                  fields = line.split()
+                  if len(fields) != 3 or not digest_pattern.fullmatch(fields[0]) or not fields[1].isdigit():
+                      raise SystemExit("invalid digest row: {}".format(line))
+                  rows.append((fields[0], int(fields[1]), Path(fields[2]).name))
+              if not rows or len({row[2] for row in rows}) != len(rows):
+                  raise SystemExit("missing or duplicate digest rows in {}".format(digest_path))
+              payloads = {}
+              for candidate in directory.rglob("*"):
+                  if candidate.is_file() and candidate.name not in {"build-identity.txt", "artifact-sha256.txt"}:
+                      payloads.setdefault(candidate.name, []).append(candidate)
+              for expected_digest, expected_size, name in rows:
+                  candidates = payloads.get(name, [])
+                  if len(candidates) != 1:
+                      raise SystemExit("payload is not unique: {}".format(name))
+                  candidate = candidates[0]
+                  if candidate.stat().st_size != expected_size:
+                      raise SystemExit("size mismatch: {}".format(candidate))
+                  digest = hashlib.sha256(candidate.read_bytes()).hexdigest()
+                  if digest != expected_digest:
+                      raise SystemExit("digest mismatch: {}".format(candidate))
+              print("verified {} ({})".format(directory, identity["platform"]))
+
+          verify_artifact(root / "python", "python-distributions")
+          cli_root = root / "cli"
+          cli_directories = sorted(path for path in cli_root.iterdir() if path.is_dir())
+          if {path.name for path in cli_directories} != {
+              "pyfcstm-pr4-release-cli-ubuntu-22.04",
+              "pyfcstm-pr4-release-cli-windows-2022",
+              "pyfcstm-pr4-release-cli-macos-14",
+          }:
+              raise SystemExit("CLI artifact matrix is incomplete: {}".format(cli_directories))
+          for directory in cli_directories:
+              verify_artifact(directory, "standalone")
+          PY
           echo 'all fresh artifact gates passed'
 
   package_publish:
@@ -618,7 +724,10 @@ jobs:
         shell: bash
         run: |
           make build_info
-          make build
+          # Keep the tracked logo PNG as the build input; otherwise Make's
+          # timestamp rule can rewrite it before the recursive build_info
+          # prerequisite and falsely mark the artifact dirty.
+          make -o logos/logo.png build
           mkdir -p dist/${{ env.CLI_NAME }}
           cp dist/pyfcstm dist/${{ env.CLI_NAME }}/pyfcstm
           cd dist
@@ -637,7 +746,9 @@ jobs:
         shell: bash
         run: |
           make build_info
-          make build
+          # Keep the tracked logo PNG as the build input; see the Linux/macOS
+          # build step above.
+          make -o logos/logo.png build
           mkdir -p dist/${{ env.CLI_NAME }}
           cp dist/pyfcstm.exe dist/${{ env.CLI_NAME }}/pyfcstm.exe
           cd dist
@@ -737,8 +848,7 @@ jobs:
           test "$actual_digest" = 5a8dc3b37fe133a4744e55be80caf6080a70350aba716d95400a0f0cbd79e846
           java -version 2> "$RUNNER_TEMP/java-version.txt"
           java -jar "$jar" -version 2>&1 | tee "$RUNNER_TEMP/plantuml-version.txt"
-      - name: Start local PlantUML service on non-Linux runners
-        if: ${{ matrix.os != 'ubuntu-22.04' }}
+      - name: Start local PlantUML service
         shell: bash
         env:
           PLANTUML_HOST: http://127.0.0.1:18080
@@ -821,6 +931,7 @@ jobs:
           | tee "$reports/summary.txt"
           test "$version_status" -eq 0
           test "$default_status" -eq 0
+          test "$readiness_status" -eq 0
           test "$visualize_status" -eq 0
           grep -F "Commit: $TARGET_COMMIT" "$reports/version.log"
       - name: Upload fresh CLI evidence
@@ -833,6 +944,8 @@ jobs:
             ${{ runner.temp }}/pyfcstm-release-cli-reports
             ${{ runner.temp }}/java-version.txt
             ${{ runner.temp }}/plantuml-version.txt
+            ${{ runner.temp }}/plantuml-readiness.txt
+            ${{ runner.temp }}/plantuml-service.log
 
   release_cli_controlled_linux:
     name: Controlled PlantUML CLI gate (Ubuntu)

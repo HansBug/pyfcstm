@@ -505,5 +505,8 @@ def test_bmc_schema_freezes_feasibility_localization_contract():
     assert '"infeasible_stage": {"const": "kernel"}' in feasibility_text
     assert '"infeasible_stage": {"const": "initialization"}' in feasibility_text
     assert '"infeasible_stage": {"const": "assumptions"}' in feasibility_text
-    assert '"localization_status": {"enum": ["not_checked", "unknown", "timeout"]}' in feasibility_text
+    assert (
+        '"localization_status": {"enum": ["not_checked", "unknown", "timeout"]}'
+        in feasibility_text
+    )
     assert '"status": {"enum": ["unknown", "timeout"]}' in inconclusive_text

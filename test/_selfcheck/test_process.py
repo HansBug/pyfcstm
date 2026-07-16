@@ -887,6 +887,9 @@ def test_worker_communication_failure_retains_cleanup_evidence(monkeypatch):
     )
     result = run_check_process(_spec(), timeout=0.1)
     assert result.reason == "worker_communication"
+    assert "worker_communication:OSError: pipe failed" in result.evidence
+    assert "Traceback (most recent call last)" in result.evidence
+    assert "OSError: pipe failed" in result.exception
     assert "cleanup=cleanup failed" in result.evidence
 
 
@@ -908,7 +911,9 @@ def test_worker_communication_failure_without_cleanup_evidence(monkeypatch):
     monkeypatch.setattr(process_module, "_terminate", lambda *args, **kwargs: None)
     result = run_check_process(_spec(), timeout=0.1)
     assert result.reason == "worker_communication"
-    assert result.evidence == "worker_communication:OSError"
+    assert "worker_communication:OSError: pipe failed" in result.evidence
+    assert "Traceback (most recent call last)" in result.evidence
+    assert "OSError: pipe failed" in result.exception
 
 
 @pytest.mark.unittest

@@ -13,6 +13,7 @@ import signal
 import subprocess
 import tempfile
 import time
+import traceback
 from typing import Optional
 
 from ._win32 import JobAssignmentError, attach_process, format_ntstatus
@@ -373,6 +374,7 @@ def _make_result(
     timeout: bool = False,
     ntstatus: Optional[str] = None,
     envelope=None,
+    exception: Optional[str] = None,
 ) -> CheckResult:
     """Build one terminal result from semantic and process observations."""
     stdout = stdout_capture.text() if stdout_capture is not None else ""
@@ -395,7 +397,7 @@ def _make_result(
         observed=envelope.get("observed"),
         evidence=evidence,
         remediation=envelope.get("remediation"),
-        exception=envelope.get("exception"),
+        exception=envelope.get("exception") or exception,
         return_code=return_code,
         transport=result_mode,
         truncated_bytes=truncated,
@@ -549,19 +551,31 @@ def run_check_process(
             try:
                 stdout_data, stderr_data = process.communicate(timeout=scaled_grace)
             except subprocess.TimeoutExpired as drain_error:
-                communication_errors.append("output_drain:TimeoutExpired")
+                communication_errors.append(
+                    "output_drain:TimeoutExpired: {}\n{}".format(
+                        drain_error,
+                        traceback.format_exc().rstrip(),
+                    )
+                )
                 if stdout_spool is None:
                     stdout_data = drain_error.output or stdout_data
                 if stderr_spool is None:
                     stderr_data = drain_error.stderr or stderr_data
             except (OSError, ValueError) as drain_error:
                 communication_errors.append(
-                    "output_drain:{}".format(type(drain_error).__name__)
+                    "output_drain:{}: {}\n{}".format(
+                        type(drain_error).__name__,
+                        drain_error,
+                        traceback.format_exc().rstrip(),
+                    )
                 )
         except (OSError, ValueError) as err:
             cleanup_error = _terminate(process, job, posix_group, scaled_grace)
             job = None
-            details = "worker_communication:{}".format(type(err).__name__)
+            exception = traceback.format_exc()
+            details = "worker_communication:{}: {}\n{}".format(
+                type(err).__name__, err, exception.rstrip()
+            )
             if cleanup_error:
                 details += "; cleanup=" + cleanup_error
             return _make_result(
@@ -573,6 +587,7 @@ def run_check_process(
                 evidence=details,
                 process=process,
                 result_mode=result_mode,
+                exception=exception,
             )
 
         stdout_capture = _capture_stream(
@@ -630,7 +645,11 @@ def run_check_process(
                 envelope=outcome.envelope,
                 **process_fields,
             )
-        details = _diagnostics(communication_errors, cleanup_error=cleanup_error)
+        details = _diagnostics(
+            communication_errors,
+            base=outcome.diagnostic or "",
+            cleanup_error=cleanup_error,
+        )
         ntstatus = format_ntstatus(return_code) if os.name == "nt" else None
         if ntstatus:
             details = (details + "\n" if details else "") + "ntstatus=" + ntstatus

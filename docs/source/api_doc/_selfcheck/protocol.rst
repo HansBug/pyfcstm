@@ -30,11 +30,17 @@ MAX\_RESULT\_FILE\_BYTES
 .. autodata:: MAX_RESULT_FILE_BYTES
 
 
+MAX\_PROTOCOL\_DIAGNOSTIC\_BYTES
+-----------------------------------------------------
+
+.. autodata:: MAX_PROTOCOL_DIAGNOSTIC_BYTES
+
+
 FrameReadOutcome
 -----------------------------------------------------
 
 .. autoclass:: FrameReadOutcome
-    :members: envelope,error_code,frame_count
+    :members: envelope,error_code,frame_count,diagnostic
 
 
 make\_nonce

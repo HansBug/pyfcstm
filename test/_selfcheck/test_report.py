@@ -137,6 +137,75 @@ def test_human_failure_details_include_semantic_diagnostics():
 
 
 @pytest.mark.unittest
+def test_human_traceback_is_indented_and_not_duplicated():
+    """Shared evidence/exception tracebacks render once with stable indentation."""
+    traceback_text = (
+        "Traceback (most recent call last):\n"
+        "  File \"probe.py\", line 1, in probe\n"
+        "ValueError: failed"
+    )
+    result = CheckResult(
+        "core.probe",
+        "FAIL",
+        True,
+        summary="probe failed",
+        reason="probe_failed",
+        evidence="command=['probe']\n" + traceback_text,
+        exception=traceback_text,
+    )
+    rendered = render_human_result(result, 1, 1, color="never")
+    assert rendered.count("Traceback (most recent call last)") == 1
+    assert "  evidence:\n    command=['probe']" in rendered
+    assert "  exception:\n    Traceback (most recent call last):" in rendered
+    assert "      File \"probe.py\", line 1, in probe" in rendered
+
+
+@pytest.mark.unittest
+def test_human_pass_and_optional_results_expose_concrete_facts():
+    """PASS lines stay factual while WARN/SKIP expand their diagnostics."""
+    passed = CheckResult(
+        "native.z3.solve",
+        "PASS",
+        True,
+        summary="solve Int x constrained by x == 1",
+        expected="status=sat model[x]=1",
+        observed="status=sat model[x]=1",
+    )
+    rendered = render_human_result(passed, 1, 12, color="never")
+    assert "[ 1/12] PASS native.z3.solve" in rendered
+    assert "expected=status=sat model[x]=1" in rendered
+    assert "observed=status=sat model[x]=1" in rendered
+
+    warned = CheckResult(
+        "visualize.java",
+        "WARN",
+        False,
+        summary="Java is unavailable",
+        reason="capability_unavailable",
+        expected="java on PATH",
+        observed="not found",
+        remediation="install a JRE",
+    )
+    rendered = render_human_result(warned, 2, 12, color="never")
+    assert "reason: capability_unavailable" in rendered
+    assert "expected: java on PATH" in rendered
+    assert "observed: not found" in rendered
+    assert "remediation: install a JRE" in rendered
+
+    skipped = CheckResult(
+        "visualize.local_render",
+        "SKIP",
+        False,
+        summary="capability prerequisite is unavailable",
+        reason="prerequisite_skipped",
+        prerequisites=("visualize.java", "visualize.plantuml_jar"),
+    )
+    rendered = render_human_result(skipped, 3, 12, color="never")
+    assert "reason: prerequisite_skipped" in rendered
+    assert "prerequisite: visualize.java, visualize.plantuml_jar" in rendered
+
+
+@pytest.mark.unittest
 def test_human_summary_omits_zero_counts_and_colors_emitted_statuses(monkeypatch):
     """Only positive status counts are shown and each keeps its color role."""
     monkeypatch.setattr("pyfcstm._selfcheck.report._color_requested", lambda mode: True)

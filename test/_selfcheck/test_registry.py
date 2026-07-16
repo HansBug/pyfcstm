@@ -1,7 +1,9 @@
 """Tests for the static built-in self-check registry."""
 
 import json
+import sys
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
@@ -14,6 +16,26 @@ from pyfcstm._selfcheck.registry import (
     registry_metadata,
     selected_specs,
 )
+
+
+def _install_build_info(monkeypatch, **overrides):
+    """Install deterministic generated identity without reading an ignored file."""
+    import pyfcstm.config as config
+
+    values = {
+        "BUILD_COMMIT": "generated-commit",
+        "BUILD_DIRTY": False,
+        "BUILD_REF": "generated-ref",
+        "BUILD_VERSION": "generated-version",
+    }
+    values.update(overrides)
+    module = ModuleType("pyfcstm.config.build_info")
+    for name, value in values.items():
+        setattr(module, name, value)
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+    monkeypatch.setattr(config, "build_info", module, raising=False)
+    monkeypatch.setattr(config, "BUILD_INFO_ERROR", None)
+    return module
 
 
 @pytest.mark.unittest
@@ -52,6 +74,7 @@ def test_source_checkout_keeps_identity_checks_optional():
     """A source checkout keeps missing generated identity metadata diagnostic-only."""
     specs = {item.check_id: item for item in selected_specs("default")}
     assert specs["identity.source"].required is False
+    assert specs["identity.build_info_module"].required is False
     assert specs["identity.artifact"].required is False
 
 
@@ -108,6 +131,7 @@ def test_source_identity_reports_stale_live_head(monkeypatch):
     """A generated identity never silently masks a different live commit."""
     import pyfcstm._selfcheck.registry as registry
 
+    _install_build_info(monkeypatch)
     monkeypatch.setattr(registry.subprocess, "check_output", lambda *args, **kwargs: b"deadbeef\n")
     outcome = get_worker("check_identity_source")()
     assert isinstance(outcome, CheckOutcome)
@@ -122,7 +146,7 @@ def test_source_identity_reports_invalid_and_unavailable_states(monkeypatch, tmp
 
     monkeypatch.setattr(config, "BUILD_INFO_ERROR", "broken identity")
     assert registry._identity_source().reason == "identity_invalid"
-    monkeypatch.setattr(config, "BUILD_INFO_ERROR", None)
+    _install_build_info(monkeypatch)
     monkeypatch.setattr(registry, "_live_source_identity", lambda: (_ for _ in ()).throw(OSError("git unavailable")))
     assert registry._identity_source().reason == "identity_unavailable"
     monkeypatch.setattr(registry, "_package_root", lambda: tmp_path / "pyfcstm")
@@ -205,6 +229,7 @@ def test_diagnostics_schema_probe_accepts_parseable_json(monkeypatch):
 @pytest.mark.unittest
 def test_identity_source_checks_dirty_ref_and_version(monkeypatch):
     """Live source identity mismatch includes more than the commit hash."""
+    _install_build_info(monkeypatch)
     monkeypatch.setattr(registry, "_live_source_identity", lambda: {
         "commit": "deadbeef",
         "dirty": False,

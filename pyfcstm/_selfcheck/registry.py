@@ -18,6 +18,7 @@ import ssl
 import subprocess
 import sys
 import tempfile
+import traceback
 import zipfile
 from functools import partial
 from pathlib import Path
@@ -28,6 +29,18 @@ from .model import CheckOutcome, CheckSpec
 
 Worker = Callable[[], CheckOutcome]
 Probe = Callable[[], CheckOutcome]
+
+_FUNCTION_DSL = """def int counter = 0;
+state Root {
+    state Idle;
+    state Done;
+    [*] -> Idle;
+    Idle -> Done :: Go effect { counter = counter + 1; }
+}
+"""
+_BMC_REACH_QUERY = 'check reach <= 1: active("Root");'
+_BMC_TERMINATED_QUERY = "check reach <= 1: terminated();"
+_BMC_FORBID_QUERY = 'check forbid <= 1: active("Root");'
 
 REGISTRY_SCHEMA_VERSION = "pyfcstm-selfcheck-registry/v1"
 REGISTRY_VERSION = "pr3-v3"
@@ -120,15 +133,123 @@ def _warn(
     reason: str,
     expected: Optional[str] = None,
     observed: Optional[str] = None,
+    evidence: str = "",
+    remediation: Optional[str] = None,
+    exception: Optional[str] = None,
 ):
     return CheckOutcome(
-        "WARN", summary, reason=reason, expected=expected, observed=observed
+        "WARN",
+        summary,
+        reason=reason,
+        expected=expected,
+        observed=observed,
+        evidence=evidence,
+        remediation=remediation,
+        exception=exception,
     )
 
 
-def _fail(summary: str, reason: str, expected: Optional[str] = None, observed=None):
+def _fail(
+    summary: str,
+    reason: str,
+    expected: Optional[str] = None,
+    observed=None,
+    evidence: str = "",
+    remediation: Optional[str] = None,
+    exception: Optional[str] = None,
+):
     return CheckOutcome(
-        "FAIL", summary, reason=reason, expected=expected, observed=observed
+        "FAIL",
+        summary,
+        reason=reason,
+        expected=expected,
+        observed=observed,
+        evidence=evidence,
+        remediation=remediation,
+        exception=exception,
+    )
+
+
+def _exception_diagnostic(
+    status: str,
+    summary: str,
+    reason: str,
+    err: BaseException,
+    expected: Optional[str] = None,
+    remediation: Optional[str] = None,
+    evidence_prefix: str = "",
+) -> CheckOutcome:
+    """Preserve one caught exception and its full active traceback."""
+    traceback_text = traceback.format_exc()
+    evidence = "\n".join(
+        item for item in (evidence_prefix.rstrip(), traceback_text.rstrip()) if item
+    )
+    constructor = _warn if status == "WARN" else _fail
+    return constructor(
+        summary,
+        reason,
+        expected=expected,
+        observed="{}: {}".format(type(err).__name__, err),
+        evidence=evidence,
+        remediation=remediation,
+        exception=traceback_text,
+    )
+
+
+def _decode_process_output(value: Any) -> str:
+    """Decode subprocess output without allowing diagnostic decoding to fail."""
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", "backslashreplace")
+    return str(value)
+
+
+def _process_evidence(
+    command: Iterable[str],
+    return_code: Optional[int] = None,
+    stdout: Any = None,
+    stderr: Any = None,
+) -> str:
+    """Format a bounded subprocess command and its captured output."""
+    lines = ["command={}".format(repr(list(command)))]
+    if return_code is not None:
+        lines.append("returncode={}".format(return_code))
+    stdout_text = _decode_process_output(stdout)
+    stderr_text = _decode_process_output(stderr)
+    if stdout_text:
+        lines.extend(("stdout:", stdout_text.rstrip()))
+    if stderr_text:
+        lines.extend(("stderr:", stderr_text.rstrip()))
+    return "\n".join(lines)
+
+
+def _click_failure(arguments: Iterable[str], result) -> CheckOutcome:
+    """Return a CLI failure with Click output and exception diagnostics."""
+    exception_text = ""
+    if result.exc_info:
+        exception_text = "".join(traceback.format_exception(*result.exc_info))
+    try:
+        stderr = result.stderr
+    except ValueError:
+        # Click releases without separately captured stderr expose only output.
+        stderr = ""
+    evidence = _process_evidence(
+        ["pyfcstm", *arguments],
+        return_code=result.exit_code,
+        stdout=result.output,
+        stderr=stderr,
+    )
+    if exception_text:
+        evidence += "\nexception:\n" + exception_text.rstrip()
+    return _fail(
+        "CLI command returned a non-zero status",
+        "cli_failed",
+        expected="exit_code=0",
+        observed="exit_code={}".format(result.exit_code),
+        evidence=evidence,
+        exception=exception_text or None,
+        remediation="rerun the recorded command and inspect its captured output",
     )
 
 
@@ -139,13 +260,22 @@ def _probe_import(module_name: str, attribute: Optional[str] = None) -> CheckOut
         if attribute is not None:
             getattr(module, attribute)
     except (ImportError, AttributeError) as err:
-        return _fail(
+        # ImportError covers unavailable modules; AttributeError covers missing exports.
+        return _exception_diagnostic(
+            "FAIL",
             "required import is unavailable",
             "import_unavailable",
             expected=module_name,
-            observed="{}: {}".format(type(err).__name__, err),
+            err=err,
+            remediation="reinstall pyfcstm and the named runtime dependency",
         )
-    return _pass("imported {}".format(module_name), expected=module_name)
+    location = getattr(module, "__file__", None) or "built-in module"
+    export = ".{}".format(attribute) if attribute else ""
+    return _pass(
+        "import {}{}".format(module_name, export),
+        expected="import succeeds",
+        observed=location,
+    )
 
 
 def _optional_import(module_name: str, attribute: Optional[str] = None) -> CheckOutcome:
@@ -154,18 +284,31 @@ def _optional_import(module_name: str, attribute: Optional[str] = None) -> Check
         if attribute is not None:
             getattr(module, attribute)
     except (ImportError, AttributeError) as err:
-        return _warn(
+        # ImportError covers unavailable optional modules; AttributeError covers missing exports.
+        return _exception_diagnostic(
+            "WARN",
             "optional dependency is unavailable",
             "capability_unavailable",
             expected=module_name,
-            observed="{}: {}".format(type(err).__name__, err),
+            err=err,
+            remediation="install the optional visualization dependencies when needed",
         )
-    return _pass("optional dependency {} is available".format(module_name))
+    location = getattr(module, "__file__", None) or "built-in module"
+    export = ".{}".format(attribute) if attribute else ""
+    return _pass(
+        "import optional {}{}".format(module_name, export),
+        expected="optional import succeeds when installed",
+        observed=location,
+    )
 
 
 def _path_probe(path: Path, label: str, required: bool = True) -> CheckOutcome:
     if path.is_file():
-        return _pass("{} is present".format(label), expected=str(path))
+        return _pass(
+            "read packaged {}".format(label),
+            expected="regular file",
+            observed="{} ({} bytes)".format(path, path.stat().st_size),
+        )
     if required:
         return _fail("{} is missing".format(label), "resource_missing", str(path))
     return _warn("{} is unavailable".format(label), "capability_unavailable", str(path))
@@ -185,9 +328,14 @@ def _artifact_self_dispatch() -> CheckOutcome:
     """Confirm the worker can import the package without CLI recursion."""
     import pyfcstm
 
-    if not getattr(pyfcstm, "__version__", None):
+    version = getattr(pyfcstm, "__version__", None)
+    if not version:
         raise RuntimeError("package version is unavailable")
-    return _pass("worker imported pyfcstm and stopped at hidden dispatch")
+    return _pass(
+        "import pyfcstm through the hidden self-check dispatch",
+        expected="non-empty package version without ordinary CLI dispatch",
+        observed="pyfcstm.__version__={}".format(version),
+    )
 
 
 def _runtime_metadata() -> CheckOutcome:
@@ -207,23 +355,36 @@ def _runtime_metadata() -> CheckOutcome:
 
 
 def _env_python() -> CheckOutcome:
-    return _pass("Python runtime is available", observed=sys.version.split()[0])
+    return _pass(
+        "read the running Python version",
+        expected="non-empty sys.version",
+        observed=sys.version.split()[0],
+    )
 
 
 def _env_os() -> CheckOutcome:
-    return _pass("operating-system metadata is available", observed=platform.platform())
+    return _pass(
+        "read operating-system metadata through platform.platform",
+        expected="non-empty platform description",
+        observed=platform.platform(),
+    )
 
 
 def _env_locale() -> CheckOutcome:
     import locale
 
     encoding = locale.getpreferredencoding(False)
-    return _pass("preferred locale encoding is available", observed=encoding)
+    return _pass(
+        "read locale.getpreferredencoding(False)",
+        expected="non-empty preferred encoding",
+        observed=encoding,
+    )
 
 
 def _env_console() -> CheckOutcome:
     return _pass(
-        "console capability is reportable",
+        "query stdout/stderr terminal capability through isatty",
+        expected="two boolean terminal flags",
         observed="stdout_tty={} stderr_tty={}".format(
             bool(getattr(sys.stdout, "isatty", lambda: False)()),
             bool(getattr(sys.stderr, "isatty", lambda: False)()),
@@ -232,7 +393,11 @@ def _env_console() -> CheckOutcome:
 
 
 def _env_process() -> CheckOutcome:
-    return _pass("current process identity is available", observed=str(os.getpid()))
+    return _pass(
+        "read the current process ID through os.getpid",
+        expected="positive integer PID",
+        observed=str(os.getpid()),
+    )
 
 
 def _env_temp() -> CheckOutcome:
@@ -241,17 +406,33 @@ def _env_temp() -> CheckOutcome:
         probe.write_text("ok", encoding="utf-8")
         if probe.read_text(encoding="utf-8") != "ok":
             return _fail("temporary directory roundtrip failed", "temp_roundtrip")
-    return _pass("temporary directory is writable")
+    return _pass(
+        "write and read a UTF-8 probe in tempfile.TemporaryDirectory",
+        expected="probe text 'ok' roundtrips",
+        observed="probe text 'ok' roundtripped",
+    )
 
 
 def _env_filesystem() -> CheckOutcome:
     root = _package_root()
-    return _pass("package filesystem is readable", observed=str(root)) if root.is_dir() else _fail("package filesystem is missing", "filesystem_missing")
+    return (
+        _pass(
+            "resolve the imported pyfcstm package directory",
+            expected="existing directory",
+            observed=str(root),
+        )
+        if root.is_dir()
+        else _fail("package filesystem is missing", "filesystem_missing")
+    )
 
 
 def _platform_specific(platform_name: str) -> CheckOutcome:
     if sys.platform.startswith(platform_name):
-        return _pass("{} platform capability is applicable".format(platform_name))
+        return _pass(
+            "match sys.platform against the {} platform probe".format(platform_name),
+            expected="prefix {}".format(platform_name),
+            observed=sys.platform,
+        )
     return CheckOutcome(
         "SKIP", "{} platform check is not applicable".format(platform_name),
         reason="not_applicable",
@@ -264,7 +445,11 @@ def _identity_package() -> CheckOutcome:
 
     if not pyfcstm.__version__ or pyfcstm.__version__ != __VERSION__:
         return _fail("package version metadata disagrees", "identity_mismatch")
-    return _pass("package identity agrees", observed=pyfcstm.__version__)
+    return _pass(
+        "compare pyfcstm.__version__ with config.meta.__VERSION__",
+        expected=__VERSION__,
+        observed=pyfcstm.__version__,
+    )
 
 
 def _identity_source() -> CheckOutcome:
@@ -290,7 +475,14 @@ def _identity_source() -> CheckOutcome:
     try:
         live = _live_source_identity()
     except (OSError, subprocess.CalledProcessError, UnicodeError, ValueError) as err:
-        return _warn("live source identity cannot be read", "identity_unavailable", observed=str(err))
+        # Git commands can fail, and their output may be undecodable or structurally invalid.
+        return _exception_diagnostic(
+            "WARN",
+            "live source identity cannot be read",
+            "identity_unavailable",
+            err,
+            remediation="regenerate build_info.py from the current checkout when identity is needed",
+        )
     expected = {
         "commit": getattr(build_info, "BUILD_COMMIT", None),
         "dirty": getattr(build_info, "BUILD_DIRTY", None),
@@ -327,24 +519,33 @@ def _live_source_identity() -> Dict[str, Any]:
 
 def _identity_build_info_module() -> CheckOutcome:
     try:
-        importlib.import_module("pyfcstm.config.build_info")
+        module = importlib.import_module("pyfcstm.config.build_info")
     except ImportError as err:
-        return _warn(
+        # A fresh source checkout intentionally has no ignored generated module.
+        return _exception_diagnostic(
+            "WARN",
             "generated build-info module is unavailable",
             "identity_unavailable",
             expected="pyfcstm.config.build_info",
-            observed="{}: {}".format(type(err).__name__, err),
+            err=err,
+            remediation="run make build_info before packaging or release validation",
         )
     except (OSError, SyntaxError, ValueError) as err:
         # OSError: the generated module cannot be read; SyntaxError: its
         # source is malformed; ValueError: its loader rejects the file.
-        return _warn(
+        return _exception_diagnostic(
+            "WARN",
             "generated build-info module is invalid",
             "identity_invalid",
             expected="valid pyfcstm.config.build_info",
-            observed="{}: {}".format(type(err).__name__, err),
+            err=err,
+            remediation="remove the damaged generated module and rerun make build_info",
         )
-    return _pass("generated build-info module is importable")
+    return _pass(
+        "import the generated build-info module",
+        expected="pyfcstm.config.build_info import succeeds when generated",
+        observed=getattr(module, "__file__", None) or "loader-provided module",
+    )
 
 
 def _identity_artifact() -> CheckOutcome:
@@ -356,17 +557,36 @@ def _json_resource(relative: str, label: str) -> CheckOutcome:
     try:
         json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, ValueError) as err:
-        return _fail("{} is invalid".format(label), "resource_invalid", observed=str(err))
-    return _pass("{} is valid".format(label))
+        # Resource reads can fail, decoding can fail, and json.loads can reject content.
+        return _exception_diagnostic(
+            "FAIL",
+            "{} is invalid".format(label),
+            "resource_invalid",
+            err,
+            expected="readable UTF-8 JSON at {}".format(relative),
+        )
+    return _pass(
+        "parse packaged {} as JSON".format(label),
+        expected="readable UTF-8 JSON",
+        observed="{} ({} bytes)".format(relative, path.stat().st_size),
+    )
 
 
 def _diagnostics_schemas() -> CheckOutcome:
     """Check that every shipped diagnostics schema is readable JSON."""
-    for relative in ("diagnostics/schema.json", "diagnostics/inspect_llm_report_schema.json"):
+    schemas = (
+        "diagnostics/schema.json",
+        "diagnostics/inspect_llm_report_schema.json",
+    )
+    for relative in schemas:
         outcome = _json_resource(relative, "diagnostic schema {}".format(relative))
         if outcome.status != "PASS":
             return outcome
-    return _pass("diagnostic schemas are readable", observed="2 schemas")
+    return _pass(
+        "parse both packaged diagnostic schemas as JSON",
+        expected="2 readable UTF-8 JSON documents",
+        observed=repr(schemas),
+    )
 
 
 def _yaml_resource(relative: str, label: str) -> CheckOutcome:
@@ -374,12 +594,26 @@ def _yaml_resource(relative: str, label: str) -> CheckOutcome:
     try:
         import yaml
     except ImportError as err:
-        return _fail("{} is invalid".format(label), "resource_invalid", observed=str(err))
+        # PyYAML is required to parse the packaged YAML resource.
+        return _exception_diagnostic(
+            "FAIL", "{} is invalid".format(label), "resource_invalid", err
+        )
     try:
         yaml.safe_load(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, TypeError, ValueError, yaml.YAMLError) as err:
-        return _fail("{} is invalid".format(label), "resource_invalid", observed=str(err))
-    return _pass("{} is valid".format(label))
+        # Reads/decoding/type validation and yaml.safe_load expose these failures.
+        return _exception_diagnostic(
+            "FAIL",
+            "{} is invalid".format(label),
+            "resource_invalid",
+            err,
+            expected="readable UTF-8 YAML at {}".format(relative),
+        )
+    return _pass(
+        "parse packaged {} as YAML".format(label),
+        expected="readable UTF-8 YAML",
+        observed="{} ({} bytes)".format(relative, path.stat().st_size),
+    )
 
 
 def _template_index() -> CheckOutcome:
@@ -391,8 +625,15 @@ def _template_index() -> CheckOutcome:
 
         names = list_templates()
     except (OSError, ValueError, KeyError, TypeError) as err:
-        return _fail("template catalog cannot be loaded", "resource_invalid", observed=str(err))
-    return _pass("template catalog is readable", observed=repr(names))
+        # The public template catalog reads JSON and validates required metadata fields.
+        return _exception_diagnostic(
+            "FAIL", "template catalog cannot be loaded", "resource_invalid", err
+        )
+    return _pass(
+        "parse the template index through list_templates",
+        expected="at least one named built-in template",
+        observed=repr(names),
+    )
 
 
 def _template_archives() -> CheckOutcome:
@@ -412,8 +653,19 @@ def _template_archives() -> CheckOutcome:
                         observed=str(archive),
                     )
         except (OSError, zipfile.BadZipFile) as err:
-            return _fail("template archive is invalid", "archive_invalid", observed=str(err))
-    return _fail("template archives are missing", "resource_missing", observed=repr(missing)) if missing else _pass("template archives are readable")
+            # Archive reads can fail and ZipFile rejects malformed central directories.
+            return _exception_diagnostic(
+                "FAIL", "template archive is invalid", "archive_invalid", err
+            )
+    return (
+        _fail("template archives are missing", "resource_missing", observed=repr(missing))
+        if missing
+        else _pass(
+            "open every indexed template archive and verify CRCs",
+            expected="all indexed archives exist and testzip returns None",
+            observed="{} archives verified".format(len(index.get("templates", []))),
+        )
+    )
 
 
 def _template_extract() -> CheckOutcome:
@@ -425,8 +677,15 @@ def _template_extract() -> CheckOutcome:
             if not (Path(target) / "python" / "config.yaml").is_file():
                 return _fail("python template extraction is incomplete", "extract_invalid")
     except (OSError, KeyError, ValueError, zipfile.BadZipFile) as err:
-        return _fail("python template extraction failed", "extract_failed", observed=str(err))
-    return _pass("python template extracts successfully")
+        # Extraction reads catalog/archive data and validates the resulting directory.
+        return _exception_diagnostic(
+            "FAIL", "python template extraction failed", "extract_failed", err
+        )
+    return _pass(
+        "extract the packaged Python template through its public API",
+        expected="python/config.yaml exists after extraction",
+        observed="config.yaml present",
+    )
 
 
 def _resource_llm_guide() -> CheckOutcome:
@@ -453,13 +712,17 @@ def _resource_llm_guide() -> CheckOutcome:
         ValueError,
         RuntimeError,
     ) as err:
-        return _fail(
+        # Public guide APIs read UTF-8 text and strict SHA-256 sidecars.
+        return _exception_diagnostic(
+            "FAIL",
             "packaged LLM guide or checksum is invalid",
             "resource_invalid",
-            observed="{}: {}".format(type(err).__name__, err),
+            err=err,
+            remediation="restore the packaged guides and regenerate their SHA-256 sidecars",
         )
     return _pass(
         "packaged LLM guides and SHA-256 sidecars are valid",
+        expected="strict public loaders accept both guide/sidecar pairs",
         observed=repr([item["resource_name"] for item in metadata]),
     )
 
@@ -504,8 +767,13 @@ def _grammar_fcstm() -> CheckOutcome:
 
         parse_state_machine_dsl("state Root;")
     except (ImportError, AttributeError, TypeError, ValueError) as err:
-        return _fail("FCSTM grammar probe failed", "grammar_invalid", observed=str(err))
-    return _pass("FCSTM grammar parsed a minimal document")
+        # Public grammar imports and minimal parsing expose these failures.
+        return _exception_diagnostic("FAIL", "FCSTM grammar probe failed", "grammar_invalid", err)
+    return _pass(
+        "load six FCSTM grammar assets and parse state Root",
+        expected="6 assets and a valid StateMachineDSLProgram",
+        observed="6 assets; parse succeeded",
+    )
 
 
 def _grammar_fbmcq() -> CheckOutcome:
@@ -517,8 +785,13 @@ def _grammar_fbmcq() -> CheckOutcome:
 
         parse_bmc_query('check reach <= 1: active("Root");')
     except (ImportError, AttributeError, TypeError, ValueError) as err:
-        return _fail("FBMCQ grammar probe failed", "grammar_invalid", observed=str(err))
-    return _pass("FBMCQ grammar parsed a minimal query")
+        # Public grammar imports and minimal parsing expose these failures.
+        return _exception_diagnostic("FAIL", "FBMCQ grammar probe failed", "grammar_invalid", err)
+    return _pass(
+        "load six FBMCQ grammar assets and parse reach bound 1",
+        expected="6 assets and a valid BmcQuery",
+        observed="6 assets; reach query parsed",
+    )
 
 
 def _resource_optional_import(module_name: str) -> CheckOutcome:
@@ -534,25 +807,48 @@ def _z3_solve() -> CheckOutcome:
         import z3
 
         solver = z3.Solver()
-        solver.add(z3.Int("selfcheck_x") == 1)
-        if solver.check() != z3.sat:
-            return _fail("Z3 solver returned an unexpected result", "solver_failed")
+        x = z3.Int("selfcheck_x")
+        solver.add(x == 1)
+        status = solver.check()
+        value = solver.model().eval(x).as_long() if status == z3.sat else None
+        if status != z3.sat or value != 1:
+            return _fail(
+                "Z3 solver returned an unexpected result",
+                "solver_failed",
+                expected="status=sat model[selfcheck_x]=1",
+                observed="status={} model[selfcheck_x]={}".format(status, value),
+            )
     except (ImportError, AttributeError, TypeError, ValueError, OSError) as err:
-        return _fail("Z3 solver probe failed", "solver_failed", observed=str(err))
-    return _pass("Z3 solver can solve a simple constraint")
+        # Z3 imports, native loading, expression construction, and model decoding fail here.
+        return _exception_diagnostic("FAIL", "Z3 solver probe failed", "solver_failed", err)
+    return _pass(
+        "solve Int selfcheck_x constrained by selfcheck_x == 1",
+        expected="status=sat model[selfcheck_x]=1",
+        observed="status=sat model[selfcheck_x]=1",
+    )
 
 
 def _yaml_backend() -> CheckOutcome:
     try:
         import yaml
     except ImportError as err:
-        return _warn("YAML backend is unavailable", "capability_unavailable", observed=str(err))
+        # PyYAML may be absent from a damaged installation.
+        return _exception_diagnostic(
+            "WARN", "YAML backend is unavailable", "capability_unavailable", err
+        )
     try:
         if yaml.safe_load("key: value")["key"] != "value":
             return _warn("YAML backend returned an unexpected value", "capability_unavailable")
     except (AttributeError, TypeError, ValueError, yaml.YAMLError) as err:
-        return _warn("YAML backend is unavailable", "capability_unavailable", observed=str(err))
-    return _pass("YAML backend parsed a mapping")
+        # safe_load can reject malformed inputs or return values with invalid types.
+        return _exception_diagnostic(
+            "WARN", "YAML backend is unavailable", "capability_unavailable", err
+        )
+    return _pass(
+        "parse YAML 'key: value' through yaml.safe_load",
+        expected="mapping key -> value",
+        observed="{'key': 'value'}",
+    )
 
 
 def _lxml_parse() -> CheckOutcome:
@@ -563,8 +859,15 @@ def _lxml_parse() -> CheckOutcome:
         if root.tag != "selfcheck":
             return _warn("lxml parser returned an unexpected root", "capability_unavailable")
     except (ImportError, AttributeError, TypeError, ValueError, OSError) as err:
-        return _warn("lxml parser is unavailable", "capability_unavailable", observed=str(err))
-    return _pass("lxml parsed a minimal XML document")
+        # lxml imports/native loading and etree parsing expose these failures.
+        return _exception_diagnostic(
+            "WARN", "lxml parser is unavailable", "capability_unavailable", err
+        )
+    return _pass(
+        "parse b'<selfcheck />' through lxml.etree",
+        expected="root tag selfcheck",
+        observed="root tag selfcheck",
+    )
 
 
 def _markupsafe_backend() -> CheckOutcome:
@@ -574,8 +877,15 @@ def _markupsafe_backend() -> CheckOutcome:
         if str(escape("<selfcheck>")) != "&lt;selfcheck&gt;":
             return _warn("MarkupSafe returned an unexpected escape", "capability_unavailable")
     except (ImportError, AttributeError, TypeError, ValueError) as err:
-        return _warn("MarkupSafe is unavailable", "capability_unavailable", observed=str(err))
-    return _pass("MarkupSafe escaped a minimal value")
+        # MarkupSafe import and escape conversion expose these failures.
+        return _exception_diagnostic(
+            "WARN", "MarkupSafe is unavailable", "capability_unavailable", err
+        )
+    return _pass(
+        "escape '<selfcheck>' through MarkupSafe",
+        expected="&lt;selfcheck&gt;",
+        observed="&lt;selfcheck&gt;",
+    )
 
 
 def _charset_normalizer_backend() -> CheckOutcome:
@@ -586,8 +896,15 @@ def _charset_normalizer_backend() -> CheckOutcome:
         if match is None:
             return _warn("charset-normalizer found no encoding", "capability_unavailable")
     except (ImportError, AttributeError, TypeError, ValueError) as err:
-        return _warn("charset-normalizer is unavailable", "capability_unavailable", observed=str(err))
-    return _pass("charset-normalizer detected a byte encoding")
+        # charset-normalizer import and byte matching expose these failures.
+        return _exception_diagnostic(
+            "WARN", "charset-normalizer is unavailable", "capability_unavailable", err
+        )
+    return _pass(
+        "detect the encoding of b'self-check' with charset-normalizer",
+        expected="one best encoding match",
+        observed="encoding={}".format(match.encoding),
+    )
 
 
 def _ssl_certifi() -> CheckOutcome:
@@ -600,94 +917,276 @@ def _ssl_certifi() -> CheckOutcome:
         path = certifi.where()
         return _path_probe(Path(path), "certifi CA bundle", required=False)
     except (OSError, AttributeError, TypeError, ValueError) as err:
-        return _warn("certifi CA bundle is unavailable", "capability_unavailable", observed=str(err))
+        # certifi.where and filesystem validation expose these failures.
+        return _exception_diagnostic(
+            "WARN", "certifi CA bundle is unavailable", "capability_unavailable", err
+        )
 
 
 def _core_dsl_parse() -> CheckOutcome:
-    outcome = _probe_import("pyfcstm.dsl.parse", "parse_state_machine_dsl")
-    if outcome.status != "PASS":
-        return outcome
     try:
+        from pyfcstm.dsl.node import StateMachineDSLProgram
         from pyfcstm.dsl.parse import parse_state_machine_dsl
 
-        parse_state_machine_dsl("state Root;")
-    except (AttributeError, TypeError, ValueError) as err:
-        return _fail("DSL parser probe failed", "dsl_parse_failed", observed=str(err))
-    return _pass("DSL parser accepts a minimal state machine")
+        program = parse_state_machine_dsl(_FUNCTION_DSL)
+        rendered = str(program)
+        if not isinstance(program, StateMachineDSLProgram):
+            return _fail(
+                "DSL parser returned an unexpected AST type",
+                "dsl_parse_failed",
+                expected="StateMachineDSLProgram",
+                observed=type(program).__name__,
+            )
+        required_fragments = ("def int counter = 0;", "state Idle", "Idle -> Done :: Go")
+        missing = [fragment for fragment in required_fragments if fragment not in rendered]
+        if missing:
+            return _fail(
+                "DSL AST is missing expected declarations",
+                "dsl_parse_failed",
+                expected=repr(required_fragments),
+                observed="missing={}".format(repr(missing)),
+            )
+    except (ImportError, AttributeError, TypeError, ValueError) as err:
+        # Imports expose the public parser; parser/type/value errors indicate a broken probe path.
+        return _exception_diagnostic("FAIL", "DSL parser probe failed", "dsl_parse_failed", err)
+    return _pass(
+        "parse representative FCSTM text into its typed AST",
+        expected="StateMachineDSLProgram with counter, Idle, Done and Go",
+        observed="{} characters of canonical DSL".format(len(rendered)),
+    )
 
 
 def _core_model_build() -> CheckOutcome:
     try:
         from pyfcstm.model import StateMachine, load_state_machine_from_text
 
-        model = load_state_machine_from_text("state Root;")
+        model = load_state_machine_from_text(_FUNCTION_DSL)
         if not isinstance(model, StateMachine):
-            return _fail("model loader returned an unexpected type", "model_invalid")
+            return _fail(
+                "model loader returned an unexpected type",
+                "model_invalid",
+                expected="StateMachine",
+                observed=type(model).__name__,
+            )
+        state_paths = tuple(state.path for state in model.walk_states())
+        transitions = model.root_state.transitions
+        transition = transitions[1] if len(transitions) > 1 else None
+        valid = (
+            state_paths == (("Root",), ("Root", "Idle"), ("Root", "Done"))
+            and tuple(model.defines) == ("counter",)
+            and transition is not None
+            and transition.from_state == "Idle"
+            and transition.to_state == "Done"
+            and transition.event is not None
+            and transition.event.name == "Go"
+            and len(transition.effects) == 1
+        )
+        if not valid:
+            return _fail(
+                "model structure differs from the representative FCSTM input",
+                "model_invalid",
+                expected="Root.[Idle,Done], counter, Idle->Done::Go with one effect",
+                observed="paths={} vars={} transitions={}".format(
+                    state_paths, tuple(model.defines), len(transitions)
+                ),
+            )
     except (ImportError, AttributeError, TypeError, ValueError) as err:
-        return _fail("model build probe failed", "model_build_failed", observed=str(err))
-    return _pass("model builds from DSL text")
+        # Imports expose the public model loader; malformed model data raises the other classes.
+        return _exception_diagnostic("FAIL", "model build probe failed", "model_build_failed", err)
+    return _pass(
+        "load FCSTM text into a usable StateMachine",
+        expected="3 states, 1 variable and Idle->Done::Go",
+        observed="paths={} counter=0 transition_effects=1".format(state_paths),
+    )
 
 
 def _core_model_roundtrip() -> CheckOutcome:
     try:
         from pyfcstm.model import load_state_machine_from_text, parse_dsl_node_to_state_machine
 
-        model = load_state_machine_from_text("state Root;")
+        model = load_state_machine_from_text(_FUNCTION_DSL)
+        canonical_dsl = str(model.to_ast_node())
         rebuilt = parse_dsl_node_to_state_machine(model.to_ast_node())
-        if not getattr(rebuilt, "root_state", None) or rebuilt.root_state.name != model.root_state.name:
-            return _fail("model roundtrip has no root state", "model_invalid")
+        plantuml = rebuilt.to_plantuml()
+        expected_paths = tuple(state.path for state in model.walk_states())
+        rebuilt_paths = tuple(state.path for state in rebuilt.walk_states())
+        if (
+            rebuilt_paths != expected_paths
+            or "Idle -> Done :: Go" not in canonical_dsl
+            or "@startuml" not in plantuml
+            or "root__idle --> root__done" not in plantuml
+        ):
+            return _fail(
+                "model roundtrip lost DSL or PlantUML structure",
+                "model_invalid",
+                expected="same state paths plus Idle->Done in DSL and PlantUML",
+                observed="paths={} dsl_transition={} plantuml_transition={}".format(
+                    rebuilt_paths,
+                    "Idle -> Done :: Go" in canonical_dsl,
+                    "root__idle --> root__done" in plantuml,
+                ),
+            )
     except (ImportError, AttributeError, TypeError, ValueError) as err:
-        return _fail("model roundtrip probe failed", "model_roundtrip_failed", observed=str(err))
-    return _pass("model root state is available")
+        # Public model conversion can fail through imports, attributes, invalid types, or values.
+        return _exception_diagnostic(
+            "FAIL", "model roundtrip probe failed", "model_roundtrip_failed", err
+        )
+    return _pass(
+        "roundtrip model through AST, DSL and PlantUML",
+        expected="state paths preserved and Idle->Done rendered twice",
+        observed="paths={} dsl_chars={} plantuml_chars={}".format(
+            rebuilt_paths, len(canonical_dsl), len(plantuml)
+        ),
+    )
 
 
 def _render_expr() -> CheckOutcome:
     try:
-        from pyfcstm.model import Integer
+        from pyfcstm.dsl import BinaryOp, Integer, Name
         from pyfcstm.render import render_expr_node
 
-        rendered = render_expr_node(Integer(1), lang_style="python")
-        if not rendered:
-            return _fail("expression renderer returned empty output", "render_failed")
+        rendered = render_expr_node(
+            BinaryOp(Name("counter"), "+", Integer("1")), lang_style="python"
+        )
+        if rendered != "counter + 1":
+            return _fail(
+                "expression renderer returned unexpected output",
+                "render_failed",
+                expected="counter + 1",
+                observed=rendered,
+            )
     except (ImportError, AttributeError, TypeError, ValueError) as err:
-        return _fail("expression renderer probe failed", "render_failed", observed=str(err))
-    return _pass("expression renderer returned output", observed=str(rendered))
+        # Public rendering can fail through imports or invalid AST/type/value handling.
+        return _exception_diagnostic("FAIL", "expression renderer probe failed", "render_failed", err)
+    return _pass(
+        "render BinaryOp(counter + 1) with the Python expression style",
+        expected="counter + 1",
+        observed=rendered,
+    )
 
 
 def _render_statement() -> CheckOutcome:
     try:
-        from pyfcstm.model import Integer, Operation
+        from pyfcstm.dsl import BinaryOp, Integer, Name, OperationAssignment
         from pyfcstm.render import render_stmt_nodes
 
-        rendered = render_stmt_nodes([Operation("counter", Integer(1))], lang_style="python")
-        if "counter" not in rendered:
-            return _fail("statement renderer returned unexpected output", "render_failed")
+        statement = OperationAssignment(
+            "counter", BinaryOp(Name("counter"), "+", Integer("1"))
+        )
+        rendered = render_stmt_nodes([statement], lang_style="python")
+        if rendered != "counter = counter + 1":
+            return _fail(
+                "statement renderer returned unexpected output",
+                "render_failed",
+                expected="counter = counter + 1",
+                observed=rendered,
+            )
     except (ImportError, AttributeError, TypeError, ValueError) as err:
-        return _fail("statement rendering environment failed", "render_failed", observed=str(err))
-    return _pass("statement rendering environment is available")
+        # Public statement rendering can fail through imports or invalid AST/type/value handling.
+        return _exception_diagnostic(
+            "FAIL", "statement rendering environment failed", "render_failed", err
+        )
+    return _pass(
+        "render counter assignment with the Python statement style",
+        expected="counter = counter + 1",
+        observed=rendered,
+    )
 
 
 def _template_python() -> CheckOutcome:
     try:
-        from pyfcstm.template import has_template
+        import runpy
 
-        if not has_template("python"):
-            return _fail("python built-in template is missing", "template_missing")
-    except (OSError, ValueError, KeyError, TypeError) as err:
-        return _fail("python template catalog probe failed", "template_invalid", observed=str(err))
-    return _pass("python built-in template is registered")
+        from pyfcstm.model import load_state_machine_from_text
+        from pyfcstm.render import StateMachineCodeRenderer
+        from pyfcstm.template import extract_template
+
+        with tempfile.TemporaryDirectory(prefix="pyfcstm-template-python-") as directory:
+            template_dir = extract_template("python", str(Path(directory) / "template"))
+            output_dir = Path(directory) / "generated"
+            StateMachineCodeRenderer(template_dir).render(
+                load_state_machine_from_text(_FUNCTION_DSL),
+                str(output_dir),
+                clear_previous_directory=True,
+            )
+            machine_file = output_dir / "machine.py"
+            namespace = runpy.run_path(str(machine_file))
+            machine_class = namespace.get("RootMachine")
+            if not isinstance(machine_class, type):
+                return _fail(
+                    "generated Python runtime class is missing",
+                    "template_invalid",
+                    expected="RootMachine class",
+                    observed=type(machine_class).__name__,
+                )
+            runtime = machine_class()
+            runtime.cycle()
+            runtime.cycle(["Root.Idle.Go"])
+            observed = "state={} counter={}".format(
+                ".".join(runtime.current_state_path), runtime.vars.get("counter")
+            )
+            if runtime.current_state_path != ("Root", "Done") or runtime.vars.get("counter") != 1:
+                return _fail(
+                    "generated Python runtime produced unexpected behavior",
+                    "template_invalid",
+                    expected="state=Root.Done counter=1",
+                    observed=observed,
+                )
+    except (ImportError, OSError, ValueError, KeyError, TypeError, RuntimeError) as err:
+        # Template extraction, rendering, import, and runtime execution expose these failures.
+        return _exception_diagnostic(
+            "FAIL", "python template runtime probe failed", "template_invalid", err
+        )
+    return _pass(
+        "extract, render, import and execute the built-in Python template",
+        expected="Go moves Root.Idle to Root.Done and counter 0->1",
+        observed=observed,
+    )
 
 
 def _template_catalog() -> CheckOutcome:
     try:
-        from pyfcstm.template import list_templates
+        from pyfcstm.model import load_state_machine_from_text
+        from pyfcstm.render import StateMachineCodeRenderer
+        from pyfcstm.template import extract_template, list_templates
 
         names = list_templates()
         if not names:
             return _fail("built-in template catalog is empty", "template_missing")
-    except (OSError, ValueError, KeyError, TypeError) as err:
-        return _fail("built-in template catalog probe failed", "template_invalid", observed=str(err))
-    return _pass("built-in template catalog is available", observed=repr(names))
+        model = load_state_machine_from_text("state Root;")
+        generated = {}
+        with tempfile.TemporaryDirectory(prefix="pyfcstm-template-catalog-") as directory:
+            for name in names:
+                template_dir = extract_template(
+                    name, str(Path(directory) / "templates" / name)
+                )
+                output_dir = Path(directory) / "outputs" / name
+                StateMachineCodeRenderer(template_dir).render(
+                    model, str(output_dir), clear_previous_directory=True
+                )
+                files = tuple(
+                    path.name
+                    for path in output_dir.rglob("*")
+                    if path.is_file() and path.stat().st_size > 0
+                )
+                if not files:
+                    return _fail(
+                        "built-in template rendered no non-empty files",
+                        "template_invalid",
+                        expected="at least one non-empty output file",
+                        observed="template={}".format(name),
+                    )
+                generated[name] = len(files)
+    except (ImportError, OSError, ValueError, KeyError, TypeError) as err:
+        # Catalog loading, extraction, renderer configuration, and filesystem work can fail here.
+        return _exception_diagnostic(
+            "FAIL", "built-in template catalog probe failed", "template_invalid", err
+        )
+    return _pass(
+        "extract and render every built-in template",
+        expected="non-empty outputs for every catalog entry",
+        observed=repr(generated),
+    )
 
 
 def _simulate_cycle() -> CheckOutcome:
@@ -695,39 +1194,126 @@ def _simulate_cycle() -> CheckOutcome:
         from pyfcstm.model import load_state_machine_from_text
         from pyfcstm.simulate import SimulationRuntime
 
-        runtime = SimulationRuntime(load_state_machine_from_text("state Root;"))
+        runtime = SimulationRuntime(load_state_machine_from_text(_FUNCTION_DSL))
         runtime.cycle()
+        initial = (runtime.current_state.path, dict(runtime.vars))
+        runtime.cycle(["Root.Idle.Go"])
+        observed = "initial={}/{} final={}/{}".format(
+            ".".join(initial[0]),
+            initial[1].get("counter"),
+            ".".join(runtime.current_state.path),
+            runtime.vars.get("counter"),
+        )
+        if initial != (("Root", "Idle"), {"counter": 0}) or (
+            runtime.current_state.path != ("Root", "Done")
+            or runtime.vars.get("counter") != 1
+        ):
+            return _fail(
+                "simulation runtime produced unexpected state or variables",
+                "simulation_failed",
+                expected="Root.Idle/0 -> Go -> Root.Done/1",
+                observed=observed,
+            )
     except (ImportError, AttributeError, TypeError, ValueError, RuntimeError) as err:
-        return _fail("simulation cycle probe failed", "simulation_failed", observed=str(err))
-    return _pass("simulation runtime completed one cycle")
+        # Runtime construction and cycle execution expose the documented failure classes.
+        return _exception_diagnostic(
+            "FAIL", "simulation cycle probe failed", "simulation_failed", err
+        )
+    return _pass(
+        "initialize, deliver Go, and observe state plus variables",
+        expected="Root.Idle/0 -> Root.Done/1",
+        observed=observed,
+    )
 
 
 def _solver_translation() -> CheckOutcome:
     try:
-        from pyfcstm.model import Integer
-        from pyfcstm.solver import expr_to_z3
+        from pyfcstm.model import BinaryOp, Integer, Variable
+        from pyfcstm.solver import expr_to_z3, solve
         import z3
 
-        expr_to_z3(Integer(1), {})
-        z3.Int("selfcheck_translation")
+        x = z3.Int("x")
+        expression = BinaryOp(x=Variable("x"), op="+", y=Integer(5))
+        translated = expr_to_z3(expression, {"x": x})
+        result = solve([translated == 10], max_solutions=1)
+        observed = "status={} x={}".format(
+            result.status,
+            result.solutions[0].get("x") if result.solutions else None,
+        )
+        if result.status != "sat" or not result.solutions or result.solutions[0].get("x") != 5:
+            return _fail(
+                "translated solver expression produced an unexpected model",
+                "solver_translation_failed",
+                expected="status=sat x=5",
+                observed=observed,
+            )
     except (ImportError, AttributeError, TypeError, ValueError, OSError) as err:
-        return _fail("solver translation probe failed", "solver_translation_failed", observed=str(err))
-    return _pass("solver expression translation is available")
+        # Public solver imports, translation, and native Z3 calls expose these failures.
+        return _exception_diagnostic(
+            "FAIL", "solver translation probe failed", "solver_translation_failed", err
+        )
+    return _pass(
+        "translate x + 5 and solve translated == 10",
+        expected="status=sat x=5",
+        observed=observed,
+    )
 
 
 def _verify_solve() -> CheckOutcome:
     try:
+        from click.testing import CliRunner
+        from pyfcstm.entry.cli import cli
         from pyfcstm.model import load_state_machine_from_text
-        from pyfcstm.verify import REGISTRY, run_inspect_algorithms
+        from pyfcstm.verify import run_inspect_algorithms
 
-        if not REGISTRY:
-            return _fail("verify algorithm registry is empty", "verify_registry_empty")
-        results = run_inspect_algorithms(load_state_machine_from_text("state Root;"))
-        if not results:
-            return _fail("verify execution returned no results", "verify_failed")
-    except (ImportError, AttributeError, TypeError, ValueError) as err:
-        return _fail("verify registry probe failed", "verify_failed", observed=str(err))
-    return _pass("verify algorithm registry is available")
+        results = run_inspect_algorithms(
+            load_state_machine_from_text("state Root;"),
+            max_complexity_tier="smt_linear",
+        )
+        kinds = {result.algorithm_name: result.result_kind for result in results}
+        expected_kinds = {
+            "topological_reachable_set": "sat",
+            "composite_init_guards_incomplete": "unsat",
+        }
+        if any(kinds.get(name) != kind for name, kind in expected_kinds.items()):
+            return _fail(
+                "verify algorithms returned unexpected SAT/UNSAT results",
+                "verify_failed",
+                expected=repr(expected_kinds),
+                observed=repr({name: kinds.get(name) for name in expected_kinds}),
+            )
+        with tempfile.TemporaryDirectory(prefix="pyfcstm-cli-inspect-") as directory:
+            source = Path(directory) / "machine.fcstm"
+            source.write_text("state Root;\n", encoding="utf-8")
+            arguments = [
+                "inspect",
+                "-i",
+                str(source),
+                "--format",
+                "json",
+                "--enable-verify",
+                "--max-complexity-tier",
+                "smt_linear",
+            ]
+            cli_result = CliRunner().invoke(cli, arguments)
+            if cli_result.exit_code != 0:
+                return _click_failure(arguments, cli_result)
+            inspect_payload = json.loads(cli_result.output)
+            if inspect_payload.get("root_state_path") != "Root":
+                return _fail(
+                    "CLI inspect returned an unexpected report",
+                    "cli_failed",
+                    expected="root_state_path=Root",
+                    observed=repr(inspect_payload.get("root_state_path")),
+                )
+    except (ImportError, OSError, AttributeError, TypeError, ValueError) as err:
+        # Verify/Click imports, filesystem access, JSON parsing, and typed results fail here.
+        return _exception_diagnostic("FAIL", "verify and inspect probe failed", "verify_failed", err)
+    return _pass(
+        "run verify SAT/UNSAT algorithms and the inspect CLI",
+        expected=repr(expected_kinds),
+        observed="{}; inspect root=Root".format(repr(expected_kinds)),
+    )
 
 
 def _cli_help() -> CheckOutcome:
@@ -735,12 +1321,28 @@ def _cli_help() -> CheckOutcome:
         from click.testing import CliRunner
         from pyfcstm.entry.cli import cli
 
-        result = CliRunner().invoke(cli, ["--help"])
+        arguments = ["--help"]
+        result = CliRunner().invoke(cli, arguments)
     except (ImportError, AttributeError, TypeError, ValueError) as err:
-        return _fail("CLI help probe failed", "cli_failed", observed=str(err))
+        # Click imports and command construction expose these documented failures.
+        return _exception_diagnostic("FAIL", "CLI help probe failed", "cli_failed", err)
     if result.exit_code != 0:
-        return _fail("CLI help returned a non-zero status", "cli_failed", observed=result.output)
-    return _pass("CLI help returned successfully")
+        return _click_failure(arguments, result)
+    commands = ("bmc", "generate", "inspect", "plantuml", "simulate", "visualize")
+    missing = [command for command in commands if "  {} ".format(command) not in result.output]
+    if missing:
+        return _fail(
+            "CLI help is missing expected top-level commands",
+            "cli_failed",
+            expected=repr(commands),
+            observed="missing={}".format(repr(missing)),
+            evidence=result.output,
+        )
+    return _pass(
+        "load CLI help and enumerate every top-level command",
+        expected=repr(commands),
+        observed="all 6 commands registered",
+    )
 
 
 def _cli_generate() -> CheckOutcome:
@@ -752,26 +1354,38 @@ def _cli_generate() -> CheckOutcome:
             root = Path(directory)
             source = root / "machine.fcstm"
             output = root / "generated"
-            source.write_text("state Root;\n", encoding="utf-8")
-            result = CliRunner().invoke(
-                cli,
-                [
-                    "generate",
-                    "-i",
-                    str(source),
-                    "--template",
-                    "python",
-                    "-o",
-                    str(output),
-                ],
-            )
+            source.write_text(_FUNCTION_DSL, encoding="utf-8")
+            arguments = [
+                "generate",
+                "-i",
+                str(source),
+                "--template",
+                "python",
+                "-o",
+                str(output),
+            ]
+            result = CliRunner().invoke(cli, arguments)
             if result.exit_code != 0:
-                return _fail("CLI generate returned a non-zero status", "cli_failed", observed=result.output)
-            if not (output / "machine.py").is_file():
-                return _fail("CLI generate produced no machine.py", "cli_failed")
+                return _click_failure(arguments, result)
+            machine_file = output / "machine.py"
+            if not machine_file.is_file() or "class RootMachine" not in machine_file.read_text(
+                encoding="utf-8"
+            ):
+                return _fail(
+                    "CLI generate produced no usable machine.py",
+                    "cli_failed",
+                    expected="non-empty machine.py containing RootMachine",
+                    observed=str(machine_file),
+                )
+            generated_size = machine_file.stat().st_size
     except (ImportError, OSError, AttributeError, TypeError, ValueError) as err:
-        return _fail("CLI generate probe failed", "cli_failed", observed=str(err))
-    return _pass("CLI generate produced machine.py")
+        # Click imports, temporary files, generation, and output reads expose these failures.
+        return _exception_diagnostic("FAIL", "CLI generate probe failed", "cli_failed", err)
+    return _pass(
+        "run CLI generate with the built-in Python template",
+        expected="machine.py containing RootMachine",
+        observed="generated {} bytes".format(generated_size),
+    )
 
 
 def _cli_simulate() -> CheckOutcome:
@@ -781,16 +1395,33 @@ def _cli_simulate() -> CheckOutcome:
 
         with tempfile.TemporaryDirectory(prefix="pyfcstm-cli-") as directory:
             source = Path(directory) / "machine.fcstm"
-            source.write_text("state Root;\n", encoding="utf-8")
-            result = CliRunner().invoke(
-                cli,
-                ["simulate", "-i", str(source), "-e", "cycle; current", "--no-color"],
-            )
+            source.write_text(_FUNCTION_DSL, encoding="utf-8")
+            arguments = [
+                "simulate",
+                "-i",
+                str(source),
+                "-e",
+                "cycle; cycle Root.Idle.Go; current",
+                "--no-color",
+            ]
+            result = CliRunner().invoke(cli, arguments)
             if result.exit_code != 0:
-                return _fail("CLI simulate returned a non-zero status", "cli_failed", observed=result.output)
+                return _click_failure(arguments, result)
+            if "Current State: Root.Done" not in result.output or "counter = 1" not in result.output:
+                return _fail(
+                    "CLI simulate returned unexpected state or variables",
+                    "cli_failed",
+                    expected="Current State: Root.Done and counter = 1",
+                    observed=result.output,
+                )
     except (ImportError, OSError, AttributeError, TypeError, ValueError) as err:
-        return _fail("CLI simulate probe failed", "cli_failed", observed=str(err))
-    return _pass("CLI simulate completed a batch cycle")
+        # Click imports, temporary files, and batch simulation expose these failures.
+        return _exception_diagnostic("FAIL", "CLI simulate probe failed", "cli_failed", err)
+    return _pass(
+        "run CLI batch simulation through the Go transition",
+        expected="Root.Done with counter=1",
+        observed="Current State: Root.Done; counter = 1",
+    )
 
 
 def _cli_plantuml() -> CheckOutcome:
@@ -800,34 +1431,71 @@ def _cli_plantuml() -> CheckOutcome:
 
         with tempfile.TemporaryDirectory(prefix="pyfcstm-cli-") as directory:
             source = Path(directory) / "machine.fcstm"
-            source.write_text("state Root;\n", encoding="utf-8")
-            result = CliRunner().invoke(cli, ["plantuml", "-i", str(source)])
+            source.write_text(_FUNCTION_DSL, encoding="utf-8")
+            arguments = ["plantuml", "-i", str(source)]
+            result = CliRunner().invoke(cli, arguments)
             if result.exit_code != 0:
-                return _fail("CLI plantuml returned a non-zero status", "cli_failed", observed=result.output)
-            if "@startuml" not in result.output:
-                return _fail("CLI plantuml returned no PlantUML text", "cli_failed")
+                return _click_failure(arguments, result)
+            required = ("@startuml", "root__idle --> root__done", "counter")
+            missing = [fragment for fragment in required if fragment not in result.output]
+            if missing:
+                return _fail(
+                    "CLI plantuml returned incomplete PlantUML text",
+                    "cli_failed",
+                    expected=repr(required),
+                    observed="missing={}".format(repr(missing)),
+                    evidence=result.output,
+                )
     except (ImportError, OSError, AttributeError, TypeError, ValueError) as err:
-        return _fail("CLI plantuml probe failed", "cli_failed", observed=str(err))
-    return _pass("CLI plantuml returned PlantUML text")
+        # Click imports, temporary files, and PlantUML text generation fail here.
+        return _exception_diagnostic("FAIL", "CLI plantuml probe failed", "cli_failed", err)
+    return _pass(
+        "run CLI PlantUML text generation without Java or a JAR",
+        expected="@startuml, Idle->Done and counter legend",
+        observed="{} characters".format(len(result.output)),
+    )
 
 
 def _bmc_query_parse() -> CheckOutcome:
     try:
+        from pyfcstm.bmc.query import BmcQuery
         from pyfcstm.bmc.parse import parse_bmc_query
 
-        query = parse_bmc_query('check reach <= 1: active("Root");')
-        if getattr(getattr(query, "property", None), "kind", None) != "reach":
-            return _fail("BMC query parser returned unexpected query", "bmc_parse_failed")
+        query = parse_bmc_query(_BMC_REACH_QUERY)
+        observed = "type={} kind={} bound={}".format(
+            type(query).__name__,
+            getattr(getattr(query, "property", None), "kind", None),
+            getattr(getattr(query, "property", None), "bound", None),
+        )
+        if (
+            not isinstance(query, BmcQuery)
+            or query.property.kind != "reach"
+            or query.property.bound != 1
+            or not str(query).endswith(_BMC_REACH_QUERY)
+        ):
+            return _fail(
+                "BMC query parser returned unexpected query",
+                "bmc_parse_failed",
+                expected="BmcQuery kind=reach bound=1 with canonical source",
+                observed=observed,
+            )
     except (ImportError, AttributeError, TypeError, ValueError) as err:
-        return _fail("BMC query parser probe failed", "bmc_parse_failed", observed=str(err))
-    return _pass("BMC query parser accepts a minimal query")
+        # Public BMC parser imports and query validation expose these failures.
+        return _exception_diagnostic("FAIL", "BMC query parser probe failed", "bmc_parse_failed", err)
+    return _pass(
+        "parse FBMCQ reach text into a typed query model",
+        expected="BmcQuery kind=reach bound=1",
+        observed=observed,
+    )
 
 
 def _bmc_prepare() -> CheckOutcome:
     """Compile a BMC formula while proving no solver is started."""
     try:
         import z3
+        from pyfcstm.bmc.parse import parse_bmc_query
         from pyfcstm.bmc.pipeline import compile_bmc_query
+        from pyfcstm.bmc.properties import BmcPropertyFormula
         from pyfcstm.model import load_state_machine_from_text
 
         calls = {"construct": 0, "check": 0}
@@ -848,32 +1516,56 @@ def _bmc_prepare() -> CheckOutcome:
         try:
             formula = compile_bmc_query(
                 load_state_machine_from_text("state Root;"),
-                'check reach <= 1: active("Root");',
+                parse_bmc_query(_BMC_REACH_QUERY),
             )
         finally:
             z3.Solver = original_solver
             if original_check is not None:
                 original_solver.check = original_check
-        if not hasattr(formula, "solve_formula"):
-            return _fail("BMC formula is not solve-ready", "bmc_prepare_failed")
-        if calls["construct"] or calls["check"]:
-            return _fail("BMC preparation started a solver", "bmc_prepare_solved")
+        if (
+            not isinstance(formula, BmcPropertyFormula)
+            or not hasattr(formula, "solve_formula")
+            or formula.kind != "reach"
+            or formula.polarity != "witness"
+        ):
+            return _fail(
+                "BMC formula is not the expected solve-ready type",
+                "bmc_prepare_failed",
+                expected="BmcPropertyFormula kind=reach polarity=witness",
+                observed="type={} kind={} polarity={}".format(
+                    type(formula).__name__,
+                    getattr(formula, "kind", None),
+                    getattr(formula, "polarity", None),
+                ),
+            )
     except (ImportError, AttributeError, TypeError, ValueError, RuntimeError) as err:
-        return _fail("BMC prepare probe failed", "bmc_prepare_failed", observed=str(err))
+        # Public BMC preparation and Z3 monitor setup expose these documented failures.
+        return _exception_diagnostic("FAIL", "BMC prepare probe failed", "bmc_prepare_failed", err)
     except AssertionError as err:
-        return _fail("BMC preparation started a solver", "bmc_prepare_solved", observed=str(err))
-    return _pass("BMC query compiles without solving")
+        # The local monitor raises only when preparation constructs or checks a solver.
+        return _exception_diagnostic(
+            "FAIL", "BMC preparation started a solver", "bmc_prepare_solved", err
+        )
+    return _pass(
+        "compile StateMachine + parsed BmcQuery without solving",
+        expected="BmcPropertyFormula reach/witness; Solver construct/check=0/0",
+        observed="type={} kind={} polarity={}; Solver construct/check=0/0".format(
+            type(formula).__name__, formula.kind, formula.polarity
+        ),
+    )
 
 
 def _bmc_solve() -> CheckOutcome:
     try:
+        from click.testing import CliRunner
+        from pyfcstm.entry.cli import cli
         from pyfcstm.bmc.pipeline import compile_bmc_query
         from pyfcstm.bmc.witness import solve_bmc_property
         from pyfcstm.model import load_state_machine_from_text
 
         formula = compile_bmc_query(
             load_state_machine_from_text("state Root;"),
-            'check reach <= 1: active("Root");',
+            _BMC_REACH_QUERY,
         )
         result = solve_bmc_property(formula)
         if (
@@ -893,13 +1585,13 @@ def _bmc_solve() -> CheckOutcome:
         terminated = solve_bmc_property(
             compile_bmc_query(
                 load_state_machine_from_text("state Root;"),
-                "check reach <= 1: terminated();",
+                _BMC_TERMINATED_QUERY,
             )
         )
         forbidden = solve_bmc_property(
             compile_bmc_query(
                 load_state_machine_from_text("state Root;"),
-                'check forbid <= 1: active("Root");',
+                _BMC_FORBID_QUERY,
             )
         )
         if (
@@ -910,49 +1602,164 @@ def _bmc_solve() -> CheckOutcome:
             or forbidden.property_satisfied is not False
             or forbidden.outcome != "property_violated"
         ):
-            return _fail("BMC polarity probe has unexpected result", "bmc_solve_failed")
+            return _fail(
+                "BMC polarity probe has unexpected result",
+                "bmc_solve_failed",
+                expected="reach active=sat/true; reach terminated=unsat/false; forbid active=sat/false",
+                observed="reach={}/{}/{} terminated={}/{}/{} forbid={}/{}/{}".format(
+                    result.status,
+                    result.property_satisfied,
+                    result.outcome,
+                    terminated.status,
+                    terminated.property_satisfied,
+                    terminated.outcome,
+                    forbidden.status,
+                    forbidden.property_satisfied,
+                    forbidden.outcome,
+                ),
+            )
+        with tempfile.TemporaryDirectory(prefix="pyfcstm-cli-bmc-") as directory:
+            model_file = Path(directory) / "machine.fcstm"
+            query_file = Path(directory) / "property.fbmcq"
+            model_file.write_text("state Root;\n", encoding="utf-8")
+            query_file.write_text(_BMC_REACH_QUERY + "\n", encoding="utf-8")
+            arguments = [
+                "bmc",
+                "-i",
+                str(model_file),
+                "-q",
+                str(query_file),
+                "--json",
+                "--color",
+                "never",
+            ]
+            cli_result = CliRunner().invoke(cli, arguments)
+            if cli_result.exit_code != 0:
+                return _click_failure(arguments, cli_result)
+            payload = json.loads(cli_result.output)
+            cli_solve = payload.get("result", {})
+            if (
+                payload.get("schema_version") != "bmc-cli/v1"
+                or cli_solve.get("status") != "sat"
+                or cli_solve.get("property_satisfied") is not True
+                or cli_solve.get("outcome") != "witness_found"
+            ):
+                return _fail(
+                    "BMC CLI returned an unexpected JSON result",
+                    "bmc_solve_failed",
+                    expected="bmc-cli/v1 sat/true/witness_found",
+                    observed=repr(
+                        {
+                            "schema_version": payload.get("schema_version"),
+                            "status": cli_solve.get("status"),
+                            "property_satisfied": cli_solve.get("property_satisfied"),
+                            "outcome": cli_solve.get("outcome"),
+                        }
+                    ),
+                )
     except (ImportError, AttributeError, TypeError, ValueError, RuntimeError) as err:
-        return _fail("BMC solve probe failed", "bmc_solve_failed", observed=str(err))
-    return _pass("BMC property solver returned a typed result")
+        # Public BMC/CLI imports, compilation, solving, replay, and JSON expose these failures.
+        return _exception_diagnostic("FAIL", "BMC solve probe failed", "bmc_solve_failed", err)
+    return _pass(
+        "solve three property polarities and run the BMC CLI",
+        expected="reach active=sat/true; terminated=unsat/false; forbid=sat/false",
+        observed="sat/true/witness; unsat/false/no_witness; sat/false/violated; CLI=sat/true",
+    )
 
 
 def _bmc_closure() -> CheckOutcome:
-    modules = ("pyfcstm.bmc.parse", "pyfcstm.bmc.pipeline", "pyfcstm.bmc.witness")
+    modules = (
+        "pyfcstm.bmc.binding",
+        "pyfcstm.bmc.domain",
+        "pyfcstm.bmc.engine",
+        "pyfcstm.bmc.parse",
+        "pyfcstm.bmc.pipeline",
+        "pyfcstm.bmc.properties",
+        "pyfcstm.bmc.relation",
+        "pyfcstm.bmc.witness",
+    )
     for module in modules:
         outcome = _probe_import(module)
         if outcome.status != "PASS":
             return outcome
-    return _pass("BMC module closure is importable")
+    return _pass(
+        "import the complete BMC lazy-module closure",
+        expected="8 binding-to-witness modules",
+        observed="8 modules imported",
+    )
 
 
 def _java() -> CheckOutcome:
     executable = shutil.which("java")
     if executable is None:
-        return _warn("Java executable is unavailable", "capability_unavailable")
+        return _warn(
+            "Java executable is unavailable",
+            "capability_unavailable",
+            expected="java executable on PATH",
+            observed="not found",
+            remediation="install a compatible JRE to enable local image rendering",
+        )
+    command = [executable, "-version"]
     try:
         completed = subprocess.run(
-            [executable, "-version"],
+            command,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             timeout=15.0,
         )
     except (OSError, subprocess.TimeoutExpired) as err:
-        return _warn("Java executable is unavailable", "capability_unavailable", observed=str(err))
+        # Process creation can fail and a damaged Java executable can hang.
+        return _exception_diagnostic(
+            "WARN",
+            "Java executable is unavailable",
+            "capability_unavailable",
+            err,
+            expected="java -version exits 0 within 15 seconds",
+            remediation="repair the configured JRE or remove the broken executable from PATH",
+            evidence_prefix=_process_evidence(
+                command,
+                stdout=getattr(err, "output", None),
+                stderr=getattr(err, "stderr", None),
+            ),
+        )
     if completed.returncode != 0:
         return _warn(
             "Java executable returned a non-zero status",
             "capability_unavailable",
+            expected="returncode=0",
             observed="returncode={}".format(completed.returncode),
+            evidence=_process_evidence(
+                command,
+                return_code=completed.returncode,
+                stdout=completed.stdout,
+                stderr=completed.stderr,
+            ),
+            remediation="repair the configured JRE or remove the broken executable from PATH",
         )
-    return _pass("Java executable is available", observed=executable)
+    version_output = _decode_process_output(completed.stdout + completed.stderr).strip()
+    return _pass(
+        "run java -version",
+        expected="returncode=0 and version output",
+        observed="{}; {}".format(executable, version_output or "no version text"),
+    )
 
 
 def _plantuml_jar() -> CheckOutcome:
     candidates = (_package_root() / "plantuml.jar", Path.cwd() / "plantuml.jar")
     for candidate in candidates:
         if candidate.is_file():
-            return _pass("PlantUML JAR is available", observed=str(candidate))
-    return _warn("PlantUML JAR is unavailable", "capability_unavailable")
+            return _pass(
+                "locate the optional PlantUML JAR",
+                expected="regular file",
+                observed="{} ({} bytes)".format(candidate, candidate.stat().st_size),
+            )
+    return _warn(
+        "PlantUML JAR is unavailable",
+        "capability_unavailable",
+        expected=repr([str(candidate) for candidate in candidates]),
+        observed="no candidate is a regular file",
+        remediation="set up plantuml.jar only when local image rendering is required",
+    )
 
 
 def _python_stack() -> CheckOutcome:
@@ -964,24 +1771,58 @@ def _visual_local_version() -> CheckOutcome:
     candidates = (_package_root() / "plantuml.jar", Path.cwd() / "plantuml.jar")
     jar = next((candidate for candidate in candidates if candidate.is_file()), None)
     if java is None or jar is None:
-        return _warn("local PlantUML version is unavailable", "capability_unavailable")
+        return _warn(
+            "local PlantUML version is unavailable",
+            "capability_unavailable",
+            expected="java executable and plantuml.jar",
+            observed="java={} jar={}".format(java, jar),
+            remediation="install Java and configure plantuml.jar for local rendering",
+        )
+    command = [java, "-jar", str(jar), "-version"]
     try:
         completed = subprocess.run(
-            [java, "-jar", str(jar), "-version"],
+            command,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             timeout=15.0,
         )
     except (OSError, subprocess.TimeoutExpired) as err:
-        return _warn(
+        # Process creation can fail and Java/JAR startup can exceed the deadline.
+        return _exception_diagnostic(
+            "WARN",
             "local PlantUML version is unavailable",
             "capability_unavailable",
-            observed="{}: {}".format(type(err).__name__, err),
+            err,
+            expected="PlantUML -version exits 0 within 15 seconds",
+            remediation="repair Java/plantuml.jar or use the optional remote renderer",
+            evidence_prefix=_process_evidence(
+                command,
+                stdout=getattr(err, "output", None),
+                stderr=getattr(err, "stderr", None),
+            ),
         )
     output = completed.stdout + completed.stderr
     if completed.returncode != 0 or not output.strip():
-        return _warn("local PlantUML version is unavailable", "capability_unavailable")
-    return _pass("local PlantUML version is available", observed=output.decode("utf-8", "backslashreplace").strip())
+        return _warn(
+            "local PlantUML version is unavailable",
+            "capability_unavailable",
+            expected="returncode=0 and non-empty version output",
+            observed="returncode={} output_bytes={}".format(
+                completed.returncode, len(output)
+            ),
+            evidence=_process_evidence(
+                command,
+                return_code=completed.returncode,
+                stdout=completed.stdout,
+                stderr=completed.stderr,
+            ),
+            remediation="repair Java/plantuml.jar or use the optional remote renderer",
+        )
+    return _pass(
+        "run PlantUML -version through Java",
+        expected="returncode=0 and non-empty version output",
+        observed=output.decode("utf-8", "backslashreplace").strip(),
+    )
 
 
 def _visual_local_render() -> CheckOutcome:
@@ -992,32 +1833,56 @@ def _visual_local_render() -> CheckOutcome:
         return _warn(
             "local image rendering requires optional Java/PlantUML",
             "capability_unavailable",
+            expected="java executable and plantuml.jar",
+            observed="java={} jar={}".format(java, jar),
+            remediation="install Java and configure plantuml.jar for local rendering",
         )
     source = b"@startuml\nAlice -> Bob\n@enduml\n"
+    command = [java, "-jar", str(jar), "-pipe", "-tpng"]
     try:
         completed = subprocess.run(
-            [java, "-jar", str(jar), "-pipe", "-tpng"],
+            command,
             input=source,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             timeout=15.0,
         )
     except (OSError, subprocess.TimeoutExpired) as err:
-        return _warn(
+        # Process creation can fail and image rendering can exceed the deadline.
+        return _exception_diagnostic(
+            "WARN",
             "local PlantUML rendering is unavailable",
             "capability_unavailable",
-            observed="{}: {}".format(type(err).__name__, err),
+            err,
+            expected="PNG bytes within 15 seconds",
+            remediation="repair Java/plantuml.jar or use the optional remote renderer",
+            evidence_prefix=_process_evidence(
+                command,
+                stdout=getattr(err, "output", None),
+                stderr=getattr(err, "stderr", None),
+            ),
         )
     if completed.returncode != 0 or not completed.stdout:
         return _warn(
             "local PlantUML rendering is unavailable",
             "capability_unavailable",
-            observed="returncode={} stderr={}".format(
-                completed.returncode,
-                completed.stderr.decode("utf-8", "backslashreplace"),
+            expected="returncode=0 and non-empty PNG stdout",
+            observed="returncode={} stdout_bytes={}".format(
+                completed.returncode, len(completed.stdout)
             ),
+            evidence=_process_evidence(
+                command,
+                return_code=completed.returncode,
+                stdout=completed.stdout,
+                stderr=completed.stderr,
+            ),
+            remediation="repair Java/plantuml.jar or use the optional remote renderer",
         )
-    return _pass("local PlantUML rendering returned image bytes", observed=str(len(completed.stdout)))
+    return _pass(
+        "render Alice -> Bob through local PlantUML -pipe -tpng",
+        expected="returncode=0 and non-empty PNG stdout",
+        observed="{} image bytes".format(len(completed.stdout)),
+    )
 
 
 def _visual_remote_tls() -> CheckOutcome:
@@ -1033,8 +1898,20 @@ def _visual_remote_tls() -> CheckOutcome:
             with context.wrap_socket(raw, server_hostname="www.plantuml.com") as tls:
                 observed = tls.version() or "TLS"
     except (AttributeError, OSError, ssl.SSLError, ValueError) as err:
-        return _warn("TLS context is unavailable", "capability_unavailable", observed=str(err))
-    return _pass("remote PlantUML TLS endpoint is reachable", observed=observed)
+        # Socket/TLS setup and certificate validation expose these failures.
+        return _exception_diagnostic(
+            "WARN",
+            "TLS context is unavailable",
+            "capability_unavailable",
+            err,
+            expected="TLS connection to www.plantuml.com:443",
+            remediation="check DNS, firewall, certificates, and the explicit --network opt-in",
+        )
+    return _pass(
+        "negotiate TLS with www.plantuml.com:443",
+        expected="validated TLS session",
+        observed=observed,
+    )
 
 
 def _visual_remote_render() -> CheckOutcome:
@@ -1052,8 +1929,20 @@ def _visual_remote_render() -> CheckOutcome:
         if not payload:
             return _warn("remote PlantUML response is empty", "capability_unavailable")
     except (OSError, ValueError, TypeError, UnicodeError) as err:
-        return _warn("remote PlantUML rendering is unavailable", "capability_unavailable", observed=str(err))
-    return _pass("remote PlantUML rendering endpoint returned data", observed=str(len(payload)))
+        # URL/network, response decoding, and payload validation expose these failures.
+        return _exception_diagnostic(
+            "WARN",
+            "remote PlantUML rendering is unavailable",
+            "capability_unavailable",
+            err,
+            expected="non-empty response from the fixed PlantUML text URL",
+            remediation="check network policy and the remote PlantUML service",
+        )
+    return _pass(
+        "request a fixed Alice -> Bob diagram from remote PlantUML",
+        expected="non-empty response within 10 seconds",
+        observed="{} response bytes".format(len(payload)),
+    )
 
 
 def _resource_random_user_agent() -> CheckOutcome:
@@ -1073,8 +1962,15 @@ def _resource_unidecode() -> CheckOutcome:
         if not all(observed):
             return _fail("Unidecode tables returned an empty mapping", "tables_invalid")
     except (ImportError, AttributeError, TypeError, ValueError) as err:
-        return _fail("Unidecode tables are unavailable", "tables_invalid", observed=str(err))
-    return _pass("Unidecode mapping tables are readable", observed=repr(observed))
+        # Unidecode import and dynamic mapping-table lookup expose these failures.
+        return _exception_diagnostic(
+            "FAIL", "Unidecode tables are unavailable", "tables_invalid", err
+        )
+    return _pass(
+        "transliterate samples from Latin, Cyrillic and CJK tables",
+        expected="three non-empty transliterations",
+        observed=repr(observed),
+    )
 
 
 def _make_probe_worker(check_id: str) -> Worker:
@@ -1166,6 +2062,7 @@ _VISUAL_IDS = frozenset(item for item in EXPECTED_CHECK_IDS if item.startswith("
 _OPTIONAL_IDS = frozenset(
     {
         "identity.source",
+        "identity.build_info_module",
         "identity.artifact",
         "resource.random_user_agent",
         "native.lxml.parse",

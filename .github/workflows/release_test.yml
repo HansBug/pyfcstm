@@ -61,6 +61,7 @@ jobs:
             echo 'artifact_kind=python-distributions'
             echo "full_commit=$GITHUB_SHA"
             echo 'dirty=0'
+            echo 'tag='
             echo 'platform=ubuntu-latest'
           } > dist/build-identity.txt
           python - <<'PY' > dist/artifact-sha256.txt
@@ -96,6 +97,13 @@ jobs:
           - 18080:8080
     timeout-minutes: 25
     steps:
+      - name: Prepare self-check evidence directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          reports="$RUNNER_TEMP/pyfcstm-wheel-reports"
+          mkdir -p "$reports"
+          printf 'job=fresh-wheel-linux\nstarted_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$reports/bootstrap.txt"
       - name: Set up Python 3.7
         uses: actions/setup-python@v6
         with:
@@ -151,6 +159,20 @@ jobs:
           identity="$RUNNER_TEMP/pyfcstm-package-artifact/build-identity.txt"
           digest_file="$RUNNER_TEMP/pyfcstm-package-artifact/artifact-sha256.txt"
           test -f "$identity" -a -f "$digest_file"
+          check_identity() {
+            local identity_file="$1"
+            shift
+            local expected count
+            for expected in "$@"; do
+              count=$(grep -Fxc "$expected" "$identity_file" || true)
+              test "$count" -eq 1
+            done
+          }
+          check_identity "$identity" \
+            'schema=pyfcstm-build-identity/v1' \
+            'artifact_kind=python-distributions' \
+            "full_commit=$GITHUB_SHA" \
+            'dirty=0' 'tag=' 'platform=ubuntu-latest'
           grep -F "full_commit=$GITHUB_SHA" "$identity"
           wheel_name=$(basename "$wheel")
           actual_digest=$(python - "$wheel" <<'PY'
@@ -208,6 +230,8 @@ jobs:
           test "$version_status" -eq 0
           test "$module_version_status" -eq 0
           test "$default_status" -eq 0
+          test "$visualize_status" -eq 0
+          test "$readiness_status" -eq 0
           grep -F "Commit: $GITHUB_SHA" "$reports/version.log"
       - name: Assert controlled PlantUML results
         env:
@@ -256,6 +280,13 @@ jobs:
             python-version: '3.8'
     timeout-minutes: 25
     steps:
+      - name: Prepare self-check evidence directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          reports="$RUNNER_TEMP/pyfcstm-wheel-reports"
+          mkdir -p "$reports"
+          printf 'job=fresh-wheel-nonlinux\nstarted_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$reports/bootstrap.txt"
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v6
         with:
@@ -301,7 +332,7 @@ jobs:
           java -jar "$RUNNER_TEMP/plantuml.jar" -picoweb:18080:127.0.0.1 > "$log" 2>&1 &
           echo $! > "$RUNNER_TEMP/plantuml-service.pid"
           for attempt in $(seq 1 30); do
-            if curl --fail --silent --show-error --max-time 2 "${PLANTUML_HOST%/}/" > "$RUNNER_TEMP/plantuml-readiness.txt" 2>&1; then
+            if curl --fail --location --silent --show-error --max-time 2 "${PLANTUML_HOST%/}/" > "$RUNNER_TEMP/plantuml-readiness.txt" 2>&1; then
               exit 0
             fi
             sleep 1
@@ -328,6 +359,20 @@ jobs:
           identity=$(find "$RUNNER_TEMP/pyfcstm-package-artifact" -type f -name build-identity.txt -print -quit)
           digest_file=$(find "$RUNNER_TEMP/pyfcstm-package-artifact" -type f -name artifact-sha256.txt -print -quit)
           test -n "$identity" -a -n "$digest_file"
+          check_identity() {
+            local identity_file="$1"
+            shift
+            local expected count
+            for expected in "$@"; do
+              count=$(grep -Fxc "$expected" "$identity_file" || true)
+              test "$count" -eq 1
+            done
+          }
+          check_identity "$identity" \
+            'schema=pyfcstm-build-identity/v1' \
+            'artifact_kind=python-distributions' \
+            "full_commit=$GITHUB_SHA" \
+            'dirty=0' 'tag=' 'platform=ubuntu-latest'
           grep -F "full_commit=$GITHUB_SHA" "$identity"
           wheel_name=$(basename "$wheel")
           expected_digest=$(awk -v file="$wheel_name" '$3 == "dist/" file || $3 == file {print $1}' "$digest_file")
@@ -433,6 +478,13 @@ jobs:
           - 18080:8080
     timeout-minutes: 25
     steps:
+      - name: Prepare self-check evidence directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          reports="$RUNNER_TEMP/pyfcstm-sdist-reports"
+          mkdir -p "$reports"
+          printf 'job=fresh-sdist\nstarted_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$reports/bootstrap.txt"
       - name: Set up Python 3.7
         uses: actions/setup-python@v6
         with:
@@ -488,6 +540,20 @@ jobs:
           identity=$(find "$RUNNER_TEMP/pyfcstm-package-artifact" -type f -name build-identity.txt -print -quit)
           digest_file=$(find "$RUNNER_TEMP/pyfcstm-package-artifact" -type f -name artifact-sha256.txt -print -quit)
           test -n "$identity" -a -n "$digest_file"
+          check_identity() {
+            local identity_file="$1"
+            shift
+            local expected count
+            for expected in "$@"; do
+              count=$(grep -Fxc "$expected" "$identity_file" || true)
+              test "$count" -eq 1
+            done
+          }
+          check_identity "$identity" \
+            'schema=pyfcstm-build-identity/v1' \
+            'artifact_kind=python-distributions' \
+            "full_commit=$GITHUB_SHA" \
+            'dirty=0' 'tag=' 'platform=ubuntu-latest'
           grep -F "full_commit=$GITHUB_SHA" "$identity"
           sdist_name=$(basename "$sdist")
           actual_digest=$(python - "$sdist" <<'PY'
@@ -545,6 +611,8 @@ jobs:
           test "$version_status" -eq 0
           test "$module_version_status" -eq 0
           test "$default_status" -eq 0
+          test "$visualize_status" -eq 0
+          test "$readiness_status" -eq 0
           grep -F "Commit: $GITHUB_SHA" "$reports/version.log"
       - name: Assert controlled PlantUML results
         env:
@@ -878,6 +946,7 @@ jobs:
             echo 'artifact_kind=standalone'
             echo "full_commit=$GITHUB_SHA"
             echo 'dirty=0'
+            echo 'tag='
             echo "platform=${{ matrix.os }}"
           } > dist/build-identity.txt
           python - "dist/${ZIP_NAME}.zip" > dist/artifact-sha256.txt <<'PY'
@@ -922,6 +991,13 @@ jobs:
           - macos-14
     timeout-minutes: 25
     steps:
+      - name: Prepare self-check evidence directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          reports="$RUNNER_TEMP/pyfcstm-release-test-cli-reports"
+          mkdir -p "$reports"
+          printf 'job=fresh-release-cli\nstarted_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$reports/bootstrap.txt"
       - name: Set up Java runtime
         uses: actions/setup-java@v4
         with:
@@ -963,7 +1039,7 @@ jobs:
           java -jar "$RUNNER_TEMP/plantuml.jar" -picoweb:18080:127.0.0.1 > "$log" 2>&1 &
           echo $! > "$RUNNER_TEMP/plantuml-service.pid"
           for attempt in $(seq 1 30); do
-            if curl --fail --silent --show-error --max-time 2 "${PLANTUML_HOST%/}/" > "$RUNNER_TEMP/plantuml-readiness.txt" 2>&1; then
+            if curl --fail --location --silent --show-error --max-time 2 "${PLANTUML_HOST%/}/" > "$RUNNER_TEMP/plantuml-readiness.txt" 2>&1; then
               exit 0
             fi
             sleep 1
@@ -985,6 +1061,20 @@ jobs:
           identity="$RUNNER_TEMP/pyfcstm-release-test-cli/build-identity.txt"
           digest_file="$RUNNER_TEMP/pyfcstm-release-test-cli/artifact-sha256.txt"
           test -n "$archive" -a -f "$identity" -a -f "$digest_file"
+          check_identity() {
+            local identity_file="$1"
+            shift
+            local expected count
+            for expected in "$@"; do
+              count=$(grep -Fxc "$expected" "$identity_file" || true)
+              test "$count" -eq 1
+            done
+          }
+          check_identity "$identity" \
+            'schema=pyfcstm-build-identity/v1' \
+            'artifact_kind=standalone' \
+            "full_commit=$GITHUB_SHA" \
+            'dirty=0' 'tag=' "platform=${{ matrix.os }}"
           grep -F "full_commit=$GITHUB_SHA" "$identity"
           archive_name=$(basename "$archive")
           expected_digest=$(awk -v file="$archive_name" '$3 == "dist/" file || $3 == file {print $1}' "$digest_file")

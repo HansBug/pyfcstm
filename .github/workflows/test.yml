@@ -866,6 +866,7 @@ jobs:
             echo 'artifact_kind=standalone'
             echo "full_commit=$GITHUB_SHA"
             echo 'dirty=0'
+            echo 'tag='
             echo "platform=${{ matrix.os }}"
           } > dist/build-identity.txt
           python - "dist/${ZIP_NAME}.zip" > dist/artifact-sha256.txt <<'PY'
@@ -907,6 +908,13 @@ jobs:
           - 18080:8080
     timeout-minutes: 20
     steps:
+      - name: Prepare self-check evidence directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          reports="$RUNNER_TEMP/pyfcstm-selfcheck-reports"
+          mkdir -p "$reports"
+          printf 'job=fresh-cli-linux\nstarted_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$reports/bootstrap.txt"
       - name: Set up Java runtime
         uses: actions/setup-java@v4
         with:
@@ -954,6 +962,20 @@ jobs:
           identity=$(find "$RUNNER_TEMP/pyfcstm-cli-artifact" -maxdepth 1 -name build-identity.txt -print -quit)
           digest_file=$(find "$RUNNER_TEMP/pyfcstm-cli-artifact" -maxdepth 1 -name artifact-sha256.txt -print -quit)
           test -n "$identity" -a -n "$digest_file"
+          check_identity() {
+            local identity_file="$1"
+            shift
+            local expected count
+            for expected in "$@"; do
+              count=$(grep -Fxc "$expected" "$identity_file" || true)
+              test "$count" -eq 1
+            done
+          }
+          check_identity "$identity" \
+            'schema=pyfcstm-build-identity/v1' \
+            'artifact_kind=standalone' \
+            "full_commit=$GITHUB_SHA" \
+            'dirty=0' 'tag=' 'platform=ubuntu-22.04'
           grep -F "full_commit=$GITHUB_SHA" "$identity"
           archive_name=$(basename "$archive")
           expected_digest=$(awk -v file="$archive_name" '$3 == "dist/" file || $3 == file {print $1}' "$digest_file")
@@ -1056,6 +1078,13 @@ jobs:
             exe: pyfcstm
     timeout-minutes: 20
     steps:
+      - name: Prepare self-check evidence directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          reports="$RUNNER_TEMP/pyfcstm-selfcheck-reports"
+          mkdir -p "$reports"
+          printf 'job=fresh-cli-nonlinux\nstarted_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$reports/bootstrap.txt"
       - name: Set up Java runtime
         uses: actions/setup-java@v4
         with:
@@ -1097,7 +1126,7 @@ jobs:
           java -jar "$RUNNER_TEMP/plantuml.jar" -picoweb:18080:127.0.0.1 > "$log" 2>&1 &
           echo $! > "$RUNNER_TEMP/plantuml-service.pid"
           for attempt in $(seq 1 30); do
-            if curl --fail --silent --show-error --max-time 2 "${PLANTUML_HOST%/}/" > "$RUNNER_TEMP/plantuml-readiness.txt" 2>&1; then
+            if curl --fail --location --silent --show-error --max-time 2 "${PLANTUML_HOST%/}/" > "$RUNNER_TEMP/plantuml-readiness.txt" 2>&1; then
               exit 0
             fi
             sleep 1
@@ -1120,6 +1149,20 @@ jobs:
           identity=$(find "$RUNNER_TEMP/pyfcstm-cli-artifact" -maxdepth 1 -name build-identity.txt -print -quit)
           digest_file=$(find "$RUNNER_TEMP/pyfcstm-cli-artifact" -maxdepth 1 -name artifact-sha256.txt -print -quit)
           test -n "$identity" -a -n "$digest_file"
+          check_identity() {
+            local identity_file="$1"
+            shift
+            local expected count
+            for expected in "$@"; do
+              count=$(grep -Fxc "$expected" "$identity_file" || true)
+              test "$count" -eq 1
+            done
+          }
+          check_identity "$identity" \
+            'schema=pyfcstm-build-identity/v1' \
+            'artifact_kind=standalone' \
+            "full_commit=$GITHUB_SHA" \
+            'dirty=0' 'tag=' "platform=${{ matrix.os }}"
           grep -F "full_commit=$GITHUB_SHA" "$identity"
           archive_name=$(basename "$archive")
           expected_digest=$(awk -v file="$archive_name" '$3 == "dist/" file || $3 == file {print $1}' "$digest_file")
@@ -1174,7 +1217,29 @@ jobs:
           test "$version_status" -eq 0
           test "$default_status" -eq 0
           test "$readiness_status" -eq 0
+          test "$visualize_status" -eq 0
           grep -F "Commit: $GITHUB_SHA" "$reports/version.log"
+      - name: Assert configured PlantUML results
+        shell: bash
+        env:
+          PLANTUML_HOST: http://127.0.0.1:18080
+        run: |
+          set -euo pipefail
+          python - "$RUNNER_TEMP/pyfcstm-selfcheck-reports/visualize.json" "$PLANTUML_HOST" <<'PY'
+          import json
+          import sys
+
+          report_path, host = sys.argv[1:]
+          with open(report_path, "r") as stream:
+              report = json.load(stream)
+          results = {item["id"]: item for item in report["results"]}
+          for check_id in ("visualize.remote_tls", "visualize.remote_render"):
+              result = results.get(check_id)
+              if result is None or result["status"] != "PASS":
+                  raise SystemExit("{} did not PASS: {}".format(check_id, result))
+              if host not in (result.get("observed") or ""):
+                  raise SystemExit("{} did not record configured host: {}".format(check_id, result))
+          PY
       - name: Upload clean CLI evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v4

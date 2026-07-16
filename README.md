@@ -136,6 +136,23 @@ pyfcstm --help
 python -m pyfcstm --help
 ```
 
+For a released wheel or standalone CLI, run the deployment self-check as the
+next diagnostic step:
+
+```shell
+pyfcstm --self-check
+```
+
+Self-check is intentionally narrower than the unit-test suite and release CI.
+Those pre-release gates are responsible for implementation correctness before
+artifacts are published. Self-check runs against the already-published
+artifact and the current machine to find missing packaged resources, unavailable
+runtime dependencies, platform/installation problems, and optional
+visualization availability. When it reports a failure, keep the complete
+environment and traceback evidence from the report for debugging; a passing
+self-check is deployment evidence, not a replacement for the project's test
+suite.
+
 **More Information**: See
 the [Installation Documentation](https://pyfcstm.readthedocs.io/en/latest/tutorials/installation/index.html) for
 detailed steps and environment requirements.

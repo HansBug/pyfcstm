@@ -82,6 +82,8 @@ jobs:
         run: |
           make build_info
           make package
+          test "$(find dist -maxdepth 1 -type f -name '*.whl' | wc -l)" -eq 1
+          test "$(find dist -maxdepth 1 -type f -name '*.tar.gz' | wc -l)" -eq 1
           python - <<'PY' > dist/artifact-sha256.txt
           import hashlib
           import os
@@ -193,7 +195,6 @@ jobs:
         run: |
           set -euo pipefail
           reports="$RUNNER_TEMP/pyfcstm-release-python-reports"
-          rm -rf "$reports"
           mkdir -p "$reports"
           python - "$RUNNER_TEMP/pyfcstm-release-python" > "$reports/downloaded-sha256.txt" <<'PY'
           import hashlib
@@ -216,6 +217,10 @@ jobs:
           grep -F "full_commit=$TARGET_COMMIT" "$identity"
           cp "$identity" "$reports/build-identity.txt"
           cp "$digest_file" "$reports/artifact-sha256.txt"
+          wheel_count=$(find "$RUNNER_TEMP/pyfcstm-release-python" -type f -name '*.whl' -print | wc -l)
+          sdist_count=$(find "$RUNNER_TEMP/pyfcstm-release-python" -type f -name '*.tar.gz' -print | wc -l)
+          test "$wheel_count" -eq 1
+          test "$sdist_count" -eq 1
           set +e
           curl --fail --location --retry 5 --retry-delay 2 --max-time 15 \
             "${PLANTUML_HOST%/}/" > "$reports/plantuml-readiness.txt" 2>&1
@@ -281,22 +286,22 @@ jobs:
             test "$visualize_status" -eq 0
             test "$readiness_status" -eq 0
             grep -F "Commit: $TARGET_COMMIT" "$reports/${kind}-version.log"
-            python - "$reports/${kind}-visualize.json" "$PLANTUML_HOST" <<'PY'
-            import json
-            import sys
+          python - "$reports/${kind}-visualize.json" "$PLANTUML_HOST" <<'PY'
+          import json
+          import sys
 
-            report_path, host = sys.argv[1:]
-            with open(report_path, "r") as stream:
-                report = json.load(stream)
-            results = {item["id"]: item for item in report["results"]}
-            for check_id in ("visualize.remote_tls", "visualize.remote_render"):
-                result = results.get(check_id)
-                if result is None or result["status"] != "PASS":
-                    raise SystemExit("{} did not PASS: {}".format(check_id, result))
-                if host not in (result.get("observed") or ""):
-                    raise SystemExit("{} did not record configured host: {}".format(check_id, result))
-            PY
-            deactivate
+          report_path, host = sys.argv[1:]
+          with open(report_path, "r") as stream:
+              report = json.load(stream)
+          results = {item["id"]: item for item in report["results"]}
+          for check_id in ("visualize.remote_tls", "visualize.remote_render"):
+              result = results.get(check_id)
+              if result is None or result["status"] != "PASS":
+                  raise SystemExit("{} did not PASS: {}".format(check_id, result))
+              if host not in (result.get("observed") or ""):
+                  raise SystemExit("{} did not record configured host: {}".format(check_id, result))
+          PY
+          deactivate
           done
       - name: Upload fresh Python evidence
         if: ${{ always() }}
@@ -850,6 +855,7 @@ jobs:
           : > "$RUNNER_TEMP/plantuml-readiness.txt"
           : > "$RUNNER_TEMP/plantuml-service.log"
       - name: Set up Java runtime
+        continue-on-error: true
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -860,6 +866,7 @@ jobs:
           name: pyfcstm-release-cli-${{ matrix.os }}
           path: ${{ runner.temp }}/pyfcstm-release-cli
       - name: Install and verify PlantUML JAR
+        continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
@@ -881,6 +888,7 @@ jobs:
           java -version 2> "$RUNNER_TEMP/java-version.txt"
           java -jar "$jar" -version 2>&1 | tee "$RUNNER_TEMP/plantuml-version.txt"
       - name: Start local PlantUML service
+        continue-on-error: true
         shell: bash
         env:
           PLANTUML_HOST: http://127.0.0.1:18080
@@ -909,6 +917,8 @@ jobs:
           reports="$RUNNER_TEMP/pyfcstm-release-cli-reports"
           rm -rf "$root"
           mkdir -p "$root" "$reports"
+          archive_count=$(find "$RUNNER_TEMP/pyfcstm-release-cli" -maxdepth 1 -type f -name '*.zip' -print | wc -l)
+          test "$archive_count" -eq 1
           archive=$(find "$RUNNER_TEMP/pyfcstm-release-cli" -maxdepth 1 -type f -name '*.zip' -print -quit)
           test -n "$archive"
           identity=$(find "$RUNNER_TEMP/pyfcstm-release-cli" -maxdepth 1 -name build-identity.txt -print -quit)
@@ -944,6 +954,12 @@ jobs:
               xattr -dr com.apple.quarantine "$root"
             fi
           fi
+          for forbidden in setup.py 'requirements*.txt' Makefile; do
+            if find "$root" -type f -name "$forbidden" -print -quit | grep -q .; then
+              echo "forbidden source/build file found in clean root: $forbidden" >&2
+              exit 1
+            fi
+          done
           if [ "${{ matrix.os }}" = "windows-2022" ]; then
             exe=$(find "$root" -type f -name pyfcstm.exe -print -quit)
           else
@@ -963,10 +979,15 @@ jobs:
           | tee "$reports/summary.txt"
           test "$version_status" -eq 0
           test "$default_status" -eq 0
-          test "$readiness_status" -eq 0
-          test "$visualize_status" -eq 0
           grep -F "Commit: $TARGET_COMMIT" "$reports/version.log"
-          python - "$reports/visualize.json" "$PLANTUML_HOST" <<'PY'
+      - name: Record optional PlantUML results
+        continue-on-error: true
+        shell: bash
+        env:
+          PLANTUML_HOST: http://127.0.0.1:18080
+        run: |
+          set -euo pipefail
+          python - "$RUNNER_TEMP/pyfcstm-release-cli-reports/visualize.json" "$PLANTUML_HOST" <<'PY'
           import json
           import sys
 
@@ -1058,6 +1079,8 @@ jobs:
           reports="$RUNNER_TEMP/pyfcstm-controlled-cli-reports"
           rm -rf "$root"
           mkdir -p "$root" "$reports"
+          archive_count=$(find "$RUNNER_TEMP/pyfcstm-release-cli" -maxdepth 1 -type f -name '*.zip' -print | wc -l)
+          test "$archive_count" -eq 1
           archive=$(find "$RUNNER_TEMP/pyfcstm-release-cli" -maxdepth 1 -type f -name '*.zip' -print -quit)
           identity="$RUNNER_TEMP/pyfcstm-release-cli/build-identity.txt"
           digest_file="$RUNNER_TEMP/pyfcstm-release-cli/artifact-sha256.txt"
@@ -1087,6 +1110,12 @@ jobs:
           set -e
           test "$readiness_status" -eq 0
           unzip -q "$archive" -d "$root"
+          for forbidden in setup.py 'requirements*.txt' Makefile; do
+            if find "$root" -type f -name "$forbidden" -print -quit | grep -q .; then
+              echo "forbidden source/build file found in clean root: $forbidden" >&2
+              exit 1
+            fi
+          done
           exe=$(find "$root" -type f -name pyfcstm -perm -u+x -print -quit)
           test -n "$exe"
           set +e

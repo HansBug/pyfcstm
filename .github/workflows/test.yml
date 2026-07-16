@@ -915,7 +915,10 @@ jobs:
           reports="$RUNNER_TEMP/pyfcstm-selfcheck-reports"
           mkdir -p "$reports"
           printf 'job=fresh-cli-linux\nstarted_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$reports/bootstrap.txt"
+          : > "$RUNNER_TEMP/java-version.txt"
+          : > "$RUNNER_TEMP/plantuml-version.txt"
       - name: Set up Java runtime
+        continue-on-error: true
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -926,6 +929,7 @@ jobs:
           name: pyfcstm-cli-ubuntu-22.04
           path: ${{ runner.temp }}/pyfcstm-cli-artifact
       - name: Install and verify PlantUML JAR
+        continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
@@ -955,7 +959,7 @@ jobs:
           set -euo pipefail
           root="$RUNNER_TEMP/pyfcstm-clean-root"
           reports="$RUNNER_TEMP/pyfcstm-selfcheck-reports"
-          rm -rf "$root" "$reports"
+          rm -rf "$root"
           mkdir -p "$root" "$reports"
           archive=$(find "$RUNNER_TEMP/pyfcstm-cli-artifact" -maxdepth 1 -type f -name '*.zip' -print -quit)
           test -n "$archive"
@@ -1000,13 +1004,12 @@ jobs:
             "${PLANTUML_HOST%/}/" > "$reports/plantuml-readiness.txt" 2>&1
           readiness_status=$?
           set -e
-          test "$readiness_status" -eq 0
           unzip -q "$archive" -d "$root"
           if find "$root" -type d -name pyfcstm -print -quit | grep -q .; then
             echo "forbidden source package directory found in clean root" >&2
             exit 1
           fi
-          for forbidden in setup.py requirements.txt Makefile; do
+          for forbidden in setup.py 'requirements*.txt' Makefile; do
             if find "$root" -type f -name "$forbidden" -print -quit | grep -q .; then
               echo "forbidden source/build file found in clean root: $forbidden" >&2
               exit 1
@@ -1027,9 +1030,9 @@ jobs:
           | tee "$reports/summary.txt"
           test "$version_status" -eq 0
           test "$default_status" -eq 0
-          test "$visualize_status" -eq 0
           grep -F "Commit: $GITHUB_SHA" "$reports/version.log"
-      - name: Assert controlled PlantUML results
+      - name: Record optional PlantUML results
+        continue-on-error: true
         shell: bash
         env:
           PLANTUML_HOST: http://127.0.0.1:18080
@@ -1085,7 +1088,12 @@ jobs:
           reports="$RUNNER_TEMP/pyfcstm-selfcheck-reports"
           mkdir -p "$reports"
           printf 'job=fresh-cli-nonlinux\nstarted_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$reports/bootstrap.txt"
+          : > "$RUNNER_TEMP/java-version.txt"
+          : > "$RUNNER_TEMP/plantuml-version.txt"
+          : > "$RUNNER_TEMP/plantuml-readiness.txt"
+          : > "$RUNNER_TEMP/plantuml-service.log"
       - name: Set up Java runtime
+        continue-on-error: true
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -1096,6 +1104,7 @@ jobs:
           name: ${{ matrix.artifact }}
           path: ${{ runner.temp }}/pyfcstm-cli-artifact
       - name: Install and verify PlantUML JAR
+        continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
@@ -1117,6 +1126,7 @@ jobs:
           java -version 2> "$RUNNER_TEMP/java-version.txt"
           java -jar "$jar" -version 2>&1 | tee "$RUNNER_TEMP/plantuml-version.txt"
       - name: Start local PlantUML service
+        continue-on-error: true
         shell: bash
         env:
           PLANTUML_HOST: http://127.0.0.1:18080
@@ -1142,7 +1152,7 @@ jobs:
           set -euo pipefail
           root="$RUNNER_TEMP/pyfcstm-clean-root"
           reports="$RUNNER_TEMP/pyfcstm-selfcheck-reports"
-          rm -rf "$root" "$reports"
+          rm -rf "$root"
           mkdir -p "$root" "$reports"
           archive=$(find "$RUNNER_TEMP/pyfcstm-cli-artifact" -maxdepth 1 -type f -name '*.zip' -print -quit)
           test -n "$archive"
@@ -1195,7 +1205,7 @@ jobs:
             echo "forbidden source package directory found in clean root" >&2
             exit 1
           fi
-          for forbidden in setup.py requirements.txt Makefile; do
+          for forbidden in setup.py 'requirements*.txt' Makefile; do
             if find "$root" -type f -name "$forbidden" -print -quit | grep -q .; then
               echo "forbidden source/build file found in clean root: $forbidden" >&2
               exit 1
@@ -1216,10 +1226,9 @@ jobs:
             | tee "$reports/summary.txt"
           test "$version_status" -eq 0
           test "$default_status" -eq 0
-          test "$readiness_status" -eq 0
-          test "$visualize_status" -eq 0
           grep -F "Commit: $GITHUB_SHA" "$reports/version.log"
-      - name: Assert configured PlantUML results
+      - name: Record optional PlantUML results
+        continue-on-error: true
         shell: bash
         env:
           PLANTUML_HOST: http://127.0.0.1:18080

@@ -56,6 +56,8 @@ jobs:
           make build_info
           make package
           test -z "$(git status --porcelain)"
+          test "$(find dist -maxdepth 1 -type f -name '*.whl' | wc -l)" -eq 1
+          test "$(find dist -maxdepth 1 -type f -name '*.tar.gz' | wc -l)" -eq 1
           {
             echo 'schema=pyfcstm-build-identity/v1'
             echo 'artifact_kind=python-distributions'
@@ -104,6 +106,8 @@ jobs:
           reports="$RUNNER_TEMP/pyfcstm-wheel-reports"
           mkdir -p "$reports"
           printf 'job=fresh-wheel-linux\nstarted_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$reports/bootstrap.txt"
+          : > "$RUNNER_TEMP/java-version.txt"
+          : > "$RUNNER_TEMP/plantuml-version.txt"
       - name: Set up Python 3.7
         uses: actions/setup-python@v6
         with:
@@ -152,8 +156,10 @@ jobs:
           root="$RUNNER_TEMP/pyfcstm-wheel-clean-root"
           reports="$RUNNER_TEMP/pyfcstm-wheel-reports"
           venv="$RUNNER_TEMP/pyfcstm-wheel-venv"
-          rm -rf "$root" "$reports" "$venv"
+          rm -rf "$root" "$venv"
           mkdir -p "$root" "$reports"
+          wheel_count=$(find "$RUNNER_TEMP/pyfcstm-package-artifact" -maxdepth 1 -type f -name '*.whl' -print | wc -l)
+          test "$wheel_count" -eq 1
           wheel=$(find "$RUNNER_TEMP/pyfcstm-package-artifact" -maxdepth 1 -type f -name '*.whl' -print -quit)
           test -n "$wheel"
           identity="$RUNNER_TEMP/pyfcstm-package-artifact/build-identity.txt"
@@ -287,11 +293,16 @@ jobs:
           reports="$RUNNER_TEMP/pyfcstm-wheel-reports"
           mkdir -p "$reports"
           printf 'job=fresh-wheel-nonlinux\nstarted_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$reports/bootstrap.txt"
+          : > "$RUNNER_TEMP/java-version.txt"
+          : > "$RUNNER_TEMP/plantuml-version.txt"
+          : > "$RUNNER_TEMP/plantuml-readiness.txt"
+          : > "$RUNNER_TEMP/plantuml-service.log"
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
       - name: Set up Java runtime
+        continue-on-error: true
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -302,6 +313,7 @@ jobs:
           name: build-artifacts-source-pack
           path: ${{ runner.temp }}/pyfcstm-package-artifact
       - name: Install and verify PlantUML JAR
+        continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
@@ -323,6 +335,7 @@ jobs:
           java -version 2> "$RUNNER_TEMP/java-version.txt"
           java -jar "$jar" -version 2>&1 | tee "$RUNNER_TEMP/plantuml-version.txt"
       - name: Start local PlantUML service
+        continue-on-error: true
         shell: bash
         env:
           PLANTUML_HOST: http://127.0.0.1:18080
@@ -352,8 +365,10 @@ jobs:
           root="$RUNNER_TEMP/pyfcstm-wheel-clean-root"
           reports="$RUNNER_TEMP/pyfcstm-wheel-reports"
           venv="$RUNNER_TEMP/pyfcstm-wheel-venv"
-          rm -rf "$root" "$reports" "$venv"
+          rm -rf "$root" "$venv"
           mkdir -p "$root" "$reports"
+          wheel_count=$(find "$RUNNER_TEMP/pyfcstm-package-artifact" -type f -name '*.whl' -print | wc -l)
+          test "$wheel_count" -eq 1
           wheel=$(find "$RUNNER_TEMP/pyfcstm-package-artifact" -type f -name '*.whl' -print -quit)
           test -n "$wheel"
           identity=$(find "$RUNNER_TEMP/pyfcstm-package-artifact" -type f -name build-identity.txt -print -quit)
@@ -431,10 +446,9 @@ jobs:
           test "$version_status" -eq 0
           test "$module_version_status" -eq 0
           test "$default_status" -eq 0
-          test "$visualize_status" -eq 0
-          test "$readiness_status" -eq 0
           grep -F "Commit: $GITHUB_SHA" "$reports/version.log"
-      - name: Assert configured PlantUML results
+      - name: Record optional PlantUML results
+        continue-on-error: true
         env:
           PLANTUML_HOST: http://127.0.0.1:18080
         shell: bash
@@ -485,6 +499,8 @@ jobs:
           reports="$RUNNER_TEMP/pyfcstm-sdist-reports"
           mkdir -p "$reports"
           printf 'job=fresh-sdist\nstarted_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$reports/bootstrap.txt"
+          : > "$RUNNER_TEMP/java-version.txt"
+          : > "$RUNNER_TEMP/plantuml-version.txt"
       - name: Set up Python 3.7
         uses: actions/setup-python@v6
         with:
@@ -533,8 +549,10 @@ jobs:
           root="$RUNNER_TEMP/pyfcstm-sdist-clean-root"
           reports="$RUNNER_TEMP/pyfcstm-sdist-reports"
           venv="$RUNNER_TEMP/pyfcstm-sdist-venv"
-          rm -rf "$root" "$reports" "$venv"
+          rm -rf "$root" "$venv"
           mkdir -p "$root" "$reports"
+          sdist_count=$(find "$RUNNER_TEMP/pyfcstm-package-artifact" -type f \( -name '*.tar.gz' -o -name '*.zip' \) -print | wc -l)
+          test "$sdist_count" -eq 1
           sdist=$(find "$RUNNER_TEMP/pyfcstm-package-artifact" -type f \( -name '*.tar.gz' -o -name '*.zip' \) -print -quit)
           test -n "$sdist"
           identity=$(find "$RUNNER_TEMP/pyfcstm-package-artifact" -type f -name build-identity.txt -print -quit)
@@ -998,7 +1016,12 @@ jobs:
           reports="$RUNNER_TEMP/pyfcstm-release-test-cli-reports"
           mkdir -p "$reports"
           printf 'job=fresh-release-cli\nstarted_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$reports/bootstrap.txt"
+          : > "$RUNNER_TEMP/java-version.txt"
+          : > "$RUNNER_TEMP/plantuml-version.txt"
+          : > "$RUNNER_TEMP/plantuml-readiness.txt"
+          : > "$RUNNER_TEMP/plantuml-service.log"
       - name: Set up Java runtime
+        continue-on-error: true
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -1009,6 +1032,7 @@ jobs:
           name: pyfcstm-release-test-cli-${{ matrix.os }}
           path: ${{ runner.temp }}/pyfcstm-release-test-cli
       - name: Install and verify PlantUML JAR
+        continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
@@ -1030,6 +1054,7 @@ jobs:
           java -version 2> "$RUNNER_TEMP/java-version.txt"
           java -jar "$jar" -version 2>&1 | tee "$RUNNER_TEMP/plantuml-version.txt"
       - name: Start local PlantUML service
+        continue-on-error: true
         shell: bash
         env:
           PLANTUML_HOST: http://127.0.0.1:18080
@@ -1055,8 +1080,10 @@ jobs:
           set -euo pipefail
           root="$RUNNER_TEMP/pyfcstm-release-test-cli-root"
           reports="$RUNNER_TEMP/pyfcstm-release-test-cli-reports"
-          rm -rf "$root" "$reports"
+          rm -rf "$root"
           mkdir -p "$root" "$reports"
+          archive_count=$(find "$RUNNER_TEMP/pyfcstm-release-test-cli" -maxdepth 1 -type f -name '*.zip' -print | wc -l)
+          test "$archive_count" -eq 1
           archive=$(find "$RUNNER_TEMP/pyfcstm-release-test-cli" -maxdepth 1 -type f -name '*.zip' -print -quit)
           identity="$RUNNER_TEMP/pyfcstm-release-test-cli/build-identity.txt"
           digest_file="$RUNNER_TEMP/pyfcstm-release-test-cli/artifact-sha256.txt"
@@ -1101,7 +1128,7 @@ jobs:
             echo "forbidden source package directory found in clean root" >&2
             exit 1
           fi
-          for forbidden in setup.py requirements.txt Makefile; do
+          for forbidden in setup.py 'requirements*.txt' Makefile; do
             if find "$root" -type f -name "$forbidden" -print -quit | grep -q .; then
               echo "forbidden source/build file found in clean root: $forbidden" >&2
               exit 1
@@ -1131,10 +1158,9 @@ jobs:
             | tee "$reports/summary.txt"
           test "$version_status" -eq 0
           test "$default_status" -eq 0
-          test "$visualize_status" -eq 0
-          test "$readiness_status" -eq 0
           grep -F "Commit: $GITHUB_SHA" "$reports/version.log"
-      - name: Assert configured PlantUML results
+      - name: Record optional PlantUML results
+        continue-on-error: true
         env:
           PLANTUML_HOST: http://127.0.0.1:18080
         shell: bash

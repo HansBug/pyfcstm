@@ -77,6 +77,22 @@ def test_resolve_plantuml_options_dedicated_level_wins_with_one_warning():
     assert 'Using' in warnings[0]
 
 
+def test_resolve_plantuml_options_same_explicit_value_has_no_warning():
+    options, warnings = resolve_plantuml_options(
+        ('detail_level=full',), dedicated_detail_level='full'
+    )
+
+    assert options.detail_level == 'full'
+    assert warnings == ()
+
+
+def test_public_option_type_view_does_not_mutate_resolver(monkeypatch):
+    monkeypatch.setitem(PLANTUML_OPTION_TYPES, 'show_events', str)
+
+    with pytest.raises(ClickErrorException, match='Expected bool'):
+        resolve_plantuml_options(('show_events=banana',))
+
+
 def test_resolve_plantuml_options_normalizes_case_before_comparison():
     options, warnings = resolve_plantuml_options(
         ('detail_level=FULL',), dedicated_detail_level='FuLl'
@@ -394,3 +410,14 @@ def test_subcommand_help_links_to_configuration_reference(command):
         in help_text
     )
     assert 'Configuration reference:' in help_text
+    normalized_help = ' '.join(help_text.split())
+    if command == 'plantuml':
+        assert (
+            'Configuration options in key=value format. Can be specified multiple '
+            'times. Example: -c show_events=true -c max_depth=2'
+        ) in normalized_help
+    else:
+        assert (
+            'Configuration options in key=value format. Can be specified multiple '
+            'times.'
+        ) in normalized_help

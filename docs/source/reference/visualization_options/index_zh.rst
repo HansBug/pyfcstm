@@ -534,7 +534,7 @@ PlantUML 选项字段
    * - ``detail_level``
      - ``-l minimal`` 用于小型层次审查。
      - ``-l full`` 用于生命周期动作主题。
-     - ``-l normal -c detail_level=full`` 会输出冲突 warning，并使用 ``normal``，因为显式 ``-l`` 的值优先。
+     - ``-l normal -c detail_level=full`` 会输出冲突 warning，并使用 ``normal``，因为这里的 ``normal`` 是通过 ``-l`` 显式写出的。省略 ``-l`` 时只是使用 Click 默认值，不会形成第二次显式赋值。
    * - ``show_variable_definitions``
      - ``-c show_variable_definitions=true`` 用于在审查中证明变量声明。
      - ``-c show_variable_definitions=false`` 用于只看结构的图。

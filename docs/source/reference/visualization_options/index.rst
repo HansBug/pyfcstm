@@ -540,7 +540,7 @@ rather than accidental.
    * - ``detail_level``
      - ``-l minimal`` for a small hierarchy review.
      - ``-l full`` when lifecycle actions are the topic.
-     - ``-l normal -c detail_level=full`` emits a conflict warning and uses ``normal`` because the explicit ``-l`` value wins.
+     - ``-l normal -c detail_level=full`` emits a conflict warning and uses ``normal`` because ``normal`` was explicitly written through ``-l``. Omitting ``-l`` leaves the Click default and does not create a second assignment.
    * - ``show_variable_definitions``
      - ``-c show_variable_definitions=true`` to prove variable declarations in a review.
      - ``-c show_variable_definitions=false`` for a structure-only diagram.

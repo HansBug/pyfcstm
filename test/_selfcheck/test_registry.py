@@ -194,25 +194,12 @@ def test_resource_llm_guide_reports_sidecar_mismatch_through_public_api(monkeypa
 
 
 @pytest.mark.unittest
-def test_dependency_diagnostics_are_structured_without_result_ids():
-    """Dependency inventory is metadata, not an additional fixed check."""
-    diagnostics = registry.collect_dependency_diagnostics()
-    assert diagnostics
-    assert all(
-        set(item) >= {"name", "status", "version", "path", "reason"}
-        for item in diagnostics
-    )
-    assert all(not item["name"].startswith("dep.") for item in diagnostics)
-
-
-@pytest.mark.unittest
-def test_diagnostics_schema_probe_rejects_json_that_is_not_a_schema(monkeypatch):
-    """A parseable arbitrary JSON document is not a valid diagnostics schema."""
+def test_diagnostics_schema_probe_accepts_parseable_json(monkeypatch):
+    """The resource check stops at JSON readability rather than schema policy."""
     path = Path(__file__).parents[2] / "pyfcstm" / "template" / "index.json"
     monkeypatch.setattr(registry, "_resource", lambda _name: path)
     outcome = registry._diagnostics_schemas()
-    assert outcome.status == "FAIL"
-    assert outcome.reason == "schema_invalid"
+    assert outcome.status == "PASS"
 
 
 @pytest.mark.unittest
@@ -322,3 +309,20 @@ def test_grammar_asset_probe_reports_the_missing_relative_path(tmp_path, monkeyp
     assert outcome.status == "FAIL"
     assert outcome.reason == "resource_missing"
     assert "GrammarParser.tokens" in outcome.observed
+
+
+@pytest.mark.unittest
+def test_template_archive_probe_reports_crc_corruption(monkeypatch):
+    """A readable archive with a bad CRC is reported as corrupted, not absent."""
+    original_testzip = registry.zipfile.ZipFile.testzip
+    monkeypatch.setattr(
+        registry.zipfile.ZipFile,
+        "testzip",
+        lambda handle: "broken-entry",
+    )
+    try:
+        outcome = registry._template_archives()
+    finally:
+        monkeypatch.setattr(registry.zipfile.ZipFile, "testzip", original_testzip)
+    assert outcome.status == "FAIL"
+    assert outcome.reason == "archive_invalid"

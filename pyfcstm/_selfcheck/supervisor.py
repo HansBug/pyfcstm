@@ -26,7 +26,6 @@ from .model import (
 from .process import run_check_process
 from .registry import (
     CAPABILITY_CHECK_IDS,
-    collect_dependency_diagnostics,
     get_worker,
     registry_metadata,
     selected_specs,
@@ -60,25 +59,14 @@ _STRICT_WARN_REASONS = frozenset(
 
 
 def _runtime_artifact_kind() -> str:
-    """Classify the running source, installed package, or frozen artifact."""
+    """Classify source, installed, or frozen execution without package metadata."""
     package_root = os.path.dirname(os.path.abspath(__file__))
     package_parent = os.path.dirname(os.path.dirname(package_root))
     if getattr(sys, "frozen", False):
         return "frozen"
     if os.path.exists(os.path.join(package_parent, ".git")):
         return "source"
-    try:
-        entries = os.listdir(package_parent)
-    except OSError:
-        return "source"
-    for name in entries:
-        if name.startswith("pyfcstm-") and name.endswith(".dist-info"):
-            return "wheel"
-        if name.startswith("pyfcstm") and name.endswith(".egg-info"):
-            # Editable installs expose legacy egg-info beside the package and
-            # should still be reported as source-backed execution.
-            return "source"
-    return "source"
+    return "installed"
 
 
 def _artifact_metadata(redact: bool = True):
@@ -92,10 +80,10 @@ def _artifact_metadata(redact: bool = True):
     Example::
 
         >>> data = _artifact_metadata()
-        >>> data["kind"] in ("source", "wheel", "frozen")
+        >>> data["kind"] in ("source", "installed", "frozen")
         True
 
-    The runtime classifier reports only source, wheel, or frozen execution;
+    The runtime classifier reports only source, installed, or frozen execution;
     it is descriptive metadata and does not validate the artifact contents.
     """
     package_root = os.path.dirname(os.path.abspath(__file__))
@@ -516,7 +504,6 @@ def run_supervisor(arguments: Sequence[str], start_emitted: bool = False) -> int
             metadata["dependencies"] = []
             metadata["capabilities"] = {
                 "registry": dict(registry_metadata(options.profile)),
-                "dependency_diagnostics": list(collect_dependency_diagnostics()),
             }
             metadata["environment"] = collect_environment(options.redact)
             if streaming_human:
@@ -542,7 +529,6 @@ def run_supervisor(arguments: Sequence[str], start_emitted: bool = False) -> int
             registry_info = dict(registry_metadata(options.profile))
             metadata["capabilities"] = {
                 "registry": registry_info,
-                "dependency_diagnostics": list(collect_dependency_diagnostics()),
             }
             metadata["environment"] = collect_environment(options.redact)
             if streaming_human:

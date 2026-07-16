@@ -56,6 +56,7 @@ def test_default_profile_returns_one_canonical_snapshot(capsys):
     assert payload["artifact"]["frozen"] is False
     assert payload["artifact"]["root"] == "<redacted>"
     assert "checks" not in payload and "counts" not in payload
+    assert "dependency_diagnostics" not in payload["capabilities"]
 
 
 @pytest.mark.unittest
@@ -231,22 +232,6 @@ def test_explicit_skip_is_terminal_without_invoking_the_worker(monkeypatch, caps
     result = _payload(capsys)["results"][0]
     assert result["status"] == "SKIP"
     assert result["reason"] == "explicit_skip"
-
-
-@pytest.mark.unittest
-def test_dependency_diagnostics_are_capability_metadata(monkeypatch, capsys):
-    """Dependency diagnostics are emitted under capabilities, not results."""
-    spec = CheckSpec("demo", "demo")
-    _install_worker_specs(monkeypatch, (spec,))
-    monkeypatch.setattr(
-        supervisor,
-        "collect_dependency_diagnostics",
-        lambda: ({"name": "demo", "status": "PASS", "version": "1", "path": "/x", "reason": None},),
-    )
-    assert supervisor.run_supervisor(("--format", "json")) == 0
-    payload = _payload(capsys)
-    assert payload["capabilities"]["dependency_diagnostics"][0]["name"] == "demo"
-    assert [item["id"] for item in payload["results"]] == ["demo"]
 
 
 @pytest.mark.unittest

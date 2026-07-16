@@ -48,12 +48,6 @@ EXPECTED\_CHECK\_IDS
 .. autodata:: __all__
 
 
-collect\_dependency\_diagnostics
------------------------------------------------------
-
-.. autofunction:: collect_dependency_diagnostics
-
-
 get\_worker
 -----------------------------------------------------
 

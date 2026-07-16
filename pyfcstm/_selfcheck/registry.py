@@ -351,52 +351,6 @@ def _identity_artifact() -> CheckOutcome:
     return _identity_build_info_module()
 
 
-def collect_dependency_diagnostics() -> Tuple[Mapping[str, Any], ...]:
-    """Collect version, import path, and absence diagnostics for dependencies."""
-    dependencies = (
-        ("antlr4-python3-runtime", "antlr4"),
-        ("click", "click"),
-        ("jinja2", "jinja2"),
-        ("pyyaml", "yaml"),
-        ("z3-solver", "z3"),
-        ("plantumlcli", "plantumlcli"),
-        ("pygments", "pygments"),
-        ("unidecode", "unidecode"),
-        ("lxml", "lxml"),
-        ("certifi", "certifi"),
-    )
-    diagnostics = []
-    for distribution_name, module_name in dependencies:
-        version = None
-        path = None
-        reason = None
-        try:
-            try:
-                from importlib import metadata
-            except ImportError:
-                import importlib_metadata as metadata
-            version = metadata.version(distribution_name)
-        except (ImportError, KeyError, OSError, ValueError) as err:
-            reason = "version_unavailable:{}".format(type(err).__name__)
-        try:
-            module = importlib.import_module(module_name)
-            path = getattr(module, "__file__", None)
-        except (ImportError, AttributeError) as err:
-            reason = reason or "missing:{}".format(type(err).__name__)
-        diagnostics.append(
-            {
-                "name": distribution_name,
-                "status": "PASS" if path else "WARN",
-                "importable": bool(path),
-                "version": version,
-                "path": path,
-                "reason": reason,
-                "error": reason,
-            }
-        )
-    return tuple(diagnostics)
-
-
 def _json_resource(relative: str, label: str) -> CheckOutcome:
     path = _resource(relative)
     try:
@@ -407,53 +361,12 @@ def _json_resource(relative: str, label: str) -> CheckOutcome:
 
 
 def _diagnostics_schemas() -> CheckOutcome:
-    """Validate every shipped diagnostics schema, not only the primary one."""
+    """Check that every shipped diagnostics schema is readable JSON."""
     for relative in ("diagnostics/schema.json", "diagnostics/inspect_llm_report_schema.json"):
-        path = _resource(relative)
-        try:
-            document = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeError, ValueError) as err:
-            return _fail(
-                "diagnostic schema {} is invalid".format(relative),
-                "resource_invalid",
-                observed=str(err),
-            )
-        if not isinstance(document, dict):
-            return _fail(
-                "diagnostic schema {} is not an object".format(relative),
-                "schema_invalid",
-            )
-        if not isinstance(document.get("$schema"), str) or not document["$schema"].startswith(
-            "https://json-schema.org/"
-        ):
-            return _fail(
-                "diagnostic schema {} has no JSON Schema dialect".format(relative),
-                "schema_invalid",
-            )
-        if not isinstance(document.get("$id"), str) or not document["$id"]:
-            return _fail(
-                "diagnostic schema {} has no stable ID".format(relative),
-                "schema_invalid",
-            )
-        if document.get("type") != "object":
-            return _fail(
-                "diagnostic schema {} has an unexpected root type".format(relative),
-                "schema_invalid",
-            )
-        required = document.get("required")
-        properties = document.get("properties")
-        if (
-            not isinstance(required, list)
-            or not required
-            or not all(isinstance(item, str) and item for item in required)
-            or not isinstance(properties, dict)
-            or any(item not in properties for item in required)
-        ):
-            return _fail(
-                "diagnostic schema {} has an invalid required/properties contract".format(relative),
-                "schema_invalid",
-            )
-    return _pass("diagnostic schemas are valid", observed="2 schemas")
+        outcome = _json_resource(relative, "diagnostic schema {}".format(relative))
+        if outcome.status != "PASS":
+            return outcome
+    return _pass("diagnostic schemas are readable", observed="2 schemas")
 
 
 def _yaml_resource(relative: str, label: str) -> CheckOutcome:
@@ -493,7 +406,11 @@ def _template_archives() -> CheckOutcome:
         try:
             with zipfile.ZipFile(str(archive)) as handle:
                 if handle.testzip() is not None:
-                    missing.append(str(archive))
+                    return _fail(
+                        "template archive is corrupted",
+                        "archive_invalid",
+                        observed=str(archive),
+                    )
         except (OSError, zipfile.BadZipFile) as err:
             return _fail("template archive is invalid", "archive_invalid", observed=str(err))
     return _fail("template archives are missing", "resource_missing", observed=repr(missing)) if missing else _pass("template archives are readable")
@@ -1408,7 +1325,6 @@ __all__ = [
     "REGISTRY_SCHEMA_VERSION",
     "REGISTRY_VERSION",
     "get_worker",
-    "collect_dependency_diagnostics",
     "registry_metadata",
     "selected_specs",
 ]

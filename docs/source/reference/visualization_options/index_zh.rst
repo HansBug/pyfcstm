@@ -93,7 +93,7 @@
    * - 预设加窄覆盖。
      - ``pyfcstm plantuml -i docs/source/tutorials/visualization/example.fcstm -l full -c max_action_lines=3 -o /tmp/compact.puml``
      - 保持 full 可见性，同时把每个动作块限制为三行。
-     - ``-c detail_level=full`` 属于错误层次；预设应使用 ``-l full``。
+     - 预设建议使用 ``-l full``；``-c detail_level=full`` 也合法，若与显式 ``-l`` 冲突会输出 warning 并以 ``-l`` 为准。
    * - 事件导向图。
      - ``pyfcstm plantuml -i docs/source/tutorials/visualization/example.fcstm -c event_visualization_mode=both -o /tmp/events.puml``
      - 同时在转换和事件辅助结构中显示事件。

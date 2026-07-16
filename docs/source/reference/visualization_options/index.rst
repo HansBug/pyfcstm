@@ -97,7 +97,7 @@ observable outcomes and failure boundaries.
    * - Preset plus narrow override.
      - ``pyfcstm plantuml -i docs/source/tutorials/visualization/example.fcstm -l full -c max_action_lines=3 -o /tmp/compact.puml``
      - Keeps full visibility while limiting each action block to three visible lines.
-     - ``-c detail_level=full`` is the wrong layer; use ``-l full`` for the preset.
+     - Prefer ``-l full`` for the preset; ``-c detail_level=full`` is also valid, and an explicit ``-l`` wins with a warning when the values conflict.
    * - Event-oriented diagram.
      - ``pyfcstm plantuml -i docs/source/tutorials/visualization/example.fcstm -c event_visualization_mode=both -o /tmp/events.puml``
      - Shows events directly in transitions and in event-supporting visual structures.

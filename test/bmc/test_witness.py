@@ -983,6 +983,63 @@ def test_solve_result_rejects_suffix_on_non_response() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    ("kernel", "initialization", "assumptions"),
+    [
+        (
+            BmcFeasibilityCheck("unsat", "checked", elapsed_ms=1.0),
+            BmcFeasibilityCheck("sat", "inferred"),
+            BmcFeasibilityCheck("sat", "inferred"),
+        ),
+        (
+            BmcFeasibilityCheck("sat", "inferred"),
+            BmcFeasibilityCheck("unsat", "checked", elapsed_ms=1.0),
+            BmcFeasibilityCheck("sat", "inferred"),
+        ),
+    ],
+)
+def test_feasibility_result_rejects_downstream_sat_after_prefix_unsat(
+    kernel, initialization, assumptions
+) -> None:
+    """Cumulative prefix evidence cannot become SAT after an UNSAT prefix."""
+    with pytest.raises(BmcBuildError, match="cumulative feasibility"):
+        BmcFeasibilityResult(
+            kernel,
+            initialization,
+            assumptions,
+            localization_status="not_needed",
+            refinement_status="not_needed",
+        )
+
+
+def test_solve_result_rejects_forged_suffix_when_formula_has_no_suffix() -> None:
+    """A false suffix formula cannot expose an ``incomplete_suffix`` role."""
+    _, formula = _compile(
+        """
+        state Root {
+            event Go;
+            state A;
+            [*] -> A;
+        }
+        """,
+        'init state("Root.A");\n'
+        "check response <= 2:\n"
+        '  trigger event("Root.Go", current)\n'
+        "  -> within 1 terminated();",
+    )
+    assert z3.is_false(formula.incomplete_formula)
+
+    with pytest.raises(BmcBuildError, match="non-empty suffix"):
+        BmcSolveResult(
+            formula,
+            "unsat",
+            incomplete_status="sat",
+            incomplete_model=_empty_sat_model(),
+            incomplete_elapsed_ms=1.0,
+            feasibility=_feasible_result_evidence(),
+        )
+
+
 def test_solve_result_rejects_forged_inconclusive_feasibility() -> None:
     """Primary unknown cannot carry a later-stage UNSAT claim."""
     formula = _verdict_formula("reach")

@@ -84,9 +84,9 @@ Both installed entry forms have the same behavior:
    * - ``--timeout-ms``
      - Integer, ``>= 1``
      - Unset; no Z3 timeout
-     - Applies independently to each Z3 ``check()``.  It is not a total CLI
-       wall-clock budget and does not limit loading, parsing, expansion, formula
-       construction, witness decoding, or replay.
+     - Establishes one total budget shared by every staged Z3 ``check()`` in
+       the public solve.  It does not limit loading, parsing, expansion,
+       formula construction, witness decoding, or replay.
    * - ``--max-bound``
      - Integer, ``>= 1``
      - Unset; no CLI cap
@@ -305,6 +305,7 @@ mechanics.  Its first line is exactly one of these shapes:
    BMC <kind> <= <bound>: PROPERTY DOES NOT HOLD
    BMC <kind> <= <bound>: PROPERTY INCONCLUSIVE
    BMC <kind> <= <bound>: REPLAY MISMATCH; PROPERTY VERDICT UNTRUSTED
+   BMC <kind> <= <bound>: SCENARIO INFEASIBLE; PROPERTY NOT EVALUATED
 
 The next sentence explains the polarity-aware outcome.  ``Solver`` then shows
 the primary status and elapsed milliseconds; the configured shared timeout
@@ -742,8 +743,11 @@ downloadable reference schema.
    3
 
 stdout and stderr are empty; ``response.json`` has primary ``status: unsat``,
-``incomplete_status: sat``, ``outcome: incomplete``, null witness/replay, and
-``exit_code: 3``.  Increase the bound if a definitive horizon is required.
+``incomplete_status: sat``, ``outcome: incomplete``, and ``exit_code: 3``.
+Because the suffix model is available, ``witness`` and ``replay`` are objects
+with ``bmc-witness/v2`` and ``model_role: incomplete_suffix``; they describe
+only the executable prefix and do not turn the detached result into a
+property verdict.  Increase the bound if a definitive horizon is required.
 
 **Example 4: policy rejection is stderr-only and preserves output.**  Put
 ``check reach <= 2: active("Root");`` in ``large.fbmcq`` and assume

@@ -1717,7 +1717,9 @@ class BmcFeasibilityRefinementCheck(_PrettyPrintableMixin):
 
         Example::
 
-            >>> BmcFeasibilityRefinementCheck("unsat_core", "complete", 0.5).to_canonical()["name"]
+            >>> BmcFeasibilityRefinementCheck(
+            ...     "unsat_core", "complete", elapsed_ms=0.5
+            ... ).to_canonical()["name"]
             'unsat_core'
         """
         return {
@@ -1763,7 +1765,9 @@ class BmcFeasibilityResult(_PrettyPrintableMixin):
     Example::
 
         >>> sat = BmcFeasibilityCheck("sat", "inferred")
-        >>> BmcFeasibilityResult(sat, sat, sat).localization_status
+        >>> BmcFeasibilityResult(
+        ...     sat, sat, sat, localization_status="not_needed"
+        ... ).localization_status
         'not_needed'
     """
 
@@ -1866,6 +1870,16 @@ class BmcFeasibilityResult(_PrettyPrintableMixin):
             raise BmcBuildError(
                 "all SAT feasibility stages require localization_status=not_needed."
             )
+        if self.kernel.status == "unsat" and (
+            self.initialization.status == "sat" or self.assumptions.status == "sat"
+        ):
+            raise BmcBuildError(
+                "cumulative feasibility evidence cannot claim SAT after kernel UNSAT."
+            )
+        if self.initialization.status == "unsat" and self.assumptions.status == "sat":
+            raise BmcBuildError(
+                "cumulative feasibility evidence cannot claim SAT after initialization UNSAT."
+            )
         if (
             self.refinement_status in {"not_requested", "not_needed"}
             and self.refinement_checks
@@ -1891,7 +1905,9 @@ class BmcFeasibilityResult(_PrettyPrintableMixin):
         Example::
 
             >>> sat = BmcFeasibilityCheck("sat", "inferred")
-            >>> BmcFeasibilityResult(sat, sat, sat).scenario_infeasible
+            >>> BmcFeasibilityResult(
+            ...     sat, sat, sat, localization_status="not_needed"
+            ... ).scenario_infeasible
             False
         """
         return self.assumptions.status == "unsat"
@@ -1905,7 +1921,9 @@ class BmcFeasibilityResult(_PrettyPrintableMixin):
         Example::
 
             >>> sat = BmcFeasibilityCheck("sat", "inferred")
-            >>> BmcFeasibilityResult(sat, sat, sat).to_canonical()["infeasible_stage"] is None
+            >>> BmcFeasibilityResult(
+            ...     sat, sat, sat, localization_status="not_needed"
+            ... ).to_canonical()["infeasible_stage"] is None
             True
         """
         return {
@@ -1958,6 +1976,11 @@ def _is_not_checked_feasibility(value: BmcFeasibilityResult) -> bool:
         and value.refinement_status in {"not_requested", "not_needed"}
         and not value.refinement_checks
     )
+
+
+def _has_nonempty_incomplete_formula(formula: BmcPropertyFormula) -> bool:
+    """Return whether a response formula has a real suffix diagnostic."""
+    return not z3.is_false(formula.incomplete_formula)
 
 
 def _has_diagnostic(result: "BmcSolveResult", marker: str) -> bool:
@@ -2140,6 +2163,12 @@ class BmcSolveResult(_PrettyPrintableMixin):
         if self.incomplete_status is not None and self.kind != "response":
             raise BmcBuildError(
                 "incomplete status is only valid for response properties."
+            )
+        if self.incomplete_status is not None and not _has_nonempty_incomplete_formula(
+            self.formula
+        ):
+            raise BmcBuildError(
+                "incomplete status requires a non-empty suffix formula."
             )
         if self.incomplete_status is not None and self.status != "unsat":
             raise BmcBuildError("incomplete status requires a primary UNSAT result.")
@@ -2414,11 +2443,18 @@ class BmcSolveResult(_PrettyPrintableMixin):
 
         Example::
 
-            >>> formula = _verdict_formula("reach")
-            >>> solver = z3.Solver()
-            >>> solver.add(z3.BoolVal(True))
-            >>> _ = solver.check()
-            >>> BmcSolveResult(formula, "sat", model=solver.model()).available_model_roles
+            >>> from pyfcstm.bmc import BmcEngine, build_bmc_core_formula, compile_bmc_property
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> from pyfcstm.bmc.witness import solve_bmc_property
+            >>> sm = load_state_machine_from_text("state Root;")
+            >>> formula = compile_bmc_property(
+            ...     build_bmc_core_formula(
+            ...         BmcEngine(sm).prepare(
+            ...             'check reach <= 1: active("Root");'
+            ...         )
+            ...     )
+            ... )
+            >>> solve_bmc_property(formula).available_model_roles
             ('primary_witness',)
         """
         if self.status == "sat":
@@ -2429,6 +2465,7 @@ class BmcSolveResult(_PrettyPrintableMixin):
             self.status == "unsat"
             and self.incomplete_status == "sat"
             and self.kind == "response"
+            and _has_nonempty_incomplete_formula(self.formula)
             and self.feasibility.assumptions.status == "sat"
         ):
             return ("incomplete_suffix",)
@@ -3728,6 +3765,8 @@ def _check_with_budget(
     bool,
 ]:
     remaining = budget.remaining_ms()
+    # ``timeout_ms=None`` leaves ``deadline`` and ``remaining`` unset, so this
+    # path intentionally calls Z3 without setting a solver timeout.
     if budget.deadline is not None and remaining is None:
         return "timeout", None, "deadline_exhausted_before_check", 0.0, False
     if remaining is not None:
@@ -4702,6 +4741,10 @@ def decode_bmc_result_trace(
     if result.feasibility.assumptions.status != "sat":
         raise BmcBuildError(
             "incomplete_suffix model channel requires SAT assumptions feasibility."
+        )
+    if not _has_nonempty_incomplete_formula(result.formula):
+        raise BmcBuildError(
+            "incomplete_suffix model channel requires a non-empty suffix formula."
         )
     if result.incomplete_status != "sat" or result.incomplete_model is None:
         raise BmcBuildError(

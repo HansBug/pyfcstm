@@ -1106,7 +1106,7 @@ class SimulationRuntime:
             >>> sm = parse_dsl_node_to_state_machine(ast)
             >>> runtime = SimulationRuntime(sm)
             >>> runtime.cycle()
-            CycleResult(value=None, input_events=(), consumed_events=(), unconsumed_events=())
+            CycleResult(value=None, input_events=(), consumed_events=(), unconsumed_events=(), delta=False)
             >>> runtime._parse_event('System.Idle.Start').path_name
             'System.Idle.Start'
         """

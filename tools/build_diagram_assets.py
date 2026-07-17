@@ -43,6 +43,14 @@ ASSET_MARKERS = {
 }
 
 
+def _node_command(name: str) -> str:
+    """Return a subprocess-safe Node command for the current platform."""
+    # Windows exposes npm/npx through ``.cmd`` shims. ``shell=False`` (the
+    # required safe subprocess mode) does not resolve those shims by their
+    # extensionless names on all supported Python versions.
+    return name + ".cmd" if os.name == "nt" else name
+
+
 def sha256_bytes(data: bytes) -> str:
     """Return the lower-case SHA-256 digest for ``data``."""
     return hashlib.sha256(data).hexdigest()
@@ -99,7 +107,7 @@ def ensure_js_dependencies() -> None:
         return
     subprocess.run(
         [
-            "npm",
+            _node_command("npm"),
             "ci",
             "--ignore-scripts",
             "--no-audit",
@@ -149,7 +157,7 @@ def build_renderer(output: Path, esbuild_version: str) -> Tuple[bytes, Dict[str,
     """
     metafile = output.with_suffix(".meta.json")
     command = [
-        "npx",
+        _node_command("npx"),
         "--yes",
         "esbuild@%s" % esbuild_version,
         str(ENTRY_PATH),

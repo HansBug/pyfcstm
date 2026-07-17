@@ -7,9 +7,9 @@ file, parses it into an internal model, and emits PlantUML text either to a
 file or to standard output.
 
 The module is intended to be used as part of a larger CLI application that
-manages multiple subcommands. It does not expose any public API directly;
-instead, it contributes functionality through the helper function that
-registers the subcommand.
+manages multiple subcommands. It exposes the shared PlantUML option resolver
+and source builder used by the ``plantuml`` and ``visualize`` entry points,
+alongside the helper that registers the subcommand.
 
 .. note::
    The CLI entry point relies on :func:`pyfcstm.dsl.parse.parse_with_grammar_entry`
@@ -26,10 +26,13 @@ Example::
 
 """
 
+import difflib
 import pathlib
-from typing import Optional, Tuple, Dict, Union
+from dataclasses import dataclass
+from typing import Any, Dict, Optional, Tuple, Union
 
 import click
+from click.core import ParameterSource
 
 from .base import CONTEXT_SETTINGS, ClickErrorException
 from ..dsl import parse_with_grammar_entry
@@ -37,41 +40,445 @@ from ..model import parse_dsl_node_to_state_machine
 from ..model.plantuml import PlantUMLOptions
 from ..utils import auto_decode, parse_key_value_pairs
 
-#: Accepted value types for PlantUML CLI configuration keys.
-PLANTUML_OPTION_TYPES: Dict[str, Union[type, str]] = {
-    'detail_level': str,
-    'show_variable_definitions': bool,
-    'variable_display_mode': str,
-    'variable_legend_position': str,
-    'state_name_format': 'tuple[str, ...]',
-    'show_pseudo_state_style': bool,
-    'collapse_empty_states': bool,
-    'show_lifecycle_actions': bool,
-    'show_enter_actions': bool,
-    'show_during_actions': bool,
-    'show_exit_actions': bool,
-    'show_aspect_actions': bool,
-    'show_abstract_actions': bool,
-    'show_concrete_actions': bool,
-    'abstract_action_marker': str,
-    'max_action_lines': int,
-    'show_transition_guards': bool,
-    'show_transition_effects': bool,
-    'transition_effect_mode': str,
-    'show_events': bool,
-    'event_name_format': 'tuple[str, ...]',
-    'event_visualization_mode': str,
-    'event_legend_position': str,
-    'max_depth': int,
-    'collapsed_state_marker': str,
-    'use_skinparam': bool,
-    'use_stereotypes': bool,
+@dataclass(frozen=True)
+class _PlantUMLOptionSpec:
+    """
+    Metadata for one PlantUML option exposed at the CLI boundary.
+
+    :ivar type_hint: Type hint consumed by ``parse_key_value_pairs``.
+    :ivar choices: Allowed scalar values after case normalization.
+    :ivar element_choices: Allowed values for tuple elements.
+    :ivar python_only: Whether the option requires the Python API.
+
+    Example::
+
+        >>> _PlantUMLOptionSpec(bool).type_hint is bool
+        True
+    """
+
+    type_hint: Optional[Union[type, str]]
+    choices: Tuple[str, ...] = ()
+    element_choices: Tuple[str, ...] = ()
+    python_only: bool = False
+
+
+_DETAIL_LEVEL_CHOICES = ('minimal', 'normal', 'full')
+_LEGEND_POSITION_CHOICES = (
+    'top left', 'top center', 'top right',
+    'bottom left', 'bottom center', 'bottom right',
+    'left', 'right', 'center',
+)
+
+
+# This registry is the single source for CLI types, choices, supported-key
+# diagnostics, and the Python-only field classification.
+_PLANTUML_OPTION_REGISTRY: Dict[str, _PlantUMLOptionSpec] = {
+    'detail_level': _PlantUMLOptionSpec(str, choices=_DETAIL_LEVEL_CHOICES),
+    'show_variable_definitions': _PlantUMLOptionSpec(bool),
+    'variable_display_mode': _PlantUMLOptionSpec(
+        str, choices=('note', 'legend', 'hide')
+    ),
+    'variable_legend_position': _PlantUMLOptionSpec(
+        str, choices=_LEGEND_POSITION_CHOICES
+    ),
+    'state_name_format': _PlantUMLOptionSpec(
+        'tuple[str, ...]', element_choices=('name', 'extra_name', 'path')
+    ),
+    'show_pseudo_state_style': _PlantUMLOptionSpec(bool),
+    'collapse_empty_states': _PlantUMLOptionSpec(bool),
+    'show_lifecycle_actions': _PlantUMLOptionSpec(bool),
+    'show_enter_actions': _PlantUMLOptionSpec(bool),
+    'show_during_actions': _PlantUMLOptionSpec(bool),
+    'show_exit_actions': _PlantUMLOptionSpec(bool),
+    'show_aspect_actions': _PlantUMLOptionSpec(bool),
+    'show_abstract_actions': _PlantUMLOptionSpec(bool),
+    'show_concrete_actions': _PlantUMLOptionSpec(bool),
+    'abstract_action_marker': _PlantUMLOptionSpec(
+        str, choices=('text', 'symbol', 'none')
+    ),
+    'max_action_lines': _PlantUMLOptionSpec(int),
+    'show_transition_guards': _PlantUMLOptionSpec(bool),
+    'show_transition_effects': _PlantUMLOptionSpec(bool),
+    'transition_effect_mode': _PlantUMLOptionSpec(
+        str, choices=('note', 'inline', 'hide')
+    ),
+    'show_events': _PlantUMLOptionSpec(bool),
+    'event_name_format': _PlantUMLOptionSpec(
+        'tuple[str, ...]',
+        element_choices=('name', 'extra_name', 'path', 'relpath'),
+    ),
+    'event_visualization_mode': _PlantUMLOptionSpec(
+        str, choices=('none', 'color', 'legend', 'both', 'dependency_view')
+    ),
+    'event_legend_position': _PlantUMLOptionSpec(
+        str, choices=_LEGEND_POSITION_CHOICES
+    ),
+    'max_depth': _PlantUMLOptionSpec(int),
+    'collapsed_state_marker': _PlantUMLOptionSpec(str),
+    'use_skinparam': _PlantUMLOptionSpec(bool),
+    'use_stereotypes': _PlantUMLOptionSpec(bool),
+    'custom_colors': _PlantUMLOptionSpec(None, python_only=True),
 }
+
+# Kept as a derived compatibility view for callers that only need parser type
+# hints. No key or type is maintained independently from the registry above.
+_PLANTUML_OPTION_TYPES: Dict[str, Union[type, str]] = {
+    key: spec.type_hint
+    for key, spec in _PLANTUML_OPTION_REGISTRY.items()
+    if not spec.python_only and spec.type_hint is not None
+}
+_PLANTUML_PYTHON_ONLY_OPTIONS = frozenset(
+    key for key, spec in _PLANTUML_OPTION_REGISTRY.items() if spec.python_only
+)
+
+# Preserve the pre-existing public mapping for callers that imported it
+# directly; keep it separate from the resolver's private parser hints so
+# compatibility callers cannot mutate validation behavior in this process.
+#: Accepted value types for PlantUML CLI configuration keys, derived from the
+#: PlantUML option registry.
+#: :meta hide-value:
+PLANTUML_OPTION_TYPES = dict(_PLANTUML_OPTION_TYPES)
+
+
+@dataclass(frozen=True)
+class _PlantUMLOptionAssignment:
+    """
+    One normalized option assignment with its user-visible source label.
+
+    :ivar key: Canonical PlantUML option name.
+    :ivar value: Typed and choice-normalized value.
+    :ivar source: User-facing source label used in diagnostics.
+
+    Example::
+
+        >>> _PlantUMLOptionAssignment('max_depth', 2, '--config[1]').value
+        2
+    """
+
+    key: str
+    value: Any
+    source: str
+
+
+def _format_supported_plantuml_options() -> str:
+    """
+    Format supported CLI options from the single registry.
+
+    :return: Grouped supported-option text for a CLI diagnostic.
+    :rtype: str
+
+    Example::
+
+        >>> 'Supported --config options:' in _format_supported_plantuml_options()
+        True
+    """
+    groups = (
+        ('Boolean', lambda hint: hint is bool),
+        ('Integer', lambda hint: hint is int),
+        ('Tuple', lambda hint: isinstance(hint, str) and hint.startswith('tuple[')),
+        ('String', lambda hint: hint is str),
+    )
+    lines = ['Supported --config options:']
+    for label, predicate in groups:
+        names = sorted(
+            key for key, spec in _PLANTUML_OPTION_REGISTRY.items()
+            if not spec.python_only and predicate(spec.type_hint)
+        )
+        lines.append(f'  {label}: {", ".join(names)}')
+    lines.append('Dedicated option: detail_level is also available as -l/--level.')
+    lines.append('Python API only: custom_colors')
+    return '\n'.join(lines)
+
+
+def _unknown_plantuml_option_error(key: str) -> str:
+    """
+    Build a strict unknown-key diagnostic with an optional suggestion.
+
+    :param key: User-provided configuration key.
+    :type key: str
+    :return: Error text containing an optional typo suggestion and support list.
+    :rtype: str
+
+    Example::
+
+        >>> 'show_events' in _unknown_plantuml_option_error('show_event')
+        True
+    """
+    message = f"Unknown PlantUML configuration option {key!r}."
+    suggestion = difflib.get_close_matches(
+        key, sorted(_PLANTUML_OPTION_REGISTRY), n=1, cutoff=0.6
+    )
+    if suggestion:
+        message += f"\nDid you mean {suggestion[0]!r}?"
+    return f'{message}\n\n{_format_supported_plantuml_options()}'
+
+
+def _canonical_choice(key: str, value: Any, choices: Tuple[str, ...]) -> str:
+    """
+    Normalize a case-insensitive string choice or raise a CLI error.
+
+    :param key: PlantUML option name used in diagnostics.
+    :type key: str
+    :param value: User-provided value to normalize.
+    :param choices: Canonical choices accepted for the option.
+    :type choices: Tuple[str, ...]
+    :return: The matching canonical choice.
+    :rtype: str
+    :raises pyfcstm.entry.base.ClickErrorException: If ``value`` is not a
+        valid string choice.
+
+    Example::
+
+        >>> _canonical_choice('detail_level', 'FULL', ('minimal', 'full'))
+        'full'
+    """
+    if not isinstance(value, str):
+        raise ClickErrorException(
+            f"Invalid value for PlantUML option {key!r}: {value!r}. "
+            f'Expected one of: {", ".join(choices)}.'
+        )
+    normalized = value.strip().casefold()
+    for choice in choices:
+        if choice.casefold() == normalized:
+            return choice
+    raise ClickErrorException(
+        f"Invalid value for PlantUML option {key!r}: {value!r}. "
+        f'Expected one of: {", ".join(choices)}.'
+    )
+
+
+def _canonical_option_value(key: str, value: Any, spec: _PlantUMLOptionSpec) -> Any:
+    """
+    Apply registry choices and tuple-element validation to a parsed value.
+
+    :param key: PlantUML option name used in diagnostics.
+    :type key: str
+    :param value: Typed value returned by the generic parser.
+    :param spec: Registry metadata for ``key``.
+    :type spec: _PlantUMLOptionSpec
+    :return: Canonical scalar or tuple value.
+    :rtype: Any
+    :raises pyfcstm.entry.base.ClickErrorException: If a choice or tuple
+        element is invalid.
+
+    Example::
+
+        >>> _canonical_option_value(
+        ...     'state_name_format', ('NAME', 'path'),
+        ...     _PlantUMLOptionSpec('tuple[str, ...]', element_choices=('name', 'path')),
+        ... )
+        ('name', 'path')
+    """
+    if spec.choices:
+        return _canonical_choice(key, value, spec.choices)
+    if spec.element_choices:
+        if not isinstance(value, tuple):
+            raise ClickErrorException(
+                f"Invalid value for PlantUML option {key!r}: {value!r}. "
+                'Expected a tuple value.'
+            )
+        if not value or not any(str(element).strip() for element in value):
+            raise ClickErrorException(
+                f"Invalid value for PlantUML option {key!r}: "
+                'expected at least one element.'
+            )
+        canonical = []
+        for index, element in enumerate(value):
+            try:
+                canonical.append(_canonical_choice(key, element, spec.element_choices))
+            except ClickErrorException as err:
+                # _canonical_choice rejects an invalid enum or tuple element.
+                raise ClickErrorException(f'{err} (element {index})')
+        return tuple(canonical)
+    return value
+
+
+def _parse_plantuml_config_assignment(pair: str, index: int) -> _PlantUMLOptionAssignment:
+    """
+    Validate and parse one raw ``key=value`` CLI assignment.
+
+    :param pair: Raw assignment from one ``-c/--config`` occurrence.
+    :type pair: str
+    :param index: One-based occurrence index used in warning text.
+    :type index: int
+    :return: Typed, canonical assignment with a source label.
+    :rtype: _PlantUMLOptionAssignment
+    :raises pyfcstm.entry.base.ClickErrorException: If the key or value is
+        outside the CLI registry.
+
+    Example::
+
+        >>> _parse_plantuml_config_assignment('max_depth=2', 1).value
+        2
+    """
+    if '=' not in pair:
+        raise ClickErrorException(f"Option must be in 'key=value' format, got: {pair}")
+    key, raw_value = pair.split('=', 1)
+    key = key.strip()
+    if not key:
+        raise ClickErrorException('PlantUML configuration option key cannot be empty.')
+    spec = _PLANTUML_OPTION_REGISTRY.get(key)
+    if spec is None:
+        raise ClickErrorException(_unknown_plantuml_option_error(key))
+    if spec.python_only:
+        raise ClickErrorException(
+            f'PlantUML option {key!r} requires a mapping and is Python API only; '
+            f'use PlantUMLOptions({key}={{...}}) instead.'
+        )
+    try:
+        parsed = parse_key_value_pairs((pair,), type_hints=_PLANTUML_OPTION_TYPES)[key]
+    except ValueError as err:
+        # parse_key_value_pairs rejects a value that cannot match the registry type hint.
+        raise ClickErrorException(str(err))
+    value = _canonical_option_value(key, parsed, spec)
+    return _PlantUMLOptionAssignment(key, value, f'--config[{index}]')
+
+
+def _format_option_conflict(
+    key: str,
+    assignments: Tuple[_PlantUMLOptionAssignment, ...],
+    winner: _PlantUMLOptionAssignment,
+) -> str:
+    """
+    Format one stable warning for all conflicting assignments of a key.
+
+    :param key: Canonical option name with conflicting values.
+    :param assignments: Explicit assignments for ``key`` in source order.
+    :param winner: Assignment selected by precedence or last-wins.
+    :return: Multi-line warning body without the ``Warning:`` prefix.
+    :rtype: str
+
+    Example::
+
+        >>> item = _PlantUMLOptionAssignment('max_depth', 2, '--config[2]')
+        >>> 'Using 2 from --config[2].' in _format_option_conflict('max_depth', (item,), item)
+        True
+    """
+    lines = [f"conflicting explicit values for PlantUML option {key!r}:"]
+    lines.extend(f'  {item.source}: {item.value!r}' for item in assignments)
+    lines.append(f'Using {winner.value!r} from {winner.source}.')
+    return '\n'.join(lines)
+
+
+def resolve_plantuml_options(
+    config_options: Tuple[str, ...] = (),
+    dedicated_detail_level: Optional[str] = None,
+) -> Tuple[PlantUMLOptions, Tuple[str, ...]]:
+    """
+    Resolve PlantUML CLI options from explicit generic and dedicated sources.
+
+    :param config_options: Raw ``key=value`` assignments from ``-c``.
+    :type config_options: Tuple[str, ...]
+    :param dedicated_detail_level: Explicit ``-l/--level`` value, or ``None``
+        when the Click default was used.
+    :type dedicated_detail_level: str or None
+    :return: Effective options and zero or more warning messages.
+    :rtype: Tuple[PlantUMLOptions, Tuple[str, ...]]
+    :raises pyfcstm.entry.base.ClickErrorException: If a key/value is invalid or
+        ``PlantUMLOptions`` rejects the effective configuration.
+
+    Example::
+
+        >>> options, warnings = resolve_plantuml_options(('max_depth=2',))
+        >>> options.max_depth
+        2
+        >>> warnings
+        ()
+    """
+    assignments = [
+        _parse_plantuml_config_assignment(pair, index)
+        for index, pair in enumerate(config_options, 1)
+    ]
+    if dedicated_detail_level is not None:
+        detail_spec = _PLANTUML_OPTION_REGISTRY['detail_level']
+        assignments.append(
+            _PlantUMLOptionAssignment(
+                'detail_level',
+                _canonical_option_value('detail_level', dedicated_detail_level, detail_spec),
+                '--level',
+            )
+        )
+
+    by_key: Dict[str, list] = {}
+    for assignment in assignments:
+        by_key.setdefault(assignment.key, []).append(assignment)
+
+    effective: Dict[str, Any] = {}
+    warnings = []
+    for key, grouped in by_key.items():
+        grouped_tuple = tuple(grouped)
+        dedicated = next(
+            (item for item in grouped_tuple if item.source == '--level'), None
+        )
+        winner = dedicated or grouped_tuple[-1]
+        if any(item.value != grouped_tuple[0].value for item in grouped_tuple[1:]):
+            warnings.append(_format_option_conflict(key, grouped_tuple, winner))
+        effective[key] = winner.value
+
+    try:
+        options = PlantUMLOptions(**effective)
+    except ValueError as err:
+        # PlantUMLOptions.__post_init__ rejects an invalid cross-field configuration.
+        raise ClickErrorException(f'Invalid PlantUML configuration: {err}')
+    return options, tuple(warnings)
+
+
+def _emit_plantuml_warnings(warnings: Tuple[str, ...]) -> None:
+    """
+    Write resolver warnings to stderr without changing command success.
+
+    :param warnings: Warning bodies returned by the resolver.
+    :type warnings: Tuple[str, ...]
+    :return: ``None``; warnings are emitted through Click's stderr stream.
+    :rtype: None
+
+    Example::
+
+        >>> _emit_plantuml_warnings(())
+    """
+    for warning in warnings:
+        click.echo(f'Warning: {warning}', err=True)
+
+
+def _render_plantuml_source(input_code_file: str, options: PlantUMLOptions) -> str:
+    """
+    Parse a DSL file and render it with already-resolved options.
+
+    :param input_code_file: Path to the input state-machine DSL file.
+    :type input_code_file: str
+    :param options: Fully resolved PlantUML options.
+    :type options: PlantUMLOptions
+    :return: PlantUML source text.
+    :rtype: str
+    :raises pyfcstm.entry.base.ClickErrorException: If the input file cannot
+        be read.
+    :raises UnicodeDecodeError: If the input bytes cannot be decoded.
+    :raises pyfcstm.dsl.error.GrammarParseError: If the DSL is invalid.
+
+    Example::
+
+        >>> from pathlib import Path
+        >>> Path('example.fcstm').exists()
+        False
+    """
+    input_path = pathlib.Path(input_code_file)
+    try:
+        code = auto_decode(input_path.read_bytes())
+    except FileNotFoundError:
+        # Path.read_bytes raises this when the requested DSL file does not exist.
+        raise ClickErrorException(f'Input DSL file not found: {input_code_file}')
+    except OSError as err:
+        # Path.read_bytes raises OSError for other filesystem/read failures.
+        raise ClickErrorException(f'Failed to read input DSL file {input_code_file}: {err}')
+
+    ast_node = parse_with_grammar_entry(code, entry_name='state_machine_dsl')
+    model = parse_dsl_node_to_state_machine(ast_node, path=input_code_file)
+    return model.to_plantuml(options)
 
 
 def build_plantuml_output(
     input_code_file: str,
-    detail_level: str = 'normal',
+    detail_level: Optional[str] = None,
     config_options: Tuple[str, ...] = (),
 ) -> str:
     """
@@ -83,8 +490,9 @@ def build_plantuml_output(
 
     :param input_code_file: Path to the input DSL file.
     :type input_code_file: str
-    :param detail_level: PlantUML detail level preset, defaults to ``'normal'``.
-    :type detail_level: str, optional
+    :param detail_level: Explicit PlantUML detail level preset. ``None`` means
+        that the built-in ``'normal'`` default was not explicitly supplied.
+    :type detail_level: str or None, optional
     :param config_options: Additional PlantUML configuration options in
         ``key=value`` format.
     :type config_options: Tuple[str, ...], optional
@@ -103,24 +511,12 @@ def build_plantuml_output(
         >>> plantuml_text.startswith('@startuml')
         True
     """
-    input_path = pathlib.Path(input_code_file)
-    try:
-        code = auto_decode(input_path.read_bytes())
-    except FileNotFoundError:
-        raise ClickErrorException(f'Input DSL file not found: {input_code_file}')
-    except OSError as err:
-        raise ClickErrorException(f'Failed to read input DSL file {input_code_file}: {err}')
-
-    ast_node = parse_with_grammar_entry(code, entry_name='state_machine_dsl')
-    model = parse_dsl_node_to_state_machine(ast_node, path=input_code_file)
-
-    try:
-        parsed_options = parse_key_value_pairs(config_options, type_hints=PLANTUML_OPTION_TYPES)
-    except ValueError as err:
-        raise ClickErrorException(str(err))
-
-    options = PlantUMLOptions(detail_level=detail_level, **parsed_options)
-    return model.to_plantuml(options)
+    options, warnings = resolve_plantuml_options(
+        config_options=config_options,
+        dedicated_detail_level=detail_level,
+    )
+    _emit_plantuml_warnings(warnings)
+    return _render_plantuml_source(input_code_file, options)
 
 
 def _add_plantuml_subcommand(cli: click.Group) -> click.Group:
@@ -147,7 +543,11 @@ def _add_plantuml_subcommand(cli: click.Group) -> click.Group:
 
     @cli.command(
         'plantuml',
-        help='Create Plantuml code of a given state machine DSL code.',
+        help=(
+            'Create PlantUML source from a state machine DSL file.\n\n'
+            'Configuration reference:\n'
+            'https://pyfcstm.readthedocs.io/en/latest/reference/visualization_options/'
+        ),
         context_settings=CONTEXT_SETTINGS,
     )
     @click.option(
@@ -221,7 +621,8 @@ def _add_plantuml_subcommand(cli: click.Group) -> click.Group:
             provided DSL input.
         :raises SyntaxError: If the parsed DSL contains invalid state machine
             constructs.
-        :raises click.BadParameter: If a config option is not in key=value format.
+        :raises pyfcstm.entry.base.ClickErrorException: If a config option is
+            invalid or is not in key=value format.
 
         Example::
 
@@ -237,11 +638,18 @@ def _add_plantuml_subcommand(cli: click.Group) -> click.Group:
             >>> # Combine preset with overrides
             >>> # pyfcstm plantuml -i example.dsl -l full -c max_depth=3 -c event_visualization_mode=color
         """
-        plantuml_output = build_plantuml_output(
-            input_code_file=input_code_file,
-            detail_level=detail_level,
-            config_options=config_options,
+        context = click.get_current_context()
+        dedicated_detail_level = (
+            detail_level
+            if context.get_parameter_source('detail_level') is ParameterSource.COMMANDLINE
+            else None
         )
+        options, warnings = resolve_plantuml_options(
+            config_options=config_options,
+            dedicated_detail_level=dedicated_detail_level,
+        )
+        _emit_plantuml_warnings(warnings)
+        plantuml_output = _render_plantuml_source(input_code_file, options)
 
         # Write output
         if output_file is not None:

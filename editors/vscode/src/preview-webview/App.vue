@@ -511,11 +511,27 @@ body {
     box-sizing: border-box;
     flex: 1;
     min-height: 0;
+    container: fcstm-preview / size;
 }
 
-/* Bottom drawer: bounded-height container holding DetailsPanel and
-   BottomPanels. Stage above gets the remaining flex space, so clicks
-   into the Details area don't resize the diagram. */
+/* A side-by-side VSCode editor group is much shorter than a standalone
+   browser page. The Stage defaults to a 320px minimum, but this compact
+   workbench contract deliberately lowers that floor to 240px after the
+   toolbar, options and details drawer have claimed their fixed space. */
+@container fcstm-preview (max-height: 760px) {
+    .fcstm-stage { min-height: 240px; }
+}
+/* Container queries are unavailable in some older VSCode WebViews covered
+   by the extension's ``^1.60.0`` engine range. The webview viewport itself
+   is the editor-group height, so this media-query fallback preserves the
+   compact right-pane contract there as well. */
+@media (max-height: 760px) {
+    .fcstm-stage { min-height: 240px; }
+}
+
+/* Bottom drawer: bounded-height container holding DetailsPanel. The
+   variables/events panels remain below it; Stage above gets the remaining
+   flex space, so clicks into Details do not resize the diagram. */
 .fcstm-bottom-drawer {
     flex: 0 0 auto;
     display: flex;

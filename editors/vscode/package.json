@@ -56,6 +56,7 @@
     "watch": "node esbuild.config.js --watch",
     "compile:tsc": "tsc -p ./",
     "pretest": "npm run compile:tsc",
+    "test:preview-geometry": "node scripts/run-preview-geometry.js",
     "lint": "eslint src --ext ts",
     "package": "vsce package --out build/"
   },

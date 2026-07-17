@@ -585,16 +585,13 @@ def test_public_non_trace_objects_are_field_value_golden_pinned() -> None:
     """
     expected_runtime_step = """
         BmcRuntimeStep
-        field               value
-        index               0
-        input_events        A
-        consumed_events     A
-        unconsumed_events   -
-        abstract_calls      -
-        delta               false
-        cycle_count_before  -
-        cycle_count_after   -
-        history_entry       -
+        field              value
+        index              0
+        input_events       A
+        consumed_events    A
+        unconsumed_events  -
+        abstract_calls     -
+        delta              false
     """
 
     _assert_text_equal(

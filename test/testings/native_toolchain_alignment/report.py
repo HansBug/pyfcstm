@@ -1,9 +1,9 @@
 """
 JSON report contracts for native toolchain semantic alignment.
 
-This module defines the second-version result, command, and observation schema
-used by the native toolchain pytest helper. The schema is intentionally test
-local: generated C-family artifacts write public observations, and Python-side
+This module defines the result, command, and observation contracts used by the
+native toolchain pytest helper. The schema is intentionally test local:
+generated C-family artifacts write public observations, and Python-side
 pytest code stores command logs and summary results beside the build artifacts.
 
 The module contains:
@@ -26,8 +26,6 @@ import os
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
 
-SCHEMA_VERSION = "2"
-
 COMMAND_REQUIRED_FIELDS = {
     "stage",
     "argv",
@@ -38,8 +36,8 @@ COMMAND_REQUIRED_FIELDS = {
     "stderr_path",
     "timed_out",
 }
+COMMAND_ALLOWED_FIELDS = frozenset(COMMAND_REQUIRED_FIELDS)
 RESULT_REQUIRED_FIELDS = {
-    "schema_version",
     "case_id",
     "template_name",
     "profile_name",
@@ -63,7 +61,6 @@ RESULT_REQUIRED_FIELDS = {
     "report_only",
 }
 OBSERVATION_REQUIRED_FIELDS = {
-    "schema_version",
     "case_id",
     "template_name",
     "phase",
@@ -78,6 +75,8 @@ OBSERVATION_REQUIRED_FIELDS = {
     "api_return",
     "delta",
 }
+RESULT_ALLOWED_FIELDS = frozenset(RESULT_REQUIRED_FIELDS)
+OBSERVATION_ALLOWED_FIELDS = frozenset(OBSERVATION_REQUIRED_FIELDS)
 RESULT_STATUS_VALUES = {"passed", "failed", "error", "skipped"}
 RESULT_CLASSIFICATION_VALUES = {
     "passed",
@@ -241,8 +240,8 @@ class NativeToolchainResult:
         ...     "demo", "c", "linux-gcc-o2", "cmake-run", "gcc", "gcc 1",
         ...     "gcc", "gcc 1", "-O2", "passed", "passed", "ok",
         ... )
-        >>> result.to_dict()["schema_version"]
-        '2'
+        >>> "delta" in result.to_dict()
+        False
     """
 
     case_id: str
@@ -284,7 +283,6 @@ class NativeToolchainResult:
             'profile_error'
         """
         return {
-            "schema_version": SCHEMA_VERSION,
             "case_id": self.case_id,
             "template_name": self.template_name,
             "profile_name": self.profile_name,
@@ -315,6 +313,14 @@ def _missing_fields(
     return sorted(set(required_fields) - set(data.keys()))
 
 
+def _reject_unknown_fields(
+    data: Mapping[str, Any], allowed_fields: Iterable[str], label: str
+) -> None:
+    unknown = sorted(set(data.keys()) - set(allowed_fields))
+    if unknown:
+        raise ValueError("%s has unknown fields: %r" % (label, unknown))
+
+
 def validate_command_data(data: Mapping[str, Any]) -> None:
     """
     Validate one command record dictionary.
@@ -331,6 +337,7 @@ def validate_command_data(data: Mapping[str, Any]) -> None:
         >>> record = NativeCommandRecord("version", ["cc", "--version"], "/tmp")
         >>> validate_command_data(record.to_dict())
     """
+    _reject_unknown_fields(data, COMMAND_ALLOWED_FIELDS, "command record")
     missing = _missing_fields(data, COMMAND_REQUIRED_FIELDS)
     if missing:
         raise ValueError("command record missing fields: %r" % missing)
@@ -373,11 +380,10 @@ def validate_result_data(data: Mapping[str, Any]) -> None:
         ... )
         >>> validate_result_data(result.to_dict())
     """
+    _reject_unknown_fields(data, RESULT_ALLOWED_FIELDS, "result")
     missing = _missing_fields(data, RESULT_REQUIRED_FIELDS)
     if missing:
         raise ValueError("result missing fields: %r" % missing)
-    if data["schema_version"] != SCHEMA_VERSION:
-        raise ValueError("result schema_version must be %r" % SCHEMA_VERSION)
     for key in (
         "case_id",
         "template_name",
@@ -443,18 +449,17 @@ def validate_observation_data(data: Mapping[str, Any]) -> None:
     Example::
 
         >>> validate_observation_data({
-        ...     "schema_version": "2", "case_id": "demo", "template_name": "c",
-        ...     "phase": "step", "step_index": 0, "cycle_index": 0,
+        ...     "case_id": "demo", "template_name": "c", "phase": "step",
+        ...     "step_index": 0, "cycle_index": 0,
         ...     "events": [], "current_state": "Root.A", "is_ended": False,
         ...     "vars": {}, "handler_calls": [], "last_error": None,
         ...     "api_return": 1, "delta": False,
         ... })
     """
+    _reject_unknown_fields(data, OBSERVATION_ALLOWED_FIELDS, "observation")
     missing = _missing_fields(data, OBSERVATION_REQUIRED_FIELDS)
     if missing:
         raise ValueError("observation missing fields: %r" % missing)
-    if data["schema_version"] != SCHEMA_VERSION:
-        raise ValueError("observation schema_version must be %r" % SCHEMA_VERSION)
     for key in ("case_id", "template_name", "phase"):
         if not isinstance(data[key], str):
             raise ValueError("observation %s must be a string" % key)
@@ -529,8 +534,8 @@ def read_observations_jsonl(path: str) -> List[Dict[str, Any]]:
         >>> td = tempfile.mkdtemp()
         >>> path = os.path.join(td, "observations.jsonl")
         >>> _ = open(path, "w").write(json.dumps({
-        ...     "schema_version": "2", "case_id": "demo", "template_name": "c",
-        ...     "phase": "step", "step_index": 0, "cycle_index": 0,
+        ...     "case_id": "demo", "template_name": "c", "phase": "step",
+        ...     "step_index": 0, "cycle_index": 0,
         ...     "events": [], "current_state": "Root.A", "is_ended": False,
         ...     "vars": {}, "handler_calls": [], "last_error": None,
         ...     "api_return": 1, "delta": False,

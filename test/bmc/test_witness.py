@@ -1193,7 +1193,6 @@ def test_solve_result_rejects_invalid_public_payloads(factory, message) -> None:
             ),
             "abstract_calls",
         ),
-        (lambda: BmcWitnessTrace({}, {}, {}, (), (), schema_version="v2"), "schema"),
         (lambda: BmcWitnessTrace((), {}, {}, (), ()), "property"),
         (lambda: BmcWitnessTrace({}, (), {}, (), ()), "solver"),
         (lambda: BmcWitnessTrace({}, {}, (), (), ()), "initial"),
@@ -1467,8 +1466,8 @@ def test_witness_trace_metadata_accepts_nested_json_payloads() -> None:
     assert canonical["initial"] == {"argv": ["--flag", 1], "mode": "cold"}
 
 
-def test_witness_v1_step_schema_includes_complete_event_accounting() -> None:
-    """The first public witness schema pins full cycle event accounting."""
+def test_witness_step_contract_includes_complete_event_accounting() -> None:
+    """The public witness contract pins full cycle event accounting."""
     trace = BmcWitnessTrace(
         {"kind": "reach"},
         {"status": "sat"},
@@ -1500,7 +1499,7 @@ def test_witness_v1_step_schema_includes_complete_event_accounting() -> None:
 
     payload = trace.to_canonical()
 
-    assert payload["schema_version"] == "bmc-witness/v1"
+    assert "schema_version" not in payload
     assert payload["steps"] == [
         {
             "index": 0,

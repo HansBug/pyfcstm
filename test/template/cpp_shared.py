@@ -2,7 +2,7 @@
 Shared C++ wrapper semantic-fixture alignment helpers.
 
 This module renders the built-in ``cpp`` and ``cpp_poll`` templates for one
-schema-v2 semantic fixture, generates a C++98 harness that drives only the
+shared semantic fixture, generates a C++98 harness that drives only the
 public ``machine.hpp`` wrapper API, builds the generated C core plus C++
 wrapper with CMake, and compares emitted public observations with the existing
 shared fixture expectations. The generated harness intentionally includes only
@@ -249,8 +249,7 @@ static void write_observation(FILE *out, Wrapper *wrapper, int step_index, int c
     const char *state_path = wrapper->current_state_path();
     const Wrapper::Vars *vars = wrapper->vars();
     fputc('{', out);
-    fputs("\"schema_version\":\"2\"", out);
-    fputs(",\"case_id\":", out);
+    fputs("\"case_id\":", out);
     json_string(out, {{ context.case_id | tojson }});
     fputs(",\"template_name\":", out);
     json_string(out, {{ context.template_name | tojson }});
@@ -283,8 +282,7 @@ static void write_observation(FILE *out, Wrapper *wrapper, int step_index, int c
 static void write_initial_error(FILE *out, const char *last_error)
 {
     fputc('{', out);
-    fputs("\"schema_version\":\"2\"", out);
-    fputs(",\"case_id\":", out);
+    fputs("\"case_id\":", out);
     json_string(out, {{ context.case_id | tojson }});
     fputs(",\"template_name\":", out);
     json_string(out, {{ context.template_name | tojson }});
@@ -604,8 +602,7 @@ static void write_observation(FILE *out, Wrapper *wrapper, int step_index, int c
     const char *state_path = wrapper->current_state_path();
     const Wrapper::Vars *vars = wrapper->vars();
     fputc('{', out);
-    fputs("\"schema_version\":\"2\"", out);
-    fputs(",\"case_id\":", out);
+    fputs("\"case_id\":", out);
     json_string(out, {{ context.case_id | tojson }});
     fputs(",\"template_name\":", out);
     json_string(out, {{ context.template_name | tojson }});
@@ -638,8 +635,7 @@ static void write_observation(FILE *out, Wrapper *wrapper, int step_index, int c
 static void write_initial_error(FILE *out, const char *last_error)
 {
     fputc('{', out);
-    fputs("\"schema_version\":\"2\"", out);
-    fputs(",\"case_id\":", out);
+    fputs("\"case_id\":", out);
     json_string(out, {{ context.case_id | tojson }});
     fputs(",\"template_name\":", out);
     json_string(out, {{ context.template_name | tojson }});

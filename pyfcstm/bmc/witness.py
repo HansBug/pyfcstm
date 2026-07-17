@@ -30,15 +30,14 @@ Example::
     >>> result = solve_bmc_property(formula)
     >>> result.status
     'sat'
-    >>> decode_bmc_witness(formula, result.model).schema_version
-    'bmc-witness/v1'
+    >>> decode_bmc_witness(formula, result.model).steps[0].delta
+    False
 """
 
 from __future__ import annotations
 
 import io
 import math
-import copy
 import sys
 import time
 from collections.abc import Iterable as IterableABC
@@ -79,7 +78,6 @@ _CanonicalDict = Dict[str, Any]
 BmcSolveStatus = Literal["sat", "unsat", "unknown", "timeout"]
 _INTERNAL_ISSUE_URL = "https://github.com/HansBug/pyfcstm/issues/new"
 _REPLAY_FLOAT_TOLERANCE = 1e-9
-_MISSING_REPLAY_OBSERVATION = object()
 _PRETTY_STR_MAX_ROWS = 50
 _MARKDOWN_TABLE_FORMATS = {"github"}
 _EVENT_REASON_PRIORITY = {
@@ -2218,9 +2216,8 @@ class BmcWitnessTrace(_PrettyPrintableMixin):
     The metadata dictionaries are public JSON-stable payloads.  They may
     contain strings, booleans, ``None``, finite numeric values, nested mappings,
     and lists, but not arbitrary Python objects or non-finite floating-point
-    values. The ``bmc-witness/v1`` step schema includes canonical replay input
-    events, ordered consumed event paths, and presence-derived unconsumed event
-    paths.
+    values. The witness step schema includes canonical replay input events,
+    ordered consumed event paths, and presence-derived unconsumed event paths.
 
     :param property: Property metadata.
     :type property: Mapping[str, object]
@@ -2234,17 +2231,14 @@ class BmcWitnessTrace(_PrettyPrintableMixin):
     :type steps: Sequence[BmcWitnessStep]
     :param diagnostics: Witness diagnostics, defaults to ``()``.
     :type diagnostics: Sequence[str], optional
-    :param schema_version: Witness schema version, defaults to
-        ``"bmc-witness/v1"``.
-    :type schema_version: str, optional
     :raises pyfcstm.bmc.errors.BmcBuildError: If the trace payload is
         malformed or violates public witness invariants.
 
     Example::
 
         >>> trace = BmcWitnessTrace({'kind': 'reach'}, {'status': 'sat'}, {'mode': 'cold'}, (), ())
-        >>> trace.to_canonical()['schema_version']
-        'bmc-witness/v1'
+        >>> sorted(trace.to_canonical())
+        ['diagnostics', 'frames', 'initial', 'property', 'solver', 'steps']
     """
 
     property: Mapping[str, Any]
@@ -2253,13 +2247,8 @@ class BmcWitnessTrace(_PrettyPrintableMixin):
     frames: Sequence[BmcWitnessFrame]
     steps: Sequence[BmcWitnessStep]
     diagnostics: Sequence[str] = ()
-    schema_version: str = "bmc-witness/v1"
 
     def __post_init__(self) -> None:
-        if self.schema_version != "bmc-witness/v1":
-            raise BmcBuildError(
-                "Unsupported witness schema version: %r." % self.schema_version
-            )
         if not isinstance(self.property, Mapping):
             raise BmcBuildError("property must be a mapping.")
         if not isinstance(self.solver, Mapping):
@@ -2308,7 +2297,6 @@ class BmcWitnessTrace(_PrettyPrintableMixin):
         solver_metadata = _coerce_public_json_mapping("solver", self.solver)
         _validate_witness_solver_metadata(solver_metadata)
         return {
-            "schema_version": self.schema_version,
             "property": _coerce_public_json_mapping("property", self.property),
             "solver": solver_metadata,
             "initial": _coerce_public_json_mapping("initial", self.initial),
@@ -2400,15 +2388,6 @@ class BmcRuntimeStep(_PrettyPrintableMixin):
     :type abstract_calls: Sequence[BmcWitnessCallRecord]
     :param delta: Runtime Delta observation, defaults to ``False``.
     :type delta: bool, optional
-    :param cycle_count_before: Runtime cycle count before the call, or ``None``
-        for a synthetic terminated absorb step.
-    :type cycle_count_before: int, optional
-    :param cycle_count_after: Runtime cycle count after the call, or ``None``
-        for a synthetic terminated absorb step.
-    :type cycle_count_after: int, optional
-    :param history_entry: Deep-copied five-field runtime history entry, or
-        ``None`` when the step is synthetic or history retention is disabled.
-    :type history_entry: Mapping[str, object], optional
     :raises pyfcstm.bmc.errors.BmcBuildError: If the runtime-step payload is
         malformed.
 
@@ -2424,9 +2403,6 @@ class BmcRuntimeStep(_PrettyPrintableMixin):
     unconsumed_events: Sequence[str]
     abstract_calls: Sequence[BmcWitnessCallRecord]
     delta: bool = False
-    cycle_count_before: Optional[int] = None
-    cycle_count_after: Optional[int] = None
-    history_entry: Optional[Mapping[str, Any]] = None
 
     def __post_init__(self) -> None:
         if (
@@ -2437,29 +2413,6 @@ class BmcRuntimeStep(_PrettyPrintableMixin):
             raise BmcBuildError("runtime step index must be a non-negative integer.")
         if not isinstance(self.delta, bool):
             raise BmcBuildError("runtime step delta must be bool.")
-        for field_name in ("cycle_count_before", "cycle_count_after"):
-            value = getattr(self, field_name)
-            if value is not None and (
-                isinstance(value, bool) or not isinstance(value, int) or value < 0
-            ):
-                raise BmcBuildError(
-                    "runtime step %s must be a non-negative integer or None."
-                    % field_name
-                )
-        if (self.cycle_count_before is None) != (self.cycle_count_after is None):
-            raise BmcBuildError(
-                "runtime step cycle_count_before and cycle_count_after must both be set or None."
-            )
-        if self.history_entry is not None:
-            object.__setattr__(
-                self,
-                "history_entry",
-                copy.deepcopy(
-                    _coerce_public_json_mapping(
-                        "runtime step history_entry", self.history_entry
-                    )
-                ),
-            )
         object.__setattr__(
             self,
             "input_events",
@@ -2508,15 +2461,6 @@ class BmcRuntimeStep(_PrettyPrintableMixin):
             "unconsumed_events": list(self.unconsumed_events),
             "abstract_calls": [item.to_canonical() for item in self.abstract_calls],
             "delta": self.delta,
-            "cycle_count_before": self.cycle_count_before,
-            "cycle_count_after": self.cycle_count_after,
-            "history_entry": (
-                None
-                if self.history_entry is None
-                else _coerce_public_json_mapping(
-                    "runtime step history_entry", self.history_entry
-                )
-            ),
         }
 
 
@@ -3694,52 +3638,10 @@ def _compare_calls(
             )
 
 
-def _compare_history_entry(
-    mismatches: list[BmcReplayMismatch],
-    index: int,
-    expected: Optional[Mapping[str, Any]],
-    actual: Optional[Mapping[str, Any]],
-) -> None:
-    path = "steps[%d].history_entry" % index
-    if expected is None or actual is None:
-        if expected != actual:
-            mismatches.append(
-                BmcReplayMismatch(path, expected, actual, "history entry presence mismatch")
-            )
-        return
-    common_keys = _compare_mapping_keys(
-        mismatches,
-        path,
-        expected,
-        actual,
-        "history entry key set mismatch",
-    )
-    for key in common_keys:
-        value_path = "%s.%s" % (path, key)
-        if isinstance(expected[key], Mapping) and isinstance(actual[key], Mapping):
-            common_var_names = _compare_mapping_keys(
-                mismatches,
-                value_path,
-                expected[key],
-                actual[key],
-                "history entry mapping key set mismatch",
-            )
-            for name in common_var_names:
-                _compare_values(
-                    mismatches,
-                    "%s.%s" % (value_path, name),
-                    expected[key][name],
-                    actual[key][name],
-                )
-        else:
-            _compare_values(mismatches, value_path, expected[key], actual[key])
-
-
 def _compare_step(
     mismatches: list[BmcReplayMismatch],
     witness: BmcWitnessStep,
     runtime: BmcRuntimeStep,
-    expected_history: object = _MISSING_REPLAY_OBSERVATION,
 ) -> None:
     is_absorb = witness.case_kind == "absorb"
     expected_delta = False if is_absorb else witness.delta
@@ -3751,33 +3653,6 @@ def _compare_step(
                 runtime.delta,
                 "delta mismatch",
             )
-        )
-    expected_before = None if is_absorb else witness.index
-    expected_after = None if is_absorb else witness.index + 1
-    if expected_before != runtime.cycle_count_before:
-        mismatches.append(
-            BmcReplayMismatch(
-                "steps[%d].cycle_count_before" % witness.index,
-                expected_before,
-                runtime.cycle_count_before,
-                "cycle count before mismatch",
-            )
-        )
-    if expected_after != runtime.cycle_count_after:
-        mismatches.append(
-            BmcReplayMismatch(
-                "steps[%d].cycle_count_after" % witness.index,
-                expected_after,
-                runtime.cycle_count_after,
-                "cycle count after mismatch",
-            )
-        )
-    if expected_history is not _MISSING_REPLAY_OBSERVATION:
-        _compare_history_entry(
-            mismatches,
-            witness.index,
-            expected_history,
-            runtime.history_entry,
         )
     if tuple(witness.input_event_paths) != tuple(runtime.input_events):
         mismatches.append(
@@ -3957,19 +3832,9 @@ def replay_bmc_witness(
         _compare_frame(mismatches, witness.frames[0], frames[0], init_runtime_state)
     for step in witness.steps:
         call_start = len(recorder.calls)
-        terminated_absorb = runtime.is_ended
-        cycle_count_before = None if terminated_absorb else runtime.cycle_count
         recorder.begin_step()
         result = runtime.cycle(step.input_event_paths)
         recorder.end_step()
-        cycle_count_after = None if terminated_absorb else runtime.cycle_count
-        history_entry = None
-        if (
-            not terminated_absorb
-            and cycle_count_after > cycle_count_before
-            and runtime.history
-        ):
-            history_entry = copy.deepcopy(runtime.history[-1])
         step_calls = tuple(
             BmcWitnessCallRecord(
                 ordinal=idx,
@@ -3990,35 +3855,9 @@ def replay_bmc_witness(
             unconsumed_events=result.unconsumed_events,
             abstract_calls=step_calls,
             delta=result.delta,
-            cycle_count_before=cycle_count_before,
-            cycle_count_after=cycle_count_after,
-            history_entry=history_entry,
         )
         steps.append(runtime_step)
-        expected_history = None
-        if step.case_kind != "absorb":
-            target_frame = (
-                witness.frames[step.target_frame]
-                if 0 <= step.target_frame < len(witness.frames)
-                else None
-            )
-            if target_frame is not None:
-                expected_history = {
-                    "cycle": step.index + 1,
-                    "state": (
-                        "(terminated)"
-                        if target_frame.terminated
-                        else (
-                            init_runtime_state
-                            if target_frame.sentinel == "init"
-                            else target_frame.state
-                        )
-                    ),
-                    "vars": dict(target_frame.vars),
-                    "events": list(step.input_event_paths),
-                    "delta": step.delta,
-                }
-        _compare_step(mismatches, step, runtime_step, expected_history)
+        _compare_step(mismatches, step, runtime_step)
         runtime_frame = _runtime_frame(runtime, step.target_frame)
         frames.append(runtime_frame)
         if step.target_frame < len(witness.frames):

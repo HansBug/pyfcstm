@@ -6,7 +6,7 @@ origin:
   docs:
   - https://github.com/HansBug/pyfcstm/issues/143#issuecomment-4614288612
   notes:
-  - Legacy model Event descriptor coverage is now represented by a legal string event path in shared schema v2; object-input API coverage stays in ordinary simulator tests.
+  - Legacy model Event descriptor coverage is now represented by a legal string event path in the shared string-event contract; object-input API coverage stays in ordinary simulator tests.
 categories:
 - event_paths
 - runtime

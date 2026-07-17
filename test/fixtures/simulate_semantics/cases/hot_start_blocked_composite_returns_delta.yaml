@@ -17,6 +17,7 @@ initial:
     x: 0
 steps:
 - cycle: []
+  cycle_count: 2
   expect:
     state: Root.C
     vars:

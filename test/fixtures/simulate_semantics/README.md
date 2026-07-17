@@ -44,9 +44,9 @@ SKIP_SLOW_TESTS=1 make unittest
 ## Adding a case
 
 1. Add `cases/<id>.fcstm` with the DSL source.
-2. Add `cases/<id>.yaml` using the v3 schema in `schema.md`.
-3. Do not write `schema_version`, `id`, or `source`; the loader derives the case
-   id and paired FCSTM file from the YAML basename.
+2. Add `cases/<id>.yaml` using the shared fixture contract in `schema.md`.
+3. Do not write `id` or `source`; the loader derives the case id and paired
+   FCSTM file from the YAML basename.
 4. Set `origin.files` to the exact original pytest function(s), issue links, or
    PR links that supplied the behavior.
 5. Omit `exclude_runners` unless a current shared runner has a documented
@@ -66,7 +66,7 @@ SKIP_SLOW_TESTS=1 make unittest
 10. Run `python tools/inventory_simulate_semantics.py --check` to keep the
     long-term Markdown, pairing, and public-observation contract clean.
 
-Minimal v3 shape:
+Minimal shared-contract shape:
 
 ```yaml
 title: Event sequence reaches active state
@@ -118,7 +118,7 @@ limited to this README and `schema.md`.
 
 Use `python tools/inventory_simulate_semantics.py --check` when changing this
 corpus. The check verifies YAML/FCSTM pairing, the top-level Markdown file list,
-absence of v1 fields and include-style runner selection, absence of legacy cycle
+absence of retired fields and include-style runner selection, absence of legacy cycle
 and path shapes, and absence of known private simulator surfaces in shared YAML.
 
 ## Public-observation checklist

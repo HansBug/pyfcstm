@@ -1,13 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/HansBug/pyfcstm/blob/main/docs/source/reference/bmc_results/bmc_cli_v1.schema.json",
+  "$id": "https://github.com/HansBug/pyfcstm/blob/main/docs/source/reference/bmc_results/bmc_cli.schema.json",
   "title": "PyFCSTM BMC CLI result",
-  "description": "Stable bmc-cli/v1 envelope emitted by pyfcstm bmc --json.",
+  "description": "Structured BMC JSON envelope emitted by pyfcstm bmc --json.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "input", "property", "result", "witness", "replay", "exit_code"],
+  "required": ["input", "property", "result", "witness", "replay", "exit_code"],
   "properties": {
-    "schema_version": {"const": "bmc-cli/v1"},
     "input": {"$ref": "#/$defs/input"},
     "property": {"$ref": "#/$defs/property"},
     "result": {"$ref": "#/$defs/result"},
@@ -140,9 +139,8 @@
     "witness": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["schema_version", "property", "solver", "initial", "frames", "steps", "diagnostics"],
+      "required": ["property", "solver", "initial", "frames", "steps", "diagnostics"],
       "properties": {
-        "schema_version": {"const": "bmc-witness/v1"},
         "property": {"$ref": "#/$defs/property"},
         "solver": {
           "type": "object",
@@ -184,13 +182,14 @@
     "runtimeStep": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["index", "input_events", "consumed_events", "unconsumed_events", "abstract_calls"],
+      "required": ["index", "input_events", "consumed_events", "unconsumed_events", "abstract_calls", "delta"],
       "properties": {
         "index": {"type": "integer", "minimum": 0},
         "input_events": {"type": "array", "items": {"type": "string"}},
         "consumed_events": {"type": "array", "items": {"type": "string"}},
         "unconsumed_events": {"type": "array", "items": {"type": "string"}},
-        "abstract_calls": {"type": "array", "items": {"$ref": "#/$defs/call"}}
+        "abstract_calls": {"type": "array", "items": {"$ref": "#/$defs/call"}},
+        "delta": {"type": "boolean"}
       }
     },
     "mismatch": {

@@ -33,7 +33,7 @@ The claim ladder is deliberately one-way:
      - It does not expose a public trace or prove runtime agreement.
    * - Decode
      - A SAT model from the main solve
-     - The model can be projected into a ``bmc-witness/v1`` macro-step trace.
+     - The model can be projected into a public macro-step trace.
      - It does not decide whether the trace is a desired behavior or a violation; polarity does that.
    * - Replay
      - The decoded public trace
@@ -200,9 +200,9 @@ The projection is deliberately sparse.  True event Booleans are included in
 ``input_events`` only when the selected case, an explicit true assumption, or
 response-property support needs them for replay.  Negative assumptions and
 other inspected event values may appear in ``event_reads`` as debugging data,
-but they are not passed to ``runtime.cycle()``.  Case labels, ``delta``,
-``gamma``, and ``progress`` likewise remain witness-side explanations; the
-runtime does not expose corresponding public observations.
+but they are not passed to ``runtime.cycle()``.  Case labels, ``gamma``, and
+``progress`` remain witness-side explanations; ``delta`` is also emitted as a
+public runtime-step observation and is checked during replay.
 
 Decoding therefore has a strict caller boundary: it accepts a compiled formula
 and a ``z3.ModelRef`` that the caller obtained from the SAT main solve.  It does
@@ -232,8 +232,9 @@ The success flag is the conjunction of the public comparisons:
       \operatorname{eq}_{S}(W.S_i,R(W).S_i),
 
 where frame equality covers state, termination, persistent-variable keys and
-values, and step equality covers input, consumed and unconsumed events plus
-ordered abstract-call metadata and snapshots.  Floating-point values use the
+values, and step equality covers input, consumed and unconsumed events, the
+``delta`` result, plus ordered abstract-call metadata and snapshots.
+Floating-point values use the
 explicit replay tolerance rather than bitwise equality.  The initial sentinel
 is compared against the runtime state produced by cold initialization, not
 mistaken for an ordinary state path.
@@ -261,7 +262,7 @@ The following trace shows the ownership boundary for a one-step transition:
 
 Case labels and solver-only progress flags are intentionally absent from
 :math:`\operatorname{eq}_S`.  A runtime cannot disagree about information it
-does not publish.  Conversely, event consumption and abstract-call snapshots
+does not publish.  Conversely, ``delta``, event consumption, and abstract-call snapshots
 are included because matching only the final state would miss behaviorally
 important divergence.
 

@@ -37,6 +37,7 @@ steps:
       trace: 0
       seed: 1
     ended: false
+    delta: true
 - cycle: Root.Gate.Unlock
   expect:
     state: Root.Gate.Armed
@@ -44,6 +45,7 @@ steps:
       trace: 111
       seed: 1
     ended: false
+    delta: false
 - cycle: Root.Gate.Armed.Finish
   expect:
     state: Root.Gate.Idle
@@ -51,3 +53,4 @@ steps:
       trace: 11111
       seed: 1
     ended: false
+    delta: false

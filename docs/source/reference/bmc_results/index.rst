@@ -5,12 +5,12 @@ BMC CLI and Result Protocol Reference
 
 This page freezes the process and data contract of ``pyfcstm bmc``.  It covers
 one FCSTM model and one FBMCQ query per invocation, the human report, the
-``bmc-cli/v1`` JSON envelope, witness decoding, runtime replay, exit status,
+structured JSON envelope, witness decoding, runtime replay, exit status,
 errors, and the downloadable reference schema.  It is a bounded result
 protocol: a successful bounded verdict is not an unbounded proof.
 
 The source facts for this page are :mod:`pyfcstm.entry.bmc`, the
-``bmc_cli_v1.schema.json`` maintained beside this page's reST source,
+``bmc_cli.schema.json`` maintained beside this page's reST source,
 :mod:`pyfcstm.bmc.witness`, and the entry behavior tests.  The schema is authoritative for
 JSON types and required keys; the entry module is authoritative for process
 ordering, streams, file effects, and exit status.
@@ -79,7 +79,7 @@ Both installed entry forms have the same behavior:
    * - ``--json``
      - Flag
      - False; human
-     - Selects the stable ``bmc-cli/v1`` JSON envelope.  There is deliberately
+     - Selects the structured JSON envelope.  There is deliberately
        no overlapping ``--format`` option.
    * - ``--timeout-ms``
      - Integer, ``>= 1``
@@ -122,7 +122,7 @@ One invocation follows this fixed order:
 #. When the property exposes a non-false incomplete-horizon formula, solve that
    diagnostic formula separately.
 #. If the primary result is SAT, decode its model into a
-   ``bmc-witness/v1`` trace and replay it through ``SimulationRuntime`` with
+   witness trace and replay it through ``SimulationRuntime`` with
    ``abstract_handlers=None``.
 #. Compute the final exit code, construct the entire report once, then write it
    to stdout or atomically replace ``--output``.
@@ -324,7 +324,7 @@ keys, non-ASCII characters preserved, and one trailing newline.  Every object
 in the schema rejects undeclared keys where ``additionalProperties`` is false.
 Raw Z3 models and complete SMT formulas are deliberately excluded.
 
-.. list-table:: Top-level ``bmc-cli/v1`` fields
+.. list-table:: Top-level JSON fields
    :header-rows: 1
    :widths: 20 22 15 43
 
@@ -332,10 +332,6 @@ Raw Z3 models and complete SMT formulas are deliberately excluded.
      - Type/allowed value
      - Always present
      - Meaning
-   * - ``schema_version``
-     - string, exactly ``bmc-cli/v1``
-     - Yes
-     - Version discriminator for this envelope.
    * - ``input``
      - object
      - Yes
@@ -352,7 +348,7 @@ Raw Z3 models and complete SMT formulas are deliberately excluded.
    * - ``witness``
      - object or null
      - Yes
-     - ``bmc-witness/v1`` for primary SAT; null otherwise.
+     - Witness trace for primary SAT; null otherwise.
    * - ``replay``
      - object or null
      - Yes
@@ -435,8 +431,7 @@ and all other stable values remain suitable for exact checks.
 Witness fields
 --------------
 
-``witness`` is present only for primary SAT and has
-``schema_version == "bmc-witness/v1"``.  Its required root fields are:
+The witness trace is present only for primary SAT. Its required root fields are:
 
 .. list-table:: Witness root and nested records
    :header-rows: 1
@@ -512,8 +507,8 @@ replay object contains:
        symbolic ``state_id`` or sentinel field.
    * - ``runtime_trace.steps[]``
      - ``index``, ``input_events``, ``consumed_events``,
-       ``unconsumed_events``, ``abstract_calls``
-     - Actual runtime event accounting and recorded abstract calls.
+       ``unconsumed_events``, ``abstract_calls``, ``delta``
+     - Actual runtime event accounting, committed-only Delta result, and recorded abstract calls.
    * - ``mismatches[]``
      - ``path``, ``expected``, ``actual``, ``message``, ``tolerance``
      - One comparison failure.  Expected/actual are JSON values; tolerance is a
@@ -574,7 +569,7 @@ A response counterexample may arise because the trigger is undefined or
 because a defined trigger has no response in its complete window.  Both are
 part of the same counterexample objective and both currently produce SAT,
 ``property_violated``, and exit ``1`` when replay matches.  Neither
-``result.outcome`` nor ``bmc-witness/v1`` exposes a stable machine-readable
+``result.outcome`` nor the witness trace exposes a stable machine-readable
 ``cause`` discriminator.  Humans may inspect the query and trace; scripts must
 not infer or depend on a cause classification that the protocol does not have.
 
@@ -662,7 +657,7 @@ file containing exactly the shown statement.
      ...
      "result": {"outcome": "witness_found", "status": "sat", ...},
      "replay": {"mismatches": [], "ok": true, ...},
-     "witness": {"schema_version": "bmc-witness/v1", ...}
+     "witness": {"property": {"kind": "reach", ...}, ...}
    }
 
 The excerpt is schematic because sorted pretty JSON places keys between these
@@ -712,14 +707,14 @@ being created.
 Schema download and consumer checks
 -----------------------------------
 
-:download:`Download the normative bmc-cli/v1 JSON Schema
-<bmc_cli_v1.schema.json>`.
+:download:`Download the normative BMC JSON Schema
+<bmc_cli.schema.json>`.
 
 The schema is a reference artifact, not a runtime dependency.  Sphinx publishes
 it through the download link above; do not infer a schema URL from this page's
 rendered URL.  It deliberately is not shipped inside ``pyfcstm`` wheels, source
 distributions, or standalone executables.  Consumers that need structural
-validation should download or vendor the versioned schema with their integration
+validation should download or vendor this reference schema with their integration
 and load that local copy:
 
 .. code-block:: python
@@ -728,7 +723,7 @@ and load that local copy:
    from pathlib import Path
 
    schema = json.loads(
-       Path("bmc_cli_v1.schema.json").read_text(encoding="utf-8")
+       Path("bmc_cli.schema.json").read_text(encoding="utf-8")
    )
 
 With ``jsonschema``, validate the schema itself as Draft 2020-12 and then
@@ -742,8 +737,7 @@ Consumer rules
 
 * Branch first on process exit and the presence of a JSON report.  Exit ``1``
   alone cannot distinguish a negative verdict from stderr-only failure.
-* When JSON exists, require ``schema_version == "bmc-cli/v1"`` and verify
-  ``payload.exit_code`` equals the process exit status.
+* When JSON exists, verify ``payload.exit_code`` equals the process exit status.
 * Use ``result.outcome`` and ``result.polarity``; never interpret SAT as a
   universal success.
 * Treat exit ``3`` as one process category but distinguish timeout, unknown,

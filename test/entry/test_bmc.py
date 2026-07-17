@@ -145,7 +145,7 @@ def test_bmc_json_verdict_matrix(
     result, payload = _json_result(model_path, query_path)
 
     assert result.exit_code == expected_exit
-    assert payload["schema_version"] == "bmc-cli/v1"
+    assert "schema_version" not in payload
     assert payload["exit_code"] == result.exit_code
     assert payload["result"]["status"] == status
     assert payload["result"]["outcome"] == outcome
@@ -153,64 +153,8 @@ def test_bmc_json_verdict_matrix(
     assert (payload["replay"] is not None) is has_trace
     if has_trace:
         assert payload["replay"]["ok"] is True
+        assert "delta" in payload["replay"]["runtime_trace"]["steps"][0]
     assert "formulas" not in json.dumps(payload)
-
-
-def test_bmc_json_projects_richer_replay_observation_to_v1() -> None:
-    """CLI v1 keeps its runtime-step allowlist despite richer Python replay."""
-    import pyfcstm.entry.bmc as bmc_entry
-
-    projected = bmc_entry._project_replay_to_bmc_cli_v1(
-        {
-            "ok": True,
-            "runtime_trace": {
-                "frames": [],
-                "steps": [
-                    {
-                        "index": 0,
-                        "input_events": [],
-                        "consumed_events": [],
-                        "unconsumed_events": [],
-                        "abstract_calls": [],
-                        "delta": True,
-                        "cycle_count_before": 0,
-                        "cycle_count_after": 1,
-                        "history_entry": {"future": True},
-                        "future_extra": "must not leak",
-                    }
-                ],
-                "future_trace_field": True,
-            },
-            "mismatches": [],
-            "future_replay_field": True,
-        }
-    )
-
-    assert projected == {
-        "ok": True,
-        "runtime_trace": {
-            "frames": [],
-            "steps": [
-                {
-                    "index": 0,
-                    "input_events": [],
-                    "consumed_events": [],
-                    "unconsumed_events": [],
-                    "abstract_calls": [],
-                }
-            ],
-        },
-        "mismatches": [],
-    }
-    projected_step = projected["runtime_trace"]["steps"][0]
-    for forbidden_key in (
-        "delta",
-        "cycle_count_before",
-        "cycle_count_after",
-        "history_entry",
-        "future_extra",
-    ):
-        assert forbidden_key not in projected_step
 
 
 def test_bmc_human_report_prioritizes_verdict_and_diagnostics(bmc_files) -> None:

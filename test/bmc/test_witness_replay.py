@@ -85,13 +85,10 @@ def test_replay_reports_structured_var_mismatch() -> None:
     )
     replay = replay_bmc_witness(model, bad_trace)
     assert replay.ok is False
-    assert [item.path for item in replay.mismatches] == [
-        "steps[0].history_entry.vars.x",
-        "frames[1].vars.x",
-    ]
+    assert [item.path for item in replay.mismatches] == ["frames[1].vars.x"]
     _assert_text_equal(
         """
-        BmcReplayResult[mismatch] mismatches=2
+        BmcReplayResult[mismatch] mismatches=1
 
         BmcRuntimeTrace frames=2 steps=1
 
@@ -100,7 +97,6 @@ def test_replay_reports_structured_var_mismatch() -> None:
         0        -                Root     initial       0      -         -        I
         1        Root --> Root.A  Root.A   runtime_step  1      -         -        -
 
-        MISMATCH steps[0].history_entry.vars.x: 2 != 1
         MISMATCH frames[1].vars.x: 2 != 1
         """,
         replay.to_text(show_legend=False),
@@ -171,13 +167,10 @@ def test_replay_float_comparison_uses_tolerance() -> None:
     )
     replay = replay_bmc_witness(model, far_trace)
     assert replay.ok is False
-    assert [item.path for item in replay.mismatches] == [
-        "steps[0].history_entry.vars.x",
-        "frames[1].vars.x",
-    ]
+    assert [item.path for item in replay.mismatches] == ["frames[1].vars.x"]
     _assert_text_equal(
         """
-        BmcReplayResult[mismatch] mismatches=2
+        BmcReplayResult[mismatch] mismatches=1
 
         BmcRuntimeTrace frames=2 steps=1
 
@@ -186,7 +179,6 @@ def test_replay_float_comparison_uses_tolerance() -> None:
         0        -                Root     initial       0.0    -         -        I
         1        Root --> Root.A  Root.A   runtime_step  0.5    -         -        -
 
-        MISMATCH steps[0].history_entry.vars.x: 0.50001 != 0.5
         MISMATCH frames[1].vars.x: 0.50001 != 0.5
         """,
         replay.to_text(show_legend=False),
@@ -282,9 +274,6 @@ def test_replay_uses_synthetic_observation_for_post_termination_absorb() -> None
     assert replay.ok is True
     absorb_step = replay.runtime_trace.steps[-1]
     assert absorb_step.delta is False
-    assert absorb_step.cycle_count_before is None
-    assert absorb_step.cycle_count_after is None
-    assert absorb_step.history_entry is None
 
 
 def test_replay_rejects_tampered_initial_terminated_step_payload() -> None:
@@ -453,10 +442,7 @@ def test_replay_rejects_forged_non_initial_init_sentinel_frames() -> None:
 
     result = replay_bmc_witness(model, forged_trace)
 
-    assert [mismatch.path for mismatch in result.mismatches] == [
-        "steps[0].history_entry.state",
-        "frames[1].state",
-    ]
+    assert [mismatch.path for mismatch in result.mismatches] == ["frames[1].state"]
 
 
 def test_replay_accepts_later_init_sentinel_when_initial_cycle_stays_unstable() -> None:
@@ -509,22 +495,13 @@ def test_replay_accepts_later_init_sentinel_when_initial_cycle_stays_unstable() 
                 "unconsumed_events": [],
                 "abstract_calls": [],
                 "delta": True,
-                "cycle_count_before": 0,
-                "cycle_count_after": 1,
-                "history_entry": {
-                    "cycle": 1,
-                    "state": "Root",
-                    "vars": {},
-                    "events": [],
-                    "delta": True,
-                },
             }
         ],
     }
 
 
-def test_compare_step_reports_delta_count_and_history_forgery_paths() -> None:
-    """Replay comparison names every newly observable Delta field precisely."""
+def test_compare_step_reports_delta_forgery_path() -> None:
+    """Replay comparison names the observable Delta field precisely."""
     witness_step = BmcWitnessStep(
         0,
         0,
@@ -544,36 +521,10 @@ def test_compare_step_reports_delta_count_and_history_forgery_paths() -> None:
         (),
         (),
         delta=False,
-        cycle_count_before=1,
-        cycle_count_after=2,
-        history_entry={
-            "cycle": 2,
-            "state": "Root",
-            "vars": {},
-            "events": [],
-            "delta": False,
-        },
     )
     mismatches = []
-    _compare_step(
-        mismatches,
-        witness_step,
-        runtime_step,
-        {
-            "cycle": 1,
-            "state": "Root",
-            "vars": {},
-            "events": [],
-            "delta": True,
-        },
-    )
-    assert [item.path for item in mismatches] == [
-        "steps[0].delta",
-        "steps[0].cycle_count_before",
-        "steps[0].cycle_count_after",
-        "steps[0].history_entry.cycle",
-        "steps[0].history_entry.delta",
-    ]
+    _compare_step(mismatches, witness_step, runtime_step)
+    assert [item.path for item in mismatches] == ["steps[0].delta"]
 
 
 def test_replay_reports_init_sentinel_when_runtime_is_terminated() -> None:
@@ -643,16 +594,10 @@ def test_replay_reports_witness_trace_shape_mismatches() -> None:
         "steps[1].index",
         "steps[1].source_frame",
         "steps[1].target_frame",
-        "steps[3].cycle_count_before",
-        "steps[3].cycle_count_after",
-        "steps[3].history_entry",
-        "steps[0].cycle_count_before",
-        "steps[0].cycle_count_after",
-        "steps[0].history_entry.cycle",
     ]
     _assert_text_equal(
         """
-        BmcReplayResult[mismatch] mismatches=14
+        BmcReplayResult[mismatch] mismatches=8
 
         BmcRuntimeTrace frames=3 steps=2
 
@@ -670,12 +615,6 @@ def test_replay_reports_witness_trace_shape_mismatches() -> None:
         MISMATCH steps[1].index: 1 != 0
         MISMATCH steps[1].source_frame: 1 != 0
         MISMATCH steps[1].target_frame: 2 != 1
-        MISMATCH steps[3].cycle_count_before: 3 != 0
-        MISMATCH steps[3].cycle_count_after: 4 != 1
-        MISMATCH steps[3].history_entry: - != cycle=1, delta=false, events=-, state=Root.A, vars=-
-        MISMATCH steps[0].cycle_count_before: 0 != 1
-        MISMATCH steps[0].cycle_count_after: 1 != 2
-        MISMATCH steps[0].history_entry.cycle: 1 != 2
         """,
         replay.to_text(show_legend=False),
     )
@@ -947,13 +886,6 @@ def test_replay_reports_missing_frame_and_call_snapshot_keys() -> None:
     assert replay.ok is False
     assert [item.to_canonical() for item in replay.mismatches] == [
         {
-            "path": "steps[0].history_entry.vars",
-            "expected": ["x"],
-            "actual": ["x", "y"],
-            "message": "history entry mapping key set mismatch",
-            "tolerance": None,
-        },
-        {
             "path": "steps[0].abstract_calls[0].snapshot",
             "expected": ["x"],
             "actual": ["x", "y"],
@@ -997,13 +929,6 @@ def test_replay_reports_state_and_termination_mismatches() -> None:
     assert replay.ok is False
     assert [item.to_canonical() for item in replay.mismatches] == [
         {
-            "path": "steps[0].history_entry.state",
-            "expected": "(terminated)",
-            "actual": "Root.B",
-            "message": "value mismatch",
-            "tolerance": None,
-        },
-        {
             "path": "frames[1].state",
             "expected": None,
             "actual": "Root.B",
@@ -1020,7 +945,7 @@ def test_replay_reports_state_and_termination_mismatches() -> None:
     ]
     _assert_text_equal(
         """
-        BmcReplayResult[mismatch] mismatches=3
+        BmcReplayResult[mismatch] mismatches=2
 
         BmcRuntimeTrace frames=2 steps=1
 
@@ -1029,7 +954,6 @@ def test_replay_reports_state_and_termination_mismatches() -> None:
         0        -                  Root.A   initial       -         -        I
         1        Root.A --> Root.B  Root.B   runtime_step  -         -        -
 
-        MISMATCH steps[0].history_entry.state: (terminated) != Root.B
         MISMATCH frames[1].state: - != Root.B
         MISMATCH frames[1].terminated: true != false
         """,

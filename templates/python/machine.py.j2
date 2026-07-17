@@ -639,15 +639,6 @@ class {{ machine_class_name(model) }}:
             for frame in stack
         )
 
-    def _create_root_rollback_stack(self):
-        return [
-            {
-                "state": self._ROOT_STATE_PATH,
-                "mode": "init_wait",
-                "plain_before_pending": False,
-            }
-        ]
-
     def _is_stoppable_state(self, state_path):
         state_info = self._STATE_INFO[state_path]
         return state_info["is_leaf"] and not state_info["is_pseudo"]
@@ -1447,29 +1438,20 @@ class {{ machine_class_name(model) }}:
             if not success:
                 delta = True
 
-        if success or delta:
-            if delta:
-                self._stack = snapshot_stack
-                self._vars = snapshot_vars
-                self._entered_root = snapshot_entered_root
-                self._ended = snapshot_ended
-                self._last_cycle_was_delta = True
-            else:
-                self._stack = [] if sim_ended else sim_stack
-                self._vars = sim_vars
-                self._entered_root = sim_entered_root
-                self._ended = sim_ended
-            self.variables = self._vars
-            self.cycle_count += 1
-        else:
+        if delta:
+            self._stack = snapshot_stack
             self._vars = snapshot_vars
-            self.variables = self._vars
-            self._ended = snapshot_ended
-            if not snapshot_entered_root and not snapshot_ended:
-                self._stack = self._create_root_rollback_stack()
-            else:
-                self._stack = snapshot_stack
             self._entered_root = snapshot_entered_root
+            self._ended = snapshot_ended
+            self._last_cycle_was_delta = True
+        else:
+            self._stack = [] if sim_ended else sim_stack
+            self._vars = sim_vars
+            self._entered_root = sim_entered_root
+            self._ended = sim_ended
+
+        self.variables = self._vars
+        self.cycle_count += 1
 
         if self._ended or not self._stack:
             self._ended = True

@@ -21,8 +21,8 @@ FBMCQ and Bounded Model Checking
   terminal report states whether the bounded property holds before showing the
   SAT/UNSAT solver diagnostic, supports optional ANSI color, and requires every
   decoded SAT witness to pass structural validation and simulator replay.
-- Added the stable ``bmc-cli/v1`` JSON envelope for CI, tools, and LLM
-  consumers, with a downloadable schema in the BMC result protocol reference.
+- Added a stable structured JSON result for CI, tools, and LLM consumers, with
+  a downloadable schema in the BMC result protocol reference.
   The envelope preserves polarity-aware outcomes, solver timing, witness and
   replay records, diagnostics, and the matching process exit code.
 

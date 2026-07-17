@@ -688,13 +688,13 @@ def _cycle_input_for_step(
     if isinstance(cycle_data, dict):
         if not cycle_data:
             raise _case_error(
-                case_id, yaml_path, "%s.cycle: {} is not valid v2" % field_path
+                case_id, yaml_path, "%s.cycle: {} is not a valid shared shape" % field_path
             )
         if "events" in cycle_data:
             raise _case_error(
                 case_id,
                 yaml_path,
-                "%s.cycle.events is not valid v2; use cycle: <event> or cycle: [<event>]"
+                "%s.cycle.events is not a valid shared shape; use cycle: <event> or cycle: [<event>]"
                 % field_path,
             )
         raise _case_error(
@@ -705,7 +705,7 @@ def _cycle_input_for_step(
         )
     if cycle_data is None:
         raise _case_error(
-            case_id, yaml_path, "%s.cycle: null is not valid v2" % field_path
+            case_id, yaml_path, "%s.cycle: null is not a valid shared shape" % field_path
         )
     raise _case_error(
         case_id,
@@ -1072,7 +1072,7 @@ class _GeneratedPythonAlignmentRuntime:
         """
         Return the simulator model used for generated-runtime alignment.
 
-        Schema v2 fixtures pass only string event paths or lists of string event
+        Shared fixtures pass only string event paths or lists of string event
         paths to :meth:`cycle`. The state machine remains available here for
         alignment diagnostics and for callers that need to inspect the
         authoritative simulator model while comparing generated behavior.

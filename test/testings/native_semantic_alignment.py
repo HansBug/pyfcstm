@@ -1,7 +1,7 @@
 """
 Native generated-runtime alignment helpers for semantic fixtures.
 
-This module adapts the schema v2 shared semantic fixture corpus to the built-in
+This module adapts the shared semantic fixture corpus to the built-in
 C and C poll templates. It owns the test-side runner names, native
 public-observation adapter, subprocess crash isolation, and hard-failure report
 helpers used by the C-family template alignment tests.
@@ -45,6 +45,9 @@ from test.testings.simulate_semantics import (
     iter_semantic_cases,
     load_semantic_case,
 )
+
+
+_MISSING_DELTA = object()
 
 GENERATED_C_ALIGNMENT = "generated_c_alignment"
 GENERATED_C_POLL_ALIGNMENT = "generated_c_poll_alignment"
@@ -280,7 +283,16 @@ class _GeneratedNativeAlignmentRuntime:
 
     @property
     def last_cycle_was_delta(self) -> bool:
-        return self._native_runtime.last_cycle_was_delta
+        value = getattr(self._native_runtime, "last_cycle_was_delta", _MISSING_DELTA)
+        assert value is not _MISSING_DELTA, (
+            "native alignment runtime must expose last_cycle_was_delta for DSL:\n%s"
+            % self._dsl_code
+        )
+        assert type(value) is bool, (
+            "native Delta observation must be bool for DSL:\n%s\nvalue=%r"
+            % (self._dsl_code, value)
+        )
+        return value
 
     @property
     def current_state(self) -> Optional[_StateProxy]:
@@ -326,8 +338,8 @@ class _GeneratedNativeAlignmentRuntime:
                 % (when, self._dsl_code, sim_path, native_path)
             )
         sim_delta = self._last_simulation_delta
-        native_delta = self._native_runtime.last_cycle_was_delta
-        assert isinstance(native_delta, bool), (
+        native_delta = self.last_cycle_was_delta
+        assert type(native_delta) is bool, (
             "%s: native Delta observation must be bool for DSL:\n%s\nvalue=%r"
             % (when, self._dsl_code, native_delta)
         )
@@ -339,10 +351,20 @@ class _GeneratedNativeAlignmentRuntime:
     def cycle(self, events: Any = None) -> Any:
         sim_exc = None
         native_exc = None
+        self._last_simulation_delta = False
         native_events = _normalize_events_for_native(events)
         try:
             sim_result = self._simulation_runtime.cycle(events)
-            self._last_simulation_delta = bool(getattr(sim_result, "delta", False))
+            sim_delta = getattr(sim_result, "delta", _MISSING_DELTA)
+            assert sim_delta is not _MISSING_DELTA, (
+                "SimulationRuntime.cycle() must expose CycleResult.delta for DSL:\n%s"
+                % self._dsl_code
+            )
+            assert type(sim_delta) is bool, (
+                "simulation Delta observation must be bool for DSL:\n%s\nvalue=%r"
+                % (self._dsl_code, sim_delta)
+            )
+            self._last_simulation_delta = sim_delta
         except _SIMULATION_RUNTIME_EXCEPTIONS as err:
             # SimulationRuntime semantic exceptions are compared by class name;
             # unexpected exception classes still propagate and expose harness

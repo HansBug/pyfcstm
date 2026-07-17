@@ -640,6 +640,8 @@ class TestCPollBuiltinTemplate:
             assert runtime.current_state_path == ('Root', 'P')
             runtime.cycle()
             assert runtime.last_cycle_was_delta is True
+            runtime.cycle()
+            assert runtime.last_cycle_was_delta is True
 
     def test_generated_machine_detects_two_state_cycle_without_actions(self):
         dsl_code = """

@@ -64,7 +64,7 @@ BmcWitnessTrace
 -----------------------------------------------------
 
 .. autoclass:: BmcWitnessTrace
-    :members: __post_init__,to_canonical,pretty_print,to_text,__str__,property,solver,initial,frames,steps,diagnostics,schema_version
+    :members: __post_init__,to_canonical,pretty_print,to_text,__str__,property,solver,initial,frames,steps,diagnostics
 
 
 BmcRuntimeFrame
@@ -78,7 +78,7 @@ BmcRuntimeStep
 -----------------------------------------------------
 
 .. autoclass:: BmcRuntimeStep
-    :members: __post_init__,to_canonical,pretty_print,to_text,__str__,index,input_events,consumed_events,unconsumed_events,abstract_calls,delta,cycle_count_before,cycle_count_after,history_entry
+    :members: __post_init__,to_canonical,pretty_print,to_text,__str__,index,input_events,consumed_events,unconsumed_events,abstract_calls,delta
 
 
 BmcRuntimeTrace

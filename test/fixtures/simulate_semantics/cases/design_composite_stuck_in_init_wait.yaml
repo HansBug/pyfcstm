@@ -16,6 +16,7 @@ steps:
       phase: 0
       trace: 0
     ended: false
+    delta: true
 - cycle: []
   expect:
     state: Root
@@ -23,6 +24,7 @@ steps:
       phase: 0
       trace: 0
     ended: false
+    delta: true
 - cycle: []
   expect:
     state: Root
@@ -30,3 +32,4 @@ steps:
       phase: 0
       trace: 0
     ended: false
+    delta: true

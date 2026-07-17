@@ -20,3 +20,4 @@ steps:
       x: 0
     ended: false
     handler_calls: []
+    delta: true

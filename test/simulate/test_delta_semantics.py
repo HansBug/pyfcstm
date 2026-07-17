@@ -1,5 +1,7 @@
 """Focused regression tests for simulator Delta macro-step semantics."""
 
+import logging
+
 import pytest
 
 from pyfcstm.dsl import parse_with_grammar_entry
@@ -188,7 +190,7 @@ def test_delta_flag_resets_after_ordinary_success_and_error():
     assert runtime.history[-1]["delta"] is False
 
 
-def test_committed_only_delta_does_not_report_consumed_events(monkeypatch):
+def test_committed_only_delta_does_not_report_consumed_events(monkeypatch, caplog):
     runtime = _runtime(
         """
         state Root {
@@ -217,9 +219,26 @@ def test_committed_only_delta_does_not_report_consumed_events(monkeypatch):
 
     monkeypatch.setattr(runtime, "_run_cycle_on_context", fake_run_cycle)
 
+    caplog.set_level(logging.WARNING, logger="pyfcstm.simulate")
     result = runtime.cycle("Root.Go")
 
     assert calls == [True, False]
     assert result.delta is True
     assert result.consumed_events == ()
     assert result.unconsumed_events == ("Root.Go",)
+    assert runtime.cycle_count == 1
+    assert runtime.history == [
+        {
+            "cycle": 1,
+            "state": "Root",
+            "vars": {},
+            "events": ["Root.Go"],
+            "delta": True,
+        }
+    ]
+    warnings = [record for record in caplog.records if record.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    assert warnings[0].getMessage() == (
+        "Cycle 1 completed as Delta - State: Root; "
+        "no stoppable successor was committed"
+    )

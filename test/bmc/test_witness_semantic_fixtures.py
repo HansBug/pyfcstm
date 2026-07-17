@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import copy
 from typing import Iterable, List, Sequence, Tuple
 
 import pytest
@@ -87,18 +86,8 @@ def collect_simulation_trace_for_bmc_fixture(
             _cycle_input_for_step(step, case.id, case.yaml_path, field_path)
         )
         for _ in range(cycle_count):
-            terminated_absorb = runtime.is_ended
-            cycle_count_before = None if terminated_absorb else runtime.cycle_count
             before = len(recorder.calls)
             result = runtime.cycle(cycle_input)
-            cycle_count_after = None if terminated_absorb else runtime.cycle_count
-            history_entry = None
-            if (
-                not terminated_absorb
-                and cycle_count_after > cycle_count_before
-                and runtime.history
-            ):
-                history_entry = copy.deepcopy(runtime.history[-1])
             new_calls = tuple(
                 BmcWitnessCallRecord(
                     ordinal=call_index,
@@ -122,9 +111,6 @@ def collect_simulation_trace_for_bmc_fixture(
                     unconsumed_events=result.unconsumed_events,
                     abstract_calls=new_calls,
                     delta=result.delta,
-                    cycle_count_before=cycle_count_before,
-                    cycle_count_after=cycle_count_after,
-                    history_entry=history_entry,
                 )
             )
             frames.append(_runtime_frame(runtime, len(frames)))
@@ -312,15 +298,6 @@ def test_duplicate_event_fixture_uses_boolean_presence_without_exclusion() -> No
         "unconsumed_events": ["Root.A.Noise"],
         "abstract_calls": [],
         "delta": False,
-        "cycle_count_before": 1,
-        "cycle_count_after": 2,
-        "history_entry": {
-            "cycle": 2,
-            "state": "Root.A",
-            "vars": {"counter": 2},
-            "events": ["Root.A.Tick", "Root.A.Noise"],
-            "delta": False,
-        },
     }
 
     model = build_state_machine_from_case(case)

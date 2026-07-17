@@ -1,4 +1,4 @@
-# Simulate semantic fixture schema v3
+# Simulate semantic fixture contract
 
 This directory stores the shared semantic fixture corpus for simulator and
 built-in Python runtime alignment tests. A fixture is a pair of files under
@@ -66,9 +66,8 @@ other than `delta`, event accounting, and top-level expected-failure markers.
 | `handlers` | no | Abstract-handler fixtures for public hook-call records. |
 | `steps` | yes | Runtime checkpoints. Use `[]` only when `initial.expect.raises` asserts constructor failure. |
 
-Rejected v1 or non-shared top-level fields include `schema_version`, `id`,
-`source`, `runners`, `runtime_options`, `model_build`, `commands`, and
-`expected_failure`.
+Rejected non-shared top-level fields include `id`, `source`, `runners`,
+`runtime_options`, `model_build`, `commands`, and `expected_failure`.
 
 Allowed categories:
 
@@ -195,8 +194,8 @@ When `expect.delta` is present with `cycle_count > 1`, the same boolean is
 checked after every individual `cycle()` call, not only after the final call.
 Use separate steps to describe a mixed ordinary/Delta sequence.
 
-Rejected v1 cycle shapes include `cycle: {}`, `cycle: null`,
-`cycle: {events: [...]}`, and event-object descriptors such as
+Retired cycle shapes include `cycle: {}`, `cycle: null`, `cycle: {events: [...]}`,
+and event-object descriptors such as
 `cycle: [{event: Root.A.Go}]`.
 
 ## Expectations

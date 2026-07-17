@@ -2912,19 +2912,6 @@ class SimulationRuntime:
         )
         return len(stack) == 0
 
-    def _create_root_rollback_stack(self) -> List[_Frame]:
-        """
-        Create the rollback stack used for initial-cycle dead ends.
-
-        When the very first cycle cannot reach a stoppable state, the reviewed
-        design keeps the runtime pinned at the root boundary with all simulated
-        side effects discarded. The returned stack represents that boundary.
-
-        :return: Single-frame stack rooted at the state machine root.
-        :rtype: List[_Frame]
-        """
-        return [_Frame(self.state_machine.root_state, "init_wait")]
-
     @staticmethod
     def _create_execution_signature(
         stack: List[_Frame],
@@ -3492,80 +3479,62 @@ class SimulationRuntime:
                 # necessarily unconsumed.
                 consumed_event_names.clear()
 
-        if success or delta:
-            if delta:
-                self.stack = snapshot_stack
-                self.vars = snapshot_vars
-                self._initialized = snapshot_initialized
-                self._ended = snapshot_ended
-                self._warned_anonymous_abstracts = snapshot_warned_anonymous
-                self._abstract_handler_errors = snapshot_handler_errors
-            else:
-                self.stack = [] if sim_ended else sim_stack
-                self.vars = sim_vars
-                self._initialized = sim_initialized
-                self._ended = sim_ended
-
-            old_vars = snapshot_vars
-            self.cycle_count += 1
-
-            # Record history entry
-            # Get current state path
-            try:
-                state_path = (
-                    ".".join(self.current_state.path)
-                    if self.current_state
-                    else "(terminated)"
-                )
-            except (AttributeError, IndexError):
-                state_path = "(terminated)"
-
-            # Create history entry
-            history_entry = {
-                "cycle": self.cycle_count,
-                "state": state_path,
-                "vars": copy.deepcopy(self.vars),
-                "events": event_names,
-                "delta": delta,
-            }
-
-            # Add to history and maintain size limit
-            self.history.append(history_entry)
-            self._trim_history_to_size()
-
-            # Log successful cycle completion with variable changes
-            changes = self._format_var_changes(old_vars, self.vars)
-            current_values = ", ".join(
-                "%s=%s" % (name, _safe_runtime_repr(value))
-                for name, value in sorted(self.vars.items())
-            )
-            if delta:
-                self.logger.warning(
-                    f"Cycle {self.cycle_count} completed as Delta - State: {state_path}; "
-                    "no stoppable successor was committed"
-                )
-            else:
-                self.logger.info(
-                    f"Cycle {self.cycle_count} completed successfully - State: {state_path}{changes}; "
-                    f"current values: state={state_path}, vars={{ {current_values} }}"
-                )
-        else:
-            # Kept as a defensive fallback for a future internal outcome that is
-            # neither ordinary success nor a classified Delta. Current cycle
-            # execution returns only success, Delta, or raises a concrete error.
+        if delta:
+            self.stack = snapshot_stack
             self.vars = snapshot_vars
+            self._initialized = snapshot_initialized
             self._ended = snapshot_ended
             self._warned_anonymous_abstracts = snapshot_warned_anonymous
             self._abstract_handler_errors = snapshot_handler_errors
-            if not snapshot_initialized and not snapshot_ended:
-                self.stack = self._create_root_rollback_stack()
-            else:
-                self.stack = snapshot_stack
-            self._initialized = snapshot_initialized
-            self.logger.warning(
-                f"Cycle {self.cycle_count + 1} failed - Unable to reach a stoppable state, changes rolled back"
+        else:
+            self.stack = [] if sim_ended else sim_stack
+            self.vars = sim_vars
+            self._initialized = sim_initialized
+            self._ended = sim_ended
+
+        old_vars = snapshot_vars
+        self.cycle_count += 1
+
+        # Record history entry
+        # Get current state path
+        try:
+            state_path = (
+                ".".join(self.current_state.path)
+                if self.current_state
+                else "(terminated)"
             )
-            consumed_event_names = []
+        except (AttributeError, IndexError):
+            state_path = "(terminated)"
+
+        # Create history entry
+        history_entry = {
+            "cycle": self.cycle_count,
+            "state": state_path,
+            "vars": copy.deepcopy(self.vars),
+            "events": event_names,
+            "delta": delta,
+        }
+
+        # Add to history and maintain size limit
+        self.history.append(history_entry)
+        self._trim_history_to_size()
+
+        # Log successful cycle completion with variable changes
+        changes = self._format_var_changes(old_vars, self.vars)
+        current_values = ", ".join(
+            "%s=%s" % (name, _safe_runtime_repr(value))
+            for name, value in sorted(self.vars.items())
+        )
+        if delta:
+            self.logger.warning(
+                f"Cycle {self.cycle_count} completed as Delta - State: {state_path}; "
+                "no stoppable successor was committed"
+            )
+        else:
+            self.logger.info(
+                f"Cycle {self.cycle_count} completed successfully - State: {state_path}{changes}; "
+                f"current values: state={state_path}, vars={{ {current_values} }}"
+            )
 
         if self._ended or not self.stack:
             self._ended = True

@@ -141,8 +141,18 @@ def test_report_schema_rejects_missing_fields_and_bad_types(tmp_path):
     validate_result_data(result)
 
     bad_result = dict(result)
-    bad_result.pop("schema_version")
+    bad_result.pop("case_id")
     with pytest.raises(ValueError, match="missing fields"):
+        validate_result_data(bad_result)
+
+    bad_result = dict(result)
+    bad_result["schema_version"] = "2"
+    with pytest.raises(ValueError, match="unknown fields"):
+        validate_result_data(bad_result)
+
+    bad_result = dict(result)
+    bad_result["future_field"] = True
+    with pytest.raises(ValueError, match="unknown fields"):
         validate_result_data(bad_result)
 
     bad_result = dict(result)
@@ -161,15 +171,24 @@ def test_report_schema_rejects_missing_fields_and_bad_types(tmp_path):
         validate_command_data(bad_command)
 
     bad_command = command.to_dict()
+    bad_command["schema_version"] = "2"
+    with pytest.raises(ValueError, match="unknown fields"):
+        validate_command_data(bad_command)
+
+    bad_command = command.to_dict()
+    bad_command["future_field"] = True
+    with pytest.raises(ValueError, match="unknown fields"):
+        validate_command_data(bad_command)
+
+    bad_command = command.to_dict()
     bad_command["duration_seconds"] = False
     with pytest.raises(ValueError, match="duration_seconds"):
         validate_command_data(bad_command)
 
 
 @pytest.mark.unittest
-def test_observation_schema_requires_version_and_public_fields():
+def test_observation_schema_requires_public_fields_and_rejects_unknown_keys():
     data = {
-        "schema_version": "2",
         "case_id": "demo",
         "template_name": "c",
         "phase": "step",
@@ -186,11 +205,16 @@ def test_observation_schema_requires_version_and_public_fields():
     }
     validate_observation_data(json.loads(json.dumps(data)))
 
-    data["schema_version"] = "1"
-    with pytest.raises(ValueError, match="schema_version"):
+    data["schema_version"] = "2"
+    with pytest.raises(ValueError, match="unknown fields"):
         validate_observation_data(data)
 
-    data["schema_version"] = "2"
+    data.pop("schema_version")
+    data["future_field"] = True
+    with pytest.raises(ValueError, match="unknown fields"):
+        validate_observation_data(data)
+
+    data.pop("future_field")
     data["events"] = ["Root.A.Go", 1]
     with pytest.raises(ValueError, match="events"):
         validate_observation_data(data)

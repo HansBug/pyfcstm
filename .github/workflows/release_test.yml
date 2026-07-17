@@ -40,6 +40,10 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 20
+      - name: Set up Node.js for diagram assets
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
       - name: Set up python ${{ matrix.python-version }}
         uses: actions/setup-python@v6
         with:
@@ -825,6 +829,10 @@ jobs:
         with:
           fetch-depth: 20
           submodules: 'recursive'
+      - name: Set up Node.js for diagram assets
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
       - name: Set up system dependencies on Linux
         if: ${{ env.OS_NAME == 'Linux' }}
         shell: bash

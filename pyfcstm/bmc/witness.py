@@ -2168,19 +2168,21 @@ class BmcSolveResult(_PrettyPrintableMixin):
             raise BmcBuildError(
                 "incomplete_elapsed_ms is required when suffix has a status."
             )
-        if self.feasibility is None:
+        feasibility = self.feasibility
+        if feasibility is None:
             if self.status == "sat":
-                object.__setattr__(self, "feasibility", _inferred_feasibility())
+                feasibility = _inferred_feasibility()
             elif self.status in {"unknown", "timeout"}:
-                object.__setattr__(self, "feasibility", _not_checked_feasibility())
+                feasibility = _not_checked_feasibility()
             else:
                 raise BmcBuildError(
                     "feasibility evidence is required for primary unsat results."
                 )
-        elif not isinstance(self.feasibility, BmcFeasibilityResult):
+            object.__setattr__(self, "feasibility", feasibility)
+        elif not isinstance(feasibility, BmcFeasibilityResult):
             raise BmcBuildError("feasibility must be BmcFeasibilityResult or None.")
         if self.status in {"unknown", "timeout"} and not _is_not_checked_feasibility(
-            self.feasibility
+            feasibility
         ):
             raise BmcBuildError(
                 "primary unknown/timeout results require all feasibility stages "
@@ -2188,7 +2190,7 @@ class BmcSolveResult(_PrettyPrintableMixin):
             )
         if (
             self.status == "unsat"
-            and _is_not_checked_feasibility(self.feasibility)
+            and _is_not_checked_feasibility(feasibility)
             and not _has_diagnostic(self, _FEASIBILITY_TIMEOUT_BEFORE_ASSUMPTIONS)
         ):
             raise BmcBuildError(
@@ -2196,17 +2198,17 @@ class BmcSolveResult(_PrettyPrintableMixin):
                 "require a deadline exhaustion diagnostic."
             )
         if self.status == "sat" and not (
-            self.feasibility.kernel.origin == "inferred"
-            and self.feasibility.initialization.origin == "inferred"
-            and self.feasibility.assumptions.origin == "inferred"
-            and self.feasibility.kernel.status == "sat"
-            and self.feasibility.initialization.status == "sat"
-            and self.feasibility.assumptions.status == "sat"
+            feasibility.kernel.origin == "inferred"
+            and feasibility.initialization.origin == "inferred"
+            and feasibility.assumptions.origin == "inferred"
+            and feasibility.kernel.status == "sat"
+            and feasibility.initialization.status == "sat"
+            and feasibility.assumptions.status == "sat"
         ):
             raise BmcBuildError(
                 "primary sat results require inferred SAT feasibility evidence."
             )
-        if self.status != "sat" and self.feasibility.assumptions.origin == "inferred":
+        if self.status != "sat" and feasibility.assumptions.origin == "inferred":
             raise BmcBuildError(
                 "assumptions inferred feasibility evidence requires primary status=sat."
             )
@@ -2222,11 +2224,10 @@ class BmcSolveResult(_PrettyPrintableMixin):
             )
         if self.incomplete_status is not None and self.status != "unsat":
             raise BmcBuildError("incomplete status requires a primary UNSAT result.")
-        if self.status == "sat" and self.feasibility.scenario_infeasible:
+        if self.status == "sat" and feasibility.scenario_infeasible:
             raise BmcBuildError("primary sat result cannot be scenario_infeasible.")
         if self.incomplete_status == "sat" and (
-            self.feasibility.scenario_infeasible
-            or self.feasibility.assumptions.status != "sat"
+            feasibility.scenario_infeasible or feasibility.assumptions.status != "sat"
         ):
             raise BmcBuildError(
                 "incomplete suffix model requires SAT assumptions feasibility evidence."
@@ -2234,6 +2235,19 @@ class BmcSolveResult(_PrettyPrintableMixin):
         if self.total_elapsed_ms is None:
             total = self.elapsed_ms + (self.incomplete_elapsed_ms or 0.0)
             object.__setattr__(self, "total_elapsed_ms", total)
+
+    def _validated_feasibility(self) -> BmcFeasibilityResult:
+        """Return validated feasibility evidence for internal consumers.
+
+        :return: Non-optional feasibility evidence.
+        :rtype: BmcFeasibilityResult
+        :raises pyfcstm.bmc.errors.BmcBuildError: If an object bypassed normal
+            dataclass initialization and has no feasibility evidence.
+        """
+        feasibility = self.feasibility
+        if feasibility is None:
+            raise _internal_error("BmcSolveResult feasibility evidence is missing.")
+        return feasibility
 
     @property
     def kind(self) -> str:
@@ -2290,13 +2304,14 @@ class BmcSolveResult(_PrettyPrintableMixin):
             >>> BmcSolveResult(formula, 'timeout', reason='timeout').incomplete
             True
         """
-        if self.feasibility.scenario_infeasible:
+        feasibility = self._validated_feasibility()
+        if feasibility.scenario_infeasible:
             return False
         if _has_diagnostic(self, _FEASIBILITY_TIMEOUT_BEFORE_ASSUMPTIONS):
             return True
         if self.status in {"unknown", "timeout"}:
             return True
-        if self.feasibility.assumptions.status in {"unknown", "timeout"}:
+        if feasibility.assumptions.status in {"unknown", "timeout"}:
             return True
         if self.kind != "response" or self.status != "unsat":
             return False
@@ -2386,13 +2401,14 @@ class BmcSolveResult(_PrettyPrintableMixin):
             >>> solve_bmc_property(formula).property_satisfied
             False
         """
-        if self.feasibility.scenario_infeasible:
+        feasibility = self._validated_feasibility()
+        if feasibility.scenario_infeasible:
             return None
         if _has_diagnostic(self, _FEASIBILITY_TIMEOUT_BEFORE_ASSUMPTIONS):
             return None
         if self.status in {"unknown", "timeout"}:
             return None
-        if self.feasibility.assumptions.status in {"unknown", "timeout"}:
+        if feasibility.assumptions.status in {"unknown", "timeout"}:
             return None
         if self.status == "sat":
             return self.polarity == "witness"
@@ -2420,7 +2436,8 @@ class BmcSolveResult(_PrettyPrintableMixin):
             >>> solve_bmc_property(formula).outcome
             'no_witness'
         """
-        if self.feasibility.scenario_infeasible:
+        feasibility = self._validated_feasibility()
+        if feasibility.scenario_infeasible:
             return "scenario_infeasible"
         if _has_diagnostic(self, _FEASIBILITY_TIMEOUT_BEFORE_ASSUMPTIONS):
             return "feasibility_timeout"
@@ -2428,9 +2445,9 @@ class BmcSolveResult(_PrettyPrintableMixin):
             return "timeout"
         if self.status == "unknown":
             return "unknown"
-        if self.feasibility.assumptions.status == "timeout":
+        if feasibility.assumptions.status == "timeout":
             return "feasibility_timeout"
-        if self.feasibility.assumptions.status == "unknown":
+        if feasibility.assumptions.status == "unknown":
             return "feasibility_unknown"
         if self.status == "sat":
             if self.polarity == "witness":
@@ -2463,6 +2480,7 @@ class BmcSolveResult(_PrettyPrintableMixin):
             >>> solve_bmc_property(formula).to_canonical()['status']
             'unsat'
         """
+        feasibility = self._validated_feasibility()
         return {
             "node": "bmc_solve_result",
             "schema_version": "bmc-solve-result/v2",
@@ -2483,7 +2501,7 @@ class BmcSolveResult(_PrettyPrintableMixin):
             "incomplete_elapsed_ms": self.incomplete_elapsed_ms,
             "has_incomplete_model": self.incomplete_model is not None,
             "total_elapsed_ms": self.total_elapsed_ms,
-            "feasibility": self.feasibility.to_canonical(),
+            "feasibility": feasibility.to_canonical(),
             "available_model_roles": list(self.available_model_roles),
             "diagnostics": list(self.diagnostics),
         }
@@ -2515,12 +2533,13 @@ class BmcSolveResult(_PrettyPrintableMixin):
             if self.polarity == "witness":
                 return ("primary_witness",)
             return ("primary_counterexample",)
+        feasibility = self._validated_feasibility()
         if (
             self.status == "unsat"
             and self.incomplete_status == "sat"
             and self.kind == "response"
             and _has_nonempty_incomplete_formula(self.formula)
-            and self.feasibility.assumptions.status == "sat"
+            and feasibility.assumptions.status == "sat"
         ):
             return ("incomplete_suffix",)
         return ()
@@ -4799,11 +4818,12 @@ def decode_bmc_result_trace(
         )
     if result.status != "unsat":
         raise BmcBuildError("incomplete_suffix model channel requires primary UNSAT.")
-    if result.feasibility.scenario_infeasible:
+    feasibility = result._validated_feasibility()
+    if feasibility.scenario_infeasible:
         raise BmcBuildError(
             "scenario-infeasible results cannot expose an incomplete suffix model."
         )
-    if result.feasibility.assumptions.status != "sat":
+    if feasibility.assumptions.status != "sat":
         raise BmcBuildError(
             "incomplete_suffix model channel requires SAT assumptions feasibility."
         )

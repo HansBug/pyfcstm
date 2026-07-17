@@ -1017,6 +1017,18 @@ def test_solve_result_constructor_requires_unsat_feasibility_evidence() -> None:
         BmcSolveResult(formula, "unsat")
 
 
+def test_solve_result_default_feasibility_supports_all_public_verdict_paths() -> None:
+    """SAT direct constructors expose complete inferred feasibility evidence."""
+    formula = _verdict_formula("reach")
+
+    result = BmcSolveResult(formula, "sat", model=_empty_sat_model())
+
+    assert result.feasibility is not None
+    assert result.feasibility.assumptions.origin == "inferred"
+    assert result.available_model_roles == ("primary_witness",)
+    assert result.to_canonical()["feasibility"]["assumptions"]["status"] == "sat"
+
+
 def test_solve_result_rejects_unchecked_unsat_without_timeout_evidence() -> None:
     """Primary UNSAT cannot use empty feasibility evidence as a verdict."""
     formula = _verdict_formula("reach")

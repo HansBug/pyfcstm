@@ -380,13 +380,18 @@ def _human_diagnostics(execution: _BmcExecution) -> Tuple[str, ...]:
             lines.append("Diagnostic: %s" % item)
 
     if execution.replay is not None:
+        witness = execution.witness
+        if witness is None:
+            raise _BmcCliInternalError(
+                "Replay result exists without its decoded witness."
+            )
         if execution.replay.ok:
             lines.append(
                 "Replay: verified (%d frames, %d %s)."
                 % (
-                    len(execution.witness.frames),
-                    len(execution.witness.steps),
-                    "step" if len(execution.witness.steps) == 1 else "steps",
+                    len(witness.frames),
+                    len(witness.steps),
+                    "step" if len(witness.steps) == 1 else "steps",
                 )
             )
         else:

@@ -85,7 +85,15 @@ def test_replay_reports_structured_var_mismatch() -> None:
     )
     replay = replay_bmc_witness(model, bad_trace)
     assert replay.ok is False
-    assert [item.path for item in replay.mismatches] == ["frames[1].vars.x"]
+    assert [item.to_canonical() for item in replay.mismatches] == [
+        {
+            "path": "frames[1].vars.x",
+            "expected": 2,
+            "actual": 1,
+            "message": "value mismatch",
+            "tolerance": None,
+        }
+    ]
     _assert_text_equal(
         """
         BmcReplayResult[mismatch] mismatches=1
@@ -167,7 +175,15 @@ def test_replay_float_comparison_uses_tolerance() -> None:
     )
     replay = replay_bmc_witness(model, far_trace)
     assert replay.ok is False
-    assert [item.path for item in replay.mismatches] == ["frames[1].vars.x"]
+    assert [item.to_canonical() for item in replay.mismatches] == [
+        {
+            "path": "frames[1].vars.x",
+            "expected": 0.50001,
+            "actual": 0.5,
+            "message": "float value mismatch",
+            "tolerance": 1e-9,
+        }
+    ]
     _assert_text_equal(
         """
         BmcReplayResult[mismatch] mismatches=1
@@ -461,7 +477,15 @@ def test_replay_rejects_forged_non_initial_init_sentinel_frames() -> None:
 
     result = replay_bmc_witness(model, forged_trace)
 
-    assert [mismatch.path for mismatch in result.mismatches] == ["frames[1].state"]
+    assert [mismatch.to_canonical() for mismatch in result.mismatches] == [
+        {
+            "path": "frames[1].state",
+            "expected": "Root",
+            "actual": "Root.A",
+            "message": "init sentinel state mismatch",
+            "tolerance": None,
+        }
+    ]
 
 
 def test_replay_accepts_later_init_sentinel_when_initial_cycle_stays_unstable() -> None:
@@ -604,15 +628,63 @@ def test_replay_reports_witness_trace_shape_mismatches() -> None:
 
     replay = replay_bmc_witness(model, bad_trace)
     assert replay.ok is False
-    assert [item.path for item in replay.mismatches] == [
-        "frames",
-        "frames[1].index",
-        "steps[0].index",
-        "steps[0].source_frame",
-        "steps[0].target_frame",
-        "steps[1].index",
-        "steps[1].source_frame",
-        "steps[1].target_frame",
+    assert [item.to_canonical() for item in replay.mismatches] == [
+        {
+            "path": "frames",
+            "expected": 3,
+            "actual": 2,
+            "message": "frame/step length mismatch",
+            "tolerance": None,
+        },
+        {
+            "path": "frames[1].index",
+            "expected": 1,
+            "actual": 7,
+            "message": "frame index mismatch",
+            "tolerance": None,
+        },
+        {
+            "path": "steps[0].index",
+            "expected": 0,
+            "actual": 3,
+            "message": "step index mismatch",
+            "tolerance": None,
+        },
+        {
+            "path": "steps[0].source_frame",
+            "expected": 0,
+            "actual": 2,
+            "message": "step source frame mismatch",
+            "tolerance": None,
+        },
+        {
+            "path": "steps[0].target_frame",
+            "expected": 1,
+            "actual": 4,
+            "message": "step target frame mismatch",
+            "tolerance": None,
+        },
+        {
+            "path": "steps[1].index",
+            "expected": 1,
+            "actual": 0,
+            "message": "step index mismatch",
+            "tolerance": None,
+        },
+        {
+            "path": "steps[1].source_frame",
+            "expected": 1,
+            "actual": 0,
+            "message": "step source frame mismatch",
+            "tolerance": None,
+        },
+        {
+            "path": "steps[1].target_frame",
+            "expected": 2,
+            "actual": 1,
+            "message": "step target frame mismatch",
+            "tolerance": None,
+        },
     ]
     _assert_text_equal(
         """

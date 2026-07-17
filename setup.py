@@ -80,9 +80,45 @@ def _require_diagram_assets_for_distribution() -> None:
         "bdist",
         "bdist_wheel",
         "install",
+        "editable_wheel",
+        "develop",
     }
     if not distribution_commands.intersection(sys.argv[1:]):
         return
+    generated_assets = {
+        "renderer.js",
+        "resvg-binding.js",
+        "resvg-bridge.js",
+        "host-shim.js",
+        "resvg.wasm",
+        "manifest.json",
+        os.path.join("fonts", "JetBrainsMono-Regular.ttf"),
+    }
+    tracked_markers = {
+        ".gitignore",
+        ".gitkeep",
+        "__init__.py",
+        "NOTICE.txt",
+        "LICENSE-MPL-2.0.txt",
+    }
+    asset_files = set()
+    for directory, _subdirectories, filenames in os.walk(
+        os.path.join(here, _MODULE_NAME, "assets")
+    ):
+        for filename in filenames:
+            path = os.path.join(directory, filename)
+            relative = os.path.relpath(
+                path, os.path.join(here, _MODULE_NAME, "assets")
+            )
+            if "__pycache__" not in relative.split(os.sep):
+                asset_files.add(relative)
+    extras = sorted(asset_files - generated_assets - tracked_markers)
+    if extras:
+        raise RuntimeError(
+            "diagram asset tree contains unregistered files; run "
+            "`make build_assets` before building or installing the package: %s"
+            % ", ".join(extras)
+        )
     required_assets = [
         os.path.join(here, _MODULE_NAME, "assets", "renderer.js"),
         os.path.join(here, _MODULE_NAME, "assets", "resvg.wasm"),
@@ -99,7 +135,7 @@ def _require_diagram_assets_for_distribution() -> None:
     if missing:
         raise RuntimeError(
             "diagram distribution assets are missing; run `make build_assets` "
-            "before building a wheel or sdist: %s" % ", ".join(missing)
+            "before building or installing the package: %s" % ", ".join(missing)
         )
 
 

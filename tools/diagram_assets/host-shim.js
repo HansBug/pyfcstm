@@ -104,3 +104,17 @@ if (typeof globalThis.TextDecoder === "undefined") {
     return output;
   };
 }
+
+// MiniRacer does not provide a browser security boundary. Keep the embedded
+// renderer unable to create or evaluate arbitrary JavaScript, including when
+// a future bundle accidentally references these ambient V8 capabilities.
+Object.defineProperty(globalThis, "eval", {
+  value: undefined,
+  writable: false,
+  configurable: false,
+});
+Object.defineProperty(globalThis, "Function", {
+  value: undefined,
+  writable: false,
+  configurable: false,
+});

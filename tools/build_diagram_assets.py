@@ -172,7 +172,43 @@ def build_renderer(output: Path, esbuild_version: str) -> Tuple[bytes, Dict[str,
         "--outfile=%s" % output,
     ]
     subprocess.run(command, cwd=str(ROOT), check=True)
-    return output.read_bytes(), json.loads(metafile.read_text(encoding="utf-8"))
+    metadata = json.loads(metafile.read_text(encoding="utf-8"))
+    return output.read_bytes(), _canonicalize_metafile(metadata)
+
+
+def _canonicalize_metafile(metadata: Dict[str, object]) -> Dict[str, object]:
+    """Remove random staging paths from esbuild metafile output keys."""
+    outputs = metadata.get("outputs")
+    if not isinstance(outputs, dict):
+        return metadata
+    canonical_outputs = {}
+    for output_path, output_metadata in outputs.items():
+        # esbuild records the temporary staging directory in the output key.
+        # Keep only the logical filename so manifest hashes stay stable.
+        logical_name = str(output_path).replace("\\", "/").rsplit("/", 1)[-1]
+        if logical_name in canonical_outputs:
+            raise ValueError(
+                "esbuild metafile has duplicate logical output: %s" % logical_name
+            )
+        canonical_outputs[logical_name] = output_metadata
+    canonical = dict(metadata)
+    canonical["outputs"] = canonical_outputs
+    return canonical
+
+
+def _check_metafile_determinism() -> None:
+    """Verify that temporary output directory names cannot affect hashes."""
+    base = {"bytes": 1, "inputs": {"entry.ts": {"bytesInOutput": 1}}}
+    first = _canonicalize_metafile(
+        {"inputs": {}, "outputs": {"/tmp/stage-a/renderer-core.js": base}}
+    )
+    second = _canonicalize_metafile(
+        {"inputs": {}, "outputs": {"/tmp/stage-b/renderer-core.js": base}}
+    )
+    first_encoded = json.dumps(first, sort_keys=True, separators=(",", ":"))
+    second_encoded = json.dumps(second, sort_keys=True, separators=(",", ":"))
+    if first_encoded != second_encoded:
+        raise ValueError("esbuild metafile canonicalization is not deterministic")
 
 
 def load_font(font_path: Path, lock: Dict[str, object]) -> bytes:
@@ -224,6 +260,29 @@ def _relative_files(root: Path) -> Set[str]:
         for path in root.rglob("*")
         if path.is_file() and not path.is_symlink()
     }
+
+
+def _assert_no_symlink_tree(root: Path) -> None:
+    """Reject symlink entries before a generated tree is consumed."""
+    if root.is_symlink():
+        raise OSError("diagram asset tree is a symlink: %s" % root)
+    if not root.is_dir():
+        return
+    for path in root.rglob("*"):
+        if path.is_symlink():
+            raise OSError("diagram asset tree contains a symlink: %s" % path)
+
+
+def _assert_no_symlink_components(path: Path) -> None:
+    """Reject symlink components between the asset root and ``path``."""
+    if ASSET_DIR.is_symlink():
+        raise OSError("diagram asset root is a symlink: %s" % ASSET_DIR)
+    relative = path.relative_to(ASSET_DIR)
+    current = ASSET_DIR
+    for component in relative.parts:
+        current /= component
+        if current.is_symlink():
+            raise OSError("diagram asset path contains a symlink: %s" % current)
 
 
 def tracked_asset_paths() -> Set[str]:
@@ -290,6 +349,8 @@ def publish_assets(staging: Path) -> None:
     :rtype: None
     :raises OSError: If a publish or rollback filesystem operation fails.
     """
+    _assert_no_symlink_tree(ASSET_DIR)
+    _assert_no_symlink_tree(staging)
     tracked = tracked_asset_paths()
     staged = _relative_files(staging)
     existing = _relative_files(ASSET_DIR) - tracked
@@ -300,6 +361,7 @@ def publish_assets(staging: Path) -> None:
     try:
         for relative in sorted(staged | existing):
             destination = ASSET_DIR / relative
+            _assert_no_symlink_components(destination.parent)
             if destination.exists() or destination.is_symlink():
                 saved = backup / relative
                 saved.parent.mkdir(parents=True, exist_ok=True)
@@ -421,8 +483,18 @@ def main(argv=None) -> int:
     """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--clean", action="store_true", help="remove generated assets")
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="run deterministic asset-builder self-checks",
+    )
     args = parser.parse_args(argv)
-    if args.clean:
+    if args.clean and args.check:
+        parser.error("--clean and --check cannot be combined")
+    if args.check:
+        _check_metafile_determinism()
+        print("diagram asset builder: deterministic self-check passed")
+    elif args.clean:
         clean_assets()
     else:
         build_assets()

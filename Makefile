@@ -158,6 +158,7 @@ help:
 	@echo ""
 
 package: build_assets build_info
+	rm -rf ${BUILD_DIR}
 	$(PYTHON) -m build --sdist --wheel --outdir ${DIST_DIR}
 build_info: build_assets tpl
 	$(PYTHON) -m tools.write_build_info
@@ -228,6 +229,7 @@ build_assets_clean:
 	$(PYTHON) tools/build_diagram_assets.py --clean
 
 diagram_assets_check: build_assets
+	$(PYTHON) tools/build_diagram_assets.py --check
 	$(PYTHON) tools/check_diagram_assets.py
 
 diagram_package_check: package

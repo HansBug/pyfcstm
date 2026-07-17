@@ -10,7 +10,6 @@ import base64
 import json
 import math
 import pkgutil
-import sys
 import time
 from typing import Any, Dict
 
@@ -32,7 +31,7 @@ class DiagramAssetEngine:
     Drive the shared ES2017 renderer and resvg bridge in MiniRacer.
 
     :param timeout: Maximum seconds for one ELK/render polling operation,
-        defaults to ``30.0``.
+        which must be finite and positive, defaults to ``30.0``.
     :type timeout: float, optional
 
     Example::
@@ -44,9 +43,10 @@ class DiagramAssetEngine:
     """
 
     def __init__(self, timeout: float = 30.0) -> None:
-        if timeout <= 0:
-            raise ValueError("timeout must be positive")
-        self.timeout = float(timeout)
+        numeric_timeout = float(timeout)
+        if not math.isfinite(numeric_timeout) or numeric_timeout <= 0:
+            raise ValueError("timeout must be a finite positive number")
+        self.timeout = numeric_timeout
         self._context = self._create_context()
         self._resvg_ready = False
         self._load_bundle()
@@ -54,10 +54,16 @@ class DiagramAssetEngine:
     @staticmethod
     def _create_context() -> Any:
         """Create the Python-version-appropriate MiniRacer context."""
-        if sys.version_info >= (3, 8):
+        try:
             from py_mini_racer import MiniRacer
-        else:
-            from py_mini_racer.py_mini_racer import MiniRacer
+        except ImportError as top_level_error:
+            # Legacy py-mini-racer exports MiniRacer from this submodule.
+            try:
+                from py_mini_racer.py_mini_racer import MiniRacer
+            except ImportError:
+                # Preserve a modern package's native import/ABI failure when
+                # neither supported export shape is available.
+                raise top_level_error
         return MiniRacer()
 
     def _eval(self, source: str) -> Any:
@@ -136,11 +142,11 @@ class DiagramAssetEngine:
 
         :param svg: SVG text returned by :meth:`render_svg`.
         :type svg: str
-        :param scale: Positive raster scale, defaults to ``1.0``.
+        :param scale: Finite positive raster scale, defaults to ``1.0``.
         :type scale: float, optional
         :return: PNG bytes.
         :rtype: bytes
-        :raises ValueError: If ``scale`` is not positive.
+        :raises ValueError: If ``scale`` is not finite and positive.
         :raises DiagramAssetError: If resvg reports a rendering failure.
         """
         numeric_scale = float(scale)

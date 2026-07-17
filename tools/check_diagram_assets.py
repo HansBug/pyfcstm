@@ -18,6 +18,16 @@ TRACKED_MARKERS = {
     "LICENSE-MPL-2.0.txt",
 }
 
+GENERATED_ASSETS = {
+    "renderer.js",
+    "resvg-binding.js",
+    "resvg-bridge.js",
+    "host-shim.js",
+    "resvg.wasm",
+    "manifest.json",
+    "fonts/JetBrainsMono-Regular.ttf",
+}
+
 
 def digest(path: Path) -> str:
     """Return the SHA-256 digest of a generated asset."""
@@ -70,17 +80,22 @@ def main() -> int:
         raise ValueError("unexpected diagram asset manifest schema")
     entries: List[Dict[str, object]] = manifest.get("files", [])
     expected = {str(item["path"]): item for item in entries}
-    required = {
-        "renderer.js",
-        "resvg-binding.js",
-        "resvg-bridge.js",
-        "host-shim.js",
-        "resvg.wasm",
-        "fonts/JetBrainsMono-Regular.ttf",
-    }
+    required = GENERATED_ASSETS - {"manifest.json"}
     if set(expected) != required:
         raise ValueError(
             "manifest asset list does not match the required generated set"
+        )
+
+    actual_files = {
+        path.relative_to(ASSET_DIR).as_posix()
+        for path in ASSET_DIR.rglob("*")
+        if path.is_file() and "__pycache__" not in path.parts
+    }
+    allowed_files = GENERATED_ASSETS | TRACKED_MARKERS
+    extras = sorted(actual_files - allowed_files)
+    if extras:
+        raise ValueError(
+            "diagram asset tree contains unregistered files: %s" % ", ".join(extras)
         )
 
     for relative, item in expected.items():

@@ -18,6 +18,14 @@ REQUIRED = {
     "pyfcstm/assets/fonts/JetBrainsMono-Regular.ttf",
 }
 
+TRACKED_MARKERS = {
+    "pyfcstm/assets/.gitignore",
+    "pyfcstm/assets/.gitkeep",
+    "pyfcstm/assets/__init__.py",
+    "pyfcstm/assets/NOTICE.txt",
+    "pyfcstm/assets/LICENSE-MPL-2.0.txt",
+}
+
 
 def check_members(members: Iterable[str], read_member) -> None:
     """Validate required members and manifest-listed byte sizes."""
@@ -25,6 +33,16 @@ def check_members(members: Iterable[str], read_member) -> None:
     missing = sorted(REQUIRED - names)
     if missing:
         raise ValueError("archive is missing diagram assets: %s" % ", ".join(missing))
+    asset_files = {
+        name
+        for name in names
+        if name.startswith("pyfcstm/assets/") and not name.endswith("/")
+    }
+    extras = sorted(asset_files - REQUIRED - TRACKED_MARKERS)
+    if extras:
+        raise ValueError(
+            "archive contains unregistered diagram assets: %s" % ", ".join(extras)
+        )
     manifest = json.loads(read_member("pyfcstm/assets/manifest.json").decode("utf-8"))
     for item in manifest["files"]:
         path = "pyfcstm/assets/" + item["path"]

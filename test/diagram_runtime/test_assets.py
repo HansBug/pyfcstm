@@ -99,7 +99,6 @@ def _request():
 
 
 def test_renderer_is_deterministic_and_escapes_hostile_labels():
-    pytest.importorskip("py_mini_racer")
     request = _request()
     request["diagram"]["rootState"]["children"][0]["displayName"] = (
         "启动 <ready> & 继续"
@@ -115,8 +114,36 @@ def test_renderer_is_deterministic_and_escapes_hostile_labels():
     assert "</script><script>" not in first
 
 
+def test_rendered_a_to_b_resvg_tip_meets_target_border():
+    engine = DiagramAssetEngine()
+    svg = engine.render_svg(_request())
+    target = re.search(
+        r'<g data-fcstm-kind="state" data-fcstm-id="Machine\.B".*?'
+        r'<rect x="([0-9.]+)" y="([0-9.]+)" width="([0-9.]+)" '
+        r'height="([0-9.]+)"',
+        svg,
+        re.S,
+    )
+    assert target
+    edge = re.search(
+        r'<path d="M[0-9.]+,[0-9.]+ L([0-9.]+),([0-9.]+)"[^>]*'
+        r'data-fcstm-id="a-b"',
+        svg,
+    )
+    assert edge
+    end_x, end_y = map(float, edge.groups())
+    target_x, target_y, _target_width, target_height = map(float, target.groups())
+    assert end_x == pytest.approx(target_x)
+    normalized = engine.expand_svg(svg)
+    transforms = re.findall(r'transform="matrix\(([^)]+)\)"', normalized)
+    assert len(transforms) == 2
+    a, b, c, d, tx, ty = [float(part) for part in transforms[1].split()]
+    tip = (tx + a * 10 + c * 5, ty + b * 10 + d * 5)
+    assert tip[0] == pytest.approx(target_x, abs=1e-3)
+    assert tip[1] == pytest.approx(target_y + target_height / 2, abs=1e-3)
+
+
 def test_resvg_png_and_vector_expansion_keep_marker_direction():
-    pytest.importorskip("py_mini_racer")
     svg = """
     <svg xmlns="http://www.w3.org/2000/svg" width="240" height="240">
       <defs><marker id="arrow" viewBox="0 0 10 10" refX="10" refY="5"
@@ -143,7 +170,6 @@ def test_resvg_png_and_vector_expansion_keep_marker_direction():
 
 
 def test_resvg_marker_tip_lands_on_path_endpoint():
-    pytest.importorskip("py_mini_racer")
     svg = """
     <svg xmlns="http://www.w3.org/2000/svg" width="240" height="240">
       <defs><marker id="arrow" viewBox="0 0 10 10" refX="10" refY="5"
@@ -157,6 +183,19 @@ def test_resvg_marker_tip_lands_on_path_endpoint():
     """
     endpoints = [(190.0, 60.0), (180.0, 190.0), (50.0, 180.0), (60.0, 50.0)]
     engine = DiagramAssetEngine()
+
+    legacy = engine.expand_svg(svg.replace('refX="10"', 'refX="9"'))
+    legacy_transforms = re.findall(
+        r'transform="matrix\(([^)]+)\)"', legacy
+    )
+    assert len(legacy_transforms) == len(endpoints)
+    legacy_errors = []
+    for transform, endpoint in zip(legacy_transforms, endpoints):
+        a, b, c, d, tx, ty = [float(part) for part in transform.split()]
+        tip = (tx + a * 10 + c * 5, ty + b * 10 + d * 5)
+        legacy_errors.append(math.hypot(tip[0] - endpoint[0], tip[1] - endpoint[1]))
+    assert legacy_errors == pytest.approx([1.0] * len(endpoints), abs=1e-3)
+
     normalized = engine.expand_svg(svg)
     transforms = re.findall(r'transform="matrix\(([^)]+)\)"', normalized)
     assert len(transforms) == len(endpoints)
@@ -167,9 +206,22 @@ def test_resvg_marker_tip_lands_on_path_endpoint():
 
 
 def test_render_png_rejects_non_finite_scale():
-    pytest.importorskip("py_mini_racer")
     engine = DiagramAssetEngine()
     svg = '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>'
     for scale in (float("nan"), float("inf"), float("-inf")):
         with pytest.raises(ValueError, match="finite positive"):
             engine.render_png(svg, scale=scale)
+
+
+def test_engine_rejects_non_finite_timeout():
+    for timeout in (float("nan"), float("inf"), float("-inf")):
+        with pytest.raises(ValueError, match="finite positive"):
+            DiagramAssetEngine(timeout=timeout)
+
+
+def test_host_shim_blocks_dynamic_code_creation():
+    engine = DiagramAssetEngine()
+    with pytest.raises(Exception):
+        engine._eval("eval('1 + 1')")
+    with pytest.raises(Exception):
+        engine._eval("Function('return 3')()")

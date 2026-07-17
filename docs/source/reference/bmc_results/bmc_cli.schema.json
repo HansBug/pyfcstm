@@ -22,7 +22,7 @@
     {
       "if": {
         "allOf": [
-          {"properties": {"result": {"properties": {"schema_version": {"const": "bmc-solve-result/v2"}, "outcome": {"enum": ["witness_found", "property_satisfied"]}}}}},
+          {"properties": {"result": {"required": ["schema_version", "outcome"], "properties": {"schema_version": {"const": "bmc-solve-result/v2"}, "outcome": {"enum": ["witness_found", "property_satisfied"]}}}}},
           {"not": {"$ref": "#/$defs/replayMismatchEnvelope"}}
         ]
       },
@@ -31,7 +31,7 @@
     {
       "if": {
         "allOf": [
-          {"properties": {"result": {"properties": {"schema_version": {"const": "bmc-solve-result/v2"}, "outcome": {"enum": ["property_violated", "no_witness"]}}}}},
+          {"properties": {"result": {"required": ["schema_version", "outcome"], "properties": {"schema_version": {"const": "bmc-solve-result/v2"}, "outcome": {"enum": ["property_violated", "no_witness"]}}}}},
           {"not": {"$ref": "#/$defs/replayMismatchEnvelope"}}
         ]
       },
@@ -40,30 +40,30 @@
     {
       "if": {
         "allOf": [
-          {"properties": {"result": {"properties": {"schema_version": {"const": "bmc-solve-result/v2"}, "outcome": {"enum": ["incomplete", "timeout", "unknown", "scenario_infeasible", "feasibility_timeout", "feasibility_unknown"]}}}}},
+          {"properties": {"result": {"required": ["schema_version", "outcome"], "properties": {"schema_version": {"const": "bmc-solve-result/v2"}, "outcome": {"enum": ["incomplete", "timeout", "unknown", "scenario_infeasible", "feasibility_timeout", "feasibility_unknown"]}}}}},
           {"not": {"$ref": "#/$defs/replayMismatchEnvelope"}}
         ]
       },
       "then": {"properties": {"exit_code": {"const": 3}}}
     },
     {
-      "if": {"properties": {"result": {"properties": {"schema_version": {"const": "bmc-solve-result/v2"}, "outcome": {"const": "scenario_infeasible"}}}}},
+      "if": {"properties": {"result": {"required": ["schema_version", "outcome"], "properties": {"schema_version": {"const": "bmc-solve-result/v2"}, "outcome": {"const": "scenario_infeasible"}}}}},
       "then": {"properties": {"witness": {"const": null}, "replay": {"const": null}}}
     },
     {
-      "if": {"properties": {"result": {"properties": {"schema_version": {"const": "bmc-solve-result/v2"}, "available_model_roles": {"const": []}}}}},
+      "if": {"properties": {"result": {"required": ["schema_version", "available_model_roles"], "properties": {"schema_version": {"const": "bmc-solve-result/v2"}, "available_model_roles": {"const": []}}}}},
       "then": {"properties": {"witness": {"const": null}, "replay": {"const": null}}}
     },
     {
-      "if": {"properties": {"result": {"properties": {"schema_version": {"const": "bmc-solve-result/v2"}, "available_model_roles": {"prefixItems": [{"const": "primary_witness"}], "items": false, "minItems": 1, "maxItems": 1}}}}},
+      "if": {"properties": {"result": {"required": ["schema_version", "available_model_roles"], "properties": {"schema_version": {"const": "bmc-solve-result/v2"}, "available_model_roles": {"prefixItems": [{"const": "primary_witness"}], "items": false, "minItems": 1, "maxItems": 1}}}}},
       "then": {"properties": {"witness": {"$ref": "#/$defs/primaryWitnessV2"}, "replay": {"$ref": "#/$defs/primaryReplayV2"}}}
     },
     {
-      "if": {"properties": {"result": {"properties": {"schema_version": {"const": "bmc-solve-result/v2"}, "available_model_roles": {"prefixItems": [{"const": "primary_counterexample"}], "items": false, "minItems": 1, "maxItems": 1}}}}},
+      "if": {"properties": {"result": {"required": ["schema_version", "available_model_roles"], "properties": {"schema_version": {"const": "bmc-solve-result/v2"}, "available_model_roles": {"prefixItems": [{"const": "primary_counterexample"}], "items": false, "minItems": 1, "maxItems": 1}}}}},
       "then": {"properties": {"witness": {"$ref": "#/$defs/primaryCounterexampleWitnessV2"}, "replay": {"$ref": "#/$defs/primaryCounterexampleReplayV2"}}}
     },
     {
-      "if": {"properties": {"result": {"properties": {"schema_version": {"const": "bmc-solve-result/v2"}, "available_model_roles": {"prefixItems": [{"const": "incomplete_suffix"}], "items": false, "minItems": 1, "maxItems": 1}}}}},
+      "if": {"properties": {"result": {"required": ["schema_version", "available_model_roles"], "properties": {"schema_version": {"const": "bmc-solve-result/v2"}, "available_model_roles": {"prefixItems": [{"const": "incomplete_suffix"}], "items": false, "minItems": 1, "maxItems": 1}}}}},
       "then": {"properties": {"witness": {"$ref": "#/$defs/incompleteSuffixWitnessV2"}, "replay": {"$ref": "#/$defs/incompleteSuffixReplayV2"}}}
     }
   ],

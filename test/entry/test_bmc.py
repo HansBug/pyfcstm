@@ -899,6 +899,45 @@ def test_bmc_schema_rejects_removed_version_fields(bmc_files) -> None:
         _assert_bmc_schema_instance(schema, legacy_witness)
 
 
+def test_bmc_schema_accepts_legacy_v1_envelope(bmc_files) -> None:
+    """The published schema keeps its declared v1 envelope compatibility."""
+    jsonschema = pytest.importorskip("jsonschema")
+    model_path, query = bmc_files
+    query_path = query('check reach <= 1: active("Root");')
+    _, payload = _json_result(model_path, query_path)
+    schema_path = (
+        Path(__file__).resolve().parents[2]
+        / "docs"
+        / "source"
+        / "reference"
+        / "bmc_results"
+        / "bmc_cli.schema.json"
+    )
+    validator = jsonschema.Draft202012Validator(
+        json.loads(schema_path.read_text(encoding="utf-8"))
+    )
+
+    legacy = deepcopy(payload)
+    for key in (
+        "schema_version",
+        "incomplete_elapsed_ms",
+        "total_elapsed_ms",
+        "feasibility",
+        "available_model_roles",
+    ):
+        legacy["result"].pop(key, None)
+    for key in ("schema_version", "model_role", "verdict"):
+        legacy["witness"].pop(key, None)
+    legacy["witness"]["solver"] = {
+        "status": "sat",
+        "reason": None,
+        "incomplete_status": None,
+    }
+    legacy["replay"].pop("model_role", None)
+
+    assert list(validator.iter_errors(legacy)) == []
+
+
 def test_bmc_max_bound_is_a_controlled_compile_error(bmc_files) -> None:
     """The maximum-bound policy rejects larger queries without writing a report."""
     model_path, query = bmc_files

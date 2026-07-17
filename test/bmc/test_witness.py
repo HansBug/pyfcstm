@@ -834,10 +834,7 @@ def test_solver_budget_exhaustion_before_suffix_is_not_checked(monkeypatch) -> N
     assert result.incomplete_status is None
     assert result.incomplete_reason is None
     assert result.incomplete_elapsed_ms is None
-    assert (
-        "feasibility_timeout:deadline_exhausted_before_suffix_check"
-        in result.diagnostics
-    )
+    assert witness_module._SUFFIX_TIMEOUT_BEFORE_CHECK in result.diagnostics
     assert spy.check_count == 2
 
 

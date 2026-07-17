@@ -47,7 +47,17 @@ import time
 from collections.abc import Iterable as IterableABC
 from dataclasses import dataclass, field
 from fractions import Fraction
-from typing import Any, Callable, Dict, Iterable, Mapping, Optional, Sequence, Tuple
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Iterable,
+    Mapping,
+    Optional,
+    Sequence,
+    Tuple,
+    cast,
+)
 
 from tabulate import tabulate, tabulate_formats
 import z3
@@ -293,7 +303,7 @@ def _validate_witness_solver_metadata(value: Mapping[str, Any]) -> None:
         _validate_elapsed_ms(value["elapsed_ms"])
     if "incomplete_elapsed_ms" in value:
         if value["incomplete_elapsed_ms"] is not None or "model_status" not in value:
-            _validate_elapsed_ms(value["incomplete_elapsed_ms"])
+            _validate_elapsed_ms(cast(float, value["incomplete_elapsed_ms"]))
     if "reason" in value:
         _validate_primary_solve_reason(
             "solver.status", status, "solver.reason", value["reason"]
@@ -404,7 +414,7 @@ def _validate_v2_witness_solver_metadata(
             "incomplete_suffix requires primary unsat and incomplete sat."
         )
     if value["primary_reason"] is not None:
-        raise BmcBuildError("v2 primary SAT metadata requires primary_reason=None.")
+        raise BmcBuildError("v2 witness solver metadata requires primary_reason=None.")
     if (
         value["incomplete_status"] in {"sat", "unsat"}
         and value["incomplete_reason"] is not None
@@ -1533,6 +1543,7 @@ _FEASIBILITY_CORE_REFINEMENT_NAMES = {
 _FEASIBILITY_TIMEOUT_BEFORE_ASSUMPTIONS = (
     "feasibility_timeout:deadline_exhausted_before_assumptions_check"
 )
+_SUFFIX_TIMEOUT_BEFORE_CHECK = "suffix_timeout:deadline_exhausted_before_suffix_check"
 
 _BMC_MODEL_ROLES = {
     "primary_witness",
@@ -3094,12 +3105,14 @@ class BmcWitnessTrace(_PrettyPrintableMixin):
                 "bmc-witness/v1 cannot contain model_role or verdict metadata."
             )
         if self.schema_version == "bmc-witness/v2":
-            if self.model_role is None:
+            model_role = self.model_role
+            if model_role is None:
                 raise BmcBuildError("bmc-witness/v2 requires model_role.")
-            if not isinstance(self.verdict, Mapping):
+            verdict = self.verdict
+            if not isinstance(verdict, Mapping):
                 raise BmcBuildError("bmc-witness/v2 requires verdict metadata.")
-            verdict = _coerce_public_json_mapping("verdict", self.verdict)
-            _validate_witness_verdict(self.model_role, verdict)
+            verdict = _coerce_public_json_mapping("verdict", verdict)
+            _validate_witness_verdict(model_role, verdict)
             object.__setattr__(self, "verdict", verdict)
         if not isinstance(self.property, Mapping):
             raise BmcBuildError("property must be a mapping.")
@@ -3112,7 +3125,10 @@ class BmcWitnessTrace(_PrettyPrintableMixin):
         initial_metadata = _coerce_public_json_mapping("initial", self.initial)
         _validate_witness_solver_metadata(solver_metadata)
         if self.schema_version == "bmc-witness/v2":
-            _validate_v2_witness_solver_metadata(self.model_role, solver_metadata)
+            model_role = self.model_role
+            if model_role is None:
+                raise BmcBuildError("bmc-witness/v2 requires model_role.")
+            _validate_v2_witness_solver_metadata(model_role, solver_metadata)
         object.__setattr__(self, "property", property_metadata)
         object.__setattr__(self, "solver", solver_metadata)
         object.__setattr__(self, "initial", initial_metadata)
@@ -3151,10 +3167,16 @@ class BmcWitnessTrace(_PrettyPrintableMixin):
         solver_metadata = _coerce_public_json_mapping("solver", self.solver)
         _validate_witness_solver_metadata(solver_metadata)
         if self.schema_version == "bmc-witness/v2":
-            _validate_v2_witness_solver_metadata(self.model_role, solver_metadata)
+            model_role = self.model_role
+            if model_role is None:
+                raise BmcBuildError("bmc-witness/v2 requires model_role.")
+            _validate_v2_witness_solver_metadata(model_role, solver_metadata)
+            verdict = self.verdict
+            if not isinstance(verdict, Mapping):
+                raise BmcBuildError("bmc-witness/v2 requires verdict metadata.")
             _validate_witness_verdict(
-                self.model_role,
-                _coerce_public_json_mapping("verdict", self.verdict),
+                model_role,
+                _coerce_public_json_mapping("verdict", verdict),
             )
         return {
             "schema_version": self.schema_version,
@@ -4119,9 +4141,7 @@ def solve_bmc_property(
                     incomplete_model = None
                     incomplete_reason = None
                     incomplete_elapsed_ms = None
-                    diagnostics.append(
-                        "feasibility_timeout:deadline_exhausted_before_suffix_check"
-                    )
+                    diagnostics.append(_SUFFIX_TIMEOUT_BEFORE_CHECK)
                 else:
                     diagnostics.append(
                         "incomplete_elapsed_ms=%.3f" % incomplete_elapsed_ms

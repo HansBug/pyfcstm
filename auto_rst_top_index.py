@@ -20,6 +20,9 @@ from io import StringIO
 from natsort import natsorted
 
 
+_PRIVATE_API_PACKAGES = {"_selfcheck"}
+
+
 def get_api_index_intro_paragraphs(language):
     """
     Return the generated API index introduction paragraphs.
@@ -147,6 +150,8 @@ def generate_rst_index(input_dir, output_file, title, intro_paragraphs=()):
             and name.endswith(".py")
             and not name.startswith("__")
         ):
+            if name in _PRIVATE_API_PACKAGES:
+                continue
             if name.endswith(".py"):
                 # Remove .py extension for modules
                 rel_names.append(os.path.splitext(name)[0])

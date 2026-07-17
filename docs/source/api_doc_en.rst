@@ -22,6 +22,7 @@ module tree.
     :hidden:
 
     api_doc/index
+    api_doc/_bootstrap
     api_doc/bmc/index
     api_doc/config/index
     api_doc/diagnostics/index
@@ -38,6 +39,7 @@ module tree.
     api_doc/verify/index
 
 * :doc:`api_doc/index`
+* :doc:`api_doc/_bootstrap`
 * :doc:`api_doc/bmc/index`
 * :doc:`api_doc/config/index`
 * :doc:`api_doc/diagnostics/index`

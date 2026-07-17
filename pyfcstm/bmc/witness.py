@@ -2016,6 +2016,8 @@ class BmcWitnessStep(_PrettyPrintableMixin):
     :type case_label: str
     :param case_kind: Selected BMC case kind, such as ``"initial"``,
         ``"transition"``, ``"fallback"``, ``"delta"``, or ``"absorb"``.
+        During replay, ``"absorb"`` is a terminal no-op whose runtime Delta
+        observation is always false, so its witness Delta flag is not compared.
     :type case_kind: str
     :param progress: Replay-friendly progress classification.
     :type progress: str
@@ -3644,6 +3646,8 @@ def _compare_step(
     runtime: BmcRuntimeStep,
 ) -> None:
     is_absorb = witness.case_kind == "absorb"
+    # Absorb re-enters an ended runtime, whose public cycle observation is
+    # always false; its witness Delta flag is encoding detail, not replay data.
     expected_delta = False if is_absorb else witness.delta
     if expected_delta != runtime.delta:
         mismatches.append(

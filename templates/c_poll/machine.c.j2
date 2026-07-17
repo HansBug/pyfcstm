@@ -1519,18 +1519,6 @@ static int _{{ machine_class_name(model) }}_normalize_events(
     return {{ machine_macro_name(model) }}_SUCCESS;
 }
 
-static void _{{ machine_class_name(model) }}_event_set_activate_all(
-    _{{ machine_class_name(model) }}EventSet *event_set)
-{
-    size_t i;
-
-    _{{ machine_class_name(model) }}_event_set_reset(event_set);
-    for (i = 0u; i < sizeof(event_set->active_bitset) / sizeof(event_set->active_bitset[0]); ++i) {
-        event_set->active_bitset[i] = ~0ul;
-        event_set->evaluated_bitset[i] = ~0ul;
-    }
-}
-
 static void _{{ machine_class_name(model) }}_copy_context(
     _{{ machine_class_name(model) }}RuntimeContext *dst,
     const _{{ machine_class_name(model) }}RuntimeContext *src)

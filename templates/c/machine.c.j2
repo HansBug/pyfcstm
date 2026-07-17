@@ -1462,21 +1462,6 @@ static int _{{ machine_class_name(model) }}_normalize_events(
     return {{ machine_macro_name(model) }}_SUCCESS;
 }
 
-static int _{{ machine_class_name(model) }}_event_set_activate_all(
-    {{ machine_class_name(model) }} *machine,
-    _{{ machine_class_name(model) }}EventSet *event_set)
-{
-    int event_id;
-
-    _{{ machine_class_name(model) }}_event_set_reset(event_set, {{ machine_macro_name(model) }}_EVENT_COUNT);
-    for (event_id = 0; event_id < {{ machine_macro_name(model) }}_EVENT_COUNT; ++event_id) {
-        if (_{{ machine_class_name(model) }}_event_set_add(machine, event_set, event_id) != {{ machine_macro_name(model) }}_SUCCESS) {
-            return {{ machine_macro_name(model) }}_FAILURE;
-        }
-    }
-    return {{ machine_macro_name(model) }}_SUCCESS;
-}
-
 static void _{{ machine_class_name(model) }}_copy_context(
     _{{ machine_class_name(model) }}RuntimeContext *dst,
     const _{{ machine_class_name(model) }}RuntimeContext *src)

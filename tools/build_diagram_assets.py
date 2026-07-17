@@ -15,13 +15,14 @@ recreate the same package contents.
 import argparse
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import sys
 import tempfile
 import urllib.request
 from pathlib import Path
-from typing import Dict, Iterable, Tuple
+from typing import Dict, Iterable, List, Set, Tuple
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -31,6 +32,15 @@ ENTRY_PATH = ROOT / "tools" / "diagram_assets" / "python-renderer-entry.ts"
 BRIDGE_PATH = ROOT / "tools" / "diagram_assets" / "resvg-bridge.js"
 HOST_SHIM_PATH = ROOT / "tools" / "diagram_assets" / "host-shim.js"
 JSFCSTM_DIR = ROOT / "editors" / "jsfcstm"
+ELK_API_PATH = JSFCSTM_DIR / "node_modules" / "elkjs" / "lib" / "elk-api.js"
+ELK_WORKER_PATH = JSFCSTM_DIR / "node_modules" / "elkjs" / "lib" / "elk-worker.min.js"
+ASSET_MARKERS = {
+    ".gitignore",
+    ".gitkeep",
+    "__init__.py",
+    "NOTICE.txt",
+    "LICENSE-MPL-2.0.txt",
+}
 
 
 def sha256_bytes(data: bytes) -> str:
@@ -71,9 +81,42 @@ def download_locked(url: str, expected_sha256: str) -> bytes:
     return data
 
 
-def ensure_locked_file(path: Path, url: str, expected_sha256: str) -> bytes:
+def ensure_js_dependencies() -> None:
     """
-    Reuse a matching local generated file or fetch and atomically replace it.
+    Restore the exact jsfcstm dependency tree required by the asset entry.
+
+    ``python-renderer-entry.ts`` imports ELK from the jsfcstm lockfile rather
+    than from an ambient global installation. A clean Python checkout therefore
+    needs one deterministic ``npm ci`` before esbuild can resolve that import;
+    an existing complete tree is reused so repeated make targets stay cheap.
+
+    :return: ``None``.
+    :rtype: None
+    :raises subprocess.CalledProcessError: If the lockfile install fails.
+    :raises FileNotFoundError: If npm is unavailable or the install omits ELK.
+    """
+    if ELK_API_PATH.is_file() and ELK_WORKER_PATH.is_file():
+        return
+    subprocess.run(
+        [
+            "npm",
+            "ci",
+            "--ignore-scripts",
+            "--no-audit",
+            "--no-fund",
+        ],
+        cwd=str(JSFCSTM_DIR),
+        check=True,
+    )
+    if not ELK_API_PATH.is_file() or not ELK_WORKER_PATH.is_file():
+        raise FileNotFoundError(
+            "npm ci completed without the locked elkjs API/worker assets"
+        )
+
+
+def load_locked_file(path: Path, url: str, expected_sha256: str) -> bytes:
+    """
+    Reuse a matching local generated file or fetch a verified replacement.
 
     :param path: Generated asset path.
     :type path: pathlib.Path
@@ -89,9 +132,6 @@ def ensure_locked_file(path: Path, url: str, expected_sha256: str) -> bytes:
         if sha256_bytes(data) == expected_sha256:
             return data
     data = download_locked(url, expected_sha256)
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_bytes(data)
-    temporary.replace(path)
     return data
 
 
@@ -127,24 +167,23 @@ def build_renderer(output: Path, esbuild_version: str) -> Tuple[bytes, Dict[str,
     return output.read_bytes(), json.loads(metafile.read_text(encoding="utf-8"))
 
 
-def copy_font(font_path: Path, lock: Dict[str, object]) -> bytes:
-    """Copy the locked JetBrains Mono face into the generated asset tree."""
-    font_path.parent.mkdir(parents=True, exist_ok=True)
+def load_font(font_path: Path, lock: Dict[str, object]) -> bytes:
+    """Load the locked JetBrains Mono face without publishing it yet."""
     font_lock = lock["fonts"]
     if not isinstance(font_lock, dict):
         raise ValueError("font lock must be an object")
     url = str(font_lock["url"])
     digest = str(font_lock["sha256"])
-    return ensure_locked_file(font_path, url, digest)
+    return load_locked_file(font_path, url, digest)
 
 
-def write_manifest(
+def build_manifest(
     lock: Dict[str, object],
     files: Iterable[Tuple[str, bytes]],
     metafile: Dict[str, object],
     esbuild_version: str,
-) -> None:
-    """Write deterministic manifest metadata for all generated resources."""
+) -> bytes:
+    """Return deterministic manifest metadata for all generated resources."""
     entries = []
     for relative, data in sorted(files):
         entries.append(
@@ -165,10 +204,118 @@ def write_manifest(
             ),
         },
     }
-    path = ASSET_DIR / "manifest.json"
-    path.write_text(
-        json.dumps(manifest, ensure_ascii=True, indent=2) + "\n", encoding="utf-8"
-    )
+    return (json.dumps(manifest, ensure_ascii=True, indent=2) + "\n").encode("utf-8")
+
+
+def _relative_files(root: Path) -> Set[str]:
+    """Return all regular-file paths below ``root`` in POSIX form."""
+    if not root.is_dir():
+        return set()
+    return {
+        path.relative_to(root).as_posix()
+        for path in root.rglob("*")
+        if path.is_file() and not path.is_symlink()
+    }
+
+
+def tracked_asset_paths() -> Set[str]:
+    """
+    Return tracked paths below ``pyfcstm/assets``.
+
+    The git query keeps cleanup and validation aligned with future tracked
+    package markers. Source archives without git metadata use the current
+    marker set as a compatibility fallback.
+
+    :return: Relative paths from ``pyfcstm/assets``.
+    :rtype: set[str]
+    """
+    try:
+        result = subprocess.run(
+            ["git", "ls-files", "--", "pyfcstm/assets"],
+            cwd=str(ROOT),
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        # OSError: source archives may not have the git executable; preserve
+        # the checked-in package markers so cleanup remains non-destructive.
+        return set(ASSET_MARKERS)
+    if result.returncode != 0:
+        return set(ASSET_MARKERS)
+    prefix = "pyfcstm/assets/"
+    paths = {
+        line.strip()[len(prefix) :]
+        for line in result.stdout.splitlines()
+        if line.strip().startswith(prefix)
+    }
+    return paths or set(ASSET_MARKERS)
+
+
+def _remove_path(path: Path) -> None:
+    """Remove one generated file or directory during publication rollback."""
+    if path.is_symlink() or path.is_file():
+        path.unlink()
+    elif path.is_dir():
+        shutil.rmtree(str(path))
+
+
+def _prune_empty_asset_dirs() -> None:
+    """Remove empty generated directories without touching package markers."""
+    if not ASSET_DIR.is_dir():
+        return
+    for path in sorted(
+        ASSET_DIR.rglob("*"), key=lambda item: len(item.parts), reverse=True
+    ):
+        if path.is_dir() and not path.is_symlink():
+            if not any(path.iterdir()):
+                path.rmdir()
+
+
+def publish_assets(staging: Path) -> None:
+    """
+    Atomically publish staged generated resources with rollback protection.
+
+    :param staging: Directory containing only generated package files.
+    :type staging: pathlib.Path
+    :return: ``None``.
+    :rtype: None
+    :raises OSError: If a publish or rollback filesystem operation fails.
+    """
+    tracked = tracked_asset_paths()
+    staged = _relative_files(staging)
+    existing = _relative_files(ASSET_DIR) - tracked
+    backup = staging.parent / (staging.name + "-backup")
+    backup.mkdir()
+    backed_up: List[str] = []
+    published: List[str] = []
+    try:
+        for relative in sorted(staged | existing):
+            destination = ASSET_DIR / relative
+            if destination.exists() or destination.is_symlink():
+                saved = backup / relative
+                saved.parent.mkdir(parents=True, exist_ok=True)
+                os.replace(str(destination), str(saved))
+                backed_up.append(relative)
+            if relative in staged:
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                os.replace(str(staging / relative), str(destination))
+                published.append(relative)
+        _prune_empty_asset_dirs()
+    except (OSError, shutil.Error):
+        # OSError/shutil.Error: a filesystem move, directory creation, or
+        # rollback operation failed while publishing the staged asset set.
+        for relative in reversed(published):
+            _remove_path(ASSET_DIR / relative)
+        for relative in reversed(backed_up):
+            saved = backup / relative
+            destination = ASSET_DIR / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(str(saved), str(destination))
+        raise
+    finally:
+        if backup.exists():
+            shutil.rmtree(str(backup))
 
 
 def build_assets() -> None:
@@ -188,15 +335,19 @@ def build_assets() -> None:
     esbuild_version = str(renderer_lock.get("esbuildVersion", ""))
     if not esbuild_version:
         raise ValueError("renderer lock must pin esbuildVersion")
-    with tempfile.TemporaryDirectory(prefix="pyfcstm-diagram-assets-") as temporary:
-        renderer_path = Path(temporary) / "renderer-core.js"
+    ensure_js_dependencies()
+    with tempfile.TemporaryDirectory(
+        prefix=".pyfcstm-diagram-assets-", dir=str(ASSET_DIR.parent)
+    ) as temporary:
+        temporary_root = Path(temporary)
+        renderer_path = temporary_root / "renderer-core.js"
         renderer, metafile = build_renderer(renderer_path, esbuild_version)
-        bundle = ensure_locked_file(
+        bundle = load_locked_file(
             ASSET_DIR / "resvg-binding.js",
             str(renderer_lock["resvgBundleUrl"]),
             str(renderer_lock["resvgBundleSha256"]),
         )
-        wasm = ensure_locked_file(
+        wasm = load_locked_file(
             ASSET_DIR / "resvg.wasm",
             str(renderer_lock["resvgWasmUrl"]),
             str(renderer_lock["resvgWasmSha256"]),
@@ -204,32 +355,32 @@ def build_assets() -> None:
         max_wasm = int(renderer_lock["resvgWasmMaxBytes"])
         if len(wasm) > max_wasm:
             raise ValueError("resvg WASM exceeds the locked byte budget")
-        font = copy_font(ASSET_DIR / "fonts" / "JetBrainsMono-Regular.ttf", lock)
-
-        (ASSET_DIR / "fonts").mkdir(parents=True, exist_ok=True)
-        (ASSET_DIR / "resvg-bridge.js").write_text(
-            BRIDGE_PATH.read_text(encoding="utf-8"), encoding="utf-8"
-        )
-        (ASSET_DIR / "host-shim.js").write_text(
-            HOST_SHIM_PATH.read_text(encoding="utf-8"), encoding="utf-8"
-        )
+        font = load_font(ASSET_DIR / "fonts" / "JetBrainsMono-Regular.ttf", lock)
+        bridge = BRIDGE_PATH.read_bytes()
+        host_shim = HOST_SHIM_PATH.read_bytes()
         combined = (
             renderer
             + b"\n"
             + bundle
             + b"\n"
-            + (ASSET_DIR / "resvg-bridge.js").read_bytes()
+            + bridge
         )
-        (ASSET_DIR / "renderer.js").write_bytes(combined)
         files = [
             ("renderer.js", combined),
             ("resvg-binding.js", bundle),
             ("resvg.wasm", wasm),
-            ("resvg-bridge.js", (ASSET_DIR / "resvg-bridge.js").read_bytes()),
-            ("host-shim.js", (ASSET_DIR / "host-shim.js").read_bytes()),
+            ("resvg-bridge.js", bridge),
+            ("host-shim.js", host_shim),
             ("fonts/JetBrainsMono-Regular.ttf", font),
         ]
-        write_manifest(lock, files, metafile, esbuild_version)
+        manifest = build_manifest(lock, files, metafile, esbuild_version)
+        files.append(("manifest.json", manifest))
+        staging = temporary_root / "staged"
+        for relative, data in files:
+            path = staging / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(data)
+        publish_assets(staging)
 
     print(
         "built %s (%d bytes)"
@@ -241,19 +392,14 @@ def clean_assets() -> None:
     """Remove generated files while preserving tracked package markers."""
     if not ASSET_DIR.is_dir():
         return
-    for path in sorted(ASSET_DIR.iterdir()):
-        if path.name in {
-            "__init__.py",
-            ".gitkeep",
-            "NOTICE.txt",
-            "LICENSE-MPL-2.0.txt",
-            ".gitignore",
-        }:
+    tracked = tracked_asset_paths()
+    for path in sorted(ASSET_DIR.rglob("*"), reverse=True):
+        if not (path.is_file() or path.is_symlink()):
             continue
-        if path.is_dir():
-            shutil.rmtree(path)
-        else:
+        relative = path.relative_to(ASSET_DIR).as_posix()
+        if relative not in tracked:
             path.unlink()
+    _prune_empty_asset_dirs()
 
 
 def main(argv=None) -> int:

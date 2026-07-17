@@ -1,5 +1,6 @@
 import os
 import re
+import sys
 
 from setuptools import find_packages, setup
 
@@ -68,6 +69,41 @@ package_data.setdefault("pyfcstm.assets", []).extend(
         "fonts/*.ttc",
     ]
 )
+
+
+def _require_diagram_assets_for_distribution() -> None:
+    """Fail closed when a distribution build would omit diagram resources."""
+    distribution_commands = {
+        "build",
+        "build_py",
+        "sdist",
+        "bdist",
+        "bdist_wheel",
+        "install",
+    }
+    if not distribution_commands.intersection(sys.argv[1:]):
+        return
+    required_assets = [
+        os.path.join(here, _MODULE_NAME, "assets", "renderer.js"),
+        os.path.join(here, _MODULE_NAME, "assets", "resvg.wasm"),
+        os.path.join(here, _MODULE_NAME, "assets", "manifest.json"),
+        os.path.join(
+            here,
+            _MODULE_NAME,
+            "assets",
+            "fonts",
+            "JetBrainsMono-Regular.ttf",
+        ),
+    ]
+    missing = [path for path in required_assets if not os.path.isfile(path)]
+    if missing:
+        raise RuntimeError(
+            "diagram distribution assets are missing; run `make build_assets` "
+            "before building a wheel or sdist: %s" % ", ".join(missing)
+        )
+
+
+_require_diagram_assets_for_distribution()
 
 setup(
     # information

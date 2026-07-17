@@ -8,6 +8,7 @@ work described by PR #383.
 
 import base64
 import json
+import math
 import pkgutil
 import sys
 import time
@@ -142,11 +143,13 @@ class DiagramAssetEngine:
         :raises ValueError: If ``scale`` is not positive.
         :raises DiagramAssetError: If resvg reports a rendering failure.
         """
-        if scale <= 0:
-            raise ValueError("scale must be positive")
+        numeric_scale = float(scale)
+        if not math.isfinite(numeric_scale) or numeric_scale <= 0:
+            raise ValueError("scale must be a finite positive number")
         self._ensure_resvg()
         encoded = self._eval(
-            "__pyfcstm_resvg_png(%s, %s)" % (json.dumps(svg), repr(float(scale)))
+            "__pyfcstm_resvg_png(%s, %s)"
+            % (json.dumps(svg), json.dumps(numeric_scale))
         )
         return base64.b64decode(str(encoded))
 

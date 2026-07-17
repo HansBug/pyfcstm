@@ -24,6 +24,35 @@ def digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def is_tracked(relative: str) -> bool:
+    """
+    Return whether git tracks one asset path.
+
+    :param relative: Repository-relative path to inspect.
+    :type relative: str
+    :return: ``True`` when the path is tracked.
+    :rtype: bool
+    :raises RuntimeError: If git cannot answer the query.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "ls-files", "--error-unmatch", "--", relative],
+            cwd=str(ROOT),
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except OSError as err:
+        # OSError: the maintenance checker cannot enforce the tracked/ignored
+        # package boundary without a usable git executable.
+        raise RuntimeError("git is required for diagram asset boundary checks") from err
+    if result.returncode == 0:
+        return True
+    if result.returncode == 1:
+        return False
+    raise RuntimeError("git could not inspect diagram asset path: %s" % relative)
+
+
 def main() -> int:
     """
     Validate hashes, size limits, syntax, and git-ignore rules.
@@ -32,6 +61,7 @@ def main() -> int:
     :rtype: int
     :raises ValueError: If any asset contract is violated.
     :raises OSError: If an asset or required command is unavailable.
+    :raises RuntimeError: If git cannot enforce the tracked/ignored boundary.
     """
     manifest_path = ASSET_DIR / "manifest.json"
     lock = json.loads(LOCK_PATH.read_text(encoding="utf-8"))
@@ -67,11 +97,19 @@ def main() -> int:
         )
         if result.returncode != 0:
             raise ValueError("generated asset is not ignored by git: %s" % relative)
+        repository_path = "pyfcstm/assets/" + relative
+        if is_tracked(repository_path):
+            raise ValueError("generated asset is tracked by git: %s" % relative)
 
     for relative in sorted(TRACKED_MARKERS):
         path = ASSET_DIR / relative
         if not path.is_file():
             raise ValueError("missing tracked asset marker: %s" % path)
+        repository_path = "pyfcstm/assets/" + relative
+        if not is_tracked(repository_path):
+            raise ValueError(
+                "tracked asset marker is not tracked by git: %s" % relative
+            )
         result = subprocess.run(
             ["git", "check-ignore", "--quiet", str(path.relative_to(ROOT))],
             cwd=str(ROOT),
@@ -87,6 +125,8 @@ def main() -> int:
         raise ValueError(
             "generated renderer does not contain the canonical auto marker"
         )
+    if 'refX="10"' not in renderer:
+        raise ValueError("generated renderer does not align marker tips to endpoints")
     renderer_lock = lock["renderer"]
     if not isinstance(renderer_lock, dict):
         raise ValueError("renderer lock must be an object")

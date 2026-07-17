@@ -1,6 +1,7 @@
 """Runtime checks for the PR-A shared renderer and resvg asset boundary."""
 
 import re
+import math
 
 import pytest
 
@@ -108,6 +109,7 @@ def test_renderer_is_deterministic_and_escapes_hostile_labels():
     second = engine.render_svg(request)
     assert first == second
     assert 'orient="auto"' in first
+    assert 'refX="10"' in first
     assert "auto-start-reverse" not in first
     assert "启动 &lt;ready&gt; &amp; 继续" in first
     assert "</script><script>" not in first
@@ -117,7 +119,7 @@ def test_resvg_png_and_vector_expansion_keep_marker_direction():
     pytest.importorskip("py_mini_racer")
     svg = """
     <svg xmlns="http://www.w3.org/2000/svg" width="240" height="240">
-      <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
+      <defs><marker id="arrow" viewBox="0 0 10 10" refX="10" refY="5"
         markerWidth="10" markerHeight="10" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
       <path d="M30,60 L190,60" marker-end="url(#arrow)"/>
       <path d="M180,30 L180,190" marker-end="url(#arrow)"/>
@@ -138,3 +140,36 @@ def test_resvg_png_and_vector_expansion_keep_marker_direction():
         length = (values[0] ** 2 + values[1] ** 2) ** 0.5
         dot = (values[0] * direction[0] + values[1] * direction[1]) / length
         assert dot > 0.999
+
+
+def test_resvg_marker_tip_lands_on_path_endpoint():
+    pytest.importorskip("py_mini_racer")
+    svg = """
+    <svg xmlns="http://www.w3.org/2000/svg" width="240" height="240">
+      <defs><marker id="arrow" viewBox="0 0 10 10" refX="10" refY="5"
+        markerWidth="10" markerHeight="10" orient="auto"
+        markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <path d="M30,60 L190,60" marker-end="url(#arrow)"/>
+      <path d="M180,30 L180,190" marker-end="url(#arrow)"/>
+      <path d="M210,180 L50,180" marker-end="url(#arrow)"/>
+      <path d="M60,210 L60,50" marker-end="url(#arrow)"/>
+    </svg>
+    """
+    endpoints = [(190.0, 60.0), (180.0, 190.0), (50.0, 180.0), (60.0, 50.0)]
+    engine = DiagramAssetEngine()
+    normalized = engine.expand_svg(svg)
+    transforms = re.findall(r'transform="matrix\(([^)]+)\)"', normalized)
+    assert len(transforms) == len(endpoints)
+    for transform, endpoint in zip(transforms, endpoints):
+        a, b, c, d, tx, ty = [float(part) for part in transform.split()]
+        tip = (tx + a * 10 + c * 5, ty + b * 10 + d * 5)
+        assert math.hypot(tip[0] - endpoint[0], tip[1] - endpoint[1]) < 1e-3
+
+
+def test_render_png_rejects_non_finite_scale():
+    pytest.importorskip("py_mini_racer")
+    engine = DiagramAssetEngine()
+    svg = '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>'
+    for scale in (float("nan"), float("inf"), float("-inf")):
+        with pytest.raises(ValueError, match="finite positive"):
+            engine.render_png(svg, scale=scale)

@@ -116,6 +116,7 @@ describe('jsfcstm ELK-based diagram pipeline', () => {
         assert.ok(svg.includes('data-fcstm-kind="state"'));
         assert.ok(svg.includes('data-fcstm-kind="transition"'));
         assert.ok(svg.includes('orient="auto"'));
+        assert.ok(svg.includes('refX="10"'));
         assert.ok(!svg.includes('auto-start-reverse'));
         // XML-escaped font-family, not JSON-escaped.
         assert.ok(svg.includes('font-family="&quot;JetBrains Mono&quot;'));

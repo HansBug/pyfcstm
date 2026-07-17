@@ -414,7 +414,7 @@ function drawEdge(
 function defs(P: SvgPalette): string {
     return [
         '<defs>',
-        `<marker id="fcstm-arrow" viewBox="0 0 10 10" refX="9" refY="5" `,
+        `<marker id="fcstm-arrow" viewBox="0 0 10 10" refX="10" refY="5" `,
         // Keep the canonical marker syntax compatible with the legacy
         // resvg/usvg parser used by the Python embedded renderer.
         `markerWidth="10" markerHeight="10" orient="auto" markerUnits="userSpaceOnUse">`,

@@ -1413,7 +1413,9 @@ def test_feasibility_result_rejects_unchecked_outer_unsat_stages(
         )
 
 
-def test_feasibility_result_rejects_inferred_prefix_without_checked_sat_source() -> None:
+def test_feasibility_result_rejects_inferred_prefix_without_checked_sat_source() -> (
+    None
+):
     """Inferred SAT stages require a stronger checked SAT source."""
     inferred_kernel = BmcFeasibilityCheck("sat", "inferred")
     inconclusive_initialization = BmcFeasibilityCheck(

@@ -268,12 +268,18 @@ is not a process/protocol error: it still emits a complete report.
      - null / null
      - ``0``
      - No complete-window violation and no uncovered tail trigger.
-   * - Response objective UNSAT; suffix check SAT, unknown, or timeout
+   * - Response objective UNSAT; suffix check SAT
+     - ``unsat``
+     - ``incomplete``
+     - object / object, replay ok
+     - ``3``
+     - The detached ``incomplete_suffix`` model supplies finite-prefix evidence; it does not establish a property verdict.
+   * - Response objective UNSAT; suffix check unknown or timeout
      - ``unsat``
      - ``incomplete``
      - null / null
      - ``3``
-     - The bounded tail cannot support a definitive satisfaction verdict.
+     - The suffix check produced no model, so the bounded tail cannot support a definitive satisfaction verdict.
    * - Any primary objective unknown
      - ``unknown``
      - ``unknown``
@@ -285,7 +291,7 @@ is not a process/protocol error: it still emits a complete report.
      - ``timeout``
      - null / null
      - ``3``
-     - Per-check timeout reached.
+     - The shared solve budget was exhausted before a conclusive primary result.
    * - Any primary SAT; decode succeeds; replay returns mismatches
      - ``sat``
      - Polarity-derived value

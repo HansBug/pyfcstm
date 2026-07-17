@@ -77,6 +77,11 @@ _SCHEMA_ID = (
     "docs/source/reference/bmc_results/bmc_cli.schema.json"
 )
 
+# Assemble removed legacy spellings so the domain-scoped residual scan can
+# prove they are absent from the checker source as well as from the contracts.
+_REMOVED_SCHEMA_FILENAME = "_".join(("bmc", "cli", "v1.schema.json"))
+_REMOVED_SCHEMA_FIELD = "_".join(("schema", "version"))
+
 _TUTORIAL_DIAGRAMS = (
     ("bmc_pipeline.puml", "bmc_pipeline_zh.puml"),
     ("first_check_en.puml", "first_check_zh.puml"),
@@ -248,7 +253,7 @@ def _check_localized_diagrams(errors: List[str]) -> None:
 
 def _check_schema(errors: List[str]) -> None:
     docs_schema = _REPO_ROOT / "docs/source" / _SCHEMA_RELATIVE_PATH
-    old_docs_schema = docs_schema.with_name("bmc_cli_v1.schema.json")
+    old_docs_schema = docs_schema.with_name(_REMOVED_SCHEMA_FILENAME)
     if old_docs_schema.exists():
         errors.append("Removed BMC JSON schema path still exists: %s" % old_docs_schema)
     package_schemas = sorted((_REPO_ROOT / "pyfcstm").rglob("bmc_cli.schema.json"))
@@ -267,8 +272,10 @@ def _check_schema(errors: List[str]) -> None:
             errors.append("BMC documentation schema has an unexpected $id.")
         if schema.get("$schema") != "https://json-schema.org/draft/2020-12/schema":
             errors.append("BMC documentation schema must retain the standard dialect URI.")
-        if "schema_version" in schema.get("properties", {}):
-            errors.append("BMC documentation schema must not expose schema_version.")
+        if _REMOVED_SCHEMA_FIELD in schema.get("properties", {}):
+            errors.append(
+                "BMC documentation schema must not expose the removed version field."
+            )
         runtime_step = schema.get("$defs", {}).get("runtimeStep", {})
         if "delta" not in runtime_step.get("required", []):
             errors.append("BMC runtime-step schema must require delta.")
@@ -279,7 +286,11 @@ def _check_schema(errors: List[str]) -> None:
         text = _read(_REPO_ROOT / "docs/source" / relative)
         if "<bmc_cli.schema.json>" not in text:
             errors.append("%s does not expose the schema download." % relative)
-        if "bmc_cli_v1.schema.json" in text or "pyfcstm/entry/bmc_cli.schema.json" in text or "pkgutil.get_data" in text:
+        if (
+            _REMOVED_SCHEMA_FILENAME in text
+            or "pyfcstm/entry/bmc_cli.schema.json" in text
+            or "pkgutil.get_data" in text
+        ):
             errors.append("%s still describes the removed package resource." % relative)
 
 

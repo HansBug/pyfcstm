@@ -2016,8 +2016,9 @@ class BmcWitnessStep(_PrettyPrintableMixin):
     :type case_label: str
     :param case_kind: Selected BMC case kind, such as ``"initial"``,
         ``"transition"``, ``"fallback"``, ``"delta"``, or ``"absorb"``.
-        During replay, ``"absorb"`` is a terminal no-op whose runtime Delta
-        observation is always false, so its witness Delta flag is not compared.
+        During replay, ``"absorb"`` is a terminal no-op with a synthetic
+        runtime Delta observation of false; its witness Delta flag is still
+        compared so forged payloads are reported.
     :type case_kind: str
     :param progress: Replay-friendly progress classification.
     :type progress: str
@@ -3645,10 +3646,9 @@ def _compare_step(
     witness: BmcWitnessStep,
     runtime: BmcRuntimeStep,
 ) -> None:
-    is_absorb = witness.case_kind == "absorb"
-    # Absorb re-enters an ended runtime, whose public cycle observation is
-    # always false; its witness Delta flag is encoding detail, not replay data.
-    expected_delta = False if is_absorb else witness.delta
+    # Absorb has a synthetic runtime observation of false, but its witness
+    # Delta remains observable input and must be checked for forged payloads.
+    expected_delta = witness.delta
     if expected_delta != runtime.delta:
         mismatches.append(
             BmcReplayMismatch(

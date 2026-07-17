@@ -1318,6 +1318,7 @@ def test_solve_result_rejects_invalid_public_payloads(factory, message) -> None:
         (lambda: BmcRuntimeStep(0, (), (), "Root.Go", ()), "unconsumed_events"),
         (lambda: BmcRuntimeStep(0, (), (), (), (object(),)), "abstract_calls"),
         (lambda: BmcRuntimeStep(0, (), (), (), None), "abstract_calls"),
+        (lambda: BmcRuntimeStep(0, (), (), (), (), delta=1), "runtime step delta"),
         (
             lambda: BmcRuntimeTrace((object(),), ()),
             "runtime trace frames",
@@ -1388,6 +1389,12 @@ def test_witness_public_dataclasses_reject_invalid_payloads(factory, message) ->
     """Witness JSON/replay dataclasses validate their public payload shape."""
     with pytest.raises(BmcBuildError, match=message):
         factory()
+
+
+def test_witness_trace_rejects_removed_schema_version_constructor_keyword() -> None:
+    """The removed witness version field is no longer a constructor argument."""
+    with pytest.raises(TypeError, match="schema_version"):
+        BmcWitnessTrace({}, {}, {}, (), (), schema_version="bmc-witness/v1")
 
 
 @pytest.mark.parametrize(

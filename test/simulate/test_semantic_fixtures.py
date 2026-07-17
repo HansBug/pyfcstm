@@ -42,8 +42,41 @@ EXPECTED_DELTA_STEP_SEQUENCES = {
 def test_all_semantic_fixtures_load():
     cases = iter_semantic_cases()
 
-    assert len(cases) >= 161
+    assert len(cases) == 165
     assert {case.id for case in cases}
+
+
+@pytest.mark.unittest
+def test_full_fixture_runtime_scan_finds_exact_delta_cohort():
+    """Execute every simulation fixture and mechanically enumerate Delta cases."""
+    actual_delta_case_ids = set()
+    cases = iter_semantic_cases()
+    for case in cases:
+        if simulate_semantics._initial_constructor_expect(case) is not None:
+            continue
+        runtime = simulate_semantics._build_simulation_runtime(case)
+        handler_calls = simulate_semantics._register_fixture_handlers(runtime, case)
+        original_cycle = runtime.cycle
+        observed_deltas = []
+
+        def cycle(events=None):
+            result = original_cycle(events)
+            observed_deltas.append(result.delta)
+            return result
+
+        runtime.cycle = cycle
+        for step_index, step in enumerate(case.data.get("steps") or []):
+            simulate_semantics._run_step(
+                runtime,
+                step,
+                case,
+                step_index,
+                handler_calls=handler_calls,
+            )
+        if any(observed_deltas):
+            actual_delta_case_ids.add(case.id)
+
+    assert actual_delta_case_ids == set(EXPECTED_DELTA_STEP_SEQUENCES)
 
 
 @pytest.mark.unittest

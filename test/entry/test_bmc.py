@@ -404,12 +404,17 @@ def test_bmc_schema_prioritizes_replay_mismatch_exit_four(
 
     replay_marked_ok = copy.deepcopy(payload)
     replay_marked_ok["replay"]["ok"] = True
-    replay_marked_ok["replay"]["mismatches"] = []
+    replay_marked_ok["replay"]["mismatches"] = payload["replay"]["mismatches"]
+    replay_marked_ok["exit_code"] = 0
     assert list(validator.iter_errors(replay_marked_ok))
 
-    no_replay = copy.deepcopy(payload)
-    no_replay["replay"] = None
-    assert list(validator.iter_errors(no_replay))
+    mismatch_without_details = copy.deepcopy(payload)
+    mismatch_without_details["replay"]["mismatches"] = []
+    assert list(validator.iter_errors(mismatch_without_details))
+
+    exit_four_without_replay = copy.deepcopy(payload)
+    exit_four_without_replay["replay"] = None
+    assert list(validator.iter_errors(exit_four_without_replay))
 
 
 def test_bmc_internal_witness_error_keeps_traceback(
@@ -551,6 +556,46 @@ def test_bmc_schema_rejects_forged_scenario_infeasible_verdict(bmc_files) -> Non
             "assumptions origin",
             lambda item: item["result"]["feasibility"]["assumptions"].update(
                 origin="inferred"
+            ),
+        ),
+        (
+            "infeasible stage localization",
+            lambda item: item["result"]["feasibility"].update(
+                localization_status="not_needed"
+            ),
+        ),
+        (
+            "complete refinement without checks",
+            lambda item: item["result"]["feasibility"].update(
+                refinement_status="complete", refinement_checks=[]
+            ),
+        ),
+        (
+            "unused refinement with checks",
+            lambda item: item["result"]["feasibility"].update(
+                refinement_status="not_needed",
+                refinement_checks=[
+                    {
+                        "name": "unsat_core",
+                        "status": "complete",
+                        "reason": None,
+                        "elapsed_ms": 1.0,
+                    }
+                ],
+            ),
+        ),
+        (
+            "refinement completed reason",
+            lambda item: item["result"]["feasibility"].update(
+                refinement_status="partial",
+                refinement_checks=[
+                    {
+                        "name": "component_initialization",
+                        "status": "sat",
+                        "reason": "forged",
+                        "elapsed_ms": 1.0,
+                    }
+                ],
             ),
         ),
         ("exit code", lambda item: item.update(exit_code=0)),

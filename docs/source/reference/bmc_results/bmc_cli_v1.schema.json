@@ -287,6 +287,37 @@
         {
           "if": {"properties": {"refinement_status": {"enum": ["unknown", "timeout"]}}},
           "then": {"required": ["refinement_reason"], "properties": {"refinement_reason": {"type": "string", "minLength": 1}}}
+        },
+        {
+          "if": {"properties": {"infeasible_stage": {"enum": ["kernel", "initialization", "assumptions"]}}},
+          "then": {"properties": {"localization_status": {"const": "complete"}}}
+        },
+        {
+          "if": {"properties": {"localization_status": {"const": "complete"}}},
+          "then": {"properties": {"infeasible_stage": {"enum": ["kernel", "initialization", "assumptions"]}}}
+        },
+        {
+          "if": {
+            "allOf": [
+              {"properties": {"kernel": {"properties": {"status": {"const": "sat"}}}}},
+              {"properties": {"initialization": {"properties": {"status": {"const": "sat"}}}}},
+              {"properties": {"assumptions": {"properties": {"status": {"const": "sat"}}}}}
+            ]
+          },
+          "then": {"properties": {"localization_status": {"const": "not_needed"}}}
+        },
+        {
+          "if": {"properties": {"refinement_status": {"enum": ["not_requested", "not_needed"]}}},
+          "then": {
+            "properties": {
+              "refinement_reason": {"const": null},
+              "refinement_checks": {"maxItems": 0}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"refinement_status": {"enum": ["complete", "partial"]}}},
+          "then": {"properties": {"refinement_checks": {"minItems": 1}}}
         }
       ]
     },
@@ -308,6 +339,10 @@
         {
           "if": {"properties": {"status": {"const": "complete"}}},
           "then": {"properties": {"name": {"enum": ["unsat_core", "unsat_core_minimization"]}, "reason": {"const": null}}}
+        },
+        {
+          "if": {"properties": {"status": {"enum": ["sat", "unsat"]}}},
+          "then": {"properties": {"reason": {"const": null}}}
         },
         {
           "if": {"properties": {"status": {"enum": ["unknown", "timeout"]}}},
@@ -950,6 +985,20 @@
         "tolerance": {"type": ["number", "null"], "minimum": 0}
       }
     },
+    "replayConsistency": {
+      "type": "object",
+      "required": ["ok", "mismatches"],
+      "allOf": [
+        {
+          "if": {"properties": {"ok": {"const": true}}},
+          "then": {"properties": {"mismatches": {"maxItems": 0}}}
+        },
+        {
+          "if": {"properties": {"ok": {"const": false}}},
+          "then": {"properties": {"mismatches": {"minItems": 1}}}
+        }
+      ]
+    },
     "replayV1": {
       "type": "object",
       "additionalProperties": false,
@@ -966,7 +1015,8 @@
           }
         },
         "mismatches": {"type": "array", "items": {"$ref": "#/$defs/mismatch"}}
-      }
+      },
+      "allOf": [{"$ref": "#/$defs/replayConsistency"}]
     },
     "replayV2": {
       "type": "object",
@@ -985,7 +1035,8 @@
           }
         },
         "mismatches": {"type": "array", "items": {"$ref": "#/$defs/mismatch"}}
-      }
+      },
+      "allOf": [{"$ref": "#/$defs/replayConsistency"}]
     },
     "primaryReplayV2": {
       "allOf": [

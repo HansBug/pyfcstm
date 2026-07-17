@@ -1748,9 +1748,12 @@ class BmcFeasibilityResult(_PrettyPrintableMixin):
     ``assumptions`` being checked UNSAT proves that the admissible scenario is
     empty even when the deadline prevents deeper localization.  In that case
     ``scenario_infeasible`` is true while ``infeasible_stage`` remains ``None``
-    and ``localization_status`` remains ``not_checked``.  ``inferred`` SAT
-    stages are conclusions from a stronger checked SAT prefix, not additional
-    solver calls.
+    and ``localization_status`` remains ``not_checked`` only when no checked SAT
+    prefix already identifies the first weaker stage.  A checked SAT
+    ``initialization`` stage localizes the failure to ``assumptions``; a checked
+    SAT ``kernel`` followed by checked UNSAT ``initialization`` localizes it to
+    ``initialization``.  ``inferred`` SAT stages are conclusions from a stronger
+    checked SAT prefix, not additional solver calls.
 
     :param kernel: Evidence for ``K_N``.
     :type kernel: BmcFeasibilityCheck
@@ -1917,6 +1920,40 @@ class BmcFeasibilityResult(_PrettyPrintableMixin):
         ):
             raise BmcBuildError(
                 "all SAT feasibility stages require localization_status=not_needed."
+            )
+        if self.initialization.status == "sat" and self.kernel.status != "sat":
+            raise BmcBuildError(
+                "cumulative feasibility evidence cannot claim SAT initialization "
+                "after a non-SAT kernel stage."
+            )
+        if self.assumptions.status == "sat" and self.initialization.status != "sat":
+            raise BmcBuildError(
+                "cumulative feasibility evidence cannot claim SAT assumptions "
+                "after a non-SAT initialization stage."
+            )
+        if (
+            self.initialization.status == "sat"
+            and self.assumptions.status == "unsat"
+            and (
+                self.infeasible_stage != "assumptions"
+                or self.localization_status != "complete"
+            )
+        ):
+            raise BmcBuildError(
+                "checked SAT initialization with UNSAT assumptions requires "
+                "complete assumptions localization."
+            )
+        if (
+            self.kernel.status == "sat"
+            and self.initialization.status == "unsat"
+            and (
+                self.infeasible_stage != "initialization"
+                or self.localization_status != "complete"
+            )
+        ):
+            raise BmcBuildError(
+                "checked SAT kernel with UNSAT initialization requires complete "
+                "initialization localization."
             )
         if self.kernel.status == "unsat" and (
             self.initialization.status == "sat" or self.assumptions.status == "sat"

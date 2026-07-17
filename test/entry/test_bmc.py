@@ -728,6 +728,30 @@ def test_bmc_schema_rejects_localized_prefix_origin_mutations(bmc_files) -> None
     )
     assert list(validator.iter_errors(inferred_kernel))
 
+    unlocalized_assumptions = copy.deepcopy(payload)
+    feasibility = unlocalized_assumptions["result"]["feasibility"]
+    feasibility["kernel"].update(
+        status="unknown", origin="checked", reason="timeout", elapsed_ms=1.0
+    )
+    feasibility["infeasible_stage"] = None
+    feasibility["localization_status"] = "not_checked"
+    assert list(validator.iter_errors(unlocalized_assumptions))
+
+    unlocalized_initialization = copy.deepcopy(payload)
+    feasibility = unlocalized_initialization["result"]["feasibility"]
+    feasibility["kernel"].update(
+        status="sat", origin="checked", reason=None, elapsed_ms=1.0
+    )
+    feasibility["initialization"].update(
+        status="unsat", origin="checked", reason=None, elapsed_ms=1.0
+    )
+    feasibility["assumptions"].update(
+        status="unsat", origin="checked", reason=None, elapsed_ms=1.0
+    )
+    feasibility["infeasible_stage"] = None
+    feasibility["localization_status"] = "not_checked"
+    assert list(validator.iter_errors(unlocalized_initialization))
+
 
 def test_bmc_schema_rejects_terminal_verdict_mutations(bmc_files) -> None:
     """Schema binds feasible primary UNSAT to its polarity truth table."""

@@ -253,6 +253,42 @@
           }
         },
         {
+          "if": {"properties": {"initialization": {"properties": {"status": {"const": "sat"}}}}},
+          "then": {"properties": {"kernel": {"properties": {"status": {"const": "sat"}}}}}
+        },
+        {
+          "if": {"properties": {"assumptions": {"properties": {"status": {"const": "sat"}}}}},
+          "then": {"properties": {"initialization": {"properties": {"status": {"const": "sat"}}}}}
+        },
+        {
+          "if": {
+            "allOf": [
+              {"properties": {"kernel": {"properties": {"status": {"const": "sat"}}}}},
+              {"properties": {"initialization": {"properties": {"status": {"const": "unsat"}}}}}
+            ]
+          },
+          "then": {
+            "properties": {
+              "infeasible_stage": {"const": "initialization"},
+              "localization_status": {"const": "complete"}
+            }
+          }
+        },
+        {
+          "if": {
+            "allOf": [
+              {"properties": {"initialization": {"properties": {"status": {"const": "sat"}}}}},
+              {"properties": {"assumptions": {"properties": {"status": {"const": "unsat"}}}}}
+            ]
+          },
+          "then": {
+            "properties": {
+              "infeasible_stage": {"const": "assumptions"},
+              "localization_status": {"const": "complete"}
+            }
+          }
+        },
+        {
           "if": {"properties": {"infeasible_stage": {"const": "kernel"}}},
           "then": {
             "properties": {

@@ -1204,6 +1204,29 @@ def test_feasibility_result_allows_unlocalized_assumptions_unsat() -> None:
     assert result.localization_status == "not_checked"
 
 
+@pytest.mark.parametrize(
+    ("kernel", "initialization", "assumptions"),
+    [
+        (
+            BmcFeasibilityCheck("unknown", "checked", reason="timeout", elapsed_ms=1.0),
+            BmcFeasibilityCheck("sat", "checked", elapsed_ms=1.0),
+            BmcFeasibilityCheck("unsat", "checked", elapsed_ms=1.0),
+        ),
+        (
+            BmcFeasibilityCheck("sat", "checked", elapsed_ms=1.0),
+            BmcFeasibilityCheck("unsat", "checked", elapsed_ms=1.0),
+            BmcFeasibilityCheck("unsat", "checked", elapsed_ms=1.0),
+        ),
+    ],
+)
+def test_feasibility_result_rejects_unlocalized_stage_evidence(
+    kernel, initialization, assumptions
+) -> None:
+    """Contradictory or localizable stage evidence cannot stay unlocalized."""
+    with pytest.raises(BmcBuildError, match="cumulative feasibility|localization"):
+        BmcFeasibilityResult(kernel, initialization, assumptions)
+
+
 def test_feasibility_check_rejects_inconsistent_reason() -> None:
     """Feasibility stage reason ownership is validated at construction time."""
     with pytest.raises(BmcBuildError, match="reason"):

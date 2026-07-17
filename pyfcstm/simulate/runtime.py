@@ -3295,18 +3295,19 @@ class SimulationRuntime:
             >>> sm = parse_dsl_node_to_state_machine(ast)
             >>> runtime = SimulationRuntime(sm)
             >>> runtime.cycle()
+            CycleResult(value=None, input_events=(), consumed_events=(), unconsumed_events=(), delta=False)
             >>> runtime.current_state.path
             ('Root', 'System', 'Idle')
             >>> # Use relative path from current state - most convenient!
-            >>> runtime.cycle(['start'])
+            >>> _ = runtime.cycle(['start'])
             >>> runtime.current_state.path
             ('Root', 'System', 'Active')
             >>> # Use parent-relative path to access parent's event
-            >>> runtime.cycle(['.system_error'])  # Access System.system_error
+            >>> _ = runtime.cycle(['.system_error'])  # Access System.system_error
             >>> # Use absolute path to access root event
-            >>> runtime.cycle(['/global_stop'])  # Access Root.global_stop
+            >>> _ = runtime.cycle(['/global_stop'])  # Access Root.global_stop
             >>> # Full path still works for backward compatibility
-            >>> runtime.cycle(['Root.System.Active.pause'])
+            >>> _ = runtime.cycle(['Root.System.Active.pause'])
             >>> runtime.current_state.path
             ('Root', 'System', 'Idle')
 
@@ -3314,32 +3315,34 @@ class SimulationRuntime:
 
             >>> dsl_code = '''
             ... def int x = 0;
-            ... state System1 {
-            ...     state A {
-            ...         during { x = x + 1; }
+            ... state Root {
+            ...     state System1 {
+            ...         state A {
+            ...             during { x = x + 1; }
+            ...         }
+            ...         [*] -> A;
+            ...         A -> [*] :: Exit;
             ...     }
-            ...     [*] -> A;
-            ...     A -> [*] :: Exit;
-            ... }
-            ... state System2 {
-            ...     state B {
-            ...         during { x = x + 10; }
+            ...     state System2 {
+            ...         state B {
+            ...             during { x = x + 10; }
+            ...         }
+            ...         [*] -> B;
             ...     }
-            ...     [*] -> B;
+            ...     [*] -> System1;
+            ...     System1 -> System2 :: Switch;
             ... }
-            ... [*] -> System1;
-            ... System1 -> System2 :: Switch;
             ... '''
             >>> ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
             >>> sm = parse_dsl_node_to_state_machine(ast)
             >>> runtime = SimulationRuntime(sm)
-            >>> runtime.cycle()
+            >>> _ = runtime.cycle()
             >>> runtime.current_state.path
-            ('System1', 'A')
+            ('Root', 'System1', 'A')
             >>> # Provide both Exit and Switch events
-            >>> runtime.cycle(['System1.A.Exit', 'Switch'])
+            >>> _ = runtime.cycle(['Root.System1.A.Exit', 'Root.System1.Switch'])
             >>> runtime.current_state.path
-            ('System2', 'B')
+            ('Root', 'System2', 'B')
 
         Example - A blocked hot-start boundary produces a Delta step::
 
@@ -3379,18 +3382,18 @@ class SimulationRuntime:
             >>> ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
             >>> sm = parse_dsl_node_to_state_machine(ast)
             >>> runtime = SimulationRuntime(sm)
-            >>> runtime.cycle()
+            >>> _ = runtime.cycle()
             >>> runtime.vars['counter']
             1
-            >>> runtime.cycle()
+            >>> _ = runtime.cycle()
             >>> runtime.vars['counter']
             2
-            >>> runtime.cycle()
+            >>> _ = runtime.cycle()
             >>> runtime.vars['counter']
             3
-            >>> runtime.cycle()  # Self-transition fires
+            >>> _ = runtime.cycle()  # Self-transition fires
             >>> runtime.vars['counter']
-            4  # Exit + re-enter + during
+            4
 
         .. note::
            Once the runtime has ended (:attr:`is_ended` is ``True``), subsequent

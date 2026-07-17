@@ -567,7 +567,15 @@ def test_compare_step_reports_delta_forgery_path() -> None:
     )
     mismatches = []
     _compare_step(mismatches, witness_step, runtime_step)
-    assert [item.path for item in mismatches] == ["steps[0].delta"]
+    assert [item.to_canonical() for item in mismatches] == [
+        {
+            "path": "steps[0].delta",
+            "expected": True,
+            "actual": False,
+            "message": "delta mismatch",
+            "tolerance": None,
+        }
+    ]
 
 
 def test_replay_reports_init_sentinel_when_runtime_is_terminated() -> None:

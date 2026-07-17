@@ -164,8 +164,7 @@ package: build_assets diagram_assets_check build_info
 build_info: build_assets diagram_assets_check tpl
 	$(PYTHON) -m tools.write_build_info
 
-build_info_cli: ${APP_ICON_STAMP}
-	$(MAKE) build_info
+build_info_cli: ${APP_ICON_STAMP} build_info
 
 build: build_assets diagram_assets_check build_info_cli
 	$(PYTHON) -m tools.generate_spec -o pyfcstm.spec --icon-dir ${APP_ICON_DIR}

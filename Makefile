@@ -160,7 +160,10 @@ help:
 
 package: build_assets diagram_assets_check build_info
 	rm -rf ${BUILD_DIR}
+	rm -f ${DIST_DIR}/*.whl ${DIST_DIR}/*.tar.gz
 	$(PYTHON) -m build --sdist --wheel --outdir ${DIST_DIR}
+	$(PYTHON) tools/check_diagram_package.py --check
+	$(PYTHON) tools/check_diagram_package.py --dist-dir ${DIST_DIR}
 build_info: build_assets diagram_assets_check tpl
 	$(PYTHON) -m tools.write_build_info
 
@@ -233,6 +236,7 @@ diagram_assets_check: build_assets
 	$(PYTHON) tools/check_diagram_assets.py
 
 diagram_package_check: package
+	$(PYTHON) tools/check_diagram_package.py --check
 	$(PYTHON) tools/check_diagram_package.py --dist-dir ${DIST_DIR}
 
 template_packaging_check:

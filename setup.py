@@ -100,16 +100,31 @@ def _require_diagram_assets_for_distribution() -> None:
         "__init__.py",
         "NOTICE.txt",
         "LICENSE-MPL-2.0.txt",
+        "LICENSE-EPL-2.0.txt",
+        "LICENSE-OFL-1.1.txt",
     }
+    asset_root = os.path.join(here, _MODULE_NAME, "assets")
+    if os.path.islink(asset_root):
+        raise RuntimeError("diagram asset root must not be a symlink: %s" % asset_root)
     asset_files = set()
-    for directory, _subdirectories, filenames in os.walk(
-        os.path.join(here, _MODULE_NAME, "assets")
-    ):
+    for directory, subdirectories, filenames in os.walk(asset_root):
+        linked_directories = [
+            os.path.join(directory, name)
+            for name in subdirectories
+            if os.path.islink(os.path.join(directory, name))
+        ]
+        if linked_directories:
+            raise RuntimeError(
+                "diagram asset tree contains symlink directories: %s"
+                % ", ".join(sorted(linked_directories))
+            )
         for filename in filenames:
             path = os.path.join(directory, filename)
-            relative = os.path.relpath(
-                path, os.path.join(here, _MODULE_NAME, "assets")
-            )
+            if os.path.islink(path):
+                raise RuntimeError(
+                    "diagram asset tree contains a symlink file: %s" % path
+                )
+            relative = os.path.relpath(path, asset_root)
             if "__pycache__" not in relative.split(os.sep):
                 asset_files.add(relative)
     extras = sorted(asset_files - generated_assets - tracked_markers)
@@ -119,19 +134,17 @@ def _require_diagram_assets_for_distribution() -> None:
             "`make build_assets` before building or installing the package: %s"
             % ", ".join(extras)
         )
-    required_assets = [
-        os.path.join(here, _MODULE_NAME, "assets", "renderer.js"),
-        os.path.join(here, _MODULE_NAME, "assets", "resvg.wasm"),
-        os.path.join(here, _MODULE_NAME, "assets", "manifest.json"),
-        os.path.join(
-            here,
-            _MODULE_NAME,
-            "assets",
-            "fonts",
-            "JetBrainsMono-Regular.ttf",
-        ),
+    required_distribution = generated_assets | {
+        "NOTICE.txt",
+        "LICENSE-MPL-2.0.txt",
+        "LICENSE-EPL-2.0.txt",
+        "LICENSE-OFL-1.1.txt",
+    }
+    missing = [
+        os.path.join(here, _MODULE_NAME, "assets", relative)
+        for relative in sorted(required_distribution)
+        if not os.path.isfile(os.path.join(here, _MODULE_NAME, "assets", relative))
     ]
-    missing = [path for path in required_assets if not os.path.isfile(path)]
     if missing:
         raise RuntimeError(
             "diagram distribution assets are missing; run `make build_assets` "

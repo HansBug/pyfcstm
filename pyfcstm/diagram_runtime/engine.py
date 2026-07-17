@@ -7,11 +7,12 @@ work described by PR #383.
 """
 
 import base64
+import inspect
 import json
 import math
 import pkgutil
 import time
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 
 class DiagramAssetError(RuntimeError):
@@ -33,6 +34,9 @@ class DiagramAssetEngine:
     :param timeout: Maximum seconds for one ELK/render polling operation,
         which must be finite and positive, defaults to ``30.0``.
     :type timeout: float, optional
+    :param max_memory: Optional V8 heap limit in bytes applied to each
+        JavaScript evaluation, defaults to ``None``.
+    :type max_memory: int, optional
 
     Example::
 
@@ -42,18 +46,58 @@ class DiagramAssetEngine:
         True
     """
 
-    def __init__(self, timeout: float = 30.0) -> None:
+    def __init__(self, timeout: float = 30.0, max_memory: Optional[int] = None) -> None:
         numeric_timeout = float(timeout)
         if not math.isfinite(numeric_timeout) or numeric_timeout <= 0:
             raise ValueError("timeout must be a finite positive number")
+        if max_memory is not None:
+            if isinstance(max_memory, bool) or int(max_memory) != max_memory:
+                raise ValueError("max_memory must be a positive integer or None")
+            if int(max_memory) <= 0:
+                raise ValueError("max_memory must be a positive integer or None")
         self.timeout = numeric_timeout
-        self._context = self._create_context()
+        self.max_memory = int(max_memory) if max_memory is not None else None
+        self._context = None
         self._resvg_ready = False
-        self._load_bundle()
+        self._timeout_uses_seconds = False
+        self._interrupt_errors = ()
+        self._ensure_context()
 
     @staticmethod
-    def _create_context() -> Any:
+    def _distribution_installed(name: str) -> bool:
+        """Return whether a MiniRacer distribution is installed."""
+        try:
+            from importlib import metadata
+        except ImportError:
+            # Python 3.7 has no stdlib importlib.metadata; the backport is
+            # optional, so fall back to setuptools when it is unavailable.
+            try:
+                import importlib_metadata as metadata
+            except ImportError:
+                try:
+                    from pkg_resources import DistributionNotFound, get_distribution
+                except ImportError:
+                    return False
+                try:
+                    get_distribution(name)
+                except DistributionNotFound:
+                    return False
+                return True
+        try:
+            metadata.version(name)
+        except metadata.PackageNotFoundError:
+            return False
+        return True
+
+    def _create_context(self) -> Any:
         """Create the Python-version-appropriate MiniRacer context."""
+        if self._distribution_installed("mini-racer") and self._distribution_installed(
+            "py-mini-racer"
+        ):
+            raise DiagramAssetError(
+                "mini-racer and py-mini-racer are installed together; "
+                "install exactly one runtime for this Python version"
+            )
         try:
             from py_mini_racer import MiniRacer
         except ImportError as top_level_error:
@@ -64,11 +108,76 @@ class DiagramAssetEngine:
                 # Preserve a modern package's native import/ABI failure when
                 # neither supported export shape is available.
                 raise top_level_error
+        try:
+            from py_mini_racer import JSOOMException, JSTimeoutException
+        except ImportError:
+            # py-mini-racer 0.6 keeps these exception classes in its legacy
+            # module; modern mini-racer exports them at package top level.
+            from py_mini_racer.py_mini_racer import JSOOMException, JSTimeoutException
+        self._interrupt_errors = (JSTimeoutException, JSOOMException)
+        self._timeout_uses_seconds = (
+            "timeout_sec" in inspect.signature(MiniRacer.eval).parameters
+        )
         return MiniRacer()
 
-    def _eval(self, source: str) -> Any:
-        """Evaluate JavaScript and preserve the native exception boundary."""
-        return self._context.eval(source)
+    def _ensure_context(self) -> None:
+        """Create and initialize a context after startup or interruption."""
+        if self._context is None:
+            self._context = self._create_context()
+            self._load_bundle()
+
+    def _discard_context(self) -> None:
+        """Drop a context that was interrupted or exceeded its heap limit."""
+        context = self._context
+        self._context = None
+        self._resvg_ready = False
+        if context is None:
+            return
+        close = getattr(context, "close", None)
+        if callable(close):
+            close()
+
+    def _eval(self, source: str, timeout: Optional[float] = None) -> Any:
+        """
+        Evaluate JavaScript with the native MiniRacer resource limits.
+
+        :param source: JavaScript source text to evaluate.
+        :type source: str
+        :param timeout: Evaluation limit in seconds, defaults to the engine
+            timeout.
+        :type timeout: float, optional
+        :return: The converted MiniRacer result.
+        :rtype: object
+        :raises DiagramAssetError: If MiniRacer interrupts execution.
+        """
+        numeric_timeout = self.timeout if timeout is None else float(timeout)
+        if not math.isfinite(numeric_timeout) or numeric_timeout <= 0:
+            raise ValueError("timeout must be a finite positive number")
+        self._ensure_context()
+        try:
+            if self._timeout_uses_seconds:
+                return self._context.eval(
+                    source,
+                    timeout_sec=numeric_timeout,
+                    max_memory=self.max_memory,
+                )
+            # py-mini-racer 0.6 accepts milliseconds and does not understand
+            # the modern ``timeout_sec`` keyword.
+            timeout_ms = max(1, int(math.ceil(numeric_timeout * 1000.0)))
+            return self._context.eval(
+                source,
+                timeout=timeout_ms,
+                max_memory=self.max_memory,
+            )
+        except Exception as err:
+            # JSTimeoutException/JSOOMException are the only expected native
+            # interruption failures; every other exception must propagate.
+            if not isinstance(err, self._interrupt_errors):
+                raise
+            self._discard_context()
+            raise DiagramAssetError(
+                "embedded MiniRacer evaluation exceeded its time or memory limit"
+            ) from err
 
     def _load_bundle(self) -> None:
         """Load the host shim and verified renderer bundle once."""
@@ -76,9 +185,11 @@ class DiagramAssetEngine:
         self._eval("globalThis.__pyfcstm_embedded_host = true;")
         self._eval(_asset_bytes("renderer.js").decode("utf-8"))
 
-    def _poll(self, request_id: str) -> Dict[str, Any]:
+    def _poll(self, request_id: str, timeout: Optional[float] = None) -> Dict[str, Any]:
         """Read one renderer job status from the JS context."""
-        value = self._eval("__pyfcstm_render_poll(%s)" % json.dumps(request_id))
+        value = self._eval(
+            "__pyfcstm_render_poll(%s)" % json.dumps(request_id), timeout=timeout
+        )
         return json.loads(str(value))
 
     def render_svg(self, request: Dict[str, Any]) -> str:
@@ -93,26 +204,34 @@ class DiagramAssetEngine:
         :raises DiagramAssetError: If the JS job reports an error or times out.
         """
         request_id = "pyfcstm-%d" % time.monotonic_ns()
+        deadline = time.monotonic() + self.timeout
         self._eval(
             "__pyfcstm_render_start(%s, %s)"
             % (
                 json.dumps(json.dumps(request, ensure_ascii=False)),
                 json.dumps(request_id),
-            )
+            ),
+            timeout=self.timeout,
         )
-        deadline = time.monotonic() + self.timeout
         while time.monotonic() < deadline:
-            status = self._poll(request_id)
+            remaining = max(0.001, deadline - time.monotonic())
+            status = self._poll(request_id, timeout=remaining)
             if status.get("status") == "done":
-                self._eval("__pyfcstm_render_drop(%s)" % json.dumps(request_id))
+                self._eval(
+                    "__pyfcstm_render_drop(%s)" % json.dumps(request_id),
+                    timeout=remaining,
+                )
                 return str(status["svg"])
             if status.get("status") == "error":
-                self._eval("__pyfcstm_render_drop(%s)" % json.dumps(request_id))
+                self._eval(
+                    "__pyfcstm_render_drop(%s)" % json.dumps(request_id),
+                    timeout=remaining,
+                )
                 raise DiagramAssetError(
                     str(status.get("error", "unknown renderer error"))
                 )
             time.sleep(0.001)
-        self._eval("__pyfcstm_render_drop(%s)" % json.dumps(request_id))
+        self._eval("__pyfcstm_render_drop(%s)" % json.dumps(request_id), timeout=0.001)
         raise DiagramAssetError("diagram renderer timed out after %.1fs" % self.timeout)
 
     def _ensure_resvg(self) -> None:
@@ -120,19 +239,25 @@ class DiagramAssetEngine:
         if self._resvg_ready:
             return
         wasm = base64.b64encode(_asset_bytes("resvg.wasm")).decode("ascii")
-        self._eval("__pyfcstm_resvg_init(%s)" % json.dumps(wasm))
         deadline = time.monotonic() + self.timeout
+        self._eval("__pyfcstm_resvg_init(%s)" % json.dumps(wasm), timeout=self.timeout)
         while time.monotonic() < deadline:
-            status = str(self._eval("__pyfcstm_resvg_status"))
+            remaining = max(0.001, deadline - time.monotonic())
+            status = str(self._eval("__pyfcstm_resvg_status", timeout=remaining))
             if status == "ok":
                 font = base64.b64encode(
                     _asset_bytes("fonts/JetBrainsMono-Regular.ttf")
                 ).decode("ascii")
-                self._eval("__pyfcstm_resvg_register_font(%s)" % json.dumps(font))
+                self._eval(
+                    "__pyfcstm_resvg_register_font(%s)" % json.dumps(font),
+                    timeout=remaining,
+                )
                 self._resvg_ready = True
                 return
             if status == "error":
-                raise DiagramAssetError(str(self._eval("__pyfcstm_resvg_error")))
+                raise DiagramAssetError(
+                    str(self._eval("__pyfcstm_resvg_error", timeout=remaining))
+                )
             time.sleep(0.001)
         raise DiagramAssetError("resvg WASM initialization timed out")
 
@@ -155,7 +280,8 @@ class DiagramAssetEngine:
         self._ensure_resvg()
         encoded = self._eval(
             "__pyfcstm_resvg_png(%s, %s)"
-            % (json.dumps(svg), json.dumps(numeric_scale))
+            % (json.dumps(svg), json.dumps(numeric_scale)),
+            timeout=self.timeout,
         )
         return base64.b64decode(str(encoded))
 
@@ -169,4 +295,9 @@ class DiagramAssetEngine:
         :rtype: str
         """
         self._ensure_resvg()
-        return str(self._eval("__pyfcstm_resvg_expand(%s)" % json.dumps(svg)))
+        return str(
+            self._eval(
+                "__pyfcstm_resvg_expand(%s)" % json.dumps(svg),
+                timeout=self.timeout,
+            )
+        )

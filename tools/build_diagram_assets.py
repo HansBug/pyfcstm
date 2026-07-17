@@ -40,6 +40,8 @@ ASSET_MARKERS = {
     "__init__.py",
     "NOTICE.txt",
     "LICENSE-MPL-2.0.txt",
+    "LICENSE-EPL-2.0.txt",
+    "LICENSE-OFL-1.1.txt",
 }
 
 
@@ -143,7 +145,9 @@ def load_locked_file(path: Path, url: str, expected_sha256: str) -> bytes:
     return data
 
 
-def build_renderer(output: Path, esbuild_version: str) -> Tuple[bytes, Dict[str, object]]:
+def build_renderer(
+    output: Path, esbuild_version: str
+) -> Tuple[bytes, Dict[str, object]]:
     """
     Build the canonical renderer as a minified ES2017 IIFE.
 
@@ -209,6 +213,37 @@ def _check_metafile_determinism() -> None:
     second_encoded = json.dumps(second, sort_keys=True, separators=(",", ":"))
     if first_encoded != second_encoded:
         raise ValueError("esbuild metafile canonicalization is not deterministic")
+
+
+def _check_clean_symlink_safety() -> None:
+    """Verify cleanup refuses a root symlink before touching its target."""
+    global ASSET_DIR
+    with tempfile.TemporaryDirectory(prefix="pyfcstm-asset-check-") as temp_dir:
+        temporary_root = Path(temp_dir)
+        outside = temporary_root / "outside"
+        outside.mkdir()
+        victim = outside / "victim.txt"
+        victim.write_text("must survive", encoding="ascii")
+        linked_root = temporary_root / "assets"
+        try:
+            linked_root.symlink_to(outside, target_is_directory=True)
+        except OSError:
+            # Some Windows checkouts deny symlink creation without elevation;
+            # the production guard remains fail-closed when symlinks exist.
+            return
+        original = ASSET_DIR
+        ASSET_DIR = linked_root
+        try:
+            try:
+                clean_assets()
+            except OSError:
+                pass
+            else:
+                raise AssertionError("cleanup accepted a symlinked asset root")
+        finally:
+            ASSET_DIR = original
+        if victim.read_text(encoding="ascii") != "must survive":
+            raise AssertionError("cleanup touched a path outside the asset root")
 
 
 def load_font(font_path: Path, lock: Dict[str, object]) -> bytes:
@@ -316,7 +351,9 @@ def tracked_asset_paths() -> Set[str]:
         for line in result.stdout.splitlines()
         if line.strip().startswith(prefix)
     }
-    return paths or set(ASSET_MARKERS)
+    # Keep the checked-in marker contract even before a new marker file has
+    # been staged; this prevents a local rebuild from deleting it.
+    return paths | set(ASSET_MARKERS)
 
 
 def _remove_path(path: Path) -> None:
@@ -398,6 +435,10 @@ def build_assets() -> None:
     :raises OSError: If the generated directory cannot be written.
     """
     lock = read_lock()
+    # Refuse to follow a checkout-provided symlink before any local asset is
+    # read or the generated directory is created.  Publication performs the
+    # same check later, but build inputs must be protected too.
+    _assert_no_symlink_tree(ASSET_DIR)
     ASSET_DIR.mkdir(parents=True, exist_ok=True)
     renderer_lock = lock["renderer"]
     if not isinstance(renderer_lock, dict):
@@ -428,13 +469,7 @@ def build_assets() -> None:
         font = load_font(ASSET_DIR / "fonts" / "JetBrainsMono-Regular.ttf", lock)
         bridge = BRIDGE_PATH.read_bytes()
         host_shim = HOST_SHIM_PATH.read_bytes()
-        combined = (
-            renderer
-            + b"\n"
-            + bundle
-            + b"\n"
-            + bridge
-        )
+        combined = renderer + b"\n" + bundle + b"\n" + bridge
         files = [
             ("renderer.js", combined),
             ("resvg-binding.js", bundle),
@@ -460,6 +495,7 @@ def build_assets() -> None:
 
 def clean_assets() -> None:
     """Remove generated files while preserving tracked package markers."""
+    _assert_no_symlink_tree(ASSET_DIR)
     if not ASSET_DIR.is_dir():
         return
     tracked = tracked_asset_paths()
@@ -493,7 +529,8 @@ def main(argv=None) -> int:
         parser.error("--clean and --check cannot be combined")
     if args.check:
         _check_metafile_determinism()
-        print("diagram asset builder: deterministic self-check passed")
+        _check_clean_symlink_safety()
+        print("diagram asset builder: deterministic and safety self-check passed")
     elif args.clean:
         clean_assets()
     else:

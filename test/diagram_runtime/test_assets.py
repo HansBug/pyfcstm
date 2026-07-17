@@ -5,7 +5,7 @@ import math
 
 import pytest
 
-from pyfcstm.diagram_runtime import DiagramAssetEngine
+from pyfcstm.diagram_runtime import DiagramAssetEngine, DiagramAssetError
 
 
 pytestmark = pytest.mark.unittest
@@ -185,9 +185,7 @@ def test_resvg_marker_tip_lands_on_path_endpoint():
     engine = DiagramAssetEngine()
 
     legacy = engine.expand_svg(svg.replace('refX="10"', 'refX="9"'))
-    legacy_transforms = re.findall(
-        r'transform="matrix\(([^)]+)\)"', legacy
-    )
+    legacy_transforms = re.findall(r'transform="matrix\(([^)]+)\)"', legacy)
     assert len(legacy_transforms) == len(endpoints)
     legacy_errors = []
     for transform, endpoint in zip(legacy_transforms, endpoints):
@@ -217,6 +215,32 @@ def test_engine_rejects_non_finite_timeout():
     for timeout in (float("nan"), float("inf"), float("-inf")):
         with pytest.raises(ValueError, match="finite positive"):
             DiagramAssetEngine(timeout=timeout)
+
+
+def test_engine_restarts_context_after_native_timeout():
+    engine = DiagramAssetEngine(timeout=0.2)
+    with pytest.raises(DiagramAssetError, match="time or memory limit"):
+        engine._eval("while (true) {}")
+    assert engine._eval("6 * 7") == 42
+
+
+def test_engine_rejects_invalid_memory_limit():
+    for value in (0, -1, True, 1.5):
+        with pytest.raises(ValueError, match="max_memory"):
+            DiagramAssetEngine(max_memory=value)
+
+
+def test_engine_rejects_dual_miniracer_distributions(monkeypatch):
+    def both_installed(_name):
+        return True
+
+    monkeypatch.setattr(
+        DiagramAssetEngine,
+        "_distribution_installed",
+        staticmethod(both_installed),
+    )
+    with pytest.raises(DiagramAssetError, match="installed together"):
+        DiagramAssetEngine()
 
 
 def test_host_shim_blocks_dynamic_code_creation():

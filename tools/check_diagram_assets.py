@@ -16,6 +16,8 @@ TRACKED_MARKERS = {
     "__init__.py",
     "NOTICE.txt",
     "LICENSE-MPL-2.0.txt",
+    "LICENSE-EPL-2.0.txt",
+    "LICENSE-OFL-1.1.txt",
 }
 
 GENERATED_ASSETS = {
@@ -63,17 +65,57 @@ def is_tracked(relative: str) -> bool:
     raise RuntimeError("git could not inspect diagram asset path: %s" % relative)
 
 
+def git_boundary_available() -> bool:
+    """Return whether Git marker checks can run for this source tree.
+
+    Source archives intentionally have no ``.git`` directory.  Their asset
+    content, hashes, and allow-list remain fully checkable, but Git-specific
+    tracked/ignored assertions are not meaningful there.
+
+    :return: ``True`` when ``ROOT`` is the repository root of a Git checkout.
+    :rtype: bool
+    """
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=str(ROOT),
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+    except OSError:
+        # OSError: source archives may not contain the git executable.
+        return False
+    if result.returncode != 0:
+        return False
+    try:
+        return Path(result.stdout.strip()).resolve() == ROOT.resolve()
+    except (OSError, RuntimeError):
+        # OSError/RuntimeError: an invalid or inaccessible Git root cannot
+        # prove that the boundary belongs to this project.
+        return False
+
+
 def main() -> int:
     """
-    Validate hashes, size limits, syntax, and git-ignore rules.
+    Validate hashes, size limits, syntax, and the asset boundary.
+
+    Git tracked/ignored checks run when this is a repository checkout.  A
+    source archive has no Git metadata, so the content and allow-list checks
+    remain enforced while only those Git-specific assertions are skipped.
 
     :return: Process exit status.
     :rtype: int
     :raises ValueError: If any asset contract is violated.
     :raises OSError: If an asset or required command is unavailable.
-    :raises RuntimeError: If git cannot enforce the tracked/ignored boundary.
     """
     manifest_path = ASSET_DIR / "manifest.json"
+    if ASSET_DIR.is_symlink():
+        raise ValueError("diagram asset root is a symlink: %s" % ASSET_DIR)
+    for candidate in ASSET_DIR.rglob("*"):
+        if candidate.is_symlink():
+            raise ValueError("diagram asset tree contains a symlink: %s" % candidate)
     lock = json.loads(LOCK_PATH.read_text(encoding="utf-8"))
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     if manifest.get("schema") != "pyfcstm-diagram-assets/1":
@@ -98,6 +140,8 @@ def main() -> int:
             "diagram asset tree contains unregistered files: %s" % ", ".join(extras)
         )
 
+    enforce_git_boundary = git_boundary_available()
+
     for relative, item in expected.items():
         path = ASSET_DIR / relative
         if not path.is_file():
@@ -105,33 +149,37 @@ def main() -> int:
         actual_digest = digest(path)
         if actual_digest != item["sha256"] or path.stat().st_size != item["bytes"]:
             raise ValueError("manifest mismatch for generated asset: %s" % relative)
-        result = subprocess.run(
-            ["git", "check-ignore", "--quiet", str(path.relative_to(ROOT))],
-            cwd=str(ROOT),
-            check=False,
-        )
-        if result.returncode != 0:
-            raise ValueError("generated asset is not ignored by git: %s" % relative)
-        repository_path = "pyfcstm/assets/" + relative
-        if is_tracked(repository_path):
-            raise ValueError("generated asset is tracked by git: %s" % relative)
+        if enforce_git_boundary:
+            result = subprocess.run(
+                ["git", "check-ignore", "--quiet", str(path.relative_to(ROOT))],
+                cwd=str(ROOT),
+                check=False,
+            )
+            if result.returncode != 0:
+                raise ValueError("generated asset is not ignored by git: %s" % relative)
+            repository_path = "pyfcstm/assets/" + relative
+            if is_tracked(repository_path):
+                raise ValueError("generated asset is tracked by git: %s" % relative)
 
     for relative in sorted(TRACKED_MARKERS):
         path = ASSET_DIR / relative
         if not path.is_file():
             raise ValueError("missing tracked asset marker: %s" % path)
-        repository_path = "pyfcstm/assets/" + relative
-        if not is_tracked(repository_path):
-            raise ValueError(
-                "tracked asset marker is not tracked by git: %s" % relative
+        if enforce_git_boundary:
+            repository_path = "pyfcstm/assets/" + relative
+            if not is_tracked(repository_path):
+                raise ValueError(
+                    "tracked asset marker is not tracked by git: %s" % relative
+                )
+            result = subprocess.run(
+                ["git", "check-ignore", "--quiet", str(path.relative_to(ROOT))],
+                cwd=str(ROOT),
+                check=False,
             )
-        result = subprocess.run(
-            ["git", "check-ignore", "--quiet", str(path.relative_to(ROOT))],
-            cwd=str(ROOT),
-            check=False,
-        )
-        if result.returncode == 0:
-            raise ValueError("tracked asset marker is ignored by git: %s" % relative)
+            if result.returncode == 0:
+                raise ValueError(
+                    "tracked asset marker is ignored by git: %s" % relative
+                )
 
     renderer = (ASSET_DIR / "renderer.js").read_text(encoding="utf-8")
     if 'orient="auto-start-reverse"' in renderer:
@@ -171,7 +219,10 @@ def main() -> int:
         raise ValueError("font exceeds the locked size budget")
 
     subprocess.run(["node", "--check", str(ASSET_DIR / "renderer.js")], check=True)
-    print("diagram assets: hashes, size, syntax, and ignore rules passed")
+    if enforce_git_boundary:
+        print("diagram assets: hashes, size, syntax, and ignore rules passed")
+    else:
+        print("diagram assets: hashes, size, and syntax passed (Git boundary skipped)")
     return 0
 
 

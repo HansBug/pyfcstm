@@ -7,7 +7,7 @@
     "resvgBundleSha256": "435b67b9e703c1b33600e4696ee19817c402d5055136b782558ba719a3b227ae",
     "resvgWasmUrl": "https://gist.githubusercontent.com/HansBug/3dee7cb7094369bcbae42d0a1bdcf6fd/raw/d7930a0aed8b7f98bcf93ca3ca03425b8313a5eb/resvg037.wasm",
     "resvgWasmSha256": "65a71d371905968c3747f9c57a86fd803e27b9dc081e7145350b9529bc803248",
-    "resvgWasmMaxBytes": 2800000,
+    "resvgWasmMaxBytes": 2600000,
     "esbuildVersion": "0.28.1"
   },
   "fonts": {

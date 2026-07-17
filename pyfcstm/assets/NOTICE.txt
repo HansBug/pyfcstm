@@ -3,3 +3,16 @@ Generated diagram assets are produced by ``make build_assets``.
 The generated directory is intentionally ignored by git. Source and license
 provenance is maintained in ``tools/diagram_assets`` and in the generated
 manifest; do not hand-edit compiled files under this directory.
+
+Third-party runtime resources distributed in this directory:
+
+* ``elkjs`` 0.11.1, Copyright Ulf Ruegg and contributors, under the Eclipse
+  Public License 2.0. See ``LICENSE-EPL-2.0.txt``.
+* ``resvg`` 0.37 compatibility bindings and WASM, from the immutable source
+  URLs and SHA-256 values recorded in ``tools/diagram_assets/asset-lock.json``.
+* ``JetBrains Mono`` Regular, Copyright 2020 The JetBrains Mono Project
+  Authors, under the SIL Open Font License 1.1. See ``LICENSE-OFL-1.1.txt``.
+
+The renderer bundle itself is built from the tracked jsfcstm sources with the
+locked esbuild version. ``manifest.json`` records the generated file hashes,
+source lock, and build metadata.

@@ -473,6 +473,18 @@ def extract_public_members(source_code: str) -> Dict[str, List[Dict[str, Any]]]:
     extractor = PublicMemberExtractor(class_index)
     extractor.visit(tree)
 
+    source_lines = source_code.splitlines()
+    for variable in extractor.public_variables:
+        metadata = []
+        line_index = variable["lineno"] - 2
+        while line_index >= 0:
+            comment = source_lines[line_index].lstrip()
+            if not comment.startswith("#:"):
+                break
+            metadata.append(comment[2:].strip())
+            line_index -= 1
+        variable["hide_value"] = ":meta hide-value:" in metadata
+
     return {
         "classes": extractor.public_classes,
         "functions": extractor.public_functions,
@@ -510,6 +522,8 @@ def print_extracted_members(f, members: Dict[str, List[Dict[str, Any]]]):
         print("-" * max(_RST_MEMBER_TITLE_MIN_WIDTH, len(title)), file=f)
         print("", file=f)
         print(f".. autodata:: {var['name']}", file=f)
+        if var.get("hide_value"):
+            print("   :no-value:", file=f)
         print("", file=f)
         print("", file=f)
 

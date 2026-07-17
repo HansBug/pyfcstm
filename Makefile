@@ -176,6 +176,7 @@ test_cli:
 clean:
 	rm -rf ${DIST_DIR} ${BUILD_DIR} *.egg-info
 	rm -rf build dist pyfcstm.spec
+	rm -f ${SRC_DIR}/config/build_info.py
 	rm -f ${VSCODE_ICON}
 	@rmdir --ignore-fail-on-non-empty ${VSCODE_EXT_DIR}/resources 2>/dev/null || true
 

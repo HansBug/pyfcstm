@@ -35,3 +35,28 @@ def test_private_selfcheck_index_is_marked_orphan(tmp_path):
     output = tmp_path / "index.rst"
     convert_code_to_rst(str(source), str(output), lib_dir=str(tmp_path))
     assert ":orphan:" in output.read_text(encoding="utf-8")
+
+
+@pytest.mark.unittest
+def test_autodata_hide_value_metadata_is_preserved(tmp_path):
+    """Sphinx hide-value metadata becomes an autodata no-value option."""
+    from auto_rst import convert_code_to_rst
+
+    source = tmp_path / "example.py"
+    source.write_text(
+        "#: Public value whose large representation should stay hidden.\n"
+        "#: :meta hide-value:\n"
+        "HIDDEN_VALUE = {'large': 'mapping'}\n"
+        "VISIBLE_VALUE = 1\n",
+        encoding="utf-8",
+    )
+    output = tmp_path / "example.rst"
+    convert_code_to_rst(str(source), str(output), lib_dir=str(tmp_path))
+    text = output.read_text(encoding="utf-8")
+
+    hidden_section = text.split(".. autodata:: HIDDEN_VALUE", 1)[1].split(
+        ".. autodata:: VISIBLE_VALUE", 1
+    )[0]
+    visible_section = text.split(".. autodata:: VISIBLE_VALUE", 1)[1]
+    assert "   :no-value:" in hidden_section
+    assert ":no-value:" not in visible_section

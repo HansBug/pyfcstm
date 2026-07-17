@@ -14,18 +14,26 @@ import os
 import platform
 import socket
 import shutil
-import ssl
 import subprocess
 import sys
 import tempfile
 import time
 import traceback
+from urllib.parse import urlsplit
 import zipfile
 from functools import partial
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, Mapping, Optional, Tuple
 
 from .model import CheckOutcome, CheckSpec
+
+
+try:
+    import ssl
+except ImportError:
+    # Frozen Windows builds may lack a loadable OpenSSL extension; keep the
+    # core registry importable so HTTPS remains an explicit capability WARN.
+    ssl = None
 
 
 Worker = Callable[[], CheckOutcome]
@@ -45,6 +53,10 @@ _BMC_FORBID_QUERY = 'check forbid <= 1: active("Root");'
 _PROCESS_OUTPUT_LIMIT = 64 * 1024
 _PROCESS_OUTPUT_HARD_LIMIT = 2 * 1024 * 1024
 _PROCESS_POLL_INTERVAL = 0.01
+_PLANTUML_JAR_ENV = "PLANTUML_JAR"
+_PLANTUML_HOST_ENV = "PLANTUML_HOST"
+_OFFICIAL_PLANTUML_HOST = "http://www.plantuml.com/plantuml"
+_PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
 
 class _ProcessOutputLimitExceeded(OSError):
@@ -2054,8 +2066,39 @@ def _java() -> CheckOutcome:
     )
 
 
+def _plantuml_jar_candidates() -> Tuple[Path, ...]:
+    """Return PlantUML JAR candidates in the same order as the CLI."""
+    configured = os.environ.get(_PLANTUML_JAR_ENV)
+    fallback = (_package_root() / "plantuml.jar", Path.cwd() / "plantuml.jar")
+    if configured and configured.strip():
+        return (Path(configured).expanduser(),) + fallback
+    return fallback
+
+
+def _configured_plantuml_host() -> str:
+    """Return the configured remote host or the CLI's official fallback."""
+    configured = os.environ.get(_PLANTUML_HOST_ENV)
+    if configured and configured.strip():
+        return configured.strip()
+    return _OFFICIAL_PLANTUML_HOST
+
+
+def _remote_host_endpoint():
+    """Parse the configured PlantUML endpoint and validate its transport."""
+    host = _configured_plantuml_host()
+    parsed = urlsplit(host)
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        raise ValueError(
+            "{} must be an absolute http(s) URL: {!r}".format(
+                _PLANTUML_HOST_ENV, host
+            )
+        )
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    return host, parsed, port
+
+
 def _plantuml_jar() -> CheckOutcome:
-    candidates = (_package_root() / "plantuml.jar", Path.cwd() / "plantuml.jar")
+    candidates = _plantuml_jar_candidates()
     for candidate in candidates:
         if candidate.is_file():
             return _pass(
@@ -2078,7 +2121,7 @@ def _python_stack() -> CheckOutcome:
 
 def _visual_local_version() -> CheckOutcome:
     java = shutil.which("java")
-    candidates = (_package_root() / "plantuml.jar", Path.cwd() / "plantuml.jar")
+    candidates = _plantuml_jar_candidates()
     jar = next((candidate for candidate in candidates if candidate.is_file()), None)
     if java is None or jar is None:
         return _warn(
@@ -2135,7 +2178,7 @@ def _visual_local_version() -> CheckOutcome:
 
 def _visual_local_render() -> CheckOutcome:
     java = shutil.which("java")
-    candidates = (_package_root() / "plantuml.jar", Path.cwd() / "plantuml.jar")
+    candidates = _plantuml_jar_candidates()
     jar = next((candidate for candidate in candidates if candidate.is_file()), None)
     if java is None or jar is None:
         return _warn(
@@ -2199,23 +2242,33 @@ def _visual_remote_tls() -> CheckOutcome:
             reason="network_disabled",
         )
     try:
-        context = ssl.create_default_context()
-        with socket.create_connection(("www.plantuml.com", 443), timeout=5.0) as raw:
-            with context.wrap_socket(raw, server_hostname="www.plantuml.com") as tls:
-                observed = tls.version() or "TLS"
-    except (AttributeError, OSError, ssl.SSLError, ValueError) as err:
-        # Socket/TLS setup and certificate validation expose these failures.
+        host, parsed, port = _remote_host_endpoint()
+        address = (parsed.hostname, port)
+        if parsed.scheme == "https":
+            if ssl is None:
+                raise ImportError("Python ssl module is unavailable")
+            context = ssl.create_default_context()
+            with socket.create_connection(address, timeout=5.0) as raw:
+                with context.wrap_socket(raw, server_hostname=parsed.hostname) as tls:
+                    observed = "transport=tls host={} version={}".format(
+                        host, tls.version() or "TLS"
+                    )
+        else:
+            with socket.create_connection(address, timeout=5.0):
+                observed = "transport=plain host={} endpoint=reachable".format(host)
+    except (AttributeError, ImportError, OSError, ValueError) as err:
+        # URL parsing, socket setup, and TLS certificate validation expose these failures.
         return _exception_diagnostic(
             "WARN",
-            "TLS context is unavailable",
+            "PlantUML remote service is unavailable",
             "capability_unavailable",
             err,
-            expected="TLS connection to www.plantuml.com:443",
+            expected="configured PlantUML host is reachable",
             remediation="check DNS, firewall, certificates, and the explicit --network opt-in",
         )
     return _pass(
-        "negotiate TLS with www.plantuml.com:443",
-        expected="validated TLS session",
+        "probe the configured PlantUML remote service",
+        expected="configured HTTP(S) endpoint is reachable",
         observed=observed,
     )
 
@@ -2225,29 +2278,52 @@ def _visual_remote_render() -> CheckOutcome:
         return CheckOutcome(
             "SKIP", "remote rendering requires --network", reason="network_disabled"
         )
+    host = _configured_plantuml_host()
+    source = "@startuml\nAlice -> Bob\n@enduml\n"
     try:
-        from urllib.request import urlopen
+        from pyfcstm.entry.visualize import create_remote_plantuml_backend
+        from plantumlcli.models.base import PlantumlResourceType
 
-        with urlopen(
-            "https://www.plantuml.com/plantuml/txt/Syp9J4vLqBLJSCp9oGS0", timeout=10.0
-        ) as response:
-            payload = response.read(64 * 1024)
-        if not payload:
-            return _warn("remote PlantUML response is empty", "capability_unavailable")
-    except (OSError, ValueError, TypeError, UnicodeError) as err:
-        # URL/network, response decoding, and payload validation expose these failures.
+        backend = create_remote_plantuml_backend(remote_host=host)
+        try:
+            backend.check()
+        except UnicodeDecodeError:
+            # PlantUML PicoWeb may return a binary PNG for its root page;
+            # validate the real render below instead of decoding that page.
+            pass
+        with tempfile.TemporaryDirectory(prefix="pyfcstm-plantuml-") as directory:
+            output = Path(directory) / "selfcheck.png"
+            backend.dump(str(output), PlantumlResourceType.PNG, source)
+            payload = output.read_bytes()
+    except (AttributeError, ImportError, OSError, ValueError) as err:
+        # AttributeError/ValueError: plantumlcli can reject an unexpected
+        # service homepage shape; ImportError: optional backend unavailable;
+        # OSError: request or temporary output failure. Unexpected classes
+        # still propagate so implementation bugs remain visible.
         return _exception_diagnostic(
             "WARN",
             "remote PlantUML rendering is unavailable",
             "capability_unavailable",
             err,
-            expected="non-empty response from the fixed PlantUML text URL",
+            expected="configured PlantUML service returns a PNG for Alice -> Bob",
             remediation="check network policy and the remote PlantUML service",
         )
+    if not payload.startswith(_PNG_SIGNATURE):
+        return _warn(
+            "remote PlantUML rendering returned an invalid image",
+            "capability_unavailable",
+            expected="PNG signature {}".format(_PNG_SIGNATURE),
+            observed="host={} response_bytes={} signature={!r}".format(
+                host, len(payload), payload[:8]
+            ),
+            remediation="check the configured PlantUML service and renderer endpoint",
+        )
     return _pass(
-        "request a fixed Alice -> Bob diagram from remote PlantUML",
-        expected="non-empty response within 10 seconds",
-        observed="{} response bytes".format(len(payload)),
+        "render Alice -> Bob through the configured PlantUML service",
+        expected="PNG signature and non-empty image",
+        observed="host={} transport={} PNG response_bytes={} signature=valid".format(
+            host, "tls" if urlsplit(host).scheme == "https" else "plain", len(payload)
+        ),
     )
 
 

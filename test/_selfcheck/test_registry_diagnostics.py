@@ -1,6 +1,9 @@
 """Failure diagnostics for resource, native, and visualization probes."""
 
 import json
+import contextlib
+import http.server
+import threading
 import subprocess
 import sys
 import time
@@ -9,6 +12,46 @@ from types import SimpleNamespace
 import pytest
 
 from pyfcstm._selfcheck import registry
+
+
+_PNG = b"\x89PNG\r\n\x1a\n" + b"selfcheck"
+
+
+class _PlantUmlServiceHandler(http.server.BaseHTTPRequestHandler):
+    """Serve the minimum real HTTP contract consumed by plantumlcli."""
+
+    def do_GET(self):  # noqa: N802 - stdlib handler hook name
+        if self.path.rstrip("/") == "/plantuml":
+            payload = b"<html><div id='footer'>PlantUML Server version 1.2023.6</div></html>"
+            content_type = "text/html"
+        elif self.path.startswith("/plantuml/png/"):
+            payload = _PNG
+            content_type = "image/png"
+        else:
+            self.send_error(404)
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def log_message(self, format, *args):  # noqa: A002 - stdlib hook signature
+        del format, args
+
+
+@contextlib.contextmanager
+def _plantuml_service():
+    """Run a real local HTTP service for the plantumlcli remote backend."""
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _PlantUmlServiceHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield "http://127.0.0.1:{}/plantuml".format(server.server_port)
+    finally:
+        server.shutdown()
+        thread.join(timeout=5.0)
+        server.server_close()
 
 
 def _raiser(error):
@@ -387,6 +430,215 @@ def test_java_and_local_plantuml_diagnostics(monkeypatch, tmp_path):
     assert outcome.observed == "3 image bytes"
 
 
+@pytest.mark.unittest
+def test_plantuml_jar_environment_path_has_priority(monkeypatch, tmp_path):
+    """The explicit JAR environment follows the same source as the CLI."""
+    package_jar = tmp_path / "package" / "plantuml.jar"
+    package_jar.parent.mkdir()
+    package_jar.write_bytes(b"package")
+    env_jar = tmp_path / "configured" / "plantuml.jar"
+    env_jar.parent.mkdir()
+    env_jar.write_bytes(b"configured")
+    monkeypatch.setattr(registry, "_package_root", lambda: package_jar.parent)
+    monkeypatch.setenv("PLANTUML_JAR", str(env_jar))
+
+    outcome = registry._plantuml_jar()
+
+    assert outcome.status == "PASS"
+    assert str(env_jar) in outcome.observed
+    assert str(package_jar) not in outcome.observed
+
+
+@pytest.mark.unittest
+def test_plantuml_jar_invalid_environment_path_falls_back(monkeypatch, tmp_path):
+    """A stale explicit path does not hide a valid packaged JAR candidate."""
+    package_jar = tmp_path / "package" / "plantuml.jar"
+    package_jar.parent.mkdir()
+    package_jar.write_bytes(b"package")
+    monkeypatch.setattr(registry, "_package_root", lambda: package_jar.parent)
+    monkeypatch.setenv("PLANTUML_JAR", str(tmp_path / "missing" / "plantuml.jar"))
+
+    outcome = registry._plantuml_jar()
+
+    assert outcome.status == "PASS"
+    assert str(package_jar) in outcome.observed
+
+
+@pytest.mark.unittest
+def test_plantuml_jar_uses_packaged_candidate_without_environment(monkeypatch, tmp_path):
+    """The packaged candidate remains the fallback when no env path exists."""
+    package_jar = tmp_path / "package" / "plantuml.jar"
+    package_jar.parent.mkdir()
+    package_jar.write_bytes(b"package")
+    monkeypatch.setattr(registry, "_package_root", lambda: package_jar.parent)
+    monkeypatch.delenv("PLANTUML_JAR", raising=False)
+
+    outcome = registry._plantuml_jar()
+
+    assert outcome.status == "PASS"
+    assert str(package_jar) in outcome.observed
+
+
+@pytest.mark.unittest
+def test_remote_host_parser_rejects_invalid_scheme(monkeypatch):
+    """Malformed PlantUML hosts produce a capability warning, not a crash."""
+    monkeypatch.setenv("PYFCSTM_SELFCHECK_NETWORK", "1")
+    monkeypatch.setenv("PLANTUML_HOST", "ftp://plantuml.example/plantuml")
+
+    outcome = registry._visual_remote_tls()
+
+    assert outcome.status == "WARN"
+    assert "PLANTUML_HOST" in (outcome.exception or "")
+
+
+@pytest.mark.unittest
+def test_remote_https_without_ssl_keeps_core_registry_alive(monkeypatch):
+    """A missing frozen SSL extension becomes a capability warning."""
+    monkeypatch.setenv("PYFCSTM_SELFCHECK_NETWORK", "1")
+    monkeypatch.setenv("PLANTUML_HOST", "https://plantuml.example/plantuml")
+    monkeypatch.setattr(registry, "ssl", None)
+
+    outcome = registry._visual_remote_tls()
+
+    _assert_traceback(
+        outcome,
+        "WARN",
+        "capability_unavailable",
+        "Python ssl module is unavailable",
+    )
+
+
+@pytest.mark.unittest
+def test_remote_host_parser_accepts_explicit_port(monkeypatch):
+    """An explicit HTTPS port is used for the TLS probe."""
+    monkeypatch.setenv("PYFCSTM_SELFCHECK_NETWORK", "1")
+    monkeypatch.setenv("PLANTUML_HOST", "https://plantuml.example:9443/plantuml")
+    calls = []
+
+    class _Socket:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback_value):
+            del exc_type, exc_value, traceback_value
+
+    class _Tls:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback_value):
+            del exc_type, exc_value, traceback_value
+
+        def version(self):
+            return "TLSv1.3"
+
+    monkeypatch.setattr(
+        registry.socket,
+        "create_connection",
+        lambda address, timeout: calls.append((address, timeout)) or _Socket(),
+    )
+    monkeypatch.setattr(
+        registry.ssl,
+        "create_default_context",
+        lambda: type("_Context", (), {"wrap_socket": lambda self, raw, server_hostname: _Tls()})(),
+    )
+
+    outcome = registry._visual_remote_tls()
+
+    assert outcome.status == "PASS"
+    assert calls == [(('plantuml.example', 9443), 5.0)]
+    assert "TLSv1.3" in outcome.observed
+
+
+@pytest.mark.unittest
+def test_remote_host_uses_http_transport_without_tls(monkeypatch):
+    """A configured HTTP service is probed on its host and not hard-coded TLS."""
+    monkeypatch.setenv("PYFCSTM_SELFCHECK_NETWORK", "1")
+    monkeypatch.setenv("PLANTUML_HOST", "http://127.0.0.1:18080/plantuml")
+    calls = []
+
+    class _Socket:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback_value):
+            del exc_type, exc_value, traceback_value
+
+    monkeypatch.setattr(
+        registry.socket,
+        "create_connection",
+        lambda address, timeout: calls.append((address, timeout)) or _Socket(),
+    )
+    monkeypatch.setattr(
+        registry.ssl,
+        "create_default_context",
+        _raiser(AssertionError("HTTP must not create a TLS context")),
+    )
+
+    outcome = registry._visual_remote_tls()
+
+    assert outcome.status == "PASS"
+    assert "transport=plain" in outcome.observed
+    assert "host=http://127.0.0.1:18080/plantuml" in outcome.observed
+    assert calls == [(('127.0.0.1', 18080), 5.0)]
+
+
+@pytest.mark.unittest
+def test_remote_render_uses_configured_service_and_validates_png(monkeypatch):
+    """Remote rendering follows PLANTUML_HOST and validates a PNG signature."""
+    monkeypatch.setenv("PYFCSTM_SELFCHECK_NETWORK", "1")
+    with _plantuml_service() as host:
+        monkeypatch.setenv("PLANTUML_HOST", host)
+        outcome = registry._visual_remote_render()
+
+    assert outcome.status == "PASS"
+    assert "host={}".format(host) in outcome.observed
+    assert "PNG" in outcome.observed
+
+
+@pytest.mark.unittest
+def test_remote_render_backend_shape_failure_is_a_capability_warning(monkeypatch):
+    """A malformed PlantUML homepage remains a reportable capability warning."""
+    monkeypatch.setenv("PYFCSTM_SELFCHECK_NETWORK", "1")
+
+    class _Backend:
+        def check(self):
+            raise AttributeError("homepage footer is unavailable")
+
+    monkeypatch.setattr(
+        "pyfcstm.entry.visualize.create_remote_plantuml_backend",
+        lambda remote_host: _Backend(),
+    )
+    outcome = registry._visual_remote_render()
+
+    assert outcome.status == "WARN"
+    assert "homepage footer is unavailable" in (outcome.exception or "")
+
+
+@pytest.mark.unittest
+def test_remote_render_accepts_binary_picoweb_homepage(monkeypatch):
+    """PicoWeb binary root pages do not prevent a real PNG render probe."""
+    monkeypatch.setenv("PYFCSTM_SELFCHECK_NETWORK", "1")
+
+    class _Backend:
+        def check(self):
+            raise UnicodeDecodeError("utf-8", b"\x89PNG", 0, 1, "binary page")
+
+        def dump(self, path, type_, code):
+            del type_, code
+            with open(path, "wb") as handle:
+                handle.write(_PNG)
+
+    monkeypatch.setattr(
+        "pyfcstm.entry.visualize.create_remote_plantuml_backend",
+        lambda remote_host: _Backend(),
+    )
+    outcome = registry._visual_remote_render()
+
+    assert outcome.status == "PASS"
+    assert "signature=valid" in outcome.observed
+
+
 class _ContextValue:
     def __init__(self, value):
         self.value = value
@@ -401,10 +653,11 @@ class _ContextValue:
 @pytest.mark.unittest
 def test_remote_visualization_and_unidecode_diagnostics(monkeypatch):
     """Opt-in remote and dynamic-table checks retain concrete observations."""
-    import urllib.request
     import unidecode as unidecode_module
+    import pyfcstm.entry.visualize as visualize_module
 
     monkeypatch.setenv("PYFCSTM_SELFCHECK_NETWORK", "1")
+    monkeypatch.setenv("PLANTUML_HOST", "https://www.plantuml.com/plantuml")
     monkeypatch.setattr(
         registry.ssl,
         "create_default_context",
@@ -429,18 +682,33 @@ def test_remote_visualization_and_unidecode_diagnostics(monkeypatch):
     )
     outcome = registry._visual_remote_tls()
     assert outcome.status == "PASS"
-    assert outcome.observed == "TLSv1.2"
+    assert "transport=tls" in outcome.observed
+    assert "host=https://www.plantuml.com/plantuml" in outcome.observed
+
+    class _Backend:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def check(self):
+            return None
+
+        def dump(self, path, type_, code):
+            del type_, code
+            with open(path, "wb") as handle:
+                handle.write(self.payload)
 
     monkeypatch.setattr(
-        urllib.request,
-        "urlopen",
-        lambda *args, **kwargs: _ContextValue(SimpleNamespace(read=lambda size: b"")),
+        visualize_module,
+        "create_remote_plantuml_backend",
+        lambda remote_host: _Backend(b"not-png"),
     )
-    assert registry._visual_remote_render().status == "WARN"
+    outcome = registry._visual_remote_render()
+    assert outcome.status == "WARN"
+    assert "not-png" in outcome.observed
 
     monkeypatch.setattr(
-        urllib.request,
-        "urlopen",
+        visualize_module,
+        "create_remote_plantuml_backend",
         _raiser(OSError("remote render failed")),
     )
     _assert_traceback(
@@ -451,15 +719,14 @@ def test_remote_visualization_and_unidecode_diagnostics(monkeypatch):
     )
 
     monkeypatch.setattr(
-        urllib.request,
-        "urlopen",
-        lambda *args, **kwargs: _ContextValue(
-            SimpleNamespace(read=lambda size: b"diagram")
-        ),
+        visualize_module,
+        "create_remote_plantuml_backend",
+        lambda remote_host: _Backend(b"\x89PNG\r\n\x1a\nimage"),
     )
     outcome = registry._visual_remote_render()
     assert outcome.status == "PASS"
-    assert outcome.observed == "7 response bytes"
+    assert "transport=tls" in outcome.observed
+    assert "PNG response_bytes=13" in outcome.observed
 
     real_unidecode = unidecode_module.unidecode
     monkeypatch.setattr(unidecode_module, "unidecode", lambda value: "")

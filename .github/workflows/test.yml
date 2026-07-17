@@ -381,6 +381,8 @@ jobs:
       - template_representative
       - template_full
       - build_cli
+      - fresh_cli_selfcheck_linux
+      - fresh_cli_selfcheck_nonlinux
       - jsfcstm_test
     if: ${{ always() }}
     steps:
@@ -393,6 +395,8 @@ jobs:
           REPRESENTATIVE_RESULT: ${{ needs.template_representative.result }}
           TEMPLATE_FULL_RESULT: ${{ needs.template_full.result }}
           BUILD_CLI_RESULT: ${{ needs.build_cli.result }}
+          FRESH_CLI_LINUX_RESULT: ${{ needs.fresh_cli_selfcheck_linux.result }}
+          FRESH_CLI_NONLINUX_RESULT: ${{ needs.fresh_cli_selfcheck_nonlinux.result }}
           JSFCSTM_RESULT: ${{ needs.jsfcstm_test.result }}
           SELECTED_FULL_COUNT: ${{ needs.detect_template_suites.outputs.selected_full_count }}
           SELECTED_SUITES: ${{ needs.detect_template_suites.outputs.selected_suites }}
@@ -421,6 +425,8 @@ jobs:
           representative = os.environ.get('REPRESENTATIVE_RESULT') or ''
           template_full = os.environ.get('TEMPLATE_FULL_RESULT') or ''
           build_cli = os.environ.get('BUILD_CLI_RESULT') or ''
+          fresh_cli_linux = os.environ.get('FRESH_CLI_LINUX_RESULT') or ''
+          fresh_cli_nonlinux = os.environ.get('FRESH_CLI_NONLINUX_RESULT') or ''
           jsfcstm = os.environ.get('JSFCSTM_RESULT') or ''
           selected_count_text = os.environ.get('SELECTED_FULL_COUNT') or ''
           selected_suites = os.environ.get('SELECTED_SUITES') or ''
@@ -444,6 +450,8 @@ jobs:
           print('representative={0}'.format(representative))
           print('template_full={0}'.format(template_full))
           print('build_cli={0}'.format(build_cli))
+          print('fresh_cli_linux={0}'.format(fresh_cli_linux))
+          print('fresh_cli_nonlinux={0}'.format(fresh_cli_nonlinux))
           print('jsfcstm={0}'.format(jsfcstm))
           print('selected_full_count={0}'.format(selected_count_text))
           print('selected_suites={0}'.format(selected_suites or '(none)'))
@@ -487,6 +495,11 @@ jobs:
               print('Code Test skip token detected for CLI build; skipped CLI build is accepted.')
           elif run_cli_build and build_cli != 'success':
               failures.append('CLI build job result is {0}'.format(build_cli))
+          elif run_cli_build:
+              if fresh_cli_linux != 'success':
+                  failures.append('fresh Linux CLI self-check result is {0}'.format(fresh_cli_linux))
+              if fresh_cli_nonlinux != 'success':
+                  failures.append('fresh Windows/macOS CLI self-check result is {0}'.format(fresh_cli_nonlinux))
           elif not run_cli_build:
               print('CI route detector marked CLI build as unrelated; skipped CLI build is accepted.')
 
@@ -805,7 +818,10 @@ jobs:
         shell: bash
         run: |
           make build_info
-          make build
+          # Keep the tracked logo PNG as the build input; otherwise Make's
+          # timestamp rule can rewrite it before the recursive build_info
+          # prerequisite and falsely mark the artifact dirty.
+          make -o logos/logo.png build
           mkdir -p dist/${{ env.CLI_NAME }}
           cp dist/pyfcstm dist/${{ env.CLI_NAME }}/pyfcstm
           cd dist
@@ -824,7 +840,9 @@ jobs:
         shell: bash
         run: |
           make build_info
-          make build
+          # Keep the tracked logo PNG as the build input; see the Linux/macOS
+          # build step above.
+          make -o logos/logo.png build
           mkdir -p dist/${{ env.CLI_NAME }}
           cp dist/pyfcstm.exe dist/${{ env.CLI_NAME }}/pyfcstm.exe
           cd dist
@@ -838,10 +856,416 @@ jobs:
         shell: bash
         run: |
           python -m tools.test_cli dist/pyfcstm.exe --test-dsl docs/source/tutorials/cli/simple_machine.fcstm --template-dir test/testfile/template_1
+      - name: Record CLI identity and archive digest
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(git status --porcelain)"
+          {
+            echo 'schema=pyfcstm-build-identity/v1'
+            echo 'artifact_kind=standalone'
+            echo "full_commit=$GITHUB_SHA"
+            echo 'dirty=0'
+            echo 'tag='
+            echo "platform=${{ matrix.os }}"
+          } > dist/build-identity.txt
+          python - "dist/${ZIP_NAME}.zip" > dist/artifact-sha256.txt <<'PY'
+          import hashlib
+          import os
+          import sys
+
+          path = sys.argv[1]
+          digest = hashlib.sha256()
+          with open(path, "rb") as stream:
+              for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                  digest.update(chunk)
+          print("{} {} dist/{}".format(
+              digest.hexdigest(), os.path.getsize(path), os.path.basename(path)
+          ))
+          PY
       - uses: actions/upload-artifact@v4
         with:
           name: pyfcstm-v${{ env.PACKAGE_VERSION }}-${{ env.OS_NAME }}-${{ env.CPU_ARCH }}-${{ env.GIT_COMMIT_ID }}
           path: dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pyfcstm-cli-${{ matrix.os }}
+          if-no-files-found: error
+          path: |
+            dist/${{ env.ZIP_NAME }}.zip
+            dist/build-identity.txt
+            dist/artifact-sha256.txt
+
+  fresh_cli_selfcheck_linux:
+    name: Fresh CLI self-check (Ubuntu service)
+    runs-on: ubuntu-22.04
+    needs: build_cli
+    if: ${{ needs.build_cli.result == 'success' }}
+    services:
+      plantuml:
+        image: plantuml/plantuml-server@sha256:00b96145a7e2999fd9504b84e26d00c47222b7963a0072ee14ea59449d634e99
+        ports:
+          - 18080:8080
+    timeout-minutes: 20
+    steps:
+      - name: Prepare self-check evidence directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          reports="$RUNNER_TEMP/pyfcstm-selfcheck-reports"
+          mkdir -p "$reports"
+          printf 'job=fresh-cli-linux\nstarted_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$reports/bootstrap.txt"
+          : > "$RUNNER_TEMP/java-version.txt"
+          : > "$RUNNER_TEMP/plantuml-version.txt"
+      - name: Set up Java runtime
+        continue-on-error: true
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Download only the built CLI artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pyfcstm-cli-ubuntu-22.04
+          path: ${{ runner.temp }}/pyfcstm-cli-artifact
+      - name: Install and verify PlantUML JAR
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          jar="$RUNNER_TEMP/plantuml.jar"
+          curl --fail --location --silent --show-error \
+            https://github.com/plantuml/plantuml/releases/download/v1.2024.6/plantuml-1.2024.6.jar \
+            --output "$jar"
+          actual_digest=$(python - "$jar" <<'PY'
+          import hashlib
+          import sys
+          digest = hashlib.sha256()
+          with open(sys.argv[1], "rb") as stream:
+              for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                  digest.update(chunk)
+          print(digest.hexdigest())
+          PY
+          )
+          test "$actual_digest" = 5a8dc3b37fe133a4744e55be80caf6080a70350aba716d95400a0f0cbd79e846
+          java -version 2> "$RUNNER_TEMP/java-version.txt"
+          java -jar "$jar" -version 2>&1 | tee "$RUNNER_TEMP/plantuml-version.txt"
+      - name: Run downloaded CLI in a clean directory
+        shell: bash
+        env:
+          PLANTUML_JAR: ${{ runner.temp }}/plantuml.jar
+          PLANTUML_HOST: http://127.0.0.1:18080
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/pyfcstm-clean-root"
+          reports="$RUNNER_TEMP/pyfcstm-selfcheck-reports"
+          rm -rf "$root"
+          mkdir -p "$root" "$reports"
+          shopt -s nullglob
+          archives=("$RUNNER_TEMP"/pyfcstm-cli-artifact/*.zip)
+          test "${#archives[@]}" -eq 1
+          archive="${archives[0]}"
+          shopt -u nullglob
+          identity=$(find "$RUNNER_TEMP/pyfcstm-cli-artifact" -maxdepth 1 -name build-identity.txt -print -quit)
+          digest_file=$(find "$RUNNER_TEMP/pyfcstm-cli-artifact" -maxdepth 1 -name artifact-sha256.txt -print -quit)
+          test -n "$identity" -a -n "$digest_file"
+          check_identity() {
+            local identity_file="$1"
+            shift
+            local expected count
+            for expected in "$@"; do
+              count=$(grep -Fxc "$expected" "$identity_file" || true)
+              test "$count" -eq 1
+            done
+          }
+          check_identity "$identity" \
+            'schema=pyfcstm-build-identity/v1' \
+            'artifact_kind=standalone' \
+            "full_commit=$GITHUB_SHA" \
+            'dirty=0' 'tag=' 'platform=ubuntu-22.04'
+          grep -F "full_commit=$GITHUB_SHA" "$identity"
+          archive_name=$(basename "$archive")
+          expected_digest=$(awk -v file="$archive_name" '$3 == "dist/" file || $3 == file {print $1}' "$digest_file")
+          expected_size=$(awk -v file="$archive_name" '$3 == "dist/" file || $3 == file {print $2}' "$digest_file")
+          actual_digest=$(python - "$archive" <<'PY'
+          import hashlib
+          import sys
+          digest = hashlib.sha256()
+          with open(sys.argv[1], "rb") as stream:
+              for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                  digest.update(chunk)
+          print(digest.hexdigest())
+          PY
+          )
+          test -n "$expected_digest" -a "$expected_digest" = "$actual_digest"
+          test "$expected_size" -eq "$(wc -c < "$archive")"
+          cp "$identity" "$reports/build-identity.txt"
+          cp "$digest_file" "$reports/artifact-sha256.txt"
+          printf '%s  %s\n' "$actual_digest" "$archive_name" | tee "$reports/artifact.sha256"
+          set +e
+          curl --fail --location --retry 5 --retry-delay 2 --max-time 15 \
+            "${PLANTUML_HOST%/}/" > "$reports/plantuml-readiness.txt" 2>&1
+          readiness_status=$?
+          set -e
+          unzip -q "$archive" -d "$root"
+          if find "$root" -type d -name pyfcstm -print -quit | grep -q .; then
+            echo "forbidden source package directory found in clean root" >&2
+            exit 1
+          fi
+          for forbidden in setup.py 'requirements*.txt' Makefile; do
+            if find "$root" -type f -name "$forbidden" -print -quit | grep -q .; then
+              echo "forbidden source/build file found in clean root: $forbidden" >&2
+              exit 1
+            fi
+          done
+          exe=$(find "$root" -type f -name pyfcstm -perm -u+x -print -quit)
+          test -n "$exe"
+          set +e
+          "$exe" --version 2>&1 | tee "$reports/version.log"
+          version_status=${PIPESTATUS[0]}
+          "$exe" --self-check --color always --report "$reports/default.json" 2>&1 | tee "$reports/default.log"
+          default_status=${PIPESTATUS[0]}
+          "$exe" --self-check --profile visualize --network --color always --report "$reports/visualize.json" 2>&1 | tee "$reports/visualize.log"
+          visualize_status=${PIPESTATUS[0]}
+          set -e
+          printf 'version=%s\ndefault=%s\nvisualize=%s\nplantuml_readiness=%s\nPLANTUML_HOST=%s\nPLANTUML_JAR=%s\n' \
+            "$version_status" "$default_status" "$visualize_status" "$readiness_status" "$PLANTUML_HOST" "$PLANTUML_JAR" \
+          | tee "$reports/summary.txt"
+          test "$version_status" -eq 0
+          test "$default_status" -eq 0
+          grep -F "Commit: $GITHUB_SHA" "$reports/version.log"
+      - name: Record optional PlantUML results
+        continue-on-error: true
+        shell: bash
+        env:
+          PLANTUML_HOST: http://127.0.0.1:18080
+        run: |
+          set -euo pipefail
+          python - "$RUNNER_TEMP/pyfcstm-selfcheck-reports/visualize.json" "$PLANTUML_HOST" <<'PY'
+          import json
+          import sys
+
+          report_path, host = sys.argv[1:]
+          with open(report_path, "r") as stream:
+              report = json.load(stream)
+          results = {item["id"]: item for item in report["results"]}
+          for check_id in ("visualize.remote_tls", "visualize.remote_render"):
+              result = results.get(check_id)
+              if result is None or result["status"] != "PASS":
+                  raise SystemExit("{} did not PASS: {}".format(check_id, result))
+              if host not in (result.get("observed") or ""):
+                  raise SystemExit("{} did not record configured host: {}".format(check_id, result))
+          PY
+      - name: Upload clean CLI evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: pyfcstm-cli-selfcheck-ubuntu
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/pyfcstm-selfcheck-reports
+            ${{ runner.temp }}/java-version.txt
+            ${{ runner.temp }}/plantuml-version.txt
+
+  fresh_cli_selfcheck_nonlinux:
+    name: Fresh CLI self-check (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    needs: build_cli
+    if: ${{ needs.build_cli.result == 'success' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            artifact: pyfcstm-cli-windows-2022
+            exe: pyfcstm.exe
+          - os: macos-14
+            artifact: pyfcstm-cli-macos-14
+            exe: pyfcstm
+    timeout-minutes: 20
+    steps:
+      - name: Prepare self-check evidence directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          reports="$RUNNER_TEMP/pyfcstm-selfcheck-reports"
+          mkdir -p "$reports"
+          printf 'job=fresh-cli-nonlinux\nstarted_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$reports/bootstrap.txt"
+          : > "$RUNNER_TEMP/java-version.txt"
+          : > "$RUNNER_TEMP/plantuml-version.txt"
+          : > "$RUNNER_TEMP/plantuml-readiness.txt"
+          : > "$RUNNER_TEMP/plantuml-service.log"
+      - name: Set up Java runtime
+        continue-on-error: true
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Download only the built CLI artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ runner.temp }}/pyfcstm-cli-artifact
+      - name: Install and verify PlantUML JAR
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          jar="$RUNNER_TEMP/plantuml.jar"
+          curl --fail --location --silent --show-error \
+            https://github.com/plantuml/plantuml/releases/download/v1.2024.6/plantuml-1.2024.6.jar \
+            --output "$jar"
+          actual_digest=$(python - "$jar" <<'PY'
+          import hashlib
+          import sys
+          digest = hashlib.sha256()
+          with open(sys.argv[1], "rb") as stream:
+              for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                  digest.update(chunk)
+          print(digest.hexdigest())
+          PY
+          )
+          test "$actual_digest" = 5a8dc3b37fe133a4744e55be80caf6080a70350aba716d95400a0f0cbd79e846
+          java -version 2> "$RUNNER_TEMP/java-version.txt"
+          java -jar "$jar" -version 2>&1 | tee "$RUNNER_TEMP/plantuml-version.txt"
+      - name: Start local PlantUML service
+        continue-on-error: true
+        shell: bash
+        env:
+          PLANTUML_HOST: http://127.0.0.1:18080
+        run: |
+          set -euo pipefail
+          log="$RUNNER_TEMP/plantuml-service.log"
+          java -jar "$RUNNER_TEMP/plantuml.jar" -picoweb:18080:127.0.0.1 > "$log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/plantuml-service.pid"
+          for attempt in $(seq 1 30); do
+            if curl --fail --location --silent --show-error --max-time 2 "${PLANTUML_HOST%/}/" > "$RUNNER_TEMP/plantuml-readiness.txt" 2>&1; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat "$log" >&2
+          exit 1
+      - name: Run downloaded CLI in a clean directory
+        shell: bash
+        env:
+          PLANTUML_JAR: ${{ runner.temp }}/plantuml.jar
+          PLANTUML_HOST: http://127.0.0.1:18080
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/pyfcstm-clean-root"
+          reports="$RUNNER_TEMP/pyfcstm-selfcheck-reports"
+          rm -rf "$root"
+          mkdir -p "$root" "$reports"
+          shopt -s nullglob
+          archives=("$RUNNER_TEMP"/pyfcstm-cli-artifact/*.zip)
+          test "${#archives[@]}" -eq 1
+          archive="${archives[0]}"
+          shopt -u nullglob
+          identity=$(find "$RUNNER_TEMP/pyfcstm-cli-artifact" -maxdepth 1 -name build-identity.txt -print -quit)
+          digest_file=$(find "$RUNNER_TEMP/pyfcstm-cli-artifact" -maxdepth 1 -name artifact-sha256.txt -print -quit)
+          test -n "$identity" -a -n "$digest_file"
+          check_identity() {
+            local identity_file="$1"
+            shift
+            local expected count
+            for expected in "$@"; do
+              count=$(grep -Fxc "$expected" "$identity_file" || true)
+              test "$count" -eq 1
+            done
+          }
+          check_identity "$identity" \
+            'schema=pyfcstm-build-identity/v1' \
+            'artifact_kind=standalone' \
+            "full_commit=$GITHUB_SHA" \
+            'dirty=0' 'tag=' "platform=${{ matrix.os }}"
+          grep -F "full_commit=$GITHUB_SHA" "$identity"
+          archive_name=$(basename "$archive")
+          expected_digest=$(awk -v file="$archive_name" '$3 == "dist/" file || $3 == file {print $1}' "$digest_file")
+          expected_size=$(awk -v file="$archive_name" '$3 == "dist/" file || $3 == file {print $2}' "$digest_file")
+          actual_digest=$(python - "$archive" <<'PY'
+          import hashlib
+          import sys
+          digest = hashlib.sha256()
+          with open(sys.argv[1], "rb") as stream:
+              for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                  digest.update(chunk)
+          print(digest.hexdigest())
+          PY
+          )
+          test -n "$expected_digest" -a "$expected_digest" = "$actual_digest"
+          test "$expected_size" -eq "$(wc -c < "$archive")"
+          cp "$identity" "$reports/build-identity.txt"
+          cp "$digest_file" "$reports/artifact-sha256.txt"
+          printf '%s  %s\n' "$actual_digest" "$archive_name" | tee "$reports/artifact.sha256"
+          set +e
+          curl --fail --location --retry 3 --retry-delay 2 --max-time 15 \
+            "${PLANTUML_HOST%/}/" > "$reports/plantuml-readiness.txt" 2>&1
+          readiness_status=$?
+          set -e
+          unzip -q "$archive" -d "$root"
+          if [ "${{ matrix.os }}" = "macos-14" ]; then
+            xattr -dr com.apple.quarantine "$root" 2>/dev/null || true
+          fi
+          if find "$root" -type d -name pyfcstm -print -quit | grep -q .; then
+            echo "forbidden source package directory found in clean root" >&2
+            exit 1
+          fi
+          for forbidden in setup.py 'requirements*.txt' Makefile; do
+            if find "$root" -type f -name "$forbidden" -print -quit | grep -q .; then
+              echo "forbidden source/build file found in clean root: $forbidden" >&2
+              exit 1
+            fi
+          done
+          exe=$(find "$root" -type f -name '${{ matrix.exe }}' -print -quit)
+          test -n "$exe"
+          set +e
+          "$exe" --version 2>&1 | tee "$reports/version.log"
+          version_status=${PIPESTATUS[0]}
+          "$exe" --self-check --color always --report "$reports/default.json" 2>&1 | tee "$reports/default.log"
+          default_status=${PIPESTATUS[0]}
+          "$exe" --self-check --profile visualize --network --color always --report "$reports/visualize.json" 2>&1 | tee "$reports/visualize.log"
+          visualize_status=${PIPESTATUS[0]}
+          set -e
+          printf 'version=%s\ndefault=%s\nvisualize=%s\nplantuml_readiness=%s\nPLANTUML_HOST=%s\nPLANTUML_JAR=%s\n' \
+            "$version_status" "$default_status" "$visualize_status" "$readiness_status" "$PLANTUML_HOST" "$PLANTUML_JAR" \
+            | tee "$reports/summary.txt"
+          test "$version_status" -eq 0
+          test "$default_status" -eq 0
+          grep -F "Commit: $GITHUB_SHA" "$reports/version.log"
+      - name: Record optional PlantUML results
+        continue-on-error: true
+        shell: bash
+        env:
+          PLANTUML_HOST: http://127.0.0.1:18080
+        run: |
+          set -euo pipefail
+          python - "$RUNNER_TEMP/pyfcstm-selfcheck-reports/visualize.json" "$PLANTUML_HOST" <<'PY'
+          import json
+          import sys
+
+          report_path, host = sys.argv[1:]
+          with open(report_path, "r") as stream:
+              report = json.load(stream)
+          results = {item["id"]: item for item in report["results"]}
+          for check_id in ("visualize.remote_tls", "visualize.remote_render"):
+              result = results.get(check_id)
+              if result is None or result["status"] != "PASS":
+                  raise SystemExit("{} did not PASS: {}".format(check_id, result))
+              if host not in (result.get("observed") or ""):
+                  raise SystemExit("{} did not record configured host: {}".format(check_id, result))
+          PY
+      - name: Upload clean CLI evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: pyfcstm-cli-selfcheck-${{ matrix.os }}
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/pyfcstm-selfcheck-reports
+            ${{ runner.temp }}/java-version.txt
+            ${{ runner.temp }}/plantuml-version.txt
+            ${{ runner.temp }}/plantuml-service.log
 
   jsfcstm_test:
     # Run jsfcstm's mocha + c8 suite across the supported Node versions.

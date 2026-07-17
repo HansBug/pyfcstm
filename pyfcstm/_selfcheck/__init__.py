@@ -5,6 +5,17 @@ This package is an internal execution boundary for ``python -m pyfcstm
 --self-check``. It is intentionally not re-exported from :mod:`pyfcstm` and
 does not provide a third-party check plug-in API.
 
+Self-check is a post-release deployment diagnostic, not a substitute for the
+unit-test suite, the full CI gates, or the CLI build. Those pre-release gates
+establish implementation correctness before a wheel or standalone CLI is
+published. Once an artifact is installed or unpacked by a user, self-check
+inspects that deployment's imports, packaged resources, runtime dependencies,
+platform compatibility, and optional visualization services. A failure should
+therefore be read as evidence about the current installation or environment,
+not as a second implementation-correctness test. Reports preserve the
+relevant environment metadata and failure detail so a deployment problem can
+be diagnosed without reproducing the original machine.
+
 The package contains:
 
 .. list-table::

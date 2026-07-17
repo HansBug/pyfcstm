@@ -127,7 +127,11 @@ def _build_supervisor_parser(add_help: bool = False) -> argparse.ArgumentParser:
         add_help=add_help,
         allow_abbrev=False,
         prog="pyfcstm --self-check",
-        description="Run runtime and packaged-resource self-checks.",
+        description=(
+            "Diagnose a released pyfcstm installation or standalone artifact "
+            "in its current deployment environment. This is not a replacement "
+            "for unit tests, CI, or the release build gates."
+        ),
     )
     parser.add_argument(
         "--profile", choices=("default", "full", "visualize"), default="default"
@@ -166,7 +170,8 @@ def _build_worker_parser() -> argparse.ArgumentParser:
         prog="pyfcstm --self-check-worker",
         description=(
             "Run one isolated self-check worker. This is an internal entry "
-            "point launched by the self-check supervisor."
+            "point launched by the self-check supervisor; it is not a public "
+            "correctness-test interface."
         ),
     )
     parser.add_argument("--check-id", required=True)

@@ -1951,7 +1951,7 @@ def _bmc_solve() -> CheckOutcome:
             payload = json.loads(cli_result.output)
             cli_solve = payload.get("result", {})
             if (
-                payload.get("schema_version") != "bmc-cli/v1"
+                "schema_version" in payload
                 or cli_solve.get("status") != "sat"
                 or cli_solve.get("property_satisfied") is not True
                 or cli_solve.get("outcome") != "witness_found"
@@ -1959,7 +1959,7 @@ def _bmc_solve() -> CheckOutcome:
                 return _fail(
                     "BMC CLI returned an unexpected JSON result",
                     "bmc_solve_failed",
-                    expected="bmc-cli/v1 sat/true/witness_found",
+                    expected="unversioned JSON sat/true/witness_found",
                     observed=repr(
                         {
                             "schema_version": payload.get("schema_version"),

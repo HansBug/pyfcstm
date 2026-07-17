@@ -275,6 +275,25 @@ def test_replay_uses_synthetic_observation_for_post_termination_absorb() -> None
     absorb_step = replay.runtime_trace.steps[-1]
     assert absorb_step.delta is False
 
+    forged_trace = replace(
+        trace,
+        steps=tuple(
+            replace(step, delta=True) if step.case_kind == "absorb" else step
+            for step in trace.steps
+        ),
+    )
+    forged_replay = replay_bmc_witness(model, forged_trace)
+    assert forged_replay.ok is False
+    assert [mismatch.to_canonical() for mismatch in forged_replay.mismatches] == [
+        {
+            "path": "steps[%d].delta" % trace.steps[-1].index,
+            "expected": True,
+            "actual": False,
+            "message": "delta mismatch",
+            "tolerance": None,
+        }
+    ]
+
 
 def test_replay_rejects_tampered_initial_terminated_step_payload() -> None:
     """Synthetic terminated replay still compares step events and calls."""

@@ -431,6 +431,7 @@ class _GeneratedNativeAlignmentRuntime:
                         native_cause,
                     )
                 )
+            self._assert_aligned("after failed cycle(events=%r)" % (events,))
             raise sim_exc
         self._assert_aligned("after cycle(events=%r)" % (events,))
         return sim_result

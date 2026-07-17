@@ -3643,8 +3643,7 @@ def _compare_step(
     witness: BmcWitnessStep,
     runtime: BmcRuntimeStep,
 ) -> None:
-    is_absorb = witness.case_kind == "absorb"
-    expected_delta = False if is_absorb else witness.delta
+    expected_delta = witness.delta
     if expected_delta != runtime.delta:
         mismatches.append(
             BmcReplayMismatch(

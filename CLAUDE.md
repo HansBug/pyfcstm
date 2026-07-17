@@ -1014,6 +1014,123 @@ See [pyfcstm/llm/fcstm_grammar_guide.md](pyfcstm/llm/fcstm_grammar_guide.md) and
 [pyfcstm/llm/fbmcq_language_guide.md](pyfcstm/llm/fbmcq_language_guide.md) for
 the packaged LLM guides.
 
+### GitHub Issue and Pull Request Label Governance
+
+The repository label taxonomy is a maintained project contract, not an informal collection of tags. Apply it to every
+issue and pull request, including automated, historical, closed, and merged items. Labels classify durable intent and
+ownership; they must not duplicate temporary review, CI, or branch state that GitHub already records natively.
+
+#### Required Axes
+
+| Work item | Required labels | Optional labels | Lifecycle authority |
+| --- | --- | --- | --- |
+| Issue | Exactly one ``kind:*``, exactly one ``status:*``, and one to four ``area:*`` labels | ``role:*``, ``scope:*``, and community modifiers | ``status:*`` plus the GitHub issue state and close reason |
+| Pull request | Exactly one ``kind:*`` and one to four ``area:*`` labels | ``role:*``, ``scope:*``, and automation/community modifiers | GitHub Open/Draft/Ready/Merged/Closed state; do not add ``status:*`` labels |
+
+Use exactly one kind because it describes the primary deliverable:
+
+| Label | Use when the primary deliverable is |
+| --- | --- |
+| ``kind: bug`` | A correction for confirmed incorrect behavior or a regression |
+| ``kind: design`` | A technical design, implementation plan, contract freeze, or executable prototype plan |
+| ``kind: documentation`` | Documentation or packaged guidance rather than runtime behavior |
+| ``kind: feature`` | A new user-facing or developer-facing capability |
+| ``kind: maintenance`` | Refactoring, cleanup, tests, tooling, dependencies, CI maintenance, or repository health |
+| ``kind: release`` | Release preparation, publishing, delivery artifacts, or acceptance packaging |
+| ``kind: research`` | Evidence gathering, comparison, benchmarking, or roadmap research |
+| ``kind: security`` | Credential exposure, vulnerability handling, or security hardening |
+
+Area labels are multi-select ownership boundaries. Use only areas that are central to the requested work or delivered
+change. Routine tests, docstrings, generated API RST, changelog text, or a small CI edit do **not** by themselves justify
+``area: testing``, ``area: documentation``, or ``area: ci``. If more than four areas appear necessary, narrow the work
+item or keep secondary impact in the body instead of turning the label list into a changed-file inventory.
+
+The current area boundaries are:
+
+- ``area: bmc`` for bounded model checking and FBMCQ behavior.
+- ``area: ci`` for workflow routing, runners, and cross-platform gates.
+- ``area: cli`` for command-line entry points and human-facing command behavior.
+- ``area: diagnostics`` for diagnostics, inspect reports, repair metadata, and diagnostic schemas.
+- ``area: documentation`` for Sphinx, guides, references, and generated documentation as a primary deliverable.
+- ``area: dsl`` for FCSTM/FBMCQ grammar, AST, language semantics, and syntax highlighting contracts.
+- ``area: editor`` for jsfcstm, VS Code, LSP, editor packaging, and editor workflows.
+- ``area: llm`` for LLM-facing guides, schemas, and evaluation assets.
+- ``area: model`` for the core state-machine model and validation behavior.
+- ``area: numeric`` for numeric semantics, fixed-width types, and arithmetic policy.
+- ``area: packaging`` for packages, bootstrap/self-check, frozen artifacts, resources, and publishing.
+- ``area: security`` for credentials, vulnerabilities, security response, and hardening.
+- ``area: simulation`` for ``SimulationRuntime`` and executable semantic behavior.
+- ``area: sysdesim`` for SysDeSim/DAMNX conversion and compatibility work.
+- ``area: templates`` for the template renderer, built-in templates, and generated runtimes.
+- ``area: testing`` for test contracts, shared fixtures, coverage policy, and QA infrastructure as primary work.
+- ``area: tooling`` for repository-local tools, linting, automation helpers, and maintenance utilities.
+- ``area: verification`` for solver, topology, structural verification, and verification APIs.
+- ``area: visualization`` for PlantUML, ELK, diagrams, geometry, and rendered images.
+
+#### Issue Status Lifecycle
+
+Every issue must carry exactly one status label, and the status must be updated before or together with a close/reopen
+operation:
+
+At creation, choose the issue's kind, one to four primary areas, and the status that reflects its actual maturity. Use
+``status: proposed`` for unresolved proposals, ``status: planned`` only after backlog acceptance, ``status: ready`` only
+after implementation boundaries and acceptance criteria are complete, and ``status: reference`` for intentionally open
+evidence or roadmap records. Do not default every new issue to ``planned`` or ``ready``.
+
+| Label | Meaning and transition rule |
+| --- | --- |
+| ``status: proposed`` | The proposal needs a decision or material requirements clarification |
+| ``status: planned`` | The work is accepted into the backlog, but implementation has not started |
+| ``status: ready`` | Scope, boundaries, dependencies, and acceptance criteria are implementation-ready |
+| ``status: in progress`` | Implementation or an associated active pull request is underway |
+| ``status: blocked`` | Progress is stopped by a named dependency, decision, credential, or external condition |
+| ``status: reference`` | The open issue is an evidence, research, or roadmap reference rather than an active implementation queue |
+| ``status: completed`` | The promised work was delivered; use before closing with the GitHub ``completed`` reason |
+| ``status: duplicate`` | Another linked issue is authoritative; use before closing with the GitHub ``duplicate`` reason |
+| ``status: superseded`` | A newer linked design or implementation replaces this issue; close as ``not planned`` |
+| ``status: not planned`` | The work will not be pursued under the current roadmap; close as ``not planned`` with a reason |
+
+When reopening an issue, replace its closed status with the correct open status in the same operation. A merged PR does
+not automatically prove that an issue is complete: first verify the issue acceptance criteria and any required follow-up
+work, then set ``status: completed`` and close it.
+
+#### Pull Request Creation and Structure
+
+- Add one ``kind:*`` and one to four primary ``area:*`` labels when the PR is opened. Update them if the implementation
+  scope changes materially. A tracking issue can seed the area choice, but the PR labels must describe the actual diff.
+- Add ``role: umbrella`` when the PR coordinates multiple dependent PRs or aggregates their delivery into a parent
+  branch. Add ``role: sub-pr`` when its base is an umbrella or stacked branch. A nested aggregate PR may carry both.
+- An issue may use ``role: umbrella`` when it coordinates several issues or PRs. ``role: sub-pr`` is PR-only.
+- Add ``scope: non-main`` only when the branch or artifact is intentionally excluded from ``main``. A normal sub-PR
+  targeting an umbrella branch must **not** receive this label merely because its immediate base is not ``main``.
+- Do not add ``status:*`` to PRs. GitHub Draft/Ready/Open/Merged/Closed state, checks, reviews, and mergeability are the
+  authoritative PR lifecycle signals. Keep classification labels after merge or closure for historical searchability.
+- Dependency and bot-managed PRs still require ``kind: maintenance`` and an owning ``area:*`` label. Preserve automation
+  labels such as ``dependencies``, ``javascript``, and ``github_actions``.
+
+#### Adding, Renaming, and Removing Labels
+
+- Add a label only for a durable, repeated, queryable classification need. Do not create labels for one issue number,
+  one PR slice, a roadmap phase, a temporary reviewer state, a branch name, a target commit, or a one-off experiment.
+- Use lowercase namespaced axes: ``kind:*``, ``area:*``, ``status:*``, ``role:*``, and ``scope:*``. Prefer extending an
+  existing label description or using multiple existing areas before adding a narrowly synonymous label.
+- New labels require a concise description that states both inclusion and exclusion boundaries. Reuse the axis color
+  family so the GitHub label list remains scannable; color alone must never carry semantic meaning.
+- Rename an established label through GitHub's label rename operation so existing associations move atomically. Before
+  deleting a label, search open and closed issues/PRs, migrate every association, update this section and any automation,
+  then verify the old name has zero uses.
+- ``bug``, ``enhancement``, ``documentation``, ``duplicate``, ``invalid``, and ``wontfix`` are legacy compatibility
+  labels; do not add them manually. ``good first issue``, ``help wanted``, and ``question`` are optional community
+  modifiers. Bot labels remain outside the primary taxonomy and may coexist with it.
+- Use GitHub Milestones for target versions or delivery windows instead of creating version labels. Add a priority axis
+  only after the repository adopts an explicit prioritization process with stable definitions.
+
+For a bulk label migration, first generate a dry-run manifest containing each item number, state, base/head, linked
+issue, changed paths, proposed labels, and classification reason. Review closed-unmerged PRs, empty PRs, umbrella
+relationships, and non-main branches manually. Add new labels before removing legacy labels, preserve bot-managed labels,
+and finally read back every open/closed/merged item to prove the required-axis invariants. Never treat a successful API
+exit code as sufficient evidence for a repository-wide migration.
+
 ### `gh` / `glab` Identity Rule
 
 Any `gh` or `glab` invocation that acts on behalf of a user (viewing private data, creating issues/PRs/MRs, commenting, approving, pushing releases, etc.) MUST run as an identity whose login/email matches the current repo's `git config user.name` and `git config user.email`. Running under whatever account happens to be "active" in the CLI is NOT acceptable — tokens silently carry over the wrong identity across repos and produce PRs/comments authored by the wrong user.

@@ -1764,7 +1764,12 @@ class BmcFeasibilityResult(_PrettyPrintableMixin):
     ``initialization`` stage localizes the failure to ``assumptions``; a checked
     SAT ``kernel`` followed by checked UNSAT ``initialization`` localizes it to
     ``initialization``.  ``inferred`` SAT stages are conclusions from a stronger
-    checked SAT prefix, not additional solver calls.
+    checked SAT prefix, not additional solver calls.  Because these stages are
+    cumulative, a localized ``initialization`` failure also requires checked
+    UNSAT ``assumptions`` evidence, and a localized ``kernel`` failure requires
+    checked UNSAT evidence for both outer stages.  This keeps direct public
+    constructors and canonical JSON payloads closed under the same evidence
+    contract as :func:`solve_bmc_property`.
 
     :param kernel: Evidence for ``K_N``.
     :type kernel: BmcFeasibilityCheck
@@ -1896,6 +1901,14 @@ class BmcFeasibilityResult(_PrettyPrintableMixin):
                 raise BmcBuildError(
                     "initialization infeasible_stage requires checked kernel evidence."
                 )
+            if self.infeasible_stage == "initialization" and (
+                self.assumptions.origin != "checked"
+                or self.assumptions.status != "unsat"
+            ):
+                raise BmcBuildError(
+                    "initialization infeasible_stage requires checked UNSAT "
+                    "assumptions evidence."
+                )
             if self.infeasible_stage == "assumptions" and (
                 self.kernel.status != "sat" or self.initialization.status != "sat"
             ):
@@ -1909,6 +1922,16 @@ class BmcFeasibilityResult(_PrettyPrintableMixin):
                 raise BmcBuildError(
                     "assumptions infeasible_stage requires checked initialization "
                     "evidence."
+                )
+            if self.infeasible_stage == "kernel" and (
+                self.initialization.origin != "checked"
+                or self.initialization.status != "unsat"
+                or self.assumptions.origin != "checked"
+                or self.assumptions.status != "unsat"
+            ):
+                raise BmcBuildError(
+                    "kernel infeasible_stage requires checked UNSAT initialization "
+                    "and assumptions evidence."
                 )
         elif self.localization_status == "complete":
             raise BmcBuildError(

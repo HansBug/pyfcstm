@@ -312,7 +312,9 @@
           "if": {"properties": {"infeasible_stage": {"const": "kernel"}}},
           "then": {
             "properties": {
-              "kernel": {"properties": {"status": {"const": "unsat"}, "origin": {"const": "checked"}}}
+              "kernel": {"properties": {"status": {"const": "unsat"}, "origin": {"const": "checked"}}},
+              "initialization": {"properties": {"status": {"const": "unsat"}, "origin": {"const": "checked"}}},
+              "assumptions": {"properties": {"status": {"const": "unsat"}, "origin": {"const": "checked"}}}
             }
           }
         },
@@ -321,7 +323,8 @@
           "then": {
             "properties": {
               "kernel": {"properties": {"status": {"const": "sat"}, "origin": {"const": "checked"}}},
-              "initialization": {"properties": {"status": {"const": "unsat"}, "origin": {"const": "checked"}}}
+              "initialization": {"properties": {"status": {"const": "unsat"}, "origin": {"const": "checked"}}},
+              "assumptions": {"properties": {"status": {"const": "unsat"}, "origin": {"const": "checked"}}}
             }
           }
         },

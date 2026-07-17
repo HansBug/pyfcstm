@@ -1382,6 +1382,37 @@ def test_feasibility_result_requires_checked_prefix_for_localization(
         )
 
 
+@pytest.mark.parametrize(
+    ("infeasible_stage", "kernel", "initialization", "assumptions"),
+    [
+        (
+            "kernel",
+            BmcFeasibilityCheck("unsat", "checked", elapsed_ms=1.0),
+            BmcFeasibilityCheck(None, "not_checked"),
+            BmcFeasibilityCheck(None, "not_checked"),
+        ),
+        (
+            "initialization",
+            BmcFeasibilityCheck("sat", "checked", elapsed_ms=1.0),
+            BmcFeasibilityCheck("unsat", "checked", elapsed_ms=1.0),
+            BmcFeasibilityCheck(None, "not_checked"),
+        ),
+    ],
+)
+def test_feasibility_result_rejects_unchecked_outer_unsat_stages(
+    infeasible_stage, kernel, initialization, assumptions
+) -> None:
+    """Localized cumulative UNSAT evidence must include checked outer stages."""
+    with pytest.raises(BmcBuildError, match="checked UNSAT"):
+        BmcFeasibilityResult(
+            kernel=kernel,
+            initialization=initialization,
+            assumptions=assumptions,
+            infeasible_stage=infeasible_stage,
+            localization_status="complete",
+        )
+
+
 def test_solve_property_keeps_unchecked_response_suffix_incomplete() -> None:
     """Disabling suffix diagnostics must not report response UNSAT as satisfied."""
     _, formula = _compile(

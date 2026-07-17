@@ -728,6 +728,54 @@ def test_bmc_schema_rejects_localized_prefix_origin_mutations(bmc_files) -> None
     )
     assert list(validator.iter_errors(inferred_kernel))
 
+    unchecked_kernel_outer_stages = copy.deepcopy(payload)
+    result = unchecked_kernel_outer_stages["result"]
+    result.update(
+        property_satisfied=False,
+        witness_found=False,
+        counterexample_found=False,
+        incomplete=False,
+        outcome="no_witness",
+        available_model_roles=[],
+    )
+    feasibility = result["feasibility"]
+    not_checked = {
+        "status": None,
+        "origin": "not_checked",
+        "reason": None,
+        "elapsed_ms": None,
+    }
+    feasibility["kernel"].update(
+        status="unsat", origin="checked", reason=None, elapsed_ms=1.0
+    )
+    feasibility["initialization"] = copy.deepcopy(not_checked)
+    feasibility["assumptions"] = copy.deepcopy(not_checked)
+    feasibility["infeasible_stage"] = "kernel"
+    feasibility["localization_status"] = "complete"
+    assert list(validator.iter_errors(unchecked_kernel_outer_stages))
+
+    unchecked_initialization_outer_stage = copy.deepcopy(payload)
+    result = unchecked_initialization_outer_stage["result"]
+    result.update(
+        property_satisfied=False,
+        witness_found=False,
+        counterexample_found=False,
+        incomplete=False,
+        outcome="no_witness",
+        available_model_roles=[],
+    )
+    feasibility = result["feasibility"]
+    feasibility["kernel"].update(
+        status="sat", origin="checked", reason=None, elapsed_ms=1.0
+    )
+    feasibility["initialization"].update(
+        status="unsat", origin="checked", reason=None, elapsed_ms=1.0
+    )
+    feasibility["assumptions"] = copy.deepcopy(not_checked)
+    feasibility["infeasible_stage"] = "initialization"
+    feasibility["localization_status"] = "complete"
+    assert list(validator.iter_errors(unchecked_initialization_outer_stage))
+
     unlocalized_assumptions = copy.deepcopy(payload)
     feasibility = unlocalized_assumptions["result"]["feasibility"]
     feasibility["kernel"].update(

@@ -3,7 +3,11 @@ import {h} from 'vue';
 import {NSelect, NCheckbox, NSpace, NButton, NButtonGroup, NTooltip, NIcon} from 'naive-ui';
 import {DownloadOutline} from '@vicons/ionicons5';
 import type {PreviewResolvedOptions} from '../types';
-import {PALETTE_IDS, PALETTE_LABEL, type PaletteId} from '../render/palette';
+import {
+    PALETTE_IDS,
+    PALETTE_LABEL,
+    type PaletteId,
+} from '../../../../jsfcstm/src/diagram/render/palette';
 
 type ColorMode = 'light' | 'dark' | 'auto';
 

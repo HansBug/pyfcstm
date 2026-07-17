@@ -11,14 +11,15 @@ import ELK from 'elkjs/lib/elk.bundled.js';
 
 import {
     buildFcstmDiagramWebviewPayload,
+    buildCrossingIndex,
+    collectSegments,
     collectElkLayoutGeometry,
     MIN_TERMINAL_SEGMENT,
     MIN_SELF_LOOP_SEGMENT,
     resolveFcstmDiagramPreviewOptions,
+    smoothGraphEdges,
     terminalApproach,
 } from '../../jsfcstm/dist/diagram';
-import {smoothGraphEdges} from '../src/preview-webview/render/edge-smoother';
-import {buildCrossingIndex, collectSegments} from '../src/preview-webview/render/crossings';
 import {renderSvg} from '../src/preview-webview/render/svg';
 import {computePreviewFit, PREVIEW_FIT_MARGIN_PX} from '../src/preview-webview/layout';
 import type {PreviewResolvedOptions, PreviewWebviewState} from '../src/preview-webview/types';

@@ -58,6 +58,16 @@ package_data = {
     for package_name in find_packages(include=("*"))
 }
 package_data.setdefault("pyfcstm.llm", []).extend(["*.md", "*.sha256"])
+package_data.setdefault("pyfcstm.assets", []).extend(
+    [
+        "*.js",
+        "*.wasm",
+        "*.json",
+        "*.txt",
+        "fonts/*.ttf",
+        "fonts/*.ttc",
+    ]
+)
 
 setup(
     # information

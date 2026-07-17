@@ -14,9 +14,11 @@ API 文档
 
     api_doc/index
     api_doc/_bootstrap
+    api_doc/assets/index
     api_doc/bmc/index
     api_doc/config/index
     api_doc/diagnostics/index
+    api_doc/diagram_runtime/index
     api_doc/dsl/index
     api_doc/entry/index
     api_doc/highlight/index
@@ -31,9 +33,11 @@ API 文档
 
 * :doc:`api_doc/index`
 * :doc:`api_doc/_bootstrap`
+* :doc:`api_doc/assets/index`
 * :doc:`api_doc/bmc/index`
 * :doc:`api_doc/config/index`
 * :doc:`api_doc/diagnostics/index`
+* :doc:`api_doc/diagram_runtime/index`
 * :doc:`api_doc/dsl/index`
 * :doc:`api_doc/entry/index`
 * :doc:`api_doc/highlight/index`

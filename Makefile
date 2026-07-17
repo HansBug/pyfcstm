@@ -1,4 +1,4 @@
-.PHONY: docs docs_en docs_zh docs_pdf docs_pdf_en docs_pdf_zh test unittest template_unittest resource antlr antlr_build fcstm_antlr_build fbmcq_antlr_build build build_info build_info_cli package clean docs_auto todos_auto tests_auto rst_auto sha256 jsfcstm jsfcstm_clean vscode vscode_clean vscode_install vscode_uninstall logos logos_clean app_icons app_icons_clean help tpl tpl_clean templates_package template_packaging_check template_source_install_check docs_terminology_check test_boundary_check
+.PHONY: docs docs_en docs_zh docs_pdf docs_pdf_en docs_pdf_zh test unittest template_unittest resource antlr antlr_build fcstm_antlr_build fbmcq_antlr_build build build_info build_info_cli package clean build_assets build_assets_clean diagram_assets_check diagram_package_check docs_auto todos_auto tests_auto rst_auto sha256 jsfcstm jsfcstm_clean vscode vscode_clean vscode_install vscode_uninstall logos logos_clean app_icons app_icons_clean help tpl tpl_clean templates_package template_packaging_check template_source_install_check docs_terminology_check test_boundary_check
 
 PYTHON := $(shell which python)
 
@@ -86,6 +86,8 @@ help:
 	@echo "  make package      - Build Python package (sdist and wheel)"
 	@echo "  make build        - Build standalone executable with PyInstaller"
 	@echo "  make build_info   - Generate build identity for a package or CLI build"
+	@echo "  make build_assets - Build ignored Python diagram JS/WASM/font assets"
+	@echo "  make build_assets_clean - Remove generated diagram assets"
 	@echo "  make clean        - Remove build artifacts"
 	@echo ""
 	@echo "Testing:"
@@ -155,15 +157,15 @@ help:
 	@echo "  AUTO_OPTIONS=...  - LLM generation options"
 	@echo ""
 
-package: build_info
+package: build_assets build_info
 	$(PYTHON) -m build --sdist --wheel --outdir ${DIST_DIR}
-build_info: tpl
+build_info: build_assets tpl
 	$(PYTHON) -m tools.write_build_info
 
 build_info_cli: ${APP_ICON_STAMP}
 	$(MAKE) build_info
 
-build: build_info_cli
+build: build_assets build_info_cli
 	$(PYTHON) -m tools.generate_spec -o pyfcstm.spec --icon-dir ${APP_ICON_DIR}
 	pyinstaller pyfcstm.spec
 	@echo "Verifying bundled PyInstaller icon asset..."
@@ -174,6 +176,7 @@ test_cli:
 		--test-dsl docs/source/tutorials/cli/simple_machine.fcstm \
 		--template-dir test/testfile/template_1
 clean:
+	$(MAKE) build_assets_clean
 	rm -rf ${DIST_DIR} ${BUILD_DIR} *.egg-info
 	rm -rf build dist pyfcstm.spec
 	rm -f ${SRC_DIR}/config/build_info.py
@@ -182,7 +185,7 @@ clean:
 
 test: unittest
 
-unittest: tpl
+unittest: build_assets tpl
 	UNITTEST=1 \
 		pytest "${RANGE_TEST_DIR}" \
 		-sv -m unittest \
@@ -192,7 +195,7 @@ unittest: tpl
 		$(if ${MIN_COVERAGE},--cov-fail-under=${MIN_COVERAGE},) \
 		$(if ${WORKERS},-n ${WORKERS},)
 
-template_unittest: tpl
+template_unittest: build_assets tpl
 	UNITTEST=1 $(PYTHON) tools/run_template_suites.py --no-package $(TEMPLATE_UNITTEST_ARGS)
 
 docs:
@@ -217,6 +220,18 @@ templates_package: tpl
 
 tpl_clean:
 	rm -f ${SRC_DIR}/template/*.zip ${SRC_DIR}/template/index.json
+
+build_assets:
+	$(PYTHON) tools/build_diagram_assets.py
+
+build_assets_clean:
+	$(PYTHON) tools/build_diagram_assets.py --clean
+
+diagram_assets_check: build_assets
+	$(PYTHON) tools/check_diagram_assets.py
+
+diagram_package_check: package
+	$(PYTHON) tools/check_diagram_package.py --dist-dir ${DIST_DIR}
 
 template_packaging_check:
 	$(PYTHON) tools/check_template_packaging.py

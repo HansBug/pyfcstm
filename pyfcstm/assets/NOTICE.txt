@@ -1,0 +1,5 @@
+Generated diagram assets are produced by ``make build_assets``.
+
+The generated directory is intentionally ignored by git. Source and license
+provenance is maintained in ``tools/diagram_assets`` and in the generated
+manifest; do not hand-edit compiled files under this directory.

@@ -358,6 +358,60 @@ def test_bmc_structured_replay_mismatch_is_exit_four(
     assert "Mismatch frames[1].state: state mismatch" in human.stdout
 
 
+def test_bmc_schema_prioritizes_replay_mismatch_exit_four(
+    bmc_files, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The CLI schema accepts replay exit four and rejects lower-priority codes."""
+    import pyfcstm.entry.bmc as bmc_entry
+
+    jsonschema = pytest.importorskip("jsonschema")
+    model_path, query = bmc_files
+    query_path = query('check reach <= 1: active("Root");')
+    original = bmc_entry._replay_bmc_witness
+
+    def mismatching_replay(model, witness, *, abstract_handlers=None):
+        replay = original(model, witness, abstract_handlers=abstract_handlers)
+        return replace(
+            replay,
+            mismatches=(
+                BmcReplayMismatch("frames[1].state", "Root", "Bad", "state mismatch"),
+            ),
+        )
+
+    monkeypatch.setattr(bmc_entry, "_replay_bmc_witness", mismatching_replay)
+    _, payload = _json_result(model_path, query_path)
+    schema_path = (
+        Path(__file__).resolve().parents[2]
+        / "docs"
+        / "source"
+        / "reference"
+        / "bmc_results"
+        / "bmc_cli_v1.schema.json"
+    )
+    validator = jsonschema.Draft202012Validator(
+        json.loads(schema_path.read_text(encoding="utf-8"))
+    )
+
+    assert payload["result"]["outcome"] == "witness_found"
+    assert payload["replay"]["ok"] is False
+    assert payload["exit_code"] == 4
+    assert list(validator.iter_errors(payload)) == []
+
+    for exit_code in (0, 1, 3):
+        forged = copy.deepcopy(payload)
+        forged["exit_code"] = exit_code
+        assert list(validator.iter_errors(forged)), exit_code
+
+    replay_marked_ok = copy.deepcopy(payload)
+    replay_marked_ok["replay"]["ok"] = True
+    replay_marked_ok["replay"]["mismatches"] = []
+    assert list(validator.iter_errors(replay_marked_ok))
+
+    no_replay = copy.deepcopy(payload)
+    no_replay["replay"] = None
+    assert list(validator.iter_errors(no_replay))
+
+
 def test_bmc_internal_witness_error_keeps_traceback(
     bmc_files, monkeypatch: pytest.MonkeyPatch
 ) -> None:

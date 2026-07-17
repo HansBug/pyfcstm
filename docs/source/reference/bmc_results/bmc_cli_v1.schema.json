@@ -17,15 +17,34 @@
   },
   "allOf": [
     {
-      "if": {"properties": {"result": {"properties": {"schema_version": {"const": "bmc-solve-result/v2"}, "outcome": {"enum": ["witness_found", "property_satisfied"]}}}}},
+      "if": {"$ref": "#/$defs/replayMismatchEnvelope"},
+      "then": {"properties": {"exit_code": {"const": 4}}}
+    },
+    {
+      "if": {
+        "allOf": [
+          {"properties": {"result": {"properties": {"schema_version": {"const": "bmc-solve-result/v2"}, "outcome": {"enum": ["witness_found", "property_satisfied"]}}}}},
+          {"not": {"$ref": "#/$defs/replayMismatchEnvelope"}}
+        ]
+      },
       "then": {"properties": {"exit_code": {"const": 0}}}
     },
     {
-      "if": {"properties": {"result": {"properties": {"schema_version": {"const": "bmc-solve-result/v2"}, "outcome": {"enum": ["property_violated", "no_witness"]}}}}},
+      "if": {
+        "allOf": [
+          {"properties": {"result": {"properties": {"schema_version": {"const": "bmc-solve-result/v2"}, "outcome": {"enum": ["property_violated", "no_witness"]}}}}},
+          {"not": {"$ref": "#/$defs/replayMismatchEnvelope"}}
+        ]
+      },
       "then": {"properties": {"exit_code": {"const": 1}}}
     },
     {
-      "if": {"properties": {"result": {"properties": {"schema_version": {"const": "bmc-solve-result/v2"}, "outcome": {"enum": ["incomplete", "timeout", "unknown", "scenario_infeasible", "feasibility_timeout", "feasibility_unknown"]}}}}},
+      "if": {
+        "allOf": [
+          {"properties": {"result": {"properties": {"schema_version": {"const": "bmc-solve-result/v2"}, "outcome": {"enum": ["incomplete", "timeout", "unknown", "scenario_infeasible", "feasibility_timeout", "feasibility_unknown"]}}}}},
+          {"not": {"$ref": "#/$defs/replayMismatchEnvelope"}}
+        ]
+      },
       "then": {"properties": {"exit_code": {"const": 3}}}
     },
     {
@@ -50,6 +69,17 @@
     }
   ],
   "$defs": {
+    "replayMismatchEnvelope": {
+      "type": "object",
+      "required": ["replay"],
+      "properties": {
+        "replay": {
+          "type": "object",
+          "required": ["ok"],
+          "properties": {"ok": {"const": false}}
+        }
+      }
+    },
     "jsonValue": {
       "oneOf": [
         {"type": "null"},

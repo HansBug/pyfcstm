@@ -87,6 +87,7 @@ help:
 	@echo "  make build        - Build standalone executable with PyInstaller"
 	@echo "  make build_info   - Generate build identity for a package or CLI build"
 	@echo "  make build_assets - Build ignored Python diagram JS/WASM/font assets"
+	@echo "  make diagram_assets_check - Build and validate diagram assets and ignore rules"
 	@echo "  make build_assets_clean - Remove generated diagram assets"
 	@echo "  make clean        - Remove build artifacts"
 	@echo ""
@@ -157,16 +158,16 @@ help:
 	@echo "  AUTO_OPTIONS=...  - LLM generation options"
 	@echo ""
 
-package: build_assets build_info
+package: build_assets diagram_assets_check build_info
 	rm -rf ${BUILD_DIR}
 	$(PYTHON) -m build --sdist --wheel --outdir ${DIST_DIR}
-build_info: build_assets tpl
+build_info: build_assets diagram_assets_check tpl
 	$(PYTHON) -m tools.write_build_info
 
 build_info_cli: ${APP_ICON_STAMP}
 	$(MAKE) build_info
 
-build: build_assets build_info_cli
+build: build_assets diagram_assets_check build_info_cli
 	$(PYTHON) -m tools.generate_spec -o pyfcstm.spec --icon-dir ${APP_ICON_DIR}
 	pyinstaller pyfcstm.spec
 	@echo "Verifying bundled PyInstaller icon asset..."
@@ -186,7 +187,7 @@ clean:
 
 test: unittest
 
-unittest: build_assets tpl
+unittest: build_assets diagram_assets_check tpl
 	UNITTEST=1 \
 		pytest "${RANGE_TEST_DIR}" \
 		-sv -m unittest \
@@ -196,7 +197,7 @@ unittest: build_assets tpl
 		$(if ${MIN_COVERAGE},--cov-fail-under=${MIN_COVERAGE},) \
 		$(if ${WORKERS},-n ${WORKERS},)
 
-template_unittest: build_assets tpl
+template_unittest: build_assets diagram_assets_check tpl
 	UNITTEST=1 $(PYTHON) tools/run_template_suites.py --no-package $(TEMPLATE_UNITTEST_ARGS)
 
 docs:

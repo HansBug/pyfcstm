@@ -289,6 +289,26 @@
           }
         },
         {
+          "if": {"properties": {"localization_status": {"const": "not_needed"}}},
+          "then": {
+            "allOf": [
+              {"properties": {"kernel": {"properties": {"status": {"const": "sat"}}}}},
+              {"properties": {"initialization": {"properties": {"status": {"const": "sat"}}}}},
+              {"properties": {"assumptions": {"properties": {"status": {"const": "sat"}}}}}
+            ]
+          }
+        },
+        {
+          "if": {"properties": {"localization_status": {"enum": ["unknown", "timeout"]}}},
+          "then": {
+            "anyOf": [
+              {"properties": {"kernel": {"$ref": "#/$defs/checkedInconclusiveFeasibilityCheck"}}},
+              {"properties": {"initialization": {"$ref": "#/$defs/checkedInconclusiveFeasibilityCheck"}}},
+              {"properties": {"assumptions": {"$ref": "#/$defs/checkedInconclusiveFeasibilityCheck"}}}
+            ]
+          }
+        },
+        {
           "if": {"properties": {"infeasible_stage": {"const": "kernel"}}},
           "then": {
             "properties": {

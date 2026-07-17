@@ -1914,12 +1914,15 @@ class BmcFeasibilityResult(_PrettyPrintableMixin):
                 "unknown/timeout feasibility evidence cannot use localization_status="
                 "not_needed."
             )
-        if (
-            all(item.status == "sat" for item in checks)
-            and self.localization_status != "not_needed"
-        ):
+        all_sat = all(item.status == "sat" for item in checks)
+        if all_sat and self.localization_status != "not_needed":
             raise BmcBuildError(
                 "all SAT feasibility stages require localization_status=not_needed."
+            )
+        if self.localization_status in {"unknown", "timeout"} and not inconclusive:
+            raise BmcBuildError(
+                "localization_status=unknown/timeout requires checked "
+                "unknown/timeout feasibility evidence."
             )
         if self.initialization.status == "sat" and self.kernel.status != "sat":
             raise BmcBuildError(
@@ -1964,6 +1967,10 @@ class BmcFeasibilityResult(_PrettyPrintableMixin):
         if self.initialization.status == "unsat" and self.assumptions.status == "sat":
             raise BmcBuildError(
                 "cumulative feasibility evidence cannot claim SAT after initialization UNSAT."
+            )
+        if self.localization_status == "not_needed" and not all_sat:
+            raise BmcBuildError(
+                "localization_status=not_needed requires all SAT feasibility stages."
             )
         if (
             self.refinement_status in {"not_requested", "not_needed"}

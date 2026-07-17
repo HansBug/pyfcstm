@@ -87,6 +87,7 @@ _ALLOWED_EXPECT_FIELDS = {
     "vars_keys",
     "vars_absent",
     "ended",
+    "delta",
     "raises",
     "handler_calls",
 }
@@ -116,9 +117,11 @@ _PUBLIC_EXPECT_FIELDS = {
     "vars_keys",
     "vars_absent",
     "ended",
+    "delta",
     "raises",
     "handler_calls",
 }
+_MISSING_OBSERVATION = object()
 _EXCEPTION_TYPES = {
     "ModelValidationError": ModelValidationError,
     "SimulationRuntimeDfsError": SimulationRuntimeDfsError,
@@ -393,12 +396,75 @@ def _normalize_handler_call_records(
     return [_handler_call_comparable_record(item) for item in handler_calls]
 
 
+def _cycle_delta_observation(
+    runtime: Any,
+    cycle_result: Any,
+    case: SemanticCase,
+    field_path: str,
+) -> bool:
+    """
+    Read the Delta bit from the result or the runtime's public getter.
+
+    The simulator exposes Delta on :class:`CycleResult`; generated/native
+    adapters expose the same observation through ``last_cycle_was_delta``.
+    A missing or non-boolean observation is a harness/API contract failure and
+    must remain loud instead of silently treating it as ``False``.
+
+    :param runtime: Runtime or alignment adapter that executed the cycle.
+    :type runtime: typing.Any
+    :param cycle_result: Value returned by ``runtime.cycle``.
+    :type cycle_result: typing.Any
+    :param case: Semantic fixture being evaluated.
+    :type case: SemanticCase
+    :param field_path: Fixture path used in diagnostics.
+    :type field_path: str
+    :return: Observed Delta flag.
+    :rtype: bool
+    :raises AssertionError: If no public Delta observation exists or its value
+        is not an exact boolean.
+
+    Example::
+
+        >>> case = load_semantic_case("design_basic_simple_transition")
+        >>> _cycle_delta_observation(object(), type("R", (), {"delta": True})(), case, "steps[0]")
+        True
+    """
+    actual = getattr(cycle_result, "delta", _MISSING_OBSERVATION)
+    if actual is _MISSING_OBSERVATION:
+        actual = getattr(runtime, "last_cycle_was_delta", _MISSING_OBSERVATION)
+    assert actual is not _MISSING_OBSERVATION, (
+        "%s %s requires public CycleResult.delta or last_cycle_was_delta"
+        % (case.id, field_path)
+    )
+    assert isinstance(actual, bool), (
+        "%s %s delta must be a boolean, got %r" % (case.id, field_path, actual)
+    )
+    return actual
+
+
+def _assert_delta_expectation(
+    runtime: Any,
+    cycle_result: Any,
+    expect: Mapping[str, Any],
+    case: SemanticCase,
+    field_path: str,
+) -> None:
+    if "delta" not in expect:
+        return
+    actual = _cycle_delta_observation(runtime, cycle_result, case, field_path)
+    expected = expect["delta"]
+    assert actual is expected, (
+        "%s %s delta mismatch: %r != %r" % (case.id, field_path, actual, expected)
+    )
+
+
 def _assert_runtime_expectation(
     runtime: Any,
     expect: Mapping[str, Any],
     case: SemanticCase,
     field_path: str,
     handler_calls: Optional[Sequence[Mapping[str, Any]]] = None,
+    cycle_result: Any = None,
 ) -> None:
     if "ended" in expect:
         actual_ended = bool(getattr(runtime, "is_ended"))
@@ -411,6 +477,8 @@ def _assert_runtime_expectation(
                 expect["ended"],
             )
         )
+
+    _assert_delta_expectation(runtime, cycle_result, expect, case, field_path)
 
     if "state" in expect:
         expected_path = _as_tuple_path(expect["state"], case, field_path + ".state")
@@ -620,13 +688,13 @@ def _cycle_input_for_step(
     if isinstance(cycle_data, dict):
         if not cycle_data:
             raise _case_error(
-                case_id, yaml_path, "%s.cycle: {} is not valid v2" % field_path
+                case_id, yaml_path, "%s.cycle: {} is not a valid shared shape" % field_path
             )
         if "events" in cycle_data:
             raise _case_error(
                 case_id,
                 yaml_path,
-                "%s.cycle.events is not valid v2; use cycle: <event> or cycle: [<event>]"
+                "%s.cycle.events is not a valid shared shape; use cycle: <event> or cycle: [<event>]"
                 % field_path,
             )
         raise _case_error(
@@ -637,7 +705,7 @@ def _cycle_input_for_step(
         )
     if cycle_data is None:
         raise _case_error(
-            case_id, yaml_path, "%s.cycle: null is not valid v2" % field_path
+            case_id, yaml_path, "%s.cycle: null is not a valid shared shape" % field_path
         )
     raise _case_error(
         case_id,
@@ -694,6 +762,31 @@ def _validate_step_cycle_shape(
         )
 
 
+def _validate_step_delta_contract(
+    step: Mapping[str, Any], case_id: str, yaml_path: str, field_path: str
+) -> None:
+    expect = step.get("expect")
+    if not isinstance(expect, dict) or "delta" not in expect:
+        return
+    if type(expect["delta"]) is not bool:
+        raise _case_error(
+            case_id, yaml_path, "%s.expect.delta must be a boolean" % field_path
+        )
+    cycle_count = _effective_cycle_count(step, case_id, yaml_path, field_path)
+    if cycle_count == 0:
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "%s.expect.delta requires effective cycle_count > 0" % field_path,
+        )
+    if "raises" in expect:
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "%s.expect.raises cannot be combined with expect.delta" % field_path,
+        )
+
+
 def _run_step(
     runtime: Any,
     step: Mapping[str, Any],
@@ -706,6 +799,7 @@ def _run_step(
     cycle_count = _effective_cycle_count(step, case.id, case.yaml_path, field_path)
     cycle_input = _cycle_input_for_step(step, case.id, case.yaml_path, field_path)
     events = _step_events(cycle_input, runtime, case, field_path)
+    cycle_results = []
     if "raises" in expect:
         try:
             runtime.cycle(events)
@@ -719,13 +813,25 @@ def _run_step(
             )
     else:
         for _ in range(cycle_count):
-            runtime.cycle(events)
+            cycle_result = runtime.cycle(events)
+            cycle_results.append(cycle_result)
+            # A repeated step keeps its final state/vars expectation, but a
+            # Delta expectation describes every public cycle call. This avoids
+            # collapsing a mixed ordinary/Delta sequence into the last bit.
+            _assert_delta_expectation(
+                runtime,
+                cycle_result,
+                expect,
+                case,
+                field_path + ".expect",
+            )
     _assert_runtime_expectation(
         runtime,
         expect,
         case,
         field_path + ".expect",
         handler_calls=handler_calls,
+        cycle_result=cycle_results[-1] if cycle_results else None,
     )
 
 
@@ -966,7 +1072,7 @@ class _GeneratedPythonAlignmentRuntime:
         """
         Return the simulator model used for generated-runtime alignment.
 
-        Schema v2 fixtures pass only string event paths or lists of string event
+        Shared fixtures pass only string event paths or lists of string event
         paths to :meth:`cycle`. The state machine remains available here for
         alignment diagnostics and for callers that need to inspect the
         authoritative simulator model while comparing generated behavior.
@@ -1024,6 +1130,27 @@ class _GeneratedPythonAlignmentRuntime:
                 )
             )
 
+    def _assert_delta_aligned(self, simulation_delta: Any, when: str) -> None:
+        assert isinstance(simulation_delta, bool), (
+            "%s: simulator delta must be bool for DSL:\n%s\ndelta=%r"
+            % (when, self._dsl_code, simulation_delta)
+        )
+        generated_delta = getattr(
+            self._generated_runtime, "last_cycle_was_delta", _MISSING_OBSERVATION
+        )
+        assert generated_delta is not _MISSING_OBSERVATION, (
+            "%s: generated runtime requires last_cycle_was_delta for DSL:\n%s"
+            % (when, self._dsl_code)
+        )
+        assert isinstance(generated_delta, bool), (
+            "%s: generated delta must be bool for DSL:\n%s\ndelta=%r"
+            % (when, self._dsl_code, generated_delta)
+        )
+        assert simulation_delta is generated_delta, (
+            "%s: delta mismatch for DSL:\n%s\nsimulation=%r\ngenerated=%r"
+            % (when, self._dsl_code, simulation_delta, generated_delta)
+        )
+
     @property
     def vars(self) -> Mapping[str, Any]:
         self._assert_aligned("vars access")
@@ -1033,6 +1160,39 @@ class _GeneratedPythonAlignmentRuntime:
     def is_ended(self) -> bool:
         self._assert_aligned("is_ended access")
         return self._simulation_runtime.is_ended
+
+    @property
+    def last_cycle_was_delta(self) -> bool:
+        """
+        Return the generated runtime's last-cycle Delta getter.
+
+        :return: ``True`` only when the most recent successful cycle was a
+            no-progress Delta step.
+        :rtype: bool
+        :raises AssertionError: If the generated runtime does not expose the
+            required public getter or returns a non-boolean value.
+
+        Example::
+
+            >>> case = load_semantic_case("design_basic_simple_transition")
+            >>> runtime = _GeneratedPythonAlignmentRuntime(
+            ...     object(), type("Generated", (), {"last_cycle_was_delta": False})(), case.dsl_code
+            ... )
+            >>> runtime.last_cycle_was_delta
+            False
+        """
+        value = getattr(
+            self._generated_runtime, "last_cycle_was_delta", _MISSING_OBSERVATION
+        )
+        assert value is not _MISSING_OBSERVATION, (
+            "generated Python alignment requires last_cycle_was_delta for DSL:\n%s"
+            % self._dsl_code
+        )
+        assert isinstance(value, bool), (
+            "generated Python alignment generated delta must be bool for DSL:\n%s\n"
+            "delta=%r" % (self._dsl_code, value)
+        )
+        return value
 
     @property
     def current_state(self):
@@ -1112,7 +1272,14 @@ class _GeneratedPythonAlignmentRuntime:
                         gen_cause,
                     )
                 )
+            self._assert_delta_aligned(False, "after failed cycle")
             raise sim_exc
+        sim_delta = getattr(sim_result, "delta", _MISSING_OBSERVATION)
+        assert sim_delta is not _MISSING_OBSERVATION, (
+            "generated Python alignment requires SimulationRuntime.cycle() "
+            "to expose CycleResult.delta for DSL:\n%s" % self._dsl_code
+        )
+        self._assert_delta_aligned(sim_delta, "after cycle(events=%r)" % (events,))
         self._assert_aligned("after cycle(events=%r)" % (events,))
         return sim_result
 
@@ -1479,6 +1646,8 @@ def _validate_expect(
             )
     if "ended" in expect and not isinstance(expect["ended"], bool):
         raise _case_error(case_id, yaml_path, "%s.ended must be a boolean" % field_path)
+    if "delta" in expect and type(expect["delta"]) is not bool:
+        raise _case_error(case_id, yaml_path, "%s.delta must be a boolean" % field_path)
     if "state" in expect and "ended" in expect:
         if expect["state"] is None and expect["ended"] is False:
             raise _case_error(
@@ -1766,6 +1935,7 @@ def validate_shared_fixture_contract(data: Mapping[str, Any], yaml_path: str) ->
                     yaml_path,
                     "handler_calls requires top-level handlers",
                 )
+            _validate_step_delta_contract(step, case_id, yaml_path, "steps[%d]" % step_index)
 
 
 def _validate_case_data(data: Mapping[str, Any], yaml_path: str) -> None:
@@ -1830,10 +2000,9 @@ def _validate_case_data(data: Mapping[str, Any], yaml_path: str) -> None:
             _validate_expect(
                 step["expect"], case_id, yaml_path, field_path + ".expect", runners
             )
+            _validate_step_delta_contract(step, case_id, yaml_path, field_path)
+            cycle_count = _effective_cycle_count(step, case_id, yaml_path, field_path)
             if "raises" in step["expect"]:
-                cycle_count = _effective_cycle_count(
-                    step, case_id, yaml_path, field_path
-                )
                 if cycle_count != 1:
                     raise _case_error(
                         case_id,

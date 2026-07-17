@@ -37,6 +37,14 @@ state _Root {
 """
 
 
+_DELTA_DSL = """
+state Root {
+    pseudo state P;
+    [*] -> P;
+}
+"""
+
+
 _README_MULTI_EVENT_DSL = """
 state Root {
     state Idle;
@@ -72,8 +80,10 @@ def _assert_wrapper_source_contract(artifacts):
     assert "typedef RootMachineEventId EventId;" in header
     assert "int cycle(const EventId *event_ids, size_t event_count);" in header
     assert "int cycle(EventId event_id);" in header
+    assert "bool last_cycle_was_delta() const;" in header
     assert "RootMachine_cycle(&machine_, event_ids, event_count)" in source
     assert "RootMachine_cycle(&machine_, &event_id, 1u)" in source
+    assert "RootMachine_last_cycle_was_delta(&machine_)" in source
     assert "RootMachine_create" not in source
     assert "RootMachine_create_uninitialized" not in source
 
@@ -180,6 +190,9 @@ def _harness_source():
             if (wrapper.last_error() == NULL) {
                 return 12;
             }
+            if (wrapper.last_cycle_was_delta()) {
+                return 13;
+            }
 
             hooks.on_p4_Root_p4_Boot = boot_hook;
             hooks.on_p4_Root_p6_Active_p11_ActiveEnter = active_hook;
@@ -187,6 +200,9 @@ def _harness_source():
 
             if (!wrapper.cycle()) {
                 return 20;
+            }
+            if (wrapper.last_cycle_was_delta()) {
+                return 24;
             }
             if (wrapper.current_state_id() != ROOT_MACHINE_STATE_P4_ROOT_P4_IDLE) {
                 return 21;
@@ -252,6 +268,34 @@ def _harness_source():
     )
 
 
+def _delta_harness_source():
+    return textwrap.dedent(
+        r"""
+        #include "machine.hpp"
+
+        typedef pyfcstm_generated::RootMachine_cpp::MachineWrapper Wrapper;
+
+        int main()
+        {
+            Wrapper wrapper;
+            if (wrapper.last_cycle_was_delta()) {
+                return 10;
+            }
+            if (!wrapper.cycle()) {
+                return 11;
+            }
+            if (!wrapper.last_cycle_was_delta()) {
+                return 12;
+            }
+            if (!wrapper.cycle()) {
+                return 13;
+            }
+            return wrapper.last_cycle_was_delta() ? 0 : 14;
+        }
+        """
+    )
+
+
 def _extract_cpp_code_block(markdown, heading):
     pattern = r"## {heading}\n\n```cpp\n(.*?)\n```".format(heading=re.escape(heading))
     match = re.search(pattern, markdown, re.S)
@@ -296,6 +340,15 @@ def _compile_probe_source():
 
 @pytest.mark.unittest
 class TestCppWrapperTemplate:
+    def test_wrapper_delta_getter_stays_true_across_two_calls(self):
+        with render_cpp_artifacts(_DELTA_DSL) as artifacts:
+            result = compile_and_run_cpp_wrapper_harness(
+                artifacts,
+                "cpp_wrapper_delta_two_calls",
+                _delta_harness_source(),
+            )
+        assert result.returncode == 0, result.stderr
+
     def test_wrapper_api_compiles_and_runs_with_cmake(self):
         with render_cpp_artifacts(_WRAPPER_DSL) as artifacts:
             _assert_wrapper_source_contract(artifacts)

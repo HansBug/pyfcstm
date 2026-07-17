@@ -131,9 +131,11 @@ Transition priority and validation
 When several transitions are available, the model order and guard/event match
 determine which candidate is considered first.  The runtime validates the
 candidate path before committing state or variable changes.  If the chosen path
-cannot reach a stoppable leaf, the runtime reports a DFS validation failure
-instead of leaving the machine halfway through a pseudo or composite routing
-chain.
+cannot reach a stoppable leaf or termination but is otherwise a stable
+non-progress boundary, the runtime commits a successful ``Delta`` macro step
+without advancing state or variables.  A changing-signature loop or an actual
+expression/event/DFS error still fails loudly instead of leaving the machine
+halfway through a pseudo or composite routing chain.
 
 Hot start semantics
 -------------------
@@ -145,7 +147,9 @@ Hot start builds the active stack directly from an ``initial_state`` and
 * enter actions on the constructed path are skipped;
 * plain composite ``during before`` for the constructed boundary is not replayed;
 * later cycles run normal transition and during semantics;
-* a composite hot-start target is validated so it can reach a stoppable leaf.
+* construction performs only structural checks; the first real cycle reports a
+  successful ``Delta`` step when no stoppable or terminated successor can be
+  committed, while expression, event, and DFS errors remain loud.
 
 This makes hot start useful for debugging and tests, but it is not equivalent to
 replaying the full history from the root initial state.
@@ -153,8 +157,9 @@ replaying the full history from the root initial state.
 Runtime history and export
 --------------------------
 
-After each committed cycle, the runtime records the cycle number, active state
-and variables in history.  The REPL ``history`` command formats that in the
+After each successful cycle, including Delta cycles, the runtime records the
+cycle number, active state, variables, input events, and boolean ``delta`` in
+history.  The REPL ``history`` command formats that in the
 terminal, while ``export <path>`` writes the retained history to a file.  Export
 is an observation feature; it does not change the runtime state.
 

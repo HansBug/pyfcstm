@@ -168,7 +168,7 @@ History and export formats
 --------------------------
 
 Runtime history entries are dictionaries with ``cycle``, ``state``, ``vars``,
-and optional ``events`` keys.  ``history`` displays retained rows; ``export`` is
+``events`` and boolean ``delta`` keys.  ``history`` displays retained rows; ``export`` is
 a command-layer feature and is not a :class:`pyfcstm.simulate.SimulationRuntime` method.
 
 .. list-table:: Export formats
@@ -178,7 +178,7 @@ a command-layer feature and is not a :class:`pyfcstm.simulate.SimulationRuntime`
      - Shape
      - Notes
    * - ``.csv``
-     - Columns ``cycle``, ``state``, ``events``, then sorted variable names.
+     - Columns ``cycle``, ``state``, ``delta``, ``events``, then sorted variable names.
      - Events are joined with semicolons inside one CSV cell.
    * - ``.json``
      - JSON array of history entry objects.
@@ -215,6 +215,9 @@ Python runtime API
    * - ``CycleResult.unconsumed_events``
      - Canonical supplied event paths that did not correspond to executed
        evented transitions.
+   * - ``CycleResult.delta``
+     - ``True`` only for a successful no-progress step; ordinary success,
+       errors, and ended no-ops keep it ``False``.
    * - ``vars`` / ``cycle_count`` / ``history`` / ``history_size``
      - Public runtime state used by command display, tests, and tooling.  The
        command-layer ``history_size`` setting remaps ``0`` to runtime ``None``;

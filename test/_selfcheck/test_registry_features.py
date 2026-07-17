@@ -559,6 +559,25 @@ def test_bmc_solve_and_closure_cover_polarity_cli_and_exception_paths(monkeypatc
     assert outcome.reason == "bmc_solve_failed"
     assert "schema_version" in outcome.observed
 
+    sequence = good_sequence()
+    monkeypatch.setattr(
+        bmc_witness, "solve_bmc_property", lambda formula: sequence.pop(0)
+    )
+    payload = {
+        "result": {
+            "status": "sat",
+            "property_satisfied": True,
+            "outcome": "witness_found",
+        }
+    }
+    monkeypatch.setattr(
+        click_testing.CliRunner,
+        "invoke",
+        lambda *args, **kwargs: _cli_result(0, json.dumps(payload)),
+    )
+    outcome = registry._bmc_solve()
+    assert outcome.status == "PASS"
+
     real_compile = bmc_pipeline.compile_bmc_query
     monkeypatch.setattr(bmc_witness, "solve_bmc_property", real_solve)
     monkeypatch.setattr(

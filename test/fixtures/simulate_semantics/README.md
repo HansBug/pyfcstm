@@ -21,8 +21,8 @@ The only runner-selection field is `exclude_runners` for explicit exceptions.
 Do not add include-style `runners`, top-level boundary markers, CLI command
 scenarios, model-construction diagnostics, runtime options, log/warning
 assertions, stack snapshots, cycle counters, history records, cycle return
-metadata, event accounting, or any other private simulator surface to this
-corpus.
+metadata other than the public `delta` bit, event accounting, or any other
+private simulator surface to this corpus.
 
 Shared fixtures cover only legal DSL models and legal runtime use: optional legal
 hot-start construction, optional legal abstract-handler registration, and a
@@ -44,17 +44,21 @@ SKIP_SLOW_TESTS=1 make unittest
 ## Adding a case
 
 1. Add `cases/<id>.fcstm` with the DSL source.
-2. Add `cases/<id>.yaml` using the v2 schema in `schema.md`.
-3. Do not write `schema_version`, `id`, or `source`; the loader derives the case
-   id and paired FCSTM file from the YAML basename.
+2. Add `cases/<id>.yaml` using the shared fixture contract in `schema.md`.
+3. Do not write `id` or `source`; the loader derives the case id and paired
+   FCSTM file from the YAML basename.
 4. Set `origin.files` to the exact original pytest function(s), issue links, or
    PR links that supplied the behavior.
 5. Omit `exclude_runners` unless a current shared runner has a documented
    capability gap for this otherwise shared behavior.
 6. Use only the public observation surface: `state`, `vars`, `vars_exact`,
-   `vars_keys`, `vars_absent`, `ended`, `raises`, and `handler_calls`.
+   `vars_keys`, `vars_absent`, `ended`, `delta`, `raises`, and `handler_calls`.
+   `delta` must be a boolean on a successful cycle step; it is rejected on
+   `cycle_count: 0` checkpoints and exception steps.
 7. Keep `expect` sparse: omitted fields mean “do not assert this observation,”
    not a default expected value.
+   With `cycle_count > 1`, `expect.delta` is checked after every call; use
+   separate steps for mixed ordinary/Delta sequences.
 8. Preserve every original behavior either through the shared public observation
    surface or through ordinary pytest outside this corpus.
 9. Run the fixture tests and the ordinary pytest coverage that owns any
@@ -62,7 +66,7 @@ SKIP_SLOW_TESTS=1 make unittest
 10. Run `python tools/inventory_simulate_semantics.py --check` to keep the
     long-term Markdown, pairing, and public-observation contract clean.
 
-Minimal v2 shape:
+Minimal shared-contract shape:
 
 ```yaml
 title: Event sequence reaches active state
@@ -91,6 +95,7 @@ steps:
     expect:
       state: Root.Active
       vars: {counter: 1}
+      delta: false
 
   - cycle_count: 4
     expect:
@@ -101,6 +106,7 @@ steps:
     expect:
       state: Root.Done
       ended: false
+      delta: false
 ```
 
 ## Maintenance inventory
@@ -112,7 +118,7 @@ limited to this README and `schema.md`.
 
 Use `python tools/inventory_simulate_semantics.py --check` when changing this
 corpus. The check verifies YAML/FCSTM pairing, the top-level Markdown file list,
-absence of v1 fields and include-style runner selection, absence of legacy cycle
+absence of retired fields and include-style runner selection, absence of legacy cycle
 and path shapes, and absence of known private simulator surfaces in shared YAML.
 
 ## Public-observation checklist
@@ -128,8 +134,8 @@ Use this checklist before deleting or replacing any inline original test:
 - Every helper assertion and every bare assertion either has a public YAML
   equivalent or remains in ordinary pytest coverage.
 - Runtime log assertions, Python warning assertions, stack snapshots, cycle
-  counters, history records, cycle return metadata, event accounting, and CLI
-  output stay outside this shared corpus.
+  counters, history records, cycle return metadata other than `delta`, event
+  accounting, and CLI output stay outside this shared corpus.
 - `set(runtime.vars.keys())` and temporary-variable non-leakage use `vars_keys`
   and/or `vars_absent`.
 - Exception tests keep class and message assertions under `raises` and keep

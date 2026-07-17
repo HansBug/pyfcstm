@@ -621,6 +621,45 @@ class TestCPollBuiltinTemplate:
             assert runtime.current_state_path == ('System', 'Running')
             assert runtime.vars == {'counter': 111}
 
+    def test_generated_machine_classifies_unchanged_self_loop_as_delta(self):
+        dsl_code = """
+        state Root {
+            state A;
+            pseudo state P;
+            [*] -> A;
+            A -> P :: Go;
+            P -> P;
+        }
+        """
+
+        with render_c_runtime(dsl_code) as (runtime, _):
+            runtime.cycle()
+            assert runtime.current_state_path == ('Root', 'A')
+            assert runtime.last_cycle_was_delta is False
+            runtime.hot_start('Root.P', {})
+            assert runtime.current_state_path == ('Root', 'P')
+            runtime.cycle()
+            assert runtime.last_cycle_was_delta is True
+            runtime.cycle()
+            assert runtime.last_cycle_was_delta is True
+
+    def test_generated_machine_detects_two_state_cycle_without_actions(self):
+        dsl_code = """
+        state Root {
+            pseudo state A;
+            pseudo state B;
+            [*] -> A;
+            A -> B;
+            B -> A;
+        }
+        """
+
+        with render_c_runtime(dsl_code) as (runtime, _):
+            runtime.hot_start('Root.A', {})
+            runtime.cycle()
+            assert runtime.current_state_path == ('Root', 'A')
+            assert runtime.last_cycle_was_delta is True
+
     def test_generated_machine_create_failure_cannot_be_cycled(self):
         dsl_code = """
         def int counter = 1.5;
@@ -742,7 +781,7 @@ class TestCPollBuiltinTemplate:
             assert cold_calls == [('cold', 'Root', 'enter', 0)]
 
 
-    def test_failed_hot_start_preserves_public_runtime_snapshot(self):
+    def test_hot_start_accepts_blocked_target_and_reports_delta(self):
         dsl_code = """
         def int trace = 0;
         state Root {
@@ -756,22 +795,19 @@ class TestCPollBuiltinTemplate:
         """
 
         with render_c_runtime(dsl_code) as (runtime, _):
-            runtime.cycle()
-            before_state = runtime.current_state_path
-            before_vars = dict(runtime.vars)
-            before_ended = runtime.is_ended
-
-            with pytest.raises(ValueError, match='cannot reach a stoppable state'):
-                runtime.hot_start('Root.Composite', {'trace': 5})
-
-            assert runtime.current_state_path == before_state
-            assert runtime.vars == before_vars
-            assert runtime.is_ended is before_ended
+            assert runtime.hot_start('Root.Composite', {'trace': 5}) is None
+            assert runtime.current_state_path == ('Root', 'Composite')
+            assert runtime.vars == {'trace': 5}
 
             runtime.cycle()
-            assert runtime.current_state_path == before_state
-            assert runtime.vars == {'trace': before_vars['trace'] + 1}
-            assert runtime.is_ended is before_ended
+            assert runtime.current_state_path == ('Root', 'Composite')
+            assert runtime.vars == {'trace': 5}
+            assert runtime.last_cycle_was_delta is True
+
+            runtime.hot_start('Root.Idle', {'trace': 5})
+            runtime.cycle()
+            assert runtime.vars == {'trace': 6}
+            assert runtime.last_cycle_was_delta is False
 
     def test_generated_machine_exposes_read_only_event_check_context(self):
         dsl_code = """

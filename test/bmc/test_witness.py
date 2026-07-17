@@ -1985,7 +1985,6 @@ def test_solve_result_rejects_invalid_public_payloads(factory, message) -> None:
             ),
             "abstract_calls",
         ),
-        (lambda: BmcWitnessTrace({}, {}, {}, (), (), schema_version="v2"), "schema"),
         (lambda: BmcWitnessTrace((), {}, {}, (), ()), "property"),
         (lambda: BmcWitnessTrace({}, (), {}, (), ()), "solver"),
         (lambda: BmcWitnessTrace({}, {}, (), (), ()), "initial"),
@@ -2111,6 +2110,7 @@ def test_solve_result_rejects_invalid_public_payloads(factory, message) -> None:
         (lambda: BmcRuntimeStep(0, (), (), "Root.Go", ()), "unconsumed_events"),
         (lambda: BmcRuntimeStep(0, (), (), (), (object(),)), "abstract_calls"),
         (lambda: BmcRuntimeStep(0, (), (), (), None), "abstract_calls"),
+        (lambda: BmcRuntimeStep(0, (), (), (), (), delta=1), "runtime step delta"),
         (
             lambda: BmcRuntimeTrace((object(),), ()),
             "runtime trace frames",
@@ -2181,6 +2181,12 @@ def test_witness_public_dataclasses_reject_invalid_payloads(factory, message) ->
     """Witness JSON/replay dataclasses validate their public payload shape."""
     with pytest.raises(BmcBuildError, match=message):
         factory()
+
+
+def test_witness_trace_accepts_legacy_schema_version_constructor_keyword() -> None:
+    """The compatibility witness API still accepts the v1 schema field."""
+    trace = BmcWitnessTrace({}, {}, {}, (), (), schema_version="bmc-witness/v1")
+    assert trace.to_canonical()["schema_version"] == "bmc-witness/v1"
 
 
 @pytest.mark.parametrize(
@@ -2259,8 +2265,8 @@ def test_witness_trace_metadata_accepts_nested_json_payloads() -> None:
     assert canonical["initial"] == {"argv": ["--flag", 1], "mode": "cold"}
 
 
-def test_witness_v1_step_schema_includes_complete_event_accounting() -> None:
-    """The first public witness schema pins full cycle event accounting."""
+def test_witness_step_contract_includes_complete_event_accounting() -> None:
+    """The public witness contract pins full cycle event accounting."""
     trace = BmcWitnessTrace(
         {"kind": "reach"},
         {"status": "sat"},

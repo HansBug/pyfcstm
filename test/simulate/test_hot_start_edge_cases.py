@@ -467,12 +467,17 @@ state Root {
 """
         sm = build_state_machine(dsl_code)
 
+        runtime = SimulationRuntime(
+            sm,
+            initial_state="Root.Locked",
+            initial_vars={"spin": 0},
+        )
+
         with pytest.raises(SimulationRuntimeDfsError, match="step safety limit"):
-            SimulationRuntime(
-                sm,
-                initial_state="Root.Locked",
-                initial_vars={"spin": 0},
-            )
+            runtime.cycle()
+
+        assert runtime.cycle_count == 0
+        assert runtime.history == []
 
     def test_deep_initial_chain_validation_is_bounded(self):
         """Test that a single-path initial chain does not validate exponentially."""

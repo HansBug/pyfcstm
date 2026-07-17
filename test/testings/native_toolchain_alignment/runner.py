@@ -112,6 +112,11 @@ class _ObservationRuntime:
         return bool(self._observation["is_ended"])
 
     @property
+    def last_cycle_was_delta(self) -> bool:
+        """Return the strict Delta flag emitted by the native observation."""
+        return self._observation["delta"]
+
+    @property
     def current_state(self) -> Optional[_StateView]:
         """
         Return the observed active state path as a lightweight state view.

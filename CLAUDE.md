@@ -99,7 +99,7 @@ As of 2026-03, the repository is no longer only a generic template experiment. T
 - Expression rendering and statement rendering infrastructure under [pyfcstm/render/](pyfcstm/render/), with built-in statement styles for `dsl`, `c`, `cpp`, `python`, `java`, `js`, `ts`, `rust`, and `go`
 - Dedicated template tests under [test/template/](test/template/), including generated-runtime tests and runtime-alignment tests for the built-in `python` template
 - A render/template tutorial path in [docs/source/tutorials/render/](docs/source/tutorials/render/) that now reflects the current renderer, template packaging, and testing model
-- A bounded model checking kernel under [pyfcstm/bmc/](pyfcstm/bmc/) plus the `pyfcstm bmc` CLI, stable `bmc-cli/v1` JSON envelope, mandatory SAT witness replay, and bilingual Tutorial/How-to/Explanation/Reference documentation
+- A bounded model checking kernel under [pyfcstm/bmc/](pyfcstm/bmc/) plus the `pyfcstm bmc` CLI, a stable structured JSON result, mandatory SAT witness replay, and bilingual Tutorial/How-to/Explanation/Reference documentation
 
 When updating repository guidance, do not describe built-in templates, statement rendering, or CLI `--template` support as planned-only features. They are current behavior.
 
@@ -489,8 +489,8 @@ Mandatory completion rule for built-in template work:
 **Bounded Model Checking** ([pyfcstm/bmc/](pyfcstm/bmc/), [pyfcstm/entry/bmc.py](pyfcstm/entry/bmc.py))
 
 - Compiles one `.fbmcq` query into a bounded transition relation and one of seven property objectives
-- Exposes `pyfcstm bmc` with polarity-aware human verdicts, per-check solver timing, optional ANSI terminal color, and stable `bmc-cli/v1` JSON
-- Requires every SAT model to decode into a `bmc-witness/v1` trace and pass `SimulationRuntime` replay before the CLI reports a trusted verdict
+- Exposes `pyfcstm bmc` with polarity-aware human verdicts, per-check solver timing, optional ANSI terminal color, and a stable structured JSON result
+- Requires every SAT model to decode into a public macro-step trace and pass `SimulationRuntime` replay before the CLI reports a trusted verdict
 - Keeps bounded conclusions explicit: SAT/UNSAT describe the solver objective, while `property_satisfied` / `outcome` describe whether the user property holds within the requested bound
 
 **Entry Points** ([pyfcstm/entry/](pyfcstm/entry/))

@@ -21,8 +21,8 @@ FBMCQ and Bounded Model Checking
   terminal report states whether the bounded property holds before showing the
   SAT/UNSAT solver diagnostic, supports optional ANSI color, and requires every
   decoded SAT witness to pass structural validation and simulator replay.
-- Added the stable ``bmc-cli/v1`` JSON envelope for CI, tools, and LLM
-  consumers, with a downloadable schema in the BMC result protocol reference.
+- Added a stable structured JSON result for CI, tools, and LLM consumers, with
+  a downloadable schema in the BMC result protocol reference.
   The envelope preserves polarity-aware outcomes, solver timing, witness and
   replay records, diagnostics, and the matching process exit code.
 
@@ -53,9 +53,21 @@ Simulation and Runtime Semantics
 - Added :class:`pyfcstm.simulate.CycleResult` event accounting and strengthened
   abstract-handler registration, decorator scanning, execution context, named
   action references, warning metadata, and session-copy behavior.
+- Changed non-stoppable hot-start and pseudo-state no-progress behavior to a
+  successful Delta cycle: construction no longer rejects a valid blocked target,
+  and the first real ``cycle()`` reports ``delta=True`` while advancing the
+  public cycle/history contract.
 - Extended the shared semantic fixture corpus so the simulator and generated
   runtimes are checked against the same cycle-by-cycle state, variable, event,
   history, callback, and failure behavior.
+
+Compatibility notes
+~~~~~~~~~~~~~~~~~~~
+
+- Removed the product-version fields from BMC CLI and witness/native results
+  and changed the downloadable result schema to an unversioned filename.
+  Consumers must stop reading the removed fields and update schema download
+  paths; the standard JSON Schema ``$schema`` dialect URI remains unchanged.
 
 Built-In Templates and DSL
 ~~~~~~~~~~~~~~~~~~~~~~~~~~

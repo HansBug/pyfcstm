@@ -14,6 +14,7 @@ from pyfcstm.bmc import (
     compile_bmc_property,
 )
 from pyfcstm.bmc.witness import (
+    BmcRuntimeStep,
     BmcWitnessCallRecord,
     BmcWitnessEvent,
     BmcWitnessFrame,
@@ -22,6 +23,7 @@ from pyfcstm.bmc.witness import (
     decode_bmc_witness,
     replay_bmc_witness,
     solve_bmc_property,
+    _compare_step,
 )
 from pyfcstm.model import load_state_machine_from_text
 
@@ -260,6 +262,55 @@ def test_replay_handles_initial_terminated_absorb_trace() -> None:
     )
 
 
+def test_replay_uses_synthetic_observation_for_post_termination_absorb() -> None:
+    """An absorb step after runtime termination has no cycle metadata."""
+    model = load_state_machine_from_text(
+        """
+        state Root {
+            state A;
+            [*] -> A;
+            A -> [*];
+        }
+        """
+    )
+    formula = compile_bmc_property(
+        build_bmc_core_formula(
+            BmcEngine(model).prepare(
+                'init state("Root.A"); check reach <= 2: terminated();'
+            )
+        )
+    )
+    solved = solve_bmc_property(formula)
+    assert solved.status == "sat"
+    trace = decode_bmc_witness(formula, solved.model)
+    assert trace.steps[-1].case_kind == "absorb"
+
+    replay = replay_bmc_witness(model, trace)
+
+    assert replay.ok is True
+    absorb_step = replay.runtime_trace.steps[-1]
+    assert absorb_step.delta is False
+
+    forged_trace = replace(
+        trace,
+        steps=tuple(
+            replace(step, delta=True) if step.case_kind == "absorb" else step
+            for step in trace.steps
+        ),
+    )
+    forged_replay = replay_bmc_witness(model, forged_trace)
+    assert forged_replay.ok is False
+    assert [mismatch.to_canonical() for mismatch in forged_replay.mismatches] == [
+        {
+            "path": "steps[%d].delta" % trace.steps[-1].index,
+            "expected": True,
+            "actual": False,
+            "message": "delta mismatch",
+            "tolerance": None,
+        }
+    ]
+
+
 def test_replay_rejects_tampered_initial_terminated_step_payload() -> None:
     """Synthetic terminated replay still compares step events and calls."""
     model, trace = _trace(
@@ -486,9 +537,45 @@ def test_replay_accepts_later_init_sentinel_when_initial_cycle_stays_unstable() 
                 "consumed_events": [],
                 "unconsumed_events": [],
                 "abstract_calls": [],
+                "delta": True,
             }
         ],
     }
+
+
+def test_compare_step_reports_delta_forgery_path() -> None:
+    """Replay comparison names the observable Delta field precisely."""
+    witness_step = BmcWitnessStep(
+        0,
+        0,
+        1,
+        "Root::delta::0",
+        "delta",
+        "delta",
+        None,
+        None,
+        True,
+        False,
+    )
+    runtime_step = BmcRuntimeStep(
+        0,
+        (),
+        (),
+        (),
+        (),
+        delta=False,
+    )
+    mismatches = []
+    _compare_step(mismatches, witness_step, runtime_step)
+    assert [item.to_canonical() for item in mismatches] == [
+        {
+            "path": "steps[0].delta",
+            "expected": True,
+            "actual": False,
+            "message": "delta mismatch",
+            "tolerance": None,
+        }
+    ]
 
 
 def test_replay_reports_init_sentinel_when_runtime_is_terminated() -> None:

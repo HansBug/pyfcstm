@@ -466,7 +466,7 @@ def test_bmc_schema_freezes_role_channel_contract():
         / "source"
         / "reference"
         / "bmc_results"
-        / "bmc_cli_v1.schema.json"
+        / "bmc_cli.schema.json"
     )
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
     result_v2 = schema["$defs"]["resultV2"]
@@ -492,7 +492,7 @@ def test_bmc_schema_freezes_feasibility_localization_contract():
         / "source"
         / "reference"
         / "bmc_results"
-        / "bmc_cli_v1.schema.json"
+        / "bmc_cli.schema.json"
     )
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
     feasibility_text = json.dumps(

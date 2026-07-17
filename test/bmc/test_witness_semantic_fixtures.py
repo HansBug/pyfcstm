@@ -110,6 +110,7 @@ def collect_simulation_trace_for_bmc_fixture(
                     consumed_events=result.consumed_events,
                     unconsumed_events=result.unconsumed_events,
                     abstract_calls=new_calls,
+                    delta=result.delta,
                 )
             )
             frames.append(_runtime_frame(runtime, len(frames)))
@@ -210,12 +211,12 @@ def test_bmc_witness_fixture_runner_keeps_policy_counts_auditable() -> None:
         policy = policy_for_case(case.id)
         mode_counts[policy.mode] = mode_counts.get(policy.mode, 0) + 1
     assert mode_counts == {
-        "hard_pass": 146,
+        "hard_pass": 148,
         "expected_unsupported": 3,
         "temporary_exclude": 10,
-        "long_term_exclude": 6,
+        "long_term_exclude": 4,
     }
-    assert len(_hard_pass_cases()) == 146
+    assert len(_hard_pass_cases()) == 148
     zero_step_ids = set()
     for case in _hard_pass_cases():
         cycle_count = 0
@@ -296,6 +297,7 @@ def test_duplicate_event_fixture_uses_boolean_presence_without_exclusion() -> No
         "consumed_events": ["Root.A.Tick"],
         "unconsumed_events": ["Root.A.Noise"],
         "abstract_calls": [],
+        "delta": False,
     }
 
     model = build_state_machine_from_case(case)

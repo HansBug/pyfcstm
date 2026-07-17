@@ -41,6 +41,14 @@ state Root {
 """
 
 
+_DELTA_DSL = """
+state Root {
+    pseudo state P;
+    [*] -> P;
+}
+"""
+
+
 def _read(path):
     with open(path, "r", encoding="utf-8") as f:
         return f.read()
@@ -67,11 +75,13 @@ def _assert_wrapper_source_contract(artifacts):
         in header
     )
     assert "int cycle();" in header
+    assert "bool last_cycle_was_delta() const;" in header
     assert "RootMachine_set_event_checks(" in source
     assert "&machine_," in source
     assert "event_checks," in source
     assert "user_data)" in source
     assert "RootMachine_cycle(&machine_)" in source
+    assert "RootMachine_last_cycle_was_delta(&machine_)" in source
     assert "RootMachine_create" not in source
     assert "RootMachine_create_uninitialized" not in source
     assert "cycle(const EventId *event_ids" not in header
@@ -196,6 +206,9 @@ def _harness_source():
             if (wrapper.last_error() == NULL) {
                 return 12;
             }
+            if (wrapper.last_cycle_was_delta()) {
+                return 13;
+            }
 
             hooks.on_p4_Root_p4_Boot = boot_hook;
             hooks.on_p4_Root_p6_Active_p11_ActiveEnter = active_hook;
@@ -206,6 +219,9 @@ def _harness_source():
 
             if (!wrapper.cycle()) {
                 return 20;
+            }
+            if (wrapper.last_cycle_was_delta()) {
+                return 24;
             }
             if (wrapper.current_state_id() != ROOT_MACHINE_STATE_P4_ROOT_P4_IDLE) {
                 return 21;
@@ -277,6 +293,34 @@ def _harness_source():
     )
 
 
+def _delta_harness_source():
+    return textwrap.dedent(
+        r"""
+        #include "machine.hpp"
+
+        typedef pyfcstm_generated::RootMachine_cpp_poll::MachineWrapper Wrapper;
+
+        int main()
+        {
+            Wrapper wrapper;
+            if (wrapper.last_cycle_was_delta()) {
+                return 10;
+            }
+            if (!wrapper.cycle()) {
+                return 11;
+            }
+            if (!wrapper.last_cycle_was_delta()) {
+                return 12;
+            }
+            if (!wrapper.cycle()) {
+                return 13;
+            }
+            return wrapper.last_cycle_was_delta() ? 0 : 14;
+        }
+        """
+    )
+
+
 def _compile_probe_source():
     return textwrap.dedent(
         r"""
@@ -319,6 +363,15 @@ def _extract_named_bash_block(markdown, marker):
 
 @pytest.mark.unittest
 class TestCppPollWrapperTemplate:
+    def test_poll_wrapper_delta_getter_stays_true_across_two_calls(self):
+        with render_cpp_poll_artifacts(_DELTA_DSL) as artifacts:
+            result = compile_and_run_cpp_poll_wrapper_harness(
+                artifacts,
+                "cpp_poll_wrapper_delta_two_calls",
+                _delta_harness_source(),
+            )
+        assert result.returncode == 0, result.stderr
+
     def test_poll_wrapper_api_compiles_and_runs_with_cmake(self):
         with render_cpp_poll_artifacts(_WRAPPER_DSL) as artifacts:
             _assert_wrapper_source_contract(artifacts)

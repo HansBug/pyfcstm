@@ -86,7 +86,7 @@ DESIGN_LOG_ASSERTIONS = {
             "contains": [
                 {
                     "level": "WARNING",
-                    "message": "Unable to reach a stoppable state",
+                    "message": "completed as Delta",
                     "match_kind": "substring",
                 }
             ]
@@ -95,7 +95,7 @@ DESIGN_LOG_ASSERTIONS = {
             "contains": [
                 {
                     "level": "WARNING",
-                    "message": "Unable to reach a stoppable state",
+                    "message": "completed as Delta",
                     "match_kind": "substring",
                 }
             ]
@@ -104,7 +104,7 @@ DESIGN_LOG_ASSERTIONS = {
             "contains": [
                 {
                     "level": "WARNING",
-                    "message": "Unable to reach a stoppable state",
+                    "message": "completed as Delta",
                     "match_kind": "substring",
                 }
             ]
@@ -115,7 +115,7 @@ DESIGN_LOG_ASSERTIONS = {
             "contains": [
                 {
                     "level": "WARNING",
-                    "message": "Unable to reach a stoppable state",
+                    "message": "completed as Delta",
                     "match_kind": "substring",
                 }
             ]
@@ -124,7 +124,7 @@ DESIGN_LOG_ASSERTIONS = {
             "contains": [
                 {
                     "level": "WARNING",
-                    "message": "Unable to reach a stoppable state",
+                    "message": "completed as Delta",
                     "match_kind": "substring",
                 }
             ]
@@ -133,7 +133,7 @@ DESIGN_LOG_ASSERTIONS = {
             "contains": [
                 {
                     "level": "WARNING",
-                    "message": "Unable to reach a stoppable state",
+                    "message": "completed as Delta",
                     "match_kind": "substring",
                 }
             ]
@@ -320,9 +320,9 @@ def test_abstract_handler_warning_rollback_on_raise():
 
 
 @pytest.mark.unittest
-def test_failed_cycle_rolls_back_logged_abstract_handler_errors():
+def test_delta_discards_logged_abstract_handler_errors_for_no_outgoing_pseudo():
     """
-    Preserve log-mode abstract handler rollback diagnostics.
+    A no-outgoing pseudo is classified before its abstract action is reachable.
     """
     calls = []
     runtime = _runtime_from_dsl_code(
@@ -335,11 +335,13 @@ def test_failed_cycle_rolls_back_logged_abstract_handler_errors():
 
     assert result.value is None
     _assert_root_runtime_snapshot(runtime, {"x": 0})
-    assert runtime.cycle_count == 0
+    assert result.delta is True
+    assert runtime.cycle_count == 1
     assert runtime.is_error_state is False
     assert runtime.error_info is None
     assert runtime.abstract_handler_errors == []
     assert calls == []
+    assert runtime.history[-1]["delta"] is True
 
 
 @pytest.mark.unittest

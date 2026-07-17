@@ -401,12 +401,14 @@ def _expectation_expr(core, case, ignored_fields: Sequence[str]) -> z3.BoolRef:
         "vars_keys",
         "vars_absent",
         "ended",
+        "delta",
         "handler_calls",
     }
     observed_public_fields = 0
     for index, step in enumerate(case.data.get("steps") or []):
         field_path = "steps[%d]" % index
         expect = step.get("expect") or {}
+        start_frame_index = frame_index
         frame_index += _effective_cycle_count(step, case.id, case.yaml_path, field_path)
         try:
             if "handler_calls" in expect and "handler_calls" not in ignored:
@@ -434,6 +436,13 @@ def _expectation_expr(core, case, ignored_fields: Sequence[str]) -> z3.BoolRef:
             if "vars_absent" in expect:
                 observed_public_fields += 1
                 constraints.append(_expect_vars_absent(core, expect["vars_absent"]))
+            if "delta" in expect and "delta" not in ignored:
+                observed_public_fields += 1
+                for step_index in range(start_frame_index, frame_index):
+                    constraints.append(
+                        core.symbols.delta_flag(step_index)
+                        == z3.BoolVal(expect["delta"])
+                    )
         except _StaticFalseExpectation:
             constraints.append(z3.BoolVal(False))
         unknown_unignored = (set(expect) - public_fields - ignored) - {"raises"}
@@ -579,11 +588,11 @@ def test_bmc_semantic_fixture_policy_covers_known_gap_inventory() -> None:
         for mode in _SUPPORTED_POLICY_MODES
     }
     assert mode_counts == {
-        "hard_pass": 146,
+        "hard_pass": 148,
         "partial": 0,
         "expected_unsupported": 3,
         "temporary_exclude": 10,
-        "long_term_exclude": 6,
+        "long_term_exclude": 4,
     }
 
     for case_id in BMC_CORE_FIXTURE_LEDGER_CASES:

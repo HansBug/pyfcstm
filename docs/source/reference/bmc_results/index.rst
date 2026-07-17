@@ -5,12 +5,12 @@ BMC CLI and Result Protocol Reference
 
 This page freezes the process and data contract of ``pyfcstm bmc``.  It covers
 one FCSTM model and one FBMCQ query per invocation, the human report, the
-``bmc-cli/v1`` JSON envelope, witness decoding, runtime replay, exit status,
+structured JSON envelope, witness decoding, runtime replay, exit status,
 errors, and the downloadable reference schema.  It is a bounded result
 protocol: a successful bounded verdict is not an unbounded proof.
 
 The source facts for this page are :mod:`pyfcstm.entry.bmc`, the
-``bmc_cli_v1.schema.json`` maintained beside this page's reST source,
+``bmc_cli.schema.json`` maintained beside this page's reST source,
 :mod:`pyfcstm.bmc.witness`, and the entry behavior tests.  The schema is authoritative for
 JSON types and required keys; the entry module is authoritative for process
 ordering, streams, file effects, and exit status.
@@ -79,7 +79,7 @@ Both installed entry forms have the same behavior:
    * - ``--json``
      - Flag
      - False; human
-     - Selects the stable ``bmc-cli/v1`` JSON envelope.  There is deliberately
+     - Selects the structured JSON envelope.  There is deliberately
        no overlapping ``--format`` option.
    * - ``--timeout-ms``
      - Integer, ``>= 1``
@@ -338,7 +338,7 @@ keys, non-ASCII characters preserved, and one trailing newline.  Every object
 in the schema rejects undeclared keys where ``additionalProperties`` is false.
 Raw Z3 models and complete SMT formulas are deliberately excluded.
 
-.. list-table:: Top-level ``bmc-cli/v1`` fields
+.. list-table:: Top-level JSON fields
    :header-rows: 1
    :widths: 20 22 15 43
 
@@ -346,10 +346,6 @@ Raw Z3 models and complete SMT formulas are deliberately excluded.
      - Type/allowed value
      - Always present
      - Meaning
-   * - ``schema_version``
-     - string, exactly ``bmc-cli/v1``
-     - Yes
-     - Version discriminator for this envelope.
    * - ``input``
      - object
      - Yes
@@ -500,10 +496,11 @@ channels even when each individual object is structurally valid.
 Witness fields
 --------------
 
-CLI-emitted ``witness`` uses ``schema_version == "bmc-witness/v2"`` and adds
-root ``model_role`` and ``verdict`` fields.  The legacy
-``decode_bmc_witness`` compatibility API continues to produce v1.  In v2,
-``model_role`` is at the trace root, never nested under ``solver``.
+The selected witness trace is present for a primary or suffix model. CLI-emitted
+traces use ``schema_version == "bmc-witness/v2"`` and add root ``model_role``
+and ``verdict`` fields; the compatibility ``decode_bmc_witness`` API continues
+to emit v1. In v2, ``model_role`` is at the trace root, never nested under
+``solver``. The required root fields are described below.
 
 .. list-table:: Witness root and nested records
    :header-rows: 1
@@ -584,8 +581,8 @@ replay object contains:
        symbolic ``state_id`` or sentinel field.
    * - ``runtime_trace.steps[]``
      - ``index``, ``input_events``, ``consumed_events``,
-       ``unconsumed_events``, ``abstract_calls``
-     - Actual runtime event accounting and recorded abstract calls.
+       ``unconsumed_events``, ``abstract_calls``, ``delta``
+     - Actual runtime event accounting, committed-only Delta result, and recorded abstract calls.
    * - ``mismatches[]``
      - ``path``, ``expected``, ``actual``, ``message``, ``tolerance``
      - One comparison failure.  Expected/actual are JSON values; tolerance is a
@@ -787,14 +784,14 @@ being created.
 Schema download and consumer checks
 -----------------------------------
 
-:download:`Download the normative bmc-cli/v1 JSON Schema
-<bmc_cli_v1.schema.json>`.
+:download:`Download the normative BMC JSON Schema
+<bmc_cli.schema.json>`.
 
 The schema is a reference artifact, not a runtime dependency.  Sphinx publishes
 it through the download link above; do not infer a schema URL from this page's
 rendered URL.  It deliberately is not shipped inside ``pyfcstm`` wheels, source
 distributions, or standalone executables.  Consumers that need structural
-validation should download or vendor the versioned schema with their integration
+validation should download or vendor this reference schema with their integration
 and load that local copy:
 
 .. code-block:: python
@@ -803,7 +800,7 @@ and load that local copy:
    from pathlib import Path
 
    schema = json.loads(
-       Path("bmc_cli_v1.schema.json").read_text(encoding="utf-8")
+       Path("bmc_cli.schema.json").read_text(encoding="utf-8")
    )
 
 With ``jsonschema``, validate the schema itself as Draft 2020-12 and then
@@ -817,8 +814,7 @@ Consumer rules
 
 * Branch first on process exit and the presence of a JSON report.  Exit ``1``
   alone cannot distinguish a negative verdict from stderr-only failure.
-* When JSON exists, require ``schema_version == "bmc-cli/v1"`` and verify
-  ``payload.exit_code`` equals the process exit status.
+* When JSON exists, verify ``payload.exit_code`` equals the process exit status.
 * Use ``result.outcome`` and ``result.polarity``; never interpret SAT as a
   universal success.
 * Treat exit ``3`` as one process category but distinguish timeout, unknown,

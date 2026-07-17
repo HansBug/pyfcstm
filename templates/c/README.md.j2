@@ -509,6 +509,7 @@ The machine object is not opaque in C, but most fields are runtime-owned.
 | `{{ machine_class_name(model) }}_cycle(machine, event_ids, event_count)` | Execute one cycle with zero or more event ids |
 | `{{ machine_class_name(model) }}_vars(machine)` | Read persistent variables |
 | `{{ machine_class_name(model) }}_is_ended(machine)` | Test whether the machine has ended |
+| `{{ machine_class_name(model) }}_last_cycle_was_delta(machine)` | Read whether the most recent successful cycle was a Delta no-progress step |
 | `{{ machine_class_name(model) }}_current_state_id(machine)` | Read the current leaf-state id |
 | `{{ machine_class_name(model) }}_current_state_path(machine)` | Read the current leaf-state full path for diagnostics |
 | `{{ machine_class_name(model) }}_current_state_name(machine)` | Read the current leaf-state short name |

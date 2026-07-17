@@ -387,6 +387,9 @@ class _CRuntime:
         self._is_ended = self._bind_function(
             '{prefix}_is_ended', argtypes=[ctypes.c_void_p], restype=ctypes.c_int
         )
+        self._last_cycle_was_delta = self._bind_function(
+            '{prefix}_last_cycle_was_delta', argtypes=[ctypes.c_void_p], restype=ctypes.c_int
+        )
         self._last_error = self._bind_function(
             '{prefix}_last_error', argtypes=[ctypes.c_void_p], restype=ctypes.c_char_p
         )
@@ -648,6 +651,10 @@ class _CRuntime:
     @property
     def is_ended(self):
         return bool(self._is_ended(self._machine))
+
+    @property
+    def last_cycle_was_delta(self):
+        return bool(self._last_cycle_was_delta(self._machine))
 
     @property
     def current_state_path(self):

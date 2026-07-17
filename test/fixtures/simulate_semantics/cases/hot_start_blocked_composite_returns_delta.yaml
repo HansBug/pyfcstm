@@ -1,25 +1,26 @@
-title: Hot start rejects a composite target whose initial transition is blocked
+title: Hot start blocked composite returns a Delta step
 origin:
   files:
   - test/simulate/test_semantic_fixtures.py::test_simulation_semantic_fixture
   - test/template/python/test_semantic_fixture_alignment.py::test_generated_python_alignment_semantic_fixture
   notes:
   - The target composite remains in init_wait because its guarded initial transition
-    is false.
+    is false; the first real cycle reports a successful Delta.
 categories:
 - runtime
 - hot_start
 - validation
 - template_alignment
-exclude_runners:
-- bmc_core
 initial:
   state: Root.C
   vars:
     x: 0
+steps:
+- cycle: []
+  cycle_count: 2
   expect:
-    raises:
-      type: ValueError
-      match: Hot start target 'Root.C' cannot reach a stoppable state
-      match_kind: substring
-steps: []
+    state: Root.C
+    vars:
+      x: 0
+    ended: false
+    delta: true

@@ -45,8 +45,18 @@ FBMCQ 与有界模型检查
   变量归一化、事件所有权、历史长度调整和终止状态查询。
 - 新增 :class:`pyfcstm.simulate.CycleResult` 事件记账，并强化抽象处理器注册、装饰器
   扫描、执行上下文、命名动作引用、警告元数据和会话复制行为。
+- 将 non-stoppable 热启动和伪状态无进展行为改为成功的 Delta 周期：合法的阻塞目标不再
+  在构造器阶段被拒绝，第一次真实 ``cycle()`` 返回 ``delta=True``，并推进公开周期计数
+  与 history 契约。
 - 扩展共享语义用例语料，使模拟器和生成运行时按周期对齐状态、变量、事件、历史、
   回调与失败行为。
+
+兼容性说明
+~~~~~~~~~~
+
+- 删除 BMC CLI、witness/native 结果中的 ``schema_version`` 字段，并将可下载结果模式从
+  ``bmc_cli_v1.schema.json`` 重命名为 ``bmc_cli.schema.json``。下游必须停止读取已删除字段
+  并更新模式下载路径；标准 JSON Schema 的 ``$schema`` 方言 URI 保持不变。
 
 内置模板与 DSL
 ~~~~~~~~~~~~~~

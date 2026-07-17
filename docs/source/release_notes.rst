@@ -53,9 +53,22 @@ Simulation and Runtime Semantics
 - Added :class:`pyfcstm.simulate.CycleResult` event accounting and strengthened
   abstract-handler registration, decorator scanning, execution context, named
   action references, warning metadata, and session-copy behavior.
+- Changed non-stoppable hot-start and pseudo-state no-progress behavior to a
+  successful Delta cycle: construction no longer rejects a valid blocked target,
+  and the first real ``cycle()`` reports ``delta=True`` while advancing the
+  public cycle/history contract.
 - Extended the shared semantic fixture corpus so the simulator and generated
   runtimes are checked against the same cycle-by-cycle state, variable, event,
   history, callback, and failure behavior.
+
+Compatibility notes
+~~~~~~~~~~~~~~~~~~~
+
+- Removed the BMC CLI and witness/native ``schema_version`` fields and renamed
+  the downloadable result schema from ``bmc_cli_v1.schema.json`` to
+  ``bmc_cli.schema.json``. Consumers must stop reading the removed fields and
+  update schema download paths; the standard JSON Schema ``$schema`` dialect
+  URI remains unchanged.
 
 Built-In Templates and DSL
 ~~~~~~~~~~~~~~~~~~~~~~~~~~

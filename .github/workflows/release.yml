@@ -1,31 +1,76 @@
 name: Package Release
 
 on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing release tag to stage, verify, and publish'
+        required: true
+        type: string
   release:
     types: [ published ]
 
-jobs:
-  release:
-    name: Publish to official pypi
-    runs-on: ${{ matrix.os }}
-    if: ${{ github.repository == 'hansbug/pyfcstm' }}
-    strategy:
-      matrix:
-        os:
-          - 'ubuntu-latest'
-        python-version:
-          - '3.8'
+permissions:
+  contents: write
 
+concurrency:
+  group: pyfcstm-release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  resolve_release_target:
+    name: Resolve release tag and commit
+    runs-on: ubuntu-22.04
+    if: ${{ github.repository == 'hansbug/pyfcstm' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+    outputs:
+      tag: ${{ steps.resolve.outputs.tag }}
+      full_commit: ${{ steps.resolve.outputs.full_commit }}
+    steps:
+      - name: Checkout requested release ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+          fetch-depth: 0
+          submodules: 'recursive'
+      - name: Resolve canonical release identity
+        id: resolve
+        env:
+          REQUESTED_TAG: ${{ github.event.inputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${REQUESTED_TAG:-${GITHUB_REF_NAME}}"
+          case "$tag" in v*) ;; *) echo "release tag must start with v: $tag" >&2; exit 1 ;; esac
+          git fetch --tags --force --quiet
+          commit="$(git rev-parse "${tag}^{commit}")"
+          test "$commit" = "$(git rev-parse HEAD)"
+          test "$commit" = "$GITHUB_SHA"
+          test "$(git rev-parse --verify "${tag}^{tag}" 2>/dev/null || git rev-parse --verify "${tag}^{commit}")" >/dev/null
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "full_commit=$commit" >> "$GITHUB_OUTPUT"
+          printf 'tag=%s\nfull_commit=%s\n' "$tag" "$commit"
+
+  package_stage:
+    name: Stage Python release artifacts
+    runs-on: ubuntu-22.04
+    needs: resolve_release_target
+    if: ${{ needs.resolve_release_target.result == 'success' }}
+    outputs:
+      tag: ${{ steps.identity.outputs.tag }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v3.3.0
         with:
-          fetch-depth: 20
+          ref: ${{ needs.resolve_release_target.outputs.full_commit }}
+          fetch-depth: 0
           submodules: 'recursive'
-      - name: Set up python ${{ matrix.python-version }}
-        uses: actions/setup-python@v2
+      - name: Set up Python 3.8
+        uses: actions/setup-python@v6
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: '3.8'
       - name: Set up python dependences
         run: |
           pip install --upgrade pip
@@ -35,27 +80,424 @@ jobs:
           pip install --upgrade build
       - name: Build packages
         run: |
+          make build_info
           make package
-      - name: Publish distribution 📦 to real PyPI
+          test "$(find dist -maxdepth 1 -type f -name '*.whl' | wc -l)" -eq 1
+          test "$(find dist -maxdepth 1 -type f -name '*.tar.gz' | wc -l)" -eq 1
+          python - <<'PY' > dist/artifact-sha256.txt
+          import hashlib
+          import os
+          from glob import glob
+
+          for path in sorted(glob("dist/*.whl") + glob("dist/*.tar.gz")):
+              digest = hashlib.sha256()
+              with open(path, "rb") as stream:
+                  for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                      digest.update(chunk)
+              print("{} {} dist/{}".format(
+                  digest.hexdigest(), os.path.getsize(path), os.path.basename(path)
+              ))
+          PY
+      - name: Record release identity
+        id: identity
+        env:
+          TARGET_TAG: ${{ needs.resolve_release_target.outputs.tag }}
+          TARGET_COMMIT: ${{ needs.resolve_release_target.outputs.full_commit }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="$TARGET_TAG"
+          test -n "$(git rev-parse HEAD)"
+          test -z "$(git status --porcelain)"
+          git fetch --tags --force --quiet
+          test "$(git rev-parse HEAD)" = "$TARGET_COMMIT"
+          {
+            echo 'schema=pyfcstm-build-identity/v1'
+            echo 'artifact_kind=python-distributions'
+            echo "full_commit=$TARGET_COMMIT"
+            echo 'dirty=0'
+            echo "tag=$tag"
+            echo 'platform=ubuntu-22.04'
+          } > dist/build-identity.txt
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - name: Upload staged Python artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: pyfcstm-release-python
+          if-no-files-found: error
+          path: dist/*
+
+  package_fresh:
+    name: Fresh Python release self-check
+    runs-on: ubuntu-22.04
+    needs: [resolve_release_target, package_stage]
+    if: ${{ needs.resolve_release_target.result == 'success' && needs.package_stage.result == 'success' }}
+    services:
+      plantuml:
+        image: plantuml/plantuml-server@sha256:00b96145a7e2999fd9504b84e26d00c47222b7963a0072ee14ea59449d634e99
+        ports:
+          - 18080:8080
+    timeout-minutes: 30
+    steps:
+      - name: Prepare self-check evidence directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          reports="$RUNNER_TEMP/pyfcstm-release-python-reports"
+          mkdir -p "$reports"
+          printf 'job=fresh-python-release\nstarted_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$reports/bootstrap.txt"
+          : > "$RUNNER_TEMP/java-version.txt"
+          : > "$RUNNER_TEMP/plantuml-version.txt"
+      - name: Set up Python 3.8
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.8'
+      - name: Set up Java runtime
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Download staged Python artifacts only
+        uses: actions/download-artifact@v4
+        with:
+          name: pyfcstm-release-python
+          path: ${{ runner.temp }}/pyfcstm-release-python
+      - name: Install and verify PlantUML JAR
+        shell: bash
+        run: |
+          set -euo pipefail
+          jar="$RUNNER_TEMP/plantuml.jar"
+          curl --fail --location --silent --show-error \
+            https://github.com/plantuml/plantuml/releases/download/v1.2024.6/plantuml-1.2024.6.jar \
+            --output "$jar"
+          actual_digest=$(python - "$jar" <<'PY'
+          import hashlib
+          import sys
+          digest = hashlib.sha256()
+          with open(sys.argv[1], "rb") as stream:
+              for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                  digest.update(chunk)
+          print(digest.hexdigest())
+          PY
+          )
+          test "$actual_digest" = 5a8dc3b37fe133a4744e55be80caf6080a70350aba716d95400a0f0cbd79e846
+          java -version 2> "$RUNNER_TEMP/java-version.txt"
+          java -jar "$jar" -version 2>&1 | tee "$RUNNER_TEMP/plantuml-version.txt"
+      - name: Install wheel and sdist in separate clean venvs
+        shell: bash
+        env:
+          PYTHONPATH: ''
+          PYTHONNOUSERSITE: '1'
+          PIP_CONFIG_FILE: /dev/null
+          PLANTUML_JAR: ${{ runner.temp }}/plantuml.jar
+          PLANTUML_HOST: http://127.0.0.1:18080
+          TARGET_COMMIT: ${{ needs.resolve_release_target.outputs.full_commit }}
+        run: |
+          set -euo pipefail
+          reports="$RUNNER_TEMP/pyfcstm-release-python-reports"
+          mkdir -p "$reports"
+          python - "$RUNNER_TEMP/pyfcstm-release-python" > "$reports/downloaded-sha256.txt" <<'PY'
+          import hashlib
+          import os
+          import sys
+          directory = sys.argv[1]
+          for name in sorted(os.listdir(directory)):
+              path = os.path.join(directory, name)
+              if not os.path.isfile(path):
+                  continue
+              digest = hashlib.sha256()
+              with open(path, "rb") as stream:
+                  for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                      digest.update(chunk)
+              print("{} {} {}".format(digest.hexdigest(), os.path.getsize(path), name))
+          PY
+          identity="$RUNNER_TEMP/pyfcstm-release-python/build-identity.txt"
+          digest_file="$RUNNER_TEMP/pyfcstm-release-python/artifact-sha256.txt"
+          test -f "$identity" -a -f "$digest_file"
+          grep -F "full_commit=$TARGET_COMMIT" "$identity"
+          cp "$identity" "$reports/build-identity.txt"
+          cp "$digest_file" "$reports/artifact-sha256.txt"
+          wheel_count=$(find "$RUNNER_TEMP/pyfcstm-release-python" -type f -name '*.whl' -print | wc -l)
+          sdist_count=$(find "$RUNNER_TEMP/pyfcstm-release-python" -type f -name '*.tar.gz' -print | wc -l)
+          test "$wheel_count" -eq 1
+          test "$sdist_count" -eq 1
+          set +e
+          curl --fail --location --retry 5 --retry-delay 2 --max-time 15 \
+            "${PLANTUML_HOST%/}/" > "$reports/plantuml-readiness.txt" 2>&1
+          readiness_status=$?
+          set -e
+          test "$readiness_status" -eq 0
+          for kind in wheel sdist; do
+            if [ "$kind" = wheel ]; then
+              artifact=$(find "$RUNNER_TEMP/pyfcstm-release-python" -type f -name '*.whl' -print -quit)
+            else
+              artifact=$(find "$RUNNER_TEMP/pyfcstm-release-python" -type f -name '*.tar.gz' -print -quit)
+            fi
+            test -n "$artifact"
+            artifact_name=$(basename "$artifact")
+            expected_digest=$(awk -v file="$artifact_name" '$3 == "dist/" file || $3 == file {print $1}' "$digest_file")
+            expected_size=$(awk -v file="$artifact_name" '$3 == "dist/" file || $3 == file {print $2}' "$digest_file")
+            actual_digest=$(python - "$artifact" <<'PY'
+          import hashlib
+          import sys
+          digest = hashlib.sha256()
+          with open(sys.argv[1], "rb") as stream:
+              for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                  digest.update(chunk)
+          print(digest.hexdigest())
+          PY
+            )
+            test -n "$expected_digest" -a "$expected_digest" = "$actual_digest"
+            test "$expected_size" -eq "$(wc -c < "$artifact")"
+            venv="$RUNNER_TEMP/pyfcstm-release-${kind}-venv"
+            rm -rf "$venv"
+            python -m venv "$venv"
+            source "$venv/bin/activate"
+            python -m pip --isolated install --upgrade 'pip<24.1' 2>&1 | tee "$reports/${kind}-pip-bootstrap.log"
+            set +e
+            python -m pip --isolated install --no-cache-dir "$artifact" 2>&1 | tee "$reports/${kind}-pip-install.log"
+            install_status=${PIPESTATUS[0]}
+            set -e
+            test "$install_status" -eq 0
+            python -m pip --isolated check 2>&1 | tee "$reports/${kind}-pip-check.log"
+            python -m pip --isolated list --format=json 2>&1 | tee "$reports/${kind}-pip-list.json"
+            python -c 'import pyfcstm, sys; print(pyfcstm.__file__); print(sys.executable); print("\\n".join(sys.path))' \
+              | tee "$reports/${kind}-module-path.txt"
+            if grep -F "$GITHUB_WORKSPACE" "$reports/${kind}-module-path.txt"; then
+              echo 'installed module came from the checkout workspace' >&2
+              exit 1
+            fi
+            set +e
+            pyfcstm --version 2>&1 | tee "$reports/${kind}-version.log"
+            version_status=${PIPESTATUS[0]}
+            python -m pyfcstm --version 2>&1 | tee "$reports/${kind}-module-version.log"
+            module_version_status=${PIPESTATUS[0]}
+            pyfcstm --self-check --color always --report "$reports/${kind}-default.json" 2>&1 | tee "$reports/${kind}-default.log"
+            default_status=${PIPESTATUS[0]}
+            pyfcstm --self-check --profile visualize --network --color always --report "$reports/${kind}-visualize.json" 2>&1 | tee "$reports/${kind}-visualize.log"
+            visualize_status=${PIPESTATUS[0]}
+            set -e
+            printf 'kind=%s\ninstall=%s\nversion=%s\nmodule_version=%s\ndefault=%s\nvisualize=%s\nplantuml_readiness=%s\nPLANTUML_HOST=%s\nPLANTUML_JAR=%s\n' \
+              "$kind" "$install_status" "$version_status" "$module_version_status" "$default_status" "$visualize_status" "$readiness_status" "$PLANTUML_HOST" "$PLANTUML_JAR" \
+              | tee "$reports/${kind}-summary.txt"
+            test "$version_status" -eq 0
+            test "$module_version_status" -eq 0
+            test "$default_status" -eq 0
+            test "$visualize_status" -eq 0
+            test "$readiness_status" -eq 0
+            grep -F "Commit: $TARGET_COMMIT" "$reports/${kind}-version.log"
+          python - "$reports/${kind}-visualize.json" "$PLANTUML_HOST" <<'PY'
+          import json
+          import sys
+
+          report_path, host = sys.argv[1:]
+          with open(report_path, "r") as stream:
+              report = json.load(stream)
+          results = {item["id"]: item for item in report["results"]}
+          for check_id in ("visualize.remote_tls", "visualize.remote_render"):
+              result = results.get(check_id)
+              if result is None or result["status"] != "PASS":
+                  raise SystemExit("{} did not PASS: {}".format(check_id, result))
+              if host not in (result.get("observed") or ""):
+                  raise SystemExit("{} did not record configured host: {}".format(check_id, result))
+          PY
+          deactivate
+          done
+      - name: Upload fresh Python evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: pyfcstm-release-python-selfcheck
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/pyfcstm-release-python-reports
+            ${{ runner.temp }}/java-version.txt
+            ${{ runner.temp }}/plantuml-version.txt
+
+  release_gate:
+    name: Aggregate fresh artifact gate
+    runs-on: ubuntu-22.04
+    needs: [resolve_release_target, package_fresh, release_cli_fresh, release_cli_controlled_linux]
+    if: ${{ always() && needs.resolve_release_target.result == 'success' && needs.package_fresh.result == 'success' && needs.release_cli_fresh.result == 'success' && needs.release_cli_controlled_linux.result == 'success' }}
+    steps:
+      - name: Download the exact staged Python artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pyfcstm-release-python
+          path: ${{ runner.temp }}/pyfcstm-release-gate/python
+      - name: Download staged Ubuntu CLI artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pyfcstm-release-cli-ubuntu-22.04
+          path: ${{ runner.temp }}/pyfcstm-release-gate/cli/pyfcstm-release-cli-ubuntu-22.04
+      - name: Download staged Windows CLI artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pyfcstm-release-cli-windows-2022
+          path: ${{ runner.temp }}/pyfcstm-release-gate/cli/pyfcstm-release-cli-windows-2022
+      - name: Download staged macOS CLI artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pyfcstm-release-cli-macos-14
+          path: ${{ runner.temp }}/pyfcstm-release-gate/cli/pyfcstm-release-cli-macos-14
+      - name: Confirm fresh results and staged sidecars
+        env:
+          TARGET_COMMIT: ${{ needs.resolve_release_target.outputs.full_commit }}
+          TARGET_TAG: ${{ needs.resolve_release_target.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'package_fresh=success'
+          echo 'release_cli_fresh=success'
+          echo 'release_cli_controlled_linux=success'
+          echo "target_commit=$TARGET_COMMIT"
+          python - "$RUNNER_TEMP/pyfcstm-release-gate" "$TARGET_COMMIT" "$TARGET_TAG" <<'PY'
+          import hashlib
+          import re
+          import sys
+          from pathlib import Path
+
+          root = Path(sys.argv[1])
+          target_commit = sys.argv[2]
+          target_tag = sys.argv[3]
+          digest_pattern = re.compile(r"^[0-9a-f]{64}$")
+          commit_pattern = re.compile(r"^[0-9a-f]{40}$")
+
+          def read_identity(path):
+              values = {}
+              for line in path.read_text(encoding="utf-8").splitlines():
+                  key, separator, value = line.partition("=")
+                  if not separator or not key or key in values:
+                      raise SystemExit("invalid identity line: {}".format(line))
+                  values[key] = value
+              required = {"schema", "artifact_kind", "full_commit", "dirty", "platform", "tag"}
+              missing = sorted(required - set(values))
+              if missing:
+                  raise SystemExit("identity missing fields: {}".format(",".join(missing)))
+              if values["schema"] != "pyfcstm-build-identity/v1":
+                  raise SystemExit("unsupported identity schema: {}".format(values["schema"]))
+              if not commit_pattern.fullmatch(values["full_commit"]):
+                  raise SystemExit("invalid full_commit: {}".format(values["full_commit"]))
+              if (
+                  values["full_commit"] != target_commit
+                  or values["dirty"] != "0"
+                  or values["tag"] != target_tag
+              ):
+                  raise SystemExit("identity does not match target clean commit: {}".format(path))
+              return values
+
+          def verify_artifact(directory, expected_kind, expected_platform=None):
+              identity_path = directory / "build-identity.txt"
+              digest_path = directory / "artifact-sha256.txt"
+              if not identity_path.is_file() or not digest_path.is_file():
+                  raise SystemExit("missing sidecars in {}".format(directory))
+              identity = read_identity(identity_path)
+              if identity["artifact_kind"] != expected_kind:
+                  raise SystemExit("unexpected artifact kind in {}".format(identity_path))
+              if expected_platform is not None and identity["platform"] != expected_platform:
+                  raise SystemExit(
+                      "identity platform mismatch in {}: expected {}, got {}".format(
+                          identity_path, expected_platform, identity["platform"]
+                      )
+                  )
+              rows = []
+              for line in digest_path.read_text(encoding="utf-8").splitlines():
+                  fields = line.split()
+                  if len(fields) != 3 or not digest_pattern.fullmatch(fields[0]) or not fields[1].isdigit():
+                      raise SystemExit("invalid digest row: {}".format(line))
+                  rows.append((fields[0], int(fields[1]), Path(fields[2]).name))
+              if not rows or len({row[2] for row in rows}) != len(rows):
+                  raise SystemExit("missing or duplicate digest rows in {}".format(digest_path))
+              payloads = {}
+              for candidate in directory.rglob("*"):
+                  if candidate.is_file() and candidate.name not in {"build-identity.txt", "artifact-sha256.txt"}:
+                      payloads.setdefault(candidate.name, []).append(candidate)
+              for expected_digest, expected_size, name in rows:
+                  candidates = payloads.get(name, [])
+                  if len(candidates) != 1:
+                      raise SystemExit("payload is not unique: {}".format(name))
+                  candidate = candidates[0]
+                  if candidate.stat().st_size != expected_size:
+                      raise SystemExit("size mismatch: {}".format(candidate))
+                  digest = hashlib.sha256(candidate.read_bytes()).hexdigest()
+                  if digest != expected_digest:
+                      raise SystemExit("digest mismatch: {}".format(candidate))
+              print("verified {} ({})".format(directory, identity["platform"]))
+
+          verify_artifact(root / "python", "python-distributions", "ubuntu-22.04")
+          cli_root = root / "cli"
+          cli_directories = sorted(path for path in cli_root.iterdir() if path.is_dir())
+          if {path.name for path in cli_directories} != {
+              "pyfcstm-release-cli-ubuntu-22.04",
+              "pyfcstm-release-cli-windows-2022",
+              "pyfcstm-release-cli-macos-14",
+          }:
+              raise SystemExit("CLI artifact matrix is incomplete: {}".format(cli_directories))
+          for directory in cli_directories:
+              prefix = "pyfcstm-release-cli-"
+              if not directory.name.startswith(prefix):
+                  raise SystemExit("unexpected CLI artifact directory: {}".format(directory))
+              verify_artifact(directory, "standalone", directory.name[len(prefix):])
+          PY
+          echo 'all fresh artifact gates passed'
+
+  package_publish:
+    name: Publish verified Python artifacts
+    runs-on: ubuntu-22.04
+    needs: [resolve_release_target, package_stage, release_gate]
+    if: ${{ needs.resolve_release_target.result == 'success' && needs.package_stage.result == 'success' && needs.release_gate.result == 'success' }}
+    steps:
+      - name: Download the exact staged artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: pyfcstm-release-python
+          path: ${{ runner.temp }}/pyfcstm-release-python
+      - name: Verify staged identity and prepare draft release
+        id: identity
+        env:
+          TARGET_TAG: ${{ needs.resolve_release_target.outputs.tag }}
+          TARGET_COMMIT: ${{ needs.resolve_release_target.outputs.full_commit }}
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="$TARGET_TAG"
+          test "$(awk -F= '$1 == "tag" {print $2}' "$RUNNER_TEMP/pyfcstm-release-python/build-identity.txt")" = "$tag"
+          test "$(awk -F= '$1 == "full_commit" {print $2}' "$RUNNER_TEMP/pyfcstm-release-python/build-identity.txt")" = "$TARGET_COMMIT"
+          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --draft --title "$tag" --generate-notes
+          test "$(gh release view "$tag" --json isDraft --jq '.isDraft')" = true
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - name: Isolate only publishable distributions
+        shell: bash
+        run: |
+          set -euo pipefail
+          publish="$RUNNER_TEMP/pyfcstm-release-python-publish"
+          rm -rf "$publish"
+          mkdir -p "$publish"
+          cp "$RUNNER_TEMP/pyfcstm-release-python"/*.whl "$publish"/
+          cp "$RUNNER_TEMP/pyfcstm-release-python"/*.tar.gz "$publish"/
+      - name: Publish only verified Python distributions
         uses: pypa/gh-action-pypi-publish@v1.13.0
         with:
           password: ${{ secrets.PYPI_PASSWORD }}
-      - name: Upload binaries to release
-        uses: svenstaro/upload-release-action@v2
-        with:
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: dist/*
-          tag: ${{ github.ref }}
-          overwrite: true
-          file_glob: true
+          packages-dir: ${{ runner.temp }}/pyfcstm-release-python-publish
+      - name: Upload Python distributions to the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_TAG: ${{ needs.resolve_release_target.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="$TARGET_TAG"
+          gh release upload "$tag" "$RUNNER_TEMP/pyfcstm-release-python-publish"/*.whl "$RUNNER_TEMP/pyfcstm-release-python-publish"/*.tar.gz --clobber
 
   release_docs_pdf:
     name: Bilingual Docs PDF And Release
     runs-on: ubuntu-24.04
-    if: ${{ github.repository == 'hansbug/pyfcstm' }}
+    if: ${{ github.repository == 'hansbug/pyfcstm' && github.event_name == 'release' && github.event.action == 'published' }}
     services:
       plantuml:
-        image: plantuml/plantuml-server:jetty-v1.2023.6
+        image: plantuml/plantuml-server@sha256:00b96145a7e2999fd9504b84e26d00c47222b7963a0072ee14ea59449d634e99
         ports:
           - 18080:8080
     steps:
@@ -155,10 +597,11 @@ jobs:
           overwrite: true
           file_glob: true
 
-  release_cli:
-    name: CLI Build And Release
+  release_cli_stage:
+    name: Stage standalone CLI artifacts
     runs-on: ${{ matrix.os }}
-    if: ${{ github.repository == 'hansbug/pyfcstm' }}
+    needs: resolve_release_target
+    if: ${{ needs.resolve_release_target.result == 'success' }}
     strategy:
       fail-fast: false
       matrix:
@@ -210,7 +653,8 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3.3.0
         with:
-          fetch-depth: 20
+          ref: ${{ needs.resolve_release_target.outputs.full_commit }}
+          fetch-depth: 0
           submodules: 'recursive'
       - name: Set up system dependencies on Linux
         if: ${{ env.OS_NAME == 'Linux' }}
@@ -255,7 +699,7 @@ jobs:
           echo "PKG_CONFIG_PATH=${BREW_PREFIX}/lib/pkgconfig${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}" >> $GITHUB_ENV
           echo "DYLD_FALLBACK_LIBRARY_PATH=${BREW_PREFIX}/lib${DYLD_FALLBACK_LIBRARY_PATH:+:${DYLD_FALLBACK_LIBRARY_PATH}}" >> $GITHUB_ENV
       - name: Set up python ${{ matrix.python-version }}
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install dependencies
@@ -287,11 +731,13 @@ jobs:
           pip list
           tree .
       - name: Get package version
+        env:
+          TARGET_COMMIT: ${{ needs.resolve_release_target.outputs.full_commit }}
         shell: bash
         run: |
           python -c 'from pyfcstm.config.meta import __VERSION__;print(__VERSION__)'
           echo "PACKAGE_VERSION=$(python -c 'from pyfcstm.config.meta import __VERSION__;print(__VERSION__)')" >> $GITHUB_ENV
-          echo "GIT_COMMIT_ID=$(echo ${GITHUB_SHA} | cut -c1-7)" >> $GITHUB_ENV
+          echo "GIT_COMMIT_ID=$(echo ${TARGET_COMMIT} | cut -c1-7)" >> $GITHUB_ENV
           echo "PYTHON_VERSION=$(python -V | xargs -n 1 | tail -1)" >> $GITHUB_ENV
           echo "CPU_ARCH=$(uname -m)" >> $GITHUB_ENV
       - name: Get CLI name
@@ -303,7 +749,11 @@ jobs:
         if: ${{ env.OS_NAME != 'Windows' }}
         shell: bash
         run: |
-          make build
+          make build_info
+          # Keep the tracked logo PNG as the build input; otherwise Make's
+          # timestamp rule can rewrite it before the recursive build_info
+          # prerequisite and falsely mark the artifact dirty.
+          make -o logos/logo.png build
           mkdir -p dist/${{ env.CLI_NAME }}
           cp dist/pyfcstm dist/${{ env.CLI_NAME }}/pyfcstm
           cd dist
@@ -321,7 +771,10 @@ jobs:
         if: ${{ env.OS_NAME == 'Windows' }}
         shell: bash
         run: |
-          make build
+          make build_info
+          # Keep the tracked logo PNG as the build input; see the Linux/macOS
+          # build step above.
+          make -o logos/logo.png build
           mkdir -p dist/${{ env.CLI_NAME }}
           cp dist/pyfcstm.exe dist/${{ env.CLI_NAME }}/pyfcstm.exe
           cd dist
@@ -335,22 +788,451 @@ jobs:
         shell: bash
         run: |
           python -m tools.test_cli dist/pyfcstm.exe --test-dsl docs/source/tutorials/cli/simple_machine.fcstm --template-dir test/testfile/template_1
-      - name: Upload binaries to release
-        uses: svenstaro/upload-release-action@v2
+      - name: Record CLI identity and archive digest
+        env:
+          TARGET_TAG: ${{ needs.resolve_release_target.outputs.tag }}
+          TARGET_COMMIT: ${{ needs.resolve_release_target.outputs.full_commit }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(git status --porcelain)"
+          tag="$TARGET_TAG"
+          {
+            echo 'schema=pyfcstm-build-identity/v1'
+            echo 'artifact_kind=standalone'
+            echo "full_commit=$TARGET_COMMIT"
+            echo 'dirty=0'
+            echo "tag=$tag"
+            echo "platform=${{ matrix.os }}"
+          } > dist/build-identity.txt
+          python - "dist/${ZIP_NAME}.zip" > dist/artifact-sha256.txt <<'PY'
+          import hashlib
+          import os
+          import sys
+
+          path = sys.argv[1]
+          digest = hashlib.sha256()
+          with open(path, "rb") as stream:
+              for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                  digest.update(chunk)
+          print("{} {} dist/{}".format(
+              digest.hexdigest(), os.path.getsize(path), os.path.basename(path)
+          ))
+          PY
+      - name: Upload staged standalone artifact
+        uses: actions/upload-artifact@v4
         with:
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: dist/${{ env.ZIP_NAME }}.zip
-          asset_name: ${{ env.ZIP_NAME }}.zip
-          tag: ${{ github.ref }}
-          overwrite: true
+          name: pyfcstm-release-cli-${{ matrix.os }}
+          if-no-files-found: error
+          path: |
+            dist/${{ env.ZIP_NAME }}.zip
+            dist/build-identity.txt
+            dist/artifact-sha256.txt
+
+  release_cli_fresh:
+    name: Fresh standalone CLI self-check (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    needs: [resolve_release_target, release_cli_stage]
+    if: ${{ needs.resolve_release_target.result == 'success' && needs.release_cli_stage.result == 'success' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-22.04
+          - windows-2022
+          - macos-14
+    timeout-minutes: 25
+    steps:
+      - name: Prepare self-check evidence directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          reports="$RUNNER_TEMP/pyfcstm-release-cli-reports"
+          mkdir -p "$reports"
+          printf 'job=fresh-standalone-release\nstarted_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$reports/bootstrap.txt"
+          : > "$RUNNER_TEMP/java-version.txt"
+          : > "$RUNNER_TEMP/plantuml-version.txt"
+          : > "$RUNNER_TEMP/plantuml-readiness.txt"
+          : > "$RUNNER_TEMP/plantuml-service.log"
+      - name: Set up Java runtime
+        continue-on-error: true
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Download only the staged CLI artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pyfcstm-release-cli-${{ matrix.os }}
+          path: ${{ runner.temp }}/pyfcstm-release-cli
+      - name: Install and verify PlantUML JAR
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          jar="$RUNNER_TEMP/plantuml.jar"
+          curl --fail --location --silent --show-error \
+            https://github.com/plantuml/plantuml/releases/download/v1.2024.6/plantuml-1.2024.6.jar \
+            --output "$jar"
+          actual_digest=$(python - "$jar" <<'PY'
+          import hashlib
+          import sys
+          digest = hashlib.sha256()
+          with open(sys.argv[1], "rb") as stream:
+              for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                  digest.update(chunk)
+          print(digest.hexdigest())
+          PY
+          )
+          test "$actual_digest" = 5a8dc3b37fe133a4744e55be80caf6080a70350aba716d95400a0f0cbd79e846
+          java -version 2> "$RUNNER_TEMP/java-version.txt"
+          java -jar "$jar" -version 2>&1 | tee "$RUNNER_TEMP/plantuml-version.txt"
+      - name: Start local PlantUML service
+        continue-on-error: true
+        shell: bash
+        env:
+          PLANTUML_HOST: http://127.0.0.1:18080
+        run: |
+          set -euo pipefail
+          log="$RUNNER_TEMP/plantuml-service.log"
+          java -jar "$RUNNER_TEMP/plantuml.jar" -picoweb:18080:127.0.0.1 > "$log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/plantuml-service.pid"
+          for attempt in $(seq 1 30); do
+            if curl --fail --location --silent --show-error --max-time 2 "${PLANTUML_HOST%/}/" > "$RUNNER_TEMP/plantuml-readiness.txt" 2>&1; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat "$log" >&2
+          exit 1
+      - name: Run the downloaded CLI without checkout
+        shell: bash
+        env:
+          PLANTUML_JAR: ${{ runner.temp }}/plantuml.jar
+          PLANTUML_HOST: http://127.0.0.1:18080
+          TARGET_COMMIT: ${{ needs.resolve_release_target.outputs.full_commit }}
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/pyfcstm-release-cli-root"
+          reports="$RUNNER_TEMP/pyfcstm-release-cli-reports"
+          rm -rf "$root"
+          mkdir -p "$root" "$reports"
+          archive_count=$(find "$RUNNER_TEMP/pyfcstm-release-cli" -maxdepth 1 -type f -name '*.zip' -print | wc -l)
+          test "$archive_count" -eq 1
+          archive=$(find "$RUNNER_TEMP/pyfcstm-release-cli" -maxdepth 1 -type f -name '*.zip' -print -quit)
+          test -n "$archive"
+          identity=$(find "$RUNNER_TEMP/pyfcstm-release-cli" -maxdepth 1 -name build-identity.txt -print -quit)
+          digest_file=$(find "$RUNNER_TEMP/pyfcstm-release-cli" -maxdepth 1 -name artifact-sha256.txt -print -quit)
+          test -n "$identity" -a -n "$digest_file"
+          grep -F "full_commit=$TARGET_COMMIT" "$identity"
+          archive_name=$(basename "$archive")
+          expected_digest=$(awk -v file="$archive_name" '$3 == "dist/" file || $3 == file {print $1}' "$digest_file")
+          expected_size=$(awk -v file="$archive_name" '$3 == "dist/" file || $3 == file {print $2}' "$digest_file")
+          actual_digest=$(python - "$archive" <<'PY'
+          import hashlib
+          import sys
+          digest = hashlib.sha256()
+          with open(sys.argv[1], "rb") as stream:
+              for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                  digest.update(chunk)
+          print(digest.hexdigest())
+          PY
+          )
+          test -n "$expected_digest" -a "$expected_digest" = "$actual_digest"
+          test "$expected_size" -eq "$(wc -c < "$archive")"
+          cp "$identity" "$reports/build-identity.txt"
+          cp "$digest_file" "$reports/artifact-sha256.txt"
+          printf '%s  %s\n' "$actual_digest" "$archive_name" | tee "$reports/artifact.sha256"
+          set +e
+          curl --fail --location --retry 3 --retry-delay 2 --max-time 15 \
+            "${PLANTUML_HOST%/}/" > "$reports/plantuml-readiness.txt" 2>&1
+          readiness_status=$?
+          set -e
+          unzip -q "$archive" -d "$root"
+          if [ "${{ matrix.os }}" = "macos-14" ]; then
+            if xattr -lr "$root" 2>/dev/null | grep -q com.apple.quarantine; then
+              xattr -dr com.apple.quarantine "$root"
+            fi
+          fi
+          for forbidden in setup.py 'requirements*.txt' Makefile; do
+            if find "$root" -type f -name "$forbidden" -print -quit | grep -q .; then
+              echo "forbidden source/build file found in clean root: $forbidden" >&2
+              exit 1
+            fi
+          done
+          if [ "${{ matrix.os }}" = "windows-2022" ]; then
+            exe=$(find "$root" -type f -name pyfcstm.exe -print -quit)
+          else
+            exe=$(find "$root" -type f -name pyfcstm -print -quit)
+          fi
+          test -n "$exe"
+          set +e
+          "$exe" --version 2>&1 | tee "$reports/version.log"
+          version_status=${PIPESTATUS[0]}
+          "$exe" --self-check --color always --report "$reports/default.json" 2>&1 | tee "$reports/default.log"
+          default_status=${PIPESTATUS[0]}
+          "$exe" --self-check --profile visualize --network --color always --report "$reports/visualize.json" 2>&1 | tee "$reports/visualize.log"
+          visualize_status=${PIPESTATUS[0]}
+          set -e
+          printf 'version=%s\ndefault=%s\nvisualize=%s\nplantuml_readiness=%s\nPLANTUML_HOST=%s\nPLANTUML_JAR=%s\n' \
+            "$version_status" "$default_status" "$visualize_status" "$readiness_status" "$PLANTUML_HOST" "$PLANTUML_JAR" \
+          | tee "$reports/summary.txt"
+          test "$version_status" -eq 0
+          test "$default_status" -eq 0
+          grep -F "Commit: $TARGET_COMMIT" "$reports/version.log"
+      - name: Record optional PlantUML results
+        continue-on-error: true
+        shell: bash
+        env:
+          PLANTUML_HOST: http://127.0.0.1:18080
+        run: |
+          set -euo pipefail
+          python - "$RUNNER_TEMP/pyfcstm-release-cli-reports/visualize.json" "$PLANTUML_HOST" <<'PY'
+          import json
+          import sys
+
+          report_path, host = sys.argv[1:]
+          with open(report_path, "r") as stream:
+              report = json.load(stream)
+          results = {item["id"]: item for item in report["results"]}
+          for check_id in ("visualize.remote_tls", "visualize.remote_render"):
+              result = results.get(check_id)
+              if result is None or result["status"] != "PASS":
+                  raise SystemExit("{} did not PASS: {}".format(check_id, result))
+              if host not in (result.get("observed") or ""):
+                  raise SystemExit("{} did not record configured host: {}".format(check_id, result))
+          PY
+      - name: Upload fresh CLI evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: pyfcstm-release-cli-selfcheck-${{ matrix.os }}
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/pyfcstm-release-cli-reports
+            ${{ runner.temp }}/java-version.txt
+            ${{ runner.temp }}/plantuml-version.txt
+            ${{ runner.temp }}/plantuml-readiness.txt
+            ${{ runner.temp }}/plantuml-service.log
+
+  release_cli_controlled_linux:
+    name: Controlled PlantUML CLI gate (Ubuntu)
+    runs-on: ubuntu-22.04
+    needs: [resolve_release_target, release_cli_stage]
+    if: ${{ needs.resolve_release_target.result == 'success' && needs.release_cli_stage.result == 'success' }}
+    services:
+      plantuml:
+        image: plantuml/plantuml-server@sha256:00b96145a7e2999fd9504b84e26d00c47222b7963a0072ee14ea59449d634e99
+        ports:
+          - 18080:8080
+    timeout-minutes: 25
+    steps:
+      - name: Prepare self-check evidence directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          reports="$RUNNER_TEMP/pyfcstm-controlled-cli-reports"
+          mkdir -p "$reports"
+          printf 'job=controlled-standalone-release\nstarted_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$reports/bootstrap.txt"
+          : > "$RUNNER_TEMP/java-version.txt"
+          : > "$RUNNER_TEMP/plantuml-version.txt"
+      - name: Set up Java runtime
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Download only the staged Ubuntu CLI artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pyfcstm-release-cli-ubuntu-22.04
+          path: ${{ runner.temp }}/pyfcstm-release-cli
+      - name: Install and verify PlantUML JAR
+        shell: bash
+        run: |
+          set -euo pipefail
+          jar="$RUNNER_TEMP/plantuml.jar"
+          curl --fail --location --silent --show-error \
+            https://github.com/plantuml/plantuml/releases/download/v1.2024.6/plantuml-1.2024.6.jar \
+            --output "$jar"
+          actual_digest=$(python - "$jar" <<'PY'
+          import hashlib
+          import sys
+          digest = hashlib.sha256()
+          with open(sys.argv[1], "rb") as stream:
+              for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                  digest.update(chunk)
+          print(digest.hexdigest())
+          PY
+          )
+          test "$actual_digest" = 5a8dc3b37fe133a4744e55be80caf6080a70350aba716d95400a0f0cbd79e846
+          java -version 2> "$RUNNER_TEMP/java-version.txt"
+          java -jar "$jar" -version 2>&1 | tee "$RUNNER_TEMP/plantuml-version.txt"
+      - name: Run staged Ubuntu CLI against the controlled service
+        shell: bash
+        env:
+          PLANTUML_JAR: ${{ runner.temp }}/plantuml.jar
+          PLANTUML_HOST: http://127.0.0.1:18080
+          TARGET_COMMIT: ${{ needs.resolve_release_target.outputs.full_commit }}
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/pyfcstm-controlled-cli-root"
+          reports="$RUNNER_TEMP/pyfcstm-controlled-cli-reports"
+          rm -rf "$root"
+          mkdir -p "$root" "$reports"
+          archive_count=$(find "$RUNNER_TEMP/pyfcstm-release-cli" -maxdepth 1 -type f -name '*.zip' -print | wc -l)
+          test "$archive_count" -eq 1
+          archive=$(find "$RUNNER_TEMP/pyfcstm-release-cli" -maxdepth 1 -type f -name '*.zip' -print -quit)
+          identity="$RUNNER_TEMP/pyfcstm-release-cli/build-identity.txt"
+          digest_file="$RUNNER_TEMP/pyfcstm-release-cli/artifact-sha256.txt"
+          test -n "$archive" -a -f "$identity" -a -f "$digest_file"
+          grep -F "full_commit=$TARGET_COMMIT" "$identity"
+          archive_name=$(basename "$archive")
+          expected_digest=$(awk -v file="$archive_name" '$3 == "dist/" file || $3 == file {print $1}' "$digest_file")
+          expected_size=$(awk -v file="$archive_name" '$3 == "dist/" file || $3 == file {print $2}' "$digest_file")
+          actual_digest=$(python - "$archive" <<'PY'
+          import hashlib
+          import sys
+          digest = hashlib.sha256()
+          with open(sys.argv[1], "rb") as stream:
+              for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                  digest.update(chunk)
+          print(digest.hexdigest())
+          PY
+          )
+          test -n "$expected_digest" -a "$expected_digest" = "$actual_digest"
+          test "$expected_size" -eq "$(wc -c < "$archive")"
+          cp "$identity" "$reports/build-identity.txt"
+          cp "$digest_file" "$reports/artifact-sha256.txt"
+          set +e
+          curl --fail --location --retry 5 --retry-delay 2 --max-time 15 \
+            "${PLANTUML_HOST%/}/" > "$reports/plantuml-readiness.txt" 2>&1
+          readiness_status=$?
+          set -e
+          test "$readiness_status" -eq 0
+          unzip -q "$archive" -d "$root"
+          for forbidden in setup.py 'requirements*.txt' Makefile; do
+            if find "$root" -type f -name "$forbidden" -print -quit | grep -q .; then
+              echo "forbidden source/build file found in clean root: $forbidden" >&2
+              exit 1
+            fi
+          done
+          exe=$(find "$root" -type f -name pyfcstm -perm -u+x -print -quit)
+          test -n "$exe"
+          set +e
+          "$exe" --version 2>&1 | tee "$reports/version.log"
+          version_status=${PIPESTATUS[0]}
+          "$exe" --self-check --color always --report "$reports/default.json" 2>&1 | tee "$reports/default.log"
+          default_status=${PIPESTATUS[0]}
+          "$exe" --self-check --profile visualize --network --color always --report "$reports/visualize.json" 2>&1 | tee "$reports/visualize.log"
+          visualize_status=${PIPESTATUS[0]}
+          set -e
+          printf 'version=%s\ndefault=%s\nvisualize=%s\nplantuml_readiness=%s\nPLANTUML_HOST=%s\nPLANTUML_JAR=%s\n' \
+            "$version_status" "$default_status" "$visualize_status" "$readiness_status" "$PLANTUML_HOST" "$PLANTUML_JAR" \
+          | tee "$reports/summary.txt"
+          test "$version_status" -eq 0
+          test "$default_status" -eq 0
+          test "$visualize_status" -eq 0
+          grep -F "Commit: $TARGET_COMMIT" "$reports/version.log"
+          python - "$reports/visualize.json" "$PLANTUML_HOST" <<'PY'
+          import json
+          import sys
+
+          report_path, host = sys.argv[1:]
+          with open(report_path, "r") as stream:
+              report = json.load(stream)
+          results = {item["id"]: item for item in report["results"]}
+          for check_id in ("visualize.remote_tls", "visualize.remote_render"):
+              result = results.get(check_id)
+              if result is None or result["status"] != "PASS":
+                  raise SystemExit("{} did not PASS: {}".format(check_id, result))
+              if host not in (result.get("observed") or ""):
+                  raise SystemExit("{} did not record configured host: {}".format(check_id, result))
+          PY
+      - name: Upload controlled CLI evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: pyfcstm-release-cli-controlled-ubuntu
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/pyfcstm-controlled-cli-reports
+            ${{ runner.temp }}/java-version.txt
+            ${{ runner.temp }}/plantuml-version.txt
+
+  release_cli_publish:
+    name: Upload verified standalone artifact (${{ matrix.os }})
+    runs-on: ubuntu-22.04
+    needs: [resolve_release_target, release_gate, release_cli_stage, release_cli_fresh, release_cli_controlled_linux]
+    if: ${{ needs.resolve_release_target.result == 'success' && needs.release_gate.result == 'success' && needs.release_cli_stage.result == 'success' && needs.release_cli_fresh.result == 'success' && needs.release_cli_controlled_linux.result == 'success' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-22.04
+          - windows-2022
+          - macos-14
+    steps:
+      - name: Download the exact verified CLI artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pyfcstm-release-cli-${{ matrix.os }}
+          path: ${{ runner.temp }}/pyfcstm-release-cli
+      - name: Upload binary to the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_TAG: ${{ needs.resolve_release_target.outputs.tag }}
+          TARGET_COMMIT: ${{ needs.resolve_release_target.outputs.full_commit }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="$TARGET_TAG"
+          archive=$(find "$RUNNER_TEMP/pyfcstm-release-cli" -maxdepth 1 -type f -name '*.zip' -print -quit)
+          test -n "$archive"
+          identity=$(find "$RUNNER_TEMP/pyfcstm-release-cli" -maxdepth 1 -name build-identity.txt -print -quit)
+          digest_file=$(find "$RUNNER_TEMP/pyfcstm-release-cli" -maxdepth 1 -name artifact-sha256.txt -print -quit)
+          test -n "$identity" -a -n "$digest_file"
+          grep -F "full_commit=$TARGET_COMMIT" "$identity"
+          grep -F "tag=$tag" "$identity"
+          archive_name=$(basename "$archive")
+          expected_digest=$(awk -v file="$archive_name" '$3 == "dist/" file || $3 == file {print $1}' "$digest_file")
+          expected_size=$(awk -v file="$archive_name" '$3 == "dist/" file || $3 == file {print $2}' "$digest_file")
+          actual_digest=$(python - "$archive" <<'PY'
+          import hashlib
+          import sys
+          digest = hashlib.sha256()
+          with open(sys.argv[1], "rb") as stream:
+              for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                  digest.update(chunk)
+          print(digest.hexdigest())
+          PY
+          )
+          test -n "$expected_digest" -a "$expected_digest" = "$actual_digest"
+          test "$expected_size" -eq "$(wc -c < "$archive")"
+          gh release upload "$tag" "$archive" --clobber
+
+  release_finalize:
+    name: Finalize verified draft release
+    runs-on: ubuntu-22.04
+    needs: [resolve_release_target, package_publish, release_cli_publish]
+    if: ${{ needs.resolve_release_target.result == 'success' && needs.package_publish.result == 'success' && needs.release_cli_publish.result == 'success' }}
+    steps:
+      - name: Publish the verified draft only
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_TAG: ${{ needs.resolve_release_target.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="$TARGET_TAG"
+          gh release edit "$tag" --draft=false
 
   release_vscode_extension:
     name: VSCode Extension Build And Release
     runs-on: ubuntu-latest
-    if: ${{ github.repository == 'hansbug/pyfcstm' }}
+    if: ${{ github.repository == 'hansbug/pyfcstm' && github.event_name == 'release' && github.event.action == 'published' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 20
 
@@ -361,7 +1243,7 @@ jobs:
           java-version: '11'
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v6
         with:
           python-version: '3.8'
 

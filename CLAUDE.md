@@ -1160,6 +1160,23 @@ For built-in template work, the current design bar is defined by the `python` te
 
 ### Testing Strategy
 
+#### Self-Check Boundary
+
+The self-check entry point (``pyfcstm --self-check``) is a deployment
+diagnostic for artifacts that have already passed the unit-test matrix, full CI
+gates, and CLI build checks. Those pre-release gates own implementation
+correctness and are required before publishing a wheel or standalone CLI.
+Self-check must not duplicate that work or become a second functional-test
+suite. It instead exercises the installed/unpacked artifact in the user's
+current environment to detect missing packaged resources, unavailable runtime
+dependencies, installation-path problems, platform compatibility issues, and
+optional visualization availability (for example Java/PlantUML); optional
+visualization failures are reported as warnings when the core runtime remains
+usable. Its output should retain enough environment metadata, subprocess
+stdout/stderr, and traceback detail to diagnose deployment failures. A passing
+self-check is evidence that this deployment is usable under the observed
+conditions, not a replacement for unit tests or release CI.
+
 - Tests in [test/](test/); use `@pytest.mark.unittest`
 - Unit tests must not depend on local files ignored by version control (for example, gitignored files).
 - Unit test suites must be strictly self-contained within their owning test tree. Python tests may use fixtures,

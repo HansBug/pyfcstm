@@ -10,11 +10,28 @@ import argparse
 import ast
 import os
 import pathlib
+import re
 from io import StringIO
 from typing import List, Dict, Any
 
 from natsort import natsorted
-from sphinx.util.rst import escape
+
+
+_RST_SYMBOLS_RE = re.compile(r"([!-\-/:-@\[-`{-~])")
+
+
+def _escape_rst(text: str) -> str:
+    """Escape RST text without making Sphinx a test-time import requirement."""
+    try:
+        from sphinx.util.rst import escape
+    except ModuleNotFoundError as err:
+        # ``sphinx`` is a documentation-only dependency; its absence must not
+        # prevent the source-level RST generator regression tests from running.
+        if err.name != "sphinx":
+            raise
+        escaped = _RST_SYMBOLS_RE.sub(r"\\\1", text)
+        return re.sub(r"^\.", r"\.", escaped)
+    return escape(text)
 
 
 _RST_MEMBER_TITLE_MIN_WIDTH = 53
@@ -57,7 +74,7 @@ def rst_to_text(text: str) -> str:
     :return: The escaped text safe for RST.
     :rtype: str
     """
-    return escape(text)
+    return _escape_rst(text)
 
 
 class PublicMemberExtractor(ast.NodeVisitor):
@@ -456,6 +473,18 @@ def extract_public_members(source_code: str) -> Dict[str, List[Dict[str, Any]]]:
     extractor = PublicMemberExtractor(class_index)
     extractor.visit(tree)
 
+    source_lines = source_code.splitlines()
+    for variable in extractor.public_variables:
+        metadata = []
+        line_index = variable["lineno"] - 2
+        while line_index >= 0:
+            comment = source_lines[line_index].lstrip()
+            if not comment.startswith("#:"):
+                break
+            metadata.append(comment[2:].strip())
+            line_index -= 1
+        variable["hide_value"] = ":meta hide-value:" in metadata
+
     return {
         "classes": extractor.public_classes,
         "functions": extractor.public_functions,
@@ -493,6 +522,8 @@ def print_extracted_members(f, members: Dict[str, List[Dict[str, Any]]]):
         print("-" * max(_RST_MEMBER_TITLE_MIN_WIDTH, len(title)), file=f)
         print("", file=f)
         print(f".. autodata:: {var['name']}", file=f)
+        if var.get("hide_value"):
+            print("   :no-value:", file=f)
         print("", file=f)
         print("", file=f)
 
@@ -542,6 +573,7 @@ def print_package_toctree(f, code_file: str):
             os.path.isfile(code_abs_file)
             and code_rel_file.endswith(".py")
             and not (code_rel_base.startswith("__") and code_rel_base.endswith("__"))
+            and code_rel_file != "build_info.py"
             and not code_rel_base.startswith("_")
         ):
             code_rels.append(code_rel_base)
@@ -606,6 +638,12 @@ def convert_code_to_rst(code_file: str, rst_file: str, lib_dir: str = "."):
         print(f"{rst_to_text(module_name)}", file=buffer)
         print("========================================================", file=buffer)
         print("", file=buffer)
+
+        if module_name == "pyfcstm._selfcheck":
+            # The private package is intentionally excluded from the public API
+            # top-level toctree, so mark its generated index as an orphan.
+            print(":orphan:", file=buffer)
+            print("", file=buffer)
 
         print(f".. currentmodule:: {module_name}", file=buffer)
         print("", file=buffer)

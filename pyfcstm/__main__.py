@@ -1,13 +1,9 @@
 """
 Command-line entry point for the :mod:`pyfcstm` package.
 
-This module exposes the console entry point that launches the CLI
-implementation provided by :func:`pyfcstm.entry.pyfcstmcli`. When the module
-is executed as a script, it invokes the CLI handler.
-
-The module contains the following main components:
-
-* :func:`pyfcstm.entry.pyfcstmcli` - CLI handler invoked on script execution
+This module delegates to the standard-library bootstrap in
+:mod:`pyfcstm._bootstrap`. Root-level version requests can therefore report
+build identity without importing Click or the normal CLI command graph.
 
 Example::
 
@@ -15,7 +11,8 @@ Example::
     >>> # python -m pyfcstm
 
 """
-from .entry import pyfcstmcli
 
-if __name__ == '__main__':
-    pyfcstmcli()
+from ._bootstrap import main
+
+if __name__ == "__main__":
+    raise SystemExit(main())

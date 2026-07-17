@@ -64,11 +64,10 @@ Simulation and Runtime Semantics
 Compatibility notes
 ~~~~~~~~~~~~~~~~~~~
 
-- Removed the BMC CLI and witness/native ``schema_version`` fields and renamed
-  the downloadable result schema from ``bmc_cli_v1.schema.json`` to
-  ``bmc_cli.schema.json``. Consumers must stop reading the removed fields and
-  update schema download paths; the standard JSON Schema ``$schema`` dialect
-  URI remains unchanged.
+- Removed the product-version fields from BMC CLI and witness/native results
+  and changed the downloadable result schema to an unversioned filename.
+  Consumers must stop reading the removed fields and update schema download
+  paths; the standard JSON Schema ``$schema`` dialect URI remains unchanged.
 
 Built-In Templates and DSL
 ~~~~~~~~~~~~~~~~~~~~~~~~~~

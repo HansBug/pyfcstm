@@ -54,9 +54,9 @@ FBMCQ 与有界模型检查
 兼容性说明
 ~~~~~~~~~~
 
-- 删除 BMC CLI、witness/native 结果中的 ``schema_version`` 字段，并将可下载结果模式从
-  ``bmc_cli_v1.schema.json`` 重命名为 ``bmc_cli.schema.json``。下游必须停止读取已删除字段
-  并更新模式下载路径；标准 JSON Schema 的 ``$schema`` 方言 URI 保持不变。
+- 删除 BMC CLI、witness/native 结果中的产品版本字段，并将可下载结果模式改为无版本文件名。
+  下游必须停止读取已删除字段并更新模式下载路径；标准 JSON Schema 的 ``$schema`` 方言 URI
+  保持不变。
 
 内置模板与 DSL
 ~~~~~~~~~~~~~~

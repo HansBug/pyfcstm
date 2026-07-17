@@ -883,6 +883,9 @@
     "witnessV1": {
       "type": "object",
       "additionalProperties": false,
+      "allOf": [
+        {"not": {"required": ["schema_version"]}}
+      ],
       "required": ["property", "solver", "initial", "frames", "steps", "diagnostics"],
       "properties": {
         "property": {"$ref": "#/$defs/property"},
@@ -984,7 +987,7 @@
               "properties": {
                 "model_role": {"const": "incomplete_suffix"},
                 "property": {"properties": {"kind": {"const": "response"}}},
-                "solver": {"properties": {"primary_status": {"const": "unsat"}, "incomplete_status": {"const": "sat"}}},
+                "solver": {"properties": {"primary_status": {"const": "unsat"}, "incomplete_status": {"const": "sat"}, "incomplete_elapsed_ms": {"type": "number", "minimum": 0}}},
                 "verdict": {"properties": {"property_satisfied": {"const": null}, "witness_found": {"const": false}, "counterexample_found": {"const": false}, "incomplete": {"const": true}, "outcome": {"const": "incomplete"}}}
               }
             }

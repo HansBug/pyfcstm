@@ -833,6 +833,10 @@ def test_bmc_schema_rejects_suffix_channel_mutations(bmc_files) -> None:
     forged_elapsed["result"]["incomplete_elapsed_ms"] = None
     assert list(validator.iter_errors(forged_elapsed))
 
+    forged_trace_elapsed = copy.deepcopy(payload)
+    forged_trace_elapsed["witness"]["solver"]["incomplete_elapsed_ms"] = None
+    assert list(validator.iter_errors(forged_trace_elapsed))
+
     forged_feasibility = copy.deepcopy(payload)
     forged_feasibility["result"]["feasibility"]["assumptions"] = {
         "status": "unknown",

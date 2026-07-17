@@ -285,7 +285,9 @@ def _validate_elapsed_ms(value: float) -> None:
         raise BmcBuildError("elapsed_ms must be a finite non-negative number.")
 
 
-def _validate_witness_solver_metadata(value: Mapping[str, Any]) -> None:
+def _validate_witness_solver_metadata(
+    value: Mapping[str, Any], *, schema_version: str = "bmc-witness/v1"
+) -> None:
     status = value.get("status")
     if status is not None and status not in {"sat", "unsat", "unknown", "timeout"}:
         raise BmcBuildError("solver.status must be sat, unsat, unknown, or timeout.")
@@ -302,7 +304,10 @@ def _validate_witness_solver_metadata(value: Mapping[str, Any]) -> None:
     if "elapsed_ms" in value:
         _validate_elapsed_ms(value["elapsed_ms"])
     if "incomplete_elapsed_ms" in value:
-        if value["incomplete_elapsed_ms"] is not None or "model_status" not in value:
+        if (
+            value["incomplete_elapsed_ms"] is not None
+            or schema_version == "bmc-witness/v1"
+        ):
             _validate_elapsed_ms(cast(float, value["incomplete_elapsed_ms"]))
     if "reason" in value:
         _validate_primary_solve_reason(
@@ -409,9 +414,15 @@ def _validate_v2_witness_solver_metadata(
             raise BmcBuildError(
                 "primary model roles require primary sat and no suffix status."
             )
+        if value["incomplete_elapsed_ms"] is not None:
+            raise BmcBuildError("primary model roles require no suffix elapsed time.")
     elif primary_status != "unsat" or incomplete_status != "sat":
         raise BmcBuildError(
             "incomplete_suffix requires primary unsat and incomplete sat."
+        )
+    elif value["incomplete_elapsed_ms"] is None:
+        raise BmcBuildError(
+            "incomplete_suffix requires a non-null suffix elapsed time."
         )
     if value["primary_reason"] is not None:
         raise BmcBuildError("v2 witness solver metadata requires primary_reason=None.")
@@ -3167,7 +3178,9 @@ class BmcWitnessTrace(_PrettyPrintableMixin):
         property_metadata = _coerce_public_json_mapping("property", self.property)
         solver_metadata = _coerce_public_json_mapping("solver", self.solver)
         initial_metadata = _coerce_public_json_mapping("initial", self.initial)
-        _validate_witness_solver_metadata(solver_metadata)
+        _validate_witness_solver_metadata(
+            solver_metadata, schema_version=self.schema_version
+        )
         if self.schema_version == "bmc-witness/v2":
             model_role = self.model_role
             if model_role is None:
@@ -3209,7 +3222,9 @@ class BmcWitnessTrace(_PrettyPrintableMixin):
             []
         """
         solver_metadata = _coerce_public_json_mapping("solver", self.solver)
-        _validate_witness_solver_metadata(solver_metadata)
+        _validate_witness_solver_metadata(
+            solver_metadata, schema_version=self.schema_version
+        )
         if self.schema_version == "bmc-witness/v2":
             model_role = self.model_role
             if model_role is None:

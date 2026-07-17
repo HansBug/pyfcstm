@@ -2226,6 +2226,53 @@ def test_witness_trace_accepts_legacy_schema_version_constructor_keyword() -> No
     assert trace.to_canonical()["schema_version"] == "bmc-witness/v1"
 
 
+def test_witness_trace_rejects_v1_null_suffix_elapsed_with_v2_fields() -> None:
+    """Legacy validation does not infer its rules from incidental v2 fields."""
+    with pytest.raises(BmcBuildError, match="elapsed_ms"):
+        BmcWitnessTrace(
+            {},
+            {
+                "status": "sat",
+                "incomplete_status": None,
+                "model_status": "sat",
+                "incomplete_elapsed_ms": None,
+            },
+            {},
+            (),
+            (),
+            schema_version="bmc-witness/v1",
+        )
+
+
+def test_witness_trace_rejects_null_suffix_elapsed_for_v2_suffix_role() -> None:
+    """An incomplete suffix trace must retain evidence of its solver check."""
+    with pytest.raises(BmcBuildError, match="suffix elapsed"):
+        BmcWitnessTrace(
+            {"kind": "response", "polarity": "witness"},
+            {
+                "model_status": "sat",
+                "primary_status": "unsat",
+                "incomplete_status": "sat",
+                "primary_reason": None,
+                "incomplete_reason": None,
+                "primary_elapsed_ms": 1.0,
+                "incomplete_elapsed_ms": None,
+            },
+            {},
+            (),
+            (),
+            schema_version="bmc-witness/v2",
+            model_role="incomplete_suffix",
+            verdict={
+                "property_satisfied": None,
+                "witness_found": False,
+                "counterexample_found": False,
+                "incomplete": True,
+                "outcome": "incomplete",
+            },
+        )
+
+
 @pytest.mark.parametrize(
     ("kwargs", "message"),
     [

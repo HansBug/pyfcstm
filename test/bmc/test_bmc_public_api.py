@@ -484,6 +484,25 @@ def test_bmc_schema_freezes_role_channel_contract():
 
 
 @pytest.mark.unittest
+def test_bmc_schema_uses_explicit_legacy_witness_discriminator():
+    """The legacy witness branch explicitly excludes the v2 version field."""
+    schema_path = (
+        Path(__file__).resolve().parents[2]
+        / "docs"
+        / "source"
+        / "reference"
+        / "bmc_results"
+        / "bmc_cli.schema.json"
+    )
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    assert {"schema_version"} in [
+        set(rule["not"]["required"])
+        for rule in schema["$defs"]["witnessV1"]["allOf"]
+        if "not" in rule and "required" in rule["not"]
+    ]
+
+
+@pytest.mark.unittest
 def test_bmc_schema_freezes_feasibility_localization_contract():
     """The published schema records cumulative feasibility invariants."""
     schema_path = (

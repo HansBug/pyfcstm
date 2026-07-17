@@ -1413,6 +1413,24 @@ def test_feasibility_result_rejects_unchecked_outer_unsat_stages(
         )
 
 
+def test_feasibility_result_rejects_inferred_prefix_without_checked_sat_source() -> None:
+    """Inferred SAT stages require a stronger checked SAT source."""
+    inferred_kernel = BmcFeasibilityCheck("sat", "inferred")
+    inconclusive_initialization = BmcFeasibilityCheck(
+        "unknown", "checked", reason="probe unknown", elapsed_ms=1.0
+    )
+    unsat_assumptions = BmcFeasibilityCheck("unsat", "checked", elapsed_ms=1.0)
+
+    with pytest.raises(BmcBuildError, match="inferred.*checked SAT"):
+        BmcFeasibilityResult(
+            inferred_kernel,
+            inconclusive_initialization,
+            unsat_assumptions,
+            localization_status="unknown",
+            refinement_status="not_requested",
+        )
+
+
 def test_solve_property_keeps_unchecked_response_suffix_incomplete() -> None:
     """Disabling suffix diagnostics must not report response UNSAT as satisfied."""
     _, formula = _compile(

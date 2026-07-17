@@ -728,6 +728,21 @@ def test_bmc_schema_rejects_localized_prefix_origin_mutations(bmc_files) -> None
     )
     assert list(validator.iter_errors(inferred_kernel))
 
+    inferred_without_checked_source = copy.deepcopy(payload)
+    feasibility = inferred_without_checked_source["result"]["feasibility"]
+    feasibility["kernel"].update(
+        status="sat", origin="inferred", reason=None, elapsed_ms=None
+    )
+    feasibility["initialization"].update(
+        status="unknown", origin="checked", reason="probe unknown", elapsed_ms=1.0
+    )
+    feasibility["assumptions"].update(
+        status="unsat", origin="checked", reason=None, elapsed_ms=1.0
+    )
+    feasibility["infeasible_stage"] = None
+    feasibility["localization_status"] = "unknown"
+    assert list(validator.iter_errors(inferred_without_checked_source))
+
     unchecked_kernel_outer_stages = copy.deepcopy(payload)
     result = unchecked_kernel_outer_stages["result"]
     result.update(

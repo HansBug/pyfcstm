@@ -196,6 +196,17 @@
         "origin": {"const": "checked"}
       }
     },
+    "checkedSatFeasibilityCheck": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "origin", "reason", "elapsed_ms"],
+      "properties": {
+        "status": {"const": "sat"},
+        "origin": {"const": "checked"},
+        "reason": {"const": null},
+        "elapsed_ms": {"type": "number", "minimum": 0}
+      }
+    },
     "notCheckedFeasibilityCheck": {
       "type": "object",
       "additionalProperties": false,
@@ -237,6 +248,50 @@
         "refinement_checks": {"type": "array", "items": {"$ref": "#/$defs/refinementCheck"}}
       },
       "allOf": [
+        {
+          "if": {"properties": {"kernel": {"properties": {"origin": {"const": "inferred"}}}}},
+          "then": {
+            "anyOf": [
+              {
+                "allOf": [
+                  {"properties": {"kernel": {"properties": {"status": {"const": "sat"}, "origin": {"const": "inferred"}}}}},
+                  {"properties": {"initialization": {"properties": {"status": {"const": "sat"}, "origin": {"const": "inferred"}}}}},
+                  {"properties": {"assumptions": {"properties": {"status": {"const": "sat"}, "origin": {"const": "inferred"}}}}},
+                  {"properties": {"localization_status": {"const": "not_needed"}}}
+                ]
+              },
+              {"properties": {"initialization": {"$ref": "#/$defs/checkedSatFeasibilityCheck"}}},
+              {"properties": {"assumptions": {"$ref": "#/$defs/checkedSatFeasibilityCheck"}}}
+            ]
+          }
+        },
+        {
+          "if": {"properties": {"initialization": {"properties": {"origin": {"const": "inferred"}}}}},
+          "then": {
+            "anyOf": [
+              {
+                "allOf": [
+                  {"properties": {"kernel": {"properties": {"status": {"const": "sat"}, "origin": {"const": "inferred"}}}}},
+                  {"properties": {"initialization": {"properties": {"status": {"const": "sat"}, "origin": {"const": "inferred"}}}}},
+                  {"properties": {"assumptions": {"properties": {"status": {"const": "sat"}, "origin": {"const": "inferred"}}}}},
+                  {"properties": {"localization_status": {"const": "not_needed"}}}
+                ]
+              },
+              {"properties": {"assumptions": {"$ref": "#/$defs/checkedSatFeasibilityCheck"}}}
+            ]
+          }
+        },
+        {
+          "if": {"properties": {"assumptions": {"properties": {"origin": {"const": "inferred"}}}}},
+          "then": {
+            "allOf": [
+              {"properties": {"kernel": {"properties": {"status": {"const": "sat"}, "origin": {"const": "inferred"}}}}},
+              {"properties": {"initialization": {"properties": {"status": {"const": "sat"}, "origin": {"const": "inferred"}}}}},
+              {"properties": {"assumptions": {"properties": {"status": {"const": "sat"}, "origin": {"const": "inferred"}}}}},
+              {"properties": {"localization_status": {"const": "not_needed"}}}
+            ]
+          }
+        },
         {
           "if": {
             "anyOf": [

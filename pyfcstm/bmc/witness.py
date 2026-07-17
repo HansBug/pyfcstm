@@ -1949,6 +1949,22 @@ class BmcFeasibilityResult(_PrettyPrintableMixin):
                 "not_needed."
             )
         all_sat = all(item.status == "sat" for item in checks)
+        all_inferred_sat = all(
+            item.status == "sat" and item.origin == "inferred" for item in checks
+        )
+        for index, item in enumerate(checks):
+            if item.origin != "inferred":
+                continue
+            if all_inferred_sat and self.localization_status == "not_needed":
+                continue
+            if not any(
+                stronger.origin == "checked" and stronger.status == "sat"
+                for stronger in checks[index + 1 :]
+            ):
+                raise BmcBuildError(
+                    "cumulative feasibility inferred evidence requires a stronger "
+                    "checked SAT stage."
+                )
         if all_sat and self.localization_status != "not_needed":
             raise BmcBuildError(
                 "all SAT feasibility stages require localization_status=not_needed."

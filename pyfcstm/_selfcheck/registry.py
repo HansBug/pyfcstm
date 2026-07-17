@@ -2211,13 +2211,15 @@ def _visual_local_render() -> CheckOutcome:
                 stderr=getattr(err, "stderr", None),
             ),
         )
-    if completed.returncode != 0 or not completed.stdout:
+    if completed.returncode != 0 or not completed.stdout.startswith(_PNG_SIGNATURE):
         return _warn(
             "local PlantUML rendering is unavailable",
             "capability_unavailable",
-            expected="returncode=0 and non-empty PNG stdout",
-            observed="returncode={} stdout_bytes={}".format(
-                completed.returncode, len(completed.stdout)
+            expected="returncode=0 and PNG signature {!r}".format(_PNG_SIGNATURE),
+            observed="returncode={} stdout_bytes={} signature={!r}".format(
+                completed.returncode,
+                len(completed.stdout),
+                completed.stdout[: len(_PNG_SIGNATURE)],
             ),
             evidence=_process_evidence(
                 command,
@@ -2229,7 +2231,7 @@ def _visual_local_render() -> CheckOutcome:
         )
     return _pass(
         "render Alice -> Bob through local PlantUML -pipe -tpng",
-        expected="returncode=0 and non-empty PNG stdout",
+        expected="returncode=0 and PNG signature {!r}".format(_PNG_SIGNATURE),
         observed="{} image bytes".format(len(completed.stdout)),
     )
 

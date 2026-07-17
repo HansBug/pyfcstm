@@ -421,13 +421,22 @@ def test_java_and_local_plantuml_diagnostics(monkeypatch, tmp_path):
     assert outcome.status == "WARN"
     assert "render err" in outcome.evidence
 
-    png = SimpleNamespace(returncode=0, stdout=b"PNG", stderr=b"")
+    not_png = SimpleNamespace(returncode=0, stdout=b"not-a-png", stderr=b"")
+    monkeypatch.setattr(
+        registry, "_run_subprocess_bounded", lambda *args, **kwargs: not_png
+    )
+    outcome = registry._visual_local_render()
+    assert outcome.status == "WARN"
+    assert "PNG signature" in outcome.expected
+    assert "signature=b'not-a-pn'" in outcome.observed
+
+    png = SimpleNamespace(returncode=0, stdout=_PNG, stderr=b"")
     monkeypatch.setattr(
         registry, "_run_subprocess_bounded", lambda *args, **kwargs: png
     )
     outcome = registry._visual_local_render()
     assert outcome.status == "PASS"
-    assert outcome.observed == "3 image bytes"
+    assert outcome.observed == "{} image bytes".format(len(_PNG))
 
 
 @pytest.mark.unittest

@@ -18,7 +18,8 @@ on:
       - 'MANIFEST.in'
       - 'requirements*.txt'
       - 'Makefile'
-      # This workflow itself
+      # Release workflows
+      - '.github/workflows/release.yml'
       - '.github/workflows/release_test.yml'
   workflow_dispatch:
 

@@ -399,6 +399,60 @@ def test_windows_without_vt_uses_console_attribute_fallback(monkeypatch, capsys)
 
 
 @pytest.mark.unittest
+def test_incremental_windows_without_vt_keeps_console_color_roles(monkeypatch):
+    """Streaming output passes ANSI roles to the Win7 attribute translator."""
+    snapshot = ReportSnapshot(
+        (CheckResult("ok", "PASS", True, summary="ready"),),
+        _metadata(),
+        {"PASS": 1},
+    )
+    observed = []
+    import pyfcstm._selfcheck.report as report
+
+    monkeypatch.setattr(
+        report, "os", SimpleNamespace(name="nt", environ=report.os.environ)
+    )
+    monkeypatch.setattr(
+        "pyfcstm._selfcheck.report._windows_vt_supported", lambda stream: False
+    )
+    monkeypatch.setattr(
+        "pyfcstm._selfcheck.report.write_console_ansi",
+        lambda text, stream: observed.append(text) or True,
+    )
+
+    write_human_start("default", color="always")
+    write_human_result(snapshot.checks[0], 1, 1, color="always")
+    write_human_summary(snapshot, color="always")
+
+    assert "\x1b[36mpyfcstm self-check" in observed[0]
+    assert "\x1b[32mPASS\x1b[0m" in observed[1]
+    assert "\x1b[1;32m[ PASSED ]\x1b[0m" in observed[2]
+
+
+@pytest.mark.unittest
+def test_incremental_windows_fallback_failure_writes_plain_text(monkeypatch, capsys):
+    """A failed Win7 color preflight never leaks ANSI from streaming output."""
+    check = CheckResult("ok", "PASS", True, summary="ready")
+    import pyfcstm._selfcheck.report as report
+
+    monkeypatch.setattr(
+        report, "os", SimpleNamespace(name="nt", environ=report.os.environ)
+    )
+    monkeypatch.setattr(
+        "pyfcstm._selfcheck.report._windows_vt_supported", lambda stream: False
+    )
+    monkeypatch.setattr(
+        "pyfcstm._selfcheck.report.write_console_ansi", lambda text, stream: False
+    )
+
+    write_human_result(check, 1, 1, color="always")
+
+    output = capsys.readouterr().out
+    assert output == "[1/1] PASS ok (ready)\n"
+    assert "\x1b[" not in output
+
+
+@pytest.mark.unittest
 def test_windows_console_probe_uses_pointer_sized_handle(monkeypatch):
     """The VT probe preserves 64-bit handles and reads the console mode bit."""
     import ctypes

@@ -35,7 +35,7 @@ def _windows_vt_supported(stream) -> bool:
     """Return whether the current Windows console accepts VT sequences.
 
     Windows 7 consoles do not expose ``ENABLE_VIRTUAL_TERMINAL_PROCESSING``;
-    those consoles deliberately fall back to stable uncoloured status labels.
+    those consoles use the Win32 attribute writer instead.
     """
     if os.name != "nt":
         return True
@@ -103,18 +103,21 @@ def _paint_status(status: str, use_color: bool) -> str:
 
 
 def _stream_color_state(color: str):
-    """Return the requested/VT-safe color state for incremental output."""
-    requested = _color_requested(color)
-    return requested and _windows_vt_supported(sys.stdout)
+    """Return whether incremental output should preserve color roles."""
+    return _color_requested(color)
 
 
-def _write_human_text(text: str, color: str = "auto") -> None:
+def _write_human_text(
+    text: str, color: str = "auto", plain_text: Optional[str] = None
+) -> None:
     """Write a human fragment immediately, including the Win7 fallback."""
     requested = _color_requested(color)
     ansi = requested and _windows_vt_supported(sys.stdout)
     if requested and os.name == "nt" and not ansi:
         if write_console_ansi(text, sys.stdout):
             return
+        if plain_text is not None:
+            text = plain_text
     try:
         sys.stdout.write(text)
         sys.stdout.flush()
@@ -150,7 +153,12 @@ def _stream_version_line(profile: str, use_color: bool) -> str:
 
 def write_human_start(profile: str = "default", color: str = "auto") -> None:
     """Flush the lightweight human-mode header before checks start."""
-    _write_human_text(_stream_version_line(profile, _stream_color_state(color)), color)
+    use_color = _stream_color_state(color)
+    _write_human_text(
+        _stream_version_line(profile, use_color),
+        color,
+        _stream_version_line(profile, False) if use_color else None,
+    )
 
 
 def write_human_plan(total: int, profile: str, color: str = "auto") -> None:
@@ -280,6 +288,17 @@ def _result_detail_lines(check) -> list:
     return []
 
 
+def _render_human_result(check, index: int, total: int, use_color: bool) -> str:
+    """Render one completed check with an already resolved color policy."""
+    index_width = len(str(max(1, total)))
+    position = "[{:>{}}/{}]".format(index, index_width, total)
+    status = _paint_status(check.status, use_color)
+    summary = _result_summary(check)
+    lines = ["{} {} {} ({})".format(position, status, check.check_id, summary)]
+    lines.extend(_result_detail_lines(check))
+    return "\n".join(lines) + "\n"
+
+
 def render_human_result(
     check, index: int, total: int, color: str = "auto"
 ) -> str:
@@ -293,18 +312,17 @@ def render_human_result(
     :rtype: str
     """
     use_color = _color_requested(color) and _windows_vt_supported(sys.stdout)
-    index_width = len(str(max(1, total)))
-    position = "[{:>{}}/{}]".format(index, index_width, total)
-    status = _paint_status(check.status, use_color)
-    summary = _result_summary(check)
-    lines = ["{} {} {} ({})".format(position, status, check.check_id, summary)]
-    lines.extend(_result_detail_lines(check))
-    return "\n".join(lines) + "\n"
+    return _render_human_result(check, index, total, use_color)
 
 
 def write_human_result(check, index: int, total: int, color: str = "auto") -> None:
     """Flush one completed check and its failure details immediately."""
-    _write_human_text(render_human_result(check, index, total, color), color)
+    use_color = _stream_color_state(color)
+    _write_human_text(
+        _render_human_result(check, index, total, use_color),
+        color,
+        _render_human_result(check, index, total, False) if use_color else None,
+    )
 
 
 def _summary_lines(snapshot: ReportSnapshot, use_color: bool):
@@ -346,7 +364,14 @@ def render_human_summary(snapshot: ReportSnapshot, color: str = "auto") -> str:
 
 def write_human_summary(snapshot: ReportSnapshot, color: str = "auto") -> None:
     """Flush the final summary after all incremental result lines."""
-    _write_human_text(render_human_summary(snapshot, color), color)
+    use_color = _stream_color_state(color)
+    _write_human_text(
+        "\n".join(_summary_lines(snapshot, use_color)) + "\n",
+        color,
+        "\n".join(_summary_lines(snapshot, False)) + "\n"
+        if use_color
+        else None,
+    )
 
 
 def _render_human(snapshot: ReportSnapshot, use_color: bool) -> str:

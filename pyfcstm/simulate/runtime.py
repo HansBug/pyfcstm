@@ -6,9 +6,11 @@ from the pyfcstm DSL. The runtime maintains an execution stack of active states,
 variable mappings, and internal frame modes that control lifecycle progression.
 
 Each cycle advances the state machine until reaching a stable boundary: either a
-stoppable state (non-pseudo leaf state), termination (empty stack), or validation
-failure (changes rolled back). The runtime uses speculative validation to ensure
-transitions can reach valid stable states before executing them.
+stoppable state (non-pseudo leaf state), termination (empty stack), or a successful
+Delta step when no stoppable successor can be committed. Speculative execution
+changes are discarded for a Delta step, while the public cycle count and history
+still record the completed macro step. Actual input, expression, writeback, and
+DFS safety errors remain loud failures rather than Delta results.
 
 The execution model uses internal frame modes (active, after_entry, init_wait,
 post_child_exit) to track execution phases. Transitions are selected from the
@@ -29,8 +31,10 @@ child-to-child transitions.
 
 Validation works by cloning the execution context and speculatively executing the
 transition until reaching a stable boundary. If validation succeeds, the real
-transition executes. If validation fails or exceeds safety limits (1000 steps or
-64 stack depth), the transition is rejected and variables roll back.
+transition executes. If the speculative path reaches a no-progress boundary, the
+runtime restores the pre-cycle state and records a successful Delta step. If an
+actual expression, writeback, or DFS safety error occurs, the corresponding
+exception is raised and the pre-cycle state is restored.
 
 Abstract actions can be implemented by registering Python handlers that receive
 read-only execution context. Handler registration validates named abstract
@@ -340,6 +344,8 @@ class CycleResult:
     :param unconsumed_events: Canonical input event paths that did not
         correspond to an executed evented transition.
     :type unconsumed_events: Tuple[str, ...]
+    :param delta: Whether this cycle was a successful no-progress Delta step.
+    :type delta: bool
 
     Example::
 
@@ -352,12 +358,15 @@ class CycleResult:
         True
         >>> result.consumed_events
         ('Root.A.Go',)
+        >>> result.delta
+        False
     """
 
     value: Any = None
     input_events: Tuple[str, ...] = ()
     consumed_events: Tuple[str, ...] = ()
     unconsumed_events: Tuple[str, ...] = ()
+    delta: bool = False
 
 
 class SimulationRuntimeExpressionError(ValueError, ArithmeticError):
@@ -455,13 +464,17 @@ class SimulationRuntime:
     **Core Execution Model**:
 
     The runtime implements cycle-based execution where each :meth:`cycle` call
-    advances the state machine until reaching a stable boundary. Cycles can end
-    in three ways:
+    advances the state machine until reaching a stable boundary. A cycle can
+    produce an ordinary success, a successful Delta step, termination, a loud
+    execution error, or the existing ended/error-state no-op:
 
     1. **Stoppable State**: Reached a leaf state (non-pseudo) where execution
        can stabilize
     2. **Termination**: The state machine has ended (empty stack)
-    3. **Validation Failure**: Cannot reach a stoppable state, changes rolled back
+    3. **Delta Success**: No stoppable successor can be committed; speculative
+       state and variables are restored while the public count and history advance
+    4. **Loud Error or No-op**: An actual execution error is raised, or an ended
+       or error-state runtime ignores the cycle
 
     **Transition Selection**:
 
@@ -478,17 +491,18 @@ class SimulationRuntime:
     ``A -> [*]``, which puts ``System1`` in ``post_child_exit`` mode where
     parent-level transitions can be considered.
 
-    **Validation and Rollback**:
+    **Speculative Execution and Delta**:
 
     When a stoppable state has an enabled transition, the runtime performs
     speculative validation to ensure the transition can eventually reach another
     stoppable state or terminate. This prevents cycles from getting stuck in
     non-stoppable configurations.
 
-    If validation fails or a cycle cannot reach a stoppable state, all variable
-    changes are rolled back and the runtime remains at the previous stable
-    boundary. For the initial cycle, rollback pins the runtime at the root
-    boundary in ``init_wait`` mode.
+    If a speculative path reaches a no-progress boundary, the runtime restores
+    the previous stack and variables, records a successful ``delta=True`` result,
+    increments the public cycle count, appends history, and leaves input events
+    unconsumed. Actual expression, writeback, abstract-handler, and DFS safety
+    errors restore the pre-cycle state without incrementing the cycle count.
 
     **DFS Safety Limits**:
 
@@ -1022,21 +1036,17 @@ class SimulationRuntime:
 
     def _validate_hot_start_stack(self, target_state: State) -> None:
         """
-        Validate that a hot-start target can reach a stable boundary.
+        Validate only the structural part of a hot-start stack.
 
-        A non-pseudo leaf target is already a stable boundary, so validation
-        succeeds without executing the leaf's first-cycle ``during`` actions.
-        Other targets are checked by cloning the constructed stack and current
-        variables, then advancing that clone with no events in validation mode.
-        The real runtime therefore remains at the requested target state and no
-        lifecycle or abstract-handler side effects from the preflight are
-        committed.
+        Dynamic reachability belongs to the first real :meth:`cycle` call. The
+        constructor must not evaluate guards, lifecycle actions, pseudo-state
+        ``during`` blocks, or abstract handlers while trying to predict whether
+        a future event can make the target stoppable.
 
         :param target_state: Target state selected by the user.
         :type target_state: State
         :return: ``None``.
         :rtype: None
-        :raises ValueError: If the target cannot reach a stoppable state or end.
         :raises SimulationRuntimeDfsError: If the constructed hot-start stack
             already exceeds the structural depth safety limit.
         """
@@ -1046,119 +1056,6 @@ class SimulationRuntime:
                 f"({self._DFS_STRUCTURAL_DEPTH_LIMIT}) before execution; "
                 "choose a shallower target state or simplify the state hierarchy."
             )
-
-        if target_state.is_stoppable:
-            return
-
-        validation_stack = self._clone_stack(self.stack)
-        validation_vars = copy.deepcopy(self.vars)
-        dfs_error = None
-        try:
-            success, _ = self._run_cycle_on_context(
-                validation_stack,
-                validation_vars,
-                {},
-                is_validation_mode=True,
-            )
-        except SimulationRuntimeDfsError as e:
-            # _run_cycle_on_context preflight can hit DFS limits while proving
-            # that a hot-start target has no empty-event stable path.
-            dfs_error = e
-            success = False
-        if not success:
-            if self._can_hot_start_wait_for_evented_initial(target_state):
-                if dfs_error is not None:
-                    raise dfs_error
-                return
-            target_path = ".".join(target_state.path)
-            raise ValueError(
-                f"Hot start target '{target_path}' cannot reach a stoppable state"
-            )
-
-    def _can_hot_start_wait_for_evented_initial(self, target_state: State) -> bool:
-        """
-        Return whether a composite hot-start target can wait for an evented init.
-
-        Constructor preflight runs without user events, so an initial transition
-        guarded by an event may be legitimately disabled until the first
-        :meth:`cycle` call. The event gate can appear directly on the target
-        composite or after an eventless initial-transition chain. Such targets
-        should remain in ``init_wait`` instead of being rejected during
-        construction.
-
-        :param target_state: Hot-start target state to inspect.
-        :type target_state: State
-        :return: ``True`` when the target has an event-gated initial transition
-            boundary whose non-event guard is currently satisfiable.
-        :rtype: bool
-        :raises SimulationRuntimeDfsError: If the eventless initial-chain search
-            exceeds the runtime safety limits.
-        """
-        if target_state.is_leaf_state:
-            return False
-
-        worklist = [(self._clone_stack(self.stack), copy.deepcopy(self.vars))]
-        seen_signatures = set()
-        steps_taken = 0
-
-        while worklist:
-            current_stack, current_vars = worklist.pop()
-            if not current_stack:
-                continue
-
-            structural_signature = self._create_structural_signature(current_stack)
-            if len(structural_signature) > self._DFS_STRUCTURAL_DEPTH_LIMIT:
-                raise SimulationRuntimeDfsError(
-                    "Hot start event-gated initial-chain search exceeded the "
-                    "structural stack-depth safety limit "
-                    f"({self._DFS_STRUCTURAL_DEPTH_LIMIT}); "
-                    "choose a shallower target state or simplify the state hierarchy."
-                )
-
-            signature = self._create_execution_signature(current_stack, current_vars)
-            if signature in seen_signatures:
-                continue
-            seen_signatures.add(signature)
-
-            if steps_taken >= self._DFS_STEP_LIMIT:
-                raise SimulationRuntimeDfsError(
-                    "Hot start event-gated initial-chain search exceeded the "
-                    f"step safety limit ({self._DFS_STEP_LIMIT}); "
-                    "the state machine likely contains an invalid unbounded "
-                    "initial-transition chain."
-                )
-            steps_taken += 1
-
-            frame = current_stack[-1]
-            state = frame.state
-            if state.is_leaf_state or frame.mode != "init_wait":
-                continue
-
-            for transition in state.init_transitions:
-                if transition.event is None:
-                    continue
-                if self._transition_matches_guard(transition, current_vars):
-                    return True
-
-            for transition in reversed(state.init_transitions):
-                if transition.event is not None:
-                    continue
-                if not self._transition_matches_guard(transition, current_vars):
-                    continue
-
-                next_stack = self._clone_stack(current_stack)
-                next_vars = copy.deepcopy(current_vars)
-                self._execute_initial_transition_on_context(
-                    next_stack,
-                    next_vars,
-                    transition,
-                    {},
-                    is_validation_mode=True,
-                    attempt_initial_transition=False,
-                )
-                worklist.append((next_stack, next_vars))
-
-        return False
 
     def _event_input_error(self, message: str) -> SimulationRuntimeEventError:
         """
@@ -1209,7 +1106,7 @@ class SimulationRuntime:
             >>> sm = parse_dsl_node_to_state_machine(ast)
             >>> runtime = SimulationRuntime(sm)
             >>> runtime.cycle()
-            CycleResult(value=None, input_events=(), consumed_events=(), unconsumed_events=())
+            CycleResult(value=None, input_events=(), consumed_events=(), unconsumed_events=(), delta=False)
             >>> runtime._parse_event('System.Idle.Start').path_name
             'System.Idle.Start'
         """
@@ -2155,6 +2052,35 @@ class SimulationRuntime:
             transition, d_events
         ) and self._transition_matches_guard(transition, vars_)
 
+    @staticmethod
+    def _is_no_outgoing_pseudo(state: State) -> bool:
+        """
+        Return whether ``state`` is a pseudo source with no control successor.
+
+        A pseudo state with no outgoing initial or normal transition is a
+        structural Delta boundary. The predicate deliberately excludes
+        composite states and pseudo states that still have a candidate path, so
+        callers can use it before executing entry, during, effect, or abstract
+        actions without swallowing a reachable transition.
+
+        :param state: State to classify.
+        :type state: State
+        :return: ``True`` only for a no-outgoing pseudo state.
+        :rtype: bool
+
+        Example::
+
+            >>> from pyfcstm.model import State
+            >>> state = State(name="P", path=("Root", "P"), substates={}, is_pseudo=True)
+            >>> SimulationRuntime._is_no_outgoing_pseudo(state)
+            True
+        """
+        return bool(
+            state.is_pseudo
+            and not state.transitions_from
+            and not state.init_transitions
+        )
+
     def _run_leaf_during(
         self,
         state: State,
@@ -2232,6 +2158,12 @@ class SimulationRuntime:
             exceeds runtime safety limits.
         """
         stack.append(_Frame(state, "active"))
+        if self._is_no_outgoing_pseudo(state):
+            # This source has no control edge to execute. Keep the frame so the
+            # public cycle can report a stuttering Delta, but do not run any
+            # standalone lifecycle action before that classification.
+            return
+
         for on_enter in state.on_enters:
             self._execute_func(on_enter, vars_, is_validation_mode=is_validation_mode)
 
@@ -2989,19 +2921,6 @@ class SimulationRuntime:
         )
         return len(stack) == 0
 
-    def _create_root_rollback_stack(self) -> List[_Frame]:
-        """
-        Create the rollback stack used for initial-cycle dead ends.
-
-        When the very first cycle cannot reach a stoppable state, the reviewed
-        design keeps the runtime pinned at the root boundary with all simulated
-        side effects discarded. The returned stack represents that boundary.
-
-        :return: Single-frame stack rooted at the state machine root.
-        :rtype: List[_Frame]
-        """
-        return [_Frame(self.state_machine.root_state, "init_wait")]
-
     @staticmethod
     def _create_execution_signature(
         stack: List[_Frame],
@@ -3150,6 +3069,13 @@ class SimulationRuntime:
             frame = stack[-1]
             state = frame.state
 
+            if self._is_no_outgoing_pseudo(state):
+                self.logger.debug(
+                    "[VALIDATION] No-outgoing pseudo reached Delta boundary: %s",
+                    ".".join(state.path),
+                )
+                return False, False
+
             if state.is_leaf_state:
                 if frame.mode == "after_entry":
                     frame.mode = "active"
@@ -3230,12 +3156,16 @@ class SimulationRuntime:
         Execute a full runtime cycle until reaching a stable boundary.
 
         This method advances the state machine through transitions and lifecycle
-        actions until one of three conditions is met:
+        actions until one of four outcomes is met:
 
         1. **Stoppable State**: Reached a leaf state (non-pseudo) where execution
            can stabilize
         2. **Termination**: The state machine has ended (empty stack)
-        3. **Validation Failure**: Cannot reach a stoppable state, changes rolled back
+        3. **Delta Success**: No stoppable successor can be committed; speculative
+           state and variables are restored, ``cycle_count`` and ``history`` are
+           advanced, and the returned result has ``delta=True``
+        4. **Loud Error or No-op**: An actual input/expression/writeback/DFS error
+           is raised, or an ended/error-state runtime ignores the cycle
 
         **Cycle Execution Flow**:
 
@@ -3243,8 +3173,9 @@ class SimulationRuntime:
 
         1. **Speculative Execution**: Clone the current context and simulate the
            cycle to validate it can reach a stable boundary
-        2. **Commit or Rollback**: If validation succeeds, commit the changes;
-           otherwise, rollback to the previous stable state
+        2. **Commit or Delta**: If validation reaches a stoppable or terminated
+           boundary, commit the changes; otherwise restore the pre-cycle state and
+           record a successful Delta step
 
         **Event Handling**:
 
@@ -3279,13 +3210,14 @@ class SimulationRuntime:
         - Maximum 64 structural stack depth
         - Repeated execution states are pruned automatically
 
-        **Rollback Behavior**:
+        **Delta and Error Behavior**:
 
-        If a cycle cannot reach a stoppable state, all variable changes are
-        rolled back:
-        - For normal cycles: Restore previous stack and variables
-        - For initial cycle: Pin runtime at root boundary in ``init_wait`` mode
-        - All side effects from failed validation are discarded
+        A Delta step restores the previous stack and variables, leaves all input
+        occurrences unconsumed, increments the public cycle count, appends a
+        five-field history entry plus ``delta=True``, and emits one Delta warning.
+        Actual expression, writeback, abstract-handler, or DFS errors restore the
+        pre-cycle state without incrementing the cycle count. Ended and error-state
+        runtimes return the existing no-op result with ``delta=False``.
 
         :param events: Events available for the current cycle. Can be a single
             model-owned event object, a dot-separated path string, or an
@@ -3363,18 +3295,19 @@ class SimulationRuntime:
             >>> sm = parse_dsl_node_to_state_machine(ast)
             >>> runtime = SimulationRuntime(sm)
             >>> runtime.cycle()
+            CycleResult(value=None, input_events=(), consumed_events=(), unconsumed_events=(), delta=False)
             >>> runtime.current_state.path
             ('Root', 'System', 'Idle')
             >>> # Use relative path from current state - most convenient!
-            >>> runtime.cycle(['start'])
+            >>> _ = runtime.cycle(['start'])
             >>> runtime.current_state.path
             ('Root', 'System', 'Active')
             >>> # Use parent-relative path to access parent's event
-            >>> runtime.cycle(['.system_error'])  # Access System.system_error
+            >>> _ = runtime.cycle(['.system_error'])  # Access System.system_error
             >>> # Use absolute path to access root event
-            >>> runtime.cycle(['/global_stop'])  # Access Root.global_stop
+            >>> _ = runtime.cycle(['/global_stop'])  # Access Root.global_stop
             >>> # Full path still works for backward compatibility
-            >>> runtime.cycle(['Root.System.Active.pause'])
+            >>> _ = runtime.cycle(['Root.System.Active.pause'])
             >>> runtime.current_state.path
             ('Root', 'System', 'Idle')
 
@@ -3382,53 +3315,57 @@ class SimulationRuntime:
 
             >>> dsl_code = '''
             ... def int x = 0;
-            ... state System1 {
-            ...     state A {
-            ...         during { x = x + 1; }
+            ... state Root {
+            ...     state System1 {
+            ...         state A {
+            ...             during { x = x + 1; }
+            ...         }
+            ...         [*] -> A;
+            ...         A -> [*] :: Exit;
             ...     }
-            ...     [*] -> A;
-            ...     A -> [*] :: Exit;
-            ... }
-            ... state System2 {
-            ...     state B {
-            ...         during { x = x + 10; }
+            ...     state System2 {
+            ...         state B {
+            ...             during { x = x + 10; }
+            ...         }
+            ...         [*] -> B;
             ...     }
-            ...     [*] -> B;
+            ...     [*] -> System1;
+            ...     System1 -> System2 :: Switch;
             ... }
-            ... [*] -> System1;
-            ... System1 -> System2 :: Switch;
             ... '''
             >>> ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
             >>> sm = parse_dsl_node_to_state_machine(ast)
             >>> runtime = SimulationRuntime(sm)
-            >>> runtime.cycle()
+            >>> _ = runtime.cycle()
             >>> runtime.current_state.path
-            ('System1', 'A')
+            ('Root', 'System1', 'A')
             >>> # Provide both Exit and Switch events
-            >>> runtime.cycle(['System1.A.Exit', 'Switch'])
+            >>> _ = runtime.cycle(['Root.System1.A.Exit', 'Root.System1.Switch'])
             >>> runtime.current_state.path
-            ('System2', 'B')
+            ('Root', 'System2', 'B')
 
-        Example - Validation preventing invalid transitions::
+        Example - A blocked hot-start boundary produces a Delta step::
 
             >>> dsl_code = '''
+            ... def int x = 0;
             ... state Root {
-            ...     state A;
-            ...     state B {
-            ...         [*] -> C : if [false];  # Blocked initial transition
-            ...         state C;
+            ...     state C {
+            ...         state A { during { x = x + 1; } }
+            ...         [*] -> A : if [x > 0];
             ...     }
-            ...     [*] -> A;
-            ...     A -> B :: Go;  # Rejected by validation
+            ...     [*] -> C;
             ... }
             ... '''
             >>> ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
             >>> sm = parse_dsl_node_to_state_machine(ast)
-            >>> runtime = SimulationRuntime(sm)
-            >>> runtime.cycle()
-            >>> runtime.cycle(['Root.A.Go'])  # Rejected - cannot reach stoppable
-            >>> runtime.current_state.path
-            ('Root', 'A')  # Remains in A due to validation failure
+            >>> runtime = SimulationRuntime(sm, initial_state='Root.C', initial_vars={'x': 0})
+            >>> result = runtime.cycle()
+            >>> result.delta
+            True
+            >>> runtime.cycle_count
+            1
+            >>> runtime.history[-1]['delta']
+            True
 
         Example - Multiple cycles with state changes::
 
@@ -3445,18 +3382,18 @@ class SimulationRuntime:
             >>> ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
             >>> sm = parse_dsl_node_to_state_machine(ast)
             >>> runtime = SimulationRuntime(sm)
-            >>> runtime.cycle()
+            >>> _ = runtime.cycle()
             >>> runtime.vars['counter']
             1
-            >>> runtime.cycle()
+            >>> _ = runtime.cycle()
             >>> runtime.vars['counter']
             2
-            >>> runtime.cycle()
+            >>> _ = runtime.cycle()
             >>> runtime.vars['counter']
             3
-            >>> runtime.cycle()  # Self-transition fires
+            >>> _ = runtime.cycle()  # Self-transition fires
             >>> runtime.vars['counter']
-            4  # Exit + re-enter + during
+            4
 
         .. note::
            Once the runtime has ended (:attr:`is_ended` is ``True``), subsequent
@@ -3517,6 +3454,11 @@ class SimulationRuntime:
             is_validation_mode=True,
         )
 
+        # A validation dead end is a successful Delta boundary. The speculative
+        # context is intentionally discarded; the public runtime will commit
+        # the pre-cycle snapshot below and record the macro step.
+        delta = not success
+
         if success:
             sim_stack = self._clone_stack(snapshot_stack)
             sim_vars = copy.deepcopy(snapshot_vars)
@@ -3547,61 +3489,72 @@ class SimulationRuntime:
                     self._warned_anonymous_abstracts = snapshot_warned_anonymous
                     self._abstract_handler_errors = snapshot_handler_errors
 
-        if success:
+            if not success:
+                # Validation and committed execution must agree. If a
+                # committed-only callback path turns the result into a dead end,
+                # classify it as Delta and discard the speculative context.
+                delta = True
+                # A Delta macro step commits no transition, so event
+                # occurrences collected by the discarded committed pass are
+                # necessarily unconsumed.
+                consumed_event_names.clear()
+
+        if delta:
+            self.stack = snapshot_stack
+            self.vars = snapshot_vars
+            self._initialized = snapshot_initialized
+            self._ended = snapshot_ended
+            self._warned_anonymous_abstracts = snapshot_warned_anonymous
+            self._abstract_handler_errors = snapshot_handler_errors
+        else:
             self.stack = [] if sim_ended else sim_stack
-            old_vars = snapshot_vars
             self.vars = sim_vars
             self._initialized = sim_initialized
             self._ended = sim_ended
-            self.cycle_count += 1  # Increment cycle count on successful cycle
 
-            # Record history entry
-            # Get current state path
-            try:
-                state_path = (
-                    ".".join(self.current_state.path)
-                    if self.current_state
-                    else "(terminated)"
-                )
-            except (AttributeError, IndexError):
-                state_path = "(terminated)"
+        old_vars = snapshot_vars
+        self.cycle_count += 1
 
-            # Create history entry
-            history_entry = {
-                "cycle": self.cycle_count,
-                "state": state_path,
-                "vars": copy.deepcopy(self.vars),
-                "events": event_names,
-            }
-
-            # Add to history and maintain size limit
-            self.history.append(history_entry)
-            self._trim_history_to_size()
-
-            # Log successful cycle completion with variable changes
-            changes = self._format_var_changes(old_vars, self.vars)
-            current_values = ", ".join(
-                "%s=%s" % (name, _safe_runtime_repr(value))
-                for name, value in sorted(self.vars.items())
+        # Record history entry
+        # Get current state path
+        try:
+            state_path = (
+                ".".join(self.current_state.path)
+                if self.current_state
+                else "(terminated)"
             )
+        except (AttributeError, IndexError):
+            state_path = "(terminated)"
+
+        # Create history entry
+        history_entry = {
+            "cycle": self.cycle_count,
+            "state": state_path,
+            "vars": copy.deepcopy(self.vars),
+            "events": event_names,
+            "delta": delta,
+        }
+
+        # Add to history and maintain size limit
+        self.history.append(history_entry)
+        self._trim_history_to_size()
+
+        # Log successful cycle completion with variable changes
+        changes = self._format_var_changes(old_vars, self.vars)
+        current_values = ", ".join(
+            "%s=%s" % (name, _safe_runtime_repr(value))
+            for name, value in sorted(self.vars.items())
+        )
+        if delta:
+            self.logger.warning(
+                f"Cycle {self.cycle_count} completed as Delta - State: {state_path}; "
+                "no stoppable successor was committed"
+            )
+        else:
             self.logger.info(
                 f"Cycle {self.cycle_count} completed successfully - State: {state_path}{changes}; "
                 f"current values: state={state_path}, vars={{ {current_values} }}"
             )
-        else:
-            self.vars = snapshot_vars
-            self._ended = snapshot_ended
-            self._warned_anonymous_abstracts = snapshot_warned_anonymous
-            self._abstract_handler_errors = snapshot_handler_errors
-            if not snapshot_initialized and not snapshot_ended:
-                self.stack = self._create_root_rollback_stack()
-            else:
-                self.stack = snapshot_stack
-            self._initialized = snapshot_initialized
-            self.logger.warning(
-                f"Cycle {self.cycle_count + 1} failed - Unable to reach a stoppable state, changes rolled back"
-            )
-            consumed_event_names = []
 
         if self._ended or not self.stack:
             self._ended = True
@@ -3623,6 +3576,7 @@ class SimulationRuntime:
             unconsumed_events=self._unconsumed_event_names(
                 event_names, consumed_event_names
             ),
+            delta=delta,
         )
         return result
 

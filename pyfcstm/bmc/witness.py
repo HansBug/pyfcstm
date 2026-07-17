@@ -30,8 +30,8 @@ Example::
     >>> result = solve_bmc_property(formula)
     >>> result.status
     'sat'
-    >>> decode_bmc_witness(formula, result.model).schema_version
-    'bmc-witness/v1'
+    >>> decode_bmc_witness(formula, result.model).steps[0].delta
+    False
 """
 
 from __future__ import annotations
@@ -2016,6 +2016,9 @@ class BmcWitnessStep(_PrettyPrintableMixin):
     :type case_label: str
     :param case_kind: Selected BMC case kind, such as ``"initial"``,
         ``"transition"``, ``"fallback"``, ``"delta"``, or ``"absorb"``.
+        During replay, ``"absorb"`` is a terminal no-op with a synthetic
+        runtime Delta observation of false; its witness Delta flag is still
+        compared so forged payloads are reported.
     :type case_kind: str
     :param progress: Replay-friendly progress classification.
     :type progress: str
@@ -2216,9 +2219,8 @@ class BmcWitnessTrace(_PrettyPrintableMixin):
     The metadata dictionaries are public JSON-stable payloads.  They may
     contain strings, booleans, ``None``, finite numeric values, nested mappings,
     and lists, but not arbitrary Python objects or non-finite floating-point
-    values. The ``bmc-witness/v1`` step schema includes canonical replay input
-    events, ordered consumed event paths, and presence-derived unconsumed event
-    paths.
+    values. The witness step schema includes canonical replay input events,
+    ordered consumed event paths, and presence-derived unconsumed event paths.
 
     :param property: Property metadata.
     :type property: Mapping[str, object]
@@ -2232,17 +2234,14 @@ class BmcWitnessTrace(_PrettyPrintableMixin):
     :type steps: Sequence[BmcWitnessStep]
     :param diagnostics: Witness diagnostics, defaults to ``()``.
     :type diagnostics: Sequence[str], optional
-    :param schema_version: Witness schema version, defaults to
-        ``"bmc-witness/v1"``.
-    :type schema_version: str, optional
     :raises pyfcstm.bmc.errors.BmcBuildError: If the trace payload is
         malformed or violates public witness invariants.
 
     Example::
 
         >>> trace = BmcWitnessTrace({'kind': 'reach'}, {'status': 'sat'}, {'mode': 'cold'}, (), ())
-        >>> trace.to_canonical()['schema_version']
-        'bmc-witness/v1'
+        >>> sorted(trace.to_canonical())
+        ['diagnostics', 'frames', 'initial', 'property', 'solver', 'steps']
     """
 
     property: Mapping[str, Any]
@@ -2251,13 +2250,8 @@ class BmcWitnessTrace(_PrettyPrintableMixin):
     frames: Sequence[BmcWitnessFrame]
     steps: Sequence[BmcWitnessStep]
     diagnostics: Sequence[str] = ()
-    schema_version: str = "bmc-witness/v1"
 
     def __post_init__(self) -> None:
-        if self.schema_version != "bmc-witness/v1":
-            raise BmcBuildError(
-                "Unsupported witness schema version: %r." % self.schema_version
-            )
         if not isinstance(self.property, Mapping):
             raise BmcBuildError("property must be a mapping.")
         if not isinstance(self.solver, Mapping):
@@ -2306,7 +2300,6 @@ class BmcWitnessTrace(_PrettyPrintableMixin):
         solver_metadata = _coerce_public_json_mapping("solver", self.solver)
         _validate_witness_solver_metadata(solver_metadata)
         return {
-            "schema_version": self.schema_version,
             "property": _coerce_public_json_mapping("property", self.property),
             "solver": solver_metadata,
             "initial": _coerce_public_json_mapping("initial", self.initial),
@@ -2396,13 +2389,15 @@ class BmcRuntimeStep(_PrettyPrintableMixin):
     :type unconsumed_events: Sequence[str]
     :param abstract_calls: Handler call records captured in this step.
     :type abstract_calls: Sequence[BmcWitnessCallRecord]
+    :param delta: Runtime Delta observation, defaults to ``False``.
+    :type delta: bool, optional
     :raises pyfcstm.bmc.errors.BmcBuildError: If the runtime-step payload is
         malformed.
 
     Example::
 
-        >>> BmcRuntimeStep(0, (), (), (), ()).to_canonical()['index']
-        0
+        >>> BmcRuntimeStep(0, (), (), (), ()).to_canonical()['delta']
+        False
     """
 
     index: int
@@ -2410,6 +2405,7 @@ class BmcRuntimeStep(_PrettyPrintableMixin):
     consumed_events: Sequence[str]
     unconsumed_events: Sequence[str]
     abstract_calls: Sequence[BmcWitnessCallRecord]
+    delta: bool = False
 
     def __post_init__(self) -> None:
         if (
@@ -2418,6 +2414,8 @@ class BmcRuntimeStep(_PrettyPrintableMixin):
             or self.index < 0
         ):
             raise BmcBuildError("runtime step index must be a non-negative integer.")
+        if not isinstance(self.delta, bool):
+            raise BmcBuildError("runtime step delta must be bool.")
         object.__setattr__(
             self,
             "input_events",
@@ -2465,6 +2463,7 @@ class BmcRuntimeStep(_PrettyPrintableMixin):
             "consumed_events": list(self.consumed_events),
             "unconsumed_events": list(self.unconsumed_events),
             "abstract_calls": [item.to_canonical() for item in self.abstract_calls],
+            "delta": self.delta,
         }
 
 
@@ -3647,6 +3646,18 @@ def _compare_step(
     witness: BmcWitnessStep,
     runtime: BmcRuntimeStep,
 ) -> None:
+    # Absorb has a synthetic runtime observation of false, but its witness
+    # Delta remains observable input and must be checked for forged payloads.
+    expected_delta = witness.delta
+    if expected_delta != runtime.delta:
+        mismatches.append(
+            BmcReplayMismatch(
+                "steps[%d].delta" % witness.index,
+                expected_delta,
+                runtime.delta,
+                "delta mismatch",
+            )
+        )
     if tuple(witness.input_event_paths) != tuple(runtime.input_events):
         mismatches.append(
             BmcReplayMismatch(
@@ -3824,7 +3835,7 @@ def replay_bmc_witness(
     if witness.frames:
         _compare_frame(mismatches, witness.frames[0], frames[0], init_runtime_state)
     for step in witness.steps:
-        before_count = len(recorder.calls)
+        call_start = len(recorder.calls)
         recorder.begin_step()
         result = runtime.cycle(step.input_event_paths)
         recorder.end_step()
@@ -3839,7 +3850,7 @@ def replay_bmc_witness(
                 named_ref=call.named_ref,
                 snapshot=call.snapshot,
             )
-            for idx, call in enumerate(recorder.calls[before_count:])
+            for idx, call in enumerate(recorder.calls[call_start:])
         )
         runtime_step = BmcRuntimeStep(
             index=step.index,
@@ -3847,6 +3858,7 @@ def replay_bmc_witness(
             consumed_events=result.consumed_events,
             unconsumed_events=result.unconsumed_events,
             abstract_calls=step_calls,
+            delta=result.delta,
         )
         steps.append(runtime_step)
         _compare_step(mismatches, step, runtime_step)

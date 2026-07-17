@@ -55,6 +55,8 @@ INITIAL_DELTA_ALIGNMENT_CASES = {
     "failed_initial_cycle_preserves_root_entry_lifecycle",
     "hot_start_deep_evented_initial_waits_for_event",
     "design_post_child_exit_without_follow_up",
+    "hot_start_blocked_composite_returns_delta",
+    "hot_start_pseudo_without_outgoing_path_returns_delta",
 }
 
 NUMERIC_UNSUPPORTED_CASES = {
@@ -97,9 +99,7 @@ TEMPORARY_BMC_CORE_EXCLUDE_CASES = {
 CONSTRUCTOR_DIAGNOSTIC_EXCLUDE_CASES = {
     "hot_start_initial_vars_reject_bool_values",
     "hot_start_initial_vars_reject_string_values",
-    "hot_start_rejects_blocked_composite_initial",
     "hot_start_rejects_overdeep_leaf_stack",
-    "hot_start_rejects_unstable_pseudo_leaf",
     "persistent_default_int_initializer_rejects_non_integer_float",
 }
 

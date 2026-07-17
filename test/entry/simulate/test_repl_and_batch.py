@@ -243,6 +243,27 @@ def _run_to_idle_processor():
 
 @pytest.mark.unittest
 class TestCommandProcessorSessionState:
+    def test_delta_is_visible_in_cycle_table_and_csv_history(self, tmp_path):
+        runtime, model = _build_runtime(textwrap.dedent("""
+            state Root {
+                pseudo state P;
+                [*] -> P;
+            }
+        """))
+        processor = CommandProcessor(runtime, state_machine=model, use_color=False)
+
+        assert "Initialized from state: Root.P" in processor.process("init Root.P").output
+        table = processor.process("cycle 2").output
+        assert "Delta" in table
+        assert "True" in table
+
+        csv_path = tmp_path / "history.csv"
+        result = processor.process("export %s" % csv_path)
+        assert "History exported" in result.output
+        lines = csv_path.read_text(encoding="utf-8").splitlines()
+        assert lines[0].split(",")[:4] == ["cycle", "state", "delta", "events"]
+        assert all(",True," in line for line in lines[1:])
+
     def test_default_history_size_setting_matches_runtime_retention(self):
         processor = _run_to_idle_processor()
 

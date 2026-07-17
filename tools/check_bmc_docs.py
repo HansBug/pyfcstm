@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import textwrap
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
@@ -71,10 +72,10 @@ _EQUATION_PAIRS = (
     "explanations/bmc_solving/index",
 )
 
-_SCHEMA_RELATIVE_PATH = Path("reference/bmc_results/bmc_cli_v1.schema.json")
+_SCHEMA_RELATIVE_PATH = Path("reference/bmc_results/bmc_cli.schema.json")
 _SCHEMA_ID = (
     "https://github.com/HansBug/pyfcstm/blob/main/"
-    "docs/source/reference/bmc_results/bmc_cli_v1.schema.json"
+    "docs/source/reference/bmc_results/bmc_cli.schema.json"
 )
 
 _TUTORIAL_DIAGRAMS = (
@@ -248,7 +249,14 @@ def _check_localized_diagrams(errors: List[str]) -> None:
 
 def _check_schema(errors: List[str]) -> None:
     docs_schema = _REPO_ROOT / "docs/source" / _SCHEMA_RELATIVE_PATH
-    package_schemas = sorted((_REPO_ROOT / "pyfcstm").rglob("bmc_cli_v1.schema.json"))
+    legacy_schemas = sorted(
+        path
+        for path in docs_schema.parent.glob("bmc_cli_*.schema.json")
+        if path != docs_schema
+    )
+    for legacy_schema in legacy_schemas:
+        errors.append("Legacy BMC JSON schema path still exists: %s" % legacy_schema)
+    package_schemas = sorted((_REPO_ROOT / "pyfcstm").rglob("bmc_cli.schema.json"))
     for package_schema in package_schemas:
         errors.append(
             "BMC JSON schema must not be shipped inside pyfcstm: %s"
@@ -262,18 +270,33 @@ def _check_schema(errors: List[str]) -> None:
     else:
         if schema.get("$id") != _SCHEMA_ID:
             errors.append("BMC documentation schema has an unexpected $id.")
-        if schema.get("properties", {}).get("schema_version", {}).get("const") != (
-            "bmc-cli/v1"
-        ):
-            errors.append("BMC documentation schema does not freeze bmc-cli/v1.")
+        if schema.get("$schema") != "https://json-schema.org/draft/2020-12/schema":
+            errors.append(
+                "BMC documentation schema must retain the standard dialect URI."
+            )
+        properties = schema.get("properties", {})
+        if any("version" in str(name).casefold() for name in properties):
+            errors.append(
+                "BMC documentation schema must not expose version properties."
+            )
+        runtime_step = schema.get("$defs", {}).get("runtimeStep", {})
+        if "delta" not in runtime_step.get("required", []):
+            errors.append("BMC runtime-step schema must require delta.")
     for relative in (
         "reference/bmc_results/index.rst",
         "reference/bmc_results/index_zh.rst",
     ):
         text = _read(_REPO_ROOT / "docs/source" / relative)
-        if "<bmc_cli_v1.schema.json>" not in text:
+        if "<bmc_cli.schema.json>" not in text:
             errors.append("%s does not expose the schema download." % relative)
-        if "pyfcstm/entry/bmc_cli_v1.schema.json" in text or "pkgutil.get_data" in text:
+        schema_references = set(
+            re.findall(r"bmc_cli_[A-Za-z0-9_.-]+\.schema\.json", text)
+        )
+        if (
+            any(reference != docs_schema.name for reference in schema_references)
+            or "pyfcstm/entry/bmc_cli.schema.json" in text
+            or "pkgutil.get_data" in text
+        ):
             errors.append("%s still describes the removed package resource." % relative)
 
 

@@ -60,6 +60,10 @@ int MachineWrapper::is_ended() const {
     return {{ machine_class_name(model) }}_is_ended(&machine_);
 }
 
+bool MachineWrapper::last_cycle_was_delta() const {
+    return {{ machine_class_name(model) }}_last_cycle_was_delta(&machine_) != 0;
+}
+
 MachineWrapper::StateId MachineWrapper::current_state_id() const {
     return {{ machine_class_name(model) }}_current_state_id(&machine_);
 }

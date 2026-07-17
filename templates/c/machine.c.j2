@@ -228,6 +228,29 @@ typedef struct _{{ machine_class_name(model) }}RuntimeContext {
     size_t stack_size;
 } _{{ machine_class_name(model) }}RuntimeContext;
 
+static int _{{ machine_class_name(model) }}_contexts_equal(
+    const _{{ machine_class_name(model) }}RuntimeContext *left,
+    const _{{ machine_class_name(model) }}RuntimeContext *right)
+{
+    size_t i;
+    if (left->stack_size != right->stack_size) {
+        return 0;
+    }
+{% for def_item in model.defines.values() -%}
+    if (left->vars.{{ def_item.name | to_c_identifier }} != right->vars.{{ def_item.name | to_c_identifier }}) {
+        return 0;
+    }
+{% endfor -%}
+    for (i = 0u; i < left->stack_size; ++i) {
+        if (left->stack[i].state_id != right->stack[i].state_id ||
+            left->stack[i].mode != right->stack[i].mode ||
+            left->stack[i].plain_before_pending != right->stack[i].plain_before_pending) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 typedef struct _{{ machine_class_name(model) }}EventSet {
     unsigned long bitset[{{ machine_macro_name(model) }}_EVENTSET_BITSET_WORDS_INTERNAL];
     int ids[{{ [1, all_events.items | length] | max }}];
@@ -1439,21 +1462,6 @@ static int _{{ machine_class_name(model) }}_normalize_events(
     return {{ machine_macro_name(model) }}_SUCCESS;
 }
 
-static int _{{ machine_class_name(model) }}_event_set_activate_all(
-    {{ machine_class_name(model) }} *machine,
-    _{{ machine_class_name(model) }}EventSet *event_set)
-{
-    int event_id;
-
-    _{{ machine_class_name(model) }}_event_set_reset(event_set, {{ machine_macro_name(model) }}_EVENT_COUNT);
-    for (event_id = 0; event_id < {{ machine_macro_name(model) }}_EVENT_COUNT; ++event_id) {
-        if (_{{ machine_class_name(model) }}_event_set_add(machine, event_set, event_id) != {{ machine_macro_name(model) }}_SUCCESS) {
-            return {{ machine_macro_name(model) }}_FAILURE;
-        }
-    }
-    return {{ machine_macro_name(model) }}_SUCCESS;
-}
-
 static void _{{ machine_class_name(model) }}_copy_context(
     _{{ machine_class_name(model) }}RuntimeContext *dst,
     const _{{ machine_class_name(model) }}RuntimeContext *src)
@@ -1584,6 +1592,11 @@ static int _{{ machine_class_name(model) }}_run_leaf_during(
         }
     }
 
+    if (state_info->is_pseudo &&
+        state_info->transition_count == 0u &&
+        state_info->initial_transition_count == 0u) {
+        return {{ machine_macro_name(model) }}_SUCCESS;
+    }
     if (!state_info->is_pseudo) {
         for (i = path_count; i > 0u; --i) {
             if (_{{ machine_class_name(model) }}_run_aspect_before_actions_for_state(
@@ -1633,6 +1646,14 @@ static int _{{ machine_class_name(model) }}_is_stoppable_state(int state_id)
 {
     const _{{ machine_class_name(model) }}StateInfo *state_info = &_{{ machine_class_name(model) }}_state_info[state_id];
     return state_info->is_leaf && !state_info->is_pseudo;
+}
+
+static int _{{ machine_class_name(model) }}_is_no_outgoing_pseudo(int state_id)
+{
+    const _{{ machine_class_name(model) }}StateInfo *state_info = &_{{ machine_class_name(model) }}_state_info[state_id];
+    return state_info->is_pseudo &&
+        state_info->transition_count == 0u &&
+        state_info->initial_transition_count == 0u;
 }
 
 static int _{{ machine_class_name(model) }}_is_self_transition(
@@ -1717,6 +1738,10 @@ static int _{{ machine_class_name(model) }}_enter_state(
                 {{ machine_macro_name(model) }}_MAX_STACK_DEPTH);
         }
         return {{ machine_macro_name(model) }}_FAILURE;
+    }
+
+    if (_{{ machine_class_name(model) }}_is_no_outgoing_pseudo(state_id)) {
+        return {{ machine_macro_name(model) }}_SUCCESS;
     }
 
     if (_{{ machine_class_name(model) }}_run_enter_actions_for_state(
@@ -1876,18 +1901,35 @@ static int _{{ machine_class_name(model) }}_run_cycle_on_context(
     int is_validation_mode)
 {
     int steps_taken;
-    int signatures_seen;
+    _{{ machine_class_name(model) }}RuntimeContext checkpoint;
+    size_t period_power;
+    size_t period_length;
     size_t i;
 
-    (void)signatures_seen;
-
     steps_taken = 0;
+    checkpoint = *context;
+    period_power = 1u;
+    period_length = 0u;
     while (!(*ended)) {
         {{ machine_class_name(model) }}Frame *frame;
         int state_id;
         const _{{ machine_class_name(model) }}StateInfo *state_info;
         int transition_id;
         int structural_depth;
+
+        if (steps_taken > 0) {
+            if (_{{ machine_class_name(model) }}_contexts_equal(context, &checkpoint)) {
+                return 0;
+            }
+            ++period_length;
+            if (period_length == period_power) {
+                checkpoint = *context;
+                period_length = 0u;
+                if (period_power < {{ machine_macro_name(model) }}_MAX_DFS_STEPS) {
+                    period_power *= 2u;
+                }
+            }
+        }
 
         if (context->stack_size == 0u) {
             *ended = 1;
@@ -1913,6 +1955,10 @@ static int _{{ machine_class_name(model) }}_run_cycle_on_context(
         frame = &context->stack[context->stack_size - 1u];
         state_id = frame->state_id;
         state_info = &_{{ machine_class_name(model) }}_state_info[state_id];
+
+        if (_{{ machine_class_name(model) }}_is_no_outgoing_pseudo(state_id)) {
+            return 0;
+        }
 
         if (state_info->is_leaf) {
             if (frame->mode == {{ machine_macro_name(model) }}_FRAME_MODE_AFTER_ENTRY) {
@@ -2163,6 +2209,7 @@ int {{ machine_class_name(model) }}_init({{ machine_class_name(model) }} *machin
     machine->ended = 0;
     machine->entered_root = 0;
     machine->initialized = 1;
+    machine->last_cycle_was_delta = 0;
     machine->_active_vars = NULL;
     _{{ machine_class_name(model) }}_clear_error(machine);
     return {{ machine_macro_name(model) }}_SUCCESS;
@@ -2175,14 +2222,9 @@ int {{ machine_class_name(model) }}_hot_start(
 {
     {{ machine_class_name(model) }} saved_machine;
     char hot_start_error[sizeof(machine->last_error)];
-    _{{ machine_class_name(model) }}RuntimeContext validation_context;
-    _{{ machine_class_name(model) }}EventSet validation_event_set;
-    int validation_ended;
-    int validation_success;
     int path_ids[{{ machine_macro_name(model) }}_MAX_STACK_DEPTH];
     size_t path_count;
     int current_state_id;
-    int target_state_id;
     size_t i;
 
     if (machine == NULL || initial_vars == NULL) {
@@ -2193,7 +2235,6 @@ int {{ machine_class_name(model) }}_hot_start(
     hot_start_error[0] = '\0';
     memset(machine, 0, sizeof(*machine));
     machine->vars = *initial_vars;
-    target_state_id = initial_state_id;
     current_state_id = initial_state_id;
     if (!_{{ machine_class_name(model) }}_state_id_is_valid(current_state_id)) {
         _{{ machine_class_name(model) }}_format_error_text(
@@ -2249,34 +2290,6 @@ int {{ machine_class_name(model) }}_hot_start(
             {{ machine_macro_name(model) }}_MAX_STACK_DEPTH);
         goto hot_start_failure;
     }
-    if (!_{{ machine_class_name(model) }}_is_stoppable_state(target_state_id)) {
-        if (_{{ machine_class_name(model) }}_event_set_activate_all(machine, &validation_event_set) != {{ machine_macro_name(model) }}_SUCCESS) {
-            _{{ machine_class_name(model) }}_format_error_text(hot_start_error, sizeof(hot_start_error), "%s", machine->last_error);
-            goto hot_start_failure;
-        }
-        _{{ machine_class_name(model) }}_copy_from_machine(&validation_context, machine);
-        validation_ended = 0;
-        validation_success = _{{ machine_class_name(model) }}_run_cycle_on_context(
-            machine,
-            &validation_context,
-            &validation_event_set,
-            &validation_ended,
-            1,
-            1);
-        if (!validation_success && machine->last_error[0] != '\0') {
-            _{{ machine_class_name(model) }}_format_error_text(hot_start_error, sizeof(hot_start_error), "%s", machine->last_error);
-            goto hot_start_failure;
-        }
-        if (!validation_success) {
-            _{{ machine_class_name(model) }}_format_error_text(
-                hot_start_error,
-                sizeof(hot_start_error),
-                "Hot start target '%s' cannot reach a stoppable state",
-                _{{ machine_class_name(model) }}_state_info[target_state_id].path);
-            goto hot_start_failure;
-        }
-        _{{ machine_class_name(model) }}_clear_error(machine);
-    }
     return {{ machine_macro_name(model) }}_SUCCESS;
 
 hot_start_failure:
@@ -2314,6 +2327,7 @@ int {{ machine_class_name(model) }}_cycle(
     if (machine == NULL) {
         return {{ machine_macro_name(model) }}_FAILURE;
     }
+    machine->last_cycle_was_delta = 0;
     if (!machine->initialized) {
         _{{ machine_class_name(model) }}_set_error(machine, "Machine is not initialized; call {{ machine_class_name(model) }}_init(...) or {{ machine_class_name(model) }}_hot_start(...) before cycle().");
         return {{ machine_macro_name(model) }}_FAILURE;
@@ -2349,6 +2363,7 @@ int {{ machine_class_name(model) }}_cycle(
         if (machine->last_error[0] != '\0') {
             return {{ machine_macro_name(model) }}_FAILURE;
         }
+        machine->last_cycle_was_delta = 1;
         return {{ machine_macro_name(model) }}_SUCCESS;
     }
 
@@ -2383,6 +2398,9 @@ int {{ machine_class_name(model) }}_cycle(
     if (!success && machine->last_error[0] != '\0') {
         return {{ machine_macro_name(model) }}_FAILURE;
     }
+    if (!success) {
+        machine->last_cycle_was_delta = 1;
+    }
     return {{ machine_macro_name(model) }}_SUCCESS;
 }
 
@@ -2395,6 +2413,11 @@ const {{ machine_class_name(model) }}Vars *{{ machine_class_name(model) }}_vars(
 int {{ machine_class_name(model) }}_is_ended(const {{ machine_class_name(model) }} *machine)
 {
     return machine != NULL ? machine->ended : 1;
+}
+
+int {{ machine_class_name(model) }}_last_cycle_was_delta(const {{ machine_class_name(model) }} *machine)
+{
+    return machine != NULL ? machine->last_cycle_was_delta : 0;
 }
 
 {{ machine_class_name(model) }}StateId {{ machine_class_name(model) }}_current_state_id(const {{ machine_class_name(model) }} *machine)

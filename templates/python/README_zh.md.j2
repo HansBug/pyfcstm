@@ -353,6 +353,8 @@ machine = {{ machine_class_name(model) }}()
   - 返回当前活动的持久变量字典
 - `is_ended`
   - 返回运行时是否已结束
+- `last_cycle_was_delta`
+  - 返回最近一次成功周期是否为 Delta 无进展周期
 - `current_state_path`
   - 返回当前叶状态路径元组，或 `None`
 - `current_state_name`

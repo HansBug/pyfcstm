@@ -142,7 +142,7 @@
 历史和导出格式
 --------------
 
-运行时历史记录是包含 ``cycle``、``state``、``vars`` 和可选 ``events`` 键的字典。``history`` 会显示保留行；``export`` 是命令层功能，不是 :class:`pyfcstm.simulate.SimulationRuntime` 方法。
+运行时历史记录是包含 ``cycle``、``state``、``vars``、``events`` 和布尔 ``delta`` 键的字典。``history`` 会显示保留行；``export`` 是命令层功能，不是 :class:`pyfcstm.simulate.SimulationRuntime` 方法。
 
 .. list-table:: 导出格式
    :header-rows: 1
@@ -151,7 +151,7 @@
      - 形状
      - 说明
    * - ``.csv``
-     - 列为 ``cycle``、``state``、``events``，然后是排序后的变量名。
+     - 列为 ``cycle``、``state``、``delta``、``events``，然后是排序后的变量名。
      - 事件在一个 CSV 单元格内用分号连接。
    * - ``.json``
      - 历史记录对象组成的 JSON 数组。
@@ -184,6 +184,8 @@ Python 运行时应用程序接口
      - 本周期实际执行的事件转换对应的规范事件路径。
    * - ``CycleResult.unconsumed_events``
      - 已提供但没有对应已执行事件转换的规范事件路径。
+   * - ``CycleResult.delta``
+     - 成功但没有可提交后继时为 ``True``；普通成功、错误和已结束空操作为 ``False``。
    * - ``vars`` / ``cycle_count`` / ``history`` / ``history_size``
      - 命令显示、测试和工具使用的公开运行时状态。命令层 ``history_size`` 设置会把 ``0`` 映射为运行时
        ``None``；直接编写运行时代码时，需要传入 ``None`` 来表示历史不设上限。

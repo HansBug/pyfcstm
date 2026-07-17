@@ -16,9 +16,11 @@ steps:
     vars:
       x: 0
     ended: false
+    delta: true
 - cycle: Root.Start
   expect:
     state: Root.A
     vars:
       x: 11
     ended: false
+    delta: false

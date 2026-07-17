@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -21,6 +22,72 @@ from pyfcstm.utils import ModelValidationError
 
 
 pytestmark = pytest.mark.unittest
+
+
+def _assert_bmc_schema_instance(schema, value, path="$", definitions=None):
+    """Validate the BMC result schema with the standard-library test harness."""
+    definitions = schema.get("$defs", {}) if definitions is None else definitions
+    if "$ref" in schema:
+        ref = schema["$ref"]
+        assert ref.startswith("#/$defs/"), "%s has unsupported ref %r" % (path, ref)
+        return _assert_bmc_schema_instance(
+            definitions[ref.split("/", 2)[-1]], value, path, definitions
+        )
+    if "oneOf" in schema:
+        errors = []
+        for branch in schema["oneOf"]:
+            try:
+                _assert_bmc_schema_instance(branch, value, path, definitions)
+            except AssertionError as err:
+                errors.append(str(err))
+            else:
+                return
+        raise AssertionError("%s matched no oneOf branch: %s" % (path, errors))
+    if "const" in schema:
+        assert value == schema["const"], "%s != const %r" % (path, schema["const"])
+    if "enum" in schema:
+        assert value in schema["enum"], "%s not in enum %r" % (path, schema["enum"])
+    if "type" in schema:
+        allowed_types = schema["type"]
+        if isinstance(allowed_types, str):
+            allowed_types = [allowed_types]
+        type_matches = {
+            "null": value is None,
+            "boolean": type(value) is bool,
+            "integer": type(value) is int,
+            "number": type(value) in (int, float) and type(value) is not bool,
+            "string": isinstance(value, str),
+            "array": isinstance(value, list),
+            "object": isinstance(value, dict),
+        }
+        assert any(type_matches[item] for item in allowed_types), (
+            "%s has wrong type: %r" % (path, type(value).__name__)
+        )
+    if isinstance(value, dict):
+        properties = schema.get("properties", {})
+        for required in schema.get("required", []):
+            assert required in value, "%s missing required %s" % (path, required)
+        if schema.get("additionalProperties") is False:
+            assert set(value) <= set(properties), "%s has unknown fields %r" % (
+                path,
+                sorted(set(value) - set(properties)),
+            )
+        for key, item in value.items():
+            if key in properties:
+                _assert_bmc_schema_instance(
+                    properties[key], item, "%s.%s" % (path, key), definitions
+                )
+            elif isinstance(schema.get("additionalProperties"), dict):
+                _assert_bmc_schema_instance(
+                    schema["additionalProperties"], item, "%s.%s" % (path, key), definitions
+                )
+    elif isinstance(value, list) and isinstance(schema.get("items"), dict):
+        for index, item in enumerate(value):
+            _assert_bmc_schema_instance(
+                schema["items"], item, "%s[%d]" % (path, index), definitions
+            )
+    if "minimum" in schema and type(value) in (int, float):
+        assert value >= schema["minimum"], "%s is below minimum" % path
 
 
 @pytest.fixture()
@@ -144,8 +211,14 @@ def test_bmc_json_verdict_matrix(
 
     result, payload = _json_result(model_path, query_path)
 
+    schema = json.loads(
+        Path("docs/source/reference/bmc_results/bmc_cli.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    _assert_bmc_schema_instance(schema, payload)
     assert result.exit_code == expected_exit
-    assert payload["schema_version"] == "bmc-cli/v1"
+    assert "schema_version" not in payload
     assert payload["exit_code"] == result.exit_code
     assert payload["result"]["status"] == status
     assert payload["result"]["outcome"] == outcome
@@ -153,6 +226,7 @@ def test_bmc_json_verdict_matrix(
     assert (payload["replay"] is not None) is has_trace
     if has_trace:
         assert payload["replay"]["ok"] is True
+        assert "delta" in payload["replay"]["runtime_trace"]["steps"][0]
     assert "formulas" not in json.dumps(payload)
 
 
@@ -418,6 +492,12 @@ def test_bmc_response_incomplete_is_exit_three(bmc_files) -> None:
 
     result, payload = _json_result(model_path, query_path)
 
+    schema = json.loads(
+        Path("docs/source/reference/bmc_results/bmc_cli.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    _assert_bmc_schema_instance(schema, payload)
     assert result.exit_code == 3
     assert payload["exit_code"] == 3
     assert payload["result"]["status"] == "unsat"
@@ -454,6 +534,12 @@ def test_bmc_solver_inconclusive_is_exit_three(
     monkeypatch.setattr(bmc_entry, "_solve_bmc_property", inconclusive)
     result, payload = _json_result(model_path, query_path, "--timeout-ms", "25")
 
+    schema = json.loads(
+        Path("docs/source/reference/bmc_results/bmc_cli.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    _assert_bmc_schema_instance(schema, payload)
     assert result.exit_code == 3
     assert payload["exit_code"] == 3
     assert payload["result"]["status"] == status
@@ -473,6 +559,28 @@ def test_bmc_solver_inconclusive_is_exit_three(
     assert human.exit_code == 3
     assert "Timeout: 25 ms for each solver check" in human.stdout
     assert "Solver reason: %s" % reason in human.stdout
+
+
+def test_bmc_schema_rejects_removed_version_fields(bmc_files) -> None:
+    """The unversioned schema rejects legacy root and witness fields."""
+    model_path, query = bmc_files
+    query_path = query('check reach <= 1: active("Root");')
+    _, payload = _json_result(model_path, query_path)
+    schema = json.loads(
+        Path("docs/source/reference/bmc_results/bmc_cli.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    legacy_root = deepcopy(payload)
+    legacy_root["schema_version"] = "bmc-cli/v1"
+    with pytest.raises(AssertionError, match="unknown fields"):
+        _assert_bmc_schema_instance(schema, legacy_root)
+
+    legacy_witness = deepcopy(payload)
+    legacy_witness["witness"]["schema_version"] = "bmc-witness/v1"
+    with pytest.raises(AssertionError, match="unknown fields"):
+        _assert_bmc_schema_instance(schema, legacy_witness)
 
 
 def test_bmc_max_bound_is_a_controlled_compile_error(bmc_files) -> None:

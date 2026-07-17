@@ -4,7 +4,7 @@ This module composes the public BMC pipeline into the ``pyfcstm bmc`` command.
 It keeps query compilation, solving, witness decoding, and runtime replay
 explicit while providing stable human and JSON process contracts.
 
-The normative ``bmc-cli/v1`` JSON Schema is published as a download from the
+The normative BMC JSON Schema is published as a download from the
 `BMC result protocol reference
 <https://pyfcstm.readthedocs.io/en/latest/reference/bmc_results/index.html>`_
 rather than shipped as a runtime package resource.
@@ -425,7 +425,6 @@ def _json_report(
     query_file: str,
 ) -> str:
     payload = {
-        "schema_version": "bmc-cli/v1",
         "input": {
             "model_path": input_code_file,
             "query_path": query_file,
@@ -435,9 +434,7 @@ def _json_report(
         "witness": (
             execution.witness.to_canonical() if execution.witness is not None else None
         ),
-        "replay": (
-            execution.replay.to_canonical() if execution.replay is not None else None
-        ),
+        "replay": execution.replay.to_canonical() if execution.replay is not None else None,
         "exit_code": execution.exit_code,
     }
     return (
@@ -465,7 +462,7 @@ def build_bmc_output(
     :type input_code_file: str
     :param query_file: FBMCQ query file path.
     :type query_file: str
-    :param json_output: Whether to emit ``bmc-cli/v1`` JSON, defaults to
+    :param json_output: Whether to emit structured BMC JSON, defaults to
         ``False``. Its normative JSON Schema is linked from the `BMC result
         protocol reference
         <https://pyfcstm.readthedocs.io/en/latest/reference/bmc_results/index.html>`_.
@@ -645,7 +642,7 @@ def _add_bmc_subcommand(cli: click.Group) -> click.Group:
         "--json",
         "json_output",
         is_flag=True,
-        help="Emit the stable bmc-cli/v1 JSON envelope.",
+        help="Emit the structured JSON result.",
     )
     @click.option(
         "--timeout-ms",

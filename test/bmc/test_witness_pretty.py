@@ -584,13 +584,14 @@ def test_public_non_trace_objects_are_field_value_golden_pinned() -> None:
     vars        -
     """
     expected_runtime_step = """
-    BmcRuntimeStep
-    field              value
-    index              0
-    input_events       A
-    consumed_events    A
-    unconsumed_events  -
-    abstract_calls     -
+        BmcRuntimeStep
+        field              value
+        index              0
+        input_events       A
+        consumed_events    A
+        unconsumed_events  -
+        abstract_calls     -
+        delta              false
     """
 
     _assert_text_equal(

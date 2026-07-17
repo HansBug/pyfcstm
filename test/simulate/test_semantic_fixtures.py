@@ -3,6 +3,7 @@ import os
 import pytest
 import yaml
 
+from test.testings import simulate_semantics
 from test.testings.simulate_semantics import (
     BMC_CORE_RUNNER,
     SemanticCaseError,
@@ -13,12 +14,69 @@ from test.testings.simulate_semantics import (
 )
 
 
+# Independent truth ledger for the nine Delta cohorts. Values are one tuple per
+# YAML success expectation; a repeated tuple expands to one value per public
+# cycle call. Keep this table independent from both YAML and Runtime output so
+# drift is reported instead of becoming self-consistent.
+EXPECTED_DELTA_STEP_SEQUENCES = {
+    "design_composite_stuck_in_init_wait": ((True,), (True,), (True,)),
+    "design_post_child_exit_without_follow_up": ((True,), (True,), (True,)),
+    "failed_initial_cycle_preserves_root_entry_lifecycle": ((True,), (False,)),
+    "failed_initial_cycle_skips_abstract_handler_callbacks": ((True,),),
+    "hot_start_composite_evented_initial_skips_entry_boundary_before": (
+        (True,),
+        (False,),
+    ),
+    "hot_start_deep_evented_initial_waits_for_event": ((True,), (False,)),
+    "hot_start_evented_initial_matches_cold_suffix": (
+        (True,),
+        (False,),
+        (False,),
+    ),
+    "hot_start_blocked_composite_returns_delta": ((True, True),),
+    "hot_start_pseudo_without_outgoing_path_returns_delta": ((True, True),),
+}
+
+
 @pytest.mark.unittest
 def test_all_semantic_fixtures_load():
     cases = iter_semantic_cases()
 
-    assert len(cases) >= 161
+    assert len(cases) == 165
     assert {case.id for case in cases}
+
+
+@pytest.mark.unittest
+def test_full_fixture_runtime_scan_finds_exact_delta_cohort():
+    """Execute every simulation fixture and mechanically enumerate Delta cases."""
+    actual_delta_case_ids = set()
+    cases = iter_semantic_cases()
+    for case in cases:
+        if simulate_semantics._initial_constructor_expect(case) is not None:
+            continue
+        runtime = simulate_semantics._build_simulation_runtime(case)
+        handler_calls = simulate_semantics._register_fixture_handlers(runtime, case)
+        original_cycle = runtime.cycle
+        observed_deltas = []
+
+        def cycle(events=None):
+            result = original_cycle(events)
+            observed_deltas.append(result.delta)
+            return result
+
+        runtime.cycle = cycle
+        for step_index, step in enumerate(case.data.get("steps") or []):
+            simulate_semantics._run_step(
+                runtime,
+                step,
+                case,
+                step_index,
+                handler_calls=handler_calls,
+            )
+        if any(observed_deltas):
+            actual_delta_case_ids.add(case.id)
+
+    assert actual_delta_case_ids == set(EXPECTED_DELTA_STEP_SEQUENCES)
 
 
 @pytest.mark.unittest
@@ -60,6 +118,105 @@ def test_generated_alignment_cases_share_the_simulation_fixture_corpus():
 
     assert generated_cases
     assert all("simulation" in case.runners for case in generated_cases)
+
+
+@pytest.mark.unittest
+def test_delta_cohort_yaml_matches_independent_truth_ledger():
+    """Keep the nine Delta cohort declarations exact and independently auditable."""
+    cases = {case.id: case for case in iter_semantic_cases()}
+    delta_case_ids = {
+        case.id
+        for case in cases.values()
+        if any(
+            "delta" in (step.get("expect") or {})
+            for step in case.data.get("steps") or []
+        )
+    }
+    assert delta_case_ids == set(EXPECTED_DELTA_STEP_SEQUENCES)
+    observed_case_sequences = {}
+    for case_id, expected_sequences in EXPECTED_DELTA_STEP_SEQUENCES.items():
+        case = cases[case_id]
+        observed_sequences = []
+        for step_index, step in enumerate(case.data.get("steps") or []):
+            expect = step.get("expect") or {}
+            cycle_count = step.get("cycle_count", 1)
+            if "raises" in expect or cycle_count == 0:
+                assert "delta" not in expect, (
+                    "%s steps[%d] checkpoint/error unexpectedly declares delta"
+                    % (case_id, step_index)
+                )
+                continue
+            assert "delta" in expect, (
+                "%s steps[%d] successful cycle omitted delta" % (case_id, step_index)
+            )
+            observed_sequences.append(tuple([expect["delta"]] * cycle_count))
+        observed_case_sequences[case_id] = tuple(observed_sequences)
+        assert observed_case_sequences[case_id] == expected_sequences, (
+            "%s Delta YAML/ledger mismatch: yaml=%r ledger=%r"
+            % (case_id, observed_case_sequences[case_id], expected_sequences)
+        )
+
+    yaml_step_count = sum(
+        len(sequences) for sequences in observed_case_sequences.values()
+    )
+    true_count = sum(
+        value is True
+        for sequences in observed_case_sequences.values()
+        for step_sequence in sequences
+        for value in step_sequence[:1]
+    )
+    false_count = sum(
+        value is False
+        for sequences in observed_case_sequences.values()
+        for step_sequence in sequences
+        for value in step_sequence[:1]
+    )
+    actual_call_count = sum(
+        len(step_sequence)
+        for sequences in observed_case_sequences.values()
+        for step_sequence in sequences
+    )
+    assert yaml_step_count == 18
+    assert (true_count, false_count) == (13, 5)
+    assert actual_call_count == 20
+
+
+@pytest.mark.unittest
+def test_delta_cohort_runtime_matches_independent_truth_ledger():
+    """Execute each cohort and compare actual public cycle Delta values to the ledger."""
+    cases = {case.id: case for case in iter_semantic_cases()}
+    for case_id, expected_sequences in EXPECTED_DELTA_STEP_SEQUENCES.items():
+        case = cases[case_id]
+        runtime = simulate_semantics._build_simulation_runtime(case)
+        simulate_semantics._register_fixture_handlers(runtime, case)
+        actual_sequences = []
+        for step_index, step in enumerate(case.data.get("steps") or []):
+            expect = step.get("expect") or {}
+            cycle_count = simulate_semantics._effective_cycle_count(
+                step, case.id, case.yaml_path, "steps[%d]" % step_index
+            )
+            cycle_input = simulate_semantics._cycle_input_for_step(
+                step, case.id, case.yaml_path, "steps[%d]" % step_index
+            )
+            events = simulate_semantics._step_events(
+                cycle_input, runtime, case, "steps[%d]" % step_index
+            )
+            step_values = []
+            for _ in range(cycle_count):
+                result = runtime.cycle(events)
+                if "delta" in expect:
+                    value = getattr(result, "delta", None)
+                    assert type(value) is bool, (
+                        "%s steps[%d] runtime result delta must be bool: %r"
+                        % (case_id, step_index, value)
+                    )
+                    step_values.append(value)
+            if "delta" in expect:
+                actual_sequences.append(tuple(step_values))
+        assert tuple(actual_sequences) == expected_sequences, (
+            "%s Delta Runtime/ledger mismatch: runtime=%r ledger=%r"
+            % (case_id, tuple(actual_sequences), expected_sequences)
+        )
 
 
 @pytest.mark.unittest
@@ -346,7 +503,6 @@ def _shared_case_data():
     ["mutate", "message"],
     [
         (lambda data: data.update({"unexpected": True}), "unknown top-level fields"),
-        (lambda data: data.update({"schema_version": 2}), "unknown top-level fields"),
         (lambda data: data.update({"id": "bad"}), "unknown top-level fields"),
         (
             lambda data: data.update({"source": {"fcstm": "bad.fcstm"}}),
@@ -635,15 +791,15 @@ def _shared_case_data():
         ),
         (
             lambda data: data["steps"][0].update({"cycle": {}}),
-            "cycle: {} is not valid v2",
+            r"cycle: \{\} is not a valid shared shape",
         ),
         (
             lambda data: data["steps"][0].update({"cycle": None}),
-            "cycle: null is not valid v2",
+            "cycle: null is not a valid shared shape",
         ),
         (
             lambda data: data["steps"][0].update({"cycle": {"events": ["Root.A.Go"]}}),
-            "cycle.events is not valid v2",
+            "cycle.events is not a valid shared shape",
         ),
         (
             lambda data: data["steps"][0].update({"cycle": [{"event": "Root.A.Go"}]}),
@@ -831,6 +987,7 @@ def test_semantic_fixture_schema_rejects_invalid_yaml(tmp_path, mutate, message)
 @pytest.mark.unittest
 def test_shared_fixture_accepts_public_observations(tmp_path):
     data = _shared_case_data()
+    data["steps"][0]["expect"]["delta"] = False
     data["handlers"] = [{"action": "Root.Init", "behavior": "record_call"}]
     data["steps"][0]["expect"]["handler_calls"] = [
         {
@@ -848,6 +1005,84 @@ def test_shared_fixture_accepts_public_observations(tmp_path):
 
     load_semantic_case(yaml_path)
     validate_shared_fixture_contract(data, yaml_path)
+
+
+@pytest.mark.unittest
+def test_shared_fixture_delta_must_be_boolean(tmp_path):
+    data = _shared_case_data()
+    data["steps"][0]["expect"]["delta"] = 0
+    yaml_path = _write_fixture(tmp_path, data)
+
+    with pytest.raises(SemanticCaseError, match=r"steps\[0\]\.expect\.delta must be a boolean"):
+        load_semantic_case(yaml_path)
+
+
+@pytest.mark.unittest
+def test_shared_fixture_rejects_delta_without_cycle(tmp_path):
+    data = _shared_case_data()
+    data["steps"][0]["cycle_count"] = 0
+    data["steps"][0]["expect"]["delta"] = False
+    yaml_path = _write_fixture(tmp_path, data)
+
+    with pytest.raises(
+        SemanticCaseError,
+        match=r"steps\[0\]\.expect\.delta requires effective cycle_count > 0",
+    ):
+        load_semantic_case(yaml_path)
+
+
+@pytest.mark.unittest
+def test_shared_fixture_rejects_delta_on_exception_step(tmp_path):
+    data = _shared_case_data()
+    data["steps"][0]["expect"].update(
+        {"raises": {"type": "ValueError"}, "delta": False}
+    )
+    yaml_path = _write_fixture(tmp_path, data)
+
+    with pytest.raises(
+        SemanticCaseError,
+        match=r"steps\[0\]\.expect\.raises cannot be combined with expect\.delta",
+    ):
+        load_semantic_case(yaml_path)
+
+
+@pytest.mark.unittest
+def test_run_step_checks_delta_on_every_repeated_cycle():
+    from test.testings import simulate_semantics
+
+    class _Result:
+        def __init__(self, delta):
+            self.delta = delta
+
+    class _Runtime:
+        vars = {}
+        is_ended = False
+        current_state = None
+
+        def __init__(self):
+            self.results = iter([_Result(False), _Result(True)])
+            self.calls = 0
+
+        def cycle(self, events):
+            self.calls += 1
+            return next(self.results)
+
+    case = load_semantic_case("design_basic_simple_transition")
+    runtime = _Runtime()
+
+    with pytest.raises(AssertionError, match=r"steps\[0\]\.expect delta mismatch"):
+        simulate_semantics._run_step(
+            runtime,
+            {
+                "cycle": [],
+                "cycle_count": 2,
+                "expect": {"delta": True},
+            },
+            case,
+            0,
+        )
+
+    assert runtime.calls == 1
 
 
 @pytest.mark.unittest
@@ -891,7 +1126,6 @@ def test_shared_fixture_corpus_uses_public_observation_fields():
     disallowed_top_level_fields = {
         "boundary",
         "id",
-        "schema_version",
         "source",
         "runners",
         "model_build",
@@ -965,7 +1199,6 @@ def test_shared_fixture_corpus_satisfies_current_contract():
     assert cases
     assert all("boundary" not in case.data for case in cases)
     assert all("id" not in case.data for case in cases)
-    assert all("schema_version" not in case.data for case in cases)
     assert all("source" not in case.data for case in cases)
     assert all("runners" not in case.data for case in cases)
     assert all(

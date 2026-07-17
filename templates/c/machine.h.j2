@@ -325,6 +325,7 @@ struct {{ machine_class_name(model) }} {
     int ended;
     int entered_root;
     int initialized;
+    int last_cycle_was_delta;
     int validation_depth;
     const {{ machine_class_name(model) }}Hooks *hooks;
     void *hook_user_data;
@@ -365,6 +366,9 @@ extern "C" {
     const {{ machine_class_name(model) }} *machine);
 /* Return non-zero after the machine has reached runtime end. */
 {{ machine_macro_name(model) }}_API int {{ machine_class_name(model) }}_is_ended(
+    const {{ machine_class_name(model) }} *machine);
+/* Return non-zero when the most recent successful cycle was a Delta step. */
+{{ machine_macro_name(model) }}_API int {{ machine_class_name(model) }}_last_cycle_was_delta(
     const {{ machine_class_name(model) }} *machine);
 /* Return the current leaf-state id, or `..._INVALID_STATE_ID` after runtime end. */
 {{ machine_macro_name(model) }}_API {{ machine_class_name(model) }}StateId {{ machine_class_name(model) }}_current_state_id(

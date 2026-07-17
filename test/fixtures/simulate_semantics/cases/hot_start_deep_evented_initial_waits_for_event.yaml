@@ -38,6 +38,7 @@ steps:
       trace: 0
       branch: 0
     ended: false
+    delta: true
 - cycle: Root.Gate.Prep.Wait.Unlock
   expect:
     state: Root.Gate.Prep.Wait.Armed
@@ -45,3 +46,4 @@ steps:
       trace: 21345
       branch: 0
     ended: false
+    delta: false

@@ -44,6 +44,7 @@ steps:
       trace: 0
     ended: false
     handler_calls: []
+    delta: true
 - cycle: Root.Gate.Unlock
   expect:
     state: Root.Gate.Armed
@@ -62,3 +63,4 @@ steps:
       call_stage: enter
       abstract_target: Root.Gate.Armed.EnterArmed
       named_ref: null
+    delta: false

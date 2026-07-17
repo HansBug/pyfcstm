@@ -232,7 +232,6 @@
 .. code-block:: json
 
    {
-     "schema_version": "bmc-cli/v1",
      "result": {
        "status": "sat",
        "outcome": "property_violated",

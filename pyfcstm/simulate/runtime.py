@@ -6,9 +6,11 @@ from the pyfcstm DSL. The runtime maintains an execution stack of active states,
 variable mappings, and internal frame modes that control lifecycle progression.
 
 Each cycle advances the state machine until reaching a stable boundary: either a
-stoppable state (non-pseudo leaf state), termination (empty stack), or validation
-failure (changes rolled back). The runtime uses speculative validation to ensure
-transitions can reach valid stable states before executing them.
+stoppable state (non-pseudo leaf state), termination (empty stack), or a successful
+Delta step when no stoppable successor can be committed. Speculative execution
+changes are discarded for a Delta step, while the public cycle count and history
+still record the completed macro step. Actual input, expression, writeback, and
+DFS safety errors remain loud failures rather than Delta results.
 
 The execution model uses internal frame modes (active, after_entry, init_wait,
 post_child_exit) to track execution phases. Transitions are selected from the
@@ -29,8 +31,10 @@ child-to-child transitions.
 
 Validation works by cloning the execution context and speculatively executing the
 transition until reaching a stable boundary. If validation succeeds, the real
-transition executes. If validation fails or exceeds safety limits (1000 steps or
-64 stack depth), the transition is rejected and variables roll back.
+transition executes. If the speculative path reaches a no-progress boundary, the
+runtime restores the pre-cycle state and records a successful Delta step. If an
+actual expression, writeback, or DFS safety error occurs, the corresponding
+exception is raised and the pre-cycle state is restored.
 
 Abstract actions can be implemented by registering Python handlers that receive
 read-only execution context. Handler registration validates named abstract
@@ -460,13 +464,17 @@ class SimulationRuntime:
     **Core Execution Model**:
 
     The runtime implements cycle-based execution where each :meth:`cycle` call
-    advances the state machine until reaching a stable boundary. Cycles can end
-    in three ways:
+    advances the state machine until reaching a stable boundary. A cycle can
+    produce an ordinary success, a successful Delta step, termination, a loud
+    execution error, or the existing ended/error-state no-op:
 
     1. **Stoppable State**: Reached a leaf state (non-pseudo) where execution
        can stabilize
     2. **Termination**: The state machine has ended (empty stack)
-    3. **Validation Failure**: Cannot reach a stoppable state, changes rolled back
+    3. **Delta Success**: No stoppable successor can be committed; speculative
+       state and variables are restored while the public count and history advance
+    4. **Loud Error or No-op**: An actual execution error is raised, or an ended
+       or error-state runtime ignores the cycle
 
     **Transition Selection**:
 
@@ -483,17 +491,18 @@ class SimulationRuntime:
     ``A -> [*]``, which puts ``System1`` in ``post_child_exit`` mode where
     parent-level transitions can be considered.
 
-    **Validation and Rollback**:
+    **Speculative Execution and Delta**:
 
     When a stoppable state has an enabled transition, the runtime performs
     speculative validation to ensure the transition can eventually reach another
     stoppable state or terminate. This prevents cycles from getting stuck in
     non-stoppable configurations.
 
-    If validation fails or a cycle cannot reach a stoppable state, all variable
-    changes are rolled back and the runtime remains at the previous stable
-    boundary. For the initial cycle, rollback pins the runtime at the root
-    boundary in ``init_wait`` mode.
+    If a speculative path reaches a no-progress boundary, the runtime restores
+    the previous stack and variables, records a successful ``delta=True`` result,
+    increments the public cycle count, appends history, and leaves input events
+    unconsumed. Actual expression, writeback, abstract-handler, and DFS safety
+    errors restore the pre-cycle state without incrementing the cycle count.
 
     **DFS Safety Limits**:
 
@@ -3147,12 +3156,16 @@ class SimulationRuntime:
         Execute a full runtime cycle until reaching a stable boundary.
 
         This method advances the state machine through transitions and lifecycle
-        actions until one of three conditions is met:
+        actions until one of four outcomes is met:
 
         1. **Stoppable State**: Reached a leaf state (non-pseudo) where execution
            can stabilize
         2. **Termination**: The state machine has ended (empty stack)
-        3. **Validation Failure**: Cannot reach a stoppable state, changes rolled back
+        3. **Delta Success**: No stoppable successor can be committed; speculative
+           state and variables are restored, ``cycle_count`` and ``history`` are
+           advanced, and the returned result has ``delta=True``
+        4. **Loud Error or No-op**: An actual input/expression/writeback/DFS error
+           is raised, or an ended/error-state runtime ignores the cycle
 
         **Cycle Execution Flow**:
 
@@ -3160,8 +3173,9 @@ class SimulationRuntime:
 
         1. **Speculative Execution**: Clone the current context and simulate the
            cycle to validate it can reach a stable boundary
-        2. **Commit or Rollback**: If validation succeeds, commit the changes;
-           otherwise, rollback to the previous stable state
+        2. **Commit or Delta**: If validation reaches a stoppable or terminated
+           boundary, commit the changes; otherwise restore the pre-cycle state and
+           record a successful Delta step
 
         **Event Handling**:
 
@@ -3196,13 +3210,14 @@ class SimulationRuntime:
         - Maximum 64 structural stack depth
         - Repeated execution states are pruned automatically
 
-        **Rollback Behavior**:
+        **Delta and Error Behavior**:
 
-        If a cycle cannot reach a stoppable state, all variable changes are
-        rolled back:
-        - For normal cycles: Restore previous stack and variables
-        - For initial cycle: Pin runtime at root boundary in ``init_wait`` mode
-        - All side effects from failed validation are discarded
+        A Delta step restores the previous stack and variables, leaves all input
+        occurrences unconsumed, increments the public cycle count, appends a
+        five-field history entry plus ``delta=True``, and emits one Delta warning.
+        Actual expression, writeback, abstract-handler, or DFS errors restore the
+        pre-cycle state without incrementing the cycle count. Ended and error-state
+        runtimes return the existing no-op result with ``delta=False``.
 
         :param events: Events available for the current cycle. Can be a single
             model-owned event object, a dot-separated path string, or an
@@ -3326,26 +3341,28 @@ class SimulationRuntime:
             >>> runtime.current_state.path
             ('System2', 'B')
 
-        Example - Validation preventing invalid transitions::
+        Example - A blocked hot-start boundary produces a Delta step::
 
             >>> dsl_code = '''
+            ... def int x = 0;
             ... state Root {
-            ...     state A;
-            ...     state B {
-            ...         [*] -> C : if [false];  # Blocked initial transition
-            ...         state C;
+            ...     state C {
+            ...         state A { during { x = x + 1; } }
+            ...         [*] -> A : if [x > 0];
             ...     }
-            ...     [*] -> A;
-            ...     A -> B :: Go;  # Rejected by validation
+            ...     [*] -> C;
             ... }
             ... '''
             >>> ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
             >>> sm = parse_dsl_node_to_state_machine(ast)
-            >>> runtime = SimulationRuntime(sm)
-            >>> runtime.cycle()
-            >>> runtime.cycle(['Root.A.Go'])  # Rejected - cannot reach stoppable
-            >>> runtime.current_state.path
-            ('Root', 'A')  # Remains in A due to validation failure
+            >>> runtime = SimulationRuntime(sm, initial_state='Root.C', initial_vars={'x': 0})
+            >>> result = runtime.cycle()
+            >>> result.delta
+            True
+            >>> runtime.cycle_count
+            1
+            >>> runtime.history[-1]['delta']
+            True
 
         Example - Multiple cycles with state changes::
 

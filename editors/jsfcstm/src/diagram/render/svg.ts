@@ -41,7 +41,8 @@ const CJK_FONT_FAMILY: Record<CjkLocale, string> = {
 };
 
 function fontFamilyFor(locale: CjkLocale = 'sc'): string {
-    return `"JetBrains Mono","${CJK_FONT_FAMILY[locale]}",monospace`;
+    const family = CJK_FONT_FAMILY[locale] || CJK_FONT_FAMILY.sc;
+    return `"JetBrains Mono","${family}",monospace`;
 }
 
 const LABEL_GLYPH_EVENT = '●';

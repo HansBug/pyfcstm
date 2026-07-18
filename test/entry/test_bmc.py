@@ -305,6 +305,7 @@ def test_bmc_human_report_prioritizes_verdict_and_diagnostics(bmc_files) -> None
                 "Scenario: FEASIBLE",
                 "Primary search: COUNTEREXAMPLE = UNSAT",
                 "Response horizon: OPEN",
+                "Horizon reason: response obligation remains open beyond the current bounded horizon.",
                 "An admissible finite prefix leaves a response obligation open beyond "
                 "the current horizon; no bounded property verdict is available.",
                 "Model role: INCOMPLETE SUFFIX",
@@ -431,7 +432,7 @@ def test_bmc_human_report_distinguishes_feasibility_unknown_timeout_and_unchecke
     assert "SCENARIO FEASIBILITY TIMED OUT; PROPERTY NOT EVALUATED" in (
         timed_out.stdout
     )
-    assert "Scenario: UNKNOWN" in timed_out.stdout
+    assert "Scenario: TIMED OUT" in timed_out.stdout
     assert "Feasibility stage: ASSUMPTIONS" in timed_out.stdout
     assert "Feasibility status: TIMED OUT" in timed_out.stdout
     assert "Feasibility reason: timeout" in timed_out.stdout

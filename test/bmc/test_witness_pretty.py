@@ -787,6 +787,7 @@ def test_public_non_trace_objects_are_field_value_golden_pinned() -> None:
             (
                 "BmcSolveResult: PROPERTY INCONCLUSIVE; RESPONSE HORIZON INCOMPLETE",
                 "Response horizon: OPEN",
+                "Horizon reason: response obligation remains open beyond the current bounded horizon.",
                 "Model role: INCOMPLETE SUFFIX",
                 "Model evidence: SAT suffix model available.",
             ),
@@ -867,7 +868,7 @@ def test_public_non_trace_objects_are_field_value_golden_pinned() -> None:
             ),
             (
                 "BmcSolveResult: SCENARIO FEASIBILITY TIMED OUT; PROPERTY NOT EVALUATED",
-                "Scenario: UNKNOWN",
+                "Scenario: TIMED OUT",
                 "Scenario feasibility timed out",
                 "Feasibility stage: ASSUMPTIONS",
                 "Feasibility status: TIMED OUT",
@@ -904,6 +905,15 @@ def test_solve_result_text_exposes_polarity_and_exception_semantics(
             (
                 "Response horizon: TIMED OUT",
                 "Horizon reason: suffix timeout",
+            ),
+        ),
+        (
+            "sat",
+            None,
+            (),
+            (
+                "Response horizon: OPEN",
+                "Horizon reason: response obligation remains open beyond the current bounded horizon.",
             ),
         ),
         (
@@ -944,6 +954,7 @@ def test_solve_result_text_exposes_response_exception_reason(
     text = model.to_text(tablefmt="plain")
     for fragment in fragments:
         assert fragment in text
+    assert all(fragment in str(model) for fragment in fragments)
 
 
 def test_pretty_print_default_stdout_and_invalid_end_are_pinned(capsys) -> None:

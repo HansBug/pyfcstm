@@ -329,6 +329,12 @@ there is SAT evidence, ``Evidence`` identifies ``PRIMARY WITNESS``,
 empty scenario reports ``Failure boundary`` as ``KERNEL``, ``INITIALIZATION``,
 ``ASSUMPTIONS``, or ``NOT LOCALIZED``; this is a cumulative boundary, not an
 unsat core and not proof that one source clause is internally contradictory.
+For a checked feasibility timeout, ``Scenario`` is ``TIMED OUT``; for a checked
+feasibility unknown it is ``UNKNOWN``.  If the shared budget expires before the
+assumptions stage starts, it is ``NOT CHECKED``.  An open response horizon is a
+valid SAT suffix result rather than a solver exception, and its ``Evidence``
+includes a ``Horizon reason`` explaining that the response obligation extends
+beyond the current bound.
 
 ``Solver`` then shows the primary status and elapsed milliseconds; the
 configured shared timeout budget, response horizon status/time, solver reasons,
@@ -385,8 +391,8 @@ feasibility result identifies the ``ASSUMPTIONS`` stage and prints its
 ``UNKNOWN``/``TIMED OUT`` status and solver reason, or explicitly says that the
 stage was not checked because the shared timeout budget was already exhausted.
 Primary ``unknown``/``timeout`` results print ``Primary reason``; incomplete
-response results print ``Horizon reason`` for an unknown, timeout, disabled, or
-not-checked suffix check.  This information is part of the public text
+response results print ``Horizon reason`` for an open, unknown, timeout,
+disabled, or not-checked suffix check.  This information is part of the public text
 presentation used by both the CLI and ``str(result)``/``result.to_text()``; it
 is not restricted to the low-level ``Details`` table.
 

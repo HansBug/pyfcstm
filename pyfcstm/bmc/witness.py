@@ -1320,9 +1320,13 @@ def _solve_scenario(result: "BmcSolveResult", outcome: str) -> str:
     feasibility = result._validated_feasibility()
     if outcome == "scenario_infeasible":
         return "INFEASIBLE"
-    if outcome in {"feasibility_unknown", "feasibility_timeout"}:
+    if outcome == "feasibility_unknown":
         if feasibility.assumptions.origin == "checked":
             return "UNKNOWN"
+        return "NOT CHECKED"
+    if outcome == "feasibility_timeout":
+        if feasibility.assumptions.origin == "checked":
+            return "TIMED OUT"
         return "NOT CHECKED"
     if outcome in {"unknown", "timeout"}:
         return "NOT CHECKED"
@@ -1430,6 +1434,11 @@ def _solve_exception_evidence(
         if response_horizon in {"UNKNOWN", "TIMED OUT"}:
             return (
                 "Horizon reason: %s" % (result.incomplete_reason or "not provided"),
+            )
+        if response_horizon == "OPEN":
+            return (
+                "Horizon reason: response obligation remains open beyond the "
+                "current bounded horizon.",
             )
         if response_horizon == "NOT CHECKED":
             return (

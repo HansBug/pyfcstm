@@ -233,9 +233,11 @@ def test_engine_restarts_context_after_native_timeout():
     assert engine._eval("6 * 7") == 42
 
 
-def test_engine_discards_context_after_renderer_deadline():
+def test_engine_discards_context_after_renderer_deadline(monkeypatch):
     engine = DiagramAssetEngine()
-    engine.timeout = 0.02
+    # Keep the native MiniRacer evaluation budget above startup cost.  Advance
+    # only Python's deadline clock so this probe is independent of V8 timing.
+    engine.timeout = 30.0
     engine._eval(
         "globalThis.__pyfcstm_render_start = function(_request, id) { return id; };"
     )
@@ -243,6 +245,20 @@ def test_engine_discards_context_after_renderer_deadline():
         "globalThis.__pyfcstm_render_poll = function(_id) "
         "{ return JSON.stringify({status: 'pending'}); };"
     )
+    import importlib
+
+    engine_module = importlib.import_module("pyfcstm.diagram.engine")
+    real_time = engine_module.time
+    ticks = iter((100.0, 131.0))
+
+    class DeadlineClock:
+        def monotonic(self):
+            return next(ticks)
+
+        def __getattr__(self, name):
+            return getattr(real_time, name)
+
+    monkeypatch.setattr(engine_module, "time", DeadlineClock())
     with pytest.raises(DiagramAssetError, match="renderer timed out"):
         engine.render_svg(_request())
     assert engine._context is None

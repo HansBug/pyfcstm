@@ -230,6 +230,26 @@ def test_missing_runtime_asset_reports_issue_url_for_installed_package(monkeypat
         DiagramAssetEngine()
 
 
+def test_physical_missing_runtime_asset_reports_issue_url(monkeypatch):
+    import importlib
+
+    engine_module = importlib.import_module("pyfcstm.diagram.engine")
+    real_get_data = engine_module.pkgutil.get_data
+
+    def missing_renderer(package, resource):
+        if resource == "renderer.js":
+            raise FileNotFoundError("renderer.js disappeared from the package")
+        return real_get_data(package, resource)
+
+    monkeypatch.setattr(engine_module.pkgutil, "get_data", missing_renderer)
+    monkeypatch.setattr(engine_module, "_is_development_checkout", lambda: False)
+    with pytest.raises(
+        DiagramAssetError,
+        match=r"renderer\.js.*expected packaged resource is missing.*github.com/HansBug/pyfcstm/issues",
+    ):
+        DiagramAssetEngine()
+
+
 def test_invalid_runtime_asset_reports_data_failure(monkeypatch):
     import importlib
 

@@ -100,6 +100,12 @@ def _asset_bytes(name: str) -> bytes:
     """Load and minimally validate one generated asset."""
     try:
         data = pkgutil.get_data("pyfcstm.diagram.assets", name)
+    except FileNotFoundError as err:
+        # FileNotFoundError: an installed package physically lacks the
+        # requested resource rather than returning a package-loader null.
+        raise _asset_failure(
+            name, "the expected packaged resource is missing", err
+        ) from err
     except OSError as err:
         # OSError: importlib/pkgutil could not read a packaged resource.
         raise _asset_failure(

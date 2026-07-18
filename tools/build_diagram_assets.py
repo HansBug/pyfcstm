@@ -131,15 +131,24 @@ def elk_tree_sha256() -> str:
     if not ELK_PACKAGE_DIR.is_dir():
         raise FileNotFoundError("installed elkjs package directory is missing")
     digest = hashlib.sha256()
-    for path in sorted(ELK_PACKAGE_DIR.rglob("*")):
+    files = []
+    for path in ELK_PACKAGE_DIR.rglob("*"):
         if path.is_symlink():
             raise ValueError("installed elkjs package contains a symlink")
-        if not path.is_file():
-            continue
-        relative = path.relative_to(ELK_PACKAGE_DIR).as_posix().encode("utf-8")
+        if path.is_file():
+            files.append((path.relative_to(ELK_PACKAGE_DIR).as_posix(), path))
+    for relative_text, path in sorted(files, key=lambda item: item[0]):
+        relative = relative_text.encode("utf-8")
+        data = path.read_bytes()
+        # npm extracts text files with the platform's native newline policy
+        # on some Windows/npm combinations; the package tarball is LF-based.
+        if path.suffix.lower() in (".js", ".json", ".md") or relative_text.endswith(
+            ".d.ts"
+        ):
+            data = data.replace(b"\r\n", b"\n")
         digest.update(relative)
         digest.update(b"\0")
-        digest.update(path.read_bytes())
+        digest.update(data)
         digest.update(b"\0")
     return digest.hexdigest()
 

@@ -359,6 +359,42 @@ def test_corrupt_font_payload_reports_resource_data_failure(monkeypatch):
         )
 
 
+def test_corrupt_font_checksum_adjustment_reports_resource_data_failure(monkeypatch):
+    import importlib
+
+    engine_module = importlib.import_module("pyfcstm.diagram.engine")
+    real_get_data = engine_module.pkgutil.get_data
+    original = real_get_data("pyfcstm.diagram.assets", "fonts/NotoSansTC-Regular.otf")
+    corrupted = bytearray(original)
+    table_count = struct.unpack(">H", corrupted[4:6])[0]
+    for offset in range(12, 12 + table_count * 16, 16):
+        if corrupted[offset : offset + 4] == b"head":
+            head_offset = struct.unpack(">I", corrupted[offset + 8 : offset + 12])[0]
+            # Keep the head table structurally valid; only the whole-font
+            # checkSumAdjustment is damaged, which table-level checks alone
+            # intentionally cannot detect.
+            corrupted[head_offset + 8] ^= 1
+            break
+    else:
+        raise AssertionError("fixture font has no head table")
+
+    def corrupt_font(package, resource):
+        if resource == "fonts/NotoSansTC-Regular.otf":
+            return bytes(corrupted)
+        return real_get_data(package, resource)
+
+    engine = DiagramAssetEngine()
+    monkeypatch.setattr(engine_module.pkgutil, "get_data", corrupt_font)
+    with pytest.raises(
+        DiagramAssetError,
+        match=r"NotoSansTC-Regular\.otf.*failed OpenType table, bounds, or checksum validation.*make build_assets",
+    ):
+        engine.render_png(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1">'
+            '<text font-family="Noto Sans TC">繁</text></svg>'
+        )
+
+
 def test_zero_length_required_font_table_reports_resource_data_failure(monkeypatch):
     import importlib
 

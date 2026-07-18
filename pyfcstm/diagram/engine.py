@@ -136,6 +136,9 @@ def _valid_opentype(data: bytes) -> bool:
     """Validate the bounded SFNT table directory of one OpenType font."""
     if len(data) < 12 or not data.startswith((b"\x00\x01\x00\x00", b"true", b"OTTO")):
         return False
+    if len(data) % 4:
+        # SFNT checksums cover the complete four-byte-padded font payload.
+        return False
     try:
         table_count = struct.unpack(">H", data[4:6])[0]
     except struct.error:
@@ -180,9 +183,19 @@ def _valid_opentype(data: bytes) -> bool:
         )
         if actual_checksum != expected_checksum:
             return False
-    return required_tags.issubset(table_tags) and bool(
-        {b"glyf", b"CFF ", b"CFF2"}.intersection(table_tags)
+    if not required_tags.issubset(table_tags) or not {
+        b"glyf",
+        b"CFF ",
+        b"CFF2",
+    }.intersection(table_tags):
+        return False
+    # OpenType requires the complete font checksum, including
+    # head.checkSumAdjustment, to equal this fixed magic value.  Table-level
+    # checksums alone cannot detect a damaged adjustment field.
+    total_checksum = (
+        sum(word[0] for word in struct.iter_unpack(">I", data)) & 0xFFFFFFFF
     )
+    return total_checksum == 0xB1B0AFBA
 
 
 class DiagramAssetEngine:

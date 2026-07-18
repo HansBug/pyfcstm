@@ -881,9 +881,12 @@ def test_solve_result_text_exposes_polarity_and_exception_semantics(
     result, fragments
 ) -> None:
     """Direct result text exposes verdict, evidence role, and non-verdict states."""
-    text = result().to_text(tablefmt="plain")
+    solve_result = result()
+    text = solve_result.to_text(tablefmt="plain")
+    string_text = str(solve_result)
     for fragment in fragments:
         assert fragment in text
+        assert fragment in string_text
 
 
 @pytest.mark.parametrize(

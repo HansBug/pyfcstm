@@ -260,11 +260,23 @@ def test_engine_discards_context_after_resvg_deadline(monkeypatch):
         "globalThis.__pyfcstm_resvg_init = function(_wasm) "
         "{ globalThis.__pyfcstm_resvg_status = 'pending'; };"
     )
+    import importlib
+
+    engine_module = importlib.import_module("pyfcstm.diagram_runtime.engine")
+    real_time = engine_module.time
     ticks = iter((100.0, 131.0))
-    monkeypatch.setattr(
-        "pyfcstm.diagram_runtime.engine.time.monotonic",
-        lambda: next(ticks),
-    )
+
+    class DeadlineClock:
+        def monotonic(self):
+            return next(ticks)
+
+        def __getattr__(self, name):
+            return getattr(real_time, name)
+
+    # Replace only the engine module's reference.  Mutating the standard
+    # library time module itself would also change MiniRacer's asyncio event
+    # loop clock on modern runtimes and can leave native eval waiting forever.
+    monkeypatch.setattr(engine_module, "time", DeadlineClock())
     svg = '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>'
     with pytest.raises(DiagramAssetError, match="resvg WASM initialization timed out"):
         engine.render_png(svg)

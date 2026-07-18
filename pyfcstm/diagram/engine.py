@@ -15,6 +15,7 @@ import pkgutil
 import re
 import struct
 import time
+import zlib
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -196,6 +197,71 @@ def _valid_opentype(data: bytes) -> bool:
         sum(word[0] for word in struct.iter_unpack(">I", data)) & 0xFFFFFFFF
     )
     return total_checksum == 0xB1B0AFBA
+
+
+def _valid_png(data: bytes) -> bool:
+    """Validate the opaque RGBA PNG payload emitted by the renderer."""
+    if not data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return False
+    position = 8
+    saw_ihdr = False
+    saw_idat = False
+    saw_iend = False
+    width = height = None
+    compressed = bytearray()
+    try:
+        while position < len(data):
+            if position + 12 > len(data):
+                return False
+            length = struct.unpack(">I", data[position : position + 4])[0]
+            chunk_end = position + 12 + length
+            if chunk_end > len(data):
+                return False
+            chunk_type = data[position + 4 : position + 8]
+            payload = data[position + 8 : position + 8 + length]
+            expected_crc = struct.unpack(">I", data[position + 8 + length : chunk_end])[
+                0
+            ]
+            actual_crc = zlib.crc32(chunk_type + payload) & 0xFFFFFFFF
+            if actual_crc != expected_crc:
+                return False
+            if not saw_ihdr:
+                if chunk_type != b"IHDR" or length != 13:
+                    return False
+                width, height, depth, color_type, compression, filtering, interlace = (
+                    struct.unpack(">IIBBBBB", payload)
+                )
+                if (
+                    not width
+                    or not height
+                    or depth != 8
+                    or color_type != 6
+                    or compression != 0
+                    or filtering != 0
+                    or interlace != 0
+                ):
+                    return False
+                saw_ihdr = True
+            elif chunk_type == b"IDAT":
+                if saw_iend:
+                    return False
+                compressed.extend(payload)
+                saw_idat = True
+            elif chunk_type == b"IEND":
+                if length != 0 or not saw_idat:
+                    return False
+                saw_iend = True
+                position = chunk_end
+                break
+            position = chunk_end
+        if not saw_ihdr or not saw_idat or not saw_iend or position != len(data):
+            return False
+        decoded = zlib.decompress(bytes(compressed))
+    except (struct.error, ValueError, zlib.error):
+        # struct.error/ValueError: truncated or malformed PNG chunk fields;
+        # zlib.error: IDAT is not a valid compressed scanline stream.
+        return False
+    return len(decoded) == (width * 4 + 1) * height
 
 
 class DiagramAssetEngine:
@@ -576,10 +642,8 @@ class DiagramAssetEngine:
             raise _asset_failure(
                 "resvg.wasm", "the renderer returned invalid PNG data", err
             ) from err
-        if not result.startswith(b"\x89PNG\r\n\x1a\n"):
-            raise _asset_failure(
-                "resvg.wasm", "the renderer returned a non-PNG payload"
-            )
+        if not _valid_png(result):
+            raise _asset_failure("resvg.wasm", "the renderer returned invalid PNG data")
         return result
 
     def expand_svg(self, svg: str) -> str:

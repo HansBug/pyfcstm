@@ -42,6 +42,26 @@ GENERATED_ASSETS = {
     "fonts/NotoSansKR-Bold.otf",
 }
 
+EXPECTED_FONT_PATHS = frozenset(
+    {
+        "fonts/JetBrainsMono-Regular.ttf",
+        "fonts/JetBrainsMono-Medium.ttf",
+        "fonts/JetBrainsMono-Bold.ttf",
+        "fonts/NotoSansSC-Regular.otf",
+        "fonts/NotoSansSC-Bold.otf",
+        "fonts/NotoSansTC-Regular.otf",
+        "fonts/NotoSansTC-Bold.otf",
+        "fonts/NotoSansHK-Regular.otf",
+        "fonts/NotoSansHK-Bold.otf",
+        "fonts/NotoSansJP-Regular.otf",
+        "fonts/NotoSansJP-Bold.otf",
+        "fonts/NotoSansKR-Regular.otf",
+        "fonts/NotoSansKR-Bold.otf",
+    }
+)
+
+CONTROLLED_TEXT_MARKERS = frozenset(TRACKED_MARKERS - {".gitignore"})
+
 
 def digest(path: Path) -> str:
     """Return the SHA-256 digest of a generated asset."""
@@ -193,6 +213,16 @@ def main() -> int:
                     "tracked asset marker is ignored by git: %s" % relative
                 )
 
+    for relative in sorted(CONTROLLED_TEXT_MARKERS):
+        try:
+            (ASSET_DIR / relative).read_bytes().decode("ascii")
+        except UnicodeDecodeError as err:
+            # UnicodeDecodeError: a controlled asset marker is no longer
+            # ASCII/English text and would violate the package asset contract.
+            raise ValueError(
+                "controlled diagram asset must be ASCII/English text: %s" % relative
+            ) from err
+
     renderer = (ASSET_DIR / "renderer.js").read_text(encoding="utf-8")
     if 'orient="auto-start-reverse"' in renderer:
         raise ValueError("generated renderer still contains auto-start-reverse")
@@ -244,6 +274,13 @@ def main() -> int:
         relative for relative in expected if relative.startswith("fonts/")
     }:
         raise ValueError("manifest font list differs from source font lock")
+    if locked_paths != EXPECTED_FONT_PATHS:
+        missing = sorted(EXPECTED_FONT_PATHS - locked_paths)
+        extra = sorted(locked_paths - EXPECTED_FONT_PATHS)
+        raise ValueError(
+            "diagram font set must contain all 13 locked faces; missing=%s extra=%s"
+            % (", ".join(missing) or "none", ", ".join(extra) or "none")
+        )
     if total_bytes > int(fonts_lock.get("maxTotalBytes", 0)):
         raise ValueError("combined fonts exceed the locked size budget")
     if str(fonts_lock.get("defaultFamily", "")) != "JetBrains Mono":

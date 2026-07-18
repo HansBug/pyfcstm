@@ -1,5 +1,6 @@
 """Runtime checks for the PR-A shared renderer and resvg asset boundary."""
 
+import base64
 import re
 import math
 import builtins
@@ -702,6 +703,24 @@ def test_render_png_rejects_non_finite_scale():
     for scale in (float("nan"), float("inf"), float("-inf")):
         with pytest.raises(ValueError, match="finite positive"):
             engine.render_png(svg, scale=scale)
+
+
+def test_render_png_rejects_truncated_or_corrupt_png_payload(monkeypatch):
+    import importlib
+
+    engine_module = importlib.import_module("pyfcstm.diagram.engine")
+    engine = DiagramAssetEngine()
+    monkeypatch.setattr(engine, "_ensure_resvg", lambda _locale: None)
+    malformed = base64.b64encode(b"\x89PNG\r\n\x1a\n\x00\x00").decode("ascii")
+    monkeypatch.setattr(engine, "_eval_asset", lambda *_args, **_kwargs: malformed)
+    with pytest.raises(
+        DiagramAssetError,
+        match=r"resvg\.wasm.*invalid PNG data.*make build_assets",
+    ):
+        engine.render_png(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>'
+        )
+    assert not engine_module._valid_png(b"\x89PNG\r\n\x1a\n")
 
 
 def test_engine_rejects_non_finite_timeout():

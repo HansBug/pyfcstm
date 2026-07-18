@@ -246,6 +246,7 @@ def test_bmc_human_report_prioritizes_verdict_and_diagnostics(bmc_files) -> None
         "BMC reach <= 1: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND\n"
     )
     assert "Scenario: FEASIBLE" in result.stdout
+    assert "Property verdict: SATISFIED WITHIN BOUND (WITNESS FOUND)" in result.stdout
     assert "Primary search: WITNESS = SAT" in result.stdout
     assert "Response horizon:" not in result.stdout
     assert (
@@ -272,6 +273,7 @@ def test_bmc_human_report_prioritizes_verdict_and_diagnostics(bmc_files) -> None
             "BMC reach <= 1: GOAL UNREALIZABLE WITHIN BOUND; NO WITNESS",
             (
                 "Scenario: FEASIBLE",
+                "Property verdict: NOT SATISFIED WITHIN BOUND (NO WITNESS)",
                 "Primary search: WITNESS = UNSAT",
                 "Conclusion: No admissible execution satisfies the reach objective "
                 "within 1 macro-step.",
@@ -282,6 +284,7 @@ def test_bmc_human_report_prioritizes_verdict_and_diagnostics(bmc_files) -> None
             "BMC forbid <= 1: PROPERTY DOES NOT HOLD WITHIN BOUND; COUNTEREXAMPLE FOUND",
             (
                 "Scenario: FEASIBLE",
+                "Property verdict: NOT SATISFIED WITHIN BOUND (COUNTEREXAMPLE FOUND)",
                 "Primary search: COUNTEREXAMPLE = SAT",
                 "Conclusion: At least one admissible execution violates the forbid "
                 "property within 1 macro-step.",
@@ -293,6 +296,7 @@ def test_bmc_human_report_prioritizes_verdict_and_diagnostics(bmc_files) -> None
             "BMC forbid <= 1: PROPERTY GUARANTEED WITHIN BOUND; NO COUNTEREXAMPLE",
             (
                 "Scenario: FEASIBLE",
+                "Property verdict: SATISFIED WITHIN BOUND (NO COUNTEREXAMPLE)",
                 "Primary search: COUNTEREXAMPLE = UNSAT",
                 "Conclusion: Every admissible execution within 1 macro-step satisfies "
                 "the forbid property.",
@@ -303,6 +307,7 @@ def test_bmc_human_report_prioritizes_verdict_and_diagnostics(bmc_files) -> None
             "BMC response <= 1: PROPERTY INCONCLUSIVE; RESPONSE HORIZON INCOMPLETE",
             (
                 "Scenario: FEASIBLE",
+                "Property verdict: INCONCLUSIVE (RESPONSE HORIZON INCOMPLETE)",
                 "Primary search: COUNTEREXAMPLE = UNSAT",
                 "Response horizon: OPEN",
                 "Horizon reason: response obligation remains open beyond the current bounded horizon.",
@@ -416,6 +421,10 @@ def test_bmc_human_report_distinguishes_feasibility_unknown_timeout_and_unchecke
     assert unknown.exit_code == 3
     assert "SCENARIO FEASIBILITY UNKNOWN; PROPERTY NOT EVALUATED" in unknown.stdout
     assert "Scenario: UNKNOWN" in unknown.stdout
+    assert (
+        "Property verdict: NOT EVALUATED (SCENARIO FEASIBILITY UNKNOWN)"
+        in unknown.stdout
+    )
     assert "Feasibility stage: ASSUMPTIONS" in unknown.stdout
     assert "Feasibility status: UNKNOWN" in unknown.stdout
     assert "Feasibility reason: incomplete" in unknown.stdout
@@ -433,6 +442,10 @@ def test_bmc_human_report_distinguishes_feasibility_unknown_timeout_and_unchecke
         timed_out.stdout
     )
     assert "Scenario: TIMED OUT" in timed_out.stdout
+    assert (
+        "Property verdict: NOT EVALUATED (SCENARIO FEASIBILITY TIMED OUT)"
+        in timed_out.stdout
+    )
     assert "Feasibility stage: ASSUMPTIONS" in timed_out.stdout
     assert "Feasibility status: TIMED OUT" in timed_out.stdout
     assert "Feasibility reason: timeout" in timed_out.stdout
@@ -453,6 +466,10 @@ def test_bmc_human_report_distinguishes_feasibility_unknown_timeout_and_unchecke
         unchecked.stdout
     )
     assert "Scenario: NOT CHECKED" in unchecked.stdout
+    assert (
+        "Property verdict: NOT EVALUATED (SCENARIO FEASIBILITY TIMED OUT)"
+        in unchecked.stdout
+    )
     assert "Feasibility stage: ASSUMPTIONS (NOT CHECKED)" in unchecked.stdout
     assert (
         "Feasibility reason: shared timeout budget exhausted before assumptions check."
@@ -523,6 +540,7 @@ def test_bmc_human_presentation_marks_api_only_disabled_suffix() -> None:
     presentation = bmc_entry._human_presentation(execution)
 
     assert presentation.response_horizon == "DISABLED"
+    assert presentation.property_verdict == "INCONCLUSIVE (RESPONSE HORIZON INCOMPLETE)"
     assert "response horizon check was disabled" in presentation.conclusion
 
 
@@ -661,9 +679,10 @@ def test_bmc_structured_replay_mismatch_is_exit_four(
     assert payload["replay"]["ok"] is False
     assert payload["replay"]["mismatches"][0]["path"] == "frames[1].state"
 
-    human = _run("-i", str(model_path), "-q", str(query_path), "--color", "always")
+    human = _run("-i", str(model_path), "-q", str(query_path), "--color", "never")
     assert human.exit_code == 4
     assert "EVIDENCE/REPLAY MISMATCH; RESULT UNTRUSTED" in human.stdout
+    assert "Property verdict: INCONCLUSIVE (EVIDENCE/REPLAY MISMATCH)" in human.stdout
     assert "could not be reproduced by the runtime" in human.stdout
     assert "Replay:" in human.stdout
     assert "FAILED (1 mismatch)." in human.stdout

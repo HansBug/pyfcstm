@@ -135,6 +135,7 @@ class _BmcPresentation:
 
     headline: str
     scenario: str
+    property_verdict: str
     primary_search: str
     response_horizon: Optional[str]
     conclusion: str
@@ -289,9 +290,11 @@ def _human_presentation(execution: _BmcExecution) -> _BmcPresentation:
     evidence = list(base.evidence)
     if execution.replay is not None and not execution.replay.ok:
         headline = "EVIDENCE/REPLAY MISMATCH; RESULT UNTRUSTED"
+        property_verdict = "INCONCLUSIVE (EVIDENCE/REPLAY MISMATCH)"
         severity = "red"
     else:
         headline = base.headline
+        property_verdict = base.property_verdict
         severity = base.severity
     replay = execution.replay
     if replay is not None:
@@ -325,6 +328,7 @@ def _human_presentation(execution: _BmcExecution) -> _BmcPresentation:
     return _BmcPresentation(
         headline=headline,
         scenario=base.scenario,
+        property_verdict=property_verdict,
         primary_search=base.primary_search,
         response_horizon=base.response_horizon,
         conclusion=(
@@ -421,6 +425,7 @@ def _human_report(
     header = [
         "BMC %s <= %d: %s" % (formula.kind, formula.bound, presentation.headline),
         "Scenario: %s" % presentation.scenario,
+        "Property verdict: %s" % presentation.property_verdict,
         "Primary search: %s" % presentation.primary_search,
     ]
     if presentation.response_horizon is not None:
@@ -463,6 +468,7 @@ def _colorize_human_report(text: str, severity: str) -> str:
         if content.startswith(
             (
                 "Scenario:",
+                "Property verdict:",
                 "Primary search:",
                 "Response horizon:",
                 "Conclusion:",

@@ -321,7 +321,15 @@ or an inconclusive check:
    BMC <kind> <= <bound>: SCENARIO INFEASIBLE; PROPERTY NOT EVALUATED
    BMC <kind> <= <bound>: EVIDENCE/REPLAY MISMATCH; RESULT UNTRUSTED
 
-The first report block then contains ``Scenario`` and ``Primary search``.  A
+The first report block then contains ``Scenario``, ``Property verdict``, and
+``Primary search``.  ``Property verdict`` is the direct bounded conclusion:
+``SATISFIED WITHIN BOUND`` means the requested property outcome was established,
+``NOT SATISFIED WITHIN BOUND`` means a required witness was absent or a
+counterexample was found, ``NOT EVALUATED`` means scenario feasibility did not
+permit a property verdict, and ``INCONCLUSIVE`` means the bounded search did
+not finish with a property verdict.  The parenthetical text preserves whether
+the evidence was a witness, a missing witness, a counterexample, or an
+exception state.  A
 response query also contains ``Response horizon``; non-response queries omit
 that line.  ``Conclusion`` states the quantifier-aware user result.  When
 there is SAT evidence, ``Evidence`` identifies ``PRIMARY WITNESS``,
@@ -337,10 +345,12 @@ includes a ``Horizon reason`` explaining that the response obligation extends
 beyond the current bound.
 
 ``GOAL UNREALIZABLE WITHIN BOUND`` is reserved for a witness-polarity objective
-whose feasible bounded scenario contains no satisfying execution; it is not a
-claim that a Boolean property is false.  ``PROPERTY GUARANTEED WITHIN BOUND``
-is reserved for a counterexample-polarity objective with no bounded
-counterexample.
+whose feasible bounded scenario contains no satisfying execution.  Its
+separate ``Property verdict: NOT SATISFIED WITHIN BOUND (NO WITNESS)`` line
+records the same bounded negative verdict as ``property_satisfied: false``;
+the headline identifies the evidence form and does not claim that a concrete
+counterexample trace was found.  ``PROPERTY GUARANTEED WITHIN BOUND`` is
+reserved for a counterexample-polarity objective with no bounded counterexample.
 
 ``Solver`` then shows the primary status and elapsed milliseconds; the
 configured shared timeout budget, response horizon status/time, solver reasons,
@@ -374,6 +384,7 @@ model role without interpreting raw ``SAT``/``UNSAT`` fields:
 
    BmcSolveResult: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
    Scenario: FEASIBLE
+   Property verdict: SATISFIED WITHIN BOUND (WITNESS FOUND)
    Primary search: WITNESS = SAT
    Conclusion: At least one admissible execution satisfies the reach objective within 1 macro-step.
    Evidence:

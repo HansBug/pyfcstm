@@ -649,6 +649,7 @@ def test_public_non_trace_objects_are_field_value_golden_pinned() -> None:
     expected_solve = """
     BmcSolveResult: PROPERTY INCONCLUSIVE; PRIMARY CHECK UNKNOWN
     Scenario: NOT CHECKED
+    Property verdict: INCONCLUSIVE (PRIMARY CHECK UNKNOWN)
     Primary search: WITNESS = UNKNOWN
     Conclusion: The primary witness search returned unknown; no property verdict is available.
     Evidence:
@@ -702,6 +703,7 @@ def test_public_non_trace_objects_are_field_value_golden_pinned() -> None:
             (
                 "BmcSolveResult: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND",
                 "Scenario: FEASIBLE",
+                "Property verdict: SATISFIED WITHIN BOUND (WITNESS FOUND)",
                 "Primary search: WITNESS = SAT",
                 "Model role: PRIMARY WITNESS",
                 "Model evidence: SAT model available.",
@@ -713,6 +715,7 @@ def test_public_non_trace_objects_are_field_value_golden_pinned() -> None:
             ),
             (
                 "BmcSolveResult: GOAL UNREALIZABLE WITHIN BOUND; NO WITNESS",
+                "Property verdict: NOT SATISFIED WITHIN BOUND (NO WITNESS)",
                 "Primary search: WITNESS = UNSAT",
                 "No admissible execution satisfies the reach objective",
                 "Model evidence: no SAT model available.",
@@ -726,6 +729,7 @@ def test_public_non_trace_objects_are_field_value_golden_pinned() -> None:
             ),
             (
                 "BmcSolveResult: PROPERTY DOES NOT HOLD WITHIN BOUND; COUNTEREXAMPLE FOUND",
+                "Property verdict: NOT SATISFIED WITHIN BOUND (COUNTEREXAMPLE FOUND)",
                 "Primary search: COUNTEREXAMPLE = SAT",
                 "Model role: PRIMARY COUNTEREXAMPLE",
             ),
@@ -738,6 +742,7 @@ def test_public_non_trace_objects_are_field_value_golden_pinned() -> None:
             ),
             (
                 "BmcSolveResult: PROPERTY GUARANTEED WITHIN BOUND; NO COUNTEREXAMPLE",
+                "Property verdict: SATISFIED WITHIN BOUND (NO COUNTEREXAMPLE)",
                 "Primary search: COUNTEREXAMPLE = UNSAT",
                 "Every admissible execution within 1 macro-step satisfies the forbid property.",
             ),
@@ -757,6 +762,7 @@ def test_public_non_trace_objects_are_field_value_golden_pinned() -> None:
             (
                 "BmcSolveResult: SCENARIO INFEASIBLE; PROPERTY NOT EVALUATED",
                 "Scenario: INFEASIBLE",
+                "Property verdict: NOT EVALUATED (SCENARIO INFEASIBLE)",
                 "Failure boundary: ASSUMPTIONS",
                 "property was not evaluated",
             ),
@@ -771,6 +777,7 @@ def test_public_non_trace_objects_are_field_value_golden_pinned() -> None:
             ),
             (
                 "BmcSolveResult: PROPERTY GUARANTEED WITHIN BOUND; NO COUNTEREXAMPLE",
+                "Property verdict: SATISFIED WITHIN BOUND (NO COUNTEREXAMPLE)",
                 "Response horizon: CLOSED",
                 "The response horizon check found no open obligation",
             ),
@@ -786,6 +793,7 @@ def test_public_non_trace_objects_are_field_value_golden_pinned() -> None:
             ),
             (
                 "BmcSolveResult: PROPERTY INCONCLUSIVE; RESPONSE HORIZON INCOMPLETE",
+                "Property verdict: INCONCLUSIVE (RESPONSE HORIZON INCOMPLETE)",
                 "Response horizon: OPEN",
                 "Horizon reason: response obligation remains open beyond the current bounded horizon.",
                 "Model role: INCOMPLETE SUFFIX",
@@ -807,6 +815,7 @@ def test_public_non_trace_objects_are_field_value_golden_pinned() -> None:
             ),
             (
                 "BmcSolveResult: SCENARIO INFEASIBLE; PROPERTY NOT EVALUATED",
+                "Property verdict: NOT EVALUATED (SCENARIO INFEASIBLE)",
                 "Failure boundary: NOT LOCALIZED",
                 "Localization: NOT_CHECKED (feasibility_timeout:assumptions)",
             ),
@@ -837,6 +846,7 @@ def test_public_non_trace_objects_are_field_value_golden_pinned() -> None:
             (
                 "BmcSolveResult: SCENARIO FEASIBILITY UNKNOWN; PROPERTY NOT EVALUATED",
                 "Scenario: UNKNOWN",
+                "Property verdict: NOT EVALUATED (SCENARIO FEASIBILITY UNKNOWN)",
                 "primary UNSAT result cannot be interpreted as a property verdict",
                 "Feasibility stage: ASSUMPTIONS",
                 "Feasibility status: UNKNOWN",
@@ -869,6 +879,7 @@ def test_public_non_trace_objects_are_field_value_golden_pinned() -> None:
             (
                 "BmcSolveResult: SCENARIO FEASIBILITY TIMED OUT; PROPERTY NOT EVALUATED",
                 "Scenario: TIMED OUT",
+                "Property verdict: NOT EVALUATED (SCENARIO FEASIBILITY TIMED OUT)",
                 "Scenario feasibility timed out",
                 "Feasibility stage: ASSUMPTIONS",
                 "Feasibility status: TIMED OUT",
@@ -898,6 +909,7 @@ def test_solve_result_text_exposes_polarity_and_exception_semantics(
             (),
             (
                 "Response horizon: UNKNOWN",
+                "Property verdict: INCONCLUSIVE (RESPONSE HORIZON INCOMPLETE)",
                 "Horizon reason: suffix canceled",
             ),
         ),
@@ -907,6 +919,7 @@ def test_solve_result_text_exposes_polarity_and_exception_semantics(
             (),
             (
                 "Response horizon: TIMED OUT",
+                "Property verdict: INCONCLUSIVE (RESPONSE HORIZON INCOMPLETE)",
                 "Horizon reason: suffix timeout",
             ),
         ),
@@ -916,6 +929,7 @@ def test_solve_result_text_exposes_polarity_and_exception_semantics(
             (),
             (
                 "Response horizon: OPEN",
+                "Property verdict: INCONCLUSIVE (RESPONSE HORIZON INCOMPLETE)",
                 "Horizon reason: response obligation remains open beyond the current bounded horizon.",
             ),
         ),
@@ -925,6 +939,7 @@ def test_solve_result_text_exposes_polarity_and_exception_semantics(
             (witness_module._SUFFIX_TIMEOUT_BEFORE_CHECK,),
             (
                 "Response horizon: NOT CHECKED",
+                "Property verdict: INCONCLUSIVE (RESPONSE HORIZON INCOMPLETE)",
                 "Horizon reason: shared timeout budget exhausted before suffix check.",
             ),
         ),
@@ -934,6 +949,7 @@ def test_solve_result_text_exposes_polarity_and_exception_semantics(
             ("incomplete_check=disabled",),
             (
                 "Response horizon: DISABLED",
+                "Property verdict: INCONCLUSIVE (RESPONSE HORIZON INCOMPLETE)",
                 "Horizon reason: response horizon check was disabled.",
             ),
         ),

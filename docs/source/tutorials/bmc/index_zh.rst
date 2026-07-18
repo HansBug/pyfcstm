@@ -160,6 +160,7 @@
 
    BMC forbid <= 2: PROPERTY DOES NOT HOLD WITHIN BOUND; COUNTEREXAMPLE FOUND
    Scenario: FEASIBLE
+   Property verdict: NOT SATISFIED WITHIN BOUND (COUNTEREXAMPLE FOUND)
    Primary search: COUNTEREXAMPLE = SAT
    Conclusion: At least one admissible execution violates the forbid property within 2 macro-steps.
 
@@ -210,6 +211,7 @@
 
    BMC forbid <= 2: PROPERTY GUARANTEED WITHIN BOUND; NO COUNTEREXAMPLE
    Scenario: FEASIBLE
+   Property verdict: SATISFIED WITHIN BOUND (NO COUNTEREXAMPLE)
    Primary search: COUNTEREXAMPLE = UNSAT
    Conclusion: Every admissible execution within 2 macro-steps satisfies the forbid property.
 

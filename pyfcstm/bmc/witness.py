@@ -1300,6 +1300,7 @@ class _BmcSolvePresentation:
 
     headline: str
     scenario: str
+    property_verdict: str
     primary_search: str
     response_horizon: Optional[str]
     conclusion: str
@@ -1314,6 +1315,25 @@ def _solve_bound_phrase(result: "BmcSolveResult") -> str:
 
 def _solve_search_kind(result: "BmcSolveResult") -> str:
     return "WITNESS" if result.polarity == "witness" else "COUNTEREXAMPLE"
+
+
+def _solve_property_verdict(outcome: str) -> str:
+    """Return the explicit bounded property verdict for human output."""
+    verdicts = {
+        "witness_found": "SATISFIED WITHIN BOUND (WITNESS FOUND)",
+        "no_witness": "NOT SATISFIED WITHIN BOUND (NO WITNESS)",
+        "property_violated": "NOT SATISFIED WITHIN BOUND (COUNTEREXAMPLE FOUND)",
+        "property_satisfied": "SATISFIED WITHIN BOUND (NO COUNTEREXAMPLE)",
+        "scenario_infeasible": "NOT EVALUATED (SCENARIO INFEASIBLE)",
+        "feasibility_unknown": "NOT EVALUATED (SCENARIO FEASIBILITY UNKNOWN)",
+        "feasibility_timeout": "NOT EVALUATED (SCENARIO FEASIBILITY TIMED OUT)",
+        "unknown": "INCONCLUSIVE (PRIMARY CHECK UNKNOWN)",
+        "timeout": "INCONCLUSIVE (PRIMARY CHECK TIMED OUT)",
+        "incomplete": "INCONCLUSIVE (RESPONSE HORIZON INCOMPLETE)",
+    }
+    if outcome not in verdicts:
+        raise BmcBuildError("Unsupported BMC outcome: %s" % outcome)
+    return verdicts[outcome]
 
 
 def _solve_scenario(result: "BmcSolveResult", outcome: str) -> str:
@@ -1589,6 +1609,7 @@ def _solve_presentation(result: "BmcSolveResult") -> _BmcSolvePresentation:
     return _BmcSolvePresentation(
         headline=headlines[outcome],
         scenario=_solve_scenario(result, outcome),
+        property_verdict=_solve_property_verdict(outcome),
         primary_search="%s = %s" % (_solve_search_kind(result), result.status.upper()),
         response_horizon=response_horizon,
         conclusion=_solve_conclusion(result, outcome, response_horizon),
@@ -1602,6 +1623,7 @@ def _render_solve_result(result: "BmcSolveResult", tablefmt: str) -> str:
     lines = [
         "BmcSolveResult: %s" % presentation.headline,
         "Scenario: %s" % presentation.scenario,
+        "Property verdict: %s" % presentation.property_verdict,
         "Primary search: %s" % presentation.primary_search,
     ]
     if presentation.response_horizon is not None:

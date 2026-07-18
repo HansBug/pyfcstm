@@ -242,7 +242,9 @@ def test_bmc_human_report_prioritizes_verdict_and_diagnostics(bmc_files) -> None
     result = _run("-i", str(model_path), "-q", str(query_path))
 
     assert result.exit_code == 0
-    assert result.stdout.startswith("BMC reach <= 1: WITNESS FOUND WITHIN BOUND\n")
+    assert result.stdout.startswith(
+        "BMC reach <= 1: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND\n"
+    )
     assert "Scenario: FEASIBLE" in result.stdout
     assert "Primary search: WITNESS = SAT" in result.stdout
     assert "Response horizon:" not in result.stdout
@@ -267,7 +269,7 @@ def test_bmc_human_report_prioritizes_verdict_and_diagnostics(bmc_files) -> None
     [
         (
             "check reach <= 1: terminated();",
-            "BMC reach <= 1: NO WITNESS WITHIN BOUND",
+            "BMC reach <= 1: PROPERTY DOES NOT HOLD WITHIN BOUND; NO WITNESS",
             (
                 "Scenario: FEASIBLE",
                 "Primary search: WITNESS = UNSAT",
@@ -330,7 +332,7 @@ def test_bmc_human_report_explains_each_verdict_family(
     [
         (
             "check exists_always <= 1: true;",
-            "WITNESS FOUND WITHIN BOUND",
+            "PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND",
             "satisfies the exists_always objective",
         ),
         (
@@ -519,7 +521,7 @@ def test_bmc_human_color_is_terminal_only(bmc_files) -> None:
 
     colored = _run("-i", str(model_path), "-q", str(query_path), "--color", "always")
     assert "\x1b[" in colored.stdout
-    assert "WITNESS FOUND WITHIN BOUND" in colored.stdout
+    assert "PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND" in colored.stdout
 
     json_result = _run(
         "-i",
@@ -1541,7 +1543,7 @@ check reach <= 1: active("Root.Done");
         "yellow",
     )
     assert "\x1b[31m" in bmc_entry._colorize_human_report(
-        "BMC reach <= 1: NO WITNESS WITHIN BOUND\nScenario: FEASIBLE\n",
+        "BMC reach <= 1: PROPERTY DOES NOT HOLD WITHIN BOUND; NO WITNESS\nScenario: FEASIBLE\n",
         "red",
     )
 

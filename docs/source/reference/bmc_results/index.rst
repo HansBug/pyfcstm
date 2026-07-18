@@ -309,8 +309,8 @@ or an inconclusive check:
 
 .. code-block:: text
 
-   BMC <kind> <= <bound>: WITNESS FOUND WITHIN BOUND
-   BMC <kind> <= <bound>: NO WITNESS WITHIN BOUND
+   BMC <kind> <= <bound>: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   BMC <kind> <= <bound>: PROPERTY DOES NOT HOLD WITHIN BOUND; NO WITNESS
    BMC <kind> <= <bound>: PROPERTY DOES NOT HOLD WITHIN BOUND; COUNTEREXAMPLE FOUND
    BMC <kind> <= <bound>: PROPERTY GUARANTEED WITHIN BOUND; NO COUNTEREXAMPLE
    BMC <kind> <= <bound>: PROPERTY INCONCLUSIVE; PRIMARY CHECK UNKNOWN
@@ -360,7 +360,7 @@ model role without interpreting raw ``SAT``/``UNSAT`` fields:
 
 .. code-block:: text
 
-   BmcSolveResult: WITNESS FOUND WITHIN BOUND
+   BmcSolveResult: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
    Scenario: FEASIBLE
    Primary search: WITNESS = SAT
    Conclusion: At least one admissible execution satisfies the reach objective within 1 macro-step.

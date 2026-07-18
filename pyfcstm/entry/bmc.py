@@ -37,7 +37,7 @@ Examples::
     ...     report, exit_code = build_bmc_output(model_path, query_path)
     >>> exit_code
     0
-    >>> report.startswith("BMC reach <= 1: WITNESS FOUND WITHIN BOUND")
+    >>> report.startswith("BMC reach <= 1: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND")
     True
 """
 

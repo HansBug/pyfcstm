@@ -699,7 +699,7 @@ def test_public_non_trace_objects_are_field_value_golden_pinned() -> None:
         (
             lambda: solve_bmc_property(_sample_formula()),
             (
-                "BmcSolveResult: WITNESS FOUND WITHIN BOUND",
+                "BmcSolveResult: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND",
                 "Scenario: FEASIBLE",
                 "Primary search: WITNESS = SAT",
                 "Model role: PRIMARY WITNESS",
@@ -711,7 +711,7 @@ def test_public_non_trace_objects_are_field_value_golden_pinned() -> None:
                 _sample_formula(), "unsat", feasibility=_feasible_evidence()
             ),
             (
-                "BmcSolveResult: NO WITNESS WITHIN BOUND",
+                "BmcSolveResult: PROPERTY DOES NOT HOLD WITHIN BOUND; NO WITNESS",
                 "Primary search: WITNESS = UNSAT",
                 "No admissible execution satisfies the reach objective",
                 "Model evidence: no SAT model available.",
@@ -764,6 +764,20 @@ def test_public_non_trace_objects_are_field_value_golden_pinned() -> None:
             lambda: BmcSolveResult(
                 _sample_response_formula(),
                 "unsat",
+                incomplete_status="unsat",
+                incomplete_elapsed_ms=1.0,
+                feasibility=_feasible_evidence(),
+            ),
+            (
+                "BmcSolveResult: PROPERTY GUARANTEED WITHIN BOUND; NO COUNTEREXAMPLE",
+                "Response horizon: CLOSED",
+                "The response horizon check found no open obligation",
+            ),
+        ),
+        (
+            lambda: BmcSolveResult(
+                _sample_response_formula(),
+                "unsat",
                 incomplete_status="sat",
                 incomplete_model=_empty_sat_model(),
                 incomplete_elapsed_ms=1.0,
@@ -774,6 +788,83 @@ def test_public_non_trace_objects_are_field_value_golden_pinned() -> None:
                 "Response horizon: OPEN",
                 "Model role: INCOMPLETE SUFFIX",
                 "Model evidence: SAT suffix model available.",
+            ),
+        ),
+        (
+            lambda: BmcSolveResult(
+                _sample_formula(),
+                "unsat",
+                feasibility=BmcFeasibilityResult(
+                    BmcFeasibilityCheck("unsat", "checked", elapsed_ms=1.0),
+                    BmcFeasibilityCheck("unsat", "checked", elapsed_ms=1.0),
+                    BmcFeasibilityCheck("unsat", "checked", elapsed_ms=1.0),
+                    localization_status="not_checked",
+                    refinement_status="not_requested",
+                ),
+                diagnostics=("feasibility_timeout:assumptions",),
+            ),
+            (
+                "BmcSolveResult: SCENARIO INFEASIBLE; PROPERTY NOT EVALUATED",
+                "Failure boundary: NOT LOCALIZED",
+                "Localization: NOT_CHECKED (feasibility_timeout:assumptions)",
+            ),
+        ),
+        (
+            lambda: BmcSolveResult(
+                _sample_formula(),
+                "unsat",
+                feasibility=BmcFeasibilityResult(
+                    BmcFeasibilityCheck(
+                        "unknown", "checked", reason="kernel unknown", elapsed_ms=1.0
+                    ),
+                    BmcFeasibilityCheck(
+                        "unknown",
+                        "checked",
+                        reason="initialization unknown",
+                        elapsed_ms=1.0,
+                    ),
+                    BmcFeasibilityCheck(
+                        "unknown",
+                        "checked",
+                        reason="assumptions unknown",
+                        elapsed_ms=1.0,
+                    ),
+                    localization_status="unknown",
+                ),
+            ),
+            (
+                "BmcSolveResult: SCENARIO FEASIBILITY UNKNOWN; PROPERTY NOT EVALUATED",
+                "Scenario: UNKNOWN",
+                "primary UNSAT result cannot be interpreted as a property verdict",
+            ),
+        ),
+        (
+            lambda: BmcSolveResult(
+                _sample_formula(),
+                "unsat",
+                feasibility=BmcFeasibilityResult(
+                    BmcFeasibilityCheck(
+                        "timeout", "checked", reason="kernel timeout", elapsed_ms=1.0
+                    ),
+                    BmcFeasibilityCheck(
+                        "timeout",
+                        "checked",
+                        reason="initialization timeout",
+                        elapsed_ms=1.0,
+                    ),
+                    BmcFeasibilityCheck(
+                        "timeout",
+                        "checked",
+                        reason="assumptions timeout",
+                        elapsed_ms=1.0,
+                    ),
+                    localization_status="timeout",
+                ),
+            ),
+            (
+                "BmcSolveResult: SCENARIO FEASIBILITY TIMED OUT; PROPERTY NOT EVALUATED",
+                "Scenario: UNKNOWN",
+                "Scenario feasibility timed out",
             ),
         ),
     ],

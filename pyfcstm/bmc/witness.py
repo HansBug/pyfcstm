@@ -1317,10 +1317,11 @@ def _solve_search_kind(result: "BmcSolveResult") -> str:
 
 
 def _solve_scenario(result: "BmcSolveResult", outcome: str) -> str:
+    feasibility = result._validated_feasibility()
     if outcome == "scenario_infeasible":
         return "INFEASIBLE"
     if outcome in {"feasibility_unknown", "feasibility_timeout"}:
-        if result.feasibility.assumptions.origin == "checked":
+        if feasibility.assumptions.origin == "checked":
             return "UNKNOWN"
         return "NOT CHECKED"
     if outcome in {"unknown", "timeout"}:
@@ -1350,14 +1351,12 @@ def _solve_response_horizon(result: "BmcSolveResult", outcome: str) -> Optional[
             return "TIMED OUT"
         if result.incomplete_reason == "incomplete check disabled":
             return "DISABLED"
-        if _has_diagnostic(result, _SUFFIX_TIMEOUT_BEFORE_CHECK):
-            return "NOT CHECKED"
         return "NOT CHECKED"
     return None
 
 
 def _solve_failure_evidence(result: "BmcSolveResult") -> Tuple[str, ...]:
-    feasibility = result.feasibility
+    feasibility = result._validated_feasibility()
     stage = feasibility.infeasible_stage
     details = {
         "kernel": "No admissible execution exists in the bounded solver kernel.",
@@ -1373,8 +1372,8 @@ def _solve_failure_evidence(result: "BmcSolveResult") -> Tuple[str, ...]:
         (
             check.reason
             for check in (
-                feasibility.initialization,
                 feasibility.kernel,
+                feasibility.initialization,
                 feasibility.assumptions,
             )
             if check.reason is not None
@@ -1402,6 +1401,7 @@ def _solve_failure_evidence(result: "BmcSolveResult") -> Tuple[str, ...]:
 def _solve_conclusion(
     result: "BmcSolveResult", outcome: str, response_horizon: Optional[str]
 ) -> str:
+    feasibility = result._validated_feasibility()
     bound = _solve_bound_phrase(result)
     kind = result.kind
     search_kind = _solve_search_kind(result).lower()
@@ -1448,7 +1448,7 @@ def _solve_conclusion(
             "be interpreted as a property verdict."
         )
     if outcome == "feasibility_timeout":
-        if result.feasibility.assumptions.origin == "checked":
+        if feasibility.assumptions.origin == "checked":
             return (
                 "Scenario feasibility timed out, so the primary UNSAT result "
                 "cannot be interpreted as a property verdict."
@@ -1500,8 +1500,8 @@ def _solve_presentation(result: "BmcSolveResult") -> _BmcSolvePresentation:
     outcome = result.outcome
     response_horizon = _solve_response_horizon(result, outcome)
     headlines = {
-        "witness_found": "WITNESS FOUND WITHIN BOUND",
-        "no_witness": "NO WITNESS WITHIN BOUND",
+        "witness_found": "PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND",
+        "no_witness": "PROPERTY DOES NOT HOLD WITHIN BOUND; NO WITNESS",
         "property_violated": "PROPERTY DOES NOT HOLD WITHIN BOUND; COUNTEREXAMPLE FOUND",
         "property_satisfied": "PROPERTY GUARANTEED WITHIN BOUND; NO COUNTEREXAMPLE",
         "scenario_infeasible": "SCENARIO INFEASIBLE; PROPERTY NOT EVALUATED",

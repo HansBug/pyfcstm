@@ -308,7 +308,7 @@ key and allowed ``where`` expression.
 **What it does.** Human mode prints the same witness in a compact form and runs
 the mandatory replay trust gate before reporting success.
 
-**Expected output.** The first line is ``BMC reach <= 1: WITNESS FOUND WITHIN BOUND``.
+**Expected output.** The first line is ``BMC reach <= 1: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND``.
 ``Solver: SAT`` follows as diagnostic evidence, ``Replay: verified`` reports
 the runtime trust gate, and the compact ``Trace`` lists source, target, selected
 case, events, and calls.  The process exits ``0``.  Use ``--color always`` to

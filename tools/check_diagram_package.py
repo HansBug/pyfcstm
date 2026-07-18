@@ -9,7 +9,7 @@ import tarfile
 import tempfile
 import zipfile
 from pathlib import Path
-from pathlib import PurePosixPath
+from pathlib import PurePosixPath, PureWindowsPath
 from typing import Dict, Iterable, Optional
 
 
@@ -178,12 +178,17 @@ def check_sdist(
         roots = set()
         for member in archive.getmembers():
             member_path = PurePosixPath(member.name)
+            windows_path = PureWindowsPath(member.name)
             parts = member_path.parts
             if (
-                member_path.is_absolute()
+                "\\" in member.name
+                or member_path.is_absolute()
+                or windows_path.is_absolute()
+                or windows_path.drive
                 or not parts
                 or parts[0] in ("", ".", "..")
                 or ".." in parts
+                or ".." in windows_path.parts
             ):
                 raise ValueError(
                     "sdist contains an unsafe member path: %s" % member.name
@@ -391,6 +396,20 @@ def _self_check() -> None:
             pass
         else:
             raise AssertionError("multiple sdist roots were accepted")
+
+        windows_path = Path(directory) / "windows-path.tar.gz"
+        with tarfile.open(str(windows_path), mode="w:gz") as archive:
+            info = tarfile.TarInfo("pyfcstm-0.0.0/..\\shadow/renderer.js")
+            info.size = 1
+            archive.addfile(info, io.BytesIO(b"x"))
+        try:
+            check_sdist(windows_path)
+        except ValueError:
+            # Backslash traversal must fail before a Windows extraction can
+            # reinterpret the member as a parent-directory path.
+            pass
+        else:
+            raise AssertionError("Windows-style sdist traversal was accepted")
 
     missing_license = dict(files)
     del missing_license["pyfcstm/assets/LICENSE-EPL-2.0.txt"]

@@ -428,6 +428,9 @@ def test_engine_restarts_context_after_native_timeout():
     engine.timeout = 0.2
     with pytest.raises(DiagramAssetError, match="time or memory limit"):
         engine._eval("while (true) {}")
+    # The interrupted context must be rebuilt with a normal startup budget;
+    # the short budget above is only the intentional infinite-loop trigger.
+    engine.timeout = 30.0
     assert engine._eval("6 * 7") == 42
 
 

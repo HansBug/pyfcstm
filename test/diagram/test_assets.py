@@ -224,6 +224,19 @@ def test_invalid_wasm_reports_resource_data_failure(monkeypatch):
         )
 
 
+def test_invalid_expanded_svg_reports_resource_data_failure(monkeypatch):
+    engine = DiagramAssetEngine()
+    monkeypatch.setattr(engine, "_ensure_resvg", lambda _locale: None)
+    monkeypatch.setattr(engine, "_eval_asset", lambda *_args, **_kwargs: "not-svg")
+    with pytest.raises(
+        DiagramAssetError,
+        match=r"resvg\.wasm.*malformed expanded SVG output.*make build_assets",
+    ):
+        engine.expand_svg(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>'
+        )
+
+
 def test_model_render_embeds_cjk_fallback_and_keeps_glyphs_distinct():
     request = _request()
     request["diagram"]["rootState"]["children"][0]["displayName"] = "启动"

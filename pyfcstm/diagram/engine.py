@@ -519,13 +519,21 @@ class DiagramAssetEngine:
         :rtype: str
         """
         self._ensure_resvg(self._locale_from_svg(svg))
-        return str(
+        expanded = str(
             self._eval_asset(
                 "resvg.wasm",
                 "__pyfcstm_resvg_expand(%s)" % json.dumps(svg),
                 timeout=self.timeout,
             )
         )
+        stripped = expanded.strip()
+        if not stripped.startswith("<svg") or not (
+            stripped.endswith("</svg>") or stripped.endswith("/>")
+        ):
+            raise _asset_failure(
+                "resvg.wasm", "the renderer returned malformed expanded SVG output"
+            )
+        return expanded
 
     @staticmethod
     def _locale_from_svg(svg: str) -> str:

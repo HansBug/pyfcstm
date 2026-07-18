@@ -1,8 +1,8 @@
 Generated diagram assets are produced by ``make build_assets``.
 
-The generated directory is intentionally ignored by git. Source and license
-provenance is maintained in the tracked source lock and in the generated
-manifest; do not hand-edit compiled files under this directory.
+Generated files under this directory are intentionally ignored by git.
+Source and license provenance is maintained in the tracked source lock and in
+the generated manifest; do not hand-edit compiled files under this directory.
 
 Third-party runtime resources distributed in this directory:
 

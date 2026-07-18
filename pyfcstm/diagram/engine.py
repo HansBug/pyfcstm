@@ -13,6 +13,7 @@ import json
 import math
 import pkgutil
 import re
+import struct
 import time
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -105,6 +106,11 @@ def _asset_bytes(name: str) -> bytes:
         ) from err
     if data is None:
         raise _asset_failure(name, "the expected packaged resource is missing")
+    if not isinstance(data, bytes):
+        raise _asset_failure(
+            name,
+            "the packaged resource returned non-binary data instead of bytes",
+        )
     if not data:
         raise _asset_failure(name, "the packaged resource is empty")
     if name.endswith(".js"):
@@ -118,11 +124,65 @@ def _asset_bytes(name: str) -> bytes:
             raise _asset_failure(name, "the JavaScript resource is empty")
     elif name == "resvg.wasm" and not data.startswith(b"\x00asm"):
         raise _asset_failure(name, "the resource is not a WebAssembly binary")
-    elif name.startswith("fonts/") and not (
-        data.startswith((b"\x00\x01\x00\x00", b"true", b"OTTO", b"ttcf"))
-    ):
-        raise _asset_failure(name, "the resource is not a supported OpenType font")
+    elif name.startswith("fonts/") and not _valid_opentype(data):
+        raise _asset_failure(
+            name,
+            "the resource failed OpenType table, bounds, or checksum validation",
+        )
     return data
+
+
+def _valid_opentype(data: bytes) -> bool:
+    """Validate the bounded SFNT table directory of one OpenType font."""
+    if len(data) < 12 or not data.startswith((b"\x00\x01\x00\x00", b"true", b"OTTO")):
+        return False
+    try:
+        table_count = struct.unpack(">H", data[4:6])[0]
+    except struct.error:
+        # struct.error: a truncated SFNT header cannot expose a table count.
+        return False
+    if table_count == 0:
+        return False
+    directory_end = 12 + table_count * 16
+    if directory_end > len(data):
+        return False
+    table_tags = set()
+    required_tags = {b"cmap", b"head", b"hhea", b"hmtx", b"maxp", b"name"}
+    minimum_lengths = {
+        b"cmap": 4,
+        b"head": 54,
+        b"hhea": 36,
+        b"hmtx": 4,
+        b"maxp": 6,
+        b"name": 6,
+        b"glyf": 1,
+        b"CFF ": 1,
+        b"CFF2": 1,
+    }
+    for offset in range(12, directory_end, 16):
+        table_tag = data[offset : offset + 4]
+        table_tags.add(table_tag)
+        expected_checksum, table_offset, table_length = struct.unpack(
+            ">III", data[offset + 4 : offset + 16]
+        )
+        if table_offset > len(data) or table_length > len(data) - table_offset:
+            return False
+        if table_length < minimum_lengths.get(table_tag, 0):
+            return False
+        table_data = bytearray(data[table_offset : table_offset + table_length])
+        if table_tag == b"head" and len(table_data) >= 12:
+            # OpenType defines head.checkSumAdjustment as zero while the head
+            # table checksum is calculated; the directory stores that result.
+            table_data[8:12] = b"\x00" * 4
+        table_data.extend(b"\x00" * (-len(table_data) % 4))
+        actual_checksum = (
+            sum(struct.unpack(">%dI" % (len(table_data) // 4), table_data)) & 0xFFFFFFFF
+        )
+        if actual_checksum != expected_checksum:
+            return False
+    return required_tags.issubset(table_tags) and bool(
+        {b"glyf", b"CFF ", b"CFF2"}.intersection(table_tags)
+    )
 
 
 class DiagramAssetEngine:

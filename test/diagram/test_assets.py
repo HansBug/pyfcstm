@@ -4,6 +4,8 @@ import re
 import math
 import builtins
 import hashlib
+import struct
+import zlib
 
 import pytest
 
@@ -103,6 +105,73 @@ def _request():
         "palette": "default",
         "mode": "light",
     }
+
+
+def _png_ink_bbox(data):
+    """Decode the RGBA rows and return the non-white pixel bounding box."""
+    assert data.startswith(b"\x89PNG\r\n\x1a\n")
+    position = 8
+    width = height = bit_depth = color_type = None
+    compressed = []
+    while position < len(data):
+        length = struct.unpack(">I", data[position : position + 4])[0]
+        chunk_type = data[position + 4 : position + 8]
+        chunk = data[position + 8 : position + 8 + length]
+        position += length + 12
+        if chunk_type == b"IHDR":
+            width, height, bit_depth, color_type, _, _, _ = struct.unpack(
+                ">IIBBBBB", chunk
+            )
+        elif chunk_type == b"IDAT":
+            compressed.append(chunk)
+        elif chunk_type == b"IEND":
+            break
+    assert (bit_depth, color_type) == (8, 6)
+    assert width and height
+    raw = zlib.decompress(b"".join(compressed))
+    stride = width * 4
+    rows = []
+    offset = 0
+    previous = bytearray(stride)
+    for _ in range(height):
+        filter_type = raw[offset]
+        encoded = raw[offset + 1 : offset + 1 + stride]
+        offset += stride + 1
+        row = bytearray(stride)
+        for index, value in enumerate(encoded):
+            left = row[index - 4] if index >= 4 else 0
+            above = previous[index]
+            upper_left = previous[index - 4] if index >= 4 else 0
+            if filter_type == 0:
+                predictor = 0
+            elif filter_type == 1:
+                predictor = left
+            elif filter_type == 2:
+                predictor = above
+            elif filter_type == 3:
+                predictor = (left + above) // 2
+            elif filter_type == 4:
+                estimate = left + above - upper_left
+                distances = (
+                    abs(estimate - left),
+                    abs(estimate - above),
+                    abs(estimate - upper_left),
+                )
+                predictor = (left, above, upper_left)[distances.index(min(distances))]
+            else:
+                raise AssertionError("unsupported PNG filter: %s" % filter_type)
+            row[index] = (value + predictor) & 0xFF
+        rows.append(row)
+        previous = row
+    points = []
+    for y, row in enumerate(rows):
+        for x in range(width):
+            red, green, blue, alpha = row[x * 4 : x * 4 + 4]
+            if alpha and (red < 245 or green < 245 or blue < 245):
+                points.append((x, y))
+    assert points, "PNG contains no visible ink"
+    xs, ys = zip(*points)
+    return width, height, (min(xs), min(ys), max(xs), max(ys))
 
 
 def test_renderer_is_deterministic_and_escapes_hostile_labels():
@@ -224,6 +293,107 @@ def test_invalid_wasm_reports_resource_data_failure(monkeypatch):
         )
 
 
+@pytest.mark.parametrize(
+    "invalid_data,reason",
+    (
+        (
+            b"OTTO" + b"invalid-font-data",
+            "failed OpenType table, bounds, or checksum validation",
+        ),
+        (
+            b"OTTO" + b"\x00" * 8,
+            "failed OpenType table, bounds, or checksum validation",
+        ),
+        ("not-bytes", "non-binary data instead of bytes"),
+    ),
+)
+def test_invalid_font_data_reports_resource_data_failure(
+    monkeypatch, invalid_data, reason
+):
+    import importlib
+
+    engine_module = importlib.import_module("pyfcstm.diagram.engine")
+    real_get_data = engine_module.pkgutil.get_data
+
+    def invalid_font(package, resource):
+        if resource == "fonts/NotoSansTC-Regular.otf":
+            return invalid_data
+        return real_get_data(package, resource)
+
+    engine = DiagramAssetEngine()
+    monkeypatch.setattr(engine_module.pkgutil, "get_data", invalid_font)
+    with pytest.raises(
+        DiagramAssetError,
+        match=r"NotoSansTC-Regular\.otf.*%s.*make build_assets" % re.escape(reason),
+    ):
+        engine.render_png(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1">'
+            '<text font-family="Noto Sans TC">繁</text></svg>'
+        )
+
+
+def test_corrupt_font_payload_reports_resource_data_failure(monkeypatch):
+    import importlib
+
+    engine_module = importlib.import_module("pyfcstm.diagram.engine")
+    real_get_data = engine_module.pkgutil.get_data
+    original = real_get_data("pyfcstm.diagram.assets", "fonts/NotoSansTC-Regular.otf")
+    corrupted = bytearray(original)
+    corrupted[-1] ^= 1
+
+    def corrupt_font(package, resource):
+        if resource == "fonts/NotoSansTC-Regular.otf":
+            return bytes(corrupted)
+        return real_get_data(package, resource)
+
+    engine = DiagramAssetEngine()
+    monkeypatch.setattr(engine_module.pkgutil, "get_data", corrupt_font)
+    monkeypatch.setattr(engine_module, "_is_development_checkout", lambda: False)
+    with pytest.raises(
+        DiagramAssetError,
+        match=r"NotoSansTC-Regular\.otf.*failed OpenType table, bounds, or checksum validation.*github.com/HansBug/pyfcstm/issues",
+    ):
+        engine.render_png(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1">'
+            '<text font-family="Noto Sans TC">繁</text></svg>'
+        )
+
+
+def test_zero_length_required_font_table_reports_resource_data_failure(monkeypatch):
+    import importlib
+
+    engine_module = importlib.import_module("pyfcstm.diagram.engine")
+    real_get_data = engine_module.pkgutil.get_data
+    original = real_get_data("pyfcstm.diagram.assets", "fonts/NotoSansTC-Regular.otf")
+    corrupted = bytearray(original)
+    table_count = struct.unpack(">H", corrupted[4:6])[0]
+    for offset in range(12, 12 + table_count * 16, 16):
+        if corrupted[offset : offset + 4] == b"head":
+            # Keep the tag present and make the zero-length table checksum
+            # self-consistent; the structural minimum must reject it.
+            corrupted[offset + 4 : offset + 8] = b"\x00" * 4
+            corrupted[offset + 12 : offset + 16] = b"\x00" * 4
+            break
+    else:
+        raise AssertionError("fixture font has no head table")
+
+    def corrupt_font(package, resource):
+        if resource == "fonts/NotoSansTC-Regular.otf":
+            return bytes(corrupted)
+        return real_get_data(package, resource)
+
+    engine = DiagramAssetEngine()
+    monkeypatch.setattr(engine_module.pkgutil, "get_data", corrupt_font)
+    with pytest.raises(
+        DiagramAssetError,
+        match=r"NotoSansTC-Regular\.otf.*failed OpenType table, bounds, or checksum validation.*make build_assets",
+    ):
+        engine.render_png(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1">'
+            '<text font-family="Noto Sans TC">繁</text></svg>'
+        )
+
+
 def test_invalid_expanded_svg_reports_resource_data_failure(monkeypatch):
     engine = DiagramAssetEngine()
     monkeypatch.setattr(engine, "_ensure_resvg", lambda _locale: None)
@@ -311,6 +481,76 @@ def test_model_render_cjk_scripts_work_in_each_locked_locale_face():
         expanded = engine.expand_svg(svg)
         assert text not in expanded, locale
         assert "<path" in expanded, locale
+
+
+@pytest.mark.parametrize(
+    "locale,text",
+    (
+        ("sc", "简体中文"),
+        ("tc", "繁體中文"),
+        ("hk", "香港中文"),
+        ("jp", "日本語"),
+        ("kr", "한국어"),
+    ),
+)
+def test_each_locale_regular_and_bold_have_visible_distinct_glyphs(locale, text):
+    engine = DiagramAssetEngine()
+    family = "Noto Sans " + locale.upper()
+
+    def glyph_svg(weight):
+        return (
+            '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="120">'
+            '<rect width="640" height="120" fill="white"/>'
+            '<text x="24" y="82" font-family="%s" font-size="64" '
+            'font-weight="%s">%s</text></svg>' % (family, weight, text)
+        )
+
+    regular = engine.render_png(glyph_svg(400))
+    bold = engine.render_png(glyph_svg(700))
+    regular_width, regular_height, regular_box = _png_ink_bbox(regular)
+    bold_width, bold_height, bold_box = _png_ink_bbox(bold)
+    assert (regular_width, regular_height) == (640, 120)
+    assert (bold_width, bold_height) == (640, 120)
+    for box in (regular_box, bold_box):
+        left, top, right, bottom = box
+        assert left > 0 and top > 0
+        assert right < 639 and bottom < 119
+    assert hashlib.sha256(regular).digest() != hashlib.sha256(bold).digest(), locale
+    assert "<path" in engine.expand_svg(glyph_svg(400))
+    assert "<path" in engine.expand_svg(glyph_svg(700))
+
+
+def test_locale_switch_rebuilds_context_for_each_font_pair(monkeypatch):
+    import importlib
+
+    engine_module = importlib.import_module("pyfcstm.diagram.engine")
+    engine = DiagramAssetEngine()
+    first_context = engine._context
+    discarded = []
+
+    def fake_discard():
+        discarded.append(engine._context)
+        engine._context = None
+        engine._resvg_ready = False
+        engine._resvg_locale = None
+
+    monkeypatch.setattr(engine, "_discard_context", fake_discard)
+    monkeypatch.setattr(engine_module, "_asset_bytes", lambda _name: b"asset")
+    monkeypatch.setattr(
+        engine,
+        "_eval_asset",
+        lambda _name, _source, timeout=None: "ok",
+    )
+
+    engine._resvg_ready = True
+    engine._resvg_locale = "sc"
+    engine._ensure_resvg("tc")
+    assert discarded == [first_context]
+    assert engine._resvg_locale == "tc"
+    engine._ensure_resvg("sc")
+    assert len(discarded) == 2
+    assert discarded[1] is None
+    assert engine._resvg_locale == "sc"
 
 
 def test_long_cjk_model_label_expands_its_node_without_render_failure():

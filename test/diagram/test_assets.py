@@ -722,6 +722,25 @@ def test_render_png_rejects_truncated_or_corrupt_png_payload(monkeypatch):
         )
     assert not engine_module._valid_png(b"\x89PNG\r\n\x1a\n")
 
+    def chunk(kind, payload):
+        checksum = zlib.crc32(kind + payload) & 0xFFFFFFFF
+        return (
+            struct.pack(">I", len(payload))
+            + kind
+            + payload
+            + struct.pack(">I", checksum)
+        )
+
+    header = struct.pack(">IIBBBBB", 1, 1, 8, 6, 0, 0, 0)
+    invalid_filter = b"\x09\x00\x00\x00\x00"
+    filtered_png = (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", header)
+        + chunk(b"IDAT", zlib.compress(invalid_filter))
+        + chunk(b"IEND", b"")
+    )
+    assert not engine_module._valid_png(filtered_png)
+
 
 def test_engine_rejects_non_finite_timeout():
     for timeout in (float("nan"), float("inf"), float("-inf")):

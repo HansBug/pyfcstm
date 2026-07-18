@@ -261,7 +261,10 @@ def _valid_png(data: bytes) -> bool:
         # struct.error/ValueError: truncated or malformed PNG chunk fields;
         # zlib.error: IDAT is not a valid compressed scanline stream.
         return False
-    return len(decoded) == (width * 4 + 1) * height
+    row_stride = width * 4 + 1
+    if len(decoded) != row_stride * height:
+        return False
+    return all(decoded[offset] <= 4 for offset in range(0, len(decoded), row_stride))
 
 
 class DiagramAssetEngine:

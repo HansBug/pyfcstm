@@ -250,12 +250,20 @@ def test_engine_discards_context_after_renderer_deadline():
     assert engine._eval("6 * 7") == 42
 
 
-def test_engine_discards_context_after_resvg_deadline():
+def test_engine_discards_context_after_resvg_deadline(monkeypatch):
     engine = DiagramAssetEngine()
-    engine.timeout = 0.02
+    # Keep the native MiniRacer evaluation budget comfortably above startup
+    # cost.  Advance only Python's deadline clock so this probe tests the
+    # resvg polling deadline rather than a platform-dependent V8 interrupt.
+    engine.timeout = 30.0
     engine._eval(
         "globalThis.__pyfcstm_resvg_init = function(_wasm) "
         "{ globalThis.__pyfcstm_resvg_status = 'pending'; };"
+    )
+    ticks = iter((100.0, 131.0))
+    monkeypatch.setattr(
+        "pyfcstm.diagram_runtime.engine.time.monotonic",
+        lambda: next(ticks),
     )
     svg = '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>'
     with pytest.raises(DiagramAssetError, match="resvg WASM initialization timed out"):

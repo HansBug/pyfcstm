@@ -379,37 +379,110 @@ def _self_check() -> None:
         raise AssertionError("legal marker mutation was accepted")
 
     with tempfile.TemporaryDirectory(prefix="pyfcstm-sdist-check-") as directory:
-        shadow_path = Path(directory) / "shadow.tar.gz"
-        with tarfile.open(str(shadow_path), mode="w:gz") as archive:
-            for name, data in (
-                ("pyfcstm-0.0.0/pyfcstm/assets/renderer.js", b"canonical"),
-                ("shadow/pyfcstm/assets/renderer.js", b"tampered"),
-            ):
-                info = tarfile.TarInfo(name)
-                info.size = len(data)
-                archive.addfile(info, io.BytesIO(data))
-        try:
-            check_sdist(shadow_path)
-        except ValueError:
-            # A second top-level directory must not be allowed to shadow the
-            # canonical sdist root before package asset checks run.
-            pass
-        else:
-            raise AssertionError("multiple sdist roots were accepted")
 
-        windows_path = Path(directory) / "windows-path.tar.gz"
-        with tarfile.open(str(windows_path), mode="w:gz") as archive:
-            info = tarfile.TarInfo("pyfcstm-0.0.0/..\\shadow/renderer.js")
-            info.size = 1
-            archive.addfile(info, io.BytesIO(b"x"))
-        try:
-            check_sdist(windows_path)
-        except ValueError:
-            # Backslash traversal must fail before a Windows extraction can
-            # reinterpret the member as a parent-directory path.
-            pass
-        else:
-            raise AssertionError("Windows-style sdist traversal was accepted")
+        def write_archive(path: Path, entries) -> None:
+            """Write tar entries while preserving special-member metadata."""
+            with tarfile.open(str(path), mode="w:gz") as archive:
+                for name, data, kind in entries:
+                    info = tarfile.TarInfo(name)
+                    if kind == "symlink":
+                        info.type = tarfile.SYMTYPE
+                        info.linkname = data
+                        archive.addfile(info)
+                    elif kind == "hardlink":
+                        info.type = tarfile.LNKTYPE
+                        info.linkname = data
+                        archive.addfile(info)
+                    else:
+                        payload = (
+                            data if isinstance(data, bytes) else data.encode("utf-8")
+                        )
+                        info.size = len(payload)
+                        archive.addfile(info, io.BytesIO(payload))
+
+        root = "pyfcstm-0.0.0"
+        valid_entries = [
+            (root + "/" + name, data, "file") for name, data in files.items()
+        ]
+
+        def expect_failure(label: str, entries, message: str) -> None:
+            """Require one specific checker failure for a regression probe."""
+            probe_path = Path(directory) / (label + ".tar.gz")
+            write_archive(probe_path, entries)
+            try:
+                check_sdist(probe_path)
+            except ValueError as err:
+                # ValueError is the public checker failure for malformed sdist
+                # paths/members; any other exception indicates a broken probe.
+                if message not in str(err):
+                    raise AssertionError(
+                        "%s failed for the wrong reason: %s" % (label, err)
+                    ) from err
+            else:
+                raise AssertionError("%s was accepted" % label)
+
+        # Keep the root-shadow probe otherwise valid so it cannot pass merely
+        # because check_members reports missing assets.
+        expect_failure(
+            "shadow-root",
+            valid_entries + [("shadow/pyfcstm/assets/shadow.js", b"tampered", "file")],
+            "exactly one top-level directory",
+        )
+        expect_failure(
+            "duplicate-member",
+            valid_entries
+            + [(root + "/pyfcstm/assets/renderer.js", b"duplicate", "file")],
+            "duplicate member path",
+        )
+        expect_failure(
+            "absolute-member",
+            valid_entries + [("/absolute/pyfcstm/assets/renderer.js", b"x", "file")],
+            "unsafe member path",
+        )
+        expect_failure(
+            "parent-member",
+            valid_entries + [(root + "/../pyfcstm/assets/renderer.js", b"x", "file")],
+            "unsafe member path",
+        )
+        expect_failure(
+            "windows-parent-member",
+            valid_entries + [(root + "/..\\shadow/renderer.js", b"x", "file")],
+            "unsafe member path",
+        )
+        expect_failure(
+            "windows-drive-member",
+            valid_entries + [("C:/pyfcstm/assets/renderer.js", b"x", "file")],
+            "unsafe member path",
+        )
+        expect_failure(
+            "root-level-member",
+            valid_entries + [("README", b"x", "file")],
+            "root-level file",
+        )
+        expect_failure(
+            "symlink-member",
+            valid_entries
+            + [
+                (
+                    root + "/pyfcstm/assets/link.js",
+                    "renderer.js",
+                    "symlink",
+                )
+            ],
+            "non-regular member",
+        )
+        expect_failure(
+            "hardlink-member",
+            valid_entries
+            + [
+                (
+                    root + "/pyfcstm/assets/link.js",
+                    root + "/pyfcstm/assets/renderer.js",
+                    "hardlink",
+                )
+            ],
+            "non-regular member",
+        )
 
     missing_license = dict(files)
     del missing_license["pyfcstm/assets/LICENSE-EPL-2.0.txt"]

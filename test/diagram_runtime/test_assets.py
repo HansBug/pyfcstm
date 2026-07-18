@@ -2,6 +2,7 @@
 
 import re
 import math
+import builtins
 
 import pytest
 
@@ -9,6 +10,7 @@ from pyfcstm.diagram_runtime import (
     DiagramAssetEngine,
     DiagramAssetError,
     DiagramEngineConflictError,
+    DiagramEngineMetadataError,
 )
 
 
@@ -263,10 +265,24 @@ def test_engine_discards_context_after_resvg_deadline():
     assert engine._eval("6 * 7") == 42
 
 
-def test_engine_rejects_invalid_memory_limit():
-    for value in (0, -1, True, 1.5, float("nan"), float("inf"), float("-inf")):
+def test_engine_rejects_invalid_memory_limit(monkeypatch):
+    for value in (
+        0,
+        -1,
+        True,
+        1.5,
+        "1024",
+        float("nan"),
+        float("inf"),
+        float("-inf"),
+    ):
         with pytest.raises(ValueError, match="max_memory"):
             DiagramAssetEngine(max_memory=value)
+    # Avoid asking V8 to reserve an impractically large heap while checking
+    # that Python preserves the exact integer without float conversion.
+    monkeypatch.setattr(DiagramAssetEngine, "_ensure_context", lambda _self: None)
+    engine = DiagramAssetEngine(max_memory=2**53 + 1)
+    assert engine.max_memory == 2**53 + 1
 
 
 def test_engine_rejects_dual_miniracer_distributions(monkeypatch):
@@ -278,8 +294,31 @@ def test_engine_rejects_dual_miniracer_distributions(monkeypatch):
         "_distribution_installed",
         staticmethod(both_installed),
     )
-    with pytest.raises(DiagramEngineConflictError, match="installed together"):
+    monkeypatch.setattr(
+        DiagramAssetEngine,
+        "_distribution_version",
+        staticmethod(lambda name: "0.14.1" if name == "mini-racer" else "0.6.0"),
+    )
+    with pytest.raises(
+        DiagramEngineConflictError,
+        match=r"mini-racer 0\.14\.1 and py-mini-racer 0\.6\.0.*installed together",
+    ):
         DiagramAssetEngine()
+
+
+def test_engine_rejects_unavailable_distribution_metadata(monkeypatch):
+    real_import = builtins.__import__
+
+    def unavailable(name, globals=None, locals=None, fromlist=(), level=0):
+        if name in ("importlib_metadata", "pkg_resources") or (
+            name == "importlib" and "metadata" in fromlist
+        ):
+            raise ImportError("metadata unavailable")
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", unavailable)
+    with pytest.raises(DiagramEngineMetadataError, match="cannot inspect"):
+        DiagramAssetEngine._distribution_version("mini-racer")
 
 
 def test_host_shim_blocks_dynamic_code_creation():

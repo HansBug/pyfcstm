@@ -51,6 +51,7 @@ def check_members(
     members: Iterable[str],
     read_member,
     source_manifest: Optional[Dict[str, object]] = None,
+    source_manifest_bytes: Optional[bytes] = None,
     source_files: Optional[Dict[str, bytes]] = None,
 ) -> Dict[str, str]:
     """Validate exact package members and manifest-listed content hashes.
@@ -61,6 +62,9 @@ def check_members(
         Distribution checks compare against it so a tampered archive cannot
         make a coordinated asset/manifest mutation self-consistent.
     :type source_manifest: dict, optional
+    :param source_manifest_bytes: Authoritative source manifest bytes, when
+        available.  Archives must preserve these bytes exactly.
+    :type source_manifest_bytes: bytes, optional
     :param source_files: Source-tree bytes for package markers, when available.
         Archive markers must match these bytes exactly.
     :type source_files: dict, optional
@@ -81,11 +85,14 @@ def check_members(
         raise ValueError(
             "archive contains unregistered diagram assets: %s" % ", ".join(extras)
         )
-    manifest = json.loads(read_member("pyfcstm/assets/manifest.json").decode("utf-8"))
+    manifest_bytes = read_member("pyfcstm/assets/manifest.json")
+    manifest = json.loads(manifest_bytes.decode("utf-8"))
     if manifest.get("schema") != "pyfcstm-diagram-assets/1":
         raise ValueError("archive diagram manifest has an unsupported schema")
     if source_manifest is not None and manifest != source_manifest:
         raise ValueError("archive diagram manifest differs from the source manifest")
+    if source_manifest_bytes is not None and manifest_bytes != source_manifest_bytes:
+        raise ValueError("archive diagram manifest bytes differ from the source")
     if source_files is not None:
         for path in PACKAGE_REQUIRED - {"pyfcstm/assets/manifest.json"}:
             expected = source_files.get(path)
@@ -142,18 +149,24 @@ def check_members(
 def check_wheel(
     path: Path,
     source_manifest: Optional[Dict[str, object]] = None,
+    source_manifest_bytes: Optional[bytes] = None,
     source_files: Optional[Dict[str, bytes]] = None,
 ) -> Dict[str, str]:
     """Check one wheel zip archive."""
     with zipfile.ZipFile(str(path)) as archive:
         return check_members(
-            archive.namelist(), archive.read, source_manifest, source_files
+            archive.namelist(),
+            archive.read,
+            source_manifest,
+            source_manifest_bytes,
+            source_files,
         )
 
 
 def check_sdist(
     path: Path,
     source_manifest: Optional[Dict[str, object]] = None,
+    source_manifest_bytes: Optional[bytes] = None,
     source_files: Optional[Dict[str, bytes]] = None,
 ) -> Dict[str, str]:
     """Check one gzip-compressed sdist archive."""
@@ -174,7 +187,13 @@ def check_sdist(
         # ``pyfcstm/assets/renderer.js``.  Do not strip that package prefix a
         # second time: the required set and manifest reader use the same
         # package-relative namespace.
-        return check_members(set(files), read_member, source_manifest, source_files)
+        return check_members(
+            set(files),
+            read_member,
+            source_manifest,
+            source_manifest_bytes,
+            source_files,
+        )
 
 
 def load_source_manifest() -> Dict[str, object]:
@@ -191,6 +210,17 @@ def load_source_manifest() -> Dict[str, object]:
     if not isinstance(value, dict):
         raise ValueError("source diagram manifest must be a JSON object")
     return value
+
+
+def load_source_manifest_bytes() -> bytes:
+    """Load the exact generated manifest bytes used by package builds."""
+    try:
+        return SOURCE_MANIFEST_PATH.read_bytes()
+    except OSError as err:
+        # OSError: the source build did not produce the authoritative manifest.
+        raise ValueError(
+            "source diagram manifest bytes are unavailable: %s" % SOURCE_MANIFEST_PATH
+        ) from err
 
 
 def load_source_files() -> Dict[str, bytes]:
@@ -235,7 +265,14 @@ def _self_check() -> None:
         for path, data in files.items()
         if path != "pyfcstm/assets/manifest.json"
     }
-    check_members(set(files), files.__getitem__, source_manifest, source_files)
+    source_manifest_bytes = files["pyfcstm/assets/manifest.json"]
+    check_members(
+        set(files),
+        files.__getitem__,
+        source_manifest,
+        source_manifest_bytes,
+        source_files,
+    )
 
     corrupted = dict(files)
     corrupted["pyfcstm/assets/renderer.js"] = b"y"
@@ -259,7 +296,11 @@ def _self_check() -> None:
     ).encode("utf-8")
     try:
         check_members(
-            set(coordinated), coordinated.__getitem__, source_manifest, source_files
+            set(coordinated),
+            coordinated.__getitem__,
+            source_manifest,
+            source_manifest_bytes,
+            source_files,
         )
     except ValueError:
         # Updating an archive asset and its embedded manifest must still fail
@@ -268,6 +309,25 @@ def _self_check() -> None:
     else:
         raise AssertionError("coordinated archive asset mutation was accepted")
 
+    reformatted = dict(files)
+    reformatted["pyfcstm/assets/manifest.json"] = json.dumps(
+        source_manifest, sort_keys=True, indent=4
+    ).encode("utf-8")
+    try:
+        check_members(
+            set(reformatted),
+            reformatted.__getitem__,
+            source_manifest,
+            source_manifest_bytes,
+            source_files,
+        )
+    except ValueError:
+        # A semantically equivalent but byte-different manifest is not the
+        # manifest emitted by the source build and must be rejected.
+        pass
+    else:
+        raise AssertionError("manifest byte reformatting was accepted")
+
     legal_corrupted = dict(files)
     legal_corrupted["pyfcstm/assets/LICENSE-EPL-2.0.txt"] = b"tampered"
     try:
@@ -275,6 +335,7 @@ def _self_check() -> None:
             set(legal_corrupted),
             legal_corrupted.__getitem__,
             source_manifest,
+            source_manifest_bytes,
             source_files,
         )
     except ValueError:
@@ -311,12 +372,17 @@ def main() -> int:
     if not wheels or not sdists:
         raise ValueError("dist directory must contain one wheel and one sdist")
     source_manifest = load_source_manifest()
+    source_manifest_bytes = load_source_manifest_bytes()
     source_files = load_source_files()
     archive_snapshots = []
     for wheel in wheels:
-        archive_snapshots.append(check_wheel(wheel, source_manifest, source_files))
+        archive_snapshots.append(
+            check_wheel(wheel, source_manifest, source_manifest_bytes, source_files)
+        )
     for sdist in sdists:
-        archive_snapshots.append(check_sdist(sdist, source_manifest, source_files))
+        archive_snapshots.append(
+            check_sdist(sdist, source_manifest, source_manifest_bytes, source_files)
+        )
     if any(snapshot != archive_snapshots[0] for snapshot in archive_snapshots[1:]):
         raise ValueError("diagram asset bytes differ across wheel and sdist archives")
     print(

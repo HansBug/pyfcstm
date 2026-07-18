@@ -10,8 +10,9 @@ Third-party runtime resources distributed in this directory:
   Public License 2.0. See ``LICENSE-EPL-2.0.txt``. The exact package was
   resolved from
   ``https://registry.npmmirror.com/elkjs/-/elkjs-0.11.1.tgz`` with the
-  integrity recorded in ``manifest.json``. Its source is available at
-  ``https://github.com/kieler/elkjs/tree/v0.11.1``.
+  integrity and installed-tree digest recorded in
+  ``tools/diagram_assets/asset-lock.json`` and ``manifest.json``. Its source
+  is available at ``https://github.com/kieler/elkjs/tree/v0.11.1``.
 * ``resvg`` 0.37 compatibility bindings and WASM, from the immutable source
   URLs and SHA-256 values recorded in ``tools/diagram_assets/asset-lock.json``.
 * ``JetBrains Mono`` Regular, Copyright 2020 The JetBrains Mono Project

@@ -19,6 +19,10 @@ class DiagramAssetError(RuntimeError):
     """Raised when the embedded renderer or its generated assets fail."""
 
 
+class DiagramEngineMetadataError(DiagramAssetError):
+    """Raised when installed MiniRacer distributions cannot be inspected."""
+
+
 class DiagramEngineConflictError(DiagramAssetError):
     """
     Report mutually exclusive MiniRacer distributions.
@@ -60,23 +64,10 @@ class DiagramAssetEngine:
         if not math.isfinite(numeric_timeout) or numeric_timeout <= 0:
             raise ValueError("timeout must be a finite positive number")
         if max_memory is not None:
-            if isinstance(max_memory, bool):
+            if isinstance(max_memory, bool) or not isinstance(max_memory, int):
                 raise ValueError("max_memory must be a finite positive integer or None")
-            try:
-                numeric_memory = float(max_memory)
-            except (TypeError, ValueError, OverflowError) as err:
-                # TypeError/ValueError/OverflowError: an invalid caller value
-                # cannot be converted to a finite numeric heap limit.
-                raise ValueError(
-                    "max_memory must be a finite positive integer or None"
-                ) from err
-            if (
-                not math.isfinite(numeric_memory)
-                or numeric_memory <= 0
-                or numeric_memory != math.floor(numeric_memory)
-            ):
+            if max_memory <= 0:
                 raise ValueError("max_memory must be a finite positive integer or None")
-            max_memory = int(numeric_memory)
         self.timeout = numeric_timeout
         self.max_memory = max_memory
         self._context = None
@@ -86,8 +77,8 @@ class DiagramAssetEngine:
         self._ensure_context()
 
     @staticmethod
-    def _distribution_installed(name: str) -> bool:
-        """Return whether a MiniRacer distribution is installed."""
+    def _distribution_version(name: str) -> Optional[str]:
+        """Return one distribution version, or ``None`` when absent."""
         try:
             from importlib import metadata
         except ImportError:
@@ -98,27 +89,38 @@ class DiagramAssetEngine:
             except ImportError:
                 try:
                     from pkg_resources import DistributionNotFound, get_distribution
-                except ImportError:
-                    return False
+                except ImportError as err:
+                    # ImportError: Python 3.7 has no metadata provider and the
+                    # optional backport/setuptools fallback is unavailable.
+                    raise DiagramEngineMetadataError(
+                        "cannot inspect installed MiniRacer distributions; "
+                        "install importlib-metadata or setuptools"
+                    ) from err
                 try:
-                    get_distribution(name)
+                    return str(get_distribution(name).version)
                 except DistributionNotFound:
-                    return False
-                return True
+                    return None
         try:
-            metadata.version(name)
+            return str(metadata.version(name))
         except metadata.PackageNotFoundError:
-            return False
-        return True
+            return None
+
+    @staticmethod
+    def _distribution_installed(name: str) -> bool:
+        """Return whether a MiniRacer distribution is installed."""
+        return DiagramAssetEngine._distribution_version(name) is not None
 
     def _create_context(self) -> Any:
         """Create the Python-version-appropriate MiniRacer context."""
         if self._distribution_installed("mini-racer") and self._distribution_installed(
             "py-mini-racer"
         ):
+            modern_version = self._distribution_version("mini-racer") or "unknown"
+            legacy_version = self._distribution_version("py-mini-racer") or "unknown"
             raise DiagramEngineConflictError(
-                "mini-racer and py-mini-racer are installed together; "
+                "mini-racer %s and py-mini-racer %s are installed together; "
                 "install exactly one runtime for this Python version"
+                % (modern_version, legacy_version)
             )
         try:
             from py_mini_racer import MiniRacer

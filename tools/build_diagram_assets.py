@@ -33,6 +33,7 @@ BRIDGE_PATH = ROOT / "tools" / "diagram_assets" / "resvg-bridge.js"
 HOST_SHIM_PATH = ROOT / "tools" / "diagram_assets" / "host-shim.js"
 JSFCSTM_DIR = ROOT / "editors" / "jsfcstm"
 JSFCSTM_LOCK_PATH = JSFCSTM_DIR / "package-lock.json"
+ELK_PACKAGE_DIR = JSFCSTM_DIR / "node_modules" / "elkjs"
 ELK_API_PATH = JSFCSTM_DIR / "node_modules" / "elkjs" / "lib" / "elk-api.js"
 ELK_WORKER_PATH = JSFCSTM_DIR / "node_modules" / "elkjs" / "lib" / "elk-worker.min.js"
 ASSET_MARKERS = {
@@ -125,8 +126,26 @@ def ensure_js_dependencies() -> None:
         )
 
 
+def elk_tree_sha256() -> str:
+    """Return a deterministic digest of every installed ELK package file."""
+    if not ELK_PACKAGE_DIR.is_dir():
+        raise FileNotFoundError("installed elkjs package directory is missing")
+    digest = hashlib.sha256()
+    for path in sorted(ELK_PACKAGE_DIR.rglob("*")):
+        if path.is_symlink():
+            raise ValueError("installed elkjs package contains a symlink")
+        if not path.is_file():
+            continue
+        relative = path.relative_to(ELK_PACKAGE_DIR).as_posix().encode("utf-8")
+        digest.update(relative)
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
 def validate_elk_provenance(lock: Dict[str, object]) -> None:
-    """Require the generated bundle's ELK provenance to match package-lock."""
+    """Require package-lock metadata and installed ELK bytes to match."""
     try:
         package_lock = json.loads(JSFCSTM_LOCK_PATH.read_text(encoding="utf-8"))
         package = package_lock["packages"]["node_modules/elkjs"]
@@ -147,9 +166,13 @@ def validate_elk_provenance(lock: Dict[str, object]) -> None:
         "resolved": package.get("resolved"),
         "integrity": package.get("integrity"),
         "license": package.get("license"),
+        "treeSha256": provenance.get("treeSha256"),
     }
     if provenance != expected:
         raise ValueError("diagram asset ELK provenance differs from package-lock")
+    expected_tree = provenance.get("treeSha256")
+    if not isinstance(expected_tree, str) or expected_tree != elk_tree_sha256():
+        raise ValueError("installed elkjs bytes differ from the locked tree digest")
 
 
 def load_locked_file(path: Path, url: str, expected_sha256: str) -> bytes:

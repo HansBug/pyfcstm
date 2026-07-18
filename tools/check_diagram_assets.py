@@ -60,7 +60,7 @@ EXPECTED_FONT_PATHS = frozenset(
     }
 )
 
-CONTROLLED_TEXT_MARKERS = frozenset(TRACKED_MARKERS - {".gitignore"})
+CONTROLLED_TEXT_MARKERS = frozenset(TRACKED_MARKERS)
 
 
 def digest(path: Path) -> str:

@@ -1398,6 +1398,48 @@ def _solve_failure_evidence(result: "BmcSolveResult") -> Tuple[str, ...]:
     )
 
 
+def _solve_exception_evidence(
+    result: "BmcSolveResult", outcome: str, response_horizon: Optional[str]
+) -> Tuple[str, ...]:
+    """Return semantic evidence for an inconclusive BMC result.
+
+    The structured result keeps low-level reasons in solver fields and
+    diagnostics.  Human output also needs the responsible stage and reason in
+    its Evidence section so callers do not have to inspect the Details table.
+    """
+    feasibility = result._validated_feasibility()
+    if outcome in {"feasibility_unknown", "feasibility_timeout"}:
+        assumptions = feasibility.assumptions
+        if assumptions.origin == "checked":
+            status = "TIMED OUT" if assumptions.status == "timeout" else "UNKNOWN"
+            reason = assumptions.reason or "not provided"
+            return (
+                "Feasibility stage: ASSUMPTIONS",
+                "Feasibility status: %s" % status,
+                "Feasibility reason: %s" % reason,
+            )
+        return (
+            "Feasibility stage: ASSUMPTIONS (NOT CHECKED)",
+            "Feasibility reason: shared timeout budget exhausted before "
+            "assumptions check.",
+        )
+    if outcome in {"unknown", "timeout"}:
+        reason = result.reason or "not provided"
+        return ("Primary reason: %s" % reason,)
+    if outcome == "incomplete":
+        if response_horizon in {"UNKNOWN", "TIMED OUT"}:
+            return (
+                "Horizon reason: %s" % (result.incomplete_reason or "not provided"),
+            )
+        if response_horizon == "NOT CHECKED":
+            return (
+                "Horizon reason: shared timeout budget exhausted before suffix check.",
+            )
+        if response_horizon == "DISABLED":
+            return ("Horizon reason: response horizon check was disabled.",)
+    return ()
+
+
 def _solve_conclusion(
     result: "BmcSolveResult", outcome: str, response_horizon: Optional[str]
 ) -> str:
@@ -1514,7 +1556,9 @@ def _solve_presentation(result: "BmcSolveResult") -> _BmcSolvePresentation:
     evidence = []
     if outcome == "scenario_infeasible":
         evidence.extend(_solve_failure_evidence(result))
-    elif result.status == "sat":
+    else:
+        evidence.extend(_solve_exception_evidence(result, outcome, response_horizon))
+    if result.status == "sat":
         role = (
             "PRIMARY WITNESS"
             if result.polarity == "witness"

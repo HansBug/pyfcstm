@@ -652,6 +652,7 @@ def test_public_non_trace_objects_are_field_value_golden_pinned() -> None:
     Primary search: WITNESS = UNKNOWN
     Conclusion: The primary witness search returned unknown; no property verdict is available.
     Evidence:
+      Primary reason: because
       Model evidence: no SAT model available.
 
     Details:
@@ -836,6 +837,9 @@ def test_public_non_trace_objects_are_field_value_golden_pinned() -> None:
                 "BmcSolveResult: SCENARIO FEASIBILITY UNKNOWN; PROPERTY NOT EVALUATED",
                 "Scenario: UNKNOWN",
                 "primary UNSAT result cannot be interpreted as a property verdict",
+                "Feasibility stage: ASSUMPTIONS",
+                "Feasibility status: UNKNOWN",
+                "Feasibility reason: assumptions unknown",
             ),
         ),
         (
@@ -865,6 +869,9 @@ def test_public_non_trace_objects_are_field_value_golden_pinned() -> None:
                 "BmcSolveResult: SCENARIO FEASIBILITY TIMED OUT; PROPERTY NOT EVALUATED",
                 "Scenario: UNKNOWN",
                 "Scenario feasibility timed out",
+                "Feasibility stage: ASSUMPTIONS",
+                "Feasibility status: TIMED OUT",
+                "Feasibility reason: assumptions timeout",
             ),
         ),
     ],
@@ -874,6 +881,67 @@ def test_solve_result_text_exposes_polarity_and_exception_semantics(
 ) -> None:
     """Direct result text exposes verdict, evidence role, and non-verdict states."""
     text = result().to_text(tablefmt="plain")
+    for fragment in fragments:
+        assert fragment in text
+
+
+@pytest.mark.parametrize(
+    ("incomplete_status", "incomplete_reason", "diagnostics", "fragments"),
+    [
+        (
+            "unknown",
+            "suffix canceled",
+            (),
+            (
+                "Response horizon: UNKNOWN",
+                "Horizon reason: suffix canceled",
+            ),
+        ),
+        (
+            "timeout",
+            "suffix timeout",
+            (),
+            (
+                "Response horizon: TIMED OUT",
+                "Horizon reason: suffix timeout",
+            ),
+        ),
+        (
+            None,
+            None,
+            (witness_module._SUFFIX_TIMEOUT_BEFORE_CHECK,),
+            (
+                "Response horizon: NOT CHECKED",
+                "Horizon reason: shared timeout budget exhausted before suffix check.",
+            ),
+        ),
+        (
+            None,
+            "incomplete check disabled",
+            ("incomplete_check=disabled",),
+            (
+                "Response horizon: DISABLED",
+                "Horizon reason: response horizon check was disabled.",
+            ),
+        ),
+    ],
+)
+def test_solve_result_text_exposes_response_exception_reason(
+    incomplete_status, incomplete_reason, diagnostics, fragments
+) -> None:
+    """Response exception reasons remain visible outside the details table."""
+    model = BmcSolveResult(
+        _sample_response_formula(),
+        "unsat",
+        incomplete_status=incomplete_status,
+        incomplete_model=_empty_sat_model() if incomplete_status == "sat" else None,
+        incomplete_reason=incomplete_reason,
+        incomplete_elapsed_ms=1.0 if incomplete_status is not None else None,
+        diagnostics=diagnostics,
+        feasibility=_feasible_evidence(),
+    )
+
+    text = model.to_text(tablefmt="plain")
     for fragment in fragments:
         assert fragment in text
 

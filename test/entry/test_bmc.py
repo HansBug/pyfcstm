@@ -415,6 +415,9 @@ def test_bmc_human_report_distinguishes_feasibility_unknown_timeout_and_unchecke
     assert unknown.exit_code == 3
     assert "SCENARIO FEASIBILITY UNKNOWN; PROPERTY NOT EVALUATED" in unknown.stdout
     assert "Scenario: UNKNOWN" in unknown.stdout
+    assert "Feasibility stage: ASSUMPTIONS" in unknown.stdout
+    assert "Feasibility status: UNKNOWN" in unknown.stdout
+    assert "Feasibility reason: incomplete" in unknown.stdout
 
     timed_out = run_with_result(
         BmcFeasibilityResult(
@@ -429,6 +432,9 @@ def test_bmc_human_report_distinguishes_feasibility_unknown_timeout_and_unchecke
         timed_out.stdout
     )
     assert "Scenario: UNKNOWN" in timed_out.stdout
+    assert "Feasibility stage: ASSUMPTIONS" in timed_out.stdout
+    assert "Feasibility status: TIMED OUT" in timed_out.stdout
+    assert "Feasibility reason: timeout" in timed_out.stdout
 
     unchecked = run_with_result(
         BmcFeasibilityResult(
@@ -446,6 +452,11 @@ def test_bmc_human_report_distinguishes_feasibility_unknown_timeout_and_unchecke
         unchecked.stdout
     )
     assert "Scenario: NOT CHECKED" in unchecked.stdout
+    assert "Feasibility stage: ASSUMPTIONS (NOT CHECKED)" in unchecked.stdout
+    assert (
+        "Feasibility reason: shared timeout budget exhausted before assumptions check."
+        in unchecked.stdout
+    )
 
 
 def test_bmc_human_report_keeps_known_infeasible_scenario_when_localization_stops(

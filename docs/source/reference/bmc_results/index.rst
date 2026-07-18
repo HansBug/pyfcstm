@@ -380,6 +380,16 @@ not own runtime replay; ``BmcReplayResult`` remains the separate object that
 prints replay success or mismatch details, and the CLI combines both objects to
 produce ``RESULT UNTRUSTED`` when necessary.
 
+Inconclusive results also place the actionable cause in ``Evidence``.  A
+feasibility result identifies the ``ASSUMPTIONS`` stage and prints its
+``UNKNOWN``/``TIMED OUT`` status and solver reason, or explicitly says that the
+stage was not checked because the shared timeout budget was already exhausted.
+Primary ``unknown``/``timeout`` results print ``Primary reason``; incomplete
+response results print ``Horizon reason`` for an unknown, timeout, disabled, or
+not-checked suffix check.  This information is part of the public text
+presentation used by both the CLI and ``str(result)``/``result.to_text()``; it
+is not restricted to the low-level ``Details`` table.
+
 JSON envelope
 -------------
 

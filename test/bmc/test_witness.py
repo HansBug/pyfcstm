@@ -1115,6 +1115,25 @@ def test_solve_result_rejects_inferred_assumptions_for_primary_unsat() -> None:
         BmcSolveResult(formula, "unsat", feasibility=feasibility)
 
 
+def test_solve_result_rejects_unchecked_stages_after_inconclusive_prefix() -> None:
+    """A primary UNSAT result cannot skip stages after an unknown prefix."""
+    formula = _verdict_formula("reach")
+    unknown_kernel = BmcFeasibilityCheck(
+        "unknown", "checked", reason="canceled", elapsed_ms=1.0
+    )
+    not_checked = BmcFeasibilityCheck(None, "not_checked")
+    feasibility = BmcFeasibilityResult(
+        unknown_kernel,
+        not_checked,
+        not_checked,
+        localization_status="not_checked",
+        refinement_status="not_needed",
+    )
+
+    with pytest.raises(BmcBuildError, match="inconclusive.*not_checked"):
+        BmcSolveResult(formula, "unsat", feasibility=feasibility)
+
+
 @pytest.mark.parametrize(
     ("status", "kwargs"),
     [

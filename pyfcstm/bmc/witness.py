@@ -2667,6 +2667,24 @@ class BmcSolveResult(_PrettyPrintableMixin):
             raise BmcBuildError(
                 "assumptions inferred feasibility evidence requires primary status=sat."
             )
+        if self.status == "unsat":
+            checks = (
+                feasibility.kernel,
+                feasibility.initialization,
+                feasibility.assumptions,
+            )
+            for index, check in enumerate(checks[:-1]):
+                if (
+                    check.origin == "checked"
+                    and check.status in {"unknown", "timeout"}
+                    and any(
+                        later.origin == "not_checked" for later in checks[index + 1 :]
+                    )
+                ):
+                    raise BmcBuildError(
+                        "inconclusive feasibility evidence cannot be followed by "
+                        "not_checked stages."
+                    )
         if self.incomplete_status is not None and self.kind != "response":
             raise BmcBuildError(
                 "incomplete status is only valid for response properties."

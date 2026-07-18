@@ -303,32 +303,82 @@ Human report
 ------------
 
 Human output reports the bounded property verdict before exposing solver
-mechanics.  Its first line is exactly one of these shapes:
+mechanics.  Its first line is polarity-aware and identifies whether the
+result is a witness, a counterexample, a bounded guarantee, an empty scenario,
+or an inconclusive check:
 
 .. code-block:: text
 
-   BMC <kind> <= <bound>: PROPERTY HOLDS
-   BMC <kind> <= <bound>: PROPERTY DOES NOT HOLD
-   BMC <kind> <= <bound>: PROPERTY INCONCLUSIVE
-   BMC <kind> <= <bound>: REPLAY MISMATCH; PROPERTY VERDICT UNTRUSTED
+   BMC <kind> <= <bound>: WITNESS FOUND WITHIN BOUND
+   BMC <kind> <= <bound>: NO WITNESS WITHIN BOUND
+   BMC <kind> <= <bound>: PROPERTY DOES NOT HOLD WITHIN BOUND; COUNTEREXAMPLE FOUND
+   BMC <kind> <= <bound>: PROPERTY GUARANTEED WITHIN BOUND; NO COUNTEREXAMPLE
+   BMC <kind> <= <bound>: PROPERTY INCONCLUSIVE; PRIMARY CHECK UNKNOWN
+   BMC <kind> <= <bound>: PROPERTY INCONCLUSIVE; PRIMARY CHECK TIMED OUT
+   BMC <kind> <= <bound>: PROPERTY INCONCLUSIVE; RESPONSE HORIZON INCOMPLETE
+   BMC <kind> <= <bound>: SCENARIO FEASIBILITY UNKNOWN; PROPERTY NOT EVALUATED
+   BMC <kind> <= <bound>: SCENARIO FEASIBILITY TIMED OUT; PROPERTY NOT EVALUATED
    BMC <kind> <= <bound>: SCENARIO INFEASIBLE; PROPERTY NOT EVALUATED
+   BMC <kind> <= <bound>: EVIDENCE/REPLAY MISMATCH; RESULT UNTRUSTED
 
-The next sentence explains the polarity-aware outcome.  ``Solver`` then shows
-the primary status and elapsed milliseconds; the configured shared timeout
-budget, response horizon status/time, solver reasons, and diagnostics appear when
-applicable.  SAT results add replay status and a compact trace whose rows show
-``source -> target [case; events; calls]``.  Event and call previews retain the
-first three values and report the omitted count.  Replay mismatches show every
-path and message.
+The first report block then contains ``Scenario`` and ``Primary search``.  A
+response query also contains ``Response horizon``; non-response queries omit
+that line.  ``Conclusion`` states the quantifier-aware user result.  When
+there is SAT evidence, ``Evidence`` identifies ``PRIMARY WITNESS``,
+``PRIMARY COUNTEREXAMPLE``, or ``INCOMPLETE SUFFIX`` and reports replay.  An
+empty scenario reports ``Failure boundary`` as ``KERNEL``, ``INITIALIZATION``,
+``ASSUMPTIONS``, or ``NOT LOCALIZED``; this is a cumulative boundary, not an
+unsat core and not proof that one source clause is internally contradictory.
+
+``Solver`` then shows the primary status and elapsed milliseconds; the
+configured shared timeout budget, response horizon status/time, solver reasons,
+and low-level diagnostics appear when applicable.  SAT results add a compact
+trace whose rows show ``source -> target [case; events; calls]``.  Event and
+call previews retain the first three values and report the omitted count.
+Replay mismatches show every path and message.  ``PROPERTY GUARANTEED WITHIN
+BOUND`` means that the scenario is feasible and every admissible execution in
+the stated bound has no counterexample; it is not an unbounded theorem.
 
 The final paragraph always states the bounded-result limitation and points to
 ``--json`` for the complete witness, runtime trace, mismatches, and stable
 diagnostics.  Sections have exactly one blank line and the report has one
-trailing newline.  With ``--color auto``, terminals use green for a holding
-property, red for a non-holding property or replay mismatch, yellow for an
-inconclusive result and bounded caveat, and cyan for diagnostic labels.  Color
-never enters JSON or files.  Scripts and LLM integrations must consume
-``--json`` rather than parse human wording, ANSI, or live timing.
+trailing newline.  With ``--color auto``, terminals use green for a witness or
+bounded guarantee, red for a missing witness, counterexample, or replay
+mismatch, yellow for an empty/unknown/incomplete scenario and the bounded
+caveat, and cyan for report labels.  Color never enters JSON or files.  Scripts
+and LLM integrations must consume ``--json`` rather than parse human wording,
+ANSI, or live timing.
+
+Direct Python result text
+-------------------------
+
+``BmcSolveResult`` uses the same semantic vocabulary when it is printed
+directly with ``str(result)`` or ``result.to_text()``.  The summary appears
+before the canonical field table, so a Python caller can immediately see the
+polarity, bounded conclusion, scenario status, response horizon, and available
+model role without interpreting raw ``SAT``/``UNSAT`` fields:
+
+.. code-block:: text
+
+   BmcSolveResult: WITNESS FOUND WITHIN BOUND
+   Scenario: FEASIBLE
+   Primary search: WITNESS = SAT
+   Conclusion: At least one admissible execution satisfies the reach objective within 1 macro-step.
+   Evidence:
+     Model role: PRIMARY WITNESS
+     Model evidence: SAT model available.
+
+   Details:
+   BmcSolveResult
+   field    value
+   ...
+
+The same mapping is used for ``NO WITNESS``, ``COUNTEREXAMPLE FOUND``,
+``PROPERTY GUARANTEED``, scenario infeasibility, feasibility unknown/timeout,
+primary unknown/timeout, and incomplete response horizons.  A solve result does
+not own runtime replay; ``BmcReplayResult`` remains the separate object that
+prints replay success or mismatch details, and the CLI combines both objects to
+produce ``RESULT UNTRUSTED`` when necessary.
 
 JSON envelope
 -------------

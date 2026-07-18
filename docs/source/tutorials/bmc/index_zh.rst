@@ -96,8 +96,9 @@
 * SAT 表示找到反例，所以性质 **不成立**；
 * UNSAT 表示编码范围内不存在反例，所以性质在这个边界内 **成立**。
 
-正因为存在这种极性映射，用户应该先读 ``PROPERTY HOLDS`` 或 ``PROPERTY DOES NOT HOLD``，
-再把求解状态当作支持证据。
+正因为存在这种极性映射，用户应该先读带极性语义的首行，再把求解状态当作支持证据。
+``WITNESS FOUND`` 表示存在量化搜索找到了一条执行，并不表示所有执行都满足谓词。
+``PROPERTY GUARANTEED`` 只用于反例搜索已经在完整的有界响应窗口中找不到反例的情况。
 
 3. 把边界 2 展开为帧和步
 -------------------------
@@ -157,8 +158,10 @@
 
 .. code-block:: text
 
-   BMC forbid <= 2: PROPERTY DOES NOT HOLD
-   A counterexample violating the bounded property was found.
+   BMC forbid <= 2: PROPERTY DOES NOT HOLD WITHIN BOUND; COUNTEREXAMPLE FOUND
+   Scenario: FEASIBLE
+   Primary search: COUNTEREXAMPLE = SAT
+   Conclusion: At least one admissible execution violates the forbid property within 2 macro-steps.
 
    Solver: SAT in ... ms
    Replay: verified (3 frames, 2 steps).
@@ -169,7 +172,7 @@
 
 按顺序解释：
 
-1. ``PROPERTY DOES NOT HOLD`` 是面向用户的结论。
+1. ``PROPERTY DOES NOT HOLD WITHIN BOUND; COUNTEREXAMPLE FOUND`` 是面向用户的结论。
 2. ``SAT`` 表示反例目标存在满足赋值。
 3. ``3 frames, 2 steps`` 与边界为 2 的搜索范围一致。
 4. ``Replay: verified`` 表示解码后的事件序列在运行时重现了公开观测；它是一致性门禁，不是无界证明。
@@ -205,8 +208,10 @@
 
 .. code-block:: text
 
-   BMC forbid <= 2: PROPERTY HOLDS
-   No counterexample was found within the bound.
+   BMC forbid <= 2: PROPERTY GUARANTEED WITHIN BOUND; NO COUNTEREXAMPLE
+   Scenario: FEASIBLE
+   Primary search: COUNTEREXAMPLE = UNSAT
+   Conclusion: Every admissible execution within 2 macro-steps satisfies the forbid property.
 
    Solver: UNSAT in ... ms
 

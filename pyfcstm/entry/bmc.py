@@ -37,7 +37,7 @@ Examples::
     ...     report, exit_code = build_bmc_output(model_path, query_path)
     >>> exit_code
     0
-    >>> report.startswith("BMC reach <= 1: PROPERTY HOLDS")
+    >>> report.startswith("BMC reach <= 1: WITNESS FOUND WITHIN BOUND")
     True
 """
 
@@ -113,6 +113,13 @@ def _replay_bmc_witness(*args, **kwargs):
     return implementation(*args, **kwargs)
 
 
+def _solve_presentation(*args, **kwargs):
+    """Reuse the BMC result presentation owned by the solver layer."""
+    from ..bmc.witness import _solve_presentation as implementation
+
+    return implementation(*args, **kwargs)
+
+
 @dataclass(frozen=True)
 class _BmcExecution:
     formula: BmcPropertyFormula
@@ -120,6 +127,23 @@ class _BmcExecution:
     witness: Optional[BmcWitnessTrace]
     replay: Optional[BmcReplayResult]
     exit_code: int
+
+
+@dataclass(frozen=True)
+class _BmcPresentation:
+    """Human-report semantics derived from one structured BMC execution."""
+
+    headline: str
+    scenario: str
+    primary_search: str
+    response_horizon: Optional[str]
+    conclusion: str
+    severity: str
+    evidence: Tuple[str, ...] = ()
+
+
+_SUFFIX_TIMEOUT_BEFORE_CHECK = "suffix_timeout:deadline_exhausted_before_suffix_check"
+_FEASIBILITY_SEVERITIES = {"green", "red", "yellow"}
 
 
 def _read_query_file(query_file: str) -> str:
@@ -260,49 +284,58 @@ def _property_payload(formula: BmcPropertyFormula) -> dict:
     }
 
 
-def _human_verdict(execution: _BmcExecution) -> str:
+def _human_presentation(execution: _BmcExecution) -> _BmcPresentation:
+    base = _solve_presentation(execution.result)
+    evidence = list(base.evidence)
     if execution.replay is not None and not execution.replay.ok:
-        return "REPLAY MISMATCH; PROPERTY VERDICT UNTRUSTED"
-    if execution.result.outcome == "scenario_infeasible":
-        return "SCENARIO INFEASIBLE; PROPERTY NOT EVALUATED"
-    if execution.result.incomplete:
-        return "PROPERTY INCONCLUSIVE"
-    if execution.result.property_satisfied is None:
-        return "PROPERTY INCONCLUSIVE"
-    if execution.result.property_satisfied:
-        return "PROPERTY HOLDS"
-    return "PROPERTY DOES NOT HOLD"
-
-
-def _human_outcome(execution: _BmcExecution) -> str:
-    if execution.replay is not None and not execution.replay.ok:
-        return (
-            "The solver trace could not be reproduced by the runtime; "
-            "treat this as an implementation defect."
-        )
-    messages = {
-        "witness_found": "A satisfying execution was found within the bound.",
-        "no_witness": (
-            "No execution satisfying the reach objective was found within the bound."
+        headline = "EVIDENCE/REPLAY MISMATCH; RESULT UNTRUSTED"
+        severity = "red"
+    else:
+        headline = base.headline
+        severity = base.severity
+    replay = execution.replay
+    if replay is not None:
+        if replay.ok:
+            frames = len(replay.runtime_trace.frames)
+            steps = len(replay.runtime_trace.steps)
+            step_word = "step" if steps == 1 else "steps"
+            prefix = (
+                "finite prefix"
+                if execution.witness is not None
+                and execution.witness.model_role == "incomplete_suffix"
+                else ""
+            )
+            if prefix:
+                evidence.append(
+                    "Replay: verified %s (%d frames, %d %s)."
+                    % (prefix, frames, steps, step_word)
+                )
+            else:
+                evidence.append(
+                    "Replay: verified (%d frames, %d %s)." % (frames, steps, step_word)
+                )
+        else:
+            mismatches = len(replay.mismatches)
+            mismatch_word = "mismatch" if mismatches == 1 else "mismatches"
+            evidence.append("Replay: FAILED (%d %s)." % (mismatches, mismatch_word))
+            evidence.extend(
+                "Mismatch %s: %s" % (item.path, item.message)
+                for item in replay.mismatches
+            )
+    return _BmcPresentation(
+        headline=headline,
+        scenario=base.scenario,
+        primary_search=base.primary_search,
+        response_horizon=base.response_horizon,
+        conclusion=(
+            "The solver evidence could not be reproduced by the runtime; treat "
+            "this as an implementation defect."
+            if execution.replay is not None and not execution.replay.ok
+            else base.conclusion
         ),
-        "property_satisfied": "No counterexample was found within the bound.",
-        "property_violated": (
-            "A counterexample violating the bounded property was found."
-        ),
-        "incomplete": "The visible horizon cannot decide every response window.",
-        "scenario_infeasible": (
-            "The admissible scenario is infeasible; the property was not evaluated."
-        ),
-        "feasibility_timeout": (
-            "The scenario feasibility checks timed out before a property verdict."
-        ),
-        "feasibility_unknown": (
-            "The scenario feasibility checks were inconclusive before a property verdict."
-        ),
-        "timeout": "The solver timed out before producing a conclusive result.",
-        "unknown": "The solver could not produce a conclusive result.",
-    }
-    return messages[execution.result.outcome]
+        severity=severity,
+        evidence=tuple(evidence),
+    )
 
 
 def _human_frame_label(witness: BmcWitnessTrace, frame_index: int) -> str:
@@ -371,50 +404,33 @@ def _human_diagnostics(execution: _BmcExecution) -> Tuple[str, ...]:
                 feasibility.assumptions.status or "not_checked",
             )
         )
-        if feasibility.infeasible_stage is not None:
-            lines.append("Infeasible stage: %s" % feasibility.infeasible_stage)
     for item in result.diagnostics:
         if item.startswith("incomplete_elapsed_ms="):
             lines.append("Horizon solve time: %s ms" % item.partition("=")[2])
         else:
             lines.append("Diagnostic: %s" % item)
 
-    if execution.replay is not None:
-        witness = execution.witness
-        if witness is None:
-            raise _BmcCliInternalError(
-                "Replay result exists without its decoded witness."
-            )
-        if execution.replay.ok:
-            lines.append(
-                "Replay: verified (%d frames, %d %s)."
-                % (
-                    len(witness.frames),
-                    len(witness.steps),
-                    "step" if len(witness.steps) == 1 else "steps",
-                )
-            )
-        else:
-            lines.append(
-                "Replay: FAILED (%d mismatches)." % len(execution.replay.mismatches)
-            )
-            lines.extend(
-                "Mismatch %s: %s" % (item.path, item.message)
-                for item in execution.replay.mismatches
-            )
     return tuple(lines)
 
 
-def _human_report(execution: _BmcExecution) -> str:
+def _human_report(
+    execution: _BmcExecution, presentation: Optional[_BmcPresentation] = None
+) -> str:
     formula = execution.formula
+    presentation = presentation or _human_presentation(execution)
+    header = [
+        "BMC %s <= %d: %s" % (formula.kind, formula.bound, presentation.headline),
+        "Scenario: %s" % presentation.scenario,
+        "Primary search: %s" % presentation.primary_search,
+    ]
+    if presentation.response_horizon is not None:
+        header.append("Response horizon: %s" % presentation.response_horizon)
+    header.append("Conclusion: %s" % presentation.conclusion)
+    if presentation.evidence:
+        header.append("Evidence:")
+        header.extend("  %s" % item for item in presentation.evidence)
     sections = [
-        "BMC %s <= %d: %s\n%s"
-        % (
-            formula.kind,
-            formula.bound,
-            _human_verdict(execution),
-            _human_outcome(execution),
-        ),
+        "\n".join(header),
         "\n".join(_human_diagnostics(execution)),
     ]
     trace = _human_trace(execution)
@@ -433,20 +449,38 @@ def _human_report(execution: _BmcExecution) -> str:
     return "\n\n".join(sections) + "\n"
 
 
-def _colorize_human_report(text: str) -> str:
+def _colorize_human_report(text: str, severity: str) -> str:
     lines = text.splitlines()
-    if "PROPERTY HOLDS" in lines[0]:
-        lines[0] = click.style(lines[0], fg="green", bold=True)
-    elif "PROPERTY INCONCLUSIVE" in lines[0]:
-        lines[0] = click.style(lines[0], fg="yellow", bold=True)
-    else:
-        lines[0] = click.style(lines[0], fg="red", bold=True)
+    if severity not in _FEASIBILITY_SEVERITIES:
+        raise _BmcCliInternalError("Unsupported human report severity: %s" % severity)
+    lines[0] = click.style(lines[0], fg=severity, bold=True)
     for index, line in enumerate(lines):
         if line == "Trace":
             lines[index] = click.style(line, fg="cyan", bold=True)
-        elif line.startswith("Solver:") or line.startswith("Replay:"):
-            label, separator, value = line.partition(":")
-            lines[index] = click.style(label + separator, fg="cyan", bold=True) + value
+            continue
+        indentation = line[: len(line) - len(line.lstrip())]
+        content = line.lstrip()
+        if content.startswith(
+            (
+                "Scenario:",
+                "Primary search:",
+                "Response horizon:",
+                "Conclusion:",
+                "Evidence:",
+                "Model role:",
+                "Failure boundary:",
+                "Localization:",
+                "Failure detail:",
+                "Solver:",
+                "Replay:",
+            )
+        ):
+            label, separator, value = content.partition(":")
+            lines[index] = (
+                indentation
+                + click.style(label + separator, fg="cyan", bold=True)
+                + value
+            )
         elif line.startswith("This is a bounded result"):
             lines[index] = click.style(line, fg="yellow")
     return "\n".join(lines) + "\n"
@@ -535,6 +569,25 @@ def build_bmc_output(
         >>> callable(build_bmc_output)
         True
     """
+    text, exit_code, _severity = _build_bmc_report(
+        input_code_file,
+        query_file,
+        json_output=json_output,
+        timeout_ms=timeout_ms,
+        max_bound=max_bound,
+    )
+    return text, exit_code
+
+
+def _build_bmc_report(
+    input_code_file: str,
+    query_file: str,
+    *,
+    json_output: bool,
+    timeout_ms: Optional[int],
+    max_bound: Optional[int],
+) -> Tuple[str, int, str]:
+    """Build one report and retain presentation severity for terminal color."""
     execution = _execute_bmc(
         input_code_file,
         query_file,
@@ -542,10 +595,17 @@ def build_bmc_output(
         max_bound,
     )
     if json_output:
-        text = _json_report(execution, input_code_file, query_file)
-    else:
-        text = _human_report(execution)
-    return text, execution.exit_code
+        return (
+            _json_report(execution, input_code_file, query_file),
+            execution.exit_code,
+            "yellow",
+        )
+    presentation = _human_presentation(execution)
+    return (
+        _human_report(execution, presentation),
+        execution.exit_code,
+        presentation.severity,
+    )
 
 
 def write_bmc_output(output_file: str, text: str) -> None:
@@ -615,7 +675,7 @@ def _run_bmc_command(
     color_mode: str,
 ) -> int:
     """Build and publish one report behind the CLI exception boundary."""
-    text, exit_code = build_bmc_output(
+    text, exit_code, severity = _build_bmc_report(
         input_code_file,
         query_file,
         json_output=json_output,
@@ -629,7 +689,7 @@ def _run_bmc_command(
             output_file=output_file,
         )
         if color_enabled:
-            text = _colorize_human_report(text)
+            text = _colorize_human_report(text, severity)
         click.echo(text, nl=False, color=color_enabled)
     else:
         try:

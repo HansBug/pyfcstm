@@ -235,15 +235,23 @@ def test_bmc_json_verdict_matrix(
 
 
 def test_bmc_human_report_prioritizes_verdict_and_diagnostics(bmc_files) -> None:
-    """Default human output explains the verdict before compact trace details."""
+    """Human output exposes scenario, search, conclusion, and evidence first."""
     model_path, query = bmc_files
     query_path = query('check reach <= 1: active("Root");')
 
     result = _run("-i", str(model_path), "-q", str(query_path))
 
     assert result.exit_code == 0
-    assert result.stdout.startswith("BMC reach <= 1: PROPERTY HOLDS\n")
-    assert "A satisfying execution was found within the bound." in result.stdout
+    assert result.stdout.startswith("BMC reach <= 1: WITNESS FOUND WITHIN BOUND\n")
+    assert "Scenario: FEASIBLE" in result.stdout
+    assert "Primary search: WITNESS = SAT" in result.stdout
+    assert "Response horizon:" not in result.stdout
+    assert (
+        "Conclusion: At least one admissible execution satisfies the reach "
+        "objective within 1 macro-step."
+    ) in result.stdout
+    assert "Evidence:" in result.stdout
+    assert "Model role: PRIMARY WITNESS" in result.stdout
     assert "Solver: SAT in " in result.stdout
     assert "Replay: verified (2 frames, 1 step)." in result.stdout
     assert "\nTrace\n  0: init -> Root [initial]" in result.stdout
@@ -255,41 +263,253 @@ def test_bmc_human_report_prioritizes_verdict_and_diagnostics(bmc_files) -> None
 
 
 @pytest.mark.parametrize(
-    ("query_text", "heading", "explanation"),
+    ("query_text", "heading", "fragments"),
     [
         (
             "check reach <= 1: terminated();",
-            "BMC reach <= 1: PROPERTY DOES NOT HOLD",
-            "No execution satisfying the reach objective was found within the bound.",
+            "BMC reach <= 1: NO WITNESS WITHIN BOUND",
+            (
+                "Scenario: FEASIBLE",
+                "Primary search: WITNESS = UNSAT",
+                "Conclusion: No admissible execution satisfies the reach objective "
+                "within 1 macro-step.",
+            ),
         ),
         (
             'check forbid <= 1: active("Root");',
-            "BMC forbid <= 1: PROPERTY DOES NOT HOLD",
-            "A counterexample violating the bounded property was found.",
+            "BMC forbid <= 1: PROPERTY DOES NOT HOLD WITHIN BOUND; COUNTEREXAMPLE FOUND",
+            (
+                "Scenario: FEASIBLE",
+                "Primary search: COUNTEREXAMPLE = SAT",
+                "Conclusion: At least one admissible execution violates the forbid "
+                "property within 1 macro-step.",
+                "Model role: PRIMARY COUNTEREXAMPLE",
+            ),
         ),
         (
             "check forbid <= 1: terminated();",
-            "BMC forbid <= 1: PROPERTY HOLDS",
-            "No counterexample was found within the bound.",
+            "BMC forbid <= 1: PROPERTY GUARANTEED WITHIN BOUND; NO COUNTEREXAMPLE",
+            (
+                "Scenario: FEASIBLE",
+                "Primary search: COUNTEREXAMPLE = UNSAT",
+                "Conclusion: Every admissible execution within 1 macro-step satisfies "
+                "the forbid property.",
+            ),
         ),
         (
             "check response <= 1: trigger true -> within 2 false;",
-            "BMC response <= 1: PROPERTY INCONCLUSIVE",
-            "The visible horizon cannot decide every response window.",
+            "BMC response <= 1: PROPERTY INCONCLUSIVE; RESPONSE HORIZON INCOMPLETE",
+            (
+                "Scenario: FEASIBLE",
+                "Primary search: COUNTEREXAMPLE = UNSAT",
+                "Response horizon: OPEN",
+                "An admissible finite prefix leaves a response obligation open beyond "
+                "the current horizon; no bounded property verdict is available.",
+                "Model role: INCOMPLETE SUFFIX",
+                "Replay: verified finite prefix (2 frames, 1 step).",
+            ),
         ),
     ],
 )
 def test_bmc_human_report_explains_each_verdict_family(
-    bmc_files, query_text: str, heading: str, explanation: str
+    bmc_files, query_text: str, heading: str, fragments: tuple[str, ...]
 ) -> None:
-    """Human reports distinguish negative, positive, and incomplete outcomes."""
+    """Human reports distinguish each primary polarity and response outcome."""
     model_path, query = bmc_files
     query_path = query(query_text)
 
     result = _run("-i", str(model_path), "-q", str(query_path))
 
-    assert heading in result.stdout
-    assert explanation in result.stdout
+    assert result.stdout.startswith(heading + "\n")
+    for fragment in fragments:
+        assert fragment in result.stdout
+
+
+@pytest.mark.parametrize(
+    ("query_text", "headline_fragment", "conclusion_fragment"),
+    [
+        (
+            "check exists_always <= 1: true;",
+            "WITNESS FOUND WITHIN BOUND",
+            "satisfies the exists_always objective",
+        ),
+        (
+            "check invariant <= 1: true;",
+            "PROPERTY GUARANTEED WITHIN BOUND; NO COUNTEREXAMPLE",
+            "satisfies the invariant property",
+        ),
+        (
+            'check must_reach <= 1: active("Root");',
+            "PROPERTY GUARANTEED WITHIN BOUND; NO COUNTEREXAMPLE",
+            "satisfies the must_reach property",
+        ),
+    ],
+)
+def test_bmc_human_report_uses_property_kind_in_quantifier_text(
+    bmc_files,
+    query_text: str,
+    headline_fragment: str,
+    conclusion_fragment: str,
+) -> None:
+    """Human conclusions do not hard-code the reach property kind."""
+    model_path, query = bmc_files
+    query_path = query(query_text)
+
+    result = _run("-i", str(model_path), "-q", str(query_path))
+
+    assert headline_fragment in result.stdout
+    assert conclusion_fragment in result.stdout
+    assert "reach objective" not in result.stdout
+
+
+def test_bmc_human_report_marks_complete_response_horizon(bmc_files) -> None:
+    """A response without a nontrivial suffix reports a complete horizon."""
+    model_path, query = bmc_files
+    query_path = query("check response <= 1: trigger true -> within 1 true;")
+
+    result = _run("-i", str(model_path), "-q", str(query_path))
+
+    assert result.exit_code == 0
+    assert "PROPERTY GUARANTEED WITHIN BOUND; NO COUNTEREXAMPLE" in result.stdout
+    assert "Response horizon: NOT NEEDED" in result.stdout
+    assert "The response horizon is complete and no counterexample exists" in (
+        result.stdout
+    )
+
+
+def test_bmc_human_report_distinguishes_feasibility_unknown_timeout_and_unchecked(
+    bmc_files, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Feasibility uncertainty is not presented as an empty scenario."""
+    import pyfcstm.entry.bmc as bmc_entry
+
+    model_path, query = bmc_files
+    query_path = query("check reach <= 1: terminated();")
+    not_checked = BmcFeasibilityCheck(None, "not_checked")
+
+    def run_with_result(feasibility, diagnostics=()):
+        def solve(formula, *, timeout_ms=None):
+            return BmcSolveResult(
+                formula,
+                "unsat",
+                timeout_ms=timeout_ms,
+                diagnostics=diagnostics,
+                feasibility=feasibility,
+            )
+
+        monkeypatch.setattr(bmc_entry, "_solve_bmc_property", solve)
+        return _run("-i", str(model_path), "-q", str(query_path))
+
+    unknown = run_with_result(
+        BmcFeasibilityResult(
+            not_checked,
+            not_checked,
+            BmcFeasibilityCheck(
+                "unknown", "checked", reason="incomplete", elapsed_ms=1.0
+            ),
+            localization_status="unknown",
+        )
+    )
+    assert unknown.exit_code == 3
+    assert "SCENARIO FEASIBILITY UNKNOWN; PROPERTY NOT EVALUATED" in unknown.stdout
+    assert "Scenario: UNKNOWN" in unknown.stdout
+
+    timed_out = run_with_result(
+        BmcFeasibilityResult(
+            not_checked,
+            not_checked,
+            BmcFeasibilityCheck("timeout", "checked", reason="timeout", elapsed_ms=1.0),
+            localization_status="timeout",
+        )
+    )
+    assert timed_out.exit_code == 3
+    assert "SCENARIO FEASIBILITY TIMED OUT; PROPERTY NOT EVALUATED" in (
+        timed_out.stdout
+    )
+    assert "Scenario: UNKNOWN" in timed_out.stdout
+
+    unchecked = run_with_result(
+        BmcFeasibilityResult(
+            not_checked,
+            not_checked,
+            not_checked,
+            localization_status="not_checked",
+        ),
+        diagnostics=(
+            "feasibility_timeout:deadline_exhausted_before_assumptions_check",
+        ),
+    )
+    assert unchecked.exit_code == 3
+    assert "SCENARIO FEASIBILITY TIMED OUT; PROPERTY NOT EVALUATED" in (
+        unchecked.stdout
+    )
+    assert "Scenario: NOT CHECKED" in unchecked.stdout
+
+
+def test_bmc_human_report_keeps_known_infeasible_scenario_when_localization_stops(
+    bmc_files, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Localization timeout does not downgrade a proven empty scenario."""
+    import pyfcstm.entry.bmc as bmc_entry
+
+    model_path, query = bmc_files
+    query_path = query("check reach <= 1: terminated();")
+    not_checked = BmcFeasibilityCheck(None, "not_checked")
+    feasibility = BmcFeasibilityResult(
+        not_checked,
+        BmcFeasibilityCheck("timeout", "checked", reason="timeout", elapsed_ms=1.0),
+        BmcFeasibilityCheck("unsat", "checked", elapsed_ms=1.0),
+        localization_status="timeout",
+    )
+
+    def solve(formula, *, timeout_ms=None):
+        return BmcSolveResult(
+            formula,
+            "unsat",
+            timeout_ms=timeout_ms,
+            feasibility=feasibility,
+        )
+
+    monkeypatch.setattr(bmc_entry, "_solve_bmc_property", solve)
+    result = _run("-i", str(model_path), "-q", str(query_path))
+
+    assert result.exit_code == 3
+    assert "SCENARIO INFEASIBLE; PROPERTY NOT EVALUATED" in result.stdout
+    assert "Failure boundary: NOT LOCALIZED" in result.stdout
+    assert "Localization: TIMEOUT (timeout)" in result.stdout
+    assert "feasibility_unknown" not in result.stdout
+
+
+def test_bmc_human_presentation_marks_api_only_disabled_suffix() -> None:
+    """The internal presentation contract distinguishes a deliberately disabled suffix."""
+    import pyfcstm.entry.bmc as bmc_entry
+    from pyfcstm.bmc import BmcEngine, build_bmc_core_formula, compile_bmc_property
+    from pyfcstm.model import load_state_machine_from_text
+
+    model = load_state_machine_from_text("state Root;\n")
+    prepared = BmcEngine(model).prepare(
+        "check response <= 1: trigger true -> within 2 false;"
+    )
+    formula = compile_bmc_property(build_bmc_core_formula(prepared))
+    inferred_sat = BmcFeasibilityCheck("sat", "inferred")
+    feasibility = BmcFeasibilityResult(
+        inferred_sat,
+        inferred_sat,
+        BmcFeasibilityCheck("sat", "checked", elapsed_ms=1.0),
+        localization_status="not_needed",
+    )
+    result = BmcSolveResult(
+        formula,
+        "unsat",
+        incomplete_reason="incomplete check disabled",
+        feasibility=feasibility,
+    )
+    execution = bmc_entry._BmcExecution(formula, result, None, None, 3)
+
+    presentation = bmc_entry._human_presentation(execution)
+
+    assert presentation.response_horizon == "DISABLED"
+    assert "response horizon check was disabled" in presentation.conclusion
 
 
 def test_bmc_human_color_is_terminal_only(bmc_files) -> None:
@@ -299,7 +519,7 @@ def test_bmc_human_color_is_terminal_only(bmc_files) -> None:
 
     colored = _run("-i", str(model_path), "-q", str(query_path), "--color", "always")
     assert "\x1b[" in colored.stdout
-    assert "PROPERTY HOLDS" in colored.stdout
+    assert "WITNESS FOUND WITHIN BOUND" in colored.stdout
 
     json_result = _run(
         "-i",
@@ -429,9 +649,10 @@ def test_bmc_structured_replay_mismatch_is_exit_four(
 
     human = _run("-i", str(model_path), "-q", str(query_path), "--color", "always")
     assert human.exit_code == 4
-    assert "REPLAY MISMATCH; PROPERTY VERDICT UNTRUSTED" in human.stdout
+    assert "EVIDENCE/REPLAY MISMATCH; RESULT UNTRUSTED" in human.stdout
     assert "could not be reproduced by the runtime" in human.stdout
-    assert "Replay:\x1b[0m FAILED (1 mismatches)." in human.stdout
+    assert "Replay:" in human.stdout
+    assert "FAILED (1 mismatch)." in human.stdout
     assert "Mismatch frames[1].state: state mismatch" in human.stdout
 
 
@@ -593,6 +814,10 @@ def test_bmc_scenario_infeasible_is_not_a_property_failure(bmc_files) -> None:
     human = _run("-i", str(model_path), "-q", str(query_path))
     assert human.exit_code == 3
     assert "SCENARIO INFEASIBLE; PROPERTY NOT EVALUATED" in human.stdout
+    assert "Scenario: INFEASIBLE" in human.stdout
+    assert "Primary search: WITNESS = UNSAT" in human.stdout
+    assert "Failure boundary: ASSUMPTIONS" in human.stdout
+    assert "Adding assumptions leaves no admissible execution." in human.stdout
 
 
 def test_bmc_schema_rejects_forged_scenario_infeasible_verdict(bmc_files) -> None:
@@ -1010,6 +1235,8 @@ def test_bmc_solver_inconclusive_is_exit_three(
     )
     assert human.exit_code == 3
     assert "Timeout: 25 ms shared by all solver checks" in human.stdout
+    assert "Scenario: NOT CHECKED" in human.stdout
+    assert "Primary search: WITNESS = %s" % status.upper() in human.stdout
     assert "Solver reason: %s" % reason in human.stdout
 
 
@@ -1309,10 +1536,13 @@ check reach <= 1: active("Root.Done");
     assert bmc_entry._human_frame_label(unknown_witness, 0) == "unknown"
 
     assert "\x1b[33m" in bmc_entry._colorize_human_report(
-        "BMC response <= 1: PROPERTY INCONCLUSIVE\nSolver: UNSAT\n"
+        "BMC response <= 1: PROPERTY INCONCLUSIVE; RESPONSE HORIZON INCOMPLETE\n"
+        "Scenario: FEASIBLE\n",
+        "yellow",
     )
     assert "\x1b[31m" in bmc_entry._colorize_human_report(
-        "BMC reach <= 1: PROPERTY DOES NOT HOLD\nSolver: UNSAT\n"
+        "BMC reach <= 1: NO WITNESS WITHIN BOUND\nScenario: FEASIBLE\n",
+        "red",
     )
 
     model = load_state_machine_from_text("state Root;")

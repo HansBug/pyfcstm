@@ -188,7 +188,7 @@ without inventing inputs.
      - Click rejects the closed ``--format`` choice before writing a report.
    * - ``bmc``
      - ``pyfcstm bmc -i docs/source/tutorials/bmc/first_check.fcstm -q docs/source/tutorials/bmc/reach_door.fbmcq``
-     - The first line is ``BMC reach <= 1: PROPERTY HOLDS`` and replay is verified.
+     - The first line is ``BMC reach <= 1: WITNESS FOUND WITHIN BOUND`` and replay is verified.
      - ``pyfcstm bmc -i docs/source/tutorials/bmc/first_check.fcstm -q /tmp/missing.fbmcq``
      - Query-file reading fails before compilation and emits no partial report.
    * - ``generate``

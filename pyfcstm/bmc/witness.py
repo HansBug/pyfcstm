@@ -1294,6 +1294,272 @@ def _canonical_for_pretty(obj: Any) -> Mapping[str, Any]:
     return {"value": obj}  # pragma: no cover - mixin is only used by known classes.
 
 
+@dataclass(frozen=True)
+class _BmcSolvePresentation:
+    """Human-readable semantic summary for one solver result."""
+
+    headline: str
+    scenario: str
+    primary_search: str
+    response_horizon: Optional[str]
+    conclusion: str
+    severity: str
+    evidence: Tuple[str, ...]
+
+
+def _solve_bound_phrase(result: "BmcSolveResult") -> str:
+    bound = result.formula.bound
+    return "%d macro-step" % bound if bound == 1 else "%d macro-steps" % bound
+
+
+def _solve_search_kind(result: "BmcSolveResult") -> str:
+    return "WITNESS" if result.polarity == "witness" else "COUNTEREXAMPLE"
+
+
+def _solve_scenario(result: "BmcSolveResult", outcome: str) -> str:
+    if outcome == "scenario_infeasible":
+        return "INFEASIBLE"
+    if outcome in {"feasibility_unknown", "feasibility_timeout"}:
+        if result.feasibility.assumptions.origin == "checked":
+            return "UNKNOWN"
+        return "NOT CHECKED"
+    if outcome in {"unknown", "timeout"}:
+        return "NOT CHECKED"
+    return "FEASIBLE"
+
+
+def _solve_response_horizon(result: "BmcSolveResult", outcome: str) -> Optional[str]:
+    if result.kind != "response":
+        return None
+    if outcome in {
+        "scenario_infeasible",
+        "feasibility_unknown",
+        "feasibility_timeout",
+        "unknown",
+        "timeout",
+    }:
+        return None
+    if outcome == "property_satisfied":
+        return "CLOSED" if result.incomplete_status == "unsat" else "NOT NEEDED"
+    if outcome == "incomplete":
+        if result.incomplete_status == "sat":
+            return "OPEN"
+        if result.incomplete_status == "unknown":
+            return "UNKNOWN"
+        if result.incomplete_status == "timeout":
+            return "TIMED OUT"
+        if result.incomplete_reason == "incomplete check disabled":
+            return "DISABLED"
+        if _has_diagnostic(result, _SUFFIX_TIMEOUT_BEFORE_CHECK):
+            return "NOT CHECKED"
+        return "NOT CHECKED"
+    return None
+
+
+def _solve_failure_evidence(result: "BmcSolveResult") -> Tuple[str, ...]:
+    feasibility = result.feasibility
+    stage = feasibility.infeasible_stage
+    details = {
+        "kernel": "No admissible execution exists in the bounded solver kernel.",
+        "initialization": "Adding initialization constraints leaves no admissible execution.",
+        "assumptions": "Adding assumptions leaves no admissible execution.",
+    }
+    if stage is not None:
+        return (
+            "Failure boundary: %s" % stage.upper(),
+            "Failure detail: %s" % details[stage],
+        )
+    reason = next(
+        (
+            check.reason
+            for check in (
+                feasibility.initialization,
+                feasibility.kernel,
+                feasibility.assumptions,
+            )
+            if check.reason is not None
+        ),
+        None,
+    )
+    if reason is None:
+        reason = next(
+            (
+                diagnostic
+                for diagnostic in result.diagnostics
+                if diagnostic.startswith("feasibility_")
+            ),
+            None,
+        )
+    suffix = " (%s)" % reason if reason is not None else ""
+    return (
+        "Failure boundary: NOT LOCALIZED",
+        "Localization: %s%s" % (feasibility.localization_status.upper(), suffix),
+        "Failure detail: The scenario is infeasible, but the first failing "
+        "cumulative boundary was not localized.",
+    )
+
+
+def _solve_conclusion(
+    result: "BmcSolveResult", outcome: str, response_horizon: Optional[str]
+) -> str:
+    bound = _solve_bound_phrase(result)
+    kind = result.kind
+    search_kind = _solve_search_kind(result).lower()
+    if outcome == "witness_found":
+        return (
+            "At least one admissible execution satisfies the %s objective "
+            "within %s." % (kind, bound)
+        )
+    if outcome == "no_witness":
+        return "No admissible execution satisfies the %s objective within %s." % (
+            kind,
+            bound,
+        )
+    if outcome == "property_violated":
+        return (
+            "At least one admissible execution violates the %s property within %s."
+            % (kind, bound)
+        )
+    if outcome == "property_satisfied":
+        if kind == "response" and response_horizon == "NOT NEEDED":
+            return (
+                "The response horizon is complete and no counterexample exists; "
+                "every admissible execution within %s satisfies the response property."
+                % bound
+            )
+        if kind == "response":
+            return (
+                "The response horizon check found no open obligation; every "
+                "admissible execution within %s satisfies the response property."
+                % bound
+            )
+        return "Every admissible execution within %s satisfies the %s property." % (
+            bound,
+            kind,
+        )
+    if outcome == "scenario_infeasible":
+        return (
+            "No admissible execution exists within %s; the property was not evaluated."
+            % bound
+        )
+    if outcome == "feasibility_unknown":
+        return (
+            "Scenario feasibility is unknown, so the primary UNSAT result cannot "
+            "be interpreted as a property verdict."
+        )
+    if outcome == "feasibility_timeout":
+        if result.feasibility.assumptions.origin == "checked":
+            return (
+                "Scenario feasibility timed out, so the primary UNSAT result "
+                "cannot be interpreted as a property verdict."
+            )
+        return (
+            "Scenario feasibility was not checked because the shared timeout "
+            "budget was exhausted; no property verdict is available."
+        )
+    if outcome == "unknown":
+        return (
+            "The primary %s search returned unknown; no property verdict is available."
+            % search_kind
+        )
+    if outcome == "timeout":
+        return (
+            "The primary %s search timed out; no property verdict is available."
+            % search_kind
+        )
+    if outcome == "incomplete":
+        conclusions = {
+            "NOT NEEDED": "The response horizon is complete and no counterexample exists.",
+            "CLOSED": "The response horizon check found no open obligation.",
+            "OPEN": (
+                "An admissible finite prefix leaves a response obligation open "
+                "beyond the current horizon; no bounded property verdict is available."
+            ),
+            "UNKNOWN": (
+                "The response horizon check returned unknown; no bounded property "
+                "verdict is available."
+            ),
+            "TIMED OUT": (
+                "The response horizon check timed out; no bounded property verdict "
+                "is available."
+            ),
+            "NOT CHECKED": (
+                "The response horizon was not checked because the shared timeout "
+                "budget was exhausted; no bounded property verdict is available."
+            ),
+            "DISABLED": (
+                "The response horizon check was disabled; no bounded property "
+                "verdict is available."
+            ),
+        }
+        return conclusions[response_horizon or "NOT CHECKED"]
+    raise BmcBuildError("Unsupported BMC outcome: %s" % outcome)
+
+
+def _solve_presentation(result: "BmcSolveResult") -> _BmcSolvePresentation:
+    outcome = result.outcome
+    response_horizon = _solve_response_horizon(result, outcome)
+    headlines = {
+        "witness_found": "WITNESS FOUND WITHIN BOUND",
+        "no_witness": "NO WITNESS WITHIN BOUND",
+        "property_violated": "PROPERTY DOES NOT HOLD WITHIN BOUND; COUNTEREXAMPLE FOUND",
+        "property_satisfied": "PROPERTY GUARANTEED WITHIN BOUND; NO COUNTEREXAMPLE",
+        "scenario_infeasible": "SCENARIO INFEASIBLE; PROPERTY NOT EVALUATED",
+        "feasibility_unknown": "SCENARIO FEASIBILITY UNKNOWN; PROPERTY NOT EVALUATED",
+        "feasibility_timeout": "SCENARIO FEASIBILITY TIMED OUT; PROPERTY NOT EVALUATED",
+        "unknown": "PROPERTY INCONCLUSIVE; PRIMARY CHECK UNKNOWN",
+        "timeout": "PROPERTY INCONCLUSIVE; PRIMARY CHECK TIMED OUT",
+        "incomplete": "PROPERTY INCONCLUSIVE; RESPONSE HORIZON INCOMPLETE",
+    }
+    evidence = []
+    if outcome == "scenario_infeasible":
+        evidence.extend(_solve_failure_evidence(result))
+    elif result.status == "sat":
+        role = (
+            "PRIMARY WITNESS"
+            if result.polarity == "witness"
+            else "PRIMARY COUNTEREXAMPLE"
+        )
+        evidence.append("Model role: %s" % role)
+        evidence.append("Model evidence: SAT model available.")
+    elif result.available_model_roles == ("incomplete_suffix",):
+        evidence.append("Model role: INCOMPLETE SUFFIX")
+        evidence.append("Model evidence: SAT suffix model available.")
+    else:
+        evidence.append("Model evidence: no SAT model available.")
+    severity = {
+        "witness_found": "green",
+        "property_satisfied": "green",
+        "no_witness": "red",
+        "property_violated": "red",
+    }.get(outcome, "yellow")
+    return _BmcSolvePresentation(
+        headline=headlines[outcome],
+        scenario=_solve_scenario(result, outcome),
+        primary_search="%s = %s" % (_solve_search_kind(result), result.status.upper()),
+        response_horizon=response_horizon,
+        conclusion=_solve_conclusion(result, outcome, response_horizon),
+        severity=severity,
+        evidence=tuple(evidence),
+    )
+
+
+def _render_solve_result(result: "BmcSolveResult", tablefmt: str) -> str:
+    presentation = _solve_presentation(result)
+    lines = [
+        "BmcSolveResult: %s" % presentation.headline,
+        "Scenario: %s" % presentation.scenario,
+        "Primary search: %s" % presentation.primary_search,
+    ]
+    if presentation.response_horizon is not None:
+        lines.append("Response horizon: %s" % presentation.response_horizon)
+    lines.append("Conclusion: %s" % presentation.conclusion)
+    lines.append("Evidence:")
+    lines.extend("  %s" % item for item in presentation.evidence)
+    lines.extend(("", "Details:", _render_field_value_object(result, tablefmt)))
+    return "\n".join(lines)
+
+
 def _render_field_value_object(obj: Any, tablefmt: str) -> str:
     rows = []
     for key, value in _canonical_for_pretty(obj).items():
@@ -1354,6 +1620,8 @@ def _render_pretty_object(
         "show_ids": show_ids,
         "show_legend": show_legend,
     }
+    if isinstance(obj, BmcSolveResult):
+        return _render_solve_result(obj, tablefmt)
     if isinstance(obj, BmcWitnessTrace):
         return _render_witness_trace(obj, **kwargs)
     if isinstance(obj, BmcRuntimeTrace):
@@ -2209,6 +2477,12 @@ def _has_diagnostic(result: "BmcSolveResult", marker: str) -> bool:
 @dataclass(frozen=True)
 class BmcSolveResult(_PrettyPrintableMixin):
     """Structured result for one BMC property solve.
+
+    The default string representation starts with the same polarity-aware
+    bounded verdict vocabulary used by the CLI, then includes the canonical
+    field table.  Runtime replay is intentionally represented by the separate
+    :class:`BmcReplayResult`; the CLI combines both objects and can therefore
+    override the headline when replay mismatches.
 
     The raw Z3 models are intentionally kept as Python attributes rather than
     JSON fields.  Callers can pass :attr:`model` to

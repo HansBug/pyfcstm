@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 
 import pytest
+import z3
 from hbutils.testing import TextAligner
 
 import pyfcstm.bmc.witness as witness_module
@@ -15,6 +16,8 @@ from pyfcstm.bmc import (
     compile_bmc_property,
 )
 from pyfcstm.bmc.witness import (
+    BmcFeasibilityCheck,
+    BmcFeasibilityResult,
     BmcEventDecodePolicy,
     BmcReplayMismatch,
     BmcReplayResult,
@@ -27,6 +30,7 @@ from pyfcstm.bmc.witness import (
     BmcWitnessFrame,
     BmcWitnessStep,
     BmcWitnessTrace,
+    solve_bmc_property,
 )
 from pyfcstm.model import load_state_machine_from_text
 
@@ -216,6 +220,42 @@ def _sample_formula():
     state_machine = load_state_machine_from_text("state Root;")
     context = BmcEngine(state_machine).prepare('check reach <= 1: active("Root");')
     return compile_bmc_property(build_bmc_core_formula(context))
+
+
+def _sample_counterexample_formula():
+    """Compile a counterexample-polarity formula for summary tests."""
+    state_machine = load_state_machine_from_text("state Root;")
+    context = BmcEngine(state_machine).prepare('check forbid <= 1: active("Root");')
+    return compile_bmc_property(build_bmc_core_formula(context))
+
+
+def _sample_response_formula():
+    """Compile a response formula with a non-empty suffix horizon."""
+    state_machine = load_state_machine_from_text("state Root;")
+    context = BmcEngine(state_machine).prepare(
+        "check response <= 1: trigger true -> within 2 false;"
+    )
+    return compile_bmc_property(build_bmc_core_formula(context))
+
+
+def _empty_sat_model():
+    """Build a minimal Z3 model for presentation-only result objects."""
+    solver = z3.Solver()
+    solver.add(z3.BoolVal(True))
+    assert solver.check() == z3.sat
+    return solver.model()
+
+
+def _feasible_evidence():
+    """Build checked SAT evidence for direct result presentation tests."""
+    inferred = BmcFeasibilityCheck("sat", "inferred")
+    assumptions = BmcFeasibilityCheck("sat", "checked", elapsed_ms=1.0)
+    return BmcFeasibilityResult(
+        inferred,
+        inferred,
+        assumptions,
+        localization_status="not_needed",
+    )
 
 
 def test_witness_trace_default_output_is_single_frame_table() -> None:
@@ -519,7 +559,7 @@ def test_runtime_trace_blank_step_via_is_golden_pinned() -> None:
 
 def test_public_non_trace_objects_are_field_value_golden_pinned() -> None:
     """Every public witness/replay record type has exact standalone output."""
-    expected_solve = """
+    expected_solve_details = """
     BmcSolveResult
     field                  value
     kind                   reach
@@ -598,16 +638,27 @@ def test_public_non_trace_objects_are_field_value_golden_pinned() -> None:
         delta              false
     """
 
-    _assert_text_equal(
-        expected_solve,
-        BmcSolveResult(
-            _sample_formula(),
-            "unknown",
-            reason="because",
-            elapsed_ms=1.25,
-            timeout_ms=10,
-            diagnostics=("diag",),
-        ).to_text(tablefmt="plain"),
+    solve_result = BmcSolveResult(
+        _sample_formula(),
+        "unknown",
+        reason="because",
+        elapsed_ms=1.25,
+        timeout_ms=10,
+        diagnostics=("diag",),
+    )
+    expected_solve = """
+    BmcSolveResult: PROPERTY INCONCLUSIVE; PRIMARY CHECK UNKNOWN
+    Scenario: NOT CHECKED
+    Primary search: WITNESS = UNKNOWN
+    Conclusion: The primary witness search returned unknown; no property verdict is available.
+    Evidence:
+      Model evidence: no SAT model available.
+
+    Details:
+    """ + expected_solve_details.lstrip()
+    _assert_text_equal(expected_solve, solve_result.to_text(tablefmt="plain"))
+    assert str(solve_result).startswith(
+        "BmcSolveResult: PROPERTY INCONCLUSIVE; PRIMARY CHECK UNKNOWN\n"
     )
     _assert_text_equal(
         expected_event,
@@ -640,6 +691,100 @@ def test_public_non_trace_objects_are_field_value_golden_pinned() -> None:
         expected_runtime_step,
         BmcRuntimeStep(0, ("A",), ("A",), (), ()).to_text(tablefmt="plain"),
     )
+
+
+@pytest.mark.parametrize(
+    ("result", "fragments"),
+    [
+        (
+            lambda: solve_bmc_property(_sample_formula()),
+            (
+                "BmcSolveResult: WITNESS FOUND WITHIN BOUND",
+                "Scenario: FEASIBLE",
+                "Primary search: WITNESS = SAT",
+                "Model role: PRIMARY WITNESS",
+                "Model evidence: SAT model available.",
+            ),
+        ),
+        (
+            lambda: BmcSolveResult(
+                _sample_formula(), "unsat", feasibility=_feasible_evidence()
+            ),
+            (
+                "BmcSolveResult: NO WITNESS WITHIN BOUND",
+                "Primary search: WITNESS = UNSAT",
+                "No admissible execution satisfies the reach objective",
+                "Model evidence: no SAT model available.",
+            ),
+        ),
+        (
+            lambda: BmcSolveResult(
+                _sample_counterexample_formula(),
+                "sat",
+                model=_empty_sat_model(),
+            ),
+            (
+                "BmcSolveResult: PROPERTY DOES NOT HOLD WITHIN BOUND; COUNTEREXAMPLE FOUND",
+                "Primary search: COUNTEREXAMPLE = SAT",
+                "Model role: PRIMARY COUNTEREXAMPLE",
+            ),
+        ),
+        (
+            lambda: BmcSolveResult(
+                _sample_counterexample_formula(),
+                "unsat",
+                feasibility=_feasible_evidence(),
+            ),
+            (
+                "BmcSolveResult: PROPERTY GUARANTEED WITHIN BOUND; NO COUNTEREXAMPLE",
+                "Primary search: COUNTEREXAMPLE = UNSAT",
+                "Every admissible execution within 1 macro-step satisfies the forbid property.",
+            ),
+        ),
+        (
+            lambda: BmcSolveResult(
+                _sample_counterexample_formula(),
+                "unsat",
+                feasibility=BmcFeasibilityResult(
+                    BmcFeasibilityCheck("sat", "checked", elapsed_ms=1.0),
+                    BmcFeasibilityCheck("sat", "checked", elapsed_ms=1.0),
+                    BmcFeasibilityCheck("unsat", "checked", elapsed_ms=1.0),
+                    infeasible_stage="assumptions",
+                    localization_status="complete",
+                ),
+            ),
+            (
+                "BmcSolveResult: SCENARIO INFEASIBLE; PROPERTY NOT EVALUATED",
+                "Scenario: INFEASIBLE",
+                "Failure boundary: ASSUMPTIONS",
+                "property was not evaluated",
+            ),
+        ),
+        (
+            lambda: BmcSolveResult(
+                _sample_response_formula(),
+                "unsat",
+                incomplete_status="sat",
+                incomplete_model=_empty_sat_model(),
+                incomplete_elapsed_ms=1.0,
+                feasibility=_feasible_evidence(),
+            ),
+            (
+                "BmcSolveResult: PROPERTY INCONCLUSIVE; RESPONSE HORIZON INCOMPLETE",
+                "Response horizon: OPEN",
+                "Model role: INCOMPLETE SUFFIX",
+                "Model evidence: SAT suffix model available.",
+            ),
+        ),
+    ],
+)
+def test_solve_result_text_exposes_polarity_and_exception_semantics(
+    result, fragments
+) -> None:
+    """Direct result text exposes verdict, evidence role, and non-verdict states."""
+    text = result().to_text(tablefmt="plain")
+    for fragment in fragments:
+        assert fragment in text
 
 
 def test_pretty_print_default_stdout_and_invalid_end_are_pinned(capsys) -> None:

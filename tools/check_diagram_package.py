@@ -2,11 +2,14 @@
 
 import argparse
 import hashlib
+import io
 import json
 import re
 import tarfile
+import tempfile
 import zipfile
 from pathlib import Path
+from pathlib import PurePosixPath
 from typing import Dict, Iterable, Optional
 
 
@@ -172,12 +175,32 @@ def check_sdist(
     """Check one gzip-compressed sdist archive."""
     with tarfile.open(str(path), mode="r:gz") as archive:
         files: Dict[str, bytes] = {}
+        roots = set()
         for member in archive.getmembers():
-            if not member.isfile():
+            parts = PurePosixPath(member.name).parts
+            if not parts or parts[0] in ("", ".", "..") or ".." in parts:
+                raise ValueError(
+                    "sdist contains an unsafe member path: %s" % member.name
+                )
+            roots.add(parts[0])
+            if member.isdir():
                 continue
+            if not member.isfile() or member.issym() or member.islnk():
+                raise ValueError(
+                    "sdist contains a non-regular member: %s" % member.name
+                )
+            if len(parts) < 2:
+                raise ValueError("sdist contains a root-level file: %s" % member.name)
             stream = archive.extractfile(member)
-            if stream is not None:
-                files[member.name.split("/", 1)[-1]] = stream.read()
+            if stream is None:
+                raise ValueError("sdist member cannot be read: %s" % member.name)
+            relative = "/".join(parts[1:])
+            if relative in files:
+                raise ValueError("sdist contains duplicate member path: %s" % relative)
+            files[relative] = stream.read()
+
+        if len(roots) != 1:
+            raise ValueError("sdist must contain exactly one top-level directory")
 
         def read_member(name: str) -> bytes:
             return files[name]
@@ -343,6 +366,25 @@ def _self_check() -> None:
         pass
     else:
         raise AssertionError("legal marker mutation was accepted")
+
+    with tempfile.TemporaryDirectory(prefix="pyfcstm-sdist-check-") as directory:
+        shadow_path = Path(directory) / "shadow.tar.gz"
+        with tarfile.open(str(shadow_path), mode="w:gz") as archive:
+            for name, data in (
+                ("pyfcstm-0.0.0/pyfcstm/assets/renderer.js", b"canonical"),
+                ("shadow/pyfcstm/assets/renderer.js", b"tampered"),
+            ):
+                info = tarfile.TarInfo(name)
+                info.size = len(data)
+                archive.addfile(info, io.BytesIO(data))
+        try:
+            check_sdist(shadow_path)
+        except ValueError:
+            # A second top-level directory must not be allowed to shadow the
+            # canonical sdist root before package asset checks run.
+            pass
+        else:
+            raise AssertionError("multiple sdist roots were accepted")
 
     missing_license = dict(files)
     del missing_license["pyfcstm/assets/LICENSE-EPL-2.0.txt"]

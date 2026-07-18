@@ -1,13 +1,17 @@
 Generated diagram assets are produced by ``make build_assets``.
 
 The generated directory is intentionally ignored by git. Source and license
-provenance is maintained in ``tools/diagram_assets`` and in the generated
+provenance is maintained in the tracked source lock and in the generated
 manifest; do not hand-edit compiled files under this directory.
 
 Third-party runtime resources distributed in this directory:
 
 * ``elkjs`` 0.11.1, Copyright Ulf Ruegg and contributors, under the Eclipse
-  Public License 2.0. See ``LICENSE-EPL-2.0.txt``.
+  Public License 2.0. See ``LICENSE-EPL-2.0.txt``. The exact package was
+  resolved from
+  ``https://registry.npmmirror.com/elkjs/-/elkjs-0.11.1.tgz`` with the
+  integrity recorded in ``manifest.json``. Its source is available at
+  ``https://github.com/kieler/elkjs/tree/v0.11.1``.
 * ``resvg`` 0.37 compatibility bindings and WASM, from the immutable source
   URLs and SHA-256 values recorded in ``tools/diagram_assets/asset-lock.json``.
 * ``JetBrains Mono`` Regular, Copyright 2020 The JetBrains Mono Project

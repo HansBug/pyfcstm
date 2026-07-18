@@ -5,7 +5,11 @@ import math
 
 import pytest
 
-from pyfcstm.diagram_runtime import DiagramAssetEngine, DiagramAssetError
+from pyfcstm.diagram_runtime import (
+    DiagramAssetEngine,
+    DiagramAssetError,
+    DiagramEngineConflictError,
+)
 
 
 pytestmark = pytest.mark.unittest
@@ -218,14 +222,49 @@ def test_engine_rejects_non_finite_timeout():
 
 
 def test_engine_restarts_context_after_native_timeout():
-    engine = DiagramAssetEngine(timeout=0.2)
+    # A cold Windows runner can need more than 0.2 seconds to load the
+    # generated bundle; apply the eval budget after startup for this test.
+    engine = DiagramAssetEngine()
+    engine.timeout = 0.2
     with pytest.raises(DiagramAssetError, match="time or memory limit"):
         engine._eval("while (true) {}")
     assert engine._eval("6 * 7") == 42
 
 
+def test_engine_discards_context_after_renderer_deadline():
+    engine = DiagramAssetEngine()
+    engine.timeout = 0.02
+    engine._eval(
+        "globalThis.__pyfcstm_render_start = function(_request, id) { return id; };"
+    )
+    engine._eval(
+        "globalThis.__pyfcstm_render_poll = function(_id) "
+        "{ return JSON.stringify({status: 'pending'}); };"
+    )
+    with pytest.raises(DiagramAssetError, match="renderer timed out"):
+        engine.render_svg(_request())
+    assert engine._context is None
+    engine.timeout = 30.0
+    assert engine._eval("6 * 7") == 42
+
+
+def test_engine_discards_context_after_resvg_deadline():
+    engine = DiagramAssetEngine()
+    engine.timeout = 0.02
+    engine._eval(
+        "globalThis.__pyfcstm_resvg_init = function(_wasm) "
+        "{ globalThis.__pyfcstm_resvg_status = 'pending'; };"
+    )
+    svg = '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>'
+    with pytest.raises(DiagramAssetError, match="resvg WASM initialization timed out"):
+        engine.render_png(svg)
+    assert engine._context is None
+    engine.timeout = 30.0
+    assert engine._eval("6 * 7") == 42
+
+
 def test_engine_rejects_invalid_memory_limit():
-    for value in (0, -1, True, 1.5):
+    for value in (0, -1, True, 1.5, float("nan"), float("inf"), float("-inf")):
         with pytest.raises(ValueError, match="max_memory"):
             DiagramAssetEngine(max_memory=value)
 
@@ -239,7 +278,7 @@ def test_engine_rejects_dual_miniracer_distributions(monkeypatch):
         "_distribution_installed",
         staticmethod(both_installed),
     )
-    with pytest.raises(DiagramAssetError, match="installed together"):
+    with pytest.raises(DiagramEngineConflictError, match="installed together"):
         DiagramAssetEngine()
 
 

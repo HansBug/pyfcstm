@@ -32,6 +32,7 @@ ENTRY_PATH = ROOT / "tools" / "diagram_assets" / "python-renderer-entry.ts"
 BRIDGE_PATH = ROOT / "tools" / "diagram_assets" / "resvg-bridge.js"
 HOST_SHIM_PATH = ROOT / "tools" / "diagram_assets" / "host-shim.js"
 JSFCSTM_DIR = ROOT / "editors" / "jsfcstm"
+JSFCSTM_LOCK_PATH = JSFCSTM_DIR / "package-lock.json"
 ELK_API_PATH = JSFCSTM_DIR / "node_modules" / "elkjs" / "lib" / "elk-api.js"
 ELK_WORKER_PATH = JSFCSTM_DIR / "node_modules" / "elkjs" / "lib" / "elk-worker.min.js"
 ASSET_MARKERS = {
@@ -122,6 +123,33 @@ def ensure_js_dependencies() -> None:
         raise FileNotFoundError(
             "npm ci completed without the locked elkjs API/worker assets"
         )
+
+
+def validate_elk_provenance(lock: Dict[str, object]) -> None:
+    """Require the generated bundle's ELK provenance to match package-lock."""
+    try:
+        package_lock = json.loads(JSFCSTM_LOCK_PATH.read_text(encoding="utf-8"))
+        package = package_lock["packages"]["node_modules/elkjs"]
+    except (KeyError, OSError, TypeError, ValueError) as err:
+        # KeyError/TypeError/ValueError: package-lock.json has no valid ELK
+        # entry; OSError: the tracked lock file cannot be read.
+        raise ValueError("jsfcstm package-lock lacks a valid elkjs entry") from err
+    renderer = lock.get("renderer")
+    if not isinstance(renderer, dict) or not isinstance(renderer.get("elkjs"), dict):
+        raise ValueError("diagram asset lock lacks elkjs provenance")
+    provenance = renderer["elkjs"]
+    expected = {
+        "name": "elkjs",
+        "version": package.get("version"),
+        "repository": "https://github.com/kieler/elkjs",
+        "sourceUrl": "https://github.com/kieler/elkjs/tree/v%s"
+        % package.get("version"),
+        "resolved": package.get("resolved"),
+        "integrity": package.get("integrity"),
+        "license": package.get("license"),
+    }
+    if provenance != expected:
+        raise ValueError("diagram asset ELK provenance differs from package-lock")
 
 
 def load_locked_file(path: Path, url: str, expected_sha256: str) -> bytes:
@@ -447,6 +475,7 @@ def build_assets() -> None:
     if not esbuild_version:
         raise ValueError("renderer lock must pin esbuildVersion")
     ensure_js_dependencies()
+    validate_elk_provenance(lock)
     with tempfile.TemporaryDirectory(
         prefix=".pyfcstm-diagram-assets-", dir=str(ASSET_DIR.parent)
     ) as temporary:

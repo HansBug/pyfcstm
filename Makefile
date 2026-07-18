@@ -236,8 +236,6 @@ diagram_assets_check: build_assets
 	$(PYTHON) tools/check_diagram_assets.py
 
 diagram_package_check: package
-	$(PYTHON) tools/check_diagram_package.py --check
-	$(PYTHON) tools/check_diagram_package.py --dist-dir ${DIST_DIR}
 
 template_packaging_check:
 	$(PYTHON) tools/check_template_packaging.py

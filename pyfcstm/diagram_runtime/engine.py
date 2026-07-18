@@ -19,6 +19,15 @@ class DiagramAssetError(RuntimeError):
     """Raised when the embedded renderer or its generated assets fail."""
 
 
+class DiagramEngineConflictError(DiagramAssetError):
+    """
+    Report mutually exclusive MiniRacer distributions.
+
+    This error is raised before a JavaScript context is created when both
+    ``mini-racer`` and ``py-mini-racer`` are installed in one environment.
+    """
+
+
 def _asset_bytes(name: str) -> bytes:
     """Load one generated asset through the Python 3.7-compatible resource API."""
     data = pkgutil.get_data("pyfcstm.assets", name)
@@ -51,12 +60,25 @@ class DiagramAssetEngine:
         if not math.isfinite(numeric_timeout) or numeric_timeout <= 0:
             raise ValueError("timeout must be a finite positive number")
         if max_memory is not None:
-            if isinstance(max_memory, bool) or int(max_memory) != max_memory:
-                raise ValueError("max_memory must be a positive integer or None")
-            if int(max_memory) <= 0:
-                raise ValueError("max_memory must be a positive integer or None")
+            if isinstance(max_memory, bool):
+                raise ValueError("max_memory must be a finite positive integer or None")
+            try:
+                numeric_memory = float(max_memory)
+            except (TypeError, ValueError, OverflowError) as err:
+                # TypeError/ValueError/OverflowError: an invalid caller value
+                # cannot be converted to a finite numeric heap limit.
+                raise ValueError(
+                    "max_memory must be a finite positive integer or None"
+                ) from err
+            if (
+                not math.isfinite(numeric_memory)
+                or numeric_memory <= 0
+                or numeric_memory != math.floor(numeric_memory)
+            ):
+                raise ValueError("max_memory must be a finite positive integer or None")
+            max_memory = int(numeric_memory)
         self.timeout = numeric_timeout
-        self.max_memory = int(max_memory) if max_memory is not None else None
+        self.max_memory = max_memory
         self._context = None
         self._resvg_ready = False
         self._timeout_uses_seconds = False
@@ -94,7 +116,7 @@ class DiagramAssetEngine:
         if self._distribution_installed("mini-racer") and self._distribution_installed(
             "py-mini-racer"
         ):
-            raise DiagramAssetError(
+            raise DiagramEngineConflictError(
                 "mini-racer and py-mini-racer are installed together; "
                 "install exactly one runtime for this Python version"
             )
@@ -227,11 +249,14 @@ class DiagramAssetEngine:
                     "__pyfcstm_render_drop(%s)" % json.dumps(request_id),
                     timeout=remaining,
                 )
-                raise DiagramAssetError(
-                    str(status.get("error", "unknown renderer error"))
-                )
+                error = str(status.get("error", "unknown renderer error"))
+                self._discard_context()
+                raise DiagramAssetError(error)
             time.sleep(0.001)
-        self._eval("__pyfcstm_render_drop(%s)" % json.dumps(request_id), timeout=0.001)
+        # The renderer promise may still be pending in the old context.  A
+        # Python-side deadline is therefore terminal too: discard the whole
+        # context instead of allowing the next request to observe stale jobs.
+        self._discard_context()
         raise DiagramAssetError("diagram renderer timed out after %.1fs" % self.timeout)
 
     def _ensure_resvg(self) -> None:
@@ -255,10 +280,11 @@ class DiagramAssetEngine:
                 self._resvg_ready = True
                 return
             if status == "error":
-                raise DiagramAssetError(
-                    str(self._eval("__pyfcstm_resvg_error", timeout=remaining))
-                )
+                error = str(self._eval("__pyfcstm_resvg_error", timeout=remaining))
+                self._discard_context()
+                raise DiagramAssetError(error)
             time.sleep(0.001)
+        self._discard_context()
         raise DiagramAssetError("resvg WASM initialization timed out")
 
     def render_png(self, svg: str, scale: float = 1.0) -> bytes:

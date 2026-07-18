@@ -51,6 +51,11 @@ OPTIONAL_SOURCE_MARKERS = {
     "pyfcstm/diagram/assets/.gitignore",
 }
 
+LEGACY_PATH_PREFIXES = (
+    "pyfcstm/assets",
+    "pyfcstm/diagram_runtime",
+)
+
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -79,6 +84,18 @@ def check_members(
     :rtype: dict
     """
     names = set(members)
+    legacy = sorted(
+        name
+        for name in names
+        if any(
+            name == prefix or name.startswith(prefix + "/")
+            for prefix in LEGACY_PATH_PREFIXES
+        )
+    )
+    if legacy:
+        raise ValueError(
+            "archive contains retired diagram paths: %s" % ", ".join(legacy)
+        )
     missing = sorted(PACKAGE_REQUIRED - names)
     if missing:
         raise ValueError("archive is missing diagram assets: %s" % ", ".join(missing))
@@ -492,6 +509,12 @@ def _self_check() -> None:
             ],
             "non-regular member",
         )
+        expect_failure(
+            "legacy-asset-path",
+            valid_entries
+            + [(root + "/pyfcstm/assets/manifest.json", b"retired", "file")],
+            "retired diagram paths",
+        )
 
     missing_license = dict(files)
     del missing_license["pyfcstm/diagram/assets/LICENSE-EPL-2.0.txt"]
@@ -502,6 +525,20 @@ def _self_check() -> None:
         pass
     else:
         raise AssertionError("missing third-party license was accepted")
+
+    legacy = dict(files)
+    legacy["pyfcstm/assets/manifest.json"] = b"retired"
+    try:
+        check_members(set(legacy), legacy.__getitem__)
+    except ValueError as err:
+        # A broad MANIFEST.in include must not resurrect the retired asset
+        # directory in a source archive.
+        if "retired diagram paths" not in str(err):
+            raise AssertionError(
+                "legacy asset path failed for the wrong reason: %s" % err
+            ) from err
+    else:
+        raise AssertionError("retired asset path was accepted")
 
 
 def main() -> int:

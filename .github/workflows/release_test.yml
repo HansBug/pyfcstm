@@ -911,7 +911,9 @@ jobs:
           python -V
           pip --version
           pip list
-          tree .
+          # Chocolatey's tree.exe is not guaranteed to be visible to the
+          # Git Bash shell on Windows; keep this diagnostic dependency-free.
+          python -c 'import os; [print(os.path.join(root, name)) for root, dirs, files in os.walk(".") for name in sorted(dirs + files) if ".git" not in root.split(os.sep)]'
       - name: Get package version
         shell: bash
         run: |

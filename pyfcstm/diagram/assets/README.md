@@ -20,7 +20,7 @@ Node.js、浏览器或系统字体。
 
 ## 预期文件清单
 
-受控元数据：
+源码树中的受控元数据：
 
 - `README.md`
 - `__init__.py`
@@ -29,6 +29,9 @@ Node.js、浏览器或系统字体。
 - `LICENSE-MPL-2.0.txt`
 - `LICENSE-EPL-2.0.txt`
 - `LICENSE-OFL-1.1.txt`
+
+其中 `.gitignore` 只用于仓库源码树中的生成资源边界控制，不会进入
+wheel/sdist；其余受控元数据会随 Python 包发布。
 
 构建生成资源：
 

@@ -105,6 +105,15 @@ def _require_diagram_assets_for_distribution() -> None:
         "LICENSE-OFL-1.1.txt",
     }
     asset_root = os.path.join(here, _MODULE_NAME, "diagram", "assets")
+    for legacy_root in (
+        os.path.join(here, _MODULE_NAME, "assets"),
+        os.path.join(here, _MODULE_NAME, "diagram_runtime"),
+    ):
+        if os.path.lexists(legacy_root):
+            raise RuntimeError(
+                "retired diagram path must be removed before distribution: %s"
+                % legacy_root
+            )
     if os.path.islink(asset_root):
         raise RuntimeError("diagram asset root must not be a symlink: %s" % asset_root)
     asset_files = set()

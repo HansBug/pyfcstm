@@ -8,11 +8,11 @@ from typing import Dict, List
 
 
 ROOT = Path(__file__).resolve().parent.parent
-ASSET_DIR = ROOT / "pyfcstm" / "assets"
+ASSET_DIR = ROOT / "pyfcstm" / "diagram" / "assets"
 LOCK_PATH = ROOT / "tools" / "diagram_assets" / "asset-lock.json"
 TRACKED_MARKERS = {
     ".gitignore",
-    ".gitkeep",
+    "README.md",
     "__init__.py",
     "NOTICE.txt",
     "LICENSE-MPL-2.0.txt",
@@ -157,7 +157,7 @@ def main() -> int:
             )
             if result.returncode != 0:
                 raise ValueError("generated asset is not ignored by git: %s" % relative)
-            repository_path = "pyfcstm/assets/" + relative
+            repository_path = "pyfcstm/diagram/assets/" + relative
             if is_tracked(repository_path):
                 raise ValueError("generated asset is tracked by git: %s" % relative)
 
@@ -166,7 +166,7 @@ def main() -> int:
         if not path.is_file():
             raise ValueError("missing tracked asset marker: %s" % path)
         if enforce_git_boundary:
-            repository_path = "pyfcstm/assets/" + relative
+            repository_path = "pyfcstm/diagram/assets/" + relative
             if not is_tracked(repository_path):
                 raise ValueError(
                     "tracked asset marker is not tracked by git: %s" % relative

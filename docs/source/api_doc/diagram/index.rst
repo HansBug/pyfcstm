@@ -1,14 +1,15 @@
-pyfcstm.diagram\_runtime
+pyfcstm.diagram
 ========================================================
 
-.. currentmodule:: pyfcstm.diagram_runtime
+.. currentmodule:: pyfcstm.diagram
 
-.. automodule:: pyfcstm.diagram_runtime
+.. automodule:: pyfcstm.diagram
 
 
 .. toctree::
     :maxdepth: 3
 
+    assets/index
     engine
 
 \_\_all\_\_

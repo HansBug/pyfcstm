@@ -6,7 +6,7 @@ import builtins
 
 import pytest
 
-from pyfcstm.diagram_runtime import (
+from pyfcstm.diagram import (
     DiagramAssetEngine,
     DiagramAssetError,
     DiagramEngineConflictError,
@@ -262,7 +262,7 @@ def test_engine_discards_context_after_resvg_deadline(monkeypatch):
     )
     import importlib
 
-    engine_module = importlib.import_module("pyfcstm.diagram_runtime.engine")
+    engine_module = importlib.import_module("pyfcstm.diagram.engine")
     real_time = engine_module.time
     ticks = iter((100.0, 131.0))
 

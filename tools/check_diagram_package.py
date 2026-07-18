@@ -14,37 +14,41 @@ from typing import Dict, Iterable, Optional
 
 
 ROOT = Path(__file__).resolve().parent.parent
-SOURCE_MANIFEST_PATH = ROOT / "pyfcstm" / "assets" / "manifest.json"
+SOURCE_MANIFEST_PATH = ROOT / "pyfcstm" / "diagram" / "assets" / "manifest.json"
 
 
 GENERATED_REQUIRED = {
-    "pyfcstm/assets/renderer.js",
-    "pyfcstm/assets/resvg-binding.js",
-    "pyfcstm/assets/resvg-bridge.js",
-    "pyfcstm/assets/host-shim.js",
-    "pyfcstm/assets/resvg.wasm",
-    "pyfcstm/assets/manifest.json",
-    "pyfcstm/assets/fonts/JetBrainsMono-Regular.ttf",
+    "pyfcstm/diagram/assets/renderer.js",
+    "pyfcstm/diagram/assets/resvg-binding.js",
+    "pyfcstm/diagram/assets/resvg-bridge.js",
+    "pyfcstm/diagram/assets/host-shim.js",
+    "pyfcstm/diagram/assets/resvg.wasm",
+    "pyfcstm/diagram/assets/manifest.json",
+    "pyfcstm/diagram/assets/fonts/JetBrainsMono-Regular.ttf",
 }
 
 LEGAL_REQUIRED = {
-    "pyfcstm/assets/NOTICE.txt",
-    "pyfcstm/assets/LICENSE-MPL-2.0.txt",
-    "pyfcstm/assets/LICENSE-EPL-2.0.txt",
-    "pyfcstm/assets/LICENSE-OFL-1.1.txt",
+    "pyfcstm/diagram/assets/NOTICE.txt",
+    "pyfcstm/diagram/assets/LICENSE-MPL-2.0.txt",
+    "pyfcstm/diagram/assets/LICENSE-EPL-2.0.txt",
+    "pyfcstm/diagram/assets/LICENSE-OFL-1.1.txt",
+}
+
+DOCUMENTATION_REQUIRED = {
+    "pyfcstm/diagram/assets/README.md",
 }
 
 PACKAGE_REQUIRED = (
     GENERATED_REQUIRED
     | LEGAL_REQUIRED
+    | DOCUMENTATION_REQUIRED
     | {
-        "pyfcstm/assets/__init__.py",
+        "pyfcstm/diagram/assets/__init__.py",
     }
 )
 
 OPTIONAL_SOURCE_MARKERS = {
-    "pyfcstm/assets/.gitignore",
-    "pyfcstm/assets/.gitkeep",
+    "pyfcstm/diagram/assets/.gitignore",
 }
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -81,14 +85,14 @@ def check_members(
     asset_files = {
         name
         for name in names
-        if name.startswith("pyfcstm/assets/") and not name.endswith("/")
+        if name.startswith("pyfcstm/diagram/assets/") and not name.endswith("/")
     }
     extras = sorted(asset_files - PACKAGE_REQUIRED - OPTIONAL_SOURCE_MARKERS)
     if extras:
         raise ValueError(
             "archive contains unregistered diagram assets: %s" % ", ".join(extras)
         )
-    manifest_bytes = read_member("pyfcstm/assets/manifest.json")
+    manifest_bytes = read_member("pyfcstm/diagram/assets/manifest.json")
     manifest = json.loads(manifest_bytes.decode("utf-8"))
     if manifest.get("schema") != "pyfcstm-diagram-assets/1":
         raise ValueError("archive diagram manifest has an unsupported schema")
@@ -97,7 +101,7 @@ def check_members(
     if source_manifest_bytes is not None and manifest_bytes != source_manifest_bytes:
         raise ValueError("archive diagram manifest bytes differ from the source")
     if source_files is not None:
-        for path in PACKAGE_REQUIRED - {"pyfcstm/assets/manifest.json"}:
+        for path in PACKAGE_REQUIRED - {"pyfcstm/diagram/assets/manifest.json"}:
             expected = source_files.get(path)
             if expected is None or read_member(path) != expected:
                 raise ValueError(
@@ -107,9 +111,9 @@ def check_members(
     if not isinstance(manifest_items, list):
         raise ValueError("archive diagram manifest files must be a list")
     expected_paths = {
-        path[len("pyfcstm/assets/") :]
+        path[len("pyfcstm/diagram/assets/") :]
         for path in GENERATED_REQUIRED
-        if path != "pyfcstm/assets/manifest.json"
+        if path != "pyfcstm/diagram/assets/manifest.json"
     }
     seen = set()
     if len(manifest_items) != len(expected_paths):
@@ -135,7 +139,7 @@ def check_members(
             raise ValueError(
                 "archive diagram manifest has invalid SHA-256: %s" % relative
             )
-        path = "pyfcstm/assets/" + item["path"]
+        path = "pyfcstm/diagram/assets/" + item["path"]
         data = read_member(path)
         if len(data) != size:
             raise ValueError("archive asset size differs from manifest: %s" % path)
@@ -218,7 +222,7 @@ def check_sdist(
 
         # ``files`` already strips the archive's versioned top-level
         # directory, leaving package-relative names such as
-        # ``pyfcstm/assets/renderer.js``.  Do not strip that package prefix a
+        # ``pyfcstm/diagram/assets/renderer.js``.  Do not strip that package prefix a
         # second time: the required set and manifest reader use the same
         # package-relative namespace.
         return check_members(
@@ -260,7 +264,7 @@ def load_source_manifest_bytes() -> bytes:
 def load_source_files() -> Dict[str, bytes]:
     """Load source package markers used to anchor archive provenance."""
     source_files = {}
-    for relative in PACKAGE_REQUIRED - {"pyfcstm/assets/manifest.json"}:
+    for relative in PACKAGE_REQUIRED - {"pyfcstm/diagram/assets/manifest.json"}:
         path = ROOT / relative
         try:
             source_files[relative] = path.read_bytes()
@@ -278,28 +282,30 @@ def _self_check() -> None:
     files = {
         path: (b"x" if path.endswith(".js") else b"asset")
         for path in PACKAGE_REQUIRED
-        if path != "pyfcstm/assets/manifest.json"
+        if path != "pyfcstm/diagram/assets/manifest.json"
     }
     manifest_entries = []
-    for path in sorted(GENERATED_REQUIRED - {"pyfcstm/assets/manifest.json"}):
+    for path in sorted(GENERATED_REQUIRED - {"pyfcstm/diagram/assets/manifest.json"}):
         data = files[path]
         manifest_entries.append(
             {
-                "path": path[len("pyfcstm/assets/") :],
+                "path": path[len("pyfcstm/diagram/assets/") :],
                 "bytes": len(data),
                 "sha256": hashlib.sha256(data).hexdigest(),
             }
         )
-    files["pyfcstm/assets/manifest.json"] = json.dumps(
+    files["pyfcstm/diagram/assets/manifest.json"] = json.dumps(
         {"schema": "pyfcstm-diagram-assets/1", "files": manifest_entries}
     ).encode("utf-8")
-    source_manifest = json.loads(files["pyfcstm/assets/manifest.json"].decode("utf-8"))
+    source_manifest = json.loads(
+        files["pyfcstm/diagram/assets/manifest.json"].decode("utf-8")
+    )
     source_files = {
         path: data
         for path, data in files.items()
-        if path != "pyfcstm/assets/manifest.json"
+        if path != "pyfcstm/diagram/assets/manifest.json"
     }
-    source_manifest_bytes = files["pyfcstm/assets/manifest.json"]
+    source_manifest_bytes = files["pyfcstm/diagram/assets/manifest.json"]
     check_members(
         set(files),
         files.__getitem__,
@@ -309,7 +315,7 @@ def _self_check() -> None:
     )
 
     corrupted = dict(files)
-    corrupted["pyfcstm/assets/renderer.js"] = b"y"
+    corrupted["pyfcstm/diagram/assets/renderer.js"] = b"y"
     try:
         check_members(set(corrupted), corrupted.__getitem__)
     except ValueError:
@@ -319,13 +325,13 @@ def _self_check() -> None:
         raise AssertionError("same-length archive corruption was accepted")
 
     coordinated = dict(files)
-    coordinated["pyfcstm/assets/renderer.js"] = b"y"
+    coordinated["pyfcstm/diagram/assets/renderer.js"] = b"y"
     coordinated_manifest = json.loads(json.dumps(source_manifest))
     for item in coordinated_manifest["files"]:
         if item["path"] == "renderer.js":
             item["bytes"] = 1
             item["sha256"] = hashlib.sha256(b"y").hexdigest()
-    coordinated["pyfcstm/assets/manifest.json"] = json.dumps(
+    coordinated["pyfcstm/diagram/assets/manifest.json"] = json.dumps(
         coordinated_manifest
     ).encode("utf-8")
     try:
@@ -344,7 +350,7 @@ def _self_check() -> None:
         raise AssertionError("coordinated archive asset mutation was accepted")
 
     reformatted = dict(files)
-    reformatted["pyfcstm/assets/manifest.json"] = json.dumps(
+    reformatted["pyfcstm/diagram/assets/manifest.json"] = json.dumps(
         source_manifest, sort_keys=True, indent=4
     ).encode("utf-8")
     try:
@@ -363,7 +369,7 @@ def _self_check() -> None:
         raise AssertionError("manifest byte reformatting was accepted")
 
     legal_corrupted = dict(files)
-    legal_corrupted["pyfcstm/assets/LICENSE-EPL-2.0.txt"] = b"tampered"
+    legal_corrupted["pyfcstm/diagram/assets/LICENSE-EPL-2.0.txt"] = b"tampered"
     try:
         check_members(
             set(legal_corrupted),
@@ -425,23 +431,26 @@ def _self_check() -> None:
         # because check_members reports missing assets.
         expect_failure(
             "shadow-root",
-            valid_entries + [("shadow/pyfcstm/assets/shadow.js", b"tampered", "file")],
+            valid_entries
+            + [("shadow/pyfcstm/diagram/assets/shadow.js", b"tampered", "file")],
             "exactly one top-level directory",
         )
         expect_failure(
             "duplicate-member",
             valid_entries
-            + [(root + "/pyfcstm/assets/renderer.js", b"duplicate", "file")],
+            + [(root + "/pyfcstm/diagram/assets/renderer.js", b"duplicate", "file")],
             "duplicate member path",
         )
         expect_failure(
             "absolute-member",
-            valid_entries + [("/absolute/pyfcstm/assets/renderer.js", b"x", "file")],
+            valid_entries
+            + [("/absolute/pyfcstm/diagram/assets/renderer.js", b"x", "file")],
             "unsafe member path",
         )
         expect_failure(
             "parent-member",
-            valid_entries + [(root + "/../pyfcstm/assets/renderer.js", b"x", "file")],
+            valid_entries
+            + [(root + "/../pyfcstm/diagram/assets/renderer.js", b"x", "file")],
             "unsafe member path",
         )
         expect_failure(
@@ -451,7 +460,7 @@ def _self_check() -> None:
         )
         expect_failure(
             "windows-drive-member",
-            valid_entries + [("C:/pyfcstm/assets/renderer.js", b"x", "file")],
+            valid_entries + [("C:/pyfcstm/diagram/assets/renderer.js", b"x", "file")],
             "unsafe member path",
         )
         expect_failure(
@@ -464,7 +473,7 @@ def _self_check() -> None:
             valid_entries
             + [
                 (
-                    root + "/pyfcstm/assets/link.js",
+                    root + "/pyfcstm/diagram/assets/link.js",
                     "renderer.js",
                     "symlink",
                 )
@@ -476,8 +485,8 @@ def _self_check() -> None:
             valid_entries
             + [
                 (
-                    root + "/pyfcstm/assets/link.js",
-                    root + "/pyfcstm/assets/renderer.js",
+                    root + "/pyfcstm/diagram/assets/link.js",
+                    root + "/pyfcstm/diagram/assets/renderer.js",
                     "hardlink",
                 )
             ],
@@ -485,7 +494,7 @@ def _self_check() -> None:
         )
 
     missing_license = dict(files)
-    del missing_license["pyfcstm/assets/LICENSE-EPL-2.0.txt"]
+    del missing_license["pyfcstm/diagram/assets/LICENSE-EPL-2.0.txt"]
     try:
         check_members(set(missing_license), missing_license.__getitem__)
     except ValueError:

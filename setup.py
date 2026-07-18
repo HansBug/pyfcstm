@@ -59,8 +59,9 @@ package_data = {
     for package_name in find_packages(include=("*"))
 }
 package_data.setdefault("pyfcstm.llm", []).extend(["*.md", "*.sha256"])
-package_data.setdefault("pyfcstm.assets", []).extend(
+package_data.setdefault("pyfcstm.diagram.assets", []).extend(
     [
+        "README.md",
         "*.js",
         "*.wasm",
         "*.json",
@@ -96,14 +97,14 @@ def _require_diagram_assets_for_distribution() -> None:
     }
     tracked_markers = {
         ".gitignore",
-        ".gitkeep",
+        "README.md",
         "__init__.py",
         "NOTICE.txt",
         "LICENSE-MPL-2.0.txt",
         "LICENSE-EPL-2.0.txt",
         "LICENSE-OFL-1.1.txt",
     }
-    asset_root = os.path.join(here, _MODULE_NAME, "assets")
+    asset_root = os.path.join(here, _MODULE_NAME, "diagram", "assets")
     if os.path.islink(asset_root):
         raise RuntimeError("diagram asset root must not be a symlink: %s" % asset_root)
     asset_files = set()
@@ -135,15 +136,18 @@ def _require_diagram_assets_for_distribution() -> None:
             % ", ".join(extras)
         )
     required_distribution = generated_assets | {
+        "README.md",
         "NOTICE.txt",
         "LICENSE-MPL-2.0.txt",
         "LICENSE-EPL-2.0.txt",
         "LICENSE-OFL-1.1.txt",
     }
     missing = [
-        os.path.join(here, _MODULE_NAME, "assets", relative)
+        os.path.join(here, _MODULE_NAME, "diagram", "assets", relative)
         for relative in sorted(required_distribution)
-        if not os.path.isfile(os.path.join(here, _MODULE_NAME, "assets", relative))
+        if not os.path.isfile(
+            os.path.join(here, _MODULE_NAME, "diagram", "assets", relative)
+        )
     ]
     if missing:
         raise RuntimeError(

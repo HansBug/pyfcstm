@@ -3,7 +3,7 @@
 *
 !.gitignore
 !__init__.py
-!.gitkeep
+!README.md
 !NOTICE.txt
 !LICENSE-MPL-2.0.txt
 !LICENSE-EPL-2.0.txt

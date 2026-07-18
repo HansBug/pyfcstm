@@ -7,7 +7,7 @@ canonical jsfcstm source, downloads the pinned resvg 0.37 compatibility
 artifacts when they are absent, copies the fixed font, and writes a manifest
 with byte hashes. ``make build_assets`` is the supported entry point.
 
-The generated files live under ``pyfcstm/assets`` and are ignored by git.
+The generated files live under ``pyfcstm/diagram/assets`` and are ignored by git.
 The source lock and this script remain tracked so a clean checkout can
 recreate the same package contents.
 """
@@ -26,7 +26,7 @@ from typing import Dict, Iterable, List, Set, Tuple
 
 
 ROOT = Path(__file__).resolve().parent.parent
-ASSET_DIR = ROOT / "pyfcstm" / "assets"
+ASSET_DIR = ROOT / "pyfcstm" / "diagram" / "assets"
 LOCK_PATH = ROOT / "tools" / "diagram_assets" / "asset-lock.json"
 ENTRY_PATH = ROOT / "tools" / "diagram_assets" / "python-renderer-entry.ts"
 BRIDGE_PATH = ROOT / "tools" / "diagram_assets" / "resvg-bridge.js"
@@ -38,7 +38,7 @@ ELK_API_PATH = JSFCSTM_DIR / "node_modules" / "elkjs" / "lib" / "elk-api.js"
 ELK_WORKER_PATH = JSFCSTM_DIR / "node_modules" / "elkjs" / "lib" / "elk-worker.min.js"
 ASSET_MARKERS = {
     ".gitignore",
-    ".gitkeep",
+    "README.md",
     "__init__.py",
     "NOTICE.txt",
     "LICENSE-MPL-2.0.txt",
@@ -382,18 +382,18 @@ def _assert_no_symlink_components(path: Path) -> None:
 
 def tracked_asset_paths() -> Set[str]:
     """
-    Return tracked paths below ``pyfcstm/assets``.
+    Return tracked paths below ``pyfcstm/diagram/assets``.
 
     The git query keeps cleanup and validation aligned with future tracked
     package markers. Source archives without git metadata use the current
     marker set as a compatibility fallback.
 
-    :return: Relative paths from ``pyfcstm/assets``.
+    :return: Relative paths from ``pyfcstm/diagram/assets``.
     :rtype: set[str]
     """
     try:
         result = subprocess.run(
-            ["git", "ls-files", "--", "pyfcstm/assets"],
+            ["git", "ls-files", "--", "pyfcstm/diagram/assets"],
             cwd=str(ROOT),
             check=False,
             capture_output=True,
@@ -405,7 +405,7 @@ def tracked_asset_paths() -> Set[str]:
         return set(ASSET_MARKERS)
     if result.returncode != 0:
         return set(ASSET_MARKERS)
-    prefix = "pyfcstm/assets/"
+    prefix = "pyfcstm/diagram/assets/"
     paths = {
         line.strip()[len(prefix) :]
         for line in result.stdout.splitlines()

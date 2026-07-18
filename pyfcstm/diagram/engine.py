@@ -34,7 +34,7 @@ class DiagramEngineConflictError(DiagramAssetError):
 
 def _asset_bytes(name: str) -> bytes:
     """Load one generated asset through the Python 3.7-compatible resource API."""
-    data = pkgutil.get_data("pyfcstm.assets", name)
+    data = pkgutil.get_data("pyfcstm.diagram.assets", name)
     if data is None:
         raise DiagramAssetError("missing generated diagram asset: %s" % name)
     return data

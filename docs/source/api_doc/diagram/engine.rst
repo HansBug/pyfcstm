@@ -1,9 +1,9 @@
-pyfcstm.diagram\_runtime.engine
+pyfcstm.diagram.engine
 ========================================================
 
-.. currentmodule:: pyfcstm.diagram_runtime.engine
+.. currentmodule:: pyfcstm.diagram.engine
 
-.. automodule:: pyfcstm.diagram_runtime.engine
+.. automodule:: pyfcstm.diagram.engine
 
 
 DiagramAssetError

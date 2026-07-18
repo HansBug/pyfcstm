@@ -95,6 +95,7 @@
     },
     "nullableString": {"type": ["string", "null"]},
     "nullableInteger": {"type": ["integer", "null"]},
+    "nullablePositiveInteger": {"type": ["integer", "null"], "minimum": 1},
     "nullableNumber": {"type": ["number", "null"], "minimum": 0},
     "input": {
       "type": "object",
@@ -115,7 +116,15 @@
         "bound": {"type": "integer", "minimum": 1},
         "case_label": {"$ref": "#/$defs/nullableString"},
         "response_window": {"$ref": "#/$defs/nullableInteger"}
-      }
+      },
+      "allOf": [
+        {
+          "oneOf": [
+            {"properties": {"kind": {"enum": ["reach", "exists_always", "cover"]}, "polarity": {"const": "witness"}}},
+            {"properties": {"kind": {"enum": ["forbid", "invariant", "must_reach", "response"]}, "polarity": {"const": "counterexample"}}}
+          ]
+        }
+      ]
     },
     "legacyResult": {
       "type": "object",
@@ -133,13 +142,23 @@
         "outcome": {"enum": ["property_satisfied", "property_violated", "witness_found", "no_witness", "incomplete", "timeout", "unknown"]},
         "reason": {"$ref": "#/$defs/nullableString"},
         "elapsed_ms": {"type": "number", "minimum": 0},
-        "timeout_ms": {"$ref": "#/$defs/nullableInteger"},
+        "timeout_ms": {"$ref": "#/$defs/nullablePositiveInteger"},
         "has_model": {"type": "boolean"},
         "incomplete_status": {"enum": ["sat", "unsat", "unknown", "timeout", null]},
         "incomplete_reason": {"$ref": "#/$defs/nullableString"},
         "has_incomplete_model": {"type": "boolean"},
         "diagnostics": {"type": "array", "items": {"type": "string"}}
-      }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"enum": ["sat", "unsat"]}}},
+          "then": {"properties": {"reason": {"const": null}}}
+        },
+        {
+          "if": {"properties": {"status": {"enum": ["unknown", "timeout"]}}},
+          "then": {"properties": {"reason": {"type": "string", "minLength": 1}}}
+        }
+      ]
     },
     "feasibilityCheck": {
       "oneOf": [
@@ -406,6 +425,10 @@
           "then": {"properties": {"localization_status": {"const": "complete"}}}
         },
         {
+          "if": {"properties": {"infeasible_stage": {"enum": ["kernel", "initialization", "assumptions"]}}},
+          "then": {"properties": {"refinement_status": {"const": "not_requested"}}}
+        },
+        {
           "if": {"properties": {"localization_status": {"const": "complete"}}},
           "then": {"properties": {"infeasible_stage": {"enum": ["kernel", "initialization", "assumptions"]}}}
         },
@@ -479,7 +502,7 @@
         "outcome": {"enum": ["property_satisfied", "property_violated", "witness_found", "no_witness", "incomplete", "timeout", "unknown", "scenario_infeasible", "feasibility_timeout", "feasibility_unknown"]},
         "reason": {"$ref": "#/$defs/nullableString"},
         "elapsed_ms": {"type": "number", "minimum": 0},
-        "timeout_ms": {"$ref": "#/$defs/nullableInteger"},
+        "timeout_ms": {"$ref": "#/$defs/nullablePositiveInteger"},
         "has_model": {"type": "boolean"},
         "incomplete_status": {"enum": ["sat", "unsat", "unknown", "timeout", null]},
         "incomplete_reason": {"$ref": "#/$defs/nullableString"},
@@ -491,6 +514,14 @@
         "diagnostics": {"type": "array", "items": {"type": "string"}}
       },
       "allOf": [
+        {
+          "if": {"properties": {"status": {"enum": ["sat", "unsat"]}}},
+          "then": {"properties": {"reason": {"const": null}}}
+        },
+        {
+          "if": {"properties": {"status": {"enum": ["unknown", "timeout"]}}},
+          "then": {"properties": {"reason": {"type": "string", "minLength": 1}}}
+        },
         {
           "if": {"properties": {"kind": {"enum": ["reach", "forbid", "invariant", "must_reach", "exists_always", "cover"]}}},
           "then": {
@@ -949,7 +980,7 @@
           "required": ["status", "reason", "incomplete_status"],
           "properties": {
             "status": {"const": "sat"},
-            "reason": {"$ref": "#/$defs/nullableString"},
+            "reason": {"const": null},
             "incomplete_status": {"enum": ["sat", "unsat", "unknown", "timeout", null]}
           }
         },
@@ -996,8 +1027,8 @@
             "model_status": {"const": "sat"},
             "primary_status": {"enum": ["sat", "unsat", "unknown", "timeout"]},
             "incomplete_status": {"enum": ["sat", "unsat", "unknown", "timeout", null]},
-            "primary_reason": {"$ref": "#/$defs/nullableString"},
-            "incomplete_reason": {"$ref": "#/$defs/nullableString"},
+            "primary_reason": {"const": null},
+            "incomplete_reason": {"const": null},
             "primary_elapsed_ms": {"type": "number", "minimum": 0},
             "incomplete_elapsed_ms": {"$ref": "#/$defs/nullableNumber"}
           }
@@ -1039,7 +1070,7 @@
             {
               "properties": {
                 "model_role": {"const": "incomplete_suffix"},
-                "property": {"properties": {"kind": {"const": "response"}}},
+                "property": {"properties": {"kind": {"const": "response"}, "polarity": {"const": "counterexample"}}},
                 "solver": {"properties": {"primary_status": {"const": "unsat"}, "incomplete_status": {"const": "sat"}, "incomplete_elapsed_ms": {"type": "number", "minimum": 0}}},
                 "verdict": {"properties": {"property_satisfied": {"const": null}, "witness_found": {"const": false}, "counterexample_found": {"const": false}, "incomplete": {"const": true}, "outcome": {"const": "incomplete"}}}
               }

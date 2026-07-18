@@ -268,6 +268,11 @@ def _validate_primary_solve_reason(
             "%s must be None unless %s is unknown or timeout."
             % (reason_name, status_name)
         )
+    if status in {"unknown", "timeout"} and reason == "":
+        raise BmcBuildError(
+            "%s must be non-empty when %s is unknown or timeout."
+            % (reason_name, status_name)
+        )
 
 
 def _validate_incomplete_solve_reason(
@@ -277,6 +282,11 @@ def _validate_incomplete_solve_reason(
     if reason is not None and status in {"sat", "unsat"}:
         raise BmcBuildError(
             "%s must be None when %s is sat or unsat." % (reason_name, status_name)
+        )
+    if status in {"unknown", "timeout"} and reason == "":
+        raise BmcBuildError(
+            "%s must be non-empty when %s is unknown or timeout."
+            % (reason_name, status_name)
         )
 
 
@@ -378,6 +388,62 @@ def _validate_witness_verdict(model_role: str, verdict: Mapping[str, Any]) -> No
             raise BmcBuildError(
                 "verdict.%s is inconsistent with model_role=%r."
                 % (field_name, model_role)
+            )
+
+
+def _validate_role_aware_witness_property(
+    model_role: str, value: Mapping[str, Any]
+) -> None:
+    """Bind role-aware witness metadata to its property discriminator."""
+    required = {"kind", "polarity"}
+    missing = required.difference(value)
+    if missing:
+        raise BmcBuildError(
+            "role-aware witness property is missing: %s." % ", ".join(sorted(missing))
+        )
+    kind = value["kind"]
+    polarity = value["polarity"]
+    if kind not in {
+        "reach",
+        "forbid",
+        "invariant",
+        "must_reach",
+        "exists_always",
+        "response",
+        "cover",
+    }:
+        raise BmcBuildError("role-aware witness property.kind is invalid: %r." % kind)
+    if polarity not in {"witness", "counterexample"}:
+        raise BmcBuildError(
+            "role-aware witness property.polarity is invalid: %r." % polarity
+        )
+    expected_polarity = {
+        "reach": "witness",
+        "exists_always": "witness",
+        "cover": "witness",
+        "forbid": "counterexample",
+        "invariant": "counterexample",
+        "must_reach": "counterexample",
+        "response": "counterexample",
+    }[kind]
+    if polarity != expected_polarity:
+        raise BmcBuildError(
+            "role-aware witness property.polarity does not match property.kind "
+            "%r." % kind
+        )
+    expected = {
+        "primary_witness": {"polarity": "witness"},
+        "primary_counterexample": {"polarity": "counterexample"},
+        "incomplete_suffix": {
+            "kind": "response",
+            "polarity": "counterexample",
+        },
+    }[model_role]
+    for field_name, expected_value in expected.items():
+        if value[field_name] != expected_value:
+            raise BmcBuildError(
+                "role-aware witness property.%s is inconsistent with "
+                "model_role=%r." % (field_name, model_role)
             )
 
 
@@ -1860,6 +1926,13 @@ class BmcFeasibilityResult(_PrettyPrintableMixin):
             raise BmcBuildError(
                 "Unknown/timeout refinement requires a non-empty refinement_reason."
             )
+        if (
+            self.infeasible_stage is not None
+            and self.refinement_status != "not_requested"
+        ):
+            raise BmcBuildError(
+                "localized infeasible stages require refinement_status=not_requested."
+            )
         object.__setattr__(
             self,
             "refinement_checks",
@@ -3213,6 +3286,13 @@ class BmcWitnessTrace(_PrettyPrintableMixin):
         property_metadata = _coerce_public_json_mapping("property", self.property)
         solver_metadata = _coerce_public_json_mapping("solver", self.solver)
         initial_metadata = _coerce_public_json_mapping("initial", self.initial)
+        if role_aware:
+            model_role = self.model_role
+            if model_role is None:
+                raise BmcBuildError(
+                    "model_role and verdict must either both be present or both be absent."
+                )
+            _validate_role_aware_witness_property(model_role, property_metadata)
         _validate_witness_solver_metadata(solver_metadata)
         role_solver_fields = {
             "model_status",

@@ -681,6 +681,20 @@ def test_bmc_schema_rejects_forged_scenario_infeasible_verdict(bmc_files) -> Non
                 ],
             ),
         ),
+        (
+            "localized refinement status",
+            lambda item: item["result"]["feasibility"].update(
+                refinement_status="not_needed"
+            ),
+        ),
+        (
+            "result reason",
+            lambda item: item["result"].update(reason="forged"),
+        ),
+        (
+            "negative timeout",
+            lambda item: item["result"].update(timeout_ms=-1),
+        ),
         ("exit code", lambda item: item.update(exit_code=0)),
     )
     for name, mutate in mutations:
@@ -909,6 +923,14 @@ def test_bmc_schema_rejects_suffix_channel_mutations(bmc_files) -> None:
     }
     forged_feasibility["result"]["feasibility"]["localization_status"] = "unknown"
     assert list(validator.iter_errors(forged_feasibility))
+
+    forged_solver_reason = copy.deepcopy(payload)
+    forged_solver_reason["witness"]["solver"]["primary_reason"] = "forged"
+    assert list(validator.iter_errors(forged_solver_reason))
+
+    forged_property = copy.deepcopy(payload)
+    forged_property["witness"]["property"]["kind"] = "reach"
+    assert list(validator.iter_errors(forged_property))
 
 
 def test_bmc_schema_rejects_mismatched_role_aware_trace_roles(bmc_files) -> None:

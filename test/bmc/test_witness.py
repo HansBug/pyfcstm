@@ -661,6 +661,63 @@ def test_solve_property_primary_models_expose_role_aware_channels() -> None:
     assert "model_role" not in counterexample.solver
 
 
+@pytest.mark.parametrize(
+    ("model_role", "property_metadata"),
+    [
+        (
+            "primary_witness",
+            {"kind": "reach", "polarity": "counterexample"},
+        ),
+        (
+            "primary_counterexample",
+            {"kind": "forbid", "polarity": "witness"},
+        ),
+        (
+            "incomplete_suffix",
+            {"kind": "reach", "polarity": "counterexample"},
+        ),
+    ],
+)
+def test_witness_trace_rejects_role_property_mismatches(
+    model_role, property_metadata
+) -> None:
+    """Role-aware traces bind property kind/polarity to the selected model."""
+    suffix = model_role == "incomplete_suffix"
+    with pytest.raises(BmcBuildError, match="property"):
+        BmcWitnessTrace(
+            property_metadata,
+            {
+                "model_status": "sat",
+                "primary_status": "unsat" if suffix else "sat",
+                "incomplete_status": "sat" if suffix else None,
+                "primary_reason": None,
+                "incomplete_reason": None,
+                "primary_elapsed_ms": 1.0,
+                "incomplete_elapsed_ms": 1.0 if suffix else None,
+            },
+            {},
+            (),
+            (),
+            model_role=model_role,
+            verdict={
+                "property_satisfied": None
+                if suffix
+                else model_role == "primary_witness",
+                "witness_found": not suffix and model_role == "primary_witness",
+                "counterexample_found": not suffix
+                and model_role == "primary_counterexample",
+                "incomplete": suffix,
+                "outcome": "incomplete"
+                if suffix
+                else (
+                    "witness_found"
+                    if model_role == "primary_witness"
+                    else "property_violated"
+                ),
+            },
+        )
+
+
 class _SolverSpy:
     """Minimal incremental-solver double for deadline and stage tests."""
 
@@ -1058,6 +1115,21 @@ def test_solve_result_rejects_inferred_assumptions_for_primary_unsat() -> None:
         BmcSolveResult(formula, "unsat", feasibility=feasibility)
 
 
+@pytest.mark.parametrize(
+    ("status", "kwargs"),
+    [
+        ("sat", {"model": _empty_sat_model(), "reason": "forged"}),
+        ("unsat", {"feasibility": _feasible_result_evidence(), "reason": "forged"}),
+        ("sat", {"model": _empty_sat_model(), "timeout_ms": 0}),
+        ("sat", {"model": _empty_sat_model(), "timeout_ms": -1}),
+    ],
+)
+def test_solve_result_rejects_invalid_reason_and_timeout_values(status, kwargs) -> None:
+    """Direct result constructors enforce the published reason/timeout contract."""
+    with pytest.raises(BmcBuildError, match="reason|timeout_ms"):
+        BmcSolveResult(_verdict_formula("reach"), status, **kwargs)
+
+
 def test_solve_result_allows_inferred_prefix_before_checked_assumptions() -> None:
     """Primary UNSAT may infer only the kernel/init SAT prefix."""
     formula = _verdict_formula("reach")
@@ -1379,6 +1451,22 @@ def test_feasibility_result_requires_checked_prefix_for_localization(
             assumptions=assumptions,
             infeasible_stage=infeasible_stage,
             localization_status="complete",
+        )
+
+
+def test_feasibility_result_rejects_not_needed_for_localized_stage() -> None:
+    """A localized infeasible stage must keep refinement explicitly unrequested."""
+    checked_sat = BmcFeasibilityCheck("sat", "checked", elapsed_ms=1.0)
+    checked_unsat = BmcFeasibilityCheck("unsat", "checked", elapsed_ms=1.0)
+
+    with pytest.raises(BmcBuildError, match="refinement_status.*not_requested"):
+        BmcFeasibilityResult(
+            checked_sat,
+            checked_unsat,
+            checked_unsat,
+            infeasible_stage="initialization",
+            localization_status="complete",
+            refinement_status="not_needed",
         )
 
 
@@ -2299,7 +2387,7 @@ def test_witness_trace_rejects_null_suffix_elapsed_for_suffix_role() -> None:
     """An incomplete suffix trace must retain evidence of its solver check."""
     with pytest.raises(BmcBuildError, match="suffix elapsed"):
         BmcWitnessTrace(
-            {"kind": "response", "polarity": "witness"},
+            {"kind": "response", "polarity": "counterexample"},
             {
                 "model_status": "sat",
                 "primary_status": "unsat",

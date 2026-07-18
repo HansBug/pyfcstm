@@ -13,7 +13,7 @@ import type {
     PreviewWebviewState, SelectionRef, PreviewResolvedOptions,
     TextRange, PreviewStateDetail, PreviewTransitionDetail,
 } from './types';
-import type {PaletteId, PaletteMode} from './render/palette';
+import type {PaletteId, PaletteMode} from '../../../jsfcstm/src/diagram/render/palette';
 
 type ColorMode = 'light' | 'dark' | 'auto';
 const STORAGE_KEY_PALETTE = 'fcstm.preview.palette';

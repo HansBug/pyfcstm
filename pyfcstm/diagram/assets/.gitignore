@@ -1,0 +1,10 @@
+# Generated diagram assets are never committed. Keep only package markers and
+# provenance files tracked in this directory.
+*
+!.gitignore
+!__init__.py
+!README.md
+!NOTICE.txt
+!LICENSE-MPL-2.0.txt
+!LICENSE-EPL-2.0.txt
+!LICENSE-OFL-1.1.txt

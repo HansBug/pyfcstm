@@ -1,5 +1,6 @@
 import os
 import re
+import sys
 
 from setuptools import find_packages, setup
 
@@ -58,6 +59,125 @@ package_data = {
     for package_name in find_packages(include=("*"))
 }
 package_data.setdefault("pyfcstm.llm", []).extend(["*.md", "*.sha256"])
+package_data.setdefault("pyfcstm.diagram.assets", []).extend(
+    [
+        "README.md",
+        "*.js",
+        "*.wasm",
+        "*.json",
+        "*.txt",
+        "fonts/*.ttf",
+        "fonts/*.otf",
+    ]
+)
+
+
+def _require_diagram_assets_for_distribution() -> None:
+    """Fail closed when a distribution build would omit diagram resources."""
+    distribution_commands = {
+        "build",
+        "build_py",
+        "sdist",
+        "bdist",
+        "bdist_wheel",
+        "install",
+        "editable_wheel",
+        "develop",
+    }
+    if not distribution_commands.intersection(sys.argv[1:]):
+        return
+    generated_assets = {
+        "renderer.js",
+        "resvg-binding.js",
+        "resvg-bridge.js",
+        "host-shim.js",
+        "resvg.wasm",
+        "manifest.json",
+        os.path.join("fonts", "JetBrainsMono-Regular.ttf"),
+        os.path.join("fonts", "JetBrainsMono-Medium.ttf"),
+        os.path.join("fonts", "JetBrainsMono-Bold.ttf"),
+        os.path.join("fonts", "NotoSansSC-Regular.otf"),
+        os.path.join("fonts", "NotoSansSC-Bold.otf"),
+        os.path.join("fonts", "NotoSansTC-Regular.otf"),
+        os.path.join("fonts", "NotoSansTC-Bold.otf"),
+        os.path.join("fonts", "NotoSansHK-Regular.otf"),
+        os.path.join("fonts", "NotoSansHK-Bold.otf"),
+        os.path.join("fonts", "NotoSansJP-Regular.otf"),
+        os.path.join("fonts", "NotoSansJP-Bold.otf"),
+        os.path.join("fonts", "NotoSansKR-Regular.otf"),
+        os.path.join("fonts", "NotoSansKR-Bold.otf"),
+    }
+    tracked_markers = {
+        ".gitignore",
+        "README.md",
+        "__init__.py",
+        "NOTICE.txt",
+        "LICENSE-MPL-2.0.txt",
+        "LICENSE-EPL-2.0.txt",
+        "LICENSE-OFL-1.1.txt",
+    }
+    asset_root = os.path.join(here, _MODULE_NAME, "diagram", "assets")
+    for legacy_root in (
+        os.path.join(here, _MODULE_NAME, "assets"),
+        os.path.join(here, _MODULE_NAME, "diagram_runtime"),
+    ):
+        if os.path.lexists(legacy_root):
+            raise RuntimeError(
+                "retired diagram path must be removed before distribution: %s"
+                % legacy_root
+            )
+    if os.path.islink(asset_root):
+        raise RuntimeError("diagram asset root must not be a symlink: %s" % asset_root)
+    asset_files = set()
+    for directory, subdirectories, filenames in os.walk(asset_root):
+        linked_directories = [
+            os.path.join(directory, name)
+            for name in subdirectories
+            if os.path.islink(os.path.join(directory, name))
+        ]
+        if linked_directories:
+            raise RuntimeError(
+                "diagram asset tree contains symlink directories: %s"
+                % ", ".join(sorted(linked_directories))
+            )
+        for filename in filenames:
+            path = os.path.join(directory, filename)
+            if os.path.islink(path):
+                raise RuntimeError(
+                    "diagram asset tree contains a symlink file: %s" % path
+                )
+            relative = os.path.relpath(path, asset_root)
+            if "__pycache__" not in relative.split(os.sep):
+                asset_files.add(relative)
+    extras = sorted(asset_files - generated_assets - tracked_markers)
+    if extras:
+        raise RuntimeError(
+            "diagram asset tree contains unregistered files; run "
+            "`make build_assets` before building or installing the package: %s"
+            % ", ".join(extras)
+        )
+    required_distribution = generated_assets | {
+        "README.md",
+        "NOTICE.txt",
+        "LICENSE-MPL-2.0.txt",
+        "LICENSE-EPL-2.0.txt",
+        "LICENSE-OFL-1.1.txt",
+    }
+    missing = [
+        os.path.join(here, _MODULE_NAME, "diagram", "assets", relative)
+        for relative in sorted(required_distribution)
+        if not os.path.isfile(
+            os.path.join(here, _MODULE_NAME, "diagram", "assets", relative)
+        )
+    ]
+    if missing:
+        raise RuntimeError(
+            "diagram distribution assets are missing; run `make build_assets` "
+            "before building or installing the package: %s" % ", ".join(missing)
+        )
+
+
+_require_diagram_assets_for_distribution()
 
 setup(
     # information

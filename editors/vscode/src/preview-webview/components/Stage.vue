@@ -7,8 +7,8 @@ import {
     ImageOutline, CodeOutline,
 } from '@vicons/ionicons5';
 import {renderSvg, type RenderedSvg} from '../render/svg';
-import {smoothGraphEdges} from '../render/edge-smoother';
-import type {PaletteId, PaletteMode} from '../render/palette';
+import {smoothGraphEdges} from '../../../../jsfcstm/src/diagram/render/edge-smoother';
+import type {PaletteId, PaletteMode} from '../../../../jsfcstm/src/diagram/render/palette';
 import {getElk} from '../composables/useElk';
 import {decidePreviewPointerAction, PREVIEW_DRAG_THRESHOLD_PX} from '../interaction';
 import {computePreviewFit} from '../layout';

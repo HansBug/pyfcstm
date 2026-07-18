@@ -7,3 +7,10 @@ recursive-include pyfcstm/template *.zip *.json
 recursive-include pyfcstm/dsl *.g4 *.interp *.tokens
 recursive-include pyfcstm/bmc/grammar *.g4 *.interp *.tokens
 recursive-include pyfcstm/llm *.md *.sha256
+recursive-include pyfcstm/diagram/assets *.md *.js *.wasm *.json *.txt *.ttf *.otf
+prune pyfcstm/assets
+prune pyfcstm/diagram_runtime
+include pyfcstm/diagram/assets/NOTICE.txt
+include pyfcstm/diagram/assets/LICENSE-MPL-2.0.txt
+include pyfcstm/diagram/assets/LICENSE-EPL-2.0.txt
+include pyfcstm/diagram/assets/LICENSE-OFL-1.1.txt

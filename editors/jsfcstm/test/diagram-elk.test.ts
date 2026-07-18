@@ -9,12 +9,17 @@ import {
     buildFcstmDiagramFromDocument,
     buildFcstmDiagramWebviewPayload,
     buildFcstmElkGraph,
+    buildCrossingIndex,
+    collectSegments,
     collectElkLayoutGeometry,
     MIN_TERMINAL_SEGMENT,
     MIN_SELF_LOOP_SEGMENT,
     renderFcstmDiagramSvg,
+    resolvePalette,
     resolveFcstmDiagramPreviewOptions,
+    smoothGraphEdges,
     terminalApproach,
+    measureFcstmElkLabel,
 } from '@pyfcstm/jsfcstm/diagram';
 
 describe('jsfcstm ELK-based diagram pipeline', () => {
@@ -36,6 +41,37 @@ describe('jsfcstm ELK-based diagram pipeline', () => {
         '    Running -> [*] : Start;',
         '}',
     ].join('\n');
+
+    it('measures Unicode display width instead of UTF-16 code units', () => {
+        const corpus: Array<[string, string]> = [
+            ['ASCII', 'A'],
+            ['precomposed Latin', 'é'],
+            ['decomposed Latin', 'e\u0301'],
+            ['astral mathematical Latin', '𝔸'],
+            ['CJK', '状态'],
+            ['full-width Latin', 'Ａ'],
+            ['Greek', 'Ω'],
+            ['emoji', '😀'],
+            ['ZWJ emoji', '👩‍💻'],
+            ['flag emoji', '🇨🇳'],
+            ['variation-selector emoji', '✈️'],
+            ['keycap emoji', '1️⃣'],
+        ];
+        const widths = new Map(corpus.map(([name, text]) => [
+            name,
+            measureFcstmElkLabel(text, 0, 0).width,
+        ]));
+
+        assert.equal(widths.get('precomposed Latin'), widths.get('decomposed Latin'));
+        assert.equal(widths.get('CJK'), measureFcstmElkLabel('ABCD', 0, 0).width);
+        assert.equal(widths.get('full-width Latin'), measureFcstmElkLabel('状', 0, 0).width);
+        assert.equal(widths.get('astral mathematical Latin'), widths.get('ASCII'));
+        assert.equal(widths.get('ZWJ emoji'), widths.get('emoji'));
+        assert.equal(widths.get('flag emoji'), widths.get('emoji'));
+        assert.equal(widths.get('variation-selector emoji'), widths.get('emoji'));
+        assert.equal(widths.get('keycap emoji'), widths.get('emoji'));
+        assert.ok((widths.get('CJK') || 0) > (widths.get('ASCII') || 0));
+    });
 
     it('builds an ELK compound graph matching the diagram IR', async () => {
         const doc = createDocument(sampleSource, '/tmp/elk-sample.fcstm');
@@ -111,6 +147,9 @@ describe('jsfcstm ELK-based diagram pipeline', () => {
         assert.ok(svg.includes('data-fcstm-kind="composite-state"'));
         assert.ok(svg.includes('data-fcstm-kind="state"'));
         assert.ok(svg.includes('data-fcstm-kind="transition"'));
+        assert.ok(svg.includes('orient="auto"'));
+        assert.ok(svg.includes('refX="10"'));
+        assert.ok(!svg.includes('auto-start-reverse'));
         // XML-escaped font-family, not JSON-escaped.
         assert.ok(svg.includes('font-family="&quot;JetBrains Mono&quot;'));
         assert.ok(!svg.includes('font-family="\\"'), 'font-family must not use JS-string escapes');
@@ -125,6 +164,63 @@ describe('jsfcstm ELK-based diagram pipeline', () => {
                 'chevron group must include data-fcstm-range-* attributes for reveal-source'
             );
         }
+    });
+
+    it('shares smoother, crossing, palette, and truncation behavior with the webview', () => {
+        const graph: any = {
+            id: '__canvas__',
+            x: 0,
+            y: 0,
+            children: [],
+            edges: [
+                {
+                    id: 'vhv',
+                    sources: ['A'],
+                    targets: ['B'],
+                    sections: [{
+                        startPoint: {x: 0, y: 0},
+                        bendPoints: [{x: 5, y: 10}, {x: 50, y: 10}],
+                        endPoint: {x: 50, y: 100},
+                    }],
+                },
+                {
+                    id: 'long',
+                    sources: ['B'],
+                    targets: ['C'],
+                    sections: [{
+                        startPoint: {x: 0, y: 0},
+                        bendPoints: [{x: 5, y: 0}, {x: 5, y: 20}, {x: 20, y: 20}],
+                        endPoint: {x: 20, y: 100},
+                    }],
+                },
+                {
+                    id: 'horizontal',
+                    sources: ['D'],
+                    targets: ['E'],
+                    sections: [{
+                        startPoint: {x: -20, y: 10},
+                        endPoint: {x: 20, y: 10},
+                    }],
+                },
+                {
+                    id: 'vertical',
+                    sources: ['F'],
+                    targets: ['G'],
+                    sections: [{
+                        startPoint: {x: 0, y: 0},
+                        endPoint: {x: 0, y: 30},
+                    }],
+                },
+            ],
+        };
+        smoothGraphEdges(graph, 18);
+        assert.equal(graph.edges[0].sections[0].bendPoints[0].y, 18);
+        assert.equal(graph.edges[1].sections[0].bendPoints[0].x, 18);
+        const crossings = buildCrossingIndex(collectSegments(graph));
+        assert.ok(crossings.size > 0);
+        assert.equal(resolvePalette('default', 'light').edgeStroke, '#3470a8');
+        assert.equal(resolvePalette('darcula', 'dark').leafFill, '#3c3f41');
+
     });
 
     it('builds a webview payload with everything the preview panel needs', async () => {

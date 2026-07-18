@@ -285,9 +285,7 @@ def _validate_elapsed_ms(value: float) -> None:
         raise BmcBuildError("elapsed_ms must be a finite non-negative number.")
 
 
-def _validate_witness_solver_metadata(
-    value: Mapping[str, Any], *, schema_version: str = "bmc-witness/v1"
-) -> None:
+def _validate_witness_solver_metadata(value: Mapping[str, Any]) -> None:
     status = value.get("status")
     if status is not None and status not in {"sat", "unsat", "unknown", "timeout"}:
         raise BmcBuildError("solver.status must be sat, unsat, unknown, or timeout.")
@@ -304,10 +302,7 @@ def _validate_witness_solver_metadata(
     if "elapsed_ms" in value:
         _validate_elapsed_ms(value["elapsed_ms"])
     if "incomplete_elapsed_ms" in value:
-        if (
-            value["incomplete_elapsed_ms"] is not None
-            or schema_version == "bmc-witness/v1"
-        ):
+        if value["incomplete_elapsed_ms"] is not None:
             _validate_elapsed_ms(cast(float, value["incomplete_elapsed_ms"]))
     if "reason" in value:
         _validate_primary_solve_reason(
@@ -386,7 +381,7 @@ def _validate_witness_verdict(model_role: str, verdict: Mapping[str, Any]) -> No
             )
 
 
-def _validate_v2_witness_solver_metadata(
+def _validate_role_aware_witness_solver_metadata(
     model_role: str, value: Mapping[str, Any]
 ) -> None:
     required = {
@@ -401,14 +396,20 @@ def _validate_v2_witness_solver_metadata(
     missing = required.difference(value)
     if missing:
         raise BmcBuildError(
-            "bmc-witness/v2 solver metadata is missing: %s."
+            "role-aware witness solver metadata is missing: %s."
             % ", ".join(sorted(missing))
+        )
+    legacy_only = {"status", "reason", "elapsed_ms"}.intersection(value)
+    if legacy_only:
+        raise BmcBuildError(
+            "role-aware witness solver metadata cannot contain raw-model fields: %s."
+            % ", ".join(sorted(legacy_only))
         )
     model_status = value["model_status"]
     primary_status = value["primary_status"]
     incomplete_status = value["incomplete_status"]
     if model_status != "sat":
-        raise BmcBuildError("bmc-witness/v2 model_status must be sat.")
+        raise BmcBuildError("role-aware witness model_status must be sat.")
     if model_role in {"primary_witness", "primary_counterexample"}:
         if primary_status != "sat" or incomplete_status is not None:
             raise BmcBuildError(
@@ -425,13 +426,15 @@ def _validate_v2_witness_solver_metadata(
             "incomplete_suffix requires a non-null suffix elapsed time."
         )
     if value["primary_reason"] is not None:
-        raise BmcBuildError("v2 witness solver metadata requires primary_reason=None.")
+        raise BmcBuildError(
+            "role-aware witness solver metadata requires primary_reason=None."
+        )
     if (
         value["incomplete_status"] in {"sat", "unsat"}
         and value["incomplete_reason"] is not None
     ):
         raise BmcBuildError(
-            "v2 completed suffix metadata requires incomplete_reason=None."
+            "role-aware completed suffix metadata requires incomplete_reason=None."
         )
 
 
@@ -2588,7 +2591,6 @@ class BmcSolveResult(_PrettyPrintableMixin):
         feasibility = self._validated_feasibility()
         return {
             "node": "bmc_solve_result",
-            "schema_version": "bmc-solve-result/v2",
             "kind": self.kind,
             "polarity": self.polarity,
             "status": self.status,
@@ -3157,12 +3159,10 @@ class BmcWitnessTrace(_PrettyPrintableMixin):
     :type steps: Sequence[BmcWitnessStep]
     :param diagnostics: Witness diagnostics, defaults to ``()``.
     :type diagnostics: Sequence[str], optional
-    :param schema_version: Witness schema version, defaults to
-        ``"bmc-witness/v1"``.
-    :type schema_version: str, optional
-    :param model_role: Selected model role for v2 traces, defaults to ``None``.
+    :param model_role: Selected model role for role-aware traces, defaults to
+        ``None`` for raw-model traces.
     :type model_role: str, optional
-    :param verdict: Detached role-aware verdict for v2 traces, defaults to
+    :param verdict: Detached verdict for role-aware traces, defaults to
         ``None``.
     :type verdict: Mapping[str, object], optional
     :raises pyfcstm.bmc.errors.BmcBuildError: If the trace payload is
@@ -3171,8 +3171,8 @@ class BmcWitnessTrace(_PrettyPrintableMixin):
     Example::
 
         >>> trace = BmcWitnessTrace({'kind': 'reach'}, {'status': 'sat'}, {'mode': 'cold'}, (), ())
-        >>> trace.to_canonical()['schema_version']
-        'bmc-witness/v1'
+        >>> sorted(trace.to_canonical())
+        ['diagnostics', 'frames', 'initial', 'property', 'solver', 'steps']
     """
 
     property: Mapping[str, Any]
@@ -3181,30 +3181,26 @@ class BmcWitnessTrace(_PrettyPrintableMixin):
     frames: Sequence[BmcWitnessFrame]
     steps: Sequence[BmcWitnessStep]
     diagnostics: Sequence[str] = ()
-    schema_version: str = "bmc-witness/v1"
     model_role: Optional[str] = None
     verdict: Optional[Mapping[str, Any]] = None
 
     def __post_init__(self) -> None:
-        if self.schema_version not in {"bmc-witness/v1", "bmc-witness/v2"}:
+        role_aware = self.model_role is not None or self.verdict is not None
+        if (self.model_role is None) != (self.verdict is None):
             raise BmcBuildError(
-                "Unsupported witness schema version: %r." % self.schema_version
+                "model_role and verdict must either both be present or both be absent."
             )
         if self.model_role is not None and self.model_role not in _BMC_MODEL_ROLES:
             raise BmcBuildError("Unsupported witness model_role: %r." % self.model_role)
-        if self.schema_version == "bmc-witness/v1" and (
-            self.model_role is not None or self.verdict is not None
-        ):
-            raise BmcBuildError(
-                "bmc-witness/v1 cannot contain model_role or verdict metadata."
-            )
-        if self.schema_version == "bmc-witness/v2":
+        if role_aware:
             model_role = self.model_role
             if model_role is None:
-                raise BmcBuildError("bmc-witness/v2 requires model_role.")
+                raise BmcBuildError(
+                    "model_role and verdict must either both be present or both be absent."
+                )
             verdict = self.verdict
             if not isinstance(verdict, Mapping):
-                raise BmcBuildError("bmc-witness/v2 requires verdict metadata.")
+                raise BmcBuildError("role-aware witness requires verdict metadata.")
             verdict = _coerce_public_json_mapping("verdict", verdict)
             _validate_witness_verdict(model_role, verdict)
             object.__setattr__(self, "verdict", verdict)
@@ -3217,14 +3213,24 @@ class BmcWitnessTrace(_PrettyPrintableMixin):
         property_metadata = _coerce_public_json_mapping("property", self.property)
         solver_metadata = _coerce_public_json_mapping("solver", self.solver)
         initial_metadata = _coerce_public_json_mapping("initial", self.initial)
-        _validate_witness_solver_metadata(
-            solver_metadata, schema_version=self.schema_version
-        )
-        if self.schema_version == "bmc-witness/v2":
+        _validate_witness_solver_metadata(solver_metadata)
+        role_solver_fields = {
+            "model_status",
+            "primary_status",
+            "primary_reason",
+            "primary_elapsed_ms",
+        }
+        if not role_aware and role_solver_fields.intersection(solver_metadata):
+            raise BmcBuildError(
+                "role-aware solver metadata requires model_role and verdict."
+            )
+        if role_aware:
             model_role = self.model_role
             if model_role is None:
-                raise BmcBuildError("bmc-witness/v2 requires model_role.")
-            _validate_v2_witness_solver_metadata(model_role, solver_metadata)
+                raise BmcBuildError(
+                    "model_role and verdict must either both be present or both be absent."
+                )
+            _validate_role_aware_witness_solver_metadata(model_role, solver_metadata)
         object.__setattr__(self, "property", property_metadata)
         object.__setattr__(self, "solver", solver_metadata)
         object.__setattr__(self, "initial", initial_metadata)
@@ -3261,26 +3267,30 @@ class BmcWitnessTrace(_PrettyPrintableMixin):
             []
         """
         solver_metadata = _coerce_public_json_mapping("solver", self.solver)
-        _validate_witness_solver_metadata(
-            solver_metadata, schema_version=self.schema_version
-        )
-        if self.schema_version == "bmc-witness/v2":
+        _validate_witness_solver_metadata(solver_metadata)
+        role_aware = self.model_role is not None or self.verdict is not None
+        if (self.model_role is None) != (self.verdict is None):
+            raise BmcBuildError(
+                "model_role and verdict must either both be present or both be absent."
+            )
+        if role_aware:
             model_role = self.model_role
             if model_role is None:
-                raise BmcBuildError("bmc-witness/v2 requires model_role.")
-            _validate_v2_witness_solver_metadata(model_role, solver_metadata)
+                raise BmcBuildError(
+                    "model_role and verdict must either both be present or both be absent."
+                )
+            _validate_role_aware_witness_solver_metadata(model_role, solver_metadata)
             verdict = self.verdict
             if not isinstance(verdict, Mapping):
-                raise BmcBuildError("bmc-witness/v2 requires verdict metadata.")
+                raise BmcBuildError("role-aware witness requires verdict metadata.")
             _validate_witness_verdict(
                 model_role,
                 _coerce_public_json_mapping("verdict", verdict),
             )
         return {
-            "schema_version": self.schema_version,
             **(
                 {"model_role": self.model_role, "verdict": self.verdict}
-                if self.schema_version == "bmc-witness/v2"
+                if role_aware
                 else {}
             ),
             "property": _coerce_public_json_mapping("property", self.property),
@@ -3592,7 +3602,7 @@ class BmcReplayResult(_PrettyPrintableMixin):
     :param mismatches: Structured replay mismatches, defaults to ``()``.
     :type mismatches: Sequence[BmcReplayMismatch], optional
     :param model_role: Model role copied from the witness, defaults to ``None``
-        for legacy v1 traces.
+        for raw-model traces.
     :type model_role: str, optional
     :raises pyfcstm.bmc.errors.BmcBuildError: If the replay result payload is
         malformed.
@@ -4774,7 +4784,6 @@ def _decode_witness_trace(
     model: z3.ModelRef,
     *,
     event_policy: Optional[BmcEventDecodePolicy],
-    schema_version: str,
     model_role: Optional[str],
     solver_metadata: Mapping[str, Any],
     verdict: Optional[Mapping[str, Any]],
@@ -4807,7 +4816,6 @@ def _decode_witness_trace(
         frames=frames,
         steps=steps,
         diagnostics=checked.diagnostics,
-        schema_version=schema_version,
         model_role=model_role,
         verdict=verdict,
     )
@@ -4858,7 +4866,6 @@ def decode_bmc_witness(
         formula,
         model,
         event_policy=event_policy,
-        schema_version="bmc-witness/v1",
         model_role=None,
         solver_metadata=solver,
         verdict=None,
@@ -4881,7 +4888,7 @@ def decode_bmc_result_trace(
     :param event_policy: Optional sparse event decode policy, defaults to
         ``None``.
     :type event_policy: BmcEventDecodePolicy, optional
-    :return: Versioned witness trace carrying the selected model role.
+    :return: Role-aware witness trace carrying the selected model role.
     :rtype: BmcWitnessTrace
     :raises pyfcstm.bmc.errors.BmcBuildError: If the requested model channel is
         unavailable or the result is not internally consistent.
@@ -4932,7 +4939,6 @@ def decode_bmc_result_trace(
             result.formula,
             result.model,
             event_policy=event_policy,
-            schema_version="bmc-witness/v2",
             model_role=role,
             solver_metadata=solver_metadata,
             verdict=verdict,
@@ -4981,7 +4987,6 @@ def decode_bmc_result_trace(
         result.formula,
         result.incomplete_model,
         event_policy=event_policy,
-        schema_version="bmc-witness/v2",
         model_role="incomplete_suffix",
         solver_metadata=solver_metadata,
         verdict=verdict,

@@ -469,13 +469,13 @@ def test_bmc_schema_freezes_role_channel_contract():
         / "bmc_cli.schema.json"
     )
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
-    result_v2 = schema["$defs"]["resultV2"]
-    witness_v2 = schema["$defs"]["witnessV2"]
+    current_result = schema["$defs"]["currentResult"]
+    role_aware_witness = schema["$defs"]["roleAwareWitness"]
 
-    assert result_v2["allOf"]
-    assert witness_v2["allOf"]
-    result_text = json.dumps(result_v2["allOf"], sort_keys=True)
-    witness_text = json.dumps(witness_v2["allOf"], sort_keys=True)
+    assert current_result["allOf"]
+    assert role_aware_witness["allOf"]
+    result_text = json.dumps(current_result["allOf"], sort_keys=True)
+    witness_text = json.dumps(role_aware_witness["allOf"], sort_keys=True)
     for role in ("primary_witness", "primary_counterexample", "incomplete_suffix"):
         assert role in result_text
         assert role in witness_text
@@ -484,8 +484,8 @@ def test_bmc_schema_freezes_role_channel_contract():
 
 
 @pytest.mark.unittest
-def test_bmc_schema_uses_explicit_legacy_witness_discriminator():
-    """The legacy witness branch explicitly excludes the v2 version field."""
+def test_bmc_schema_uses_shape_discriminators_without_version_fields():
+    """Legacy and role-aware branches are distinguished by payload shape."""
     schema_path = (
         Path(__file__).resolve().parents[2]
         / "docs"
@@ -495,11 +495,12 @@ def test_bmc_schema_uses_explicit_legacy_witness_discriminator():
         / "bmc_cli.schema.json"
     )
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
-    assert {"schema_version"} in [
-        set(rule["not"]["required"])
-        for rule in schema["$defs"]["witnessV1"]["allOf"]
-        if "not" in rule and "required" in rule["not"]
-    ]
+    schema_text = json.dumps(schema, sort_keys=True)
+    assert "schema_version" not in schema_text
+    assert "model_role" not in schema["$defs"]["legacyWitness"]["properties"]
+    assert {"model_role", "verdict"}.issubset(
+        schema["$defs"]["roleAwareWitness"]["required"]
+    )
 
 
 @pytest.mark.unittest

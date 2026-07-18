@@ -85,7 +85,7 @@ BmcWitnessTrace
 -----------------------------------------------------
 
 .. autoclass:: BmcWitnessTrace
-    :members: __post_init__,to_canonical,pretty_print,to_text,__str__,property,solver,initial,frames,steps,diagnostics,schema_version,model_role,verdict
+    :members: __post_init__,to_canonical,pretty_print,to_text,__str__,property,solver,initial,frames,steps,diagnostics,model_role,verdict
 
 
 BmcRuntimeFrame

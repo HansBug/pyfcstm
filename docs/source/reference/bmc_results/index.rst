@@ -126,9 +126,9 @@ One invocation follows this fixed order:
    incomplete-horizon formula, solve that diagnostic formula under the same
    total deadline.
 #. If a SAT model is selected, decode it with the result-bound decoder into a
-   ``bmc-witness/v2`` trace and replay it through ``SimulationRuntime`` with
-   ``abstract_handlers=None``.  The legacy ``decode_bmc_witness`` API continues
-   to emit ``bmc-witness/v1``.
+   role-aware trace and replay it through ``SimulationRuntime`` with
+   ``abstract_handlers=None``.  The raw-model ``decode_bmc_witness`` API omits
+   the result-bound ``model_role`` and ``verdict`` fields.
 #. Compute the final exit code, construct the entire report once, then write it
    to stdout or atomically replace ``--output``.
 #. Exit with the same code recorded by JSON ``exit_code``.
@@ -362,7 +362,7 @@ Raw Z3 models and complete SMT formulas are deliberately excluded.
    * - ``witness``
      - object or null
      - Yes
-     - ``bmc-witness/v2`` for a CLI-selected primary or suffix model; null when
+     - Role-aware trace for a CLI-selected primary or suffix model; null when
        no model role is available.
    * - ``replay``
      - object or null
@@ -390,9 +390,6 @@ is a positive integer for response and null for other kinds.
    * - ``node``
      - exactly ``bmc_solve_result``
      - Canonical node discriminator.
-   * - ``schema_version``
-     - exactly ``bmc-solve-result/v2`` at runtime
-     - Nested result version.  The outer envelope remains ``bmc-cli/v1``.
    * - ``kind``, ``polarity``
      - same closed sets as ``property``
      - Identity copied from the solved formula.
@@ -487,20 +484,23 @@ UNSAT ``assumptions`` evidence.  ``origin == "inferred"`` therefore records a
 SAT fact implied by a trusted stronger result; it cannot replace a solver check
 needed to distinguish the first infeasible stage.
 
-For a v2 result with a non-empty ``available_model_roles`` array, both the
-``witness`` and ``replay`` objects must be v2 objects carrying exactly the same
-role as the result.  An empty role array requires both objects to be ``null``.
-This keeps the external envelope from combining evidence from different model
-channels even when each individual object is structurally valid.
+For a current result with a non-empty ``available_model_roles`` array, both the
+``witness`` and ``replay`` objects must use the role-aware shape and carry
+exactly the same role as the result.  An empty role array requires both objects
+to be ``null``.  This keeps the external envelope from combining evidence from
+different model channels even when each individual object is structurally
+valid.  Current and legacy-compatible objects are distinguished by their field
+sets, not by a payload version field.
 
 Witness fields
 --------------
 
 The selected witness trace is present for a primary or suffix model. CLI-emitted
-traces use ``schema_version == "bmc-witness/v2"`` and add root ``model_role``
-and ``verdict`` fields; the compatibility ``decode_bmc_witness`` API continues
-to emit v1. In v2, ``model_role`` is at the trace root, never nested under
-``solver``. The required root fields are described below.
+traces use the role-aware shape with root ``model_role`` and ``verdict`` fields;
+the raw-model ``decode_bmc_witness`` API emits the legacy-compatible shape
+without those fields. In the role-aware shape, ``model_role`` is at the trace
+root, never nested under ``solver``. The required root fields are described
+below.
 
 .. list-table:: Witness root and nested records
    :header-rows: 1
@@ -643,7 +643,7 @@ A response counterexample may arise because the trigger is undefined or
 because a defined trigger has no response in its complete window.  Both are
 part of the same counterexample objective and both currently produce SAT,
 ``property_violated``, and exit ``1`` when replay matches.  Neither
-``result.outcome`` nor ``bmc-witness/v2`` exposes a stable machine-readable
+``result.outcome`` nor the witness trace exposes a stable machine-readable
 ``cause`` discriminator.  Humans may inspect the query and trace; scripts must
 not infer or depend on a cause classification that the protocol does not have.
 
@@ -731,7 +731,7 @@ file containing exactly the shown statement.
      ...
      "result": {"outcome": "witness_found", "status": "sat", ...},
      "replay": {"mismatches": [], "ok": true, ...},
-     "witness": {"schema_version": "bmc-witness/v2", "model_role": "primary_witness", ...}
+     "witness": {"model_role": "primary_witness", "verdict": {"outcome": "witness_found", ...}, ...}
    }
 
 The excerpt is schematic because sorted pretty JSON places keys between these
@@ -762,10 +762,10 @@ downloadable reference schema.
 
 stdout and stderr are empty; ``response.json`` has primary ``status: unsat``,
 ``incomplete_status: sat``, ``outcome: incomplete``, and ``exit_code: 3``.
-Because the suffix model is available, ``witness`` and ``replay`` are objects
-with ``bmc-witness/v2`` and ``model_role: incomplete_suffix``; they describe
-only the executable prefix and do not turn the detached result into a
-property verdict.  Increase the bound if a definitive horizon is required.
+Because the suffix model is available, ``witness`` and ``replay`` are
+role-aware objects with ``model_role: incomplete_suffix``; they describe only
+the executable prefix and do not turn the detached result into a property
+verdict.  Increase the bound if a definitive horizon is required.
 
 **Example 4: policy rejection is stderr-only and preserves output.**  Put
 ``check reach <= 2: active("Root");`` in ``large.fbmcq`` and assume

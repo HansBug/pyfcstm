@@ -9,9 +9,9 @@
   "properties": {
     "input": {"$ref": "#/$defs/input"},
     "property": {"$ref": "#/$defs/property"},
-    "result": {"oneOf": [{"$ref": "#/$defs/resultV1"}, {"$ref": "#/$defs/resultV2"}]},
-    "witness": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/witnessV1"}, {"$ref": "#/$defs/witnessV2"}]},
-    "replay": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/replayV1"}, {"$ref": "#/$defs/replayV2"}]},
+    "result": {"oneOf": [{"$ref": "#/$defs/legacyResult"}, {"$ref": "#/$defs/currentResult"}]},
+    "witness": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/legacyWitness"}, {"$ref": "#/$defs/roleAwareWitness"}]},
+    "replay": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/legacyReplay"}, {"$ref": "#/$defs/roleAwareReplay"}]},
     "exit_code": {"enum": [0, 1, 3, 4]}
   },
   "allOf": [
@@ -22,7 +22,7 @@
     {
       "if": {
         "allOf": [
-          {"properties": {"result": {"required": ["schema_version", "outcome"], "properties": {"schema_version": {"const": "bmc-solve-result/v2"}, "outcome": {"enum": ["witness_found", "property_satisfied"]}}}}},
+          {"properties": {"result": {"required": ["available_model_roles", "outcome"], "properties": {"outcome": {"enum": ["witness_found", "property_satisfied"]}}}}},
           {"not": {"$ref": "#/$defs/replayMismatchEnvelope"}}
         ]
       },
@@ -31,7 +31,7 @@
     {
       "if": {
         "allOf": [
-          {"properties": {"result": {"required": ["schema_version", "outcome"], "properties": {"schema_version": {"const": "bmc-solve-result/v2"}, "outcome": {"enum": ["property_violated", "no_witness"]}}}}},
+          {"properties": {"result": {"required": ["available_model_roles", "outcome"], "properties": {"outcome": {"enum": ["property_violated", "no_witness"]}}}}},
           {"not": {"$ref": "#/$defs/replayMismatchEnvelope"}}
         ]
       },
@@ -40,31 +40,31 @@
     {
       "if": {
         "allOf": [
-          {"properties": {"result": {"required": ["schema_version", "outcome"], "properties": {"schema_version": {"const": "bmc-solve-result/v2"}, "outcome": {"enum": ["incomplete", "timeout", "unknown", "scenario_infeasible", "feasibility_timeout", "feasibility_unknown"]}}}}},
+          {"properties": {"result": {"required": ["available_model_roles", "outcome"], "properties": {"outcome": {"enum": ["incomplete", "timeout", "unknown", "scenario_infeasible", "feasibility_timeout", "feasibility_unknown"]}}}}},
           {"not": {"$ref": "#/$defs/replayMismatchEnvelope"}}
         ]
       },
       "then": {"properties": {"exit_code": {"const": 3}}}
     },
     {
-      "if": {"properties": {"result": {"required": ["schema_version", "outcome"], "properties": {"schema_version": {"const": "bmc-solve-result/v2"}, "outcome": {"const": "scenario_infeasible"}}}}},
+      "if": {"properties": {"result": {"required": ["available_model_roles", "outcome"], "properties": {"outcome": {"const": "scenario_infeasible"}}}}},
       "then": {"properties": {"witness": {"const": null}, "replay": {"const": null}}}
     },
     {
-      "if": {"properties": {"result": {"required": ["schema_version", "available_model_roles"], "properties": {"schema_version": {"const": "bmc-solve-result/v2"}, "available_model_roles": {"const": []}}}}},
+      "if": {"properties": {"result": {"required": ["available_model_roles"], "properties": {"available_model_roles": {"const": []}}}}},
       "then": {"properties": {"witness": {"const": null}, "replay": {"const": null}}}
     },
     {
-      "if": {"properties": {"result": {"required": ["schema_version", "available_model_roles"], "properties": {"schema_version": {"const": "bmc-solve-result/v2"}, "available_model_roles": {"prefixItems": [{"const": "primary_witness"}], "items": false, "minItems": 1, "maxItems": 1}}}}},
-      "then": {"properties": {"witness": {"$ref": "#/$defs/primaryWitnessV2"}, "replay": {"$ref": "#/$defs/primaryReplayV2"}}}
+      "if": {"properties": {"result": {"required": ["available_model_roles"], "properties": {"available_model_roles": {"prefixItems": [{"const": "primary_witness"}], "items": false, "minItems": 1, "maxItems": 1}}}}},
+      "then": {"properties": {"witness": {"$ref": "#/$defs/primaryWitness"}, "replay": {"$ref": "#/$defs/primaryReplay"}}}
     },
     {
-      "if": {"properties": {"result": {"required": ["schema_version", "available_model_roles"], "properties": {"schema_version": {"const": "bmc-solve-result/v2"}, "available_model_roles": {"prefixItems": [{"const": "primary_counterexample"}], "items": false, "minItems": 1, "maxItems": 1}}}}},
-      "then": {"properties": {"witness": {"$ref": "#/$defs/primaryCounterexampleWitnessV2"}, "replay": {"$ref": "#/$defs/primaryCounterexampleReplayV2"}}}
+      "if": {"properties": {"result": {"required": ["available_model_roles"], "properties": {"available_model_roles": {"prefixItems": [{"const": "primary_counterexample"}], "items": false, "minItems": 1, "maxItems": 1}}}}},
+      "then": {"properties": {"witness": {"$ref": "#/$defs/primaryCounterexampleWitness"}, "replay": {"$ref": "#/$defs/primaryCounterexampleReplay"}}}
     },
     {
-      "if": {"properties": {"result": {"required": ["schema_version", "available_model_roles"], "properties": {"schema_version": {"const": "bmc-solve-result/v2"}, "available_model_roles": {"prefixItems": [{"const": "incomplete_suffix"}], "items": false, "minItems": 1, "maxItems": 1}}}}},
-      "then": {"properties": {"witness": {"$ref": "#/$defs/incompleteSuffixWitnessV2"}, "replay": {"$ref": "#/$defs/incompleteSuffixReplayV2"}}}
+      "if": {"properties": {"result": {"required": ["available_model_roles"], "properties": {"available_model_roles": {"prefixItems": [{"const": "incomplete_suffix"}], "items": false, "minItems": 1, "maxItems": 1}}}}},
+      "then": {"properties": {"witness": {"$ref": "#/$defs/incompleteSuffixWitness"}, "replay": {"$ref": "#/$defs/incompleteSuffixReplay"}}}
     }
   ],
   "$defs": {
@@ -117,7 +117,7 @@
         "response_window": {"$ref": "#/$defs/nullableInteger"}
       }
     },
-    "resultV1": {
+    "legacyResult": {
       "type": "object",
       "additionalProperties": false,
       "required": ["node", "kind", "polarity", "status", "property_satisfied", "witness_found", "counterexample_found", "incomplete", "outcome", "reason", "elapsed_ms", "timeout_ms", "has_model", "incomplete_status", "incomplete_reason", "has_incomplete_model", "diagnostics"],
@@ -463,13 +463,12 @@
         }
       ]
     },
-    "resultV2": {
+    "currentResult": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["node", "schema_version", "kind", "polarity", "status", "property_satisfied", "witness_found", "counterexample_found", "incomplete", "outcome", "reason", "elapsed_ms", "timeout_ms", "has_model", "incomplete_status", "incomplete_reason", "incomplete_elapsed_ms", "has_incomplete_model", "total_elapsed_ms", "feasibility", "available_model_roles", "diagnostics"],
+      "required": ["node", "kind", "polarity", "status", "property_satisfied", "witness_found", "counterexample_found", "incomplete", "outcome", "reason", "elapsed_ms", "timeout_ms", "has_model", "incomplete_status", "incomplete_reason", "incomplete_elapsed_ms", "has_incomplete_model", "total_elapsed_ms", "feasibility", "available_model_roles", "diagnostics"],
       "properties": {
         "node": {"const": "bmc_solve_result"},
-        "schema_version": {"const": "bmc-solve-result/v2"},
         "kind": {"enum": ["reach", "forbid", "invariant", "must_reach", "exists_always", "response", "cover"]},
         "polarity": {"enum": ["witness", "counterexample"]},
         "status": {"enum": ["sat", "unsat", "unknown", "timeout"]},
@@ -938,12 +937,9 @@
         "unconsumed_events": {"type": "array", "items": {"type": "string"}}
       }
     },
-    "witnessV1": {
+    "legacyWitness": {
       "type": "object",
       "additionalProperties": false,
-      "allOf": [
-        {"not": {"required": ["schema_version"]}}
-      ],
       "required": ["property", "solver", "initial", "frames", "steps", "diagnostics"],
       "properties": {
         "property": {"$ref": "#/$defs/property"},
@@ -973,12 +969,11 @@
         "diagnostics": {"type": "array", "items": {"type": "string"}}
       }
     },
-    "witnessV2": {
+    "roleAwareWitness": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["schema_version", "model_role", "verdict", "property", "solver", "initial", "frames", "steps", "diagnostics"],
+      "required": ["model_role", "verdict", "property", "solver", "initial", "frames", "steps", "diagnostics"],
       "properties": {
-        "schema_version": {"const": "bmc-witness/v2"},
         "model_role": {"enum": ["primary_witness", "primary_counterexample", "incomplete_suffix"]},
         "verdict": {
           "type": "object",
@@ -1053,15 +1048,15 @@
         }
       ]
     },
-    "primaryWitnessV2": {
+    "primaryWitness": {
       "allOf": [
-        {"$ref": "#/$defs/witnessV2"},
+        {"$ref": "#/$defs/roleAwareWitness"},
         {"type": "object", "properties": {"model_role": {"const": "primary_witness"}}}
       ]
     },
-    "primaryCounterexampleWitnessV2": {
+    "primaryCounterexampleWitness": {
       "allOf": [
-        {"$ref": "#/$defs/witnessV2"},
+        {"$ref": "#/$defs/roleAwareWitness"},
         {"type": "object", "properties": {"model_role": {"const": "primary_counterexample"}}}
       ]
     },
@@ -1115,7 +1110,7 @@
         }
       ]
     },
-    "replayV1": {
+    "legacyReplay": {
       "type": "object",
       "additionalProperties": false,
       "required": ["ok", "runtime_trace", "mismatches"],
@@ -1134,7 +1129,7 @@
       },
       "allOf": [{"$ref": "#/$defs/replayConsistency"}]
     },
-    "replayV2": {
+    "roleAwareReplay": {
       "type": "object",
       "additionalProperties": false,
       "required": ["model_role", "ok", "runtime_trace", "mismatches"],
@@ -1154,27 +1149,27 @@
       },
       "allOf": [{"$ref": "#/$defs/replayConsistency"}]
     },
-    "primaryReplayV2": {
+    "primaryReplay": {
       "allOf": [
-        {"$ref": "#/$defs/replayV2"},
+        {"$ref": "#/$defs/roleAwareReplay"},
         {"type": "object", "properties": {"model_role": {"const": "primary_witness"}}}
       ]
     },
-    "primaryCounterexampleReplayV2": {
+    "primaryCounterexampleReplay": {
       "allOf": [
-        {"$ref": "#/$defs/replayV2"},
+        {"$ref": "#/$defs/roleAwareReplay"},
         {"type": "object", "properties": {"model_role": {"const": "primary_counterexample"}}}
       ]
     },
-    "incompleteSuffixWitnessV2": {
+    "incompleteSuffixWitness": {
       "allOf": [
-        {"$ref": "#/$defs/witnessV2"},
+        {"$ref": "#/$defs/roleAwareWitness"},
         {"type": "object", "properties": {"model_role": {"const": "incomplete_suffix"}}}
       ]
     },
-    "incompleteSuffixReplayV2": {
+    "incompleteSuffixReplay": {
       "allOf": [
-        {"$ref": "#/$defs/replayV2"},
+        {"$ref": "#/$defs/roleAwareReplay"},
         {"type": "object", "properties": {"model_role": {"const": "incomplete_suffix"}}}
       ]
     }

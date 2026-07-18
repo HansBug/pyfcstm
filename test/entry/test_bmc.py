@@ -568,7 +568,7 @@ def test_bmc_response_incomplete_is_exit_three(bmc_files) -> None:
     assert payload["result"]["incomplete"] is True
     assert payload["result"]["outcome"] == "incomplete"
     assert payload["result"]["incomplete_status"] == "sat"
-    assert payload["witness"]["schema_version"] == "bmc-witness/v2"
+    assert "schema_version" not in payload["witness"]
     assert payload["witness"]["model_role"] == "incomplete_suffix"
     assert payload["replay"]["model_role"] == "incomplete_suffix"
 
@@ -911,7 +911,7 @@ def test_bmc_schema_rejects_suffix_channel_mutations(bmc_files) -> None:
     assert list(validator.iter_errors(forged_feasibility))
 
 
-def test_bmc_schema_rejects_mismatched_v2_trace_roles(bmc_files) -> None:
+def test_bmc_schema_rejects_mismatched_role_aware_trace_roles(bmc_files) -> None:
     """Envelope replay role must match the result and witness channel."""
     jsonschema = pytest.importorskip("jsonschema")
     model_path, query = bmc_files
@@ -992,7 +992,7 @@ def test_bmc_solver_inconclusive_is_exit_three(
 
 
 def test_bmc_schema_rejects_removed_version_fields(bmc_files) -> None:
-    """The unversioned schema rejects legacy root and witness fields."""
+    """The unversioned schema rejects version fields at every payload level."""
     model_path, query = bmc_files
     query_path = query('check reach <= 1: active("Root");')
     _, payload = _json_result(model_path, query_path)
@@ -1002,19 +1002,28 @@ def test_bmc_schema_rejects_removed_version_fields(bmc_files) -> None:
         )
     )
 
-    legacy_root = deepcopy(payload)
-    legacy_root["schema_version"] = "bmc-cli/v1"
+    assert "schema_version" not in payload
+    assert "schema_version" not in payload["result"]
+    assert "schema_version" not in payload["witness"]
+
+    versioned_root = deepcopy(payload)
+    versioned_root["schema_version"] = "bmc-cli/v1"
     with pytest.raises(AssertionError, match="unknown fields"):
-        _assert_bmc_schema_instance(schema, legacy_root)
+        _assert_bmc_schema_instance(schema, versioned_root)
 
-    legacy_witness = deepcopy(payload)
-    legacy_witness["witness"]["schema_version"] = "bmc-witness/v1"
+    versioned_result = deepcopy(payload)
+    versioned_result["result"]["schema_version"] = "bmc-solve-result/v2"
     with pytest.raises(AssertionError, match="unknown fields"):
-        _assert_bmc_schema_instance(schema, legacy_witness)
+        _assert_bmc_schema_instance(schema, versioned_result)
+
+    versioned_witness = deepcopy(payload)
+    versioned_witness["witness"]["schema_version"] = "bmc-witness/v2"
+    with pytest.raises(AssertionError, match="unknown fields"):
+        _assert_bmc_schema_instance(schema, versioned_witness)
 
 
-def test_bmc_schema_accepts_legacy_v1_envelope(bmc_files) -> None:
-    """The published schema keeps its declared v1 envelope compatibility."""
+def test_bmc_schema_accepts_legacy_shape_envelope(bmc_files) -> None:
+    """The published schema accepts the pre-role payload by structural shape."""
     jsonschema = pytest.importorskip("jsonschema")
     model_path, query = bmc_files
     query_path = query('check reach <= 1: active("Root");')
@@ -1033,14 +1042,13 @@ def test_bmc_schema_accepts_legacy_v1_envelope(bmc_files) -> None:
 
     legacy = deepcopy(payload)
     for key in (
-        "schema_version",
         "incomplete_elapsed_ms",
         "total_elapsed_ms",
         "feasibility",
         "available_model_roles",
     ):
         legacy["result"].pop(key, None)
-    for key in ("schema_version", "model_role", "verdict"):
+    for key in ("model_role", "verdict"):
         legacy["witness"].pop(key, None)
     legacy["witness"]["solver"] = {
         "status": "sat",

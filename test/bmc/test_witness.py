@@ -642,7 +642,7 @@ def test_solve_property_case_c_transition_assumption_conflict() -> None:
     assert result.feasibility.assumptions.status == "unsat"
 
 
-def test_solve_property_primary_models_expose_v2_roles() -> None:
+def test_solve_property_primary_models_expose_role_aware_channels() -> None:
     """Primary witness and counterexample channels carry distinct roles."""
     _, witness_formula = _compile("state Root;", 'check reach <= 1: active("Root");')
     witness_result = solve_bmc_property(witness_formula)
@@ -859,7 +859,7 @@ def test_solve_property_case_f_incomplete_suffix_role_and_replay() -> None:
     replay = replay_bmc_witness(model, trace)
 
     assert result.available_model_roles == ("incomplete_suffix",)
-    assert trace.schema_version == "bmc-witness/v2"
+    assert "schema_version" not in trace.to_canonical()
     assert trace.model_role == "incomplete_suffix"
     assert trace.verdict["outcome"] == "incomplete"
     assert trace.solver["model_status"] == "sat"
@@ -2271,15 +2271,16 @@ def test_witness_public_dataclasses_reject_invalid_payloads(factory, message) ->
         factory()
 
 
-def test_witness_trace_accepts_legacy_schema_version_constructor_keyword() -> None:
-    """The compatibility witness API still accepts the v1 schema field."""
-    trace = BmcWitnessTrace({}, {}, {}, (), (), schema_version="bmc-witness/v1")
-    assert trace.to_canonical()["schema_version"] == "bmc-witness/v1"
+def test_witness_trace_canonical_payload_has_no_version_field() -> None:
+    """Witness payloads retain the repository-wide unversioned contract."""
+    trace = BmcWitnessTrace({}, {}, {}, (), ())
+    assert "schema_version" not in trace.to_canonical()
+    assert not hasattr(trace, "schema_version")
 
 
-def test_witness_trace_rejects_v1_null_suffix_elapsed_with_v2_fields() -> None:
-    """Legacy validation does not infer its rules from incidental v2 fields."""
-    with pytest.raises(BmcBuildError, match="elapsed_ms"):
+def test_witness_trace_rejects_role_metadata_without_role_and_verdict() -> None:
+    """Role-aware solver metadata requires the corresponding root fields."""
+    with pytest.raises(BmcBuildError, match="model_role and verdict"):
         BmcWitnessTrace(
             {},
             {
@@ -2291,11 +2292,10 @@ def test_witness_trace_rejects_v1_null_suffix_elapsed_with_v2_fields() -> None:
             {},
             (),
             (),
-            schema_version="bmc-witness/v1",
         )
 
 
-def test_witness_trace_rejects_null_suffix_elapsed_for_v2_suffix_role() -> None:
+def test_witness_trace_rejects_null_suffix_elapsed_for_suffix_role() -> None:
     """An incomplete suffix trace must retain evidence of its solver check."""
     with pytest.raises(BmcBuildError, match="suffix elapsed"):
         BmcWitnessTrace(
@@ -2312,7 +2312,6 @@ def test_witness_trace_rejects_null_suffix_elapsed_for_v2_suffix_role() -> None:
             {},
             (),
             (),
-            schema_version="bmc-witness/v2",
             model_role="incomplete_suffix",
             verdict={
                 "property_satisfied": None,
@@ -2433,7 +2432,7 @@ def test_witness_step_contract_includes_complete_event_accounting() -> None:
 
     payload = trace.to_canonical()
 
-    assert payload["schema_version"] == "bmc-witness/v1"
+    assert "schema_version" not in payload
     assert payload["steps"] == [
         {
             "index": 0,

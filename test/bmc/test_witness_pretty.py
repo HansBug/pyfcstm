@@ -522,7 +522,6 @@ def test_public_non_trace_objects_are_field_value_golden_pinned() -> None:
     expected_solve = """
     BmcSolveResult
     field                  value
-    schema_version         bmc-solve-result/v2
     kind                   reach
     polarity               witness
     status                 unknown

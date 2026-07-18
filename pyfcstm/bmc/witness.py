@@ -1552,7 +1552,7 @@ def _solve_presentation(result: "BmcSolveResult") -> _BmcSolvePresentation:
     response_horizon = _solve_response_horizon(result, outcome)
     headlines = {
         "witness_found": "PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND",
-        "no_witness": "PROPERTY DOES NOT HOLD WITHIN BOUND; NO WITNESS",
+        "no_witness": "GOAL UNREALIZABLE WITHIN BOUND; NO WITNESS",
         "property_violated": "PROPERTY DOES NOT HOLD WITHIN BOUND; COUNTEREXAMPLE FOUND",
         "property_satisfied": "PROPERTY GUARANTEED WITHIN BOUND; NO COUNTEREXAMPLE",
         "scenario_infeasible": "SCENARIO INFEASIBLE; PROPERTY NOT EVALUATED",

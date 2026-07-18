@@ -269,7 +269,7 @@ def test_bmc_human_report_prioritizes_verdict_and_diagnostics(bmc_files) -> None
     [
         (
             "check reach <= 1: terminated();",
-            "BMC reach <= 1: PROPERTY DOES NOT HOLD WITHIN BOUND; NO WITNESS",
+            "BMC reach <= 1: GOAL UNREALIZABLE WITHIN BOUND; NO WITNESS",
             (
                 "Scenario: FEASIBLE",
                 "Primary search: WITNESS = UNSAT",
@@ -1555,7 +1555,7 @@ check reach <= 1: active("Root.Done");
         "yellow",
     )
     assert "\x1b[31m" in bmc_entry._colorize_human_report(
-        "BMC reach <= 1: PROPERTY DOES NOT HOLD WITHIN BOUND; NO WITNESS\nScenario: FEASIBLE\n",
+        "BMC reach <= 1: GOAL UNREALIZABLE WITHIN BOUND; NO WITNESS\nScenario: FEASIBLE\n",
         "red",
     )
 

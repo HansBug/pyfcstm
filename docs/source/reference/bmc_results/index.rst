@@ -310,7 +310,7 @@ or an inconclusive check:
 .. code-block:: text
 
    BMC <kind> <= <bound>: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
-   BMC <kind> <= <bound>: PROPERTY DOES NOT HOLD WITHIN BOUND; NO WITNESS
+   BMC <kind> <= <bound>: GOAL UNREALIZABLE WITHIN BOUND; NO WITNESS
    BMC <kind> <= <bound>: PROPERTY DOES NOT HOLD WITHIN BOUND; COUNTEREXAMPLE FOUND
    BMC <kind> <= <bound>: PROPERTY GUARANTEED WITHIN BOUND; NO COUNTEREXAMPLE
    BMC <kind> <= <bound>: PROPERTY INCONCLUSIVE; PRIMARY CHECK UNKNOWN
@@ -335,6 +335,12 @@ assumptions stage starts, it is ``NOT CHECKED``.  An open response horizon is a
 valid SAT suffix result rather than a solver exception, and its ``Evidence``
 includes a ``Horizon reason`` explaining that the response obligation extends
 beyond the current bound.
+
+``GOAL UNREALIZABLE WITHIN BOUND`` is reserved for a witness-polarity objective
+whose feasible bounded scenario contains no satisfying execution; it is not a
+claim that a Boolean property is false.  ``PROPERTY GUARANTEED WITHIN BOUND``
+is reserved for a counterexample-polarity objective with no bounded
+counterexample.
 
 ``Solver`` then shows the primary status and elapsed milliseconds; the
 configured shared timeout budget, response horizon status/time, solver reasons,

@@ -712,7 +712,7 @@ def test_public_non_trace_objects_are_field_value_golden_pinned() -> None:
                 _sample_formula(), "unsat", feasibility=_feasible_evidence()
             ),
             (
-                "BmcSolveResult: PROPERTY DOES NOT HOLD WITHIN BOUND; NO WITNESS",
+                "BmcSolveResult: GOAL UNREALIZABLE WITHIN BOUND; NO WITNESS",
                 "Primary search: WITNESS = UNSAT",
                 "No admissible execution satisfies the reach objective",
                 "Model evidence: no SAT model available.",

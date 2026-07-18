@@ -177,8 +177,14 @@ def check_sdist(
         files: Dict[str, bytes] = {}
         roots = set()
         for member in archive.getmembers():
-            parts = PurePosixPath(member.name).parts
-            if not parts or parts[0] in ("", ".", "..") or ".." in parts:
+            member_path = PurePosixPath(member.name)
+            parts = member_path.parts
+            if (
+                member_path.is_absolute()
+                or not parts
+                or parts[0] in ("", ".", "..")
+                or ".." in parts
+            ):
                 raise ValueError(
                     "sdist contains an unsafe member path: %s" % member.name
                 )

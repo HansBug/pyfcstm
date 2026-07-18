@@ -4,7 +4,8 @@ Build and verify the ignored Python diagram runtime assets.
 The command is intentionally a small, deterministic coordinator rather than
 part of the public package. It builds the shared ES2017 renderer from the
 canonical jsfcstm source, downloads the pinned resvg 0.37 compatibility
-artifacts when they are absent, copies the fixed font, and writes a manifest
+artifacts when they are absent, copies the fixed Latin and locale-specific CJK
+fonts, and writes a manifest
 with byte hashes. ``make build_assets`` is the supported entry point.
 
 The generated files live under ``pyfcstm/diagram/assets`` and are ignored by git.
@@ -21,7 +22,7 @@ import subprocess
 import sys
 import tempfile
 import urllib.request
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Dict, Iterable, List, Set, Tuple
 
 
@@ -306,14 +307,89 @@ def _check_clean_symlink_safety() -> None:
             raise AssertionError("cleanup touched a path outside the asset root")
 
 
-def load_font(font_path: Path, lock: Dict[str, object]) -> bytes:
-    """Load the locked JetBrains Mono face without publishing it yet."""
-    font_lock = lock["fonts"]
+def font_specs(lock: Dict[str, object]) -> List[Dict[str, object]]:
+    """Return the validated deterministic font face specifications."""
+    font_lock = lock.get("fonts")
     if not isinstance(font_lock, dict):
         raise ValueError("font lock must be an object")
-    url = str(font_lock["url"])
-    digest = str(font_lock["sha256"])
-    return load_locked_file(font_path, url, digest)
+    faces = font_lock.get("faces")
+    if not isinstance(faces, list) or not faces:
+        raise ValueError("font lock must contain a non-empty faces list")
+    required = {"path", "family", "style", "url", "sha256", "maxBytes"}
+    result = []
+    seen = set()
+    for face in faces:
+        if not isinstance(face, dict) or not required.issubset(face):
+            raise ValueError("font lock contains an incomplete face entry")
+        path = str(face["path"])
+        posix_path = PurePosixPath(path)
+        safe_path = (
+            path == posix_path.as_posix()
+            and not posix_path.is_absolute()
+            and posix_path.parts[:1] == ("fonts",)
+            and len(posix_path.parts) == 2
+            and all(part not in ("", ".", "..") for part in posix_path.parts)
+            and "\\" not in path
+        )
+        if path in seen or not safe_path:
+            raise ValueError("font lock contains a duplicate or unsafe font path")
+        if not str(face["sha256"]).isalnum() or len(str(face["sha256"])) != 64:
+            raise ValueError("font lock contains an invalid font digest")
+        if int(face["maxBytes"]) <= 0:
+            raise ValueError("font lock contains an invalid font size budget")
+        seen.add(path)
+        result.append(face)
+    default_family = str(font_lock.get("defaultFamily", ""))
+    if not default_family:
+        raise ValueError("font lock must define defaultFamily")
+    if sum(int(face["maxBytes"]) for face in result) > int(
+        font_lock.get("maxTotalBytes", 0)
+    ):
+        raise ValueError("font lock total font budget is smaller than face budgets")
+    return result
+
+
+def _check_font_path_safety() -> None:
+    """Reject font-lock paths that could escape the generated asset root."""
+    lock = read_lock()
+    fonts = lock["fonts"]
+    if not isinstance(fonts, dict) or not isinstance(fonts.get("faces"), list):
+        raise AssertionError("font lock self-check fixture is malformed")
+    invalid_paths = (
+        "fonts/../setup.py",
+        "fonts/../../../.github/workflows/test.yml",
+        "../fonts/Regular.ttf",
+        "/tmp/Regular.ttf",
+        "C:/windows/font.ttf",
+        "fonts\\..\\setup.py",
+    )
+    for invalid in invalid_paths:
+        candidate = json.loads(json.dumps(lock))
+        candidate["fonts"]["faces"][0]["path"] = invalid
+        try:
+            font_specs(candidate)
+        except ValueError:
+            continue
+        raise AssertionError("font path escape was accepted: %s" % invalid)
+
+
+def load_fonts(lock: Dict[str, object]) -> List[Tuple[str, bytes]]:
+    """Load every locked font face without publishing it yet."""
+    loaded = []
+    for face in font_specs(lock):
+        relative = str(face["path"])
+        data = load_locked_file(
+            ASSET_DIR / relative,
+            str(face["url"]),
+            str(face["sha256"]),
+        )
+        if len(data) > int(face["maxBytes"]):
+            raise ValueError("font exceeds the locked byte budget: %s" % relative)
+        loaded.append((relative, data))
+    total = sum(len(data) for _relative, data in loaded)
+    if total > int(lock["fonts"]["maxTotalBytes"]):
+        raise ValueError("combined fonts exceed the locked byte budget")
+    return loaded
 
 
 def build_manifest(
@@ -527,7 +603,7 @@ def build_assets() -> None:
         max_wasm = int(renderer_lock["resvgWasmMaxBytes"])
         if len(wasm) > max_wasm:
             raise ValueError("resvg WASM exceeds the locked byte budget")
-        font = load_font(ASSET_DIR / "fonts" / "JetBrainsMono-Regular.ttf", lock)
+        fonts = load_fonts(lock)
         bridge = BRIDGE_PATH.read_bytes()
         host_shim = HOST_SHIM_PATH.read_bytes()
         combined = renderer + b"\n" + bundle + b"\n" + bridge
@@ -537,7 +613,7 @@ def build_assets() -> None:
             ("resvg.wasm", wasm),
             ("resvg-bridge.js", bridge),
             ("host-shim.js", host_shim),
-            ("fonts/JetBrainsMono-Regular.ttf", font),
+            *fonts,
         ]
         manifest = build_manifest(lock, files, metafile, esbuild_version)
         files.append(("manifest.json", manifest))
@@ -591,6 +667,7 @@ def main(argv=None) -> int:
     if args.check:
         _check_metafile_determinism()
         _check_clean_symlink_safety()
+        _check_font_path_safety()
         print("diagram asset builder: deterministic and safety self-check passed")
     elif args.clean:
         clean_assets()

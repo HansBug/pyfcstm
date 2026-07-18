@@ -3,6 +3,7 @@
 import re
 import math
 import builtins
+import hashlib
 
 import pytest
 
@@ -118,6 +119,203 @@ def test_renderer_is_deterministic_and_escapes_hostile_labels():
     assert "auto-start-reverse" not in first
     assert "启动 &lt;ready&gt; &amp; 继续" in first
     assert "</script><script>" not in first
+
+
+def test_missing_runtime_asset_reports_recovery_instructions(monkeypatch):
+    import importlib
+
+    engine_module = importlib.import_module("pyfcstm.diagram.engine")
+    real_get_data = engine_module.pkgutil.get_data
+
+    def missing_renderer(package, resource):
+        if resource == "renderer.js":
+            return None
+        return real_get_data(package, resource)
+
+    monkeypatch.setattr(engine_module.pkgutil, "get_data", missing_renderer)
+    with pytest.raises(
+        DiagramAssetError,
+        match=r"renderer\.js.*expected packaged resource is missing.*make build_assets",
+    ):
+        DiagramAssetEngine()
+
+
+def test_missing_runtime_asset_reports_issue_url_for_installed_package(monkeypatch):
+    import importlib
+
+    engine_module = importlib.import_module("pyfcstm.diagram.engine")
+    real_get_data = engine_module.pkgutil.get_data
+
+    def missing_renderer(package, resource):
+        if resource == "renderer.js":
+            return None
+        return real_get_data(package, resource)
+
+    monkeypatch.setattr(engine_module.pkgutil, "get_data", missing_renderer)
+    monkeypatch.setattr(engine_module, "_is_development_checkout", lambda: False)
+    with pytest.raises(
+        DiagramAssetError,
+        match=r"renderer\.js.*expected packaged resource is missing.*github.com/HansBug/pyfcstm/issues",
+    ):
+        DiagramAssetEngine()
+
+
+def test_invalid_runtime_asset_reports_data_failure(monkeypatch):
+    import importlib
+
+    engine_module = importlib.import_module("pyfcstm.diagram.engine")
+    real_get_data = engine_module.pkgutil.get_data
+
+    def invalid_renderer(package, resource):
+        if resource == "renderer.js":
+            return b"\xff\xfe"
+        return real_get_data(package, resource)
+
+    monkeypatch.setattr(engine_module.pkgutil, "get_data", invalid_renderer)
+    with pytest.raises(
+        DiagramAssetError,
+        match=r"renderer\.js.*not valid UTF-8.*make build_assets",
+    ):
+        DiagramAssetEngine()
+
+
+def test_missing_cjk_font_reports_recovery_instructions(monkeypatch):
+    import importlib
+
+    engine_module = importlib.import_module("pyfcstm.diagram.engine")
+    real_get_data = engine_module.pkgutil.get_data
+
+    def missing_font(package, resource):
+        if resource == "fonts/NotoSansSC-Regular.otf":
+            return None
+        return real_get_data(package, resource)
+
+    monkeypatch.setattr(engine_module.pkgutil, "get_data", missing_font)
+    engine = DiagramAssetEngine()
+    with pytest.raises(
+        DiagramAssetError,
+        match=r"NotoSansSC-Regular\.otf.*expected packaged resource is missing.*make build_assets",
+    ):
+        engine.render_png(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1">'
+            '<text font-family="Noto Sans SC">中</text></svg>'
+        )
+
+
+def test_invalid_wasm_reports_resource_data_failure(monkeypatch):
+    import importlib
+
+    engine_module = importlib.import_module("pyfcstm.diagram.engine")
+    real_asset_bytes = engine_module._asset_bytes
+
+    def invalid_wasm(name):
+        if name == "resvg.wasm":
+            return b"not-wasm"
+        return real_asset_bytes(name)
+
+    engine = DiagramAssetEngine()
+    monkeypatch.setattr(engine_module, "_asset_bytes", invalid_wasm)
+    with pytest.raises(
+        DiagramAssetError,
+        match=r"(?s)resvg\.wasm.*WASM initialization failed.*expected magic word.*make build_assets",
+    ):
+        engine.render_png(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>'
+        )
+
+
+def test_model_render_embeds_cjk_fallback_and_keeps_glyphs_distinct():
+    request = _request()
+    request["diagram"]["rootState"]["children"][0]["displayName"] = "启动"
+    request["diagram"]["rootState"]["children"][1]["displayName"] = "状态"
+    engine = DiagramAssetEngine()
+
+    svg = engine.render_svg(request)
+    assert "启动" in svg
+    assert "状态" in svg
+    assert "Noto Sans SC" in svg
+    png = engine.render_png(svg)
+    assert png.startswith(b"\x89PNG\r\n\x1a\n")
+    expanded = engine.expand_svg(svg)
+    assert "启动" not in expanded
+    assert "状态" not in expanded
+    assert "<path" in expanded
+
+    # Keep the canvas geometry fixed so a hash difference proves a different
+    # glyph outline, rather than a different ELK box size. A missing CJK font
+    # would make distinct characters collapse to the same replacement outline.
+    def glyph_svg(text, family="Noto Sans SC", weight=None):
+        weight_attr = ' font-weight="%s"' % weight if weight else ""
+        return (
+            '<svg xmlns="http://www.w3.org/2000/svg" width="80" height="40">'
+            '<text x="4" y="28" font-family="%s" font-size="24"%s>%s</text>'
+            "</svg>" % (family, weight_attr, text)
+        )
+
+    glyphs = ["状", "态", "中", "文", "�"]
+    rendered = {text: engine.render_png(glyph_svg(text)) for text in glyphs}
+    hashes = {text: hashlib.sha256(data).hexdigest() for text, data in rendered.items()}
+    assert len(set(hashes.values())) == len(glyphs)
+    expanded_hashes = {
+        text: hashlib.sha256(
+            engine.expand_svg(glyph_svg(text)).encode("utf-8")
+        ).hexdigest()
+        for text in glyphs
+    }
+    assert len(set(expanded_hashes.values())) == len(glyphs)
+    assert (
+        hashlib.sha256(engine.render_png(glyph_svg("状", weight=700))).hexdigest()
+        != hashes["状"]
+    )
+
+
+def test_model_render_cjk_scripts_work_in_each_locked_locale_face():
+    engine = DiagramAssetEngine()
+    samples = {
+        "sc": "中文",
+        "tc": "繁體",
+        "hk": "香港",
+        "jp": "日本語",
+        "kr": "한국어",
+    }
+    for locale, text in samples.items():
+        family = "Noto Sans " + locale.upper()
+        request = _request()
+        request["cjkLocale"] = locale
+        request["diagram"]["rootState"]["children"][0]["displayName"] = text
+        model_svg = engine.render_svg(request)
+        assert text in model_svg, locale
+        assert family in model_svg, locale
+        assert engine.render_png(model_svg).startswith(b"\x89PNG\r\n\x1a\n"), locale
+
+        svg = (
+            '<svg xmlns="http://www.w3.org/2000/svg" width="120" height="40">'
+            '<text x="4" y="28" font-family="%s" font-size="24">%s</text>'
+            "</svg>" % (family, text)
+        )
+        png = engine.render_png(svg)
+        assert png.startswith(b"\x89PNG\r\n\x1a\n"), locale
+        expanded = engine.expand_svg(svg)
+        assert text not in expanded, locale
+        assert "<path" in expanded, locale
+
+
+def test_long_cjk_model_label_expands_its_node_without_render_failure():
+    request = _request()
+    long_label = "这是一个非常长的中文状态标签用于验证布局不会溢出"
+    request["diagram"]["rootState"]["children"][0]["displayName"] = long_label
+    engine = DiagramAssetEngine()
+    svg = engine.render_svg(request)
+    assert long_label in svg
+    match = re.search(
+        r'<g data-fcstm-kind="state" data-fcstm-id="Machine\.A".*?'
+        r'<rect x="[0-9.]+" y="[0-9.]+" width="([0-9.]+)"',
+        svg,
+        re.S,
+    )
+    assert match
+    assert float(match.group(1)) >= 400
+    assert engine.render_png(svg).startswith(b"\x89PNG\r\n\x1a\n")
 
 
 def test_rendered_a_to_b_resvg_tip_meets_target_border():

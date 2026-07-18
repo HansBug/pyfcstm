@@ -21,9 +21,114 @@
     }
   },
   "fonts": {
-    "default": "JetBrainsMono-Regular.ttf",
-    "url": "https://github.com/JetBrains/JetBrainsMono/raw/v2.304/fonts/ttf/JetBrainsMono-Regular.ttf",
-    "sha256": "a0bf60ef0f83c5ed4d7a75d45838548b1f6873372dfac88f71804491898d138f",
-    "maxBytes": 2000000
+    "defaultFamily": "JetBrains Mono",
+    "defaultCjkLocale": "sc",
+    "maxTotalBytes": 65000000,
+    "faces": [
+      {
+        "path": "fonts/JetBrainsMono-Regular.ttf",
+        "family": "JetBrains Mono",
+        "style": "Regular",
+        "url": "https://github.com/JetBrains/JetBrainsMono/raw/v2.304/fonts/ttf/JetBrainsMono-Regular.ttf",
+        "sha256": "a0bf60ef0f83c5ed4d7a75d45838548b1f6873372dfac88f71804491898d138f",
+        "maxBytes": 300000
+      },
+      {
+        "path": "fonts/JetBrainsMono-Medium.ttf",
+        "family": "JetBrains Mono",
+        "style": "Medium",
+        "url": "https://github.com/JetBrains/JetBrainsMono/raw/v2.304/fonts/ttf/JetBrainsMono-Medium.ttf",
+        "sha256": "31c92d01a8a08528b718a43addf0ad3df0af2ca4b7b3290a452f70f358e14d3d",
+        "maxBytes": 300000
+      },
+      {
+        "path": "fonts/JetBrainsMono-Bold.ttf",
+        "family": "JetBrains Mono",
+        "style": "Bold",
+        "url": "https://github.com/JetBrains/JetBrainsMono/raw/v2.304/fonts/ttf/JetBrainsMono-Bold.ttf",
+        "sha256": "5590990c82e097397517f275f430af4546e1c45cff408bde4255dad142479dcb",
+        "maxBytes": 300000
+      },
+      {
+        "path": "fonts/NotoSansSC-Regular.otf",
+        "family": "Noto Sans SC",
+        "style": "Regular",
+        "url": "https://github.com/notofonts/noto-cjk/raw/Sans2.004/Sans/SubsetOTF/SC/NotoSansSC-Regular.otf",
+        "sha256": "faa6c9df652116dde789d351359f3d7e5d2285a2b2a1f04a2d7244df706d5ea9",
+        "maxBytes": 8500000
+      },
+      {
+        "path": "fonts/NotoSansSC-Bold.otf",
+        "family": "Noto Sans SC",
+        "style": "Bold",
+        "url": "https://github.com/notofonts/noto-cjk/raw/Sans2.004/Sans/SubsetOTF/SC/NotoSansSC-Bold.otf",
+        "sha256": "c6cb5a93abaa9edc8ee7463b7ebb7f42d618d40e6ed2f7a5371c97b0b64767c0",
+        "maxBytes": 8700000
+      },
+      {
+        "path": "fonts/NotoSansTC-Regular.otf",
+        "family": "Noto Sans TC",
+        "style": "Regular",
+        "url": "https://github.com/notofonts/noto-cjk/raw/Sans2.004/Sans/SubsetOTF/TC/NotoSansTC-Regular.otf",
+        "sha256": "5bab0cb3c1cf89dde07c4a95a4054b195afbcfe784d69d75c340780712237537",
+        "maxBytes": 5800000
+      },
+      {
+        "path": "fonts/NotoSansTC-Bold.otf",
+        "family": "Noto Sans TC",
+        "style": "Bold",
+        "url": "https://github.com/notofonts/noto-cjk/raw/Sans2.004/Sans/SubsetOTF/TC/NotoSansTC-Bold.otf",
+        "sha256": "55420b259eb119bf5f2a0aadba10cf9d736c12d64ab93e78546d69ef5f43558b",
+        "maxBytes": 6000000
+      },
+      {
+        "path": "fonts/NotoSansHK-Regular.otf",
+        "family": "Noto Sans HK",
+        "style": "Regular",
+        "url": "https://github.com/notofonts/noto-cjk/raw/Sans2.004/Sans/SubsetOTF/HK/NotoSansHK-Regular.otf",
+        "sha256": "8a43afea92bb58dfd9027bd7ac6f5b0b2662e2ffb3e7c1edc02c62b2b21924f1",
+        "maxBytes": 5800000
+      },
+      {
+        "path": "fonts/NotoSansHK-Bold.otf",
+        "family": "Noto Sans HK",
+        "style": "Bold",
+        "url": "https://github.com/notofonts/noto-cjk/raw/Sans2.004/Sans/SubsetOTF/HK/NotoSansHK-Bold.otf",
+        "sha256": "4bce16fbed09278cbdfb4d57749500038cdda70737925a846e3f6c59327ab46e",
+        "maxBytes": 6000000
+      },
+      {
+        "path": "fonts/NotoSansJP-Regular.otf",
+        "family": "Noto Sans JP",
+        "style": "Regular",
+        "url": "https://github.com/notofonts/noto-cjk/raw/Sans2.004/Sans/SubsetOTF/JP/NotoSansJP-Regular.otf",
+        "sha256": "dff723ba59d57d136764a04b9b2d03205544f7cd785a711442d6d2d085ac5073",
+        "maxBytes": 4700000
+      },
+      {
+        "path": "fonts/NotoSansJP-Bold.otf",
+        "family": "Noto Sans JP",
+        "style": "Bold",
+        "url": "https://github.com/notofonts/noto-cjk/raw/Sans2.004/Sans/SubsetOTF/JP/NotoSansJP-Bold.otf",
+        "sha256": "1b0edfb500b73a4fa8a4fcaae1bbbd403994e08e73e3e0da37e70d3853f42c5f",
+        "maxBytes": 4800000
+      },
+      {
+        "path": "fonts/NotoSansKR-Regular.otf",
+        "family": "Noto Sans KR",
+        "style": "Regular",
+        "url": "https://github.com/notofonts/noto-cjk/raw/Sans2.004/Sans/SubsetOTF/KR/NotoSansKR-Regular.otf",
+        "sha256": "69975a0ac8472717870aefeab0a4d52739308d90856b9955313b2ad5e0148d68",
+        "maxBytes": 4800000
+      },
+      {
+        "path": "fonts/NotoSansKR-Bold.otf",
+        "family": "Noto Sans KR",
+        "style": "Bold",
+        "url": "https://github.com/notofonts/noto-cjk/raw/Sans2.004/Sans/SubsetOTF/KR/NotoSansKR-Bold.otf",
+        "sha256": "5a6ceb287ed2fc6cfc6213144ebea68cbd94b20fc9eb873d8486493bf02d9bda",
+        "maxBytes": 5000000
+      }
+    ]
   }
 }

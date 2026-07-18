@@ -28,6 +28,18 @@ GENERATED_ASSETS = {
     "resvg.wasm",
     "manifest.json",
     "fonts/JetBrainsMono-Regular.ttf",
+    "fonts/JetBrainsMono-Medium.ttf",
+    "fonts/JetBrainsMono-Bold.ttf",
+    "fonts/NotoSansSC-Regular.otf",
+    "fonts/NotoSansSC-Bold.otf",
+    "fonts/NotoSansTC-Regular.otf",
+    "fonts/NotoSansTC-Bold.otf",
+    "fonts/NotoSansHK-Regular.otf",
+    "fonts/NotoSansHK-Bold.otf",
+    "fonts/NotoSansJP-Regular.otf",
+    "fonts/NotoSansJP-Bold.otf",
+    "fonts/NotoSansKR-Regular.otf",
+    "fonts/NotoSansKR-Bold.otf",
 }
 
 
@@ -208,15 +220,42 @@ def main() -> int:
     fonts_lock = lock.get("fonts")
     if not isinstance(fonts_lock, dict):
         raise ValueError("font lock must be an object")
-    default_font = str(fonts_lock.get("default", ""))
-    font_path = "fonts/" + default_font
-    if font_path not in expected:
-        raise ValueError("manifest is missing the locked default font: %s" % font_path)
-    font_entry = expected[font_path]
-    if font_entry["sha256"] != fonts_lock.get("sha256"):
-        raise ValueError("manifest font hash differs from source font lock")
-    if int(font_entry["bytes"]) > int(fonts_lock["maxBytes"]):
-        raise ValueError("font exceeds the locked size budget")
+    faces = fonts_lock.get("faces")
+    if not isinstance(faces, list) or not faces:
+        raise ValueError("font lock must contain a non-empty faces list")
+    locked_paths = set()
+    total_bytes = 0
+    for face in faces:
+        if not isinstance(face, dict):
+            raise ValueError("font lock contains a non-object face")
+        relative = str(face.get("path", ""))
+        if relative in locked_paths or relative not in expected:
+            raise ValueError("font lock path is missing or duplicated: %s" % relative)
+        entry = expected[relative]
+        if entry["sha256"] != face.get("sha256"):
+            raise ValueError(
+                "manifest font hash differs from source font lock: %s" % relative
+            )
+        if int(entry["bytes"]) > int(face["maxBytes"]):
+            raise ValueError("font exceeds the locked size budget: %s" % relative)
+        locked_paths.add(relative)
+        total_bytes += int(entry["bytes"])
+    if locked_paths != {
+        relative for relative in expected if relative.startswith("fonts/")
+    }:
+        raise ValueError("manifest font list differs from source font lock")
+    if total_bytes > int(fonts_lock.get("maxTotalBytes", 0)):
+        raise ValueError("combined fonts exceed the locked size budget")
+    if str(fonts_lock.get("defaultFamily", "")) != "JetBrains Mono":
+        raise ValueError("font lock default family must be JetBrains Mono")
+    if str(fonts_lock.get("defaultCjkLocale", "")) not in {
+        "sc",
+        "tc",
+        "hk",
+        "jp",
+        "kr",
+    }:
+        raise ValueError("font lock default CJK locale is invalid")
 
     subprocess.run(["node", "--check", str(ASSET_DIR / "renderer.js")], check=True)
     if enforce_git_boundary:

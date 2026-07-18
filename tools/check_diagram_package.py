@@ -25,6 +25,18 @@ GENERATED_REQUIRED = {
     "pyfcstm/diagram/assets/resvg.wasm",
     "pyfcstm/diagram/assets/manifest.json",
     "pyfcstm/diagram/assets/fonts/JetBrainsMono-Regular.ttf",
+    "pyfcstm/diagram/assets/fonts/JetBrainsMono-Medium.ttf",
+    "pyfcstm/diagram/assets/fonts/JetBrainsMono-Bold.ttf",
+    "pyfcstm/diagram/assets/fonts/NotoSansSC-Regular.otf",
+    "pyfcstm/diagram/assets/fonts/NotoSansSC-Bold.otf",
+    "pyfcstm/diagram/assets/fonts/NotoSansTC-Regular.otf",
+    "pyfcstm/diagram/assets/fonts/NotoSansTC-Bold.otf",
+    "pyfcstm/diagram/assets/fonts/NotoSansHK-Regular.otf",
+    "pyfcstm/diagram/assets/fonts/NotoSansHK-Bold.otf",
+    "pyfcstm/diagram/assets/fonts/NotoSansJP-Regular.otf",
+    "pyfcstm/diagram/assets/fonts/NotoSansJP-Bold.otf",
+    "pyfcstm/diagram/assets/fonts/NotoSansKR-Regular.otf",
+    "pyfcstm/diagram/assets/fonts/NotoSansKR-Bold.otf",
 }
 
 LEGAL_REQUIRED = {

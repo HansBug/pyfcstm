@@ -6,6 +6,7 @@
 (() => {
   const root = globalThis;
   let fontBuffers = [];
+  let cjkFamily = "Noto Sans SC";
 
   function decodeBase64(value) {
     const raw = atob(String(value || ""));
@@ -42,7 +43,7 @@
       font: {
         fontBuffers,
         loadSystemFonts: false,
-        defaultFontFamily: "JetBrains Mono",
+        defaultFontFamily: cjkFamily,
         monospaceFamily: "JetBrains Mono",
       },
       shapeRendering: 2,
@@ -66,9 +67,18 @@
       );
   };
 
+  root.__pyfcstm_resvg_register_fonts = function (fontBase64List, family) {
+    if (!Array.isArray(fontBase64List) || fontBase64List.length === 0) {
+      throw new Error("at least one embedded font is required");
+    }
+    fontBuffers = fontBase64List.map((fontBase64) => decodeBase64(fontBase64));
+    cjkFamily = String(family || cjkFamily);
+    return fontBuffers.length;
+  };
+
   root.__pyfcstm_resvg_register_font = function (fontBase64) {
-    fontBuffers = [decodeBase64(fontBase64)];
-    return true;
+    fontBuffers.push(decodeBase64(fontBase64));
+    return fontBuffers.length;
   };
 
   root.__pyfcstm_resvg_png = function (svg, scale) {

@@ -19,6 +19,7 @@ import {
     resolveFcstmDiagramPreviewOptions,
     smoothGraphEdges,
     terminalApproach,
+    measureFcstmElkLabel,
 } from '@pyfcstm/jsfcstm/diagram';
 
 describe('jsfcstm ELK-based diagram pipeline', () => {
@@ -40,6 +41,37 @@ describe('jsfcstm ELK-based diagram pipeline', () => {
         '    Running -> [*] : Start;',
         '}',
     ].join('\n');
+
+    it('measures Unicode display width instead of UTF-16 code units', () => {
+        const corpus: Array<[string, string]> = [
+            ['ASCII', 'A'],
+            ['precomposed Latin', 'é'],
+            ['decomposed Latin', 'e\u0301'],
+            ['astral mathematical Latin', '𝔸'],
+            ['CJK', '状态'],
+            ['full-width Latin', 'Ａ'],
+            ['Greek', 'Ω'],
+            ['emoji', '😀'],
+            ['ZWJ emoji', '👩‍💻'],
+            ['flag emoji', '🇨🇳'],
+            ['variation-selector emoji', '✈️'],
+            ['keycap emoji', '1️⃣'],
+        ];
+        const widths = new Map(corpus.map(([name, text]) => [
+            name,
+            measureFcstmElkLabel(text, 0, 0).width,
+        ]));
+
+        assert.equal(widths.get('precomposed Latin'), widths.get('decomposed Latin'));
+        assert.equal(widths.get('CJK'), measureFcstmElkLabel('ABCD', 0, 0).width);
+        assert.equal(widths.get('full-width Latin'), measureFcstmElkLabel('状', 0, 0).width);
+        assert.equal(widths.get('astral mathematical Latin'), widths.get('ASCII'));
+        assert.equal(widths.get('ZWJ emoji'), widths.get('emoji'));
+        assert.equal(widths.get('flag emoji'), widths.get('emoji'));
+        assert.equal(widths.get('variation-selector emoji'), widths.get('emoji'));
+        assert.equal(widths.get('keycap emoji'), widths.get('emoji'));
+        assert.ok((widths.get('CJK') || 0) > (widths.get('ASCII') || 0));
+    });
 
     it('builds an ELK compound graph matching the diagram IR', async () => {
         const doc = createDocument(sampleSource, '/tmp/elk-sample.fcstm');

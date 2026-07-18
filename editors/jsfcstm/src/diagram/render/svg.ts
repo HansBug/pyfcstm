@@ -23,13 +23,26 @@ import {resolvePalette, type PaletteId, type PaletteMode, type SvgPalette} from 
 
 const CONSTANTS = {
     canvasPadding: 28,
-    fontFamily: '"JetBrains Mono","Fira Code",Consolas,monospace',
     forcedEdgeDasharray: '6 4',
     entryEdgeWeight: 1.7,
     normalEdgeWeight: 1.4,
     /** Radius of the drawio-style semicircular hump at edge crossings. */
     crossingBridgeRadius: 5,
 };
+
+export type CjkLocale = 'sc' | 'tc' | 'hk' | 'jp' | 'kr';
+
+const CJK_FONT_FAMILY: Record<CjkLocale, string> = {
+    sc: 'Noto Sans SC',
+    tc: 'Noto Sans TC',
+    hk: 'Noto Sans HK',
+    jp: 'Noto Sans JP',
+    kr: 'Noto Sans KR',
+};
+
+function fontFamilyFor(locale: CjkLocale = 'sc'): string {
+    return `"JetBrains Mono","${CJK_FONT_FAMILY[locale]}",monospace`;
+}
 
 const LABEL_GLYPH_EVENT = '●';
 const LABEL_GLYPH_GUARD = '◇';
@@ -70,6 +83,7 @@ export interface RenderedSvg {
 export interface RenderOptions {
     palette?: PaletteId;
     mode?: PaletteMode;
+    cjkLocale?: CjkLocale;
 }
 
 export function renderSvg(
@@ -86,7 +100,7 @@ export function renderSvg(
         `<svg xmlns="http://www.w3.org/2000/svg" ` +
         `viewBox="0 0 ${width} ${height}" ` +
         `width="${width}" height="${height}" ` +
-        `${attr('font-family', CONSTANTS.fontFamily)} font-size="14" ` +
+        `${attr('font-family', fontFamilyFor(renderOptions.cjkLocale || 'sc'))} font-size="14" ` +
         `data-fcstm-canvas="true" data-fcstm-direction="${options.direction}" ` +
         `${attr('data-fcstm-palette', renderOptions.palette || 'default')} ` +
         `${attr('data-fcstm-mode', renderOptions.mode || 'light')}>`

@@ -15,8 +15,14 @@ Third-party runtime resources distributed in this directory:
   is available at ``https://github.com/kieler/elkjs/tree/v0.11.1``.
 * ``resvg`` 0.37 compatibility bindings and WASM, from the immutable source
   URLs and SHA-256 values recorded in ``tools/diagram_assets/asset-lock.json``.
-* ``JetBrains Mono`` Regular, Copyright 2020 The JetBrains Mono Project
-  Authors, under the SIL Open Font License 1.1. See ``LICENSE-OFL-1.1.txt``.
+* ``JetBrains Mono`` Regular, Medium, and Bold, Copyright 2020 The JetBrains
+  Mono Project Authors, under the SIL Open Font License 1.1. See
+  ``LICENSE-OFL-1.1.txt``.
+* ``Noto Sans SC``, ``Noto Sans TC``, ``Noto Sans HK``, ``Noto Sans JP``, and
+  ``Noto Sans KR`` Regular and Bold, Copyright 2014-2025 Adobe (China) Inc.,
+  The Noto Project Authors, and contributors, under the SIL Open Font License
+  1.1. See ``LICENSE-OFL-1.1.txt``. The locale-specific OTF files are
+  distributed unmodified from the Noto CJK Sans2.004 release.
 
 The renderer bundle itself is built from the tracked jsfcstm sources with the
 locked esbuild version. ``manifest.json`` records the generated file hashes,

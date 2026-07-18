@@ -9,13 +9,14 @@ import type {
   PaletteId,
   PaletteMode,
 } from "../../editors/jsfcstm/src/diagram/render/palette";
-import { renderSvg } from "../../editors/jsfcstm/src/diagram/render/svg";
+import { renderSvg, type CjkLocale } from "../../editors/jsfcstm/src/diagram/render/svg";
 
 interface RenderRequest {
   diagram: FcstmDiagram;
   options?: FcstmDiagramPreviewOptionsInput;
   palette?: PaletteId;
   mode?: PaletteMode;
+  cjkLocale?: CjkLocale;
 }
 
 interface RenderJob {
@@ -96,6 +97,7 @@ function render(requestJson: string): Promise<string> {
     return renderSvg(laidOut, options, {
       palette: request.palette || "default",
       mode: request.mode || "light",
+      cjkLocale: request.cjkLocale || "sc",
     }).svg;
   });
 }

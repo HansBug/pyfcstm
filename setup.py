@@ -67,7 +67,7 @@ package_data.setdefault("pyfcstm.diagram.assets", []).extend(
         "*.json",
         "*.txt",
         "fonts/*.ttf",
-        "fonts/*.ttc",
+        "fonts/*.otf",
     ]
 )
 
@@ -94,6 +94,18 @@ def _require_diagram_assets_for_distribution() -> None:
         "resvg.wasm",
         "manifest.json",
         os.path.join("fonts", "JetBrainsMono-Regular.ttf"),
+        os.path.join("fonts", "JetBrainsMono-Medium.ttf"),
+        os.path.join("fonts", "JetBrainsMono-Bold.ttf"),
+        os.path.join("fonts", "NotoSansSC-Regular.otf"),
+        os.path.join("fonts", "NotoSansSC-Bold.otf"),
+        os.path.join("fonts", "NotoSansTC-Regular.otf"),
+        os.path.join("fonts", "NotoSansTC-Bold.otf"),
+        os.path.join("fonts", "NotoSansHK-Regular.otf"),
+        os.path.join("fonts", "NotoSansHK-Bold.otf"),
+        os.path.join("fonts", "NotoSansJP-Regular.otf"),
+        os.path.join("fonts", "NotoSansJP-Bold.otf"),
+        os.path.join("fonts", "NotoSansKR-Regular.otf"),
+        os.path.join("fonts", "NotoSansKR-Bold.otf"),
     }
     tracked_markers = {
         ".gitignore",

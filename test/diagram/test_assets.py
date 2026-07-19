@@ -848,7 +848,7 @@ def test_render_png_rejects_non_finite_scale():
     svg = _canonical_svg(
         '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>'
     )
-    for scale in (float("nan"), float("inf"), float("-inf")):
+    for scale in (None, float("nan"), float("inf"), float("-inf")):
         with pytest.raises(ValueError, match="finite positive"):
             engine.render_png(svg, scale=scale)
 
@@ -959,6 +959,50 @@ def test_render_png_rejects_truncated_or_corrupt_png_payload(monkeypatch):
         + chunk(b"IEND", b"")
     )
     assert not engine_module._valid_png(duplicate_ihdr)
+
+
+def test_render_png_rejects_unsupported_png_chunks_at_engine_boundary(monkeypatch):
+    import importlib
+
+    engine_module = importlib.import_module("pyfcstm.diagram.engine")
+    engine = DiagramAssetEngine()
+    monkeypatch.setattr(engine, "_ensure_resvg", lambda _locale: None)
+
+    def chunk(kind, payload):
+        checksum = zlib.crc32(kind + payload) & 0xFFFFFFFF
+        return (
+            struct.pack(">I", len(payload))
+            + kind
+            + payload
+            + struct.pack(">I", checksum)
+        )
+
+    header = struct.pack(">IIBBBBB", 1, 1, 8, 6, 0, 0, 0)
+    canonical = _canonical_svg(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1">'
+        '<rect width="1" height="1" fill="black"/></svg>'
+    )
+    for kind, payload, reason in (
+        (b"ABCD", b"", "unsupported critical chunk"),
+        (b"PLTE", b"", "unsupported critical chunk"),
+    ):
+        png = (
+            b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", header)
+            + chunk(kind, payload)
+            + chunk(b"IDAT", zlib.compress(b"\x00\x00\x00\x00\xff"))
+            + chunk(b"IEND", b"")
+        )
+        assert not engine_module._valid_png(png)
+        monkeypatch.setattr(
+            engine,
+            "_eval_asset",
+            lambda *_args, payload=png, **_kwargs: base64.b64encode(payload).decode(
+                "ascii"
+            ),
+        )
+        with pytest.raises(DiagramRenderError, match=reason):
+            engine.render_png(canonical)
 
 
 def test_engine_rejects_non_finite_timeout():

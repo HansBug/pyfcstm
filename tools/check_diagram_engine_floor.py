@@ -189,7 +189,10 @@ def run(
         except DiagramAssetError:
             # DiagramAssetError: the deliberate infinite loop must interrupt
             # and discard the context before a fresh render is attempted.
-            pass
+            print(
+                "diagram engine floor: expected timeout interrupted the context",
+                file=sys.stderr,
+            )
         else:
             raise ValueError("runtime timeout smoke did not interrupt")
         timeout_engine.timeout = 30.0
@@ -211,7 +214,7 @@ def run(
 
 def main(argv=None) -> int:
     """Run the runtime-floor maintenance command."""
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--corpus", type=Path, default=DEFAULT_CORPUS)
     parser.add_argument("--python", dest="python_spec")
     parser.add_argument("--requirement")

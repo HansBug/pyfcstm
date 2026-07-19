@@ -142,6 +142,7 @@ _MAX_RENDER_DIMENSION = 16_384
 _MAX_RENDER_PIXELS = 16_777_216
 _MAX_RENDER_RGBA_BYTES = 67_108_864
 _MAX_RENDER_PNG_BYTES = 33_554_432
+_PNG_ALLOWED_CHUNKS = {b"IHDR", b"IDAT", b"IEND"}
 
 _SVG_INPUT_ELEMENTS = {
     "svg",
@@ -754,6 +755,12 @@ def _decode_png_rgba(data: bytes) -> Tuple[int, int, Tuple[int, int, int, int]]:
                 for byte in chunk_type
             ):
                 raise ValueError("PNG output has an invalid chunk type")
+            if chunk_type not in _PNG_ALLOWED_CHUNKS:
+                kind = "critical" if 65 <= chunk_type[0] <= 90 else "ancillary"
+                raise ValueError(
+                    "PNG output contains an unsupported %s chunk: %s"
+                    % (kind, chunk_type.decode("ascii"))
+                )
             payload = data[position + 8 : position + 8 + length]
             expected_crc = struct.unpack(">I", data[position + 8 + length : chunk_end])[
                 0
@@ -1308,6 +1315,8 @@ class DiagramAssetEngine:
             True
         """
         if isinstance(scale, bool):
+            raise ValueError("scale must be a finite positive number")
+        if scale is None:
             raise ValueError("scale must be a finite positive number")
         numeric_scale = float(scale)
         if not math.isfinite(numeric_scale) or numeric_scale <= 0:

@@ -136,6 +136,7 @@ class _BmcPresentation:
     headline: str
     scenario: str
     property_verdict: str
+    semantic_interpretation: str
     primary_search: str
     response_horizon: Optional[str]
     conclusion: str
@@ -291,10 +292,15 @@ def _human_presentation(execution: _BmcExecution) -> _BmcPresentation:
     if execution.replay is not None and not execution.replay.ok:
         headline = "EVIDENCE/REPLAY MISMATCH; RESULT UNTRUSTED"
         property_verdict = "INCONCLUSIVE (EVIDENCE/REPLAY MISMATCH)"
+        semantic_interpretation = (
+            "The solver evidence could not be reproduced by the runtime; no "
+            "property conclusion is trusted."
+        )
         severity = "red"
     else:
         headline = base.headline
         property_verdict = base.property_verdict
+        semantic_interpretation = base.semantic_interpretation
         severity = base.severity
     replay = execution.replay
     if replay is not None:
@@ -329,6 +335,7 @@ def _human_presentation(execution: _BmcExecution) -> _BmcPresentation:
         headline=headline,
         scenario=base.scenario,
         property_verdict=property_verdict,
+        semantic_interpretation=semantic_interpretation,
         primary_search=base.primary_search,
         response_horizon=base.response_horizon,
         conclusion=(
@@ -426,6 +433,7 @@ def _human_report(
         "BMC %s <= %d: %s" % (formula.kind, formula.bound, presentation.headline),
         "Scenario: %s" % presentation.scenario,
         "Property verdict: %s" % presentation.property_verdict,
+        "Semantic interpretation: %s" % presentation.semantic_interpretation,
         "Primary search: %s" % presentation.primary_search,
     ]
     if presentation.response_horizon is not None:
@@ -469,6 +477,7 @@ def _colorize_human_report(text: str, severity: str) -> str:
             (
                 "Scenario:",
                 "Property verdict:",
+                "Semantic interpretation:",
                 "Primary search:",
                 "Response horizon:",
                 "Conclusion:",

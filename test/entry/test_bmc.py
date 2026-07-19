@@ -247,6 +247,10 @@ def test_bmc_human_report_prioritizes_verdict_and_diagnostics(bmc_files) -> None
     )
     assert "Scenario: FEASIBLE" in result.stdout
     assert "Property verdict: SATISFIED WITHIN BOUND (WITNESS FOUND)" in result.stdout
+    assert (
+        "Semantic interpretation: A satisfying witness execution exists within "
+        "the bound; this is existential evidence, not a universal guarantee."
+    ) in result.stdout
     assert "Primary search: WITNESS = SAT" in result.stdout
     assert "Response horizon:" not in result.stdout
     assert (
@@ -275,6 +279,9 @@ def test_bmc_human_report_prioritizes_verdict_and_diagnostics(bmc_files) -> None
                 "Scenario: FEASIBLE",
                 "Property verdict: NOT SATISFIED WITHIN BOUND (NO WITNESS)",
                 "Primary search: WITNESS = UNSAT",
+                "Semantic interpretation: The witness objective is unsatisfiable "
+                "over the feasible bounded scenario; no satisfying execution "
+                "exists within the bound.",
                 "Conclusion: No admissible execution satisfies the reach objective "
                 "within 1 macro-step.",
             ),
@@ -286,6 +293,8 @@ def test_bmc_human_report_prioritizes_verdict_and_diagnostics(bmc_files) -> None
                 "Scenario: FEASIBLE",
                 "Property verdict: NOT SATISFIED WITHIN BOUND (COUNTEREXAMPLE FOUND)",
                 "Primary search: COUNTEREXAMPLE = SAT",
+                "Semantic interpretation: A counterexample execution exists within "
+                "the bound; the property is not satisfied there.",
                 "Conclusion: At least one admissible execution violates the forbid "
                 "property within 1 macro-step.",
                 "Model role: PRIMARY COUNTEREXAMPLE",
@@ -298,6 +307,9 @@ def test_bmc_human_report_prioritizes_verdict_and_diagnostics(bmc_files) -> None
                 "Scenario: FEASIBLE",
                 "Property verdict: SATISFIED WITHIN BOUND (NO COUNTEREXAMPLE)",
                 "Primary search: COUNTEREXAMPLE = UNSAT",
+                "Semantic interpretation: The counterexample objective is "
+                "unsatisfiable over the feasible bounded scenario; every "
+                "admissible execution within the bound satisfies the property.",
                 "Conclusion: Every admissible execution within 1 macro-step satisfies "
                 "the forbid property.",
             ),
@@ -309,6 +321,9 @@ def test_bmc_human_report_prioritizes_verdict_and_diagnostics(bmc_files) -> None
                 "Scenario: FEASIBLE",
                 "Property verdict: INCONCLUSIVE (RESPONSE HORIZON INCOMPLETE)",
                 "Primary search: COUNTEREXAMPLE = UNSAT",
+                "Semantic interpretation: A feasible prefix leaves a response "
+                "obligation beyond the bound; neither satisfaction nor violation "
+                "can be established.",
                 "Response horizon: OPEN",
                 "Horizon reason: response obligation remains open beyond the current bounded horizon.",
                 "An admissible finite prefix leaves a response obligation open beyond "
@@ -420,6 +435,10 @@ def test_bmc_human_report_distinguishes_feasibility_unknown_timeout_and_unchecke
     )
     assert unknown.exit_code == 3
     assert "SCENARIO FEASIBILITY UNKNOWN; PROPERTY NOT EVALUATED" in unknown.stdout
+    assert (
+        "Semantic interpretation: Scenario feasibility is unknown; the primary "
+        "UNSAT result cannot establish a property conclusion."
+    ) in unknown.stdout
     assert "Scenario: UNKNOWN" in unknown.stdout
     assert (
         "Property verdict: NOT EVALUATED (SCENARIO FEASIBILITY UNKNOWN)"
@@ -441,6 +460,11 @@ def test_bmc_human_report_distinguishes_feasibility_unknown_timeout_and_unchecke
     assert "SCENARIO FEASIBILITY TIMED OUT; PROPERTY NOT EVALUATED" in (
         timed_out.stdout
     )
+    assert (
+        "Semantic interpretation: Scenario feasibility was not resolved because "
+        "the feasibility check timed out; the primary UNSAT result cannot "
+        "establish a property conclusion."
+    ) in timed_out.stdout
     assert "Scenario: TIMED OUT" in timed_out.stdout
     assert (
         "Property verdict: NOT EVALUATED (SCENARIO FEASIBILITY TIMED OUT)"
@@ -466,6 +490,11 @@ def test_bmc_human_report_distinguishes_feasibility_unknown_timeout_and_unchecke
         unchecked.stdout
     )
     assert "Scenario: NOT CHECKED" in unchecked.stdout
+    assert (
+        "Semantic interpretation: Scenario feasibility was not checked because "
+        "the shared budget was exhausted first; the primary UNSAT result cannot "
+        "establish a property conclusion."
+    ) in unchecked.stdout
     assert (
         "Property verdict: NOT EVALUATED (SCENARIO FEASIBILITY TIMED OUT)"
         in unchecked.stdout
@@ -506,6 +535,10 @@ def test_bmc_human_report_keeps_known_infeasible_scenario_when_localization_stop
 
     assert result.exit_code == 3
     assert "SCENARIO INFEASIBLE; PROPERTY NOT EVALUATED" in result.stdout
+    assert (
+        "Semantic interpretation: The scenario constraints are unsatisfiable; "
+        "no admissible execution exists, so the property was not evaluated."
+    ) in result.stdout
     assert "Failure boundary: NOT LOCALIZED" in result.stdout
     assert "Localization: TIMEOUT (timeout)" in result.stdout
     assert "feasibility_unknown" not in result.stdout

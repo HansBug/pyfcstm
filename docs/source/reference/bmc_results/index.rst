@@ -321,8 +321,9 @@ or an inconclusive check:
    BMC <kind> <= <bound>: SCENARIO INFEASIBLE; PROPERTY NOT EVALUATED
    BMC <kind> <= <bound>: EVIDENCE/REPLAY MISMATCH; RESULT UNTRUSTED
 
-The first report block then contains ``Scenario``, ``Property verdict``, and
-``Primary search``.  ``Property verdict`` is the direct bounded conclusion:
+The first report block then contains ``Scenario``, ``Property verdict``,
+``Semantic interpretation``, and ``Primary search``.  ``Property verdict`` is
+the direct bounded conclusion:
 ``SATISFIED WITHIN BOUND`` means the requested property outcome was established,
 ``NOT SATISFIED WITHIN BOUND`` means a required witness was absent or a
 counterexample was found, ``NOT EVALUATED`` means scenario feasibility did not
@@ -343,6 +344,17 @@ assumptions stage starts, it is ``NOT CHECKED``.  An open response horizon is a
 valid SAT suffix result rather than a solver exception, and its ``Evidence``
 includes a ``Horizon reason`` explaining that the response obligation extends
 beyond the current bound.
+
+``Semantic interpretation`` states the logical meaning without requiring the
+reader to combine the solver status with the property polarity.  It explicitly
+separates an unsatisfiable scenario from an unsatisfiable property objective:
+the former means that no admissible execution exists and the property was not
+evaluated; the latter is meaningful only after the scenario is feasible.  For a
+counterexample-polarity objective, an unsatisfiable counterexample objective is
+therefore reported as every admissible execution satisfying the property within
+the bound.  For a witness-polarity objective, it is reported as no satisfying
+execution existing within the bound.  This is still a bounded statement, not
+an unbounded theorem.
 
 ``GOAL UNREALIZABLE WITHIN BOUND`` is reserved for a witness-polarity objective
 whose feasible bounded scenario contains no satisfying execution.  Its
@@ -390,6 +402,7 @@ parentheses; it is presentation text, not an additional JSON payload field.
    BmcSolveResult: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
    Scenario: FEASIBLE
    Property verdict: SATISFIED WITHIN BOUND (WITNESS FOUND)
+   Semantic interpretation: A satisfying witness execution exists within the bound; this is existential evidence, not a universal guarantee.
    Primary search: WITNESS = SAT
    Conclusion: At least one admissible execution satisfies the reach objective within 1 macro-step.
    Evidence:

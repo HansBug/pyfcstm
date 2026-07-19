@@ -1306,6 +1306,7 @@ class _BmcSolvePresentation:
     headline: str
     scenario: str
     property_verdict: str
+    semantic_interpretation: str
     primary_search: str
     response_horizon: Optional[str]
     conclusion: str
@@ -1339,6 +1340,98 @@ def _solve_property_verdict(outcome: str) -> str:
     if outcome not in verdicts:
         raise BmcBuildError("Unsupported BMC outcome: %s" % outcome)
     return verdicts[outcome]
+
+
+def _solve_semantic_interpretation(
+    result: "BmcSolveResult", outcome: str, response_horizon: Optional[str]
+) -> str:
+    """Explain the logical meaning of a solver outcome in plain language.
+
+    The explanation deliberately separates an unsatisfiable scenario from an
+    unsatisfiable property objective.  The former prevents a property verdict;
+    the latter is meaningful only after the admissible bounded scenario is
+    known to be feasible.
+    """
+    if outcome == "witness_found":
+        return (
+            "A satisfying witness execution exists within the bound; this is "
+            "existential evidence, not a universal guarantee."
+        )
+    if outcome == "no_witness":
+        return (
+            "The witness objective is unsatisfiable over the feasible bounded "
+            "scenario; no satisfying execution exists within the bound."
+        )
+    if outcome == "property_violated":
+        return (
+            "A counterexample execution exists within the bound; the property "
+            "is not satisfied there."
+        )
+    if outcome == "property_satisfied":
+        return (
+            "The counterexample objective is unsatisfiable over the feasible "
+            "bounded scenario; every admissible execution within the bound "
+            "satisfies the property."
+        )
+    if outcome == "scenario_infeasible":
+        return (
+            "The scenario constraints are unsatisfiable; no admissible execution "
+            "exists, so the property was not evaluated."
+        )
+    if outcome == "feasibility_unknown":
+        return (
+            "Scenario feasibility is unknown; the primary UNSAT result cannot "
+            "establish a property conclusion."
+        )
+    if outcome == "feasibility_timeout":
+        feasibility = result._validated_feasibility()
+        if feasibility.assumptions.origin != "checked":
+            return (
+                "Scenario feasibility was not checked because the shared budget "
+                "was exhausted first; the primary UNSAT result cannot establish "
+                "a property conclusion."
+            )
+        return (
+            "Scenario feasibility was not resolved because the feasibility check "
+            "timed out; the primary UNSAT result cannot establish a property "
+            "conclusion."
+        )
+    if outcome == "unknown":
+        return (
+            "The primary objective solver returned unknown; no property "
+            "conclusion is available."
+        )
+    if outcome == "timeout":
+        return (
+            "The primary objective solver timed out; no property conclusion is "
+            "available."
+        )
+    if outcome == "incomplete":
+        interpretations = {
+            "OPEN": (
+                "A feasible prefix leaves a response obligation beyond the "
+                "bound; neither satisfaction nor violation can be established."
+            ),
+            "UNKNOWN": (
+                "The response-horizon check returned unknown; neither "
+                "satisfaction nor violation can be established."
+            ),
+            "TIMED OUT": (
+                "The response-horizon check timed out; neither satisfaction nor "
+                "violation can be established."
+            ),
+            "NOT CHECKED": (
+                "The response-horizon check was not started because the shared "
+                "budget was exhausted; neither satisfaction nor violation can "
+                "be established."
+            ),
+            "DISABLED": (
+                "The response-horizon check was disabled; neither satisfaction "
+                "nor violation can be established."
+            ),
+        }
+        return interpretations[response_horizon or "NOT CHECKED"]
+    raise BmcBuildError("Unsupported BMC outcome: %s" % outcome)
 
 
 def _solve_scenario(result: "BmcSolveResult", outcome: str) -> str:
@@ -1615,6 +1708,9 @@ def _solve_presentation(result: "BmcSolveResult") -> _BmcSolvePresentation:
         headline=headlines[outcome],
         scenario=_solve_scenario(result, outcome),
         property_verdict=result.property_verdict,
+        semantic_interpretation=_solve_semantic_interpretation(
+            result, outcome, response_horizon
+        ),
         primary_search="%s = %s" % (_solve_search_kind(result), result.status.upper()),
         response_horizon=response_horizon,
         conclusion=_solve_conclusion(result, outcome, response_horizon),
@@ -1629,6 +1725,7 @@ def _render_solve_result(result: "BmcSolveResult", tablefmt: str) -> str:
         "BmcSolveResult: %s" % presentation.headline,
         "Scenario: %s" % presentation.scenario,
         "Property verdict: %s" % presentation.property_verdict,
+        "Semantic interpretation: %s" % presentation.semantic_interpretation,
         "Primary search: %s" % presentation.primary_search,
     ]
     if presentation.response_horizon is not None:

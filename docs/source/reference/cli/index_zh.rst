@@ -178,7 +178,7 @@
      - Click 在写报告前拒绝封闭的 ``--format`` 取值。
    * - ``bmc``
      - ``pyfcstm bmc -i docs/source/tutorials/bmc/first_check.fcstm -q docs/source/tutorials/bmc/reach_door.fbmcq``
-     - 第一行是 ``BMC reach <= 1: PROPERTY HOLDS``，且重放通过。
+     - 第一行是 ``BMC reach <= 1: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND``，且重放通过。
      - ``pyfcstm bmc -i docs/source/tutorials/bmc/first_check.fcstm -q /tmp/missing.fbmcq``
      - 查询文件在编译前读取失败，不输出半成品报告。
    * - ``generate``

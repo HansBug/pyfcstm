@@ -84,9 +84,9 @@ Both installed entry forms have the same behavior:
    * - ``--timeout-ms``
      - Integer, ``>= 1``
      - Unset; no Z3 timeout
-     - Applies independently to each Z3 ``check()``.  It is not a total CLI
-       wall-clock budget and does not limit loading, parsing, expansion, formula
-       construction, witness decoding, or replay.
+     - Establishes one total budget shared by every staged Z3 ``check()`` in
+       the public solve.  It does not limit loading, parsing, expansion,
+       formula construction, witness decoding, or replay.
    * - ``--max-bound``
      - Integer, ``>= 1``
      - Unset; no CLI cap
@@ -119,11 +119,16 @@ One invocation follows this fixed order:
 #. Read and decode the FBMCQ file.
 #. Compile exactly one query, applying ``--max-bound`` when supplied.
 #. Solve the primary property objective.
-#. When the property exposes a non-false incomplete-horizon formula, solve that
-   diagnostic formula separately.
-#. If the primary result is SAT, decode its model into a
-   witness trace and replay it through ``SimulationRuntime`` with
-   ``abstract_handlers=None``.
+#. When the primary result is UNSAT, check ``S_assume`` and, only when needed,
+   ``S_init`` and ``K_N``.  Do not interpret an UNSAT objective as a property
+   verdict until the admissible scenario is known to be feasible.
+#. If the scenario is feasible and the property exposes a non-false
+   incomplete-horizon formula, solve that diagnostic formula under the same
+   total deadline.
+#. If a SAT model is selected, decode it with the result-bound decoder into a
+   role-aware trace and replay it through ``SimulationRuntime`` with
+   ``abstract_handlers=None``.  The raw-model ``decode_bmc_witness`` API omits
+   the result-bound ``model_role`` and ``verdict`` fields.
 #. Compute the final exit code, construct the entire report once, then write it
    to stdout or atomically replace ``--output``.
 #. Exit with the same code recorded by JSON ``exit_code``.
@@ -211,8 +216,10 @@ is not a process/protocol error: it still emits a complete report.
      - Usage on stderr; no report.
      - Fix missing/unknown options or require positive integers.
    * - ``3``
-     - Solver ``unknown``/``timeout`` or response horizon ``incomplete``.
-     - Complete report; ``witness`` and ``replay`` are null.
+     - Solver ``unknown``/``timeout``, feasibility inconclusive, scenario
+       infeasible, or response horizon ``incomplete``.
+     - Complete report.  Scenario-infeasible and inconclusive feasibility
+       branches have null ``witness``/``replay``; a SAT suffix may have both.
      - Inspect ``result.outcome`` before choosing a larger timeout or bound.
    * - ``4``
      - SAT decoded successfully and replay returned a structured result with
@@ -261,12 +268,18 @@ is not a process/protocol error: it still emits a complete report.
      - null / null
      - ``0``
      - No complete-window violation and no uncovered tail trigger.
-   * - Response objective UNSAT; suffix check SAT, unknown, or timeout
+   * - Response objective UNSAT; suffix check SAT
+     - ``unsat``
+     - ``incomplete``
+     - object / object, replay ok
+     - ``3``
+     - The detached ``incomplete_suffix`` model supplies finite-prefix evidence; it does not establish a property verdict.
+   * - Response objective UNSAT; suffix check unknown or timeout
      - ``unsat``
      - ``incomplete``
      - null / null
      - ``3``
-     - The bounded tail cannot support a definitive satisfaction verdict.
+     - The suffix check produced no model, so the bounded tail cannot support a definitive satisfaction verdict.
    * - Any primary objective unknown
      - ``unknown``
      - ``unknown``
@@ -278,7 +291,7 @@ is not a process/protocol error: it still emits a complete report.
      - ``timeout``
      - null / null
      - ``3``
-     - Per-check timeout reached.
+     - The shared solve budget was exhausted before a conclusive primary result.
    * - Any primary SAT; decode succeeds; replay returns mismatches
      - ``sat``
      - Polarity-derived value
@@ -290,31 +303,139 @@ Human report
 ------------
 
 Human output reports the bounded property verdict before exposing solver
-mechanics.  Its first line is exactly one of these shapes:
+mechanics.  Its first line is polarity-aware and identifies whether the
+result is a witness, a counterexample, a bounded guarantee, an empty scenario,
+or an inconclusive check:
 
 .. code-block:: text
 
-   BMC <kind> <= <bound>: PROPERTY HOLDS
-   BMC <kind> <= <bound>: PROPERTY DOES NOT HOLD
-   BMC <kind> <= <bound>: PROPERTY INCONCLUSIVE
-   BMC <kind> <= <bound>: REPLAY MISMATCH; PROPERTY VERDICT UNTRUSTED
+   BMC <kind> <= <bound>: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   BMC <kind> <= <bound>: GOAL UNREALIZABLE WITHIN BOUND; NO WITNESS
+   BMC <kind> <= <bound>: PROPERTY DOES NOT HOLD WITHIN BOUND; COUNTEREXAMPLE FOUND
+   BMC <kind> <= <bound>: PROPERTY GUARANTEED WITHIN BOUND; NO COUNTEREXAMPLE
+   BMC <kind> <= <bound>: PROPERTY INCONCLUSIVE; PRIMARY CHECK UNKNOWN
+   BMC <kind> <= <bound>: PROPERTY INCONCLUSIVE; PRIMARY CHECK TIMED OUT
+   BMC <kind> <= <bound>: PROPERTY INCONCLUSIVE; RESPONSE HORIZON INCOMPLETE
+   BMC <kind> <= <bound>: SCENARIO FEASIBILITY UNKNOWN; PROPERTY NOT EVALUATED
+   BMC <kind> <= <bound>: SCENARIO FEASIBILITY TIMED OUT; PROPERTY NOT EVALUATED
+   BMC <kind> <= <bound>: SCENARIO FEASIBILITY NOT CHECKED; PROPERTY NOT EVALUATED
+   BMC <kind> <= <bound>: SCENARIO INFEASIBLE; PROPERTY NOT EVALUATED
+   BMC <kind> <= <bound>: EVIDENCE/REPLAY MISMATCH; RESULT UNTRUSTED
 
-The next sentence explains the polarity-aware outcome.  ``Solver`` then shows
-the primary status and elapsed milliseconds; configured per-check timeout,
-response horizon status/time, solver reasons, and diagnostics appear when
-applicable.  SAT results add replay status and a compact trace whose rows show
-``source -> target [case; events; calls]``.  Event and call previews retain the
-first three values and report the omitted count.  Replay mismatches show every
-path and message.
+The first report block then contains ``Scenario``, ``Property verdict``,
+``Semantic interpretation``, and ``Primary search``.  ``Property verdict`` is
+the direct bounded conclusion:
+``SATISFIED WITHIN BOUND`` means the requested property outcome was established,
+``NOT SATISFIED WITHIN BOUND`` means a required witness was absent or a
+counterexample was found, ``NOT EVALUATED`` means scenario feasibility did not
+permit a property verdict, and ``INCONCLUSIVE`` means the bounded search did
+not finish with a property verdict.  The parenthetical text preserves whether
+the evidence was a witness, a missing witness, a counterexample, or an
+exception state.  A
+response query also contains ``Response horizon``; non-response queries omit
+that line.  ``Conclusion`` states the quantifier-aware user result.  When
+there is SAT evidence, ``Evidence`` identifies ``PRIMARY WITNESS``,
+``PRIMARY COUNTEREXAMPLE``, or ``INCOMPLETE SUFFIX`` and reports replay.  An
+empty scenario reports ``Failure boundary`` as ``KERNEL``, ``INITIALIZATION``,
+``ASSUMPTIONS``, or ``NOT LOCALIZED``; this is a cumulative boundary, not an
+unsat core and not proof that one source clause is internally contradictory.
+For a checked feasibility timeout, ``Scenario`` is ``TIMED OUT``; for a checked
+feasibility unknown it is ``UNKNOWN``.  If the shared budget expires before the
+assumptions stage starts, it is ``NOT CHECKED``.  An open response horizon is a
+valid SAT suffix result rather than a solver exception, and its ``Evidence``
+includes a ``Horizon reason`` explaining that the response obligation extends
+beyond the current bound.
+
+For the shared-budget case, the matching property line is
+``Property verdict: NOT EVALUATED (SCENARIO FEASIBILITY NOT CHECKED)``.  A
+feasibility check that actually starts and times out instead keeps
+``NOT EVALUATED (SCENARIO FEASIBILITY TIMED OUT)``.
+
+``Semantic interpretation`` states the logical meaning without requiring the
+reader to combine the solver status with the property polarity.  It explicitly
+separates an unsatisfiable scenario from an unsatisfiable property objective:
+the former means that no admissible execution exists and the property was not
+evaluated; the latter is meaningful only after the scenario is feasible.  For a
+counterexample-polarity objective, an unsatisfiable counterexample objective is
+therefore reported as every admissible execution satisfying the property within
+the bound.  For a witness-polarity objective, it is reported as no satisfying
+execution existing within the bound.  This is still a bounded statement, not
+an unbounded theorem.
+
+``GOAL UNREALIZABLE WITHIN BOUND`` is reserved for a witness-polarity objective
+whose feasible bounded scenario contains no satisfying execution.  Its
+separate ``Property verdict: NOT SATISFIED WITHIN BOUND (NO WITNESS)`` line
+records the same bounded negative verdict as ``property_satisfied: false``;
+the headline identifies the evidence form and does not claim that a concrete
+counterexample trace was found.  ``PROPERTY GUARANTEED WITHIN BOUND`` is
+reserved for a counterexample-polarity objective with no bounded counterexample.
+
+``Solver`` then shows the primary status and elapsed milliseconds; the
+configured shared timeout budget, response horizon status/time, solver reasons,
+and low-level diagnostics appear when applicable.  SAT results add a compact
+trace whose rows show ``source -> target [case; events; calls]``.  Event and
+call previews retain the first three values and report the omitted count.
+Replay mismatches show every path and message.  ``PROPERTY GUARANTEED WITHIN
+BOUND`` means that the scenario is feasible and every admissible execution in
+the stated bound has no counterexample; it is not an unbounded theorem.
 
 The final paragraph always states the bounded-result limitation and points to
 ``--json`` for the complete witness, runtime trace, mismatches, and stable
 diagnostics.  Sections have exactly one blank line and the report has one
-trailing newline.  With ``--color auto``, terminals use green for a holding
-property, red for a non-holding property or replay mismatch, yellow for an
-inconclusive result and bounded caveat, and cyan for diagnostic labels.  Color
-never enters JSON or files.  Scripts and LLM integrations must consume
-``--json`` rather than parse human wording, ANSI, or live timing.
+trailing newline.  With ``--color auto``, terminals use green for a witness or
+bounded guarantee, red for a missing witness, counterexample, or replay
+mismatch, yellow for an empty/unknown/incomplete scenario and the bounded
+caveat, and cyan for report labels.  Color never enters JSON or files.  Scripts
+and LLM integrations must consume ``--json`` rather than parse human wording,
+ANSI, or live timing.
+
+Direct Python result text
+-------------------------
+
+``BmcSolveResult`` uses the same semantic vocabulary when it is printed
+directly with ``str(result)`` or ``result.to_text()``.  The summary appears
+before the canonical field table, so a Python caller can immediately see the
+polarity, bounded conclusion, scenario status, response horizon, and available
+model role without interpreting raw ``SAT``/``UNSAT`` fields:
+
+For programmatic human-facing reports, ``result.property_verdict`` returns the
+same canonical ``Property verdict`` line without parsing ``str(result)``.  It
+is derived from ``result.outcome`` and preserves the evidence distinction in
+parentheses; it is presentation text, not an additional JSON payload field.
+
+.. code-block:: text
+
+   BmcSolveResult: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   Scenario: FEASIBLE
+   Property verdict: SATISFIED WITHIN BOUND (WITNESS FOUND)
+   Semantic interpretation: A satisfying witness execution exists within the bound; this is existential evidence, not a universal guarantee.
+   Primary search: WITNESS = SAT
+   Conclusion: At least one admissible execution satisfies the reach objective within 1 macro-step.
+   Evidence:
+     Model role: PRIMARY WITNESS
+     Model evidence: SAT model available.
+
+   Details:
+   BmcSolveResult
+   field    value
+   ...
+
+The same mapping is used for ``NO WITNESS``, ``COUNTEREXAMPLE FOUND``,
+``PROPERTY GUARANTEED``, scenario infeasibility, feasibility unknown/timeout,
+primary unknown/timeout, and incomplete response horizons.  A solve result does
+not own runtime replay; ``BmcReplayResult`` remains the separate object that
+prints replay success or mismatch details, and the CLI combines both objects to
+produce ``RESULT UNTRUSTED`` when necessary.
+
+Inconclusive results also place the actionable cause in ``Evidence``.  A
+feasibility result identifies the ``ASSUMPTIONS`` stage and prints its
+``UNKNOWN``/``TIMED OUT`` status and solver reason, or explicitly says that the
+stage was not checked because the shared timeout budget was already exhausted.
+Primary ``unknown``/``timeout`` results print ``Primary reason``; incomplete
+response results print ``Horizon reason`` for an open, unknown, timeout,
+disabled, or not-checked suffix check.  This information is part of the public text
+presentation used by both the CLI and ``str(result)``/``result.to_text()``; it
+is not restricted to the low-level ``Details`` table.
 
 JSON envelope
 -------------
@@ -348,11 +469,12 @@ Raw Z3 models and complete SMT formulas are deliberately excluded.
    * - ``witness``
      - object or null
      - Yes
-     - Witness trace for primary SAT; null otherwise.
+     - Role-aware trace for a CLI-selected primary or suffix model; null when
+       no model role is available.
    * - ``replay``
      - object or null
      - Yes
-     - Runtime replay result for primary SAT; null otherwise.
+     - Runtime replay result for a selected model role; null otherwise.
    * - ``exit_code``
      - one of ``0, 1, 3, 4``
      - Yes
@@ -395,7 +517,9 @@ is a positive integer for response and null for other kinds.
      - True for primary unknown/timeout or unresolved response horizon.
    * - ``outcome``
      - ``property_satisfied``, ``property_violated``, ``witness_found``,
-       ``no_witness``, ``incomplete``, ``timeout``, ``unknown``
+       ``no_witness``, ``incomplete``, ``timeout``, ``unknown``,
+       ``scenario_infeasible``, ``feasibility_timeout``,
+       ``feasibility_unknown``
      - Stable consumer-facing classification; use this with ``exit_code``.
    * - ``reason``
      - string or null
@@ -405,7 +529,7 @@ is a positive integer for response and null for other kinds.
      - Primary check wall time; inherently nondeterministic.
    * - ``timeout_ms``
      - positive integer or null
-     - Configured per-check timeout, not elapsed total time.
+     - One total timeout budget shared by every staged check in this invocation.
    * - ``has_model``
      - boolean
      - True exactly when a primary SAT model existed; the raw model is absent.
@@ -419,6 +543,20 @@ is a positive integer for response and null for other kinds.
    * - ``has_incomplete_model``
      - boolean
      - True exactly for a secondary SAT model; the raw model is absent.
+   * - ``incomplete_elapsed_ms``
+     - finite number or null
+     - Secondary check time, when that check actually ran.
+   * - ``total_elapsed_ms``
+     - finite number, ``>= 0``
+     - End-to-end Python-side public-solve interval, including staged-result construction.
+   * - ``feasibility``
+     - object
+     - Stage evidence for ``K_N``, ``S_init`` and ``S_assume``.  A checked
+       ``unknown``/``timeout`` never becomes ``scenario_infeasible``.
+   * - ``available_model_roles``
+     - array of closed role strings
+     - ``primary_witness``, ``primary_counterexample`` or
+       ``incomplete_suffix``.
    * - ``diagnostics``
      - array of strings
      - Solver/formula diagnostics; may contain nondeterministic
@@ -428,10 +566,48 @@ Golden tests should fix or range-check ``elapsed_ms`` and the secondary timing
 diagnostic rather than exact-comparing live time.  Key sets, enums, nullability,
 and all other stable values remain suitable for exact checks.
 
+Feasibility and model roles
+---------------------------
+
+``result.outcome == "scenario_infeasible"`` means ``S_assume`` was proven
+unsatisfiable.  It is not a property failure: ``property_satisfied`` is
+``null``, no model role is available, and response suffix solving is skipped.
+When ``S_assume`` is satisfiable, a primary SAT model is classified as either
+``primary_witness`` or ``primary_counterexample``.  A response primary UNSAT
+followed by a SAT ``Psi_q`` check is classified as ``incomplete_suffix``; its
+trace is useful for replaying the finite prefix but its detached verdict stays
+``incomplete``.
+
+``timeout_ms == null`` means no Z3 timeout is installed.  A finite value is a
+single total budget shared by primary, feasibility, localization, and suffix
+checks; a later check is not started after the budget is exhausted.
+
+The schema preserves the evidence boundary for localized infeasibility.  An
+``infeasible_stage == "initialization"`` result requires a checked SAT
+``kernel`` prefix and checked UNSAT ``initialization`` evidence.  An
+``infeasible_stage == "assumptions"`` result requires a SAT ``kernel`` prefix
+(which may be inferred), checked SAT ``initialization`` evidence, and checked
+UNSAT ``assumptions`` evidence.  ``origin == "inferred"`` therefore records a
+SAT fact implied by a trusted stronger result; it cannot replace a solver check
+needed to distinguish the first infeasible stage.
+
+For a current result with a non-empty ``available_model_roles`` array, both the
+``witness`` and ``replay`` objects must use the role-aware shape and carry
+exactly the same role as the result.  An empty role array requires both objects
+to be ``null``.  This keeps the external envelope from combining evidence from
+different model channels even when each individual object is structurally
+valid.  Current and legacy-compatible objects are distinguished by their field
+sets, not by a payload version field.
+
 Witness fields
 --------------
 
-The witness trace is present only for primary SAT. Its required root fields are:
+The selected witness trace is present for a primary or suffix model. CLI-emitted
+traces use the role-aware shape with root ``model_role`` and ``verdict`` fields;
+the raw-model ``decode_bmc_witness`` API emits the legacy-compatible shape
+without those fields. In the role-aware shape, ``model_role`` is at the trace
+root, never nested under ``solver``. The required root fields are described
+below.
 
 .. list-table:: Witness root and nested records
    :header-rows: 1
@@ -444,9 +620,14 @@ The witness trace is present only for primary SAT. Its required root fields are:
      - ``kind``, ``polarity``, ``bound``, ``case_label``, ``response_window``
      - Same property shape as the envelope.
    * - ``witness.solver``
-     - ``status``, ``reason``, ``incomplete_status``
-     - ``status`` is exactly SAT.  Reason is null for SAT; secondary status may
-       be any status or null.
+     - ``model_status``, ``primary_status``, ``incomplete_status``, timing and
+       reason fields
+     - The selected model status is SAT.  For ``incomplete_suffix``, primary is
+       UNSAT and incomplete is SAT; completed SAT/UNSAT checks have null reason.
+   * - ``witness.model_role`` and ``witness.verdict``
+     - closed role and detached verdict objects
+     - The role/verdict combination is validated together; suffix replay cannot
+       be promoted to a property verdict.
    * - ``witness.initial``
      - ``mode``, ``state``, ``sentinel``, ``vars``
      - Replay initialization metadata.  State may be null; sentinel is
@@ -526,9 +707,9 @@ Dual checks and the response cause boundary
 
 Every property performs one primary check.  Only a formula with a non-false
 incomplete-horizon observation performs a second check; this is currently the
-non-trivial response case.  Each check receives the full configured
-``--timeout-ms`` independently.  Thus two 100 ms checks may consume more than
-100 ms in total, and total CLI time can be longer still.
+non-trivial response case.  All staged checks consume one shared total
+``--timeout-ms`` budget.  A later check receives only the remaining budget and
+is not started after the deadline is exhausted.
 
 .. list-table:: Response two-check interpretation
    :header-rows: 1
@@ -657,7 +838,7 @@ file containing exactly the shown statement.
      ...
      "result": {"outcome": "witness_found", "status": "sat", ...},
      "replay": {"mismatches": [], "ok": true, ...},
-     "witness": {"property": {"kind": "reach", ...}, ...}
+     "witness": {"model_role": "primary_witness", "verdict": {"outcome": "witness_found", ...}, ...}
    }
 
 The excerpt is schematic because sorted pretty JSON places keys between these
@@ -687,8 +868,11 @@ downloadable reference schema.
    3
 
 stdout and stderr are empty; ``response.json`` has primary ``status: unsat``,
-``incomplete_status: sat``, ``outcome: incomplete``, null witness/replay, and
-``exit_code: 3``.  Increase the bound if a definitive horizon is required.
+``incomplete_status: sat``, ``outcome: incomplete``, and ``exit_code: 3``.
+Because the suffix model is available, ``witness`` and ``replay`` are
+role-aware objects with ``model_role: incomplete_suffix``; they describe only
+the executable prefix and do not turn the detached result into a property
+verdict.  Increase the bound if a definitive horizon is required.
 
 **Example 4: policy rejection is stderr-only and preserves output.**  Put
 ``check reach <= 2: active("Root");`` in ``large.fbmcq`` and assume
@@ -741,7 +925,9 @@ Consumer rules
 * Use ``result.outcome`` and ``result.polarity``; never interpret SAT as a
   universal success.
 * Treat exit ``3`` as one process category but distinguish timeout, unknown,
-  and response incomplete before changing timeout or bound.
+  feasibility failure, scenario infeasibility, and response incomplete before
+  changing timeout or bound.  A suffix model may still be present on an
+  incomplete response result.
 * Treat exit ``4`` as an inspectable trust failure.  Do not conflate it with an
   exception or a property counterexample.
 * Do not parse human tables, depend on live elapsed time, expect raw models or

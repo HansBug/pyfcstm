@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import copy
 import subprocess
 import sys
 from copy import deepcopy
@@ -13,7 +14,7 @@ from types import SimpleNamespace
 import pytest
 from click.testing import CliRunner
 
-from pyfcstm.bmc import BmcBuildError
+from pyfcstm.bmc import BmcBuildError, BmcFeasibilityCheck, BmcFeasibilityResult
 from pyfcstm.bmc.witness import BmcReplayMismatch, BmcSolveResult
 from pyfcstm.dsl import GrammarParseError
 from pyfcstm.entry import pyfcstmcli
@@ -79,7 +80,10 @@ def _assert_bmc_schema_instance(schema, value, path="$", definitions=None):
                 )
             elif isinstance(schema.get("additionalProperties"), dict):
                 _assert_bmc_schema_instance(
-                    schema["additionalProperties"], item, "%s.%s" % (path, key), definitions
+                    schema["additionalProperties"],
+                    item,
+                    "%s.%s" % (path, key),
+                    definitions,
                 )
     elif isinstance(value, list) and isinstance(schema.get("items"), dict):
         for index, item in enumerate(value):
@@ -231,15 +235,30 @@ def test_bmc_json_verdict_matrix(
 
 
 def test_bmc_human_report_prioritizes_verdict_and_diagnostics(bmc_files) -> None:
-    """Default human output explains the verdict before compact trace details."""
+    """Human output exposes scenario, search, conclusion, and evidence first."""
     model_path, query = bmc_files
     query_path = query('check reach <= 1: active("Root");')
 
     result = _run("-i", str(model_path), "-q", str(query_path))
 
     assert result.exit_code == 0
-    assert result.stdout.startswith("BMC reach <= 1: PROPERTY HOLDS\n")
-    assert "A satisfying execution was found within the bound." in result.stdout
+    assert result.stdout.startswith(
+        "BMC reach <= 1: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND\n"
+    )
+    assert "Scenario: FEASIBLE" in result.stdout
+    assert "Property verdict: SATISFIED WITHIN BOUND (WITNESS FOUND)" in result.stdout
+    assert (
+        "Semantic interpretation: A satisfying witness execution exists within "
+        "the bound; this is existential evidence, not a universal guarantee."
+    ) in result.stdout
+    assert "Primary search: WITNESS = SAT" in result.stdout
+    assert "Response horizon:" not in result.stdout
+    assert (
+        "Conclusion: At least one admissible execution satisfies the reach "
+        "objective within 1 macro-step."
+    ) in result.stdout
+    assert "Evidence:" in result.stdout
+    assert "Model role: PRIMARY WITNESS" in result.stdout
     assert "Solver: SAT in " in result.stdout
     assert "Replay: verified (2 frames, 1 step)." in result.stdout
     assert "\nTrace\n  0: init -> Root [initial]" in result.stdout
@@ -251,41 +270,311 @@ def test_bmc_human_report_prioritizes_verdict_and_diagnostics(bmc_files) -> None
 
 
 @pytest.mark.parametrize(
-    ("query_text", "heading", "explanation"),
+    ("query_text", "heading", "fragments"),
     [
         (
             "check reach <= 1: terminated();",
-            "BMC reach <= 1: PROPERTY DOES NOT HOLD",
-            "No execution satisfying the reach objective was found within the bound.",
+            "BMC reach <= 1: GOAL UNREALIZABLE WITHIN BOUND; NO WITNESS",
+            (
+                "Scenario: FEASIBLE",
+                "Property verdict: NOT SATISFIED WITHIN BOUND (NO WITNESS)",
+                "Primary search: WITNESS = UNSAT",
+                "Semantic interpretation: The witness objective is unsatisfiable "
+                "over the feasible bounded scenario; no satisfying execution "
+                "exists within the bound.",
+                "Conclusion: No admissible execution satisfies the reach objective "
+                "within 1 macro-step.",
+            ),
         ),
         (
             'check forbid <= 1: active("Root");',
-            "BMC forbid <= 1: PROPERTY DOES NOT HOLD",
-            "A counterexample violating the bounded property was found.",
+            "BMC forbid <= 1: PROPERTY DOES NOT HOLD WITHIN BOUND; COUNTEREXAMPLE FOUND",
+            (
+                "Scenario: FEASIBLE",
+                "Property verdict: NOT SATISFIED WITHIN BOUND (COUNTEREXAMPLE FOUND)",
+                "Primary search: COUNTEREXAMPLE = SAT",
+                "Semantic interpretation: A counterexample execution exists within "
+                "the bound; the property is not satisfied there.",
+                "Conclusion: At least one admissible execution violates the forbid "
+                "property within 1 macro-step.",
+                "Model role: PRIMARY COUNTEREXAMPLE",
+            ),
         ),
         (
             "check forbid <= 1: terminated();",
-            "BMC forbid <= 1: PROPERTY HOLDS",
-            "No counterexample was found within the bound.",
+            "BMC forbid <= 1: PROPERTY GUARANTEED WITHIN BOUND; NO COUNTEREXAMPLE",
+            (
+                "Scenario: FEASIBLE",
+                "Property verdict: SATISFIED WITHIN BOUND (NO COUNTEREXAMPLE)",
+                "Primary search: COUNTEREXAMPLE = UNSAT",
+                "Semantic interpretation: The counterexample objective is "
+                "unsatisfiable over the feasible bounded scenario; every "
+                "admissible execution within the bound satisfies the property.",
+                "Conclusion: Every admissible execution within 1 macro-step satisfies "
+                "the forbid property.",
+            ),
         ),
         (
             "check response <= 1: trigger true -> within 2 false;",
-            "BMC response <= 1: PROPERTY INCONCLUSIVE",
-            "The visible horizon cannot decide every response window.",
+            "BMC response <= 1: PROPERTY INCONCLUSIVE; RESPONSE HORIZON INCOMPLETE",
+            (
+                "Scenario: FEASIBLE",
+                "Property verdict: INCONCLUSIVE (RESPONSE HORIZON INCOMPLETE)",
+                "Primary search: COUNTEREXAMPLE = UNSAT",
+                "Semantic interpretation: A feasible prefix leaves a response "
+                "obligation beyond the bound; neither satisfaction nor violation "
+                "can be established.",
+                "Response horizon: OPEN",
+                "Horizon reason: response obligation remains open beyond the current bounded horizon.",
+                "An admissible finite prefix leaves a response obligation open beyond "
+                "the current horizon; no bounded property verdict is available.",
+                "Model role: INCOMPLETE SUFFIX",
+                "Replay: verified finite prefix (2 frames, 1 step).",
+            ),
         ),
     ],
 )
 def test_bmc_human_report_explains_each_verdict_family(
-    bmc_files, query_text: str, heading: str, explanation: str
+    bmc_files, query_text: str, heading: str, fragments: tuple[str, ...]
 ) -> None:
-    """Human reports distinguish negative, positive, and incomplete outcomes."""
+    """Human reports distinguish each primary polarity and response outcome."""
     model_path, query = bmc_files
     query_path = query(query_text)
 
     result = _run("-i", str(model_path), "-q", str(query_path))
 
-    assert heading in result.stdout
-    assert explanation in result.stdout
+    assert result.stdout.startswith(heading + "\n")
+    for fragment in fragments:
+        assert fragment in result.stdout
+
+
+@pytest.mark.parametrize(
+    ("query_text", "headline_fragment", "conclusion_fragment"),
+    [
+        (
+            "check exists_always <= 1: true;",
+            "PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND",
+            "satisfies the exists_always objective",
+        ),
+        (
+            "check invariant <= 1: true;",
+            "PROPERTY GUARANTEED WITHIN BOUND; NO COUNTEREXAMPLE",
+            "satisfies the invariant property",
+        ),
+        (
+            'check must_reach <= 1: active("Root");',
+            "PROPERTY GUARANTEED WITHIN BOUND; NO COUNTEREXAMPLE",
+            "satisfies the must_reach property",
+        ),
+    ],
+)
+def test_bmc_human_report_uses_property_kind_in_quantifier_text(
+    bmc_files,
+    query_text: str,
+    headline_fragment: str,
+    conclusion_fragment: str,
+) -> None:
+    """Human conclusions do not hard-code the reach property kind."""
+    model_path, query = bmc_files
+    query_path = query(query_text)
+
+    result = _run("-i", str(model_path), "-q", str(query_path))
+
+    assert headline_fragment in result.stdout
+    assert conclusion_fragment in result.stdout
+    assert "reach objective" not in result.stdout
+
+
+def test_bmc_human_report_marks_complete_response_horizon(bmc_files) -> None:
+    """A response without a nontrivial suffix reports a complete horizon."""
+    model_path, query = bmc_files
+    query_path = query("check response <= 1: trigger true -> within 1 true;")
+
+    result = _run("-i", str(model_path), "-q", str(query_path))
+
+    assert result.exit_code == 0
+    assert "PROPERTY GUARANTEED WITHIN BOUND; NO COUNTEREXAMPLE" in result.stdout
+    assert "Response horizon: NOT NEEDED" in result.stdout
+    assert "The response horizon is complete and no counterexample exists" in (
+        result.stdout
+    )
+
+
+def test_bmc_human_report_distinguishes_feasibility_unknown_timeout_and_unchecked(
+    bmc_files, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Feasibility uncertainty is not presented as an empty scenario."""
+    import pyfcstm.entry.bmc as bmc_entry
+
+    model_path, query = bmc_files
+    query_path = query("check reach <= 1: terminated();")
+    not_checked = BmcFeasibilityCheck(None, "not_checked")
+
+    def run_with_result(feasibility, diagnostics=()):
+        def solve(formula, *, timeout_ms=None):
+            return BmcSolveResult(
+                formula,
+                "unsat",
+                timeout_ms=timeout_ms,
+                diagnostics=diagnostics,
+                feasibility=feasibility,
+            )
+
+        monkeypatch.setattr(bmc_entry, "_solve_bmc_property", solve)
+        return _run("-i", str(model_path), "-q", str(query_path))
+
+    unknown = run_with_result(
+        BmcFeasibilityResult(
+            not_checked,
+            not_checked,
+            BmcFeasibilityCheck(
+                "unknown", "checked", reason="incomplete", elapsed_ms=1.0
+            ),
+            localization_status="unknown",
+        )
+    )
+    assert unknown.exit_code == 3
+    assert "SCENARIO FEASIBILITY UNKNOWN; PROPERTY NOT EVALUATED" in unknown.stdout
+    assert (
+        "Semantic interpretation: Scenario feasibility is unknown; the primary "
+        "UNSAT result cannot establish a property conclusion."
+    ) in unknown.stdout
+    assert "Scenario: UNKNOWN" in unknown.stdout
+    assert (
+        "Property verdict: NOT EVALUATED (SCENARIO FEASIBILITY UNKNOWN)"
+        in unknown.stdout
+    )
+    assert "Feasibility stage: ASSUMPTIONS" in unknown.stdout
+    assert "Feasibility status: UNKNOWN" in unknown.stdout
+    assert "Feasibility reason: incomplete" in unknown.stdout
+
+    timed_out = run_with_result(
+        BmcFeasibilityResult(
+            not_checked,
+            not_checked,
+            BmcFeasibilityCheck("timeout", "checked", reason="timeout", elapsed_ms=1.0),
+            localization_status="timeout",
+        )
+    )
+    assert timed_out.exit_code == 3
+    assert "SCENARIO FEASIBILITY TIMED OUT; PROPERTY NOT EVALUATED" in (
+        timed_out.stdout
+    )
+    assert (
+        "Semantic interpretation: Scenario feasibility was not resolved because "
+        "the feasibility check timed out; the primary UNSAT result cannot "
+        "establish a property conclusion."
+    ) in timed_out.stdout
+    assert "Scenario: TIMED OUT" in timed_out.stdout
+    assert (
+        "Property verdict: NOT EVALUATED (SCENARIO FEASIBILITY TIMED OUT)"
+        in timed_out.stdout
+    )
+    assert "Feasibility stage: ASSUMPTIONS" in timed_out.stdout
+    assert "Feasibility status: TIMED OUT" in timed_out.stdout
+    assert "Feasibility reason: timeout" in timed_out.stdout
+
+    unchecked = run_with_result(
+        BmcFeasibilityResult(
+            not_checked,
+            not_checked,
+            not_checked,
+            localization_status="not_checked",
+        ),
+        diagnostics=(
+            "feasibility_timeout:deadline_exhausted_before_assumptions_check",
+        ),
+    )
+    assert unchecked.exit_code == 3
+    assert "SCENARIO FEASIBILITY NOT CHECKED; PROPERTY NOT EVALUATED" in (
+        unchecked.stdout
+    )
+    assert "Scenario: NOT CHECKED" in unchecked.stdout
+    assert (
+        "Semantic interpretation: Scenario feasibility was not checked because "
+        "the shared budget was exhausted first; the primary UNSAT result cannot "
+        "establish a property conclusion."
+    ) in unchecked.stdout
+    assert (
+        "Property verdict: NOT EVALUATED (SCENARIO FEASIBILITY NOT CHECKED)"
+        in unchecked.stdout
+    )
+    assert "Feasibility stage: ASSUMPTIONS (NOT CHECKED)" in unchecked.stdout
+    assert (
+        "Feasibility reason: shared timeout budget exhausted before assumptions check."
+        in unchecked.stdout
+    )
+
+
+def test_bmc_human_report_keeps_known_infeasible_scenario_when_localization_stops(
+    bmc_files, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Localization timeout does not downgrade a proven empty scenario."""
+    import pyfcstm.entry.bmc as bmc_entry
+
+    model_path, query = bmc_files
+    query_path = query("check reach <= 1: terminated();")
+    not_checked = BmcFeasibilityCheck(None, "not_checked")
+    feasibility = BmcFeasibilityResult(
+        not_checked,
+        BmcFeasibilityCheck("timeout", "checked", reason="timeout", elapsed_ms=1.0),
+        BmcFeasibilityCheck("unsat", "checked", elapsed_ms=1.0),
+        localization_status="timeout",
+    )
+
+    def solve(formula, *, timeout_ms=None):
+        return BmcSolveResult(
+            formula,
+            "unsat",
+            timeout_ms=timeout_ms,
+            feasibility=feasibility,
+        )
+
+    monkeypatch.setattr(bmc_entry, "_solve_bmc_property", solve)
+    result = _run("-i", str(model_path), "-q", str(query_path))
+
+    assert result.exit_code == 3
+    assert "SCENARIO INFEASIBLE; PROPERTY NOT EVALUATED" in result.stdout
+    assert (
+        "Semantic interpretation: The scenario constraints are unsatisfiable; "
+        "no admissible execution exists, so the property was not evaluated."
+    ) in result.stdout
+    assert "Failure boundary: NOT LOCALIZED" in result.stdout
+    assert "Localization: TIMEOUT (timeout)" in result.stdout
+    assert "feasibility_unknown" not in result.stdout
+
+
+def test_bmc_human_presentation_marks_api_only_disabled_suffix() -> None:
+    """The internal presentation contract distinguishes a deliberately disabled suffix."""
+    import pyfcstm.entry.bmc as bmc_entry
+    from pyfcstm.bmc import BmcEngine, build_bmc_core_formula, compile_bmc_property
+    from pyfcstm.model import load_state_machine_from_text
+
+    model = load_state_machine_from_text("state Root;\n")
+    prepared = BmcEngine(model).prepare(
+        "check response <= 1: trigger true -> within 2 false;"
+    )
+    formula = compile_bmc_property(build_bmc_core_formula(prepared))
+    inferred_sat = BmcFeasibilityCheck("sat", "inferred")
+    feasibility = BmcFeasibilityResult(
+        inferred_sat,
+        inferred_sat,
+        BmcFeasibilityCheck("sat", "checked", elapsed_ms=1.0),
+        localization_status="not_needed",
+    )
+    result = BmcSolveResult(
+        formula,
+        "unsat",
+        incomplete_reason="incomplete check disabled",
+        feasibility=feasibility,
+    )
+    execution = bmc_entry._BmcExecution(formula, result, None, None, 3)
+
+    presentation = bmc_entry._human_presentation(execution)
+
+    assert presentation.response_horizon == "DISABLED"
+    assert presentation.property_verdict == "INCONCLUSIVE (RESPONSE HORIZON INCOMPLETE)"
+    assert "response horizon check was disabled" in presentation.conclusion
 
 
 def test_bmc_human_color_is_terminal_only(bmc_files) -> None:
@@ -295,7 +584,7 @@ def test_bmc_human_color_is_terminal_only(bmc_files) -> None:
 
     colored = _run("-i", str(model_path), "-q", str(query_path), "--color", "always")
     assert "\x1b[" in colored.stdout
-    assert "PROPERTY HOLDS" in colored.stdout
+    assert "PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND" in colored.stdout
 
     json_result = _run(
         "-i",
@@ -423,12 +712,73 @@ def test_bmc_structured_replay_mismatch_is_exit_four(
     assert payload["replay"]["ok"] is False
     assert payload["replay"]["mismatches"][0]["path"] == "frames[1].state"
 
-    human = _run("-i", str(model_path), "-q", str(query_path), "--color", "always")
+    human = _run("-i", str(model_path), "-q", str(query_path), "--color", "never")
     assert human.exit_code == 4
-    assert "REPLAY MISMATCH; PROPERTY VERDICT UNTRUSTED" in human.stdout
+    assert "EVIDENCE/REPLAY MISMATCH; RESULT UNTRUSTED" in human.stdout
+    assert "Property verdict: INCONCLUSIVE (EVIDENCE/REPLAY MISMATCH)" in human.stdout
     assert "could not be reproduced by the runtime" in human.stdout
-    assert "Replay:\x1b[0m FAILED (1 mismatches)." in human.stdout
+    assert "Replay:" in human.stdout
+    assert "FAILED (1 mismatch)." in human.stdout
     assert "Mismatch frames[1].state: state mismatch" in human.stdout
+
+
+def test_bmc_schema_prioritizes_replay_mismatch_exit_four(
+    bmc_files, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The CLI schema accepts replay exit four and rejects lower-priority codes."""
+    import pyfcstm.entry.bmc as bmc_entry
+
+    jsonschema = pytest.importorskip("jsonschema")
+    model_path, query = bmc_files
+    query_path = query('check reach <= 1: active("Root");')
+    original = bmc_entry._replay_bmc_witness
+
+    def mismatching_replay(model, witness, *, abstract_handlers=None):
+        replay = original(model, witness, abstract_handlers=abstract_handlers)
+        return replace(
+            replay,
+            mismatches=(
+                BmcReplayMismatch("frames[1].state", "Root", "Bad", "state mismatch"),
+            ),
+        )
+
+    monkeypatch.setattr(bmc_entry, "_replay_bmc_witness", mismatching_replay)
+    _, payload = _json_result(model_path, query_path)
+    schema_path = (
+        Path(__file__).resolve().parents[2]
+        / "docs"
+        / "source"
+        / "reference"
+        / "bmc_results"
+        / "bmc_cli.schema.json"
+    )
+    validator = jsonschema.Draft202012Validator(
+        json.loads(schema_path.read_text(encoding="utf-8"))
+    )
+
+    assert payload["result"]["outcome"] == "witness_found"
+    assert payload["replay"]["ok"] is False
+    assert payload["exit_code"] == 4
+    assert list(validator.iter_errors(payload)) == []
+
+    for exit_code in (0, 1, 3):
+        forged = copy.deepcopy(payload)
+        forged["exit_code"] = exit_code
+        assert list(validator.iter_errors(forged)), exit_code
+
+    replay_marked_ok = copy.deepcopy(payload)
+    replay_marked_ok["replay"]["ok"] = True
+    replay_marked_ok["replay"]["mismatches"] = payload["replay"]["mismatches"]
+    replay_marked_ok["exit_code"] = 0
+    assert list(validator.iter_errors(replay_marked_ok))
+
+    mismatch_without_details = copy.deepcopy(payload)
+    mismatch_without_details["replay"]["mismatches"] = []
+    assert list(validator.iter_errors(mismatch_without_details))
+
+    exit_four_without_replay = copy.deepcopy(payload)
+    exit_four_without_replay["replay"] = None
+    assert list(validator.iter_errors(exit_four_without_replay))
 
 
 def test_bmc_internal_witness_error_keeps_traceback(
@@ -440,12 +790,12 @@ def test_bmc_internal_witness_error_keeps_traceback(
     model_path, query = bmc_files
     query_path = query('check reach <= 1: active("Root");')
 
-    def fail_decode(formula, model):
+    def fail_decode(*args, **kwargs):
         raise BmcBuildError(
             "This is an internal BMC witness consistency error; please open an issue."
         )
 
-    monkeypatch.setattr(bmc_entry, "_decode_bmc_witness", fail_decode)
+    monkeypatch.setattr(bmc_entry, "_decode_bmc_result_trace", fail_decode)
     result = _run("-i", str(model_path), "-q", str(query_path), "--json")
 
     assert result.exit_code == 1
@@ -466,7 +816,8 @@ def test_bmc_unexpected_witness_pipeline_error_keeps_traceback(
     def fail_pipeline(*args, **kwargs):
         raise ValueError("forged %s failure" % stage)
 
-    monkeypatch.setattr(bmc_entry, "_%s_bmc_witness" % stage, fail_pipeline)
+    target = "_decode_bmc_result_trace" if stage == "decode" else "_replay_bmc_witness"
+    monkeypatch.setattr(bmc_entry, target, fail_pipeline)
     result = _run("-i", str(model_path), "-q", str(query_path), "--json")
 
     assert result.exit_code == 1
@@ -504,8 +855,400 @@ def test_bmc_response_incomplete_is_exit_three(bmc_files) -> None:
     assert payload["result"]["incomplete"] is True
     assert payload["result"]["outcome"] == "incomplete"
     assert payload["result"]["incomplete_status"] == "sat"
+    assert "schema_version" not in payload["witness"]
+    assert payload["witness"]["model_role"] == "incomplete_suffix"
+    assert payload["replay"]["model_role"] == "incomplete_suffix"
+
+
+def test_bmc_scenario_infeasible_is_not_a_property_failure(bmc_files) -> None:
+    """Contradictory assumptions produce a distinct non-verdict CLI result."""
+    model_path, query = bmc_files
+    model_path.write_text("def int x = 0;\nstate Root;\n", encoding="utf-8")
+    query_path = query(
+        'assume at 0: x == 0;\nassume at 0: x == 1;\ncheck reach <= 1: active("Root");'
+    )
+
+    result, payload = _json_result(model_path, query_path)
+
+    assert result.exit_code == 3
+    assert payload["exit_code"] == 3
+    assert payload["result"]["outcome"] == "scenario_infeasible"
+    assert payload["result"]["property_satisfied"] is None
     assert payload["witness"] is None
     assert payload["replay"] is None
+
+    human = _run("-i", str(model_path), "-q", str(query_path))
+    assert human.exit_code == 3
+    assert "SCENARIO INFEASIBLE; PROPERTY NOT EVALUATED" in human.stdout
+    assert "Scenario: INFEASIBLE" in human.stdout
+    assert "Primary search: WITNESS = UNSAT" in human.stdout
+    assert "Failure boundary: ASSUMPTIONS" in human.stdout
+    assert "Adding assumptions leaves no admissible execution." in human.stdout
+
+
+def test_bmc_schema_rejects_forged_scenario_infeasible_verdict(bmc_files) -> None:
+    """The published schema rejects terminal verdict and channel mutations."""
+    jsonschema = pytest.importorskip("jsonschema")
+    model_path, query = bmc_files
+    model_path.write_text("def int x = 0;\nstate Root;\n", encoding="utf-8")
+    query_path = query(
+        'assume at 0: x == 0;\nassume at 0: x == 1;\ncheck reach <= 1: active("Root");'
+    )
+    _, payload = _json_result(model_path, query_path)
+    schema_path = (
+        Path(__file__).resolve().parents[2]
+        / "docs"
+        / "source"
+        / "reference"
+        / "bmc_results"
+        / "bmc_cli.schema.json"
+    )
+    validator = jsonschema.Draft202012Validator(
+        json.loads(schema_path.read_text(encoding="utf-8"))
+    )
+
+    assert list(validator.iter_errors(payload)) == []
+    mutations = (
+        ("outcome", lambda item: item["result"].update(outcome="property_satisfied")),
+        (
+            "verdict",
+            lambda item: item["result"].update(
+                property_satisfied=True,
+                witness_found=False,
+                counterexample_found=False,
+                incomplete=False,
+                outcome="property_satisfied",
+            ),
+        ),
+        (
+            "role",
+            lambda item: item["result"].update(
+                available_model_roles=["primary_counterexample"]
+            ),
+        ),
+        (
+            "assumptions origin",
+            lambda item: item["result"]["feasibility"]["assumptions"].update(
+                origin="inferred"
+            ),
+        ),
+        (
+            "infeasible stage localization",
+            lambda item: item["result"]["feasibility"].update(
+                localization_status="not_needed"
+            ),
+        ),
+        (
+            "complete refinement without checks",
+            lambda item: item["result"]["feasibility"].update(
+                refinement_status="complete", refinement_checks=[]
+            ),
+        ),
+        (
+            "unused refinement with checks",
+            lambda item: item["result"]["feasibility"].update(
+                refinement_status="not_needed",
+                refinement_checks=[
+                    {
+                        "name": "unsat_core",
+                        "status": "complete",
+                        "reason": None,
+                        "elapsed_ms": 1.0,
+                    }
+                ],
+            ),
+        ),
+        (
+            "refinement completed reason",
+            lambda item: item["result"]["feasibility"].update(
+                refinement_status="partial",
+                refinement_checks=[
+                    {
+                        "name": "component_initialization",
+                        "status": "sat",
+                        "reason": "forged",
+                        "elapsed_ms": 1.0,
+                    }
+                ],
+            ),
+        ),
+        (
+            "localized refinement status",
+            lambda item: item["result"]["feasibility"].update(
+                refinement_status="not_needed"
+            ),
+        ),
+        (
+            "result reason",
+            lambda item: item["result"].update(reason="forged"),
+        ),
+        (
+            "negative timeout",
+            lambda item: item["result"].update(timeout_ms=-1),
+        ),
+        ("exit code", lambda item: item.update(exit_code=0)),
+    )
+    for name, mutate in mutations:
+        forged = copy.deepcopy(payload)
+        mutate(forged)
+        assert list(validator.iter_errors(forged)), name
+
+
+def test_bmc_schema_rejects_localized_prefix_origin_mutations(bmc_files) -> None:
+    """Schema localization branches require real checked prefix evidence."""
+    jsonschema = pytest.importorskip("jsonschema")
+    model_path, query = bmc_files
+    model_path.write_text("def int x = 0;\nstate Root;\n", encoding="utf-8")
+    query_path = query(
+        'assume at 0: x == 0;\nassume at 0: x == 1;\ncheck reach <= 1: active("Root");'
+    )
+    _, payload = _json_result(model_path, query_path)
+    schema_path = (
+        Path(__file__).resolve().parents[2]
+        / "docs"
+        / "source"
+        / "reference"
+        / "bmc_results"
+        / "bmc_cli.schema.json"
+    )
+    validator = jsonschema.Draft202012Validator(
+        json.loads(schema_path.read_text(encoding="utf-8"))
+    )
+    assert list(validator.iter_errors(payload)) == []
+
+    inferred_initialization = copy.deepcopy(payload)
+    inferred_initialization["result"]["feasibility"]["initialization"].update(
+        origin="inferred", elapsed_ms=None
+    )
+    assert list(validator.iter_errors(inferred_initialization))
+
+    inferred_kernel = copy.deepcopy(payload)
+    feasibility = inferred_kernel["result"]["feasibility"]
+    feasibility["infeasible_stage"] = "initialization"
+    feasibility["initialization"].update(
+        status="unsat", origin="checked", reason=None, elapsed_ms=1.0
+    )
+    feasibility["kernel"].update(
+        status="sat", origin="inferred", reason=None, elapsed_ms=None
+    )
+    assert list(validator.iter_errors(inferred_kernel))
+
+    inferred_without_checked_source = copy.deepcopy(payload)
+    feasibility = inferred_without_checked_source["result"]["feasibility"]
+    feasibility["kernel"].update(
+        status="sat", origin="inferred", reason=None, elapsed_ms=None
+    )
+    feasibility["initialization"].update(
+        status="unknown", origin="checked", reason="probe unknown", elapsed_ms=1.0
+    )
+    feasibility["assumptions"].update(
+        status="unsat", origin="checked", reason=None, elapsed_ms=1.0
+    )
+    feasibility["infeasible_stage"] = None
+    feasibility["localization_status"] = "unknown"
+    assert list(validator.iter_errors(inferred_without_checked_source))
+
+    unchecked_kernel_outer_stages = copy.deepcopy(payload)
+    result = unchecked_kernel_outer_stages["result"]
+    result.update(
+        property_satisfied=False,
+        witness_found=False,
+        counterexample_found=False,
+        incomplete=False,
+        outcome="no_witness",
+        available_model_roles=[],
+    )
+    feasibility = result["feasibility"]
+    not_checked = {
+        "status": None,
+        "origin": "not_checked",
+        "reason": None,
+        "elapsed_ms": None,
+    }
+    feasibility["kernel"].update(
+        status="unsat", origin="checked", reason=None, elapsed_ms=1.0
+    )
+    feasibility["initialization"] = copy.deepcopy(not_checked)
+    feasibility["assumptions"] = copy.deepcopy(not_checked)
+    feasibility["infeasible_stage"] = "kernel"
+    feasibility["localization_status"] = "complete"
+    assert list(validator.iter_errors(unchecked_kernel_outer_stages))
+
+    unchecked_initialization_outer_stage = copy.deepcopy(payload)
+    result = unchecked_initialization_outer_stage["result"]
+    result.update(
+        property_satisfied=False,
+        witness_found=False,
+        counterexample_found=False,
+        incomplete=False,
+        outcome="no_witness",
+        available_model_roles=[],
+    )
+    feasibility = result["feasibility"]
+    feasibility["kernel"].update(
+        status="sat", origin="checked", reason=None, elapsed_ms=1.0
+    )
+    feasibility["initialization"].update(
+        status="unsat", origin="checked", reason=None, elapsed_ms=1.0
+    )
+    feasibility["assumptions"] = copy.deepcopy(not_checked)
+    feasibility["infeasible_stage"] = "initialization"
+    feasibility["localization_status"] = "complete"
+    assert list(validator.iter_errors(unchecked_initialization_outer_stage))
+
+    unlocalized_assumptions = copy.deepcopy(payload)
+    feasibility = unlocalized_assumptions["result"]["feasibility"]
+    feasibility["kernel"].update(
+        status="unknown", origin="checked", reason="timeout", elapsed_ms=1.0
+    )
+    feasibility["infeasible_stage"] = None
+    feasibility["localization_status"] = "not_checked"
+    assert list(validator.iter_errors(unlocalized_assumptions))
+
+    unlocalized_initialization = copy.deepcopy(payload)
+    feasibility = unlocalized_initialization["result"]["feasibility"]
+    feasibility["kernel"].update(
+        status="sat", origin="checked", reason=None, elapsed_ms=1.0
+    )
+    feasibility["initialization"].update(
+        status="unsat", origin="checked", reason=None, elapsed_ms=1.0
+    )
+    feasibility["assumptions"].update(
+        status="unsat", origin="checked", reason=None, elapsed_ms=1.0
+    )
+    feasibility["infeasible_stage"] = None
+    feasibility["localization_status"] = "not_checked"
+    assert list(validator.iter_errors(unlocalized_initialization))
+
+    unlocalized_not_needed = copy.deepcopy(payload)
+    feasibility = unlocalized_not_needed["result"]["feasibility"]
+    feasibility["kernel"] = {
+        "status": None,
+        "origin": "not_checked",
+        "reason": None,
+        "elapsed_ms": None,
+    }
+    feasibility["initialization"] = copy.deepcopy(feasibility["kernel"])
+    feasibility["assumptions"].update(
+        status="unsat", origin="checked", reason=None, elapsed_ms=1.0
+    )
+    feasibility["infeasible_stage"] = None
+    feasibility["localization_status"] = "not_needed"
+    assert list(validator.iter_errors(unlocalized_not_needed))
+
+    for localization_status in ("unknown", "timeout"):
+        unlocalized_inconclusive = copy.deepcopy(unlocalized_not_needed)
+        unlocalized_inconclusive["result"]["feasibility"]["localization_status"] = (
+            localization_status
+        )
+        assert list(validator.iter_errors(unlocalized_inconclusive))
+
+
+def test_bmc_schema_rejects_terminal_verdict_mutations(bmc_files) -> None:
+    """Schema binds feasible primary UNSAT to its polarity truth table."""
+    jsonschema = pytest.importorskip("jsonschema")
+    model_path, query = bmc_files
+    query_path = query("check forbid <= 1: terminated();")
+    _, payload = _json_result(model_path, query_path)
+    schema_path = (
+        Path(__file__).resolve().parents[2]
+        / "docs"
+        / "source"
+        / "reference"
+        / "bmc_results"
+        / "bmc_cli.schema.json"
+    )
+    validator = jsonschema.Draft202012Validator(
+        json.loads(schema_path.read_text(encoding="utf-8"))
+    )
+    assert list(validator.iter_errors(payload)) == []
+
+    mutations = (
+        {"property_satisfied": False, "witness_found": True},
+        {"outcome": "no_witness"},
+        {"incomplete": True},
+        {"exit_code": 0},
+    )
+    for changes in mutations:
+        forged = copy.deepcopy(payload)
+        forged["result"].update(changes)
+        if "exit_code" in changes:
+            forged["exit_code"] = changes["exit_code"]
+        assert list(validator.iter_errors(forged)), changes
+
+
+def test_bmc_schema_rejects_suffix_channel_mutations(bmc_files) -> None:
+    """Schema keeps suffix status, reason, feasibility, and role aligned."""
+    jsonschema = pytest.importorskip("jsonschema")
+    model_path, query = bmc_files
+    query_path = query("check response <= 1: trigger true -> within 2 false;")
+    _, payload = _json_result(model_path, query_path)
+    schema_path = (
+        Path(__file__).resolve().parents[2]
+        / "docs"
+        / "source"
+        / "reference"
+        / "bmc_results"
+        / "bmc_cli.schema.json"
+    )
+    validator = jsonschema.Draft202012Validator(
+        json.loads(schema_path.read_text(encoding="utf-8"))
+    )
+    assert list(validator.iter_errors(payload)) == []
+
+    forged_elapsed = copy.deepcopy(payload)
+    forged_elapsed["result"]["incomplete_reason"] = "forged"
+    forged_elapsed["result"]["incomplete_elapsed_ms"] = None
+    assert list(validator.iter_errors(forged_elapsed))
+
+    forged_trace_elapsed = copy.deepcopy(payload)
+    forged_trace_elapsed["witness"]["solver"]["incomplete_elapsed_ms"] = None
+    assert list(validator.iter_errors(forged_trace_elapsed))
+
+    forged_feasibility = copy.deepcopy(payload)
+    forged_feasibility["result"]["feasibility"]["assumptions"] = {
+        "status": "unknown",
+        "origin": "checked",
+        "reason": "solver stopped",
+        "elapsed_ms": 1.0,
+    }
+    forged_feasibility["result"]["feasibility"]["localization_status"] = "unknown"
+    assert list(validator.iter_errors(forged_feasibility))
+
+    forged_solver_reason = copy.deepcopy(payload)
+    forged_solver_reason["witness"]["solver"]["primary_reason"] = "forged"
+    assert list(validator.iter_errors(forged_solver_reason))
+
+    forged_property = copy.deepcopy(payload)
+    forged_property["witness"]["property"]["kind"] = "reach"
+    assert list(validator.iter_errors(forged_property))
+
+
+def test_bmc_schema_rejects_mismatched_role_aware_trace_roles(bmc_files) -> None:
+    """Envelope replay role must match the result and witness channel."""
+    jsonschema = pytest.importorskip("jsonschema")
+    model_path, query = bmc_files
+    query_path = query('check reach <= 1: active("Root");')
+    _, payload = _json_result(model_path, query_path)
+    schema_path = (
+        Path(__file__).resolve().parents[2]
+        / "docs"
+        / "source"
+        / "reference"
+        / "bmc_results"
+        / "bmc_cli.schema.json"
+    )
+    validator = jsonschema.Draft202012Validator(
+        json.loads(schema_path.read_text(encoding="utf-8"))
+    )
+    assert list(validator.iter_errors(payload)) == []
+    assert payload["result"]["available_model_roles"] == ["primary_witness"]
+    assert payload["witness"]["model_role"] == "primary_witness"
+    assert payload["replay"]["model_role"] == "primary_witness"
+
+    forged = copy.deepcopy(payload)
+    forged["replay"]["model_role"] = "primary_counterexample"
+    assert list(validator.iter_errors(forged))
 
 
 @pytest.mark.parametrize(
@@ -557,12 +1300,14 @@ def test_bmc_solver_inconclusive_is_exit_three(
         "25",
     )
     assert human.exit_code == 3
-    assert "Timeout: 25 ms for each solver check" in human.stdout
+    assert "Timeout: 25 ms shared by all solver checks" in human.stdout
+    assert "Scenario: NOT CHECKED" in human.stdout
+    assert "Primary search: WITNESS = %s" % status.upper() in human.stdout
     assert "Solver reason: %s" % reason in human.stdout
 
 
 def test_bmc_schema_rejects_removed_version_fields(bmc_files) -> None:
-    """The unversioned schema rejects legacy root and witness fields."""
+    """The unversioned schema rejects version fields at every payload level."""
     model_path, query = bmc_files
     query_path = query('check reach <= 1: active("Root");')
     _, payload = _json_result(model_path, query_path)
@@ -572,15 +1317,62 @@ def test_bmc_schema_rejects_removed_version_fields(bmc_files) -> None:
         )
     )
 
-    legacy_root = deepcopy(payload)
-    legacy_root["schema_version"] = "bmc-cli/v1"
-    with pytest.raises(AssertionError, match="unknown fields"):
-        _assert_bmc_schema_instance(schema, legacy_root)
+    assert "schema_version" not in payload
+    assert "schema_version" not in payload["result"]
+    assert "schema_version" not in payload["witness"]
 
-    legacy_witness = deepcopy(payload)
-    legacy_witness["witness"]["schema_version"] = "bmc-witness/v1"
+    versioned_root = deepcopy(payload)
+    versioned_root["schema_version"] = "bmc-cli/v1"
     with pytest.raises(AssertionError, match="unknown fields"):
-        _assert_bmc_schema_instance(schema, legacy_witness)
+        _assert_bmc_schema_instance(schema, versioned_root)
+
+    versioned_result = deepcopy(payload)
+    versioned_result["result"]["schema_version"] = "bmc-solve-result/v2"
+    with pytest.raises(AssertionError, match="unknown fields"):
+        _assert_bmc_schema_instance(schema, versioned_result)
+
+    versioned_witness = deepcopy(payload)
+    versioned_witness["witness"]["schema_version"] = "bmc-witness/v2"
+    with pytest.raises(AssertionError, match="unknown fields"):
+        _assert_bmc_schema_instance(schema, versioned_witness)
+
+
+def test_bmc_schema_accepts_legacy_shape_envelope(bmc_files) -> None:
+    """The published schema accepts the pre-role payload by structural shape."""
+    jsonschema = pytest.importorskip("jsonschema")
+    model_path, query = bmc_files
+    query_path = query('check reach <= 1: active("Root");')
+    _, payload = _json_result(model_path, query_path)
+    schema_path = (
+        Path(__file__).resolve().parents[2]
+        / "docs"
+        / "source"
+        / "reference"
+        / "bmc_results"
+        / "bmc_cli.schema.json"
+    )
+    validator = jsonschema.Draft202012Validator(
+        json.loads(schema_path.read_text(encoding="utf-8"))
+    )
+
+    legacy = deepcopy(payload)
+    for key in (
+        "incomplete_elapsed_ms",
+        "total_elapsed_ms",
+        "feasibility",
+        "available_model_roles",
+    ):
+        legacy["result"].pop(key, None)
+    for key in ("model_role", "verdict"):
+        legacy["witness"].pop(key, None)
+    legacy["witness"]["solver"] = {
+        "status": "sat",
+        "reason": None,
+        "incomplete_status": None,
+    }
+    legacy["replay"].pop("model_role", None)
+
+    assert list(validator.iter_errors(legacy)) == []
 
 
 def test_bmc_max_bound_is_a_controlled_compile_error(bmc_files) -> None:
@@ -810,10 +1602,13 @@ check reach <= 1: active("Root.Done");
     assert bmc_entry._human_frame_label(unknown_witness, 0) == "unknown"
 
     assert "\x1b[33m" in bmc_entry._colorize_human_report(
-        "BMC response <= 1: PROPERTY INCONCLUSIVE\nSolver: UNSAT\n"
+        "BMC response <= 1: PROPERTY INCONCLUSIVE; RESPONSE HORIZON INCOMPLETE\n"
+        "Scenario: FEASIBLE\n",
+        "yellow",
     )
     assert "\x1b[31m" in bmc_entry._colorize_human_report(
-        "BMC reach <= 1: PROPERTY DOES NOT HOLD\nSolver: UNSAT\n"
+        "BMC reach <= 1: GOAL UNREALIZABLE WITHIN BOUND; NO WITNESS\nScenario: FEASIBLE\n",
+        "red",
     )
 
     model = load_state_machine_from_text("state Root;")
@@ -825,7 +1620,14 @@ check reach <= 1: active("Root.Done");
         formula,
         "unsat",
         incomplete_status="unknown",
+        incomplete_elapsed_ms=1.0,
         incomplete_reason="incomplete",
+        feasibility=BmcFeasibilityResult(
+            BmcFeasibilityCheck("sat", "inferred"),
+            BmcFeasibilityCheck("sat", "inferred"),
+            BmcFeasibilityCheck("sat", "checked", elapsed_ms=1.0),
+            localization_status="not_needed",
+        ),
         diagnostics=("custom_diagnostic=1",),
     )
     execution = bmc_entry._BmcExecution(formula, solve_result, None, None, 3)

@@ -1,8 +1,10 @@
 """Public API tests for the BMC query model package."""
 
 import importlib
+import json
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -116,10 +118,14 @@ def test_bmc_public_api_exports_exact_names():
         "compile_bmc_property",
         "compile_bmc_query",
         "solve_bmc_property",
+        "decode_bmc_result_trace",
         "decode_bmc_witness",
         "replay_bmc_witness",
         "BmcSolveStatus",
         "BmcEventDecodePolicy",
+        "BmcFeasibilityCheck",
+        "BmcFeasibilityRefinementCheck",
+        "BmcFeasibilityResult",
         "BmcSolveResult",
         "BmcWitnessEvent",
         "BmcWitnessCallRecord",
@@ -393,6 +399,9 @@ def test_submodule_all_exports_are_exact():
     assert set(witness.__all__) == {
         "BmcSolveStatus",
         "BmcEventDecodePolicy",
+        "BmcFeasibilityCheck",
+        "BmcFeasibilityRefinementCheck",
+        "BmcFeasibilityResult",
         "BmcSolveResult",
         "BmcWitnessEvent",
         "BmcWitnessCallRecord",
@@ -405,6 +414,7 @@ def test_submodule_all_exports_are_exact():
         "BmcReplayMismatch",
         "BmcReplayResult",
         "solve_bmc_property",
+        "decode_bmc_result_trace",
         "decode_bmc_witness",
         "replay_bmc_witness",
     }
@@ -445,3 +455,78 @@ def test_bmc_import_does_not_load_verify_modules():
     )
 
     assert result.stdout.strip() == "[]"
+
+
+@pytest.mark.unittest
+def test_bmc_schema_freezes_role_channel_contract():
+    """The published schema contains fail-closed role/channel branches."""
+    schema_path = (
+        Path(__file__).resolve().parents[2]
+        / "docs"
+        / "source"
+        / "reference"
+        / "bmc_results"
+        / "bmc_cli.schema.json"
+    )
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    current_result = schema["$defs"]["currentResult"]
+    role_aware_witness = schema["$defs"]["roleAwareWitness"]
+
+    assert current_result["allOf"]
+    assert role_aware_witness["allOf"]
+    result_text = json.dumps(current_result["allOf"], sort_keys=True)
+    witness_text = json.dumps(role_aware_witness["allOf"], sort_keys=True)
+    for role in ("primary_witness", "primary_counterexample", "incomplete_suffix"):
+        assert role in result_text
+        assert role in witness_text
+    assert '"const": "response"' in result_text
+    assert '"const": "unsat"' in witness_text
+
+
+@pytest.mark.unittest
+def test_bmc_schema_uses_shape_discriminators_without_version_fields():
+    """Legacy and role-aware branches are distinguished by payload shape."""
+    schema_path = (
+        Path(__file__).resolve().parents[2]
+        / "docs"
+        / "source"
+        / "reference"
+        / "bmc_results"
+        / "bmc_cli.schema.json"
+    )
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    schema_text = json.dumps(schema, sort_keys=True)
+    assert "schema_version" not in schema_text
+    assert "model_role" not in schema["$defs"]["legacyWitness"]["properties"]
+    assert {"model_role", "verdict"}.issubset(
+        schema["$defs"]["roleAwareWitness"]["required"]
+    )
+
+
+@pytest.mark.unittest
+def test_bmc_schema_freezes_feasibility_localization_contract():
+    """The published schema records cumulative feasibility invariants."""
+    schema_path = (
+        Path(__file__).resolve().parents[2]
+        / "docs"
+        / "source"
+        / "reference"
+        / "bmc_results"
+        / "bmc_cli.schema.json"
+    )
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    feasibility_text = json.dumps(
+        schema["$defs"]["feasibility"]["allOf"], sort_keys=True
+    )
+    inconclusive_text = json.dumps(
+        schema["$defs"]["checkedInconclusiveFeasibilityCheck"], sort_keys=True
+    )
+
+    assert '"infeasible_stage": {"const": "kernel"}' in feasibility_text
+    assert '"infeasible_stage": {"const": "initialization"}' in feasibility_text
+    assert '"infeasible_stage": {"const": "assumptions"}' in feasibility_text
+    assert (
+        '"localization_status": {"enum": ["not_checked", "unknown", "timeout"]}'
+        in feasibility_text
+    )
+    assert '"status": {"enum": ["unknown", "timeout"]}' in inconclusive_text

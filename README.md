@@ -281,7 +281,7 @@ pyfcstm bmc -i door.fcstm -q door_latch_safety.fbmcq
 ```
 
 ```text
-BMC forbid <= 2: PROPERTY DOES NOT HOLD
+BMC forbid <= 2: PROPERTY DOES NOT HOLD WITHIN BOUND; COUNTEREXAMPLE FOUND
 A counterexample violating the bounded property was found.
 
 Solver: SAT in ... ms
@@ -310,7 +310,7 @@ Locked -> Open : ServiceOverride effect {
 }
 ```
 
-Running the same query now reports `PROPERTY HOLDS` and `Solver: UNSAT`: no
+Running the same query now reports `PROPERTY GUARANTEED WITHIN BOUND; NO COUNTEREXAMPLE` and `Solver: UNSAT`: no
 counterexample exists within two macro-steps. This remains a bounded result,
 not an unbounded proof. Use the stable JSON envelope for CI, tools, and LLM
 inputs:

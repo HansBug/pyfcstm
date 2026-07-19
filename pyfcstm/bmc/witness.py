@@ -13,10 +13,14 @@ accounting contract.
 The module contains:
 
 * :class:`BmcSolveResult` - Structured solver status and optional Z3 model.
+* :class:`BmcFeasibilityCheck` and :class:`BmcFeasibilityResult` - Staged
+  evidence for the admissible BMC scenario.
 * :class:`BmcWitnessTrace` - JSON-stable decoded witness root object.
 * :class:`BmcReplayResult` - Structured runtime replay result and mismatches.
 * :func:`solve_bmc_property` - Solve a compiled property formula.
 * :func:`decode_bmc_witness` - Decode one SAT model into a witness trace.
+* :func:`decode_bmc_result_trace` - Decode a role-selected model from a solve
+  result.
 * :func:`replay_bmc_witness` - Replay a witness with ``SimulationRuntime``.
 
 Example::
@@ -43,7 +47,17 @@ import time
 from collections.abc import Iterable as IterableABC
 from dataclasses import dataclass, field
 from fractions import Fraction
-from typing import Any, Callable, Dict, Iterable, Mapping, Optional, Sequence, Tuple
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Iterable,
+    Mapping,
+    Optional,
+    Sequence,
+    Tuple,
+    cast,
+)
 
 from tabulate import tabulate, tabulate_formats
 import z3
@@ -254,15 +268,30 @@ def _validate_primary_solve_reason(
             "%s must be None unless %s is unknown or timeout."
             % (reason_name, status_name)
         )
+    if status in {"unknown", "timeout"} and reason in {None, ""}:
+        raise BmcBuildError(
+            "%s must be non-empty when %s is unknown or timeout."
+            % (reason_name, status_name)
+        )
 
 
 def _validate_incomplete_solve_reason(
     status_name: str, status: Optional[str], reason_name: str, reason: Optional[str]
 ) -> None:
     _validate_optional_reason(reason_name, reason)
-    if reason is not None and status in {"sat", "unsat"}:
+    if status in {"sat", "unsat"} and reason is not None:
         raise BmcBuildError(
             "%s must be None when %s is sat or unsat." % (reason_name, status_name)
+        )
+    if status in {"unknown", "timeout"} and reason in {None, ""}:
+        raise BmcBuildError(
+            "%s must be non-empty when %s is unknown or timeout."
+            % (reason_name, status_name)
+        )
+    if status is None and reason not in {None, "incomplete check disabled"}:
+        raise BmcBuildError(
+            "%s must be None or the disabled-check marker when %s is None."
+            % (reason_name, status_name)
         )
 
 
@@ -288,7 +317,8 @@ def _validate_witness_solver_metadata(value: Mapping[str, Any]) -> None:
     if "elapsed_ms" in value:
         _validate_elapsed_ms(value["elapsed_ms"])
     if "incomplete_elapsed_ms" in value:
-        _validate_elapsed_ms(value["incomplete_elapsed_ms"])
+        if value["incomplete_elapsed_ms"] is not None:
+            _validate_elapsed_ms(cast(float, value["incomplete_elapsed_ms"]))
     if "reason" in value:
         _validate_primary_solve_reason(
             "solver.status", status, "solver.reason", value["reason"]
@@ -299,6 +329,183 @@ def _validate_witness_solver_metadata(value: Mapping[str, Any]) -> None:
             incomplete_status,
             "solver.incomplete_reason",
             value["incomplete_reason"],
+        )
+    for field_name in ("model_status", "primary_status"):
+        field_value = value.get(field_name)
+        if field_value is not None and field_value not in {
+            "sat",
+            "unsat",
+            "unknown",
+            "timeout",
+        }:
+            raise BmcBuildError(
+                "solver.%s must be sat, unsat, unknown, timeout, or None." % field_name
+            )
+    if "primary_reason" in value:
+        _validate_primary_solve_reason(
+            "solver.primary_status",
+            value.get("primary_status"),
+            "solver.primary_reason",
+            value["primary_reason"],
+        )
+    if "primary_elapsed_ms" in value:
+        _validate_elapsed_ms(value["primary_elapsed_ms"])
+
+
+def _validate_witness_verdict(model_role: str, verdict: Mapping[str, Any]) -> None:
+    required = {
+        "property_satisfied",
+        "witness_found",
+        "counterexample_found",
+        "incomplete",
+        "outcome",
+    }
+    missing = required.difference(verdict)
+    if missing:
+        raise BmcBuildError(
+            "verdict is missing required fields: %s." % ", ".join(sorted(missing))
+        )
+    expected = {
+        "primary_witness": {
+            "property_satisfied": True,
+            "witness_found": True,
+            "counterexample_found": False,
+            "incomplete": False,
+            "outcome": "witness_found",
+        },
+        "primary_counterexample": {
+            "property_satisfied": False,
+            "witness_found": False,
+            "counterexample_found": True,
+            "incomplete": False,
+            "outcome": "property_violated",
+        },
+        "incomplete_suffix": {
+            "property_satisfied": None,
+            "witness_found": False,
+            "counterexample_found": False,
+            "incomplete": True,
+            "outcome": "incomplete",
+        },
+    }[model_role]
+    for field_name, expected_value in expected.items():
+        if verdict.get(field_name) != expected_value:
+            raise BmcBuildError(
+                "verdict.%s is inconsistent with model_role=%r."
+                % (field_name, model_role)
+            )
+
+
+def _validate_role_aware_witness_property(
+    model_role: str, value: Mapping[str, Any]
+) -> None:
+    """Bind role-aware witness metadata to its property discriminator."""
+    required = {"kind", "polarity"}
+    missing = required.difference(value)
+    if missing:
+        raise BmcBuildError(
+            "role-aware witness property is missing: %s." % ", ".join(sorted(missing))
+        )
+    kind = value["kind"]
+    polarity = value["polarity"]
+    if kind not in {
+        "reach",
+        "forbid",
+        "invariant",
+        "must_reach",
+        "exists_always",
+        "response",
+        "cover",
+    }:
+        raise BmcBuildError("role-aware witness property.kind is invalid: %r." % kind)
+    if polarity not in {"witness", "counterexample"}:
+        raise BmcBuildError(
+            "role-aware witness property.polarity is invalid: %r." % polarity
+        )
+    expected_polarity = {
+        "reach": "witness",
+        "exists_always": "witness",
+        "cover": "witness",
+        "forbid": "counterexample",
+        "invariant": "counterexample",
+        "must_reach": "counterexample",
+        "response": "counterexample",
+    }[kind]
+    if polarity != expected_polarity:
+        raise BmcBuildError(
+            "role-aware witness property.polarity does not match property.kind "
+            "%r." % kind
+        )
+    expected = {
+        "primary_witness": {"polarity": "witness"},
+        "primary_counterexample": {"polarity": "counterexample"},
+        "incomplete_suffix": {
+            "kind": "response",
+            "polarity": "counterexample",
+        },
+    }[model_role]
+    for field_name, expected_value in expected.items():
+        if value[field_name] != expected_value:
+            raise BmcBuildError(
+                "role-aware witness property.%s is inconsistent with "
+                "model_role=%r." % (field_name, model_role)
+            )
+
+
+def _validate_role_aware_witness_solver_metadata(
+    model_role: str, value: Mapping[str, Any]
+) -> None:
+    required = {
+        "model_status",
+        "primary_status",
+        "incomplete_status",
+        "primary_reason",
+        "incomplete_reason",
+        "primary_elapsed_ms",
+        "incomplete_elapsed_ms",
+    }
+    missing = required.difference(value)
+    if missing:
+        raise BmcBuildError(
+            "role-aware witness solver metadata is missing: %s."
+            % ", ".join(sorted(missing))
+        )
+    legacy_only = {"status", "reason", "elapsed_ms"}.intersection(value)
+    if legacy_only:
+        raise BmcBuildError(
+            "role-aware witness solver metadata cannot contain raw-model fields: %s."
+            % ", ".join(sorted(legacy_only))
+        )
+    model_status = value["model_status"]
+    primary_status = value["primary_status"]
+    incomplete_status = value["incomplete_status"]
+    if model_status != "sat":
+        raise BmcBuildError("role-aware witness model_status must be sat.")
+    if model_role in {"primary_witness", "primary_counterexample"}:
+        if primary_status != "sat" or incomplete_status is not None:
+            raise BmcBuildError(
+                "primary model roles require primary sat and no suffix status."
+            )
+        if value["incomplete_elapsed_ms"] is not None:
+            raise BmcBuildError("primary model roles require no suffix elapsed time.")
+    elif primary_status != "unsat" or incomplete_status != "sat":
+        raise BmcBuildError(
+            "incomplete_suffix requires primary unsat and incomplete sat."
+        )
+    elif value["incomplete_elapsed_ms"] is None:
+        raise BmcBuildError(
+            "incomplete_suffix requires a non-null suffix elapsed time."
+        )
+    if value["primary_reason"] is not None:
+        raise BmcBuildError(
+            "role-aware witness solver metadata requires primary_reason=None."
+        )
+    if (
+        value["incomplete_status"] in {"sat", "unsat"}
+        and value["incomplete_reason"] is not None
+    ):
+        raise BmcBuildError(
+            "role-aware completed suffix metadata requires incomplete_reason=None."
         )
 
 
@@ -625,14 +832,16 @@ def _format_extra(markers: Sequence[str]) -> str:
 def _trace_preamble(trace: "BmcWitnessTrace") -> str:
     kind = trace.property.get("kind", "property")
     bound = trace.property.get("bound")
-    status = trace.solver.get("status", "-")
+    status = trace.solver.get("status", trace.solver.get("model_status", "-"))
     if bound is None:
         spec = str(kind)
     else:
         spec = "%s<=%s" % (kind, bound)
-    return "BmcWitnessTrace[%s, %s] frames=%d steps=%d" % (
+    role = "" if trace.model_role is None else ", %s" % trace.model_role
+    return "BmcWitnessTrace[%s, %s%s] frames=%d steps=%d" % (
         spec,
         status,
+        role,
         len(trace.frames),
         len(trace.steps),
     )
@@ -1042,8 +1251,9 @@ def _render_runtime_trace(
 def _render_replay_result(result: "BmcReplayResult", **kwargs: Any) -> str:
     trace_text = _render_runtime_trace(result.runtime_trace, **kwargs)
     status = "ok" if result.ok else "mismatch"
+    role = "" if result.model_role is None else " role=%s" % result.model_role
     parts = [
-        "BmcReplayResult[%s] mismatches=%d" % (status, len(result.mismatches)),
+        "BmcReplayResult[%s]%s mismatches=%d" % (status, role, len(result.mismatches)),
         "",
         trace_text,
     ]
@@ -1064,6 +1274,12 @@ def _render_replay_result(result: "BmcReplayResult", **kwargs: Any) -> str:
 def _canonical_for_pretty(obj: Any) -> Mapping[str, Any]:
     if isinstance(obj, BmcSolveResult):
         return obj.to_canonical()
+    if isinstance(obj, BmcFeasibilityCheck):
+        return obj.to_canonical()
+    if isinstance(obj, BmcFeasibilityRefinementCheck):
+        return obj.to_canonical()
+    if isinstance(obj, BmcFeasibilityResult):
+        return obj.to_canonical()
     if isinstance(obj, BmcEventDecodePolicy):
         return obj.to_canonical()
     if isinstance(obj, BmcWitnessEvent):
@@ -1081,6 +1297,456 @@ def _canonical_for_pretty(obj: Any) -> Mapping[str, Any]:
     if isinstance(obj, BmcReplayMismatch):
         return obj.to_canonical()
     return {"value": obj}  # pragma: no cover - mixin is only used by known classes.
+
+
+@dataclass(frozen=True)
+class _BmcSolvePresentation:
+    """Human-readable semantic summary for one solver result."""
+
+    headline: str
+    scenario: str
+    property_verdict: str
+    semantic_interpretation: str
+    primary_search: str
+    response_horizon: Optional[str]
+    conclusion: str
+    severity: str
+    evidence: Tuple[str, ...]
+
+
+def _solve_bound_phrase(result: "BmcSolveResult") -> str:
+    bound = result.formula.bound
+    return "%d macro-step" % bound if bound == 1 else "%d macro-steps" % bound
+
+
+def _solve_search_kind(result: "BmcSolveResult") -> str:
+    return "WITNESS" if result.polarity == "witness" else "COUNTEREXAMPLE"
+
+
+def _solve_property_verdict(result: "BmcSolveResult") -> str:
+    """Return the explicit bounded property verdict for human output."""
+    outcome = result.outcome
+    verdicts = {
+        "witness_found": "SATISFIED WITHIN BOUND (WITNESS FOUND)",
+        "no_witness": "NOT SATISFIED WITHIN BOUND (NO WITNESS)",
+        "property_violated": "NOT SATISFIED WITHIN BOUND (COUNTEREXAMPLE FOUND)",
+        "property_satisfied": "SATISFIED WITHIN BOUND (NO COUNTEREXAMPLE)",
+        "scenario_infeasible": "NOT EVALUATED (SCENARIO INFEASIBLE)",
+        "feasibility_unknown": "NOT EVALUATED (SCENARIO FEASIBILITY UNKNOWN)",
+        "feasibility_timeout": "NOT EVALUATED (SCENARIO FEASIBILITY TIMED OUT)",
+        "unknown": "INCONCLUSIVE (PRIMARY CHECK UNKNOWN)",
+        "timeout": "INCONCLUSIVE (PRIMARY CHECK TIMED OUT)",
+        "incomplete": "INCONCLUSIVE (RESPONSE HORIZON INCOMPLETE)",
+    }
+    if outcome not in verdicts:
+        raise BmcBuildError("Unsupported BMC outcome: %s" % outcome)
+    if outcome == "feasibility_timeout":
+        feasibility = result._validated_feasibility()
+        if feasibility.assumptions.origin != "checked":
+            return "NOT EVALUATED (SCENARIO FEASIBILITY NOT CHECKED)"
+    return verdicts[outcome]
+
+
+def _solve_semantic_interpretation(
+    result: "BmcSolveResult", outcome: str, response_horizon: Optional[str]
+) -> str:
+    """Explain the logical meaning of a solver outcome in plain language.
+
+    The explanation deliberately separates an unsatisfiable scenario from an
+    unsatisfiable property objective.  The former prevents a property verdict;
+    the latter is meaningful only after the admissible bounded scenario is
+    known to be feasible.
+    """
+    if outcome == "witness_found":
+        return (
+            "A satisfying witness execution exists within the bound; this is "
+            "existential evidence, not a universal guarantee."
+        )
+    if outcome == "no_witness":
+        return (
+            "The witness objective is unsatisfiable over the feasible bounded "
+            "scenario; no satisfying execution exists within the bound."
+        )
+    if outcome == "property_violated":
+        return (
+            "A counterexample execution exists within the bound; the property "
+            "is not satisfied there."
+        )
+    if outcome == "property_satisfied":
+        return (
+            "The counterexample objective is unsatisfiable over the feasible "
+            "bounded scenario; every admissible execution within the bound "
+            "satisfies the property."
+        )
+    if outcome == "scenario_infeasible":
+        return (
+            "The scenario constraints are unsatisfiable; no admissible execution "
+            "exists, so the property was not evaluated."
+        )
+    if outcome == "feasibility_unknown":
+        return (
+            "Scenario feasibility is unknown; the primary UNSAT result cannot "
+            "establish a property conclusion."
+        )
+    if outcome == "feasibility_timeout":
+        feasibility = result._validated_feasibility()
+        if feasibility.assumptions.origin != "checked":
+            return (
+                "Scenario feasibility was not checked because the shared budget "
+                "was exhausted first; the primary UNSAT result cannot establish "
+                "a property conclusion."
+            )
+        return (
+            "Scenario feasibility was not resolved because the feasibility check "
+            "timed out; the primary UNSAT result cannot establish a property "
+            "conclusion."
+        )
+    if outcome == "unknown":
+        return (
+            "The primary objective solver returned unknown; no property "
+            "conclusion is available."
+        )
+    if outcome == "timeout":
+        return (
+            "The primary objective solver timed out; no property conclusion is "
+            "available."
+        )
+    if outcome == "incomplete":
+        interpretations = {
+            "OPEN": (
+                "A feasible prefix leaves a response obligation beyond the "
+                "bound; neither satisfaction nor violation can be established."
+            ),
+            "UNKNOWN": (
+                "The response-horizon check returned unknown; neither "
+                "satisfaction nor violation can be established."
+            ),
+            "TIMED OUT": (
+                "The response-horizon check timed out; neither satisfaction nor "
+                "violation can be established."
+            ),
+            "NOT CHECKED": (
+                "The response-horizon check was not started because the shared "
+                "budget was exhausted; neither satisfaction nor violation can "
+                "be established."
+            ),
+            "DISABLED": (
+                "The response-horizon check was disabled; neither satisfaction "
+                "nor violation can be established."
+            ),
+        }
+        return interpretations[response_horizon or "NOT CHECKED"]
+    raise BmcBuildError("Unsupported BMC outcome: %s" % outcome)
+
+
+def _solve_scenario(result: "BmcSolveResult", outcome: str) -> str:
+    feasibility = result._validated_feasibility()
+    if outcome == "scenario_infeasible":
+        return "INFEASIBLE"
+    if outcome == "feasibility_unknown":
+        if feasibility.assumptions.origin == "checked":
+            return "UNKNOWN"
+        return "NOT CHECKED"
+    if outcome == "feasibility_timeout":
+        if feasibility.assumptions.origin == "checked":
+            return "TIMED OUT"
+        return "NOT CHECKED"
+    if outcome in {"unknown", "timeout"}:
+        return "NOT CHECKED"
+    return "FEASIBLE"
+
+
+def _solve_response_horizon(result: "BmcSolveResult", outcome: str) -> Optional[str]:
+    if result.kind != "response":
+        return None
+    if outcome in {
+        "scenario_infeasible",
+        "feasibility_unknown",
+        "feasibility_timeout",
+        "unknown",
+        "timeout",
+    }:
+        return None
+    if outcome == "property_satisfied":
+        return "CLOSED" if result.incomplete_status == "unsat" else "NOT NEEDED"
+    if outcome == "incomplete":
+        if result.incomplete_status == "sat":
+            return "OPEN"
+        if result.incomplete_status == "unknown":
+            return "UNKNOWN"
+        if result.incomplete_status == "timeout":
+            return "TIMED OUT"
+        if result.incomplete_reason == "incomplete check disabled":
+            return "DISABLED"
+        return "NOT CHECKED"
+    return None
+
+
+def _solve_failure_evidence(result: "BmcSolveResult") -> Tuple[str, ...]:
+    feasibility = result._validated_feasibility()
+    stage = feasibility.infeasible_stage
+    details = {
+        "kernel": "No admissible execution exists in the bounded solver kernel.",
+        "initialization": "Adding initialization constraints leaves no admissible execution.",
+        "assumptions": "Adding assumptions leaves no admissible execution.",
+    }
+    if stage is not None:
+        return (
+            "Failure boundary: %s" % stage.upper(),
+            "Failure detail: %s" % details[stage],
+        )
+    reason = next(
+        (
+            check.reason
+            for check in (
+                feasibility.kernel,
+                feasibility.initialization,
+                feasibility.assumptions,
+            )
+            if check.reason is not None
+        ),
+        None,
+    )
+    if reason is None:
+        reason = next(
+            (
+                diagnostic
+                for diagnostic in result.diagnostics
+                if diagnostic.startswith("feasibility_")
+            ),
+            None,
+        )
+    suffix = " (%s)" % reason if reason is not None else ""
+    return (
+        "Failure boundary: NOT LOCALIZED",
+        "Localization: %s%s" % (feasibility.localization_status.upper(), suffix),
+        "Failure detail: The scenario is infeasible, but the first failing "
+        "cumulative boundary was not localized.",
+    )
+
+
+def _solve_exception_evidence(
+    result: "BmcSolveResult", outcome: str, response_horizon: Optional[str]
+) -> Tuple[str, ...]:
+    """Return semantic evidence for an inconclusive BMC result.
+
+    The structured result keeps low-level reasons in solver fields and
+    diagnostics.  Human output also needs the responsible stage and reason in
+    its Evidence section so callers do not have to inspect the Details table.
+    """
+    feasibility = result._validated_feasibility()
+    if outcome in {"feasibility_unknown", "feasibility_timeout"}:
+        assumptions = feasibility.assumptions
+        if assumptions.origin == "checked":
+            status = "TIMED OUT" if assumptions.status == "timeout" else "UNKNOWN"
+            reason = assumptions.reason or "not provided"
+            return (
+                "Feasibility stage: ASSUMPTIONS",
+                "Feasibility status: %s" % status,
+                "Feasibility reason: %s" % reason,
+            )
+        return (
+            "Feasibility stage: ASSUMPTIONS (NOT CHECKED)",
+            "Feasibility reason: shared timeout budget exhausted before "
+            "assumptions check.",
+        )
+    if outcome in {"unknown", "timeout"}:
+        reason = result.reason or "not provided"
+        return ("Primary reason: %s" % reason,)
+    if outcome == "incomplete":
+        if response_horizon in {"UNKNOWN", "TIMED OUT"}:
+            return (
+                "Horizon reason: %s" % (result.incomplete_reason or "not provided"),
+            )
+        if response_horizon == "OPEN":
+            return (
+                "Horizon reason: response obligation remains open beyond the "
+                "current bounded horizon.",
+            )
+        if response_horizon == "NOT CHECKED":
+            return (
+                "Horizon reason: shared timeout budget exhausted before suffix check.",
+            )
+        if response_horizon == "DISABLED":
+            return ("Horizon reason: response horizon check was disabled.",)
+    return ()
+
+
+def _solve_conclusion(
+    result: "BmcSolveResult", outcome: str, response_horizon: Optional[str]
+) -> str:
+    feasibility = result._validated_feasibility()
+    bound = _solve_bound_phrase(result)
+    kind = result.kind
+    search_kind = _solve_search_kind(result).lower()
+    if outcome == "witness_found":
+        return (
+            "At least one admissible execution satisfies the %s objective "
+            "within %s." % (kind, bound)
+        )
+    if outcome == "no_witness":
+        return "No admissible execution satisfies the %s objective within %s." % (
+            kind,
+            bound,
+        )
+    if outcome == "property_violated":
+        return (
+            "At least one admissible execution violates the %s property within %s."
+            % (kind, bound)
+        )
+    if outcome == "property_satisfied":
+        if kind == "response" and response_horizon == "NOT NEEDED":
+            return (
+                "The response horizon is complete and no counterexample exists; "
+                "every admissible execution within %s satisfies the response property."
+                % bound
+            )
+        if kind == "response":
+            return (
+                "The response horizon check found no open obligation; every "
+                "admissible execution within %s satisfies the response property."
+                % bound
+            )
+        return "Every admissible execution within %s satisfies the %s property." % (
+            bound,
+            kind,
+        )
+    if outcome == "scenario_infeasible":
+        return (
+            "No admissible execution exists within %s; the property was not evaluated."
+            % bound
+        )
+    if outcome == "feasibility_unknown":
+        return (
+            "Scenario feasibility is unknown, so the primary UNSAT result cannot "
+            "be interpreted as a property verdict."
+        )
+    if outcome == "feasibility_timeout":
+        if feasibility.assumptions.origin == "checked":
+            return (
+                "Scenario feasibility timed out, so the primary UNSAT result "
+                "cannot be interpreted as a property verdict."
+            )
+        return (
+            "Scenario feasibility was not checked because the shared timeout "
+            "budget was exhausted; no property verdict is available."
+        )
+    if outcome == "unknown":
+        return (
+            "The primary %s search returned unknown; no property verdict is available."
+            % search_kind
+        )
+    if outcome == "timeout":
+        return (
+            "The primary %s search timed out; no property verdict is available."
+            % search_kind
+        )
+    if outcome == "incomplete":
+        conclusions = {
+            "NOT NEEDED": "The response horizon is complete and no counterexample exists.",
+            "CLOSED": "The response horizon check found no open obligation.",
+            "OPEN": (
+                "An admissible finite prefix leaves a response obligation open "
+                "beyond the current horizon; no bounded property verdict is available."
+            ),
+            "UNKNOWN": (
+                "The response horizon check returned unknown; no bounded property "
+                "verdict is available."
+            ),
+            "TIMED OUT": (
+                "The response horizon check timed out; no bounded property verdict "
+                "is available."
+            ),
+            "NOT CHECKED": (
+                "The response horizon was not checked because the shared timeout "
+                "budget was exhausted; no bounded property verdict is available."
+            ),
+            "DISABLED": (
+                "The response horizon check was disabled; no bounded property "
+                "verdict is available."
+            ),
+        }
+        return conclusions[response_horizon or "NOT CHECKED"]
+    raise BmcBuildError("Unsupported BMC outcome: %s" % outcome)
+
+
+def _solve_presentation(result: "BmcSolveResult") -> _BmcSolvePresentation:
+    outcome = result.outcome
+    response_horizon = _solve_response_horizon(result, outcome)
+    feasibility = result._validated_feasibility()
+    feasibility_timeout_headline = (
+        "SCENARIO FEASIBILITY TIMED OUT"
+        if feasibility.assumptions.origin == "checked"
+        else "SCENARIO FEASIBILITY NOT CHECKED"
+    )
+    headlines = {
+        "witness_found": "PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND",
+        "no_witness": "GOAL UNREALIZABLE WITHIN BOUND; NO WITNESS",
+        "property_violated": "PROPERTY DOES NOT HOLD WITHIN BOUND; COUNTEREXAMPLE FOUND",
+        "property_satisfied": "PROPERTY GUARANTEED WITHIN BOUND; NO COUNTEREXAMPLE",
+        "scenario_infeasible": "SCENARIO INFEASIBLE; PROPERTY NOT EVALUATED",
+        "feasibility_unknown": "SCENARIO FEASIBILITY UNKNOWN; PROPERTY NOT EVALUATED",
+        "feasibility_timeout": "%s; PROPERTY NOT EVALUATED"
+        % feasibility_timeout_headline,
+        "unknown": "PROPERTY INCONCLUSIVE; PRIMARY CHECK UNKNOWN",
+        "timeout": "PROPERTY INCONCLUSIVE; PRIMARY CHECK TIMED OUT",
+        "incomplete": "PROPERTY INCONCLUSIVE; RESPONSE HORIZON INCOMPLETE",
+    }
+    evidence = []
+    if outcome == "scenario_infeasible":
+        evidence.extend(_solve_failure_evidence(result))
+    else:
+        evidence.extend(_solve_exception_evidence(result, outcome, response_horizon))
+    if result.status == "sat":
+        role = (
+            "PRIMARY WITNESS"
+            if result.polarity == "witness"
+            else "PRIMARY COUNTEREXAMPLE"
+        )
+        evidence.append("Model role: %s" % role)
+        evidence.append("Model evidence: SAT model available.")
+    elif result.available_model_roles == ("incomplete_suffix",):
+        evidence.append("Model role: INCOMPLETE SUFFIX")
+        evidence.append("Model evidence: SAT suffix model available.")
+    else:
+        evidence.append("Model evidence: no SAT model available.")
+    severity = {
+        "witness_found": "green",
+        "property_satisfied": "green",
+        "no_witness": "red",
+        "property_violated": "red",
+    }.get(outcome, "yellow")
+    return _BmcSolvePresentation(
+        headline=headlines[outcome],
+        scenario=_solve_scenario(result, outcome),
+        property_verdict=result.property_verdict,
+        semantic_interpretation=_solve_semantic_interpretation(
+            result, outcome, response_horizon
+        ),
+        primary_search="%s = %s" % (_solve_search_kind(result), result.status.upper()),
+        response_horizon=response_horizon,
+        conclusion=_solve_conclusion(result, outcome, response_horizon),
+        severity=severity,
+        evidence=tuple(evidence),
+    )
+
+
+def _render_solve_result(result: "BmcSolveResult", tablefmt: str) -> str:
+    presentation = _solve_presentation(result)
+    lines = [
+        "BmcSolveResult: %s" % presentation.headline,
+        "Scenario: %s" % presentation.scenario,
+        "Property verdict: %s" % presentation.property_verdict,
+        "Semantic interpretation: %s" % presentation.semantic_interpretation,
+        "Primary search: %s" % presentation.primary_search,
+    ]
+    if presentation.response_horizon is not None:
+        lines.append("Response horizon: %s" % presentation.response_horizon)
+    lines.append("Conclusion: %s" % presentation.conclusion)
+    lines.append("Evidence:")
+    lines.extend("  %s" % item for item in presentation.evidence)
+    lines.extend(("", "Details:", _render_field_value_object(result, tablefmt)))
+    return "\n".join(lines)
 
 
 def _render_field_value_object(obj: Any, tablefmt: str) -> str:
@@ -1143,6 +1809,8 @@ def _render_pretty_object(
         "show_ids": show_ids,
         "show_legend": show_legend,
     }
+    if isinstance(obj, BmcSolveResult):
+        return _render_solve_result(obj, tablefmt)
     if isinstance(obj, BmcWitnessTrace):
         return _render_witness_trace(obj, **kwargs)
     if isinstance(obj, BmcRuntimeTrace):
@@ -1383,9 +2051,627 @@ def _solve(
     return "unknown", None, reason, elapsed_ms
 
 
+_FEASIBILITY_ORIGINS = {"checked", "inferred", "not_checked"}
+_FEASIBILITY_REFINEMENT_NAMES = {
+    "component_initialization",
+    "domain_initialization",
+    "component_assumptions",
+    "domain_assumptions",
+    "unsat_core",
+    "unsat_core_minimization",
+}
+_FEASIBILITY_REFINEMENT_STATUSES = {
+    "sat",
+    "unsat",
+    "complete",
+    "unknown",
+    "timeout",
+}
+_FEASIBILITY_COMPONENT_REFINEMENT_NAMES = {
+    "component_initialization",
+    "domain_initialization",
+    "component_assumptions",
+    "domain_assumptions",
+}
+_FEASIBILITY_CORE_REFINEMENT_NAMES = {
+    "unsat_core",
+    "unsat_core_minimization",
+}
+_FEASIBILITY_TIMEOUT_BEFORE_ASSUMPTIONS = (
+    "feasibility_timeout:deadline_exhausted_before_assumptions_check"
+)
+_SUFFIX_TIMEOUT_BEFORE_CHECK = "suffix_timeout:deadline_exhausted_before_suffix_check"
+
+_BMC_MODEL_ROLES = {
+    "primary_witness",
+    "primary_counterexample",
+    "incomplete_suffix",
+}
+
+
+def _validate_optional_elapsed_ms(name: str, value: Optional[float]) -> None:
+    if value is not None:
+        _validate_elapsed_ms(value)
+
+
+def _validate_feasibility_check_payload(
+    status: Optional[BmcSolveStatus],
+    origin: str,
+    reason: Optional[str],
+    elapsed_ms: Optional[float],
+) -> None:
+    if origin not in _FEASIBILITY_ORIGINS:
+        raise BmcBuildError(
+            "origin must be checked, inferred, or not_checked, got %r." % origin
+        )
+    if status is not None and status not in {
+        "sat",
+        "unsat",
+        "unknown",
+        "timeout",
+    }:
+        raise BmcBuildError("status must be sat, unsat, unknown, timeout, or None.")
+    _validate_optional_reason("reason", reason)
+    _validate_optional_elapsed_ms("elapsed_ms", elapsed_ms)
+    if origin == "not_checked":
+        if status is not None or reason is not None or elapsed_ms is not None:
+            raise BmcBuildError(
+                "not_checked feasibility evidence requires status, reason, and "
+                "elapsed_ms to be None."
+            )
+        return
+    if origin == "inferred":
+        if status != "sat" or reason is not None or elapsed_ms is not None:
+            raise BmcBuildError(
+                "inferred feasibility evidence requires sat status and no "
+                "reason or elapsed_ms."
+            )
+        return
+    if status is None or elapsed_ms is None:
+        raise BmcBuildError(
+            "checked feasibility evidence requires status and elapsed_ms."
+        )
+    if status in {"sat", "unsat"} and reason is not None:
+        raise BmcBuildError(
+            "checked sat/unsat feasibility evidence requires reason=None."
+        )
+    if status in {"unknown", "timeout"} and not reason:
+        raise BmcBuildError(
+            "checked unknown/timeout feasibility evidence requires a non-empty reason."
+        )
+
+
+@dataclass(frozen=True)
+class BmcFeasibilityCheck(_PrettyPrintableMixin):
+    """Evidence for one cumulative BMC feasibility stage.
+
+    :param status: Solver status for the cumulative stage, or ``None`` when the
+        stage was not checked.
+    :type status: str, optional
+    :param origin: Evidence origin: ``checked``, ``inferred``, or
+        ``not_checked``.
+    :type origin: str
+    :param reason: Non-empty solver reason for an unknown or timeout check,
+        defaults to ``None``.
+    :type reason: str, optional
+    :param elapsed_ms: Elapsed time for a real stage check, defaults to ``None``.
+    :type elapsed_ms: float, optional
+    :raises pyfcstm.bmc.errors.BmcBuildError: If the evidence combination is
+        inconsistent.
+
+    Example::
+
+        >>> BmcFeasibilityCheck(status="sat", origin="inferred").to_canonical()
+        {'status': 'sat', 'origin': 'inferred', 'reason': None, 'elapsed_ms': None}
+    """
+
+    status: Optional[BmcSolveStatus]
+    origin: str
+    reason: Optional[str] = None
+    elapsed_ms: Optional[float] = None
+
+    def __post_init__(self) -> None:
+        _validate_feasibility_check_payload(
+            self.status, self.origin, self.reason, self.elapsed_ms
+        )
+
+    def to_canonical(self) -> _CanonicalDict:
+        """Return the JSON-stable stage evidence mapping.
+
+        :return: Canonical stage evidence.
+        :rtype: Dict[str, object]
+
+        Example::
+
+            >>> BmcFeasibilityCheck(None, "not_checked").to_canonical()["status"] is None
+            True
+        """
+        return {
+            "status": self.status,
+            "origin": self.origin,
+            "reason": self.reason,
+            "elapsed_ms": self.elapsed_ms,
+        }
+
+
+@dataclass(frozen=True)
+class BmcFeasibilityRefinementCheck(_PrettyPrintableMixin):
+    """Evidence for an optional feasibility refinement probe.
+
+    :param name: Stable refinement probe name.
+    :type name: str
+    :param status: Probe status.
+    :type status: str
+    :param reason: Solver reason for unknown or timeout, defaults to ``None``.
+    :type reason: str, optional
+    :param elapsed_ms: Probe elapsed time, defaults to ``None``.
+    :type elapsed_ms: float, optional
+    :raises pyfcstm.bmc.errors.BmcBuildError: If the probe payload is invalid.
+
+    Example::
+
+        >>> BmcFeasibilityRefinementCheck(
+        ...     "unsat_core", "complete", elapsed_ms=0.5
+        ... ).to_canonical()["status"]
+        'complete'
+    """
+
+    name: str
+    status: str
+    reason: Optional[str] = None
+    elapsed_ms: Optional[float] = None
+
+    def __post_init__(self) -> None:
+        if self.name not in _FEASIBILITY_REFINEMENT_NAMES:
+            raise BmcBuildError(
+                "Unsupported feasibility refinement name: %r." % self.name
+            )
+        if self.status not in _FEASIBILITY_REFINEMENT_STATUSES:
+            raise BmcBuildError(
+                "Unsupported feasibility refinement status: %r." % self.status
+            )
+        _validate_optional_reason("reason", self.reason)
+        _validate_optional_elapsed_ms("elapsed_ms", self.elapsed_ms)
+        if (
+            self.status == "complete"
+            and self.name in _FEASIBILITY_COMPONENT_REFINEMENT_NAMES
+        ):
+            raise BmcBuildError(
+                "component/domain feasibility refinement cannot use status=complete."
+            )
+        if self.status in {"sat", "unsat", "complete"} and self.reason is not None:
+            raise BmcBuildError(
+                "Completed feasibility refinement requires reason=None."
+            )
+        if self.status in {"unknown", "timeout"} and not self.reason:
+            raise BmcBuildError(
+                "Unknown/timeout feasibility refinement requires a non-empty reason."
+            )
+        if self.elapsed_ms is None:
+            raise BmcBuildError("Feasibility refinement requires elapsed_ms.")
+        if (
+            self.status == "complete"
+            and self.name not in _FEASIBILITY_CORE_REFINEMENT_NAMES
+        ):
+            raise BmcBuildError(
+                "Only unsat-core feasibility refinement can use status=complete."
+            )
+
+    def to_canonical(self) -> _CanonicalDict:
+        """Return the JSON-stable refinement mapping.
+
+        :return: Canonical refinement evidence.
+        :rtype: Dict[str, object]
+
+        Example::
+
+            >>> BmcFeasibilityRefinementCheck(
+            ...     "unsat_core", "complete", elapsed_ms=0.5
+            ... ).to_canonical()["name"]
+            'unsat_core'
+        """
+        return {
+            "name": self.name,
+            "status": self.status,
+            "reason": self.reason,
+            "elapsed_ms": self.elapsed_ms,
+        }
+
+
+@dataclass(frozen=True)
+class BmcFeasibilityResult(_PrettyPrintableMixin):
+    """Structured cumulative feasibility evidence for a BMC solve.
+
+    ``assumptions`` being checked UNSAT proves that the admissible scenario is
+    empty even when the deadline prevents deeper localization.  In that case
+    ``scenario_infeasible`` is true while ``infeasible_stage`` remains ``None``
+    and ``localization_status`` remains ``not_checked`` only when no checked SAT
+    prefix already identifies the first weaker stage.  A checked SAT
+    ``initialization`` stage localizes the failure to ``assumptions``; a checked
+    SAT ``kernel`` followed by checked UNSAT ``initialization`` localizes it to
+    ``initialization``.  ``inferred`` SAT stages are conclusions from a stronger
+    checked SAT prefix, not additional solver calls.  Because these stages are
+    cumulative, a localized ``initialization`` failure also requires checked
+    UNSAT ``assumptions`` evidence, and a localized ``kernel`` failure requires
+    checked UNSAT evidence for both outer stages.  This keeps direct public
+    constructors and canonical JSON payloads closed under the same evidence
+    contract as :func:`solve_bmc_property`.
+
+    :param kernel: Evidence for ``K_N``.
+    :type kernel: BmcFeasibilityCheck
+    :param initialization: Evidence for ``S_init``.
+    :type initialization: BmcFeasibilityCheck
+    :param assumptions: Evidence for ``S_assume``.
+    :type assumptions: BmcFeasibilityCheck
+    :param infeasible_stage: First localized infeasible stage, defaults to
+        ``None``.
+    :type infeasible_stage: str, optional
+    :param localization_status: Localization status, defaults to
+        ``"not_checked"``.
+    :type localization_status: str, optional
+    :param refinement_status: Optional refinement aggregate, defaults to
+        ``"not_requested"``.
+    :type refinement_status: str, optional
+    :param refinement_reason: Aggregate refinement reason, defaults to ``None``.
+    :type refinement_reason: str, optional
+    :param refinement_checks: Executed refinement checks, defaults to ``()``.
+    :type refinement_checks: Sequence[BmcFeasibilityRefinementCheck], optional
+    :raises pyfcstm.bmc.errors.BmcBuildError: If stage evidence is inconsistent.
+
+    Example::
+
+        >>> sat = BmcFeasibilityCheck("sat", "inferred")
+        >>> BmcFeasibilityResult(
+        ...     sat, sat, sat, localization_status="not_needed"
+        ... ).localization_status
+        'not_needed'
+    """
+
+    kernel: BmcFeasibilityCheck
+    initialization: BmcFeasibilityCheck
+    assumptions: BmcFeasibilityCheck
+    infeasible_stage: Optional[str] = None
+    localization_status: str = "not_checked"
+    refinement_status: str = "not_requested"
+    refinement_reason: Optional[str] = None
+    refinement_checks: Sequence[BmcFeasibilityRefinementCheck] = ()
+
+    def __post_init__(self) -> None:
+        checks = (self.kernel, self.initialization, self.assumptions)
+        if not all(isinstance(item, BmcFeasibilityCheck) for item in checks):
+            raise BmcBuildError("All feasibility stages must be BmcFeasibilityCheck.")
+        if self.infeasible_stage not in {
+            None,
+            "kernel",
+            "initialization",
+            "assumptions",
+        }:
+            raise BmcBuildError(
+                "Unsupported infeasible_stage: %r." % self.infeasible_stage
+            )
+        if self.localization_status not in {
+            "not_needed",
+            "not_checked",
+            "complete",
+            "unknown",
+            "timeout",
+        }:
+            raise BmcBuildError(
+                "Unsupported localization_status: %r." % self.localization_status
+            )
+        if self.refinement_status not in {
+            "not_requested",
+            "not_needed",
+            "complete",
+            "partial",
+            "unknown",
+            "timeout",
+        }:
+            raise BmcBuildError(
+                "Unsupported refinement_status: %r." % self.refinement_status
+            )
+        _validate_optional_reason("refinement_reason", self.refinement_reason)
+        if self.refinement_status in {"not_requested", "not_needed", "complete"}:
+            if self.refinement_reason is not None:
+                raise BmcBuildError(
+                    "refinement_reason must be None for completed or unused refinement."
+                )
+        elif (
+            self.refinement_status in {"unknown", "timeout"}
+            and not self.refinement_reason
+        ):
+            raise BmcBuildError(
+                "Unknown/timeout refinement requires a non-empty refinement_reason."
+            )
+        if (
+            self.infeasible_stage is not None
+            and self.refinement_status != "not_requested"
+        ):
+            raise BmcBuildError(
+                "localized infeasible stages require refinement_status=not_requested."
+            )
+        object.__setattr__(
+            self,
+            "refinement_checks",
+            _coerce_public_sequence(
+                "refinement_checks",
+                self.refinement_checks,
+                BmcFeasibilityRefinementCheck,
+                "BmcFeasibilityRefinementCheck objects",
+            ),
+        )
+        inconclusive = any(
+            item.origin == "checked" and item.status in {"unknown", "timeout"}
+            for item in checks
+        )
+        if inconclusive and self.infeasible_stage is not None:
+            raise BmcBuildError(
+                "unknown/timeout feasibility evidence cannot claim a localized "
+                "infeasible_stage."
+            )
+        if self.infeasible_stage is not None:
+            if self.localization_status != "complete":
+                raise BmcBuildError(
+                    "infeasible_stage requires localization_status=complete."
+                )
+            selected = getattr(self, self.infeasible_stage)
+            if selected.origin != "checked" or selected.status != "unsat":
+                raise BmcBuildError(
+                    "infeasible_stage requires checked/unsat evidence for the "
+                    "selected stage."
+                )
+            if (
+                self.infeasible_stage == "initialization"
+                and self.kernel.status != "sat"
+            ):
+                raise BmcBuildError(
+                    "initialization infeasible_stage requires a SAT prefix."
+                )
+            if (
+                self.infeasible_stage == "initialization"
+                and self.kernel.origin != "checked"
+            ):
+                raise BmcBuildError(
+                    "initialization infeasible_stage requires checked kernel evidence."
+                )
+            if self.infeasible_stage == "initialization" and (
+                self.assumptions.origin != "checked"
+                or self.assumptions.status != "unsat"
+            ):
+                raise BmcBuildError(
+                    "initialization infeasible_stage requires checked UNSAT "
+                    "assumptions evidence."
+                )
+            if self.infeasible_stage == "assumptions" and (
+                self.kernel.status != "sat" or self.initialization.status != "sat"
+            ):
+                raise BmcBuildError(
+                    "assumptions infeasible_stage requires a SAT prefix."
+                )
+            if (
+                self.infeasible_stage == "assumptions"
+                and self.initialization.origin != "checked"
+            ):
+                raise BmcBuildError(
+                    "assumptions infeasible_stage requires checked initialization "
+                    "evidence."
+                )
+            if self.infeasible_stage == "kernel" and (
+                self.initialization.origin != "checked"
+                or self.initialization.status != "unsat"
+                or self.assumptions.origin != "checked"
+                or self.assumptions.status != "unsat"
+            ):
+                raise BmcBuildError(
+                    "kernel infeasible_stage requires checked UNSAT initialization "
+                    "and assumptions evidence."
+                )
+        elif self.localization_status == "complete":
+            raise BmcBuildError(
+                "localization_status=complete requires infeasible_stage."
+            )
+        if (
+            any(
+                item.status in {"unknown", "timeout"} and item.origin == "checked"
+                for item in checks
+            )
+            and self.localization_status == "not_needed"
+        ):
+            raise BmcBuildError(
+                "unknown/timeout feasibility evidence cannot use localization_status="
+                "not_needed."
+            )
+        all_sat = all(item.status == "sat" for item in checks)
+        all_inferred_sat = all(
+            item.status == "sat" and item.origin == "inferred" for item in checks
+        )
+        for index, item in enumerate(checks):
+            if item.origin != "inferred":
+                continue
+            if all_inferred_sat and self.localization_status == "not_needed":
+                continue
+            if not any(
+                stronger.origin == "checked" and stronger.status == "sat"
+                for stronger in checks[index + 1 :]
+            ):
+                raise BmcBuildError(
+                    "cumulative feasibility inferred evidence requires a stronger "
+                    "checked SAT stage."
+                )
+        if all_sat and self.localization_status != "not_needed":
+            raise BmcBuildError(
+                "all SAT feasibility stages require localization_status=not_needed."
+            )
+        if self.localization_status in {"unknown", "timeout"} and not inconclusive:
+            raise BmcBuildError(
+                "localization_status=unknown/timeout requires checked "
+                "unknown/timeout feasibility evidence."
+            )
+        if self.initialization.status == "sat" and self.kernel.status != "sat":
+            raise BmcBuildError(
+                "cumulative feasibility evidence cannot claim SAT initialization "
+                "after a non-SAT kernel stage."
+            )
+        if self.assumptions.status == "sat" and self.initialization.status != "sat":
+            raise BmcBuildError(
+                "cumulative feasibility evidence cannot claim SAT assumptions "
+                "after a non-SAT initialization stage."
+            )
+        if (
+            self.initialization.status == "sat"
+            and self.assumptions.status == "unsat"
+            and (
+                self.infeasible_stage != "assumptions"
+                or self.localization_status != "complete"
+            )
+        ):
+            raise BmcBuildError(
+                "checked SAT initialization with UNSAT assumptions requires "
+                "complete assumptions localization."
+            )
+        if (
+            self.kernel.status == "sat"
+            and self.initialization.status == "unsat"
+            and (
+                self.infeasible_stage != "initialization"
+                or self.localization_status != "complete"
+            )
+        ):
+            raise BmcBuildError(
+                "checked SAT kernel with UNSAT initialization requires complete "
+                "initialization localization."
+            )
+        if self.kernel.status == "unsat" and (
+            self.initialization.status == "sat" or self.assumptions.status == "sat"
+        ):
+            raise BmcBuildError(
+                "cumulative feasibility evidence cannot claim SAT after kernel UNSAT."
+            )
+        if self.initialization.status == "unsat" and self.assumptions.status == "sat":
+            raise BmcBuildError(
+                "cumulative feasibility evidence cannot claim SAT after initialization UNSAT."
+            )
+        if self.localization_status == "not_needed" and not all_sat:
+            raise BmcBuildError(
+                "localization_status=not_needed requires all SAT feasibility stages."
+            )
+        if (
+            self.refinement_status in {"not_requested", "not_needed"}
+            and self.refinement_checks
+        ):
+            raise BmcBuildError(
+                "A refinement status without executed checks cannot contain checks."
+            )
+        if (
+            self.refinement_status in {"complete", "partial"}
+            and not self.refinement_checks
+        ):
+            raise BmcBuildError(
+                "A completed or partial refinement requires executed checks."
+            )
+
+    @property
+    def scenario_infeasible(self) -> bool:
+        """Return whether cumulative assumptions are proven UNSAT.
+
+        :return: ``True`` when ``S_assume`` was checked UNSAT.
+        :rtype: bool
+
+        Example::
+
+            >>> sat = BmcFeasibilityCheck("sat", "inferred")
+            >>> BmcFeasibilityResult(
+            ...     sat, sat, sat, localization_status="not_needed"
+            ... ).scenario_infeasible
+            False
+        """
+        return self.assumptions.status == "unsat"
+
+    def to_canonical(self) -> _CanonicalDict:
+        """Return the JSON-stable feasibility mapping.
+
+        :return: Canonical feasibility evidence.
+        :rtype: Dict[str, object]
+
+        Example::
+
+            >>> sat = BmcFeasibilityCheck("sat", "inferred")
+            >>> BmcFeasibilityResult(
+            ...     sat, sat, sat, localization_status="not_needed"
+            ... ).to_canonical()["infeasible_stage"] is None
+            True
+        """
+        return {
+            "kernel": self.kernel.to_canonical(),
+            "initialization": self.initialization.to_canonical(),
+            "assumptions": self.assumptions.to_canonical(),
+            "infeasible_stage": self.infeasible_stage,
+            "localization_status": self.localization_status,
+            "refinement_status": self.refinement_status,
+            "refinement_reason": self.refinement_reason,
+            "refinement_checks": [
+                item.to_canonical() for item in self.refinement_checks
+            ],
+        }
+
+
+def _inferred_feasibility() -> BmcFeasibilityResult:
+    """Build SAT prefix evidence inferred from one primary SAT model."""
+    sat = BmcFeasibilityCheck("sat", "inferred")
+    return BmcFeasibilityResult(
+        kernel=sat,
+        initialization=sat,
+        assumptions=sat,
+        localization_status="not_needed",
+        refinement_status="not_needed",
+    )
+
+
+def _not_checked_feasibility() -> BmcFeasibilityResult:
+    """Build fail-closed evidence for a primary inconclusive solve."""
+    not_checked = BmcFeasibilityCheck(None, "not_checked")
+    return BmcFeasibilityResult(
+        kernel=not_checked,
+        initialization=not_checked,
+        assumptions=not_checked,
+        localization_status="not_checked",
+        refinement_status="not_needed",
+    )
+
+
+def _is_not_checked_feasibility(value: BmcFeasibilityResult) -> bool:
+    """Return whether a result carries only inconclusive-stage evidence."""
+    return (
+        all(
+            item.origin == "not_checked" and item.status is None
+            for item in (value.kernel, value.initialization, value.assumptions)
+        )
+        and value.infeasible_stage is None
+        and value.localization_status == "not_checked"
+        and value.refinement_status in {"not_requested", "not_needed"}
+        and not value.refinement_checks
+    )
+
+
+def _has_nonempty_incomplete_formula(formula: BmcPropertyFormula) -> bool:
+    """Return whether a response formula has a real suffix diagnostic."""
+    return not z3.is_false(formula.incomplete_formula)
+
+
+def _has_diagnostic(result: "BmcSolveResult", marker: str) -> bool:
+    """Return whether a stable diagnostic marker is present."""
+    return marker in result.diagnostics
+
+
 @dataclass(frozen=True)
 class BmcSolveResult(_PrettyPrintableMixin):
     """Structured result for one BMC property solve.
+
+    The default string representation starts with the same polarity-aware
+    bounded verdict vocabulary used by the CLI, then includes the canonical
+    field table.  Runtime replay is intentionally represented by the separate
+    :class:`BmcReplayResult`; the CLI combines both objects and can therefore
+    override the headline when replay mismatches.
 
     The raw Z3 models are intentionally kept as Python attributes rather than
     JSON fields.  Callers can pass :attr:`model` to
@@ -1423,6 +2709,15 @@ class BmcSolveResult(_PrettyPrintableMixin):
     :type incomplete_reason: str, optional
     :param diagnostics: Solver-level diagnostics, defaults to ``()``.
     :type diagnostics: Tuple[str, ...], optional
+    :param incomplete_elapsed_ms: Secondary-check elapsed time, defaults to
+        ``None``.
+    :type incomplete_elapsed_ms: float, optional
+    :param total_elapsed_ms: End-to-end Python-side elapsed time for this public
+        solve call, including staged-result construction, defaults to ``None``.
+    :type total_elapsed_ms: float, optional
+    :param feasibility: Staged scenario-feasibility evidence, defaults to
+        ``None`` for SAT and inconclusive direct constructors.
+    :type feasibility: BmcFeasibilityResult, optional
     :raises pyfcstm.bmc.errors.BmcBuildError: If the solve result payload is
         malformed.
 
@@ -1450,6 +2745,9 @@ class BmcSolveResult(_PrettyPrintableMixin):
     )
     incomplete_reason: Optional[str] = None
     diagnostics: Tuple[str, ...] = ()
+    incomplete_elapsed_ms: Optional[float] = None
+    total_elapsed_ms: Optional[float] = None
+    feasibility: Optional[BmcFeasibilityResult] = None
 
     def __post_init__(self) -> None:
         _require_formula(self.formula)
@@ -1478,6 +2776,10 @@ class BmcSolveResult(_PrettyPrintableMixin):
             "incomplete_reason",
             self.incomplete_reason,
         )
+        _validate_optional_elapsed_ms(
+            "incomplete_elapsed_ms", self.incomplete_elapsed_ms
+        )
+        _validate_optional_elapsed_ms("total_elapsed_ms", self.total_elapsed_ms)
         if self.timeout_ms is not None and (
             isinstance(self.timeout_ms, bool)
             or not isinstance(self.timeout_ms, int)
@@ -1489,6 +2791,10 @@ class BmcSolveResult(_PrettyPrintableMixin):
             "diagnostics",
             _coerce_public_sequence("diagnostics", self.diagnostics, str, "strings"),
         )
+        if self.feasibility is not None and not isinstance(
+            self.feasibility, BmcFeasibilityResult
+        ):
+            raise BmcBuildError("feasibility must be BmcFeasibilityResult or None.")
         if self.status == "sat" and self.model is None:
             raise BmcBuildError("model is required when status is sat.")
         if self.status != "sat" and self.model is not None:
@@ -1501,6 +2807,126 @@ class BmcSolveResult(_PrettyPrintableMixin):
             raise BmcBuildError(
                 "incomplete_model must be None unless incomplete_status is sat."
             )
+        if self.incomplete_status is None:
+            if self.incomplete_elapsed_ms is not None:
+                raise BmcBuildError(
+                    "incomplete_elapsed_ms must be None when suffix was not checked."
+                )
+            if (
+                self.kind == "response"
+                and self.status == "unsat"
+                and _has_nonempty_incomplete_formula(self.formula)
+                and self.feasibility is not None
+                and self.feasibility.assumptions.status == "sat"
+                and self.incomplete_reason != "incomplete check disabled"
+                and not _has_diagnostic(self, _SUFFIX_TIMEOUT_BEFORE_CHECK)
+            ):
+                raise BmcBuildError(
+                    "unchecked response suffix requires the disabled-check marker "
+                    "or a suffix deadline exhaustion diagnostic."
+                )
+        elif self.incomplete_elapsed_ms is None:
+            raise BmcBuildError(
+                "incomplete_elapsed_ms is required when suffix has a status."
+            )
+        feasibility = self.feasibility
+        if feasibility is None:
+            if self.status == "sat":
+                feasibility = _inferred_feasibility()
+            elif self.status in {"unknown", "timeout"}:
+                feasibility = _not_checked_feasibility()
+            else:
+                raise BmcBuildError(
+                    "feasibility evidence is required for primary unsat results."
+                )
+            object.__setattr__(self, "feasibility", feasibility)
+        elif not isinstance(feasibility, BmcFeasibilityResult):
+            raise BmcBuildError("feasibility must be BmcFeasibilityResult or None.")
+        if self.status in {"unknown", "timeout"} and not _is_not_checked_feasibility(
+            feasibility
+        ):
+            raise BmcBuildError(
+                "primary unknown/timeout results require all feasibility stages "
+                "to be not_checked."
+            )
+        if (
+            self.status == "unsat"
+            and _is_not_checked_feasibility(feasibility)
+            and not _has_diagnostic(self, _FEASIBILITY_TIMEOUT_BEFORE_ASSUMPTIONS)
+        ):
+            raise BmcBuildError(
+                "primary unsat results with all not_checked feasibility evidence "
+                "require a deadline exhaustion diagnostic."
+            )
+        if self.status == "sat" and not (
+            feasibility.kernel.origin == "inferred"
+            and feasibility.initialization.origin == "inferred"
+            and feasibility.assumptions.origin == "inferred"
+            and feasibility.kernel.status == "sat"
+            and feasibility.initialization.status == "sat"
+            and feasibility.assumptions.status == "sat"
+        ):
+            raise BmcBuildError(
+                "primary sat results require inferred SAT feasibility evidence."
+            )
+        if self.status != "sat" and feasibility.assumptions.origin == "inferred":
+            raise BmcBuildError(
+                "assumptions inferred feasibility evidence requires primary status=sat."
+            )
+        if self.status == "unsat":
+            checks = (
+                feasibility.kernel,
+                feasibility.initialization,
+                feasibility.assumptions,
+            )
+            for index, check in enumerate(checks[:-1]):
+                if (
+                    check.origin == "checked"
+                    and check.status in {"unknown", "timeout"}
+                    and any(
+                        later.origin == "not_checked" for later in checks[index + 1 :]
+                    )
+                ):
+                    raise BmcBuildError(
+                        "inconclusive feasibility evidence cannot be followed by "
+                        "not_checked stages."
+                    )
+        if self.incomplete_status is not None and self.kind != "response":
+            raise BmcBuildError(
+                "incomplete status is only valid for response properties."
+            )
+        if self.incomplete_status is not None and not _has_nonempty_incomplete_formula(
+            self.formula
+        ):
+            raise BmcBuildError(
+                "incomplete status requires a non-empty suffix formula."
+            )
+        if self.incomplete_status is not None and self.status != "unsat":
+            raise BmcBuildError("incomplete status requires a primary UNSAT result.")
+        if self.status == "sat" and feasibility.scenario_infeasible:
+            raise BmcBuildError("primary sat result cannot be scenario_infeasible.")
+        if self.incomplete_status == "sat" and (
+            feasibility.scenario_infeasible or feasibility.assumptions.status != "sat"
+        ):
+            raise BmcBuildError(
+                "incomplete suffix model requires SAT assumptions feasibility evidence."
+            )
+        if self.total_elapsed_ms is None:
+            total = self.elapsed_ms + (self.incomplete_elapsed_ms or 0.0)
+            object.__setattr__(self, "total_elapsed_ms", total)
+
+    def _validated_feasibility(self) -> BmcFeasibilityResult:
+        """Return validated feasibility evidence for internal consumers.
+
+        :return: Non-optional feasibility evidence.
+        :rtype: BmcFeasibilityResult
+        :raises pyfcstm.bmc.errors.BmcBuildError: If an object bypassed normal
+            dataclass initialization and has no feasibility evidence.
+        """
+        feasibility = self.feasibility
+        if feasibility is None:
+            raise _internal_error("BmcSolveResult feasibility evidence is missing.")
+        return feasibility
 
     @property
     def kind(self) -> str:
@@ -1537,17 +2963,19 @@ class BmcSolveResult(_PrettyPrintableMixin):
         Solver ``unknown`` and ``timeout`` statuses are always incomplete.  A
         response property is also incomplete when the primary objective is
         ``"unsat"`` and its suffix diagnostic was not solved, was inconclusive,
-        or can still contain an uncovered trigger window.  If the primary
-        response objective is ``"sat"``, the counterexample verdict is already
-        decisive even when a separate suffix diagnostic would also be
-        satisfiable.
+        or can still contain an uncovered trigger window.  A proven
+        ``scenario_infeasible`` result is not horizon-incomplete because it is a
+        definitive non-verdict, while a feasibility timeout before the
+        assumptions check remains incomplete.  If the primary response
+        objective is ``"sat"``, the counterexample verdict is already decisive
+        even when a separate suffix diagnostic would also be satisfiable.
 
         :return: Whether the solve result carries an incomplete verdict.
         :rtype: bool
 
         Example::
 
-            >>> from pyfcstm.bmc.witness import BmcSolveResult
+            >>> from pyfcstm.bmc.witness import BmcSolveResult, solve_bmc_property
             >>> from pyfcstm.bmc import BmcEngine, build_bmc_core_formula, compile_bmc_property
             >>> from pyfcstm.model import load_state_machine_from_text
             >>> sm = load_state_machine_from_text('state Root;')
@@ -1555,7 +2983,14 @@ class BmcSolveResult(_PrettyPrintableMixin):
             >>> BmcSolveResult(formula, 'timeout', reason='timeout').incomplete
             True
         """
+        feasibility = self._validated_feasibility()
+        if feasibility.scenario_infeasible:
+            return False
+        if _has_diagnostic(self, _FEASIBILITY_TIMEOUT_BEFORE_ASSUMPTIONS):
+            return True
         if self.status in {"unknown", "timeout"}:
+            return True
+        if feasibility.assumptions.status in {"unknown", "timeout"}:
             return True
         if self.kind != "response" or self.status != "unsat":
             return False
@@ -1579,7 +3014,7 @@ class BmcSolveResult(_PrettyPrintableMixin):
         Example::
 
             >>> import z3
-            >>> from pyfcstm.bmc.witness import BmcSolveResult
+            >>> from pyfcstm.bmc.witness import BmcSolveResult, solve_bmc_property
             >>> from pyfcstm.bmc import BmcEngine, build_bmc_core_formula, compile_bmc_property
             >>> from pyfcstm.model import load_state_machine_from_text
             >>> sm = load_state_machine_from_text('state Root;')
@@ -1604,7 +3039,7 @@ class BmcSolveResult(_PrettyPrintableMixin):
         Example::
 
             >>> import z3
-            >>> from pyfcstm.bmc.witness import BmcSolveResult
+            >>> from pyfcstm.bmc.witness import BmcSolveResult, solve_bmc_property
             >>> from pyfcstm.bmc import BmcEngine, build_bmc_core_formula, compile_bmc_property
             >>> from pyfcstm.model import load_state_machine_from_text
             >>> sm = load_state_machine_from_text('state Root;')
@@ -1630,21 +3065,29 @@ class BmcSolveResult(_PrettyPrintableMixin):
         incomplete.
 
         :return: ``True`` if the bounded property is satisfied, ``False`` if it
-            is violated or lacks a required witness, and ``None`` if the result
-            is incomplete.
+            is violated or lacks a required witness, and ``None`` if the
+            property cannot be evaluated because the result is incomplete, the
+            scenario is infeasible, or feasibility timed out.
         :rtype: Optional[bool]
 
         Example::
 
-            >>> from pyfcstm.bmc.witness import BmcSolveResult
+            >>> from pyfcstm.bmc.witness import BmcSolveResult, solve_bmc_property
             >>> from pyfcstm.bmc import BmcEngine, build_bmc_core_formula, compile_bmc_property
             >>> from pyfcstm.model import load_state_machine_from_text
             >>> sm = load_state_machine_from_text('state Root;')
             >>> formula = compile_bmc_property(build_bmc_core_formula(BmcEngine(sm).prepare('check reach <= 1: terminated();')))
-            >>> BmcSolveResult(formula, 'unsat').property_satisfied
+            >>> solve_bmc_property(formula).property_satisfied
             False
         """
+        feasibility = self._validated_feasibility()
+        if feasibility.scenario_infeasible:
+            return None
+        if _has_diagnostic(self, _FEASIBILITY_TIMEOUT_BEFORE_ASSUMPTIONS):
+            return None
         if self.status in {"unknown", "timeout"}:
+            return None
+        if feasibility.assumptions.status in {"unknown", "timeout"}:
             return None
         if self.status == "sat":
             return self.polarity == "witness"
@@ -1658,23 +3101,33 @@ class BmcSolveResult(_PrettyPrintableMixin):
 
         :return: One of ``"property_satisfied"``, ``"property_violated"``,
             ``"witness_found"``, ``"no_witness"``, ``"incomplete"``,
-            ``"timeout"``, or ``"unknown"``.
+            ``"scenario_infeasible"``, ``"feasibility_timeout"``,
+            ``"feasibility_unknown"``, ``"timeout"``, or ``"unknown"``.
         :rtype: str
 
         Example::
 
-            >>> from pyfcstm.bmc.witness import BmcSolveResult
+            >>> from pyfcstm.bmc.witness import BmcSolveResult, solve_bmc_property
             >>> from pyfcstm.bmc import BmcEngine, build_bmc_core_formula, compile_bmc_property
             >>> from pyfcstm.model import load_state_machine_from_text
             >>> sm = load_state_machine_from_text('state Root;')
             >>> formula = compile_bmc_property(build_bmc_core_formula(BmcEngine(sm).prepare('check reach <= 1: terminated();')))
-            >>> BmcSolveResult(formula, 'unsat').outcome
+            >>> solve_bmc_property(formula).outcome
             'no_witness'
         """
+        feasibility = self._validated_feasibility()
+        if feasibility.scenario_infeasible:
+            return "scenario_infeasible"
+        if _has_diagnostic(self, _FEASIBILITY_TIMEOUT_BEFORE_ASSUMPTIONS):
+            return "feasibility_timeout"
         if self.status == "timeout":
             return "timeout"
         if self.status == "unknown":
             return "unknown"
+        if feasibility.assumptions.status == "timeout":
+            return "feasibility_timeout"
+        if feasibility.assumptions.status == "unknown":
+            return "feasibility_unknown"
         if self.status == "sat":
             if self.polarity == "witness":
                 return "witness_found"
@@ -1684,6 +3137,40 @@ class BmcSolveResult(_PrettyPrintableMixin):
         if self.polarity == "witness":
             return "no_witness"
         return "property_satisfied"
+
+    @property
+    def property_verdict(self) -> str:
+        """Return the canonical human-readable bounded property verdict.
+
+        This is the same semantic line used by :meth:`to_text`, :func:`str`,
+        and the human-readable ``pyfcstm bmc`` report.  It deliberately keeps
+        evidence form in parentheses so callers can distinguish a missing
+        witness from a concrete counterexample without interpreting raw SAT
+        or UNSAT status.  Runtime replay validation is a separate
+        :class:`BmcReplayResult` concern; the CLI may replace this bounded
+        verdict with an untrusted-evidence message when replay finds a
+        mismatch.
+
+        :return: Canonical bounded property verdict text.
+        :rtype: str
+
+        Example::
+
+            >>> from pyfcstm.bmc import BmcEngine, build_bmc_core_formula, compile_bmc_property
+            >>> from pyfcstm.bmc.witness import solve_bmc_property
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text("state Root;")
+            >>> formula = compile_bmc_property(
+            ...     build_bmc_core_formula(
+            ...         BmcEngine(model).prepare(
+            ...             'check reach <= 1: active("Root");'
+            ...         )
+            ...     )
+            ... )
+            >>> solve_bmc_property(formula).property_verdict
+            'SATISFIED WITHIN BOUND (WITNESS FOUND)'
+        """
+        return _solve_property_verdict(self)
 
     def to_canonical(self) -> _CanonicalDict:
         """Return a JSON-stable solve summary.
@@ -1698,14 +3185,15 @@ class BmcSolveResult(_PrettyPrintableMixin):
         Example::
 
             >>> import z3
-            >>> from pyfcstm.bmc.witness import BmcSolveResult
+            >>> from pyfcstm.bmc.witness import BmcSolveResult, solve_bmc_property
             >>> from pyfcstm.bmc import BmcEngine, build_bmc_core_formula, compile_bmc_property
             >>> from pyfcstm.model import load_state_machine_from_text
             >>> sm = load_state_machine_from_text('state Root;')
-            >>> formula = compile_bmc_property(build_bmc_core_formula(BmcEngine(sm).prepare('check reach <= 1: active("Root");')))
-            >>> BmcSolveResult(formula, 'unsat').to_canonical()['status']
+            >>> formula = compile_bmc_property(build_bmc_core_formula(BmcEngine(sm).prepare('check reach <= 1: terminated();')))
+            >>> solve_bmc_property(formula).to_canonical()['status']
             'unsat'
         """
+        feasibility = self._validated_feasibility()
         return {
             "node": "bmc_solve_result",
             "kind": self.kind,
@@ -1722,9 +3210,51 @@ class BmcSolveResult(_PrettyPrintableMixin):
             "has_model": self.model is not None,
             "incomplete_status": self.incomplete_status,
             "incomplete_reason": self.incomplete_reason,
+            "incomplete_elapsed_ms": self.incomplete_elapsed_ms,
             "has_incomplete_model": self.incomplete_model is not None,
+            "total_elapsed_ms": self.total_elapsed_ms,
+            "feasibility": feasibility.to_canonical(),
+            "available_model_roles": list(self.available_model_roles),
             "diagnostics": list(self.diagnostics),
         }
+
+    @property
+    def available_model_roles(self) -> Tuple[str, ...]:
+        """Return the result model channels that contain SAT evidence.
+
+        :return: Ordered available model roles.
+        :rtype: Tuple[str, ...]
+
+        Example::
+
+            >>> from pyfcstm.bmc import BmcEngine, build_bmc_core_formula, compile_bmc_property
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> from pyfcstm.bmc.witness import solve_bmc_property
+            >>> sm = load_state_machine_from_text("state Root;")
+            >>> formula = compile_bmc_property(
+            ...     build_bmc_core_formula(
+            ...         BmcEngine(sm).prepare(
+            ...             'check reach <= 1: active("Root");'
+            ...         )
+            ...     )
+            ... )
+            >>> solve_bmc_property(formula).available_model_roles
+            ('primary_witness',)
+        """
+        if self.status == "sat":
+            if self.polarity == "witness":
+                return ("primary_witness",)
+            return ("primary_counterexample",)
+        feasibility = self._validated_feasibility()
+        if (
+            self.status == "unsat"
+            and self.incomplete_status == "sat"
+            and self.kind == "response"
+            and _has_nonempty_incomplete_formula(self.formula)
+            and feasibility.assumptions.status == "sat"
+        ):
+            return ("incomplete_suffix",)
+        return ()
 
 
 @dataclass(frozen=True)
@@ -2234,6 +3764,12 @@ class BmcWitnessTrace(_PrettyPrintableMixin):
     :type steps: Sequence[BmcWitnessStep]
     :param diagnostics: Witness diagnostics, defaults to ``()``.
     :type diagnostics: Sequence[str], optional
+    :param model_role: Selected model role for role-aware traces, defaults to
+        ``None`` for raw-model traces.
+    :type model_role: str, optional
+    :param verdict: Detached verdict for role-aware traces, defaults to
+        ``None``.
+    :type verdict: Mapping[str, object], optional
     :raises pyfcstm.bmc.errors.BmcBuildError: If the trace payload is
         malformed or violates public witness invariants.
 
@@ -2250,8 +3786,29 @@ class BmcWitnessTrace(_PrettyPrintableMixin):
     frames: Sequence[BmcWitnessFrame]
     steps: Sequence[BmcWitnessStep]
     diagnostics: Sequence[str] = ()
+    model_role: Optional[str] = None
+    verdict: Optional[Mapping[str, Any]] = None
 
     def __post_init__(self) -> None:
+        role_aware = self.model_role is not None or self.verdict is not None
+        if (self.model_role is None) != (self.verdict is None):
+            raise BmcBuildError(
+                "model_role and verdict must either both be present or both be absent."
+            )
+        if self.model_role is not None and self.model_role not in _BMC_MODEL_ROLES:
+            raise BmcBuildError("Unsupported witness model_role: %r." % self.model_role)
+        if role_aware:
+            model_role = self.model_role
+            if model_role is None:
+                raise BmcBuildError(
+                    "model_role and verdict must either both be present or both be absent."
+                )
+            verdict = self.verdict
+            if not isinstance(verdict, Mapping):
+                raise BmcBuildError("role-aware witness requires verdict metadata.")
+            verdict = _coerce_public_json_mapping("verdict", verdict)
+            _validate_witness_verdict(model_role, verdict)
+            object.__setattr__(self, "verdict", verdict)
         if not isinstance(self.property, Mapping):
             raise BmcBuildError("property must be a mapping.")
         if not isinstance(self.solver, Mapping):
@@ -2261,7 +3818,31 @@ class BmcWitnessTrace(_PrettyPrintableMixin):
         property_metadata = _coerce_public_json_mapping("property", self.property)
         solver_metadata = _coerce_public_json_mapping("solver", self.solver)
         initial_metadata = _coerce_public_json_mapping("initial", self.initial)
+        if role_aware:
+            model_role = self.model_role
+            if model_role is None:
+                raise BmcBuildError(
+                    "model_role and verdict must either both be present or both be absent."
+                )
+            _validate_role_aware_witness_property(model_role, property_metadata)
         _validate_witness_solver_metadata(solver_metadata)
+        role_solver_fields = {
+            "model_status",
+            "primary_status",
+            "primary_reason",
+            "primary_elapsed_ms",
+        }
+        if not role_aware and role_solver_fields.intersection(solver_metadata):
+            raise BmcBuildError(
+                "role-aware solver metadata requires model_role and verdict."
+            )
+        if role_aware:
+            model_role = self.model_role
+            if model_role is None:
+                raise BmcBuildError(
+                    "model_role and verdict must either both be present or both be absent."
+                )
+            _validate_role_aware_witness_solver_metadata(model_role, solver_metadata)
         object.__setattr__(self, "property", property_metadata)
         object.__setattr__(self, "solver", solver_metadata)
         object.__setattr__(self, "initial", initial_metadata)
@@ -2299,7 +3880,31 @@ class BmcWitnessTrace(_PrettyPrintableMixin):
         """
         solver_metadata = _coerce_public_json_mapping("solver", self.solver)
         _validate_witness_solver_metadata(solver_metadata)
+        role_aware = self.model_role is not None or self.verdict is not None
+        if (self.model_role is None) != (self.verdict is None):
+            raise BmcBuildError(
+                "model_role and verdict must either both be present or both be absent."
+            )
+        if role_aware:
+            model_role = self.model_role
+            if model_role is None:
+                raise BmcBuildError(
+                    "model_role and verdict must either both be present or both be absent."
+                )
+            _validate_role_aware_witness_solver_metadata(model_role, solver_metadata)
+            verdict = self.verdict
+            if not isinstance(verdict, Mapping):
+                raise BmcBuildError("role-aware witness requires verdict metadata.")
+            _validate_witness_verdict(
+                model_role,
+                _coerce_public_json_mapping("verdict", verdict),
+            )
         return {
+            **(
+                {"model_role": self.model_role, "verdict": self.verdict}
+                if role_aware
+                else {}
+            ),
             "property": _coerce_public_json_mapping("property", self.property),
             "solver": solver_metadata,
             "initial": _coerce_public_json_mapping("initial", self.initial),
@@ -2608,6 +4213,9 @@ class BmcReplayResult(_PrettyPrintableMixin):
     :type runtime_trace: BmcRuntimeTrace
     :param mismatches: Structured replay mismatches, defaults to ``()``.
     :type mismatches: Sequence[BmcReplayMismatch], optional
+    :param model_role: Model role copied from the witness, defaults to ``None``
+        for raw-model traces.
+    :type model_role: str, optional
     :raises pyfcstm.bmc.errors.BmcBuildError: If the replay result payload is
         malformed.
 
@@ -2621,12 +4229,19 @@ class BmcReplayResult(_PrettyPrintableMixin):
     witness: BmcWitnessTrace
     runtime_trace: BmcRuntimeTrace
     mismatches: Sequence[BmcReplayMismatch] = ()
+    model_role: Optional[str] = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.witness, BmcWitnessTrace):
             raise BmcBuildError("witness must be BmcWitnessTrace.")
         if not isinstance(self.runtime_trace, BmcRuntimeTrace):
             raise BmcBuildError("runtime_trace must be BmcRuntimeTrace.")
+        if self.model_role is None:
+            object.__setattr__(self, "model_role", self.witness.model_role)
+        elif self.model_role not in _BMC_MODEL_ROLES:
+            raise BmcBuildError("Unsupported replay model_role: %r." % self.model_role)
+        if self.witness.model_role != self.model_role:
+            raise BmcBuildError("replay model_role must match the witness model_role.")
         object.__setattr__(
             self,
             "mismatches",
@@ -2665,11 +4280,14 @@ class BmcReplayResult(_PrettyPrintableMixin):
             >>> BmcReplayResult(trace, BmcRuntimeTrace((), ())).to_canonical()['ok']
             True
         """
-        return {
+        payload = {
             "ok": self.ok,
             "runtime_trace": self.runtime_trace.to_canonical(),
             "mismatches": [item.to_canonical() for item in self.mismatches],
         }
+        if self.model_role is not None:
+            payload["model_role"] = self.model_role
+        return payload
 
 
 class _HandlerCallRecorder:
@@ -2938,6 +4556,129 @@ def _register_recorder(
             runtime.register_abstract_handler(action_path, wrapper)
 
 
+class _SolveBudget:
+    """Track one optional deadline shared by all staged solver checks."""
+
+    def __init__(self, timeout_ms: Optional[int]) -> None:
+        if timeout_ms is not None and (
+            isinstance(timeout_ms, bool)
+            or not isinstance(timeout_ms, int)
+            or timeout_ms <= 0
+        ):
+            raise BmcBuildError("timeout_ms must be a positive integer or None.")
+        self.timeout_ms = timeout_ms
+        self.deadline = (
+            None if timeout_ms is None else time.monotonic() + timeout_ms / 1000.0
+        )
+
+    def remaining_ms(self) -> Optional[int]:
+        if self.deadline is None:
+            return None
+        remaining = int((self.deadline - time.monotonic()) * 1000.0)
+        return remaining if remaining >= 1 else None
+
+
+def _check_with_budget(
+    solver: z3.Solver, budget: _SolveBudget
+) -> Tuple[
+    BmcSolveStatus,
+    Optional[z3.ModelRef],
+    Optional[str],
+    float,
+    bool,
+]:
+    remaining = budget.remaining_ms()
+    # ``timeout_ms=None`` leaves ``deadline`` and ``remaining`` unset, so this
+    # path intentionally calls Z3 without setting a solver timeout.
+    if budget.deadline is not None and remaining is None:
+        return "timeout", None, "deadline_exhausted_before_check", 0.0, False
+    if remaining is not None:
+        solver.set(timeout=remaining)
+    start = time.monotonic()
+    status = solver.check()
+    elapsed_ms = (time.monotonic() - start) * 1000.0
+    if status == z3.sat:
+        return "sat", solver.model(), None, elapsed_ms, True
+    if status == z3.unsat:
+        return "unsat", None, None, elapsed_ms, True
+    reason = solver.reason_unknown() or "unknown"
+    if reason == "timeout":
+        return "timeout", None, reason, elapsed_ms, True
+    return "unknown", None, reason, elapsed_ms, True
+
+
+def _feasibility_check(
+    status: BmcSolveStatus,
+    reason: Optional[str],
+    elapsed_ms: float,
+    check_started: bool = True,
+) -> BmcFeasibilityCheck:
+    if not check_started:
+        return _stage_not_checked()
+    return BmcFeasibilityCheck(
+        status=status,
+        origin="checked",
+        reason=reason,
+        elapsed_ms=elapsed_ms,
+    )
+
+
+def _stage_not_checked() -> BmcFeasibilityCheck:
+    return BmcFeasibilityCheck(status=None, origin="not_checked")
+
+
+def _build_feasibility(
+    kernel: BmcFeasibilityCheck,
+    initialization: BmcFeasibilityCheck,
+    assumptions: BmcFeasibilityCheck,
+    *,
+    infeasible_stage: Optional[str] = None,
+    localization_status: str = "not_needed",
+    refinement_status: str = "not_needed",
+) -> BmcFeasibilityResult:
+    return BmcFeasibilityResult(
+        kernel=kernel,
+        initialization=initialization,
+        assumptions=assumptions,
+        infeasible_stage=infeasible_stage,
+        localization_status=localization_status,
+        refinement_status=refinement_status,
+    )
+
+
+def _make_solve_result(
+    formula: BmcPropertyFormula,
+    *,
+    status: BmcSolveStatus,
+    model: Optional[z3.ModelRef],
+    reason: Optional[str],
+    elapsed_ms: float,
+    timeout_ms: Optional[int],
+    incomplete_status: Optional[BmcSolveStatus],
+    incomplete_model: Optional[z3.ModelRef],
+    incomplete_reason: Optional[str],
+    incomplete_elapsed_ms: Optional[float],
+    diagnostics: Sequence[str],
+    feasibility: BmcFeasibilityResult,
+    started_at: float,
+) -> BmcSolveResult:
+    return BmcSolveResult(
+        formula=formula,
+        status=status,
+        model=model,
+        reason=reason,
+        elapsed_ms=elapsed_ms,
+        timeout_ms=timeout_ms,
+        incomplete_status=incomplete_status,
+        incomplete_model=incomplete_model,
+        incomplete_reason=incomplete_reason,
+        diagnostics=tuple(diagnostics),
+        incomplete_elapsed_ms=incomplete_elapsed_ms,
+        total_elapsed_ms=(time.monotonic() - started_at) * 1000.0,
+        feasibility=feasibility,
+    )
+
+
 def solve_bmc_property(
     formula: BmcPropertyFormula,
     *,
@@ -2946,10 +4687,12 @@ def solve_bmc_property(
 ) -> BmcSolveResult:
     """Solve a compiled BMC property formula.
 
-    The primary status always comes from :attr:`BmcPropertyFormula.solve_formula`.
-    When ``check_incomplete`` is true and the formula has a non-false
-    incomplete-bound observation, the incomplete formula is solved separately
-    and reported without changing the primary status.
+    The primary status comes from :attr:`BmcPropertyFormula.solve_formula`.
+    A primary UNSAT result first checks the admissible scenario formula
+    ``S_assume`` and, when necessary, localizes the failure through ``S_init``
+    and ``K_N`` before exposing a property verdict.  Response suffix checks
+    run only after ``S_assume`` is SAT.  All staged checks share one optional
+    deadline; ``timeout_ms=None`` leaves Z3's timeout unset.
 
     :param formula: Compiled BMC property formula.
     :type formula: pyfcstm.bmc.properties.BmcPropertyFormula
@@ -2975,33 +4718,334 @@ def solve_bmc_property(
     checked = _require_formula(formula)
     if not isinstance(check_incomplete, bool):
         raise BmcBuildError("check_incomplete must be bool.")
-    status, model, reason, elapsed_ms = _solve(checked.solve_formula, timeout_ms)
-    incomplete_status = None
-    incomplete_model = None
-    incomplete_reason = None
+    budget = _SolveBudget(timeout_ms)
+    started_at = time.monotonic()
+    core = checked.core
+    solver = z3.Solver()
+    solver.add(core.domain_formula, core.transition_formula)
+    solver.push()
+    solver.add(core.initial_formula)
+    solver.push()
+    solver.add(core.environment_formula)
+    solver.push()
+    solver.add(checked.objective_formula)
+
+    status, model, reason, elapsed_ms, _ = _check_with_budget(solver, budget)
     diagnostics = list(checked.diagnostics)
-    if check_incomplete and not z3.is_false(checked.incomplete_formula):
-        (
-            incomplete_status,
-            incomplete_model,
-            incomplete_reason,
-            incomplete_elapsed_ms,
-        ) = _solve(checked.incomplete_solve_formula, timeout_ms)
-        diagnostics.append("incomplete_elapsed_ms=%.3f" % incomplete_elapsed_ms)
-    elif not check_incomplete and not z3.is_false(checked.incomplete_formula):
-        incomplete_reason = "incomplete check disabled"
-        diagnostics.append("incomplete_check=disabled")
-    return BmcSolveResult(
-        formula=checked,
+    if status == "sat":
+        feasibility = _inferred_feasibility()
+        return _make_solve_result(
+            checked,
+            status=status,
+            model=model,
+            reason=reason,
+            elapsed_ms=elapsed_ms,
+            timeout_ms=timeout_ms,
+            incomplete_status=None,
+            incomplete_model=None,
+            incomplete_reason=None,
+            incomplete_elapsed_ms=None,
+            diagnostics=diagnostics,
+            feasibility=feasibility,
+            started_at=started_at,
+        )
+    if status in {"unknown", "timeout"}:
+        feasibility = _not_checked_feasibility()
+        diagnostics.append("feasibility_%s:primary" % status)
+        return _make_solve_result(
+            checked,
+            status=status,
+            model=model,
+            reason=reason,
+            elapsed_ms=elapsed_ms,
+            timeout_ms=timeout_ms,
+            incomplete_status=None,
+            incomplete_model=None,
+            incomplete_reason=None,
+            incomplete_elapsed_ms=None,
+            diagnostics=diagnostics,
+            feasibility=feasibility,
+            started_at=started_at,
+        )
+
+    solver.pop()  # Remove the primary objective and retain S_assume.
+    (
+        assumptions_status,
+        assumptions_model,
+        assumptions_reason,
+        assumptions_elapsed,
+        assumptions_started,
+    ) = _check_with_budget(solver, budget)
+    assumptions = _feasibility_check(
+        assumptions_status,
+        assumptions_reason,
+        assumptions_elapsed,
+        assumptions_started,
+    )
+    if not assumptions_started:
+        feasibility = _build_feasibility(
+            _stage_not_checked(),
+            _stage_not_checked(),
+            assumptions,
+            localization_status="not_checked",
+            refinement_status="not_needed",
+        )
+        diagnostics.append(_FEASIBILITY_TIMEOUT_BEFORE_ASSUMPTIONS)
+        return _make_solve_result(
+            checked,
+            status=status,
+            model=None,
+            reason=reason,
+            elapsed_ms=elapsed_ms,
+            timeout_ms=timeout_ms,
+            incomplete_status=None,
+            incomplete_model=None,
+            incomplete_reason=None,
+            incomplete_elapsed_ms=None,
+            diagnostics=diagnostics,
+            feasibility=feasibility,
+            started_at=started_at,
+        )
+    if assumptions_status in {"unknown", "timeout"}:
+        feasibility = _build_feasibility(
+            _stage_not_checked(),
+            _stage_not_checked(),
+            assumptions,
+            localization_status=assumptions_status,
+            refinement_status="not_needed",
+        )
+        diagnostics.append("feasibility_%s:assumptions" % assumptions_status)
+        return _make_solve_result(
+            checked,
+            status=status,
+            model=None,
+            reason=reason,
+            elapsed_ms=elapsed_ms,
+            timeout_ms=timeout_ms,
+            incomplete_status=None,
+            incomplete_model=None,
+            incomplete_reason=None,
+            incomplete_elapsed_ms=None,
+            diagnostics=diagnostics,
+            feasibility=feasibility,
+            started_at=started_at,
+        )
+
+    if assumptions_status == "sat":
+        sat = BmcFeasibilityCheck("sat", "inferred")
+        feasibility = _build_feasibility(
+            sat,
+            sat,
+            assumptions,
+            localization_status="not_needed",
+            refinement_status="not_needed",
+        )
+        incomplete_status = None
+        incomplete_model = None
+        incomplete_reason = None
+        incomplete_elapsed_ms = None
+        if not z3.is_false(checked.incomplete_formula):
+            if check_incomplete:
+                solver.push()
+                solver.add(checked.incomplete_formula)
+                (
+                    incomplete_status,
+                    incomplete_model,
+                    incomplete_reason,
+                    incomplete_elapsed_ms,
+                    incomplete_started,
+                ) = _check_with_budget(solver, budget)
+                solver.pop()
+                if not incomplete_started:
+                    incomplete_status = None
+                    incomplete_model = None
+                    incomplete_reason = None
+                    incomplete_elapsed_ms = None
+                    diagnostics.append(_SUFFIX_TIMEOUT_BEFORE_CHECK)
+                else:
+                    diagnostics.append(
+                        "incomplete_elapsed_ms=%.3f" % incomplete_elapsed_ms
+                    )
+            else:
+                incomplete_reason = "incomplete check disabled"
+                diagnostics.append("incomplete_check=disabled")
+        return _make_solve_result(
+            checked,
+            status=status,
+            model=None,
+            reason=reason,
+            elapsed_ms=elapsed_ms,
+            timeout_ms=timeout_ms,
+            incomplete_status=incomplete_status,
+            incomplete_model=incomplete_model,
+            incomplete_reason=incomplete_reason,
+            incomplete_elapsed_ms=incomplete_elapsed_ms,
+            diagnostics=diagnostics,
+            feasibility=feasibility,
+            started_at=started_at,
+        )
+
+    # S_assume is UNSAT. Locate the first weaker unsatisfiable stage without
+    # running any response suffix query.
+    solver.pop()  # Remove ENV_N and retain S_init.
+    (
+        initialization_status,
+        _,
+        initialization_reason,
+        initialization_elapsed,
+        initialization_started,
+    ) = _check_with_budget(solver, budget)
+    initialization = _feasibility_check(
+        initialization_status,
+        initialization_reason,
+        initialization_elapsed,
+        initialization_started,
+    )
+    if not initialization_started:
+        feasibility = _build_feasibility(
+            _stage_not_checked(),
+            initialization,
+            assumptions,
+            localization_status="not_checked",
+            refinement_status="not_requested",
+        )
+        diagnostics.append(
+            "feasibility_timeout:deadline_exhausted_before_initialization_check"
+        )
+        return _make_solve_result(
+            checked,
+            status=status,
+            model=None,
+            reason=reason,
+            elapsed_ms=elapsed_ms,
+            timeout_ms=timeout_ms,
+            incomplete_status=None,
+            incomplete_model=None,
+            incomplete_reason=None,
+            incomplete_elapsed_ms=None,
+            diagnostics=diagnostics,
+            feasibility=feasibility,
+            started_at=started_at,
+        )
+    if initialization_status in {"unknown", "timeout"}:
+        feasibility = _build_feasibility(
+            _stage_not_checked(),
+            initialization,
+            assumptions,
+            localization_status=initialization_status,
+            refinement_status="not_requested",
+        )
+        diagnostics.append("feasibility_%s:initialization" % initialization_status)
+        return _make_solve_result(
+            checked,
+            status=status,
+            model=None,
+            reason=reason,
+            elapsed_ms=elapsed_ms,
+            timeout_ms=timeout_ms,
+            incomplete_status=None,
+            incomplete_model=None,
+            incomplete_reason=None,
+            incomplete_elapsed_ms=None,
+            diagnostics=diagnostics,
+            feasibility=feasibility,
+            started_at=started_at,
+        )
+
+    if initialization_status == "sat":
+        sat = BmcFeasibilityCheck("sat", "inferred")
+        feasibility = _build_feasibility(
+            sat,
+            initialization,
+            assumptions,
+            infeasible_stage="assumptions",
+            localization_status="complete",
+            refinement_status="not_requested",
+        )
+        return _make_solve_result(
+            checked,
+            status=status,
+            model=None,
+            reason=reason,
+            elapsed_ms=elapsed_ms,
+            timeout_ms=timeout_ms,
+            incomplete_status=None,
+            incomplete_model=None,
+            incomplete_reason=None,
+            incomplete_elapsed_ms=None,
+            diagnostics=diagnostics,
+            feasibility=feasibility,
+            started_at=started_at,
+        )
+
+    solver.pop()  # Remove I_0 and retain K_N.
+    (
+        kernel_status,
+        _,
+        kernel_reason,
+        kernel_elapsed,
+        kernel_started,
+    ) = _check_with_budget(solver, budget)
+    kernel = _feasibility_check(
+        kernel_status, kernel_reason, kernel_elapsed, kernel_started
+    )
+    if not kernel_started:
+        feasibility = _build_feasibility(
+            kernel,
+            initialization,
+            assumptions,
+            localization_status="not_checked",
+            refinement_status="not_requested",
+        )
+        diagnostics.append("feasibility_timeout:deadline_exhausted_before_kernel_check")
+        return _make_solve_result(
+            checked,
+            status=status,
+            model=None,
+            reason=reason,
+            elapsed_ms=elapsed_ms,
+            timeout_ms=timeout_ms,
+            incomplete_status=None,
+            incomplete_model=None,
+            incomplete_reason=None,
+            incomplete_elapsed_ms=None,
+            diagnostics=diagnostics,
+            feasibility=feasibility,
+            started_at=started_at,
+        )
+    if kernel_status in {"unknown", "timeout"}:
+        feasibility = _build_feasibility(
+            kernel,
+            initialization,
+            assumptions,
+            localization_status=kernel_status,
+            refinement_status="not_requested",
+        )
+    else:
+        feasibility = _build_feasibility(
+            kernel,
+            initialization,
+            assumptions,
+            infeasible_stage="kernel" if kernel_status == "unsat" else "initialization",
+            localization_status="complete",
+            refinement_status="not_requested",
+        )
+    if kernel_status in {"unknown", "timeout"}:
+        diagnostics.append("feasibility_%s:kernel" % kernel_status)
+    return _make_solve_result(
+        checked,
         status=status,
-        model=model,
+        model=None,
         reason=reason,
         elapsed_ms=elapsed_ms,
         timeout_ms=timeout_ms,
-        incomplete_status=incomplete_status,
-        incomplete_model=incomplete_model,
-        incomplete_reason=incomplete_reason,
-        diagnostics=tuple(diagnostics),
+        incomplete_status=None,
+        incomplete_model=None,
+        incomplete_reason=None,
+        incomplete_elapsed_ms=None,
+        diagnostics=diagnostics,
+        feasibility=feasibility,
+        started_at=started_at,
     )
 
 
@@ -3347,6 +5391,48 @@ def _initial_metadata(
     }
 
 
+def _decode_witness_trace(
+    formula: BmcPropertyFormula,
+    model: z3.ModelRef,
+    *,
+    event_policy: Optional[BmcEventDecodePolicy],
+    model_role: Optional[str],
+    solver_metadata: Mapping[str, Any],
+    verdict: Optional[Mapping[str, Any]],
+) -> BmcWitnessTrace:
+    checked = _require_formula(formula)
+    checked_model = _require_model(model)
+    if event_policy is None:
+        event_policy = BmcEventDecodePolicy()
+    elif not isinstance(event_policy, BmcEventDecodePolicy):
+        raise BmcBuildError("event_policy must be BmcEventDecodePolicy or None.")
+    frames = tuple(
+        _frame_for_index(checked, checked_model, frame.index)
+        for frame in checked.core.context.domain.frames
+    )
+    steps = tuple(
+        _decode_step(checked, checked_model, step.index, frames, event_policy)
+        for step in checked.core.context.domain.steps
+    )
+    prop = {
+        "kind": checked.kind,
+        "polarity": checked.polarity,
+        "bound": checked.bound,
+        "case_label": checked.case_label,
+        "response_window": checked.response_window,
+    }
+    return BmcWitnessTrace(
+        property=prop,
+        solver=solver_metadata,
+        initial=_initial_metadata(checked, frames),
+        frames=frames,
+        steps=steps,
+        diagnostics=checked.diagnostics,
+        model_role=model_role,
+        verdict=verdict,
+    )
+
+
 def decode_bmc_witness(
     formula: BmcPropertyFormula,
     model: z3.ModelRef,
@@ -3383,39 +5469,139 @@ def decode_bmc_witness(
         >>> decode_bmc_witness(formula, result.model).frames[0].sentinel
         'init'
     """
-    checked = _require_formula(formula)
-    checked_model = _require_model(model)
-    if event_policy is None:
-        event_policy = BmcEventDecodePolicy()
-    elif not isinstance(event_policy, BmcEventDecodePolicy):
-        raise BmcBuildError("event_policy must be BmcEventDecodePolicy or None.")
-    frames = tuple(
-        _frame_for_index(checked, checked_model, frame.index)
-        for frame in checked.core.context.domain.frames
-    )
-    steps = tuple(
-        _decode_step(checked, checked_model, step.index, frames, event_policy)
-        for step in checked.core.context.domain.steps
-    )
     solver = {
         "status": "sat",
         "reason": None,
         "incomplete_status": None,
     }
-    prop = {
-        "kind": checked.kind,
-        "polarity": checked.polarity,
-        "bound": checked.bound,
-        "case_label": checked.case_label,
-        "response_window": checked.response_window,
+    return _decode_witness_trace(
+        formula,
+        model,
+        event_policy=event_policy,
+        model_role=None,
+        solver_metadata=solver,
+        verdict=None,
+    )
+
+
+def decode_bmc_result_trace(
+    result: BmcSolveResult,
+    *,
+    source: str = "primary",
+    event_policy: Optional[BmcEventDecodePolicy] = None,
+) -> BmcWitnessTrace:
+    """Decode one model channel from a structured BMC solve result.
+
+    :param result: Structured result returned by :func:`solve_bmc_property`.
+    :type result: BmcSolveResult
+    :param source: Model channel, either ``"primary"`` or
+        ``"incomplete_suffix"``, defaults to ``"primary"``.
+    :type source: str, optional
+    :param event_policy: Optional sparse event decode policy, defaults to
+        ``None``.
+    :type event_policy: BmcEventDecodePolicy, optional
+    :return: Role-aware witness trace carrying the selected model role.
+    :rtype: BmcWitnessTrace
+    :raises pyfcstm.bmc.errors.BmcBuildError: If the requested model channel is
+        unavailable or the result is not internally consistent.
+
+    Example::
+
+        >>> from pyfcstm.bmc import BmcEngine, build_bmc_core_formula, compile_bmc_property
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> model = load_state_machine_from_text('state Root;')
+        >>> formula = compile_bmc_property(build_bmc_core_formula(BmcEngine(model).prepare('check reach <= 1: active("Root");')))
+        >>> trace = decode_bmc_result_trace(solve_bmc_property(formula))
+        >>> trace.model_role
+        'primary_witness'
+    """
+    if not isinstance(result, BmcSolveResult):
+        raise BmcBuildError("result must be BmcSolveResult.")
+    if source not in {"primary", "incomplete_suffix"}:
+        raise BmcBuildError(
+            "source must be primary or incomplete_suffix, got %r." % source
+        )
+    if source == "primary":
+        if result.status != "sat" or result.model is None:
+            raise BmcBuildError(
+                "primary model channel requires a primary SAT result with a model."
+            )
+        role = (
+            "primary_witness"
+            if result.polarity == "witness"
+            else "primary_counterexample"
+        )
+        verdict = {
+            "property_satisfied": result.property_satisfied,
+            "witness_found": result.witness_found,
+            "counterexample_found": result.counterexample_found,
+            "incomplete": result.incomplete,
+            "outcome": result.outcome,
+        }
+        solver_metadata = {
+            "model_status": "sat",
+            "primary_status": result.status,
+            "incomplete_status": result.incomplete_status,
+            "primary_reason": result.reason,
+            "incomplete_reason": result.incomplete_reason,
+            "primary_elapsed_ms": result.elapsed_ms,
+            "incomplete_elapsed_ms": result.incomplete_elapsed_ms,
+        }
+        return _decode_witness_trace(
+            result.formula,
+            result.model,
+            event_policy=event_policy,
+            model_role=role,
+            solver_metadata=solver_metadata,
+            verdict=verdict,
+        )
+
+    if result.kind != "response":
+        raise BmcBuildError(
+            "incomplete_suffix model channel requires a response result."
+        )
+    if result.status != "unsat":
+        raise BmcBuildError("incomplete_suffix model channel requires primary UNSAT.")
+    feasibility = result._validated_feasibility()
+    if feasibility.scenario_infeasible:
+        raise BmcBuildError(
+            "scenario-infeasible results cannot expose an incomplete suffix model."
+        )
+    if feasibility.assumptions.status != "sat":
+        raise BmcBuildError(
+            "incomplete_suffix model channel requires SAT assumptions feasibility."
+        )
+    if not _has_nonempty_incomplete_formula(result.formula):
+        raise BmcBuildError(
+            "incomplete_suffix model channel requires a non-empty suffix formula."
+        )
+    if result.incomplete_status != "sat" or result.incomplete_model is None:
+        raise BmcBuildError(
+            "incomplete_suffix model channel requires a SAT suffix result."
+        )
+    solver_metadata = {
+        "model_status": "sat",
+        "primary_status": result.status,
+        "incomplete_status": result.incomplete_status,
+        "primary_reason": result.reason,
+        "incomplete_reason": result.incomplete_reason,
+        "primary_elapsed_ms": result.elapsed_ms,
+        "incomplete_elapsed_ms": result.incomplete_elapsed_ms,
     }
-    return BmcWitnessTrace(
-        property=prop,
-        solver=solver,
-        initial=_initial_metadata(checked, frames),
-        frames=frames,
-        steps=steps,
-        diagnostics=checked.diagnostics,
+    verdict = {
+        "property_satisfied": None,
+        "witness_found": False,
+        "counterexample_found": False,
+        "incomplete": True,
+        "outcome": "incomplete",
+    }
+    return _decode_witness_trace(
+        result.formula,
+        result.incomplete_model,
+        event_policy=event_policy,
+        model_role="incomplete_suffix",
+        solver_metadata=solver_metadata,
+        verdict=verdict,
     )
 
 
@@ -3881,6 +6067,9 @@ def replay_bmc_witness(
 __all__ = [
     "BmcSolveStatus",
     "BmcEventDecodePolicy",
+    "BmcFeasibilityCheck",
+    "BmcFeasibilityRefinementCheck",
+    "BmcFeasibilityResult",
     "BmcSolveResult",
     "BmcWitnessEvent",
     "BmcWitnessCallRecord",
@@ -3893,6 +6082,7 @@ __all__ = [
     "BmcReplayMismatch",
     "BmcReplayResult",
     "solve_bmc_property",
+    "decode_bmc_result_trace",
     "decode_bmc_witness",
     "replay_bmc_witness",
 ]

@@ -1295,6 +1295,22 @@ def test_feasibility_result_allows_unlocalized_assumptions_unsat() -> None:
     assert result.localization_status == "not_checked"
 
 
+def test_feasibility_result_allows_inconclusive_prefix_before_assumptions_unsat() -> (
+    None
+):
+    """An independent assumptions UNSAT proof may follow an inconclusive prefix."""
+    inconclusive = BmcFeasibilityCheck(
+        "unknown", "checked", reason="solver returned unknown", elapsed_ms=1.0
+    )
+    assumptions = BmcFeasibilityCheck("unsat", "checked", elapsed_ms=1.0)
+
+    result = BmcFeasibilityResult(inconclusive, inconclusive, assumptions)
+
+    assert result.scenario_infeasible is True
+    assert result.infeasible_stage is None
+    assert result.localization_status == "not_checked"
+
+
 @pytest.mark.parametrize(
     ("kernel", "initialization", "assumptions"),
     [
@@ -2450,6 +2466,19 @@ def test_solve_result_rejects_unchecked_response_without_cause() -> None:
     )
     assert witness_module._solve_presentation(result).response_horizon == "NOT CHECKED"
     assert "shared timeout budget was exhausted" in str(result)
+
+
+def test_solve_result_rejects_invalid_response_feasibility_type() -> None:
+    """Response suffix validation preserves the public type-error contract."""
+    _, formula = _compile(
+        _VERDICT_DSL,
+        'check response <= 1: trigger event("Root.Go", current) '
+        '-> within 2 active("Root.B");',
+    )
+    with pytest.raises(
+        BmcBuildError, match="feasibility must be BmcFeasibilityResult or None"
+    ):
+        BmcSolveResult(formula, "unsat", feasibility=object())
 
 
 def test_witness_trace_canonical_payload_has_no_version_field() -> None:

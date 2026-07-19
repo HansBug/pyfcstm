@@ -2791,6 +2791,10 @@ class BmcSolveResult(_PrettyPrintableMixin):
             "diagnostics",
             _coerce_public_sequence("diagnostics", self.diagnostics, str, "strings"),
         )
+        if self.feasibility is not None and not isinstance(
+            self.feasibility, BmcFeasibilityResult
+        ):
+            raise BmcBuildError("feasibility must be BmcFeasibilityResult or None.")
         if self.status == "sat" and self.model is None:
             raise BmcBuildError("model is required when status is sat.")
         if self.status != "sat" and self.model is not None:

@@ -1609,7 +1609,7 @@ def _solve_presentation(result: "BmcSolveResult") -> _BmcSolvePresentation:
     return _BmcSolvePresentation(
         headline=headlines[outcome],
         scenario=_solve_scenario(result, outcome),
-        property_verdict=_solve_property_verdict(outcome),
+        property_verdict=result.property_verdict,
         primary_search="%s = %s" % (_solve_search_kind(result), result.status.upper()),
         response_horizon=response_horizon,
         conclusion=_solve_conclusion(result, outcome, response_horizon),
@@ -3006,6 +3006,37 @@ class BmcSolveResult(_PrettyPrintableMixin):
         if self.polarity == "witness":
             return "no_witness"
         return "property_satisfied"
+
+    @property
+    def property_verdict(self) -> str:
+        """Return the canonical human-readable bounded property verdict.
+
+        This is the same semantic line used by :meth:`to_text`, :func:`str`,
+        and the human-readable ``pyfcstm bmc`` report.  It deliberately keeps
+        evidence form in parentheses so callers can distinguish a missing
+        witness from a concrete counterexample without interpreting raw SAT
+        or UNSAT status.
+
+        :return: Canonical bounded property verdict text.
+        :rtype: str
+
+        Example::
+
+            >>> from pyfcstm.bmc import BmcEngine, build_bmc_core_formula, compile_bmc_property
+            >>> from pyfcstm.bmc.witness import solve_bmc_property
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text("state Root;")
+            >>> formula = compile_bmc_property(
+            ...     build_bmc_core_formula(
+            ...         BmcEngine(model).prepare(
+            ...             'check reach <= 1: active("Root");'
+            ...         )
+            ...     )
+            ... )
+            >>> solve_bmc_property(formula).property_verdict
+            'SATISFIED WITHIN BOUND (WITNESS FOUND)'
+        """
+        return _solve_property_verdict(self.outcome)
 
     def to_canonical(self) -> _CanonicalDict:
         """Return a JSON-stable solve summary.

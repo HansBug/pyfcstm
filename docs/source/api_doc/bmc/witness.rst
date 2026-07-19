@@ -43,7 +43,7 @@ BmcSolveResult
 -----------------------------------------------------
 
 .. autoclass:: BmcSolveResult
-    :members: __post_init__,kind,polarity,incomplete,witness_found,counterexample_found,property_satisfied,outcome,to_canonical,available_model_roles,pretty_print,to_text,__str__,formula,status,model,reason,elapsed_ms,timeout_ms,incomplete_status,incomplete_model,incomplete_reason,diagnostics,incomplete_elapsed_ms,total_elapsed_ms,feasibility
+    :members: __post_init__,kind,polarity,incomplete,witness_found,counterexample_found,property_satisfied,outcome,property_verdict,to_canonical,available_model_roles,pretty_print,to_text,__str__,formula,status,model,reason,elapsed_ms,timeout_ms,incomplete_status,incomplete_model,incomplete_reason,diagnostics,incomplete_elapsed_ms,total_elapsed_ms,feasibility
 
 
 BmcEventDecodePolicy

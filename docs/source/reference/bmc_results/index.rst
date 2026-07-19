@@ -380,6 +380,11 @@ before the canonical field table, so a Python caller can immediately see the
 polarity, bounded conclusion, scenario status, response horizon, and available
 model role without interpreting raw ``SAT``/``UNSAT`` fields:
 
+For programmatic human-facing reports, ``result.property_verdict`` returns the
+same canonical ``Property verdict`` line without parsing ``str(result)``.  It
+is derived from ``result.outcome`` and preserves the evidence distinction in
+parentheses; it is presentation text, not an additional JSON payload field.
+
 .. code-block:: text
 
    BmcSolveResult: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND

@@ -14,6 +14,7 @@ recreate the same package contents.
 
 import argparse
 import hashlib
+from http.client import IncompleteRead
 import json
 import os
 import shutil
@@ -88,6 +89,8 @@ def download_locked(url: str, expected_sha256: str) -> bytes:
         error or remains unavailable after the retry budget.
     :raises urllib.error.URLError: If the source cannot be reached after the
         retry budget.
+    :raises http.client.IncompleteRead: If the source repeatedly closes the
+        response before the locked payload is complete.
     :raises TimeoutError: If the source repeatedly exceeds the network timeout.
     :raises OSError: If the remote connection repeatedly closes unexpectedly.
     :raises ValueError: If the downloaded digest differs from the lock.
@@ -105,9 +108,10 @@ def download_locked(url: str, expected_sha256: str) -> bytes:
                 or attempt + 1 >= _DOWNLOAD_ATTEMPTS
             ):
                 raise
-        except (urllib.error.URLError, TimeoutError, OSError):
+        except (urllib.error.URLError, TimeoutError, OSError, IncompleteRead):
             # URLError: DNS/TLS/network failure; TimeoutError: socket timeout;
-            # OSError: the peer closed/reset the connection mid-request.
+            # OSError: the peer closed/reset the connection; IncompleteRead:
+            # response.read() received only part of the HTTP body.
             if attempt + 1 >= _DOWNLOAD_ATTEMPTS:
                 raise
         time.sleep(_DOWNLOAD_BACKOFF_SECONDS * (2**attempt))
@@ -140,6 +144,7 @@ def ensure_js_dependencies() -> None:
         and (RESVG_PACKAGE_DIR / "index.min.js").is_file()
         and (RESVG_PACKAGE_DIR / "index_bg.wasm").is_file()
         and (RESVG_PACKAGE_DIR / "package.json").is_file()
+        and (JSFCSTM_DIR / "node_modules" / "esbuild").is_dir()
     ):
         return
     subprocess.run(
@@ -190,6 +195,33 @@ def elk_tree_sha256() -> str:
         digest.update(data)
         digest.update(b"\0")
     return digest.hexdigest()
+
+
+def validate_esbuild_provenance(lock: Dict[str, object]) -> None:
+    """Require the exact lockfile esbuild package used by the builder."""
+    renderer = lock.get("renderer")
+    if not isinstance(renderer, dict):
+        raise ValueError("diagram asset lock lacks renderer provenance")
+    expected_version = renderer.get("esbuildVersion")
+    if not isinstance(expected_version, str) or not expected_version:
+        raise ValueError("diagram asset lock lacks esbuildVersion")
+    try:
+        package_lock = json.loads(JSFCSTM_LOCK_PATH.read_text(encoding="utf-8"))
+        root_package = package_lock["packages"][""]
+        package = package_lock["packages"]["node_modules/esbuild"]
+    except (KeyError, OSError, TypeError, ValueError) as err:
+        # KeyError/TypeError/ValueError: package-lock.json has no valid local
+        # esbuild entry; OSError: the tracked lock file cannot be read.
+        raise ValueError("jsfcstm package-lock lacks a valid esbuild entry") from err
+    dev_dependencies = root_package.get("devDependencies")
+    if not isinstance(dev_dependencies, dict):
+        raise ValueError("jsfcstm package-lock lacks devDependencies")
+    if dev_dependencies.get("esbuild") != expected_version:
+        raise ValueError("jsfcstm esbuild devDependency differs from asset lock")
+    if package.get("version") != expected_version:
+        raise ValueError("installed esbuild version differs from asset lock")
+    if not package.get("resolved") or not package.get("integrity"):
+        raise ValueError("jsfcstm esbuild entry lacks resolved/integrity provenance")
 
 
 def validate_elk_provenance(lock: Dict[str, object]) -> None:
@@ -327,8 +359,8 @@ def build_renderer(
     metafile = output.with_suffix(".meta.json")
     command = [
         _node_command("npx"),
-        "--yes",
-        "esbuild@%s" % esbuild_version,
+        "--no-install",
+        "esbuild",
         str(ENTRY_PATH),
         "--bundle",
         "--format=iife",
@@ -498,7 +530,9 @@ def _check_download_retry() -> None:
     def flaky_urlopen(_url, timeout):
         assert timeout == 120
         attempts.append(timeout)
-        if len(attempts) < 3:
+        if len(attempts) == 1:
+            raise IncompleteRead(b"partial", 10)
+        if len(attempts) == 2:
             raise OSError("simulated remote disconnect")
         return Response()
 
@@ -726,6 +760,7 @@ def build_assets() -> None:
     if not esbuild_version:
         raise ValueError("renderer lock must pin esbuildVersion")
     ensure_js_dependencies()
+    validate_esbuild_provenance(lock)
     validate_elk_provenance(lock)
     resvg_package = validate_resvg_provenance(lock)
     with tempfile.TemporaryDirectory(
@@ -808,6 +843,7 @@ def main(argv=None) -> int:
         parser.error("--clean and --check cannot be combined")
     if args.check:
         _check_metafile_determinism()
+        validate_esbuild_provenance(read_lock())
         _check_clean_symlink_safety()
         _check_font_path_safety()
         _check_download_retry()

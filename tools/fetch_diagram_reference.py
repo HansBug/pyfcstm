@@ -38,6 +38,14 @@ def _safe_extract(data: bytes, destination: Path) -> None:
             with tarfile.open(stream.name, mode="r:gz") as archive:
                 root = destination.resolve()
                 for member in archive.getmembers():
+                    if member.issym() or member.islnk():
+                        raise RuntimeError(
+                            "diagram reference archive contains a link member"
+                        )
+                    if not (member.isdir() or member.isfile()):
+                        raise RuntimeError(
+                            "diagram reference archive contains an unsupported member"
+                        )
                     candidate = (destination / member.name).resolve()
                     if root != candidate and root not in candidate.parents:
                         raise RuntimeError(

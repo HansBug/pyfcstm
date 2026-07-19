@@ -20,10 +20,13 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 from xml.etree import ElementTree as ET
 
-from pyfcstm.diagram import DiagramAssetEngine
-
-
 ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from pyfcstm.diagram import DiagramAssetEngine  # noqa: E402
+
+
 DEFAULT_CORPORA = (
     ROOT / "tools" / "diagram_assets" / "corpus" / "canonical-arrows.json",
     ROOT / "tools" / "diagram_assets" / "corpus" / "shared-layouts.json",

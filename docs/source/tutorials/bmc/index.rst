@@ -110,8 +110,11 @@ allowed trace containing the forbidden condition. Consequently:
 * UNSAT means no such counterexample exists in the encoded prefix, so the
   property **does** hold within this bound.
 
-This polarity mapping is why users should read ``PROPERTY HOLDS`` or
-``PROPERTY DOES NOT HOLD`` before reading the solver status.
+This polarity mapping is why users should read the polarity-aware headline
+before reading the solver status. ``WITNESS FOUND`` means that an existential
+search found one execution; it is not a claim that every execution satisfies
+the predicate. ``PROPERTY GUARANTEED`` is reserved for a counterexample search
+that found no counterexample in the complete bounded horizon.
 
 3. Turn bound 2 into frames and steps
 -------------------------------------
@@ -176,8 +179,11 @@ The live timing value varies, but the structure is stable:
 
 .. code-block:: text
 
-   BMC forbid <= 2: PROPERTY DOES NOT HOLD
-   A counterexample violating the bounded property was found.
+   BMC forbid <= 2: PROPERTY DOES NOT HOLD WITHIN BOUND; COUNTEREXAMPLE FOUND
+   Scenario: FEASIBLE
+   Property verdict: NOT SATISFIED WITHIN BOUND (COUNTEREXAMPLE FOUND)
+   Primary search: COUNTEREXAMPLE = SAT
+   Conclusion: At least one admissible execution violates the forbid property within 2 macro-steps.
 
    Solver: SAT in ... ms
    Replay: verified (3 frames, 2 steps).
@@ -188,7 +194,8 @@ The live timing value varies, but the structure is stable:
 
 Interpret the lines in order:
 
-1. ``PROPERTY DOES NOT HOLD`` is the user-facing conclusion.
+1. ``PROPERTY DOES NOT HOLD WITHIN BOUND; COUNTEREXAMPLE FOUND`` is the
+   user-facing conclusion.
 2. ``SAT`` says the counterexample objective has a satisfying assignment.
 3. ``3 frames, 2 steps`` confirms the bound-two horizon.
 4. ``Replay: verified`` says the decoded event sequence reproduced the public
@@ -229,8 +236,11 @@ The result changes:
 
 .. code-block:: text
 
-   BMC forbid <= 2: PROPERTY HOLDS
-   No counterexample was found within the bound.
+   BMC forbid <= 2: PROPERTY GUARANTEED WITHIN BOUND; NO COUNTEREXAMPLE
+   Scenario: FEASIBLE
+   Property verdict: SATISFIED WITHIN BOUND (NO COUNTEREXAMPLE)
+   Primary search: COUNTEREXAMPLE = UNSAT
+   Conclusion: Every admissible execution within 2 macro-steps satisfies the forbid property.
 
    Solver: UNSAT in ... ms
 
@@ -322,8 +332,8 @@ You should now be able to distinguish these pairs:
 * **frame / step**: one snapshot / the macro-step relation between snapshots;
 * **property / objective**: the user claim / the formula whose satisfying model
   the solver searches for;
-* **SAT / property holds**: a formula has a model / a polarity-aware conclusion
-  that may be true or false for SAT;
+* **SAT / polarity-aware conclusion**: a formula has a model / the conclusion
+  depends on whether the query searches for a witness or a counterexample;
 * **witness / counterexample**: any decoded SAT trace / a witness that disproves
   a counterexample-polarity property;
 * **decode / replay**: project solver values into a trace / execute that trace

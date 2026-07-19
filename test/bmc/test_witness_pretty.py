@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 
 import pytest
+import z3
 from hbutils.testing import TextAligner
 
 import pyfcstm.bmc.witness as witness_module
@@ -15,6 +16,8 @@ from pyfcstm.bmc import (
     compile_bmc_property,
 )
 from pyfcstm.bmc.witness import (
+    BmcFeasibilityCheck,
+    BmcFeasibilityResult,
     BmcEventDecodePolicy,
     BmcReplayMismatch,
     BmcReplayResult,
@@ -27,6 +30,7 @@ from pyfcstm.bmc.witness import (
     BmcWitnessFrame,
     BmcWitnessStep,
     BmcWitnessTrace,
+    solve_bmc_property,
 )
 from pyfcstm.model import load_state_machine_from_text
 
@@ -216,6 +220,42 @@ def _sample_formula():
     state_machine = load_state_machine_from_text("state Root;")
     context = BmcEngine(state_machine).prepare('check reach <= 1: active("Root");')
     return compile_bmc_property(build_bmc_core_formula(context))
+
+
+def _sample_counterexample_formula():
+    """Compile a counterexample-polarity formula for summary tests."""
+    state_machine = load_state_machine_from_text("state Root;")
+    context = BmcEngine(state_machine).prepare('check forbid <= 1: active("Root");')
+    return compile_bmc_property(build_bmc_core_formula(context))
+
+
+def _sample_response_formula():
+    """Compile a response formula with a non-empty suffix horizon."""
+    state_machine = load_state_machine_from_text("state Root;")
+    context = BmcEngine(state_machine).prepare(
+        "check response <= 1: trigger true -> within 2 false;"
+    )
+    return compile_bmc_property(build_bmc_core_formula(context))
+
+
+def _empty_sat_model():
+    """Build a minimal Z3 model for presentation-only result objects."""
+    solver = z3.Solver()
+    solver.add(z3.BoolVal(True))
+    assert solver.check() == z3.sat
+    return solver.model()
+
+
+def _feasible_evidence():
+    """Build checked SAT evidence for direct result presentation tests."""
+    inferred = BmcFeasibilityCheck("sat", "inferred")
+    assumptions = BmcFeasibilityCheck("sat", "checked", elapsed_ms=1.0)
+    return BmcFeasibilityResult(
+        inferred,
+        inferred,
+        assumptions,
+        localization_status="not_needed",
+    )
 
 
 def test_witness_trace_default_output_is_single_frame_table() -> None:
@@ -519,25 +559,29 @@ def test_runtime_trace_blank_step_via_is_golden_pinned() -> None:
 
 def test_public_non_trace_objects_are_field_value_golden_pinned() -> None:
     """Every public witness/replay record type has exact standalone output."""
-    expected_solve = """
+    expected_solve_details = """
     BmcSolveResult
-    field                 value
-    kind                  reach
-    polarity              witness
-    status                unknown
-    property_satisfied    -
-    witness_found         false
-    counterexample_found  false
-    incomplete            true
-    outcome               unknown
-    reason                because
-    elapsed_ms            1.25
-    timeout_ms            10
-    has_model             false
-    incomplete_status     unknown
-    incomplete_reason     nope
-    has_incomplete_model  false
-    diagnostics           diag
+    field                  value
+    kind                   reach
+    polarity               witness
+    status                 unknown
+    property_satisfied     -
+    witness_found          false
+    counterexample_found   false
+    incomplete             true
+    outcome                unknown
+    reason                 because
+    elapsed_ms             1.25
+    timeout_ms             10
+    has_model              false
+    incomplete_status      -
+    incomplete_reason      -
+    incomplete_elapsed_ms  -
+    has_incomplete_model   false
+    total_elapsed_ms       1.25
+    feasibility            assumptions=elapsed_ms=-, origin=not_checked, reason=-, status=-, infeasible_stage=-, initialization=elapsed_ms=-, origin=not_checked, reason=-, status=-, kernel=elapsed_ms=-, origin=not_checked, reason=-, status=-, localization_status=not_checked, refinement_checks=-, refinement_reason=-, refinement_status=not_needed
+    available_model_roles  -
+    diagnostics            diag
     """
     expected_event = """
     BmcWitnessEvent
@@ -594,18 +638,30 @@ def test_public_non_trace_objects_are_field_value_golden_pinned() -> None:
         delta              false
     """
 
-    _assert_text_equal(
-        expected_solve,
-        BmcSolveResult(
-            _sample_formula(),
-            "unknown",
-            reason="because",
-            elapsed_ms=1.25,
-            timeout_ms=10,
-            incomplete_status="unknown",
-            incomplete_reason="nope",
-            diagnostics=("diag",),
-        ).to_text(tablefmt="plain"),
+    solve_result = BmcSolveResult(
+        _sample_formula(),
+        "unknown",
+        reason="because",
+        elapsed_ms=1.25,
+        timeout_ms=10,
+        diagnostics=("diag",),
+    )
+    expected_solve = """
+    BmcSolveResult: PROPERTY INCONCLUSIVE; PRIMARY CHECK UNKNOWN
+    Scenario: NOT CHECKED
+    Property verdict: INCONCLUSIVE (PRIMARY CHECK UNKNOWN)
+    Semantic interpretation: The primary objective solver returned unknown; no property conclusion is available.
+    Primary search: WITNESS = UNKNOWN
+    Conclusion: The primary witness search returned unknown; no property verdict is available.
+    Evidence:
+      Primary reason: because
+      Model evidence: no SAT model available.
+
+    Details:
+    """ + expected_solve_details.lstrip()
+    _assert_text_equal(expected_solve, solve_result.to_text(tablefmt="plain"))
+    assert str(solve_result).startswith(
+        "BmcSolveResult: PROPERTY INCONCLUSIVE; PRIMARY CHECK UNKNOWN\n"
     )
     _assert_text_equal(
         expected_event,
@@ -638,6 +694,345 @@ def test_public_non_trace_objects_are_field_value_golden_pinned() -> None:
         expected_runtime_step,
         BmcRuntimeStep(0, ("A",), ("A",), (), ()).to_text(tablefmt="plain"),
     )
+
+
+@pytest.mark.parametrize(
+    ("result", "fragments"),
+    [
+        (
+            lambda: solve_bmc_property(_sample_formula()),
+            (
+                "BmcSolveResult: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND",
+                "Scenario: FEASIBLE",
+                "Property verdict: SATISFIED WITHIN BOUND (WITNESS FOUND)",
+                "Semantic interpretation: A satisfying witness execution exists within the bound; this is existential evidence, not a universal guarantee.",
+                "Primary search: WITNESS = SAT",
+                "Model role: PRIMARY WITNESS",
+                "Model evidence: SAT model available.",
+            ),
+        ),
+        (
+            lambda: BmcSolveResult(
+                _sample_formula(), "unsat", feasibility=_feasible_evidence()
+            ),
+            (
+                "BmcSolveResult: GOAL UNREALIZABLE WITHIN BOUND; NO WITNESS",
+                "Property verdict: NOT SATISFIED WITHIN BOUND (NO WITNESS)",
+                "Semantic interpretation: The witness objective is unsatisfiable over the feasible bounded scenario; no satisfying execution exists within the bound.",
+                "Primary search: WITNESS = UNSAT",
+                "No admissible execution satisfies the reach objective",
+                "Model evidence: no SAT model available.",
+            ),
+        ),
+        (
+            lambda: BmcSolveResult(
+                _sample_counterexample_formula(),
+                "sat",
+                model=_empty_sat_model(),
+            ),
+            (
+                "BmcSolveResult: PROPERTY DOES NOT HOLD WITHIN BOUND; COUNTEREXAMPLE FOUND",
+                "Property verdict: NOT SATISFIED WITHIN BOUND (COUNTEREXAMPLE FOUND)",
+                "Semantic interpretation: A counterexample execution exists within the bound; the property is not satisfied there.",
+                "Primary search: COUNTEREXAMPLE = SAT",
+                "Model role: PRIMARY COUNTEREXAMPLE",
+            ),
+        ),
+        (
+            lambda: BmcSolveResult(
+                _sample_counterexample_formula(),
+                "unsat",
+                feasibility=_feasible_evidence(),
+            ),
+            (
+                "BmcSolveResult: PROPERTY GUARANTEED WITHIN BOUND; NO COUNTEREXAMPLE",
+                "Property verdict: SATISFIED WITHIN BOUND (NO COUNTEREXAMPLE)",
+                "Semantic interpretation: The counterexample objective is unsatisfiable over the feasible bounded scenario; every admissible execution within the bound satisfies the property.",
+                "Primary search: COUNTEREXAMPLE = UNSAT",
+                "Every admissible execution within 1 macro-step satisfies the forbid property.",
+            ),
+        ),
+        (
+            lambda: BmcSolveResult(
+                _sample_counterexample_formula(),
+                "unsat",
+                feasibility=BmcFeasibilityResult(
+                    BmcFeasibilityCheck("sat", "checked", elapsed_ms=1.0),
+                    BmcFeasibilityCheck("sat", "checked", elapsed_ms=1.0),
+                    BmcFeasibilityCheck("unsat", "checked", elapsed_ms=1.0),
+                    infeasible_stage="assumptions",
+                    localization_status="complete",
+                ),
+            ),
+            (
+                "BmcSolveResult: SCENARIO INFEASIBLE; PROPERTY NOT EVALUATED",
+                "Scenario: INFEASIBLE",
+                "Property verdict: NOT EVALUATED (SCENARIO INFEASIBLE)",
+                "Semantic interpretation: The scenario constraints are unsatisfiable; no admissible execution exists, so the property was not evaluated.",
+                "Failure boundary: ASSUMPTIONS",
+                "property was not evaluated",
+            ),
+        ),
+        (
+            lambda: BmcSolveResult(
+                _sample_response_formula(),
+                "unsat",
+                incomplete_status="unsat",
+                incomplete_elapsed_ms=1.0,
+                feasibility=_feasible_evidence(),
+            ),
+            (
+                "BmcSolveResult: PROPERTY GUARANTEED WITHIN BOUND; NO COUNTEREXAMPLE",
+                "Property verdict: SATISFIED WITHIN BOUND (NO COUNTEREXAMPLE)",
+                "Semantic interpretation: The counterexample objective is unsatisfiable over the feasible bounded scenario; every admissible execution within the bound satisfies the property.",
+                "Response horizon: CLOSED",
+                "The response horizon check found no open obligation",
+            ),
+        ),
+        (
+            lambda: BmcSolveResult(
+                _sample_response_formula(),
+                "unsat",
+                incomplete_status="sat",
+                incomplete_model=_empty_sat_model(),
+                incomplete_elapsed_ms=1.0,
+                feasibility=_feasible_evidence(),
+            ),
+            (
+                "BmcSolveResult: PROPERTY INCONCLUSIVE; RESPONSE HORIZON INCOMPLETE",
+                "Property verdict: INCONCLUSIVE (RESPONSE HORIZON INCOMPLETE)",
+                "Semantic interpretation: A feasible prefix leaves a response obligation beyond the bound; neither satisfaction nor violation can be established.",
+                "Response horizon: OPEN",
+                "Horizon reason: response obligation remains open beyond the current bounded horizon.",
+                "Model role: INCOMPLETE SUFFIX",
+                "Model evidence: SAT suffix model available.",
+            ),
+        ),
+        (
+            lambda: BmcSolveResult(
+                _sample_formula(),
+                "unsat",
+                feasibility=BmcFeasibilityResult(
+                    BmcFeasibilityCheck("unsat", "checked", elapsed_ms=1.0),
+                    BmcFeasibilityCheck("unsat", "checked", elapsed_ms=1.0),
+                    BmcFeasibilityCheck("unsat", "checked", elapsed_ms=1.0),
+                    localization_status="not_checked",
+                    refinement_status="not_requested",
+                ),
+                diagnostics=("feasibility_timeout:assumptions",),
+            ),
+            (
+                "BmcSolveResult: SCENARIO INFEASIBLE; PROPERTY NOT EVALUATED",
+                "Property verdict: NOT EVALUATED (SCENARIO INFEASIBLE)",
+                "Failure boundary: NOT LOCALIZED",
+                "Localization: NOT_CHECKED (feasibility_timeout:assumptions)",
+            ),
+        ),
+        (
+            lambda: BmcSolveResult(
+                _sample_formula(),
+                "unsat",
+                feasibility=BmcFeasibilityResult(
+                    BmcFeasibilityCheck(
+                        "unknown", "checked", reason="kernel unknown", elapsed_ms=1.0
+                    ),
+                    BmcFeasibilityCheck(
+                        "unknown",
+                        "checked",
+                        reason="initialization unknown",
+                        elapsed_ms=1.0,
+                    ),
+                    BmcFeasibilityCheck(
+                        "unknown",
+                        "checked",
+                        reason="assumptions unknown",
+                        elapsed_ms=1.0,
+                    ),
+                    localization_status="unknown",
+                ),
+            ),
+            (
+                "BmcSolveResult: SCENARIO FEASIBILITY UNKNOWN; PROPERTY NOT EVALUATED",
+                "Scenario: UNKNOWN",
+                "Property verdict: NOT EVALUATED (SCENARIO FEASIBILITY UNKNOWN)",
+                "Semantic interpretation: Scenario feasibility is unknown; the primary UNSAT result cannot establish a property conclusion.",
+                "primary UNSAT result cannot be interpreted as a property verdict",
+                "Feasibility stage: ASSUMPTIONS",
+                "Feasibility status: UNKNOWN",
+                "Feasibility reason: assumptions unknown",
+            ),
+        ),
+        (
+            lambda: BmcSolveResult(
+                _sample_formula(),
+                "unsat",
+                feasibility=BmcFeasibilityResult(
+                    BmcFeasibilityCheck(
+                        "timeout", "checked", reason="kernel timeout", elapsed_ms=1.0
+                    ),
+                    BmcFeasibilityCheck(
+                        "timeout",
+                        "checked",
+                        reason="initialization timeout",
+                        elapsed_ms=1.0,
+                    ),
+                    BmcFeasibilityCheck(
+                        "timeout",
+                        "checked",
+                        reason="assumptions timeout",
+                        elapsed_ms=1.0,
+                    ),
+                    localization_status="timeout",
+                ),
+            ),
+            (
+                "BmcSolveResult: SCENARIO FEASIBILITY TIMED OUT; PROPERTY NOT EVALUATED",
+                "Scenario: TIMED OUT",
+                "Property verdict: NOT EVALUATED (SCENARIO FEASIBILITY TIMED OUT)",
+                "Semantic interpretation: Scenario feasibility was not resolved because the feasibility check timed out; the primary UNSAT result cannot establish a property conclusion.",
+                "Scenario feasibility timed out",
+                "Feasibility stage: ASSUMPTIONS",
+                "Feasibility status: TIMED OUT",
+                "Feasibility reason: assumptions timeout",
+            ),
+        ),
+        (
+            lambda: BmcSolveResult(
+                _sample_formula(),
+                "timeout",
+                reason="primary timeout",
+            ),
+            (
+                "BmcSolveResult: PROPERTY INCONCLUSIVE; PRIMARY CHECK TIMED OUT",
+                "Property verdict: INCONCLUSIVE (PRIMARY CHECK TIMED OUT)",
+                "Semantic interpretation: The primary objective solver timed out; no property conclusion is available.",
+                "Primary search: WITNESS = TIMEOUT",
+                "Primary reason: primary timeout",
+            ),
+        ),
+    ],
+)
+def test_solve_result_text_exposes_polarity_and_exception_semantics(
+    result, fragments
+) -> None:
+    """Direct result text exposes verdict, evidence role, and non-verdict states."""
+    solve_result = result()
+    text = solve_result.to_text(tablefmt="plain")
+    string_text = str(solve_result)
+    property_line = "Property verdict: %s" % solve_result.property_verdict
+    assert property_line in text
+    assert property_line in string_text
+    for fragment in fragments:
+        assert fragment in text
+        assert fragment in string_text
+
+
+@pytest.mark.parametrize(
+    ("incomplete_status", "incomplete_reason", "diagnostics", "fragments"),
+    [
+        (
+            "unknown",
+            "suffix canceled",
+            (),
+            (
+                "Response horizon: UNKNOWN",
+                "Property verdict: INCONCLUSIVE (RESPONSE HORIZON INCOMPLETE)",
+                "Semantic interpretation: The response-horizon check returned unknown; neither satisfaction nor violation can be established.",
+                "Horizon reason: suffix canceled",
+            ),
+        ),
+        (
+            "timeout",
+            "suffix timeout",
+            (),
+            (
+                "Response horizon: TIMED OUT",
+                "Property verdict: INCONCLUSIVE (RESPONSE HORIZON INCOMPLETE)",
+                "Semantic interpretation: The response-horizon check timed out; neither satisfaction nor violation can be established.",
+                "Horizon reason: suffix timeout",
+            ),
+        ),
+        (
+            "sat",
+            None,
+            (),
+            (
+                "Response horizon: OPEN",
+                "Property verdict: INCONCLUSIVE (RESPONSE HORIZON INCOMPLETE)",
+                "Semantic interpretation: A feasible prefix leaves a response obligation beyond the bound; neither satisfaction nor violation can be established.",
+                "Horizon reason: response obligation remains open beyond the current bounded horizon.",
+            ),
+        ),
+        (
+            None,
+            None,
+            (witness_module._SUFFIX_TIMEOUT_BEFORE_CHECK,),
+            (
+                "Response horizon: NOT CHECKED",
+                "Property verdict: INCONCLUSIVE (RESPONSE HORIZON INCOMPLETE)",
+                "Semantic interpretation: The response-horizon check was not started because the shared budget was exhausted; neither satisfaction nor violation can be established.",
+                "Horizon reason: shared timeout budget exhausted before suffix check.",
+            ),
+        ),
+        (
+            None,
+            "incomplete check disabled",
+            ("incomplete_check=disabled",),
+            (
+                "Response horizon: DISABLED",
+                "Property verdict: INCONCLUSIVE (RESPONSE HORIZON INCOMPLETE)",
+                "Semantic interpretation: The response-horizon check was disabled; neither satisfaction nor violation can be established.",
+                "Horizon reason: response horizon check was disabled.",
+            ),
+        ),
+    ],
+)
+def test_solve_result_text_exposes_response_exception_reason(
+    incomplete_status, incomplete_reason, diagnostics, fragments
+) -> None:
+    """Response exception reasons remain visible outside the details table."""
+    model = BmcSolveResult(
+        _sample_response_formula(),
+        "unsat",
+        incomplete_status=incomplete_status,
+        incomplete_model=_empty_sat_model() if incomplete_status == "sat" else None,
+        incomplete_reason=incomplete_reason,
+        incomplete_elapsed_ms=1.0 if incomplete_status is not None else None,
+        diagnostics=diagnostics,
+        feasibility=_feasible_evidence(),
+    )
+
+    text = model.to_text(tablefmt="plain")
+    for fragment in fragments:
+        assert fragment in text
+    assert all(fragment in str(model) for fragment in fragments)
+
+
+def test_solve_result_text_distinguishes_unstarted_feasibility_timeout() -> None:
+    """Object text says ``NOT CHECKED`` when the shared budget stopped setup."""
+    not_checked = BmcFeasibilityCheck(None, "not_checked")
+    model = BmcSolveResult(
+        _sample_formula(),
+        "unsat",
+        feasibility=BmcFeasibilityResult(
+            not_checked,
+            not_checked,
+            not_checked,
+            localization_status="not_checked",
+        ),
+        diagnostics=(
+            "feasibility_timeout:deadline_exhausted_before_assumptions_check",
+        ),
+    )
+
+    text = str(model)
+    assert (
+        "BmcSolveResult: SCENARIO FEASIBILITY NOT CHECKED; PROPERTY NOT EVALUATED"
+        in text
+    )
+    assert "Scenario: NOT CHECKED" in text
+    assert "Property verdict: NOT EVALUATED (SCENARIO FEASIBILITY NOT CHECKED)" in text
+    assert "shared budget was exhausted first" in text
 
 
 def test_pretty_print_default_stdout_and_invalid_end_are_pinned(capsys) -> None:

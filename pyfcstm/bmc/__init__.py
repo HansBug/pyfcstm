@@ -125,17 +125,20 @@ Public module structure:
      - Compose query preparation, ``Core_N`` construction, and property
        compilation into a solve-ready formula without starting a solver.
    * - BMC solver and witness decoding
-     - :class:`BmcSolveResult`, :class:`BmcWitnessTrace`,
+     - :class:`BmcFeasibilityCheck`, :class:`BmcFeasibilityResult`,
+       :class:`BmcSolveResult`, :class:`BmcWitnessTrace`,
        :class:`BmcWitnessFrame`, :class:`BmcWitnessStep`,
        :class:`BmcWitnessEvent`, :class:`BmcWitnessCallRecord`,
-       :func:`solve_bmc_property`, :func:`decode_bmc_witness`
-     - Solve compiled property formulas and decode SAT models into JSON-stable
-       macro-step witness traces with complete cycle event accounting.
+       :func:`solve_bmc_property`, :func:`decode_bmc_result_trace`,
+       :func:`decode_bmc_witness`
+     - Check scenario feasibility before interpreting primary UNSAT results,
+       preserve model roles, and decode SAT models into JSON-stable macro-step
+       witness traces with complete cycle event accounting.
    * - BMC witness replay
      - :class:`BmcReplayResult`, :class:`BmcReplayMismatch`,
        :func:`replay_bmc_witness`
      - Replay decoded witnesses through ``SimulationRuntime`` and return
-       structured mismatch diagnostics.
+       structured mismatch diagnostics while retaining the selected model role.
    * - Query root model
      - :class:`InitialVariablePolicy`, :class:`InitialSpec`,
        :class:`BmcAssumption`, :class:`FrameAssumption`, :class:`EventAssumption`,
@@ -152,6 +155,8 @@ Example::
     >>> query.to_canonical()["property"]["kind"]
     'reach'
 """
+
+from typing import TYPE_CHECKING
 
 from .ast import (
     Active,
@@ -208,6 +213,14 @@ from .query import (
     InitialVariablePolicy,
     InitialSpec,
 )
+
+if TYPE_CHECKING:
+    from .witness import (
+        BmcFeasibilityCheck,
+        BmcFeasibilityRefinementCheck,
+        BmcFeasibilityResult,
+        decode_bmc_result_trace,
+    )
 
 _BINDING_EXPORTS = {
     "BmcBindingDiagnostic",
@@ -294,6 +307,9 @@ _PIPELINE_EXPORTS = {
 _WITNESS_EXPORTS = {
     "BmcSolveStatus",
     "BmcEventDecodePolicy",
+    "BmcFeasibilityCheck",
+    "BmcFeasibilityRefinementCheck",
+    "BmcFeasibilityResult",
     "BmcSolveResult",
     "BmcWitnessEvent",
     "BmcWitnessCallRecord",
@@ -306,6 +322,7 @@ _WITNESS_EXPORTS = {
     "BmcReplayMismatch",
     "BmcReplayResult",
     "solve_bmc_property",
+    "decode_bmc_result_trace",
     "decode_bmc_witness",
     "replay_bmc_witness",
 }
@@ -489,6 +506,9 @@ __all__ = [
     "compile_bmc_query",
     "BmcSolveStatus",
     "BmcEventDecodePolicy",
+    "BmcFeasibilityCheck",
+    "BmcFeasibilityRefinementCheck",
+    "BmcFeasibilityResult",
     "BmcSolveResult",
     "BmcWitnessEvent",
     "BmcWitnessCallRecord",
@@ -501,6 +521,7 @@ __all__ = [
     "BmcReplayMismatch",
     "BmcReplayResult",
     "solve_bmc_property",
+    "decode_bmc_result_trace",
     "decode_bmc_witness",
     "replay_bmc_witness",
 ]

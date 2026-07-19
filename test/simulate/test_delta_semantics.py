@@ -90,7 +90,9 @@ def test_no_outgoing_pseudo_does_not_run_during_or_abstract_handler():
         initial_state="Root.P",
         initial_vars={"x": 0},
     )
-    runtime.register_abstract_handler("Root.P.Tick", lambda context: calls.append(context))
+    runtime.register_abstract_handler(
+        "Root.P.Tick", lambda context: calls.append(context)
+    )
 
     result = runtime.cycle()
 
@@ -236,9 +238,10 @@ def test_committed_only_delta_does_not_report_consumed_events(monkeypatch, caplo
             "delta": True,
         }
     ]
-    warnings = [record for record in caplog.records if record.levelno == logging.WARNING]
+    warnings = [
+        record for record in caplog.records if record.levelno == logging.WARNING
+    ]
     assert len(warnings) == 1
     assert warnings[0].getMessage() == (
-        "Cycle 1 completed as Delta - State: Root; "
-        "no stoppable successor was committed"
+        "Cycle 1 completed as Delta - State: Root; no stoppable successor was committed"
     )

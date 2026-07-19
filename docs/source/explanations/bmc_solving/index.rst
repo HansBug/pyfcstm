@@ -40,41 +40,52 @@ The claim ladder is deliberately one-way:
      - The decoded observations agree with ``SimulationRuntime`` on this finite trace.
      - It does not prove all models decode, all cases are encoded correctly, or the property holds beyond :math:`N`.
 
-Two formulas, two Z3 checks
----------------------------
+One incremental solver, staged feasibility
+------------------------------------------
 
-Let :math:`C_N` be the core transition relation for bound :math:`N`,
-:math:`Q_N` the compiled property objective, and :math:`\Omega_N` the optional
-observation that a response obligation extends beyond the horizon.  Property
-compilation produces two independently solvable formulas:
+Let :math:`D_N` be the bounded domain, :math:`I_0` the retained initializer,
+:math:`T_N` the macro-step transition relation, and :math:`ENV_N` the query
+environment constraints.  The solver keeps the following cumulative spaces:
 
 .. math::
    :label: bmc-solve-formulas
 
-   \Phi_{\mathrm{main}} = C_N \land Q_N,
-   \qquad
-   \Phi_{\mathrm{tail}} = C_N \land \Omega_N.
+   K_N = D_N \land T_N,
+   \qquad S_{\mathrm{init}} = K_N \land I_0,
+   \qquad S_{\mathrm{assume}} = S_{\mathrm{init}} \land ENV_N.
 
-The first check is always executed.  The second is executed only when
-``check_incomplete`` is true and :math:`\Omega_N` is not the constant false
-formula.  At present that makes the second check a response-property concern;
-other property kinds have no non-trivial tail observation.
+For a compiled property objective :math:`Obj_q`, the primary query is
+:math:`\Phi_q = S_{\mathrm{assume}} \land Obj_q`.
 
-:func:`pyfcstm.bmc.witness.solve_bmc_property` calls a private ``_solve`` once
-for each applicable formula.  Each call creates a fresh ``z3.Solver``, applies
-the same ``timeout_ms`` value, adds exactly one formula, and calls ``check()``.
-Consequently, the timeout is **per check**, not a shared total budget.  If both
-checks are needed, a timeout value :math:`T` permits approximately
-:math:`2T` of solver time plus construction and reporting overhead.  Even a
-timeout on the main check does not cancel the separate tail check.
+The primary result is interpreted first.  If it is UNSAT, the solver checks
+:math:`S_{\mathrm{assume}}` and, only when necessary, :math:`S_{\mathrm{init}}`
+and :math:`K_N` to distinguish an objective-only UNSAT from an infeasible
+scenario.  These checks are staged on one incremental solver; SAT prefix
+evidence may be marked ``inferred`` rather than being solved again.
+
+For a response property, :math:`\Omega_q` denotes the observation that an
+obligation remains beyond the bound, and the optional suffix query is
+:math:`\Psi_q = S_{\mathrm{assume}} \land \Omega_q`.
+
+It is evaluated only after :math:`S_{\mathrm{assume}}` is known SAT and only
+when ``check_incomplete`` is enabled and the suffix formula is non-trivial.
+The suffix model is an ``incomplete_suffix`` role; it does not turn an
+incomplete response into a property verdict.
+
+:func:`pyfcstm.bmc.witness.solve_bmc_property` creates one incremental solver
+and one shared budget per public solve.  ``timeout_ms=None`` does not install a
+Z3 timeout.  A finite ``timeout_ms`` is a monotonic total budget shared by the
+primary, feasibility, and applicable suffix checks; each check receives only
+the remaining milliseconds.  When the budget is exhausted, later checks are
+not called and their evidence remains ``not_checked``.
 
 Z3's ``unknown`` result is split by ``reason_unknown()``: the exact reason
 ``"timeout"`` becomes public status ``timeout``; other reasons remain
 ``unknown``.  Neither status carries a model.  Main elapsed time is stored in
-``elapsed_ms``; tail elapsed time is retained as an
-``incomplete_elapsed_ms=...`` diagnostic.  Disabling the second check is also
-observable as ``incomplete_check=disabled`` rather than being treated as a
-proof that no incomplete suffix exists.
+``elapsed_ms``; suffix elapsed time is retained as
+``incomplete_elapsed_ms=...``.  Disabling the suffix check is observable as
+``incomplete_check=disabled`` rather than being treated as a proof that no
+incomplete suffix exists.
 
 Verdicts are polarity-aware
 ---------------------------
@@ -327,15 +338,19 @@ model is intentionally small so the solver boundary remains visible:
 
    state Root;
 
-The tail query exercises both formulas in :eq:`bmc-solve-formulas`:
+The response query exercises the staged primary and suffix paths described by
+:eq:`bmc-solve-formulas`:
 
 .. code-block:: text
 
    check response <= 1: trigger true -> within 2 false;
 
 Its trace summary is ``main=unsat``, ``tail=sat``, ``outcome=incomplete``.
-There is no primary SAT model, so there is no decoded witness or replay.  The
-second query exercises the positive witness path:
+There is no primary SAT model and therefore no bounded property verdict.  The
+SAT suffix is nevertheless decoded and replayed as an ``incomplete_suffix``
+role-aware witness for the executable finite prefix; it must not be mistaken
+for a complete witness or counterexample.  The second query exercises the
+positive witness path:
 
 .. code-block:: text
 
@@ -360,8 +375,8 @@ English and Chinese files carry identical blocks.
      - Implementation anchor
      - Test anchor
      - Working query and trace
-   * - :eq:`bmc-solve-formulas`: separate main and tail checks
-     - ``compile_bmc_property``; ``solve_bmc_property``; ``_solve``
+   * - :eq:`bmc-solve-formulas`: staged feasibility and response suffix
+     - ``compile_bmc_property``; ``solve_bmc_property``; ``_SolveBudget``
      - ``test_compile_response_strict_successor_and_incomplete_suffix``;
        ``test_solver_unknown_and_timeout_paths_are_structured``
      - Response query above: UNSAT main, SAT tail

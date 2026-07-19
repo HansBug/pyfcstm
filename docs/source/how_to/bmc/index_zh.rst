@@ -293,7 +293,7 @@ polarity）的含义不同。先按用户问题选择查询类别，再按该类
 **作用。** 人类可读模式以紧凑形式打印同一见证，并在报告成功前运行强制重放可信
 门禁。
 
-**预期输出。** 第一行是 ``BMC reach <= 1: PROPERTY HOLDS``。随后
+**预期输出。** 第一行是 ``BMC reach <= 1: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND``。随后
 ``Solver: SAT`` 给出求解诊断，``Replay: verified`` 给出运行时可信门禁结果，紧凑
 ``Trace`` 列出源状态、目标状态、选中分支、事件和调用。进程以 ``0`` 退出。使用
 ``--color always`` 可强制终端着色，使用 ``--color never`` 可得到稳定纯文本。

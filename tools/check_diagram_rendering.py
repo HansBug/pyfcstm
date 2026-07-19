@@ -1000,8 +1000,8 @@ def _heap_stats(engine: DiagramAssetEngine) -> Dict[str, int]:
     }
 
 
-def _bridge_metrics(engine: DiagramAssetEngine) -> Dict[str, int]:
-    """Read active-context and registered-font counters from the bridge."""
+def _bridge_metrics(engine: DiagramAssetEngine) -> Dict[str, Any]:
+    """Read token-bound context ownership and registered-font metrics."""
     try:
         value = engine._eval("__pyfcstm_resvg_metrics()")
         metrics = json.loads(str(value))
@@ -1016,8 +1016,12 @@ def _bridge_metrics(engine: DiagramAssetEngine) -> Dict[str, int]:
         python_context = getattr(engine, "_active_context_count", None)
         if python_context is not None and active_context != int(python_context):
             raise ValueError("bridge/Python active-context lifecycle counts differ")
+        expected_token = getattr(engine, "_context_token", None)
+        if not expected_token or str(metrics["contextToken"]) != str(expected_token):
+            raise ValueError("bridge/Python context lifecycle tokens differ")
         return {
             "activeContext": active_context,
+            "contextToken": str(metrics["contextToken"]),
             "registeredFonts": int(metrics["registeredFonts"]),
         }
     except (KeyError, TypeError, ValueError) as err:

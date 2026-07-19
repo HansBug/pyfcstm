@@ -34,7 +34,7 @@ import time
 import zlib
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 
 class DiagramAssetError(RuntimeError):
@@ -60,6 +60,22 @@ class DiagramRenderError(DiagramAssetError):
         Traceback (most recent call last):
         ...
         DiagramRenderError: closed SVG dialect rejected output
+    """
+
+
+class DiagramRenderLimitError(DiagramRenderError):
+    """
+    Report a render request that exceeds the bounded output contract.
+
+    The limit is checked before entering the WebAssembly renderer whenever
+    the canonical SVG exposes finite canvas dimensions.
+
+    Example::
+
+        >>> raise DiagramRenderLimitError("scale exceeds 4.0")
+        Traceback (most recent call last):
+        ...
+        DiagramRenderLimitError: scale exceeds 4.0
     """
 
 
@@ -121,6 +137,11 @@ _ASSET_ISSUE_URL = "https://github.com/HansBug/pyfcstm/issues"
 _SVG_NS = "http://www.w3.org/2000/svg"
 _SVG_MAX_BYTES = 16 * 1024 * 1024
 _SVG_MAX_ELEMENTS = 100_000
+_MAX_RENDER_SCALE = 4.0
+_MAX_RENDER_DIMENSION = 16_384
+_MAX_RENDER_PIXELS = 16_777_216
+_MAX_RENDER_RGBA_BYTES = 67_108_864
+_MAX_RENDER_PNG_BYTES = 33_554_432
 
 _SVG_INPUT_ELEMENTS = {
     "svg",
@@ -451,6 +472,101 @@ def _validate_expanded_svg(svg: str) -> str:
     return _validate_svg_tree(svg, output=True)
 
 
+_SVG_NUMBER_RE = re.compile(
+    r"^\s*[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?\s*(?:px)?\s*$"
+)
+
+
+def _svg_canvas_dimensions(svg: str) -> Tuple[float, float]:
+    """Return finite positive canonical SVG canvas dimensions."""
+    root = _svg_parse(svg)
+    view_box = root.attrib.get("viewBox")
+    if view_box is not None:
+        parts = [item for item in re.split(r"[\s,]+", view_box.strip()) if item]
+        if len(parts) != 4:
+            raise DiagramRenderLimitError(
+                "diagram render limit cannot determine the canonical SVG viewBox"
+            )
+        try:
+            width, height = float(parts[2]), float(parts[3])
+        except ValueError as err:
+            # ValueError: a shared renderer viewBox contains non-numeric text.
+            raise DiagramRenderLimitError(
+                "diagram render limit cannot determine the canonical SVG viewBox"
+            ) from err
+    else:
+        raw_width = root.attrib.get("width")
+        raw_height = root.attrib.get("height")
+        if (
+            raw_width is None
+            or raw_height is None
+            or not (
+                _SVG_NUMBER_RE.fullmatch(raw_width)
+                and _SVG_NUMBER_RE.fullmatch(raw_height)
+            )
+        ):
+            raise DiagramRenderLimitError(
+                "diagram render limit requires finite numeric SVG width and height"
+            )
+        width, height = float(raw_width.rstrip("px ")), float(raw_height.rstrip("px "))
+    if (
+        not math.isfinite(width)
+        or not math.isfinite(height)
+        or width <= 0
+        or height <= 0
+    ):
+        raise DiagramRenderLimitError(
+            "diagram render limit requires finite positive SVG dimensions"
+        )
+    return width, height
+
+
+def _checked_render_dimensions(svg: str, scale: float) -> Tuple[int, int]:
+    """Validate render limits and return the expected scaled pixel size."""
+    if scale > _MAX_RENDER_SCALE:
+        raise DiagramRenderLimitError(
+            "diagram render limit exceeded: scale %.6g > %.1f; reduce scale"
+            % (scale, _MAX_RENDER_SCALE)
+        )
+    width, height = _svg_canvas_dimensions(svg)
+    if width > _MAX_RENDER_DIMENSION or height > _MAX_RENDER_DIMENSION:
+        raise DiagramRenderLimitError(
+            "diagram render limit exceeded: source %.6gx%.6g exceeds %dpx "
+            "per dimension; reduce the model size"
+            % (width, height, _MAX_RENDER_DIMENSION)
+        )
+    source_pixels = width * height
+    if source_pixels > _MAX_RENDER_PIXELS:
+        raise DiagramRenderLimitError(
+            "diagram render limit exceeded: source %.6g pixels exceeds %d; "
+            "reduce the model size" % (source_pixels, _MAX_RENDER_PIXELS)
+        )
+    scaled_width = int(math.ceil(width * scale))
+    scaled_height = int(math.ceil(height * scale))
+    scaled_pixels = scaled_width * scaled_height
+    if (
+        scaled_width > _MAX_RENDER_DIMENSION
+        or scaled_height > _MAX_RENDER_DIMENSION
+        or scaled_pixels > _MAX_RENDER_PIXELS
+        or scaled_pixels * 4 > _MAX_RENDER_RGBA_BYTES
+    ):
+        raise DiagramRenderLimitError(
+            "diagram render limit exceeded: %.6gx%.6g at scale %.6g produces "
+            "%dx%d pixels; limits are %dpx per dimension and %d pixels; "
+            "reduce scale"
+            % (
+                width,
+                height,
+                scale,
+                scaled_width,
+                scaled_height,
+                _MAX_RENDER_DIMENSION,
+                _MAX_RENDER_PIXELS,
+            )
+        )
+    return scaled_width, scaled_height
+
+
 def _is_development_checkout() -> bool:
     """Return whether the package is running from the repository checkout."""
     root = Path(__file__).resolve().parents[2]
@@ -612,72 +728,141 @@ def _valid_opentype(data: bytes) -> bool:
     return total_checksum == 0xB1B0AFBA
 
 
-def _valid_png(data: bytes) -> bool:
-    """Validate the opaque RGBA PNG payload emitted by the renderer."""
+def _decode_png_rgba(data: bytes) -> Tuple[int, int, Tuple[int, int, int, int]]:
+    """Validate and decode the bounded RGBA PNG output contract."""
     if not data.startswith(b"\x89PNG\r\n\x1a\n"):
-        return False
+        raise ValueError("PNG output lacks the PNG signature")
+    if len(data) > _MAX_RENDER_PNG_BYTES:
+        raise ValueError("PNG output exceeds the encoded-size limit")
     position = 8
     saw_ihdr = False
     saw_idat = False
-    saw_iend = False
+    idat_closed = False
     width = height = None
     compressed = bytearray()
     try:
         while position < len(data):
             if position + 12 > len(data):
-                return False
+                raise ValueError("PNG output has a truncated chunk header")
             length = struct.unpack(">I", data[position : position + 4])[0]
             chunk_end = position + 12 + length
             if chunk_end > len(data):
-                return False
+                raise ValueError("PNG output has a truncated chunk")
             chunk_type = data[position + 4 : position + 8]
+            if len(chunk_type) != 4 or any(
+                byte < 65 or (byte > 90 and byte < 97) or byte > 122
+                for byte in chunk_type
+            ):
+                raise ValueError("PNG output has an invalid chunk type")
             payload = data[position + 8 : position + 8 + length]
             expected_crc = struct.unpack(">I", data[position + 8 + length : chunk_end])[
                 0
             ]
             actual_crc = zlib.crc32(chunk_type + payload) & 0xFFFFFFFF
             if actual_crc != expected_crc:
-                return False
-            if not saw_ihdr:
-                if chunk_type != b"IHDR" or length != 13:
-                    return False
+                raise ValueError("PNG output contains an invalid chunk checksum")
+            if chunk_type == b"IHDR":
+                if saw_ihdr or position != 8 or length != 13:
+                    raise ValueError("PNG output has duplicate or misplaced IHDR")
                 width, height, depth, color_type, compression, filtering, interlace = (
                     struct.unpack(">IIBBBBB", payload)
                 )
                 if (
                     not width
                     or not height
+                    or width > _MAX_RENDER_DIMENSION
+                    or height > _MAX_RENDER_DIMENSION
+                    or width * height > _MAX_RENDER_PIXELS
+                    or width * height * 4 > _MAX_RENDER_RGBA_BYTES
                     or depth != 8
                     or color_type != 6
                     or compression != 0
                     or filtering != 0
                     or interlace != 0
                 ):
-                    return False
+                    raise ValueError("PNG output violates the RGBA8 size contract")
                 saw_ihdr = True
+            elif not saw_ihdr:
+                raise ValueError("PNG output has a non-IHDR first chunk")
             elif chunk_type == b"IDAT":
-                if saw_iend:
-                    return False
+                if idat_closed:
+                    raise ValueError("PNG output has non-contiguous IDAT chunks")
                 compressed.extend(payload)
                 saw_idat = True
             elif chunk_type == b"IEND":
                 if length != 0 or not saw_idat:
-                    return False
-                saw_iend = True
+                    raise ValueError("PNG output has an invalid IEND")
                 position = chunk_end
+                if position != len(data):
+                    raise ValueError("PNG output has trailing bytes after IEND")
                 break
+            else:
+                if saw_idat:
+                    idat_closed = True
             position = chunk_end
-        if not saw_ihdr or not saw_idat or not saw_iend or position != len(data):
-            return False
+        if not saw_ihdr or not saw_idat or position != len(data):
+            raise ValueError("PNG output is missing IHDR, IDAT, or IEND")
         decoded = zlib.decompress(bytes(compressed))
-    except (struct.error, ValueError, zlib.error):
-        # struct.error/ValueError: truncated or malformed PNG chunk fields;
-        # zlib.error: IDAT is not a valid compressed scanline stream.
-        return False
+    except (struct.error, ValueError, zlib.error, OverflowError) as err:
+        # struct.error/ValueError: malformed chunk fields or scanlines;
+        # zlib.error: IDAT is not a valid compressed stream; OverflowError:
+        # checked dimension arithmetic cannot be represented by the decoder.
+        if isinstance(err, ValueError):
+            raise
+        raise ValueError("PNG output has malformed compressed data") from err
     row_stride = width * 4 + 1
     if len(decoded) != row_stride * height:
+        raise ValueError("PNG output has an invalid scanline length")
+    previous = bytearray(width * 4)
+    points = []
+    offset = 0
+    for y in range(height):
+        filter_type = decoded[offset]
+        encoded = decoded[offset + 1 : offset + row_stride]
+        offset += row_stride
+        row = bytearray(width * 4)
+        for index, value in enumerate(encoded):
+            left = row[index - 4] if index >= 4 else 0
+            above = previous[index]
+            upper_left = previous[index - 4] if index >= 4 else 0
+            if filter_type == 0:
+                predictor = 0
+            elif filter_type == 1:
+                predictor = left
+            elif filter_type == 2:
+                predictor = above
+            elif filter_type == 3:
+                predictor = (left + above) // 2
+            elif filter_type == 4:
+                estimate = left + above - upper_left
+                predictor = min(
+                    (left, above, upper_left),
+                    key=lambda candidate: abs(estimate - candidate),
+                )
+            else:
+                raise ValueError("PNG output uses an unsupported filter")
+            row[index] = (value + predictor) & 0xFF
+        for x in range(width):
+            red, green, blue, alpha = row[x * 4 : x * 4 + 4]
+            if alpha and (red < 245 or green < 245 or blue < 245):
+                points.append((x, y))
+        previous = row
+    if not points:
+        raise ValueError("PNG output contains no visible ink")
+    xs, ys = zip(*points)
+    return width, height, (min(xs), min(ys), max(xs), max(ys))
+
+
+def _valid_png(data: bytes) -> bool:
+    """Validate the opaque RGBA PNG payload emitted by the renderer."""
+    try:
+        _decode_png_rgba(data)
+    except (TypeError, ValueError, struct.error, zlib.error, OverflowError):
+        # TypeError/ValueError: non-bytes or malformed PNG; struct.error:
+        # truncated binary fields; zlib.error/OverflowError: invalid stream or
+        # checked decoder arithmetic.
         return False
-    return all(decoded[offset] <= 4 for offset in range(0, len(decoded), row_stride))
+    return True
 
 
 class DiagramAssetEngine:
@@ -712,6 +897,7 @@ class DiagramAssetEngine:
         self.max_memory = max_memory
         self._context = None
         self._active_context_count = 0
+        self._context_token = None
         self._resvg_ready = False
         self._resvg_locale = None
         self._timeout_uses_seconds = False
@@ -798,6 +984,7 @@ class DiagramAssetEngine:
         )
         context = MiniRacer()
         self._active_context_count = 1
+        self._context_token = "ctx-%d" % time.monotonic_ns()
         return context
 
     def _ensure_context(self) -> None:
@@ -811,6 +998,7 @@ class DiagramAssetEngine:
         context = self._context
         self._context = None
         self._active_context_count = 0
+        self._context_token = None
         self._resvg_ready = False
         self._resvg_locale = None
         if context is None:
@@ -878,10 +1066,14 @@ class DiagramAssetEngine:
         self._eval_asset("host-shim.js", host_shim)
         self._eval_asset(
             "host-shim.js",
-            "globalThis.__pyfcstm_embedded_host = true;"
-            " globalThis.__pyfcstm_active_context_count = 1;",
+            "globalThis.__pyfcstm_embedded_host = true;",
         )
         self._eval_asset("renderer.js", renderer)
+        self._eval_asset(
+            "resvg-bridge.js",
+            "globalThis.__pyfcstm_bind_context_token(%s);"
+            % json.dumps(self._context_token),
+        )
 
     def _eval_asset(
         self,
@@ -954,11 +1146,17 @@ class DiagramAssetEngine:
         """
         request_id = "pyfcstm-%d" % time.monotonic_ns()
         deadline = time.monotonic() + self.timeout
+        try:
+            serialized_request = json.dumps(request, ensure_ascii=False)
+        except (TypeError, ValueError) as err:
+            # TypeError/ValueError: the caller supplied a non-JSON-compatible
+            # DiagramData value such as a set, non-finite number, or cycle.
+            raise ValueError("request must be JSON-compatible") from err
         self._eval_asset(
             "renderer.js",
             "__pyfcstm_render_start(%s, %s)"
             % (
-                json.dumps(json.dumps(request, ensure_ascii=False)),
+                json.dumps(serialized_request),
                 json.dumps(request_id),
             ),
             timeout=self.timeout,
@@ -1099,6 +1297,8 @@ class DiagramAssetEngine:
         :return: PNG bytes.
         :rtype: bytes
         :raises ValueError: If ``scale`` is not finite and positive.
+        :raises DiagramRenderLimitError: If scale or the checked output size
+            exceeds the bounded PNG contract.
         :raises DiagramAssetError: If resvg reports a rendering failure.
 
         Example::
@@ -1107,15 +1307,19 @@ class DiagramAssetEngine:
             >>> png.startswith(b"\\x89PNG")
             True
         """
+        if isinstance(scale, bool):
+            raise ValueError("scale must be a finite positive number")
         numeric_scale = float(scale)
         if not math.isfinite(numeric_scale) or numeric_scale <= 0:
             raise ValueError("scale must be a finite positive number")
         svg = self._canonical_input(request)
+        expected_width, expected_height = _checked_render_dimensions(svg, numeric_scale)
         self._ensure_resvg(self._locale_from_svg(svg))
         encoded = self._eval_asset(
             "resvg.wasm",
             "__pyfcstm_resvg_png(%s, %s)"
             % (json.dumps(svg), json.dumps(numeric_scale)),
+            request=True,
         )
         try:
             result = base64.b64decode(str(encoded), validate=True)
@@ -1125,9 +1329,20 @@ class DiagramAssetEngine:
             raise _render_failure(
                 "resvg.wasm", "the renderer returned invalid PNG data", err
             ) from err
-        if not _valid_png(result):
+        try:
+            width, height, _bbox = _decode_png_rgba(result)
+        except (TypeError, ValueError, struct.error, zlib.error, OverflowError) as err:
+            # TypeError/ValueError: the WASM bridge returned malformed or
+            # blank PNG data; struct.error/zlib.error/OverflowError: the
+            # binary decoder rejected its structure or checked arithmetic.
             raise _render_failure(
-                "resvg.wasm", "the renderer returned invalid PNG data"
+                "resvg.wasm", "the renderer returned invalid PNG data", err
+            ) from err
+        if (width, height) != (expected_width, expected_height):
+            raise _render_failure(
+                "resvg.wasm",
+                "the renderer returned PNG dimensions %dx%d instead of %dx%d"
+                % (width, height, expected_width, expected_height),
             )
         return result
 

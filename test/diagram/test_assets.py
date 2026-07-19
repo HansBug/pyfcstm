@@ -16,6 +16,7 @@ from pyfcstm.diagram import (
     DiagramEngineConflictError,
     DiagramEngineMetadataError,
     DiagramRenderError,
+    DiagramRenderLimitError,
 )
 
 
@@ -852,6 +853,66 @@ def test_render_png_rejects_non_finite_scale():
             engine.render_png(svg, scale=scale)
 
 
+def test_render_png_rejects_scale_and_canvas_limits_before_wasm():
+    engine = DiagramAssetEngine()
+    with pytest.raises(DiagramRenderLimitError, match=r"scale .* > 4"):
+        engine.render_png(
+            _canonical_svg(
+                '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>'
+            ),
+            scale=4.0001,
+        )
+    with pytest.raises(DiagramRenderLimitError, match="per dimension"):
+        engine.render_png(
+            _canonical_svg(
+                '<svg xmlns="http://www.w3.org/2000/svg" width="16385" height="1"/>'
+            )
+        )
+    with pytest.raises(DiagramRenderLimitError, match="pixels"):
+        engine.render_png(
+            _canonical_svg(
+                '<svg xmlns="http://www.w3.org/2000/svg" width="4097" height="4097"/>'
+            )
+        )
+
+
+def test_render_png_rejects_structurally_valid_blank_png(monkeypatch):
+    import importlib
+
+    engine_module = importlib.import_module("pyfcstm.diagram.engine")
+    engine = DiagramAssetEngine()
+    monkeypatch.setattr(engine, "_ensure_resvg", lambda _locale: None)
+
+    def chunk(kind, payload):
+        checksum = zlib.crc32(kind + payload) & 0xFFFFFFFF
+        return (
+            struct.pack(">I", len(payload))
+            + kind
+            + payload
+            + struct.pack(">I", checksum)
+        )
+
+    header = struct.pack(">IIBBBBB", 1, 1, 8, 6, 0, 0, 0)
+    blank = (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", header)
+        + chunk(b"IDAT", zlib.compress(b"\x00\xff\xff\xff\xff"))
+        + chunk(b"IEND", b"")
+    )
+    assert engine_module._valid_png(blank) is False
+    monkeypatch.setattr(
+        engine,
+        "_eval_asset",
+        lambda *_args, **_kwargs: base64.b64encode(blank).decode("ascii"),
+    )
+    with pytest.raises(DiagramRenderError, match="no visible ink"):
+        engine.render_png(
+            _canonical_svg(
+                '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>'
+            )
+        )
+
+
 def test_render_png_rejects_truncated_or_corrupt_png_payload(monkeypatch):
     import importlib
 
@@ -890,6 +951,15 @@ def test_render_png_rejects_truncated_or_corrupt_png_payload(monkeypatch):
     )
     assert not engine_module._valid_png(filtered_png)
 
+    duplicate_ihdr = (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", header)
+        + chunk(b"IHDR", header)
+        + chunk(b"IDAT", zlib.compress(b"\x00\x00\x00\x00\xff"))
+        + chunk(b"IEND", b"")
+    )
+    assert not engine_module._valid_png(duplicate_ihdr)
+
 
 def test_engine_rejects_non_finite_timeout():
     for timeout in (float("nan"), float("inf"), float("-inf")):
@@ -913,12 +983,25 @@ def test_engine_restarts_context_after_native_timeout():
 def test_engine_tracks_one_active_context_and_restarts_after_discard():
     engine = DiagramAssetEngine()
     assert engine._active_context_count == 1
+    first_metrics = json.loads(engine._eval("__pyfcstm_resvg_metrics()"))
+    assert first_metrics["activeContext"] == 1
+    assert first_metrics["contextToken"] == engine._context_token
+    engine._eval("globalThis.__pyfcstm_active_context_count = 7;")
     assert json.loads(engine._eval("__pyfcstm_resvg_metrics()"))["activeContext"] == 1
     engine._discard_context()
     assert engine._active_context_count == 0
     assert engine._eval("6 * 7") == 42
     assert engine._active_context_count == 1
-    assert json.loads(engine._eval("__pyfcstm_resvg_metrics()"))["activeContext"] == 1
+    second_metrics = json.loads(engine._eval("__pyfcstm_resvg_metrics()"))
+    assert second_metrics["activeContext"] == 1
+    assert second_metrics["contextToken"] == engine._context_token
+    assert second_metrics["contextToken"] != first_metrics["contextToken"]
+
+
+def test_render_svg_rejects_non_json_request():
+    engine = DiagramAssetEngine()
+    with pytest.raises(ValueError, match="JSON-compatible"):
+        engine.render_svg({"diagram": {"invalid": {1, 2, 3}}})
 
 
 def test_engine_discards_context_after_renderer_deadline(monkeypatch):

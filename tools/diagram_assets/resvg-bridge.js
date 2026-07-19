@@ -7,6 +7,7 @@
   const root = globalThis;
   let fontBuffers = [];
   let cjkFamily = "Noto Sans SC";
+  let contextToken = "";
 
   function decodeBase64(value) {
     const raw = atob(String(value || ""));
@@ -81,9 +82,15 @@
     return fontBuffers.length;
   };
 
+  root.__pyfcstm_bind_context_token = function (token) {
+    contextToken = String(token || "");
+    return contextToken;
+  };
+
   root.__pyfcstm_resvg_metrics = function () {
     return JSON.stringify({
-      activeContext: Number(root.__pyfcstm_active_context_count || 0),
+      activeContext: contextToken ? 1 : 0,
+      contextToken,
       registeredFonts: fontBuffers.length,
     });
   };

@@ -14,6 +14,8 @@ The package roadmap is intentionally small and explicit:
      - Report missing or unusable packaged resources with recovery guidance.
    * - :class:`DiagramRenderError`
      - Report invalid DiagramData or renderer output after startup.
+   * - :class:`DiagramRenderLimitError`
+     - Report a scale or bounded-output limit violation before rendering.
    * - :class:`DiagramEngineMetadataError`
      - Report unavailable MiniRacer distribution metadata.
    * - :class:`DiagramEngineConflictError`
@@ -37,6 +39,7 @@ from .engine import (
     DiagramEngineConflictError,
     DiagramEngineMetadataError,
     DiagramRenderError,
+    DiagramRenderLimitError,
 )
 
 __all__ = [
@@ -45,4 +48,5 @@ __all__ = [
     "DiagramEngineConflictError",
     "DiagramEngineMetadataError",
     "DiagramRenderError",
+    "DiagramRenderLimitError",
 ]

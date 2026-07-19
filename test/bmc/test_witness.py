@@ -2386,6 +2386,48 @@ def test_witness_public_dataclasses_reject_invalid_payloads(factory, message) ->
         factory()
 
 
+@pytest.mark.parametrize("status", ["unknown", "timeout"])
+def test_solve_result_rejects_missing_incomplete_reason(status) -> None:
+    """Inconclusive suffix results retain an auditable solver reason."""
+    _, formula = _compile(
+        _VERDICT_DSL,
+        "check response <= 1: trigger event(\"Root.Go\", current) "
+        '-> within 1 active("Root.B");',
+    )
+    with pytest.raises(BmcBuildError, match="incomplete_reason must be non-empty"):
+        BmcSolveResult(
+            formula,
+            "unsat",
+            incomplete_status=status,
+            incomplete_reason=None,
+            incomplete_elapsed_ms=1.0,
+            feasibility=_feasible_result_evidence(),
+        )
+
+
+def test_solve_result_rejects_unchecked_incomplete_reason() -> None:
+    """Unchecked suffix metadata accepts only its explicit disabled marker."""
+    _, formula = _compile(
+        _VERDICT_DSL,
+        "check response <= 1: trigger event(\"Root.Go\", current) "
+        '-> within 1 active("Root.B");',
+    )
+    with pytest.raises(BmcBuildError, match="disabled-check marker"):
+        BmcSolveResult(
+            formula,
+            "unsat",
+            incomplete_reason="fabricated reason",
+            feasibility=_feasible_result_evidence(),
+        )
+    result = BmcSolveResult(
+        formula,
+        "unsat",
+        incomplete_reason="incomplete check disabled",
+        feasibility=_feasible_result_evidence(),
+    )
+    assert result.incomplete_status is None
+
+
 def test_witness_trace_canonical_payload_has_no_version_field() -> None:
     """Witness payloads retain the repository-wide unversioned contract."""
     trace = BmcWitnessTrace({}, {}, {}, (), ())
@@ -2491,7 +2533,7 @@ def test_witness_trace_metadata_accepts_nested_json_payloads() -> None:
             "reason": "ok",
             "incomplete_status": "unknown",
             "incomplete_elapsed_ms": 2,
-            "incomplete_reason": None,
+            "incomplete_reason": "unknown",
         },
         {"mode": "cold", "argv": ["--flag", 1]},
         (),
@@ -2506,7 +2548,7 @@ def test_witness_trace_metadata_accepts_nested_json_payloads() -> None:
     assert canonical["solver"] == {
         "elapsed_ms": 1.25,
         "incomplete_elapsed_ms": 2,
-        "incomplete_reason": None,
+        "incomplete_reason": "unknown",
         "incomplete_status": "unknown",
         "reason": "ok",
         "status": "unknown",

@@ -279,13 +279,18 @@ def _validate_incomplete_solve_reason(
     status_name: str, status: Optional[str], reason_name: str, reason: Optional[str]
 ) -> None:
     _validate_optional_reason(reason_name, reason)
-    if reason is not None and status in {"sat", "unsat"}:
+    if status in {"sat", "unsat"} and reason is not None:
         raise BmcBuildError(
             "%s must be None when %s is sat or unsat." % (reason_name, status_name)
         )
-    if status in {"unknown", "timeout"} and reason == "":
+    if status in {"unknown", "timeout"} and reason in {None, ""}:
         raise BmcBuildError(
             "%s must be non-empty when %s is unknown or timeout."
+            % (reason_name, status_name)
+        )
+    if status is None and reason not in {None, "incomplete check disabled"}:
+        raise BmcBuildError(
+            "%s must be None or the disabled-check marker when %s is None."
             % (reason_name, status_name)
         )
 

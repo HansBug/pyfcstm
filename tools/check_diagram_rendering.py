@@ -834,6 +834,119 @@ def _self_check_reference_provenance() -> None:
             raise AssertionError("provenance corruption was accepted: %s" % relative)
 
 
+def _self_check_reference_comparison() -> None:
+    """Exercise strict and clip-ID-only reference comparison semantics."""
+    with tempfile.TemporaryDirectory(prefix="pyfcstm-diagram-reference-check-") as raw:
+        root = Path(raw)
+        reference_root = root / "reference"
+        current_root = root / "current"
+        reference_root.mkdir()
+        current_root.mkdir()
+        relative_root = Path("cases") / "one"
+        outputs = {
+            "svg": b'<svg xmlns="http://www.w3.org/2000/svg"/>',
+            "png": b"png-output",
+            "expanded": (
+                b'<svg><defs><clipPath id="clipPath-old"><path d="M0,0"/>'
+                b'</clipPath></defs><g clip-path="url(#clipPath-old)"/></svg>'
+            ),
+        }
+        current_outputs = dict(outputs)
+        current_outputs["expanded"] = (
+            b'<svg><defs><clipPath id="clipPath-new"><path d="M0,0"/>'
+            b'</clipPath></defs><g clip-path="url(#clipPath-new)"/></svg>'
+        )
+
+        def write_outputs(directory: Path, values: Dict[str, bytes]) -> Dict[str, Any]:
+            result = {}
+            target = directory / relative_root
+            target.mkdir(parents=True)
+            for kind, data in values.items():
+                path = target / kind
+                path.write_bytes(data)
+                result[kind] = {
+                    "path": path.relative_to(directory).as_posix(),
+                    "bytes": len(data),
+                    "sha256": _sha256(data),
+                }
+            return result
+
+        old_case = {
+            "id": "one",
+            "corpus": "fixture.json",
+            "corpusSha256": "0" * 64,
+            "sourceFixture": "fixture.json#one",
+            "sourceSha256": "1" * 64,
+            "direction": "right",
+            "group": "LR",
+            "arrows": 0,
+            "outputs": write_outputs(reference_root, outputs),
+        }
+        new_case = dict(old_case)
+        new_case["outputs"] = write_outputs(current_root, current_outputs)
+        old_report = {
+            "cases": [old_case],
+            "layouts": 1,
+            "arrows": 0,
+            "directions": {"right": 1},
+            "cjk": {},
+        }
+        new_report = {
+            "cases": [new_case],
+            "layouts": 1,
+            "arrows": 0,
+            "directions": {"right": 1},
+            "cjk": {},
+        }
+        custom_provenance = {
+            "backend": "custom-resvg-0.37",
+            "python": "%d.%d" % sys.version_info[:2],
+            "files": dict(_CUSTOM_REFERENCE_FILES),
+            "corpora": {},
+        }
+        official_provenance = {
+            "backend": "official-resvg-2.6.2",
+            "python": "%d.%d" % sys.version_info[:2],
+            "files": {},
+            "corpora": {},
+        }
+        payload = (
+            json.dumps(
+                {
+                    "schema": "pyfcstm-diagram-reference",
+                    "provenance": custom_provenance,
+                    "report": old_report,
+                },
+                ensure_ascii=True,
+                sort_keys=True,
+                indent=2,
+            )
+            + "\n"
+        ).encode("utf-8")
+        reference_path = reference_root / "reference.json"
+        reference_path.write_bytes(payload)
+        reference_path.with_name("reference.json.sha256").write_text(
+            _sha256(payload) + "\n", encoding="ascii"
+        )
+        _write_sha_ledger(reference_root, {"reference.json", "reference.json.sha256"})
+        current = dict(new_report)
+        current["provenance"] = official_provenance
+        try:
+            compare_reference(current, reference_path, current_root)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(
+                "strict expanded SVG comparison accepted a generated clip-ID change"
+            )
+        compare_reference(
+            current,
+            reference_path,
+            current_root,
+            check_expanded_id_only=True,
+        )
+
+
 def compare_reference(
     report: Dict[str, Any],
     path: Path,
@@ -1200,7 +1313,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     args = parser.parse_args(argv)
     if args.check:
         _self_check_reference_provenance()
-        print("diagram rendering checker: provenance self-check passed")
+        _self_check_reference_comparison()
+        print("diagram rendering checker: provenance and parity self-check passed")
         return 0
     corpus_paths = tuple(path.resolve() for path in (args.corpus or DEFAULT_CORPORA))
     cases = load_cases(corpus_paths)

@@ -1093,6 +1093,54 @@ def test_render_png_rejects_oversized_encoded_payload_before_decoding(monkeypatc
     assert not decode_called
 
 
+def test_render_png_rejects_unpadded_encoded_limit_boundary(monkeypatch):
+    import importlib
+
+    engine_module = importlib.import_module("pyfcstm.diagram.engine")
+    engine = DiagramAssetEngine()
+    monkeypatch.setattr(engine, "_ensure_resvg", lambda _locale: None)
+    monkeypatch.setattr(engine_module, "_MAX_RENDER_PNG_BYTES", 1)
+    monkeypatch.setattr(engine_module, "_MAX_RENDER_PNG_BASE64_BYTES", 4)
+    monkeypatch.setattr(engine, "_eval_asset", lambda *_args, **_kwargs: "AAAA")
+    decode_called = False
+
+    def forbidden_decode(*_args, **_kwargs):
+        nonlocal decode_called
+        decode_called = True
+        raise AssertionError("ambiguous base64 boundary was decoded")
+
+    monkeypatch.setattr(engine_module.base64, "b64decode", forbidden_decode)
+    canonical = _canonical_svg(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1">'
+        '<rect width="1" height="1" fill="black"/></svg>'
+    )
+    with pytest.raises(DiagramRenderLimitError, match="base64 PNG output"):
+        engine.render_png(canonical)
+    assert not decode_called
+
+
+def test_render_png_classifies_decoded_output_limit(monkeypatch):
+    import importlib
+
+    engine_module = importlib.import_module("pyfcstm.diagram.engine")
+    engine = DiagramAssetEngine()
+    monkeypatch.setattr(engine, "_ensure_resvg", lambda _locale: None)
+    monkeypatch.setattr(engine_module, "_MAX_RENDER_PNG_BYTES", 4)
+    monkeypatch.setattr(engine_module, "_MAX_RENDER_PNG_BASE64_BYTES", 8)
+    monkeypatch.setattr(engine, "_eval_asset", lambda *_args, **_kwargs: "AAAA")
+    monkeypatch.setattr(
+        engine_module.base64,
+        "b64decode",
+        lambda *_args, **_kwargs: b"12345",
+    )
+    canonical = _canonical_svg(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1">'
+        '<rect width="1" height="1" fill="black"/></svg>'
+    )
+    with pytest.raises(DiagramRenderLimitError, match="decoded PNG output"):
+        engine.render_png(canonical)
+
+
 def test_engine_rejects_non_finite_timeout():
     for timeout in (float("nan"), float("inf"), float("-inf")):
         with pytest.raises(ValueError, match="finite positive"):
@@ -1167,6 +1215,29 @@ def test_engine_discards_context_after_renderer_deadline(monkeypatch):
     assert engine._context is None
     engine.timeout = 30.0
     assert engine._eval("6 * 7") == 42
+
+
+def test_expand_svg_native_interruption_uses_render_error(monkeypatch):
+    import importlib
+
+    engine_module = importlib.import_module("pyfcstm.diagram.engine")
+    engine = DiagramAssetEngine()
+    canonical = _canonical_svg(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1">'
+        '<rect width="1" height="1" fill="black"/></svg>'
+    )
+    monkeypatch.setattr(engine, "_ensure_resvg", lambda _locale: None)
+
+    def interrupted(*_args, **_kwargs):
+        engine._discard_context()
+        raise engine_module._DiagramEvaluationInterruptedError(
+            "embedded MiniRacer evaluation exceeded its time or memory limit"
+        )
+
+    monkeypatch.setattr(engine, "_eval", interrupted)
+    with pytest.raises(DiagramRenderError, match="renderer request exceeded"):
+        engine.expand_svg(canonical)
+    assert engine._context is None
 
 
 def test_renderer_poll_failure_uses_render_error_and_discards_context():

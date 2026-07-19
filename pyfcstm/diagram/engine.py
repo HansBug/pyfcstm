@@ -757,7 +757,10 @@ def _decode_png_rgba(data: bytes) -> Tuple[int, int, Tuple[int, int, int, int]]:
     if not data.startswith(b"\x89PNG\r\n\x1a\n"):
         raise ValueError("PNG output lacks the PNG signature")
     if len(data) > _MAX_RENDER_PNG_BYTES:
-        raise ValueError("PNG output exceeds the encoded-size limit")
+        raise DiagramRenderLimitError(
+            "diagram render limit exceeded: decoded PNG output is %d bytes; "
+            "maximum is %d bytes" % (len(data), _MAX_RENDER_PNG_BYTES)
+        )
     position = 8
     saw_ihdr = False
     saw_idat = False
@@ -798,14 +801,20 @@ def _decode_png_rgba(data: bytes) -> Tuple[int, int, Tuple[int, int, int, int]]:
                 width, height, depth, color_type, compression, filtering, interlace = (
                     struct.unpack(">IIBBBBB", payload)
                 )
+                if not width or not height:
+                    raise ValueError("PNG output has non-positive dimensions")
                 if (
-                    not width
-                    or not height
-                    or width > _MAX_RENDER_DIMENSION
+                    width > _MAX_RENDER_DIMENSION
                     or height > _MAX_RENDER_DIMENSION
                     or width * height > _MAX_RENDER_PIXELS
                     or width * height * 4 > _MAX_RENDER_RGBA_BYTES
-                    or depth != 8
+                ):
+                    raise DiagramRenderLimitError(
+                        "diagram render limit exceeded: PNG dimensions are %dx%d"
+                        % (width, height)
+                    )
+                if (
+                    depth != 8
                     or color_type != 6
                     or compression != 0
                     or filtering != 0
@@ -835,11 +844,23 @@ def _decode_png_rgba(data: bytes) -> Tuple[int, int, Tuple[int, int, int, int]]:
         if not saw_ihdr or not saw_idat or not saw_iend or position != len(data):
             raise ValueError("PNG output is missing IHDR, IDAT, or IEND")
         decoded = zlib.decompress(bytes(compressed))
-    except (struct.error, ValueError, zlib.error, OverflowError) as err:
+        if len(decoded) > _MAX_RENDER_RGBA_BYTES:
+            raise DiagramRenderLimitError(
+                "diagram render limit exceeded: decoded PNG scanlines are %d bytes; "
+                "maximum is %d bytes" % (len(decoded), _MAX_RENDER_RGBA_BYTES)
+            )
+    except (
+        struct.error,
+        ValueError,
+        DiagramRenderError,
+        zlib.error,
+        OverflowError,
+    ) as err:
         # struct.error/ValueError: malformed chunk fields or scanlines;
+        # DiagramRenderError: a checked output limit was exceeded;
         # zlib.error: IDAT is not a valid compressed stream; OverflowError:
         # checked dimension arithmetic cannot be represented by the decoder.
-        if isinstance(err, ValueError):
+        if isinstance(err, (ValueError, DiagramRenderError)):
             raise
         raise ValueError("PNG output has malformed compressed data") from err
     row_stride = width * 4 + 1
@@ -889,7 +910,14 @@ def _valid_png(data: bytes) -> bool:
     """Validate the opaque RGBA PNG payload emitted by the renderer."""
     try:
         _decode_png_rgba(data)
-    except (TypeError, ValueError, struct.error, zlib.error, OverflowError):
+    except (
+        TypeError,
+        ValueError,
+        DiagramRenderError,
+        struct.error,
+        zlib.error,
+        OverflowError,
+    ):
         # TypeError/ValueError: non-bytes or malformed PNG; struct.error:
         # truncated binary fields; zlib.error/OverflowError: invalid stream or
         # checked decoder arithmetic.
@@ -1392,7 +1420,14 @@ class DiagramAssetEngine:
             request=True,
         )
         encoded_text = str(encoded)
-        if len(encoded_text) > _MAX_RENDER_PNG_BASE64_BYTES:
+        required_padding = (
+            "=" * (3 - (_MAX_RENDER_PNG_BYTES % 3)) if _MAX_RENDER_PNG_BYTES % 3 else ""
+        )
+        if len(encoded_text) > _MAX_RENDER_PNG_BASE64_BYTES or (
+            len(encoded_text) == _MAX_RENDER_PNG_BASE64_BYTES
+            and required_padding
+            and not encoded_text.endswith(required_padding)
+        ):
             raise DiagramRenderLimitError(
                 "diagram render limit exceeded: base64 PNG output is %d bytes; "
                 "maximum encoded size is %d bytes"
@@ -1406,8 +1441,15 @@ class DiagramAssetEngine:
             raise _render_failure(
                 "resvg.wasm", "the renderer returned invalid PNG data", err
             ) from err
+        if len(result) > _MAX_RENDER_PNG_BYTES:
+            raise DiagramRenderLimitError(
+                "diagram render limit exceeded: decoded PNG output is %d bytes; "
+                "maximum is %d bytes" % (len(result), _MAX_RENDER_PNG_BYTES)
+            )
         try:
             width, height, _bbox = _decode_png_rgba(result)
+        except DiagramRenderLimitError:
+            raise
         except (TypeError, ValueError, struct.error, zlib.error, OverflowError) as err:
             # TypeError/ValueError: the WASM bridge returned malformed or
             # blank PNG data; struct.error/zlib.error/OverflowError: the
@@ -1446,6 +1488,7 @@ class DiagramAssetEngine:
                 "resvg.wasm",
                 "__pyfcstm_resvg_expand(%s)" % json.dumps(svg),
                 timeout=self.timeout,
+                request=True,
             )
         )
         stripped = expanded.strip()

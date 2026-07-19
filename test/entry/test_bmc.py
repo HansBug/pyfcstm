@@ -486,7 +486,7 @@ def test_bmc_human_report_distinguishes_feasibility_unknown_timeout_and_unchecke
         ),
     )
     assert unchecked.exit_code == 3
-    assert "SCENARIO FEASIBILITY TIMED OUT; PROPERTY NOT EVALUATED" in (
+    assert "SCENARIO FEASIBILITY NOT CHECKED; PROPERTY NOT EVALUATED" in (
         unchecked.stdout
     )
     assert "Scenario: NOT CHECKED" in unchecked.stdout

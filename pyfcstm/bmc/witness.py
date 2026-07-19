@@ -1668,6 +1668,12 @@ def _solve_conclusion(
 def _solve_presentation(result: "BmcSolveResult") -> _BmcSolvePresentation:
     outcome = result.outcome
     response_horizon = _solve_response_horizon(result, outcome)
+    feasibility = result._validated_feasibility()
+    feasibility_timeout_headline = (
+        "SCENARIO FEASIBILITY TIMED OUT"
+        if feasibility.assumptions.origin == "checked"
+        else "SCENARIO FEASIBILITY NOT CHECKED"
+    )
     headlines = {
         "witness_found": "PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND",
         "no_witness": "GOAL UNREALIZABLE WITHIN BOUND; NO WITNESS",
@@ -1675,7 +1681,8 @@ def _solve_presentation(result: "BmcSolveResult") -> _BmcSolvePresentation:
         "property_satisfied": "PROPERTY GUARANTEED WITHIN BOUND; NO COUNTEREXAMPLE",
         "scenario_infeasible": "SCENARIO INFEASIBLE; PROPERTY NOT EVALUATED",
         "feasibility_unknown": "SCENARIO FEASIBILITY UNKNOWN; PROPERTY NOT EVALUATED",
-        "feasibility_timeout": "SCENARIO FEASIBILITY TIMED OUT; PROPERTY NOT EVALUATED",
+        "feasibility_timeout": "%s; PROPERTY NOT EVALUATED"
+        % feasibility_timeout_headline,
         "unknown": "PROPERTY INCONCLUSIVE; PRIMARY CHECK UNKNOWN",
         "timeout": "PROPERTY INCONCLUSIVE; PRIMARY CHECK TIMED OUT",
         "incomplete": "PROPERTY INCONCLUSIVE; RESPONSE HORIZON INCOMPLETE",
@@ -3117,7 +3124,10 @@ class BmcSolveResult(_PrettyPrintableMixin):
         and the human-readable ``pyfcstm bmc`` report.  It deliberately keeps
         evidence form in parentheses so callers can distinguish a missing
         witness from a concrete counterexample without interpreting raw SAT
-        or UNSAT status.
+        or UNSAT status.  Runtime replay validation is a separate
+        :class:`BmcReplayResult` concern; the CLI may replace this bounded
+        verdict with an untrusted-evidence message when replay finds a
+        mismatch.
 
         :return: Canonical bounded property verdict text.
         :rtype: str

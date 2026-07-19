@@ -1008,6 +1008,30 @@ def test_solve_result_text_exposes_response_exception_reason(
     assert all(fragment in str(model) for fragment in fragments)
 
 
+def test_solve_result_text_distinguishes_unstarted_feasibility_timeout() -> None:
+    """Object text says ``NOT CHECKED`` when the shared budget stopped setup."""
+    not_checked = BmcFeasibilityCheck(None, "not_checked")
+    model = BmcSolveResult(
+        _sample_formula(),
+        "unsat",
+        feasibility=BmcFeasibilityResult(
+            not_checked,
+            not_checked,
+            not_checked,
+            localization_status="not_checked",
+        ),
+        diagnostics=(
+            "feasibility_timeout:deadline_exhausted_before_assumptions_check",
+        ),
+    )
+
+    text = str(model)
+    assert "BmcSolveResult: SCENARIO FEASIBILITY NOT CHECKED; PROPERTY NOT EVALUATED" in text
+    assert "Scenario: NOT CHECKED" in text
+    assert "Property verdict: NOT EVALUATED (SCENARIO FEASIBILITY TIMED OUT)" in text
+    assert "shared budget was exhausted first" in text
+
+
 def test_pretty_print_default_stdout_and_invalid_end_are_pinned(capsys) -> None:
     """Direct pretty printing uses stdout by default and validates ``end``."""
     expected = """

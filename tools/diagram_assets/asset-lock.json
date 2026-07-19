@@ -3,10 +3,31 @@
   "renderer": {
     "target": "es2017",
     "format": "iife",
-    "resvgBundleUrl": "https://gist.githubusercontent.com/HansBug/3dee7cb7094369bcbae42d0a1bdcf6fd/raw/3b5f4ea1e19009bba355facee16bc3feef62294d/resvg037-legacy-bundle.js",
-    "resvgBundleSha256": "435b67b9e703c1b33600e4696ee19817c402d5055136b782558ba719a3b227ae",
-    "resvgWasmUrl": "https://gist.githubusercontent.com/HansBug/3dee7cb7094369bcbae42d0a1bdcf6fd/raw/d7930a0aed8b7f98bcf93ca3ca03425b8313a5eb/resvg037.wasm",
-    "resvgWasmSha256": "65a71d371905968c3747f9c57a86fd803e27b9dc081e7145350b9529bc803248",
+    "resvgPackage": {
+      "name": "@resvg/resvg-wasm",
+      "version": "2.6.2",
+      "resolved": "https://registry.npmjs.org/@resvg/resvg-wasm/-/resvg-wasm-2.6.2.tgz",
+      "integrity": "sha512-FqALmHI8D4o6lk/LRWDnhw95z5eO+eAa6ORjVg09YRR7BkcM6oPHU9uyC0gtQG5vpFLvgpeU4+zEAz2H8APHNw==",
+      "license": "MPL-2.0",
+      "bindingPath": "index.min.js",
+      "bindingSha256": "590115ae25dead0d688da192f2d31586cdf1f8c70fe294919419c168e03e5c42",
+      "wasmPath": "index_bg.wasm",
+      "wasmSha256": "22bf6e9f9a100d972da0411a69c5ba504367fc1fa87b3b64e3f35e53926d2d70",
+      "tarballSha256": "ff51acbb5ee0074601b75c3bea9226a18d346752af787f6d2d3adcdd98493d71",
+      "sourceRepository": "https://github.com/thx/resvg-js",
+      "sourceCommit": "9ca058462ac529120c8cc84ddcd6fef644cc5406",
+      "sourceArchiveUrl": "https://codeload.github.com/thx/resvg-js/tar.gz/9ca058462ac529120c8cc84ddcd6fef644cc5406",
+      "sourceArchiveSha256": "7ce8697451237577d473361aa688917a48cba00c4a8f3302a833455c9c2013fa",
+      "patchedSourceRepository": "https://github.com/zimond/resvg",
+      "patchedSourceCommit": "3495d8705b302d6d266748516973606ca9657906",
+      "patchedSourceArchiveUrl": "https://codeload.github.com/zimond/resvg/tar.gz/3495d8705b302d6d266748516973606ca9657906",
+      "patchedSourceArchiveSha256": "08d15a07f930ee4dfb7971b792697c32059b25a5c10aa283ee672488a2417713",
+      "sourceFiles": {
+        "LICENSE": "4b89d4518bd135ab4ee154a7bce722246b57a98c3d7efc1a09409898160c2bd1",
+        "Cargo.toml": "72880b4d3e64bd62caf033579a21057c97ed069002bdef67a0029b7fc6e340a9",
+        "patched-resvg/LICENSE.txt": "fab3dd6bdab226f1c08630b1dd917e11fcb4ec5e1e020e2c16f83a0a13863e85"
+      }
+    },
     "resvgWasmMaxBytes": 2600000,
     "esbuildVersion": "0.28.1",
     "elkjs": {

@@ -17,5 +17,5 @@ cmake<4
 ruff
 # Diagram asset runtime tests must execute in CI rather than silently
 # skipping when the optional MiniRacer distribution is absent.
-py-mini-racer>=0.2; python_version < "3.8"
-mini-racer; python_version >= "3.8"
+py-mini-racer>=0.6.0,<0.7; python_version < "3.8"
+mini-racer>=0.7.0; python_version >= "3.8"

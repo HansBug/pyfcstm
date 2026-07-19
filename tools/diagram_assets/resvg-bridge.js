@@ -1,4 +1,4 @@
-/* global resvg037 */
+/* global resvg */
 
 // This file is appended to the pinned resvg binding by the asset builder.
 // It exposes only byte-oriented operations needed by the Python host; no DOM,
@@ -55,7 +55,7 @@
     root.__pyfcstm_resvg_status = "pending";
     root.__pyfcstm_resvg_error = null;
     WebAssembly.compile(decodeBase64(wasmBase64))
-      .then((module) => resvg037.initWasm(module))
+      .then((module) => resvg.initWasm(module))
       .then(
         () => {
           root.__pyfcstm_resvg_status = "ok";
@@ -81,12 +81,33 @@
     return fontBuffers.length;
   };
 
+  root.__pyfcstm_resvg_metrics = function () {
+    return JSON.stringify({
+      activeContext: Number(root.__pyfcstm_active_context_count || 0),
+      registeredFonts: fontBuffers.length,
+    });
+  };
+
   root.__pyfcstm_resvg_png = function (svg, scale) {
-    const image = new resvg037.Resvg(String(svg), options(scale)).render();
-    return encodeBase64(image.asPng());
+    const renderer = new resvg.Resvg(String(svg), options(scale));
+    try {
+      const image = renderer.render();
+      try {
+        return encodeBase64(image.asPng());
+      } finally {
+        image.free();
+      }
+    } finally {
+      renderer.free();
+    }
   };
 
   root.__pyfcstm_resvg_expand = function (svg) {
-    return new resvg037.Resvg(String(svg), options(1)).toString();
+    const renderer = new resvg.Resvg(String(svg), options(1));
+    try {
+      return renderer.toString();
+    } finally {
+      renderer.free();
+    }
   };
 })();

@@ -215,12 +215,12 @@ def main() -> int:
 
     for relative in sorted(CONTROLLED_TEXT_MARKERS):
         try:
-            (ASSET_DIR / relative).read_bytes().decode("ascii")
+            (ASSET_DIR / relative).read_bytes().decode("utf-8")
         except UnicodeDecodeError as err:
-            # UnicodeDecodeError: a controlled asset marker is no longer
-            # ASCII/English text and would violate the package asset contract.
+            # UnicodeDecodeError: a controlled asset marker is not valid UTF-8
+            # and cannot be read consistently by package consumers.
             raise ValueError(
-                "controlled diagram asset must be ASCII/English text: %s" % relative
+                "controlled diagram asset must be UTF-8 text: %s" % relative
             ) from err
 
     renderer = (ASSET_DIR / "renderer.js").read_text(encoding="utf-8")
@@ -235,6 +235,37 @@ def main() -> int:
     renderer_lock = lock["renderer"]
     if not isinstance(renderer_lock, dict):
         raise ValueError("renderer lock must be an object")
+    resvg_package = renderer_lock.get("resvgPackage")
+    if not isinstance(resvg_package, dict):
+        raise ValueError("renderer lock lacks official resvg package provenance")
+    required_resvg = {
+        "name": "@resvg/resvg-wasm",
+        "version": "2.6.2",
+        "license": "MPL-2.0",
+        "bindingPath": "index.min.js",
+        "wasmPath": "index_bg.wasm",
+        "bindingSha256": "590115ae25dead0d688da192f2d31586cdf1f8c70fe294919419c168e03e5c42",
+        "wasmSha256": "22bf6e9f9a100d972da0411a69c5ba504367fc1fa87b3b64e3f35e53926d2d70",
+        "tarballSha256": "ff51acbb5ee0074601b75c3bea9226a18d346752af787f6d2d3adcdd98493d71",
+        "sourceCommit": "9ca058462ac529120c8cc84ddcd6fef644cc5406",
+        "patchedSourceCommit": "3495d8705b302d6d266748516973606ca9657906",
+        "sourceArchiveSha256": "7ce8697451237577d473361aa688917a48cba00c4a8f3302a833455c9c2013fa",
+        "patchedSourceArchiveSha256": "08d15a07f930ee4dfb7971b792697c32059b25a5c10aa283ee672488a2417713",
+    }
+    for key, expected_value in required_resvg.items():
+        if resvg_package.get(key) != expected_value:
+            raise ValueError("official resvg lock field is invalid: %s" % key)
+    package_lock_path = ROOT / "editors" / "jsfcstm" / "package-lock.json"
+    try:
+        package_lock = json.loads(package_lock_path.read_text(encoding="utf-8"))
+        installed_lock = package_lock["packages"]["node_modules/@resvg/resvg-wasm"]
+    except (KeyError, OSError, TypeError, ValueError) as err:
+        # KeyError/TypeError/ValueError: the tracked npm lock has no valid
+        # official package entry; OSError: the lock file cannot be read.
+        raise ValueError("jsfcstm package-lock lacks official resvg 2.6.2") from err
+    for key in ("version", "resolved", "integrity"):
+        if installed_lock.get(key) != resvg_package.get(key):
+            raise ValueError("resvg package-lock differs from asset lock: %s" % key)
     if manifest["renderer"] != renderer_lock:
         raise ValueError("generated manifest renderer lock differs from source lock")
     esbuild_meta = manifest.get("esbuild")
@@ -246,6 +277,12 @@ def main() -> int:
         renderer_lock["resvgWasmMaxBytes"]
     ):
         raise ValueError("resvg WASM exceeds the locked size budget")
+    for path in (ASSET_DIR / "manifest.json", ASSET_DIR / "NOTICE.txt"):
+        text = path.read_text(encoding="utf-8")
+        if "resvg037" in text or "resvg 0.37" in text:
+            raise ValueError(
+                "diagram asset metadata still references custom resvg 0.37"
+            )
 
     fonts_lock = lock.get("fonts")
     if not isinstance(fonts_lock, dict):

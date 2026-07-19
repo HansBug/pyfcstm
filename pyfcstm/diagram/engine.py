@@ -1,9 +1,25 @@
 """
 Run the shared offline diagram renderer inside a constrained MiniRacer host.
 
-This module is an internal feasibility surface for PR-A. The public Python
-``StateMachine.diagram`` API is intentionally deferred to the continuation
-work described by PR #383.
+The module owns the diagram asset boundary:
+
+* :class:`DiagramAssetEngine` loads the generated ES2017 renderer and official
+  resvg WebAssembly package, then exposes internal SVG/PNG operations.
+* The canonical and expanded SVG validators enforce the closed renderer
+  dialect before data reaches the rasterizer or leaves the process.
+* Runtime selection, resource recovery guidance, CJK font registration, and
+  timeout/context lifecycle handling are kept in one Python boundary.
+
+This is an internal feasibility surface for the asset closure work. The
+stable ``StateMachine.diagram`` facade and user-facing export commands remain
+follow-up API work.
+
+Example::
+
+    >>> from pyfcstm.diagram import DiagramAssetEngine
+    >>> engine = DiagramAssetEngine(timeout=30.0)
+    >>> engine.timeout
+    30.0
 """
 
 import base64
@@ -16,16 +32,48 @@ import re
 import struct
 import time
 import zlib
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 
 class DiagramAssetError(RuntimeError):
-    """Raised when the embedded renderer or its generated assets fail."""
+    """
+    Report a missing, corrupt, or unusable diagram runtime asset.
+
+    Example::
+
+        >>> raise DiagramAssetError("renderer.js is missing")
+        Traceback (most recent call last):
+        ...
+        DiagramAssetError: renderer.js is missing
+    """
+
+
+class DiagramRenderError(DiagramAssetError):
+    """
+    Report invalid output or a rejected DiagramData request.
+
+    Example::
+
+        >>> raise DiagramRenderError("closed SVG dialect rejected output")
+        Traceback (most recent call last):
+        ...
+        DiagramRenderError: closed SVG dialect rejected output
+    """
 
 
 class DiagramEngineMetadataError(DiagramAssetError):
-    """Raised when installed MiniRacer distributions cannot be inspected."""
+    """
+    Report that installed MiniRacer distribution metadata is unavailable.
+
+    Example::
+
+        >>> raise DiagramEngineMetadataError("runtime metadata unavailable")
+        Traceback (most recent call last):
+        ...
+        DiagramEngineMetadataError: runtime metadata unavailable
+    """
 
 
 class DiagramEngineConflictError(DiagramAssetError):
@@ -34,6 +82,13 @@ class DiagramEngineConflictError(DiagramAssetError):
 
     This error is raised before a JavaScript context is created when both
     ``mini-racer`` and ``py-mini-racer`` are installed in one environment.
+
+    Example::
+
+        >>> raise DiagramEngineConflictError("install exactly one runtime")
+        Traceback (most recent call last):
+        ...
+        DiagramEngineConflictError: install exactly one runtime
     """
 
 
@@ -63,6 +118,337 @@ _CJK_LOCALE_PATTERN = re.compile(
 )
 
 _ASSET_ISSUE_URL = "https://github.com/HansBug/pyfcstm/issues"
+_SVG_NS = "http://www.w3.org/2000/svg"
+_SVG_MAX_BYTES = 16 * 1024 * 1024
+_SVG_MAX_ELEMENTS = 100_000
+
+_SVG_INPUT_ELEMENTS = {
+    "svg",
+    "defs",
+    "marker",
+    "filter",
+    "feGaussianBlur",
+    "feOffset",
+    "feComponentTransfer",
+    "feFuncA",
+    "feFuncR",
+    "feFuncG",
+    "feFuncB",
+    "feMerge",
+    "feMergeNode",
+    "g",
+    "rect",
+    "path",
+    "line",
+    "circle",
+    "text",
+}
+_SVG_OUTPUT_ELEMENTS = {
+    "svg",
+    "defs",
+    "filter",
+    "feGaussianBlur",
+    "feOffset",
+    "feComponentTransfer",
+    "feFuncA",
+    "feFuncR",
+    "feFuncG",
+    "feFuncB",
+    "feMerge",
+    "feMergeNode",
+    "clipPath",
+    "g",
+    "path",
+}
+_SVG_INPUT_ATTRIBUTES = {
+    "svg": {
+        "viewBox",
+        "width",
+        "height",
+        "font-family",
+        "font-size",
+        "data-fcstm-canvas",
+        "data-fcstm-direction",
+        "data-fcstm-palette",
+        "data-fcstm-mode",
+    },
+    "defs": set(),
+    "marker": {
+        "id",
+        "viewBox",
+        "refX",
+        "refY",
+        "markerWidth",
+        "markerHeight",
+        "orient",
+        "markerUnits",
+    },
+    "filter": {"id", "x", "y", "width", "height"},
+    "feGaussianBlur": {"in", "stdDeviation"},
+    "feOffset": {"in", "dx", "dy"},
+    "feComponentTransfer": set(),
+    "feFuncA": {"type", "slope", "intercept"},
+    "feFuncR": {"type", "slope", "intercept"},
+    "feFuncG": {"type", "slope", "intercept"},
+    "feFuncB": {"type", "slope", "intercept"},
+    "feMerge": set(),
+    "feMergeNode": {"in"},
+    "g": {
+        "data-fcstm-kind",
+        "data-fcstm-id",
+        "data-fcstm-variant",
+        "data-fcstm-pseudo",
+        "data-fcstm-composite",
+        "data-fcstm-collapsed",
+        "data-fcstm-range-start-line",
+        "data-fcstm-range-start-character",
+        "data-fcstm-range-end-line",
+        "data-fcstm-range-end-character",
+    },
+    "rect": {
+        "class",
+        "x",
+        "y",
+        "width",
+        "height",
+        "rx",
+        "ry",
+        "fill",
+        "stroke",
+        "stroke-width",
+        "stroke-dasharray",
+        "filter",
+        "pointer-events",
+    },
+    "path": {
+        "d",
+        "fill",
+        "stroke",
+        "stroke-width",
+        "stroke-dasharray",
+        "stroke-linecap",
+        "stroke-linejoin",
+        "stroke-opacity",
+        "marker-end",
+        "data-fcstm-kind",
+        "data-fcstm-id",
+        "data-fcstm-range-start-line",
+        "data-fcstm-range-start-character",
+        "data-fcstm-range-end-line",
+        "data-fcstm-range-end-character",
+    },
+    "line": {
+        "x1",
+        "y1",
+        "x2",
+        "y2",
+        "stroke",
+        "stroke-opacity",
+        "stroke-width",
+    },
+    "circle": {
+        "cx",
+        "cy",
+        "r",
+        "fill",
+        "stroke",
+        "stroke-width",
+        "data-fcstm-kind",
+        "data-fcstm-id",
+    },
+    "text": {
+        "x",
+        "y",
+        "fill",
+        "font-family",
+        "font-size",
+        "font-weight",
+        "text-anchor",
+        "letter-spacing",
+        "paint-order",
+        "stroke",
+        "stroke-width",
+        "stroke-linejoin",
+    },
+}
+_SVG_OUTPUT_ATTRIBUTES = {
+    "svg": {"width", "height", "viewBox"},
+    "defs": set(),
+    "filter": {"id", "x", "y", "width", "height"},
+    "feGaussianBlur": {"color-interpolation-filters", "in", "stdDeviation", "result"},
+    "feOffset": {"color-interpolation-filters", "in", "dx", "dy", "result"},
+    "feComponentTransfer": {"color-interpolation-filters", "in", "result"},
+    "feFuncA": {"type", "slope", "intercept"},
+    "feFuncR": {"type"},
+    "feFuncG": {"type"},
+    "feFuncB": {"type"},
+    "feMerge": {"color-interpolation-filters", "result"},
+    "feMergeNode": {"in"},
+    "clipPath": {"id"},
+    "g": {"clip-path", "filter", "transform"},
+    "path": {
+        "d",
+        "fill",
+        "fill-opacity",
+        "paint-order",
+        "stroke",
+        "stroke-dasharray",
+        "stroke-linecap",
+        "stroke-linejoin",
+        "stroke-opacity",
+        "stroke-width",
+        "visibility",
+    },
+}
+
+_DANGEROUS_URI_SCHEME_RE = re.compile(
+    r"(?:javascript|vbscript|data|blob|about|file|https?|ftp|ws|wss|"
+    r"chrome|chrome-extension):",
+    re.IGNORECASE,
+)
+_URI_REFERENCE_RE = re.compile(r"url\(([^)]*)\)", re.IGNORECASE)
+
+
+class _CanonicalSvg(str):
+    """Private marker for SVG text emitted by the validated shared renderer."""
+
+
+def _svg_tag(element: ET.Element) -> str:
+    """Return an SVG local name, rejecting foreign namespaces."""
+    prefix = "{%s}" % _SVG_NS
+    if not isinstance(element.tag, str) or not element.tag.startswith(prefix):
+        raise DiagramAssetError("closed SVG dialect rejected a non-SVG namespace")
+    return element.tag[len(prefix) :]
+
+
+def _svg_parse(svg: str) -> ET.Element:
+    """Parse bounded XML while rejecting DTD, entity, comments, and PIs."""
+    if not isinstance(svg, str):
+        raise DiagramAssetError("closed SVG dialect requires UTF-8 SVG text")
+    if len(svg.encode("utf-8")) > _SVG_MAX_BYTES:
+        raise DiagramAssetError("closed SVG dialect rejected an oversized SVG")
+    if any(token in svg for token in ("<!DOCTYPE", "<!ENTITY", "<?", "<!--", "<![")):
+        raise DiagramAssetError(
+            "closed SVG dialect rejected XML declarations or entities"
+        )
+    try:
+        return ET.fromstring(svg)
+    except ET.ParseError as err:
+        # ParseError: malformed XML or an unsupported entity declaration.
+        raise DiagramAssetError(
+            "closed SVG dialect rejected malformed XML: %s" % err
+        ) from err
+
+
+def _summarize_exception(error: BaseException, limit: int = 512) -> str:
+    """Return a bounded exception summary without embedding evaluated source."""
+    text = " ".join(str(error).split())
+    if not text:
+        return "unspecified error"
+    # MiniRacer may append the complete evaluated minified bundle after the
+    # JavaScript error. Keep only the native error class and its short message.
+    match = re.search(
+        r"((?:TypeError|ReferenceError|RangeError|SyntaxError|URIError|"
+        r"EvalError|Error):\s*[^`]{0,512}?)(?:\s+at\s+|`|$)",
+        text,
+    )
+    if match:
+        text = match.group(1).strip()
+    else:
+        text = re.split(r"\s+at\s+", text, maxsplit=1)[0].strip()
+    if len(text) <= limit:
+        return text
+    return text[: limit - 3].rstrip() + "..."
+
+
+def _validate_svg_tree(svg: str, output: bool) -> str:
+    """Validate one canonical or expanded SVG against its closed dialect."""
+    root = _svg_parse(svg)
+    allowed_elements = _SVG_OUTPUT_ELEMENTS if output else _SVG_INPUT_ELEMENTS
+    allowed_attributes = _SVG_OUTPUT_ATTRIBUTES if output else _SVG_INPUT_ATTRIBUTES
+    count = 0
+    ids = set()
+    references = []
+    for element in root.iter():
+        count += 1
+        if count > _SVG_MAX_ELEMENTS:
+            raise DiagramAssetError("closed SVG dialect rejected too many XML elements")
+        tag = _svg_tag(element)
+        if tag not in allowed_elements:
+            raise DiagramAssetError("closed SVG dialect rejected element: %s" % tag)
+        attrs = allowed_attributes.get(tag, set())
+        for name, value in element.attrib.items():
+            if name.startswith("{") or name not in attrs:
+                raise DiagramAssetError(
+                    "closed SVG dialect rejected attribute %s on <%s>" % (name, tag)
+                )
+            if name == "id":
+                if not value or value in ids:
+                    raise DiagramAssetError(
+                        "closed SVG dialect rejected duplicate or empty id"
+                    )
+                ids.add(value)
+            if name.lower().startswith("on") or name in {"href", "xlink:href", "style"}:
+                raise DiagramAssetError(
+                    "closed SVG dialect rejected executable attribute: %s" % name
+                )
+            if _DANGEROUS_URI_SCHEME_RE.search(value):
+                raise DiagramAssetError("closed SVG dialect rejected an external URL")
+            for uri in _URI_REFERENCE_RE.findall(value):
+                reference = uri.strip().strip("\"'")
+                if not reference.startswith("#") or len(reference) == 1:
+                    raise DiagramAssetError(
+                        "closed SVG dialect rejected a non-local URL reference"
+                    )
+                references.append(reference[1:])
+        if element.text and output and element.text.strip():
+            raise DiagramAssetError("closed SVG dialect rejected residual text nodes")
+        if element.tail and element.tail.strip():
+            raise DiagramAssetError("closed SVG dialect rejected residual tail text")
+    if root.tag != "{%s}svg" % _SVG_NS:
+        raise DiagramAssetError("closed SVG dialect requires an SVG root element")
+    for reference in references:
+        if reference not in ids:
+            raise DiagramAssetError(
+                "closed SVG dialect rejected a broken local reference: %s" % reference
+            )
+    if not output:
+        markers = list(root.iter("{%s}marker" % _SVG_NS))
+        marker_refs = [
+            element.attrib.get("marker-end")
+            for element in root.iter()
+            if element.attrib.get("marker-end")
+        ]
+        if markers:
+            if len(markers) != 1 or markers[0].attrib.get("orient") != "auto":
+                raise DiagramAssetError(
+                    "closed SVG dialect rejected the marker orientation contract"
+                )
+            if markers[0].attrib.get("refX") != "10":
+                raise DiagramAssetError(
+                    "closed SVG dialect rejected the marker endpoint contract"
+                )
+            if any("marker-start" in element.attrib for element in root.iter()):
+                raise DiagramAssetError("closed SVG dialect rejected marker-start")
+        if marker_refs and not markers:
+            raise DiagramAssetError(
+                "closed SVG dialect rejected a missing marker definition"
+            )
+    elif any(_svg_tag(element) in {"text", "marker"} for element in root.iter()):
+        raise DiagramAssetError(
+            "closed SVG dialect rejected residual text or marker elements"
+        )
+    return svg
+
+
+def _validate_canonical_svg(svg: str) -> _CanonicalSvg:
+    """Validate and mark SVG emitted by the shared renderer."""
+    return _CanonicalSvg(_validate_svg_tree(svg, output=False))
+
+
+def _validate_expanded_svg(svg: str) -> str:
+    """Validate the path-oriented SVG returned by resvg."""
+    return _validate_svg_tree(svg, output=True)
 
 
 def _is_development_checkout() -> bool:
@@ -78,8 +464,8 @@ def _asset_failure(
 ) -> DiagramAssetError:
     """Build a loud, actionable error for a missing or unusable asset."""
     detail = str(cause).strip() or "the resource failed validation"
-    if error is not None and str(error).strip():
-        detail = "%s: %s" % (detail, str(error).strip())
+    if error is not None:
+        detail = "%s: %s" % (detail, _summarize_exception(error))
     if _is_development_checkout():
         action = (
             "This appears to be a development checkout; run `make build_assets` "
@@ -93,6 +479,27 @@ def _asset_failure(
         )
     return DiagramAssetError(
         "pyfcstm diagram asset failure for %s: %s. %s" % (name, detail, action)
+    )
+
+
+def _render_failure(
+    name: str,
+    cause: str,
+    error: Optional[BaseException] = None,
+    request_error: bool = False,
+) -> DiagramRenderError:
+    """Build an actionable error for a renderer request after startup."""
+    detail = str(cause).strip() or "the renderer request failed"
+    if error is not None:
+        detail = "%s: %s" % (detail, _summarize_exception(error))
+    if request_error:
+        action = "check the DiagramData shape and renderer options, then retry"
+    elif _is_development_checkout():
+        action = "run `make build_assets` and retry after checking the renderer output"
+    else:
+        action = "report this full error at %s" % _ASSET_ISSUE_URL
+    return DiagramRenderError(
+        "pyfcstm diagram render failure for %s: %s. %s" % (name, detail, action)
     )
 
 
@@ -304,6 +711,7 @@ class DiagramAssetEngine:
         self.timeout = numeric_timeout
         self.max_memory = max_memory
         self._context = None
+        self._active_context_count = 0
         self._resvg_ready = False
         self._resvg_locale = None
         self._timeout_uses_seconds = False
@@ -388,7 +796,9 @@ class DiagramAssetEngine:
         self._timeout_uses_seconds = (
             "timeout_sec" in inspect.signature(MiniRacer.eval).parameters
         )
-        return MiniRacer()
+        context = MiniRacer()
+        self._active_context_count = 1
+        return context
 
     def _ensure_context(self) -> None:
         """Create and initialize a context after startup or interruption."""
@@ -400,6 +810,7 @@ class DiagramAssetEngine:
         """Drop a context that was interrupted or exceeded its heap limit."""
         context = self._context
         self._context = None
+        self._active_context_count = 0
         self._resvg_ready = False
         self._resvg_locale = None
         if context is None:
@@ -465,27 +876,48 @@ class DiagramAssetEngine:
                 "the bundle does not expose the required renderer entrypoint",
             )
         self._eval_asset("host-shim.js", host_shim)
-        self._eval_asset("host-shim.js", "globalThis.__pyfcstm_embedded_host = true;")
+        self._eval_asset(
+            "host-shim.js",
+            "globalThis.__pyfcstm_embedded_host = true;"
+            " globalThis.__pyfcstm_active_context_count = 1;",
+        )
         self._eval_asset("renderer.js", renderer)
 
     def _eval_asset(
-        self, name: str, source: str, timeout: Optional[float] = None
+        self,
+        name: str,
+        source: str,
+        timeout: Optional[float] = None,
+        request: bool = False,
     ) -> Any:
         """Evaluate an asset and attach the asset name to JavaScript failures."""
         try:
             return self._eval(source, timeout=timeout)
         except self._asset_eval_errors as err:
             self._discard_context()
+            if request:
+                raise _render_failure(
+                    name,
+                    "the renderer rejected the DiagramData request",
+                    err,
+                    request_error=True,
+                ) from err
             raise _asset_failure(
                 name, "the JavaScript resource could not be evaluated", err
             ) from err
 
-    def _poll(self, request_id: str, timeout: Optional[float] = None) -> Dict[str, Any]:
+    def _poll(
+        self,
+        request_id: str,
+        timeout: Optional[float] = None,
+        request: bool = False,
+    ) -> Dict[str, Any]:
         """Read one renderer job status from the JS context."""
         value = self._eval_asset(
             "renderer.js",
             "__pyfcstm_render_poll(%s)" % json.dumps(request_id),
             timeout=timeout,
+            request=request,
         )
         try:
             status = json.loads(str(value))
@@ -510,7 +942,15 @@ class DiagramAssetEngine:
         :type request: dict
         :return: UTF-8 SVG text.
         :rtype: str
+        :raises ValueError: If ``request`` is not a JSON-compatible mapping.
         :raises DiagramAssetError: If the JS job reports an error or times out.
+
+        Example::
+
+            >>> engine = DiagramAssetEngine()
+            >>> svg = engine.render_svg(diagram_data)
+            >>> svg.startswith("<svg")
+            True
         """
         request_id = "pyfcstm-%d" % time.monotonic_ns()
         deadline = time.monotonic() + self.timeout
@@ -522,37 +962,53 @@ class DiagramAssetEngine:
                 json.dumps(request_id),
             ),
             timeout=self.timeout,
+            request=True,
         )
         while time.monotonic() < deadline:
             remaining = max(0.001, deadline - time.monotonic())
-            status = self._poll(request_id, timeout=remaining)
+            status = self._poll(request_id, timeout=remaining, request=True)
             if status.get("status") == "done":
                 self._eval_asset(
                     "renderer.js",
                     "__pyfcstm_render_drop(%s)" % json.dumps(request_id),
                     timeout=remaining,
+                    request=True,
                 )
                 try:
                     svg = str(status["svg"])
                 except KeyError as err:
-                    raise _asset_failure(
+                    self._discard_context()
+                    raise _render_failure(
                         "renderer.js", "the completed job omitted its SVG output", err
                     ) from err
                 if not svg.lstrip().startswith("<svg"):
-                    raise _asset_failure(
+                    self._discard_context()
+                    raise _render_failure(
                         "renderer.js", "the renderer returned malformed SVG output"
                     )
-                return svg
+                try:
+                    return _validate_canonical_svg(svg)
+                except DiagramAssetError as err:
+                    self._discard_context()
+                    raise _render_failure(
+                        "renderer.js",
+                        "the renderer returned SVG outside the closed SVG dialect",
+                        err,
+                    ) from err
             if status.get("status") == "error":
                 self._eval_asset(
                     "renderer.js",
                     "__pyfcstm_render_drop(%s)" % json.dumps(request_id),
                     timeout=remaining,
+                    request=True,
                 )
                 error = str(status.get("error", "unknown renderer error"))
                 self._discard_context()
-                raise _asset_failure(
-                    "renderer.js", "the renderer job failed", ValueError(error)
+                raise _render_failure(
+                    "renderer.js",
+                    "the renderer job failed",
+                    ValueError(error),
+                    request_error=True,
                 )
             time.sleep(0.001)
         # The renderer promise may still be pending in the old context.  A
@@ -621,22 +1077,40 @@ class DiagramAssetEngine:
         self._discard_context()
         raise _asset_failure("resvg.wasm", "resvg WASM initialization timed out")
 
-    def render_png(self, svg: str, scale: float = 1.0) -> bytes:
-        """
-        Rasterize SVG text with the pinned resvg WASM backend.
+    def _canonical_input(self, request: Any) -> _CanonicalSvg:
+        """Resolve a DiagramData request or an internal canonical SVG."""
+        if isinstance(request, _CanonicalSvg):
+            return request
+        if isinstance(request, dict):
+            return self.render_svg(request)
+        raise ValueError(
+            "render_png/expand_svg require a DiagramData request; raw SVG input "
+            "is not supported"
+        )
 
-        :param svg: SVG text returned by :meth:`render_svg`.
-        :type svg: str
+    def render_png(self, request: Dict[str, Any], scale: float = 1.0) -> bytes:
+        """
+        Rasterize a DiagramData request with the pinned resvg WASM backend.
+
+        :param request: JSON-compatible DiagramData request.
+        :type request: dict
         :param scale: Finite positive raster scale, defaults to ``1.0``.
         :type scale: float, optional
         :return: PNG bytes.
         :rtype: bytes
         :raises ValueError: If ``scale`` is not finite and positive.
         :raises DiagramAssetError: If resvg reports a rendering failure.
+
+        Example::
+
+            >>> png = engine.render_png(diagram_data, scale=2.0)
+            >>> png.startswith(b"\\x89PNG")
+            True
         """
         numeric_scale = float(scale)
         if not math.isfinite(numeric_scale) or numeric_scale <= 0:
             raise ValueError("scale must be a finite positive number")
+        svg = self._canonical_input(request)
         self._ensure_resvg(self._locale_from_svg(svg))
         encoded = self._eval_asset(
             "resvg.wasm",
@@ -648,22 +1122,32 @@ class DiagramAssetEngine:
         except (ValueError, binascii.Error) as err:
             # ValueError/binascii.Error: the WASM bridge returned malformed
             # base64 instead of a PNG payload.
-            raise _asset_failure(
+            raise _render_failure(
                 "resvg.wasm", "the renderer returned invalid PNG data", err
             ) from err
         if not _valid_png(result):
-            raise _asset_failure("resvg.wasm", "the renderer returned invalid PNG data")
+            raise _render_failure(
+                "resvg.wasm", "the renderer returned invalid PNG data"
+            )
         return result
 
-    def expand_svg(self, svg: str) -> str:
+    def expand_svg(self, request: Dict[str, Any]) -> str:
         """
-        Expand SVG markers and text into resvg's normalized vector SVG.
+        Expand a DiagramData request into resvg's normalized vector SVG.
 
-        :param svg: SVG text.
-        :type svg: str
+        :param request: JSON-compatible DiagramData request.
+        :type request: dict
         :return: Normalized vector SVG text.
         :rtype: str
+        :raises DiagramAssetError: If resvg returns malformed or unsupported SVG.
+
+        Example::
+
+            >>> expanded = engine.expand_svg(diagram_data)
+            >>> "<path" in expanded
+            True
         """
+        svg = self._canonical_input(request)
         self._ensure_resvg(self._locale_from_svg(svg))
         expanded = str(
             self._eval_asset(
@@ -676,10 +1160,17 @@ class DiagramAssetEngine:
         if not stripped.startswith("<svg") or not (
             stripped.endswith("</svg>") or stripped.endswith("/>")
         ):
-            raise _asset_failure(
+            raise _render_failure(
                 "resvg.wasm", "the renderer returned malformed expanded SVG output"
             )
-        return expanded
+        try:
+            return _validate_expanded_svg(expanded)
+        except DiagramAssetError as err:
+            raise _render_failure(
+                "resvg.wasm",
+                "the renderer returned SVG outside the closed SVG dialect",
+                err,
+            ) from err
 
     @staticmethod
     def _locale_from_svg(svg: str) -> str:

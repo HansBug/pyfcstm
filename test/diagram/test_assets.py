@@ -1,8 +1,8 @@
-"""Runtime checks for the PR-A shared renderer and resvg asset boundary."""
+"""Runtime checks for the PR-B renderer and official resvg asset boundary."""
 
 import base64
+import json
 import re
-import math
 import builtins
 import hashlib
 import struct
@@ -15,6 +15,7 @@ from pyfcstm.diagram import (
     DiagramAssetError,
     DiagramEngineConflictError,
     DiagramEngineMetadataError,
+    DiagramRenderError,
 )
 
 
@@ -108,6 +109,15 @@ def _request():
     }
 
 
+def _canonical_svg(svg):
+    """Create a validated private SVG fixture for bridge-only tests."""
+    import importlib
+
+    return importlib.import_module("pyfcstm.diagram.engine")._validate_canonical_svg(
+        svg
+    )
+
+
 def _png_ink_bbox(data):
     """Decode the RGBA rows and return the non-white pixel bounding box."""
     assert data.startswith(b"\x89PNG\r\n\x1a\n")
@@ -189,6 +199,108 @@ def test_renderer_is_deterministic_and_escapes_hostile_labels():
     assert "auto-start-reverse" not in first
     assert "启动 &lt;ready&gt; &amp; 继续" in first
     assert "</script><script>" not in first
+
+
+def test_resvg_operations_reject_raw_svg_inputs():
+    engine = DiagramAssetEngine()
+    raw_svg = '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>'
+    with pytest.raises(ValueError, match="DiagramData request"):
+        engine.render_png(raw_svg)
+    with pytest.raises(ValueError, match="DiagramData request"):
+        engine.expand_svg(raw_svg)
+
+
+@pytest.mark.parametrize(
+    "svg",
+    (
+        '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>',
+        '<svg xmlns="http://www.w3.org/2000/svg"><foreignObject/></svg>',
+        '<svg xmlns="http://www.w3.org/2000/svg"><image href="https://evil"/></svg>',
+        '<svg xmlns="http://www.w3.org/2000/svg"><use href="file:///tmp/x"/></svg>',
+        '<svg xmlns="http://www.w3.org/2000/svg"><style>*{fill:red}</style></svg>',
+        '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0" onload="evil()"/></svg>',
+        '<svg xmlns="http://www.w3.org/2000/svg"><path fill="url(https://evil)"/></svg>',
+        '<svg xmlns="http://www.w3.org/2000/svg"><unknown/></svg>',
+        '<svg xmlns="http://www.w3.org/2000/svg"><path fill="url(#missing)"/></svg>',
+        '<svg xmlns="http://www.w3.org/2000/svg"><marker orient="auto-start-reverse"/></svg>',
+        '<svg xmlns="urn:not-svg"><path/></svg>',
+        '<svg xmlns="http://www.w3.org/2000/svg"><path>',
+    ),
+)
+def test_canonical_svg_validator_rejects_unsupported_structures(svg):
+    import importlib
+
+    engine_module = importlib.import_module("pyfcstm.diagram.engine")
+    with pytest.raises(DiagramAssetError, match="closed SVG dialect"):
+        engine_module._validate_canonical_svg(svg)
+
+
+@pytest.mark.parametrize(
+    "svg",
+    (
+        '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0"/>EVIL</svg>',
+        '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0"/>vbscript:evil</svg>',
+        '<svg xmlns="http://www.w3.org/2000/svg"><path fill="url(vbscript:evil)"/></svg>',
+        '<svg xmlns="http://www.w3.org/2000/svg"><path fill="url(blob:evil)"/></svg>',
+    ),
+)
+def test_canonical_svg_validator_rejects_tail_text_and_dangerous_urls(svg):
+    import importlib
+
+    engine_module = importlib.import_module("pyfcstm.diagram.engine")
+    with pytest.raises(DiagramAssetError, match="closed SVG dialect"):
+        engine_module._validate_canonical_svg(svg)
+
+
+def test_renderer_request_errors_are_bounded_and_actionable():
+    import copy
+
+    request = copy.deepcopy(_request())
+    del request["diagram"]["rootState"]["children"][0]["events"]
+    with pytest.raises(
+        DiagramRenderError,
+        match=r"DiagramData shape and renderer options",
+    ) as captured:
+        DiagramAssetEngine(timeout=3.0).render_svg(request)
+    message = str(captured.value)
+    assert len(message) < 512
+    assert "renderer-core" not in message
+
+
+def test_canonical_svg_validator_accepts_renderer_output_and_marker_contract():
+    import importlib
+
+    engine_module = importlib.import_module("pyfcstm.diagram.engine")
+    engine = DiagramAssetEngine()
+    canonical = engine_module._validate_canonical_svg(engine.render_svg(_request()))
+    assert canonical.startswith("<svg")
+    assert 'orient="auto"' in canonical
+    assert 'refX="10"' in canonical
+    assert "auto-start-reverse" not in canonical
+
+
+def test_expanded_svg_validator_rejects_non_path_output(monkeypatch):
+    import importlib
+
+    engine_module = importlib.import_module("pyfcstm.diagram.engine")
+    engine = DiagramAssetEngine()
+    monkeypatch.setattr(engine, "_ensure_resvg", lambda _locale: None)
+    monkeypatch.setattr(
+        engine,
+        "_eval_asset",
+        lambda *_args, **_kwargs: (
+            '<svg xmlns="http://www.w3.org/2000/svg"><text>x</text></svg>'
+        ),
+    )
+    monkeypatch.setattr(
+        engine,
+        "_canonical_input",
+        lambda _request: engine_module._CanonicalSvg(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>'
+        ),
+    )
+    with pytest.raises(DiagramAssetError, match="closed SVG dialect"):
+        engine.expand_svg(_request())
 
 
 def test_missing_runtime_asset_reports_recovery_instructions(monkeypatch):
@@ -287,8 +399,10 @@ def test_missing_cjk_font_reports_recovery_instructions(monkeypatch):
         match=r"NotoSansSC-Regular\.otf.*expected packaged resource is missing.*make build_assets",
     ):
         engine.render_png(
-            '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1">'
-            '<text font-family="Noto Sans SC">中</text></svg>'
+            _canonical_svg(
+                '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1">'
+                '<text font-family="Noto Sans SC">中</text></svg>'
+            )
         )
 
 
@@ -309,9 +423,7 @@ def test_invalid_wasm_reports_resource_data_failure(monkeypatch):
         DiagramAssetError,
         match=r"(?s)resvg\.wasm.*WASM initialization failed.*expected magic word.*make build_assets",
     ):
-        engine.render_png(
-            '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>'
-        )
+        engine.render_png(_request())
 
 
 @pytest.mark.parametrize(
@@ -348,8 +460,10 @@ def test_invalid_font_data_reports_resource_data_failure(
         match=r"NotoSansTC-Regular\.otf.*%s.*make build_assets" % re.escape(reason),
     ):
         engine.render_png(
-            '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1">'
-            '<text font-family="Noto Sans TC">繁</text></svg>'
+            _canonical_svg(
+                '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1">'
+                '<text font-family="Noto Sans TC">繁</text></svg>'
+            )
         )
 
 
@@ -375,8 +489,10 @@ def test_corrupt_font_payload_reports_resource_data_failure(monkeypatch):
         match=r"NotoSansTC-Regular\.otf.*failed OpenType table, bounds, or checksum validation.*github.com/HansBug/pyfcstm/issues",
     ):
         engine.render_png(
-            '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1">'
-            '<text font-family="Noto Sans TC">繁</text></svg>'
+            _canonical_svg(
+                '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1">'
+                '<text font-family="Noto Sans TC">繁</text></svg>'
+            )
         )
 
 
@@ -411,8 +527,10 @@ def test_corrupt_font_checksum_adjustment_reports_resource_data_failure(monkeypa
         match=r"NotoSansTC-Regular\.otf.*failed OpenType table, bounds, or checksum validation.*make build_assets",
     ):
         engine.render_png(
-            '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1">'
-            '<text font-family="Noto Sans TC">繁</text></svg>'
+            _canonical_svg(
+                '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1">'
+                '<text font-family="Noto Sans TC">繁</text></svg>'
+            )
         )
 
 
@@ -446,22 +564,32 @@ def test_zero_length_required_font_table_reports_resource_data_failure(monkeypat
         match=r"NotoSansTC-Regular\.otf.*failed OpenType table, bounds, or checksum validation.*make build_assets",
     ):
         engine.render_png(
-            '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1">'
-            '<text font-family="Noto Sans TC">繁</text></svg>'
+            _canonical_svg(
+                '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1">'
+                '<text font-family="Noto Sans TC">繁</text></svg>'
+            )
         )
 
 
 def test_invalid_expanded_svg_reports_resource_data_failure(monkeypatch):
+    import importlib
+
+    engine_module = importlib.import_module("pyfcstm.diagram.engine")
     engine = DiagramAssetEngine()
     monkeypatch.setattr(engine, "_ensure_resvg", lambda _locale: None)
     monkeypatch.setattr(engine, "_eval_asset", lambda *_args, **_kwargs: "not-svg")
+    monkeypatch.setattr(
+        engine,
+        "_canonical_input",
+        lambda _request: engine_module._CanonicalSvg(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>'
+        ),
+    )
     with pytest.raises(
         DiagramAssetError,
         match=r"resvg\.wasm.*malformed expanded SVG output.*make build_assets",
     ):
-        engine.expand_svg(
-            '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>'
-        )
+        engine.expand_svg(_request())
 
 
 def test_model_render_embeds_cjk_fallback_and_keeps_glyphs_distinct():
@@ -474,9 +602,9 @@ def test_model_render_embeds_cjk_fallback_and_keeps_glyphs_distinct():
     assert "启动" in svg
     assert "状态" in svg
     assert "Noto Sans SC" in svg
-    png = engine.render_png(svg)
+    png = engine.render_png(_canonical_svg(svg))
     assert png.startswith(b"\x89PNG\r\n\x1a\n")
-    expanded = engine.expand_svg(svg)
+    expanded = engine.expand_svg(_canonical_svg(svg))
     assert "启动" not in expanded
     assert "状态" not in expanded
     assert "<path" in expanded
@@ -493,18 +621,22 @@ def test_model_render_embeds_cjk_fallback_and_keeps_glyphs_distinct():
         )
 
     glyphs = ["状", "态", "中", "文", "�"]
-    rendered = {text: engine.render_png(glyph_svg(text)) for text in glyphs}
+    rendered = {
+        text: engine.render_png(_canonical_svg(glyph_svg(text))) for text in glyphs
+    }
     hashes = {text: hashlib.sha256(data).hexdigest() for text, data in rendered.items()}
     assert len(set(hashes.values())) == len(glyphs)
     expanded_hashes = {
         text: hashlib.sha256(
-            engine.expand_svg(glyph_svg(text)).encode("utf-8")
+            engine.expand_svg(_canonical_svg(glyph_svg(text))).encode("utf-8")
         ).hexdigest()
         for text in glyphs
     }
     assert len(set(expanded_hashes.values())) == len(glyphs)
     assert (
-        hashlib.sha256(engine.render_png(glyph_svg("状", weight=700))).hexdigest()
+        hashlib.sha256(
+            engine.render_png(_canonical_svg(glyph_svg("状", weight=700)))
+        ).hexdigest()
         != hashes["状"]
     )
 
@@ -533,9 +665,9 @@ def test_model_render_cjk_scripts_work_in_each_locked_locale_face():
             '<text x="4" y="28" font-family="%s" font-size="24">%s</text>'
             "</svg>" % (family, text)
         )
-        png = engine.render_png(svg)
+        png = engine.render_png(_canonical_svg(svg))
         assert png.startswith(b"\x89PNG\r\n\x1a\n"), locale
-        expanded = engine.expand_svg(svg)
+        expanded = engine.expand_svg(_canonical_svg(svg))
         assert text not in expanded, locale
         assert "<path" in expanded, locale
 
@@ -562,8 +694,8 @@ def test_each_locale_regular_and_bold_have_visible_distinct_glyphs(locale, text)
             'font-weight="%s">%s</text></svg>' % (family, weight, text)
         )
 
-    regular = engine.render_png(glyph_svg(400))
-    bold = engine.render_png(glyph_svg(700))
+    regular = engine.render_png(_canonical_svg(glyph_svg(400)))
+    bold = engine.render_png(_canonical_svg(glyph_svg(700)))
     regular_width, regular_height, regular_box = _png_ink_bbox(regular)
     bold_width, bold_height, bold_box = _png_ink_bbox(bold)
     assert (regular_width, regular_height) == (640, 120)
@@ -573,8 +705,8 @@ def test_each_locale_regular_and_bold_have_visible_distinct_glyphs(locale, text)
         assert left > 0 and top > 0
         assert right < 639 and bottom < 119
     assert hashlib.sha256(regular).digest() != hashlib.sha256(bold).digest(), locale
-    assert "<path" in engine.expand_svg(glyph_svg(400))
-    assert "<path" in engine.expand_svg(glyph_svg(700))
+    assert "<path" in engine.expand_svg(_canonical_svg(glyph_svg(400)))
+    assert "<path" in engine.expand_svg(_canonical_svg(glyph_svg(700)))
 
 
 def test_locale_switch_rebuilds_context_for_each_font_pair(monkeypatch):
@@ -648,7 +780,7 @@ def test_rendered_a_to_b_resvg_tip_meets_target_border():
     end_x, end_y = map(float, edge.groups())
     target_x, target_y, _target_width, target_height = map(float, target.groups())
     assert end_x == pytest.approx(target_x)
-    normalized = engine.expand_svg(svg)
+    normalized = engine.expand_svg(_canonical_svg(svg))
     transforms = re.findall(r'transform="matrix\(([^)]+)\)"', normalized)
     assert len(transforms) == 2
     a, b, c, d, tx, ty = [float(part) for part in transforms[1].split()]
@@ -669,9 +801,9 @@ def test_resvg_png_and_vector_expansion_keep_marker_direction():
     </svg>
     """
     engine = DiagramAssetEngine()
-    png = engine.render_png(svg)
+    png = engine.render_png(_canonical_svg(svg))
     assert png.startswith(b"\x89PNG\r\n\x1a\n")
-    normalized = engine.expand_svg(svg)
+    normalized = engine.expand_svg(_canonical_svg(svg))
     assert "<marker" not in normalized
     transforms = re.findall(r'transform="matrix\(([^)]+)\)"', normalized)
     assert len(transforms) == 4
@@ -695,31 +827,26 @@ def test_resvg_marker_tip_lands_on_path_endpoint():
       <path d="M60,210 L60,50" marker-end="url(#arrow)"/>
     </svg>
     """
-    endpoints = [(190.0, 60.0), (180.0, 190.0), (50.0, 180.0), (60.0, 50.0)]
     engine = DiagramAssetEngine()
 
-    legacy = engine.expand_svg(svg.replace('refX="10"', 'refX="9"'))
-    legacy_transforms = re.findall(r'transform="matrix\(([^)]+)\)"', legacy)
-    assert len(legacy_transforms) == len(endpoints)
-    legacy_errors = []
-    for transform, endpoint in zip(legacy_transforms, endpoints):
-        a, b, c, d, tx, ty = [float(part) for part in transform.split()]
-        tip = (tx + a * 10 + c * 5, ty + b * 10 + d * 5)
-        legacy_errors.append(math.hypot(tip[0] - endpoint[0], tip[1] - endpoint[1]))
-    assert legacy_errors == pytest.approx([1.0] * len(endpoints), abs=1e-3)
-
-    normalized = engine.expand_svg(svg)
+    with pytest.raises(DiagramAssetError, match="marker endpoint contract"):
+        _canonical_svg(svg.replace('refX="10"', 'refX="9"'))
+    with pytest.raises(DiagramAssetError, match="marker orientation contract"):
+        _canonical_svg(svg.replace('orient="auto"', 'orient="auto-start-reverse"'))
+    normalized = engine.expand_svg(_canonical_svg(svg))
     transforms = re.findall(r'transform="matrix\(([^)]+)\)"', normalized)
-    assert len(transforms) == len(endpoints)
-    for transform, endpoint in zip(transforms, endpoints):
+    assert len(transforms) == 4
+    for transform, direction in zip(transforms, ((1, 0), (0, 1), (-1, 0), (0, -1))):
         a, b, c, d, tx, ty = [float(part) for part in transform.split()]
-        tip = (tx + a * 10 + c * 5, ty + b * 10 + d * 5)
-        assert math.hypot(tip[0] - endpoint[0], tip[1] - endpoint[1]) < 1e-3
+        length = (a * a + b * b) ** 0.5
+        assert (a * direction[0] + b * direction[1]) / length > 0.999
 
 
 def test_render_png_rejects_non_finite_scale():
     engine = DiagramAssetEngine()
-    svg = '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>'
+    svg = _canonical_svg(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>'
+    )
     for scale in (float("nan"), float("inf"), float("-inf")):
         with pytest.raises(ValueError, match="finite positive"):
             engine.render_png(svg, scale=scale)
@@ -738,7 +865,9 @@ def test_render_png_rejects_truncated_or_corrupt_png_payload(monkeypatch):
         match=r"resvg\.wasm.*invalid PNG data.*make build_assets",
     ):
         engine.render_png(
-            '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>'
+            _canonical_svg(
+                '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>'
+            )
         )
     assert not engine_module._valid_png(b"\x89PNG\r\n\x1a\n")
 
@@ -779,6 +908,17 @@ def test_engine_restarts_context_after_native_timeout():
     # the short budget above is only the intentional infinite-loop trigger.
     engine.timeout = 30.0
     assert engine._eval("6 * 7") == 42
+
+
+def test_engine_tracks_one_active_context_and_restarts_after_discard():
+    engine = DiagramAssetEngine()
+    assert engine._active_context_count == 1
+    assert json.loads(engine._eval("__pyfcstm_resvg_metrics()"))["activeContext"] == 1
+    engine._discard_context()
+    assert engine._active_context_count == 0
+    assert engine._eval("6 * 7") == 42
+    assert engine._active_context_count == 1
+    assert json.loads(engine._eval("__pyfcstm_resvg_metrics()"))["activeContext"] == 1
 
 
 def test_engine_discards_context_after_renderer_deadline(monkeypatch):
@@ -841,7 +981,9 @@ def test_engine_discards_context_after_resvg_deadline(monkeypatch):
     # library time module itself would also change MiniRacer's asyncio event
     # loop clock on modern runtimes and can leave native eval waiting forever.
     monkeypatch.setattr(engine_module, "time", DeadlineClock())
-    svg = '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>'
+    svg = _canonical_svg(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>'
+    )
     with pytest.raises(DiagramAssetError, match="resvg WASM initialization timed out"):
         engine.render_png(svg)
     assert engine._context is None

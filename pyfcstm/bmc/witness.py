@@ -268,7 +268,7 @@ def _validate_primary_solve_reason(
             "%s must be None unless %s is unknown or timeout."
             % (reason_name, status_name)
         )
-    if status in {"unknown", "timeout"} and reason == "":
+    if status in {"unknown", "timeout"} and reason in {None, ""}:
         raise BmcBuildError(
             "%s must be non-empty when %s is unknown or timeout."
             % (reason_name, status_name)

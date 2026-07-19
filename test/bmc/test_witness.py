@@ -1775,6 +1775,14 @@ def test_internal_z3_decode_guards_are_loud() -> None:
             "reason must be None",
         ),
         (
+            lambda formula: BmcSolveResult(formula, "unknown"),
+            "reason must be non-empty",
+        ),
+        (
+            lambda formula: BmcSolveResult(formula, "timeout"),
+            "reason must be non-empty",
+        ),
+        (
             lambda formula: BmcSolveResult(
                 formula, "unknown", model=_empty_sat_model(), reason="unknown"
             ),

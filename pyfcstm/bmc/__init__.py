@@ -156,6 +156,8 @@ Example::
     'reach'
 """
 
+from typing import TYPE_CHECKING
+
 from .ast import (
     Active,
     BmcCondExpr,
@@ -211,6 +213,14 @@ from .query import (
     InitialVariablePolicy,
     InitialSpec,
 )
+
+if TYPE_CHECKING:
+    from .witness import (
+        BmcFeasibilityCheck,
+        BmcFeasibilityRefinementCheck,
+        BmcFeasibilityResult,
+        decode_bmc_result_trace,
+    )
 
 _BINDING_EXPORTS = {
     "BmcBindingDiagnostic",

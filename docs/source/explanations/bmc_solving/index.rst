@@ -346,8 +346,11 @@ The response query exercises the staged primary and suffix paths described by
    check response <= 1: trigger true -> within 2 false;
 
 Its trace summary is ``main=unsat``, ``tail=sat``, ``outcome=incomplete``.
-There is no primary SAT model, so there is no decoded witness or replay.  The
-second query exercises the positive witness path:
+There is no primary SAT model and therefore no bounded property verdict.  The
+SAT suffix is nevertheless decoded and replayed as an ``incomplete_suffix``
+role-aware witness for the executable finite prefix; it must not be mistaken
+for a complete witness or counterexample.  The second query exercises the
+positive witness path:
 
 .. code-block:: text
 

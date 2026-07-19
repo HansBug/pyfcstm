@@ -20,6 +20,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
+import urllib.error
 import urllib.request
 from pathlib import Path, PurePosixPath
 from typing import Dict, Iterable, List, Set, Tuple
@@ -46,6 +48,9 @@ ASSET_MARKERS = {
     "LICENSE-EPL-2.0.txt",
     "LICENSE-OFL-1.1.txt",
 }
+_DOWNLOAD_ATTEMPTS = 3
+_DOWNLOAD_BACKOFF_SECONDS = 1.0
+_TRANSIENT_HTTP_CODES = frozenset({408, 429, 500, 502, 503, 504})
 
 
 def _node_command(name: str) -> str:
@@ -79,12 +84,33 @@ def download_locked(url: str, expected_sha256: str) -> bytes:
     :type expected_sha256: str
     :return: Downloaded bytes.
     :rtype: bytes
-    :raises urllib.error.HTTPError: If the source returns an HTTP error.
-    :raises urllib.error.URLError: If the source cannot be reached.
+    :raises urllib.error.HTTPError: If the source returns a non-transient HTTP
+        error or remains unavailable after the retry budget.
+    :raises urllib.error.URLError: If the source cannot be reached after the
+        retry budget.
+    :raises TimeoutError: If the source repeatedly exceeds the network timeout.
+    :raises OSError: If the remote connection repeatedly closes unexpectedly.
     :raises ValueError: If the downloaded digest differs from the lock.
     """
-    with urllib.request.urlopen(url, timeout=120) as response:
-        data = response.read()
+    for attempt in range(_DOWNLOAD_ATTEMPTS):
+        try:
+            with urllib.request.urlopen(url, timeout=120) as response:
+                data = response.read()
+            break
+        except urllib.error.HTTPError as err:
+            # HTTPError: retry only service throttling/outage responses; a
+            # permanent 4xx must fail immediately instead of hiding a bad lock.
+            if (
+                err.code not in _TRANSIENT_HTTP_CODES
+                or attempt + 1 >= _DOWNLOAD_ATTEMPTS
+            ):
+                raise
+        except (urllib.error.URLError, TimeoutError, OSError):
+            # URLError: DNS/TLS/network failure; TimeoutError: socket timeout;
+            # OSError: the peer closed/reset the connection mid-request.
+            if attempt + 1 >= _DOWNLOAD_ATTEMPTS:
+                raise
+        time.sleep(_DOWNLOAD_BACKOFF_SECONDS * (2**attempt))
     actual = sha256_bytes(data)
     if actual != expected_sha256:
         raise ValueError(
@@ -451,6 +477,45 @@ def _check_font_path_safety() -> None:
         raise AssertionError("font path escape was accepted: %s" % invalid)
 
 
+def _check_download_retry() -> None:
+    """Verify transient download failures consume a bounded retry budget."""
+    original_urlopen = urllib.request.urlopen
+    original_sleep = time.sleep
+    attempts = []
+    sleeps = []
+    payload = b"locked-diagram-asset"
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return payload
+
+    def flaky_urlopen(_url, timeout):
+        assert timeout == 120
+        attempts.append(timeout)
+        if len(attempts) < 3:
+            raise OSError("simulated remote disconnect")
+        return Response()
+
+    try:
+        urllib.request.urlopen = flaky_urlopen
+        time.sleep = lambda delay: sleeps.append(delay)
+        result = download_locked("https://example.invalid/asset", sha256_bytes(payload))
+    finally:
+        urllib.request.urlopen = original_urlopen
+        time.sleep = original_sleep
+    if result != payload or len(attempts) != 3 or sleeps != [1.0, 2.0]:
+        raise AssertionError(
+            "download retry self-check used an unexpected schedule: %s/%s"
+            % (attempts, sleeps)
+        )
+
+
 def load_fonts(lock: Dict[str, object]) -> List[Tuple[str, bytes]]:
     """Load every locked font face without publishing it yet."""
     loaded = []
@@ -745,6 +810,7 @@ def main(argv=None) -> int:
         _check_metafile_determinism()
         _check_clean_symlink_safety()
         _check_font_path_safety()
+        _check_download_retry()
         print("diagram asset builder: deterministic and safety self-check passed")
     elif args.clean:
         clean_assets()

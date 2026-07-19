@@ -821,12 +821,12 @@ def test_public_non_trace_objects_are_field_value_golden_pinned() -> None:
                 ),
                 diagnostics=("feasibility_timeout:assumptions",),
             ),
-                (
-                    "BmcSolveResult: SCENARIO INFEASIBLE; PROPERTY NOT EVALUATED",
-                    "Property verdict: NOT EVALUATED (SCENARIO INFEASIBLE)",
-                    "Failure boundary: NOT LOCALIZED",
-                    "Localization: NOT_CHECKED (feasibility_timeout:assumptions)",
-                ),
+            (
+                "BmcSolveResult: SCENARIO INFEASIBLE; PROPERTY NOT EVALUATED",
+                "Property verdict: NOT EVALUATED (SCENARIO INFEASIBLE)",
+                "Failure boundary: NOT LOCALIZED",
+                "Localization: NOT_CHECKED (feasibility_timeout:assumptions)",
+            ),
         ),
         (
             lambda: BmcSolveResult(
@@ -1026,7 +1026,10 @@ def test_solve_result_text_distinguishes_unstarted_feasibility_timeout() -> None
     )
 
     text = str(model)
-    assert "BmcSolveResult: SCENARIO FEASIBILITY NOT CHECKED; PROPERTY NOT EVALUATED" in text
+    assert (
+        "BmcSolveResult: SCENARIO FEASIBILITY NOT CHECKED; PROPERTY NOT EVALUATED"
+        in text
+    )
     assert "Scenario: NOT CHECKED" in text
     assert "Property verdict: NOT EVALUATED (SCENARIO FEASIBILITY NOT CHECKED)" in text
     assert "shared budget was exhausted first" in text

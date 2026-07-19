@@ -2808,6 +2808,19 @@ class BmcSolveResult(_PrettyPrintableMixin):
                 raise BmcBuildError(
                     "incomplete_elapsed_ms must be None when suffix was not checked."
                 )
+            if (
+                self.kind == "response"
+                and self.status == "unsat"
+                and _has_nonempty_incomplete_formula(self.formula)
+                and self.feasibility is not None
+                and self.feasibility.assumptions.status == "sat"
+                and self.incomplete_reason != "incomplete check disabled"
+                and not _has_diagnostic(self, _SUFFIX_TIMEOUT_BEFORE_CHECK)
+            ):
+                raise BmcBuildError(
+                    "unchecked response suffix requires the disabled-check marker "
+                    "or a suffix deadline exhaustion diagnostic."
+                )
         elif self.incomplete_elapsed_ms is None:
             raise BmcBuildError(
                 "incomplete_elapsed_ms is required when suffix has a status."

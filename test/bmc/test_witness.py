@@ -2391,8 +2391,8 @@ def test_solve_result_rejects_missing_incomplete_reason(status) -> None:
     """Inconclusive suffix results retain an auditable solver reason."""
     _, formula = _compile(
         _VERDICT_DSL,
-        "check response <= 1: trigger event(\"Root.Go\", current) "
-        '-> within 1 active("Root.B");',
+        'check response <= 1: trigger event("Root.Go", current) '
+        '-> within 2 active("Root.B");',
     )
     with pytest.raises(BmcBuildError, match="incomplete_reason must be non-empty"):
         BmcSolveResult(
@@ -2409,8 +2409,8 @@ def test_solve_result_rejects_unchecked_incomplete_reason() -> None:
     """Unchecked suffix metadata accepts only its explicit disabled marker."""
     _, formula = _compile(
         _VERDICT_DSL,
-        "check response <= 1: trigger event(\"Root.Go\", current) "
-        '-> within 1 active("Root.B");',
+        'check response <= 1: trigger event("Root.Go", current) '
+        '-> within 2 active("Root.B");',
     )
     with pytest.raises(BmcBuildError, match="disabled-check marker"):
         BmcSolveResult(
@@ -2426,6 +2426,30 @@ def test_solve_result_rejects_unchecked_incomplete_reason() -> None:
         feasibility=_feasible_result_evidence(),
     )
     assert result.incomplete_status is None
+
+
+def test_solve_result_rejects_unchecked_response_without_cause() -> None:
+    """Unchecked response suffixes retain an explicit cause for their status."""
+    _, formula = _compile(
+        _VERDICT_DSL,
+        'check response <= 1: trigger event("Root.Go", current) '
+        '-> within 2 active("Root.B");',
+    )
+    with pytest.raises(BmcBuildError, match="unchecked response suffix"):
+        BmcSolveResult(
+            formula,
+            "unsat",
+            feasibility=_feasible_result_evidence(),
+        )
+
+    result = BmcSolveResult(
+        formula,
+        "unsat",
+        diagnostics=(witness_module._SUFFIX_TIMEOUT_BEFORE_CHECK,),
+        feasibility=_feasible_result_evidence(),
+    )
+    assert witness_module._solve_presentation(result).response_horizon == "NOT CHECKED"
+    assert "shared timeout budget was exhausted" in str(result)
 
 
 def test_witness_trace_canonical_payload_has_no_version_field() -> None:

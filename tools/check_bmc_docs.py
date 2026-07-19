@@ -237,9 +237,13 @@ def _check_localized_diagrams(errors: List[str]) -> None:
         if chinese_name + ".svg" not in chinese:
             errors.append("Chinese BMC tutorial does not use %s.svg." % chinese_name)
         if chinese_name + ".svg" in english:
-            errors.append("English BMC tutorial uses Chinese diagram %s." % chinese_name)
+            errors.append(
+                "English BMC tutorial uses Chinese diagram %s." % chinese_name
+            )
         if english_name + ".svg" in chinese:
-            errors.append("Chinese BMC tutorial uses English diagram %s." % english_name)
+            errors.append(
+                "Chinese BMC tutorial uses English diagram %s." % english_name
+            )
         for name in (english_name, chinese_name):
             for suffix in ("", ".png", ".svg"):
                 path = source / (name + suffix)

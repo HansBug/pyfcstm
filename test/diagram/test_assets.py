@@ -864,7 +864,14 @@ def test_render_png_rejects_non_finite_scale():
     svg = _canonical_svg(
         '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>'
     )
-    for scale in (None, float("nan"), float("inf"), float("-inf")):
+    for scale in (
+        None,
+        float("nan"),
+        float("inf"),
+        float("-inf"),
+        object(),
+        [],
+    ):
         with pytest.raises(ValueError, match="finite positive"):
             engine.render_png(svg, scale=scale)
 
@@ -1057,6 +1064,35 @@ def test_render_png_rejects_missing_iend_at_engine_boundary(monkeypatch):
         engine.render_png(canonical)
 
 
+def test_render_png_rejects_oversized_encoded_payload_before_decoding(monkeypatch):
+    import importlib
+
+    engine_module = importlib.import_module("pyfcstm.diagram.engine")
+    engine = DiagramAssetEngine()
+    monkeypatch.setattr(engine, "_ensure_resvg", lambda _locale: None)
+    encoded = "A" * (engine_module._MAX_RENDER_PNG_BASE64_BYTES + 1)
+    monkeypatch.setattr(
+        engine,
+        "_eval_asset",
+        lambda *_args, **_kwargs: encoded,
+    )
+    decode_called = False
+
+    def forbidden_decode(*_args, **_kwargs):
+        nonlocal decode_called
+        decode_called = True
+        raise AssertionError("oversized PNG was decoded before the size guard")
+
+    monkeypatch.setattr(engine_module.base64, "b64decode", forbidden_decode)
+    canonical = _canonical_svg(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1">'
+        '<rect width="1" height="1" fill="black"/></svg>'
+    )
+    with pytest.raises(DiagramRenderLimitError, match="base64 PNG output"):
+        engine.render_png(canonical)
+    assert not decode_called
+
+
 def test_engine_rejects_non_finite_timeout():
     for timeout in (float("nan"), float("inf"), float("-inf")):
         with pytest.raises(ValueError, match="finite positive"):
@@ -1126,11 +1162,22 @@ def test_engine_discards_context_after_renderer_deadline(monkeypatch):
             return getattr(real_time, name)
 
     monkeypatch.setattr(engine_module, "time", DeadlineClock())
-    with pytest.raises(DiagramAssetError, match="renderer timed out"):
+    with pytest.raises(DiagramRenderError, match="renderer timed out"):
         engine.render_svg(_request())
     assert engine._context is None
     engine.timeout = 30.0
     assert engine._eval("6 * 7") == 42
+
+
+def test_renderer_poll_failure_uses_render_error_and_discards_context():
+    engine = DiagramAssetEngine()
+    engine._eval(
+        "globalThis.__pyfcstm_render_start = function(_request, id) { return id; };"
+        "globalThis.__pyfcstm_render_poll = function(_id) { return 'not-json'; };"
+    )
+    with pytest.raises(DiagramRenderError, match="invalid job status data"):
+        engine.render_svg(_request())
+    assert engine._context is None
 
 
 def test_engine_discards_context_after_resvg_deadline(monkeypatch):

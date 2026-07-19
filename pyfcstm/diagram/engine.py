@@ -108,6 +108,10 @@ class DiagramEngineConflictError(DiagramAssetError):
     """
 
 
+class _DiagramEvaluationInterruptedError(DiagramAssetError):
+    """Identify a native MiniRacer timeout or memory interruption."""
+
+
 _LATIN_FONT_ASSET_PATHS = (
     "fonts/JetBrainsMono-Regular.ttf",
     "fonts/JetBrainsMono-Medium.ttf",
@@ -143,6 +147,10 @@ _MAX_RENDER_DIMENSION = 16_384
 _MAX_RENDER_PIXELS = 16_777_216
 _MAX_RENDER_RGBA_BYTES = 67_108_864
 _MAX_RENDER_PNG_BYTES = 33_554_432
+# Four base64 characters encode at most three PNG bytes.  Check this bound
+# before decoding so an oversized renderer response cannot allocate a large
+# decoded buffer before the PNG validator rejects it.
+_MAX_RENDER_PNG_BASE64_BYTES = 4 * ((_MAX_RENDER_PNG_BYTES + 2) // 3)
 _PNG_ALLOWED_CHUNKS = {b"IHDR", b"IDAT", b"IEND"}
 
 _SVG_INPUT_ELEMENTS = {
@@ -614,19 +622,24 @@ def _render_failure(
     cause: str,
     error: Optional[BaseException] = None,
     request_error: bool = False,
+    action: Optional[str] = None,
 ) -> DiagramRenderError:
     """Build an actionable error for a renderer request after startup."""
     detail = str(cause).strip() or "the renderer request failed"
     if error is not None:
         detail = "%s: %s" % (detail, _summarize_exception(error))
-    if request_error:
-        action = "check the DiagramData shape and renderer options, then retry"
+    if action is not None:
+        recovery = action
+    elif request_error:
+        recovery = "check the DiagramData shape and renderer options, then retry"
     elif _is_development_checkout():
-        action = "run `make build_assets` and retry after checking the renderer output"
+        recovery = (
+            "run `make build_assets` and retry after checking the renderer output"
+        )
     else:
-        action = "report this full error at %s" % _ASSET_ISSUE_URL
+        recovery = "report this full error at %s" % _ASSET_ISSUE_URL
     return DiagramRenderError(
-        "pyfcstm diagram render failure for %s: %s. %s" % (name, detail, action)
+        "pyfcstm diagram render failure for %s: %s. %s" % (name, detail, recovery)
     )
 
 
@@ -1064,7 +1077,7 @@ class DiagramAssetEngine:
             if not isinstance(err, self._interrupt_errors):
                 raise
             self._discard_context()
-            raise DiagramAssetError(
+            raise _DiagramEvaluationInterruptedError(
                 "embedded MiniRacer evaluation exceeded its time or memory limit"
             ) from err
 
@@ -1104,6 +1117,17 @@ class DiagramAssetEngine:
         """Evaluate an asset and attach the asset name to JavaScript failures."""
         try:
             return self._eval(source, timeout=timeout)
+        except _DiagramEvaluationInterruptedError as err:
+            # Native interruption: request failures use the render taxonomy;
+            # startup and asset failures retain the asset taxonomy.
+            if request:
+                raise _render_failure(
+                    name,
+                    "the renderer request exceeded its time or memory limit",
+                    err,
+                    request_error=True,
+                ) from err
+            raise
         except self._asset_eval_errors as err:
             self._discard_context()
             if request:
@@ -1135,10 +1159,27 @@ class DiagramAssetEngine:
         except (TypeError, ValueError) as err:
             # TypeError/ValueError: a corrupted renderer returned non-JSON
             # polling data instead of its documented status envelope.
+            if request:
+                self._discard_context()
+                raise _render_failure(
+                    "renderer.js",
+                    "the renderer returned invalid job status data",
+                    err,
+                    request_error=True,
+                ) from err
+            self._discard_context()
             raise _asset_failure(
                 "renderer.js", "the renderer returned invalid job status data", err
             ) from err
         if not isinstance(status, dict):
+            if request:
+                self._discard_context()
+                raise _render_failure(
+                    "renderer.js",
+                    "the renderer returned a non-object job status",
+                    request_error=True,
+                )
+            self._discard_context()
             raise _asset_failure(
                 "renderer.js", "the renderer returned a non-object job status"
             )
@@ -1232,7 +1273,11 @@ class DiagramAssetEngine:
         # Python-side deadline is therefore terminal too: discard the whole
         # context instead of allowing the next request to observe stale jobs.
         self._discard_context()
-        raise DiagramAssetError("diagram renderer timed out after %.1fs" % self.timeout)
+        raise _render_failure(
+            "renderer.js",
+            "diagram renderer timed out after %.1fs" % self.timeout,
+            action="retry the DiagramData request; the interrupted renderer context was discarded",
+        )
 
     def _ensure_resvg(self, cjk_locale: str = "sc") -> None:
         """Compile resvg and lazily register the selected locale's font pair."""
@@ -1330,7 +1375,11 @@ class DiagramAssetEngine:
             raise ValueError("scale must be a finite positive number")
         if scale is None:
             raise ValueError("scale must be a finite positive number")
-        numeric_scale = float(scale)
+        try:
+            numeric_scale = float(scale)
+        except (TypeError, ValueError) as err:
+            # TypeError/ValueError: the caller supplied a non-numeric scale.
+            raise ValueError("scale must be a finite positive number") from err
         if not math.isfinite(numeric_scale) or numeric_scale <= 0:
             raise ValueError("scale must be a finite positive number")
         svg = self._canonical_input(request)
@@ -1342,8 +1391,15 @@ class DiagramAssetEngine:
             % (json.dumps(svg), json.dumps(numeric_scale)),
             request=True,
         )
+        encoded_text = str(encoded)
+        if len(encoded_text) > _MAX_RENDER_PNG_BASE64_BYTES:
+            raise DiagramRenderLimitError(
+                "diagram render limit exceeded: base64 PNG output is %d bytes; "
+                "maximum encoded size is %d bytes"
+                % (len(encoded_text), _MAX_RENDER_PNG_BASE64_BYTES)
+            )
         try:
-            result = base64.b64decode(str(encoded), validate=True)
+            result = base64.b64decode(encoded_text, validate=True)
         except (ValueError, binascii.Error) as err:
             # ValueError/binascii.Error: the WASM bridge returned malformed
             # base64 instead of a PNG payload.

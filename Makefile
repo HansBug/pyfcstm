@@ -262,7 +262,8 @@ diagram_parity_check: build_assets
 		--corpus tools/diagram_assets/corpus/shared-layouts.json \
 		--expected-layouts 35 --expected-arrows 306 \
 		--expected-directions right=107,down=153,left=18,up=28 \
-		--compare-reference "$(DIAGRAM_REFERENCE)" --check-cjk --check-memory
+		--compare-reference "$(DIAGRAM_REFERENCE)" --check-expanded-id-only \
+		--check-cjk --check-memory
 
 diagram_corpus: jsfcstm
 	node tools/diagram_assets/generate_corpus.js

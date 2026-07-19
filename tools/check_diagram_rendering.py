@@ -834,8 +834,19 @@ def _self_check_reference_provenance() -> None:
             raise AssertionError("provenance corruption was accepted: %s" % relative)
 
 
-def compare_reference(report: Dict[str, Any], path: Path, report_dir: Path) -> None:
-    """Compare current outputs against a captured reference bundle."""
+def compare_reference(
+    report: Dict[str, Any],
+    path: Path,
+    report_dir: Path,
+    check_expanded_id_only: bool = False,
+) -> None:
+    """Compare current outputs against a captured reference bundle.
+
+    ``check_expanded_id_only`` permits only generated clip-ID renaming in the
+    expanded SVG; all other output bytes remain exact.  Without the flag the
+    expanded SVG is compared byte-for-byte, which is useful for diagnosing an
+    unexpected structural difference.
+    """
     try:
         reference = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, ValueError) as err:
@@ -904,7 +915,7 @@ def compare_reference(report: Dict[str, Any], path: Path, report_dir: Path) -> N
             new_path = report_dir / current["outputs"][kind]["path"]
             old_bytes = old_path.read_bytes()
             new_bytes = new_path.read_bytes()
-            if kind == "expanded":
+            if kind == "expanded" and check_expanded_id_only:
                 old_bytes = _normalise_clip_ids(old_bytes.decode("utf-8")).encode(
                     "utf-8"
                 )
@@ -1169,6 +1180,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--capture-reference", type=Path)
     parser.add_argument("--compare-reference", type=Path)
     parser.add_argument(
+        "--check-expanded-id-only",
+        action="store_true",
+        help="allow only generated clip-ID renaming in expanded SVG parity",
+    )
+    parser.add_argument(
         "--check",
         action="store_true",
         help="run the reference provenance self-check without rendering",
@@ -1221,7 +1237,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.capture_reference:
         capture_reference(report, args.capture_reference, corpus_paths, backend)
     if args.compare_reference:
-        compare_reference(report, args.compare_reference, report_dir)
+        compare_reference(
+            report,
+            args.compare_reference,
+            report_dir,
+            check_expanded_id_only=args.check_expanded_id_only,
+        )
     (report_dir / "report.json").write_text(
         json.dumps(report, ensure_ascii=True, sort_keys=True, indent=2) + "\n",
         encoding="utf-8",

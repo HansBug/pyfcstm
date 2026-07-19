@@ -496,7 +496,7 @@ def test_bmc_human_report_distinguishes_feasibility_unknown_timeout_and_unchecke
         "establish a property conclusion."
     ) in unchecked.stdout
     assert (
-        "Property verdict: NOT EVALUATED (SCENARIO FEASIBILITY TIMED OUT)"
+        "Property verdict: NOT EVALUATED (SCENARIO FEASIBILITY NOT CHECKED)"
         in unchecked.stdout
     )
     assert "Feasibility stage: ASSUMPTIONS (NOT CHECKED)" in unchecked.stdout

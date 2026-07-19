@@ -1323,8 +1323,9 @@ def _solve_search_kind(result: "BmcSolveResult") -> str:
     return "WITNESS" if result.polarity == "witness" else "COUNTEREXAMPLE"
 
 
-def _solve_property_verdict(outcome: str) -> str:
+def _solve_property_verdict(result: "BmcSolveResult") -> str:
     """Return the explicit bounded property verdict for human output."""
+    outcome = result.outcome
     verdicts = {
         "witness_found": "SATISFIED WITHIN BOUND (WITNESS FOUND)",
         "no_witness": "NOT SATISFIED WITHIN BOUND (NO WITNESS)",
@@ -1339,6 +1340,10 @@ def _solve_property_verdict(outcome: str) -> str:
     }
     if outcome not in verdicts:
         raise BmcBuildError("Unsupported BMC outcome: %s" % outcome)
+    if outcome == "feasibility_timeout":
+        feasibility = result._validated_feasibility()
+        if feasibility.assumptions.origin != "checked":
+            return "NOT EVALUATED (SCENARIO FEASIBILITY NOT CHECKED)"
     return verdicts[outcome]
 
 
@@ -3148,7 +3153,7 @@ class BmcSolveResult(_PrettyPrintableMixin):
             >>> solve_bmc_property(formula).property_verdict
             'SATISFIED WITHIN BOUND (WITNESS FOUND)'
         """
-        return _solve_property_verdict(self.outcome)
+        return _solve_property_verdict(self)
 
     def to_canonical(self) -> _CanonicalDict:
         """Return a JSON-stable solve summary.

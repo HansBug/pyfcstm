@@ -346,6 +346,11 @@ valid SAT suffix result rather than a solver exception, and its ``Evidence``
 includes a ``Horizon reason`` explaining that the response obligation extends
 beyond the current bound.
 
+For the shared-budget case, the matching property line is
+``Property verdict: NOT EVALUATED (SCENARIO FEASIBILITY NOT CHECKED)``.  A
+feasibility check that actually starts and times out instead keeps
+``NOT EVALUATED (SCENARIO FEASIBILITY TIMED OUT)``.
+
 ``Semantic interpretation`` states the logical meaning without requiring the
 reader to combine the solver status with the property polarity.  It explicitly
 separates an unsatisfiable scenario from an unsatisfiable property objective:

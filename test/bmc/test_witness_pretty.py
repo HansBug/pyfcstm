@@ -1028,7 +1028,7 @@ def test_solve_result_text_distinguishes_unstarted_feasibility_timeout() -> None
     text = str(model)
     assert "BmcSolveResult: SCENARIO FEASIBILITY NOT CHECKED; PROPERTY NOT EVALUATED" in text
     assert "Scenario: NOT CHECKED" in text
-    assert "Property verdict: NOT EVALUATED (SCENARIO FEASIBILITY TIMED OUT)" in text
+    assert "Property verdict: NOT EVALUATED (SCENARIO FEASIBILITY NOT CHECKED)" in text
     assert "shared budget was exhausted first" in text
 
 

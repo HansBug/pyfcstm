@@ -372,7 +372,9 @@ def build_renderer(
         "--metafile=%s" % metafile,
         "--outfile=%s" % output,
     ]
-    subprocess.run(command, cwd=str(ROOT), check=True)
+    # Resolve the lockfile-installed esbuild from jsfcstm's local node_modules;
+    # running npx from the repository root would incorrectly report it missing.
+    subprocess.run(command, cwd=str(JSFCSTM_DIR), check=True)
     metadata = json.loads(metafile.read_text(encoding="utf-8"))
     return output.read_bytes(), _canonicalize_metafile(metadata)
 

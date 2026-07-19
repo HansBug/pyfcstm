@@ -253,6 +253,22 @@ def test_canonical_svg_validator_rejects_tail_text_and_dangerous_urls(svg):
         engine_module._validate_canonical_svg(svg)
 
 
+def test_canonical_svg_validator_rejects_excessive_nesting():
+    import importlib
+
+    engine_module = importlib.import_module("pyfcstm.diagram.engine")
+    depth = engine_module._SVG_MAX_DEPTH + 1
+    nested = (
+        '<svg xmlns="http://www.w3.org/2000/svg">'
+        + "<g>" * depth
+        + '<rect width="1" height="1" fill="black"/>'
+        + "</g>" * depth
+        + "</svg>"
+    )
+    with pytest.raises(DiagramAssetError, match="excessive element nesting"):
+        engine_module._validate_canonical_svg(nested)
+
+
 def test_renderer_request_errors_are_bounded_and_actionable():
     import copy
 
@@ -1003,6 +1019,42 @@ def test_render_png_rejects_unsupported_png_chunks_at_engine_boundary(monkeypatc
         )
         with pytest.raises(DiagramRenderError, match=reason):
             engine.render_png(canonical)
+
+
+def test_render_png_rejects_missing_iend_at_engine_boundary(monkeypatch):
+    import importlib
+
+    engine_module = importlib.import_module("pyfcstm.diagram.engine")
+    engine = DiagramAssetEngine()
+    monkeypatch.setattr(engine, "_ensure_resvg", lambda _locale: None)
+
+    def chunk(kind, payload):
+        checksum = zlib.crc32(kind + payload) & 0xFFFFFFFF
+        return (
+            struct.pack(">I", len(payload))
+            + kind
+            + payload
+            + struct.pack(">I", checksum)
+        )
+
+    header = struct.pack(">IIBBBBB", 1, 1, 8, 6, 0, 0, 0)
+    missing_iend = (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", header)
+        + chunk(b"IDAT", zlib.compress(b"\x00\x00\x00\x00\xff"))
+    )
+    assert not engine_module._valid_png(missing_iend)
+    monkeypatch.setattr(
+        engine,
+        "_eval_asset",
+        lambda *_args, **_kwargs: base64.b64encode(missing_iend).decode("ascii"),
+    )
+    canonical = _canonical_svg(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1">'
+        '<rect width="1" height="1" fill="black"/></svg>'
+    )
+    with pytest.raises(DiagramRenderError, match="missing IHDR, IDAT, or IEND"):
+        engine.render_png(canonical)
 
 
 def test_engine_rejects_non_finite_timeout():

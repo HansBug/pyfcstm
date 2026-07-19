@@ -137,6 +137,7 @@ _ASSET_ISSUE_URL = "https://github.com/HansBug/pyfcstm/issues"
 _SVG_NS = "http://www.w3.org/2000/svg"
 _SVG_MAX_BYTES = 16 * 1024 * 1024
 _SVG_MAX_ELEMENTS = 100_000
+_SVG_MAX_DEPTH = 256
 _MAX_RENDER_SCALE = 4.0
 _MAX_RENDER_DIMENSION = 16_384
 _MAX_RENDER_PIXELS = 16_777_216
@@ -391,7 +392,15 @@ def _validate_svg_tree(svg: str, output: bool) -> str:
     count = 0
     ids = set()
     references = []
-    for element in root.iter():
+    elements = []
+    pending = [(root, 1)]
+    while pending:
+        element, depth = pending.pop()
+        if depth > _SVG_MAX_DEPTH:
+            raise DiagramAssetError(
+                "closed SVG dialect rejected excessive element nesting"
+            )
+        elements.append(element)
         count += 1
         if count > _SVG_MAX_ELEMENTS:
             raise DiagramAssetError("closed SVG dialect rejected too many XML elements")
@@ -427,6 +436,7 @@ def _validate_svg_tree(svg: str, output: bool) -> str:
             raise DiagramAssetError("closed SVG dialect rejected residual text nodes")
         if element.tail and element.tail.strip():
             raise DiagramAssetError("closed SVG dialect rejected residual tail text")
+        pending.extend((child, depth + 1) for child in reversed(list(element)))
     if root.tag != "{%s}svg" % _SVG_NS:
         raise DiagramAssetError("closed SVG dialect requires an SVG root element")
     for reference in references:
@@ -435,10 +445,10 @@ def _validate_svg_tree(svg: str, output: bool) -> str:
                 "closed SVG dialect rejected a broken local reference: %s" % reference
             )
     if not output:
-        markers = list(root.iter("{%s}marker" % _SVG_NS))
+        markers = [element for element in elements if _svg_tag(element) == "marker"]
         marker_refs = [
             element.attrib.get("marker-end")
-            for element in root.iter()
+            for element in elements
             if element.attrib.get("marker-end")
         ]
         if markers:
@@ -450,13 +460,13 @@ def _validate_svg_tree(svg: str, output: bool) -> str:
                 raise DiagramAssetError(
                     "closed SVG dialect rejected the marker endpoint contract"
                 )
-            if any("marker-start" in element.attrib for element in root.iter()):
+            if any("marker-start" in element.attrib for element in elements):
                 raise DiagramAssetError("closed SVG dialect rejected marker-start")
         if marker_refs and not markers:
             raise DiagramAssetError(
                 "closed SVG dialect rejected a missing marker definition"
             )
-    elif any(_svg_tag(element) in {"text", "marker"} for element in root.iter()):
+    elif any(_svg_tag(element) in {"text", "marker"} for element in elements):
         raise DiagramAssetError(
             "closed SVG dialect rejected residual text or marker elements"
         )
@@ -738,6 +748,7 @@ def _decode_png_rgba(data: bytes) -> Tuple[int, int, Tuple[int, int, int, int]]:
     position = 8
     saw_ihdr = False
     saw_idat = False
+    saw_iend = False
     idat_closed = False
     width = height = None
     compressed = bytearray()
@@ -799,6 +810,7 @@ def _decode_png_rgba(data: bytes) -> Tuple[int, int, Tuple[int, int, int, int]]:
             elif chunk_type == b"IEND":
                 if length != 0 or not saw_idat:
                     raise ValueError("PNG output has an invalid IEND")
+                saw_iend = True
                 position = chunk_end
                 if position != len(data):
                     raise ValueError("PNG output has trailing bytes after IEND")
@@ -807,7 +819,7 @@ def _decode_png_rgba(data: bytes) -> Tuple[int, int, Tuple[int, int, int, int]]:
                 if saw_idat:
                     idat_closed = True
             position = chunk_end
-        if not saw_ihdr or not saw_idat or position != len(data):
+        if not saw_ihdr or not saw_idat or not saw_iend or position != len(data):
             raise ValueError("PNG output is missing IHDR, IDAT, or IEND")
         decoded = zlib.decompress(bytes(compressed))
     except (struct.error, ValueError, zlib.error, OverflowError) as err:

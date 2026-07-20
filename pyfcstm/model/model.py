@@ -116,7 +116,10 @@ def _annotate_model_operations(model_items, ast_items) -> None:
         for index, ast_item in enumerate(ast_items):
             if index in used:
                 continue
-            if model_span is not None and getattr(ast_item, "_span", None) == model_span:
+            if (
+                model_span is not None
+                and getattr(ast_item, "_span", None) == model_span
+            ):
                 match = ast_item
                 used.add(index)
                 break

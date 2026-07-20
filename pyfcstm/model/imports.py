@@ -200,7 +200,7 @@ def _get_trusted_generated_combo_transition_metadata(
 
 
 def _emit_import_diag(
-        sink: Optional[DiagnosticSink], code: str, message: str, **refs: Any
+    sink: Optional[DiagnosticSink], code: str, message: str, **refs: Any
 ) -> None:
     """Emit a structured ``E_IMPORT_*`` diagnostic onto ``sink``.
 
@@ -224,7 +224,7 @@ def _emit_import_diag(
         sink,
         ModelDiagnostic(
             code=code,
-            severity='error',
+            severity="error",
             message=message,
             refs=cleaned,
         ),
@@ -409,15 +409,15 @@ def _assemble_program(
         # Reaching here means a caller constructed a degenerate AST
         # directly via ``dsl_nodes.StateMachineDSLProgram(...)``; emit
         # the explicit diagnostic and skip rather than crashing.
-        entry_source = import_stack[0] if import_stack else '<entry>'
+        entry_source = import_stack[0] if import_stack else "<entry>"
         _emit_import_diag(
             sink,
-            'E_IMPORT_NOT_FOUND',
+            "E_IMPORT_NOT_FOUND",
             "State machine DSL program does not contain a root state.",
             source_path=entry_source,
-            alias='',
-            host_state_path='',
-            reason='no_root_state',
+            alias="",
+            host_state_path="",
+            reason="no_root_state",
         )
         # In collect mode we cannot proceed without a root state — the
         # rest of the assembly assumes ``program.root_state`` is set.
@@ -455,12 +455,12 @@ def _assemble_state(
         if import_item.alias in occupied_names:
             _emit_import_diag(
                 sink,
-                'E_IMPORT_ALIAS_CONFLICT',
+                "E_IMPORT_ALIAS_CONFLICT",
                 f"Import alias conflict in state {'.'.join(current_state_path)!r}: "
                 f"alias {import_item.alias!r} conflicts with an existing child state.",
                 alias=import_item.alias,
-                host_state_path='.'.join(current_state_path),
-                conflicting_kind='existing_substate',
+                host_state_path=".".join(current_state_path),
+                conflicting_kind="existing_substate",
             )
             # Skip this import in collect mode — keep ``occupied_names``
             # untouched so subsequent alias collisions still surface.
@@ -483,11 +483,11 @@ def _assemble_state(
             chain = [*import_stack[cycle_index:], resolved_file]
             _emit_import_diag(
                 sink,
-                'E_IMPORT_CIRCULAR',
+                "E_IMPORT_CIRCULAR",
                 "Circular import detected: %s" % " -> ".join(map(repr, chain)),
                 source_path=import_item.source_path,
                 alias=import_item.alias,
-                host_state_path='.'.join(current_state_path),
+                host_state_path=".".join(current_state_path),
                 cycle_chain=list(chain),
             )
             # Skip the cyclic import in collect mode.
@@ -625,13 +625,13 @@ def _resolve_import_file(
     if not os.path.isfile(resolved_file):
         _emit_import_diag(
             sink,
-            'E_IMPORT_NOT_FOUND',
+            "E_IMPORT_NOT_FOUND",
             f"Import source file not found for import {source_path!r} as {alias!r} "
             f"in state {'.'.join(owner_state_path)!r}: {resolved_file!r}.",
             source_path=source_path,
             alias=alias,
-            host_state_path='.'.join(owner_state_path),
-            reason='file_not_found',
+            host_state_path=".".join(owner_state_path),
+            reason="file_not_found",
         )
         return None
 
@@ -658,14 +658,14 @@ def _load_imported_program(
     except OSError as err:
         _emit_import_diag(
             sink,
-            'E_IMPORT_NOT_FOUND',
+            "E_IMPORT_NOT_FOUND",
             f"Failed to read imported file {file_path!r} for import "
             f"{import_item.source_path!r} as {import_item.alias!r} in state "
             f"{'.'.join(owner_state_path)!r}: {err}",
             source_path=import_item.source_path,
             alias=import_item.alias,
-            host_state_path='.'.join(owner_state_path),
-            reason='read_error',
+            host_state_path=".".join(owner_state_path),
+            reason="read_error",
         )
         return None
     except UnicodeDecodeError as err:
@@ -673,14 +673,14 @@ def _load_imported_program(
         # but cannot be decoded by any supported FCSTM source encoding.
         _emit_import_diag(
             sink,
-            'E_IMPORT_NOT_FOUND',
+            "E_IMPORT_NOT_FOUND",
             f"Failed to decode imported file {file_path!r} for import "
             f"{import_item.source_path!r} as {import_item.alias!r} in state "
             f"{'.'.join(owner_state_path)!r}: {err}",
             source_path=import_item.source_path,
             alias=import_item.alias,
-            host_state_path='.'.join(owner_state_path),
-            reason='read_error',
+            host_state_path=".".join(owner_state_path),
+            reason="read_error",
         )
         return None
 
@@ -689,14 +689,14 @@ def _load_imported_program(
     except GrammarParseError as err:
         _emit_import_diag(
             sink,
-            'E_IMPORT_NOT_FOUND',
+            "E_IMPORT_NOT_FOUND",
             f"Failed to parse imported file {file_path!r} for import "
             f"{import_item.source_path!r} as {import_item.alias!r} in state "
             f"{'.'.join(owner_state_path)!r}: {err}",
             source_path=import_item.source_path,
             alias=import_item.alias,
-            host_state_path='.'.join(owner_state_path),
-            reason='parse_error',
+            host_state_path=".".join(owner_state_path),
+            reason="parse_error",
         )
         return None
 
@@ -710,13 +710,13 @@ def _load_imported_program(
         # instead of crashing the merger.
         _emit_import_diag(
             sink,
-            'E_IMPORT_NOT_FOUND',
+            "E_IMPORT_NOT_FOUND",
             f"Imported file {file_path!r} for import {import_item.source_path!r} "
             f"as {import_item.alias!r} does not contain a root state.",
             source_path=import_item.source_path,
             alias=import_item.alias,
-            host_state_path='.'.join(owner_state_path),
-            reason='no_root_state',
+            host_state_path=".".join(owner_state_path),
+            reason="no_root_state",
         )
         return None
 
@@ -746,7 +746,10 @@ def _rewrite_absolute_paths_for_imported_root(
             transition.event_id.path = [*instance_prefix, *transition.event_id.path]
 
     for enter_item in node.enters:
-        if isinstance(enter_item, dsl_nodes.EnterRefFunction) and enter_item.ref.is_absolute:
+        if (
+            isinstance(enter_item, dsl_nodes.EnterRefFunction)
+            and enter_item.ref.is_absolute
+        ):
             enter_item.ref.path = [*instance_prefix, *enter_item.ref.path]
 
     for during_item in node.durings:
@@ -757,7 +760,10 @@ def _rewrite_absolute_paths_for_imported_root(
             during_item.ref.path = [*instance_prefix, *during_item.ref.path]
 
     for exit_item in node.exits:
-        if isinstance(exit_item, dsl_nodes.ExitRefFunction) and exit_item.ref.is_absolute:
+        if (
+            isinstance(exit_item, dsl_nodes.ExitRefFunction)
+            and exit_item.ref.is_absolute
+        ):
             exit_item.ref.path = [*instance_prefix, *exit_item.ref.path]
 
     for during_aspect_item in node.during_aspects:
@@ -794,15 +800,16 @@ def _resolve_import_event_mappings(
 
     for mapping in event_mappings:
         if not mapping.source_event.is_absolute:
-            _emit_import_diag(sink, 
-                'E_IMPORT_MAPPING_INVALID',
+            _emit_import_diag(
+                sink,
+                "E_IMPORT_MAPPING_INVALID",
                 f"Invalid event mapping in import {import_item.alias!r} under state "
                 f"{'.'.join(owner_state_path)!r}: source event {mapping.source_event} "
                 "must be a module-absolute path.",
                 alias=import_item.alias,
-                mapping_kind='event',
-                host_state_path='.'.join(owner_state_path),
-                reason='source_not_found',
+                mapping_kind="event",
+                host_state_path=".".join(owner_state_path),
+                reason="source_not_found",
                 detail=str(mapping.source_event),
             )
 
@@ -818,29 +825,34 @@ def _resolve_import_event_mappings(
             sink=sink,
         )
         if source_path in resolved:
-            _emit_import_diag(sink, 
-                'E_IMPORT_DUPLICATE_MAPPING',
+            _emit_import_diag(
+                sink,
+                "E_IMPORT_DUPLICATE_MAPPING",
                 f"Event mapping conflict: source event "
                 f"{_format_event_path(source_path, is_absolute=True)!r} appears "
                 f"multiple times in import {import_item.alias!r}.",
                 alias=import_item.alias,
-                mapping_kind='event',
+                mapping_kind="event",
                 duplicated_name=_format_event_path(source_path, is_absolute=True),
-                direction='source_duplicated',
-                host_state_path='.'.join(owner_state_path),
+                direction="source_duplicated",
+                host_state_path=".".join(owner_state_path),
             )
         target_key = (*target_state_path, target_event_name)
-        if target_key in target_to_source and target_to_source[target_key] != source_path:
-            _emit_import_diag(sink, 
-                'E_IMPORT_DUPLICATE_MAPPING',
+        if (
+            target_key in target_to_source
+            and target_to_source[target_key] != source_path
+        ):
+            _emit_import_diag(
+                sink,
+                "E_IMPORT_DUPLICATE_MAPPING",
                 f"Event mapping conflict: import {import_item.alias!r} maps multiple "
                 f"module events to the same host event "
                 f"{_format_event_path(target_key, is_absolute=True)!r}.",
                 alias=import_item.alias,
-                mapping_kind='event',
+                mapping_kind="event",
                 duplicated_name=_format_event_path(target_key, is_absolute=True),
-                direction='target_duplicated',
-                host_state_path='.'.join(owner_state_path),
+                direction="target_duplicated",
+                host_state_path=".".join(owner_state_path),
             )
 
         resolved[source_path] = _ResolvedImportEventMapping(
@@ -875,16 +887,17 @@ def _resolve_import_event_target_path(
             # is never empty on a parsed AST. Emit the schema
             # diagnostic and return a sentinel for future stub-driven
             # callers.
-            _emit_import_diag(sink,
-                'E_IMPORT_MAPPING_INVALID',
+            _emit_import_diag(
+                sink,
+                "E_IMPORT_MAPPING_INVALID",
                 "Invalid empty absolute target event path.",
                 alias=alias,
-                mapping_kind='event',
-                host_state_path='.'.join(owner_state_path),
-                reason='empty_path',
-                detail='absolute',
+                mapping_kind="event",
+                host_state_path=".".join(owner_state_path),
+                reason="empty_path",
+                detail="absolute",
             )
-            return ((), '', ())
+            return ((), "", ())
         target_state_path = tuple((owner_state_path[0], *target_event.path[:-1]))
         return (
             target_state_path,
@@ -895,16 +908,17 @@ def _resolve_import_event_target_path(
         if len(target_event.path) < 1:  # pragma: no cover
             # Same reason as the absolute branch above — grammar never
             # produces an empty ``event_path``.
-            _emit_import_diag(sink,
-                'E_IMPORT_MAPPING_INVALID',
+            _emit_import_diag(
+                sink,
+                "E_IMPORT_MAPPING_INVALID",
                 "Invalid empty relative target event path.",
                 alias=alias,
-                mapping_kind='event',
-                host_state_path='.'.join(owner_state_path),
-                reason='empty_path',
-                detail='relative',
+                mapping_kind="event",
+                host_state_path=".".join(owner_state_path),
+                reason="empty_path",
+                detail="relative",
             )
-            return ((), '', ())
+            return ((), "", ())
         target_state_path = tuple((*owner_state_path, *target_event.path[:-1]))
         target_event_name = target_event.path[-1]
         target_event_id_path = tuple((*owner_state_path[1:], *target_event.path))
@@ -920,7 +934,9 @@ def _apply_import_event_mappings(
     sink: DiagnosticSink,
 ) -> set:
     source_event_names = {}
-    _collect_event_extra_names(program.root_state, current_path=(), output=source_event_names)
+    _collect_event_extra_names(
+        program.root_state, current_path=(), output=source_event_names
+    )
     pending_registrations = []
     _rewrite_imported_state_event_paths(
         node=program.root_state,
@@ -959,7 +975,9 @@ def _collect_event_extra_names(
 ) -> None:
     current_state_path = tuple((*current_path, node.name))
     for event in node.events:
-        output[(node.name, event.name)] = output.get((node.name, event.name), event.extra_name)
+        output[(node.name, event.name)] = output.get(
+            (node.name, event.name), event.extra_name
+        )
         output[(*current_state_path[1:], event.name)] = event.extra_name
         output[(event.name,)] = output.get((event.name,), event.extra_name)
 
@@ -1085,10 +1103,14 @@ def _validate_pending_event_registrations(
             continue
 
         existing = by_target[target_key]
-        if item.mapping_extra_name is not None and existing.mapping_extra_name is not None:
+        if (
+            item.mapping_extra_name is not None
+            and existing.mapping_extra_name is not None
+        ):
             if item.mapping_extra_name != existing.mapping_extra_name:
-                _emit_import_diag(sink, 
-                    'E_IMPORT_DUPLICATE_MAPPING',
+                _emit_import_diag(
+                    sink,
+                    "E_IMPORT_DUPLICATE_MAPPING",
                     f"Event mapping conflict: host event "
                     f"{_format_event_path(target_key, is_absolute=True)!r} "
                     f"receives conflicting display names "
@@ -1096,10 +1118,10 @@ def _validate_pending_event_registrations(
                     f"in import {import_item.alias!r} under state "
                     f"{'.'.join(owner_state_path)!r}.",
                     alias=import_item.alias,
-                    mapping_kind='event',
+                    mapping_kind="event",
                     duplicated_name=_format_event_path(target_key, is_absolute=True),
-                    direction='target_duplicated',
-                    host_state_path='.'.join(owner_state_path),
+                    direction="target_duplicated",
+                    host_state_path=".".join(owner_state_path),
                 )
 
 
@@ -1142,19 +1164,20 @@ def _synthesize_host_events_for_import(
                 and existing_event.extra_name is not None
                 and existing_event.extra_name != item.mapping_extra_name
             ):
-                _emit_import_diag(sink,
-                    'E_IMPORT_DUPLICATE_MAPPING',
+                _emit_import_diag(
+                    sink,
+                    "E_IMPORT_DUPLICATE_MAPPING",
                     f"Event mapping conflict: host event "
                     f"{_format_event_path((*item.target_state_path, event_name), is_absolute=True)!r} "
                     f"receives conflicting display names "
                     f"{existing_event.extra_name!r} and {item.mapping_extra_name!r}.",
                     alias=item.import_alias,
-                    mapping_kind='event',
+                    mapping_kind="event",
                     duplicated_name=_format_event_path(
                         (*item.target_state_path, event_name), is_absolute=True
                     ),
-                    direction='target_duplicated',
-                    host_state_path='.'.join(owner_state_path),
+                    direction="target_duplicated",
+                    host_state_path=".".join(owner_state_path),
                 )
             if existing_event.extra_name is None and final_extra_name is not None:
                 existing_event.extra_name = final_extra_name
@@ -1178,25 +1201,25 @@ def _ensure_state_path_exists(
         # so this branch is unreachable in the post-C-E pipeline).
         _emit_import_diag(
             sink,
-            'E_IMPORT_MAPPING_INVALID',
+            "E_IMPORT_MAPPING_INVALID",
             "Invalid empty host state path for event mapping.",
             alias=alias,
-            mapping_kind='event',
-            host_state_path='.'.join(owner_state_path),
-            reason='empty_path',
-            detail='<empty>',
+            mapping_kind="event",
+            host_state_path=".".join(owner_state_path),
+            reason="empty_path",
+            detail="<empty>",
         )
         return root
     if root.name != state_path[0]:
         _emit_import_diag(
             sink,
-            'E_IMPORT_MAPPING_INVALID',
+            "E_IMPORT_MAPPING_INVALID",
             f"Invalid host root path for event mapping: expected root {root.name!r}, "
             f"got {state_path[0]!r}.",
             alias=alias,
-            mapping_kind='event',
-            host_state_path='.'.join(owner_state_path),
-            reason='host_root_mismatch',
+            mapping_kind="event",
+            host_state_path=".".join(owner_state_path),
+            reason="host_root_mismatch",
             detail=f"expected={root.name!r} got={state_path[0]!r}",
         )
 
@@ -1210,14 +1233,14 @@ def _ensure_state_path_exists(
         if next_state is None:
             _emit_import_diag(
                 sink,
-                'E_IMPORT_MAPPING_INVALID',
+                "E_IMPORT_MAPPING_INVALID",
                 f"Event mapping target state "
                 f"{_format_event_path(state_path, is_absolute=True)!r} does not exist "
                 f"in host model.",
                 alias=alias,
-                mapping_kind='event',
-                host_state_path='.'.join(owner_state_path),
-                reason='target_invalid',
+                mapping_kind="event",
+                host_state_path=".".join(owner_state_path),
+                reason="target_invalid",
                 detail=_format_event_path(state_path, is_absolute=True),
             )
         state = next_state
@@ -1269,15 +1292,15 @@ def _apply_import_def_mappings(
         ):
             _emit_import_diag(
                 sink,
-                'E_IMPORT_DUPLICATE_MAPPING',
+                "E_IMPORT_DUPLICATE_MAPPING",
                 f"Variable mapping conflict: import {import_item.alias!r} maps "
                 f"multiple source variables to the same target variable "
                 f"{target_name!r}.",
                 alias=import_item.alias,
-                mapping_kind='variable',
+                mapping_kind="variable",
                 duplicated_name=target_name,
-                direction='target_duplicated',
-                host_state_path='.'.join(owner_state_path),
+                direction="target_duplicated",
+                host_state_path=".".join(owner_state_path),
             )
 
         source_to_target[def_item.name] = target_name
@@ -1310,28 +1333,28 @@ def _merge_imported_definitions(
             if def_item.name in host_explicit_def_names:
                 _emit_import_diag(
                     sink,
-                    'E_IMPORT_DUPLICATE_MAPPING',
+                    "E_IMPORT_DUPLICATE_MAPPING",
                     f"Variable mapping conflict: target variable {def_item.name!r} "
                     f"already exists in host model as type {existing_item.type!r}, "
                     f"cannot bind imported type {def_item.type!r}.",
                     alias=import_item.alias,
-                    mapping_kind='variable',
+                    mapping_kind="variable",
                     duplicated_name=def_item.name,
-                    direction='target_duplicated',
-                    host_state_path='.'.join(owner_state_path),
+                    direction="target_duplicated",
+                    host_state_path=".".join(owner_state_path),
                 )
             else:
                 _emit_import_diag(
                     sink,
-                    'E_IMPORT_DUPLICATE_MAPPING',
+                    "E_IMPORT_DUPLICATE_MAPPING",
                     f"Variable mapping conflict: target variable {def_item.name!r} "
                     f"receives incompatible imported types {existing_item.type!r} "
                     f"and {def_item.type!r}.",
                     alias=import_item.alias,
-                    mapping_kind='variable',
+                    mapping_kind="variable",
                     duplicated_name=def_item.name,
-                    direction='target_duplicated',
-                    host_state_path='.'.join(owner_state_path),
+                    direction="target_duplicated",
+                    host_state_path=".".join(owner_state_path),
                 )
 
         if def_item.name in host_explicit_def_names:
@@ -1340,14 +1363,14 @@ def _merge_imported_definitions(
         if existing_item.expr != def_item.expr:
             _emit_import_diag(
                 sink,
-                'E_IMPORT_DUPLICATE_MAPPING',
+                "E_IMPORT_DUPLICATE_MAPPING",
                 f"Variable mapping conflict: target variable {def_item.name!r} has "
                 f"conflicting initial values.",
                 alias=import_item.alias,
-                mapping_kind='variable',
+                mapping_kind="variable",
                 duplicated_name=def_item.name,
-                direction='target_duplicated',
-                host_state_path='.'.join(owner_state_path),
+                direction="target_duplicated",
+                host_state_path=".".join(owner_state_path),
             )
 
     imported_program.definitions = []
@@ -1373,14 +1396,14 @@ def _resolve_import_variable_target(
             if selector.name in seen_exact_names:
                 _emit_import_diag(
                     sink,
-                    'E_IMPORT_DUPLICATE_MAPPING',
+                    "E_IMPORT_DUPLICATE_MAPPING",
                     f"Variable mapping conflict: duplicated exact selector "
                     f"{selector.name!r} in import {import_item.alias!r}.",
                     alias=import_item.alias,
-                    mapping_kind='variable',
+                    mapping_kind="variable",
                     duplicated_name=selector.name,
-                    direction='source_duplicated',
-                    host_state_path='.'.join(owner_state_path),
+                    direction="source_duplicated",
+                    host_state_path=".".join(owner_state_path),
                 )
             seen_exact_names[selector.name] = mapping
             exact_rules.append(mapping)
@@ -1390,26 +1413,26 @@ def _resolve_import_variable_target(
                 if item in local_names:
                     _emit_import_diag(
                         sink,
-                        'E_IMPORT_DUPLICATE_MAPPING',
+                        "E_IMPORT_DUPLICATE_MAPPING",
                         f"Variable mapping conflict: duplicated selector name "
                         f"{item!r} inside set rule in import {import_item.alias!r}.",
                         alias=import_item.alias,
-                        mapping_kind='variable',
+                        mapping_kind="variable",
                         duplicated_name=item,
-                        direction='source_duplicated',
-                        host_state_path='.'.join(owner_state_path),
+                        direction="source_duplicated",
+                        host_state_path=".".join(owner_state_path),
                     )
                 if item in seen_set_names:
                     _emit_import_diag(
                         sink,
-                        'E_IMPORT_DUPLICATE_MAPPING',
+                        "E_IMPORT_DUPLICATE_MAPPING",
                         f"Variable mapping conflict: selector name {item!r} appears "
                         f"in multiple set rules in import {import_item.alias!r}.",
                         alias=import_item.alias,
-                        mapping_kind='variable',
+                        mapping_kind="variable",
                         duplicated_name=item,
-                        direction='source_duplicated',
-                        host_state_path='.'.join(owner_state_path),
+                        direction="source_duplicated",
+                        host_state_path=".".join(owner_state_path),
                     )
                 local_names.add(item)
                 seen_set_names[item] = mapping
@@ -1424,21 +1447,17 @@ def _resolve_import_variable_target(
     if len(fallback_rules) > 1:
         _emit_import_diag(
             sink,
-            'E_IMPORT_DUPLICATE_MAPPING',
+            "E_IMPORT_DUPLICATE_MAPPING",
             f"Variable mapping conflict: multiple fallback rules found in import "
             f"{import_item.alias!r}.",
             alias=import_item.alias,
-            mapping_kind='variable',
-            duplicated_name='<fallback>',
-            direction='source_duplicated',
-            host_state_path='.'.join(owner_state_path),
+            mapping_kind="variable",
+            duplicated_name="<fallback>",
+            direction="source_duplicated",
+            host_state_path=".".join(owner_state_path),
         )
 
-    exact_matches = [
-        item
-        for item in exact_rules
-        if item.selector.name == source_name
-    ]
+    exact_matches = [item for item in exact_rules if item.selector.name == source_name]
     if exact_matches:
         return _render_target_template(
             template=exact_matches[0].target_template.template,
@@ -1449,22 +1468,18 @@ def _resolve_import_variable_target(
             sink=sink,
         )
 
-    set_matches = [
-        item
-        for item in set_rules
-        if source_name in item.selector.names
-    ]
+    set_matches = [item for item in set_rules if source_name in item.selector.names]
     if len(set_matches) > 1:
         _emit_import_diag(
             sink,
-            'E_IMPORT_DUPLICATE_MAPPING',
+            "E_IMPORT_DUPLICATE_MAPPING",
             f"Variable mapping conflict: selector name {source_name!r} matches "
             f"multiple set rules in import {import_item.alias!r}.",
             alias=import_item.alias,
-            mapping_kind='variable',
+            mapping_kind="variable",
             duplicated_name=source_name,
-            direction='source_duplicated',
-            host_state_path='.'.join(owner_state_path),
+            direction="source_duplicated",
+            host_state_path=".".join(owner_state_path),
         )
     if set_matches:
         return _render_target_template(
@@ -1484,14 +1499,14 @@ def _resolve_import_variable_target(
     if len(pattern_matches) > 1:
         _emit_import_diag(
             sink,
-            'E_IMPORT_DUPLICATE_MAPPING',
+            "E_IMPORT_DUPLICATE_MAPPING",
             f"Variable mapping conflict: source variable {source_name!r} matches "
             f"multiple pattern rules in import {import_item.alias!r}.",
             alias=import_item.alias,
-            mapping_kind='variable',
+            mapping_kind="variable",
             duplicated_name=source_name,
-            direction='source_duplicated',
-            host_state_path='.'.join(owner_state_path),
+            direction="source_duplicated",
+            host_state_path=".".join(owner_state_path),
         )
     if pattern_matches:
         item, captures = pattern_matches[0]
@@ -1516,15 +1531,15 @@ def _resolve_import_variable_target(
 
     _emit_import_diag(
         sink,
-        'E_IMPORT_MAPPING_INVALID',
+        "E_IMPORT_MAPPING_INVALID",
         f"Variable mapping conflict: source variable {source_name!r} in import "
         f"{import_item.alias!r} under state {'.'.join(owner_state_path)!r} is not "
         f"matched by any def mapping rule.",
         alias=import_item.alias,
-        mapping_kind='variable',
-        reason='source_not_found',
+        mapping_kind="variable",
+        reason="source_not_found",
         detail=source_name,
-        host_state_path='.'.join(owner_state_path),
+        host_state_path=".".join(owner_state_path),
     )
 
 
@@ -1554,27 +1569,27 @@ def _render_target_template(
                 if end_index < 0:
                     _emit_import_diag(
                         sink,
-                        'E_IMPORT_MAPPING_INVALID',
+                        "E_IMPORT_MAPPING_INVALID",
                         f"Invalid variable mapping template {template!r} in import "
                         f"{import_item.alias!r}: missing closing '}}'.",
                         alias=import_item.alias,
-                        mapping_kind='variable',
-                        host_state_path='.'.join(owner_state_path),
-                        reason='template_invalid',
+                        mapping_kind="variable",
+                        host_state_path=".".join(owner_state_path),
+                        reason="template_invalid",
                         detail=template,
                     )
-                raw_index = template[i + 2:end_index]
+                raw_index = template[i + 2 : end_index]
                 if not raw_index.isdigit():
                     _emit_import_diag(
                         sink,
-                        'E_IMPORT_MAPPING_INVALID',
+                        "E_IMPORT_MAPPING_INVALID",
                         f"Invalid variable mapping template {template!r} in import "
                         f"{import_item.alias!r}: placeholder index {raw_index!r} "
                         f"is not numeric.",
                         alias=import_item.alias,
-                        mapping_kind='variable',
-                        host_state_path='.'.join(owner_state_path),
-                        reason='template_invalid',
+                        mapping_kind="variable",
+                        host_state_path=".".join(owner_state_path),
+                        reason="template_invalid",
                         detail=template,
                     )
                 rendered.append(
@@ -1609,14 +1624,14 @@ def _render_target_template(
             if len(captures) > 1:
                 _emit_import_diag(
                     sink,
-                    'E_IMPORT_MAPPING_INVALID',
+                    "E_IMPORT_MAPPING_INVALID",
                     f"Invalid variable mapping template {template!r} in import "
                     f"{import_item.alias!r}: bare '*' is ambiguous when the source "
                     f"selector has multiple capture groups.",
                     alias=import_item.alias,
-                    mapping_kind='variable',
-                    host_state_path='.'.join(owner_state_path),
-                    reason='template_invalid',
+                    mapping_kind="variable",
+                    host_state_path=".".join(owner_state_path),
+                    reason="template_invalid",
                     detail=template,
                 )
             rendered.append(source_name if not captures else captures[0])
@@ -1645,16 +1660,16 @@ def _mapping_placeholder_value(
     else:
         _emit_import_diag(
             sink,
-            'E_IMPORT_MAPPING_INVALID',
+            "E_IMPORT_MAPPING_INVALID",
             f"Invalid variable mapping template {template!r} in import "
             f"{import_item.alias!r} under state {'.'.join(owner_state_path)!r}: "
             f"placeholder ${index} is out of range for source variable "
             f"{source_name!r}.",
             alias=import_item.alias,
-            mapping_kind='variable',
-            reason='template_invalid',
+            mapping_kind="variable",
+            reason="template_invalid",
             detail=template,
-            host_state_path='.'.join(owner_state_path),
+            host_state_path=".".join(owner_state_path),
         )
 
 

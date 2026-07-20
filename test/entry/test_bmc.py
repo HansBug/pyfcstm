@@ -117,6 +117,37 @@ def _json_result(model_path: Path, query_path: Path, *args: str):
     return result, json.loads(result.stdout) if result.stdout else None
 
 
+def test_bmc_cli_compile_preserves_query_source_path(bmc_files) -> None:
+    """The file-based entry pipeline preserves FBMCQ provenance metadata."""
+    import pyfcstm.entry.bmc as bmc_entry
+
+    model_path, query = bmc_files
+    query_path = query(
+        'init state("Root") where true;\ncheck reach <= 1: active("Root");'
+    )
+    model = bmc_entry._load_model(str(model_path))
+
+    formula = bmc_entry._compile_query(
+        model,
+        query_path.read_text(encoding="utf-8"),
+        max_bound=None,
+        query_source_path=str(query_path),
+    )
+    context = formula.core.context
+    assert context.query_source_path == str(query_path)
+    target = next(
+        group
+        for group in formula.core._tracked_groups
+        if group.stable_id == "initial.target"
+    )
+    assert target.source_ref.path == context._source_registry.display_path(
+        str(query_path)
+    )
+    assert context._source_registry.excerpt(target.source_ref) == (
+        'init state("Root") where true;'
+    )
+
+
 def _stderr_text(result) -> str:
     """Return stderr across Click versions with and without split capture."""
     try:
@@ -1499,7 +1530,7 @@ def test_bmc_internal_compile_and_solve_errors_keep_internal_identity(
     model_path, query = bmc_files
     query_path = query('check reach <= 1: active("Root");')
 
-    def fail_compile(model, query_text, *, options=None):
+    def fail_compile(model, query_text, *, options=None, query_source_path=None):
         raise BmcBuildError("forged compile invariant failure")
 
     monkeypatch.setattr(bmc_entry, "_compile_bmc_query", fail_compile)

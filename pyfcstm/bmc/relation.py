@@ -273,11 +273,7 @@ def _formula_from_groups(
         >>> str(_formula_from_groups((group,)))
         'x'
     """
-    return _and(
-        expression
-        for group in groups
-        for expression in group.expressions
-    )
+    return _and(expression for group in groups for expression in group.expressions)
 
 
 def _append_tracked_group(
@@ -2379,8 +2375,7 @@ def _build_environment_formula(
                 constraints.append(frame_constraint)
                 _append_tracked_group(
                     groups,
-                    stable_id="assumption.%04d.frame.%04d"
-                    % (assumption_index, frame),
+                    stable_id="assumption.%04d.frame.%04d" % (assumption_index, frame),
                     stage="assumptions",
                     category="assumption.frame",
                     expressions=(frame_constraint,),
@@ -2406,8 +2401,7 @@ def _build_environment_formula(
                 constraints.append(event_constraint)
                 _append_tracked_group(
                     groups,
-                    stable_id="assumption.%04d.event.%04d"
-                    % (assumption_index, cycle),
+                    stable_id="assumption.%04d.event.%04d" % (assumption_index, cycle),
                     stage="assumptions",
                     category="assumption.event",
                     expressions=(event_constraint,),

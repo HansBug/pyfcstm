@@ -253,7 +253,9 @@ def _context_span(context: ParserRuleContext) -> Span:
 
 
 def _attach_query_source_metadata(
-    value: Any, parse_tree: ParserRuleContext, listener: BmcQueryParseListener,
+    value: Any,
+    parse_tree: ParserRuleContext,
+    listener: BmcQueryParseListener,
     source_path: Optional[str],
 ) -> Any:
     """Attach parser spans to a query root without changing canonical data."""
@@ -404,9 +406,7 @@ def parse_with_bmc_grammar_entry(
     return build_bmc_ast_from_parse_tree(parse_tree, source_path=source_path)
 
 
-def parse_bmc_query(
-    input_text: str, source_path: Optional[str] = None
-) -> BmcQuery:
+def parse_bmc_query(input_text: str, source_path: Optional[str] = None) -> BmcQuery:
     """Parse a complete ``.fbmcq`` query.
 
     :param input_text: Complete query text.
@@ -425,9 +425,7 @@ def parse_bmc_query(
         >>> parse_bmc_query('check reach <= 1: true;').property.bound
         1
     """
-    result = parse_with_bmc_grammar_entry(
-        input_text, "query", source_path=source_path
-    )
+    result = parse_with_bmc_grammar_entry(input_text, "query", source_path=source_path)
     if not isinstance(result, BmcQuery):
         raise BmcQueryParseError("BMC query entry did not produce BmcQuery.")
     return result

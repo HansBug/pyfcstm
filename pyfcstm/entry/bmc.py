@@ -193,6 +193,7 @@ def _compile_query(
     model: StateMachine,
     query_text: str,
     max_bound: Optional[int],
+    query_source_path: Optional[str] = None,
 ) -> BmcPropertyFormula:
     from ..bmc import (
         BmcError,
@@ -204,7 +205,7 @@ def _compile_query(
 
     options = BmcOptions(max_bound=max_bound) if max_bound is not None else None
     try:
-        query = _parse_bmc_query(query_text)
+        query = _parse_bmc_query(query_text, source_path=query_source_path)
     except (BmcQueryParseError, InvalidBmcQuery) as err:
         # BmcQueryParseError: parse_bmc_query rejects malformed FBMCQ text;
         # InvalidBmcQuery: parsed query objects reject invalid source structure.
@@ -215,7 +216,15 @@ def _compile_query(
             "query_bound=%d with max_bound=%d." % (query.property.bound, max_bound)
         )
     try:
-        return _compile_bmc_query(model, query, options=options)
+        # Compile from the original text so BmcPreparedContext retains the
+        # immutable query snapshot for exact provenance excerpts.  Passing the
+        # preflight AST would preserve spans but intentionally loses that text.
+        return _compile_bmc_query(
+            model,
+            query_text,
+            options=options,
+            query_source_path=query_source_path,
+        )
     except (BmcQueryParseError, InvalidBmcQuery, UnsupportedBmcQuery) as err:
         # BmcQueryParseError: a delegated parser rejects source text;
         # InvalidBmcQuery: model-aware binding rejects user query references;
@@ -237,7 +246,12 @@ def _execute_bmc(
 
     model = _load_model(input_code_file)
     query_text = _read_query_file(query_file)
-    formula = _compile_query(model, query_text, max_bound)
+    formula = _compile_query(
+        model,
+        query_text,
+        max_bound,
+        query_source_path=query_file,
+    )
     try:
         result = _solve_bmc_property(formula, timeout_ms=timeout_ms)
     except BmcBuildError as err:

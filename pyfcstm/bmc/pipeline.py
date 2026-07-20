@@ -45,6 +45,7 @@ def compile_bmc_query(
     query: Union[str, BmcQuery],
     *,
     options: Optional[BmcOptions] = None,
+    query_source_path: Optional[str] = None,
 ) -> BmcPropertyFormula:
     """Compile a model and BMC query into a solve-ready formula without solving.
 
@@ -61,6 +62,9 @@ def compile_bmc_query(
     :type query: Union[str, pyfcstm.bmc.query.BmcQuery]
     :param options: Optional preparation policy, defaults to ``None``.
     :type options: pyfcstm.bmc.engine.BmcOptions, optional
+    :param query_source_path: Optional source path for query text, defaults to
+        ``None``.
+    :type query_source_path: Optional[str], optional
     :return: Compiled property formula ready for an explicit solver call.
     :rtype: pyfcstm.bmc.properties.BmcPropertyFormula
     :raises pyfcstm.bmc.errors.BmcBuildError: If the model, query input, options,
@@ -83,6 +87,11 @@ def compile_bmc_query(
         >>> formula.kind, formula.polarity
         ('reach', 'witness')
     """
-    context = prepare_bmc_query(model, query, options=options)
+    context = prepare_bmc_query(
+        model,
+        query,
+        options=options,
+        query_source_path=query_source_path,
+    )
     core = build_bmc_core_formula(context)
     return compile_bmc_property(core)

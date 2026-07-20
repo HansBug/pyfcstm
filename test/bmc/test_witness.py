@@ -752,6 +752,73 @@ class _SolverSpy:
         return self.reason_value
 
 
+@pytest.mark.parametrize(
+    ("dsl_text", "query_text", "statuses", "expected_count", "expected_stage"),
+    [
+        pytest.param(
+            "state Root;",
+            'check reach <= 1: active("Root");',
+            [z3.sat],
+            1,
+            None,
+            id="sat-reach",
+        ),
+        pytest.param(
+            """
+            def int x = 0;
+            state Root {
+                state A;
+                state B;
+                [*] -> A;
+                A -> B;
+            }
+            """,
+            'init state("Root.A") where x == 1;\ncheck reach <= 1: active("Root.B");',
+            [z3.unsat, z3.unsat, z3.unsat, z3.sat],
+            4,
+            "initialization",
+            id="initialization-infeasible",
+        ),
+        pytest.param(
+            """
+            def int x = 0;
+            state Root {
+                state A;
+                state B;
+                [*] -> A;
+                A -> B;
+            }
+            """,
+            'init state("Root.A");\n'
+            "assume at 0: x == 0;\n"
+            "assume at 0: x == 1;\n"
+            'check reach <= 1: active("Root.B");',
+            [z3.unsat, z3.unsat, z3.sat],
+            3,
+            "assumptions",
+            id="assumptions-infeasible",
+        ),
+    ],
+)
+def test_solver_staged_check_count_baseline(
+    monkeypatch,
+    dsl_text,
+    query_text,
+    statuses,
+    expected_count,
+    expected_stage,
+) -> None:
+    """Lock primary, initialization, and assumptions staged check counts."""
+    _, formula = _compile(dsl_text, query_text)
+    spy = _SolverSpy(statuses, model=_empty_sat_model())
+    monkeypatch.setattr(witness_module.z3, "Solver", lambda: spy)
+
+    result = solve_bmc_property(formula, timeout_ms=100, check_incomplete=False)
+
+    assert spy.check_count == expected_count
+    assert result.feasibility.infeasible_stage == expected_stage
+
+
 def test_solver_staged_checks_stop_after_primary_unknown(monkeypatch) -> None:
     """An inconclusive primary check cannot consume later feasibility stages."""
     formula = _verdict_formula("reach")
@@ -1723,6 +1790,9 @@ def test_solver_unknown_and_timeout_paths_are_structured(monkeypatch) -> None:
         def check(self):
             return self.status
 
+        def model(self):
+            return None
+
         def reason_unknown(self):
             return self.reason
 
@@ -1733,7 +1803,7 @@ def test_solver_unknown_and_timeout_paths_are_structured(monkeypatch) -> None:
         None,
         "timeout",
     )
-    assert timeout_solver.timeout == 5
+    assert 1 <= timeout_solver.timeout <= 5
 
     unknown_solver = FakeSolver(z3.unknown, "canceled")
     monkeypatch.setattr(witness_module.z3, "Solver", lambda: unknown_solver)

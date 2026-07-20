@@ -2029,27 +2029,27 @@ def _z3_number_value(
 def _solve(
     expr: z3.BoolRef, timeout_ms: Optional[int]
 ) -> Tuple[BmcSolveStatus, Optional[z3.ModelRef], Optional[str], float]:
+    """Solve one Boolean expression through the shared budget primitive.
+
+    :param expr: Boolean expression to solve.
+    :type expr: z3.BoolRef
+    :param timeout_ms: Optional total solver budget in milliseconds, defaults
+        to ``None``.
+    :type timeout_ms: int, optional
+    :return: Status, model, reason, and elapsed milliseconds.
+    :rtype: Tuple[str, Optional[z3.ModelRef], Optional[str], float]
+
+    Example::
+
+        >>> _solve(z3.BoolVal(True), None)[0]
+        'sat'
+    """
     solver = z3.Solver()
-    if timeout_ms is not None:
-        if (
-            isinstance(timeout_ms, bool)
-            or not isinstance(timeout_ms, int)
-            or timeout_ms <= 0
-        ):
-            raise BmcBuildError("timeout_ms must be a positive integer or None.")
-        solver.set(timeout=timeout_ms)
     solver.add(expr)
-    start = time.monotonic()
-    status = solver.check()
-    elapsed_ms = (time.monotonic() - start) * 1000.0
-    if status == z3.sat:
-        return "sat", solver.model(), None, elapsed_ms
-    if status == z3.unsat:
-        return "unsat", None, None, elapsed_ms
-    reason = solver.reason_unknown()
-    if reason == "timeout":
-        return "timeout", None, reason, elapsed_ms
-    return "unknown", None, reason, elapsed_ms
+    status, model, reason, elapsed_ms, _ = _check_with_budget(
+        solver, _SolveBudget(timeout_ms)
+    )
+    return status, model, reason, elapsed_ms
 
 
 _FEASIBILITY_ORIGINS = {"checked", "inferred", "not_checked"}

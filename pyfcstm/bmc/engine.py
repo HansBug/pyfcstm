@@ -143,7 +143,7 @@ class BmcPreparedContext:
     domain: BmcDomain
     options: BmcOptions
     source_text: Optional[str] = None
-    query_source_path: Optional[str] = None
+    query_source_path: Optional[str] = field(default=None, repr=False, compare=False)
     _source_registry: Optional[SourceDocumentRegistry] = field(
         default=None, repr=False, compare=False
     )
@@ -159,9 +159,7 @@ class BmcPreparedContext:
         if self.query_source_path is not None and (
             not isinstance(self.query_source_path, str) or not self.query_source_path
         ):
-            raise BmcBuildError(
-                "query_source_path must be None or a non-empty string."
-            )
+            raise BmcBuildError("query_source_path must be None or a non-empty string.")
         effective_query_path = self.query_source_path or getattr(
             self.query, "_source_path", None
         )
@@ -451,9 +449,7 @@ def prepare_bmc_query(
         >>> prepare_bmc_query(model, 'check reach <= 1: active("Root");').bound
         1
     """
-    return BmcEngine(model, options).prepare(
-        query, query_source_path=query_source_path
-    )
+    return BmcEngine(model, options).prepare(query, query_source_path=query_source_path)
 
 
 __all__ = [

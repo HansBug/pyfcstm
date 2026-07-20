@@ -11,6 +11,15 @@ The word ``source`` here means a FCSTM/FBMCQ/generated document location.  It
 is distinct from :class:`pyfcstm.bmc.source.MacroStepSource`, which describes
 the runtime origin profile of a macro-step.
 
+The model integration contract is intentionally private and metadata-only:
+``pyfcstm.model`` loaders may attach ``_source_documents`` as a mapping from
+absolute source paths to immutable text snapshots, ``_source_root`` as the
+display root, and ``_source_path`` to source-bearing model objects.  The BMC
+registry reads these names without changing model equality, canonical output,
+or programmatic-model behavior.  Changes to those private names or their
+types must update this module and the model loader together; missing metadata
+is reported as an unavailable path or excerpt rather than guessed.
+
 Examples::
 
     >>> from pyfcstm.bmc.provenance import BmcSourceRef, SourceDocumentRegistry

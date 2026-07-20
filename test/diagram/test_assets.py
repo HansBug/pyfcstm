@@ -111,12 +111,14 @@ def _request():
 
 
 def _canonical_svg(svg):
-    """Create a validated private SVG fixture for bridge-only tests."""
-    import importlib
+    """Create a raw SVG fixture for bridge-only tests.
 
-    return importlib.import_module("pyfcstm.diagram.engine")._validate_canonical_svg(
-        svg
-    )
+    Strict SVG validation is a maintenance/tooling concern.  The production
+    engine accepts this internal bridge input and performs only basic bounded
+    XML/canvas checks; the complete dialect is checked by the maintenance
+    renderer gate.
+    """
+    return svg
 
 
 def _png_ink_bbox(data):
@@ -202,71 +204,16 @@ def test_renderer_is_deterministic_and_escapes_hostile_labels():
     assert "</script><script>" not in first
 
 
-def test_resvg_operations_reject_raw_svg_inputs():
+def test_resvg_operations_accept_raw_svg_bridge_inputs():
     engine = DiagramAssetEngine()
-    raw_svg = '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>'
-    with pytest.raises(ValueError, match="DiagramData request"):
-        engine.render_png(raw_svg)
-    with pytest.raises(ValueError, match="DiagramData request"):
-        engine.expand_svg(raw_svg)
-
-
-@pytest.mark.parametrize(
-    "svg",
-    (
-        '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>',
-        '<svg xmlns="http://www.w3.org/2000/svg"><foreignObject/></svg>',
-        '<svg xmlns="http://www.w3.org/2000/svg"><image href="https://evil"/></svg>',
-        '<svg xmlns="http://www.w3.org/2000/svg"><use href="file:///tmp/x"/></svg>',
-        '<svg xmlns="http://www.w3.org/2000/svg"><style>*{fill:red}</style></svg>',
-        '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0" onload="evil()"/></svg>',
-        '<svg xmlns="http://www.w3.org/2000/svg"><path fill="url(https://evil)"/></svg>',
-        '<svg xmlns="http://www.w3.org/2000/svg"><unknown/></svg>',
-        '<svg xmlns="http://www.w3.org/2000/svg"><path fill="url(#missing)"/></svg>',
-        '<svg xmlns="http://www.w3.org/2000/svg"><marker orient="auto-start-reverse"/></svg>',
-        '<svg xmlns="urn:not-svg"><path/></svg>',
-        '<svg xmlns="http://www.w3.org/2000/svg"><path>',
-    ),
-)
-def test_canonical_svg_validator_rejects_unsupported_structures(svg):
-    import importlib
-
-    engine_module = importlib.import_module("pyfcstm.diagram.engine")
-    with pytest.raises(DiagramAssetError, match="closed SVG dialect"):
-        engine_module._validate_canonical_svg(svg)
-
-
-@pytest.mark.parametrize(
-    "svg",
-    (
-        '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0"/>EVIL</svg>',
-        '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0"/>vbscript:evil</svg>',
-        '<svg xmlns="http://www.w3.org/2000/svg"><path fill="url(vbscript:evil)"/></svg>',
-        '<svg xmlns="http://www.w3.org/2000/svg"><path fill="url(blob:evil)"/></svg>',
-    ),
-)
-def test_canonical_svg_validator_rejects_tail_text_and_dangerous_urls(svg):
-    import importlib
-
-    engine_module = importlib.import_module("pyfcstm.diagram.engine")
-    with pytest.raises(DiagramAssetError, match="closed SVG dialect"):
-        engine_module._validate_canonical_svg(svg)
-
-
-def test_canonical_svg_validator_rejects_excessive_nesting():
-    import importlib
-
-    engine_module = importlib.import_module("pyfcstm.diagram.engine")
-    depth = engine_module._SVG_MAX_DEPTH + 1
-    nested = (
-        '<svg xmlns="http://www.w3.org/2000/svg">'
-        + "<g>" * depth
-        + '<rect width="1" height="1" fill="black"/>'
-        + "</g>" * depth
-        + "</svg>"
+    raw_svg = (
+        '<?xml version="1.0"?>\n'
+        '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1">'
+        "<!-- valid SVG comment -->"
+        "</svg>"
     )
-    with pytest.raises(DiagramAssetError, match="excessive element nesting"):
-        engine_module._validate_canonical_svg(nested)
+    assert engine.render_png(raw_svg).startswith(b"\x89PNG\r\n\x1a\n")
+    assert engine.expand_svg(raw_svg).startswith("<svg")
 
 
 def test_renderer_request_errors_are_bounded_and_actionable():
@@ -284,22 +231,16 @@ def test_renderer_request_errors_are_bounded_and_actionable():
     assert "renderer-core" not in message
 
 
-def test_canonical_svg_validator_accepts_renderer_output_and_marker_contract():
-    import importlib
-
-    engine_module = importlib.import_module("pyfcstm.diagram.engine")
+def test_renderer_output_is_svg_and_preserves_marker_contract():
     engine = DiagramAssetEngine()
-    canonical = engine_module._validate_canonical_svg(engine.render_svg(_request()))
-    assert canonical.startswith("<svg")
-    assert 'orient="auto"' in canonical
-    assert 'refX="10"' in canonical
-    assert "auto-start-reverse" not in canonical
+    svg = engine.render_svg(_request())
+    assert svg.startswith("<svg")
+    assert 'orient="auto"' in svg
+    assert 'refX="10"' in svg
+    assert "auto-start-reverse" not in svg
 
 
-def test_expanded_svg_validator_rejects_non_path_output(monkeypatch):
-    import importlib
-
-    engine_module = importlib.import_module("pyfcstm.diagram.engine")
+def test_expanded_svg_rejects_malformed_output(monkeypatch):
     engine = DiagramAssetEngine()
     monkeypatch.setattr(engine, "_ensure_resvg", lambda _locale: None)
     monkeypatch.setattr(
@@ -312,11 +253,11 @@ def test_expanded_svg_validator_rejects_non_path_output(monkeypatch):
     monkeypatch.setattr(
         engine,
         "_canonical_input",
-        lambda _request: engine_module._CanonicalSvg(
+        lambda _request: (
             '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>'
         ),
     )
-    with pytest.raises(DiagramAssetError, match="closed SVG dialect"):
+    with pytest.raises(DiagramAssetError, match="malformed SVG output"):
         engine.expand_svg(_request())
 
 
@@ -589,16 +530,13 @@ def test_zero_length_required_font_table_reports_resource_data_failure(monkeypat
 
 
 def test_invalid_expanded_svg_reports_resource_data_failure(monkeypatch):
-    import importlib
-
-    engine_module = importlib.import_module("pyfcstm.diagram.engine")
     engine = DiagramAssetEngine()
     monkeypatch.setattr(engine, "_ensure_resvg", lambda _locale: None)
     monkeypatch.setattr(engine, "_eval_asset", lambda *_args, **_kwargs: "not-svg")
     monkeypatch.setattr(
         engine,
         "_canonical_input",
-        lambda _request: engine_module._CanonicalSvg(
+        lambda _request: (
             '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>'
         ),
     )
@@ -846,10 +784,6 @@ def test_resvg_marker_tip_lands_on_path_endpoint():
     """
     engine = DiagramAssetEngine()
 
-    with pytest.raises(DiagramAssetError, match="marker endpoint contract"):
-        _canonical_svg(svg.replace('refX="10"', 'refX="9"'))
-    with pytest.raises(DiagramAssetError, match="marker orientation contract"):
-        _canonical_svg(svg.replace('orient="auto"', 'orient="auto-start-reverse"'))
     normalized = engine.expand_svg(_canonical_svg(svg))
     transforms = re.findall(r'transform="matrix\(([^)]+)\)"', normalized)
     assert len(transforms) == 4
@@ -899,144 +833,26 @@ def test_render_png_rejects_scale_and_canvas_limits_before_wasm():
         )
 
 
-def test_render_png_rejects_structurally_valid_blank_png(monkeypatch):
-    import importlib
+def test_render_png_rejects_malformed_png_payload(monkeypatch):
+    """Keep only the runtime's basic output-envelope check here.
 
-    engine_module = importlib.import_module("pyfcstm.diagram.engine")
+    Full PNG chunk, CRC, scanline, and visible-ink validation belongs to the
+    maintenance checker, where it can run over the complete visual corpus.
+    """
     engine = DiagramAssetEngine()
     monkeypatch.setattr(engine, "_ensure_resvg", lambda _locale: None)
-
-    def chunk(kind, payload):
-        checksum = zlib.crc32(kind + payload) & 0xFFFFFFFF
-        return (
-            struct.pack(">I", len(payload))
-            + kind
-            + payload
-            + struct.pack(">I", checksum)
-        )
-
-    header = struct.pack(">IIBBBBB", 1, 1, 8, 6, 0, 0, 0)
-    blank = (
-        b"\x89PNG\r\n\x1a\n"
-        + chunk(b"IHDR", header)
-        + chunk(b"IDAT", zlib.compress(b"\x00\xff\xff\xff\xff"))
-        + chunk(b"IEND", b"")
-    )
-    with pytest.raises((ValueError, DiagramRenderError)):
-        engine_module._decode_png_rgba(blank)
-    monkeypatch.setattr(
-        engine,
-        "_eval_asset",
-        lambda *_args, **_kwargs: base64.b64encode(blank).decode("ascii"),
-    )
-    with pytest.raises(DiagramRenderError, match="no visible ink"):
-        engine.render_png(
-            _canonical_svg(
-                '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>'
-            )
-        )
-
-
-def test_render_png_rejects_truncated_or_corrupt_png_payload(monkeypatch):
-    import importlib
-
-    engine_module = importlib.import_module("pyfcstm.diagram.engine")
-    engine = DiagramAssetEngine()
-    monkeypatch.setattr(engine, "_ensure_resvg", lambda _locale: None)
-    malformed = base64.b64encode(b"\x89PNG\r\n\x1a\n\x00\x00").decode("ascii")
+    malformed = base64.b64encode(b"not-a-png").decode("ascii")
     monkeypatch.setattr(engine, "_eval_asset", lambda *_args, **_kwargs: malformed)
-    with pytest.raises(
-        DiagramAssetError,
-        match=r"resvg\.wasm.*invalid PNG data.*make build_assets",
-    ):
+    with pytest.raises(DiagramRenderError, match="invalid PNG data"):
         engine.render_png(
             _canonical_svg(
                 '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>'
             )
         )
-    with pytest.raises((ValueError, DiagramRenderError)):
-        engine_module._decode_png_rgba(b"\x89PNG\r\n\x1a\n")
-
-    def chunk(kind, payload):
-        checksum = zlib.crc32(kind + payload) & 0xFFFFFFFF
-        return (
-            struct.pack(">I", len(payload))
-            + kind
-            + payload
-            + struct.pack(">I", checksum)
-        )
-
-    header = struct.pack(">IIBBBBB", 1, 1, 8, 6, 0, 0, 0)
-    invalid_filter = b"\x09\x00\x00\x00\x00"
-    filtered_png = (
-        b"\x89PNG\r\n\x1a\n"
-        + chunk(b"IHDR", header)
-        + chunk(b"IDAT", zlib.compress(invalid_filter))
-        + chunk(b"IEND", b"")
-    )
-    with pytest.raises((ValueError, DiagramRenderError)):
-        engine_module._decode_png_rgba(filtered_png)
-
-    duplicate_ihdr = (
-        b"\x89PNG\r\n\x1a\n"
-        + chunk(b"IHDR", header)
-        + chunk(b"IHDR", header)
-        + chunk(b"IDAT", zlib.compress(b"\x00\x00\x00\x00\xff"))
-        + chunk(b"IEND", b"")
-    )
-    with pytest.raises((ValueError, DiagramRenderError)):
-        engine_module._decode_png_rgba(duplicate_ihdr)
 
 
-def test_render_png_rejects_unsupported_png_chunks_at_engine_boundary(monkeypatch):
-    import importlib
-
-    engine_module = importlib.import_module("pyfcstm.diagram.engine")
-    engine = DiagramAssetEngine()
-    monkeypatch.setattr(engine, "_ensure_resvg", lambda _locale: None)
-
-    def chunk(kind, payload):
-        checksum = zlib.crc32(kind + payload) & 0xFFFFFFFF
-        return (
-            struct.pack(">I", len(payload))
-            + kind
-            + payload
-            + struct.pack(">I", checksum)
-        )
-
-    header = struct.pack(">IIBBBBB", 1, 1, 8, 6, 0, 0, 0)
-    canonical = _canonical_svg(
-        '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1">'
-        '<rect width="1" height="1" fill="black"/></svg>'
-    )
-    for kind, payload, reason in (
-        (b"ABCD", b"", "unsupported critical chunk"),
-        (b"PLTE", b"", "unsupported critical chunk"),
-    ):
-        png = (
-            b"\x89PNG\r\n\x1a\n"
-            + chunk(b"IHDR", header)
-            + chunk(kind, payload)
-            + chunk(b"IDAT", zlib.compress(b"\x00\x00\x00\x00\xff"))
-            + chunk(b"IEND", b"")
-        )
-        with pytest.raises((ValueError, DiagramRenderError)):
-            engine_module._decode_png_rgba(png)
-        monkeypatch.setattr(
-            engine,
-            "_eval_asset",
-            lambda *_args, payload=png, **_kwargs: base64.b64encode(payload).decode(
-                "ascii"
-            ),
-        )
-        with pytest.raises(DiagramRenderError, match=reason):
-            engine.render_png(canonical)
-
-
-def test_render_png_rejects_missing_iend_at_engine_boundary(monkeypatch):
-    import importlib
-
-    engine_module = importlib.import_module("pyfcstm.diagram.engine")
+def test_render_png_requires_a_real_final_iend_chunk(monkeypatch):
+    """Do not accept an ``IEND`` byte sequence hidden in an IDAT payload."""
     engine = DiagramAssetEngine()
     monkeypatch.setattr(engine, "_ensure_resvg", lambda _locale: None)
 
@@ -1053,21 +869,19 @@ def test_render_png_rejects_missing_iend_at_engine_boundary(monkeypatch):
     missing_iend = (
         b"\x89PNG\r\n\x1a\n"
         + chunk(b"IHDR", header)
-        + chunk(b"IDAT", zlib.compress(b"\x00\x00\x00\x00\xff"))
+        + chunk(b"IDAT", b"contains-IEND-marker")
     )
-    with pytest.raises((ValueError, DiagramRenderError)):
-        engine_module._decode_png_rgba(missing_iend)
     monkeypatch.setattr(
         engine,
         "_eval_asset",
         lambda *_args, **_kwargs: base64.b64encode(missing_iend).decode("ascii"),
     )
-    canonical = _canonical_svg(
-        '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1">'
-        '<rect width="1" height="1" fill="black"/></svg>'
-    )
-    with pytest.raises(DiagramRenderError, match="missing IHDR, IDAT, or IEND"):
-        engine.render_png(canonical)
+    with pytest.raises(DiagramRenderError, match="invalid PNG data"):
+        engine.render_png(
+            _canonical_svg(
+                '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>'
+            )
+        )
 
 
 def test_render_png_rejects_oversized_encoded_payload_before_decoding(monkeypatch):

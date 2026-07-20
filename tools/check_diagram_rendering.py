@@ -30,7 +30,6 @@ from pyfcstm.diagram.engine import (  # noqa: E402
     _MAX_RENDER_PIXELS,
     _MAX_RENDER_PNG_BYTES,
     _MAX_RENDER_RGBA_BYTES,
-    _decode_png_rgba,
 )
 
 
@@ -52,6 +51,131 @@ _CUSTOM_REFERENCE_FILES = {
 SVG_NS = "http://www.w3.org/2000/svg"
 PATH_RE = re.compile(r"([ML])\s*(-?[0-9]+(?:\.[0-9]+)?)\s*,\s*(-?[0-9]+(?:\.[0-9]+)?)")
 CLIP_ID_RE = re.compile(r'id="((?:clip-path|clipPath)[^"]+)"')
+
+# The strict SVG contract is intentionally maintenance-only.  Production
+# rendering performs bounded XML/canvas checks; this oracle catches renderer
+# drift, unsafe references, and accidental text/marker retention in CI.
+_STRICT_SVG_INPUT_ELEMENTS = {
+    "svg", "defs", "marker", "filter", "feGaussianBlur", "feOffset",
+    "feComponentTransfer", "feFuncA", "feFuncR", "feFuncG", "feFuncB",
+    "feMerge", "feMergeNode", "g", "rect", "path", "line", "circle", "text",
+}
+_STRICT_SVG_OUTPUT_ELEMENTS = {
+    "svg", "defs", "filter", "feGaussianBlur", "feOffset",
+    "feComponentTransfer", "feFuncA", "feFuncR", "feFuncG", "feFuncB",
+    "feMerge", "feMergeNode", "clipPath", "g", "path",
+}
+_STRICT_SVG_INPUT_ATTRIBUTES = {
+    "svg": {"viewBox", "width", "height", "font-family", "font-size",
+            "data-fcstm-canvas", "data-fcstm-direction", "data-fcstm-palette", "data-fcstm-mode"},
+    "defs": set(),
+    "marker": {"id", "viewBox", "refX", "refY", "markerWidth", "markerHeight", "orient", "markerUnits"},
+    "filter": {"id", "x", "y", "width", "height"},
+    "feGaussianBlur": {"in", "stdDeviation"},
+    "feOffset": {"in", "dx", "dy"},
+    "feComponentTransfer": set(),
+    "feFuncA": {"type", "slope", "intercept"},
+    "feFuncR": {"type", "slope", "intercept"},
+    "feFuncG": {"type", "slope", "intercept"},
+    "feFuncB": {"type", "slope", "intercept"},
+    "feMerge": set(),
+    "feMergeNode": {"in"},
+    "g": {"data-fcstm-kind", "data-fcstm-id", "data-fcstm-variant", "data-fcstm-pseudo",
+          "data-fcstm-composite", "data-fcstm-collapsed", "data-fcstm-range-start-line",
+          "data-fcstm-range-start-character", "data-fcstm-range-end-line", "data-fcstm-range-end-character"},
+    "rect": {"class", "x", "y", "width", "height", "rx", "ry", "fill", "stroke",
+             "stroke-width", "stroke-dasharray", "filter", "pointer-events"},
+    "path": {"d", "fill", "stroke", "stroke-width", "stroke-dasharray", "stroke-linecap",
+             "stroke-linejoin", "stroke-opacity", "marker-end", "data-fcstm-kind", "data-fcstm-id",
+             "data-fcstm-range-start-line", "data-fcstm-range-start-character", "data-fcstm-range-end-line",
+             "data-fcstm-range-end-character"},
+    "line": {"x1", "y1", "x2", "y2", "stroke", "stroke-opacity", "stroke-width"},
+    "circle": {"cx", "cy", "r", "fill", "stroke", "stroke-width", "data-fcstm-kind", "data-fcstm-id"},
+    "text": {"x", "y", "fill", "font-family", "font-size", "font-weight", "text-anchor",
+             "letter-spacing", "paint-order", "stroke", "stroke-width", "stroke-linejoin"},
+}
+_STRICT_SVG_OUTPUT_ATTRIBUTES = {
+    "svg": {"width", "height", "viewBox"},
+    "defs": set(),
+    "filter": {"id", "x", "y", "width", "height"},
+    "feGaussianBlur": {"color-interpolation-filters", "in", "stdDeviation", "result"},
+    "feOffset": {"color-interpolation-filters", "in", "dx", "dy", "result"},
+    "feComponentTransfer": {"color-interpolation-filters", "in", "result"},
+    "feFuncA": {"type", "slope", "intercept"}, "feFuncR": {"type"},
+    "feFuncG": {"type"}, "feFuncB": {"type"},
+    "feMerge": {"color-interpolation-filters", "result"}, "feMergeNode": {"in"},
+    "clipPath": {"id"}, "g": {"clip-path", "filter", "transform"},
+    "path": {"d", "fill", "fill-opacity", "paint-order", "stroke", "stroke-dasharray",
+             "stroke-linecap", "stroke-linejoin", "stroke-opacity", "stroke-width", "visibility"},
+}
+_STRICT_URI_RE = re.compile(
+    r"(?:javascript|vbscript|data|blob|about|file|https?|ftp|ws|wss|"
+    r"chrome|chrome-extension):",
+    re.I,
+)
+_STRICT_URL_RE = re.compile(r"url\(([^)]*)\)", re.I)
+
+
+def _strict_svg_validate(svg: str, output: bool = False) -> str:
+    """Validate the closed renderer SVG dialect for maintenance gates."""
+    if not isinstance(svg, str) or len(svg.encode("utf-8")) > 16 * 1024 * 1024:
+        raise ValueError("closed SVG dialect rejected non-text or oversized SVG")
+    if any(token in svg for token in ("<!DOCTYPE", "<!ENTITY", "<?", "<!--", "<![")):
+        raise ValueError("closed SVG dialect rejected XML declarations or entities")
+    try:
+        root = ET.fromstring(svg)
+    except ET.ParseError as err:
+        raise ValueError("closed SVG dialect rejected malformed XML") from err
+    prefix = "{%s}" % SVG_NS
+    allowed_elements = _STRICT_SVG_OUTPUT_ELEMENTS if output else _STRICT_SVG_INPUT_ELEMENTS
+    allowed_attrs = _STRICT_SVG_OUTPUT_ATTRIBUTES if output else _STRICT_SVG_INPUT_ATTRIBUTES
+    if root.tag != prefix + "svg":
+        raise ValueError("closed SVG dialect requires an SVG root element")
+    ids = set()
+    references = []
+    pending = [(root, 1)]
+    count = 0
+    while pending:
+        element, depth = pending.pop()
+        count += 1
+        if depth > 256 or count > 100000:
+            raise ValueError("closed SVG dialect exceeded bounded tree limits")
+        if not isinstance(element.tag, str) or not element.tag.startswith(prefix):
+            raise ValueError("closed SVG dialect rejected a non-SVG namespace")
+        tag = element.tag[len(prefix):]
+        if tag not in allowed_elements:
+            raise ValueError("closed SVG dialect rejected element: %s" % tag)
+        for name, value in element.attrib.items():
+            if name.startswith("{") or name not in allowed_attrs.get(tag, set()):
+                raise ValueError("closed SVG dialect rejected attribute %s" % name)
+            if name.lower().startswith("on") or name in {"href", "xlink:href", "style"}:
+                raise ValueError("closed SVG dialect rejected executable attribute")
+            if _STRICT_URI_RE.search(value):
+                raise ValueError("closed SVG dialect rejected an external URL")
+            for reference in _STRICT_URL_RE.findall(value):
+                reference = reference.strip().strip("\"'")
+                if not reference.startswith("#") or len(reference) == 1:
+                    raise ValueError("closed SVG dialect rejected a non-local URL reference")
+                references.append(reference[1:])
+            if name == "id":
+                if not value or value in ids:
+                    raise ValueError("closed SVG dialect rejected duplicate or empty id")
+                ids.add(value)
+        if element.text and ((output and element.text.strip()) or not output and False):
+            raise ValueError("closed SVG dialect rejected residual text nodes")
+        if element.tail and element.tail.strip():
+            raise ValueError("closed SVG dialect rejected residual tail text")
+        pending.extend((child, depth + 1) for child in reversed(list(element)))
+    if any(reference not in ids for reference in references):
+        raise ValueError("closed SVG dialect rejected a broken local reference")
+    if output and any((element.tag[len(prefix):] if isinstance(element.tag, str) and element.tag.startswith(prefix) else "") in {"text", "marker"} for element in root.iter()):
+        raise ValueError("closed SVG dialect rejected residual text or marker elements")
+    if not output:
+        markers = [element for element in root.iter() if isinstance(element.tag, str) and element.tag == prefix + "marker"]
+        if markers:
+            if len(markers) != 1 or markers[0].attrib.get("orient") != "auto" or markers[0].attrib.get("refX") != "10":
+                raise ValueError("closed SVG dialect rejected marker endpoint contract")
+    return svg
 
 
 def _sha256(data: bytes) -> str:
@@ -327,9 +451,9 @@ def inspect_arrows(
 def _png_ink_bbox(data: bytes) -> Tuple[int, int, Tuple[int, int, int, int]]:
     """Decode a strict RGBA PNG and return its canvas and ink bounds.
 
-    This parser intentionally mirrors the production PNG structure contract:
-    the maintenance parity gate must not accept a malformed artifact that the
-    runtime decoder would reject.
+    This parser is intentionally independent from the production envelope
+    checker: the maintenance parity gate validates the complete PNG grammar,
+    scanlines, and visible ink without importing a production decoder.
     """
     if not data.startswith(b"\x89PNG\r\n\x1a\n"):
         raise ValueError("PNG output lacks the PNG signature")
@@ -453,7 +577,7 @@ def _png_ink_bbox(data: bytes) -> Tuple[int, int, Tuple[int, int, int, int]]:
 
 
 def _self_check_png_parser() -> None:
-    """Keep parity PNG structure checks aligned with the runtime decoder."""
+    """Exercise the independent strict PNG oracle with valid and invalid data."""
 
     def chunk(kind: bytes, payload: bytes) -> bytes:
         checksum = zlib.crc32(kind + payload) & 0xFFFFFFFF
@@ -470,8 +594,6 @@ def _self_check_png_parser() -> None:
     valid = signature + chunk(b"IHDR", header) + image + chunk(b"IEND", b"")
     if _png_ink_bbox(valid)[:2] != (1, 1):
         raise AssertionError("strict parity PNG parser rejected a valid RGBA image")
-    if _decode_png_rgba(valid)[:2] != _png_ink_bbox(valid)[:2]:
-        raise AssertionError("runtime and parity PNG dimensions differ")
     invalid_cases = (
         signature + chunk(b"IDAT", b"") + chunk(b"IHDR", header) + chunk(b"IEND", b""),
         signature
@@ -505,6 +627,52 @@ def _self_check_png_parser() -> None:
         except ValueError:
             continue
         raise AssertionError("strict parity PNG parser accepted malformed output")
+
+
+def _self_check_svg_validator() -> None:
+    """Exercise hostile SVG cases without coupling production runtime code."""
+    valid = (
+        '<svg xmlns="%s" width="20" height="20">'
+        '<defs><marker id="arrow" viewBox="0 0 10 10" refX="10" '
+        'refY="5" markerWidth="10" markerHeight="10" orient="auto">'
+        '<path d="M0 0 L10 5 L0 10 z"/></marker></defs>'
+        '<path d="M1 10 L10 10" marker-end="url(#arrow)"/></svg>' % SVG_NS
+    )
+    _strict_svg_validate(valid)
+    expanded = '<svg xmlns="%s"><path d="M0 0 L1 1"/></svg>' % SVG_NS
+    _strict_svg_validate(expanded, output=True)
+    invalid = (
+        '<svg xmlns="%s"><script>alert(1)</script></svg>' % SVG_NS,
+        '<svg xmlns="%s"><image href="https://evil"/></svg>' % SVG_NS,
+        '<svg xmlns="%s"><path fill="url(#missing)"/></svg>' % SVG_NS,
+        '<svg xmlns="%s"><path d="M0 0" onload="evil()"/></svg>' % SVG_NS,
+        '<svg xmlns="urn:not-svg"><path/></svg>',
+        '<svg xmlns="%s"><path d="M0 0"/>tail</svg>' % SVG_NS,
+        '<svg xmlns="%s"><defs><path id="x"/><path id="x"/></defs></svg>' % SVG_NS,
+    )
+    for payload in invalid:
+        try:
+            _strict_svg_validate(payload)
+        except ValueError:
+            continue
+        raise AssertionError("strict SVG validator accepted malformed output")
+    try:
+        _strict_svg_validate('<svg xmlns="%s"><text>x</text></svg>' % SVG_NS, output=True)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("strict SVG validator accepted residual text")
+    nested = '<svg xmlns="%s">%s<path d="M0 0"/>%s</svg>' % (
+        SVG_NS,
+        "<g>" * 257,
+        "</g>" * 257,
+    )
+    try:
+        _strict_svg_validate(nested)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("strict SVG validator accepted excessive nesting")
 
 
 def _normalise_clip_ids(text: str) -> str:
@@ -553,14 +721,17 @@ def run_cases(
     for case in cases:
         request = request_for_case(case)
         svg = engine.render_svg(request)
+        _strict_svg_validate(svg)
         if legacy_svg_input:
-            # The pre-switch custom backend accepted SVG text. This flag is a
-            # maintenance-only bridge for capturing its immutable baseline;
-            # the official backend never enables it.
+            # Keep the historical SVG-text path available for immutable
+            # reference capture.  The production engine still supports this
+            # compatibility input, while the current corpus exercises the
+            # DiagramData path below.
             png = engine.render_png(svg)
             expanded = engine.expand_svg(svg)
         else:
-            # The official backend consumes DiagramData requests only.
+            # The canonical maintenance path exercises DiagramData requests
+            # so the corpus covers the public renderer-to-resvg handoff.
             png = engine.render_png(request)
             expanded = engine.expand_svg(request)
         png_width, png_height, png_bbox = _png_ink_bbox(png)
@@ -575,6 +746,7 @@ def run_cases(
                 % (case["id"], png_bbox)
             )
         expanded_root = ET.fromstring(expanded)
+        _strict_svg_validate(expanded, output=True)
         expanded_paths = list(expanded_root.iter("{%s}path" % SVG_NS))
         if not expanded_paths:
             raise ValueError("case %s produced an empty expanded SVG" % case["id"])
@@ -1407,7 +1579,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument(
         "--legacy-svg-input",
         action="store_true",
-        help="use the pre-switch custom backend's SVG entrypoints for reference capture",
+        help="capture references through the compatibility SVG-text input path",
     )
     parser.add_argument("--report-dir", type=Path)
     args = parser.parse_args(argv)
@@ -1415,8 +1587,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         _self_check_reference_provenance()
         _self_check_reference_comparison()
         _self_check_png_parser()
+        _self_check_svg_validator()
         print(
-            "diagram rendering checker: provenance, parity, and PNG self-check passed"
+            "diagram rendering checker: provenance, parity, SVG, and PNG self-check passed"
         )
         return 0
     corpus_paths = tuple(path.resolve() for path in (args.corpus or DEFAULT_CORPORA))

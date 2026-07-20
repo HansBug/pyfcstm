@@ -9,7 +9,7 @@ The package roadmap is intentionally small and explicit:
    * - Surface
      - Responsibility
    * - :class:`DiagramAssetEngine`
-     - Load the bundled renderer and expose validated SVG/PNG feasibility operations.
+     - Load the bundled renderer and expose bounded SVG/PNG feasibility operations.
    * - :class:`DiagramAssetError`
      - Report missing or unusable packaged resources with recovery guidance.
    * - :class:`DiagramRenderError`

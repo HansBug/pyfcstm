@@ -5,8 +5,9 @@ The module owns the diagram asset boundary:
 
 * :class:`DiagramAssetEngine` loads the generated ES2017 renderer and official
   resvg WebAssembly package, then exposes internal SVG/PNG operations.
-* The canonical and expanded SVG validators enforce the closed renderer
-  dialect before data reaches the rasterizer or leaves the process.
+* Basic SVG and PNG envelope checks keep package-owned renderer output bounded
+  before it reaches the rasterizer or leaves the process.  Strict visual
+  dialect and pixel checks live in the repository maintenance gates.
 * Runtime selection, resource recovery guidance, CJK font registration, and
   timeout/context lifecycle handling are kept in one Python boundary.
 
@@ -31,10 +32,9 @@ import pkgutil
 import re
 import struct
 import time
-import zlib
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, Union
 
 
 class DiagramAssetError(RuntimeError):
@@ -56,10 +56,10 @@ class DiagramRenderError(DiagramAssetError):
 
     Example::
 
-        >>> raise DiagramRenderError("closed SVG dialect rejected output")
+        >>> raise DiagramRenderError("SVG output envelope rejected")
         Traceback (most recent call last):
         ...
-        DiagramRenderError: closed SVG dialect rejected output
+        DiagramRenderError: SVG output envelope rejected
     """
 
 
@@ -140,8 +140,6 @@ _CJK_LOCALE_PATTERN = re.compile(
 _ASSET_ISSUE_URL = "https://github.com/HansBug/pyfcstm/issues"
 _SVG_NS = "http://www.w3.org/2000/svg"
 _SVG_MAX_BYTES = 16 * 1024 * 1024
-_SVG_MAX_ELEMENTS = 100_000
-_SVG_MAX_DEPTH = 256
 _MAX_RENDER_SCALE = 4.0
 _MAX_RENDER_DIMENSION = 16_384
 _MAX_RENDER_PIXELS = 16_777_216
@@ -149,226 +147,29 @@ _MAX_RENDER_RGBA_BYTES = 67_108_864
 _MAX_RENDER_PNG_BYTES = 33_554_432
 # Four base64 characters encode at most three PNG bytes.  Check this bound
 # before decoding so an oversized renderer response cannot allocate a large
-# decoded buffer before the PNG validator rejects it.
+# decoded buffer before the PNG header and size guard rejects it.
 _MAX_RENDER_PNG_BASE64_BYTES = 4 * ((_MAX_RENDER_PNG_BYTES + 2) // 3)
-_PNG_ALLOWED_CHUNKS = {b"IHDR", b"IDAT", b"IEND"}
-
-_SVG_INPUT_ELEMENTS = {
-    "svg",
-    "defs",
-    "marker",
-    "filter",
-    "feGaussianBlur",
-    "feOffset",
-    "feComponentTransfer",
-    "feFuncA",
-    "feFuncR",
-    "feFuncG",
-    "feFuncB",
-    "feMerge",
-    "feMergeNode",
-    "g",
-    "rect",
-    "path",
-    "line",
-    "circle",
-    "text",
-}
-_SVG_OUTPUT_ELEMENTS = {
-    "svg",
-    "defs",
-    "filter",
-    "feGaussianBlur",
-    "feOffset",
-    "feComponentTransfer",
-    "feFuncA",
-    "feFuncR",
-    "feFuncG",
-    "feFuncB",
-    "feMerge",
-    "feMergeNode",
-    "clipPath",
-    "g",
-    "path",
-}
-_SVG_INPUT_ATTRIBUTES = {
-    "svg": {
-        "viewBox",
-        "width",
-        "height",
-        "font-family",
-        "font-size",
-        "data-fcstm-canvas",
-        "data-fcstm-direction",
-        "data-fcstm-palette",
-        "data-fcstm-mode",
-    },
-    "defs": set(),
-    "marker": {
-        "id",
-        "viewBox",
-        "refX",
-        "refY",
-        "markerWidth",
-        "markerHeight",
-        "orient",
-        "markerUnits",
-    },
-    "filter": {"id", "x", "y", "width", "height"},
-    "feGaussianBlur": {"in", "stdDeviation"},
-    "feOffset": {"in", "dx", "dy"},
-    "feComponentTransfer": set(),
-    "feFuncA": {"type", "slope", "intercept"},
-    "feFuncR": {"type", "slope", "intercept"},
-    "feFuncG": {"type", "slope", "intercept"},
-    "feFuncB": {"type", "slope", "intercept"},
-    "feMerge": set(),
-    "feMergeNode": {"in"},
-    "g": {
-        "data-fcstm-kind",
-        "data-fcstm-id",
-        "data-fcstm-variant",
-        "data-fcstm-pseudo",
-        "data-fcstm-composite",
-        "data-fcstm-collapsed",
-        "data-fcstm-range-start-line",
-        "data-fcstm-range-start-character",
-        "data-fcstm-range-end-line",
-        "data-fcstm-range-end-character",
-    },
-    "rect": {
-        "class",
-        "x",
-        "y",
-        "width",
-        "height",
-        "rx",
-        "ry",
-        "fill",
-        "stroke",
-        "stroke-width",
-        "stroke-dasharray",
-        "filter",
-        "pointer-events",
-    },
-    "path": {
-        "d",
-        "fill",
-        "stroke",
-        "stroke-width",
-        "stroke-dasharray",
-        "stroke-linecap",
-        "stroke-linejoin",
-        "stroke-opacity",
-        "marker-end",
-        "data-fcstm-kind",
-        "data-fcstm-id",
-        "data-fcstm-range-start-line",
-        "data-fcstm-range-start-character",
-        "data-fcstm-range-end-line",
-        "data-fcstm-range-end-character",
-    },
-    "line": {
-        "x1",
-        "y1",
-        "x2",
-        "y2",
-        "stroke",
-        "stroke-opacity",
-        "stroke-width",
-    },
-    "circle": {
-        "cx",
-        "cy",
-        "r",
-        "fill",
-        "stroke",
-        "stroke-width",
-        "data-fcstm-kind",
-        "data-fcstm-id",
-    },
-    "text": {
-        "x",
-        "y",
-        "fill",
-        "font-family",
-        "font-size",
-        "font-weight",
-        "text-anchor",
-        "letter-spacing",
-        "paint-order",
-        "stroke",
-        "stroke-width",
-        "stroke-linejoin",
-    },
-}
-_SVG_OUTPUT_ATTRIBUTES = {
-    "svg": {"width", "height", "viewBox"},
-    "defs": set(),
-    "filter": {"id", "x", "y", "width", "height"},
-    "feGaussianBlur": {"color-interpolation-filters", "in", "stdDeviation", "result"},
-    "feOffset": {"color-interpolation-filters", "in", "dx", "dy", "result"},
-    "feComponentTransfer": {"color-interpolation-filters", "in", "result"},
-    "feFuncA": {"type", "slope", "intercept"},
-    "feFuncR": {"type"},
-    "feFuncG": {"type"},
-    "feFuncB": {"type"},
-    "feMerge": {"color-interpolation-filters", "result"},
-    "feMergeNode": {"in"},
-    "clipPath": {"id"},
-    "g": {"clip-path", "filter", "transform"},
-    "path": {
-        "d",
-        "fill",
-        "fill-opacity",
-        "paint-order",
-        "stroke",
-        "stroke-dasharray",
-        "stroke-linecap",
-        "stroke-linejoin",
-        "stroke-opacity",
-        "stroke-width",
-        "visibility",
-    },
-}
-
-_DANGEROUS_URI_SCHEME_RE = re.compile(
-    r"(?:javascript|vbscript|data|blob|about|file|https?|ftp|ws|wss|"
-    r"chrome|chrome-extension):",
-    re.IGNORECASE,
-)
-_URI_REFERENCE_RE = re.compile(r"url\(([^)]*)\)", re.IGNORECASE)
-
-
-class _CanonicalSvg(str):
-    """Private marker for SVG text emitted by the validated shared renderer."""
-
-
-def _svg_tag(element: ET.Element) -> str:
-    """Return an SVG local name, rejecting foreign namespaces."""
-    prefix = "{%s}" % _SVG_NS
-    if not isinstance(element.tag, str) or not element.tag.startswith(prefix):
-        raise DiagramAssetError("closed SVG dialect rejected a non-SVG namespace")
-    return element.tag[len(prefix) :]
-
 
 def _svg_parse(svg: str) -> ET.Element:
-    """Parse bounded XML while rejecting DTD, entity, comments, and PIs."""
+    """Parse bounded SVG XML while rejecting external entity declarations."""
     if not isinstance(svg, str):
-        raise DiagramAssetError("closed SVG dialect requires UTF-8 SVG text")
+        raise DiagramAssetError("SVG output requires UTF-8 text")
     if len(svg.encode("utf-8")) > _SVG_MAX_BYTES:
-        raise DiagramAssetError("closed SVG dialect rejected an oversized SVG")
-    if any(token in svg for token in ("<!DOCTYPE", "<!ENTITY", "<?", "<!--", "<![")):
+        raise DiagramAssetError("SVG output exceeds the bounded byte limit")
+    # XML declarations and comments are valid SVG input.  DTD/entity syntax is
+    # rejected because it can introduce external-resource expansion.
+    if any(token in svg for token in ("<!DOCTYPE", "<!ENTITY", "<![")):
         raise DiagramAssetError(
-            "closed SVG dialect rejected XML declarations or entities"
+            "SVG output contains a DTD or entity declaration"
         )
     try:
-        return ET.fromstring(svg)
+        root = ET.fromstring(svg)
     except ET.ParseError as err:
         # ParseError: malformed XML or an unsupported entity declaration.
-        raise DiagramAssetError(
-            "closed SVG dialect rejected malformed XML: %s" % err
-        ) from err
+        raise DiagramAssetError("SVG output is not well-formed: %s" % err) from err
+    if root.tag != "{%s}svg" % _SVG_NS:
+        raise DiagramAssetError("SVG output requires an SVG root element")
+    return root
 
 
 def _summarize_exception(error: BaseException, limit: int = 512) -> str:
@@ -392,103 +193,18 @@ def _summarize_exception(error: BaseException, limit: int = 512) -> str:
     return text[: limit - 3].rstrip() + "..."
 
 
-def _validate_svg_tree(svg: str, output: bool) -> str:
-    """Validate one canonical or expanded SVG against its closed dialect."""
-    root = _svg_parse(svg)
-    allowed_elements = _SVG_OUTPUT_ELEMENTS if output else _SVG_INPUT_ELEMENTS
-    allowed_attributes = _SVG_OUTPUT_ATTRIBUTES if output else _SVG_INPUT_ATTRIBUTES
-    count = 0
-    ids = set()
-    references = []
-    elements = []
-    pending = [(root, 1)]
-    while pending:
-        element, depth = pending.pop()
-        if depth > _SVG_MAX_DEPTH:
-            raise DiagramAssetError(
-                "closed SVG dialect rejected excessive element nesting"
-            )
-        elements.append(element)
-        count += 1
-        if count > _SVG_MAX_ELEMENTS:
-            raise DiagramAssetError("closed SVG dialect rejected too many XML elements")
-        tag = _svg_tag(element)
-        if tag not in allowed_elements:
-            raise DiagramAssetError("closed SVG dialect rejected element: %s" % tag)
-        attrs = allowed_attributes.get(tag, set())
-        for name, value in element.attrib.items():
-            if name.startswith("{") or name not in attrs:
-                raise DiagramAssetError(
-                    "closed SVG dialect rejected attribute %s on <%s>" % (name, tag)
-                )
-            if name == "id":
-                if not value or value in ids:
-                    raise DiagramAssetError(
-                        "closed SVG dialect rejected duplicate or empty id"
-                    )
-                ids.add(value)
-            if name.lower().startswith("on") or name in {"href", "xlink:href", "style"}:
-                raise DiagramAssetError(
-                    "closed SVG dialect rejected executable attribute: %s" % name
-                )
-            if _DANGEROUS_URI_SCHEME_RE.search(value):
-                raise DiagramAssetError("closed SVG dialect rejected an external URL")
-            for uri in _URI_REFERENCE_RE.findall(value):
-                reference = uri.strip().strip("\"'")
-                if not reference.startswith("#") or len(reference) == 1:
-                    raise DiagramAssetError(
-                        "closed SVG dialect rejected a non-local URL reference"
-                    )
-                references.append(reference[1:])
-        if element.text and output and element.text.strip():
-            raise DiagramAssetError("closed SVG dialect rejected residual text nodes")
-        if element.tail and element.tail.strip():
-            raise DiagramAssetError("closed SVG dialect rejected residual tail text")
-        pending.extend((child, depth + 1) for child in reversed(list(element)))
-    if root.tag != "{%s}svg" % _SVG_NS:
-        raise DiagramAssetError("closed SVG dialect requires an SVG root element")
-    for reference in references:
-        if reference not in ids:
-            raise DiagramAssetError(
-                "closed SVG dialect rejected a broken local reference: %s" % reference
-            )
-    if not output:
-        markers = [element for element in elements if _svg_tag(element) == "marker"]
-        marker_refs = [
-            element.attrib.get("marker-end")
-            for element in elements
-            if element.attrib.get("marker-end")
-        ]
-        if markers:
-            if len(markers) != 1 or markers[0].attrib.get("orient") != "auto":
-                raise DiagramAssetError(
-                    "closed SVG dialect rejected the marker orientation contract"
-                )
-            if markers[0].attrib.get("refX") != "10":
-                raise DiagramAssetError(
-                    "closed SVG dialect rejected the marker endpoint contract"
-                )
-            if any("marker-start" in element.attrib for element in elements):
-                raise DiagramAssetError("closed SVG dialect rejected marker-start")
-        if marker_refs and not markers:
-            raise DiagramAssetError(
-                "closed SVG dialect rejected a missing marker definition"
-            )
-    elif any(_svg_tag(element) in {"text", "marker"} for element in elements):
-        raise DiagramAssetError(
-            "closed SVG dialect rejected residual text or marker elements"
-        )
+def _check_canonical_svg(svg: str) -> str:
+    """Check the basic canonical SVG envelope."""
+    _svg_parse(svg)
+    _svg_canvas_dimensions(svg)
     return svg
 
 
-def _validate_canonical_svg(svg: str) -> _CanonicalSvg:
-    """Validate and mark SVG emitted by the shared renderer."""
-    return _CanonicalSvg(_validate_svg_tree(svg, output=False))
-
-
-def _validate_expanded_svg(svg: str) -> str:
-    """Validate the path-oriented SVG returned by resvg."""
-    return _validate_svg_tree(svg, output=True)
+def _check_expanded_svg(svg: str) -> str:
+    """Check the basic SVG envelope returned by resvg."""
+    _svg_parse(svg)
+    _svg_canvas_dimensions(svg)
+    return svg
 
 
 _SVG_NUMBER_RE = re.compile(
@@ -634,7 +350,8 @@ def _render_failure(
         recovery = "check the DiagramData shape and renderer options, then retry"
     elif _is_development_checkout():
         recovery = (
-            "run `make build_assets` and retry after checking the renderer output"
+            "inspect the renderer output; if generated assets are stale, run "
+            "`make build_assets` and retry"
         )
     else:
         recovery = "report this full error at %s" % _ASSET_ISSUE_URL
@@ -728,12 +445,11 @@ def _valid_opentype(data: bytes) -> bool:
             return False
         table_data = bytearray(data[table_offset : table_offset + table_length])
         if table_tag == b"head" and len(table_data) >= 12:
-            # OpenType defines head.checkSumAdjustment as zero while the head
-            # table checksum is calculated; the directory stores that result.
             table_data[8:12] = b"\x00" * 4
         table_data.extend(b"\x00" * (-len(table_data) % 4))
         actual_checksum = (
-            sum(struct.unpack(">%dI" % (len(table_data) // 4), table_data)) & 0xFFFFFFFF
+            sum(struct.unpack(">%dI" % (len(table_data) // 4), table_data))
+            & 0xFFFFFFFF
         )
         if actual_checksum != expected_checksum:
             return False
@@ -743,167 +459,64 @@ def _valid_opentype(data: bytes) -> bool:
         b"CFF2",
     }.intersection(table_tags):
         return False
-    # OpenType requires the complete font checksum, including
-    # head.checkSumAdjustment, to equal this fixed magic value.  Table-level
-    # checksums alone cannot detect a damaged adjustment field.
     total_checksum = (
         sum(word[0] for word in struct.iter_unpack(">I", data)) & 0xFFFFFFFF
     )
     return total_checksum == 0xB1B0AFBA
 
 
-def _decode_png_rgba(data: bytes) -> Tuple[int, int, Tuple[int, int, int, int]]:
-    """Validate and decode the bounded RGBA PNG output contract."""
-    if not data.startswith(b"\x89PNG\r\n\x1a\n"):
+def _png_dimensions(data: bytes) -> Tuple[int, int]:
+    """Check the PNG envelope and return its declared RGBA dimensions."""
+    signature = b"\x89PNG\r\n\x1a\n"
+    if not data.startswith(signature):
         raise ValueError("PNG output lacks the PNG signature")
     if len(data) > _MAX_RENDER_PNG_BYTES:
         raise DiagramRenderLimitError(
             "diagram render limit exceeded: decoded PNG output is %d bytes; "
             "maximum is %d bytes" % (len(data), _MAX_RENDER_PNG_BYTES)
         )
-    position = 8
-    saw_ihdr = False
-    saw_idat = False
-    saw_iend = False
-    idat_closed = False
-    width = height = None
-    compressed = bytearray()
+    if len(data) < 33 or data[12:16] != b"IHDR":
+        raise ValueError("PNG output has no IHDR header")
+    header_length = struct.unpack(">I", data[8:12])[0]
+    if header_length != 13:
+        raise ValueError("PNG output has an invalid IHDR length")
     try:
-        while position < len(data):
-            if position + 12 > len(data):
-                raise ValueError("PNG output has a truncated chunk header")
-            length = struct.unpack(">I", data[position : position + 4])[0]
-            chunk_end = position + 12 + length
-            if chunk_end > len(data):
-                raise ValueError("PNG output has a truncated chunk")
-            chunk_type = data[position + 4 : position + 8]
-            if len(chunk_type) != 4 or any(
-                byte < 65 or (byte > 90 and byte < 97) or byte > 122
-                for byte in chunk_type
-            ):
-                raise ValueError("PNG output has an invalid chunk type")
-            if chunk_type not in _PNG_ALLOWED_CHUNKS:
-                kind = "critical" if 65 <= chunk_type[0] <= 90 else "ancillary"
-                raise ValueError(
-                    "PNG output contains an unsupported %s chunk: %s"
-                    % (kind, chunk_type.decode("ascii"))
-                )
-            payload = data[position + 8 : position + 8 + length]
-            expected_crc = struct.unpack(">I", data[position + 8 + length : chunk_end])[
-                0
-            ]
-            actual_crc = zlib.crc32(chunk_type + payload) & 0xFFFFFFFF
-            if actual_crc != expected_crc:
-                raise ValueError("PNG output contains an invalid chunk checksum")
-            if chunk_type == b"IHDR":
-                if saw_ihdr or position != 8 or length != 13:
-                    raise ValueError("PNG output has duplicate or misplaced IHDR")
-                width, height, depth, color_type, compression, filtering, interlace = (
-                    struct.unpack(">IIBBBBB", payload)
-                )
-                if not width or not height:
-                    raise ValueError("PNG output has non-positive dimensions")
-                if (
-                    width > _MAX_RENDER_DIMENSION
-                    or height > _MAX_RENDER_DIMENSION
-                    or width * height > _MAX_RENDER_PIXELS
-                    or width * height * 4 > _MAX_RENDER_RGBA_BYTES
-                ):
-                    raise DiagramRenderLimitError(
-                        "diagram render limit exceeded: PNG dimensions are %dx%d"
-                        % (width, height)
-                    )
-                if (
-                    depth != 8
-                    or color_type != 6
-                    or compression != 0
-                    or filtering != 0
-                    or interlace != 0
-                ):
-                    raise ValueError("PNG output violates the RGBA8 size contract")
-                saw_ihdr = True
-            elif not saw_ihdr:
-                raise ValueError("PNG output has a non-IHDR first chunk")
-            elif chunk_type == b"IDAT":
-                if idat_closed:
-                    raise ValueError("PNG output has non-contiguous IDAT chunks")
-                compressed.extend(payload)
-                saw_idat = True
-            elif chunk_type == b"IEND":
-                if length != 0 or not saw_idat:
-                    raise ValueError("PNG output has an invalid IEND")
-                saw_iend = True
-                position = chunk_end
-                if position != len(data):
-                    raise ValueError("PNG output has trailing bytes after IEND")
-                break
-            else:
-                if saw_idat:
-                    idat_closed = True
-            position = chunk_end
-        if not saw_ihdr or not saw_idat or not saw_iend or position != len(data):
-            raise ValueError("PNG output is missing IHDR, IDAT, or IEND")
-        decoded = zlib.decompress(bytes(compressed))
-        if len(decoded) > _MAX_RENDER_RGBA_BYTES:
-            raise DiagramRenderLimitError(
-                "diagram render limit exceeded: decoded PNG scanlines are %d bytes; "
-                "maximum is %d bytes" % (len(decoded), _MAX_RENDER_RGBA_BYTES)
-            )
-    except (
-        struct.error,
-        ValueError,
-        DiagramRenderError,
-        zlib.error,
-        OverflowError,
-    ) as err:
-        # struct.error/ValueError: malformed chunk fields or scanlines;
-        # DiagramRenderError: a checked output limit was exceeded;
-        # zlib.error: IDAT is not a valid compressed stream; OverflowError:
-        # checked dimension arithmetic cannot be represented by the decoder.
-        if isinstance(err, (ValueError, DiagramRenderError)):
-            raise
-        raise ValueError("PNG output has malformed compressed data") from err
-    row_stride = width * 4 + 1
-    if len(decoded) != row_stride * height:
-        raise ValueError("PNG output has an invalid scanline length")
-    previous = bytearray(width * 4)
-    points = []
-    offset = 0
-    for y in range(height):
-        filter_type = decoded[offset]
-        encoded = decoded[offset + 1 : offset + row_stride]
-        offset += row_stride
-        row = bytearray(width * 4)
-        for index, value in enumerate(encoded):
-            left = row[index - 4] if index >= 4 else 0
-            above = previous[index]
-            upper_left = previous[index - 4] if index >= 4 else 0
-            if filter_type == 0:
-                predictor = 0
-            elif filter_type == 1:
-                predictor = left
-            elif filter_type == 2:
-                predictor = above
-            elif filter_type == 3:
-                predictor = (left + above) // 2
-            elif filter_type == 4:
-                estimate = left + above - upper_left
-                predictor = min(
-                    (left, above, upper_left),
-                    key=lambda candidate: abs(estimate - candidate),
-                )
-            else:
-                raise ValueError("PNG output uses an unsupported filter")
-            row[index] = (value + predictor) & 0xFF
-        for x in range(width):
-            red, green, blue, alpha = row[x * 4 : x * 4 + 4]
-            if alpha and (red < 245 or green < 245 or blue < 245):
-                points.append((x, y))
-        previous = row
-    if not points:
-        raise ValueError("PNG output contains no visible ink")
-    xs, ys = zip(*points)
-    return width, height, (min(xs), min(ys), max(xs), max(ys))
+        width, height, depth, color_type, compression, filtering, interlace = (
+            struct.unpack(">IIBBBBB", data[16:29])
+        )
+    except struct.error as err:
+        # struct.error: the fixed IHDR payload is truncated.
+        raise ValueError("PNG output has a truncated IHDR header") from err
+    if not width or not height:
+        raise ValueError("PNG output has non-positive dimensions")
+    if (
+        depth != 8
+        or color_type != 6
+        or compression != 0
+        or filtering != 0
+        or interlace != 0
+    ):
+        raise ValueError("PNG output violates the RGBA8 size contract")
+    if (
+        width > _MAX_RENDER_DIMENSION
+        or height > _MAX_RENDER_DIMENSION
+        or width * height > _MAX_RENDER_PIXELS
+        or width * height * 4 > _MAX_RENDER_RGBA_BYTES
+    ):
+        raise DiagramRenderLimitError(
+            "diagram render limit exceeded: PNG dimensions are %dx%d"
+            % (width, height)
+        )
+    # Require IEND to be the final zero-length PNG chunk.  A substring check
+    # could accept a truncated stream whose compressed IDAT bytes contain the
+    # four-byte text ``IEND`` by coincidence.
+    if (
+        len(data) < 45
+        or data[-12:-8] != b"\x00\x00\x00\x00"
+        or data[-8:-4] != b"IEND"
+    ):
+        raise ValueError("PNG output is missing IEND")
+    return width, height
 
 
 class DiagramAssetEngine:
@@ -1254,12 +867,12 @@ class DiagramAssetEngine:
                         "renderer.js", "the renderer returned malformed SVG output"
                     )
                 try:
-                    return _validate_canonical_svg(svg)
+                    return _check_canonical_svg(svg)
                 except DiagramAssetError as err:
                     self._discard_context()
                     raise _render_failure(
                         "renderer.js",
-                        "the renderer returned SVG outside the closed SVG dialect",
+                        "the renderer returned malformed SVG output",
                         err,
                     ) from err
             if status.get("status") == "error":
@@ -1348,23 +961,24 @@ class DiagramAssetEngine:
         self._discard_context()
         raise _asset_failure("resvg.wasm", "resvg WASM initialization timed out")
 
-    def _canonical_input(self, request: Any) -> _CanonicalSvg:
-        """Resolve a DiagramData request or an internal canonical SVG."""
-        if isinstance(request, _CanonicalSvg):
+    def _canonical_input(self, request: Any) -> str:
+        """Resolve DiagramData or compatibility SVG text for the bridge."""
+        if isinstance(request, str):
             return request
         if isinstance(request, dict):
             return self.render_svg(request)
-        raise ValueError(
-            "render_png/expand_svg require a DiagramData request; raw SVG input "
-            "is not supported"
-        )
+        raise ValueError("render_png/expand_svg require DiagramData or SVG text")
 
-    def render_png(self, request: Dict[str, Any], scale: float = 1.0) -> bytes:
+    def render_png(
+        self, request: Union[str, Dict[str, Any]], scale: float = 1.0
+    ) -> bytes:
         """
         Rasterize a DiagramData request with the pinned resvg WASM backend.
 
-        :param request: JSON-compatible DiagramData request.
-        :type request: dict
+        :param request: DiagramData request or canonical SVG text emitted by
+            :meth:`render_svg`.  String input is a compatibility bridge, not a
+            general-purpose SVG sanitizer.
+        :type request: str or dict
         :param scale: Finite positive raster scale, defaults to ``1.0``.
         :type scale: float, optional
         :return: PNG bytes.
@@ -1428,13 +1042,13 @@ class DiagramAssetEngine:
                 "maximum is %d bytes" % (len(result), _MAX_RENDER_PNG_BYTES)
             )
         try:
-            width, height, _bbox = _decode_png_rgba(result)
+            width, height = _png_dimensions(result)
         except DiagramRenderLimitError:
             raise
-        except (TypeError, ValueError, struct.error, zlib.error, OverflowError) as err:
-            # TypeError/ValueError: the WASM bridge returned malformed or
-            # blank PNG data; struct.error/zlib.error/OverflowError: the
-            # binary decoder rejected its structure or checked arithmetic.
+        except (TypeError, ValueError, struct.error, OverflowError) as err:
+            # TypeError/ValueError: the WASM bridge returned malformed PNG
+            # data; struct.error/OverflowError: the fixed IHDR is truncated
+            # or its checked arithmetic is invalid.
             raise _render_failure(
                 "resvg.wasm", "the renderer returned invalid PNG data", err
             ) from err
@@ -1446,15 +1060,17 @@ class DiagramAssetEngine:
             )
         return result
 
-    def expand_svg(self, request: Dict[str, Any]) -> str:
+    def expand_svg(self, request: Union[str, Dict[str, Any]]) -> str:
         """
         Expand a DiagramData request into resvg's normalized vector SVG.
 
-        :param request: JSON-compatible DiagramData request.
-        :type request: dict
+        :param request: DiagramData request or canonical SVG text emitted by
+            :meth:`render_svg`.  String input is a compatibility bridge, not a
+            general-purpose SVG sanitizer.
+        :type request: str or dict
         :return: Normalized vector SVG text.
         :rtype: str
-        :raises DiagramAssetError: If resvg returns malformed or unsupported SVG.
+        :raises DiagramAssetError: If resvg returns malformed SVG output.
 
         Example::
 
@@ -1480,11 +1096,11 @@ class DiagramAssetEngine:
                 "resvg.wasm", "the renderer returned malformed expanded SVG output"
             )
         try:
-            return _validate_expanded_svg(expanded)
+            return _check_expanded_svg(expanded)
         except DiagramAssetError as err:
             raise _render_failure(
                 "resvg.wasm",
-                "the renderer returned SVG outside the closed SVG dialect",
+                "the renderer returned malformed SVG output",
                 err,
             ) from err
 

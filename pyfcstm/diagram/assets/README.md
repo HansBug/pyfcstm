@@ -63,7 +63,8 @@ resvg binding 和 WASM 按 MPL 2.0 分发；所有字体按 SIL Open Font Licens
 - `tools/check_diagram_engine_floor.py`：按 Python 版本选择 MiniRacer 的 smoke 门禁。
 - `tools/check_diagram_provenance.py`：npm 和源码归档来源回读门禁。
 - `tools/fetch_diagram_reference.py`：按 `reference-lock.json` 恢复并校验 CI 用的
-  custom reference bundle。
+  custom reference bundle；`python tools/fetch_diagram_reference.py --check`
+  在无网络条件下验证有界重试和永久 HTTP 错误行为。
 - `tools/diagram_assets/reference-lock.json`：每个 Python major.minor 对应的
   Gist archive URL、编码方式和 tarball SHA-256。
 

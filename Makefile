@@ -1,4 +1,4 @@
-.PHONY: docs docs_en docs_zh docs_pdf docs_pdf_en docs_pdf_zh test unittest template_unittest resource antlr antlr_build fcstm_antlr_build fbmcq_antlr_build build build_info build_info_cli package clean build_assets build_assets_clean diagram_assets_check diagram_rendering_check diagram_parity_check diagram_engine_floor diagram_provenance_check diagram_assets_verify diagram_package_check diagram_corpus docs_auto todos_auto tests_auto rst_auto sha256 jsfcstm jsfcstm_clean vscode vscode_clean vscode_install vscode_uninstall logos logos_clean app_icons app_icons_clean help tpl tpl_clean templates_package template_packaging_check template_source_install_check docs_terminology_check test_boundary_check
+.PHONY: docs docs_en docs_zh docs_pdf docs_pdf_en docs_pdf_zh test unittest template_unittest resource antlr antlr_build fcstm_antlr_build fbmcq_antlr_build build build_info build_info_cli package clean build_assets build_assets_clean diagram_assets_check diagram_rendering_check diagram_parity_check diagram_reference_check diagram_engine_floor diagram_provenance_check diagram_assets_verify diagram_package_check diagram_corpus docs_auto todos_auto tests_auto rst_auto sha256 jsfcstm jsfcstm_clean vscode vscode_clean vscode_install vscode_uninstall logos logos_clean app_icons app_icons_clean help tpl tpl_clean templates_package template_packaging_check template_source_install_check docs_terminology_check test_boundary_check
 
 PYTHON := $(shell which python)
 
@@ -95,6 +95,7 @@ help:
 	@echo "  make diagram_assets_check - Build and validate diagram assets and ignore rules"
 	@echo "  make diagram_assets_verify - Run provenance, runtime, and visual asset gates"
 	@echo "  make diagram_parity_check DIAGRAM_REFERENCE=/abs/path/reference.json"
+	@echo "  make diagram_reference_check - Verify reference archive retry behavior"
 	@echo "  make diagram_corpus - Rebuild checked-in DiagramData rendering oracles"
 	@echo "  make build_assets_clean - Remove generated diagram assets"
 	@echo "  make clean        - Remove build artifacts"
@@ -274,7 +275,10 @@ diagram_engine_floor: build_assets
 diagram_provenance_check:
 	$(PYTHON) tools/check_diagram_provenance.py
 
-diagram_assets_verify: diagram_assets_check diagram_rendering_check diagram_parity_check diagram_engine_floor diagram_provenance_check
+diagram_reference_check:
+	$(PYTHON) tools/fetch_diagram_reference.py --check
+
+diagram_assets_verify: diagram_assets_check diagram_rendering_check diagram_parity_check diagram_engine_floor diagram_provenance_check diagram_reference_check
 
 diagram_package_check: package
 

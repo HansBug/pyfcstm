@@ -407,6 +407,8 @@ def _png_ink_bbox(data: bytes) -> Tuple[int, int, Tuple[int, int, int, int]]:
     except zlib.error as err:
         # zlib.error: IDAT payload is not a valid compressed scanline stream.
         raise ValueError("PNG output has invalid compressed scanlines") from err
+    if len(raw) > _MAX_RENDER_RGBA_BYTES:
+        raise ValueError("PNG output has oversized decoded scanlines")
     stride = width * 4
     if len(raw) != (stride + 1) * height:
         raise ValueError("PNG output has an invalid scanline length")
@@ -484,6 +486,11 @@ def _self_check_png_parser() -> None:
         + image
         + chunk(b"tEXt", b"x")
         + image
+        + chunk(b"IEND", b""),
+        signature
+        + chunk(b"IHDR", header)
+        + image[:-4]
+        + struct.pack(">I", (struct.unpack(">I", image[-4:])[0] ^ 1))
         + chunk(b"IEND", b""),
         valid + b"trailing-bytes",
         signature

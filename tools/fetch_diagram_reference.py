@@ -4,10 +4,12 @@ import argparse
 import base64
 import binascii
 import hashlib
+from http.client import IncompleteRead
 import json
 import shutil
 import tarfile
 import tempfile
+import time
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -15,18 +17,139 @@ from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parent.parent
 LOCK_PATH = ROOT / "tools" / "diagram_assets" / "reference-lock.json"
+_TRANSIENT_HTTP_CODES = frozenset((408, 429, 500, 502, 503, 504))
+_DOWNLOAD_ATTEMPTS = 3
+_DOWNLOAD_BACKOFF_SECONDS = 1.0
 
 
 def _download(url: str) -> bytes:
-    """Download one immutable reference archive."""
+    """Download one immutable reference archive with bounded retries."""
     request = Request(url, headers={"User-Agent": "pyfcstm-diagram-reference/1"})
+    for attempt in range(_DOWNLOAD_ATTEMPTS):
+        try:
+            with urlopen(request, timeout=120) as response:
+                return response.read()
+        except HTTPError as err:
+            # HTTPError: retry only transient throttling/outage responses; a
+            # permanent status or an exhausted retry budget fails immediately.
+            if (
+                err.code not in _TRANSIENT_HTTP_CODES
+                or attempt + 1 >= _DOWNLOAD_ATTEMPTS
+            ):
+                raise RuntimeError(
+                    "unable to download diagram reference archive (HTTP %d)" % err.code
+                ) from err
+        except (IncompleteRead, URLError, TimeoutError, OSError) as err:
+            # IncompleteRead: the response body ended early; URLError:
+            # DNS/TLS failure; TimeoutError: socket timeout; OSError: peer
+            # reset or another local stream failure.
+            if attempt + 1 >= _DOWNLOAD_ATTEMPTS:
+                raise RuntimeError(
+                    "unable to download diagram reference archive after %d attempts"
+                    % _DOWNLOAD_ATTEMPTS
+                ) from err
+        time.sleep(_DOWNLOAD_BACKOFF_SECONDS * (2**attempt))
+    raise RuntimeError("unable to download diagram reference archive")
+
+
+def _check_download_retry() -> None:
+    """Verify transient failures retry and permanent HTTP errors do not."""
+    original_urlopen = globals()["urlopen"]
+    original_sleep = time.sleep
+    attempts = []
+    sleeps = []
+    payload = b"locked-reference-archive"
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return payload
+
+    def flaky_urlopen(_request, timeout):
+        if timeout != 120:
+            raise AssertionError("reference download changed its timeout")
+        attempts.append(len(attempts) + 1)
+        if len(attempts) == 1:
+            raise IncompleteRead(b"partial", 10)
+        if len(attempts) == 2:
+            raise OSError("simulated remote disconnect")
+        return Response()
+
     try:
-        with urlopen(request, timeout=120) as response:
-            return response.read()
-    except (HTTPError, URLError, OSError) as err:
-        # HTTPError/URLError: the pinned archive cannot be fetched; OSError:
-        # the local network stream failed before the archive was complete.
-        raise RuntimeError("unable to download diagram reference archive") from err
+        globals()["urlopen"] = flaky_urlopen
+        time.sleep = lambda delay: sleeps.append(delay)
+        if _download("https://example.invalid/reference.tar.gz") != payload:
+            raise AssertionError("retry self-check returned an unexpected payload")
+    finally:
+        globals()["urlopen"] = original_urlopen
+        time.sleep = original_sleep
+    if attempts != [1, 2, 3] or sleeps != [1.0, 2.0]:
+        raise AssertionError(
+            "reference retry self-check used an unexpected schedule: %s/%s"
+            % (attempts, sleeps)
+        )
+
+    status_attempts = []
+    status_sleeps = []
+
+    def transient_status_urlopen(_request, timeout):
+        if timeout != 120:
+            raise AssertionError("reference download changed its timeout")
+        status_attempts.append(1)
+        if len(status_attempts) == 1:
+            raise HTTPError(
+                "https://example.invalid/reference.tar.gz", 503, "busy", {}, None
+            )
+        return Response()
+
+    try:
+        globals()["urlopen"] = transient_status_urlopen
+        time.sleep = lambda delay: status_sleeps.append(delay)
+        if _download("https://example.invalid/reference.tar.gz") != payload:
+            raise AssertionError("transient HTTP retry returned an unexpected payload")
+    finally:
+        globals()["urlopen"] = original_urlopen
+        time.sleep = original_sleep
+    if status_attempts != [1, 1] or status_sleeps != [1.0]:
+        raise AssertionError(
+            "transient HTTP retry self-check used an unexpected schedule: %s/%s"
+            % (status_attempts, status_sleeps)
+        )
+
+    permanent_attempts = []
+
+    def permanent_urlopen(_request, timeout):
+        if timeout != 120:
+            raise AssertionError("reference download changed its timeout")
+        permanent_attempts.append(1)
+        raise HTTPError(
+            "https://example.invalid/reference.tar.gz", 404, "missing", {}, None
+        )
+
+    try:
+        globals()["urlopen"] = permanent_urlopen
+
+        def no_sleep(_delay):
+            raise AssertionError("permanent HTTP errors must not sleep")
+
+        time.sleep = no_sleep
+        try:
+            _download("https://example.invalid/reference.tar.gz")
+        except RuntimeError:
+            # RuntimeError: _download wraps the expected permanent HTTP 404.
+            pass
+        else:
+            raise AssertionError("permanent HTTP error was accepted")
+    finally:
+        globals()["urlopen"] = original_urlopen
+        time.sleep = original_sleep
+    if permanent_attempts != [1]:
+        raise AssertionError("permanent HTTP error was retried")
 
 
 def _safe_extract(data: bytes, destination: Path) -> None:
@@ -61,9 +184,20 @@ def _safe_extract(data: bytes, destination: Path) -> None:
 def main(argv=None) -> int:
     """Restore and verify one locked reference archive."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--runtime", required=True, help="Python major.minor")
+    parser.add_argument("--output", type=Path)
+    parser.add_argument("--runtime", help="Python major.minor")
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="run the bounded download retry self-check without network access",
+    )
     args = parser.parse_args(argv)
+    if args.check:
+        _check_download_retry()
+        print("diagram reference fetcher: retry self-check passed")
+        return 0
+    if args.output is None or args.runtime is None:
+        parser.error("--output and --runtime are required unless --check is used")
     try:
         lock = json.loads(LOCK_PATH.read_text(encoding="utf-8"))
         entry = lock["runtimes"][args.runtime]

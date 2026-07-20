@@ -11,6 +11,7 @@ import pytest
 import z3
 
 import pyfcstm.bmc.provenance as provenance_module
+from pyfcstm.dsl import node as dsl_nodes
 from pyfcstm.bmc import BmcEngine, build_bmc_core_formula
 from pyfcstm.bmc.errors import BmcBuildError, InvalidBmcQuery
 from pyfcstm.bmc.parse import parse_bmc_query
@@ -19,8 +20,12 @@ from pyfcstm.bmc.provenance import (
     BmcTrackedConstraint,
     SourceDocumentRegistry,
 )
-from pyfcstm.bmc.relation import BmcCoreFormula
-from pyfcstm.model import load_state_machine_from_file, load_state_machine_from_text
+from pyfcstm.bmc.relation import BmcCoreFormula, _append_tracked_group
+from pyfcstm.model import (
+    load_state_machine_from_file,
+    load_state_machine_from_text,
+    parse_dsl_node_to_state_machine,
+)
 from pyfcstm.utils.validate import Span
 
 pytestmark = pytest.mark.unittest
@@ -96,6 +101,30 @@ def test_tracked_constraint_rejects_malformed_values(
 
     with pytest.raises(exception, match=message):
         BmcTrackedConstraint(**values)
+
+
+@pytest.mark.parametrize(
+    ("expressions", "message"),
+    [
+        pytest.param((), "non-empty", id="empty"),
+        pytest.param((z3.IntVal(1),), "Boolean", id="non-boolean"),
+    ],
+)
+def test_tracked_group_registration_rejects_invalid_expressions(
+    expressions, message
+) -> None:
+    """The relation-side registration guard rejects malformed Z3 inputs."""
+    groups = []
+
+    with pytest.raises(BmcBuildError, match=message):
+        _append_tracked_group(
+            groups,
+            stable_id="invalid",
+            stage="kernel",
+            category="domain",
+            expressions=expressions,
+            source_ref=BmcSourceRef("generated", None, None),
+        )
 
 
 @pytest.mark.parametrize(
@@ -306,6 +335,82 @@ def test_file_and_import_source_paths_are_not_collapsed(tmp_path: Path) -> None:
     assert model._source_documents[str(imported.resolve())] == imported.read_text(
         encoding="utf-8"
     )
+
+
+def test_imported_lifecycle_operations_keep_source_paths_and_excerpts(
+    tmp_path: Path,
+) -> None:
+    """Lifecycle operations and nested branches retain imported provenance."""
+    imported = tmp_path / "worker.fcstm"
+    imported.write_text(
+        """def int x = 0;
+state Worker {
+    event Tick;
+    enter { if [x > 0] { x = x + 1; } else { x = x + 2; } }
+    during before Tick { x = x + 3; }
+    exit { x = x + 4; }
+    >> during after Monitor { x = x + 5; }
+    state Idle;
+    [*] -> Idle;
+}
+""",
+        encoding="utf-8",
+    )
+    main = tmp_path / "main.fcstm"
+    main.write_text(
+        'state Root { import "./worker.fcstm" as Worker; [*] -> Worker; }\n',
+        encoding="utf-8",
+    )
+
+    model = load_state_machine_from_file(main)
+    worker = model.root_state.substates["Worker"]
+    registry = SourceDocumentRegistry(
+        model._source_documents, display_root=model._source_root
+    )
+
+    actions = (
+        worker.on_enters[0],
+        worker.on_durings[0],
+        worker.on_exits[0],
+        worker.on_during_aspects[0],
+    )
+    for action in actions:
+        assert action._source_path == str(imported.resolve())
+        operation = action.operations[0]
+        assert operation._source_path == str(imported.resolve())
+        assert registry.model_reference(operation).path == "worker.fcstm"
+
+    enter_if = worker.on_enters[0].operations[0]
+    assert enter_if._source_path == str(imported.resolve())
+    assert [
+        registry.excerpt(registry.model_reference(branch.statements[0]))
+        for branch in enter_if.branches
+    ] == ["x = x + 1;", "x = x + 2;"]
+
+    assert [
+        registry.excerpt(registry.model_reference(action.operations[0]))
+        for action in actions[1:]
+    ] == ["x = x + 3;", "x = x + 4;", "x = x + 5;"]
+
+
+def test_programmatic_ast_without_spans_fails_closed_for_operation_metadata() -> None:
+    """Programmatic AST input does not receive fabricated operation paths."""
+    program = dsl_nodes.StateMachineDSLProgram(
+        definitions=[dsl_nodes.DefAssignment("x", "int", dsl_nodes.Integer("0"))],
+        root_state=dsl_nodes.StateDefinition(
+            "Root",
+            enters=[
+                dsl_nodes.EnterOperations(
+                    [dsl_nodes.OperationAssignment("x", dsl_nodes.Integer("1"))]
+                )
+            ],
+        ),
+    )
+
+    model = parse_dsl_node_to_state_machine(program)
+
+    operation = model.root_state.on_enters[0].operations[0]
+    assert getattr(operation, "_source_path", None) is None
 
 
 def test_text_loader_records_snapshot_when_path_is_an_existing_file(

@@ -206,6 +206,24 @@ def test_engine_rejects_invalid_query_source_path(
         BmcEngine(engine_model).prepare(query, query_source_path=query_source_path)
 
 
+def test_prepared_context_rejects_invalid_query_source_path(
+    engine_model: StateMachine,
+) -> None:
+    """The public prepared-context constructor validates explicit metadata."""
+    prepared = BmcEngine(engine_model).prepare('check reach <= 1: active("Root.Done");')
+
+    with pytest.raises(BmcBuildError, match="query_source_path"):
+        BmcPreparedContext(
+            model=prepared.model,
+            query=prepared.query,
+            bound_query=prepared.bound_query,
+            domain=prepared.domain,
+            options=prepared.options,
+            source_text=prepared.source_text,
+            query_source_path="",
+        )
+
+
 @pytest.mark.unittest
 def test_engine_inherits_source_path_from_parsed_query(
     engine_model: StateMachine,
@@ -233,6 +251,7 @@ def test_engine_query_source_path_overrides_ast_metadata(
 
     assert context.query_source_path == "new.fbmcq"
     assert context.query._source_path == "new.fbmcq"
+    assert dict(context.query._source_spans).get(id(context.query)) is not None
 
 
 @pytest.mark.unittest

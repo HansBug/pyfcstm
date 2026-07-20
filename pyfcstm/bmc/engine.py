@@ -277,7 +277,17 @@ def _coerce_query(
             else getattr(query, "_source_path", None)
         )
         if effective_path != getattr(query, "_source_path", None):
+            old_root_id = id(query)
+            source_spans = dict(getattr(query, "_source_spans", ()))
+            root_span = source_spans.pop(old_root_id, None)
             query = replace(query, _source_path=effective_path)
+            if root_span is not None:
+                source_spans[id(query)] = root_span
+                object.__setattr__(
+                    query,
+                    "_source_spans",
+                    tuple(sorted(source_spans.items(), key=lambda item: item[0])),
+                )
         return query, None, effective_path
     raise BmcBuildError("query must be a str or BmcQuery.")
 

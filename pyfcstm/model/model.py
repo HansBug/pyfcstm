@@ -126,6 +126,10 @@ def _annotate_model_operations(model_items, ast_items) -> None:
         if match is None:
             continue
         _set_model_source_path(model_item, match)
+        if hasattr(model_item, "operations"):
+            _annotate_model_operations(
+                model_item.operations, getattr(match, "operations", ())
+            )
         if hasattr(model_item, "branches"):
             ast_branches = getattr(match, "branches", ())
             for model_branch, ast_branch in zip(model_item.branches, ast_branches):

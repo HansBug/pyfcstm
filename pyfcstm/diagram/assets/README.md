@@ -11,12 +11,15 @@ or system-font dependencies.
 - Rebuild generated resources only with ``make build_assets`` from the
   repository root. Do not edit generated files or copy them from another
   build directory.
-- Source URLs, versions, SHA-256 values, byte budgets, font metadata, and
-  license provenance are recorded in
+- The official ``@resvg/resvg-wasm`` 2.6.2 package is restored from the locked
+  ``editors/jsfcstm/package-lock.json`` entry. Source URLs, commits, SHA-256
+  values, byte budgets, font metadata, and license provenance are recorded in
   ``tools/diagram_assets/asset-lock.json``.
 - After changing a source or build rule, run ``make build_assets`` and
-  ``make diagram_assets_check`` followed by the relevant tests, package build,
-  and archive checks.
+  ``make diagram_assets_check``, then run
+  ``make DIAGRAM_REFERENCE=/abs/path/reference.json diagram_assets_verify``
+  with the frozen custom 0.37 reference bundle. The parity gate must not be
+  skipped.
 - Generated files are ignored by the source-tree ``.gitignore``. ``README.md``,
   ``__init__.py``, ``.gitignore``, ``NOTICE.txt``, and license files are
   controlled metadata and must not be removed by the builder.
@@ -40,10 +43,11 @@ or system-font dependencies.
 
 - ``renderer.js``: minified ES2017 IIFE containing ELK, SVG rendering, and the
   Python entrypoint.
-- ``resvg-binding.js``: pinned resvg JavaScript binding.
+- ``resvg-binding.js``: official ``@resvg/resvg-wasm`` 2.6.2 JavaScript
+  binding.
 - ``resvg-bridge.js``: restricted MiniRacer bridge and font-registration API.
 - ``host-shim.js``: the minimal host-environment shim required by MiniRacer.
-- ``resvg.wasm``: pinned resvg WebAssembly backend.
+- ``resvg.wasm``: official ``@resvg/resvg-wasm`` 2.6.2 WebAssembly backend.
 - ``manifest.json``: generated-file paths, byte sizes, hashes, and provenance.
 - ``fonts/JetBrainsMono-Regular.ttf``: Latin regular face.
 - ``fonts/JetBrainsMono-Medium.ttf``: Latin medium face.

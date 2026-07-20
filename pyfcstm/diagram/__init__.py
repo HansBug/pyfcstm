@@ -1,18 +1,34 @@
 """
 Internal MiniRacer bridge for the shared offline diagram assets.
 
-The module contains:
+The package roadmap is intentionally small and explicit:
 
-* :class:`DiagramAssetEngine` - Loads the generated ES2017 renderer and
-  exposes SVG, PNG, and normalized-vector feasibility operations.
-* :class:`DiagramAssetError` - Reports missing assets and renderer failures.
-* :class:`DiagramEngineMetadataError` - Reports unavailable distribution
-  metadata needed to select one MiniRacer runtime.
-* :class:`DiagramEngineConflictError` - Identifies incompatible dual engine
-  installations before a JavaScript context is created.
+.. list-table:: Exported asset-runtime surfaces
+   :header-rows: 1
 
-The public ``StateMachine.diagram`` facade is intentionally deferred to the
-follow-up Python API work; this package only owns the asset-runtime boundary.
+   * - Surface
+     - Responsibility
+   * - :class:`DiagramAssetEngine`
+     - Load the bundled renderer and expose SVG/PNG rendering operations.
+   * - :class:`DiagramAssetError`
+     - Report missing or unusable packaged resources with recovery guidance.
+   * - :class:`DiagramRenderError`
+     - Report invalid DiagramData or renderer output after startup.
+   * - :class:`DiagramEngineMetadataError`
+     - Report unavailable MiniRacer distribution metadata.
+   * - :class:`DiagramEngineConflictError`
+     - Reject simultaneous legacy and modern MiniRacer installations.
+
+The public ``StateMachine.diagram`` facade, CLI commands, and final export
+API are follow-up work. This package owns only the asset-runtime boundary and
+does not promise a stable user-facing diagram API yet.
+
+Example::
+
+    >>> from pyfcstm.diagram import DiagramAssetEngine
+    >>> engine = DiagramAssetEngine(timeout=30.0)
+    >>> isinstance(engine, DiagramAssetEngine)
+    True
 """
 
 from .engine import (
@@ -20,6 +36,7 @@ from .engine import (
     DiagramAssetEngine,
     DiagramEngineConflictError,
     DiagramEngineMetadataError,
+    DiagramRenderError,
 )
 
 __all__ = [
@@ -27,4 +44,5 @@ __all__ = [
     "DiagramAssetError",
     "DiagramEngineConflictError",
     "DiagramEngineMetadataError",
+    "DiagramRenderError",
 ]

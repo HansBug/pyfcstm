@@ -13,8 +13,10 @@ Third-party runtime resources distributed in this directory:
   integrity and installed-tree digest recorded in
   ``tools/diagram_assets/asset-lock.json`` and ``manifest.json``. Its source
   is available at ``https://github.com/kieler/elkjs/tree/v0.11.1``.
-* ``resvg`` 0.37 compatibility bindings and WASM, from the immutable source
-  URLs and SHA-256 values recorded in ``tools/diagram_assets/asset-lock.json``.
+* ``@resvg/resvg-wasm`` 2.6.2, Copyright 2021-present yisibl, under the
+  Mozilla Public License 2.0. See ``LICENSE-MPL-2.0.txt``. The exact npm
+  package, binding and WASM hashes, upstream resvg-js source, and patched
+  resvg source are recorded in ``tools/diagram_assets/asset-lock.json``.
 * ``JetBrains Mono`` Regular, Medium, and Bold, Copyright 2020 The JetBrains
   Mono Project Authors, under the SIL Open Font License 1.1. See
   ``LICENSE-OFL-1.1.txt``.

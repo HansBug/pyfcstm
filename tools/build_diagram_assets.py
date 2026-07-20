@@ -3,9 +3,8 @@ Build and verify the ignored Python diagram runtime assets.
 
 The command is intentionally a small, deterministic coordinator rather than
 part of the public package. It builds the shared ES2017 renderer from the
-canonical jsfcstm source, downloads the pinned resvg 0.37 compatibility
-artifacts when they are absent, copies the fixed Latin and locale-specific CJK
-fonts, and writes a manifest
+canonical jsfcstm source, copies the exact official resvg 2.6.2 package
+artifacts, copies the fixed Latin and locale-specific CJK fonts, and writes a manifest
 with byte hashes. ``make build_assets`` is the supported entry point.
 
 The generated files live under ``pyfcstm/diagram/assets`` and are ignored by git.
@@ -15,12 +14,15 @@ recreate the same package contents.
 
 import argparse
 import hashlib
+from http.client import IncompleteRead
 import json
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
+import urllib.error
 import urllib.request
 from pathlib import Path, PurePosixPath
 from typing import Dict, Iterable, List, Set, Tuple
@@ -37,6 +39,7 @@ JSFCSTM_LOCK_PATH = JSFCSTM_DIR / "package-lock.json"
 ELK_PACKAGE_DIR = JSFCSTM_DIR / "node_modules" / "elkjs"
 ELK_API_PATH = JSFCSTM_DIR / "node_modules" / "elkjs" / "lib" / "elk-api.js"
 ELK_WORKER_PATH = JSFCSTM_DIR / "node_modules" / "elkjs" / "lib" / "elk-worker.min.js"
+RESVG_PACKAGE_DIR = JSFCSTM_DIR / "node_modules" / "@resvg" / "resvg-wasm"
 ASSET_MARKERS = {
     ".gitignore",
     "README.md",
@@ -46,6 +49,9 @@ ASSET_MARKERS = {
     "LICENSE-EPL-2.0.txt",
     "LICENSE-OFL-1.1.txt",
 }
+_DOWNLOAD_ATTEMPTS = 3
+_DOWNLOAD_BACKOFF_SECONDS = 1.0
+_TRANSIENT_HTTP_CODES = frozenset({408, 429, 500, 502, 503, 504})
 
 
 def _node_command(name: str) -> str:
@@ -79,12 +85,36 @@ def download_locked(url: str, expected_sha256: str) -> bytes:
     :type expected_sha256: str
     :return: Downloaded bytes.
     :rtype: bytes
-    :raises urllib.error.HTTPError: If the source returns an HTTP error.
-    :raises urllib.error.URLError: If the source cannot be reached.
+    :raises urllib.error.HTTPError: If the source returns a non-transient HTTP
+        error or remains unavailable after the retry budget.
+    :raises urllib.error.URLError: If the source cannot be reached after the
+        retry budget.
+    :raises http.client.IncompleteRead: If the source repeatedly closes the
+        response before the locked payload is complete.
+    :raises TimeoutError: If the source repeatedly exceeds the network timeout.
+    :raises OSError: If the remote connection repeatedly closes unexpectedly.
     :raises ValueError: If the downloaded digest differs from the lock.
     """
-    with urllib.request.urlopen(url, timeout=120) as response:
-        data = response.read()
+    for attempt in range(_DOWNLOAD_ATTEMPTS):
+        try:
+            with urllib.request.urlopen(url, timeout=120) as response:
+                data = response.read()
+            break
+        except urllib.error.HTTPError as err:
+            # HTTPError: retry only service throttling/outage responses; a
+            # permanent 4xx must fail immediately instead of hiding a bad lock.
+            if (
+                err.code not in _TRANSIENT_HTTP_CODES
+                or attempt + 1 >= _DOWNLOAD_ATTEMPTS
+            ):
+                raise
+        except (urllib.error.URLError, TimeoutError, OSError, IncompleteRead):
+            # URLError: DNS/TLS/network failure; TimeoutError: socket timeout;
+            # OSError: the peer closed/reset the connection; IncompleteRead:
+            # response.read() received only part of the HTTP body.
+            if attempt + 1 >= _DOWNLOAD_ATTEMPTS:
+                raise
+        time.sleep(_DOWNLOAD_BACKOFF_SECONDS * (2**attempt))
     actual = sha256_bytes(data)
     if actual != expected_sha256:
         raise ValueError(
@@ -92,6 +122,46 @@ def download_locked(url: str, expected_sha256: str) -> bytes:
             % (url, expected_sha256, actual)
         )
     return data
+
+
+def _installed_esbuild_is_usable() -> bool:
+    """Return whether the existing local esbuild tree executes the lock version."""
+    try:
+        package_lock = json.loads(JSFCSTM_LOCK_PATH.read_text(encoding="utf-8"))
+        package = package_lock["packages"]["node_modules/esbuild"]
+        package_json = json.loads(
+            (JSFCSTM_DIR / "node_modules" / "esbuild" / "package.json").read_text(
+                encoding="utf-8"
+            )
+        )
+    except (KeyError, OSError, TypeError, UnicodeDecodeError, ValueError):
+        # KeyError/TypeError/ValueError/UnicodeDecodeError: lock or installed
+        # metadata is malformed; OSError: a local package file is unavailable.
+        return False
+    expected_version = package.get("version")
+    if (
+        not isinstance(expected_version, str)
+        or package_json.get("version") != expected_version
+    ):
+        return False
+    if package_json.get("name") != "esbuild":
+        return False
+    wrapper = JSFCSTM_DIR / "node_modules" / "esbuild" / "bin" / "esbuild"
+    if not wrapper.is_file() or wrapper.stat().st_size == 0:
+        return False
+    try:
+        result = subprocess.run(
+            [_node_command("npx"), "--no-install", "esbuild", "--version"],
+            cwd=str(JSFCSTM_DIR),
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+    except OSError:
+        # OSError: npx is unavailable or the existing executable cannot start.
+        return False
+    return result.returncode == 0 and result.stdout.strip() == expected_version
 
 
 def ensure_js_dependencies() -> None:
@@ -108,12 +178,21 @@ def ensure_js_dependencies() -> None:
     :raises subprocess.CalledProcessError: If the lockfile install fails.
     :raises FileNotFoundError: If npm is unavailable or the install omits ELK.
     """
-    if ELK_API_PATH.is_file() and ELK_WORKER_PATH.is_file():
+    if (
+        ELK_API_PATH.is_file()
+        and ELK_WORKER_PATH.is_file()
+        and (RESVG_PACKAGE_DIR / "index.min.js").is_file()
+        and (RESVG_PACKAGE_DIR / "index_bg.wasm").is_file()
+        and (RESVG_PACKAGE_DIR / "package.json").is_file()
+        and (JSFCSTM_DIR / "node_modules" / "esbuild").is_dir()
+        and _installed_esbuild_is_usable()
+    ):
         return
     subprocess.run(
         [
             _node_command("npm"),
             "ci",
+            "--include=dev",
             "--ignore-scripts",
             "--no-audit",
             "--no-fund",
@@ -121,9 +200,14 @@ def ensure_js_dependencies() -> None:
         cwd=str(JSFCSTM_DIR),
         check=True,
     )
-    if not ELK_API_PATH.is_file() or not ELK_WORKER_PATH.is_file():
+    if (
+        not ELK_API_PATH.is_file()
+        or not ELK_WORKER_PATH.is_file()
+        or not (RESVG_PACKAGE_DIR / "index.min.js").is_file()
+        or not (RESVG_PACKAGE_DIR / "index_bg.wasm").is_file()
+    ):
         raise FileNotFoundError(
-            "npm ci completed without the locked elkjs API/worker assets"
+            "npm ci completed without the locked ELK/resvg package assets"
         )
 
 
@@ -152,6 +236,33 @@ def elk_tree_sha256() -> str:
         digest.update(data)
         digest.update(b"\0")
     return digest.hexdigest()
+
+
+def validate_esbuild_provenance(lock: Dict[str, object]) -> None:
+    """Require the exact lockfile esbuild package used by the builder."""
+    renderer = lock.get("renderer")
+    if not isinstance(renderer, dict):
+        raise ValueError("diagram asset lock lacks renderer provenance")
+    expected_version = renderer.get("esbuildVersion")
+    if not isinstance(expected_version, str) or not expected_version:
+        raise ValueError("diagram asset lock lacks esbuildVersion")
+    try:
+        package_lock = json.loads(JSFCSTM_LOCK_PATH.read_text(encoding="utf-8"))
+        root_package = package_lock["packages"][""]
+        package = package_lock["packages"]["node_modules/esbuild"]
+    except (KeyError, OSError, TypeError, ValueError) as err:
+        # KeyError/TypeError/ValueError: package-lock.json has no valid local
+        # esbuild entry; OSError: the tracked lock file cannot be read.
+        raise ValueError("jsfcstm package-lock lacks a valid esbuild entry") from err
+    dev_dependencies = root_package.get("devDependencies")
+    if not isinstance(dev_dependencies, dict):
+        raise ValueError("jsfcstm package-lock lacks devDependencies")
+    if dev_dependencies.get("esbuild") != expected_version:
+        raise ValueError("jsfcstm esbuild devDependency differs from asset lock")
+    if package.get("version") != expected_version:
+        raise ValueError("installed esbuild version differs from asset lock")
+    if not package.get("resolved") or not package.get("integrity"):
+        raise ValueError("jsfcstm esbuild entry lacks resolved/integrity provenance")
 
 
 def validate_elk_provenance(lock: Dict[str, object]) -> None:
@@ -183,6 +294,72 @@ def validate_elk_provenance(lock: Dict[str, object]) -> None:
     expected_tree = provenance.get("treeSha256")
     if not isinstance(expected_tree, str) or expected_tree != elk_tree_sha256():
         raise ValueError("installed elkjs bytes differ from the locked tree digest")
+
+
+def validate_resvg_provenance(lock: Dict[str, object]) -> Dict[str, object]:
+    """Validate the installed official resvg package and return its lock entry."""
+    renderer = lock.get("renderer")
+    if not isinstance(renderer, dict):
+        raise ValueError("diagram asset lock lacks renderer provenance")
+    package_lock_entry = renderer.get("resvgPackage")
+    if not isinstance(package_lock_entry, dict):
+        raise ValueError("diagram asset lock lacks official resvg package provenance")
+    package_path = RESVG_PACKAGE_DIR / "package.json"
+    try:
+        package = json.loads(package_path.read_text(encoding="utf-8"))
+        package_lock = json.loads(JSFCSTM_LOCK_PATH.read_text(encoding="utf-8"))
+        installed_lock = package_lock["packages"]["node_modules/@resvg/resvg-wasm"]
+    except (KeyError, OSError, TypeError, ValueError) as err:
+        # KeyError/TypeError/ValueError: package metadata lacks the expected
+        # official entry; OSError: a clean install omitted package metadata.
+        raise ValueError("official resvg package metadata is unavailable") from err
+    expected_identity = {
+        "name": "@resvg/resvg-wasm",
+        "version": "2.6.2",
+        "license": "MPL-2.0",
+    }
+    expected_lock_fields = {
+        "bindingPath": "index.min.js",
+        "wasmPath": "index_bg.wasm",
+        "bindingSha256": "590115ae25dead0d688da192f2d31586cdf1f8c70fe294919419c168e03e5c42",
+        "wasmSha256": "22bf6e9f9a100d972da0411a69c5ba504367fc1fa87b3b64e3f35e53926d2d70",
+        "tarballSha256": "ff51acbb5ee0074601b75c3bea9226a18d346752af787f6d2d3adcdd98493d71",
+        "sourceCommit": "9ca058462ac529120c8cc84ddcd6fef644cc5406",
+        "patchedSourceCommit": "3495d8705b302d6d266748516973606ca9657906",
+        "sourceArchiveSha256": "7ce8697451237577d473361aa688917a48cba00c4a8f3302a833455c9c2013fa",
+        "patchedSourceArchiveSha256": "08d15a07f930ee4dfb7971b792697c32059b25a5c10aa283ee672488a2417713",
+    }
+    if any(package.get(key) != value for key, value in expected_identity.items()):
+        raise ValueError("installed resvg package identity differs from the asset lock")
+    if any(
+        package_lock_entry.get(key) != value
+        for key, value in expected_lock_fields.items()
+    ):
+        raise ValueError("official resvg lock field differs from the pinned value")
+    for key in ("version", "resolved", "integrity"):
+        if installed_lock.get(key) != package_lock_entry.get(key):
+            raise ValueError("resvg package-lock %s differs from the asset lock" % key)
+    if installed_lock.get("integrity") != (
+        "sha512-FqALmHI8D4o6lk/LRWDnhw95z5eO+eAa6ORjVg09YRR7BkcM6oPHU9uyC0gtQG5vpFLvgpeU4+zEAz2H8APHNw=="
+    ):
+        raise ValueError(
+            "resvg package-lock integrity is not the pinned official value"
+        )
+    return package_lock_entry
+
+
+def load_local_locked_file(path: Path, expected_sha256: str) -> bytes:
+    """Read one installed package file and verify its immutable digest."""
+    if not path.is_file():
+        raise FileNotFoundError("locked resvg package file is missing: %s" % path)
+    data = path.read_bytes()
+    actual = sha256_bytes(data)
+    if actual != expected_sha256:
+        raise ValueError(
+            "locked resvg package hash mismatch for %s: expected %s, got %s"
+            % (path, expected_sha256, actual)
+        )
+    return data
 
 
 def load_locked_file(path: Path, url: str, expected_sha256: str) -> bytes:
@@ -223,8 +400,8 @@ def build_renderer(
     metafile = output.with_suffix(".meta.json")
     command = [
         _node_command("npx"),
-        "--yes",
-        "esbuild@%s" % esbuild_version,
+        "--no-install",
+        "esbuild",
         str(ENTRY_PATH),
         "--bundle",
         "--format=iife",
@@ -236,7 +413,9 @@ def build_renderer(
         "--metafile=%s" % metafile,
         "--outfile=%s" % output,
     ]
-    subprocess.run(command, cwd=str(ROOT), check=True)
+    # Resolve the lockfile-installed esbuild from jsfcstm's local node_modules;
+    # running npx from the repository root would incorrectly report it missing.
+    subprocess.run(command, cwd=str(JSFCSTM_DIR), check=True)
     metadata = json.loads(metafile.read_text(encoding="utf-8"))
     return output.read_bytes(), _canonicalize_metafile(metadata)
 
@@ -371,6 +550,47 @@ def _check_font_path_safety() -> None:
         except ValueError:
             continue
         raise AssertionError("font path escape was accepted: %s" % invalid)
+
+
+def _check_download_retry() -> None:
+    """Verify transient download failures consume a bounded retry budget."""
+    original_urlopen = urllib.request.urlopen
+    original_sleep = time.sleep
+    attempts = []
+    sleeps = []
+    payload = b"locked-diagram-asset"
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return payload
+
+    def flaky_urlopen(_url, timeout):
+        assert timeout == 120
+        attempts.append(timeout)
+        if len(attempts) == 1:
+            raise IncompleteRead(b"partial", 10)
+        if len(attempts) == 2:
+            raise OSError("simulated remote disconnect")
+        return Response()
+
+    try:
+        urllib.request.urlopen = flaky_urlopen
+        time.sleep = lambda delay: sleeps.append(delay)
+        result = download_locked("https://example.invalid/asset", sha256_bytes(payload))
+    finally:
+        urllib.request.urlopen = original_urlopen
+        time.sleep = original_sleep
+    if result != payload or len(attempts) != 3 or sleeps != [1.0, 2.0]:
+        raise AssertionError(
+            "download retry self-check used an unexpected schedule: %s/%s"
+            % (attempts, sleeps)
+        )
 
 
 def load_fonts(lock: Dict[str, object]) -> List[Tuple[str, bytes]]:
@@ -583,22 +803,22 @@ def build_assets() -> None:
     if not esbuild_version:
         raise ValueError("renderer lock must pin esbuildVersion")
     ensure_js_dependencies()
+    validate_esbuild_provenance(lock)
     validate_elk_provenance(lock)
+    resvg_package = validate_resvg_provenance(lock)
     with tempfile.TemporaryDirectory(
         prefix=".pyfcstm-diagram-assets-", dir=str(ASSET_DIR.parent)
     ) as temporary:
         temporary_root = Path(temporary)
         renderer_path = temporary_root / "renderer-core.js"
         renderer, metafile = build_renderer(renderer_path, esbuild_version)
-        bundle = load_locked_file(
-            ASSET_DIR / "resvg-binding.js",
-            str(renderer_lock["resvgBundleUrl"]),
-            str(renderer_lock["resvgBundleSha256"]),
+        bundle = load_local_locked_file(
+            RESVG_PACKAGE_DIR / str(resvg_package["bindingPath"]),
+            str(resvg_package["bindingSha256"]),
         )
-        wasm = load_locked_file(
-            ASSET_DIR / "resvg.wasm",
-            str(renderer_lock["resvgWasmUrl"]),
-            str(renderer_lock["resvgWasmSha256"]),
+        wasm = load_local_locked_file(
+            RESVG_PACKAGE_DIR / str(resvg_package["wasmPath"]),
+            str(resvg_package["wasmSha256"]),
         )
         max_wasm = int(renderer_lock["resvgWasmMaxBytes"])
         if len(wasm) > max_wasm:
@@ -666,8 +886,10 @@ def main(argv=None) -> int:
         parser.error("--clean and --check cannot be combined")
     if args.check:
         _check_metafile_determinism()
+        validate_esbuild_provenance(read_lock())
         _check_clean_symlink_safety()
         _check_font_path_safety()
+        _check_download_retry()
         print("diagram asset builder: deterministic and safety self-check passed")
     elif args.clean:
         clean_assets()

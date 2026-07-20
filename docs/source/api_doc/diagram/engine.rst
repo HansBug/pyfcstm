@@ -12,6 +12,12 @@ DiagramAssetError
 .. autoclass:: DiagramAssetError
 
 
+DiagramRenderError
+-----------------------------------------------------
+
+.. autoclass:: DiagramRenderError
+
+
 DiagramEngineMetadataError
 -----------------------------------------------------
 

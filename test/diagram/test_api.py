@@ -206,3 +206,12 @@ def test_html_escapes_hostile_source_before_bootstrap_script():
     model = _model('state Root named "</script><script>bad";')
     html = model.diagram().to_html()
     assert "</script><script>bad" not in html
+
+
+def test_html_escapes_javascript_line_separators_before_bootstrap_script():
+    model = _model('state Root named "test\u2028line\u2029break";')
+    html = model.diagram().to_html()
+    assert "\u2028" not in html.split("</script>", 1)[0]
+    assert "\u2029" not in html.split("</script>", 1)[0]
+    assert "\\u2028" in html
+    assert "\\u2029" in html

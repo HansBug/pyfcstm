@@ -867,7 +867,13 @@ class Diagram:
         # Prevent embedded source text or labels from closing the bootstrap
         # script element while preserving the original characters after JSON
         # parsing in the browser.
-        state_json = state_json.replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
+        state_json = (
+            state_json.replace("<", "\\u003c")
+            .replace(">", "\\u003e")
+            .replace("&", "\\u0026")
+            .replace("\u2028", "\\u2028")
+            .replace("\u2029", "\\u2029")
+        )
         bootstrap = "window.__FCSTM_INITIAL_STATE__ = %s;" % state_json
         resvg_script = _embedded_resvg_script(self.options.cjk_locale)
         scripts = [bootstrap, resvg_script, viewer]

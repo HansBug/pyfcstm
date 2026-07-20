@@ -1,28 +1,31 @@
-Python Diagram 运行资源由 `make build_assets` 生成。
+Generated diagram assets are produced by ``make build_assets``.
 
-本目录中的生成文件由 Git 有意忽略。源码和许可证来源记录在
-`tools/diagram_assets/asset-lock.json` 以及生成的 `manifest.json` 中；禁止
-手工修改编译后的资源。
+Generated files under this directory are intentionally ignored by git.
+Source and license provenance is maintained in the tracked source lock and in
+the generated manifest; do not hand-edit compiled files under this directory.
 
-随包分发的第三方运行资源如下：
+Third-party runtime resources distributed in this directory:
 
-* `elkjs` 0.11.1，作者为 Ulf Ruegg 及贡献者，使用 Eclipse Public License
-  2.0。许可证正文见 `LICENSE-EPL-2.0.txt`。npm 归档地址、完整性信息和
-  安装树摘要记录在 `tools/diagram_assets/asset-lock.json` 和
-  `manifest.json` 中；源码见
-  `https://github.com/kieler/elkjs/tree/v0.11.1`。
-* `@resvg/resvg-wasm` 2.6.2，版权所有 2021 至今的 yisibl，使用 Mozilla
-  Public License 2.0。binding 从锁定的 npm 条目恢复；`index.min.js`、
-  `index_bg.wasm` 的摘要，以及 resvg-js 和 patched resvg 的来源提交、源码
-  归档和许可证摘要均记录在 `tools/diagram_assets/asset-lock.json` 中。
-* `JetBrains Mono` Regular、Medium、Bold，版权所有 2020 JetBrains Mono
-  Project Authors，使用 SIL Open Font License 1.1。许可证正文见
-  `LICENSE-OFL-1.1.txt`。
-* `Noto Sans SC`、`Noto Sans TC`、`Noto Sans HK`、`Noto Sans JP`、
-  `Noto Sans KR` 的 Regular 和 Bold，版权所有 2014 至 2025 Adobe (China)
-  Inc.、Noto Project Authors 及贡献者，使用 SIL Open Font License 1.1。
-  这些地区字体来自 Noto CJK Sans 2.004，按原始文件分发，许可证正文见
-  `LICENSE-OFL-1.1.txt`。
+* ``elkjs`` 0.11.1, Copyright Ulf Ruegg and contributors, under the Eclipse
+  Public License 2.0. See ``LICENSE-EPL-2.0.txt``. The exact package was
+  resolved from
+  ``https://registry.npmmirror.com/elkjs/-/elkjs-0.11.1.tgz`` with the
+  integrity and installed-tree digest recorded in
+  ``tools/diagram_assets/asset-lock.json`` and ``manifest.json``. Its source
+  is available at ``https://github.com/kieler/elkjs/tree/v0.11.1``.
+* ``@resvg/resvg-wasm`` 2.6.2, Copyright 2021-present yisibl, under the
+  Mozilla Public License 2.0. See ``LICENSE-MPL-2.0.txt``. The exact npm
+  package, binding and WASM hashes, upstream resvg-js source, and patched
+  resvg source are recorded in ``tools/diagram_assets/asset-lock.json``.
+* ``JetBrains Mono`` Regular, Medium, and Bold, Copyright 2020 The JetBrains
+  Mono Project Authors, under the SIL Open Font License 1.1. See
+  ``LICENSE-OFL-1.1.txt``.
+* ``Noto Sans SC``, ``Noto Sans TC``, ``Noto Sans HK``, ``Noto Sans JP``, and
+  ``Noto Sans KR`` Regular and Bold, Copyright 2014-2025 Adobe (China) Inc.,
+  The Noto Project Authors, and contributors, under the SIL Open Font License
+  1.1. See ``LICENSE-OFL-1.1.txt``. The locale-specific OTF files are
+  distributed unmodified from the Noto CJK Sans2.004 release.
 
-渲染器 bundle 由锁定版本的 esbuild 从受控 jsfcstm 源码构建。生成的
-`manifest.json` 记录资源摘要、来源锁和构建信息。
+The renderer bundle itself is built from the tracked jsfcstm sources with the
+locked esbuild version. ``manifest.json`` records the generated file hashes,
+source lock, and build metadata.

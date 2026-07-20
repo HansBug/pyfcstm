@@ -148,6 +148,27 @@ def test_bmc_cli_compile_preserves_query_source_path(bmc_files) -> None:
     )
 
 
+def test_entry_witness_decoder_wrapper_uses_real_public_decoder(bmc_files) -> None:
+    """The lazy witness wrapper decodes a real SAT model without substitution."""
+    import pyfcstm.entry.bmc as bmc_entry
+
+    model_path, query = bmc_files
+    query_path = query('check reach <= 1: active("Root");')
+    model = bmc_entry._load_model(str(model_path))
+    formula = bmc_entry._compile_query(
+        model,
+        query_path.read_text(encoding="utf-8"),
+        max_bound=None,
+        query_source_path=str(query_path),
+    )
+    result = bmc_entry._solve_bmc_property(formula)
+
+    assert result.status == "sat"
+    trace = bmc_entry._decode_bmc_witness(formula, result.model)
+    assert trace.frames
+    assert trace.steps
+
+
 def test_build_bmc_output_public_helper_returns_json_report(bmc_files) -> None:
     """The public entry helper runs the real file-based BMC pipeline."""
     from pyfcstm.entry.bmc import build_bmc_output
@@ -1688,3 +1709,13 @@ check reach <= 1: active("Root.Done");
     diagnostics = bmc_entry._human_diagnostics(execution)
     assert "Horizon reason: incomplete" in diagnostics
     assert "Diagnostic: custom_diagnostic=1" in diagnostics
+
+
+def test_bmc_human_color_rejects_unknown_severity() -> None:
+    """The human formatter rejects severities outside the CLI color contract."""
+    import pyfcstm.entry.bmc as bmc_entry
+
+    with pytest.raises(
+        bmc_entry._BmcCliInternalError, match="Unsupported human report severity"
+    ):
+        bmc_entry._colorize_human_report("BMC report\n", "purple")

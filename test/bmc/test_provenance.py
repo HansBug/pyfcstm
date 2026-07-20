@@ -428,6 +428,42 @@ state Root {
     assert registry.excerpt(registry.model_reference(effect)) == "x = x + 1;"
 
 
+def test_public_model_loading_preserves_event_scope_origins() -> None:
+    """Public model loading keeps local, chain, and absolute event origins."""
+    model = load_state_machine_from_text(
+        dedent(
+            """
+            state Root {
+                event Global;
+                state System {
+                    event Parent;
+                    state A {
+                        event Local;
+                    }
+                    state B;
+                    [*] -> A;
+                    A -> B :: Local;
+                    A -> B : Parent;
+                    A -> B : /Global;
+                }
+                [*] -> System;
+            }
+            """
+        )
+    )
+
+    system = model.root_state.substates["System"]
+    transitions = {
+        transition.event.name: transition
+        for transition in system.transitions
+        if transition.event is not None
+    }
+
+    assert transitions["Local"].event_scope == "local"
+    assert transitions["Parent"].event_scope == "chain"
+    assert transitions["Global"].event_scope == "absolute"
+
+
 def test_initializer_definedness_provenance_uses_definition_source(
     tmp_path: Path,
 ) -> None:

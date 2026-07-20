@@ -148,6 +148,29 @@ def test_bmc_cli_compile_preserves_query_source_path(bmc_files) -> None:
     )
 
 
+def test_build_bmc_output_public_helper_returns_json_report(bmc_files) -> None:
+    """The public entry helper runs the real file-based BMC pipeline."""
+    from pyfcstm.entry.bmc import build_bmc_output
+
+    model_path, query = bmc_files
+    query_path = query('check reach <= 1: active("Root");')
+
+    output, exit_code = build_bmc_output(
+        str(model_path),
+        str(query_path),
+        json_output=True,
+    )
+
+    payload = json.loads(output)
+    assert exit_code == 0
+    assert payload["input"]["model_path"] == str(model_path)
+    assert payload["input"]["query_path"] == str(query_path)
+    assert payload["result"]["outcome"] == "witness_found"
+    assert payload["witness"] is not None
+    assert payload["replay"]["ok"] is True
+    assert output.endswith("\n")
+
+
 def _stderr_text(result) -> str:
     """Return stderr across Click versions with and without split capture."""
     try:

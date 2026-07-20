@@ -153,6 +153,8 @@ def test_source_line_map_preserves_multiple_items_on_one_line():
     line_value = state["sourceLineMap"]["0"]
     assert isinstance(line_value, list)
     assert len(line_value) >= 3
+    assert all(item in state["sourceMap"] for item in line_value)
+    assert {state["sourceMap"][item]["kind"] for item in line_value} >= {"state", "transition"}
     assert "pyfcstm:0" not in state["sourceLineMap"]
 
 

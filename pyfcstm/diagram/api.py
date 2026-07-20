@@ -360,9 +360,12 @@ def _source_document_id(machine: StateMachine, source_path: Optional[str]) -> st
             return relative.replace(os.sep, "/")
         except (OSError, ValueError):
             # OSError/ValueError: source paths can be on different drives or
-            # become unavailable after a model is loaded. The basename is a
-            # readable last resort for a path that cannot be relativized.
-            pass
+            # become unavailable after a model is loaded. A path digest keeps
+            # those documents distinct without embedding the absolute path.
+            normalized = os.path.normcase(os.path.abspath(str(source_path)))
+            digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:12]
+            basename = Path(source_path).name or "document.fcstm"
+            return "external/%s/%s" % (digest, basename)
     return Path(source_path).name or "main.fcstm"
 
 

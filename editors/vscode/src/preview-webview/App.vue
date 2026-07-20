@@ -637,15 +637,15 @@ body {
     .fcstm-main-view--compare .fcstm-diagram-view { min-height: 160px; }
 }
 
-/* At compact browser heights the fixed chrome can leave less than 160px for
-   the two comparison panes. Let the panes shrink to the available flex track
-   and keep their own source/diagram content scrollable instead of extending
-   the page below the viewport. */
+/* Short browser windows must scroll the page rather than compressing both
+   comparison panes into unusable strips below the fixed toolbar. */
 @media (max-height: 700px) {
-    .fcstm-main-view { min-height: 0; }
+    html, body, #app { height: auto; min-height: 100%; overflow: auto; }
+    .fcstm-preview-shell { min-height: 720px; height: auto; }
+    .fcstm-main-view { flex: 0 0 280px; min-height: 280px; }
     .fcstm-stage,
     .fcstm-main-view--compare .fcstm-source-panel,
-    .fcstm-main-view--compare .fcstm-diagram-view { min-height: 0; }
+    .fcstm-main-view--compare .fcstm-diagram-view { min-height: 200px; }
     .fcstm-main-view--compare { overflow: hidden; }
 }
 
@@ -654,6 +654,15 @@ body {
     .fcstm-main-view--compare .fcstm-source-panel,
     .fcstm-main-view--compare .fcstm-diagram-view,
     .fcstm-main-view--compare .fcstm-stage { min-height: 0; }
+}
+
+@media (max-width: 760px) and (max-height: 700px) {
+    .fcstm-preview-shell { min-height: 920px; }
+    .fcstm-main-view { flex: 0 0 420px; min-height: 420px; }
+    .fcstm-main-view--compare { overflow: visible; }
+    .fcstm-main-view--compare .fcstm-source-panel,
+    .fcstm-main-view--compare .fcstm-diagram-view,
+    .fcstm-main-view--compare .fcstm-stage { min-height: 200px; }
 }
 
 /* Bottom drawer: bounded-height container holding DetailsPanel. The

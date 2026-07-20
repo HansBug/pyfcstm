@@ -58,6 +58,15 @@ let lastLaidOut: PreviewElkNode | null = null;
 let lastLaidOutOptions: PreviewPayload['options'] | null = null;
 let lastLaidOutSourceRef: unknown = null;
 
+function expectedErrorMessage(error: unknown): string {
+    // Error: ELK/layout, SVG export, and Clipboard APIs report ordinary
+    // JavaScript failures. DOMException: browser DOMParser and clipboard
+    // implementations use this class for their documented failure modes.
+    if (error instanceof Error) return error.message;
+    if (typeof DOMException !== 'undefined' && error instanceof DOMException) return error.message;
+    throw error;
+}
+
 function setTransform(tx: number, ty: number, scale: number) {
     const next = Math.max(0.1, Math.min(8, scale));
     viewTransform.tx = tx;
@@ -179,9 +188,12 @@ async function relayout() {
             fitToView();
         }
     } catch (err) {
+        // Error/DOMException are the expected failures from ELK and SVG DOM
+        // operations; unexpected thrown values must remain visible to the host.
+        const message = expectedErrorMessage(err);
         isEmpty.value = true;
         emptyTitle.value = 'Layout failed';
-        emptyMessage.value = (err as Error)?.message || String(err);
+        emptyMessage.value = message;
     }
 }
 
@@ -503,9 +515,11 @@ async function onExportEvt() {
             payload: {svg: svgString, pngBase64, pdfBase64},
         }}));
     } catch (err) {
+        // Error/DOMException are the expected failures from canvas, DOMParser,
+        // svg2pdf.js, or the browser's WebAssembly export path.
         window.dispatchEvent(new CustomEvent('fcstm-emit', {detail: {
             type: 'exportError',
-            payload: (err as Error)?.message || String(err),
+            payload: expectedErrorMessage(err),
         }}));
     }
 }
@@ -562,7 +576,8 @@ async function copySvgToClipboard() {
         }
         throw new Error('clipboard API not available');
     } catch (err) {
-        notifyCopy('svg', (err as Error)?.message || String(err));
+        // Error/DOMException are the expected failures from the clipboard API.
+        notifyCopy('svg', expectedErrorMessage(err));
     }
 }
 
@@ -582,7 +597,9 @@ async function copyPngToClipboard() {
         }
         throw new Error('ClipboardItem not available');
     } catch (err) {
-        notifyCopy('png', (err as Error)?.message || String(err));
+        // Error/DOMException are the expected failures from canvas and the
+        // clipboard API; unknown values are re-raised by the helper.
+        notifyCopy('png', expectedErrorMessage(err));
     }
 }
 

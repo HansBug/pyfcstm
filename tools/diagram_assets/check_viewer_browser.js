@@ -165,6 +165,33 @@ async function evaluate(cdp, expression) {
       line?.dispatchEvent(new MouseEvent('click', {bubbles: true, button: 0}));
       setTimeout(() => resolve({selected: document.querySelectorAll('.fcstm-selected').length}), 220);
     }, 220))`);
+    const sourceCycle = await evaluate(cdp, `(async () => {
+      const entries = Object.entries(window.__FCSTM_INITIAL_STATE__?.sourceLineMap || {})
+        .filter(([, value]) => Array.isArray(value) && value.length > 1);
+      if (!entries.length) {
+        return {candidateCount: 0, selectedIds: [], uniqueSelectedIds: 0};
+      }
+      const [key, value] = entries[0];
+      const documentId = key.includes(':') ? key.slice(0, key.lastIndexOf(':')) : '';
+      const lineNumber = key.includes(':') ? key.slice(key.lastIndexOf(':') + 1) : key;
+      if (documentId) {
+        const select = document.querySelector('.fcstm-source-panel__header select');
+        if (select && select.value !== documentId) {
+          select.value = documentId;
+          select.dispatchEvent(new Event('change', {bubbles: true}));
+          await new Promise(done => setTimeout(done, 80));
+        }
+      }
+      const line = document.querySelector('.fcstm-source-line[data-line="' + lineNumber + '"]');
+      const selectedIds = [];
+      for (let index = 0; index < value.length; index += 1) {
+        line?.dispatchEvent(new MouseEvent('click', {bubbles: true, button: 0}));
+        await new Promise(done => setTimeout(done, 120));
+        const selected = document.querySelector('[data-fcstm-id].fcstm-selected');
+        selectedIds.push(selected?.getAttribute('data-fcstm-id') || '');
+      }
+      return {candidateCount: value.length, selectedIds, uniqueSelectedIds: new Set(selectedIds.filter(Boolean)).size};
+    })()`);
     const pdf = await evaluate(cdp, `new Promise(resolve => setTimeout(() => {
       window.dispatchEvent(new CustomEvent('fcstm-export'));
       setTimeout(() => {
@@ -247,9 +274,14 @@ async function evaluate(cdp, expression) {
       : event.params.args?.map(arg => arg.value || arg.description || '').join(' '));
     const verticalOverflow = layout.main && layout.mainScrollHeight > layout.mainClientHeight + 1;
     const horizontalOverflow = layout.mainScrollWidth > layout.mainClientWidth + 1;
+    const minimumPanelHeight = viewportHeight <= 700 ? 160 : 200;
+    const comparisonSourceHeight = layout.source?.height || 0;
+    const comparisonStageHeight = layout.stage?.height || 0;
+    const comparisonTooShort = Boolean(compare.source && compare.stage &&
+      (comparisonSourceHeight < minimumPanelHeight || comparisonStageHeight < minimumPanelHeight));
     const oversizedUiIcons = (layout.svgRects || []).filter(item => /n-(?:base-icon|icon|checkbox-icon)/.test(item.className))
       .some(item => item.rect.width > 64 || item.rect.height > 64);
-    const report = {initial, diagramOnly: states, fcstmOnly, compare, backToCompare, importedSource, selection, revealSource, hover, sourceHover, sourceSelection, zoom, pdf, collapse, layout, oversizedUiIcons, externalRequests: network, consoleErrors: consoleErrors.length, consoleDetails};
+    const report = {initial, diagramOnly: states, fcstmOnly, compare, backToCompare, importedSource, selection, revealSource, hover, sourceHover, sourceSelection, sourceCycle, zoom, pdf, collapse, layout, minimumPanelHeight, comparisonTooShort, oversizedUiIcons, externalRequests: network, consoleErrors: consoleErrors.length, consoleDetails};
     console.log(JSON.stringify(report, null, 2));
     if (!initial.stage || initial.error || states.diagramOnlySource || !compare.source || !compare.stage ||
         fcstmOnly.source !== true || fcstmOnly.stage !== false || backToCompare.source !== true || backToCompare.stage !== true ||
@@ -257,7 +289,8 @@ async function evaluate(cdp, expression) {
         zoom.before === zoom.after || pdf.menu !== true || pdf.header !== '%PDF-' || pdf.bytes < 100 || pdf.images !== 0 || pdf.pages !== 1 ||
         pdf.pngHeader !== '89504e470d0a1a0a' || pdf.pngBytes < 100 || pdf.pngWidth < 1 || pdf.pngHeight < 1 ||
         pdf.pngDecodedWidth !== pdf.pngWidth || pdf.pngDecodedHeight !== pdf.pngHeight || pdf.pngNonBlankPixels < 10 ||
-        (collapse.before > 1 && collapse.after >= collapse.before) || verticalOverflow || horizontalOverflow || oversizedUiIcons || network.length || consoleErrors.length ||
+        (sourceCycle.candidateCount > 1 && sourceCycle.uniqueSelectedIds < sourceCycle.candidateCount) ||
+        (collapse.before > 1 && collapse.after >= collapse.before) || verticalOverflow || horizontalOverflow || comparisonTooShort || oversizedUiIcons || network.length || consoleErrors.length ||
         (importedSource.documents.length > 1 && (!importedSource.childText || importedSource.selected < 1))) process.exitCode = 1;
   } finally {
     chrome.kill('SIGTERM');

@@ -128,7 +128,7 @@ def _svg_parse(svg: str) -> ET.Element:
     """Parse SVG XML and require the SVG root element."""
     if not isinstance(svg, str):
         raise DiagramAssetError("SVG output requires UTF-8 text")
-    if any(token in svg for token in ("<!DOCTYPE", "<!ENTITY", "<![")):
+    if any(token in svg for token in ("<!DOCTYPE", "<!ENTITY")):
         raise DiagramAssetError("SVG output contains a DTD or entity declaration")
     try:
         root = ET.fromstring(svg)

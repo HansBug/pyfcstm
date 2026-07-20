@@ -226,6 +226,15 @@ def test_raw_svg_rejects_dtd_and_entity_declarations():
         engine.expand_svg(raw_svg)
 
 
+def test_raw_svg_accepts_cdata_text():
+    engine = DiagramAssetEngine()
+    raw_svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20">'
+        "<text x=\"1\" y=\"15\"><![CDATA[A & B]]></text></svg>"
+    )
+    assert engine.expand_svg(raw_svg).startswith("<svg")
+
+
 def test_renderer_request_errors_are_bounded_and_actionable():
     import copy
 

@@ -770,6 +770,19 @@ def test_query_group_excerpt_uses_exact_fbmcq_span() -> None:
     )
 
 
+def test_public_query_parser_keeps_same_line_spans_non_empty() -> None:
+    """Normal query parsing preserves non-empty half-open source spans."""
+    query = parse_bmc_query(
+        'init state("Root") where true;\ncheck reach <= 1: active("Root");',
+        source_path="query.fbmcq",
+    )
+
+    assert query._source_spans
+    for _, span in query._source_spans:
+        if span.line == span.end_line:
+            assert span.end_column > span.column
+
+
 def test_fcstm_and_fbmcq_document_namespaces_are_isolated(tmp_path: Path) -> None:
     """A colliding display path must not cross-contaminate excerpts."""
     machine_path = tmp_path / "machine.fcstm"

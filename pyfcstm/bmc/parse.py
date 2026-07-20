@@ -242,8 +242,10 @@ def _context_span(context: ParserRuleContext) -> Span:
     stop = context.stop if context.stop is not None else start
     end_column = stop.column + len(stop.text or "") + 1
     column = start.column + 1
-    if stop.line == start.line and end_column <= column:
-        end_column = column + 1
+    if stop.line == start.line:
+        # Keep every same-line span non-empty, including parser recovery
+        # tokens whose text is absent from the input stream.
+        end_column = max(end_column, column + 1)
     return Span(
         line=start.line,
         column=column,

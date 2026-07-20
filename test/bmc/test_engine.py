@@ -206,6 +206,7 @@ def test_engine_rejects_invalid_query_source_path(
         BmcEngine(engine_model).prepare(query, query_source_path=query_source_path)
 
 
+@pytest.mark.unittest
 def test_prepared_context_rejects_invalid_query_source_path(
     engine_model: StateMachine,
 ) -> None:

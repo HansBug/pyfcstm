@@ -185,11 +185,19 @@ async function evaluate(cdp, expression) {
       }
       const line = document.querySelector('.fcstm-source-line[data-line="' + lineNumber + '"]');
       const selectedIds = [];
+      const waitForNextSelection = async previous => {
+        const deadline = Date.now() + 1500;
+        while (Date.now() < deadline) {
+          const selected = document.querySelector('[data-fcstm-id].fcstm-selected');
+          const id = selected?.getAttribute('data-fcstm-id') || '';
+          if (id && id !== previous) return id;
+          await new Promise(done => setTimeout(done, 20));
+        }
+        return '';
+      };
       for (let index = 0; index < value.length; index += 1) {
         line?.dispatchEvent(new MouseEvent('click', {bubbles: true, button: 0}));
-        await new Promise(done => setTimeout(done, 120));
-        const selected = document.querySelector('[data-fcstm-id].fcstm-selected');
-        selectedIds.push(selected?.getAttribute('data-fcstm-id') || '');
+        selectedIds.push(await waitForNextSelection(selectedIds[selectedIds.length - 1] || ''));
       }
       return {candidateCount: value.length, selectedIds, uniqueSelectedIds: new Set(selectedIds.filter(Boolean)).size};
     })()`);
@@ -276,7 +284,7 @@ async function evaluate(cdp, expression) {
       : event.params.args?.map(arg => arg.value || arg.description || '').join(' '));
     const verticalOverflow = layout.main && layout.mainScrollHeight > layout.mainClientHeight + 1;
     const horizontalOverflow = layout.mainScrollWidth > layout.mainClientWidth + 1;
-    const minimumPanelHeight = viewportHeight <= 700 ? 160 : 200;
+    const minimumPanelHeight = viewportHeight <= 700 ? 200 : 160;
     const comparisonSourceHeight = layout.source?.height || 0;
     const comparisonStageHeight = layout.stage?.height || 0;
     const comparisonTooShort = Boolean(compare.source && compare.stage &&

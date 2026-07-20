@@ -650,10 +650,10 @@ body {
 }
 
 @media (max-width: 760px) {
-    .fcstm-main-view { min-height: 0; }
+    .fcstm-main-view { min-height: 160px; }
     .fcstm-main-view--compare .fcstm-source-panel,
     .fcstm-main-view--compare .fcstm-diagram-view,
-    .fcstm-main-view--compare .fcstm-stage { min-height: 0; }
+    .fcstm-main-view--compare .fcstm-stage { min-height: 160px; }
 }
 
 @media (max-width: 760px) and (max-height: 700px) {

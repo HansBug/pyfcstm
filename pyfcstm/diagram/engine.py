@@ -5,9 +5,8 @@ The module owns the diagram asset boundary:
 
 * :class:`DiagramAssetEngine` loads the generated ES2017 renderer and official
   resvg WebAssembly package, then exposes internal SVG/PNG operations.
-* Basic SVG and PNG envelope checks keep package-owned renderer output bounded
-  before it reaches the rasterizer or leaves the process.  Strict visual
-  dialect and pixel checks live in the repository maintenance gates.
+* Basic SVG and PNG envelope checks reject malformed renderer output.  Strict
+  visual dialect and pixel checks live in the repository maintenance gates.
 * Runtime selection, resource recovery guidance, CJK font registration, and
   timeout/context lifecycle handling are kept in one Python boundary.
 
@@ -60,22 +59,6 @@ class DiagramRenderError(DiagramAssetError):
         Traceback (most recent call last):
         ...
         DiagramRenderError: SVG output envelope rejected
-    """
-
-
-class DiagramRenderLimitError(DiagramRenderError):
-    """
-    Report a render request that exceeds the bounded output contract.
-
-    The limit is checked before entering the WebAssembly renderer whenever
-    the canonical SVG exposes finite canvas dimensions.
-
-    Example::
-
-        >>> raise DiagramRenderLimitError("scale exceeds 4.0")
-        Traceback (most recent call last):
-        ...
-        DiagramRenderLimitError: scale exceeds 4.0
     """
 
 
@@ -139,33 +122,17 @@ _CJK_LOCALE_PATTERN = re.compile(
 
 _ASSET_ISSUE_URL = "https://github.com/HansBug/pyfcstm/issues"
 _SVG_NS = "http://www.w3.org/2000/svg"
-_SVG_MAX_BYTES = 16 * 1024 * 1024
-_MAX_RENDER_SCALE = 4.0
-_MAX_RENDER_DIMENSION = 16_384
-_MAX_RENDER_PIXELS = 16_777_216
-_MAX_RENDER_RGBA_BYTES = 67_108_864
-_MAX_RENDER_PNG_BYTES = 33_554_432
-# Four base64 characters encode at most three PNG bytes.  Check this bound
-# before decoding so an oversized renderer response cannot allocate a large
-# decoded buffer before the PNG header and size guard rejects it.
-_MAX_RENDER_PNG_BASE64_BYTES = 4 * ((_MAX_RENDER_PNG_BYTES + 2) // 3)
+
 
 def _svg_parse(svg: str) -> ET.Element:
-    """Parse bounded SVG XML while rejecting external entity declarations."""
+    """Parse SVG XML and require the SVG root element."""
     if not isinstance(svg, str):
         raise DiagramAssetError("SVG output requires UTF-8 text")
-    if len(svg.encode("utf-8")) > _SVG_MAX_BYTES:
-        raise DiagramAssetError("SVG output exceeds the bounded byte limit")
-    # XML declarations and comments are valid SVG input.  DTD/entity syntax is
-    # rejected because it can introduce external-resource expansion.
-    if any(token in svg for token in ("<!DOCTYPE", "<!ENTITY", "<![")):
-        raise DiagramAssetError(
-            "SVG output contains a DTD or entity declaration"
-        )
     try:
         root = ET.fromstring(svg)
     except ET.ParseError as err:
-        # ParseError: malformed XML or an unsupported entity declaration.
+        # ParseError: malformed XML returned by the renderer or supplied as a
+        # compatibility SVG input.
         raise DiagramAssetError("SVG output is not well-formed: %s" % err) from err
     if root.tag != "{%s}svg" % _SVG_NS:
         raise DiagramAssetError("SVG output requires an SVG root element")
@@ -196,110 +163,13 @@ def _summarize_exception(error: BaseException, limit: int = 512) -> str:
 def _check_canonical_svg(svg: str) -> str:
     """Check the basic canonical SVG envelope."""
     _svg_parse(svg)
-    _svg_canvas_dimensions(svg)
     return svg
 
 
 def _check_expanded_svg(svg: str) -> str:
     """Check the basic SVG envelope returned by resvg."""
     _svg_parse(svg)
-    _svg_canvas_dimensions(svg)
     return svg
-
-
-_SVG_NUMBER_RE = re.compile(
-    r"^\s*[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?\s*(?:px)?\s*$"
-)
-
-
-def _svg_canvas_dimensions(svg: str) -> Tuple[float, float]:
-    """Return finite positive canonical SVG canvas dimensions."""
-    root = _svg_parse(svg)
-    view_box = root.attrib.get("viewBox")
-    if view_box is not None:
-        parts = [item for item in re.split(r"[\s,]+", view_box.strip()) if item]
-        if len(parts) != 4:
-            raise DiagramRenderLimitError(
-                "diagram render limit cannot determine the canonical SVG viewBox"
-            )
-        try:
-            width, height = float(parts[2]), float(parts[3])
-        except ValueError as err:
-            # ValueError: a shared renderer viewBox contains non-numeric text.
-            raise DiagramRenderLimitError(
-                "diagram render limit cannot determine the canonical SVG viewBox"
-            ) from err
-    else:
-        raw_width = root.attrib.get("width")
-        raw_height = root.attrib.get("height")
-        if (
-            raw_width is None
-            or raw_height is None
-            or not (
-                _SVG_NUMBER_RE.fullmatch(raw_width)
-                and _SVG_NUMBER_RE.fullmatch(raw_height)
-            )
-        ):
-            raise DiagramRenderLimitError(
-                "diagram render limit requires finite numeric SVG width and height"
-            )
-        width, height = float(raw_width.rstrip("px ")), float(raw_height.rstrip("px "))
-    if (
-        not math.isfinite(width)
-        or not math.isfinite(height)
-        or width <= 0
-        or height <= 0
-    ):
-        raise DiagramRenderLimitError(
-            "diagram render limit requires finite positive SVG dimensions"
-        )
-    return width, height
-
-
-def _checked_render_dimensions(svg: str, scale: float) -> Tuple[int, int]:
-    """Validate render limits and return the expected scaled pixel size."""
-    if scale > _MAX_RENDER_SCALE:
-        raise DiagramRenderLimitError(
-            "diagram render limit exceeded: scale %.6g > %.1f; reduce scale"
-            % (scale, _MAX_RENDER_SCALE)
-        )
-    width, height = _svg_canvas_dimensions(svg)
-    if width > _MAX_RENDER_DIMENSION or height > _MAX_RENDER_DIMENSION:
-        raise DiagramRenderLimitError(
-            "diagram render limit exceeded: source %.6gx%.6g exceeds %dpx "
-            "per dimension; reduce the model size"
-            % (width, height, _MAX_RENDER_DIMENSION)
-        )
-    source_pixels = width * height
-    if source_pixels > _MAX_RENDER_PIXELS:
-        raise DiagramRenderLimitError(
-            "diagram render limit exceeded: source %.6g pixels exceeds %d; "
-            "reduce the model size" % (source_pixels, _MAX_RENDER_PIXELS)
-        )
-    scaled_width = int(math.ceil(width * scale))
-    scaled_height = int(math.ceil(height * scale))
-    scaled_pixels = scaled_width * scaled_height
-    if (
-        scaled_width > _MAX_RENDER_DIMENSION
-        or scaled_height > _MAX_RENDER_DIMENSION
-        or scaled_pixels > _MAX_RENDER_PIXELS
-        or scaled_pixels * 4 > _MAX_RENDER_RGBA_BYTES
-    ):
-        raise DiagramRenderLimitError(
-            "diagram render limit exceeded: %.6gx%.6g at scale %.6g produces "
-            "%dx%d pixels; limits are %dpx per dimension and %d pixels; "
-            "reduce scale"
-            % (
-                width,
-                height,
-                scale,
-                scaled_width,
-                scaled_height,
-                _MAX_RENDER_DIMENSION,
-                _MAX_RENDER_PIXELS,
-            )
-        )
-    return scaled_width, scaled_height
 
 
 def _is_development_checkout() -> bool:
@@ -448,8 +318,7 @@ def _valid_opentype(data: bytes) -> bool:
             table_data[8:12] = b"\x00" * 4
         table_data.extend(b"\x00" * (-len(table_data) % 4))
         actual_checksum = (
-            sum(struct.unpack(">%dI" % (len(table_data) // 4), table_data))
-            & 0xFFFFFFFF
+            sum(struct.unpack(">%dI" % (len(table_data) // 4), table_data)) & 0xFFFFFFFF
         )
         if actual_checksum != expected_checksum:
             return False
@@ -470,11 +339,6 @@ def _png_dimensions(data: bytes) -> Tuple[int, int]:
     signature = b"\x89PNG\r\n\x1a\n"
     if not data.startswith(signature):
         raise ValueError("PNG output lacks the PNG signature")
-    if len(data) > _MAX_RENDER_PNG_BYTES:
-        raise DiagramRenderLimitError(
-            "diagram render limit exceeded: decoded PNG output is %d bytes; "
-            "maximum is %d bytes" % (len(data), _MAX_RENDER_PNG_BYTES)
-        )
     if len(data) < 33 or data[12:16] != b"IHDR":
         raise ValueError("PNG output has no IHDR header")
     header_length = struct.unpack(">I", data[8:12])[0]
@@ -497,24 +361,10 @@ def _png_dimensions(data: bytes) -> Tuple[int, int]:
         or interlace != 0
     ):
         raise ValueError("PNG output violates the RGBA8 size contract")
-    if (
-        width > _MAX_RENDER_DIMENSION
-        or height > _MAX_RENDER_DIMENSION
-        or width * height > _MAX_RENDER_PIXELS
-        or width * height * 4 > _MAX_RENDER_RGBA_BYTES
-    ):
-        raise DiagramRenderLimitError(
-            "diagram render limit exceeded: PNG dimensions are %dx%d"
-            % (width, height)
-        )
     # Require IEND to be the final zero-length PNG chunk.  A substring check
     # could accept a truncated stream whose compressed IDAT bytes contain the
     # four-byte text ``IEND`` by coincidence.
-    if (
-        len(data) < 45
-        or data[-12:-8] != b"\x00\x00\x00\x00"
-        or data[-8:-4] != b"IEND"
-    ):
+    if len(data) < 45 or data[-12:-8] != b"\x00\x00\x00\x00" or data[-8:-4] != b"IEND":
         raise ValueError("PNG output is missing IEND")
     return width, height
 
@@ -523,8 +373,9 @@ class DiagramAssetEngine:
     """
     Drive the shared ES2017 renderer and resvg bridge in MiniRacer.
 
-    :param timeout: Maximum seconds for one ELK/render polling operation,
-        which must be finite and positive, defaults to ``30.0``.
+    :param timeout: Optional maximum seconds for one ELK/render polling
+        operation. ``None`` leaves the operation uncapped, defaults to
+        ``None``.
     :type timeout: float, optional
     :param max_memory: Optional V8 heap limit in bytes applied to each
         JavaScript evaluation, defaults to ``None``.
@@ -538,10 +389,14 @@ class DiagramAssetEngine:
         True
     """
 
-    def __init__(self, timeout: float = 30.0, max_memory: Optional[int] = None) -> None:
-        numeric_timeout = float(timeout)
-        if not math.isfinite(numeric_timeout) or numeric_timeout <= 0:
-            raise ValueError("timeout must be a finite positive number")
+    def __init__(
+        self, timeout: Optional[float] = None, max_memory: Optional[int] = None
+    ) -> None:
+        numeric_timeout = None if timeout is None else float(timeout)
+        if numeric_timeout is not None and (
+            not math.isfinite(numeric_timeout) or numeric_timeout <= 0
+        ):
+            raise ValueError("timeout must be None or a finite positive number")
         if max_memory is not None:
             if isinstance(max_memory, bool) or not isinstance(max_memory, int):
                 raise ValueError("max_memory must be a finite positive integer or None")
@@ -675,24 +530,23 @@ class DiagramAssetEngine:
         :raises DiagramAssetError: If MiniRacer interrupts execution.
         """
         numeric_timeout = self.timeout if timeout is None else float(timeout)
-        if not math.isfinite(numeric_timeout) or numeric_timeout <= 0:
-            raise ValueError("timeout must be a finite positive number")
+        if numeric_timeout is not None and (
+            not math.isfinite(numeric_timeout) or numeric_timeout <= 0
+        ):
+            raise ValueError("timeout must be None or a finite positive number")
         self._ensure_context()
         try:
-            if self._timeout_uses_seconds:
-                return self._context.eval(
-                    source,
-                    timeout_sec=numeric_timeout,
-                    max_memory=self.max_memory,
-                )
-            # py-mini-racer 0.6 accepts milliseconds and does not understand
-            # the modern ``timeout_sec`` keyword.
-            timeout_ms = max(1, int(math.ceil(numeric_timeout * 1000.0)))
-            return self._context.eval(
-                source,
-                timeout=timeout_ms,
-                max_memory=self.max_memory,
-            )
+            kwargs = {}
+            if self.max_memory is not None:
+                kwargs["max_memory"] = self.max_memory
+            if numeric_timeout is not None:
+                if self._timeout_uses_seconds:
+                    kwargs["timeout_sec"] = numeric_timeout
+                else:
+                    # py-mini-racer 0.6 accepts milliseconds and does not
+                    # understand the modern ``timeout_sec`` keyword.
+                    kwargs["timeout"] = max(1, int(math.ceil(numeric_timeout * 1000.0)))
+            return self._context.eval(source, **kwargs)
         except Exception as err:
             # JSTimeoutException/JSOOMException are the only expected native
             # interruption failures; every other exception must propagate.
@@ -827,7 +681,7 @@ class DiagramAssetEngine:
             True
         """
         request_id = "pyfcstm-%d" % time.monotonic_ns()
-        deadline = time.monotonic() + self.timeout
+        deadline = None if self.timeout is None else time.monotonic() + self.timeout
         try:
             serialized_request = json.dumps(request, ensure_ascii=False)
         except (TypeError, ValueError) as err:
@@ -844,8 +698,10 @@ class DiagramAssetEngine:
             timeout=self.timeout,
             request=True,
         )
-        while time.monotonic() < deadline:
-            remaining = max(0.001, deadline - time.monotonic())
+        while deadline is None or time.monotonic() < deadline:
+            remaining = (
+                None if deadline is None else max(0.001, deadline - time.monotonic())
+            )
             status = self._poll(request_id, timeout=remaining, request=True)
             if status.get("status") == "done":
                 self._eval_asset(
@@ -913,14 +769,16 @@ class DiagramAssetEngine:
             self._discard_context()
         wasm_bytes = _asset_bytes("resvg.wasm")
         wasm = base64.b64encode(wasm_bytes).decode("ascii")
-        deadline = time.monotonic() + self.timeout
+        deadline = None if self.timeout is None else time.monotonic() + self.timeout
         if not self._resvg_ready:
             self._eval_asset(
                 "resvg.wasm",
                 "__pyfcstm_resvg_init(%s)" % json.dumps(wasm),
             )
-        while time.monotonic() < deadline:
-            remaining = max(0.001, deadline - time.monotonic())
+        while deadline is None or time.monotonic() < deadline:
+            remaining = (
+                None if deadline is None else max(0.001, deadline - time.monotonic())
+            )
             status = (
                 "ok"
                 if self._resvg_ready
@@ -984,8 +842,6 @@ class DiagramAssetEngine:
         :return: PNG bytes.
         :rtype: bytes
         :raises ValueError: If ``scale`` is not finite and positive.
-        :raises DiagramRenderLimitError: If scale or the checked output size
-            exceeds the bounded PNG contract.
         :raises DiagramAssetError: If resvg reports a rendering failure.
 
         Example::
@@ -1006,7 +862,6 @@ class DiagramAssetEngine:
         if not math.isfinite(numeric_scale) or numeric_scale <= 0:
             raise ValueError("scale must be a finite positive number")
         svg = self._canonical_input(request)
-        expected_width, expected_height = _checked_render_dimensions(svg, numeric_scale)
         self._ensure_resvg(self._locale_from_svg(svg))
         encoded = self._eval_asset(
             "resvg.wasm",
@@ -1015,19 +870,6 @@ class DiagramAssetEngine:
             request=True,
         )
         encoded_text = str(encoded)
-        required_padding = (
-            "=" * (3 - (_MAX_RENDER_PNG_BYTES % 3)) if _MAX_RENDER_PNG_BYTES % 3 else ""
-        )
-        if len(encoded_text) > _MAX_RENDER_PNG_BASE64_BYTES or (
-            len(encoded_text) == _MAX_RENDER_PNG_BASE64_BYTES
-            and required_padding
-            and not encoded_text.endswith(required_padding)
-        ):
-            raise DiagramRenderLimitError(
-                "diagram render limit exceeded: base64 PNG output is %d bytes; "
-                "maximum encoded size is %d bytes"
-                % (len(encoded_text), _MAX_RENDER_PNG_BASE64_BYTES)
-            )
         try:
             result = base64.b64decode(encoded_text, validate=True)
         except (ValueError, binascii.Error) as err:
@@ -1036,15 +878,8 @@ class DiagramAssetEngine:
             raise _render_failure(
                 "resvg.wasm", "the renderer returned invalid PNG data", err
             ) from err
-        if len(result) > _MAX_RENDER_PNG_BYTES:
-            raise DiagramRenderLimitError(
-                "diagram render limit exceeded: decoded PNG output is %d bytes; "
-                "maximum is %d bytes" % (len(result), _MAX_RENDER_PNG_BYTES)
-            )
         try:
-            width, height = _png_dimensions(result)
-        except DiagramRenderLimitError:
-            raise
+            _png_dimensions(result)
         except (TypeError, ValueError, struct.error, OverflowError) as err:
             # TypeError/ValueError: the WASM bridge returned malformed PNG
             # data; struct.error/OverflowError: the fixed IHDR is truncated
@@ -1052,12 +887,6 @@ class DiagramAssetEngine:
             raise _render_failure(
                 "resvg.wasm", "the renderer returned invalid PNG data", err
             ) from err
-        if (width, height) != (expected_width, expected_height):
-            raise _render_failure(
-                "resvg.wasm",
-                "the renderer returned PNG dimensions %dx%d instead of %dx%d"
-                % (width, height, expected_width, expected_height),
-            )
         return result
 
     def expand_svg(self, request: Union[str, Dict[str, Any]]) -> str:

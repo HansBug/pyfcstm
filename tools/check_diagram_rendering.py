@@ -25,12 +25,14 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from pyfcstm.diagram import DiagramAssetEngine  # noqa: E402
-from pyfcstm.diagram.engine import (  # noqa: E402
-    _MAX_RENDER_DIMENSION,
-    _MAX_RENDER_PIXELS,
-    _MAX_RENDER_PNG_BYTES,
-    _MAX_RENDER_RGBA_BYTES,
-)
+
+# These limits belong to this strict maintenance oracle only.  They keep the
+# checked-in visual corpus bounded in CI without rejecting a user's legitimate
+# local render in the production engine.
+_MAINTENANCE_MAX_DIMENSION = 16_384
+_MAINTENANCE_MAX_PIXELS = 16_777_216
+_MAINTENANCE_MAX_RGBA_BYTES = 67_108_864
+_MAINTENANCE_MAX_PNG_BYTES = 33_554_432
 
 
 DEFAULT_CORPORA = (
@@ -53,8 +55,8 @@ PATH_RE = re.compile(r"([ML])\s*(-?[0-9]+(?:\.[0-9]+)?)\s*,\s*(-?[0-9]+(?:\.[0-9
 CLIP_ID_RE = re.compile(r'id="((?:clip-path|clipPath)[^"]+)"')
 
 # The strict SVG contract is intentionally maintenance-only.  Production
-# rendering performs bounded XML/canvas checks; this oracle catches renderer
-# drift, unsafe references, and accidental text/marker retention in CI.
+# rendering performs basic XML checks; this oracle catches renderer drift,
+# unsafe references, and accidental text/marker retention in CI.
 _STRICT_SVG_INPUT_ELEMENTS = {
     "svg", "defs", "marker", "filter", "feGaussianBlur", "feOffset",
     "feComponentTransfer", "feFuncA", "feFuncR", "feFuncG", "feFuncB",
@@ -457,7 +459,7 @@ def _png_ink_bbox(data: bytes) -> Tuple[int, int, Tuple[int, int, int, int]]:
     """
     if not data.startswith(b"\x89PNG\r\n\x1a\n"):
         raise ValueError("PNG output lacks the PNG signature")
-    if len(data) > _MAX_RENDER_PNG_BYTES:
+    if len(data) > _MAINTENANCE_MAX_PNG_BYTES:
         raise ValueError("PNG output exceeds the bounded byte limit")
     position = 8
     width = height = bit_depth = color_type = None
@@ -501,10 +503,10 @@ def _png_ink_bbox(data: bytes) -> Tuple[int, int, Tuple[int, int, int, int]]:
             if not width or not height:
                 raise ValueError("PNG output has non-positive dimensions")
             if (
-                width > _MAX_RENDER_DIMENSION
-                or height > _MAX_RENDER_DIMENSION
-                or width * height > _MAX_RENDER_PIXELS
-                or width * height * 4 > _MAX_RENDER_RGBA_BYTES
+                width > _MAINTENANCE_MAX_DIMENSION
+                or height > _MAINTENANCE_MAX_DIMENSION
+                or width * height > _MAINTENANCE_MAX_PIXELS
+                or width * height * 4 > _MAINTENANCE_MAX_RGBA_BYTES
             ):
                 raise ValueError("PNG output exceeds the bounded dimension limit")
             saw_ihdr = True
@@ -531,7 +533,7 @@ def _png_ink_bbox(data: bytes) -> Tuple[int, int, Tuple[int, int, int, int]]:
     except zlib.error as err:
         # zlib.error: IDAT payload is not a valid compressed scanline stream.
         raise ValueError("PNG output has invalid compressed scanlines") from err
-    if len(raw) > _MAX_RENDER_RGBA_BYTES:
+    if len(raw) > _MAINTENANCE_MAX_RGBA_BYTES:
         raise ValueError("PNG output has oversized decoded scanlines")
     stride = width * 4
     if len(raw) != (stride + 1) * height:

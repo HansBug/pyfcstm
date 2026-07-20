@@ -16,7 +16,6 @@ from pyfcstm.diagram import (
     DiagramEngineConflictError,
     DiagramEngineMetadataError,
     DiagramRenderError,
-    DiagramRenderLimitError,
 )
 
 
@@ -247,7 +246,7 @@ def test_expanded_svg_rejects_malformed_output(monkeypatch):
         engine,
         "_eval_asset",
         lambda *_args, **_kwargs: (
-            '<svg xmlns="http://www.w3.org/2000/svg"><text>x</text></svg>'
+            '<svg xmlns="http://www.w3.org/2000/svg"><text>x</svg>'
         ),
     )
     monkeypatch.setattr(
@@ -810,27 +809,41 @@ def test_render_png_rejects_non_finite_scale():
             engine.render_png(svg, scale=scale)
 
 
-def test_render_png_rejects_scale_and_canvas_limits_before_wasm():
+def test_render_png_does_not_apply_python_scale_or_canvas_caps(monkeypatch):
+    """Large caller-selected outputs reach the renderer bridge unchanged."""
     engine = DiagramAssetEngine()
-    with pytest.raises(DiagramRenderLimitError, match=r"scale .* > 4"):
-        engine.render_png(
-            _canonical_svg(
-                '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>'
-            ),
-            scale=4.0001,
+
+    def chunk(kind, payload):
+        checksum = zlib.crc32(kind + payload) & 0xFFFFFFFF
+        return (
+            struct.pack(">I", len(payload))
+            + kind
+            + payload
+            + struct.pack(">I", checksum)
         )
-    with pytest.raises(DiagramRenderLimitError, match="per dimension"):
-        engine.render_png(
-            _canonical_svg(
-                '<svg xmlns="http://www.w3.org/2000/svg" width="16385" height="1"/>'
-            )
-        )
-    with pytest.raises(DiagramRenderLimitError, match="pixels"):
-        engine.render_png(
-            _canonical_svg(
-                '<svg xmlns="http://www.w3.org/2000/svg" width="4097" height="4097"/>'
-            )
-        )
+
+    tiny_png = (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 6, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(b"\x00\x00\x00\x00\xff"))
+        + chunk(b"IEND", b"")
+    )
+    calls = []
+    monkeypatch.setattr(engine, "_ensure_resvg", lambda _locale: None)
+    monkeypatch.setattr(
+        engine,
+        "_eval_asset",
+        lambda _name, source, **_kwargs: (
+            calls.append(source) or base64.b64encode(tiny_png).decode("ascii")
+        ),
+    )
+    svg = _canonical_svg(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="1000000000" '
+        'height="1000000000"/>'
+    )
+    result = engine.render_png(svg, scale=100.0)
+    assert result == tiny_png
+    assert "100.0" in calls[0]
 
 
 def test_render_png_rejects_malformed_png_payload(monkeypatch):
@@ -884,86 +897,10 @@ def test_render_png_requires_a_real_final_iend_chunk(monkeypatch):
         )
 
 
-def test_render_png_rejects_oversized_encoded_payload_before_decoding(monkeypatch):
-    import importlib
-
-    engine_module = importlib.import_module("pyfcstm.diagram.engine")
-    engine = DiagramAssetEngine()
-    monkeypatch.setattr(engine, "_ensure_resvg", lambda _locale: None)
-    encoded = "A" * (engine_module._MAX_RENDER_PNG_BASE64_BYTES + 1)
-    monkeypatch.setattr(
-        engine,
-        "_eval_asset",
-        lambda *_args, **_kwargs: encoded,
-    )
-    decode_called = False
-
-    def forbidden_decode(*_args, **_kwargs):
-        nonlocal decode_called
-        decode_called = True
-        raise AssertionError("oversized PNG was decoded before the size guard")
-
-    monkeypatch.setattr(engine_module.base64, "b64decode", forbidden_decode)
-    canonical = _canonical_svg(
-        '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1">'
-        '<rect width="1" height="1" fill="black"/></svg>'
-    )
-    with pytest.raises(DiagramRenderLimitError, match="base64 PNG output"):
-        engine.render_png(canonical)
-    assert not decode_called
-
-
-def test_render_png_rejects_unpadded_encoded_limit_boundary(monkeypatch):
-    import importlib
-
-    engine_module = importlib.import_module("pyfcstm.diagram.engine")
-    engine = DiagramAssetEngine()
-    monkeypatch.setattr(engine, "_ensure_resvg", lambda _locale: None)
-    monkeypatch.setattr(engine_module, "_MAX_RENDER_PNG_BYTES", 1)
-    monkeypatch.setattr(engine_module, "_MAX_RENDER_PNG_BASE64_BYTES", 4)
-    monkeypatch.setattr(engine, "_eval_asset", lambda *_args, **_kwargs: "AAAA")
-    decode_called = False
-
-    def forbidden_decode(*_args, **_kwargs):
-        nonlocal decode_called
-        decode_called = True
-        raise AssertionError("ambiguous base64 boundary was decoded")
-
-    monkeypatch.setattr(engine_module.base64, "b64decode", forbidden_decode)
-    canonical = _canonical_svg(
-        '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1">'
-        '<rect width="1" height="1" fill="black"/></svg>'
-    )
-    with pytest.raises(DiagramRenderLimitError, match="base64 PNG output"):
-        engine.render_png(canonical)
-    assert not decode_called
-
-
-def test_render_png_classifies_decoded_output_limit(monkeypatch):
-    import importlib
-
-    engine_module = importlib.import_module("pyfcstm.diagram.engine")
-    engine = DiagramAssetEngine()
-    monkeypatch.setattr(engine, "_ensure_resvg", lambda _locale: None)
-    monkeypatch.setattr(engine_module, "_MAX_RENDER_PNG_BYTES", 4)
-    monkeypatch.setattr(engine_module, "_MAX_RENDER_PNG_BASE64_BYTES", 8)
-    monkeypatch.setattr(engine, "_eval_asset", lambda *_args, **_kwargs: "AAAA")
-    monkeypatch.setattr(
-        engine_module.base64,
-        "b64decode",
-        lambda *_args, **_kwargs: b"12345",
-    )
-    canonical = _canonical_svg(
-        '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1">'
-        '<rect width="1" height="1" fill="black"/></svg>'
-    )
-    with pytest.raises(DiagramRenderLimitError, match="decoded PNG output"):
-        engine.render_png(canonical)
-
-
 def test_engine_rejects_non_finite_timeout():
+    assert DiagramAssetEngine(timeout=None).timeout is None
     for timeout in (float("nan"), float("inf"), float("-inf")):
-        with pytest.raises(ValueError, match="finite positive"):
+        with pytest.raises(ValueError, match="None or a finite positive"):
             DiagramAssetEngine(timeout=timeout)
 
 

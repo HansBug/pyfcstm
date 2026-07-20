@@ -9,13 +9,11 @@ The package roadmap is intentionally small and explicit:
    * - Surface
      - Responsibility
    * - :class:`DiagramAssetEngine`
-     - Load the bundled renderer and expose bounded SVG/PNG feasibility operations.
+     - Load the bundled renderer and expose SVG/PNG rendering operations.
    * - :class:`DiagramAssetError`
      - Report missing or unusable packaged resources with recovery guidance.
    * - :class:`DiagramRenderError`
      - Report invalid DiagramData or renderer output after startup.
-   * - :class:`DiagramRenderLimitError`
-     - Report a scale or bounded-output limit violation before rendering.
    * - :class:`DiagramEngineMetadataError`
      - Report unavailable MiniRacer distribution metadata.
    * - :class:`DiagramEngineConflictError`
@@ -39,7 +37,6 @@ from .engine import (
     DiagramEngineConflictError,
     DiagramEngineMetadataError,
     DiagramRenderError,
-    DiagramRenderLimitError,
 )
 
 __all__ = [
@@ -48,5 +45,4 @@ __all__ = [
     "DiagramEngineConflictError",
     "DiagramEngineMetadataError",
     "DiagramRenderError",
-    "DiagramRenderLimitError",
 ]

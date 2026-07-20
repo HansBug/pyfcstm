@@ -356,7 +356,15 @@ def _configure_stdio_encoding() -> None:
         if reconfigure is None:
             continue
         try:
-            reconfigure(encoding="utf-8", errors="replace")
+            is_pipe = not bool(getattr(stream, "isatty", lambda: False)())
+            original_encoding = getattr(stream, "encoding", None)
+            if os.name == "nt" and is_pipe and original_encoding:
+                # Windows subprocess callers may still decode text pipes with
+                # the legacy console code page. Keep those pipes lossless and
+                # ASCII-decodable while interactive terminals use UTF-8.
+                reconfigure(encoding=original_encoding, errors="backslashreplace")
+            else:
+                reconfigure(encoding="utf-8", errors="replace")
         except (AttributeError, ValueError):
             # AttributeError: a third-party stream exposed no reconfigure
             # implementation; ValueError: the stream was already closed.

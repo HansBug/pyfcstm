@@ -234,7 +234,10 @@ def ensure_viewer_dependencies() -> None:
     local_tarball = JSFCSTM_DIR / "jsfcstm.tgz"
     if not local_tarball.is_file() or not (JSFCSTM_DIR / "dist").is_dir():
         if not ANTLR_JAR_PATH.is_file():
-            subprocess.run(["make", "antlr"], cwd=str(ROOT), check=True)
+            # The JS parser build only needs the jar. The aggregate ``antlr``
+            # target also rewrites tracked Python requirement files, which
+            # would make release artifacts appear dirty on Windows.
+            subprocess.run(["make", "antlr-4.9.3.jar"], cwd=str(ROOT), check=True)
         subprocess.run([_node_command("npm"), "run", "build"], cwd=str(JSFCSTM_DIR), check=True)
         subprocess.run([_node_command("npm"), "run", "pack:local"], cwd=str(JSFCSTM_DIR), check=True)
     required = (

@@ -25,7 +25,7 @@ Examples::
     >>> from pyfcstm.bmc.provenance import BmcSourceRef, SourceDocumentRegistry
     >>> from pyfcstm.utils.validate import Span
     >>> registry = SourceDocumentRegistry({"machine.fcstm": "state Root;"})
-    >>> ref = BmcSourceRef("fcstm", "machine.fcstm", Span(1, 1, 1, 13))
+    >>> ref = BmcSourceRef("fcstm", "machine.fcstm", Span(1, 1, 1, 12))
     >>> registry.excerpt(ref)
     'state Root;'
 """
@@ -302,7 +302,12 @@ class SourceDocumentRegistry:
             >>> registry.reference("fcstm", "a.fcstm", None).path
             'a.fcstm'
         """
-        return BmcSourceRef(kind, self.display_path(path), span)
+        display_path = self.display_path(path)
+        if display_path is None:
+            return BmcSourceRef(kind, None, None)
+        if span is not None and self.document(path, kind=kind) is None:
+            return BmcSourceRef(kind, display_path, None)
+        return BmcSourceRef(kind, display_path, span)
 
     def excerpt(self, reference: BmcSourceRef) -> Optional[str]:
         """Return the exact source slice described by a reference.

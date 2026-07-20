@@ -49,19 +49,46 @@ def test_query_source_metadata_keeps_source_text_canonical_clean() -> None:
     }
 
 
-def test_programmatic_model_does_not_fabricate_source_path() -> None:
-    """Text-built models without a path retain stable generated metadata only."""
-    model = load_state_machine_from_text("state Root;")
+def test_pathless_source_references_drop_unresolvable_spans() -> None:
+    """Pathless FCSTM and FBMCQ metadata cannot retain misleading spans."""
+    model = load_state_machine_from_text("def int x = 3;\nstate Root;")
     context = BmcEngine(model).prepare(
-        'check reach <= 1: active("Root");', query_source_path=None
+        'assume at 0: true;\ncheck reach <= 1: active("Root");',
+        query_source_path=None,
     )
     core = build_bmc_core_formula(context)
 
-    refs = [group.source_ref for group in core._tracked_groups]
-    assert refs
-    assert all(
-        reference.path is None for reference in refs if reference.kind == "fcstm"
+    variable = next(
+        group
+        for group in core._tracked_groups
+        if group.stable_id == "initial.variable.x"
     )
+    assumption = next(
+        group
+        for group in core._tracked_groups
+        if group.stable_id == "assumption.0000.frame.0000"
+    )
+
+    assert variable.source_ref.kind == "fcstm"
+    assert variable.source_ref.path is None
+    assert variable.source_ref.span is None
+    assert context._source_registry.excerpt(variable.source_ref) is None
+    assert assumption.source_ref.kind == "fbmcq"
+    assert assumption.source_ref.path is None
+    assert assumption.source_ref.span is None
+    assert context._source_registry.excerpt(assumption.source_ref) is None
+    assert variable.stable_id == "initial.variable.x"
+    assert assumption.category == "assumption.frame"
+
+
+def test_source_reference_drops_span_without_document_snapshot() -> None:
+    """A path without a registered snapshot cannot support an exact span."""
+    registry = SourceDocumentRegistry({})
+    reference = registry.reference("fcstm", "missing.fcstm", Span(1, 1, 1, 8))
+
+    assert reference.path == "missing.fcstm"
+    assert reference.span is None
+    assert registry.excerpt(reference) is None
 
 
 def test_file_and_import_source_paths_are_not_collapsed(tmp_path: Path) -> None:

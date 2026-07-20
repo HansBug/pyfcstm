@@ -215,6 +215,17 @@ def test_resvg_operations_accept_raw_svg_bridge_inputs():
     assert engine.expand_svg(raw_svg).startswith("<svg")
 
 
+def test_raw_svg_rejects_dtd_and_entity_declarations():
+    engine = DiagramAssetEngine()
+    raw_svg = (
+        '<!DOCTYPE svg [<!ENTITY label "unsafe">]>'
+        '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1">'
+        "<text>&label;</text></svg>"
+    )
+    with pytest.raises(DiagramAssetError, match="DTD or entity"):
+        engine.expand_svg(raw_svg)
+
+
 def test_renderer_request_errors_are_bounded_and_actionable():
     import copy
 

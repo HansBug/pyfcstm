@@ -18,12 +18,6 @@ DiagramRenderError
 .. autoclass:: DiagramRenderError
 
 
-DiagramRenderLimitError
------------------------------------------------------
-
-.. autoclass:: DiagramRenderLimitError
-
-
 DiagramEngineMetadataError
 -----------------------------------------------------
 

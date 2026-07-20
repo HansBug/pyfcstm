@@ -128,6 +128,8 @@ def _svg_parse(svg: str) -> ET.Element:
     """Parse SVG XML and require the SVG root element."""
     if not isinstance(svg, str):
         raise DiagramAssetError("SVG output requires UTF-8 text")
+    if any(token in svg for token in ("<!DOCTYPE", "<!ENTITY", "<![")):
+        raise DiagramAssetError("SVG output contains a DTD or entity declaration")
     try:
         root = ET.fromstring(svg)
     except ET.ParseError as err:
@@ -822,7 +824,7 @@ class DiagramAssetEngine:
     def _canonical_input(self, request: Any) -> str:
         """Resolve DiagramData or compatibility SVG text for the bridge."""
         if isinstance(request, str):
-            return request
+            return _check_canonical_svg(request)
         if isinstance(request, dict):
             return self.render_svg(request)
         raise ValueError("render_png/expand_svg require DiagramData or SVG text")

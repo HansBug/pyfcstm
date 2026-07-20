@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import os
 from pathlib import Path
 from textwrap import dedent
 
@@ -159,7 +160,8 @@ def test_source_registry_handles_aliases_and_unknown_namespaces(tmp_path: Path) 
         {str(source_path): "state Root;"}, display_root=str(tmp_path)
     )
 
-    assert registry.document("nested/machine.fcstm") == "state Root;"
+    display_path = os.path.relpath(str(source_path), str(tmp_path))
+    assert registry.document(display_path) == "state Root;"
     assert registry.document(None) is None
     assert registry.document("nested/machine.fcstm", kind="unknown") is None
 

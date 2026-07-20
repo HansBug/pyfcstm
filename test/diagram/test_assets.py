@@ -267,6 +267,17 @@ def test_renderer_request_errors_are_bounded_and_actionable():
     assert "renderer-core" not in message
 
 
+def test_javascript_error_summary_omits_evaluated_source():
+    engine = DiagramAssetEngine()
+    with pytest.raises(DiagramAssetError) as captured:
+        engine._eval_asset(
+            "renderer.js", 'throw new Error("specific request failure")'
+        )
+    message = str(captured.value)
+    assert "specific request failure" in message
+    assert "throw new Error" not in message
+
+
 def test_renderer_output_is_svg_and_preserves_marker_contract():
     engine = DiagramAssetEngine()
     svg = engine.render_svg(_request())

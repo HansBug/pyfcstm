@@ -152,20 +152,18 @@ def _svg_parse(svg: str) -> ET.Element:
 
 def _summarize_exception(error: BaseException, limit: int = 512) -> str:
     """Return a bounded exception summary without embedding evaluated source."""
-    text = " ".join(str(error).split())
-    if not text:
+    lines = [line.strip() for line in str(error).splitlines() if line.strip()]
+    if not lines:
         return "unspecified error"
-    # MiniRacer may append the complete evaluated minified bundle after the
-    # JavaScript error. Keep only the native error class and its short message.
-    match = re.search(
-        r"((?:TypeError|ReferenceError|RangeError|SyntaxError|URIError|"
-        r"EvalError|Error):\s*[^`]{0,512}?)(?:\s+at\s+|`|$)",
-        text,
+    error_pattern = re.compile(
+        r"(?:TypeError|ReferenceError|RangeError|SyntaxError|URIError|"
+        r"EvalError|Error):\s*.*"
     )
-    if match:
-        text = match.group(1).strip()
-    else:
-        text = re.split(r"\s+at\s+", text, maxsplit=1)[0].strip()
+    # MiniRacer places evaluated source and carets on later lines. Keep the
+    # first native error headline and discard those source lines and stacks.
+    match = next((error_pattern.search(line) for line in lines if error_pattern.search(line)), None)
+    text = match.group(0).strip() if match else lines[0]
+    text = re.split(r"\s+at\s+|`", text, maxsplit=1)[0].strip()
     if len(text) <= limit:
         return text
     return text[: limit - 3].rstrip() + "..."

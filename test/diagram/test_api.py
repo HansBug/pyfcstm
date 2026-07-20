@@ -156,6 +156,12 @@ def test_headless_exports_are_typed_unavailable_until_delivery_stage():
         diagram.to_pdf()
     with pytest.raises(ValueError, match="finite positive"):
         diagram.to_png(scale=0)
+    with pytest.raises(ValueError, match="finite positive"):
+        diagram.to_png(scale=None)
+    with pytest.raises(ValueError, match="finite positive"):
+        diagram.to_png(scale=True)
+    with pytest.raises(DiagramUnavailableError, match="headless PNG"):
+        diagram.save("diagram.png", scale=2)
 
 
 def test_diagram_data_rejects_non_mapping_snapshots():

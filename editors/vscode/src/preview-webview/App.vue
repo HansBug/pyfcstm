@@ -27,10 +27,23 @@ const DRAWER_MIN_HEIGHT = 80;
 const DRAWER_MAX_HEIGHT_RATIO = 0.7;     // cap at 70% of shell height
 const DRAWER_DEFAULT_HEIGHT = 220;
 function readStorage(key: string): string | null {
-    try { return typeof localStorage !== 'undefined' ? localStorage.getItem(key) : null; } catch { return null; }
+    try {
+        return typeof localStorage !== 'undefined' ? localStorage.getItem(key) : null;
+    } catch (error) {
+        // DOMException: sandboxed or privacy-restricted browsers can reject
+        // localStorage access; all unexpected failures remain visible.
+        if (!(error instanceof DOMException)) throw error;
+        return null;
+    }
 }
 function writeStorage(key: string, value: string) {
-    try { if (typeof localStorage !== 'undefined') localStorage.setItem(key, value); } catch { /* no-op */ }
+    try {
+        if (typeof localStorage !== 'undefined') localStorage.setItem(key, value);
+    } catch (error) {
+        // DOMException: quota/security failures only affect persisted browser
+        // preferences; all unexpected failures remain visible.
+        if (!(error instanceof DOMException)) throw error;
+    }
 }
 
 // Initial state is serialised into window by the HTML shell.

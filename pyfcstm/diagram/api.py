@@ -510,12 +510,17 @@ def _atomic_write_text(path: Union[str, os.PathLike], content: str) -> Path:
             temporary.flush()
             os.fsync(temporary.fileno())
         os.replace(str(temporary_path), str(target))
-    except OSError:
+    except OSError as write_error:
         try:
             temporary_path.unlink()
-        except OSError:
-            # Cleanup failure must not mask the write/replace failure.
-            pass
+        except OSError as cleanup_error:
+            # OSError: unlink can fail after a write/replace error on a
+            # read-only or concurrently cleaned directory; keep both causes
+            # observable instead of silently discarding the cleanup failure.
+            raise OSError(
+                "%s; temporary cleanup failed for %s: %s"
+                % (write_error, temporary_path, cleanup_error)
+            ) from write_error
         raise
     return target
 
@@ -536,12 +541,17 @@ def _atomic_write_bytes(path: Union[str, os.PathLike], content: bytes) -> Path:
             temporary.flush()
             os.fsync(temporary.fileno())
         os.replace(str(temporary_path), str(target))
-    except OSError:
+    except OSError as write_error:
         try:
             temporary_path.unlink()
-        except OSError:
-            # Cleanup failure must not mask the write/replace failure.
-            pass
+        except OSError as cleanup_error:
+            # OSError: unlink can fail after a write/replace error on a
+            # read-only or concurrently cleaned directory; keep both causes
+            # observable instead of silently discarding the cleanup failure.
+            raise OSError(
+                "%s; temporary cleanup failed for %s: %s"
+                % (write_error, temporary_path, cleanup_error)
+            ) from write_error
         raise
     return target
 
@@ -915,7 +925,14 @@ class Diagram:
         :raises ValueError: If ``scale`` is not finite and positive.
         :raises DiagramUnavailableError: Always in the browser-only stage.
         """
-        value = float(scale)
+        if isinstance(scale, bool):
+            raise ValueError("scale must be a finite positive number")
+        try:
+            value = float(scale)
+        except (TypeError, ValueError) as error:
+            # TypeError/ValueError: callers supplied a non-numeric scale or
+            # a string that cannot be parsed as a number.
+            raise ValueError("scale must be a finite positive number") from error
         if not math.isfinite(value) or value <= 0:
             raise ValueError("scale must be a finite positive number")
         raise DiagramUnavailableError(
@@ -1020,7 +1037,13 @@ class Diagram:
             _atomic_write_text(output, document)
         return document
 
-    def save(self, path: Union[str, os.PathLike], format: Optional[str] = None) -> Path:
+    def save(
+        self,
+        path: Union[str, os.PathLike],
+        format: Optional[str] = None,
+        *,
+        scale: float = 1.0,
+    ) -> Path:
         """
         Save JSON or HTML according to ``format`` or the file suffix.
 
@@ -1029,6 +1052,8 @@ class Diagram:
         :param format: Explicit ``json`` or ``html`` format; when omitted,
             the suffix is used.
         :type format: str, optional
+        :param scale: PNG scale forwarded to the optional headless exporter.
+        :type scale: float
         :return: The destination path.
         :rtype: pathlib.Path
         :raises ValueError: If the selected format is unsupported.
@@ -1042,7 +1067,7 @@ class Diagram:
         elif selected == "svg":
             _atomic_write_text(target, self.to_svg())
         elif selected == "png":
-            _atomic_write_bytes(target, self.to_png())
+            _atomic_write_bytes(target, self.to_png(scale=scale))
         elif selected == "pdf":
             _atomic_write_bytes(target, self.to_pdf())
         else:

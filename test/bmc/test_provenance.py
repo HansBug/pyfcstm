@@ -253,6 +253,34 @@ def test_query_group_excerpt_uses_exact_fbmcq_span() -> None:
     )
 
 
+def test_fcstm_and_fbmcq_document_namespaces_are_isolated(tmp_path: Path) -> None:
+    """A colliding display path must not cross-contaminate excerpts."""
+    machine_path = tmp_path / "machine.fcstm"
+    machine_path.write_text("def int x = 7;\nstate Root;\n", encoding="utf-8")
+    model = load_state_machine_from_file(machine_path)
+    query_text = 'init state("Root") where true;\ncheck reach <= 1: active("Root");'
+
+    context = BmcEngine(model).prepare(query_text, query_source_path="machine.fcstm")
+    core = build_bmc_core_formula(context)
+
+    variable = next(
+        item for item in core._tracked_groups if item.stable_id == "initial.variable.x"
+    )
+    target = next(
+        item for item in core._tracked_groups if item.stable_id == "initial.target"
+    )
+
+    assert variable.source_ref.kind == "fcstm"
+    assert variable.source_ref.path == "machine.fcstm"
+    assert context._source_registry.excerpt(variable.source_ref) == "def int x = 7;"
+    assert target.source_ref.kind == "fbmcq"
+    assert target.source_ref.path == "machine.fcstm"
+    assert (
+        context._source_registry.excerpt(target.source_ref)
+        == 'init state("Root") where true;'
+    )
+
+
 def test_tracked_group_rejects_expression_from_another_z3_context() -> None:
     """The core bundle rejects groups that cannot be checked by its solver."""
     model = load_state_machine_from_text("state Root;")

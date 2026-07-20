@@ -30,4 +30,4 @@ SourceDocumentRegistry
 -----------------------------------------------------
 
 .. autoclass:: SourceDocumentRegistry
-    :members: __post_init__,display_path,document,reference,excerpt,model_reference,query_reference,documents,display_root
+    :members: __post_init__,display_path,document,reference,excerpt,model_reference,query_reference,documents,display_root,query_documents

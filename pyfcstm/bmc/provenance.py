@@ -192,6 +192,9 @@ class SourceDocumentRegistry:
     :param display_root: Optional directory used to produce stable relative
         display paths, defaults to ``None``.
     :type display_root: Optional[str], optional
+    :param query_documents: FBMCQ-only source snapshots kept separate from
+        FCSTM documents, defaults to ``{}``.
+    :type query_documents: Mapping[str, str], optional
 
     Examples::
 
@@ -201,6 +204,9 @@ class SourceDocumentRegistry:
 
     documents: Mapping[str, str]
     display_root: Optional[str] = None
+    query_documents: Mapping[str, str] = field(
+        default_factory=dict, repr=False, compare=False
+    )
 
     def __post_init__(self) -> None:
         copied = {}
@@ -211,6 +217,14 @@ class SourceDocumentRegistry:
                 raise TypeError("source document text must be strings.")
             copied[path] = text
         object.__setattr__(self, "documents", MappingProxyType(copied))
+        copied_queries = {}
+        for path, text in dict(self.query_documents).items():
+            if not isinstance(path, str) or not path:
+                raise ValueError("query document paths must be non-empty strings.")
+            if not isinstance(text, str):
+                raise TypeError("query document text must be strings.")
+            copied_queries[path] = text
+        object.__setattr__(self, "query_documents", MappingProxyType(copied_queries))
         if self.display_root is not None:
             object.__setattr__(self, "display_root", os.path.abspath(self.display_root))
 
@@ -238,11 +252,13 @@ class SourceDocumentRegistry:
             # caller-provided path rather than inventing a relative location.
             return path
 
-    def document(self, path: Optional[str]) -> Optional[str]:
+    def document(self, path: Optional[str], kind: str = "fcstm") -> Optional[str]:
         """Return a snapshotted document by internal or display path.
 
         :param path: Internal or display path.
         :type path: Optional[str]
+        :param kind: Source kind namespace, defaults to ``'fcstm'``.
+        :type kind: str, optional
         :return: Source text, or ``None`` when no document is available.
         :rtype: Optional[str]
 
@@ -253,9 +269,15 @@ class SourceDocumentRegistry:
         """
         if path is None:
             return None
-        if path in self.documents:
-            return self.documents[path]
-        for internal_path, text in self.documents.items():
+        if kind == "fcstm":
+            documents = self.documents
+        elif kind == "fbmcq":
+            documents = self.query_documents
+        else:
+            return None
+        if path in documents:
+            return documents[path]
+        for internal_path, text in documents.items():
             if self.display_path(internal_path) == path:
                 return text
         return None
@@ -299,7 +321,7 @@ class SourceDocumentRegistry:
         """
         if reference.span is None:
             return None
-        text = self.document(reference.path)
+        text = self.document(reference.path, kind=reference.kind)
         if text is None:
             return None
         offsets = _span_offsets(text, reference.span)

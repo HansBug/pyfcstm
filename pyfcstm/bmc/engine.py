@@ -165,10 +165,15 @@ class BmcPreparedContext:
         )
         if self._source_registry is None:
             documents = dict(getattr(self.model, "_source_documents", {}))
+            query_documents = {}
             if effective_query_path is not None and self.source_text is not None:
-                documents[effective_query_path] = self.source_text
+                query_documents[effective_query_path] = self.source_text
             display_root = getattr(self.model, "_source_root", None)
-            registry = SourceDocumentRegistry(documents, display_root=display_root)
+            registry = SourceDocumentRegistry(
+                documents,
+                display_root=display_root,
+                query_documents=query_documents,
+            )
             object.__setattr__(self, "_source_registry", registry)
         if self.query_source_path is None and effective_query_path is not None:
             object.__setattr__(self, "query_source_path", effective_query_path)

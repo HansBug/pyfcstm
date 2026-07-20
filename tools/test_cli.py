@@ -32,6 +32,8 @@ class CLITester:
                 cmd,
                 capture_output=True,
                 text=True,
+                encoding='utf-8',
+                errors='replace',
                 timeout=timeout,
                 check=check
             )
@@ -193,6 +195,8 @@ print('builtin_python_template_ok')
                     cwd=output_dir,
                     capture_output=True,
                     text=True,
+                    encoding='utf-8',
+                    errors='replace',
                     timeout=30,
                     check=False,
                 )

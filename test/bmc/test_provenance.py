@@ -8,6 +8,7 @@ from textwrap import dedent
 import pytest
 import z3
 
+import pyfcstm.bmc.provenance as provenance_module
 from pyfcstm.bmc import BmcEngine, build_bmc_core_formula
 from pyfcstm.bmc.errors import BmcBuildError
 from pyfcstm.bmc.parse import parse_bmc_query
@@ -19,6 +20,171 @@ from pyfcstm.bmc.provenance import (
 from pyfcstm.bmc.relation import BmcCoreFormula
 from pyfcstm.model import load_state_machine_from_file, load_state_machine_from_text
 from pyfcstm.utils.validate import Span
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "exception", "message"),
+    [
+        pytest.param(
+            {"kind": "unknown", "path": None, "span": None},
+            ValueError,
+            "source kind",
+            id="source-kind",
+        ),
+        pytest.param(
+            {"kind": "fcstm", "path": "", "span": None},
+            ValueError,
+            "source path",
+            id="empty-path",
+        ),
+        pytest.param(
+            {"kind": "fcstm", "path": None, "span": object()},
+            TypeError,
+            "source span",
+            id="invalid-span-type",
+        ),
+    ],
+)
+def test_source_reference_rejects_malformed_values(kwargs, exception, message) -> None:
+    """Source references reject invalid kind, path, and span values."""
+    with pytest.raises(exception, match=message):
+        BmcSourceRef(**kwargs)
+
+
+def test_source_reference_canonicalizes_a_complete_span() -> None:
+    """Canonical source references preserve all half-open span coordinates."""
+    reference = BmcSourceRef("fcstm", "machine.fcstm", Span(2, 3, 4, 5))
+
+    assert reference.to_canonical() == {
+        "kind": "fcstm",
+        "path": "machine.fcstm",
+        "span": {"line": 2, "column": 3, "end_line": 4, "end_column": 5},
+    }
+    assert BmcSourceRef("generated", None, None).to_canonical() == {
+        "kind": "generated",
+        "path": None,
+        "span": None,
+    }
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "exception", "message"),
+    [
+        pytest.param("stable_id", "", ValueError, "stable_id", id="stable-id"),
+        pytest.param("stage", "", ValueError, "stage", id="stage"),
+        pytest.param("category", "", ValueError, "category", id="category"),
+        pytest.param("expressions", (), ValueError, "expressions", id="expressions"),
+        pytest.param("source_ref", object(), TypeError, "source_ref", id="source-ref"),
+    ],
+)
+def test_tracked_constraint_rejects_malformed_values(
+    field, value, exception, message
+) -> None:
+    """Tracked constraints reject malformed identity and payload fields."""
+    values = {
+        "stable_id": "group",
+        "stage": "kernel",
+        "category": "domain",
+        "expressions": (z3.BoolVal(True),),
+        "source_ref": BmcSourceRef("generated", None, None),
+    }
+    values[field] = value
+
+    with pytest.raises(exception, match=message):
+        BmcTrackedConstraint(**values)
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "exception", "message"),
+    [
+        pytest.param(
+            {"documents": {1: "text"}},
+            ValueError,
+            "document paths",
+            id="document-path",
+        ),
+        pytest.param(
+            {"documents": {"machine.fcstm": object()}},
+            TypeError,
+            "document text",
+            id="document-text",
+        ),
+        pytest.param(
+            {"documents": {}, "query_documents": {"": "query"}},
+            ValueError,
+            "query document paths",
+            id="query-path",
+        ),
+        pytest.param(
+            {"documents": {}, "query_documents": {"query.fbmcq": object()}},
+            TypeError,
+            "query document text",
+            id="query-text",
+        ),
+    ],
+)
+def test_source_registry_rejects_malformed_documents(
+    kwargs, exception, message
+) -> None:
+    """Document snapshots require non-empty paths and string contents."""
+    with pytest.raises(exception, match=message):
+        SourceDocumentRegistry(**kwargs)
+
+
+@pytest.mark.parametrize(
+    "span",
+    [
+        pytest.param(Span(1, 1), id="anchor-only"),
+        pytest.param(Span(0, 1, 1, 2), id="invalid-start-line"),
+        pytest.param(Span(1, 1, 2, 1), id="invalid-end-line"),
+        pytest.param(Span(1, 3, 1, 2), id="end-before-start"),
+        pytest.param(Span(1, 1, 1, 5), id="end-after-document"),
+    ],
+)
+def test_source_registry_returns_none_for_unusable_spans(span) -> None:
+    """Invalid and anchor-only spans never produce misleading excerpts."""
+    registry = SourceDocumentRegistry({"machine.fcstm": "abc"})
+    reference = BmcSourceRef("fcstm", "machine.fcstm", span)
+
+    assert registry.excerpt(reference) is None
+
+
+def test_source_registry_handles_aliases_and_unknown_namespaces(tmp_path: Path) -> None:
+    """Document lookup resolves display aliases without crossing namespaces."""
+    source_path = tmp_path / "nested" / "machine.fcstm"
+    registry = SourceDocumentRegistry(
+        {str(source_path): "state Root;"}, display_root=str(tmp_path)
+    )
+
+    assert registry.document("nested/machine.fcstm") == "state Root;"
+    assert registry.document(None) is None
+    assert registry.document("nested/machine.fcstm", kind="unknown") is None
+
+
+def test_source_registry_preserves_path_when_relative_path_is_unavailable(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Unrelativizable paths retain the caller path, as on different Windows drives."""
+    registry = SourceDocumentRegistry(
+        {str(tmp_path / "machine.fcstm"): "state Root;"},
+        display_root=str(tmp_path),
+    )
+
+    def fail_relpath(path, start):
+        raise ValueError("paths use different drives")
+
+    monkeypatch.setattr(provenance_module.os.path, "relpath", fail_relpath)
+
+    path = str(tmp_path / "machine.fcstm")
+    assert registry.display_path(path) == path
+
+
+def test_source_registry_returns_none_for_missing_excerpt_document() -> None:
+    """A direct reference cannot produce an excerpt without a source snapshot."""
+    registry = SourceDocumentRegistry({"machine.fcstm": "state Root;"})
+    reference = BmcSourceRef("fcstm", "missing.fcstm", Span(1, 1, 1, 5))
+
+    assert registry.excerpt(reference) is None
 
 
 def test_source_registry_slices_multiline_span_exactly() -> None:

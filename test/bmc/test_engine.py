@@ -195,6 +195,66 @@ def test_engine_rejects_invalid_query_input(engine_model: StateMachine) -> None:
 
 
 @pytest.mark.unittest
+@pytest.mark.parametrize("query_source_path", ["", 123])
+def test_engine_rejects_invalid_query_source_path(
+    engine_model: StateMachine, query_source_path
+) -> None:
+    """AST preparation rejects empty and non-string query source paths."""
+    query = parse_bmc_query('check reach <= 1: active("Root.Done");')
+
+    with pytest.raises(BmcBuildError, match="query_source_path"):
+        BmcEngine(engine_model).prepare(
+            query, query_source_path=query_source_path
+        )
+
+
+@pytest.mark.unittest
+def test_engine_inherits_source_path_from_parsed_query(
+    engine_model: StateMachine,
+) -> None:
+    """AST preparation keeps a source path already attached by the parser."""
+    query = parse_bmc_query(
+        'check reach <= 1: active("Root.Done");', source_path="query.fbmcq"
+    )
+
+    context = BmcEngine(engine_model).prepare(query)
+
+    assert context.query_source_path == "query.fbmcq"
+
+
+@pytest.mark.unittest
+def test_prepared_context_inherits_source_path_from_query_metadata(
+    engine_model: StateMachine,
+) -> None:
+    """Direct context construction applies the query metadata fallback."""
+    query = parse_bmc_query(
+        'check reach <= 1: active("Root.Done");', source_path="query.fbmcq"
+    )
+    prepared = BmcEngine(engine_model).prepare(query)
+
+    context = BmcPreparedContext(
+        model=prepared.model,
+        query=prepared.query,
+        bound_query=prepared.bound_query,
+        domain=prepared.domain,
+        options=prepared.options,
+    )
+
+    assert context.query_source_path == "query.fbmcq"
+
+    reused_registry = BmcPreparedContext(
+        model=prepared.model,
+        query=prepared.query,
+        bound_query=prepared.bound_query,
+        domain=prepared.domain,
+        options=prepared.options,
+        _source_registry=prepared._source_registry,
+    )
+
+    assert reused_registry._source_registry is prepared._source_registry
+
+
+@pytest.mark.unittest
 def test_engine_propagates_parse_errors_before_prepare(
     engine_model: StateMachine,
 ) -> None:

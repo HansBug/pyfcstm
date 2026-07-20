@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from textwrap import dedent
 
@@ -10,7 +11,7 @@ import z3
 
 import pyfcstm.bmc.provenance as provenance_module
 from pyfcstm.bmc import BmcEngine, build_bmc_core_formula
-from pyfcstm.bmc.errors import BmcBuildError
+from pyfcstm.bmc.errors import BmcBuildError, InvalidBmcQuery
 from pyfcstm.bmc.parse import parse_bmc_query
 from pyfcstm.bmc.provenance import (
     BmcSourceRef,
@@ -20,6 +21,8 @@ from pyfcstm.bmc.provenance import (
 from pyfcstm.bmc.relation import BmcCoreFormula
 from pyfcstm.model import load_state_machine_from_file, load_state_machine_from_text
 from pyfcstm.utils.validate import Span
+
+pytestmark = pytest.mark.unittest
 
 
 @pytest.mark.parametrize(
@@ -215,6 +218,18 @@ def test_query_source_metadata_keeps_source_text_canonical_clean() -> None:
     }
 
 
+def test_query_source_metadata_rejects_invalid_public_metadata() -> None:
+    """Parser and query dataclass reject malformed source metadata."""
+    query_text = 'check reach <= 1: active("Root");'
+
+    with pytest.raises(InvalidBmcQuery, match="_source_path"):
+        parse_bmc_query(query_text, source_path="")
+
+    query = parse_bmc_query(query_text)
+    with pytest.raises(InvalidBmcQuery, match="_source_spans"):
+        replace(query, _source_spans=(("not-an-id", Span(1, 1)),))
+
+
 def test_pathless_source_references_drop_unresolvable_spans() -> None:
     """Pathless FCSTM and FBMCQ metadata cannot retain misleading spans."""
     model = load_state_machine_from_text("def int x = 3;\nstate Root;")
@@ -279,6 +294,19 @@ def test_file_and_import_source_paths_are_not_collapsed(tmp_path: Path) -> None:
     )
 
 
+def test_text_loader_records_snapshot_when_path_is_an_existing_file(
+    tmp_path: Path,
+) -> None:
+    """Text loading records a snapshot when its path names a real file."""
+    source_path = tmp_path / "machine.fcstm"
+    source = "state Root;"
+    source_path.write_text(source, encoding="utf-8")
+
+    model = load_state_machine_from_text(source, path=source_path)
+
+    assert model._source_documents[str(source_path.resolve())] == source
+
+
 def _conjoin(expressions):
     values = tuple(expressions)
     if not values:
@@ -335,6 +363,32 @@ def test_tracked_groups_rebuild_each_aggregate_in_registration_order() -> None:
             for expression in item.expressions
         )
     ) == str(core.environment_formula)
+
+
+def test_initial_where_definedness_is_tracked_with_the_source_predicate() -> None:
+    """Initial predicate definedness constraints retain their source group."""
+    model = load_state_machine_from_text(
+        "def int x = 1; def int y = 0; state Root;"
+    )
+    query_text = 'init cold where x / y > 0;\ncheck reach <= 1: active("Root");'
+    context = BmcEngine(model).prepare(
+        query_text, query_source_path="query.fbmcq"
+    )
+    core = build_bmc_core_formula(context)
+
+    definedness = next(
+        group
+        for group in core._tracked_groups
+        if group.stable_id == "initial.where.definedness.0000"
+    )
+
+    assert definedness.category == "definedness"
+    assert definedness.source_ref.kind == "fbmcq"
+    assert context._source_registry.excerpt(definedness.source_ref) == (
+        "x / y > 0"
+    )
+    assert len(definedness.expressions) == 1
+    assert "F_0_y" in str(definedness.expressions[0])
 
 
 def test_basic_core_formulas_match_pre_tracking_sexpression_golden() -> None:
@@ -500,3 +554,22 @@ def test_tracked_group_rejects_expression_from_another_z3_context() -> None:
             steps=core.steps,
             _tracked_groups=(foreign,),
         )
+
+
+def test_core_formula_rejects_malformed_tracked_group_payloads() -> None:
+    """Core formulas reject invalid, duplicate, and non-Boolean groups."""
+    model = load_state_machine_from_text("state Root;")
+    core = build_bmc_core_formula(
+        BmcEngine(model).prepare('check reach <= 1: active("Root");')
+    )
+
+    with pytest.raises(BmcBuildError, match="tracked groups must contain"):
+        replace(core, _tracked_groups=(object(),))
+
+    group = core._tracked_groups[0]
+    with pytest.raises(BmcBuildError, match="unique stable ids"):
+        replace(core, _tracked_groups=(group, group))
+
+    non_boolean = replace(group, expressions=(z3.Int("not_boolean"),))
+    with pytest.raises(BmcBuildError, match="Z3 Boolean expressions"):
+        replace(core, _tracked_groups=(non_boolean,))

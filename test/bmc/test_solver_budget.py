@@ -8,6 +8,8 @@ import pytest
 from pyfcstm.bmc.solver import _SolveBudget, _check_with_budget
 from pyfcstm.bmc.errors import BmcBuildError
 
+pytestmark = pytest.mark.unittest
+
 
 def test_unbounded_budget_does_not_configure_solver_timeout() -> None:
     """``None`` must call Z3 without setting a timeout."""

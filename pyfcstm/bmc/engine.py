@@ -267,7 +267,12 @@ def _coerce_query(
         parsed = parse_bmc_query(query, source_path=query_source_path)
         return parsed, query, query_source_path
     if isinstance(query, BmcQuery):
-        return query, None, query_source_path or getattr(query, "_source_path", None)
+        effective_path = (
+            query_source_path
+            if query_source_path is not None
+            else getattr(query, "_source_path", None)
+        )
+        return query, None, effective_path
     raise BmcBuildError("query must be a str or BmcQuery.")
 
 

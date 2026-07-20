@@ -177,6 +177,9 @@ export interface PreviewWebviewState {
     summary: PreviewSummaryEntry[];
     variables: string[];
     sharedEvents: PreviewSharedEventView[];
+    /** Initial standalone colour preferences supplied by the Python API. */
+    palette?: 'default' | 'nord' | 'solarized' | 'darcula';
+    colorMode?: 'light' | 'dark' | 'auto';
     /** Browser-only data and source sidecar used by the standalone host. */
     standalone?: boolean;
     standaloneMode?: 'fcstm' | 'diagram' | 'compare';

@@ -789,6 +789,8 @@ class Diagram:
             "title": self.model.root_state.name,
             "filePath": "",
             "previewOptions": self.options.to_dict(),
+            "palette": self.options.palette,
+            "colorMode": self.options.mode,
             "collapsedStateIds": list(self.view_state.collapsed_state_ids),
             "emptyTitle": "FCSTM Diagram",
             "emptyMessage": "No diagram available.",

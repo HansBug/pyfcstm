@@ -40,6 +40,16 @@ def test_source_sidecar_and_three_browser_modes_are_embedded():
     assert str(model.source_path) not in html
 
 
+def test_diagram_options_reach_standalone_colour_preferences():
+    model = _model("state Root;")
+    html = model.diagram(options=DiagramOptions(palette="nord", mode="dark")).to_html()
+    match = re.search(r"window\.__FCSTM_INITIAL_STATE__ = (.*);</script><script>", html, re.DOTALL)
+    assert match is not None
+    state = json.loads(match.group(1))
+    assert state["palette"] == "nord"
+    assert state["colorMode"] == "dark"
+
+
 def test_source_line_mapping_prefers_transition_ranges():
     source = """state Root {
     state Idle;

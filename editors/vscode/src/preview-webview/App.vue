@@ -123,8 +123,12 @@ function toggleDrawer() {
 // Palette + colour-mode state. Mode can be 'auto' (follow VSCode), or
 // user-overridden to a fixed 'light' / 'dark'. Palette picks the named
 // skin (default / nord / solarized / darcula).
-const palette = ref<PaletteId>(((readStorage(STORAGE_KEY_PALETTE) as PaletteId) || 'default'));
-const colorMode = ref<ColorMode>(((readStorage(STORAGE_KEY_MODE) as ColorMode) || 'auto'));
+const palette = ref<PaletteId>(
+    initialState.palette || (readStorage(STORAGE_KEY_PALETTE) as PaletteId) || 'default',
+);
+const colorMode = ref<ColorMode>(
+    initialState.colorMode || (readStorage(STORAGE_KEY_MODE) as ColorMode) || 'auto',
+);
 
 function applyMode(value: ColorMode) {
     colorMode.value = value;

@@ -122,6 +122,19 @@ _CJK_LOCALE_PATTERN = re.compile(
 
 _ASSET_ISSUE_URL = "https://github.com/HansBug/pyfcstm/issues"
 _SVG_NS = "http://www.w3.org/2000/svg"
+_ASSET_LOADER_BOOTSTRAP = """
+(function () {
+  const evaluate = globalThis.eval;
+  globalThis.__pyfcstm_load_asset = function (source) {
+    try {
+      evaluate(String(source));
+      return "ok";
+    } catch (error) {
+      return String((error && (error.stack || error.message)) || error);
+    }
+  };
+})();
+"""
 
 
 class _NoDoctypeTreeBuilder(ET.TreeBuilder):
@@ -580,16 +593,38 @@ class DiagramAssetEngine:
                 "renderer.js",
                 "the bundle does not expose the required renderer entrypoint",
             )
-        self._eval_asset("host-shim.js", host_shim)
+        self._eval_asset("asset-loader", _ASSET_LOADER_BOOTSTRAP)
+        self._load_javascript_asset("host-shim.js", host_shim)
         self._eval_asset(
             "host-shim.js",
             "globalThis.__pyfcstm_embedded_host = true;",
         )
-        self._eval_asset("renderer.js", renderer)
+        self._load_javascript_asset("renderer.js", renderer)
+        self._eval_asset(
+            "asset-loader",
+            "delete globalThis.__pyfcstm_load_asset;",
+        )
         self._eval_asset(
             "resvg-bridge.js",
             "globalThis.__pyfcstm_bind_context_token(%s);"
             % json.dumps(self._context_token),
+        )
+
+    def _load_javascript_asset(self, name: str, source: str) -> None:
+        """Evaluate packaged JavaScript without crossing native parse errors."""
+        result = str(
+            self._eval_asset(
+                name,
+                "globalThis.__pyfcstm_load_asset(%s)" % json.dumps(source),
+            )
+        )
+        if result == "ok":
+            return
+        self._discard_context()
+        raise _asset_failure(
+            name,
+            "the JavaScript resource could not be evaluated",
+            ValueError(result),
         )
 
     def _eval_asset(

@@ -278,6 +278,25 @@ def test_javascript_error_summary_omits_evaluated_source():
     assert "throw new Error" not in message
 
 
+def test_malformed_packaged_javascript_reports_asset_failure(monkeypatch):
+    import importlib
+
+    engine_module = importlib.import_module("pyfcstm.diagram.engine")
+    real_asset_bytes = engine_module._asset_bytes
+
+    def malformed_renderer(name):
+        if name == "renderer.js":
+            return b"globalThis.__pyfcstm_render_start = true; const = 1;"
+        return real_asset_bytes(name)
+
+    monkeypatch.setattr(engine_module, "_asset_bytes", malformed_renderer)
+    with pytest.raises(
+        DiagramAssetError,
+        match=r"renderer\.js: the JavaScript resource could not be evaluated: SyntaxError",
+    ):
+        DiagramAssetEngine(timeout=10.0)
+
+
 def test_renderer_output_is_svg_and_preserves_marker_contract():
     engine = DiagramAssetEngine()
     svg = engine.render_svg(_request())
@@ -1165,6 +1184,7 @@ def test_engine_rejects_unavailable_distribution_metadata(monkeypatch):
 
 def test_host_shim_blocks_dynamic_code_creation():
     engine = DiagramAssetEngine()
+    assert engine._eval("typeof globalThis.__pyfcstm_load_asset") == "undefined"
     with pytest.raises(Exception):
         engine._eval("eval('1 + 1')")
     with pytest.raises(Exception):

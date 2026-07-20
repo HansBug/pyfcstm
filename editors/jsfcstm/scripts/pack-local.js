@@ -4,9 +4,10 @@ const path = require('path');
 
 const packageDir = path.resolve(__dirname, '..');
 const localTarball = path.join(packageDir, 'jsfcstm.tgz');
+const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
 function main() {
-    const output = execFileSync('npm', ['pack', '--json', '--ignore-scripts'], {
+    const output = execFileSync(npmCommand, ['pack', '--json', '--ignore-scripts'], {
         cwd: packageDir,
         encoding: 'utf8',
     });

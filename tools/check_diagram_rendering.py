@@ -58,20 +58,66 @@ CLIP_ID_RE = re.compile(r'id="((?:clip-path|clipPath)[^"]+)"')
 # rendering performs basic XML checks; this oracle catches renderer drift,
 # unsafe references, and accidental text/marker retention in CI.
 _STRICT_SVG_INPUT_ELEMENTS = {
-    "svg", "defs", "marker", "filter", "feGaussianBlur", "feOffset",
-    "feComponentTransfer", "feFuncA", "feFuncR", "feFuncG", "feFuncB",
-    "feMerge", "feMergeNode", "g", "rect", "path", "line", "circle", "text",
+    "svg",
+    "defs",
+    "marker",
+    "filter",
+    "feGaussianBlur",
+    "feOffset",
+    "feComponentTransfer",
+    "feFuncA",
+    "feFuncR",
+    "feFuncG",
+    "feFuncB",
+    "feMerge",
+    "feMergeNode",
+    "g",
+    "rect",
+    "path",
+    "line",
+    "circle",
+    "text",
 }
 _STRICT_SVG_OUTPUT_ELEMENTS = {
-    "svg", "defs", "filter", "feGaussianBlur", "feOffset",
-    "feComponentTransfer", "feFuncA", "feFuncR", "feFuncG", "feFuncB",
-    "feMerge", "feMergeNode", "clipPath", "g", "path",
+    "svg",
+    "defs",
+    "filter",
+    "feGaussianBlur",
+    "feOffset",
+    "feComponentTransfer",
+    "feFuncA",
+    "feFuncR",
+    "feFuncG",
+    "feFuncB",
+    "feMerge",
+    "feMergeNode",
+    "clipPath",
+    "g",
+    "path",
 }
 _STRICT_SVG_INPUT_ATTRIBUTES = {
-    "svg": {"viewBox", "width", "height", "font-family", "font-size",
-            "data-fcstm-canvas", "data-fcstm-direction", "data-fcstm-palette", "data-fcstm-mode"},
+    "svg": {
+        "viewBox",
+        "width",
+        "height",
+        "font-family",
+        "font-size",
+        "data-fcstm-canvas",
+        "data-fcstm-direction",
+        "data-fcstm-palette",
+        "data-fcstm-mode",
+    },
     "defs": set(),
-    "marker": {"id", "viewBox", "refX", "refY", "markerWidth", "markerHeight", "orient", "markerUnits"},
+    "marker": {
+        "id",
+        "viewBox",
+        "refX",
+        "refY",
+        "markerWidth",
+        "markerHeight",
+        "orient",
+        "markerUnits",
+    },
     "filter": {"id", "x", "y", "width", "height"},
     "feGaussianBlur": {"in", "stdDeviation"},
     "feOffset": {"in", "dx", "dy"},
@@ -82,19 +128,75 @@ _STRICT_SVG_INPUT_ATTRIBUTES = {
     "feFuncB": {"type", "slope", "intercept"},
     "feMerge": set(),
     "feMergeNode": {"in"},
-    "g": {"data-fcstm-kind", "data-fcstm-id", "data-fcstm-variant", "data-fcstm-pseudo",
-          "data-fcstm-composite", "data-fcstm-collapsed", "data-fcstm-range-start-line",
-          "data-fcstm-range-start-character", "data-fcstm-range-end-line", "data-fcstm-range-end-character"},
-    "rect": {"class", "x", "y", "width", "height", "rx", "ry", "fill", "stroke",
-             "stroke-width", "stroke-dasharray", "filter", "pointer-events"},
-    "path": {"d", "fill", "stroke", "stroke-width", "stroke-dasharray", "stroke-linecap",
-             "stroke-linejoin", "stroke-opacity", "marker-end", "data-fcstm-kind", "data-fcstm-id",
-             "data-fcstm-range-start-line", "data-fcstm-range-start-character", "data-fcstm-range-end-line",
-             "data-fcstm-range-end-character"},
+    "g": {
+        "data-fcstm-kind",
+        "data-fcstm-id",
+        "data-fcstm-variant",
+        "data-fcstm-pseudo",
+        "data-fcstm-composite",
+        "data-fcstm-collapsed",
+        "data-fcstm-range-start-line",
+        "data-fcstm-range-start-character",
+        "data-fcstm-range-end-line",
+        "data-fcstm-range-end-character",
+    },
+    "rect": {
+        "class",
+        "x",
+        "y",
+        "width",
+        "height",
+        "rx",
+        "ry",
+        "fill",
+        "stroke",
+        "stroke-width",
+        "stroke-dasharray",
+        "filter",
+        "pointer-events",
+    },
+    "path": {
+        "d",
+        "fill",
+        "stroke",
+        "stroke-width",
+        "stroke-dasharray",
+        "stroke-linecap",
+        "stroke-linejoin",
+        "stroke-opacity",
+        "marker-end",
+        "data-fcstm-kind",
+        "data-fcstm-id",
+        "data-fcstm-range-start-line",
+        "data-fcstm-range-start-character",
+        "data-fcstm-range-end-line",
+        "data-fcstm-range-end-character",
+    },
     "line": {"x1", "y1", "x2", "y2", "stroke", "stroke-opacity", "stroke-width"},
-    "circle": {"cx", "cy", "r", "fill", "stroke", "stroke-width", "data-fcstm-kind", "data-fcstm-id"},
-    "text": {"x", "y", "fill", "font-family", "font-size", "font-weight", "text-anchor",
-             "letter-spacing", "paint-order", "stroke", "stroke-width", "stroke-linejoin"},
+    "circle": {
+        "cx",
+        "cy",
+        "r",
+        "fill",
+        "stroke",
+        "stroke-width",
+        "data-fcstm-kind",
+        "data-fcstm-id",
+    },
+    "text": {
+        "x",
+        "y",
+        "fill",
+        "font-family",
+        "font-size",
+        "font-weight",
+        "text-anchor",
+        "letter-spacing",
+        "paint-order",
+        "stroke",
+        "stroke-width",
+        "stroke-linejoin",
+    },
 }
 _STRICT_SVG_OUTPUT_ATTRIBUTES = {
     "svg": {"width", "height", "viewBox"},
@@ -103,12 +205,27 @@ _STRICT_SVG_OUTPUT_ATTRIBUTES = {
     "feGaussianBlur": {"color-interpolation-filters", "in", "stdDeviation", "result"},
     "feOffset": {"color-interpolation-filters", "in", "dx", "dy", "result"},
     "feComponentTransfer": {"color-interpolation-filters", "in", "result"},
-    "feFuncA": {"type", "slope", "intercept"}, "feFuncR": {"type"},
-    "feFuncG": {"type"}, "feFuncB": {"type"},
-    "feMerge": {"color-interpolation-filters", "result"}, "feMergeNode": {"in"},
-    "clipPath": {"id"}, "g": {"clip-path", "filter", "transform"},
-    "path": {"d", "fill", "fill-opacity", "paint-order", "stroke", "stroke-dasharray",
-             "stroke-linecap", "stroke-linejoin", "stroke-opacity", "stroke-width", "visibility"},
+    "feFuncA": {"type", "slope", "intercept"},
+    "feFuncR": {"type"},
+    "feFuncG": {"type"},
+    "feFuncB": {"type"},
+    "feMerge": {"color-interpolation-filters", "result"},
+    "feMergeNode": {"in"},
+    "clipPath": {"id"},
+    "g": {"clip-path", "filter", "transform"},
+    "path": {
+        "d",
+        "fill",
+        "fill-opacity",
+        "paint-order",
+        "stroke",
+        "stroke-dasharray",
+        "stroke-linecap",
+        "stroke-linejoin",
+        "stroke-opacity",
+        "stroke-width",
+        "visibility",
+    },
 }
 _STRICT_URI_RE = re.compile(
     r"(?:javascript|vbscript|data|blob|about|file|https?|ftp|ws|wss|"
@@ -129,8 +246,12 @@ def _strict_svg_validate(svg: str, output: bool = False) -> str:
     except ET.ParseError as err:
         raise ValueError("closed SVG dialect rejected malformed XML") from err
     prefix = "{%s}" % SVG_NS
-    allowed_elements = _STRICT_SVG_OUTPUT_ELEMENTS if output else _STRICT_SVG_INPUT_ELEMENTS
-    allowed_attrs = _STRICT_SVG_OUTPUT_ATTRIBUTES if output else _STRICT_SVG_INPUT_ATTRIBUTES
+    allowed_elements = (
+        _STRICT_SVG_OUTPUT_ELEMENTS if output else _STRICT_SVG_INPUT_ELEMENTS
+    )
+    allowed_attrs = (
+        _STRICT_SVG_OUTPUT_ATTRIBUTES if output else _STRICT_SVG_INPUT_ATTRIBUTES
+    )
     if root.tag != prefix + "svg":
         raise ValueError("closed SVG dialect requires an SVG root element")
     ids = set()
@@ -144,7 +265,7 @@ def _strict_svg_validate(svg: str, output: bool = False) -> str:
             raise ValueError("closed SVG dialect exceeded bounded tree limits")
         if not isinstance(element.tag, str) or not element.tag.startswith(prefix):
             raise ValueError("closed SVG dialect rejected a non-SVG namespace")
-        tag = element.tag[len(prefix):]
+        tag = element.tag[len(prefix) :]
         if tag not in allowed_elements:
             raise ValueError("closed SVG dialect rejected element: %s" % tag)
         for name, value in element.attrib.items():
@@ -157,11 +278,15 @@ def _strict_svg_validate(svg: str, output: bool = False) -> str:
             for reference in _STRICT_URL_RE.findall(value):
                 reference = reference.strip().strip("\"'")
                 if not reference.startswith("#") or len(reference) == 1:
-                    raise ValueError("closed SVG dialect rejected a non-local URL reference")
+                    raise ValueError(
+                        "closed SVG dialect rejected a non-local URL reference"
+                    )
                 references.append(reference[1:])
             if name == "id":
                 if not value or value in ids:
-                    raise ValueError("closed SVG dialect rejected duplicate or empty id")
+                    raise ValueError(
+                        "closed SVG dialect rejected duplicate or empty id"
+                    )
                 ids.add(value)
         if element.text and ((output and element.text.strip()) or not output and False):
             raise ValueError("closed SVG dialect rejected residual text nodes")
@@ -170,12 +295,28 @@ def _strict_svg_validate(svg: str, output: bool = False) -> str:
         pending.extend((child, depth + 1) for child in reversed(list(element)))
     if any(reference not in ids for reference in references):
         raise ValueError("closed SVG dialect rejected a broken local reference")
-    if output and any((element.tag[len(prefix):] if isinstance(element.tag, str) and element.tag.startswith(prefix) else "") in {"text", "marker"} for element in root.iter()):
+    if output and any(
+        (
+            element.tag[len(prefix) :]
+            if isinstance(element.tag, str) and element.tag.startswith(prefix)
+            else ""
+        )
+        in {"text", "marker"}
+        for element in root.iter()
+    ):
         raise ValueError("closed SVG dialect rejected residual text or marker elements")
     if not output:
-        markers = [element for element in root.iter() if isinstance(element.tag, str) and element.tag == prefix + "marker"]
+        markers = [
+            element
+            for element in root.iter()
+            if isinstance(element.tag, str) and element.tag == prefix + "marker"
+        ]
         if markers:
-            if len(markers) != 1 or markers[0].attrib.get("orient") != "auto" or markers[0].attrib.get("refX") != "10":
+            if (
+                len(markers) != 1
+                or markers[0].attrib.get("orient") != "auto"
+                or markers[0].attrib.get("refX") != "10"
+            ):
                 raise ValueError("closed SVG dialect rejected marker endpoint contract")
     return svg
 
@@ -659,7 +800,9 @@ def _self_check_svg_validator() -> None:
             continue
         raise AssertionError("strict SVG validator accepted malformed output")
     try:
-        _strict_svg_validate('<svg xmlns="%s"><text>x</text></svg>' % SVG_NS, output=True)
+        _strict_svg_validate(
+            '<svg xmlns="%s"><text>x</text></svg>' % SVG_NS, output=True
+        )
     except ValueError:
         pass
     else:

@@ -174,7 +174,10 @@ def _summarize_exception(error: BaseException, limit: int = 512) -> str:
     )
     # MiniRacer places evaluated source and carets on later lines. Keep the
     # first native error headline and discard those source lines and stacks.
-    match = next((error_pattern.search(line) for line in lines if error_pattern.search(line)), None)
+    match = next(
+        (error_pattern.search(line) for line in lines if error_pattern.search(line)),
+        None,
+    )
     text = match.group(0).strip() if match else lines[0]
     text = re.split(r"\s+at\s+|`", text, maxsplit=1)[0].strip()
     if len(text) <= limit:

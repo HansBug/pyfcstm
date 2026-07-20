@@ -230,7 +230,7 @@ def test_raw_svg_accepts_cdata_text():
     engine = DiagramAssetEngine()
     raw_svg = (
         '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20">'
-        "<text x=\"1\" y=\"15\"><![CDATA[A & B]]></text></svg>"
+        '<text x="1" y="15"><![CDATA[A & B]]></text></svg>'
     )
     assert engine.expand_svg(raw_svg).startswith("<svg")
 
@@ -252,6 +252,47 @@ def test_raw_svg_accepts_declaration_literals_in_comments_and_cdata(content):
     assert engine.expand_svg(raw_svg).startswith("<svg")
 
 
+@pytest.mark.parametrize(
+    "content",
+    [
+        "<!-- <!DOCTYPE and <!ENTITY are literal documentation -->",
+        '<text x="1" y="15"><![CDATA[<!DOCTYPE & <!ENTITY]]></text>',
+    ],
+)
+def test_render_svg_accepts_declaration_literals_in_output(monkeypatch, content):
+    """Apply the DTD guard to renderer output without rejecting legal text."""
+    engine = DiagramAssetEngine()
+    rendered = (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="160" height="20">'
+        + content
+        + "</svg>"
+    )
+    monkeypatch.setattr(engine, "_eval_asset", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        engine,
+        "_poll",
+        lambda *_args, **_kwargs: {"status": "done", "svg": rendered},
+    )
+    assert engine.render_svg(_request()) == rendered
+
+
+def test_render_svg_rejects_real_dtd_in_output(monkeypatch):
+    engine = DiagramAssetEngine()
+    rendered = (
+        '<!DOCTYPE svg [<!ENTITY label "unsafe">]>'
+        '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1">'
+        "<text>&label;</text></svg>"
+    )
+    monkeypatch.setattr(engine, "_eval_asset", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        engine,
+        "_poll",
+        lambda *_args, **_kwargs: {"status": "done", "svg": rendered},
+    )
+    with pytest.raises(DiagramRenderError, match="malformed SVG output"):
+        engine.render_svg(_request())
+
+
 def test_renderer_request_errors_are_bounded_and_actionable():
     import copy
 
@@ -270,9 +311,7 @@ def test_renderer_request_errors_are_bounded_and_actionable():
 def test_javascript_error_summary_omits_evaluated_source():
     engine = DiagramAssetEngine()
     with pytest.raises(DiagramAssetError) as captured:
-        engine._eval_asset(
-            "renderer.js", 'throw new Error("specific request failure")'
-        )
+        engine._eval_asset("renderer.js", 'throw new Error("specific request failure")')
     message = str(captured.value)
     assert "specific request failure" in message
     assert "throw new Error" not in message

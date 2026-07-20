@@ -351,12 +351,17 @@ def _source_document_id(machine: StateMachine, source_path: Optional[str]) -> st
     main_path = machine.source_path
     if main_path and source_path != "<memory>":
         try:
-            relative = os.path.relpath(source_path, os.path.dirname(os.path.abspath(main_path)))
-            if not relative.startswith(".."):
-                return relative.replace(os.sep, "/")
+            main_absolute = os.path.abspath(main_path)
+            base = main_absolute if os.path.isdir(main_absolute) else os.path.dirname(main_absolute)
+            relative = os.path.relpath(source_path, base)
+            # Keep ``..`` segments instead of collapsing to a basename. Two
+            # imports such as ``../a/child.fcstm`` and ``../b/child.fcstm``
+            # must remain separate source documents in the browser sidecar.
+            return relative.replace(os.sep, "/")
         except (OSError, ValueError):
             # OSError/ValueError: source paths can be on different drives or
-            # become unavailable after a model is loaded.
+            # become unavailable after a model is loaded. The basename is a
+            # readable last resort for a path that cannot be relativized.
             pass
     return Path(source_path).name or "main.fcstm"
 

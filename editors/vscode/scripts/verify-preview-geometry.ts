@@ -988,10 +988,14 @@ async function main(): Promise<void> {
         path.resolve(process.cwd(), '../../artifacts/preview-geometry'));
     fs.rmSync(outputDir, {recursive: true, force: true});
     fs.mkdirSync(outputDir, {recursive: true});
-    const fixtureNames = fs.readdirSync(fixtureDir).filter(name => name.endsWith('.fcstm')).sort();
-    if (fixtureNames.length < 10) {
-        throw new Error(`expected at least 10 visual fixtures, found ${fixtureNames.length}`);
+    const allFixtureNames = fs.readdirSync(fixtureDir).filter(name => name.endsWith('.fcstm')).sort();
+    if (allFixtureNames.length < 10) {
+        throw new Error(`expected at least 10 visual fixtures, found ${allFixtureNames.length}`);
     }
+    const requestedFixtureCount = Number(process.env.PYFCSTM_GEOMETRY_FIXTURE_LIMIT || 0);
+    const fixtureNames = Number.isInteger(requestedFixtureCount) && requestedFixtureCount > 0
+        ? allFixtureNames.slice(0, requestedFixtureCount)
+        : allFixtureNames;
 
     const elk = new ELK();
     const reports: FixtureReport[] = [];

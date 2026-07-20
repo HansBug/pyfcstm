@@ -631,7 +631,6 @@ body {
    is the editor-group height, so this media-query fallback preserves the
    compact right-pane contract there as well. */
 @media (max-height: 900px) {
-    .fcstm-bottom-drawer { max-height: 130px; }
     .fcstm-main-view { min-height: 164px; }
     .fcstm-stage,
     .fcstm-main-view--compare .fcstm-source-panel,
@@ -651,7 +650,6 @@ body {
 }
 
 @media (max-width: 760px) {
-    .fcstm-bottom-drawer { max-height: 130px; }
     .fcstm-main-view { min-height: 0; }
     .fcstm-main-view--compare .fcstm-source-panel,
     .fcstm-main-view--compare .fcstm-diagram-view,
@@ -666,6 +664,7 @@ body {
     display: flex;
     flex-direction: column;
     min-height: 0;
+    max-height: 70vh;
     gap: 8px;
 }
 .fcstm-bottom-drawer--collapsed {

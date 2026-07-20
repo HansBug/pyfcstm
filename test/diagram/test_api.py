@@ -118,6 +118,32 @@ def test_imported_source_line_map_contains_child_document_lines(tmp_path):
     assert all(state["sourceLineMap"][key] for key in child_lines)
 
 
+def test_imported_documents_with_duplicate_basenames_keep_distinct_ids(tmp_path):
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    (tmp_path / "a" / "child.fcstm").write_text(
+        "state AChild { state Idle; [*] -> Idle; }", encoding="utf-8"
+    )
+    (tmp_path / "b" / "child.fcstm").write_text(
+        "state BChild { state Idle; [*] -> Idle; }", encoding="utf-8"
+    )
+    root = tmp_path / "main.fcstm"
+    root.write_text(
+        'state Root { import "./a/child.fcstm" as A; '
+        'import "./b/child.fcstm" as B; [*] -> A; }',
+        encoding="utf-8",
+    )
+    model = load_state_machine_from_text(root.read_text(encoding="utf-8"), path=str(root))
+    html = model.diagram().to_html()
+    match = re.search(r"window\.__FCSTM_INITIAL_STATE__ = (.*);</script><script>", html, re.DOTALL)
+    assert match is not None
+    state = json.loads(match.group(1))
+    documents = state["sourceDocuments"]
+    assert "a/child.fcstm" in documents
+    assert "b/child.fcstm" in documents
+    assert documents["a/child.fcstm"]["html"] != documents["b/child.fcstm"]["html"]
+
+
 def test_source_line_map_preserves_multiple_items_on_one_line():
     model = _model("state Root { state A; state B; state C; [*] -> A; A -> B; A -> C; }")
     html = model.diagram().to_html()

@@ -38,6 +38,7 @@ BRIDGE_PATH = ROOT / "tools" / "diagram_assets" / "resvg-bridge.js"
 HOST_SHIM_PATH = ROOT / "tools" / "diagram_assets" / "host-shim.js"
 JSFCSTM_DIR = ROOT / "editors" / "jsfcstm"
 VSCODE_DIR = ROOT / "editors" / "vscode"
+ANTLR_JAR_PATH = ROOT / "antlr-4.9.3.jar"
 JSFCSTM_LOCK_PATH = JSFCSTM_DIR / "package-lock.json"
 ELK_PACKAGE_DIR = JSFCSTM_DIR / "node_modules" / "elkjs"
 ELK_API_PATH = JSFCSTM_DIR / "node_modules" / "elkjs" / "lib" / "elk-api.js"
@@ -232,6 +233,8 @@ def ensure_viewer_dependencies() -> None:
     """
     local_tarball = JSFCSTM_DIR / "jsfcstm.tgz"
     if not local_tarball.is_file() or not (JSFCSTM_DIR / "dist").is_dir():
+        if not ANTLR_JAR_PATH.is_file():
+            subprocess.run(["make", "antlr"], cwd=str(ROOT), check=True)
         subprocess.run([_node_command("npm"), "run", "build"], cwd=str(JSFCSTM_DIR), check=True)
         subprocess.run([_node_command("npm"), "run", "pack:local"], cwd=str(JSFCSTM_DIR), check=True)
     required = (
@@ -534,6 +537,15 @@ def build_viewer(output_dir: Path) -> Tuple[bytes, bytes, Dict[str, object]]:
                 % ", ".join(bundled_forbidden)
             )
     viewer = viewer_path.read_bytes()
+    forbidden_bytes = tuple(name.encode("ascii") for name in forbidden)
+    bundled_forbidden_bytes = sorted(
+        name for name, marker in zip(forbidden, forbidden_bytes) if marker in viewer
+    )
+    if bundled_forbidden_bytes:
+        raise ValueError(
+            "standalone viewer output contains forbidden raster dependency names: %s"
+            % ", ".join(bundled_forbidden_bytes)
+        )
     # Vue devtools metadata is not needed in a packaged offline viewer and
     # may otherwise leak the maintainer's checkout path into every HTML file.
     viewer = re.sub(br'__file\",\"[^\"]+\"', b'__file\",\"\"', viewer)

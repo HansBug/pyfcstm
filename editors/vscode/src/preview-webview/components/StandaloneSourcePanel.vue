@@ -31,6 +31,15 @@ function idsForLine(line: string): string[] {
     return raw ? [raw] : [];
 }
 
+function nextIdForLine(line: string): string | undefined {
+    const ids = idsForLine(line);
+    if (!ids.length) return undefined;
+    const current = props.selection?.id || props.hover?.id;
+    if (!current) return ids[0];
+    const index = ids.indexOf(current);
+    return ids[(index + 1) % ids.length];
+}
+
 const activeId = computed(() => props.hover?.id || props.selection?.id || null);
 const activeLines = computed(() => {
     const id = activeId.value;
@@ -47,7 +56,7 @@ function onClick(event: MouseEvent) {
     const target = (event.target as HTMLElement | null)?.closest('.fcstm-source-line');
     const line = target?.getAttribute('data-line');
     if (line === null || line === undefined) return;
-    const id = idsForLine(line)[0];
+    const id = nextIdForLine(line);
     if (id) emit('select', selectionKindForSourceMap(props.sourceMap, id));
 }
 
@@ -55,7 +64,9 @@ function onMouseOver(event: MouseEvent) {
     const target = (event.target as HTMLElement | null)?.closest('.fcstm-source-line');
     const line = target?.getAttribute('data-line');
     if (line === null || line === undefined) return;
-    const id = idsForLine(line)[0];
+    const ids = idsForLine(line);
+    const current = props.selection?.id;
+    const id = current && ids.includes(current) ? current : ids[0];
     emit('hover', id ? selectionKindForSourceMap(props.sourceMap, id) : null);
 }
 

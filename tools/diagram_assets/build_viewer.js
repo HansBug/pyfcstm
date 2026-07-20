@@ -7,6 +7,30 @@ const esbuild = requireFromVscode('esbuild');
 const vuePlugin = requireFromVscode('unplugin-vue/esbuild');
 const fastPngStub = path.resolve(__dirname, 'fast-png-stub.js');
 
+const forbiddenOptionalPackages = ['canvg', 'html2canvas', 'dompurify'];
+const disabledOptionalPackageNames = new Map(
+  forbiddenOptionalPackages.map((name, index) => [name, `__pyfcstm_disabled_optional_${index}__`]),
+);
+
+function stripOptionalJspdfDependencies() {
+  return {
+    name: 'strip-optional-jspdf-dependencies',
+    setup(build) {
+      build.onLoad({filter: /jspdf\.es\.min\.js$/}, async args => {
+        let contents = await fs.promises.readFile(args.path, 'utf8');
+        for (const packageName of forbiddenOptionalPackages) {
+          // jsPDF only reaches these imports through its optional ``html`` or
+          // raster-image APIs. The standalone viewer never calls those APIs;
+          // replacing the package literals prevents a hidden network/import
+          // fallback while leaving the vector PDF API intact.
+          contents = contents.split(packageName).join(disabledOptionalPackageNames.get(packageName));
+        }
+        return {contents, loader: 'js'};
+      });
+    },
+  };
+}
+
 const output = process.argv[2];
 if (!output) throw new Error('viewer output directory is required');
 
@@ -28,7 +52,12 @@ esbuild.build({
   // browser canvas path and PDF uses svg2pdf.js. Leave those optional modules
   // external so they cannot be shipped accidentally or become a hidden
   // network fallback in the self-contained file viewer.
-  external: ['canvg', 'html2canvas', 'fast-png', 'dompurify'],
+  external: [
+    'canvg', 'html2canvas', 'fast-png', 'dompurify',
+    '__pyfcstm_disabled_optional_0__',
+    '__pyfcstm_disabled_optional_1__',
+    '__pyfcstm_disabled_optional_2__',
+  ],
   alias: {'fast-png': fastPngStub},
   define: {
     'process.env.NODE_ENV': '"production"',
@@ -36,7 +65,7 @@ esbuild.build({
     '__VUE_PROD_DEVTOOLS__': 'false',
     '__VUE_PROD_HYDRATION_MISMATCH_DETAILS__': 'false',
   },
-  plugins: [vuePlugin({sourceMap: false})],
+  plugins: [vuePlugin({sourceMap: false}), stripOptionalJspdfDependencies()],
 }).then(result => {
   fs.writeFileSync(path.join(output, 'viewer.meta.json'), JSON.stringify(result.metafile || {}));
 }).catch(error => {

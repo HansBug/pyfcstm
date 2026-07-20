@@ -124,6 +124,46 @@ def download_locked(url: str, expected_sha256: str) -> bytes:
     return data
 
 
+def _installed_esbuild_is_usable() -> bool:
+    """Return whether the existing local esbuild tree executes the lock version."""
+    try:
+        package_lock = json.loads(JSFCSTM_LOCK_PATH.read_text(encoding="utf-8"))
+        package = package_lock["packages"]["node_modules/esbuild"]
+        package_json = json.loads(
+            (JSFCSTM_DIR / "node_modules" / "esbuild" / "package.json").read_text(
+                encoding="utf-8"
+            )
+        )
+    except (KeyError, OSError, TypeError, UnicodeDecodeError, ValueError):
+        # KeyError/TypeError/ValueError/UnicodeDecodeError: lock or installed
+        # metadata is malformed; OSError: a local package file is unavailable.
+        return False
+    expected_version = package.get("version")
+    if (
+        not isinstance(expected_version, str)
+        or package_json.get("version") != expected_version
+    ):
+        return False
+    if package_json.get("name") != "esbuild":
+        return False
+    wrapper = JSFCSTM_DIR / "node_modules" / "esbuild" / "bin" / "esbuild"
+    if not wrapper.is_file() or wrapper.stat().st_size == 0:
+        return False
+    try:
+        result = subprocess.run(
+            [_node_command("npx"), "--no-install", "esbuild", "--version"],
+            cwd=str(JSFCSTM_DIR),
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+    except OSError:
+        # OSError: npx is unavailable or the existing executable cannot start.
+        return False
+    return result.returncode == 0 and result.stdout.strip() == expected_version
+
+
 def ensure_js_dependencies() -> None:
     """
     Restore the exact jsfcstm dependency tree required by the asset entry.
@@ -145,6 +185,7 @@ def ensure_js_dependencies() -> None:
         and (RESVG_PACKAGE_DIR / "index_bg.wasm").is_file()
         and (RESVG_PACKAGE_DIR / "package.json").is_file()
         and (JSFCSTM_DIR / "node_modules" / "esbuild").is_dir()
+        and _installed_esbuild_is_usable()
     ):
         return
     subprocess.run(

@@ -25,6 +25,13 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from pyfcstm.diagram import DiagramAssetEngine  # noqa: E402
+from pyfcstm.diagram.engine import (  # noqa: E402
+    _MAX_RENDER_DIMENSION,
+    _MAX_RENDER_PIXELS,
+    _MAX_RENDER_PNG_BYTES,
+    _MAX_RENDER_RGBA_BYTES,
+    _decode_png_rgba,
+)
 
 
 DEFAULT_CORPORA = (
@@ -326,6 +333,8 @@ def _png_ink_bbox(data: bytes) -> Tuple[int, int, Tuple[int, int, int, int]]:
     """
     if not data.startswith(b"\x89PNG\r\n\x1a\n"):
         raise ValueError("PNG output lacks the PNG signature")
+    if len(data) > _MAX_RENDER_PNG_BYTES:
+        raise ValueError("PNG output exceeds the bounded byte limit")
     position = 8
     width = height = bit_depth = color_type = None
     compressed = bytearray()
@@ -367,6 +376,13 @@ def _png_ink_bbox(data: bytes) -> Tuple[int, int, Tuple[int, int, int, int]]:
                 raise ValueError("PNG output is not non-interlaced RGBA8")
             if not width or not height:
                 raise ValueError("PNG output has non-positive dimensions")
+            if (
+                width > _MAX_RENDER_DIMENSION
+                or height > _MAX_RENDER_DIMENSION
+                or width * height > _MAX_RENDER_PIXELS
+                or width * height * 4 > _MAX_RENDER_RGBA_BYTES
+            ):
+                raise ValueError("PNG output exceeds the bounded dimension limit")
             saw_ihdr = True
         elif kind == b"IDAT":
             if not saw_ihdr:
@@ -452,11 +468,21 @@ def _self_check_png_parser() -> None:
     valid = signature + chunk(b"IHDR", header) + image + chunk(b"IEND", b"")
     if _png_ink_bbox(valid)[:2] != (1, 1):
         raise AssertionError("strict parity PNG parser rejected a valid RGBA image")
+    if _decode_png_rgba(valid)[:2] != _png_ink_bbox(valid)[:2]:
+        raise AssertionError("runtime and parity PNG dimensions differ")
     invalid_cases = (
         signature + chunk(b"IDAT", b"") + chunk(b"IHDR", header) + chunk(b"IEND", b""),
         signature
         + chunk(b"IHDR", header)
         + chunk(b"IHDR", header)
+        + image
+        + chunk(b"IEND", b""),
+        signature + chunk(b"IHDR", header) + image + chunk(b"IEND", b"x"),
+        valid + image,
+        signature
+        + chunk(b"IHDR", header)
+        + image
+        + chunk(b"tEXt", b"x")
         + image
         + chunk(b"IEND", b""),
         valid + b"trailing-bytes",

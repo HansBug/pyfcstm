@@ -421,9 +421,10 @@ state Root {
 
     assert transition._source_path == str(source_path.resolve())
     assert effect._source_path == str(source_path.resolve())
-    assert registry.excerpt(registry.model_reference(transition)) == (
-        "A -> B effect {\n        x = x + 1;\n    }"
+    expected_transition = os.linesep.join(
+        ("A -> B effect {", "        x = x + 1;", "    }")
     )
+    assert registry.excerpt(registry.model_reference(transition)) == expected_transition
     assert registry.excerpt(registry.model_reference(effect)) == "x = x + 1;"
 
 

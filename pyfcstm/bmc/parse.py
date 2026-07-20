@@ -29,7 +29,8 @@ Example::
 
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, List, cast
+from dataclasses import replace
+from typing import Any, Callable, Dict, List, Optional, cast
 
 from antlr4 import CommonTokenStream, InputStream, ParserRuleContext, Token
 from antlr4.error.ErrorListener import ErrorListener
@@ -40,7 +41,14 @@ from .errors import BmcQueryParseError
 from .grammar.BmcQueryLexer import BmcQueryLexer
 from .grammar.BmcQueryParser import BmcQueryParser
 from .listener import BmcQueryParseListener
-from .query import BmcQuery
+from .query import (
+    BmcAssumption,
+    BmcProperty,
+    BmcQuery,
+    InitialSpec,
+    InitialVariablePolicy,
+)
+from pyfcstm.utils.validate import Span
 
 _ParserEntry = Callable[[BmcQueryParser], ParserRuleContext]
 _SUPPORTED_ENTRIES = {
@@ -222,11 +230,74 @@ def _find_error_node_text(parse_tree: ParserRuleContext) -> str:
     return ""
 
 
-def build_bmc_ast_from_parse_tree(parse_tree: ParserRuleContext) -> Any:
+def _context_span(context: ParserRuleContext) -> Span:
+    """Return a one-based half-open span for an ANTLR context.
+
+    :param context: ANTLR parser context with start/stop tokens.
+    :type context: antlr4.ParserRuleContext
+    :return: Source span covering the context.
+    :rtype: pyfcstm.utils.validate.Span
+    """
+    start = context.start
+    stop = context.stop if context.stop is not None else start
+    end_column = stop.column + len(stop.text or "") + 1
+    column = start.column + 1
+    if stop.line == start.line and end_column <= column:
+        end_column = column + 1
+    return Span(
+        line=start.line,
+        column=column,
+        end_line=stop.line,
+        end_column=end_column,
+    )
+
+
+def _attach_query_source_metadata(
+    value: Any, parse_tree: ParserRuleContext, listener: BmcQueryParseListener,
+    source_path: Optional[str],
+) -> Any:
+    """Attach parser spans to a query root without changing canonical data."""
+    if not isinstance(value, BmcQuery):
+        return value
+    spans: Dict[int, Span] = {}
+    pending = [parse_tree]
+    while pending:
+        node = pending.pop()
+        mapped = listener.nodes.get(node)
+        if isinstance(
+            mapped,
+            (
+                BmcQuery,
+                BmcProperty,
+                BmcAssumption,
+                InitialSpec,
+                InitialVariablePolicy,
+                BmcCondExpr,
+                BmcNumExpr,
+            ),
+        ):
+            spans.setdefault(id(mapped), _context_span(node))
+        for index in range(node.getChildCount() - 1, -1, -1):
+            child = node.getChild(index)
+            if isinstance(child, ParserRuleContext):
+                pending.append(child)
+    return replace(
+        value,
+        _source_path=source_path,
+        _source_spans=tuple(sorted(spans.items(), key=lambda item: item[0])),
+    )
+
+
+def build_bmc_ast_from_parse_tree(
+    parse_tree: ParserRuleContext, source_path: Optional[str] = None
+) -> Any:
     """Build a BMC AST object from an already-created ANTLR parse tree.
 
     :param parse_tree: Root parse-tree context to walk.
     :type parse_tree: antlr4.ParserRuleContext
+    :param source_path: Optional source path attached to query metadata,
+        defaults to ``None``.
+    :type source_path: Optional[str], optional
     :return: AST or query object mapped for ``parse_tree``.
     :rtype: object
     :raises TypeError: If ``parse_tree`` is not an ANTLR parser context.
@@ -264,7 +335,8 @@ def build_bmc_ast_from_parse_tree(parse_tree: ParserRuleContext) -> Any:
             "BMC parse tree construction failed because a child context was not mapped."
         ) from err
     try:
-        return listener.nodes[parse_tree]
+        result = listener.nodes[parse_tree]
+        return _attach_query_source_metadata(result, parse_tree, listener, source_path)
     except KeyError as err:
         # KeyError: listener.nodes has no root mapping when the supplied
         # parse-tree context is outside the supported BMC builder surface.
@@ -275,7 +347,10 @@ def build_bmc_ast_from_parse_tree(parse_tree: ParserRuleContext) -> Any:
 
 
 def parse_with_bmc_grammar_entry(
-    input_text: str, entry_name: str, force_finished: bool = True
+    input_text: str,
+    entry_name: str,
+    force_finished: bool = True,
+    source_path: Optional[str] = None,
 ) -> Any:
     """Parse text with a supported BMC grammar entry rule.
 
@@ -287,6 +362,9 @@ def parse_with_bmc_grammar_entry(
     :param force_finished: Whether the token stream must be exhausted after the
         entry rule, defaults to ``True``.
     :type force_finished: bool, optional
+    :param source_path: Optional source path attached to query metadata,
+        defaults to ``None``.
+    :type source_path: Optional[str], optional
     :return: AST object produced by the entry rule.
     :rtype: object
     :raises pyfcstm.bmc.errors.BmcQueryParseError: If ``entry_name`` is
@@ -323,14 +401,19 @@ def parse_with_bmc_grammar_entry(
     if force_finished:
         error_listener.check_unfinished_parsing_error(stream)
     error_listener.check_errors()
-    return build_bmc_ast_from_parse_tree(parse_tree)
+    return build_bmc_ast_from_parse_tree(parse_tree, source_path=source_path)
 
 
-def parse_bmc_query(input_text: str) -> BmcQuery:
+def parse_bmc_query(
+    input_text: str, source_path: Optional[str] = None
+) -> BmcQuery:
     """Parse a complete ``.fbmcq`` query.
 
     :param input_text: Complete query text.
     :type input_text: str
+    :param source_path: Optional source path attached to query metadata,
+        defaults to ``None``.
+    :type source_path: Optional[str], optional
     :return: Parsed query object.
     :rtype: pyfcstm.bmc.query.BmcQuery
     :raises pyfcstm.bmc.errors.BmcQueryParseError: If syntax parsing fails.
@@ -342,7 +425,9 @@ def parse_bmc_query(input_text: str) -> BmcQuery:
         >>> parse_bmc_query('check reach <= 1: true;').property.bound
         1
     """
-    result = parse_with_bmc_grammar_entry(input_text, "query")
+    result = parse_with_bmc_grammar_entry(
+        input_text, "query", source_path=source_path
+    )
     if not isinstance(result, BmcQuery):
         raise BmcQueryParseError("BMC query entry did not produce BmcQuery.")
     return result

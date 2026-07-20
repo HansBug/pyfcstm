@@ -289,6 +289,7 @@ def assemble_state_machine_imports(
 
     effective_path, import_base_dir, entry_file_path = _resolve_path_context(path)
     program = _clone_ast_node(dnode)
+    _mark_ast_source_metadata(program, entry_file_path)
     _assemble_program(
         program=program,
         import_base_dir=import_base_dir,
@@ -331,6 +332,12 @@ def _clone_ast_node(node):
             for field in fields(node)
         }
         cloned = node.__class__(**values)
+        for attribute in ("_source_path", "_source_documents"):
+            if hasattr(node, attribute):
+                value = getattr(node, attribute)
+                if attribute == "_source_documents":
+                    value = dict(value)
+                setattr(cloned, attribute, value)
         if isinstance(node, dsl_nodes.TransitionDefinition):
             metadata = _get_trusted_generated_combo_transition_metadata(node)
             if metadata is not None:
@@ -344,6 +351,50 @@ def _clone_ast_node(node):
         return cloned
     else:
         return node
+
+
+def _mark_ast_source_metadata(
+    node: object, source_path: Optional[str], source_text: Optional[str] = None
+) -> None:
+    """Attach private source metadata to an AST subtree.
+
+    AST nodes intentionally keep source metadata out of their dataclass fields
+    and canonical DSL representation. The importer nevertheless needs to carry
+    the originating file through cloning and recursive import assembly.
+
+    :param node: AST object or nested AST container.
+    :type node: object
+    :param source_path: Absolute originating file path, or ``None``.
+    :type source_path: Optional[str]
+    :param source_text: Complete source snapshot for the root program, or
+        ``None`` when only a path is known.
+    :type source_text: Optional[str], optional
+    :return: ``None``.
+    :rtype: None
+    """
+    if isinstance(node, list):
+        for item in node:
+            _mark_ast_source_metadata(item, source_path)
+        return
+    if isinstance(node, tuple):
+        for item in node:
+            _mark_ast_source_metadata(item, source_path)
+        return
+    if isinstance(node, dict):
+        for key, value in node.items():
+            _mark_ast_source_metadata(key, source_path)
+            _mark_ast_source_metadata(value, source_path)
+        return
+    if not isinstance(node, dsl_nodes.ASTNode):
+        return
+    if source_path is not None:
+        setattr(node, "_source_path", source_path)
+    if isinstance(node, dsl_nodes.StateMachineDSLProgram) and source_text is not None:
+        documents = dict(getattr(node, "_source_documents", {}))
+        documents[source_path] = source_text
+        setattr(node, "_source_documents", documents)
+    for item in fields(node):
+        _mark_ast_source_metadata(getattr(node, item.name), source_path)
 
 
 def _assemble_program(
@@ -458,6 +509,9 @@ def _assemble_state(
             import_stack=[*import_stack, resolved_file],
             sink=sink,
         )
+        host_documents = dict(getattr(host_program, "_source_documents", {}))
+        host_documents.update(getattr(imported_program, "_source_documents", {}))
+        setattr(host_program, "_source_documents", host_documents)
 
         # The mapping helpers (def / event) are sink-aware: in strict
         # mode (``DiagnosticSink(collect=False)``) the first emit raises
@@ -645,6 +699,8 @@ def _load_imported_program(
             reason='parse_error',
         )
         return None
+
+    _mark_ast_source_metadata(program, os.path.abspath(file_path), content)
 
     if program.root_state is None:  # pragma: no cover
         # Defensive: the grammar entry ``state_machine_dsl`` requires

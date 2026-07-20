@@ -105,6 +105,7 @@ from .source import (
     stable_leaf_source,
     terminated_source,
 )
+from .provenance import BmcTrackedConstraint
 from pyfcstm.model import Expr
 from pyfcstm.solver.domain import DomainConstraint, DomainSource, translate_expr_domain
 from pyfcstm.solver.operation import execute_operations_domain
@@ -244,6 +245,104 @@ def _and(items: Iterable[z3.ExprRef]) -> z3.BoolRef:
     if len(values) == 1:
         return values[0]
     return z3.And(*values)
+
+
+def _formula_from_groups(
+    groups: Sequence[BmcTrackedConstraint],
+) -> z3.BoolRef:
+    """Rebuild one aggregate formula from ordered source groups.
+
+    Each source group represents one domain-level fact and may contain more
+    than one Boolean expression. Flattening groups in registration order
+    preserves the relation builder's existing S-expression shape while making
+    the tracked partition the source of the aggregate formula.
+
+    :param groups: Ordered source groups for one formula component.
+    :type groups: Sequence[pyfcstm.bmc.provenance.BmcTrackedConstraint]
+    :return: Conjunction of all group expressions.
+    :rtype: z3.BoolRef
+
+    Examples::
+
+        >>> import z3
+        >>> from pyfcstm.bmc.provenance import BmcSourceRef, BmcTrackedConstraint
+        >>> group = BmcTrackedConstraint(
+        ...     "x", "kernel", "domain", (z3.Bool("x"),),
+        ...     BmcSourceRef("generated", None, None),
+        ... )
+        >>> str(_formula_from_groups((group,)))
+        'x'
+    """
+    return _and(
+        expression
+        for group in groups
+        for expression in group.expressions
+    )
+
+
+def _append_tracked_group(
+    groups: List[BmcTrackedConstraint],
+    *,
+    stable_id: str,
+    stage: str,
+    category: str,
+    expressions: Iterable[z3.ExprRef],
+    source_ref,
+    refs: Optional[Mapping[str, object]] = None,
+) -> None:
+    """Register one non-empty source group at its formula creation site.
+
+    The relation layer owns the Z3-specific validation while the provenance
+    module remains solver-independent.  Keeping registration adjacent to the
+    original conjunct construction prevents a later AST walk from guessing
+    which generated expression came from which domain fact.
+
+    :param groups: Mutable target group list.
+    :type groups: List[BmcTrackedConstraint]
+    :param stable_id: Deterministic group identifier.
+    :type stable_id: str
+    :param stage: Formula stage.
+    :type stage: str
+    :param category: Domain group category.
+    :type category: str
+    :param expressions: Boolean Z3 expressions for the group.
+    :type expressions: Iterable[z3.ExprRef]
+    :param source_ref: BMC source reference.
+    :type source_ref: pyfcstm.bmc.provenance.BmcSourceRef
+    :param refs: Stable frame/step/case metadata, defaults to ``None``.
+    :type refs: Optional[Mapping[str, object]], optional
+    :return: ``None``.
+    :rtype: None
+    :raises pyfcstm.bmc.errors.BmcBuildError: If an expression is not Boolean.
+
+    Examples::
+
+        >>> import z3
+        >>> from pyfcstm.bmc.provenance import BmcSourceRef
+        >>> groups = []
+        >>> _append_tracked_group(
+        ...     groups, stable_id="x", stage="kernel", category="domain",
+        ...     expressions=(z3.BoolVal(True),),
+        ...     source_ref=BmcSourceRef("generated", None, None),
+        ... )
+        >>> groups[0].stable_id
+        'x'
+    """
+    values = tuple(expressions)
+    if not values:
+        raise BmcBuildError("tracked group expressions must be non-empty.")
+    if not all(z3.is_bool(value) for value in values):
+        raise BmcBuildError("tracked group expressions must be Boolean.")
+    groups.append(
+        BmcTrackedConstraint(
+            stable_id=stable_id,
+            stage=stage,
+            category=category,
+            expressions=values,
+            source_ref=source_ref,
+            refs=refs or {},
+        )
+    )
 
 
 def _or(items: Iterable[z3.ExprRef]) -> z3.BoolRef:
@@ -1011,6 +1110,9 @@ class BmcCoreFormula:
     core: z3.BoolRef
     steps: Tuple[BmcStepRelation, ...]
     diagnostics: Tuple[str, ...] = ()
+    _tracked_groups: Tuple[BmcTrackedConstraint, ...] = field(
+        default_factory=tuple, repr=False, compare=False
+    )
 
     def __post_init__(self) -> None:
         _require_context(self.context)
@@ -1031,6 +1133,25 @@ class BmcCoreFormula:
             raise BmcBuildError("diagnostics must contain strings.")
         object.__setattr__(self, "steps", tuple(self.steps))
         object.__setattr__(self, "diagnostics", tuple(self.diagnostics))
+        groups = tuple(self._tracked_groups)
+        if not all(isinstance(item, BmcTrackedConstraint) for item in groups):
+            raise BmcBuildError(
+                "tracked groups must contain BmcTrackedConstraint objects."
+            )
+        stable_ids = [item.stable_id for item in groups]
+        if len(set(stable_ids)) != len(stable_ids):
+            raise BmcBuildError("tracked groups must have unique stable ids.")
+        for group in groups:
+            for expression in group.expressions:
+                if not z3.is_bool(expression):
+                    raise BmcBuildError(
+                        "tracked group expressions must be Z3 Boolean expressions."
+                    )
+                if expression.ctx != self.core.ctx:
+                    raise BmcBuildError(
+                        "tracked group expressions must share the core Z3 context."
+                    )
+        object.__setattr__(self, "_tracked_groups", groups)
 
     def to_canonical(self) -> _CanonicalDict:
         """Return a JSON-stable core-formula summary.
@@ -2088,24 +2209,56 @@ def _formals_by_step(
 def _build_domain_formula(
     symbols: BmcTraceSymbols,
     frame_domain: _RelationFrameDomain,
+    groups: List[BmcTrackedConstraint],
+    source_ref_factory,
 ) -> z3.BoolRef:
     constraints = [_state_in(symbols.frame_state(0), frame_domain.frame0_state_ids)]
+    _append_tracked_group(
+        groups,
+        stable_id="domain.frame.0000.state",
+        stage="kernel",
+        category="domain.frame_state",
+        expressions=(constraints[0],),
+        source_ref=source_ref_factory(),
+        refs={"frame": 0, "kind": "state"},
+    )
     for frame_index in range(1, symbols.domain.bound + 1):
-        constraints.append(
-            _state_in(
-                symbols.frame_state(frame_index), frame_domain.recurrence_state_ids
-            )
+        constraint = _state_in(
+            symbols.frame_state(frame_index), frame_domain.recurrence_state_ids
+        )
+        constraints.append(constraint)
+        _append_tracked_group(
+            groups,
+            stable_id="domain.frame.%04d.state" % frame_index,
+            stage="kernel",
+            category="domain.frame_state",
+            expressions=(constraint,),
+            source_ref=source_ref_factory(),
+            refs={"frame": frame_index, "kind": "state"},
         )
     return _and(constraints)
 
 
 def _build_initial_formula(
-    context: BmcPreparedContext, symbols: BmcTraceSymbols
+    context: BmcPreparedContext,
+    symbols: BmcTraceSymbols,
+    groups: List[BmcTrackedConstraint],
 ) -> z3.BoolRef:
     source = _initial_source(context)
-    constraints: List[z3.ExprRef] = [
-        symbols.frame_state(0) == z3.IntVal(source.source_state_id)
-    ]
+    constraints: List[z3.ExprRef] = []
+    target_constraint = symbols.frame_state(0) == z3.IntVal(source.source_state_id)
+    constraints.append(target_constraint)
+    _append_tracked_group(
+        groups,
+        stable_id="initial.target",
+        stage="initialization",
+        category="initial.target",
+        expressions=(target_constraint,),
+        source_ref=context._source_registry.query_reference(
+            context.query, context.query.initial
+        ),
+        refs={"frame": 0, "target": source.source_state_id},
+    )
     env: Dict[str, _Z3Expr] = {
         var.name: symbols.frame_var(0, var.name) for var in context.domain.variables
     }
@@ -2118,21 +2271,68 @@ def _build_initial_formula(
             define.init, env, "initializer for %s" % var.name
         )
         value = _expect_arith(result.z3_expr, "initializer for %s" % var.name)
-        constraints.extend(_domain_constraints_exprs(result.definedness_constraints))
-        constraints.append(symbols.frame_var(0, var.name) == value)
+        define_ref = context._source_registry.model_reference(define)
+        for defined_index, item in enumerate(result.definedness_constraints):
+            constraints.append(item.constraint)
+            _append_tracked_group(
+                groups,
+                stable_id="initial.variable.%s.definedness.%04d"
+                % (var.name, defined_index),
+                stage="initialization",
+                category="definedness",
+                expressions=(item.constraint,),
+                source_ref=define_ref,
+                refs={"variable": var.name, "kind": "initializer"},
+            )
+        assignment = symbols.frame_var(0, var.name) == value
+        constraints.append(assignment)
+        _append_tracked_group(
+            groups,
+            stable_id="initial.variable.%s" % var.name,
+            stage="initialization",
+            category="initial.variable",
+            expressions=(assignment,),
+            source_ref=define_ref,
+            refs={"variable": var.name, "frame": 0},
+        )
     predicate = context.bound_query.initial.predicate
     if predicate is not None:
         lowered = _lower_bmc_cond_expr(predicate, symbols, frame_index=0)
-        constraints.extend(_domain_constraints_exprs(lowered.definedness_constraints))
-        constraints.append(_expect_bool(lowered.expr, "initial where predicate"))
+        predicate_ref = context._source_registry.query_reference(
+            context.query, context.query.initial.predicate
+        )
+        for defined_index, item in enumerate(lowered.definedness_constraints):
+            constraints.append(item.constraint)
+            _append_tracked_group(
+                groups,
+                stable_id="initial.where.definedness.%04d" % defined_index,
+                stage="initialization",
+                category="definedness",
+                expressions=(item.constraint,),
+                source_ref=predicate_ref,
+                refs={"frame": 0, "kind": "where"},
+            )
+        where_constraint = _expect_bool(lowered.expr, "initial where predicate")
+        constraints.append(where_constraint)
+        _append_tracked_group(
+            groups,
+            stable_id="initial.where",
+            stage="initialization",
+            category="initial.where",
+            expressions=(where_constraint,),
+            source_ref=predicate_ref,
+            refs={"frame": 0},
+        )
     return _and(constraints)
 
 
 def _build_environment_formula(
-    context: BmcPreparedContext, symbols: BmcTraceSymbols
+    context: BmcPreparedContext,
+    symbols: BmcTraceSymbols,
+    groups: List[BmcTrackedConstraint],
 ) -> z3.BoolRef:
     constraints: List[z3.ExprRef] = []
-    for assumption in context.bound_query.assumptions:
+    for assumption_index, assumption in enumerate(context.bound_query.assumptions):
         if not isinstance(
             assumption, BoundAssumption
         ):  # pragma: no cover - BoundBmcQuery validates assumptions.
@@ -2160,10 +2360,33 @@ def _build_environment_formula(
                 lowered = _lower_bmc_cond_expr(
                     source.predicate, symbols, frame_index=frame
                 )
-                constraints.extend(
-                    _domain_constraints_exprs(lowered.definedness_constraints)
+                source_ref = context._source_registry.query_reference(
+                    context.query, source
                 )
-                constraints.append(_expect_bool(lowered.expr, "frame assumption"))
+                for defined_index, item in enumerate(lowered.definedness_constraints):
+                    constraints.append(item.constraint)
+                    _append_tracked_group(
+                        groups,
+                        stable_id="assumption.%04d.frame.%04d.definedness.%04d"
+                        % (assumption_index, frame, defined_index),
+                        stage="assumptions",
+                        category="definedness",
+                        expressions=(item.constraint,),
+                        source_ref=source_ref,
+                        refs={"assumption": assumption_index, "frame": frame},
+                    )
+                frame_constraint = _expect_bool(lowered.expr, "frame assumption")
+                constraints.append(frame_constraint)
+                _append_tracked_group(
+                    groups,
+                    stable_id="assumption.%04d.frame.%04d"
+                    % (assumption_index, frame),
+                    stage="assumptions",
+                    category="assumption.frame",
+                    expressions=(frame_constraint,),
+                    source_ref=source_ref,
+                    refs={"assumption": assumption_index, "frame": frame},
+                )
             continue
         if assumption.kind == "event":
             if (
@@ -2174,9 +2397,23 @@ def _build_environment_formula(
                 )
             event = context.domain.event_by_id(assumption.resolved_event_ids[0])
             expected = bool(getattr(assumption.source, "expected"))
+            source_ref = context._source_registry.query_reference(
+                context.query, assumption.source
+            )
             for cycle in assumption.cycles:
                 event_expr = symbols.event_input(cycle, event.path)
-                constraints.append(event_expr if expected else z3.Not(event_expr))
+                event_constraint = event_expr if expected else z3.Not(event_expr)
+                constraints.append(event_constraint)
+                _append_tracked_group(
+                    groups,
+                    stable_id="assumption.%04d.event.%04d"
+                    % (assumption_index, cycle),
+                    stage="assumptions",
+                    category="assumption.event",
+                    expressions=(event_constraint,),
+                    source_ref=source_ref,
+                    refs={"assumption": assumption_index, "step": cycle},
+                )
             continue
         if assumption.kind == "event_cardinality":
             source = assumption.source
@@ -2199,10 +2436,21 @@ def _build_environment_formula(
                 for event_id in assumption.resolved_event_ids
             ]
             for step in range(context.bound):
-                constraints.append(
-                    z3.AtMost(
-                        *[symbols.event_input(step, event.path) for event in events], 1
-                    )
+                cardinality_constraint = z3.AtMost(
+                    *[symbols.event_input(step, event.path) for event in events], 1
+                )
+                constraints.append(cardinality_constraint)
+                _append_tracked_group(
+                    groups,
+                    stable_id="assumption.%04d.cardinality.%04d"
+                    % (assumption_index, step),
+                    stage="assumptions",
+                    category="assumption.cardinality",
+                    expressions=(cardinality_constraint,),
+                    source_ref=context._source_registry.query_reference(
+                        context.query, assumption.source
+                    ),
+                    refs={"assumption": assumption_index, "step": step},
                 )
             continue
         raise _internal_bmc_error(  # pragma: no cover - BoundAssumption validates known kinds.
@@ -2244,14 +2492,42 @@ def build_bmc_core_formula(context: BmcPreparedContext) -> BmcCoreFormula:
         for step_index, formals in enumerate(formals_by_step)
     }
     symbols = BmcTraceSymbols.allocate(prepared.domain, case_labels_by_step)
+    groups: List[BmcTrackedConstraint] = []
     steps = tuple(
         _build_step_relation(step_index, symbols, formals)
         for step_index, formals in enumerate(formals_by_step)
     )
-    domain_formula = _build_domain_formula(symbols, frame_domain)
-    initial_formula = _build_initial_formula(prepared, symbols)
-    transition_formula = _and(step.formula for step in steps)
-    environment_formula = _build_environment_formula(prepared, symbols)
+    generated_ref = prepared._source_registry.reference("generated", None, None)
+
+    domain_start = len(groups)
+    _build_domain_formula(
+        symbols,
+        frame_domain,
+        groups,
+        lambda: generated_ref,
+    )
+    domain_formula = _formula_from_groups(groups[domain_start:])
+
+    initial_start = len(groups)
+    _build_initial_formula(prepared, symbols, groups)
+    initial_formula = _formula_from_groups(groups[initial_start:])
+
+    transition_start = len(groups)
+    for step in steps:
+        _append_tracked_group(
+            groups,
+            stable_id="transition.step.%04d" % step.step_index,
+            stage="kernel",
+            category="transition.step",
+            expressions=(step.formula,),
+            source_ref=generated_ref,
+            refs={"step": step.step_index},
+        )
+    transition_formula = _formula_from_groups(groups[transition_start:])
+
+    environment_start = len(groups)
+    _build_environment_formula(prepared, symbols, groups)
+    environment_formula = _formula_from_groups(groups[environment_start:])
     core = _and(
         (domain_formula, initial_formula, transition_formula, environment_formula)
     )
@@ -2265,6 +2541,7 @@ def build_bmc_core_formula(context: BmcPreparedContext) -> BmcCoreFormula:
         core=core,
         steps=steps,
         diagnostics=(),
+        _tracked_groups=tuple(groups),
     )
 
 

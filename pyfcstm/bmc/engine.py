@@ -31,7 +31,7 @@ Example::
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Tuple, Union
 
 from .binding import (
@@ -43,6 +43,7 @@ from .binding import (
 from .domain import BmcDomain, build_bmc_domain
 from .errors import BmcBuildError
 from .parse import parse_bmc_query
+from .provenance import SourceDocumentRegistry
 from .query import BmcQuery
 from pyfcstm.model import StateMachine
 
@@ -121,6 +122,9 @@ class BmcPreparedContext:
     :param source_text: Original ``.fbmcq`` text for string inputs, defaults to
         ``None`` for AST inputs.
     :type source_text: Optional[str], optional
+    :param query_source_path: Display/source path for the query text, defaults
+        to ``None`` when no reliable path is available.
+    :type query_source_path: Optional[str], optional
     :raises pyfcstm.bmc.errors.BmcBuildError: If fields are malformed or
         inconsistent.
 
@@ -139,6 +143,10 @@ class BmcPreparedContext:
     domain: BmcDomain
     options: BmcOptions
     source_text: Optional[str] = None
+    query_source_path: Optional[str] = None
+    _source_registry: Optional[SourceDocumentRegistry] = field(
+        default=None, repr=False, compare=False
+    )
 
     def __post_init__(self) -> None:
         _require_field(self.model, "model", StateMachine)
@@ -148,6 +156,24 @@ class BmcPreparedContext:
         _require_field(self.options, "options", BmcOptions)
         if self.source_text is not None and not isinstance(self.source_text, str):
             raise BmcBuildError("source_text must be None or str.")
+        if self.query_source_path is not None and (
+            not isinstance(self.query_source_path, str) or not self.query_source_path
+        ):
+            raise BmcBuildError(
+                "query_source_path must be None or a non-empty string."
+            )
+        effective_query_path = self.query_source_path or getattr(
+            self.query, "_source_path", None
+        )
+        if self._source_registry is None:
+            documents = dict(getattr(self.model, "_source_documents", {}))
+            if effective_query_path is not None and self.source_text is not None:
+                documents[effective_query_path] = self.source_text
+            display_root = getattr(self.model, "_source_root", None)
+            registry = SourceDocumentRegistry(documents, display_root=display_root)
+            object.__setattr__(self, "_source_registry", registry)
+        if self.query_source_path is None and effective_query_path is not None:
+            object.__setattr__(self, "query_source_path", effective_query_path)
         if self.domain.bound != self.query.property.bound:
             raise BmcBuildError(
                 "domain bound %d does not match query bound %d."
@@ -231,11 +257,14 @@ def _require_options(options: Optional[BmcOptions]) -> BmcOptions:
     return options
 
 
-def _coerce_query(query: object) -> Tuple[BmcQuery, Optional[str]]:
+def _coerce_query(
+    query: object, query_source_path: Optional[str]
+) -> Tuple[BmcQuery, Optional[str], Optional[str]]:
     if isinstance(query, str):
-        return parse_bmc_query(query), query
+        parsed = parse_bmc_query(query, source_path=query_source_path)
+        return parsed, query, query_source_path
     if isinstance(query, BmcQuery):
-        return query, None
+        return query, None, query_source_path or getattr(query, "_source_path", None)
     raise BmcBuildError("query must be a str or BmcQuery.")
 
 
@@ -328,7 +357,11 @@ class BmcEngine:
         return self._options
 
     def prepare(
-        self, query: _QueryInput, options: Optional[BmcOptions] = None
+        self,
+        query: _QueryInput,
+        options: Optional[BmcOptions] = None,
+        *,
+        query_source_path: Optional[str] = None,
     ) -> BmcPreparedContext:
         """Prepare a BMC query text or AST against this engine's model.
 
@@ -339,6 +372,9 @@ class BmcEngine:
         :type query: Union[str, pyfcstm.bmc.query.BmcQuery]
         :param options: Per-call options, defaults to ``None``.
         :type options: BmcOptions, optional
+        :param query_source_path: Optional source path for query text, defaults
+            to ``None``.
+        :type query_source_path: Optional[str], optional
         :return: Prepared BMC context.
         :rtype: BmcPreparedContext
         :raises pyfcstm.bmc.errors.BmcQueryParseError: If query text cannot be
@@ -360,7 +396,9 @@ class BmcEngine:
         effective_options = (
             self.options if options is None else _require_options(options)
         )
-        parsed_query, source_text = _coerce_query(query)
+        parsed_query, source_text, effective_query_path = _coerce_query(
+            query, query_source_path
+        )
         structural_bound_query = bind_bmc_query_structure(parsed_query)
         query_bound = structural_bound_query.property.bound
         _enforce_max_bound(effective_options, query_bound)
@@ -373,6 +411,7 @@ class BmcEngine:
             domain=domain,
             options=effective_options,
             source_text=source_text,
+            query_source_path=effective_query_path,
         )
 
 
@@ -380,6 +419,8 @@ def prepare_bmc_query(
     model: StateMachine,
     query: _QueryInput,
     options: Optional[BmcOptions] = None,
+    *,
+    query_source_path: Optional[str] = None,
 ) -> BmcPreparedContext:
     """Prepare a BMC query with a one-shot engine.
 
@@ -394,6 +435,9 @@ def prepare_bmc_query(
     :type query: Union[str, pyfcstm.bmc.query.BmcQuery]
     :param options: Preparation options, defaults to ``None``.
     :type options: BmcOptions, optional
+    :param query_source_path: Optional source path for query text, defaults to
+        ``None``.
+    :type query_source_path: Optional[str], optional
     :return: Prepared BMC context.
     :rtype: BmcPreparedContext
     :raises pyfcstm.bmc.errors.BmcError: If parsing, binding, domain
@@ -407,7 +451,9 @@ def prepare_bmc_query(
         >>> prepare_bmc_query(model, 'check reach <= 1: active("Root");').bound
         1
     """
-    return BmcEngine(model, options).prepare(query)
+    return BmcEngine(model, options).prepare(
+        query, query_source_path=query_source_path
+    )
 
 
 __all__ = [

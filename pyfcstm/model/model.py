@@ -44,6 +44,7 @@ Example::
 import hashlib
 import io
 import json
+import os
 import weakref
 from dataclasses import dataclass, field
 from textwrap import indent
@@ -96,6 +97,89 @@ def _node_span(node) -> Optional[Span]:
     # diagnostic-contract gaps. Keep the missing-span case observable as
     # ``None`` instead of manufacturing an imprecise fallback.
     return getattr(node, "_span", None)
+
+
+def _set_model_source_path(model_object: object, ast_object: object) -> None:
+    """Copy private AST source ownership onto a mutable model object."""
+    source_path = getattr(ast_object, "_source_path", None)
+    if source_path is not None:
+        setattr(model_object, "_source_path", source_path)
+
+
+def _annotate_model_operations(model_items, ast_items) -> None:
+    """Propagate source paths through operation statements by source span."""
+    ast_items = list(ast_items or ())
+    used = set()
+    for model_item in model_items or ():
+        model_span = getattr(model_item, "_span", None)
+        match = None
+        for index, ast_item in enumerate(ast_items):
+            if index in used:
+                continue
+            if model_span is not None and getattr(ast_item, "_span", None) == model_span:
+                match = ast_item
+                used.add(index)
+                break
+        if match is None:
+            continue
+        _set_model_source_path(model_item, match)
+        if hasattr(model_item, "branches"):
+            ast_branches = getattr(match, "branches", ())
+            for model_branch, ast_branch in zip(model_item.branches, ast_branches):
+                _set_model_source_path(model_branch, ast_branch)
+                _annotate_model_operations(
+                    model_branch.statements, getattr(ast_branch, "statements", ())
+                )
+
+
+def _annotate_model_source_paths(
+    ast_state: dsl_nodes.StateDefinition, model_state: "State"
+) -> None:
+    """Copy source ownership from an assembled AST state into its model tree."""
+    _set_model_source_path(model_state, ast_state)
+
+    ast_events = {item.name: item for item in getattr(ast_state, "events", ())}
+    for name, event in model_state.events.items():
+        ast_event = ast_events.get(name)
+        if ast_event is not None:
+            _set_model_source_path(event, ast_event)
+
+    ast_transition_items = [
+        *getattr(ast_state, "transitions", ()),
+        *getattr(ast_state, "force_transitions", ()),
+    ]
+    used = set()
+    for transition in model_state.transitions:
+        transition_span = getattr(transition, "_span", None)
+        for index, ast_transition in enumerate(ast_transition_items):
+            if index in used:
+                continue
+            if (
+                transition_span is not None
+                and getattr(ast_transition, "_span", None) == transition_span
+            ):
+                _set_model_source_path(transition, ast_transition)
+                _annotate_model_operations(
+                    transition.effects,
+                    getattr(ast_transition, "post_operations", ()),
+                )
+                used.add(index)
+                break
+
+    action_pairs = (
+        (model_state.on_enters, getattr(ast_state, "enters", ())),
+        (model_state.on_durings, getattr(ast_state, "durings", ())),
+        (model_state.on_exits, getattr(ast_state, "exits", ())),
+        (model_state.on_during_aspects, getattr(ast_state, "during_aspects", ())),
+    )
+    for model_actions, ast_actions in action_pairs:
+        _annotate_model_operations(model_actions, ast_actions)
+
+    ast_substates = {item.name: item for item in getattr(ast_state, "substates", ())}
+    for name, substate in model_state.substates.items():
+        ast_substate = ast_substates.get(name)
+        if ast_substate is not None:
+            _annotate_model_source_paths(ast_substate, substate)
 
 
 def _event_origin_from_id(
@@ -4564,6 +4648,18 @@ def parse_dsl_node_to_state_machine(
         root_state=root_state,
         forced_transitions=tuple(forced_transition_declarations),
     )
+    source_documents = dict(getattr(dnode, "_source_documents", {}))
+    setattr(machine, "_source_documents", source_documents)
+    root_source_path = getattr(dnode.root_state, "_source_path", None)
+    if root_source_path is not None:
+        setattr(machine, "_source_path", root_source_path)
+        setattr(machine, "_source_root", os.path.dirname(root_source_path))
+    for name, define in machine.defines.items():
+        for def_item in dnode.definitions:
+            if def_item.name == name:
+                _set_model_source_path(define, def_item)
+                break
+    _annotate_model_source_paths(dnode.root_state, machine.root_state)
 
     if collect:
         # In collect mode we always return the tuple. ``machine`` is the

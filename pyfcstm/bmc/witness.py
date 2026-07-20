@@ -79,6 +79,7 @@ from .errors import BmcBuildError
 from .properties import BmcPropertyFormula, _lower_predicate
 from .query import EventAssumption
 from .relation import BmcCaseRelation
+from .solver import _SolveBudget, _check_with_budget
 from pyfcstm.model import OnAspect, OnStage, StateMachine
 from pyfcstm.simulate import ReadOnlyExecutionContext, SimulationRuntime
 
@@ -4554,57 +4555,6 @@ def _register_recorder(
                 handler(ctx)
 
             runtime.register_abstract_handler(action_path, wrapper)
-
-
-class _SolveBudget:
-    """Track one optional deadline shared by all staged solver checks."""
-
-    def __init__(self, timeout_ms: Optional[int]) -> None:
-        if timeout_ms is not None and (
-            isinstance(timeout_ms, bool)
-            or not isinstance(timeout_ms, int)
-            or timeout_ms <= 0
-        ):
-            raise BmcBuildError("timeout_ms must be a positive integer or None.")
-        self.timeout_ms = timeout_ms
-        self.deadline = (
-            None if timeout_ms is None else time.monotonic() + timeout_ms / 1000.0
-        )
-
-    def remaining_ms(self) -> Optional[int]:
-        if self.deadline is None:
-            return None
-        remaining = int((self.deadline - time.monotonic()) * 1000.0)
-        return remaining if remaining >= 1 else None
-
-
-def _check_with_budget(
-    solver: z3.Solver, budget: _SolveBudget
-) -> Tuple[
-    BmcSolveStatus,
-    Optional[z3.ModelRef],
-    Optional[str],
-    float,
-    bool,
-]:
-    remaining = budget.remaining_ms()
-    # ``timeout_ms=None`` leaves ``deadline`` and ``remaining`` unset, so this
-    # path intentionally calls Z3 without setting a solver timeout.
-    if budget.deadline is not None and remaining is None:
-        return "timeout", None, "deadline_exhausted_before_check", 0.0, False
-    if remaining is not None:
-        solver.set(timeout=remaining)
-    start = time.monotonic()
-    status = solver.check()
-    elapsed_ms = (time.monotonic() - start) * 1000.0
-    if status == z3.sat:
-        return "sat", solver.model(), None, elapsed_ms, True
-    if status == z3.unsat:
-        return "unsat", None, None, elapsed_ms, True
-    reason = solver.reason_unknown() or "unknown"
-    if reason == "timeout":
-        return "timeout", None, reason, elapsed_ms, True
-    return "unknown", None, reason, elapsed_ms, True
 
 
 def _feasibility_check(

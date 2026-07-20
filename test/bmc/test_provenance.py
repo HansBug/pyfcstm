@@ -220,6 +220,18 @@ def test_query_source_metadata_keeps_source_text_canonical_clean() -> None:
     }
 
 
+def test_query_source_metadata_keeps_root_query_span_after_replace() -> None:
+    """The returned immutable query root retains its own source span."""
+    text = 'check reach <= 1: active("Root");'
+    query = parse_bmc_query(text, source_path="query.fbmcq")
+    registry = SourceDocumentRegistry({}, query_documents={"query.fbmcq": text})
+
+    reference = registry.query_reference(query, query)
+
+    assert reference.span is not None
+    assert registry.excerpt(reference) == text
+
+
 def test_query_source_metadata_rejects_invalid_public_metadata() -> None:
     """Parser and query dataclass reject malformed source metadata."""
     query_text = 'check reach <= 1: active("Root");'
@@ -369,13 +381,9 @@ def test_tracked_groups_rebuild_each_aggregate_in_registration_order() -> None:
 
 def test_initial_where_definedness_is_tracked_with_the_source_predicate() -> None:
     """Initial predicate definedness constraints retain their source group."""
-    model = load_state_machine_from_text(
-        "def int x = 1; def int y = 0; state Root;"
-    )
+    model = load_state_machine_from_text("def int x = 1; def int y = 0; state Root;")
     query_text = 'init cold where x / y > 0;\ncheck reach <= 1: active("Root");'
-    context = BmcEngine(model).prepare(
-        query_text, query_source_path="query.fbmcq"
-    )
+    context = BmcEngine(model).prepare(query_text, query_source_path="query.fbmcq")
     core = build_bmc_core_formula(context)
 
     definedness = next(
@@ -386,9 +394,7 @@ def test_initial_where_definedness_is_tracked_with_the_source_predicate() -> Non
 
     assert definedness.category == "definedness"
     assert definedness.source_ref.kind == "fbmcq"
-    assert context._source_registry.excerpt(definedness.source_ref) == (
-        "x / y > 0"
-    )
+    assert context._source_registry.excerpt(definedness.source_ref) == ("x / y > 0")
     assert len(definedness.expressions) == 1
     assert "F_0_y" in str(definedness.expressions[0])
 

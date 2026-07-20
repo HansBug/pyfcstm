@@ -283,11 +283,22 @@ def _attach_query_source_metadata(
             child = node.getChild(index)
             if isinstance(child, ParserRuleContext):
                 pending.append(child)
-    return replace(
+    root_span = spans.pop(id(value), None)
+    result = replace(
         value,
         _source_path=source_path,
         _source_spans=tuple(sorted(spans.items(), key=lambda item: item[0])),
     )
+    if root_span is not None:
+        # ``replace`` creates a new immutable query root, so move the root
+        # span from the listener-owned object ID to the returned root ID.
+        spans[id(result)] = root_span
+        object.__setattr__(
+            result,
+            "_source_spans",
+            tuple(sorted(spans.items(), key=lambda item: item[0])),
+        )
+    return result
 
 
 def build_bmc_ast_from_parse_tree(

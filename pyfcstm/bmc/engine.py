@@ -31,7 +31,7 @@ Example::
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Dict, Optional, Tuple, Union
 
 from .binding import (
@@ -263,6 +263,10 @@ def _require_options(options: Optional[BmcOptions]) -> BmcOptions:
 def _coerce_query(
     query: object, query_source_path: Optional[str]
 ) -> Tuple[BmcQuery, Optional[str], Optional[str]]:
+    if query_source_path is not None and (
+        not isinstance(query_source_path, str) or not query_source_path
+    ):
+        raise BmcBuildError("query_source_path must be None or a non-empty string.")
     if isinstance(query, str):
         parsed = parse_bmc_query(query, source_path=query_source_path)
         return parsed, query, query_source_path
@@ -272,6 +276,8 @@ def _coerce_query(
             if query_source_path is not None
             else getattr(query, "_source_path", None)
         )
+        if effective_path != getattr(query, "_source_path", None):
+            query = replace(query, _source_path=effective_path)
         return query, None, effective_path
     raise BmcBuildError("query must be a str or BmcQuery.")
 

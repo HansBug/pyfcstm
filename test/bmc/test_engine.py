@@ -203,9 +203,7 @@ def test_engine_rejects_invalid_query_source_path(
     query = parse_bmc_query('check reach <= 1: active("Root.Done");')
 
     with pytest.raises(BmcBuildError, match="query_source_path"):
-        BmcEngine(engine_model).prepare(
-            query, query_source_path=query_source_path
-        )
+        BmcEngine(engine_model).prepare(query, query_source_path=query_source_path)
 
 
 @pytest.mark.unittest
@@ -220,6 +218,21 @@ def test_engine_inherits_source_path_from_parsed_query(
     context = BmcEngine(engine_model).prepare(query)
 
     assert context.query_source_path == "query.fbmcq"
+
+
+@pytest.mark.unittest
+def test_engine_query_source_path_overrides_ast_metadata(
+    engine_model: StateMachine,
+) -> None:
+    """An explicit source path replaces stale AST path metadata."""
+    query = parse_bmc_query(
+        'check reach <= 1: active("Root.Done");', source_path="old.fbmcq"
+    )
+
+    context = BmcEngine(engine_model).prepare(query, query_source_path="new.fbmcq")
+
+    assert context.query_source_path == "new.fbmcq"
+    assert context.query._source_path == "new.fbmcq"
 
 
 @pytest.mark.unittest

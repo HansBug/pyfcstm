@@ -64,7 +64,7 @@ def _node_command(name: str) -> str:
     # Windows exposes npm/npx through ``.cmd`` shims. ``shell=False`` (the
     # required safe subprocess mode) does not resolve those shims by their
     # extensionless names on all supported Python versions.
-    return name + ".cmd" if os.name == "nt" else name
+    return name + ".cmd" if os.name == "nt" and name in ("npm", "npx") else name
 
 
 def sha256_bytes(data: bytes) -> str:

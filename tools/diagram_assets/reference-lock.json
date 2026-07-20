@@ -1,0 +1,20 @@
+{
+  "schema": "pyfcstm-diagram-reference-lock",
+  "runtimes": {
+    "3.7": {
+      "encoding": "base64",
+      "sha256": "4e315085d0c0a42bcd6a77675fc19f7a662212e8467105cff384e1e48e96a939",
+      "url": "https://gist.githubusercontent.com/HansBug/b43d202ccc9436cada8bc57fa3763450/raw/dbe7c73645bb30f4650a65b3556023c8c6982693/reference-3.7.tar.gz.b64"
+    },
+    "3.8": {
+      "encoding": "base64",
+      "sha256": "67fd4394ade6c01f94379e6d2c0bd2d864833ed8bb60bbdf2a7b3a5e5fb850e2",
+      "url": "https://gist.githubusercontent.com/HansBug/b43d202ccc9436cada8bc57fa3763450/raw/dbe7c73645bb30f4650a65b3556023c8c6982693/reference-3.8.tar.gz.b64"
+    },
+    "3.11": {
+      "encoding": "base64",
+      "sha256": "a4f9d01d24c8e50536ab21da182bac660b7dd0c5894c9f3b00ed1492aa55784d",
+      "url": "https://gist.githubusercontent.com/HansBug/b43d202ccc9436cada8bc57fa3763450/raw/dbe7c73645bb30f4650a65b3556023c8c6982693/reference-3.11.tar.gz.b64"
+    }
+  }
+}

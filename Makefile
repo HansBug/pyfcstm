@@ -1,4 +1,4 @@
-.PHONY: docs docs_en docs_zh docs_pdf docs_pdf_en docs_pdf_zh test unittest template_unittest resource antlr antlr_build fcstm_antlr_build fbmcq_antlr_build build build_info build_info_cli package clean docs_auto todos_auto tests_auto rst_auto sha256 jsfcstm jsfcstm_clean vscode vscode_clean vscode_install vscode_uninstall logos logos_clean app_icons app_icons_clean help tpl tpl_clean templates_package template_packaging_check template_source_install_check docs_terminology_check test_boundary_check
+.PHONY: docs docs_en docs_zh docs_pdf docs_pdf_en docs_pdf_zh test unittest template_unittest resource antlr antlr_build fcstm_antlr_build fbmcq_antlr_build build build_info build_info_cli package clean build_assets build_assets_clean diagram_assets_check diagram_rendering_check diagram_parity_check diagram_reference_check diagram_engine_floor diagram_provenance_check diagram_assets_verify diagram_package_check diagram_corpus docs_auto todos_auto tests_auto rst_auto sha256 jsfcstm jsfcstm_clean vscode vscode_clean vscode_install vscode_uninstall logos logos_clean app_icons app_icons_clean help tpl tpl_clean templates_package template_packaging_check template_source_install_check docs_terminology_check test_boundary_check
 
 PYTHON := $(shell which python)
 
@@ -22,6 +22,11 @@ RANGE_DIR      ?= .
 RANGE_TEST_DIR := ${TEST_DIR}/${RANGE_DIR}
 RANGE_SRC_DIR  := ${SRC_DIR}/${RANGE_DIR}
 RANGE_SRC_DIR_TEST := ${TEST_DIR}/${RANGE_DIR}
+
+# Frozen custom-backend reference bundle used by the required parity gate.
+# It is intentionally external to the source tree and must be restored by the
+# maintainer/CI workflow before ``diagram_assets_verify`` is run.
+DIAGRAM_REFERENCE ?=
 
 COV_TYPES ?= xml term-missing
 
@@ -86,6 +91,13 @@ help:
 	@echo "  make package      - Build Python package (sdist and wheel)"
 	@echo "  make build        - Build standalone executable with PyInstaller"
 	@echo "  make build_info   - Generate build identity for a package or CLI build"
+	@echo "  make build_assets - Build ignored Python diagram JS/WASM/font assets"
+	@echo "  make diagram_assets_check - Build and validate diagram assets and ignore rules"
+	@echo "  make diagram_assets_verify - Run provenance, runtime, and visual asset gates"
+	@echo "  make diagram_parity_check DIAGRAM_REFERENCE=/abs/path/reference.json"
+	@echo "  make diagram_reference_check - Verify reference archive retry behavior"
+	@echo "  make diagram_corpus - Rebuild checked-in DiagramData rendering oracles"
+	@echo "  make build_assets_clean - Remove generated diagram assets"
 	@echo "  make clean        - Remove build artifacts"
 	@echo ""
 	@echo "Testing:"
@@ -155,15 +167,18 @@ help:
 	@echo "  AUTO_OPTIONS=...  - LLM generation options"
 	@echo ""
 
-package: build_info
+package: build_assets diagram_assets_check build_info
+	rm -rf ${BUILD_DIR}
+	rm -f ${DIST_DIR}/*.whl ${DIST_DIR}/*.tar.gz
 	$(PYTHON) -m build --sdist --wheel --outdir ${DIST_DIR}
-build_info: tpl
+	$(PYTHON) tools/check_diagram_package.py --check
+	$(PYTHON) tools/check_diagram_package.py --dist-dir ${DIST_DIR}
+build_info: build_assets diagram_assets_check tpl
 	$(PYTHON) -m tools.write_build_info
 
-build_info_cli: ${APP_ICON_STAMP}
-	$(MAKE) build_info
+build_info_cli: ${APP_ICON_STAMP} build_info
 
-build: build_info_cli
+build: build_assets diagram_assets_check build_info_cli
 	$(PYTHON) -m tools.generate_spec -o pyfcstm.spec --icon-dir ${APP_ICON_DIR}
 	pyinstaller pyfcstm.spec
 	@echo "Verifying bundled PyInstaller icon asset..."
@@ -174,6 +189,7 @@ test_cli:
 		--test-dsl docs/source/tutorials/cli/simple_machine.fcstm \
 		--template-dir test/testfile/template_1
 clean:
+	$(MAKE) build_assets_clean
 	rm -rf ${DIST_DIR} ${BUILD_DIR} *.egg-info
 	rm -rf build dist pyfcstm.spec
 	rm -f ${SRC_DIR}/config/build_info.py
@@ -182,7 +198,7 @@ clean:
 
 test: unittest
 
-unittest: tpl
+unittest: build_assets diagram_assets_check tpl
 	UNITTEST=1 \
 		pytest "${RANGE_TEST_DIR}" \
 		-sv -m unittest \
@@ -192,7 +208,7 @@ unittest: tpl
 		$(if ${MIN_COVERAGE},--cov-fail-under=${MIN_COVERAGE},) \
 		$(if ${WORKERS},-n ${WORKERS},)
 
-template_unittest: tpl
+template_unittest: build_assets diagram_assets_check tpl
 	UNITTEST=1 $(PYTHON) tools/run_template_suites.py --no-package $(TEMPLATE_UNITTEST_ARGS)
 
 docs:
@@ -217,6 +233,54 @@ templates_package: tpl
 
 tpl_clean:
 	rm -f ${SRC_DIR}/template/*.zip ${SRC_DIR}/template/index.json
+
+build_assets:
+	$(PYTHON) tools/build_diagram_assets.py
+
+build_assets_clean:
+	$(PYTHON) tools/build_diagram_assets.py --clean
+
+diagram_assets_check: build_assets
+	$(PYTHON) tools/build_diagram_assets.py --check
+	$(PYTHON) tools/check_diagram_assets.py
+
+diagram_rendering_check: build_assets
+	$(PYTHON) tools/check_diagram_rendering.py --check
+	$(PYTHON) tools/check_diagram_rendering.py \
+		--corpus tools/diagram_assets/corpus/canonical-arrows.json \
+		--expected-layouts 15 --expected-arrows 130 \
+		--expected-directions right=32,down=78,left=5,up=15 --check-cjk
+	$(PYTHON) tools/check_diagram_rendering.py \
+		--corpus tools/diagram_assets/corpus/shared-layouts.json \
+		--expected-layouts 20 --expected-arrows 176 \
+		--expected-groups LR=10,TB=10
+
+diagram_parity_check: build_assets
+	@test -n "$(DIAGRAM_REFERENCE)" || (echo "DIAGRAM_REFERENCE is required; restore the frozen custom reference bundle and run make DIAGRAM_REFERENCE=/abs/path/reference.json diagram_assets_verify" >&2; exit 2)
+	@test -f "$(DIAGRAM_REFERENCE)" || (echo "DIAGRAM_REFERENCE is not a file: $(DIAGRAM_REFERENCE)" >&2; exit 2)
+	$(PYTHON) tools/check_diagram_rendering.py \
+		--corpus tools/diagram_assets/corpus/canonical-arrows.json \
+		--corpus tools/diagram_assets/corpus/shared-layouts.json \
+		--expected-layouts 35 --expected-arrows 306 \
+		--expected-directions right=107,down=153,left=18,up=28 \
+		--compare-reference "$(DIAGRAM_REFERENCE)" --check-expanded-id-only \
+		--check-cjk --check-memory
+
+diagram_corpus: jsfcstm
+	node tools/diagram_assets/generate_corpus.js
+
+diagram_engine_floor: build_assets
+	$(PYTHON) tools/check_diagram_engine_floor.py --all-cases --check-timeout-reset
+
+diagram_provenance_check:
+	$(PYTHON) tools/check_diagram_provenance.py
+
+diagram_reference_check:
+	$(PYTHON) tools/fetch_diagram_reference.py --check
+
+diagram_assets_verify: diagram_assets_check diagram_rendering_check diagram_parity_check diagram_engine_floor diagram_provenance_check diagram_reference_check
+
+diagram_package_check: package
 
 template_packaging_check:
 	$(PYTHON) tools/check_template_packaging.py

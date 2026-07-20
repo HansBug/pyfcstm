@@ -5,6 +5,8 @@
  * host and the webview bundle can import this module and reproduce the
  * same input graph bit-for-bit.
  */
+import stringWidth from 'string-width';
+
 import type {
     FcstmDiagram,
     FcstmDiagramAction,
@@ -17,8 +19,11 @@ import type {
     ResolvedFcstmDiagramPreviewOptions,
 } from './model';
 
-// Character metrics for a monospaced 14px font, used to pre-measure label
-// boxes so ELK can pack them without our SVG labels overflowing later.
+// Character metrics for the shared 14px font stack. ``string-width`` gives us
+// deterministic Unicode display columns without depending on DOM/canvas
+// measurement, while this scale keeps the Latin JetBrains Mono advance used by
+// the SVG emitter. A wide CJK/emoji column therefore reserves two Latin
+// advances, which is deliberately conservative for the embedded fallback font.
 const CHAR_WIDTH = 8.2;
 const LINE_HEIGHT = 18;
 const STATE_TITLE_HEIGHT = 30;
@@ -142,15 +147,20 @@ export const TRANSITION_LABEL_GLYPHS = {
     effect: '▸',
 };
 
+function measuredLineWidth(line: string, fontSize: number): number {
+    return stringWidth(line) * CHAR_WIDTH * (fontSize / 14);
+}
+
 /** Measure a (possibly multi-line) label rectangle for ELK. */
 export function measureLabel(
     text: string,
     padX = 16,
-    padY = 8
+    padY = 8,
+    fontSize = 14
 ): { width: number; height: number } {
     const lines = String(text).split('\n');
-    const longest = Math.max(1, ...lines.map(line => line.length));
-    const width = Math.ceil(longest * CHAR_WIDTH + padX * 2);
+    const longest = Math.max(1, ...lines.map(line => measuredLineWidth(line, fontSize)));
+    const width = Math.ceil(longest + padX * 2);
     const height = Math.ceil(lines.length * LINE_HEIGHT + padY * 2);
     return { width, height };
 }
@@ -435,7 +445,7 @@ export function buildFcstmElkGraph(
                 },
             };
             if (labelText) {
-                const { width, height } = measureLabel(labelText, 10, 4);
+                const { width, height } = measureLabel(labelText, 10, 4, 12);
                 edge.labels = [{ text: labelText, width, height }];
             }
             edges.push(edge);

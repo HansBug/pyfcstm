@@ -304,6 +304,10 @@ jobs:
         with:
           fetch-depth: 20
           submodules: 'recursive'
+      - name: Set up Node.js for diagram assets
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
       - name: Set up system dependencies
         shell: bash
         run: |
@@ -344,6 +348,10 @@ jobs:
         with:
           fetch-depth: 20
           submodules: 'recursive'
+      - name: Set up Node.js for diagram assets
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
       - name: Set up system dependencies
         shell: bash
         run: |
@@ -371,6 +379,68 @@ jobs:
           echo "Running template suite '${TEMPLATE_SUITE}' selected because '${TEMPLATE_SUITE_REASON}'."
           make template_unittest TEMPLATE_UNITTEST_ARGS="--include-suites ${TEMPLATE_SUITE}"
 
+  diagram_assets:
+    name: Diagram assets (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-22.04
+    needs: detect_ci_routes
+    if: ${{ needs.detect_ci_routes.outputs.run_expensive_code_test == 'true' && !contains(github.event.head_commit.message, 'ci skip') && !contains(github.event.head_commit.message, 'test skip') && !contains(github.event.head_commit.message, '[python skip]') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version:
+          - '3.7'
+          - '3.8'
+          - '3.11'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3.3.0
+        with:
+          fetch-depth: 20
+          submodules: 'recursive'
+      - name: Set up Node.js for diagram assets
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Set up system dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y make curl tar gzip
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install diagram dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-viz.txt
+          pip install -r requirements-test.txt
+      - name: Pin Python 3.8 runtime floor for reference parity
+        if: ${{ matrix.python-version == '3.8' }}
+        shell: bash
+        run: |
+          pip install --force-reinstall --no-deps 'mini-racer==0.7.0'
+      - name: Restore frozen custom reference
+        id: reference
+        shell: bash
+        run: |
+          set -euo pipefail
+          reference_dir="$RUNNER_TEMP/pyfcstm-diagram-reference-${{ matrix.python-version }}"
+          python tools/fetch_diagram_reference.py \
+            --runtime '${{ matrix.python-version }}' \
+            --output "$reference_dir"
+          test -f "$reference_dir/reference.json"
+          echo "path=$reference_dir/reference.json" >> "$GITHUB_OUTPUT"
+      - name: Run diagram asset closure gates
+        env:
+          CI: 'true'
+          DIAGRAM_REFERENCE: ${{ steps.reference.outputs.path }}
+        shell: bash
+        run: |
+          make DIAGRAM_REFERENCE="$DIAGRAM_REFERENCE" diagram_assets_verify
+
   template_suite_gate:
     name: template-suite-gate
     runs-on: ubuntu-22.04
@@ -384,6 +454,7 @@ jobs:
       - fresh_cli_selfcheck_linux
       - fresh_cli_selfcheck_nonlinux
       - jsfcstm_test
+      - diagram_assets
     if: ${{ always() }}
     steps:
       - name: Check template suite results
@@ -398,6 +469,7 @@ jobs:
           FRESH_CLI_LINUX_RESULT: ${{ needs.fresh_cli_selfcheck_linux.result }}
           FRESH_CLI_NONLINUX_RESULT: ${{ needs.fresh_cli_selfcheck_nonlinux.result }}
           JSFCSTM_RESULT: ${{ needs.jsfcstm_test.result }}
+          DIAGRAM_ASSETS_RESULT: ${{ needs.diagram_assets.result }}
           SELECTED_FULL_COUNT: ${{ needs.detect_template_suites.outputs.selected_full_count }}
           SELECTED_SUITES: ${{ needs.detect_template_suites.outputs.selected_suites }}
           CODE_TEST_RELEVANT: ${{ needs.detect_ci_routes.outputs.code_test_relevant }}
@@ -428,6 +500,7 @@ jobs:
           fresh_cli_linux = os.environ.get('FRESH_CLI_LINUX_RESULT') or ''
           fresh_cli_nonlinux = os.environ.get('FRESH_CLI_NONLINUX_RESULT') or ''
           jsfcstm = os.environ.get('JSFCSTM_RESULT') or ''
+          diagram_assets = os.environ.get('DIAGRAM_ASSETS_RESULT') or ''
           selected_count_text = os.environ.get('SELECTED_FULL_COUNT') or ''
           selected_suites = os.environ.get('SELECTED_SUITES') or ''
           run_expensive_code_test = is_true(os.environ.get('RUN_EXPENSIVE_CODE_TEST'))
@@ -453,6 +526,7 @@ jobs:
           print('fresh_cli_linux={0}'.format(fresh_cli_linux))
           print('fresh_cli_nonlinux={0}'.format(fresh_cli_nonlinux))
           print('jsfcstm={0}'.format(jsfcstm))
+          print('diagram_assets={0}'.format(diagram_assets))
           print('selected_full_count={0}'.format(selected_count_text))
           print('selected_suites={0}'.format(selected_suites or '(none)'))
           print('code_test_relevant={0}'.format(code_test_relevant))
@@ -490,6 +564,9 @@ jobs:
                       failures.append('template full job should be skipped or success for empty matrix, got {0}'.format(template_full))
               elif template_full != 'success':
                   failures.append('template full job result is {0} for {1} selected suite(s)'.format(template_full, selected_count))
+
+              if run_expensive_code_test and diagram_assets != 'success':
+                  failures.append('diagram assets job result is {0}'.format(diagram_assets))
 
           if skip_all or '[python skip]' in message:
               print('Code Test skip token detected for CLI build; skipped CLI build is accepted.')
@@ -582,6 +659,10 @@ jobs:
         with:
           fetch-depth: 20
           submodules: 'recursive'
+      - name: Set up Node.js for diagram assets
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
       - name: Set up system dependences on Linux
         if: ${{ env.OS_NAME == 'Linux' }}
         shell: bash
@@ -726,6 +807,10 @@ jobs:
         with:
           fetch-depth: 20
           submodules: 'recursive'
+      - name: Set up Node.js for diagram assets
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
       - name: Set up system dependencies on Linux
         if: ${{ env.OS_NAME == 'Linux' }}
         shell: bash

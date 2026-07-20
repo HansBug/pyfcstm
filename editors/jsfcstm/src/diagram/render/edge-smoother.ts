@@ -33,7 +33,7 @@
  * axis, so arrows continue to land perpendicular to the destination
  * node's border after smoothing.
  */
-import type {PreviewElkEdge, PreviewElkNode} from '../types';
+import type {FcstmElkEdge as PreviewElkEdge, FcstmElkNode as PreviewElkNode} from '../model';
 
 export const DEFAULT_MIN_STUB_LEN = 18;
 

@@ -1,0 +1,31 @@
+Generated diagram assets are produced by ``make build_assets``.
+
+Generated files under this directory are intentionally ignored by git.
+Source and license provenance is maintained in the tracked source lock and in
+the generated manifest; do not hand-edit compiled files under this directory.
+
+Third-party runtime resources distributed in this directory:
+
+* ``elkjs`` 0.11.1, Copyright Ulf Ruegg and contributors, under the Eclipse
+  Public License 2.0. See ``LICENSE-EPL-2.0.txt``. The exact package was
+  resolved from
+  ``https://registry.npmmirror.com/elkjs/-/elkjs-0.11.1.tgz`` with the
+  integrity and installed-tree digest recorded in
+  ``tools/diagram_assets/asset-lock.json`` and ``manifest.json``. Its source
+  is available at ``https://github.com/kieler/elkjs/tree/v0.11.1``.
+* ``@resvg/resvg-wasm`` 2.6.2, Copyright 2021-present yisibl, under the
+  Mozilla Public License 2.0. See ``LICENSE-MPL-2.0.txt``. The exact npm
+  package, binding and WASM hashes, upstream resvg-js source, and patched
+  resvg source are recorded in ``tools/diagram_assets/asset-lock.json``.
+* ``JetBrains Mono`` Regular, Medium, and Bold, Copyright 2020 The JetBrains
+  Mono Project Authors, under the SIL Open Font License 1.1. See
+  ``LICENSE-OFL-1.1.txt``.
+* ``Noto Sans SC``, ``Noto Sans TC``, ``Noto Sans HK``, ``Noto Sans JP``, and
+  ``Noto Sans KR`` Regular and Bold, Copyright 2014-2025 Adobe (China) Inc.,
+  The Noto Project Authors, and contributors, under the SIL Open Font License
+  1.1. See ``LICENSE-OFL-1.1.txt``. The locale-specific OTF files are
+  distributed unmodified from the Noto CJK Sans2.004 release.
+
+The renderer bundle itself is built from the tracked jsfcstm sources with the
+locked esbuild version. ``manifest.json`` records the generated file hashes,
+source lock, and build metadata.

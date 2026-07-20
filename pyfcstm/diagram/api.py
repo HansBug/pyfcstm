@@ -35,7 +35,7 @@ from pygments.formatters import HtmlFormatter
 from ..highlight import FcstmLexer
 from ..model.model import Event, IfBlock, Operation, OperationStatement, State, StateMachine, Transition
 from ..utils.validate import Span
-from .engine import DiagramAssetError
+from .engine import DiagramAssetError, DiagramUnavailableError
 
 __all__ = [
     "DiagramData",
@@ -167,18 +167,9 @@ def _event_reference(transition: Transition) -> str:
     return "/" + ".".join(event.path[1:])
 
 
-def _transition_signature(owner: State, transition: Transition, discriminator: Optional[int] = None) -> str:
-    """Build a stable semantic ID independent of source coordinates."""
-    source = "INIT_STATE" if transition.from_state is not None and getattr(transition.from_state, "name", None) == "INIT_STATE" else _text(transition.from_state)
-    target = "EXIT_STATE" if transition.to_state is not None and getattr(transition.to_state, "name", None) == "EXIT_STATE" else _text(transition.to_state)
-    event = transition.event.path_name if transition.event else ""
-    guard = _text(transition.guard)
-    effects = "\n".join(_effect_lines(transition))
-    payload_parts = [".".join(owner.path), source, target, event, guard, effects]
-    if discriminator is not None:
-        payload_parts.append(str(discriminator))
-    payload = "|".join(payload_parts)
-    return "transition:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()[:20]
+def _transition_id(owner: State, index: int) -> str:
+    """Build the contract ID from an owner path and final transition order."""
+    return "%s::transition::%d" % (".".join(owner.path), index)
 
 
 def _is_marker(value: Any, name: str) -> bool:
@@ -209,8 +200,7 @@ def _event_dict(event: Event, include_ranges: bool) -> Dict[str, Any]:
 
 def _state_dict(state: State, include_ranges: bool) -> Dict[str, Any]:
     transitions = []
-    duplicate_counts: Dict[str, int] = {}
-    for transition in state.transitions:
+    for index, transition in enumerate(state.transitions):
         source_init = _is_marker(transition.from_state, "INIT_STATE")
         target_exit = _is_marker(transition.to_state, "EXIT_STATE")
         source_label = "[*]" if source_init else _text(transition.from_state)
@@ -218,10 +208,7 @@ def _state_dict(state: State, include_ranges: bool) -> Dict[str, Any]:
         trigger = _event_reference(transition) if transition.event else ""
         guard = _text(transition.guard) if transition.guard is not None else None
         effects = _effect_lines(transition)
-        base_id = _transition_signature(state, transition)
-        duplicate_index = duplicate_counts.get(base_id, 0)
-        duplicate_counts[base_id] = duplicate_index + 1
-        transition_id = base_id if duplicate_index == 0 else _transition_signature(state, transition, duplicate_index)
+        transition_id = _transition_id(state, index)
         transition_dict: Dict[str, Any] = {
             "id": transition_id,
             "sourceLabel": source_label,
@@ -390,7 +377,9 @@ def _source_document_id(machine: StateMachine, source_path: Optional[str]) -> st
 def _source_sidecar(machine: StateMachine, source_override: Optional[str] = None) -> Tuple[str, Dict[str, Any], Dict[str, Union[str, List[str]]], Dict[str, str]]:
     source = machine.source_text if source_override is None else source_override
     source = source or ""
-    source_paths = machine._source_documents or {}
+    # Work on a copy: completing the browser sidecar must not mutate the
+    # model's imported-document registry when the main source is absent.
+    source_paths = dict(machine._source_documents or {})
     explicit_override = source_override is not None and source_override != machine.source_text
     if explicit_override or not source_paths:
         main_source_path = machine.source_path or "<memory>"
@@ -473,6 +462,88 @@ def _highlight_source(source: str) -> str:
 def _highlight_css() -> str:
     """Return the small Pygments CSS fragment used by the source pane."""
     return HtmlFormatter().get_style_defs(".fcstm-source-panel__code")
+
+
+_OPTION_KEYS = {
+    "detail_level", "detailLevel", "direction", "palette", "mode",
+    "cjk_locale", "cjkLocale",
+}
+_VIEW_STATE_KEYS = {
+    "mode", "collapsed_state_ids", "collapsedStateIds", "zoom", "pan_x",
+    "panX", "pan_y", "panY",
+}
+
+
+def _reject_unknown_mapping_keys(value: Mapping[str, Any], allowed: set, name: str) -> None:
+    unknown = [key for key in value if key not in allowed]
+    if unknown:
+        labels = ", ".join(sorted(str(key) for key in unknown))
+        raise ValueError("unknown %s field(s): %s" % (name, labels))
+
+
+def _mapping_value(value: Mapping[str, Any], snake: str, camel: str, default: Any) -> Any:
+    has_snake = snake in value
+    has_camel = camel in value
+    if has_snake and has_camel:
+        raise ValueError("%s and %s cannot both be provided" % (snake, camel))
+    if has_snake:
+        return value[snake]
+    if has_camel:
+        return value[camel]
+    return default
+
+
+def _atomic_write_text(path: Union[str, os.PathLike], content: str) -> Path:
+    """Replace a text file atomically using a temporary sibling."""
+    target = Path(path)
+    temporary = tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        prefix=".%s." % target.name,
+        dir=str(target.parent),
+        delete=False,
+    )
+    temporary_path = Path(temporary.name)
+    try:
+        with temporary:
+            temporary.write(content)
+            temporary.flush()
+            os.fsync(temporary.fileno())
+        os.replace(str(temporary_path), str(target))
+    except OSError:
+        try:
+            temporary_path.unlink()
+        except OSError:
+            # Cleanup failure must not mask the write/replace failure.
+            pass
+        raise
+    return target
+
+
+def _atomic_write_bytes(path: Union[str, os.PathLike], content: bytes) -> Path:
+    """Replace a binary file atomically using a temporary sibling."""
+    target = Path(path)
+    temporary = tempfile.NamedTemporaryFile(
+        mode="wb",
+        prefix=".%s." % target.name,
+        dir=str(target.parent),
+        delete=False,
+    )
+    temporary_path = Path(temporary.name)
+    try:
+        with temporary:
+            temporary.write(content)
+            temporary.flush()
+            os.fsync(temporary.fileno())
+        os.replace(str(temporary_path), str(target))
+    except OSError:
+        try:
+            temporary_path.unlink()
+        except OSError:
+            # Cleanup failure must not mask the write/replace failure.
+            pass
+        raise
+    return target
 
 
 def _embedded_font_css(locale: str) -> str:
@@ -739,9 +810,9 @@ class DiagramData:
 class Diagram:
     """Facade for portable data and a self-contained browser view.
 
-    Synchronous headless SVG/PNG/PDF methods are intentionally owned by the
-    later delivery stage.  This stage keeps rendering in the embedded browser
-    viewer so a base Python installation remains independent of MiniRacer.
+    The synchronous headless methods are present as typed capability probes;
+    the optional runtime that implements them belongs to the delivery stage.
+    Browser SVG/PNG/PDF export remains available from the embedded viewer.
     """
 
     def __init__(
@@ -768,26 +839,33 @@ class Diagram:
         """
         self.model = model
         if isinstance(options, Mapping):
+            _reject_unknown_mapping_keys(options, _OPTION_KEYS, "DiagramOptions")
             options = DiagramOptions(
-                detail_level=str(options.get("detail_level", options.get("detailLevel", "normal"))),
+                detail_level=str(_mapping_value(options, "detail_level", "detailLevel", "normal")),
                 direction=str(options.get("direction", "TB")),
                 palette=(None if options.get("palette") is None else str(options.get("palette"))),
                 mode=(None if options.get("mode") is None else str(options.get("mode"))),
-                cjk_locale=str(options.get("cjk_locale", options.get("cjkLocale", "sc"))),
+                cjk_locale=str(_mapping_value(options, "cjk_locale", "cjkLocale", "sc")),
             )
+        elif options is not None and not isinstance(options, DiagramOptions):
+            raise TypeError("options must be DiagramOptions or a mapping")
         if isinstance(view_state, Mapping):
+            _reject_unknown_mapping_keys(view_state, _VIEW_STATE_KEYS, "DiagramViewState")
             view_state = DiagramViewState(
                 mode=str(view_state.get("mode", "compare")),
-                collapsed_state_ids=tuple(view_state.get("collapsed_state_ids", view_state.get("collapsedStateIds", ()))),
+                collapsed_state_ids=tuple(_mapping_value(view_state, "collapsed_state_ids", "collapsedStateIds", ())),
                 zoom=float(view_state.get("zoom", 1.0)),
-                pan_x=float(view_state.get("pan_x", view_state.get("panX", 0.0))),
-                pan_y=float(view_state.get("pan_y", view_state.get("panY", 0.0))),
+                pan_x=float(_mapping_value(view_state, "pan_x", "panX", 0.0)),
+                pan_y=float(_mapping_value(view_state, "pan_y", "panY", 0.0)),
             )
+        elif view_state is not None and not isinstance(view_state, DiagramViewState):
+            raise TypeError("view_state must be DiagramViewState or a mapping")
         self.options = options or DiagramOptions()
         self.view_state = view_state or DiagramViewState()
         self.source_text = model.source_text if source_text is None else source_text
         self._renderer_diagram = _build_diagram_dict(model, include_ranges=True)
         self.data = DiagramData(self._renderer_diagram)
+        self._html_cache: Dict[str, str] = {}
 
     def to_dict(self) -> Dict[str, Any]:
         """
@@ -809,6 +887,55 @@ class Diagram:
         :rtype: str
         """
         return self.data.to_json(**kwargs)
+
+    def to_svg(self) -> str:
+        """
+        Request a synchronous headless SVG export.
+
+        :return: This method does not return while the optional headless
+            runtime is unavailable.
+        :rtype: str
+        :raises DiagramUnavailableError: Always in the browser-only stage.
+        """
+        raise DiagramUnavailableError(
+            "headless SVG export is unavailable; use Diagram.to_html() browser export "
+            "or install the optional delivery runtime"
+        )
+
+    def to_png(self, scale: float = 1.0) -> bytes:
+        """
+        Request a synchronous headless PNG export.
+
+        :param scale: Positive finite output scale reserved for the headless
+            runtime.
+        :type scale: float
+        :return: This method does not return while the optional headless
+            runtime is unavailable.
+        :rtype: bytes
+        :raises ValueError: If ``scale`` is not finite and positive.
+        :raises DiagramUnavailableError: Always in the browser-only stage.
+        """
+        value = float(scale)
+        if not math.isfinite(value) or value <= 0:
+            raise ValueError("scale must be a finite positive number")
+        raise DiagramUnavailableError(
+            "headless PNG export is unavailable; use Diagram.to_html() browser export "
+            "or install the optional delivery runtime"
+        )
+
+    def to_pdf(self) -> bytes:
+        """
+        Request a synchronous headless vector PDF export.
+
+        :return: This method does not return while the optional headless
+            runtime is unavailable.
+        :rtype: bytes
+        :raises DiagramUnavailableError: Always in the browser-only stage.
+        """
+        raise DiagramUnavailableError(
+            "headless PDF export is unavailable; use Diagram.to_html() browser export "
+            "or install the optional delivery runtime"
+        )
 
     def to_html(self, output: Optional[Union[str, os.PathLike]] = None) -> str:
         """
@@ -883,9 +1010,14 @@ class Diagram:
         ]
         css = "html,body,#app{height:100%;margin:0}\n" + _embedded_font_css(self.options.cjk_locale) + "\n" + viewer_css + "\n" + _highlight_css()
         style_hash = "'sha256-%s'" % base64.b64encode(hashlib.sha256(css.encode("utf-8")).digest()).decode("ascii")
-        document = "<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; base-uri 'none'; object-src 'none'; form-action 'none'; frame-src 'none'; media-src 'none'; manifest-src 'none'; img-src data: blob:; style-src %s; style-src-attr 'none'; font-src data:; script-src %s 'wasm-unsafe-eval'; script-src-attr 'none'; connect-src 'none'; worker-src 'none'\"><style>%s</style></head><body><div id=\"app\"></div><script>%s</script><script>%s</script><script>%s</script></body></html>" % (style_hash, " ".join(hashes), css, bootstrap, resvg_script, viewer)
+        cache_payload = "\0".join(("html", state_json, bootstrap, resvg_script, viewer, css))
+        cache_key = hashlib.sha256(cache_payload.encode("utf-8")).hexdigest()
+        document = self._html_cache.get(cache_key)
+        if document is None:
+            document = "<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; base-uri 'none'; object-src 'none'; form-action 'none'; frame-src 'none'; media-src 'none'; manifest-src 'none'; img-src data: blob:; style-src %s; style-src-attr 'none'; font-src data:; script-src %s 'wasm-unsafe-eval'; script-src-attr 'none'; connect-src 'none'; worker-src 'none'\"><style>%s</style></head><body><div id=\"app\"></div><script>%s</script><script>%s</script><script>%s</script></body></html>" % (style_hash, " ".join(hashes), css, bootstrap, resvg_script, viewer)
+            self._html_cache[cache_key] = document
         if output is not None:
-            Path(output).write_text(document, encoding="utf-8")
+            _atomic_write_text(output, document)
         return document
 
     def save(self, path: Union[str, os.PathLike], format: Optional[str] = None) -> Path:
@@ -904,9 +1036,15 @@ class Diagram:
         target = Path(path)
         selected = (format or target.suffix.lstrip(".") or "json").lower()
         if selected == "json":
-            target.write_text(self.to_json() + "\n", encoding="utf-8")
+            _atomic_write_text(target, self.to_json() + "\n")
         elif selected in ("html", "htm"):
             self.to_html(target)
+        elif selected == "svg":
+            _atomic_write_text(target, self.to_svg())
+        elif selected == "png":
+            _atomic_write_bytes(target, self.to_png())
+        elif selected == "pdf":
+            _atomic_write_bytes(target, self.to_pdf())
         else:
             raise ValueError("unsupported diagram format: %s" % selected)
         return target

@@ -5,7 +5,12 @@ import re
 
 import pytest
 
-from pyfcstm.diagram import DiagramData, DiagramOptions, DiagramViewState
+from pyfcstm.diagram import (
+    DiagramData,
+    DiagramOptions,
+    DiagramUnavailableError,
+    DiagramViewState,
+)
 from pyfcstm.model import State, StateMachine, load_state_machine_from_text
 
 
@@ -23,8 +28,8 @@ def test_portable_data_is_deterministic_and_has_no_editor_metadata():
     assert "range" not in first_json
     assert "source_path" not in first_json
     assert "filePath" not in first_json
-    transition_id = first.diagram().to_dict()["rootState"]["transitions"][1]["id"]
-    assert transition_id.startswith("transition:")
+    transition_ids = [item["id"] for item in first.diagram().to_dict()["rootState"]["transitions"]]
+    assert transition_ids == ["Root::transition::0", "Root::transition::1"]
 
 
 def test_source_sidecar_and_three_browser_modes_are_embedded():
@@ -82,16 +87,38 @@ def test_source_line_mapping_prefers_transition_ranges():
     assert match is not None
     state = json.loads(match.group(1))
     transition_id = state["sourceLineMap"]["4"]
-    assert transition_id.startswith("transition:")
+    assert transition_id == "Root::transition::1"
     assert state["sourceMap"][transition_id]["kind"] == "transition"
 
 
 def test_model_show_returns_html_path_without_opening_browser(tmp_path):
     model = _model("state Root;")
-    output = model.show(tmp_path / "diagram.html", open_browser=False)
+    output = model.show(
+        tmp_path / "diagram.html",
+        open_browser=False,
+        options={"mode": "dark"},
+        view_state={"mode": "fcstm"},
+        source_text="state Root;",
+    )
     assert output.exists()
     assert output.suffix == ".html"
-    assert "FCSTM" in output.read_text(encoding="utf-8")
+    content = output.read_text(encoding="utf-8")
+    assert "FCSTM" in content
+    assert '"standaloneMode":"fcstm"' in content
+    assert '"colorMode":"dark"' in content
+
+
+def test_html_cache_and_save_replace_are_deterministic(tmp_path):
+    diagram = _model("state Root;").diagram()
+    first = diagram.to_html()
+    second = diagram.to_html()
+    assert first == second
+    assert len(diagram._html_cache) == 1
+    output = tmp_path / "diagram.json"
+    diagram.save(output)
+    assert output.read_text(encoding="utf-8").endswith("\n")
+    diagram.save(output)
+    assert not list(tmp_path.glob(".diagram.json.*"))
 
 
 def test_combo_relay_is_explicit_model_data():
@@ -107,6 +134,28 @@ def test_diagram_value_objects_reject_unknown_values_and_copy_sequences():
     state = DiagramViewState(collapsed_state_ids=["Root.Child"])
     assert state.collapsed_state_ids == ("Root.Child",)
     assert DiagramOptions(cjk_locale="JP").to_dict()["cjkLocale"] == "jp"
+
+
+def test_diagram_mapping_inputs_fail_closed_on_unknown_or_ambiguous_fields():
+    model = _model("state Root;")
+    with pytest.raises(ValueError, match="unknown DiagramOptions field"):
+        model.diagram(options={"palette": "default", "typo": True})
+    with pytest.raises(ValueError, match="detail_level and detailLevel"):
+        model.diagram(options={"detail_level": "normal", "detailLevel": "normal"})
+    with pytest.raises(ValueError, match="unknown DiagramViewState field"):
+        model.diagram(view_state={"mode": "compare", "typo": True})
+
+
+def test_headless_exports_are_typed_unavailable_until_delivery_stage():
+    diagram = _model("state Root;").diagram()
+    with pytest.raises(DiagramUnavailableError, match="headless SVG"):
+        diagram.to_svg()
+    with pytest.raises(DiagramUnavailableError, match="headless PNG"):
+        diagram.to_png()
+    with pytest.raises(DiagramUnavailableError, match="headless PDF"):
+        diagram.to_pdf()
+    with pytest.raises(ValueError, match="finite positive"):
+        diagram.to_png(scale=0)
 
 
 def test_diagram_data_rejects_non_mapping_snapshots():
@@ -200,6 +249,21 @@ def test_programmatic_model_exposes_source_unavailable_state():
     model = StateMachine(defines={}, root_state=State(name="Root", path=("Root",), substates={}))
     html = model.diagram().to_html()
     assert "sourceUnavailableReason" in html
+
+
+def test_browser_sidecar_does_not_mutate_source_documents(tmp_path):
+    main_path = tmp_path / "main.fcstm"
+    child_path = tmp_path / "child.fcstm"
+    model = StateMachine(
+        defines={},
+        root_state=State(name="Root", path=("Root",), substates={}),
+        source_text="state Root;",
+        source_path=str(main_path),
+        _source_documents={str(child_path): "state Child;"},
+    )
+    before = dict(model._source_documents)
+    model.diagram().to_html()
+    assert model._source_documents == before
 
 
 def test_html_escapes_hostile_source_before_bootstrap_script():

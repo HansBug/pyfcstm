@@ -37,4 +37,4 @@ Diagram
 -----------------------------------------------------
 
 .. autoclass:: Diagram
-    :members: __init__,to_dict,to_json,to_html,save,show
+    :members: __init__,to_dict,to_json,to_svg,to_png,to_pdf,to_html,save,show

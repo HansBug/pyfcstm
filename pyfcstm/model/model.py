@@ -2469,7 +2469,7 @@ class StateMachine(AstExportable, PlantUMLExportable):
 
         return Diagram(self, options=options, view_state=view_state, source_text=source_text)
 
-    def show(self, output=None, *, open_browser=True):
+    def show(self, output=None, *, open_browser=True, options=None, view_state=None, source_text=None):
         """
         Open this state machine in the standalone browser viewer.
 
@@ -2477,6 +2477,12 @@ class StateMachine(AstExportable, PlantUMLExportable):
         :type output: str or os.PathLike, optional
         :param open_browser: Whether to ask the default browser to open the file.
         :type open_browser: bool
+        :param options: Optional diagram renderer options.
+        :type options: object, optional
+        :param view_state: Optional browser view state.
+        :type view_state: object, optional
+        :param source_text: Optional FCSTM source override for the source pane.
+        :type source_text: str, optional
         :return: Path to the generated HTML file.
         :rtype: pathlib.Path
 
@@ -2485,7 +2491,9 @@ class StateMachine(AstExportable, PlantUMLExportable):
             >>> model.show(open_browser=False).suffix
             '.html'
         """
-        return self.diagram().show(output, open_browser=open_browser)
+        return self.diagram(options=options, view_state=view_state, source_text=source_text).show(
+            output, open_browser=open_browser
+        )
 
     def resolve_event(
         self,

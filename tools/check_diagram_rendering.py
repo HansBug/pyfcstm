@@ -318,27 +318,40 @@ def inspect_arrows(
 
 
 def _png_ink_bbox(data: bytes) -> Tuple[int, int, Tuple[int, int, int, int]]:
-    """Decode an RGBA PNG and return its canvas and non-white ink bounds."""
+    """Decode a strict RGBA PNG and return its canvas and ink bounds.
+
+    This parser intentionally mirrors the production PNG structure contract:
+    the maintenance parity gate must not accept a malformed artifact that the
+    runtime decoder would reject.
+    """
     if not data.startswith(b"\x89PNG\r\n\x1a\n"):
         raise ValueError("PNG output lacks the PNG signature")
     position = 8
     width = height = bit_depth = color_type = None
     compressed = bytearray()
+    saw_ihdr = False
+    saw_idat = False
+    idat_closed = False
     saw_iend = False
     while position < len(data):
         if position + 12 > len(data):
             raise ValueError("PNG output has a truncated chunk header")
+        chunk_start = position
         length = struct.unpack(">I", data[position : position + 4])[0]
         end = position + 12 + length
         if end > len(data):
             raise ValueError("PNG output has a truncated chunk")
         kind = data[position + 4 : position + 8]
+        if len(kind) != 4 or kind not in {b"IHDR", b"IDAT", b"IEND"}:
+            raise ValueError("PNG output contains an unsupported chunk")
         payload = data[position + 8 : position + 8 + length]
         checksum = struct.unpack(">I", data[position + 8 + length : end])[0]
         if zlib.crc32(kind + payload) & 0xFFFFFFFF != checksum:
             raise ValueError("PNG output contains an invalid chunk checksum")
         position = end
         if kind == b"IHDR":
+            if saw_ihdr or chunk_start != 8:
+                raise ValueError("PNG output has duplicate or misplaced IHDR")
             if len(payload) != 13:
                 raise ValueError("PNG output has an invalid IHDR")
             width, height, bit_depth, color_type, compression, filtering, interlace = (
@@ -352,12 +365,26 @@ def _png_ink_bbox(data: bytes) -> Tuple[int, int, Tuple[int, int, int, int]]:
                 0,
             ):
                 raise ValueError("PNG output is not non-interlaced RGBA8")
+            if not width or not height:
+                raise ValueError("PNG output has non-positive dimensions")
+            saw_ihdr = True
         elif kind == b"IDAT":
+            if not saw_ihdr:
+                raise ValueError("PNG output has a non-IHDR first chunk")
+            if idat_closed:
+                raise ValueError("PNG output has non-contiguous IDAT chunks")
             compressed.extend(payload)
+            saw_idat = True
         elif kind == b"IEND":
+            if not saw_ihdr or not saw_idat or length != 0:
+                raise ValueError("PNG output has an invalid IEND")
             saw_iend = True
+            if position != len(data):
+                raise ValueError("PNG output has trailing bytes after IEND")
             break
-    if not saw_iend or width is None or height is None:
+        if kind != b"IDAT" and saw_idat:
+            idat_closed = True
+    if not saw_iend or not saw_ihdr or not saw_idat or width is None or height is None:
         raise ValueError("PNG output is missing IHDR or IEND")
     try:
         raw = zlib.decompress(bytes(compressed))
@@ -405,6 +432,46 @@ def _png_ink_bbox(data: bytes) -> Tuple[int, int, Tuple[int, int, int, int]]:
         raise ValueError("PNG output contains no visible ink")
     xs, ys = zip(*points)
     return width, height, (min(xs), min(ys), max(xs), max(ys))
+
+
+def _self_check_png_parser() -> None:
+    """Keep parity PNG structure checks aligned with the runtime decoder."""
+
+    def chunk(kind: bytes, payload: bytes) -> bytes:
+        checksum = zlib.crc32(kind + payload) & 0xFFFFFFFF
+        return (
+            struct.pack(">I", len(payload))
+            + kind
+            + payload
+            + struct.pack(">I", checksum)
+        )
+
+    header = struct.pack(">IIBBBBB", 1, 1, 8, 6, 0, 0, 0)
+    signature = b"\x89PNG\r\n\x1a\n"
+    image = chunk(b"IDAT", zlib.compress(b"\x00\x00\x00\x00\xff"))
+    valid = signature + chunk(b"IHDR", header) + image + chunk(b"IEND", b"")
+    if _png_ink_bbox(valid)[:2] != (1, 1):
+        raise AssertionError("strict parity PNG parser rejected a valid RGBA image")
+    invalid_cases = (
+        signature + chunk(b"IDAT", b"") + chunk(b"IHDR", header) + chunk(b"IEND", b""),
+        signature
+        + chunk(b"IHDR", header)
+        + chunk(b"IHDR", header)
+        + image
+        + chunk(b"IEND", b""),
+        valid + b"trailing-bytes",
+        signature
+        + chunk(b"IHDR", header)
+        + chunk(b"tEXt", b"x")
+        + image
+        + chunk(b"IEND", b""),
+    )
+    for payload in invalid_cases:
+        try:
+            _png_ink_bbox(payload)
+        except ValueError:
+            continue
+        raise AssertionError("strict parity PNG parser accepted malformed output")
 
 
 def _normalise_clip_ids(text: str) -> str:
@@ -1314,7 +1381,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.check:
         _self_check_reference_provenance()
         _self_check_reference_comparison()
-        print("diagram rendering checker: provenance and parity self-check passed")
+        _self_check_png_parser()
+        print(
+            "diagram rendering checker: provenance, parity, and PNG self-check passed"
+        )
         return 0
     corpus_paths = tuple(path.resolve() for path in (args.corpus or DEFAULT_CORPORA))
     cases = load_cases(corpus_paths)

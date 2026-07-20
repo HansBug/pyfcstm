@@ -922,7 +922,8 @@ def test_render_png_rejects_structurally_valid_blank_png(monkeypatch):
         + chunk(b"IDAT", zlib.compress(b"\x00\xff\xff\xff\xff"))
         + chunk(b"IEND", b"")
     )
-    assert engine_module._valid_png(blank) is False
+    with pytest.raises((ValueError, DiagramRenderError)):
+        engine_module._decode_png_rgba(blank)
     monkeypatch.setattr(
         engine,
         "_eval_asset",
@@ -953,7 +954,8 @@ def test_render_png_rejects_truncated_or_corrupt_png_payload(monkeypatch):
                 '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>'
             )
         )
-    assert not engine_module._valid_png(b"\x89PNG\r\n\x1a\n")
+    with pytest.raises((ValueError, DiagramRenderError)):
+        engine_module._decode_png_rgba(b"\x89PNG\r\n\x1a\n")
 
     def chunk(kind, payload):
         checksum = zlib.crc32(kind + payload) & 0xFFFFFFFF
@@ -972,7 +974,8 @@ def test_render_png_rejects_truncated_or_corrupt_png_payload(monkeypatch):
         + chunk(b"IDAT", zlib.compress(invalid_filter))
         + chunk(b"IEND", b"")
     )
-    assert not engine_module._valid_png(filtered_png)
+    with pytest.raises((ValueError, DiagramRenderError)):
+        engine_module._decode_png_rgba(filtered_png)
 
     duplicate_ihdr = (
         b"\x89PNG\r\n\x1a\n"
@@ -981,7 +984,8 @@ def test_render_png_rejects_truncated_or_corrupt_png_payload(monkeypatch):
         + chunk(b"IDAT", zlib.compress(b"\x00\x00\x00\x00\xff"))
         + chunk(b"IEND", b"")
     )
-    assert not engine_module._valid_png(duplicate_ihdr)
+    with pytest.raises((ValueError, DiagramRenderError)):
+        engine_module._decode_png_rgba(duplicate_ihdr)
 
 
 def test_render_png_rejects_unsupported_png_chunks_at_engine_boundary(monkeypatch):
@@ -1016,7 +1020,8 @@ def test_render_png_rejects_unsupported_png_chunks_at_engine_boundary(monkeypatc
             + chunk(b"IDAT", zlib.compress(b"\x00\x00\x00\x00\xff"))
             + chunk(b"IEND", b"")
         )
-        assert not engine_module._valid_png(png)
+        with pytest.raises((ValueError, DiagramRenderError)):
+            engine_module._decode_png_rgba(png)
         monkeypatch.setattr(
             engine,
             "_eval_asset",
@@ -1050,7 +1055,8 @@ def test_render_png_rejects_missing_iend_at_engine_boundary(monkeypatch):
         + chunk(b"IHDR", header)
         + chunk(b"IDAT", zlib.compress(b"\x00\x00\x00\x00\xff"))
     )
-    assert not engine_module._valid_png(missing_iend)
+    with pytest.raises((ValueError, DiagramRenderError)):
+        engine_module._decode_png_rgba(missing_iend)
     monkeypatch.setattr(
         engine,
         "_eval_asset",

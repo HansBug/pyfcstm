@@ -906,25 +906,6 @@ def _decode_png_rgba(data: bytes) -> Tuple[int, int, Tuple[int, int, int, int]]:
     return width, height, (min(xs), min(ys), max(xs), max(ys))
 
 
-def _valid_png(data: bytes) -> bool:
-    """Validate the opaque RGBA PNG payload emitted by the renderer."""
-    try:
-        _decode_png_rgba(data)
-    except (
-        TypeError,
-        ValueError,
-        DiagramRenderError,
-        struct.error,
-        zlib.error,
-        OverflowError,
-    ):
-        # TypeError/ValueError: non-bytes or malformed PNG; struct.error:
-        # truncated binary fields; zlib.error/OverflowError: invalid stream or
-        # checked decoder arithmetic.
-        return False
-    return True
-
-
 class DiagramAssetEngine:
     """
     Drive the shared ES2017 renderer and resvg bridge in MiniRacer.

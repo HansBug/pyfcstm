@@ -124,14 +124,23 @@ _ASSET_ISSUE_URL = "https://github.com/HansBug/pyfcstm/issues"
 _SVG_NS = "http://www.w3.org/2000/svg"
 
 
+class _NoDoctypeTreeBuilder(ET.TreeBuilder):
+    """Reject real document type declarations while parsing SVG XML."""
+
+    def doctype(
+        self, _name: str, _pubid: Optional[str], _system: Optional[str]
+    ) -> None:
+        """Reject DTDs, including the only valid context for entity declarations."""
+        raise DiagramAssetError("SVG output contains a DTD or entity declaration")
+
+
 def _svg_parse(svg: str) -> ET.Element:
     """Parse SVG XML and require the SVG root element."""
     if not isinstance(svg, str):
         raise DiagramAssetError("SVG output requires UTF-8 text")
-    if any(token in svg for token in ("<!DOCTYPE", "<!ENTITY")):
-        raise DiagramAssetError("SVG output contains a DTD or entity declaration")
     try:
-        root = ET.fromstring(svg)
+        parser = ET.XMLParser(target=_NoDoctypeTreeBuilder())
+        root = ET.fromstring(svg, parser=parser)
     except ET.ParseError as err:
         # ParseError: malformed XML returned by the renderer or supplied as a
         # compatibility SVG input.
@@ -682,10 +691,14 @@ class DiagramAssetEngine:
             >>> svg.startswith("<svg")
             True
         """
+        if not isinstance(request, dict):
+            raise ValueError("request must be a JSON-compatible mapping")
         request_id = "pyfcstm-%d" % time.monotonic_ns()
         deadline = None if self.timeout is None else time.monotonic() + self.timeout
         try:
-            serialized_request = json.dumps(request, ensure_ascii=False)
+            serialized_request = json.dumps(
+                request, ensure_ascii=False, allow_nan=False
+            )
         except (TypeError, ValueError) as err:
             # TypeError/ValueError: the caller supplied a non-JSON-compatible
             # DiagramData value such as a set, non-finite number, or cycle.

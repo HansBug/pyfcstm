@@ -235,6 +235,23 @@ def test_raw_svg_accepts_cdata_text():
     assert engine.expand_svg(raw_svg).startswith("<svg")
 
 
+@pytest.mark.parametrize(
+    "content",
+    [
+        "<!-- <!DOCTYPE and <!ENTITY are literal documentation -->",
+        '<text x="1" y="15"><![CDATA[<!DOCTYPE & <!ENTITY]]></text>',
+    ],
+)
+def test_raw_svg_accepts_declaration_literals_in_comments_and_cdata(content):
+    engine = DiagramAssetEngine()
+    raw_svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="160" height="20">'
+        + content
+        + "</svg>"
+    )
+    assert engine.expand_svg(raw_svg).startswith("<svg")
+
+
 def test_renderer_request_errors_are_bounded_and_actionable():
     import copy
 
@@ -959,6 +976,20 @@ def test_render_svg_rejects_non_json_request():
     engine = DiagramAssetEngine()
     with pytest.raises(ValueError, match="JSON-compatible"):
         engine.render_svg({"diagram": {"invalid": {1, 2, 3}}})
+
+
+@pytest.mark.parametrize("invalid_request", [None, [], "not-a-mapping"])
+def test_render_svg_rejects_non_mapping_request(invalid_request):
+    engine = DiagramAssetEngine()
+    with pytest.raises(ValueError, match="JSON-compatible mapping"):
+        engine.render_svg(invalid_request)
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_render_svg_rejects_non_finite_json_numbers(value):
+    engine = DiagramAssetEngine()
+    with pytest.raises(ValueError, match="JSON-compatible"):
+        engine.render_svg({"diagram": value})
 
 
 def test_engine_discards_context_after_renderer_deadline(monkeypatch):

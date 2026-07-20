@@ -311,8 +311,10 @@ class SourceDocumentRegistry:
         display_path = self.display_path(path)
         if display_path is None:
             return BmcSourceRef(kind, None, None)
-        if span is not None and self.document(path, kind=kind) is None:
-            return BmcSourceRef(kind, display_path, None)
+        if span is not None:
+            document = self.document(path, kind=kind)
+            if document is None or _span_offsets(document, span) is None:
+                return BmcSourceRef(kind, display_path, None)
         return BmcSourceRef(kind, display_path, span)
 
     def excerpt(self, reference: BmcSourceRef) -> Optional[str]:

@@ -4679,7 +4679,6 @@ def solve_bmc_property(
     checked = _require_formula(formula)
     if not isinstance(check_incomplete, bool):
         raise BmcBuildError("check_incomplete must be bool.")
-    budget = _SolveBudget(timeout_ms)
     started_at = time.monotonic()
     core = checked.core
     solver = z3.Solver()
@@ -4691,6 +4690,9 @@ def solve_bmc_property(
     solver.push()
     solver.add(checked.objective_formula)
 
+    # Start the shared check budget after solver construction, so a very small
+    # user budget is spent on Z3 checks rather than Python-side setup.
+    budget = _SolveBudget(timeout_ms)
     status, model, reason, elapsed_ms, _ = _check_with_budget(solver, budget)
     diagnostics = list(checked.diagnostics)
     if status == "sat":

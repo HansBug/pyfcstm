@@ -21,6 +21,7 @@ Examples::
 
 from __future__ import annotations
 
+import math
 import time
 from typing import Optional, Tuple
 
@@ -69,8 +70,10 @@ class _SolveBudget:
         """
         if self.deadline is None:
             return None
-        remaining = int((self.deadline - time.monotonic()) * 1000.0)
-        return remaining if remaining >= 1 else None
+        remaining_seconds = self.deadline - time.monotonic()
+        if remaining_seconds <= 0:
+            return None
+        return max(1, int(math.ceil(remaining_seconds * 1000.0)))
 
 
 def _check_with_budget(

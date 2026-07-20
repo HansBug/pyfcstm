@@ -5,6 +5,7 @@ from __future__ import annotations
 import z3
 import pytest
 
+import pyfcstm.bmc.solver as solver_module
 from pyfcstm.bmc.solver import _SolveBudget, _check_with_budget
 from pyfcstm.bmc.errors import BmcBuildError
 
@@ -60,6 +61,16 @@ def test_budget_reports_deadline_exhaustion_before_check(monkeypatch) -> None:
         False,
     )
     assert called is False
+
+
+def test_budget_rounds_positive_fractional_milliseconds_up(monkeypatch) -> None:
+    """A positive sub-millisecond remainder must still reach Z3 as one ms."""
+    clock = iter((100.0, 100.0005))
+    monkeypatch.setattr(solver_module.time, "monotonic", lambda: next(clock))
+
+    budget = _SolveBudget(1)
+
+    assert budget.remaining_ms() == 1
 
 
 @pytest.mark.parametrize("value", [True, 0, -1, 1.5, "10"])

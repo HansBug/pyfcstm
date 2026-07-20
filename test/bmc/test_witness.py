@@ -661,6 +661,16 @@ def test_solve_property_primary_models_expose_role_aware_channels() -> None:
     assert "model_role" not in counterexample.solver
 
 
+def test_solve_property_starts_a_one_millisecond_budget_at_z3() -> None:
+    """A minimal finite budget reaches Z3 instead of expiring during setup."""
+    _, formula = _compile("state Root;", 'check reach <= 1: active("Root");')
+
+    result = solve_bmc_property(formula, timeout_ms=1)
+
+    assert result.reason != "deadline_exhausted_before_check"
+    assert result.elapsed_ms > 0
+
+
 @pytest.mark.parametrize(
     ("model_role", "property_metadata"),
     [

@@ -322,6 +322,29 @@ def test_prepared_context_rejects_mismatched_source_registry(
 
 
 @pytest.mark.unittest
+def test_prepared_context_rejects_stale_bound_query_source_graph(
+    engine_model: StateMachine,
+) -> None:
+    """Canonical equality cannot replace source-object identity validation."""
+    query_text = (
+        'assume event("Root.Tick", 0) == true;\ncheck reach <= 1: active("Root.Done");'
+    )
+    query_with_spans = parse_bmc_query(query_text, source_path="query.fbmcq")
+    stale = BmcEngine(engine_model).prepare(parse_bmc_query(query_text))
+
+    with pytest.raises(BmcBuildError, match="source objects"):
+        BmcPreparedContext(
+            model=stale.model,
+            query=query_with_spans,
+            bound_query=stale.bound_query,
+            domain=stale.domain,
+            options=stale.options,
+            source_text=query_text,
+            query_source_path="query.fbmcq",
+        )
+
+
+@pytest.mark.unittest
 def test_engine_propagates_parse_errors_before_prepare(
     engine_model: StateMachine,
 ) -> None:

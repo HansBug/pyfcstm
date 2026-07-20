@@ -233,6 +233,16 @@ def test_source_registry_returns_none_for_missing_excerpt_document() -> None:
     assert registry.excerpt(reference) is None
 
 
+def test_source_registry_clears_known_document_spans_that_cannot_be_sliced() -> None:
+    """Known documents do not advertise an invalid source span as precise."""
+    registry = SourceDocumentRegistry({"machine.fcstm": "state Root;"})
+
+    reference = registry.reference("fcstm", "machine.fcstm", Span(99, 1, 99, 2))
+
+    assert reference.span is None
+    assert registry.excerpt(reference) is None
+
+
 def test_source_registry_slices_multiline_span_exactly() -> None:
     """A source excerpt must be the exact half-open span slice."""
     source = "line one\n第二行内容\nline three"
@@ -654,6 +664,26 @@ def test_text_loader_records_snapshot_when_path_is_an_existing_file(
     model = load_state_machine_from_text(source, path=source_path)
 
     assert model._source_documents[str(source_path.resolve())] == source
+
+
+def test_text_loader_records_snapshot_for_virtual_file_path(tmp_path: Path) -> None:
+    """Text loading keeps provenance when the file path is not on disk."""
+    source_path = tmp_path / "virtual.fcstm"
+    source = "def int x = 7;\nstate Root;\n"
+
+    model = load_state_machine_from_text(source, path=source_path)
+    context = BmcEngine(model).prepare(
+        'check reach <= 1: active("Root") and x == 7;',
+        query_source_path="query.fbmcq",
+    )
+    core = build_bmc_core_formula(context)
+    group = next(
+        item for item in core._tracked_groups if item.stable_id == "initial.variable.x"
+    )
+
+    assert source_path.exists() is False
+    assert model._source_documents[str(source_path.resolve())] == source
+    assert context._source_registry.excerpt(group.source_ref) == "def int x = 7;"
 
 
 def _conjoin(expressions):

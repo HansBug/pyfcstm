@@ -159,7 +159,7 @@ def load_state_machine_from_text(
     """
     effective_path = os.getcwd() if path is None else os.fspath(path)
     ast_node = parse_state_machine_dsl(text)
-    if path is not None and os.path.isfile(os.fspath(path)):
+    if path is not None and not os.path.isdir(os.fspath(path)):
         absolute_path = os.path.abspath(os.fspath(path))
         setattr(ast_node, "_source_documents", {absolute_path: text})
     return parse_dsl_node_to_state_machine(ast_node, path=effective_path)

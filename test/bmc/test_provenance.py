@@ -393,6 +393,126 @@ state Worker {
     ] == ["x = x + 3;", "x = x + 4;", "x = x + 5;"]
 
 
+def test_transition_effect_provenance_keeps_model_source_ownership(
+    tmp_path: Path,
+) -> None:
+    """Transition and effect metadata retain exact FCSTM source excerpts."""
+    source_path = tmp_path / "machine.fcstm"
+    source = """def int x = 0;
+state Root {
+    state A;
+    state B;
+    [*] -> A;
+    A -> B effect {
+        x = x + 1;
+    }
+}
+"""
+    source_path.write_text(source, encoding="utf-8")
+
+    model = load_state_machine_from_file(source_path)
+    transition = next(
+        item for item in model.root_state.transitions if item.from_state == "A"
+    )
+    effect = transition.effects[0]
+    registry = SourceDocumentRegistry(
+        model._source_documents, display_root=model._source_root
+    )
+
+    assert transition._source_path == str(source_path.resolve())
+    assert effect._source_path == str(source_path.resolve())
+    assert registry.excerpt(registry.model_reference(transition)) == (
+        "A -> B effect {\n        x = x + 1;\n    }"
+    )
+    assert registry.excerpt(registry.model_reference(effect)) == "x = x + 1;"
+
+
+def test_initializer_definedness_provenance_uses_definition_source(
+    tmp_path: Path,
+) -> None:
+    """Initializer definedness groups point to the defining FCSTM statement."""
+    source_path = tmp_path / "machine.fcstm"
+    source = "def int x = 1 / 0;\nstate Root;\n"
+    source_path.write_text(source, encoding="utf-8")
+
+    model = load_state_machine_from_file(source_path)
+    context = BmcEngine(model).prepare(
+        'check reach <= 1: active("Root");', query_source_path="query.fbmcq"
+    )
+    core = build_bmc_core_formula(context)
+    group = next(
+        item
+        for item in core._tracked_groups
+        if item.stable_id == "initial.variable.x.definedness.0000"
+    )
+
+    assert group.source_ref.kind == "fcstm"
+    assert group.source_ref.path == "machine.fcstm"
+    assert context._source_registry.excerpt(group.source_ref) == "def int x = 1 / 0;"
+
+
+def test_environment_group_provenance_covers_frame_event_and_cardinality() -> None:
+    """Environment groups retain exact FBMCQ excerpts for each assumption kind."""
+    model = load_state_machine_from_text(
+        """
+        def int x = 1;
+        state Root {
+            event Tick;
+        }
+        """
+    )
+    query_text = (
+        "assume always: x / 0 > 0;\n"
+        'assume event("Root.Tick", 0) == true;\n'
+        'assume events cardinality at_most_one { "Root.Tick" };\n'
+        'check reach <= 1: active("Root");'
+    )
+    context = BmcEngine(model).prepare(query_text, query_source_path="query.fbmcq")
+    core = build_bmc_core_formula(context)
+
+    excerpts_by_category = {}
+    for group in core._tracked_groups:
+        if group.stage == "assumptions":
+            excerpts_by_category.setdefault(group.category, set()).add(
+                context._source_registry.excerpt(group.source_ref)
+            )
+
+    assert excerpts_by_category["definedness"] == {"assume always: x / 0 > 0;"}
+    assert excerpts_by_category["assumption.frame"] == {"assume always: x / 0 > 0;"}
+    assert excerpts_by_category["assumption.event"] == {
+        'assume event("Root.Tick", 0) == true;'
+    }
+    assert excerpts_by_category["assumption.cardinality"] == {
+        'assume events cardinality at_most_one { "Root.Tick" };'
+    }
+
+
+@pytest.mark.parametrize(
+    "assumption_text",
+    [
+        "assume always: x / 0 > 0;",
+        "assume at 0: x / 0 > 0;",
+    ],
+)
+def test_frame_assumption_provenance_keeps_exact_query_excerpt(
+    assumption_text: str,
+) -> None:
+    """Both frame-assumption forms use the complete source statement."""
+    model = load_state_machine_from_text("def int x = 1;\nstate Root;")
+    query_text = assumption_text + '\ncheck reach <= 1: active("Root");'
+    context = BmcEngine(model).prepare(query_text, query_source_path="query.fbmcq")
+    core = build_bmc_core_formula(context)
+
+    frame_groups = [
+        item for item in core._tracked_groups if item.category == "assumption.frame"
+    ]
+
+    assert frame_groups
+    assert {
+        context._source_registry.excerpt(item.source_ref) for item in frame_groups
+    } == {assumption_text}
+
+
 def test_programmatic_ast_without_spans_fails_closed_for_operation_metadata() -> None:
     """Programmatic AST input does not receive fabricated operation paths."""
     program = dsl_nodes.StateMachineDSLProgram(

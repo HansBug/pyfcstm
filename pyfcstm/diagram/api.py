@@ -493,6 +493,28 @@ def _mapping_value(value: Mapping[str, Any], snake: str, camel: str, default: An
     return default
 
 
+def _coerce_finite_number(value: Any, field_name: str, positive: bool = False) -> float:
+    """Normalize a numeric option and reject bool/NaN/infinite values."""
+    number_label = "numbers" if field_name.endswith("offsets") else "number"
+    if isinstance(value, bool):
+        if positive:
+            raise ValueError("%s must be a finite positive number" % field_name)
+        raise ValueError("%s must be finite %s" % (field_name, number_label))
+    try:
+        number = float(value)
+    except (TypeError, ValueError) as error:
+        # TypeError/ValueError: callers supplied a non-numeric option or a
+        # string that cannot be parsed as a number.
+        if positive:
+            raise ValueError("%s must be a finite positive number" % field_name) from error
+        raise ValueError("%s must be finite %s" % (field_name, number_label)) from error
+    if not math.isfinite(number) or (positive and number <= 0):
+        if positive:
+            raise ValueError("%s must be a finite positive number" % field_name)
+        raise ValueError("%s must be finite %s" % (field_name, number_label))
+    return number
+
+
 def _atomic_write_text(path: Union[str, os.PathLike], content: str) -> Path:
     """Replace a text file atomically using a temporary sibling."""
     target = Path(path)
@@ -730,10 +752,9 @@ class DiagramViewState:
         if self.mode not in ("fcstm", "diagram", "compare"):
             raise ValueError("mode must be 'fcstm', 'diagram', or 'compare'")
         object.__setattr__(self, "collapsed_state_ids", tuple(self.collapsed_state_ids))
-        if not math.isfinite(float(self.zoom)) or float(self.zoom) <= 0:
-            raise ValueError("zoom must be a finite positive number")
-        if not math.isfinite(float(self.pan_x)) or not math.isfinite(float(self.pan_y)):
-            raise ValueError("pan offsets must be finite numbers")
+        object.__setattr__(self, "zoom", _coerce_finite_number(self.zoom, "zoom", positive=True))
+        object.__setattr__(self, "pan_x", _coerce_finite_number(self.pan_x, "pan offsets"))
+        object.__setattr__(self, "pan_y", _coerce_finite_number(self.pan_y, "pan offsets"))
 
     def to_dict(self) -> Dict[str, Any]:
         """
@@ -773,6 +794,21 @@ class DiagramData:
         if not isinstance(self.value, Mapping):
             raise TypeError("DiagramData.value must be a mapping")
         object.__setattr__(self, "value", _freeze_value(dict(self.value)))
+
+    def __hash__(self) -> int:
+        """
+        Hash the immutable snapshot by its canonical JSON representation.
+
+        :return: A hash consistent for equal immutable snapshots in one process.
+        :rtype: int
+        """
+        payload = json.dumps(
+            _thaw_value(self.value),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        return hash(payload)
 
     def to_dict(self) -> Dict[str, Any]:
         """
@@ -898,6 +934,62 @@ class Diagram:
         """
         return self.data.to_json(**kwargs)
 
+    def with_options(self, options: Optional[Any] = None, **kwargs: Any) -> "Diagram":
+        """
+        Return a new snapshot with replacement renderer options.
+
+        :param options: An immutable options value or mapping. If omitted,
+            keyword options are collected into a mapping.
+        :type options: pyfcstm.diagram.DiagramOptions or collections.abc.Mapping, optional
+        :param kwargs: Snake-case or camel-case option fields.
+        :return: A new independent diagram snapshot.
+        :rtype: pyfcstm.diagram.Diagram
+        :raises TypeError: If both ``options`` and keyword fields are supplied.
+
+        Example::
+
+            >>> dark = model.diagram().with_options(mode="dark")
+            >>> dark.options.mode
+            'dark'
+        """
+        if options is not None and kwargs:
+            raise TypeError("provide options or keyword fields, not both")
+        replacement = options if options is not None else (kwargs or self.options)
+        return Diagram(
+            self.model,
+            options=replacement,
+            view_state=self.view_state,
+            source_text=self.source_text,
+        )
+
+    def with_view_state(self, view_state: Optional[Any] = None, **kwargs: Any) -> "Diagram":
+        """
+        Return a new snapshot with replacement browser view state.
+
+        :param view_state: An immutable view state value or mapping. If
+            omitted, keyword fields are collected into a mapping.
+        :type view_state: pyfcstm.diagram.DiagramViewState or collections.abc.Mapping, optional
+        :param kwargs: Snake-case or camel-case view-state fields.
+        :return: A new independent diagram snapshot.
+        :rtype: pyfcstm.diagram.Diagram
+        :raises TypeError: If both ``view_state`` and keyword fields are supplied.
+
+        Example::
+
+            >>> source_only = model.diagram().with_view_state(mode="fcstm")
+            >>> source_only.view_state.mode
+            'fcstm'
+        """
+        if view_state is not None and kwargs:
+            raise TypeError("provide view_state or keyword fields, not both")
+        replacement = view_state if view_state is not None else (kwargs or self.view_state)
+        return Diagram(
+            self.model,
+            options=self.options,
+            view_state=replacement,
+            source_text=self.source_text,
+        )
+
     def to_svg(self) -> str:
         """
         Request a synchronous headless SVG export.
@@ -925,16 +1017,7 @@ class Diagram:
         :raises ValueError: If ``scale`` is not finite and positive.
         :raises DiagramUnavailableError: Always in the browser-only stage.
         """
-        if isinstance(scale, bool):
-            raise ValueError("scale must be a finite positive number")
-        try:
-            value = float(scale)
-        except (TypeError, ValueError) as error:
-            # TypeError/ValueError: callers supplied a non-numeric scale or
-            # a string that cannot be parsed as a number.
-            raise ValueError("scale must be a finite positive number") from error
-        if not math.isfinite(value) or value <= 0:
-            raise ValueError("scale must be a finite positive number")
+        _coerce_finite_number(scale, "scale", positive=True)
         raise DiagramUnavailableError(
             "headless PNG export is unavailable; use Diagram.to_html() browser export "
             "or install the optional delivery runtime"
@@ -1045,7 +1128,8 @@ class Diagram:
         scale: float = 1.0,
     ) -> Path:
         """
-        Save JSON or HTML according to ``format`` or the file suffix.
+        Save JSON/HTML directly and route SVG/PNG/PDF to their typed
+        headless capability methods.
 
         :param path: Destination file path.
         :type path: str or os.PathLike
@@ -1056,10 +1140,16 @@ class Diagram:
         :type scale: float
         :return: The destination path.
         :rtype: pathlib.Path
-        :raises ValueError: If the selected format is unsupported.
+        :raises ValueError: If the selected format is unsupported or a
+            non-default scale is supplied for a non-PNG format.
+        :raises DiagramUnavailableError: If a headless SVG, PNG, or PDF
+            runtime is not installed in this browser-only stage.
         """
         target = Path(path)
         selected = (format or target.suffix.lstrip(".") or "json").lower()
+        numeric_scale = _coerce_finite_number(scale, "scale", positive=True)
+        if selected != "png" and numeric_scale != 1.0:
+            raise ValueError("scale is only supported for PNG output")
         if selected == "json":
             _atomic_write_text(target, self.to_json() + "\n")
         elif selected in ("html", "htm"):
@@ -1067,7 +1157,7 @@ class Diagram:
         elif selected == "svg":
             _atomic_write_text(target, self.to_svg())
         elif selected == "png":
-            _atomic_write_bytes(target, self.to_png(scale=scale))
+            _atomic_write_bytes(target, self.to_png(scale=numeric_scale))
         elif selected == "pdf":
             _atomic_write_bytes(target, self.to_pdf())
         else:

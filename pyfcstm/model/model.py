@@ -2447,7 +2447,7 @@ class StateMachine(AstExportable, PlantUMLExportable):
         """
         yield from self.root_state.walk_states()
 
-    def diagram(self, options=None, view_state=None, source_text=None):
+    def diagram(self, options=None, view_state=None, source_text=None, **option_fields):
         """
         Create the public Python diagram facade for this state machine.
 
@@ -2457,6 +2457,8 @@ class StateMachine(AstExportable, PlantUMLExportable):
         :type view_state: object, optional
         :param source_text: Optional FCSTM source override for the browser pane.
         :type source_text: str, optional
+        :param option_fields: Renderer option fields such as ``direction`` or
+            ``cjk_locale``. These are equivalent to passing ``options``.
         :return: Diagram facade.
         :rtype: pyfcstm.diagram.Diagram
 
@@ -2467,9 +2469,22 @@ class StateMachine(AstExportable, PlantUMLExportable):
         """
         from ..diagram.api import Diagram
 
+        if options is not None and option_fields:
+            raise TypeError("provide options or keyword option fields, not both")
+        if option_fields:
+            options = option_fields
         return Diagram(self, options=options, view_state=view_state, source_text=source_text)
 
-    def show(self, output=None, *, open_browser=True, options=None, view_state=None, source_text=None):
+    def show(
+        self,
+        output=None,
+        *,
+        open_browser=True,
+        options=None,
+        view_state=None,
+        source_text=None,
+        **option_fields,
+    ):
         """
         Open this state machine in the standalone browser viewer.
 
@@ -2483,6 +2498,7 @@ class StateMachine(AstExportable, PlantUMLExportable):
         :type view_state: object, optional
         :param source_text: Optional FCSTM source override for the source pane.
         :type source_text: str, optional
+        :param option_fields: Renderer option fields equivalent to ``options``.
         :return: Path to the generated HTML file.
         :rtype: pathlib.Path
 
@@ -2491,7 +2507,12 @@ class StateMachine(AstExportable, PlantUMLExportable):
             >>> model.show(open_browser=False).suffix
             '.html'
         """
-        return self.diagram(options=options, view_state=view_state, source_text=source_text).show(
+        return self.diagram(
+            options=options,
+            view_state=view_state,
+            source_text=source_text,
+            **option_fields,
+        ).show(
             output, open_browser=open_browser
         )
 

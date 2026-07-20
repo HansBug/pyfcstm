@@ -108,6 +108,23 @@ def test_model_show_returns_html_path_without_opening_browser(tmp_path):
     assert '"colorMode":"dark"' in content
 
 
+def test_model_diagram_and_show_accept_option_keywords(tmp_path):
+    model = _model("state Root;")
+    diagram = model.diagram(mode="dark", palette="nord", cjk_locale="tc")
+    assert diagram.options.mode == "dark"
+    assert diagram.options.palette == "nord"
+    assert diagram.options.cjk_locale == "tc"
+
+    output = model.show(
+        tmp_path / "keyword-options.html",
+        open_browser=False,
+        mode="dark",
+        view_state={"mode": "fcstm"},
+    )
+    assert output.exists()
+    assert '"standaloneMode":"fcstm"' in output.read_text(encoding="utf-8")
+
+
 def test_html_cache_and_save_replace_are_deterministic(tmp_path):
     diagram = _model("state Root;").diagram()
     first = diagram.to_html()
@@ -134,6 +151,42 @@ def test_diagram_value_objects_reject_unknown_values_and_copy_sequences():
     state = DiagramViewState(collapsed_state_ids=["Root.Child"])
     assert state.collapsed_state_ids == ("Root.Child",)
     assert DiagramOptions(cjk_locale="JP").to_dict()["cjkLocale"] == "jp"
+
+
+def test_view_state_rejects_boolean_numeric_values():
+    with pytest.raises(ValueError, match="zoom must be a finite positive number"):
+        DiagramViewState(zoom=True)
+    with pytest.raises(ValueError, match="pan offsets must be finite numbers"):
+        DiagramViewState(pan_x=True)
+    with pytest.raises(ValueError, match="pan offsets must be finite numbers"):
+        DiagramViewState(pan_y=False)
+
+
+def test_diagram_derivation_methods_return_independent_snapshots():
+    model = _model("state Root;")
+    original = model.diagram()
+    changed_options = original.with_options({"mode": "dark"})
+    changed_view = original.with_view_state({"mode": "fcstm", "zoom": 1.5})
+
+    assert original.options.mode is None
+    assert original.view_state.mode == "compare"
+    assert changed_options.options.mode == "dark"
+    assert changed_options.view_state == original.view_state
+    assert changed_view.view_state.mode == "fcstm"
+    assert changed_view.view_state.zoom == 1.5
+    assert changed_view.options == original.options
+
+
+def test_save_rejects_non_default_scale_for_non_png_formats(tmp_path):
+    diagram = _model("state Root;").diagram()
+    with pytest.raises(ValueError, match="scale is only supported for PNG"):
+        diagram.save(tmp_path / "diagram.json", scale=2)
+    with pytest.raises(ValueError, match="scale is only supported for PNG"):
+        diagram.save(tmp_path / "diagram.html", scale=2)
+    with pytest.raises(ValueError, match="scale is only supported for PNG"):
+        diagram.save(tmp_path / "diagram.svg", scale=2)
+    with pytest.raises(ValueError, match="scale is only supported for PNG"):
+        diagram.save(tmp_path / "diagram.pdf", scale=2)
 
 
 def test_diagram_mapping_inputs_fail_closed_on_unknown_or_ambiguous_fields():
@@ -173,6 +226,13 @@ def test_diagram_data_snapshot_is_not_mutable():
     data = _model("state Root;").diagram().data
     with pytest.raises(TypeError):
         data.value["kind"] = "changed"
+
+
+def test_diagram_data_hash_matches_equal_immutable_snapshots():
+    first = _model("state Root;").diagram().data
+    second = _model("state Root;").diagram().data
+    assert first == second
+    assert hash(first) == hash(second)
 
 
 def test_imported_source_ranges_keep_document_identity(tmp_path):

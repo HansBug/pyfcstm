@@ -30,11 +30,11 @@ DiagramData
 -----------------------------------------------------
 
 .. autoclass:: DiagramData
-    :members: __post_init__,to_dict,to_json,value
+    :members: __post_init__,__hash__,to_dict,to_json,value
 
 
 Diagram
 -----------------------------------------------------
 
 .. autoclass:: Diagram
-    :members: __init__,to_dict,to_json,to_svg,to_png,to_pdf,to_html,save,show
+    :members: __init__,to_dict,to_json,with_options,with_view_state,to_svg,to_png,to_pdf,to_html,save,show

@@ -5,7 +5,7 @@ import re
 
 import pytest
 
-from pyfcstm.diagram import DiagramOptions, DiagramViewState
+from pyfcstm.diagram import DiagramData, DiagramOptions, DiagramViewState
 from pyfcstm.model import State, StateMachine, load_state_machine_from_text
 
 
@@ -43,11 +43,31 @@ def test_source_sidecar_and_three_browser_modes_are_embedded():
 def test_diagram_options_reach_standalone_colour_preferences():
     model = _model("state Root;")
     html = model.diagram(options=DiagramOptions(palette="nord", mode="dark")).to_html()
-    match = re.search(r"window\.__FCSTM_INITIAL_STATE__ = (.*);</script><script>", html, re.DOTALL)
+    match = re.search(r"window\.__FCSTM_INITIAL_STATE__ = (.*?);</script><script>", html, re.DOTALL)
     assert match is not None
     state = json.loads(match.group(1))
     assert state["palette"] == "nord"
     assert state["colorMode"] == "dark"
+
+
+def test_diagram_options_default_to_browser_preferences_and_allow_auto_mode():
+    model = _model("state Root;")
+    html = model.diagram().to_html()
+    match = re.search(r"window\.__FCSTM_INITIAL_STATE__ = (.*?);</script><script>", html, re.DOTALL)
+    assert match is not None
+    state = json.loads(match.group(1))
+    assert "palette" not in state
+    assert "colorMode" not in state
+    assert DiagramOptions(mode="auto").mode == "auto"
+
+
+def test_source_highlighting_preserves_multiline_token_state():
+    from pyfcstm.diagram.api import _highlight_source
+
+    rendered = _highlight_source("/* first line\nsecond line */\nstate Root;")
+    assert rendered.count('class="fcstm-source-line"') == 3
+    assert "second line" in rendered
+    assert "&lt;" not in rendered
 
 
 def test_source_line_mapping_prefers_transition_ranges():
@@ -58,7 +78,7 @@ def test_source_line_mapping_prefers_transition_ranges():
     Idle -> Run;
 }"""
     html = _model(source).diagram().to_html()
-    match = re.search(r"window\.__FCSTM_INITIAL_STATE__ = (.*);</script><script>", html, re.DOTALL)
+    match = re.search(r"window\.__FCSTM_INITIAL_STATE__ = (.*?);</script><script>", html, re.DOTALL)
     assert match is not None
     state = json.loads(match.group(1))
     transition_id = state["sourceLineMap"]["4"]
@@ -86,7 +106,12 @@ def test_diagram_value_objects_reject_unknown_values_and_copy_sequences():
         DiagramViewState(mode="unknown")
     state = DiagramViewState(collapsed_state_ids=["Root.Child"])
     assert state.collapsed_state_ids == ("Root.Child",)
-    assert DiagramOptions(cjk_locale="jp").to_dict()["cjkLocale"] == "jp"
+    assert DiagramOptions(cjk_locale="JP").to_dict()["cjkLocale"] == "jp"
+
+
+def test_diagram_data_rejects_non_mapping_snapshots():
+    with pytest.raises(TypeError, match="must be a mapping"):
+        DiagramData([("kind", "diagram")])
 
 
 def test_diagram_data_snapshot_is_not_mutable():
@@ -108,6 +133,9 @@ def test_imported_source_ranges_keep_document_identity(tmp_path):
     assert '"sourceDocuments"' in html
     assert '"documentId":"child.fcstm"' in html
     assert '"documentId":"main.fcstm"' in html
+    assert str(root) not in html
+    assert str(child) not in html
+    assert "_sourcePath" not in html
 
 
 def test_imported_source_line_map_contains_child_document_lines(tmp_path):
@@ -120,7 +148,7 @@ def test_imported_source_line_map_contains_child_document_lines(tmp_path):
     )
     model = load_state_machine_from_text(root.read_text(encoding="utf-8"), path=str(root))
     html = model.diagram().to_html()
-    match = re.search(r"window\.__FCSTM_INITIAL_STATE__ = (.*);</script><script>", html, re.DOTALL)
+    match = re.search(r"window\.__FCSTM_INITIAL_STATE__ = (.*?);</script><script>", html, re.DOTALL)
     assert match is not None
     state = json.loads(match.group(1))
     child_lines = [key for key in state["sourceLineMap"] if key.startswith("child.fcstm:")]
@@ -145,7 +173,7 @@ def test_imported_documents_with_duplicate_basenames_keep_distinct_ids(tmp_path)
     )
     model = load_state_machine_from_text(root.read_text(encoding="utf-8"), path=str(root))
     html = model.diagram().to_html()
-    match = re.search(r"window\.__FCSTM_INITIAL_STATE__ = (.*);</script><script>", html, re.DOTALL)
+    match = re.search(r"window\.__FCSTM_INITIAL_STATE__ = (.*?);</script><script>", html, re.DOTALL)
     assert match is not None
     state = json.loads(match.group(1))
     documents = state["sourceDocuments"]
@@ -157,7 +185,7 @@ def test_imported_documents_with_duplicate_basenames_keep_distinct_ids(tmp_path)
 def test_source_line_map_preserves_multiple_items_on_one_line():
     model = _model("state Root { state A; state B; state C; [*] -> A; A -> B; A -> C; }")
     html = model.diagram().to_html()
-    match = re.search(r"window\.__FCSTM_INITIAL_STATE__ = (.*);</script><script>", html, re.DOTALL)
+    match = re.search(r"window\.__FCSTM_INITIAL_STATE__ = (.*?);</script><script>", html, re.DOTALL)
     assert match is not None
     state = json.loads(match.group(1))
     line_value = state["sourceLineMap"]["0"]

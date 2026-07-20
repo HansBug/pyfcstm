@@ -17,6 +17,7 @@ Example::
 
 import base64
 import hashlib
+import html as html_module
 import json
 import math
 import os
@@ -28,7 +29,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Dict, List, Mapping, Optional, Tuple, Union
 
-from pygments import highlight
+from pygments import lex
 from pygments.formatters import HtmlFormatter
 
 from ..highlight import FcstmLexer
@@ -65,6 +66,23 @@ def _thaw_value(value: Any) -> Any:
     if isinstance(value, tuple):
         return [_thaw_value(item) for item in value]
     return value
+
+
+def _strip_browser_private_fields(node: Dict[str, Any]) -> None:
+    """Remove filesystem-only fields before embedding renderer data in HTML."""
+    node.pop("_sourcePath", None)
+    for event in node.get("events", []):
+        if isinstance(event, dict):
+            event.pop("_sourcePath", None)
+    for action in node.get("actions", []):
+        if isinstance(action, dict):
+            action.pop("_sourcePath", None)
+    for transition in node.get("transitions", []):
+        if isinstance(transition, dict):
+            transition.pop("_sourcePath", None)
+    for child in node.get("children", []):
+        if isinstance(child, dict):
+            _strip_browser_private_fields(child)
 
 
 def _span_range(span: Optional[Span]) -> Optional[Dict[str, Dict[str, int]]]:
@@ -424,14 +442,31 @@ def _source_sidecar(machine: StateMachine, source_override: Optional[str] = None
 
 
 def _highlight_source(source: str) -> str:
-    """Render source as one safe, independently addressable HTML line at a time."""
+    """Render source with stateful tokenization and addressable HTML lines."""
     lexer = FcstmLexer()
     formatter = HtmlFormatter(nowrap=True)
-    lines = source.splitlines() or [""]
-    rendered: List[str] = []
-    for index, line in enumerate(lines):
-        content = highlight(line, lexer, formatter).rstrip("\n")
-        rendered.append('<span class="fcstm-source-line" data-line="%d">%s</span>' % (index, content or " "))
+    token_lines: List[List[str]] = [[]]
+    for token, value in lex(source, lexer):
+        css_class = formatter._get_css_class(token)
+        fragments = value.split("\n")
+        for index, fragment in enumerate(fragments):
+            if fragment:
+                escaped = html_module.escape(fragment, quote=False)
+                token_lines[-1].append('<span class="%s">%s</span>' % (css_class, escaped))
+            if index < len(fragments) - 1:
+                token_lines.append([])
+    expected_line_count = max(1, len(source.splitlines()))
+    while len(token_lines) > expected_line_count:
+        token_lines.pop()
+    while len(token_lines) < expected_line_count:
+        token_lines.append([])
+    if not token_lines:
+        token_lines = [[]]
+    rendered = [
+        '<span class="fcstm-source-line" data-line="%d">%s</span>'
+        % (index, "".join(content) or " ")
+        for index, content in enumerate(token_lines)
+    ]
     return "\n".join(rendered)
 
 
@@ -517,10 +552,12 @@ class DiagramOptions:
     :type detail_level: str
     :param direction: Layout direction, either ``TB`` or ``LR``.
     :type direction: str
-    :param palette: Shared palette identifier.
-    :type palette: str
-    :param mode: Colour mode, either ``light`` or ``dark``.
-    :type mode: str
+    :param palette: Optional shared palette identifier.  When omitted, the
+        browser preference is used.
+    :type palette: str, optional
+    :param mode: Optional colour mode, either ``light``, ``dark`` or ``auto``.
+        When omitted, the browser preference is used.
+    :type mode: str, optional
     :param cjk_locale: Embedded CJK font locale: ``sc``, ``tc``, ``hk``,
         ``jp`` or ``kr``.
     :type cjk_locale: str
@@ -534,8 +571,8 @@ class DiagramOptions:
 
     detail_level: str = "normal"
     direction: str = "TB"
-    palette: str = "default"
-    mode: str = "light"
+    palette: Optional[str] = None
+    mode: Optional[str] = None
     cjk_locale: str = "sc"
 
     def __post_init__(self) -> None:
@@ -543,12 +580,14 @@ class DiagramOptions:
             raise ValueError("detail_level must be 'minimal', 'normal', or 'full'")
         if self.direction not in ("TB", "LR"):
             raise ValueError("direction must be 'TB' or 'LR'")
-        if self.palette not in ("default", "nord", "solarized", "darcula"):
+        if self.palette is not None and self.palette not in ("default", "nord", "solarized", "darcula"):
             raise ValueError("unsupported palette: %s" % self.palette)
-        if self.cjk_locale.lower() not in ("sc", "tc", "hk", "jp", "kr"):
+        locale = str(self.cjk_locale).lower()
+        if locale not in ("sc", "tc", "hk", "jp", "kr"):
             raise ValueError("unsupported CJK locale: %s" % self.cjk_locale)
-        if self.mode not in ("light", "dark"):
-            raise ValueError("mode must be 'light' or 'dark'")
+        object.__setattr__(self, "cjk_locale", locale)
+        if self.mode is not None and self.mode not in ("light", "dark", "auto"):
+            raise ValueError("mode must be 'light', 'dark', or 'auto'")
 
     def to_dict(self) -> Dict[str, Any]:
         """
@@ -650,6 +689,8 @@ class DiagramData:
     value: Mapping[str, Any]
 
     def __post_init__(self) -> None:
+        if not isinstance(self.value, Mapping):
+            raise TypeError("DiagramData.value must be a mapping")
         object.__setattr__(self, "value", _freeze_value(dict(self.value)))
 
     def to_dict(self) -> Dict[str, Any]:
@@ -730,8 +771,8 @@ class Diagram:
             options = DiagramOptions(
                 detail_level=str(options.get("detail_level", options.get("detailLevel", "normal"))),
                 direction=str(options.get("direction", "TB")),
-                palette=str(options.get("palette", "default")),
-                mode=str(options.get("mode", "light")),
+                palette=(None if options.get("palette") is None else str(options.get("palette"))),
+                mode=(None if options.get("mode") is None else str(options.get("mode"))),
                 cjk_locale=str(options.get("cjk_locale", options.get("cjkLocale", "sc"))),
             )
         if isinstance(view_state, Mapping):
@@ -785,12 +826,11 @@ class Diagram:
         viewer_css = _asset_text("viewer.css")
         browser_diagram = json.loads(json.dumps(self._renderer_diagram, ensure_ascii=False))
         browser_diagram["filePath"] = ""
+        _strip_browser_private_fields(browser_diagram["rootState"])
         state = {
             "title": self.model.root_state.name,
             "filePath": "",
             "previewOptions": self.options.to_dict(),
-            "palette": self.options.palette,
-            "colorMode": self.options.mode,
             "collapsedStateIds": list(self.view_state.collapsed_state_ids),
             "emptyTitle": "FCSTM Diagram",
             "emptyMessage": "No diagram available.",
@@ -819,6 +859,10 @@ class Diagram:
             },
             "sourceDocumentId": _source_document_id(self.model, self.model.source_path or "<memory>"),
         }
+        if self.options.palette is not None:
+            state["palette"] = self.options.palette
+        if self.options.mode is not None:
+            state["colorMode"] = self.options.mode
         state_json = json.dumps(state, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
         # Prevent embedded source text or labels from closing the bootstrap
         # script element while preserving the original characters after JSON

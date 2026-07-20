@@ -2843,6 +2843,17 @@ class BmcSolveResult(_PrettyPrintableMixin):
             object.__setattr__(self, "feasibility", feasibility)
         elif not isinstance(feasibility, BmcFeasibilityResult):
             raise BmcBuildError("feasibility must be BmcFeasibilityResult or None.")
+        if self.incomplete_reason == "incomplete check disabled" and not (
+            self.kind == "response"
+            and self.status == "unsat"
+            and self.incomplete_status is None
+            and _has_nonempty_incomplete_formula(self.formula)
+            and feasibility.assumptions.status == "sat"
+        ):
+            raise BmcBuildError(
+                "the disabled-check marker is only valid for an unchecked "
+                "response suffix after SAT assumptions feasibility."
+            )
         if self.status in {"unknown", "timeout"} and not _is_not_checked_feasibility(
             feasibility
         ):

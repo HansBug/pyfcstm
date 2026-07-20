@@ -2355,6 +2355,18 @@ def test_solve_result_public_verdict_truth_table(kind, polarity) -> None:
         assert unsat_result.to_canonical()["property_satisfied"] is True
 
 
+def test_response_sat_presentation_has_no_secondary_horizon() -> None:
+    """A primary SAT response is decisive and has no suffix horizon label."""
+    _, formula = _compile(
+        "state Root;",
+        "check response <= 1: trigger true -> within 2 false;",
+    )
+    result = BmcSolveResult(formula, "sat", model=_empty_sat_model())
+
+    assert result.outcome == "property_violated"
+    assert "Response horizon:" not in result.to_text()
+
+
 @pytest.mark.parametrize(
     ("status", "reason", "outcome"),
     [
@@ -2615,6 +2627,15 @@ def test_internal_z3_decode_guards_are_loud() -> None:
                 formula, "unsat", incomplete_reason=object()
             ),
             "incomplete_reason",
+        ),
+        (
+            lambda formula: BmcSolveResult(
+                formula,
+                "sat",
+                model=_empty_sat_model(),
+                feasibility=object(),
+            ),
+            "feasibility",
         ),
         (
             lambda formula: BmcSolveResult(formula, "unsat", timeout_ms=0),
@@ -3152,6 +3173,30 @@ def test_solve_result_rejects_unchecked_incomplete_reason() -> None:
         feasibility=_feasible_result_evidence(),
     )
     assert result.incomplete_status is None
+
+
+@pytest.mark.parametrize(
+    "query_text",
+    [
+        'check reach <= 1: active("Root");',
+        'check forbid <= 1: active("Root");',
+    ],
+)
+def test_solve_result_rejects_disabled_marker_outside_response_suffix(
+    query_text: str,
+) -> None:
+    """The disabled suffix marker cannot be attached to ordinary properties."""
+    _, formula = _compile("state Root;", query_text)
+    base = solve_bmc_property(formula)
+
+    with pytest.raises(BmcBuildError, match="disabled-check marker"):
+        BmcSolveResult(
+            formula,
+            base.status,
+            model=base.model,
+            feasibility=base.feasibility,
+            incomplete_reason="incomplete check disabled",
+        )
 
 
 def test_solve_result_rejects_unchecked_response_without_cause() -> None:

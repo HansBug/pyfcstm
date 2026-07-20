@@ -152,14 +152,13 @@ def _annotate_model_source_paths(
             _set_model_source_path(event, ast_event)
 
     ast_transition_items = [
-        *getattr(ast_state, "transitions", ()),
-        *getattr(ast_state, "force_transitions", ()),
-    ]
+        (item, False) for item in getattr(ast_state, "transitions", ())
+    ] + [(item, True) for item in getattr(ast_state, "force_transitions", ())]
     used = set()
     for transition in model_state.transitions:
         transition_span = getattr(transition, "_span", None)
-        for index, ast_transition in enumerate(ast_transition_items):
-            if index in used:
+        for index, (ast_transition, reusable) in enumerate(ast_transition_items):
+            if index in used and not reusable:
                 continue
             if (
                 transition_span is not None
@@ -170,7 +169,8 @@ def _annotate_model_source_paths(
                     transition.effects,
                     getattr(ast_transition, "post_operations", ()),
                 )
-                used.add(index)
+                if not reusable:
+                    used.add(index)
                 break
 
     action_pairs = (

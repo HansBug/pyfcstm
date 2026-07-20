@@ -11,10 +11,18 @@ from pyfcstm.bmc.errors import BmcBuildError
 pytestmark = pytest.mark.unittest
 
 
-def test_unbounded_budget_does_not_configure_solver_timeout() -> None:
+def test_unbounded_budget_does_not_configure_solver_timeout(monkeypatch) -> None:
     """``None`` must call Z3 without setting a timeout."""
     solver = z3.Solver()
     budget = _SolveBudget(None)
+    set_calls = []
+    original_set = solver.set
+
+    def record_set(*args, **kwargs):
+        set_calls.append((args, kwargs))
+        return original_set(*args, **kwargs)
+
+    monkeypatch.setattr(solver, "set", record_set)
 
     status, model, reason, elapsed_ms, check_started = _check_with_budget(
         solver, budget
@@ -25,7 +33,7 @@ def test_unbounded_budget_does_not_configure_solver_timeout() -> None:
     assert reason is None
     assert elapsed_ms >= 0
     assert check_started is True
-    assert solver.sexpr() == ""
+    assert set_calls == []
 
 
 def test_budget_reports_deadline_exhaustion_before_check(monkeypatch) -> None:

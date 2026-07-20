@@ -163,6 +163,16 @@ class BmcPreparedContext:
         effective_query_path = self.query_source_path or getattr(
             self.query, "_source_path", None
         )
+        if self._source_registry is not None and not isinstance(
+            self._source_registry, SourceDocumentRegistry
+        ):
+            raise BmcBuildError(
+                "_source_registry must be SourceDocumentRegistry or None."
+            )
+        if effective_query_path != getattr(self.query, "_source_path", None):
+            object.__setattr__(
+                self, "query", _with_query_source_path(self.query, effective_query_path)
+            )
         if self._source_registry is None:
             documents = dict(getattr(self.model, "_source_documents", {}))
             query_documents = {}
@@ -175,6 +185,14 @@ class BmcPreparedContext:
                 query_documents=query_documents,
             )
             object.__setattr__(self, "_source_registry", registry)
+        elif effective_query_path is not None and self.source_text is not None:
+            registered_query = self._source_registry.document(
+                effective_query_path, kind="fbmcq"
+            )
+            if registered_query != self.source_text:
+                raise BmcBuildError(
+                    "source_text and query_source_path do not match _source_registry."
+                )
         if self.query_source_path is None and effective_query_path is not None:
             object.__setattr__(self, "query_source_path", effective_query_path)
         if self.domain.bound != self.query.property.bound:
@@ -276,20 +294,27 @@ def _coerce_query(
             if query_source_path is not None
             else getattr(query, "_source_path", None)
         )
-        if effective_path != getattr(query, "_source_path", None):
-            old_root_id = id(query)
-            source_spans = dict(getattr(query, "_source_spans", ()))
-            root_span = source_spans.pop(old_root_id, None)
-            query = replace(query, _source_path=effective_path)
-            if root_span is not None:
-                source_spans[id(query)] = root_span
-                object.__setattr__(
-                    query,
-                    "_source_spans",
-                    tuple(sorted(source_spans.items(), key=lambda item: item[0])),
-                )
+        query = _with_query_source_path(query, effective_path)
         return query, None, effective_path
     raise BmcBuildError("query must be a str or BmcQuery.")
+
+
+def _with_query_source_path(query: BmcQuery, source_path: Optional[str]) -> BmcQuery:
+    """Return a query with source metadata moved to the new root object."""
+    if source_path == getattr(query, "_source_path", None):
+        return query
+    old_root_id = id(query)
+    source_spans = dict(getattr(query, "_source_spans", ()))
+    root_span = source_spans.pop(old_root_id, None)
+    result = replace(query, _source_path=source_path)
+    if root_span is not None:
+        source_spans[id(result)] = root_span
+        object.__setattr__(
+            result,
+            "_source_spans",
+            tuple(sorted(source_spans.items(), key=lambda item: item[0])),
+        )
+    return result
 
 
 def _enforce_max_bound(options: BmcOptions, query_bound: int) -> None:

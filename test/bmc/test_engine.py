@@ -288,6 +288,40 @@ def test_prepared_context_inherits_source_path_from_query_metadata(
 
 
 @pytest.mark.unittest
+def test_prepared_context_rejects_invalid_source_registry(
+    engine_model: StateMachine,
+) -> None:
+    """The public context constructor rejects an injected registry of the wrong type."""
+    prepared = BmcEngine(engine_model).prepare('check reach <= 1: active("Root.Done");')
+
+    with pytest.raises(BmcBuildError, match="_source_registry"):
+        replace(prepared, _source_registry=object())
+
+
+@pytest.mark.unittest
+def test_prepared_context_rejects_mismatched_source_registry(
+    engine_model: StateMachine,
+) -> None:
+    """A reused registry must contain the direct context's query snapshot."""
+    query_text = 'check reach <= 1: active("Root.Done");'
+    prepared = BmcEngine(engine_model).prepare(
+        query_text, query_source_path="old.fbmcq"
+    )
+
+    with pytest.raises(BmcBuildError, match="query_source_path"):
+        BmcPreparedContext(
+            model=prepared.model,
+            query=prepared.query,
+            bound_query=prepared.bound_query,
+            domain=prepared.domain,
+            options=prepared.options,
+            source_text=query_text,
+            query_source_path="new.fbmcq",
+            _source_registry=prepared._source_registry,
+        )
+
+
+@pytest.mark.unittest
 def test_engine_propagates_parse_errors_before_prepare(
     engine_model: StateMachine,
 ) -> None:

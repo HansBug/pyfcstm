@@ -12,7 +12,7 @@ import z3
 
 import pyfcstm.bmc.provenance as provenance_module
 from pyfcstm.dsl import node as dsl_nodes
-from pyfcstm.bmc import BmcEngine, build_bmc_core_formula
+from pyfcstm.bmc import BmcEngine, BmcPreparedContext, build_bmc_core_formula
 from pyfcstm.bmc.errors import BmcBuildError, InvalidBmcQuery
 from pyfcstm.bmc.parse import parse_bmc_query
 from pyfcstm.bmc.provenance import (
@@ -51,6 +51,18 @@ pytestmark = pytest.mark.unittest
             TypeError,
             "source span",
             id="invalid-span-type",
+        ),
+        pytest.param(
+            {"kind": "generated", "path": "query.fbmcq", "span": None},
+            ValueError,
+            "generated.*path or span",
+            id="generated-path",
+        ),
+        pytest.param(
+            {"kind": "generated", "path": None, "span": Span(1, 1, 1, 2)},
+            ValueError,
+            "generated.*path or span",
+            id="generated-span",
         ),
     ],
 )
@@ -426,6 +438,67 @@ state Root {
     )
     assert registry.excerpt(registry.model_reference(transition)) == expected_transition
     assert registry.excerpt(registry.model_reference(effect)) == "x = x + 1;"
+
+
+def test_forced_transition_expansions_share_source_provenance(tmp_path: Path) -> None:
+    """Every model transition expanded from one forced source remains locatable."""
+    source_path = tmp_path / "machine.fcstm"
+    source = """state Root {
+    state A;
+    state B;
+    state C;
+    [*] -> A;
+    !* -> C :: Go;
+}
+"""
+    source_path.write_text(source, encoding="utf-8")
+
+    model = load_state_machine_from_file(source_path)
+    forced = [
+        transition
+        for transition in model.root_state.transitions
+        if transition.is_forced
+    ]
+    registry = SourceDocumentRegistry(
+        model._source_documents, display_root=model._source_root
+    )
+
+    assert len(forced) == 3
+    assert {transition._source_path for transition in forced} == {
+        str(source_path.resolve())
+    }
+    assert {
+        registry.excerpt(registry.model_reference(transition)) for transition in forced
+    } == {"!* -> C :: Go;"}
+
+
+def test_direct_prepared_context_preserves_query_source_in_groups() -> None:
+    """Direct public context construction keeps path and excerpt metadata aligned."""
+    query_text = 'init state("Root") where true;\ncheck reach <= 1: active("Root");'
+    model = load_state_machine_from_text("state Root;")
+    parsed = parse_bmc_query(query_text, source_path="old.fbmcq")
+    prepared = BmcEngine(model).prepare(parsed)
+
+    context = BmcPreparedContext(
+        model=prepared.model,
+        query=prepared.query,
+        bound_query=prepared.bound_query,
+        domain=prepared.domain,
+        options=prepared.options,
+        source_text=query_text,
+        query_source_path="new.fbmcq",
+    )
+    core = build_bmc_core_formula(context)
+    target = next(
+        group for group in core._tracked_groups if group.stable_id == "initial.target"
+    )
+
+    assert context.query_source_path == "new.fbmcq"
+    assert context.query._source_path == "new.fbmcq"
+    assert target.source_ref.path == "new.fbmcq"
+    assert context._source_registry.excerpt(target.source_ref) == (
+        'init state("Root") where true;'
+    )
 
 
 def test_public_model_loading_preserves_event_scope_origins() -> None:

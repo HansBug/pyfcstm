@@ -100,6 +100,12 @@ class BmcSourceRef:
     def __post_init__(self) -> None:
         if self.kind not in _SOURCE_KINDS:
             raise ValueError("Unsupported BMC source kind: %r." % self.kind)
+        if self.kind == "generated" and (
+            self.path is not None or self.span is not None
+        ):
+            raise ValueError(
+                "generated BMC source references cannot carry path or span."
+            )
         if self.path is not None and (not isinstance(self.path, str) or not self.path):
             raise ValueError("BMC source path must be None or a non-empty string.")
         if self.span is not None and not isinstance(self.span, Span):

@@ -718,6 +718,271 @@ def test_witness_trace_rejects_role_property_mismatches(
         )
 
 
+def test_witness_trace_rejects_invalid_public_role_metadata() -> None:
+    """Role-aware witness constructors fail closed on malformed public data."""
+
+    def build(
+        *,
+        property_metadata=None,
+        solver_metadata=None,
+        model_role="primary_witness",
+        verdict=None,
+    ):
+        default_verdict = {
+            "property_satisfied": True,
+            "witness_found": True,
+            "counterexample_found": False,
+            "incomplete": False,
+            "outcome": "witness_found",
+        }
+        return BmcWitnessTrace(
+            property_metadata
+            if property_metadata is not None
+            else {"kind": "reach", "polarity": "witness"},
+            solver_metadata
+            if solver_metadata is not None
+            else {
+                "model_status": "sat",
+                "primary_status": "sat",
+                "incomplete_status": None,
+                "primary_reason": None,
+                "incomplete_reason": None,
+                "primary_elapsed_ms": 1.0,
+                "incomplete_elapsed_ms": None,
+            },
+            {},
+            (),
+            (),
+            model_role=model_role,
+            verdict=default_verdict if verdict is None else verdict,
+        )
+
+    valid_solver = {
+        "model_status": "sat",
+        "primary_status": "sat",
+        "incomplete_status": None,
+        "primary_reason": None,
+        "incomplete_reason": None,
+        "primary_elapsed_ms": 1.0,
+        "incomplete_elapsed_ms": None,
+    }
+    cases = (
+        (
+            lambda: BmcWitnessTrace(
+                {"kind": "reach", "polarity": "witness"},
+                valid_solver,
+                {},
+                (),
+                (),
+                model_role="primary_witness",
+            ),
+            "model_role and verdict",
+        ),
+        (lambda: build(model_role="invalid"), "Unsupported witness model_role"),
+        (lambda: build(verdict=[]), "role-aware witness requires verdict"),
+        (
+            lambda: build(verdict={"property_satisfied": True}),
+            "verdict is missing",
+        ),
+        (
+            lambda: build(
+                verdict={
+                    "property_satisfied": False,
+                    "witness_found": True,
+                    "counterexample_found": False,
+                    "incomplete": False,
+                    "outcome": "witness_found",
+                }
+            ),
+            "verdict.property_satisfied",
+        ),
+        (lambda: build(property_metadata={}), "role-aware witness property is missing"),
+        (
+            lambda: build(property_metadata={"kind": "invalid", "polarity": "witness"}),
+            "property.kind is invalid",
+        ),
+        (
+            lambda: build(property_metadata={"kind": "reach", "polarity": "invalid"}),
+            "property.polarity is invalid",
+        ),
+        (
+            lambda: build(
+                property_metadata={"kind": "forbid", "polarity": "counterexample"}
+            ),
+            "property.polarity is inconsistent",
+        ),
+        (
+            lambda: build(solver_metadata={**valid_solver, "model_status": "invalid"}),
+            "solver.model_status",
+        ),
+        (
+            lambda: build(
+                solver_metadata={
+                    key: value
+                    for key, value in valid_solver.items()
+                    if key != "model_status"
+                }
+            ),
+            "role-aware witness solver metadata is missing",
+        ),
+        (
+            lambda: build(solver_metadata={**valid_solver, "status": "sat"}),
+            "raw-model fields",
+        ),
+        (
+            lambda: build(solver_metadata={**valid_solver, "model_status": "unknown"}),
+            "model_status must be sat",
+        ),
+        (
+            lambda: build(solver_metadata={**valid_solver, "primary_status": "unsat"}),
+            "primary sat",
+        ),
+        (
+            lambda: build(
+                solver_metadata={**valid_solver, "incomplete_elapsed_ms": 1.0}
+            ),
+            "no suffix elapsed",
+        ),
+        (
+            lambda: build(
+                property_metadata={"kind": "response", "polarity": "counterexample"},
+                model_role="incomplete_suffix",
+                solver_metadata={
+                    **valid_solver,
+                    "primary_status": "sat",
+                    "incomplete_status": "sat",
+                    "incomplete_elapsed_ms": 1.0,
+                },
+                verdict={
+                    "property_satisfied": None,
+                    "witness_found": False,
+                    "counterexample_found": False,
+                    "incomplete": True,
+                    "outcome": "incomplete",
+                },
+            ),
+            "primary unsat",
+        ),
+        (
+            lambda: build(
+                property_metadata={"kind": "response", "polarity": "counterexample"},
+                model_role="incomplete_suffix",
+                solver_metadata={
+                    **valid_solver,
+                    "primary_status": "unsat",
+                    "incomplete_status": "sat",
+                    "primary_reason": "canceled",
+                    "incomplete_elapsed_ms": 1.0,
+                },
+                verdict={
+                    "property_satisfied": None,
+                    "witness_found": False,
+                    "counterexample_found": False,
+                    "incomplete": True,
+                    "outcome": "incomplete",
+                },
+            ),
+            "solver.primary_reason",
+        ),
+    )
+
+    for factory, message in cases:
+        with pytest.raises(BmcBuildError, match=message):
+            factory()
+
+
+def test_decode_result_trace_rejects_unavailable_public_model_channels() -> None:
+    """The public result decoder rejects every unavailable model channel."""
+    reach_result = solve_bmc_property(_verdict_formula("reach"))
+    with pytest.raises(BmcBuildError, match="result must be BmcSolveResult"):
+        decode_bmc_result_trace(object())
+    with pytest.raises(BmcBuildError, match="source must be primary"):
+        decode_bmc_result_trace(reach_result, source="invalid")
+    with pytest.raises(BmcBuildError, match="primary model channel"):
+        decode_bmc_result_trace(
+            BmcSolveResult(
+                reach_result.formula,
+                "unsat",
+                feasibility=_feasible_result_evidence(),
+            )
+        )
+    with pytest.raises(BmcBuildError, match="requires a response result"):
+        decode_bmc_result_trace(reach_result, source="incomplete_suffix")
+
+    _, response_violation_formula = _compile(
+        "state Root;",
+        "check response <= 1: trigger true -> within 1 false;",
+    )
+    response_violation = solve_bmc_property(response_violation_formula)
+    with pytest.raises(BmcBuildError, match="primary UNSAT"):
+        decode_bmc_result_trace(response_violation, source="incomplete_suffix")
+
+    _, response_suffix_formula = _compile(
+        "state Root;",
+        "check response <= 1: trigger true -> within 2 false;",
+    )
+    response_suffix = solve_bmc_property(response_suffix_formula)
+    assert response_suffix.incomplete_status == "sat"
+    assert (
+        decode_bmc_result_trace(response_suffix, source="incomplete_suffix").model_role
+        == "incomplete_suffix"
+    )
+
+    _, infeasible_response_formula = _compile(
+        "def int x = 0;\nstate Root;",
+        "assume at 0: x == 0;\n"
+        "assume at 0: x == 1;\n"
+        "check response <= 1: trigger true -> within 2 false;",
+    )
+    infeasible_response = solve_bmc_property(infeasible_response_formula)
+    with pytest.raises(BmcBuildError, match="scenario-infeasible"):
+        decode_bmc_result_trace(infeasible_response, source="incomplete_suffix")
+
+    not_checked = BmcFeasibilityCheck(None, "not_checked")
+    with pytest.raises(BmcBuildError, match="SAT assumptions"):
+        decode_bmc_result_trace(
+            BmcSolveResult(
+                response_suffix_formula,
+                "unsat",
+                diagnostics=(
+                    "feasibility_timeout:deadline_exhausted_before_assumptions_check",
+                ),
+                feasibility=BmcFeasibilityResult(
+                    not_checked,
+                    not_checked,
+                    not_checked,
+                    localization_status="not_checked",
+                ),
+            ),
+            source="incomplete_suffix",
+        )
+
+    _, no_suffix_formula = _compile(
+        "state Root;",
+        "check response <= 1: trigger true -> within 1 true;",
+    )
+    no_suffix_result = solve_bmc_property(no_suffix_formula)
+    with pytest.raises(BmcBuildError, match="non-empty suffix"):
+        decode_bmc_result_trace(no_suffix_result, source="incomplete_suffix")
+
+    disabled_suffix = solve_bmc_property(
+        response_suffix_formula, check_incomplete=False
+    )
+    with pytest.raises(BmcBuildError, match="SAT suffix result"):
+        decode_bmc_result_trace(disabled_suffix, source="incomplete_suffix")
+
+
+def test_replay_result_rejects_invalid_public_model_roles() -> None:
+    """Replay results keep the selected public witness role consistent."""
+    trace = decode_bmc_result_trace(solve_bmc_property(_verdict_formula("reach")))
+    runtime_trace = BmcRuntimeTrace((), ())
+
+    with pytest.raises(BmcBuildError, match="Unsupported replay model_role"):
+        BmcReplayResult(trace, runtime_trace, model_role="invalid")
+    with pytest.raises(BmcBuildError, match="must match"):
+        BmcReplayResult(trace, runtime_trace, model_role="primary_counterexample")
+
+
 class _SolverSpy:
     """Minimal incremental-solver double for deadline and stage tests."""
 
@@ -923,6 +1188,55 @@ def test_solver_budget_exhaustion_before_assumptions_is_not_checked(
     assert spy.check_count == 1
 
 
+@pytest.mark.parametrize(
+    ("remaining_values", "statuses", "diagnostic", "localization_status"),
+    [
+        (
+            (100, 100, None),
+            [z3.unsat, z3.unsat],
+            "feasibility_timeout:deadline_exhausted_before_initialization_check",
+            "not_checked",
+        ),
+        (
+            (100, 100, 100),
+            [z3.unsat, z3.unsat, z3.unknown],
+            "feasibility_unknown:initialization",
+            "unknown",
+        ),
+        (
+            (100, 100, 100, None),
+            [z3.unsat, z3.unsat, z3.unsat],
+            "feasibility_timeout:deadline_exhausted_before_kernel_check",
+            "not_checked",
+        ),
+        (
+            (100, 100, 100, 100),
+            [z3.unsat, z3.unsat, z3.unsat, z3.unknown],
+            "feasibility_unknown:kernel",
+            "unknown",
+        ),
+    ],
+)
+def test_solver_budget_localizes_inconclusive_staged_checks(
+    monkeypatch, remaining_values, statuses, diagnostic, localization_status
+) -> None:
+    """Controlled staged checks preserve each initialization/kernel boundary."""
+    formula = _verdict_formula("reach")
+    spy = _SolverSpy(statuses, reason="canceled")
+    remaining = iter(remaining_values)
+    monkeypatch.setattr(witness_module.z3, "Solver", lambda: spy)
+    monkeypatch.setattr(
+        witness_module._SolveBudget,
+        "remaining_ms",
+        lambda self: next(remaining),
+    )
+
+    result = solve_bmc_property(formula, timeout_ms=100, check_incomplete=False)
+
+    assert diagnostic in result.diagnostics
+    assert result.feasibility.localization_status == localization_status
+
+
 def test_solver_budget_exhaustion_before_suffix_is_not_checked(monkeypatch) -> None:
     """A response suffix check that never starts has no elapsed result."""
     _, formula = _compile(
@@ -1019,6 +1333,7 @@ def test_solve_property_case_j_infeasible_response_precedes_suffix() -> None:
     assert result.incomplete_status is None
     assert result.incomplete_model is None
     assert result.available_model_roles == ()
+    assert "Scenario: INFEASIBLE" in result.to_text(tablefmt="plain")
 
 
 def test_solve_property_case_d_feasible_polarity_regression() -> None:
@@ -1427,6 +1742,109 @@ def test_feasibility_check_rejects_inconsistent_reason() -> None:
 
 
 @pytest.mark.parametrize(
+    ("factory", "message"),
+    [
+        (
+            lambda: BmcFeasibilityCheck(None, "invalid"),
+            "origin",
+        ),
+        (
+            lambda: BmcFeasibilityCheck("invalid", "checked", elapsed_ms=1.0),
+            "status",
+        ),
+        (
+            lambda: BmcFeasibilityCheck("sat", "not_checked"),
+            "not_checked",
+        ),
+        (
+            lambda: BmcFeasibilityCheck("unsat", "inferred"),
+            "inferred",
+        ),
+        (
+            lambda: BmcFeasibilityCheck(None, "checked"),
+            "checked",
+        ),
+        (
+            lambda: BmcFeasibilityCheck("unknown", "checked", elapsed_ms=1.0),
+            "reason",
+        ),
+    ],
+)
+def test_feasibility_check_rejects_invalid_public_combinations(
+    factory, message
+) -> None:
+    """Public feasibility stages reject every malformed evidence combination."""
+    with pytest.raises(BmcBuildError, match=message):
+        factory()
+
+
+@pytest.mark.parametrize(
+    ("factory", "message"),
+    [
+        (
+            lambda: BmcFeasibilityRefinementCheck("invalid", "sat", elapsed_ms=1.0),
+            "name",
+        ),
+        (
+            lambda: BmcFeasibilityRefinementCheck(
+                "unsat_core", "invalid", elapsed_ms=1.0
+            ),
+            "status",
+        ),
+        (
+            lambda: BmcFeasibilityRefinementCheck(
+                "unsat_core", "unsat", reason="cached", elapsed_ms=1.0
+            ),
+            "reason",
+        ),
+        (
+            lambda: BmcFeasibilityRefinementCheck(
+                "unsat_core", "unknown", elapsed_ms=1.0
+            ),
+            "reason",
+        ),
+        (
+            lambda: BmcFeasibilityRefinementCheck(
+                "unsat_core", "unknown", reason="unknown"
+            ),
+            "elapsed_ms",
+        ),
+    ],
+)
+def test_feasibility_refinement_rejects_invalid_public_combinations(
+    factory, message
+) -> None:
+    """Public refinement probes reject malformed status, reason, and timing."""
+    with pytest.raises(BmcBuildError, match=message):
+        factory()
+
+
+def test_feasibility_refinement_public_text_and_canonical_paths() -> None:
+    """Refinement and aggregate evidence use the public text/canonical APIs."""
+    sat = BmcFeasibilityCheck("sat", "inferred")
+    feasibility = BmcFeasibilityResult(
+        sat,
+        sat,
+        sat,
+        localization_status="not_needed",
+        refinement_status="complete",
+        refinement_checks=(
+            BmcFeasibilityRefinementCheck("unsat_core", "complete", elapsed_ms=1.0),
+        ),
+    )
+
+    assert feasibility.to_canonical()["refinement_checks"][0]["status"] == "complete"
+    assert "BmcFeasibilityCheck" in BmcFeasibilityCheck("sat", "inferred").to_text()
+    assert (
+        "BmcFeasibilityRefinementCheck"
+        in BmcFeasibilityRefinementCheck(
+            "unsat_core", "complete", elapsed_ms=1.0
+        ).to_text()
+    )
+    assert "BmcFeasibilityResult" in feasibility.to_text()
+
+
+@pytest.mark.parametrize(
     "name",
     [
         "component_initialization",
@@ -1467,6 +1885,167 @@ def test_feasibility_result_rejects_stage_claim_without_checked_unsat() -> None:
             infeasible_stage="assumptions",
             localization_status="complete",
         )
+
+
+def test_feasibility_result_rejects_additional_inconsistent_public_payloads() -> None:
+    """Cumulative feasibility rejects malformed public evidence combinations."""
+    inferred_sat = BmcFeasibilityCheck("sat", "inferred")
+    checked_sat = BmcFeasibilityCheck("sat", "checked", elapsed_ms=1.0)
+    checked_unsat = BmcFeasibilityCheck("unsat", "checked", elapsed_ms=1.0)
+    not_checked = BmcFeasibilityCheck(None, "not_checked")
+    checked_unknown = BmcFeasibilityCheck(
+        "unknown", "checked", reason="canceled", elapsed_ms=1.0
+    )
+    refinement = BmcFeasibilityRefinementCheck("unsat_core", "complete", elapsed_ms=1.0)
+    cases = (
+        (
+            "stage type",
+            lambda: BmcFeasibilityResult("invalid", inferred_sat, inferred_sat),
+            "All feasibility stages",
+        ),
+        (
+            "infeasible stage",
+            lambda: BmcFeasibilityResult(
+                inferred_sat,
+                inferred_sat,
+                inferred_sat,
+                infeasible_stage="invalid",
+            ),
+            "infeasible_stage",
+        ),
+        (
+            "localization status",
+            lambda: BmcFeasibilityResult(
+                inferred_sat,
+                inferred_sat,
+                inferred_sat,
+                localization_status="invalid",
+            ),
+            "localization_status",
+        ),
+        (
+            "refinement status",
+            lambda: BmcFeasibilityResult(
+                inferred_sat,
+                inferred_sat,
+                inferred_sat,
+                refinement_status="invalid",
+            ),
+            "refinement_status",
+        ),
+        (
+            "refinement reason",
+            lambda: BmcFeasibilityResult(
+                inferred_sat,
+                inferred_sat,
+                inferred_sat,
+                refinement_reason="cached",
+            ),
+            "refinement_reason",
+        ),
+        (
+            "localized stage without complete status",
+            lambda: BmcFeasibilityResult(
+                inferred_sat,
+                checked_unsat,
+                checked_unsat,
+                infeasible_stage="initialization",
+            ),
+            "localization_status",
+        ),
+        (
+            "complete localization without stage",
+            lambda: BmcFeasibilityResult(
+                checked_sat,
+                checked_sat,
+                checked_sat,
+                localization_status="complete",
+            ),
+            "localization_status=complete",
+        ),
+        (
+            "unknown evidence marked not needed",
+            lambda: BmcFeasibilityResult(
+                checked_unknown,
+                not_checked,
+                not_checked,
+                localization_status="not_needed",
+            ),
+            "not_needed",
+        ),
+        (
+            "all SAT evidence not marked not needed",
+            lambda: BmcFeasibilityResult(
+                checked_sat,
+                checked_sat,
+                checked_sat,
+                localization_status="not_checked",
+            ),
+            "all SAT",
+        ),
+        (
+            "unknown localization without unknown evidence",
+            lambda: BmcFeasibilityResult(
+                not_checked,
+                not_checked,
+                not_checked,
+                localization_status="unknown",
+            ),
+            "unknown/timeout",
+        ),
+        (
+            "SAT initialization after unchecked kernel",
+            lambda: BmcFeasibilityResult(
+                not_checked,
+                checked_sat,
+                not_checked,
+            ),
+            "SAT initialization",
+        ),
+        (
+            "SAT assumptions after unchecked initialization",
+            lambda: BmcFeasibilityResult(
+                checked_sat,
+                not_checked,
+                checked_sat,
+            ),
+            "SAT assumptions",
+        ),
+        (
+            "assumptions UNSAT without localization",
+            lambda: BmcFeasibilityResult(
+                checked_sat,
+                checked_sat,
+                checked_unsat,
+            ),
+            "assumptions localization",
+        ),
+        (
+            "checks without refinement status",
+            lambda: BmcFeasibilityResult(
+                not_checked,
+                not_checked,
+                not_checked,
+                refinement_checks=(refinement,),
+            ),
+            "without executed checks",
+        ),
+        (
+            "completed refinement without checks",
+            lambda: BmcFeasibilityResult(
+                checked_sat,
+                checked_sat,
+                checked_sat,
+                localization_status="not_needed",
+                refinement_status="complete",
+            ),
+            "requires executed checks",
+        ),
+    )
+
+    for label, factory, message in cases:
+        with pytest.raises(BmcBuildError, match=message):
+            factory()
 
 
 @pytest.mark.parametrize("status", ["unknown", "timeout"])
@@ -1680,6 +2259,49 @@ def test_response_violation_rejects_suffix_metadata() -> None:
         )
 
 
+def test_solve_result_rejects_inconsistent_public_feasibility_channels() -> None:
+    """Public solve results cannot forge SAT or suffix feasibility evidence."""
+    _, reach_formula = _compile("state Root;", 'check reach <= 1: active("Root");')
+    checked_sat = BmcFeasibilityCheck("sat", "checked", elapsed_ms=1.0)
+    checked_feasibility = BmcFeasibilityResult(
+        checked_sat,
+        checked_sat,
+        checked_sat,
+        localization_status="not_needed",
+    )
+    with pytest.raises(BmcBuildError, match="inferred SAT feasibility"):
+        BmcSolveResult(
+            reach_formula,
+            "sat",
+            model=_empty_sat_model(),
+            feasibility=checked_feasibility,
+        )
+
+    _, response_formula = _compile(
+        "state Root;",
+        "check response <= 1: trigger true -> within 2 false;",
+    )
+    not_checked = BmcFeasibilityCheck(None, "not_checked")
+    not_checked_feasibility = BmcFeasibilityResult(
+        not_checked,
+        not_checked,
+        not_checked,
+        localization_status="not_checked",
+    )
+    with pytest.raises(BmcBuildError, match="SAT assumptions feasibility"):
+        BmcSolveResult(
+            response_formula,
+            "unsat",
+            incomplete_status="sat",
+            incomplete_model=_empty_sat_model(),
+            incomplete_elapsed_ms=1.0,
+            diagnostics=(
+                "feasibility_timeout:deadline_exhausted_before_assumptions_check",
+            ),
+            feasibility=not_checked_feasibility,
+        )
+
+
 @pytest.mark.parametrize(
     ("kind", "polarity"),
     [
@@ -1887,6 +2509,24 @@ def test_internal_z3_decode_guards_are_loud() -> None:
         (
             lambda formula: BmcSolveResult(formula, "unsat", incomplete_status="sat"),
             "incomplete_model is required",
+        ),
+        (
+            lambda formula: BmcSolveResult(
+                formula,
+                "sat",
+                model=_empty_sat_model(),
+                incomplete_elapsed_ms=1.0,
+            ),
+            "incomplete_elapsed_ms must be None",
+        ),
+        (
+            lambda formula: BmcSolveResult(
+                formula,
+                "unsat",
+                incomplete_status="sat",
+                incomplete_model=_empty_sat_model(),
+            ),
+            "incomplete_elapsed_ms is required",
         ),
         (
             lambda formula: BmcSolveResult(formula, "unsat", incomplete_model=object()),

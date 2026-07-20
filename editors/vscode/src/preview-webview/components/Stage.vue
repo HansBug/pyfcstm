@@ -14,15 +14,18 @@ import {decidePreviewPointerAction, PREVIEW_DRAG_THRESHOLD_PX} from '../interact
 import {computePreviewFit} from '../layout';
 import type {PreviewWebviewState, SelectionRef, TextRange, PreviewElkNode, PreviewPayload} from '../types';
 import {jsPDF} from 'jspdf';
+import {svg2pdf} from 'svg2pdf.js';
 
 const props = defineProps<{
     state: PreviewWebviewState;
     selection: SelectionRef;
+    hover: SelectionRef;
     palette: PaletteId;
     mode: PaletteMode;
 }>();
 const emit = defineEmits<{
     (e: 'select', sel: SelectionRef): void;
+    (e: 'hover', sel: SelectionRef): void;
     (e: 'toggleCollapse', id: string): void;
     (e: 'revealSource', range: TextRange): void;
 }>();
@@ -169,7 +172,12 @@ async function relayout() {
         isEmpty.value = false;
         await nextTick();
         applySelection();
-        fitToView();
+        const initialView = props.state.standaloneViewState;
+        if (props.state.standalone && initialView) {
+            setTransform(initialView.panX, initialView.panY, initialView.zoom);
+        } else {
+            fitToView();
+        }
     } catch (err) {
         isEmpty.value = true;
         emptyTitle.value = 'Layout failed';
@@ -238,6 +246,25 @@ function applySelection() {
     }
 }
 
+function applyHover() {
+    if (!innerRef.value) return;
+    for (const el of innerRef.value.querySelectorAll('.fcstm-source-hover')) {
+        el.classList.remove('fcstm-source-hover');
+    }
+    const hover = props.hover;
+    if (!hover) return;
+    for (const el of innerRef.value.querySelectorAll('[data-fcstm-kind][data-fcstm-id]')) {
+        const kind = el.getAttribute('data-fcstm-kind');
+        const id = el.getAttribute('data-fcstm-id');
+        if (id !== hover.id) continue;
+        if (hover.kind === 'transition') {
+            if (kind === 'transition' || kind === 'transition-label') el.classList.add('fcstm-source-hover');
+        } else if (kind !== 'chevron') {
+            el.classList.add('fcstm-source-hover');
+        }
+    }
+}
+
 function relatedElementsForId(targetId: string): Element[] {
     if (!innerRef.value) return [];
     const nodes = innerRef.value.querySelectorAll(
@@ -256,9 +283,18 @@ function onMouseOver(ev: MouseEvent) {
     const el = (ev.target as HTMLElement)?.closest?.('[data-fcstm-kind][data-fcstm-id]');
     if (!el) return;
     const kind = el.getAttribute('data-fcstm-kind');
-    if (kind !== 'transition' && kind !== 'transition-label') return;
+    if (kind !== 'transition' && kind !== 'transition-label') {
+        const stateId = el.getAttribute('data-fcstm-id');
+        if (stateId && (kind === 'state' || kind === 'chevron')) {
+            emit('hover', {kind: 'state', id: stateId});
+        } else {
+            emit('hover', null);
+        }
+        return;
+    }
     const id = el.getAttribute('data-fcstm-id');
     if (!id) return;
+    emit('hover', {kind: 'transition', id});
     clearHover();
     for (const r of relatedElementsForId(id)) r.classList.add('fcstm-related-hover');
 }
@@ -268,6 +304,7 @@ function onMouseOut(ev: MouseEvent) {
         const kind = to.getAttribute('data-fcstm-kind');
         if (kind === 'transition' || kind === 'transition-label') return;
     }
+    emit('hover', null);
     clearHover();
 }
 
@@ -410,37 +447,31 @@ function uint8ToBase64(bytes: Uint8Array): string {
     return (typeof btoa !== 'undefined' ? btoa : (s: string) => Buffer.from(s, 'binary').toString('base64'))(binary);
 }
 
-/**
- * Render the current diagram as a single-page PDF sized exactly to
- * the diagram dimensions. The page content is a high-DPI raster of
- * the SVG (4x the logical size, i.e. ~288 DPI at natural scale),
- * which is the floor for paper-grade figures. We keep the PDF page
- * size matched to the SVG in points so LaTeX / word processors can
- * drop it in with no scaling artefacts.
- *
- * We intentionally skip the vector-SVG-to-PDF path: browser SVG
- * rendering involves CSS cascade, webfonts, filters and
- * ``foreignObject`` fragments that no in-process converter handles
- * accurately — a faithful raster at high DPI is more reliable than
- * a half-broken vector PDF.
- */
 async function renderCurrentSvgToPdf(): Promise<Uint8Array> {
     const widthPt = Math.max(1, svgBounds.value.width);
     const heightPt = Math.max(1, svgBounds.value.height);
-    const {blob} = await rasterizeCurrentSvg(4);
-    const dataUrl = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = () => reject(reader.error ?? new Error('FileReader failed'));
-        reader.readAsDataURL(blob);
-    });
+    const expand = (window as unknown as {
+        __FCSTM_EXPAND_SVG__?: (svg: string) => Promise<string>;
+    }).__FCSTM_EXPAND_SVG__;
+    const expanded = expand ? await expand(svgString) : svgString;
+    const parsed = new DOMParser().parseFromString(expanded, 'image/svg+xml');
+    const svg = parsed.documentElement;
+    if (!svg || svg.nodeName.toLowerCase() !== 'svg') {
+        throw new Error('SVG export produced no root element');
+    }
     const pdf = new jsPDF({
         orientation: widthPt > heightPt ? 'landscape' : 'portrait',
         unit: 'pt',
         format: [widthPt, heightPt],
         compress: true,
     });
-    pdf.addImage(dataUrl, 'PNG', 0, 0, widthPt, heightPt, undefined, 'FAST');
+    await svg2pdf(svg, pdf, {
+        x: 0,
+        y: 0,
+        width: widthPt,
+        height: heightPt,
+        loadExternalStyleSheets: false,
+    });
     const buffer = pdf.output('arraybuffer') as ArrayBuffer;
     return new Uint8Array(buffer);
 }
@@ -449,14 +480,12 @@ async function renderCurrentSvgToPdf(): Promise<Uint8Array> {
  * Unified export. Renders SVG, PNG and PDF up front and ships all
  * three to the extension in a single message; the format the user
  * picks in the QuickPick decides which payload gets written. SVG is
- * a cheap string dump; PNG goes through the standard canvas pipeline
- * at 2x; PDF wraps a 4x-rasterised version of the same SVG into a
- * single page sized to the diagram. All three stay in lockstep with
- * the current view.
+ * a string dump, PNG uses the standard canvas pipeline, and PDF is
+ * generated by the vector-only ``svg2pdf.js`` adapter. All three stay
+ * in lockstep with the current view.
  *
- * Rendered in parallel via ``Promise.all`` so the combined latency
- * is dominated by the slowest of the three (the 4x PDF raster)
- * rather than the sum.
+ * Rendered in parallel via ``Promise.all`` so the combined latency is
+ * dominated by the slowest export rather than the sum.
  */
 async function onExportEvt() {
     if (!svgString) return;
@@ -616,6 +645,9 @@ watch(() => [props.palette, props.mode], () => {
 watch(() => props.selection, () => {
     applySelection();
 }, {deep: true});
+watch(() => props.hover, () => {
+    applyHover();
+}, {deep: true});
 
 // Expose drag threshold for debugging / tests.
 const _t = PREVIEW_DRAG_THRESHOLD_PX;
@@ -769,6 +801,18 @@ body.modifier-held .fcstm-stage__inner [data-fcstm-kind][data-fcstm-range-start-
 .fcstm-stage__inner [data-fcstm-kind="transition"].fcstm-related-hover {
     stroke-width: 3.2 !important;
     filter: drop-shadow(0 0 3px rgba(45, 106, 168, 0.35));
+}
+.fcstm-stage__inner [data-fcstm-kind="state"].fcstm-source-hover > rect:not(.fcstm-halo),
+.fcstm-stage__inner [data-fcstm-kind="composite-state"].fcstm-source-hover > .fcstm-halo {
+    stroke: #2d6aa8 !important;
+    stroke-width: 2.4 !important;
+    filter: drop-shadow(0 0 4px rgba(45, 106, 168, 0.45));
+}
+.fcstm-stage__inner [data-fcstm-kind="transition"].fcstm-source-hover,
+.fcstm-stage__inner [data-fcstm-kind="transition-label"].fcstm-source-hover > text {
+    stroke: #2d6aa8 !important;
+    fill: #2d6aa8 !important;
+    filter: drop-shadow(0 0 3px rgba(45, 106, 168, 0.4));
 }
 .fcstm-stage__inner [data-fcstm-kind="transition-label"].fcstm-related-hover > text {
     font-weight: 700;

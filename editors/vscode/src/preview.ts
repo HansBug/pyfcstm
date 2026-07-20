@@ -442,6 +442,8 @@ export class FcstmPreviewController implements vscode.Disposable {
             mode?: PreviewLayoutMode;
             svg?: string;
             base64?: string;
+            pngBase64?: string;
+            pdfBase64?: string;
             message?: string;
         };
 
@@ -557,7 +559,7 @@ export class FcstmPreviewController implements vscode.Disposable {
         const defaultUri = this.currentDocumentUri
             ? vscode.Uri.file(this.currentDocumentUri.replace(/^file:\/\//, '').replace(/\.fcstm$/i, '.' + ext))
             : undefined;
-        const filters = ext === 'svg'
+        const filters: {[name: string]: string[]} = ext === 'svg'
             ? {'SVG Image': ['svg']}
             : ext === 'png'
                 ? {'PNG Image': ['png']}

@@ -9,6 +9,7 @@ Python packaging includes the generated directory when it is present.
 The public resource contract is:
 
 * ``renderer.js`` - ES2017 shared ELK/SVG/resvg bridge;
+* ``viewer.js`` / ``viewer.css`` - standalone browser viewer bundle and styles;
 * ``resvg.wasm`` - pinned legacy-compatible raster/vector backend;
 * ``manifest.json`` - source, hash, and size evidence;
 * ``fonts/`` plus the tracked notice and license files - deterministic

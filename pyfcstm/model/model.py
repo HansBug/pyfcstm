@@ -44,14 +44,16 @@ Example::
 import hashlib
 import io
 import json
+import os
 import weakref
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields, is_dataclass
 from textwrap import indent
-from typing import Optional, Union, List, Dict, Tuple, Iterator, Set
+from typing import Any, Optional, Union, List, Dict, Tuple, Iterator, Set
 
 from .base import AstExportable, PlantUMLExportable
 from .expr import Expr, parse_expr_node_to_expr
 from .imports import (
+    _annotate_ast_source,
     assemble_state_machine_imports,
     _get_trusted_generated_combo_transition_metadata,
     _is_trusted_generated_combo_pseudo_node,
@@ -96,6 +98,71 @@ def _node_span(node) -> Optional[Span]:
     # diagnostic-contract gaps. Keep the missing-span case observable as
     # ``None`` instead of manufacturing an imprecise fallback.
     return getattr(node, "_span", None)
+
+
+def _span_key(span: Optional[Span]) -> Optional[Tuple[int, int, Optional[int], Optional[int]]]:
+    if span is None:
+        return None
+    return (span.line, span.column, span.end_line, span.end_column)
+
+
+def _collect_ast_source_metadata(node: Any, spans: Dict[Any, str], documents: Dict[str, str]) -> None:
+    if is_dataclass(node):
+        source_path = getattr(node, "_source_path", None)
+        source_text = getattr(node, "_source_text", None)
+        if isinstance(source_path, str):
+            span = _span_key(getattr(node, "_span", None))
+            if span is not None:
+                spans.setdefault(span, source_path)
+            if isinstance(source_text, str):
+                documents[source_path] = source_text
+        for item in fields(node):
+            _collect_ast_source_metadata(getattr(node, item.name), spans, documents)
+    elif isinstance(node, (list, tuple)):
+        for item in node:
+            _collect_ast_source_metadata(item, spans, documents)
+    elif isinstance(node, dict):
+        for item in node.values():
+            _collect_ast_source_metadata(item, spans, documents)
+
+
+def _attach_model_source_metadata(machine: "StateMachine", dnode: dsl_nodes.StateMachineDSLProgram) -> None:
+    documents: Dict[str, str] = {}
+    all_spans: Dict[Any, str] = {}
+    _collect_ast_source_metadata(dnode, all_spans, documents)
+
+    def attach(value: Any, source_path: Optional[str] = None) -> None:
+        source_path = source_path or all_spans.get(_span_key(getattr(value, "_span", None)))
+        if source_path is not None:
+            setattr(value, "_source_path", source_path)
+
+    for definition in machine.defines.values():
+        attach(definition)
+    def pair_states(ast_state: Any, model_state: "State") -> None:
+        state_source = getattr(ast_state, "_source_path", None)
+        attach(model_state, state_source)
+        transition_sources = {
+            _span_key(getattr(item, "_span", None)): getattr(item, "_source_path", state_source)
+            for item in [*getattr(ast_state, "transitions", ()), *getattr(ast_state, "force_transitions", ())]
+        }
+        for transition in model_state.transitions:
+            attach(transition, transition_sources.get(_span_key(getattr(transition, "_span", None)), state_source))
+            for effect in transition.effects:
+                attach(effect, state_source)
+        for event in model_state.events.values():
+            attach(event, state_source)
+        for action in [*model_state.on_enters, *model_state.on_durings, *model_state.on_exits, *model_state.on_during_aspects]:
+            attach(action, state_source)
+            for operation in getattr(action, "operations", ()):
+                attach(operation, state_source)
+        ast_children = {child.name: child for child in getattr(ast_state, "substates", ())}
+        for child in model_state.substates.values():
+            ast_child = ast_children.get(child.name)
+            if ast_child is not None:
+                pair_states(ast_child, child)
+
+    pair_states(dnode.root_state, machine.root_state)
+    machine._source_documents = documents
 
 
 def _event_origin_from_id(
@@ -1043,6 +1110,10 @@ class State(AstExportable, PlantUMLExportable):
     :type extra_name: Optional[str]
     :param is_pseudo: Whether this is a pseudo state
     :type is_pseudo: bool
+    :param is_combo_relay: Whether this pseudo state was generated as a combo
+        relay. This is semantic model data and must not be inferred from the
+        reserved state-name prefix by renderers.
+    :type is_combo_relay: bool
 
     Example::
 
@@ -1070,6 +1141,7 @@ class State(AstExportable, PlantUMLExportable):
     extra_name: Optional[str] = None
     is_pseudo: bool = False
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
+    is_combo_relay: bool = field(default=False, compare=False)
 
     def __post_init__(self) -> None:
         """
@@ -2248,6 +2320,9 @@ class StateMachine(AstExportable, PlantUMLExportable):
     defines: Dict[str, VarDefine]
     root_state: State
     forced_transitions: Tuple[Dict[str, object], ...] = field(default_factory=tuple)
+    source_text: Optional[str] = field(default=None, compare=False, repr=False)
+    source_path: Optional[str] = field(default=None, compare=False, repr=False)
+    _source_documents: Dict[str, str] = field(default_factory=dict, compare=False, repr=False)
 
     def to_ast_node(self) -> dsl_nodes.StateMachineDSLProgram:
         """
@@ -2371,6 +2446,46 @@ class StateMachine(AstExportable, PlantUMLExportable):
         :rtype: Iterator[State]
         """
         yield from self.root_state.walk_states()
+
+    def diagram(self, options=None, view_state=None, source_text=None):
+        """
+        Create the public Python diagram facade for this state machine.
+
+        :param options: Optional :class:`pyfcstm.diagram.DiagramOptions` value.
+        :type options: object, optional
+        :param view_state: Optional browser view state.
+        :type view_state: object, optional
+        :param source_text: Optional FCSTM source override for the browser pane.
+        :type source_text: str, optional
+        :return: Diagram facade.
+        :rtype: pyfcstm.diagram.Diagram
+
+        Example::
+
+            >>> model.diagram().to_dict()['kind']
+            'diagram'
+        """
+        from ..diagram.api import Diagram
+
+        return Diagram(self, options=options, view_state=view_state, source_text=source_text)
+
+    def show(self, output=None, *, open_browser=True):
+        """
+        Open this state machine in the standalone browser viewer.
+
+        :param output: Optional HTML output path.
+        :type output: str or os.PathLike, optional
+        :param open_browser: Whether to ask the default browser to open the file.
+        :type open_browser: bool
+        :return: Path to the generated HTML file.
+        :rtype: pathlib.Path
+
+        Example::
+
+            >>> model.show(open_browser=False).suffix
+            '.html'
+        """
+        return self.diagram().show(output, open_browser=open_browser)
 
     def resolve_event(
         self,
@@ -2573,6 +2688,10 @@ def parse_dsl_node_to_state_machine(
     """
 
     sink = DiagnosticSink(collect=collect)
+    entry_source = None
+    if path is not None and not os.path.isdir(os.fspath(path)):
+        entry_source = os.path.abspath(os.fspath(path))
+    _annotate_ast_source(dnode, entry_source)
     dnode = assemble_state_machine_imports(dnode, path=path, collect_into=sink)
 
     d_defines: Dict[str, VarDefine] = {}
@@ -3274,6 +3393,7 @@ def parse_dsl_node_to_state_machine(
             path=current_path,
             substates=d_substates,
             is_pseudo=bool(node.is_pseudo),
+            is_combo_relay=is_combo_relay_pseudo,
             on_enters=on_enters,
             on_durings=on_durings,
             on_exits=on_exits,
@@ -4564,6 +4684,7 @@ def parse_dsl_node_to_state_machine(
         root_state=root_state,
         forced_transitions=tuple(forced_transition_declarations),
     )
+    _attach_model_source_metadata(machine, dnode)
 
     if collect:
         # In collect mode we always return the tuple. ``machine`` is the

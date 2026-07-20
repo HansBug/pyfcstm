@@ -18,10 +18,11 @@ The package roadmap is intentionally small and explicit:
      - Report unavailable MiniRacer distribution metadata.
    * - :class:`DiagramEngineConflictError`
      - Reject simultaneous legacy and modern MiniRacer installations.
+   * - :class:`Diagram`
+     - Build portable data and a self-contained three-mode browser viewer.
 
-The public ``StateMachine.diagram`` facade, CLI commands, and final export
-API are follow-up work. This package owns only the asset-runtime boundary and
-does not promise a stable user-facing diagram API yet.
+The public :class:`Diagram` facade is layered on top of this asset boundary;
+the renderer remains shared with jsfcstm and the VSCode preview.
 
 Example::
 
@@ -38,6 +39,7 @@ from .engine import (
     DiagramEngineMetadataError,
     DiagramRenderError,
 )
+from .api import Diagram, DiagramData, DiagramOptions, DiagramViewState
 
 __all__ = [
     "DiagramAssetEngine",
@@ -45,4 +47,8 @@ __all__ = [
     "DiagramEngineConflictError",
     "DiagramEngineMetadataError",
     "DiagramRenderError",
+    "Diagram",
+    "DiagramData",
+    "DiagramOptions",
+    "DiagramViewState",
 ]

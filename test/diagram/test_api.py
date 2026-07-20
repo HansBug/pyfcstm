@@ -1,0 +1,142 @@
+"""Tests for the public Python diagram facade and browser contract."""
+
+import json
+import re
+
+import pytest
+
+from pyfcstm.diagram import DiagramOptions, DiagramViewState
+from pyfcstm.model import State, StateMachine, load_state_machine_from_text
+
+
+def _model(source):
+    return load_state_machine_from_text(source)
+
+
+def test_portable_data_is_deterministic_and_has_no_editor_metadata():
+    first = _model("state Root { state Idle; state Run; [*] -> Idle; Idle -> Run; }")
+    second = _model("\nstate Root {\n state Idle;\n state Run;\n [*] -> Idle;\n Idle -> Run;\n}\n")
+
+    first_json = first.diagram().to_json()
+    second_json = second.diagram().to_json()
+    assert json.loads(first_json) == json.loads(second_json)
+    assert "range" not in first_json
+    assert "source_path" not in first_json
+    assert "filePath" not in first_json
+    transition_id = first.diagram().to_dict()["rootState"]["transitions"][1]["id"]
+    assert transition_id.startswith("transition:")
+
+
+def test_source_sidecar_and_three_browser_modes_are_embedded():
+    source = "state Root { state Idle; [*] -> Idle; }"
+    model = _model(source)
+    html = model.diagram(view_state=DiagramViewState(mode="compare")).to_html()
+    assert "Content-Security-Policy" in html
+    assert "fcstm-source-line" in html
+    assert "standaloneMode" in html
+    assert "standaloneViewState" in html
+    assert "standaloneDiagram" in html
+    assert "sourceMap" in html
+    assert str(model.source_path) not in html
+
+
+def test_source_line_mapping_prefers_transition_ranges():
+    source = """state Root {
+    state Idle;
+    state Run;
+    [*] -> Idle;
+    Idle -> Run;
+}"""
+    html = _model(source).diagram().to_html()
+    match = re.search(r"window\.__FCSTM_INITIAL_STATE__ = (.*);</script><script>", html, re.DOTALL)
+    assert match is not None
+    state = json.loads(match.group(1))
+    transition_id = state["sourceLineMap"]["4"]
+    assert transition_id.startswith("transition:")
+    assert state["sourceMap"][transition_id]["kind"] == "transition"
+
+
+def test_model_show_returns_html_path_without_opening_browser(tmp_path):
+    model = _model("state Root;")
+    output = model.show(tmp_path / "diagram.html", open_browser=False)
+    assert output.exists()
+    assert output.suffix == ".html"
+    assert "FCSTM" in output.read_text(encoding="utf-8")
+
+
+def test_combo_relay_is_explicit_model_data():
+    state = State(name="__combo_relay", path=("Root", "__combo_relay"), substates={}, is_pseudo=True, is_combo_relay=True)
+    assert state.is_combo_relay is True
+
+
+def test_diagram_value_objects_reject_unknown_values_and_copy_sequences():
+    with pytest.raises(ValueError):
+        DiagramOptions(palette="unknown")
+    with pytest.raises(ValueError):
+        DiagramViewState(mode="unknown")
+    state = DiagramViewState(collapsed_state_ids=["Root.Child"])
+    assert state.collapsed_state_ids == ("Root.Child",)
+    assert DiagramOptions(cjk_locale="jp").to_dict()["cjkLocale"] == "jp"
+
+
+def test_diagram_data_snapshot_is_not_mutable():
+    data = _model("state Root;").diagram().data
+    with pytest.raises(TypeError):
+        data.value["kind"] = "changed"
+
+
+def test_imported_source_ranges_keep_document_identity(tmp_path):
+    child = tmp_path / "child.fcstm"
+    child.write_text("state ChildRoot { state Idle; [*] -> Idle; }", encoding="utf-8")
+    root = tmp_path / "main.fcstm"
+    root.write_text(
+        'state Root { import "./child.fcstm" as Child; [*] -> Child; }',
+        encoding="utf-8",
+    )
+    state = load_state_machine_from_text(root.read_text(encoding="utf-8"), path=str(root))
+    html = state.diagram().to_html()
+    assert '"sourceDocuments"' in html
+    assert '"documentId":"child.fcstm"' in html
+    assert '"documentId":"main.fcstm"' in html
+
+
+def test_imported_source_line_map_contains_child_document_lines(tmp_path):
+    child = tmp_path / "child.fcstm"
+    child.write_text("state ChildRoot { state Idle; [*] -> Idle; }", encoding="utf-8")
+    root = tmp_path / "main.fcstm"
+    root.write_text(
+        'state Root { import "./child.fcstm" as Child; [*] -> Child; }',
+        encoding="utf-8",
+    )
+    model = load_state_machine_from_text(root.read_text(encoding="utf-8"), path=str(root))
+    html = model.diagram().to_html()
+    match = re.search(r"window\.__FCSTM_INITIAL_STATE__ = (.*);</script><script>", html, re.DOTALL)
+    assert match is not None
+    state = json.loads(match.group(1))
+    child_lines = [key for key in state["sourceLineMap"] if key.startswith("child.fcstm:")]
+    assert child_lines
+    assert all(state["sourceLineMap"][key] for key in child_lines)
+
+
+def test_source_line_map_preserves_multiple_items_on_one_line():
+    model = _model("state Root { state A; state B; state C; [*] -> A; A -> B; A -> C; }")
+    html = model.diagram().to_html()
+    match = re.search(r"window\.__FCSTM_INITIAL_STATE__ = (.*);</script><script>", html, re.DOTALL)
+    assert match is not None
+    state = json.loads(match.group(1))
+    line_value = state["sourceLineMap"]["0"]
+    assert isinstance(line_value, list)
+    assert len(line_value) >= 3
+    assert "pyfcstm:0" not in state["sourceLineMap"]
+
+
+def test_programmatic_model_exposes_source_unavailable_state():
+    model = StateMachine(defines={}, root_state=State(name="Root", path=("Root",), substates={}))
+    html = model.diagram().to_html()
+    assert "sourceUnavailableReason" in html
+
+
+def test_html_escapes_hostile_source_before_bootstrap_script():
+    model = _model('state Root named "</script><script>bad";')
+    html = model.diagram().to_html()
+    assert "</script><script>bad" not in html

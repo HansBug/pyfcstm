@@ -8,7 +8,10 @@ import OptionsBar from './components/OptionsBar.vue';
 import Stage from './components/Stage.vue';
 import DetailsPanel from './components/DetailsPanel.vue';
 import BottomPanels from './components/BottomPanels.vue';
+import StandaloneModeBar from './components/StandaloneModeBar.vue';
+import StandaloneSourcePanel from './components/StandaloneSourcePanel.vue';
 import {bridge} from './composables/useBridge';
+import {buildStandaloneState} from './standalone-data';
 import type {
     PreviewWebviewState, SelectionRef, PreviewResolvedOptions,
     TextRange, PreviewStateDetail, PreviewTransitionDetail,
@@ -62,15 +65,19 @@ const initialState: PreviewWebviewState = (window as unknown as {
     sharedEvents: [],
 });
 
-const state = ref<PreviewWebviewState>(initialState);
+const state = ref<PreviewWebviewState>(buildStandaloneState(initialState));
 const selection = ref<SelectionRef>(null);
+const hoverSelection = ref<SelectionRef>(null);
 const vscode = bridge();
 
 // Bottom drawer (DetailsPanel + BottomPanels) — bounded height with
 // internal scroll, user-adjustable via drag handle, collapsible. The
 // Stage grabs the remaining flex space above so clicking a state does
 // not resize the canvas every time the Details content changes.
-const drawerCollapsed = ref<boolean>(readStorage(STORAGE_KEY_DRAWER_COLLAPSED) === '1');
+const drawerCollapsed = ref<boolean>(
+    readStorage(STORAGE_KEY_DRAWER_COLLAPSED) === '1'
+    || (typeof window !== 'undefined' && window.innerWidth <= 760 && window.innerHeight < 900),
+);
 function readInitialDrawerHeight(): number {
     const raw = readStorage(STORAGE_KEY_DRAWER_HEIGHT);
     if (!raw) return DRAWER_DEFAULT_HEIGHT;
@@ -159,8 +166,8 @@ const effectiveMode = computed<PaletteMode>(() => {
 });
 
 function setState(next: PreviewWebviewState) {
-    state.value = next;
-    vscode.setState(next);
+    state.value = buildStandaloneState(next);
+    vscode.setState(state.value);
 }
 
 function rangeLength(range: TextRange): number {
@@ -308,7 +315,7 @@ onMounted(() => {
     window.addEventListener('keydown', onKeyDown);
     const stored = vscode.getState();
     if (stored) {
-        state.value = stored;
+        state.value = buildStandaloneState(stored);
     }
     syncBodyClasses();
     if (typeof MutationObserver !== 'undefined') {
@@ -350,6 +357,13 @@ provide('selection', selection);
 provide('state', state);
 
 function patchOptions(options: Partial<PreviewResolvedOptions>) {
+    if (state.value.standalone) {
+        state.value = buildStandaloneState({
+            ...state.value,
+            previewOptions: {...state.value.previewOptions, ...options},
+        });
+        return;
+    }
     vscode.postMessage({type: 'patchOptions', options});
 }
 
@@ -357,15 +371,33 @@ function toggleCollapse(id: string) {
     const set = new Set(state.value.collapsedStateIds || []);
     if (set.has(id)) set.delete(id);
     else set.add(id);
-    vscode.postMessage({type: 'setCollapsed', collapsed: Array.from(set)});
+    const collapsed = Array.from(set);
+    if (state.value.standalone) {
+        state.value = buildStandaloneState({...state.value, collapsedStateIds: collapsed}, state.value.previewOptions, collapsed);
+        return;
+    }
+    vscode.postMessage({type: 'setCollapsed', collapsed});
 }
 
 function revealSource(range: {start: {line: number; character: number}; end: {line: number; character: number}}) {
+    if (state.value.standalone) {
+        // The standalone host has no VSCode editor to reveal. Reusing the
+        // same range-to-selection path keeps the action useful: the source
+        // panel switches to the owning document and scrolls to the range.
+        applyActiveRange(range);
+        return;
+    }
     vscode.postMessage({type: 'revealSource', range});
 }
 
 function setLayoutMode(mode: 'side' | 'alone') {
+    if (state.value.standalone) return;
     vscode.postMessage({type: 'setLayoutMode', mode});
+}
+
+function setStandaloneMode(mode: 'fcstm' | 'diagram' | 'compare') {
+    if (!state.value.standalone) return;
+    state.value = {...state.value, standaloneMode: mode};
 }
 
 function exportError(message: string) {
@@ -385,6 +417,11 @@ const naiveTheme = computed(() => effectiveMode.value === 'dark' ? darkTheme : n
                     @set-layout-mode="setLayoutMode"
                     @export-error="exportError"
                 />
+                <StandaloneModeBar
+                    v-if="state.standalone"
+                    :mode="state.standaloneMode || 'compare'"
+                    @change="setStandaloneMode"
+                />
                 <OptionsBar
                     :options="state.previewOptions"
                     :palette="palette"
@@ -393,15 +430,38 @@ const naiveTheme = computed(() => effectiveMode.value === 'dark' ? darkTheme : n
                     @palette="applyPalette"
                     @color-mode="applyMode"
                 />
-                <Stage
-                    :state="state"
-                    :selection="selection"
-                    :palette="palette"
-                    :mode="effectiveMode"
-                    @select="(sel: SelectionRef) => (selection = sel)"
-                    @toggle-collapse="toggleCollapse"
-                    @reveal-source="revealSource"
-                />
+                <div
+                    class="fcstm-main-view"
+                    :class="{'fcstm-main-view--compare': state.standalone && (state.standaloneMode || 'compare') === 'compare'}"
+                >
+                    <StandaloneSourcePanel
+                        v-if="state.standalone && (state.standaloneMode || 'compare') !== 'diagram'"
+                        :source-html="state.sourceHtml || ''"
+                        :source-available="state.sourceAvailable"
+                        :source-unavailable-reason="state.sourceUnavailableReason"
+                        :source-map="state.sourceMap"
+                        :source-line-map="state.sourceLineMap"
+                        :source-documents="state.sourceDocuments"
+                        :source-document-id="state.sourceDocumentId"
+                        :selection="selection"
+                        :hover="hoverSelection"
+                        @select="(sel: SelectionRef) => (selection = sel)"
+                        @hover="(sel: SelectionRef) => (hoverSelection = sel)"
+                    />
+                    <div v-if="!state.standalone || (state.standaloneMode || 'compare') !== 'fcstm'" class="fcstm-diagram-view">
+                        <Stage
+                            :state="state"
+                            :selection="selection"
+                            :hover="hoverSelection"
+                            :palette="palette"
+                            :mode="effectiveMode"
+                            @select="(sel: SelectionRef) => (selection = sel)"
+                            @hover="(sel: SelectionRef) => (hoverSelection = sel)"
+                            @toggle-collapse="toggleCollapse"
+                            @reveal-source="revealSource"
+                        />
+                    </div>
+                </div>
                 <div
                     class="fcstm-bottom-drawer"
                     :class="{'fcstm-bottom-drawer--collapsed': drawerCollapsed}"
@@ -502,6 +562,30 @@ body {
     min-height: 100%;
 }
 
+/* Naive UI injects these dimensions from its host stylesheet in the VSCode
+   webview. The standalone bundle is loaded from a file URL, so keep the
+   small icon contract local to the reused components as well. Without it a
+   select/collapse arrow can expand to its parent's full width or height. */
+.n-base-icon,
+.n-icon {
+    display: inline-flex;
+    flex: 0 0 auto;
+    width: 1em;
+    height: 1em;
+    align-items: center;
+    justify-content: center;
+}
+.n-base-icon > svg,
+.n-icon > svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+.n-checkbox-icon {
+    width: 16px;
+    height: 16px;
+}
+
 .fcstm-preview-shell {
     display: flex;
     flex-direction: column;
@@ -512,6 +596,27 @@ body {
     flex: 1;
     min-height: 0;
     container: fcstm-preview / size;
+}
+
+.fcstm-main-view {
+    display: flex;
+    flex: 1 1 0;
+    min-height: 0;
+    gap: 10px;
+    overflow: hidden;
+}
+.fcstm-main-view--compare > * { min-width: 0; }
+.fcstm-diagram-view {
+    display: flex;
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 0;
+}
+.fcstm-diagram-view > .fcstm-stage { flex: 1 1 auto; }
+@media (max-width: 760px) {
+    .fcstm-main-view--compare { flex-direction: column; overflow: auto; }
+    .fcstm-main-view--compare .fcstm-source-panel,
+    .fcstm-main-view--compare .fcstm-diagram-view { min-height: 280px; }
 }
 
 /* A side-by-side VSCode editor group is much shorter than a standalone
@@ -525,8 +630,32 @@ body {
    by the extension's ``^1.60.0`` engine range. The webview viewport itself
    is the editor-group height, so this media-query fallback preserves the
    compact right-pane contract there as well. */
-@media (max-height: 760px) {
-    .fcstm-stage { min-height: 240px; }
+@media (max-height: 900px) {
+    .fcstm-bottom-drawer { max-height: 130px; }
+    .fcstm-main-view { min-height: 164px; }
+    .fcstm-stage,
+    .fcstm-main-view--compare .fcstm-source-panel,
+    .fcstm-main-view--compare .fcstm-diagram-view { min-height: 160px; }
+}
+
+/* At compact browser heights the fixed chrome can leave less than 160px for
+   the two comparison panes. Let the panes shrink to the available flex track
+   and keep their own source/diagram content scrollable instead of extending
+   the page below the viewport. */
+@media (max-height: 700px) {
+    .fcstm-main-view { min-height: 0; }
+    .fcstm-stage,
+    .fcstm-main-view--compare .fcstm-source-panel,
+    .fcstm-main-view--compare .fcstm-diagram-view { min-height: 0; }
+    .fcstm-main-view--compare { overflow: hidden; }
+}
+
+@media (max-width: 760px) {
+    .fcstm-bottom-drawer { max-height: 130px; }
+    .fcstm-main-view { min-height: 0; }
+    .fcstm-main-view--compare .fcstm-source-panel,
+    .fcstm-main-view--compare .fcstm-diagram-view,
+    .fcstm-main-view--compare .fcstm-stage { min-height: 0; }
 }
 
 /* Bottom drawer: bounded-height container holding DetailsPanel. The

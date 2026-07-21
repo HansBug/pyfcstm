@@ -1,10 +1,12 @@
 # Python Diagram Runtime Assets
 
 This directory contains the offline resources used by the Python diagram
-runtime. ``pyfcstm.diagram`` loads the JavaScript renderer, resvg WebAssembly
-module, and embedded fonts inside MiniRacer to provide ELK layout, SVG output,
-PNG rasterization, and expanded vector SVG output without Node.js, a browser,
-or system-font dependencies.
+runtime. ``pyfcstm.diagram`` packages the JavaScript renderer, resvg WebAssembly
+module, and embedded fonts for the shared offline runtime. ``viewer.js`` and
+``viewer.css`` additionally carry the standalone browser shell which reuses the
+VSCode preview components for FCSTM-only, diagram-only, and compare modes.
+The browser host embeds ``svg2pdf.js`` 2.7.0 in ``viewer.js`` for vector PDF
+export; Python synchronous headless export remains a later delivery stage.
 
 ## Maintenance Rules
 
@@ -38,6 +40,7 @@ or system-font dependencies.
 - ``LICENSE-MPL-2.0.txt``
 - ``LICENSE-EPL-2.0.txt``
 - ``LICENSE-OFL-1.1.txt``
+- ``LICENSE-MIT.txt``
 
 ### Generated resources shipped in Python packages
 
@@ -47,6 +50,11 @@ or system-font dependencies.
   binding.
 - ``resvg-bridge.js``: restricted MiniRacer bridge and font-registration API.
 - ``host-shim.js``: the minimal host-environment shim required by MiniRacer.
+- ``viewer.js``: self-contained Vue browser viewer bundle built from the
+  VSCode preview components and standalone host adapter.
+- ``viewer.css``: extracted styles for the standalone viewer bundle.
+- ``svg2pdf.js`` 2.7.0 and its MIT-licensed dependencies are bundled inside
+  ``viewer.js``; they are not separate runtime files.
 - ``resvg.wasm``: official ``@resvg/resvg-wasm`` 2.6.2 WebAssembly backend.
 - ``manifest.json``: generated-file paths, byte sizes, hashes, and provenance.
 - ``fonts/JetBrainsMono-Regular.ttf``: Latin regular face.

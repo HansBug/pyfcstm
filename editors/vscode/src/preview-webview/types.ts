@@ -3,6 +3,8 @@
  * Vue-powered webview. Imported by both sides.
  */
 
+import type {FcstmDiagram} from '../../../jsfcstm/src/diagram/model';
+
 export type PreviewLayoutMode = 'side' | 'alone';
 
 export interface PreviewSummaryEntry {
@@ -175,6 +177,21 @@ export interface PreviewWebviewState {
     summary: PreviewSummaryEntry[];
     variables: string[];
     sharedEvents: PreviewSharedEventView[];
+    /** Initial standalone colour preferences supplied by the Python API. */
+    palette?: 'default' | 'nord' | 'solarized' | 'darcula';
+    colorMode?: 'light' | 'dark' | 'auto';
+    /** Browser-only data and source sidecar used by the standalone host. */
+    standalone?: boolean;
+    standaloneMode?: 'fcstm' | 'diagram' | 'compare';
+    standaloneViewState?: {zoom: number; panX: number; panY: number};
+    standaloneDiagram?: FcstmDiagram;
+    sourceHtml?: string;
+    sourceAvailable?: boolean;
+    sourceUnavailableReason?: string;
+    sourceMap?: Record<string, {kind: 'state' | 'transition'; documentId?: string; range: TextRange}>;
+    sourceLineMap?: Record<string, string | string[]>;
+    sourceDocuments?: Record<string, {html: string; label: string}>;
+    sourceDocumentId?: string;
 }
 
 export type SelectionRef =

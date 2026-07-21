@@ -41,6 +41,18 @@
       "treeSha256": "feec04077159fd1c2cee9ba09d51b687d3b011c2886f2e61b761a8f8a930fc77"
     }
   },
+  "viewer": {
+    "target": "es2019",
+    "format": "iife",
+    "svg2pdf": {
+      "name": "svg2pdf.js",
+      "version": "2.7.0",
+      "resolved": "https://registry.npmmirror.com/svg2pdf.js/-/svg2pdf.js-2.7.0.tgz",
+      "integrity": "sha512-nXK4Wx28H0KtOktanm5nsphl1KMEoLNMelAT/776qxPAj9DshwYcqgdpKuBnY1nrcYOriQFHVQLE4tIag+aDJA==",
+      "license": "MIT"
+    },
+    "esbuildVersion": "0.28.1"
+  },
   "fonts": {
     "defaultFamily": "JetBrains Mono",
     "defaultCjkLocale": "sc",

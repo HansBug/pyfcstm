@@ -18,6 +18,7 @@ TRACKED_MARKERS = {
     "LICENSE-MPL-2.0.txt",
     "LICENSE-EPL-2.0.txt",
     "LICENSE-OFL-1.1.txt",
+    "LICENSE-MIT.txt",
 }
 
 GENERATED_ASSETS = {
@@ -25,6 +26,8 @@ GENERATED_ASSETS = {
     "resvg-binding.js",
     "resvg-bridge.js",
     "host-shim.js",
+    "viewer.js",
+    "viewer.css",
     "resvg.wasm",
     "manifest.json",
     "fonts/JetBrainsMono-Regular.ttf",
@@ -268,6 +271,23 @@ def main() -> int:
             raise ValueError("resvg package-lock differs from asset lock: %s" % key)
     if manifest["renderer"] != renderer_lock:
         raise ValueError("generated manifest renderer lock differs from source lock")
+    viewer_lock = lock.get("viewer")
+    if not isinstance(viewer_lock, dict) or manifest.get("viewer") != viewer_lock:
+        raise ValueError("generated manifest viewer lock differs from source lock")
+    try:
+        viewer_package = json.loads(
+            (ROOT / "editors" / "vscode" / "package-lock.json").read_text(encoding="utf-8")
+        )["packages"]["node_modules/svg2pdf.js"]
+    except (KeyError, OSError, TypeError, ValueError) as err:
+        # KeyError/TypeError/ValueError: the tracked viewer lock lacks the
+        # exporter entry; OSError: the lock file cannot be read.
+        raise ValueError("vscode package-lock lacks svg2pdf.js") from err
+    exporter = viewer_lock.get("svg2pdf")
+    if not isinstance(exporter, dict) or any(
+        viewer_package.get(key) != exporter.get(key)
+        for key in ("version", "resolved", "integrity", "license")
+    ):
+        raise ValueError("svg2pdf.js package provenance differs from asset lock")
     esbuild_meta = manifest.get("esbuild")
     if not isinstance(esbuild_meta, dict):
         raise ValueError("generated manifest is missing esbuild metadata")

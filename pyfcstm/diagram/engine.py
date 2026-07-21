@@ -36,7 +36,33 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple, Union
 
 
-class DiagramAssetError(RuntimeError):
+class DiagramError(RuntimeError):
+    """
+    Base class for public diagram capability and rendering failures.
+
+    Example::
+
+        >>> raise DiagramError("diagram operation failed")
+        Traceback (most recent call last):
+        ...
+        DiagramError: diagram operation failed
+    """
+
+
+class DiagramUnavailableError(DiagramError):
+    """
+    Report an optional diagram capability that is not installed.
+
+    Example::
+
+        >>> raise DiagramUnavailableError("headless renderer is not installed")
+        Traceback (most recent call last):
+        ...
+        DiagramUnavailableError: headless renderer is not installed
+    """
+
+
+class DiagramAssetError(DiagramError):
     """
     Report a missing, corrupt, or unusable diagram runtime asset.
 
@@ -88,6 +114,19 @@ class DiagramEngineConflictError(DiagramAssetError):
         Traceback (most recent call last):
         ...
         DiagramEngineConflictError: install exactly one runtime
+    """
+
+
+class DiagramEngineLoadError(DiagramAssetError):
+    """
+    Report an installed MiniRacer distribution that cannot be imported.
+
+    Example::
+
+        >>> raise DiagramEngineLoadError("mini-racer ABI failed")
+        Traceback (most recent call last):
+        ...
+        DiagramEngineLoadError: mini-racer ABI failed
     """
 
 
@@ -475,9 +514,9 @@ class DiagramAssetEngine:
 
     def _create_context(self) -> Any:
         """Create the Python-version-appropriate MiniRacer context."""
-        if self._distribution_installed("mini-racer") and self._distribution_installed(
-            "py-mini-racer"
-        ):
+        modern_installed = self._distribution_installed("mini-racer")
+        legacy_installed = self._distribution_installed("py-mini-racer")
+        if modern_installed and legacy_installed:
             modern_version = self._distribution_version("mini-racer") or "unknown"
             legacy_version = self._distribution_version("py-mini-racer") or "unknown"
             raise DiagramEngineConflictError(
@@ -485,16 +524,32 @@ class DiagramAssetEngine:
                 "install exactly one runtime for this Python version"
                 % (modern_version, legacy_version)
             )
+        if not modern_installed and not legacy_installed:
+            raise DiagramUnavailableError(
+                "no supported MiniRacer distribution is installed; install the "
+                "optional diagram runtime for headless rendering"
+            )
+        selected = "mini-racer" if modern_installed else "py-mini-racer"
+        selected_version = self._distribution_version(selected) or "unknown"
         try:
             from py_mini_racer import MiniRacer
-        except ImportError as top_level_error:
+        except ImportError:
             # Legacy py-mini-racer exports MiniRacer from this submodule.
             try:
                 from py_mini_racer.py_mini_racer import MiniRacer
-            except ImportError:
-                # Preserve a modern package's native import/ABI failure when
-                # neither supported export shape is available.
-                raise top_level_error
+            except (ImportError, OSError) as legacy_error:
+                # ImportError/OSError: the selected distribution is installed
+                # but its Python export or native ABI cannot be loaded.
+                raise DiagramEngineLoadError(
+                    "%s %s is installed but could not be loaded: %s"
+                    % (selected, selected_version, legacy_error)
+                ) from legacy_error
+        except OSError as top_level_error:
+            # OSError: the selected native MiniRacer extension failed to load.
+            raise DiagramEngineLoadError(
+                "%s %s is installed but could not be loaded: %s"
+                % (selected, selected_version, top_level_error)
+            ) from top_level_error
         try:
             from py_mini_racer import (
                 JSEvalException,
@@ -502,15 +557,24 @@ class DiagramAssetEngine:
                 JSParseException,
                 JSTimeoutException,
             )
-        except ImportError:
-            # py-mini-racer 0.6 keeps these exception classes in its legacy
-            # module; modern mini-racer exports them at package top level.
-            from py_mini_racer.py_mini_racer import (
-                JSEvalException,
-                JSOOMException,
-                JSParseException,
-                JSTimeoutException,
-            )
+        except (ImportError, OSError):
+            # ImportError/OSError: py-mini-racer 0.6 keeps these exception
+            # classes in its legacy module; modern mini-racer exports them at
+            # package top level, but a native import can still fail.
+            try:
+                from py_mini_racer.py_mini_racer import (
+                    JSEvalException,
+                    JSOOMException,
+                    JSParseException,
+                    JSTimeoutException,
+                )
+            except (ImportError, OSError) as legacy_error:
+                # ImportError/OSError: the selected distribution lacks the
+                # expected exception exports or native module dependency.
+                raise DiagramEngineLoadError(
+                    "%s %s exception exports could not be loaded: %s"
+                    % (selected, selected_version, legacy_error)
+                ) from legacy_error
         self._interrupt_errors = (JSTimeoutException, JSOOMException)
         self._asset_eval_errors = (JSEvalException, JSParseException)
         self._timeout_uses_seconds = (

@@ -47,6 +47,7 @@ The following public components are re-exported here:
 * :func:`assign_event_colors` - Assign PlantUML colors to events
 * :func:`load_state_machine_from_file` - Convenience model loader from file
 * :func:`load_state_machine_from_text` - Convenience model loader from DSL text
+* :class:`pyfcstm.diagram.Diagram` - Standalone browser diagram facade
 
 Example::
 

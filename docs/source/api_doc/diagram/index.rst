@@ -9,6 +9,7 @@ pyfcstm.diagram
 .. toctree::
     :maxdepth: 3
 
+    api
     assets/index
     engine
 

@@ -12,6 +12,7 @@ pyfcstm.entry
     base
     bmc
     cli
+    diagram
     dispatch
     generate
     inspect

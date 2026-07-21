@@ -6,6 +6,7 @@ from dataclasses import replace
 import os
 from pathlib import Path
 from textwrap import dedent
+from types import SimpleNamespace
 
 import pytest
 import z3
@@ -26,6 +27,7 @@ from pyfcstm.model import (
     load_state_machine_from_text,
     parse_dsl_node_to_state_machine,
 )
+from pyfcstm.model.expr import Integer
 from pyfcstm.utils.validate import Span
 
 pytestmark = pytest.mark.unittest
@@ -194,6 +196,26 @@ def test_source_registry_returns_none_for_unusable_spans(span) -> None:
     assert registry.excerpt(reference) is None
 
 
+@pytest.mark.parametrize(
+    "span",
+    [
+        pytest.param(Span(1, 5, 1, 6), id="start-column-past-line"),
+        pytest.param(Span(2, 5, 2, 6), id="end-column-past-line"),
+        pytest.param(Span(1, 1, 2, 5), id="cross-line-end-column-past-line"),
+    ],
+)
+def test_source_registry_rejects_columns_outside_their_line(
+    span: Span,
+) -> None:
+    """A column cannot borrow characters from an adjacent source line."""
+    registry = SourceDocumentRegistry({"machine.fcstm": "abc\ndef"})
+
+    reference = registry.reference("fcstm", "machine.fcstm", span)
+
+    assert reference.span is None
+    assert registry.excerpt(reference) is None
+
+
 def test_source_registry_handles_aliases_and_unknown_namespaces(tmp_path: Path) -> None:
     """Document lookup resolves display aliases without crossing namespaces."""
     source_path = tmp_path / "nested" / "machine.fcstm"
@@ -254,6 +276,14 @@ def test_source_registry_slices_multiline_span_exactly() -> None:
     )
 
     assert registry.excerpt(reference) == "one\n第二行"
+
+
+def test_source_registry_handles_crlf_line_boundaries() -> None:
+    """CRLF separators do not become part of a same-line excerpt."""
+    registry = SourceDocumentRegistry({"machine.fcstm": "abc\r\ndef"})
+    reference = registry.reference("fcstm", "machine.fcstm", Span(1, 1, 1, 4))
+
+    assert registry.excerpt(reference) == "abc"
 
 
 def test_query_source_metadata_keeps_source_text_canonical_clean() -> None:
@@ -569,6 +599,59 @@ def test_initializer_definedness_provenance_uses_definition_source(
     assert group.source_ref.kind == "fcstm"
     assert group.source_ref.path == "machine.fcstm"
     assert context._source_registry.excerpt(group.source_ref) == "def int x = 1 / 0;"
+
+
+def test_public_model_mutation_drops_stale_model_source_span(tmp_path: Path) -> None:
+    """A changed public model cannot retain an obsolete exact source span."""
+    source_path = tmp_path / "machine.fcstm"
+    source_path.write_text("def int x = 1;\nstate Root;\n", encoding="utf-8")
+    model = load_state_machine_from_file(source_path)
+
+    model.defines["x"].init = Integer("2")
+    context = BmcEngine(model).prepare(
+        'check reach <= 1: active("Root");', query_source_path="query.fbmcq"
+    )
+    core = build_bmc_core_formula(context)
+    group = next(
+        item for item in core._tracked_groups if item.stable_id == "initial.variable.x"
+    )
+
+    assert group.source_ref.path == "machine.fcstm"
+    assert group.source_ref.span is None
+    assert context._source_registry.excerpt(group.source_ref) is None
+
+
+def test_public_model_mutation_that_breaks_export_fails_closed(tmp_path: Path) -> None:
+    """An unexportable mutated model object cannot retain a source span."""
+    source_path = tmp_path / "machine.fcstm"
+    source_path.write_text("def int x = 1;\nstate Root;\n", encoding="utf-8")
+    model = load_state_machine_from_file(source_path)
+    model.defines["x"].init = None
+    registry = SourceDocumentRegistry(
+        model._source_documents, display_root=model._source_root
+    )
+
+    reference = registry.model_reference(model.defines["x"])
+
+    assert reference.path == "machine.fcstm"
+    assert reference.span is None
+    assert registry.excerpt(reference) is None
+
+
+def test_model_reference_without_exporter_drops_stale_span() -> None:
+    """Metadata-only objects cannot claim an exact model source span."""
+    registry = SourceDocumentRegistry({"machine.fcstm": "state Root;"})
+    metadata_only = SimpleNamespace(
+        _source_path="machine.fcstm",
+        _span=Span(1, 1, 1, 12),
+        _source_fingerprint="stale",
+    )
+
+    reference = registry.model_reference(metadata_only)
+
+    assert reference.path == "machine.fcstm"
+    assert reference.span is None
+    assert registry.excerpt(reference) is None
 
 
 def test_environment_group_provenance_covers_frame_event_and_cardinality() -> None:

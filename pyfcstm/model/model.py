@@ -104,6 +104,11 @@ def _set_model_source_path(model_object: object, ast_object: object) -> None:
     source_path = getattr(ast_object, "_source_path", None)
     if source_path is not None:
         setattr(model_object, "_source_path", source_path)
+        setattr(
+            model_object,
+            "_source_fingerprint",
+            hashlib.sha256(str(model_object.to_ast_node()).encode("utf-8")).hexdigest(),
+        )
 
 
 def _annotate_model_operations(model_items, ast_items) -> None:

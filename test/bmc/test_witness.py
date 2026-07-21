@@ -1112,6 +1112,23 @@ def test_solver_staged_checks_stop_after_primary_unknown(monkeypatch) -> None:
     assert 1 <= spy.set_values[0] <= 20
 
 
+def test_solver_primary_timeout_preserves_public_timeout_semantics(monkeypatch) -> None:
+    """A started Z3 timeout remains distinct from a pre-check deadline timeout."""
+    formula = _verdict_formula("reach")
+    spy = _SolverSpy([z3.unknown], model=_empty_sat_model(), reason="timeout")
+    monkeypatch.setattr(witness_module.z3, "Solver", lambda: spy)
+
+    result = solve_bmc_property(formula, timeout_ms=20)
+
+    assert result.status == "timeout"
+    assert result.reason == "timeout"
+    assert result.outcome == "timeout"
+    assert result.property_satisfied is None
+    assert result.feasibility.assumptions.origin == "not_checked"
+    assert "feasibility_timeout:primary" in result.diagnostics
+    assert spy.check_count == 1
+
+
 def test_solver_staged_checks_localize_kernel(monkeypatch) -> None:
     """A staged UNSAT sequence exposes the kernel localization branch."""
     formula = _verdict_formula("reach")

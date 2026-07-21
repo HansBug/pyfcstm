@@ -445,6 +445,32 @@ state Worker {
     ] == ["x = x + 3;", "x = x + 4;", "x = x + 5;"]
 
 
+def test_imported_top_level_definition_keeps_bmc_source_ownership(
+    tmp_path: Path,
+) -> None:
+    """Imported definitions retain their source file in compiled BMC groups."""
+    imported = tmp_path / "child.fcstm"
+    imported.write_text("def int x = 5;\nstate Worker;\n", encoding="utf-8")
+    main = tmp_path / "main.fcstm"
+    main.write_text(
+        'state Root { import "./child.fcstm" as Child; [*] -> Child; }\n',
+        encoding="utf-8",
+    )
+
+    model = load_state_machine_from_file(main)
+    context = BmcEngine(model).prepare("check reach <= 1: true;")
+    core = build_bmc_core_formula(context)
+    group = next(
+        item
+        for item in core._tracked_groups
+        if item.stable_id == "initial.variable.Child_x"
+    )
+
+    assert group.source_ref.kind == "fcstm"
+    assert group.source_ref.path == "child.fcstm"
+    assert context._source_registry.excerpt(group.source_ref) == "def int x = 5;"
+
+
 def test_transition_effect_provenance_keeps_model_source_ownership(
     tmp_path: Path,
 ) -> None:

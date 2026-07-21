@@ -41,7 +41,7 @@ class _SolveBudget:
 
     Examples::
 
-        >>> _SolveBudget(None).remaining_ms()
+        >>> print(_SolveBudget(None).remaining_ms())
         None
     """
 
@@ -65,7 +65,7 @@ class _SolveBudget:
 
         Examples::
 
-            >>> _SolveBudget(None).remaining_ms()
+            >>> print(_SolveBudget(None).remaining_ms())
             None
         """
         if self.deadline is None:

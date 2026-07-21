@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import doctest
+
 import z3
 import pytest
 
@@ -104,3 +106,10 @@ def test_check_rejects_an_object_without_the_budget_interface() -> None:
 
     with pytest.raises(TypeError, match="budget must provide"):
         _check_with_budget(z3.Solver(), InvalidBudget())
+
+
+def test_solver_module_examples_are_executable() -> None:
+    """Solver module and helper docstring examples remain runnable."""
+    result = doctest.testmod(solver_module)
+
+    assert result.failed == 0

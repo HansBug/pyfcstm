@@ -668,7 +668,8 @@ def test_solve_property_starts_a_one_millisecond_budget_at_z3() -> None:
     result = solve_bmc_property(formula, timeout_ms=1)
 
     assert result.reason != "deadline_exhausted_before_check"
-    assert result.elapsed_ms > 0
+    assert result.status == "sat"
+    assert result.elapsed_ms >= 0
 
 
 @pytest.mark.parametrize(

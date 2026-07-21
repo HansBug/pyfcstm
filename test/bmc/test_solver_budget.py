@@ -73,6 +73,16 @@ def test_budget_rounds_positive_fractional_milliseconds_up(monkeypatch) -> None:
     assert budget.remaining_ms() == 1
 
 
+def test_budget_never_rounds_above_configured_timeout(monkeypatch) -> None:
+    """Clock precision cannot make a check exceed its configured budget."""
+    clock = iter((100.0, 99.9999))
+    monkeypatch.setattr(solver_module.time, "monotonic", lambda: next(clock))
+
+    budget = _SolveBudget(1)
+
+    assert budget.remaining_ms() == 1
+
+
 @pytest.mark.parametrize("value", [True, 0, -1, 1.5, "10"])
 def test_budget_rejects_invalid_timeout(value) -> None:
     """Only ``None`` or a positive integer is accepted."""

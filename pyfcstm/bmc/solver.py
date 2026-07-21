@@ -73,7 +73,8 @@ class _SolveBudget:
         remaining_seconds = self.deadline - time.monotonic()
         if remaining_seconds <= 0:
             return None
-        return max(1, int(math.ceil(remaining_seconds * 1000.0)))
+        remaining_ms = max(1, int(math.ceil(remaining_seconds * 1000.0)))
+        return min(self.timeout_ms, remaining_ms)
 
 
 def _check_with_budget(

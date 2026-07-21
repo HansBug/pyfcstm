@@ -29,4 +29,24 @@ def test_diagram_cli_open_rejects_non_html_output(tmp_path):
         ["diagram", "-i", str(source), "-o", str(tmp_path / "result.json"), "--open"],
     )
     assert result.exit_code != 0
-    assert "输出路径必须以 .html 或 .htm 结尾" in result.output
+    assert "--open requires an .html or .htm output path" in result.output
+
+
+def test_diagram_cli_help_is_english_and_does_not_leak_rst():
+    result = CliRunner().invoke(cli, ["diagram", "--help"])
+    assert result.exit_code == 0, result.output
+    assert "Generate portable JSON or a standalone HTML diagram viewer." in result.output
+    assert "Input FCSTM file." in result.output
+    assert ":param" not in result.output
+    assert "生成" not in result.output
+
+
+def test_diagram_cli_open_rejects_non_html_format(tmp_path):
+    source = tmp_path / "machine.fcstm"
+    source.write_text("state Root;", encoding="utf-8")
+    result = CliRunner().invoke(
+        cli,
+        ["diagram", "-i", str(source), "--format", "json", "--open"],
+    )
+    assert result.exit_code != 0
+    assert "--open requires HTML output" in result.output

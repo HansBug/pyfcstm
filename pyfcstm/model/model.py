@@ -2479,7 +2479,8 @@ class StateMachine(AstExportable, PlantUMLExportable):
         self,
         output=None,
         *,
-        open_browser=True,
+        open_window=True,
+        window_size=(1200, 900),
         options=None,
         view_state=None,
         source_text=None,
@@ -2490,8 +2491,10 @@ class StateMachine(AstExportable, PlantUMLExportable):
 
         :param output: Optional HTML output path.
         :type output: str or os.PathLike, optional
-        :param open_browser: Whether to ask the default browser to open the file.
-        :type open_browser: bool
+        :param open_window: Whether to launch a standalone diagram app window.
+        :type open_window: bool
+        :param window_size: Initial standalone window width and height in pixels.
+        :type window_size: tuple[int, int]
         :param options: Optional diagram renderer options.
         :type options: object, optional
         :param view_state: Optional browser view state.
@@ -2504,7 +2507,7 @@ class StateMachine(AstExportable, PlantUMLExportable):
 
         Example::
 
-            >>> model.show(open_browser=False).suffix
+            >>> model.show(open_window=False).suffix
             '.html'
         """
         return self.diagram(
@@ -2513,7 +2516,7 @@ class StateMachine(AstExportable, PlantUMLExportable):
             source_text=source_text,
             **option_fields,
         ).show(
-            output, open_browser=open_browser
+            output, open_window=open_window, window_size=window_size
         )
 
     def resolve_event(

@@ -22,8 +22,10 @@ import json
 import math
 import os
 import pkgutil
+import shutil
+import subprocess
+import sys
 import tempfile
-import webbrowser
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
@@ -452,16 +454,23 @@ def _highlight_source(source: str) -> str:
     if not token_lines:
         token_lines = [[]]
     rendered = [
-        '<span class="fcstm-source-line" data-line="%d">%s</span>'
-        % (index, "".join(content) or " ")
+        '<span class="fcstm-source-line" data-line="%d" data-line-number="%d">%s</span>'
+        % (index, index + 1, "".join(content) or " ")
         for index, content in enumerate(token_lines)
     ]
+    # The parent uses normal whitespace handling, while each line preserves
+    # its own source spacing. This keeps copied text line-oriented without
+    # turning the separator newline into an extra visual row.
     return "\n".join(rendered)
 
 
 def _highlight_css() -> str:
     """Return the small Pygments CSS fragment used by the source pane."""
-    return HtmlFormatter().get_style_defs(".fcstm-source-panel__code")
+    return HtmlFormatter().get_style_defs(".fcstm-source-panel__code") + "\n" + (
+        ".fcstm-source-panel__code { background-color: var(--fcstm-surface-raised); "
+        "color: var(--fcstm-fg); }\n"
+        ".fcstm-source-panel__code .w { color: var(--fcstm-line-number); }"
+    )
 
 
 _OPTION_KEYS = {
@@ -513,6 +522,107 @@ def _coerce_finite_number(value: Any, field_name: str, positive: bool = False) -
             raise ValueError("%s must be a finite positive number" % field_name)
         raise ValueError("%s must be finite %s" % (field_name, number_label))
     return number
+
+
+def _coerce_window_size(value: Tuple[Any, Any]) -> Tuple[int, int]:
+    """Validate the standalone app-window dimensions."""
+    if not isinstance(value, (tuple, list)) or len(value) != 2:
+        raise ValueError("window_size must contain exactly two positive integers")
+    width, height = value
+    if (
+        isinstance(width, bool)
+        or isinstance(height, bool)
+        or not isinstance(width, int)
+        or not isinstance(height, int)
+        or width <= 0
+        or height <= 0
+    ):
+        raise ValueError("window_size must contain exactly two positive integers")
+    return width, height
+
+
+def _browser_app_executable() -> Optional[str]:
+    """Find a Chromium-family executable that supports ``--app`` windows."""
+    override = os.environ.get("PYFCSTM_BROWSER")
+    candidates = [override] if override else []
+    if sys.platform == "win32":
+        local_app_data = os.environ.get("LOCALAPPDATA", "")
+        program_files = os.environ.get("PROGRAMFILES", "")
+        program_files_x86 = os.environ.get("PROGRAMFILES(X86)", "")
+        candidates.extend(
+            [
+                os.path.join(local_app_data, "Google", "Chrome", "Application", "chrome.exe"),
+                os.path.join(program_files, "Google", "Chrome", "Application", "chrome.exe"),
+                os.path.join(program_files_x86, "Google", "Chrome", "Application", "chrome.exe"),
+                os.path.join(local_app_data, "Microsoft", "Edge", "Application", "msedge.exe"),
+                "chrome.exe",
+                "msedge.exe",
+                "chromium.exe",
+            ]
+        )
+    elif sys.platform == "darwin":
+        candidates.extend(
+            [
+                "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+                "/Applications/Chromium.app/Contents/MacOS/Chromium",
+                "google-chrome",
+                "microsoft-edge",
+                "chromium",
+            ]
+        )
+    else:
+        candidates.extend(
+            [
+                "google-chrome",
+                "google-chrome-stable",
+                "chromium",
+                "chromium-browser",
+                "microsoft-edge",
+                "brave-browser",
+            ]
+        )
+    for candidate in candidates:
+        if not candidate:
+            continue
+        if os.path.isabs(candidate) and os.path.isfile(candidate):
+            return candidate
+        resolved = shutil.which(candidate)
+        if resolved:
+            return resolved
+    return None
+
+
+def _open_standalone_window(path: Path, window_size: Tuple[int, int]) -> None:
+    """Launch the self-contained viewer in a browser app window."""
+    executable = _browser_app_executable()
+    if executable is None:
+        raise DiagramUnavailableError(
+            "a Chromium-family browser is required for the standalone diagram window; "
+            "install Chrome, Chromium, Edge, or Brave, or set PYFCSTM_BROWSER"
+        )
+    width, height = window_size
+    command = [
+        executable,
+        "--app=%s" % path.resolve().as_uri(),
+        "--new-window",
+        "--window-size=%d,%d" % (width, height),
+    ]
+    popen_kwargs: Dict[str, Any] = {
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL,
+    }
+    if os.name == "nt":
+        popen_kwargs["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+    else:
+        popen_kwargs["start_new_session"] = True
+    try:
+        subprocess.Popen(command, **popen_kwargs)
+    except OSError as err:
+        raise DiagramUnavailableError(
+            "failed to launch the standalone diagram window with %s: %s" % (executable, err)
+        ) from err
 
 
 def _atomic_write_text(path: Union[str, os.PathLike], content: str) -> Path:
@@ -1164,23 +1274,34 @@ class Diagram:
             raise ValueError("unsupported diagram format: %s" % selected)
         return target
 
-    def show(self, output: Optional[Union[str, os.PathLike]] = None, *, open_browser: bool = True) -> Path:
+    def show(
+        self,
+        output: Optional[Union[str, os.PathLike]] = None,
+        *,
+        open_window: bool = True,
+        window_size: Tuple[int, int] = (1200, 900),
+    ) -> Path:
         """
-        Write an HTML viewer and optionally open it in the default browser.
+        Write an HTML viewer and optionally open it in a standalone app window.
 
         :param output: Optional destination path.  A temporary file is used
             when omitted.
         :type output: str or os.PathLike, optional
-        :param open_browser: Whether to launch the default browser.
-        :type open_browser: bool
+        :param open_window: Whether to launch a Chromium-family app window,
+            defaults to ``True``.
+        :type open_window: bool
+        :param window_size: Initial app-window width and height in pixels,
+            defaults to ``(1200, 900)``.
+        :type window_size: tuple[int, int]
         :return: The generated HTML path.
         :rtype: pathlib.Path
         """
+        dimensions = _coerce_window_size(window_size)
         if output is None:
             handle = tempfile.NamedTemporaryFile(prefix="pyfcstm-diagram-", suffix=".html", delete=False)
             handle.close()
             output = handle.name
         path = self.save(output, format="html")
-        if open_browser:
-            webbrowser.open(path.resolve().as_uri())
+        if open_window:
+            _open_standalone_window(path, dimensions)
         return path

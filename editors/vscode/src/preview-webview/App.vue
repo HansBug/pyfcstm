@@ -532,6 +532,9 @@ const naiveTheme = computed(() => effectiveMode.value === 'dark' ? darkTheme : n
     --fcstm-accent: #2d6aa8;
     --fcstm-warning: #b7791f;
     --fcstm-error: #b33a3a;
+    --fcstm-control-bg: #ffffff;
+    --fcstm-control-menu-bg: #ffffff;
+    --fcstm-line-number: #8a94a5;
     --fcstm-mono: "JetBrains Mono", "Fira Code", Consolas, monospace;
 }
 
@@ -545,6 +548,9 @@ body.fcstm-mode-dark {
     --fcstm-accent: #6ba4d8;
     --fcstm-fg: var(--vscode-editor-foreground, #dfe1e5);
     --fcstm-muted: var(--vscode-descriptionForeground, #9aa5b4);
+    --fcstm-control-bg: #263646;
+    --fcstm-control-menu-bg: #263646;
+    --fcstm-line-number: #8796a8;
 }
 /* User may force light mode regardless of VSCode's theme. */
 body.fcstm-mode-light {
@@ -555,6 +561,9 @@ body.fcstm-mode-light {
     --fcstm-accent: #2d6aa8;
     --fcstm-fg: var(--vscode-editor-foreground, #1f2937);
     --fcstm-muted: var(--vscode-descriptionForeground, #6a7280);
+    --fcstm-control-bg: #ffffff;
+    --fcstm-control-menu-bg: #ffffff;
+    --fcstm-line-number: #8a94a5;
 }
 
 html, body, #app {
@@ -601,6 +610,40 @@ body {
 .n-checkbox-icon {
     width: 16px;
     height: 16px;
+}
+
+/* Naive UI menus are teleported to <body>. The standalone bundle does not
+   inherit the VSCode webview theme stylesheet, so define an opaque control
+   surface and option contrast locally instead of relying on host variables. */
+.n-base-selection {
+    min-height: 28px;
+    border: 1px solid var(--fcstm-border) !important;
+    border-radius: 5px !important;
+    background-color: var(--fcstm-control-bg) !important;
+    color: var(--fcstm-fg) !important;
+}
+.n-base-selection:hover,
+.n-base-selection--active {
+    border-color: var(--fcstm-accent) !important;
+}
+.n-base-selection-label,
+.n-base-selection-overlay,
+.n-base-selection-input {
+    background-color: var(--fcstm-control-bg) !important;
+    color: var(--fcstm-fg) !important;
+}
+.n-base-select-menu,
+.n-base-select-menu__empty,
+.n-base-select-option {
+    background-color: var(--fcstm-control-menu-bg) !important;
+    color: var(--fcstm-fg) !important;
+}
+.n-base-select-option--pending,
+.n-base-select-option:hover {
+    background-color: color-mix(in srgb, var(--fcstm-accent) 16%, var(--fcstm-control-menu-bg)) !important;
+}
+.n-base-select-option--selected {
+    color: var(--fcstm-accent) !important;
 }
 
 .fcstm-preview-shell {

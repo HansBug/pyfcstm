@@ -71,6 +71,9 @@ def test_source_highlighting_preserves_multiline_token_state():
 
     rendered = _highlight_source("/* first line\nsecond line */\nstate Root;")
     assert rendered.count('class="fcstm-source-line"') == 3
+    assert 'data-line-number="1"' in rendered
+    assert 'data-line-number="3"' in rendered
+    assert "</span>\n<span class=\"fcstm-source-line\"" in rendered
     assert "second line" in rendered
     assert "&lt;" not in rendered
 
@@ -91,11 +94,11 @@ def test_source_line_mapping_prefers_transition_ranges():
     assert state["sourceMap"][transition_id]["kind"] == "transition"
 
 
-def test_model_show_returns_html_path_without_opening_browser(tmp_path):
+def test_model_show_returns_html_path_without_opening_window(tmp_path):
     model = _model("state Root;")
     output = model.show(
         tmp_path / "diagram.html",
-        open_browser=False,
+        open_window=False,
         options={"mode": "dark"},
         view_state={"mode": "fcstm"},
         source_text="state Root;",
@@ -117,12 +120,51 @@ def test_model_diagram_and_show_accept_option_keywords(tmp_path):
 
     output = model.show(
         tmp_path / "keyword-options.html",
-        open_browser=False,
+        open_window=False,
         mode="dark",
         view_state={"mode": "fcstm"},
     )
     assert output.exists()
     assert '"standaloneMode":"fcstm"' in output.read_text(encoding="utf-8")
+
+
+def test_show_launches_a_standalone_app_window(monkeypatch, tmp_path):
+    import pyfcstm.diagram.api as diagram_api
+
+    calls = []
+
+    def fake_popen(command, **kwargs):
+        calls.append((command, kwargs))
+        return object()
+
+    monkeypatch.setattr(diagram_api, "_browser_app_executable", lambda: "/opt/chrome")
+    monkeypatch.setattr(diagram_api.subprocess, "Popen", fake_popen)
+    output = _model("state Root;").show(
+        tmp_path / "window.html", open_window=True, window_size=(960, 640)
+    )
+    assert output.exists()
+    assert len(calls) == 1
+    command, kwargs = calls[0]
+    assert command[0] == "/opt/chrome"
+    assert command[1].startswith("--app=file://")
+    assert "--new-window" in command
+    assert "--window-size=960,640" in command
+    assert kwargs["stdin"] is diagram_api.subprocess.DEVNULL
+
+
+def test_show_rejects_invalid_window_size(tmp_path):
+    with pytest.raises(ValueError, match="window_size"):
+        _model("state Root;").show(
+            tmp_path / "window.html", open_window=False, window_size=(0, 640)
+        )
+
+
+def test_show_reports_missing_app_browser(monkeypatch, tmp_path):
+    import pyfcstm.diagram.api as diagram_api
+
+    monkeypatch.setattr(diagram_api, "_browser_app_executable", lambda: None)
+    with pytest.raises(DiagramUnavailableError, match="Chromium-family browser"):
+        _model("state Root;").show(tmp_path / "window.html", open_window=True)
 
 
 def test_html_cache_and_save_replace_are_deterministic(tmp_path):

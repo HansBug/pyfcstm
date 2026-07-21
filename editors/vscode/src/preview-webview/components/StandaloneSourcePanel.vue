@@ -118,10 +118,49 @@ watch(activeId, scrollActive);
 <style>
 .fcstm-source-panel { display: flex; flex: 1 1 0; min-width: 0; min-height: 220px; flex-direction: column; overflow: hidden; border: 1px solid var(--fcstm-border-soft); border-radius: 10px; background: var(--fcstm-surface-raised); }
 .fcstm-source-panel__header { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid var(--fcstm-border-soft); color: var(--fcstm-muted); font-weight: 700; }
-.fcstm-source-panel__header select { max-width: 55%; border: 1px solid var(--fcstm-border-soft); border-radius: 4px; background: var(--fcstm-surface-raised); color: var(--fcstm-fg); }
-.fcstm-source-panel__code { flex: 1 1 auto; overflow: auto; margin: 0; padding: 12px; color: var(--fcstm-fg); font-family: var(--fcstm-mono); font-size: 12px; line-height: 1.55; tab-size: 4; }
+.fcstm-source-panel__header select {
+    max-width: 55%;
+    min-width: 0;
+    border: 1px solid var(--fcstm-border);
+    border-radius: 5px;
+    padding: 4px 28px 4px 8px;
+    background-color: var(--fcstm-control-bg);
+    color: var(--fcstm-fg);
+    color-scheme: light dark;
+    font: inherit;
+}
+.fcstm-source-panel__header select:hover,
+.fcstm-source-panel__header select:focus {
+    border-color: var(--fcstm-accent);
+    outline: 2px solid color-mix(in srgb, var(--fcstm-accent) 28%, transparent);
+    outline-offset: 1px;
+}
+.fcstm-source-panel__header option {
+    background: var(--fcstm-control-menu-bg);
+    color: var(--fcstm-fg);
+}
+.fcstm-source-panel__code { flex: 1 1 auto; overflow: auto; margin: 0; padding: 12px; color: var(--fcstm-fg); font-family: var(--fcstm-mono); font-size: 12px; line-height: 1.55; tab-size: 4; white-space: normal; }
+.fcstm-source-panel__code > code { display: block; min-width: max-content; }
 .fcstm-source-panel__unavailable { margin: auto; padding: 24px; color: var(--fcstm-muted); text-align: center; }
-.fcstm-source-line { display: block; min-height: 1.55em; padding: 0 6px; border-left: 3px solid transparent; cursor: pointer; }
+.fcstm-source-line {
+    position: relative;
+    display: block;
+    min-height: 1.55em;
+    padding: 0 6px 0 4.5em;
+    border-left: 3px solid transparent;
+    cursor: pointer;
+    white-space: pre;
+}
+.fcstm-source-line::before {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 3.5em;
+    color: var(--fcstm-line-number);
+    content: attr(data-line-number);
+    text-align: right;
+    user-select: none;
+}
 .fcstm-source-line:hover { background: rgba(45, 106, 168, .10); }
 .fcstm-source-line--active { border-left-color: var(--fcstm-accent); background: rgba(45, 106, 168, .13); }
 </style>

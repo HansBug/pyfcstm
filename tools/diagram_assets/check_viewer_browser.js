@@ -99,6 +99,43 @@ async function evaluate(cdp, expression) {
       stage: Boolean(document.querySelector('.fcstm-stage svg')),
       error: (document.querySelector('.fcstm-stage__empty-title') || {}).textContent || '',
     })`);
+    const sourceLayout = await evaluate(cdp, `(async () => {
+      const rows = [...document.querySelectorAll('.fcstm-source-line')];
+      const boxes = rows.map(row => row.getBoundingClientRect());
+      const gaps = boxes.slice(1).map((box, index) => box.top - (boxes[index].bottom));
+      const lineNumbers = rows.map(row => ({
+        value: getComputedStyle(row, '::before').content,
+        align: getComputedStyle(row, '::before').textAlign,
+      }));
+      const select = document.querySelector('.n-base-selection');
+      select?.dispatchEvent(new MouseEvent('click', {bubbles: true, button: 0}));
+      await new Promise(resolve => setTimeout(resolve, 120));
+      const menu = document.querySelector('.n-base-select-menu');
+      const alpha = value => {
+        const match = value.match(/^rgba\\([^)]*,\\s*([0-9.]+)\\)$/);
+        return match ? Number(match[1]) : 1;
+      };
+      const menuStyle = menu ? getComputedStyle(menu) : null;
+      const option = menu?.querySelector('.n-base-select-option');
+      const optionStyle = option ? getComputedStyle(option) : null;
+      const nativeSelect = document.querySelector('.fcstm-source-panel__header select');
+      const nativeSelectStyle = nativeSelect ? getComputedStyle(nativeSelect) : null;
+      document.body.dispatchEvent(new MouseEvent('click', {bubbles: true, button: 0}));
+      return {
+        lineCount: rows.length,
+        textHasLineBreaks: rows.length < 2 || (document.querySelector('.fcstm-source-panel__code')?.textContent || '').includes('\\n'),
+        lineNumbers,
+        lineHeights: boxes.map(box => box.height),
+        maxGap: Math.max(0, ...gaps),
+        menuVisible: Boolean(menu),
+        menuBackground: menuStyle?.backgroundColor || '',
+        menuAlpha: menuStyle ? alpha(menuStyle.backgroundColor) : 0,
+        optionBackground: optionStyle?.backgroundColor || '',
+        optionAlpha: optionStyle ? alpha(optionStyle.backgroundColor) : 0,
+        nativeSelectBackground: nativeSelectStyle?.backgroundColor || '',
+        nativeSelectAlpha: nativeSelectStyle ? alpha(nativeSelectStyle.backgroundColor) : 1,
+      };
+    })()`);
     const states = await evaluate(cdp, `new Promise(resolve => setTimeout(() => {
       const buttons = [...document.querySelectorAll('.fcstm-standalone-mode button')];
       const click = label => buttons.find(button => button.textContent.includes(label))?.click();
@@ -291,10 +328,12 @@ async function evaluate(cdp, expression) {
       (comparisonSourceHeight < minimumPanelHeight || comparisonStageHeight < minimumPanelHeight));
     const oversizedUiIcons = (layout.svgRects || []).filter(item => /n-(?:base-icon|icon|checkbox-icon)/.test(item.className))
       .some(item => item.rect.width > 64 || item.rect.height > 64);
-    const report = {initial, diagramOnly: states, fcstmOnly, compare, backToCompare, importedSource, selection, revealSource, hover, sourceHover, sourceSelection, sourceCycle, zoom, pdf, collapse, layout, minimumPanelHeight, comparisonTooShort, oversizedUiIcons, externalRequests: network, cspViolations, consoleErrors: consoleErrors.length, consoleDetails};
+    const report = {initial, sourceLayout, diagramOnly: states, fcstmOnly, compare, backToCompare, importedSource, selection, revealSource, hover, sourceHover, sourceSelection, sourceCycle, zoom, pdf, collapse, layout, minimumPanelHeight, comparisonTooShort, oversizedUiIcons, externalRequests: network, cspViolations, consoleErrors: consoleErrors.length, consoleDetails};
     console.log(JSON.stringify(report, null, 2));
     if (!initial.stage || initial.error || states.diagramOnlySource || !compare.source || !compare.stage ||
         fcstmOnly.source !== true || fcstmOnly.stage !== false || backToCompare.source !== true || backToCompare.stage !== true ||
+        sourceLayout.lineCount < 1 || !sourceLayout.textHasLineBreaks || sourceLayout.lineNumbers.some(item => item.align !== 'right' || !/^"\\d+"$/.test(item.value)) || sourceLayout.maxGap > 1 ||
+        !sourceLayout.menuVisible || sourceLayout.menuAlpha < 0.99 || sourceLayout.optionAlpha < 0.99 || sourceLayout.nativeSelectAlpha < 0.99 ||
         selection.selected < 1 || revealSource.activeSourceLines < 1 || hover.activeSourceLines < 1 || sourceHover.diagramHover < 1 || sourceSelection.selected < 1 ||
         zoom.before === zoom.after || pdf.menu !== true || pdf.header !== '%PDF-' || pdf.bytes < 100 || pdf.images !== 0 || pdf.pages !== 1 ||
         pdf.pngHeader !== '89504e470d0a1a0a' || pdf.pngBytes < 100 || pdf.pngWidth < 1 || pdf.pngHeight < 1 ||

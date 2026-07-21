@@ -816,8 +816,9 @@ body.modifier-held .fcstm-stage__inner [data-fcstm-kind][data-fcstm-range-start-
     font-weight: 700;
 }
 .fcstm-stage__inner [data-fcstm-kind="transition"].fcstm-related-hover {
+    stroke: #2d6aa8 !important;
     stroke-width: 3.2 !important;
-    filter: drop-shadow(0 0 3px rgba(45, 106, 168, 0.35));
+    filter: none !important;
 }
 .fcstm-stage__inner [data-fcstm-kind="state"].fcstm-source-hover > rect:not(.fcstm-halo),
 .fcstm-stage__inner [data-fcstm-kind="composite-state"].fcstm-source-hover > .fcstm-halo {
@@ -825,18 +826,29 @@ body.modifier-held .fcstm-stage__inner [data-fcstm-kind][data-fcstm-range-start-
     stroke-width: 2.4 !important;
     filter: drop-shadow(0 0 4px rgba(45, 106, 168, 0.45));
 }
-.fcstm-stage__inner [data-fcstm-kind="transition"].fcstm-source-hover,
 .fcstm-stage__inner [data-fcstm-kind="transition-label"].fcstm-source-hover > text {
     stroke: #2d6aa8 !important;
     fill: #2d6aa8 !important;
-    filter: drop-shadow(0 0 3px rgba(45, 106, 168, 0.4));
+}
+.fcstm-stage__inner [data-fcstm-kind="transition"].fcstm-source-hover {
+    fill: none !important;
+    stroke: #2d6aa8 !important;
+    stroke-width: 3.2 !important;
+    filter: none !important;
 }
 .fcstm-stage__inner [data-fcstm-kind="transition-label"].fcstm-related-hover > text {
     font-weight: 700;
     paint-order: stroke;
 }
-.fcstm-stage__inner [data-fcstm-kind="transition-label"].fcstm-related-hover {
-    filter: drop-shadow(0 0 2px rgba(45, 106, 168, 0.3));
+/* Effect/guard notes keep their semantic background shape, but hover only
+   changes the border. Filtering the parent label group would turn that
+   note polygon into the hover shadow instead of highlighting the edge. */
+.fcstm-stage__inner [data-fcstm-kind="transition-label"].fcstm-related-hover > path:first-child,
+.fcstm-stage__inner [data-fcstm-kind="transition-label"].fcstm-related-hover > path:nth-child(2),
+.fcstm-stage__inner [data-fcstm-kind="transition-label"].fcstm-source-hover > path:first-child,
+.fcstm-stage__inner [data-fcstm-kind="transition-label"].fcstm-source-hover > path:nth-child(2) {
+    stroke: #2d6aa8 !important;
+    stroke-width: 1.3 !important;
 }
 /* Same-event labels light up with a softer teal halo when the user
    selects one transition in the event family; clearly distinct from

@@ -197,6 +197,33 @@ async function evaluate(cdp, expression) {
       line?.dispatchEvent(new MouseEvent('mouseover', {bubbles: true, relatedTarget: null}));
       setTimeout(() => resolve({diagramHover: document.querySelectorAll('.fcstm-source-hover').length}), 220);
     }, 220))`);
+    const transitionHover = await evaluate(cdp, `(async () => {
+      const transition = document.querySelector('[data-fcstm-kind="transition"][data-fcstm-id]');
+      const transitionId = transition?.getAttribute('data-fcstm-id') || '';
+      transition?.dispatchEvent(new MouseEvent('mouseover', {bubbles: true, relatedTarget: null}));
+      await new Promise(resolve => setTimeout(resolve, 220));
+      const label = [...document.querySelectorAll('[data-fcstm-kind="transition-label"]')]
+        .find(item => item.getAttribute('data-fcstm-id') === transitionId);
+      const noteParts = label ? [...label.children].filter(item => item.tagName.toLowerCase() === 'path') : [];
+      const style = element => element ? getComputedStyle(element) : null;
+      const transitionStyle = style(transition);
+      const labelStyle = style(label);
+      return {
+        transitionId,
+        transitionClass: transition?.getAttribute('class') || '',
+        transitionFilter: transitionStyle?.filter || '',
+        transitionFill: transitionStyle?.fill || '',
+        transitionStroke: transitionStyle?.stroke || '',
+        transitionStrokeWidth: transitionStyle?.strokeWidth || '',
+        labelClass: label?.getAttribute('class') || '',
+        labelFilter: labelStyle?.filter || '',
+        noteParts: noteParts.map(item => ({
+          className: item.getAttribute('class') || '',
+          filter: style(item)?.filter || '',
+          stroke: style(item)?.stroke || '',
+        })),
+      };
+    })()`);
     const sourceSelection = await evaluate(cdp, `new Promise(resolve => setTimeout(() => {
       const lineNumber = Object.keys(window.__FCSTM_INITIAL_STATE__?.sourceLineMap || {})[0];
       const line = lineNumber === undefined ? null : document.querySelector('.fcstm-source-line[data-line="' + lineNumber + '"]');
@@ -328,13 +355,16 @@ async function evaluate(cdp, expression) {
       (comparisonSourceHeight < minimumPanelHeight || comparisonStageHeight < minimumPanelHeight));
     const oversizedUiIcons = (layout.svgRects || []).filter(item => /n-(?:base-icon|icon|checkbox-icon)/.test(item.className))
       .some(item => item.rect.width > 64 || item.rect.height > 64);
-    const report = {initial, sourceLayout, diagramOnly: states, fcstmOnly, compare, backToCompare, importedSource, selection, revealSource, hover, sourceHover, sourceSelection, sourceCycle, zoom, pdf, collapse, layout, minimumPanelHeight, comparisonTooShort, oversizedUiIcons, externalRequests: network, cspViolations, consoleErrors: consoleErrors.length, consoleDetails};
+    const report = {initial, sourceLayout, diagramOnly: states, fcstmOnly, compare, backToCompare, importedSource, selection, revealSource, hover, sourceHover, transitionHover, sourceSelection, sourceCycle, zoom, pdf, collapse, layout, minimumPanelHeight, comparisonTooShort, oversizedUiIcons, externalRequests: network, cspViolations, consoleErrors: consoleErrors.length, consoleDetails};
     console.log(JSON.stringify(report, null, 2));
     if (!initial.stage || initial.error || states.diagramOnlySource || !compare.source || !compare.stage ||
         fcstmOnly.source !== true || fcstmOnly.stage !== false || backToCompare.source !== true || backToCompare.stage !== true ||
-        sourceLayout.lineCount < 1 || !sourceLayout.textHasLineBreaks || sourceLayout.lineNumbers.some(item => item.align !== 'right' || !/^"\\d+"$/.test(item.value)) || sourceLayout.maxGap > 1 ||
+        sourceLayout.lineCount < 1 || !sourceLayout.textHasLineBreaks || sourceLayout.lineNumbers.some(item => item.align !== 'right' || !/^"\d+"$/.test(item.value)) || sourceLayout.maxGap > 1 ||
         !sourceLayout.menuVisible || sourceLayout.menuAlpha < 0.99 || sourceLayout.optionAlpha < 0.99 || sourceLayout.nativeSelectAlpha < 0.99 ||
         selection.selected < 1 || revealSource.activeSourceLines < 1 || hover.activeSourceLines < 1 || sourceHover.diagramHover < 1 || sourceSelection.selected < 1 ||
+        !transitionHover.transitionId || transitionHover.transitionFilter !== 'none' || transitionHover.transitionFill !== 'none' ||
+        (transitionHover.labelFilter && transitionHover.labelFilter !== 'none') ||
+        transitionHover.noteParts.some(item => item.filter !== 'none') || transitionHover.transitionStroke !== 'rgb(45, 106, 168)' ||
         zoom.before === zoom.after || pdf.menu !== true || pdf.header !== '%PDF-' || pdf.bytes < 100 || pdf.images !== 0 || pdf.pages !== 1 ||
         pdf.pngHeader !== '89504e470d0a1a0a' || pdf.pngBytes < 100 || pdf.pngWidth < 1 || pdf.pngHeight < 1 ||
         pdf.pngDecodedWidth !== pdf.pngWidth || pdf.pngDecodedHeight !== pdf.pngHeight || pdf.pngNonBlankPixels < 10 ||

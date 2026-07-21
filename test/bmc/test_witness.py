@@ -1493,6 +1493,28 @@ def test_solve_result_default_feasibility_supports_all_public_verdict_paths() ->
     assert result.to_canonical()["feasibility"]["assumptions"]["status"] == "sat"
 
 
+def test_solve_result_rejects_sat_with_infeasible_scenario() -> None:
+    """A SAT primary result cannot carry checked UNSAT scenario evidence."""
+    formula = _verdict_formula("reach")
+    checked_sat = BmcFeasibilityCheck("sat", "checked", elapsed_ms=1.0)
+    checked_unsat = BmcFeasibilityCheck("unsat", "checked", elapsed_ms=1.0)
+    infeasible = BmcFeasibilityResult(
+        checked_sat,
+        checked_sat,
+        checked_unsat,
+        infeasible_stage="assumptions",
+        localization_status="complete",
+    )
+
+    with pytest.raises(BmcBuildError, match="inferred SAT feasibility"):
+        BmcSolveResult(
+            formula,
+            "sat",
+            model=_empty_sat_model(),
+            feasibility=infeasible,
+        )
+
+
 def test_solve_result_rejects_unchecked_unsat_without_timeout_evidence() -> None:
     """Primary UNSAT cannot use empty feasibility evidence as a verdict."""
     formula = _verdict_formula("reach")

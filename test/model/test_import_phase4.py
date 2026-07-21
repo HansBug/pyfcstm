@@ -9,6 +9,7 @@ from pyfcstm.dsl import parse_state_machine_dsl
 from pyfcstm.dsl import node as dsl_nodes
 from pyfcstm.model.imports import assemble_state_machine_imports
 from pyfcstm.model import parse_dsl_node_to_state_machine
+from pyfcstm.utils import ModelValidationError
 
 
 def _write_text_file(path: str, content: str) -> pathlib.Path:
@@ -30,6 +31,85 @@ def _build_state_machine(root_content: str, **extra_files):
 
 @pytest.mark.unittest
 class TestImportPhase4Assembly:
+    def test_variable_mapping_template_invalid_reports_structured_refs(self):
+        with isolated_directory():
+            root_file = _write_text_file(
+                "root.fcstm",
+                """
+                def int left_input = 0;
+                state Host {
+                    import "./worker.fcstm" as Worker {
+                        def sensor_* -> left_${x};
+                    }
+                    [*] -> Worker;
+                }
+                """,
+            )
+            _write_text_file(
+                "worker.fcstm",
+                """
+                def int sensor_input = 0;
+                state Worker {
+                    state Idle;
+                    [*] -> Idle;
+                }
+                """,
+            )
+
+            ast_node = parse_state_machine_dsl(root_file.read_text(encoding="utf-8"))
+            with pytest.raises(ModelValidationError) as exc_info:
+                parse_dsl_node_to_state_machine(ast_node, path=root_file)
+
+        diagnostic = exc_info.value.diagnostics[0]
+        assert diagnostic.code == "E_IMPORT_MAPPING_INVALID"
+        assert diagnostic.refs == {
+            "alias": "Worker",
+            "mapping_kind": "variable",
+            "host_state_path": "Host",
+            "reason": "template_invalid",
+            "detail": "left_${x}",
+        }
+
+    def test_event_mapping_target_conflict_reports_direction_and_target(self):
+        with isolated_directory():
+            root_file = _write_text_file(
+                "root.fcstm",
+                """
+                state Host {
+                    event Shared named "Host Shared";
+                    import "./worker.fcstm" as Worker {
+                        event /Start -> Shared named "Mapped Start";
+                        event /Stop -> Shared named "Mapped Stop";
+                    }
+                    [*] -> Worker;
+                }
+                """,
+            )
+            _write_text_file(
+                "worker.fcstm",
+                """
+                state Worker {
+                    event Start named "Worker Start";
+                    event Stop named "Worker Stop";
+                    state Idle;
+                    [*] -> Idle;
+                }
+                """,
+            )
+
+            ast_node = parse_state_machine_dsl(root_file.read_text(encoding="utf-8"))
+            with pytest.raises(ModelValidationError) as exc_info:
+                parse_dsl_node_to_state_machine(ast_node, path=root_file)
+
+        diagnostic = next(
+            item
+            for item in exc_info.value.diagnostics
+            if item.code == "E_IMPORT_DUPLICATE_MAPPING"
+        )
+        assert diagnostic.refs["mapping_kind"] == "event"
+        assert diagnostic.refs["direction"] == "target_duplicated"
+        assert diagnostic.refs["duplicated_name"] == "/Host.Shared"
+
     def test_event_mapping_duplicate_same_source_is_rejected(self):
         with isolated_directory():
             root_file = _write_text_file(

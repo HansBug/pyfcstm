@@ -21,8 +21,10 @@ from pyfcstm.bmc import (
     parse_bmc_query,
     prepare_bmc_query,
 )
+from pyfcstm.bmc.ast import Active
 from pyfcstm.bmc.binding import BoundBmcQuery
 from pyfcstm.bmc.domain import BmcDomain
+from pyfcstm.bmc.query import BmcProperty, BmcQuery
 from pyfcstm.model import StateMachine, load_state_machine_from_text
 
 
@@ -319,6 +321,47 @@ def test_prepared_context_rejects_mismatched_source_registry(
             query_source_path="new.fbmcq",
             _source_registry=prepared._source_registry,
         )
+
+
+@pytest.mark.unittest
+def test_prepared_context_accepts_matching_source_registry_snapshot(
+    engine_model: StateMachine,
+) -> None:
+    """A reused registry is accepted when its query snapshot is identical."""
+    query_text = 'check reach <= 1: active("Root.Done");'
+    prepared = BmcEngine(engine_model).prepare(
+        query_text, query_source_path="query.fbmcq"
+    )
+
+    context = BmcPreparedContext(
+        model=prepared.model,
+        query=prepared.query,
+        bound_query=prepared.bound_query,
+        domain=prepared.domain,
+        options=prepared.options,
+        source_text=query_text,
+        query_source_path="query.fbmcq",
+        _source_registry=prepared._source_registry,
+    )
+
+    assert context._source_registry is prepared._source_registry
+    assert context.source_text == query_text
+
+
+@pytest.mark.unittest
+def test_programmatic_query_source_override_without_root_span_is_supported(
+    engine_model: StateMachine,
+) -> None:
+    """Programmatic queries keep a path without inventing a source span."""
+    query = BmcQuery(property=BmcProperty("reach", 1, predicate=Active("Root.Done")))
+
+    context = BmcEngine(engine_model).prepare(
+        query, query_source_path="programmatic.fbmcq"
+    )
+
+    assert context.query_source_path == "programmatic.fbmcq"
+    assert context.query._source_path == "programmatic.fbmcq"
+    assert id(context.query) not in dict(context.query._source_spans)
 
 
 @pytest.mark.unittest

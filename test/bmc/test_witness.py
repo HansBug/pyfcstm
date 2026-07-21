@@ -3456,6 +3456,9 @@ def test_witness_step_contract_includes_complete_event_accounting() -> None:
             "unconsumed_events": ["Root.Noise"],
         }
     ]
+    rendered = trace.to_text(max_events=1)
+    assert "… (+1 more)" in rendered
+    assert "E" in rendered
 
 
 def test_witness_trace_metadata_rejects_cycles_and_excessive_depth(monkeypatch) -> None:

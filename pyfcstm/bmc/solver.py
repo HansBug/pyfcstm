@@ -6,10 +6,10 @@ means that no Z3 timeout is configured and no hidden deadline is introduced.
 This module contains only the budget/check mechanics; verdict interpretation,
 source provenance, and explanation policy belong to other BMC layers.
 
-The leading underscore on the two exported implementation names is
-intentional.  They are shared internal primitives, not part of the public BMC
-API.  They remain documented because later internal modules depend on their
-exact ``check_started`` and reason semantics.
+The leading underscore on the two implementation names is intentional.  They
+are shared internal primitives, not part of the public BMC API.  Their exact
+``check_started`` and reason semantics are documented here because later
+internal modules depend on them.
 
 Examples::
 

@@ -440,6 +440,30 @@ async function renderCurrentSvgToPng(): Promise<Blob> {
     return blob;
 }
 
+/**
+ * Remove browser-only text halos from the SVG copy sent to svg2pdf.
+ *
+ * ``svg2pdf.js`` does not preserve SVG ``paint-order="stroke"`` for the
+ * path-expanded text produced by the resvg bridge. It paints the white halo
+ * after the glyph fill, which makes ordinary transition labels unreadable on
+ * a white page. The browser SVG and PNG keep the original source unchanged;
+ * only this PDF export copy drops the halo attributes.
+ */
+function prepareSvgForPdf(source: string): string {
+    const parsed = new DOMParser().parseFromString(source, 'image/svg+xml');
+    const root = parsed.documentElement;
+    if (!root || root.nodeName.toLowerCase() !== 'svg') {
+        throw new Error('SVG export produced no root element');
+    }
+    for (const text of root.querySelectorAll('[data-fcstm-kind="transition-label"] text[paint-order="stroke"]')) {
+        text.removeAttribute('paint-order');
+        text.removeAttribute('stroke');
+        text.removeAttribute('stroke-width');
+        text.removeAttribute('stroke-linejoin');
+    }
+    return new XMLSerializer().serializeToString(root);
+}
+
 async function blobToBase64(blob: Blob): Promise<string> {
     const buffer = await blob.arrayBuffer();
     const bytes = new Uint8Array(buffer);
@@ -465,7 +489,8 @@ async function renderCurrentSvgToPdf(): Promise<Uint8Array> {
     const expand = (window as unknown as {
         __FCSTM_EXPAND_SVG__?: (svg: string) => Promise<string>;
     }).__FCSTM_EXPAND_SVG__;
-    const expanded = expand ? await expand(svgString) : svgString;
+    const pdfSource = prepareSvgForPdf(svgString);
+    const expanded = expand ? await expand(pdfSource) : pdfSource;
     const parsed = new DOMParser().parseFromString(expanded, 'image/svg+xml');
     const svg = parsed.documentElement;
     if (!svg || svg.nodeName.toLowerCase() !== 'svg') {

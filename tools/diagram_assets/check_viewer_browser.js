@@ -7,6 +7,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const zlib = require('zlib');
 const {spawn} = require('child_process');
 const {createRequire} = require('module');
 const requireFromVscode = createRequire(path.resolve(__dirname, '../../editors/vscode/package.json'));
@@ -26,6 +27,32 @@ if (!htmlPath) {
 }
 
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
+function inflatePdfStreams(base64) {
+  const raw = Buffer.from(String(base64 || ''), 'base64');
+  const streamMarker = Buffer.from('stream\n');
+  const endMarker = Buffer.from('endstream');
+  const chunks = [];
+  let offset = 0;
+  while (true) {
+    const markerStart = raw.indexOf(streamMarker, offset);
+    if (markerStart < 0) break;
+    const dataStart = markerStart + streamMarker.length;
+    const dataEnd = raw.indexOf(endMarker, dataStart);
+    if (dataEnd < 0) break;
+    let compressed = raw.subarray(dataStart, dataEnd);
+    while (compressed.length && (compressed[compressed.length - 1] === 10 || compressed[compressed.length - 1] === 13)) {
+      compressed = compressed.subarray(0, compressed.length - 1);
+    }
+    try {
+      chunks.push(zlib.inflateSync(compressed));
+    } catch (_) {
+      // Non-Flate streams are irrelevant to the content-color assertion.
+    }
+    offset = dataEnd + endMarker.length;
+  }
+  return Buffer.concat(chunks).toString('latin1');
+}
 async function waitForJson(url, attempts = 50) {
   for (let i = 0; i < attempts; i += 1) {
     try {
@@ -308,6 +335,8 @@ async function evaluate(cdp, expression) {
         image.src = pngRaw ? 'data:image/png;base64,' + payload.pngBase64 : '';
       }, 900);
     }, 120))`);
+    const pdfStreamText = inflatePdfStreams(pdf.base64);
+    pdf.whiteHaloOperators = (pdfStreamText.match(/[0-9.]+ [0-9.]+ [0-9.]+ rg\n3\. w\n1\. G/g) || []).length;
     if (pdfOutputPath && pdf.base64) fs.writeFileSync(pdfOutputPath, Buffer.from(pdf.base64, 'base64'));
     delete pdf.base64;
     const zoom = await evaluate(cdp, `new Promise(resolve => setTimeout(() => {
@@ -368,6 +397,7 @@ async function evaluate(cdp, expression) {
         zoom.before === zoom.after || pdf.menu !== true || pdf.header !== '%PDF-' || pdf.bytes < 100 || pdf.images !== 0 || pdf.pages !== 1 ||
         pdf.pngHeader !== '89504e470d0a1a0a' || pdf.pngBytes < 100 || pdf.pngWidth < 1 || pdf.pngHeight < 1 ||
         pdf.pngDecodedWidth !== pdf.pngWidth || pdf.pngDecodedHeight !== pdf.pngHeight || pdf.pngNonBlankPixels < 10 ||
+        pdf.whiteHaloOperators !== 0 ||
         (sourceCycle.candidateCount > 1 && sourceCycle.uniqueSelectedIds < sourceCycle.candidateCount) ||
         (collapse.before > 1 && collapse.after >= collapse.before) || verticalOverflow || horizontalOverflow || comparisonTooShort || oversizedUiIcons || network.length || cspViolations.length || consoleErrors.length ||
         (importedSource.documents.length > 1 && (!importedSource.childText || importedSource.selected < 1))) process.exitCode = 1;

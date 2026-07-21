@@ -530,7 +530,7 @@ state Root {
     core = build_bmc_core_formula(context)
     group = next(
         item
-        for item in core._tracked_groups
+        for item in core._tracked_case_groups
         if item.category == "transition.case" and item.refs["transition_labels"]
     )
 
@@ -565,7 +565,7 @@ def test_event_only_transition_case_uses_unique_event_source_excerpt(
     core = build_bmc_core_formula(context)
     group = next(
         item
-        for item in core._tracked_groups
+        for item in core._tracked_case_groups
         if item.category == "transition.case"
         and item.refs.get("source_inference") == "unique_event"
     )
@@ -573,6 +573,43 @@ def test_event_only_transition_case_uses_unique_event_source_excerpt(
     assert group.source_ref.kind == "fcstm"
     assert group.source_ref.path == "machine.fcstm"
     assert context._source_registry.excerpt(group.source_ref) == "A -> B :: Go;"
+
+
+def test_parent_continuation_transition_uses_normal_transition_index(
+    tmp_path: Path,
+) -> None:
+    """A parent continuation index must not select an initial transition."""
+    source_path = tmp_path / "machine.fcstm"
+    source = """def int x = 0;
+state Root {
+    state Outer {
+        state A;
+        [*] -> A;
+        A -> [*];
+    }
+    state Sink;
+    [*] -> Outer;
+    Outer -> Sink : if [x == 0];
+}
+"""
+    source_path.write_text(source, encoding="utf-8")
+
+    model = load_state_machine_from_file(source_path)
+    context = BmcEngine(model).prepare(
+        'check reach <= 3: active("Root.Sink");',
+        query_source_path="query.fbmcq",
+    )
+    core = build_bmc_core_formula(context)
+    groups = [
+        item
+        for item in core._tracked_case_groups
+        if dict(item.refs).get("transition_labels") == ["Root.Outer::0::Outer->Sink"]
+    ]
+
+    assert groups
+    assert {context._source_registry.excerpt(item.source_ref) for item in groups} == {
+        "Outer -> Sink : if [x == 0];"
+    }
 
 
 def test_forced_transition_expansions_share_source_provenance(tmp_path: Path) -> None:
@@ -1185,3 +1222,53 @@ def test_core_formula_rejects_malformed_tracked_group_payloads() -> None:
     non_boolean = replace(group, expressions=(z3.Int("not_boolean"),))
     with pytest.raises(BmcBuildError, match="Z3 Boolean expressions"):
         replace(core, _tracked_groups=(non_boolean,))
+
+    with pytest.raises(BmcBuildError, match="reconstruct D_N"):
+        replace(core, domain_formula=z3.BoolVal(True))
+
+    case_group = core._tracked_case_groups[0]
+    with pytest.raises(BmcBuildError, match="transition.case category"):
+        replace(
+            core,
+            _tracked_case_groups=(replace(case_group, category="domain.frame_state"),),
+        )
+
+    with pytest.raises(BmcBuildError, match="tracked case groups must contain"):
+        replace(core, _tracked_case_groups=(object(),))
+
+    with pytest.raises(BmcBuildError, match="tracked case groups must have unique"):
+        replace(core, _tracked_case_groups=(case_group, case_group))
+
+    case_non_boolean = replace(case_group, expressions=(z3.Int("case_not_boolean"),))
+    with pytest.raises(BmcBuildError, match="tracked case group expressions"):
+        replace(core, _tracked_case_groups=(case_non_boolean,))
+
+    other_context = z3.Context()
+    case_foreign = replace(
+        case_group,
+        expressions=(z3.Bool("case_foreign", ctx=other_context),),
+    )
+    with pytest.raises(BmcBuildError, match="tracked case group expressions"):
+        replace(core, _tracked_case_groups=(case_foreign,))
+
+    with pytest.raises(BmcBuildError, match="all tracked groups must have"):
+        replace(
+            core,
+            _tracked_case_groups=(
+                replace(case_group, stable_id=core._tracked_groups[0].stable_id),
+            ),
+        )
+
+
+def test_case_provenance_is_not_part_of_formula_group_ledger() -> None:
+    """Case provenance cannot be mistaken for a canonical formula conjunct."""
+    model = load_state_machine_from_text("state Root;")
+    core = build_bmc_core_formula(
+        BmcEngine(model).prepare('check reach <= 1: active("Root");')
+    )
+
+    assert core._tracked_case_groups
+    assert all(
+        group.category == "transition.case" for group in core._tracked_case_groups
+    )
+    assert all(group.category != "transition.case" for group in core._tracked_groups)

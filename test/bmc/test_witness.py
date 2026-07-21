@@ -1418,10 +1418,26 @@ def test_solve_property_case_e_infeasible_polarity_nonverdict(query) -> None:
 def test_solve_property_case_g_kernel_localization() -> None:
     """Case G localizes an explicitly false synthetic kernel."""
     _, formula = _compile("state Root;", 'check reach <= 1: active("Root");')
+    tracked_groups = list(formula.core._tracked_groups)
+    domain_index = next(
+        index
+        for index, group in enumerate(tracked_groups)
+        if group.category == "domain.frame_state"
+    )
+    tracked_groups[domain_index] = dataclasses.replace(
+        tracked_groups[domain_index], expressions=(z3.BoolVal(False),)
+    )
+    domain_expressions = tuple(
+        expression
+        for group in tracked_groups
+        if group.category == "domain.frame_state"
+        for expression in group.expressions
+    )
     fake_core = dataclasses.replace(
         formula.core,
-        domain_formula=z3.BoolVal(False),
+        domain_formula=z3.And(*domain_expressions),
         core=z3.BoolVal(False),
+        _tracked_groups=tuple(tracked_groups),
     )
     fake_formula = dataclasses.replace(formula, core=fake_core)
 

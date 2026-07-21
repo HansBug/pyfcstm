@@ -448,11 +448,27 @@ def _case_source_reference(
     owner = _model_state_by_path(context, owner_path)
     if owner is None:
         return generated_ref, labels
-    transitions = tuple(owner.init_transitions) + tuple(owner.transitions_from)
+    edge_parts = _edge.split("->", 1)
+    if len(edge_parts) != 2:
+        return generated_ref, labels
+    from_state, target_state = (part.strip() for part in edge_parts)
+    if not from_state or not target_state:
+        return generated_ref, labels
+    transitions = (
+        tuple(owner.init_transitions)
+        if from_state == "INIT_STATE"
+        else tuple(owner.transitions_from)
+    )
     if transition_index >= len(transitions):
         return generated_ref, labels
 
-    reference = context._source_registry.model_reference(transitions[transition_index])
+    transition = transitions[transition_index]
+    expected_target = (
+        "[*]" if str(transition.to_state) == "EXIT_STATE" else str(transition.to_state)
+    )
+    if str(transition.from_state) != from_state or expected_target != target_state:
+        return generated_ref, labels
+    reference = context._source_registry.model_reference(transition)
     if reference.path is None and reference.span is None:
         return generated_ref, labels
     return reference, labels
@@ -1204,6 +1220,9 @@ class BmcCoreFormula:
     _tracked_groups: Tuple[BmcTrackedConstraint, ...] = field(
         default_factory=tuple, repr=False, compare=False
     )
+    _tracked_case_groups: Tuple[BmcTrackedConstraint, ...] = field(
+        default_factory=tuple, repr=False, compare=False
+    )
 
     def __post_init__(self) -> None:
         _require_context(self.context)
@@ -1242,7 +1261,54 @@ class BmcCoreFormula:
                     raise BmcBuildError(
                         "tracked group expressions must share the core Z3 context."
                     )
+        case_groups = tuple(self._tracked_case_groups)
+        if not all(isinstance(item, BmcTrackedConstraint) for item in case_groups):
+            raise BmcBuildError(
+                "tracked case groups must contain BmcTrackedConstraint objects."
+            )
+        if not all(item.category == "transition.case" for item in case_groups):
+            raise BmcBuildError(
+                "tracked case groups must have transition.case category."
+            )
+        case_ids = [item.stable_id for item in case_groups]
+        if len(set(case_ids)) != len(case_ids):
+            raise BmcBuildError("tracked case groups must have unique stable ids.")
+        for group in case_groups:
+            for expression in group.expressions:
+                if not z3.is_bool(expression):
+                    raise BmcBuildError(
+                        "tracked case group expressions must be Z3 Boolean expressions."
+                    )
+                if expression.ctx != self.core.ctx:
+                    raise BmcBuildError(
+                        "tracked case group expressions must share the core Z3 context."
+                    )
+        all_ids = [item.stable_id for item in groups + case_groups]
+        if len(set(all_ids)) != len(all_ids):
+            raise BmcBuildError("all tracked groups must have unique stable ids.")
+        groups_by_formula = {
+            "D_N": tuple(
+                item for item in groups if item.category == "domain.frame_state"
+            ),
+            "I_0": tuple(item for item in groups if item.stage == "initialization"),
+            "T_N": tuple(item for item in groups if item.category == "transition.step"),
+            "ENV_N": tuple(item for item in groups if item.stage == "assumptions"),
+        }
+        formula_values = {
+            "D_N": self.domain_formula,
+            "I_0": self.initial_formula,
+            "T_N": self.transition_formula,
+            "ENV_N": self.environment_formula,
+        }
+        for name, groups_for_formula in groups_by_formula.items():
+            if not z3.eq(
+                _formula_from_groups(groups_for_formula), formula_values[name]
+            ):
+                raise BmcBuildError(
+                    "tracked groups do not reconstruct %s formula." % name
+                )
         object.__setattr__(self, "_tracked_groups", groups)
+        object.__setattr__(self, "_tracked_case_groups", case_groups)
 
     def to_canonical(self) -> _CanonicalDict:
         """Return a JSON-stable core-formula summary.
@@ -2614,9 +2680,9 @@ def build_bmc_core_formula(context: BmcPreparedContext) -> BmcCoreFormula:
         )
     transition_formula = _formula_from_groups(groups[transition_start:])
 
-    # Keep case-level provenance outside the aggregate transition slice.  The
-    # private ledger becomes more precise without changing the historical T_N
-    # expression or its canonical ordering.
+    # Keep case-level provenance in a separate ledger.  It describes individual
+    # cases but is not itself a conjunct of the canonical transition formula.
+    case_groups: List[BmcTrackedConstraint] = []
     for step in steps:
         for case_index, case_relation in enumerate(step.case_relations):
             source_ref, transition_labels = _case_source_reference(
@@ -2632,7 +2698,7 @@ def build_bmc_core_formula(context: BmcPreparedContext) -> BmcCoreFormula:
             if not transition_labels and source_ref.kind == "fcstm":
                 refs["source_inference"] = "unique_event"
             _append_tracked_group(
-                groups,
+                case_groups,
                 stable_id="transition.case.%04d.%04d" % (step.step_index, case_index),
                 stage="kernel",
                 category="transition.case",
@@ -2658,6 +2724,7 @@ def build_bmc_core_formula(context: BmcPreparedContext) -> BmcCoreFormula:
         steps=steps,
         diagnostics=(),
         _tracked_groups=tuple(groups),
+        _tracked_case_groups=tuple(case_groups),
     )
 
 

@@ -469,6 +469,40 @@ class TestComboModelExpansion:
         assert _combo_names(base) == _combo_names(inserted)
         assert len(_combo_names(inserted)) == 1
 
+    def test_combo_alternatives_split_when_second_terms_differ(self):
+        model = _build_model(
+            """
+            state Root {
+                state S1;
+                state S2;
+                state S3;
+                state S4;
+                state S5;
+                [*] -> S1;
+                S1 -> S2 :: E1 + E2 + E3;
+                S1 -> S3 :: E1 + E4 + E5;
+            }
+            """
+        )
+
+        prefix_edges = [
+            item
+            for item in model.root_state.transitions
+            if item.combo_origin_refs
+            and item.combo_origin_refs[0].role == "prefix"
+        ]
+        first_edges = [item for item in prefix_edges if item.from_state == "S1"]
+        second_edges = [item for item in prefix_edges if item.from_state != "S1"]
+
+        assert len(first_edges) == 1
+        assert len(second_edges) == 2
+        assert {item.event.path_name for item in second_edges} == {
+            "Root.S1.E2",
+            "Root.S1.E4",
+        }
+        assert len({item.to_state for item in second_edges}) == 2
+
+
     def test_identical_combos_reuse_pseudo_and_emit_terminal_edges(self):
         model = _build_model(
             """
@@ -825,6 +859,17 @@ class TestComboModelExpansion:
         assert model.root_state.substates["__combo_user"].is_pseudo
         parse_dsl_node_to_state_machine(program)
 
+    def test_root_reserved_prefix_pseudo_is_handled_by_public_loader(self):
+        program = parse_with_grammar_entry(
+            "pseudo state __combo_root;", entry_name="state_machine_dsl"
+        )
+
+        model, diagnostics = parse_dsl_node_to_state_machine(program, collect=True)
+
+        assert diagnostics == []
+        assert model.root_state.is_pseudo
+        assert model.root_state.name == "__combo_root"
+
     def test_reserved_prefix_pseudo_with_actions_warns_without_blocking(self):
         program = parse_with_grammar_entry(
             """
@@ -926,6 +971,35 @@ class TestComboModelExpansion:
             diag for diag in diagnostics if diag.code == "E_DANGLING_TRANSITION"
         ]
         assert [diag.refs["src"] for diag in dangling] == ["Missing", "Missing"]
+
+    def test_collect_mode_skips_invalid_combo_alternative_after_valid_sibling(self):
+        program = parse_with_grammar_entry(
+            """
+            state Root {
+                state S1;
+                state S2;
+                [*] -> S1;
+                S1 -> S2 :: E1 + E2;
+                S1 -> Missing :: E1 + E3;
+            }
+            """,
+            entry_name="state_machine_dsl",
+        )
+
+        model, diagnostics = parse_dsl_node_to_state_machine(program, collect=True)
+
+        generated = [
+            item for item in model.root_state.transitions if item.combo_origin_refs
+        ]
+        assert [item.event.path_name for item in generated] == [
+            "Root.S1.E1",
+            "Root.S1.E2",
+        ]
+        assert any(
+            item.code == "E_DANGLING_TRANSITION"
+            and item.refs["tgt"] == "Missing"
+            for item in diagnostics
+        )
 
     @pytest.mark.parametrize(
         ["declaration", "expected_warning"],

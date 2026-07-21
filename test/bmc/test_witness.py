@@ -1599,6 +1599,7 @@ def test_solve_result_allows_unchecked_unsat_after_deadline_exhaustion() -> None
     assert result.property_satisfied is None
     assert result.incomplete is True
     assert result.outcome == "feasibility_timeout"
+    assert "Scenario: NOT CHECKED" in result.to_text(tablefmt="plain")
 
 
 def test_solve_result_rejects_suffix_on_non_response() -> None:

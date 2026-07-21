@@ -13,6 +13,7 @@ import z3
 
 import pyfcstm.bmc.provenance as provenance_module
 from pyfcstm.dsl import node as dsl_nodes
+from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.bmc import BmcEngine, BmcPreparedContext, build_bmc_core_formula
 from pyfcstm.bmc.errors import BmcBuildError, InvalidBmcQuery
 from pyfcstm.bmc.parse import parse_bmc_query
@@ -601,6 +602,54 @@ def test_public_model_loading_preserves_event_scope_origins() -> None:
     assert transitions["Local"].event_scope == "local"
     assert transitions["Parent"].event_scope == "chain"
     assert transitions["Global"].event_scope == "absolute"
+
+
+def test_programmatic_event_metadata_fallback_infers_scope_origins() -> None:
+    """Public AST inputs without explicit event scopes use structural inference."""
+    program = parse_with_grammar_entry(
+        dedent(
+            """
+            state Root {
+                event Global;
+                state System {
+                    event Parent;
+                    state A {
+                        event Local;
+                    }
+                    state B;
+                    [*] -> A;
+                    A -> B :: Local;
+                    A -> B : Parent;
+                    A -> B : /Global;
+                }
+                [*] -> System;
+            }
+            """
+        ),
+        entry_name="state_machine_dsl",
+    )
+    ast_system = program.root_state.substates[0]
+    ast_transitions = {
+        item.event_id.path[-1]: item
+        for item in ast_system.transitions
+        if item.event_id is not None
+    }
+    for transition in ast_transitions.values():
+        transition.event_scope = None
+
+    model = parse_dsl_node_to_state_machine(program)
+    system = model.root_state.substates["System"]
+    transitions = {
+        transition.event.name: transition
+        for transition in system.transitions
+        if transition.event is not None
+    }
+
+    assert {name: item.event_scope for name, item in transitions.items()} == {
+        "Local": "local",
+        "Parent": "chain",
+        "Global": "absolute",
+    }
 
 
 def test_initializer_definedness_provenance_uses_definition_source(

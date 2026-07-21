@@ -507,6 +507,74 @@ state Root {
     assert registry.excerpt(registry.model_reference(effect)) == "x = x + 1;"
 
 
+def test_transition_case_group_keeps_exact_public_transition_excerpt(
+    tmp_path: Path,
+) -> None:
+    """A lowered transition case points back to its authored transition."""
+    source_path = tmp_path / "machine.fcstm"
+    source = """def int x = 0;
+state Root {
+    state A;
+    state B;
+    [*] -> A;
+    A -> B : if [x == 0] effect { x = x + 1; }
+}
+"""
+    source_path.write_text(source, encoding="utf-8")
+
+    model = load_state_machine_from_file(source_path)
+    context = BmcEngine(model).prepare(
+        'init state("Root.A"); check reach <= 1: active("Root.B");',
+        query_source_path="query.fbmcq",
+    )
+    core = build_bmc_core_formula(context)
+    group = next(
+        item
+        for item in core._tracked_groups
+        if item.category == "transition.case" and item.refs["transition_labels"]
+    )
+
+    assert group.source_ref.kind == "fcstm"
+    assert group.source_ref.path == "machine.fcstm"
+    assert context._source_registry.excerpt(group.source_ref) == (
+        "A -> B : if [x == 0] effect { x = x + 1; }"
+    )
+    assert group.refs["case_label"].startswith("Root.A::transition::")
+
+
+def test_event_only_transition_case_uses_unique_event_source_excerpt(
+    tmp_path: Path,
+) -> None:
+    """A uniquely matched event-only case keeps its FCSTM ownership."""
+    source_path = tmp_path / "machine.fcstm"
+    source = """state Root {
+    event Go;
+    state A;
+    state B;
+    [*] -> A;
+    A -> B :: Go;
+}
+"""
+    source_path.write_text(source, encoding="utf-8")
+
+    model = load_state_machine_from_file(source_path)
+    context = BmcEngine(model).prepare(
+        'init state("Root.A"); check reach <= 1: active("Root.B");',
+        query_source_path="query.fbmcq",
+    )
+    core = build_bmc_core_formula(context)
+    group = next(
+        item
+        for item in core._tracked_groups
+        if item.category == "transition.case"
+        and item.refs.get("source_inference") == "unique_event"
+    )
+
+    assert group.source_ref.kind == "fcstm"
+    assert group.source_ref.path == "machine.fcstm"
+    assert context._source_registry.excerpt(group.source_ref) == "A -> B :: Go;"
+
+
 def test_forced_transition_expansions_share_source_provenance(tmp_path: Path) -> None:
     """Every model transition expanded from one forced source remains locatable."""
     source_path = tmp_path / "machine.fcstm"

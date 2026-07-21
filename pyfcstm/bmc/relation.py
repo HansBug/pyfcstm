@@ -363,6 +363,101 @@ def _safe_symbol_fragment(value: str) -> str:
     return "%s_%s" % (body[:80], digest)
 
 
+def _case_transition_labels(case: CycleCase) -> Tuple[str, ...]:
+    """Return distinct model-transition labels recorded by one macro case."""
+    labels = {
+        item.transition_label
+        for item in case.guard_requirements
+        if item.transition_label is not None
+    }
+    labels.update(
+        item.transition_label
+        for item in case.action_blocks
+        if item.transition_label is not None
+    )
+    return tuple(sorted(labels))
+
+
+def _model_state_by_path(context: BmcPreparedContext, path: str):
+    return next(
+        (
+            state
+            for state in context.model.walk_states()
+            if ".".join(state.path) == path
+        ),
+        None,
+    )
+
+
+def _unique_event_transition(context: BmcPreparedContext, case: CycleCase):
+    """Return an event-only model transition when the source is unambiguous."""
+    if case.kind != "transition":
+        return None
+    event_paths = {
+        item.path
+        for item in case.used_events
+        if item.polarity == "positive" and item.reason == "trigger"
+    }
+    if len(event_paths) != 1:
+        return None
+    owner = _model_state_by_path(context, case.source_state_path)
+    if owner is None:
+        return None
+    matches = [
+        transition
+        for transition in owner.transitions_from
+        if transition.event is not None and transition.event.path_name in event_paths
+    ]
+    return matches[0] if len(matches) == 1 else None
+
+
+def _case_source_reference(
+    context: BmcPreparedContext,
+    case: CycleCase,
+    generated_ref,
+) -> Tuple[Any, Tuple[str, ...]]:
+    """Resolve a uniquely transition-backed case to its model source span.
+
+    Macro cases may combine several micro-transitions or contain only synthetic
+    fallback control.  Such cases deliberately retain the generated reference;
+    provenance must never pretend that one source span explains a composite or
+    synthetic formula.
+    """
+    labels = _case_transition_labels(case)
+    if not labels:
+        transition = _unique_event_transition(context, case)
+        if transition is not None:
+            reference = context._source_registry.model_reference(transition)
+            if reference.path is not None or reference.span is not None:
+                return reference, labels
+        return generated_ref, labels
+    if len(labels) != 1:
+        return generated_ref, labels
+
+    parts = labels[0].rsplit("::", 2)
+    if len(parts) != 3:
+        return generated_ref, labels
+    owner_path, index_text, _edge = parts
+    try:
+        transition_index = int(index_text)
+    except ValueError:
+        return generated_ref, labels
+    if transition_index < 0:
+        return generated_ref, labels
+
+    owner = _model_state_by_path(context, owner_path)
+    if owner is None:
+        return generated_ref, labels
+    transitions = tuple(owner.init_transitions) + tuple(owner.transitions_from)
+    if transition_index >= len(transitions):
+        return generated_ref, labels
+
+    reference = context._source_registry.model_reference(transitions[transition_index])
+    if reference.path is None and reference.span is None:
+        return generated_ref, labels
+    return reference, labels
+
+
 def _domain_constraints_exprs(
     items: Sequence[DomainConstraint],
 ) -> Tuple[z3.ExprRef, ...]:
@@ -2518,6 +2613,33 @@ def build_bmc_core_formula(context: BmcPreparedContext) -> BmcCoreFormula:
             refs={"step": step.step_index},
         )
     transition_formula = _formula_from_groups(groups[transition_start:])
+
+    # Keep case-level provenance outside the aggregate transition slice.  The
+    # private ledger becomes more precise without changing the historical T_N
+    # expression or its canonical ordering.
+    for step in steps:
+        for case_index, case_relation in enumerate(step.case_relations):
+            source_ref, transition_labels = _case_source_reference(
+                prepared, case_relation.case, generated_ref
+            )
+            refs = {
+                "step": step.step_index,
+                "case_index": case_index,
+                "case_label": case_relation.case.label,
+                "case_kind": case_relation.case.kind,
+                "transition_labels": list(transition_labels),
+            }
+            if not transition_labels and source_ref.kind == "fcstm":
+                refs["source_inference"] = "unique_event"
+            _append_tracked_group(
+                groups,
+                stable_id="transition.case.%04d.%04d" % (step.step_index, case_index),
+                stage="kernel",
+                category="transition.case",
+                expressions=(case_relation.formula,),
+                source_ref=source_ref,
+                refs=refs,
+            )
 
     environment_start = len(groups)
     _build_environment_formula(prepared, symbols, groups)

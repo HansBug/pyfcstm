@@ -935,6 +935,27 @@ def test_bmc_response_incomplete_is_exit_three(bmc_files) -> None:
     assert payload["replay"]["model_role"] == "incomplete_suffix"
 
 
+def test_bmc_incomplete_suffix_internal_error_keeps_traceback(
+    bmc_files, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A suffix witness consistency failure remains an internal CLI error."""
+    import pyfcstm.entry.bmc as bmc_entry
+
+    model_path, query = bmc_files
+    query_path = query("check response <= 1: trigger true -> within 2 false;")
+
+    def fail_suffix_decode(result, *, source):
+        assert source == "incomplete_suffix"
+        raise BmcBuildError("forged incomplete suffix consistency failure")
+
+    monkeypatch.setattr(bmc_entry, "_decode_bmc_result_trace", fail_suffix_decode)
+    result = _run("-i", str(model_path), "-q", str(query_path), "--json")
+
+    assert result.exit_code == 1
+    _assert_stderr_only(result, "Unexpected error found when running pyfcstm!")
+    assert "forged incomplete suffix consistency failure" in _stderr_text(result)
+
+
 def test_bmc_scenario_infeasible_is_not_a_property_failure(bmc_files) -> None:
     """Contradictory assumptions produce a distinct non-verdict CLI result."""
     model_path, query = bmc_files

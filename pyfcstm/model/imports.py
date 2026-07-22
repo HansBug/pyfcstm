@@ -736,6 +736,15 @@ def _rewrite_absolute_paths_for_imported_root(
             and tuple(transition.event_id.path) not in preserved_absolute_event_paths
         ):
             transition.event_id.path = [*instance_prefix, *transition.event_id.path]
+        combo_trigger = getattr(transition, "combo_trigger", None)
+        if combo_trigger is not None:
+            for term in combo_trigger.terms:
+                if (
+                    isinstance(term, dsl_nodes.ComboEventTerm)
+                    and term.event_id.is_absolute
+                    and tuple(term.event_id.path) not in preserved_absolute_event_paths
+                ):
+                    term.event_id.path = [*instance_prefix, *term.event_id.path]
 
     for transition in node.force_transitions:
         if (
@@ -1003,6 +1012,13 @@ def _rewrite_imported_state_event_paths(
             resolved_event_mappings=resolved_event_mappings,
             pending_registrations=pending_registrations,
         )
+        _rewrite_combo_transition_event_ids(
+            transition=transition,
+            current_scope_path=current_scope_path,
+            source_event_names=source_event_names,
+            resolved_event_mappings=resolved_event_mappings,
+            pending_registrations=pending_registrations,
+        )
 
     for transition in node.force_transitions:
         if transition.event_id is not None:
@@ -1059,6 +1075,58 @@ def _rewrite_transition_event_id(
         )
     elif transition.event_id.is_absolute:
         transition.event_id.path = [*current_scope_path, *transition.event_id.path]
+
+
+def _rewrite_combo_transition_event_ids(
+    transition,
+    current_scope_path: Tuple[str, ...],
+    source_event_names: Dict[Tuple[str, ...], Optional[str]],
+    resolved_event_mappings: Dict[Tuple[str, ...], _ResolvedImportEventMapping],
+    pending_registrations: List[_PendingEventRegistration],
+) -> None:
+    """Apply import event mappings to event terms in a combo trigger."""
+    combo_trigger = getattr(transition, "combo_trigger", None)
+    if combo_trigger is None:
+        return
+
+    for term in combo_trigger.terms:
+        if not isinstance(term, dsl_nodes.ComboEventTerm):
+            continue
+
+        event_id = term.event_id
+        if event_id.is_absolute:
+            source_path = tuple(event_id.path)
+        else:
+            source_path = tuple((*current_scope_path, *event_id.path))
+            if (
+                term.event_scope == "local"
+                and isinstance(transition.from_state, str)
+                and (not event_id.path or event_id.path[0] != transition.from_state)
+            ):
+                source_path = tuple(
+                    (*current_scope_path, transition.from_state, *event_id.path)
+                )
+
+        source_extra_name = _lookup_source_event_extra_name(
+            source_path=source_path,
+            source_event_names=source_event_names,
+        )
+        mapping = resolved_event_mappings.get(source_path)
+        if mapping is not None:
+            event_id.is_absolute = True
+            event_id.path = list(mapping.target_event_id_path)
+            pending_registrations.append(
+                _PendingEventRegistration(
+                    target_state_path=mapping.target_state_path,
+                    target_event_name=mapping.target_event_name,
+                    mapping_extra_name=mapping.extra_name,
+                    source_extra_name=source_extra_name,
+                    import_alias="",
+                    source_path=source_path,
+                )
+            )
+        elif event_id.is_absolute:
+            event_id.path = [*current_scope_path, *event_id.path]
 
 
 def _prune_mapped_source_event_definitions(

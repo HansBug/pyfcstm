@@ -473,6 +473,46 @@ class TestImportPhase4Assembly:
             ("Error", "Error"),
         ]
 
+    @pytest.mark.parametrize("combo_trigger", ["Start + Finish", "/Start + /Finish"])
+    def test_event_mapping_applies_to_combo_transition_events(self, combo_trigger):
+        state_machine = _build_state_machine(
+            """
+            state Root {
+                event HostStart;
+                event HostFinish;
+                import "./worker.fcstm" as Worker {
+                    event /Start -> HostStart;
+                    event /Finish -> HostFinish;
+                }
+                [*] -> Worker;
+            }
+            """,
+            **{
+                "worker.fcstm": f"""
+                state WorkerRoot {{
+                    event Start;
+                    event Finish;
+                    state Idle;
+                    state Done;
+                    [*] -> Idle;
+                    Idle -> Done : {combo_trigger};
+                }}
+                """,
+            },
+        )
+
+        worker_state = state_machine.root_state.substates["Worker"]
+        combo_events = [
+            transition.event
+            for transition in worker_state.transitions
+            if transition.combo_origin_refs
+        ]
+
+        assert [event.path for event in combo_events] == [
+            ("Root", "HostStart"),
+            ("Root", "HostFinish"),
+        ]
+
     def test_event_mapping_conflicting_named_override_is_rejected(self):
         with isolated_directory():
             root_file = _write_text_file(

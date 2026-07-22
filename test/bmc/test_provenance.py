@@ -17,6 +17,8 @@ from pyfcstm.bmc import (
     BmcEngine,
     BmcPreparedContext,
     build_bmc_core_formula,
+    compile_bmc_property,
+    solve_bmc_property,
 )
 from pyfcstm.bmc.errors import BmcBuildError, InvalidBmcQuery
 from pyfcstm.bmc.parse import parse_bmc_query
@@ -811,6 +813,55 @@ state WorkerRoot {
         "            w = w + 1;\n"
         "        }"
     }
+
+
+def test_imported_combo_event_mapping_controls_bmc_witness(tmp_path: Path) -> None:
+    """Mapped combo events must control normal BMC reachability semantics."""
+    imported = tmp_path / "worker.fcstm"
+    imported.write_text(
+        """state WorkerRoot {
+    event Start;
+    event Finish;
+    state Idle;
+    state Done;
+    [*] -> Idle;
+    Idle -> Done : Start + Finish;
+}
+""",
+        encoding="utf-8",
+    )
+    main = tmp_path / "main.fcstm"
+    main.write_text(
+        """state Root {
+    event HostStart;
+    event HostFinish;
+    import "./worker.fcstm" as Worker {
+        event /Start -> HostStart;
+        event /Finish -> HostFinish;
+    };
+    [*] -> Worker;
+}
+""",
+        encoding="utf-8",
+    )
+
+    model = load_state_machine_from_file(main)
+    context = BmcEngine(model).prepare(
+        'init state("Root.Worker.Idle"); '
+        'assume event("Root.HostStart", 0) == true; '
+        'assume event("Root.HostFinish", 0..1) == false; '
+        'check reach <= 2: active("Root.Worker.Done");',
+        query_source_path="query.fbmcq",
+    )
+    result = solve_bmc_property(
+        compile_bmc_property(build_bmc_core_formula(context)),
+        timeout_ms=None,
+    )
+
+    assert result.status == "unsat"
+    assert result.outcome == "no_witness"
+    assert result.property_satisfied is False
+    assert result.witness_found is False
 
 
 def test_guarded_combo_transition_case_uses_authored_source_excerpt(

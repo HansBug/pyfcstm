@@ -207,7 +207,7 @@ def _find_error_node_text(parse_tree: ParserRuleContext) -> str:
         >>> _find_error_node_text(ParserRuleContext())
         ''
     """
-    pending = [parse_tree]
+    pending: List[Any] = [parse_tree]
     while pending:
         node = pending.pop()
         if isinstance(node, ErrorNode):
@@ -226,7 +226,9 @@ def _find_error_node_text(parse_tree: ParserRuleContext) -> str:
             ):
                 return "empty recovered %s" % type(node).__name__
         for index in range(node.getChildCount() - 1, -1, -1):
-            pending.append(node.getChild(index))
+            child = node.getChild(index)
+            if child is not None:
+                pending.append(child)
     return ""
 
 
@@ -239,6 +241,8 @@ def _context_span(context: ParserRuleContext) -> Span:
     :rtype: pyfcstm.utils.validate.Span
     """
     start = context.start
+    if start is None:
+        raise BmcQueryParseError("BMC parse tree context has no source token.")
     stop = context.stop if context.stop is not None else start
     end_column = stop.column + len(stop.text or "") + 1
     column = start.column + 1

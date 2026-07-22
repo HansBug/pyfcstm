@@ -1417,6 +1417,19 @@ class BmcCoreFormula:
         if len(set(stable_ids)) != len(stable_ids):
             raise BmcBuildError("tracked groups must have unique stable ids.")
         for group in groups:
+            if type(group.source_ref) is not BmcSourceRef:
+                raise BmcBuildError(
+                    "tracked groups must use exact BmcSourceRef objects."
+                )
+            normalized_ref = self.context._source_registry.reference(
+                group.source_ref.kind,
+                group.source_ref.path,
+                group.source_ref.span,
+            )
+            if normalized_ref != group.source_ref:
+                raise BmcBuildError(
+                    "tracked group source_ref is not valid in the source registry."
+                )
             for expression in group.expressions:
                 if not z3.is_bool(expression):
                     raise BmcBuildError(
@@ -1488,6 +1501,39 @@ class BmcCoreFormula:
         )
         if not z3.eq(expected_core, self.core):
             raise BmcBuildError("core formula does not match D_N ∧ I_0 ∧ T_N ∧ ENV_N.")
+        step_relations = {step.step_index: step for step in self.steps}
+        tracked_step_indexes = set()
+        for group in groups:
+            if group.category != "transition.step":
+                continue
+            refs = dict(group.refs)
+            step_index = refs.get("step")
+            if type(step_index) is not int or step_index < 0:
+                raise BmcBuildError(
+                    "tracked transition step ref must be a non-negative int."
+                )
+            step_relation = step_relations.get(step_index)
+            if step_relation is None:
+                raise BmcBuildError(
+                    "tracked transition step ref does not identify a lowered step."
+                )
+            if group.stable_id != "transition.step.%04d" % step_index:
+                raise BmcBuildError(
+                    "tracked transition step stable_id does not match step."
+                )
+            if refs != {"step": step_index}:
+                raise BmcBuildError("tracked transition step refs do not match step.")
+            if len(group.expressions) != 1 or not z3.eq(
+                group.expressions[0], step_relation.formula
+            ):
+                raise BmcBuildError(
+                    "tracked transition step formula does not match step."
+                )
+            tracked_step_indexes.add(step_index)
+        if tracked_step_indexes != set(step_relations):
+            raise BmcBuildError(
+                "tracked transition step groups do not cover every lowered step."
+            )
         case_relations = {
             (step.step_index, case_index): case_relation
             for step in self.steps

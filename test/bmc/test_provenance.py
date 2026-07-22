@@ -1687,6 +1687,118 @@ def test_tracked_group_rejects_expression_from_another_z3_context() -> None:
         )
 
 
+def test_core_formula_rejects_unresolvable_tracked_source_span(tmp_path: Path) -> None:
+    """Ordinary source groups cannot point outside the prepared registry."""
+    source_path = tmp_path / "machine.fcstm"
+    source_path.write_text("def int x = 1;\nstate Root;\n", encoding="utf-8")
+    model = load_state_machine_from_file(source_path)
+    core = build_bmc_core_formula(
+        BmcEngine(model).prepare('check reach <= 1: active("Root");')
+    )
+    group_index = next(
+        index
+        for index, group in enumerate(core._tracked_groups)
+        if group.stable_id == "initial.variable.x"
+    )
+    groups = list(core._tracked_groups)
+    groups[group_index] = replace(
+        groups[group_index],
+        source_ref=BmcSourceRef("fcstm", source_path.name, Span(99, 1, 99, 2)),
+    )
+
+    with pytest.raises(BmcBuildError, match="tracked group source_ref"):
+        replace(core, _tracked_groups=tuple(groups))
+
+
+def test_core_formula_rejects_forged_transition_step_ledger() -> None:
+    """Transition groups must identify and reproduce their real lowered step."""
+    model = load_state_machine_from_text("state Root;")
+    core = build_bmc_core_formula(
+        BmcEngine(model).prepare('check reach <= 1: active("Root");')
+    )
+    group_index = next(
+        index
+        for index, group in enumerate(core._tracked_groups)
+        if group.category == "transition.step"
+    )
+    groups = list(core._tracked_groups)
+    groups[group_index] = replace(
+        groups[group_index],
+        stable_id="transition.step.9999",
+        refs={"step": 999},
+    )
+
+    with pytest.raises(BmcBuildError, match="transition step"):
+        replace(core, _tracked_groups=tuple(groups))
+
+    transition_group = core._tracked_groups[group_index]
+    step_index = transition_group.refs["step"]
+    with pytest.raises(BmcBuildError, match="non-negative int"):
+        replace(
+            core,
+            _tracked_groups=(
+                *core._tracked_groups[:group_index],
+                replace(transition_group, refs={"step": True}),
+                *core._tracked_groups[group_index + 1 :],
+            ),
+        )
+
+    with pytest.raises(BmcBuildError, match="stable_id"):
+        replace(
+            core,
+            _tracked_groups=(
+                *core._tracked_groups[:group_index],
+                replace(
+                    transition_group,
+                    stable_id="transition.step.9999",
+                    refs={"step": step_index},
+                ),
+                *core._tracked_groups[group_index + 1 :],
+            ),
+        )
+
+    with pytest.raises(BmcBuildError, match="refs do not match"):
+        replace(
+            core,
+            _tracked_groups=(
+                *core._tracked_groups[:group_index],
+                replace(
+                    transition_group,
+                    refs={"step": step_index, "extra": "forged"},
+                ),
+                *core._tracked_groups[group_index + 1 :],
+            ),
+        )
+
+    forged_expression = z3.Not(transition_group.expressions[0])
+    forged_groups = list(core._tracked_groups)
+    forged_groups[group_index] = replace(
+        transition_group, expressions=(forged_expression,)
+    )
+    forged_transition_formula = relation_module._formula_from_groups(
+        tuple(group for group in forged_groups if group.category == "transition.step")
+    )
+    forged_core = relation_module._and(
+        (
+            core.domain_formula,
+            core.initial_formula,
+            forged_transition_formula,
+            core.environment_formula,
+        )
+    )
+    with pytest.raises(BmcBuildError, match="formula does not match step"):
+        replace(
+            core,
+            transition_formula=forged_transition_formula,
+            core=forged_core,
+            _tracked_groups=tuple(forged_groups),
+        )
+
+    extra_step = replace(core.steps[0], step_index=999)
+    with pytest.raises(BmcBuildError, match="cover every lowered step"):
+        replace(core, steps=core.steps + (extra_step,))
+
+
 def test_core_formula_rejects_malformed_tracked_group_payloads() -> None:
     """Core formulas reject invalid, duplicate, and non-Boolean groups."""
     model = load_state_machine_from_text("state Root;")
@@ -1698,6 +1810,22 @@ def test_core_formula_rejects_malformed_tracked_group_payloads() -> None:
         replace(core, _tracked_groups=(object(),))
 
     group = core._tracked_groups[0]
+
+    class _SourceRefSubclass(BmcSourceRef):
+        pass
+
+    with pytest.raises(BmcBuildError, match="exact BmcSourceRef"):
+        replace(
+            core,
+            _tracked_groups=(
+                replace(
+                    group,
+                    source_ref=_SourceRefSubclass("generated", None, None),
+                ),
+                *core._tracked_groups[1:],
+            ),
+        )
+
     with pytest.raises(BmcBuildError, match="unique stable ids"):
         replace(core, _tracked_groups=(group, group))
 

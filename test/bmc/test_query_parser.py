@@ -22,6 +22,7 @@ from pyfcstm.bmc.parse import (
     _CollectingBmcErrorListener,
     _build_lexer,
     _build_parser,
+    _context_span,
     _find_error_node_text,
     build_bmc_ast_from_parse_tree,
     parse_bmc_cond_expression,
@@ -571,6 +572,8 @@ def test_build_bmc_ast_from_existing_parse_tree():
 @pytest.mark.unittest
 def test_parse_helpers_report_invalid_inputs_and_unmapped_trees(monkeypatch):
     """Parser helpers expose typed parse errors instead of raw ANTLR details."""
+    with pytest.raises(BmcQueryParseError, match="no source token"):
+        _context_span(ParserRuleContext())
     with pytest.raises(BmcQueryParseError, match="Supported entries"):
         parse_with_bmc_grammar_entry("true", "missing_entry")
     with pytest.raises(BmcQueryParseError):

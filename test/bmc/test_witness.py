@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import dataclasses
 from types import SimpleNamespace
 
 import pytest
@@ -37,7 +36,6 @@ from pyfcstm.bmc import (
 )
 from pyfcstm.bmc.binding import BoundAssumption
 from pyfcstm.bmc.query import EventCardinalityAssumption
-from pyfcstm.bmc.relation import _formula_from_groups, _tracked_group_component
 from pyfcstm.model import OnAspect, OnStage
 from pyfcstm.model import load_state_machine_from_text
 
@@ -1414,42 +1412,6 @@ def test_solve_property_case_e_infeasible_polarity_nonverdict(query) -> None:
     assert result.property_satisfied is None
     assert result.witness_found is False
     assert result.counterexample_found is False
-
-
-def test_solve_property_case_g_kernel_localization() -> None:
-    """Case G localizes an explicitly false synthetic kernel."""
-    _, formula = _compile("state Root;", 'check reach <= 1: active("Root");')
-    tracked_groups = list(formula.core._tracked_groups)
-    domain_index = next(
-        index
-        for index, group in enumerate(tracked_groups)
-        if group.category == "domain.frame_state"
-    )
-    tracked_groups[domain_index] = dataclasses.replace(
-        tracked_groups[domain_index], expressions=(z3.BoolVal(False),)
-    )
-    domain_groups = tuple(
-        group for group in tracked_groups if _tracked_group_component(group) == "D_N"
-    )
-    domain_formula = _formula_from_groups(domain_groups)
-    fake_core = dataclasses.replace(
-        formula.core,
-        domain_formula=domain_formula,
-        core=z3.And(
-            domain_formula,
-            formula.core.initial_formula,
-            formula.core.transition_formula,
-            formula.core.environment_formula,
-        ),
-        _tracked_groups=tuple(tracked_groups),
-    )
-    fake_formula = dataclasses.replace(formula, core=fake_core)
-
-    result = solve_bmc_property(fake_formula)
-
-    assert result.outcome == "scenario_infeasible"
-    assert result.feasibility.infeasible_stage == "kernel"
-    assert result.feasibility.kernel.status == "unsat"
 
 
 def test_solve_property_case_h_complete_response_window_has_no_suffix() -> None:

@@ -207,30 +207,6 @@ class BmcPreparedContext:
             )
         if self.bound_query.query.to_canonical() != self.query.to_canonical():
             raise BmcBuildError("bound query source does not match query.")
-        query_assumptions = tuple(self.query.assumptions)
-        bound_query_assumptions = tuple(self.bound_query.query.assumptions)
-        bound_assumptions = tuple(self.bound_query.assumptions)
-        if (
-            self.bound_query.query.initial is not self.query.initial
-            or self.bound_query.query.property is not self.query.property
-            or len(bound_query_assumptions) != len(query_assumptions)
-            or any(
-                bound_item is not query_item
-                for bound_item, query_item in zip(
-                    bound_query_assumptions, query_assumptions
-                )
-            )
-            or self.bound_query.initial.source is not self.query.initial
-            or self.bound_query.property.source is not self.query.property
-            or len(bound_assumptions) != len(query_assumptions)
-            or any(
-                bound_item.source is not query_item
-                for bound_item, query_item in zip(bound_assumptions, query_assumptions)
-            )
-        ):
-            raise BmcBuildError(
-                "bound query source objects do not match query source objects."
-            )
 
     @property
     def bound(self) -> int:

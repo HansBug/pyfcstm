@@ -42,9 +42,8 @@ from __future__ import annotations
 import json
 import re
 from abc import ABC, abstractmethod
-from collections.abc import Iterable as IterableABC
 from dataclasses import dataclass, field
-from typing import Any, ClassVar, Dict, Iterable, Optional, Tuple, Union, cast
+from typing import Any, ClassVar, Dict, Optional, Tuple, Union
 
 try:
     from typing import Literal
@@ -129,10 +128,8 @@ def _normalize_source_spans(value: object) -> Tuple[Tuple[int, Span], ...]:
     :rtype: Tuple[Tuple[int, pyfcstm.utils.validate.Span], ...]
     :raises pyfcstm.bmc.errors.InvalidBmcQuery: If a span entry is malformed.
     """
-    if not isinstance(value, IterableABC):
-        raise InvalidBmcQuery("_source_spans must contain (id, Span) pairs.")
     try:
-        source_spans = tuple(cast(Iterable[object], value))
+        source_spans = tuple(value)
     except TypeError as err:
         # TypeError: a public constructor supplied a non-iterable span ledger.
         raise InvalidBmcQuery("_source_spans must contain (id, Span) pairs.") from err
@@ -144,7 +141,7 @@ def _normalize_source_spans(value: object) -> Tuple[Tuple[int, Span], ...]:
         for item in source_spans
     ):
         raise InvalidBmcQuery("_source_spans must contain (id, Span) pairs.")
-    return cast(Tuple[Tuple[int, Span], ...], source_spans)
+    return source_spans
 
 
 def _canonical_condition(expr: Optional[BmcCondExpr]) -> Optional[_CanonicalDict]:

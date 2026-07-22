@@ -43,7 +43,6 @@ from dataclasses import dataclass, field
 from typing import (
     Any,
     Callable,
-    cast,
     Dict,
     Iterable,
     List,
@@ -106,7 +105,7 @@ from .source import (
     stable_leaf_source,
     terminated_source,
 )
-from .provenance import BmcSourceRef, BmcTrackedConstraint
+from .provenance import BmcTrackedConstraint
 from pyfcstm.model import Expr
 from pyfcstm.solver.domain import DomainConstraint, DomainSource, translate_expr_domain
 from pyfcstm.solver.operation import execute_operations_domain
@@ -118,12 +117,6 @@ _EVENT_ATOM_PREFIX = "event:"
 _GUARD_ATOM_PREFIX = "guard:"
 _ACCEPTED_ATOM_PREFIX = "accepted:"
 _ISSUE_URL = "https://github.com/HansBug/pyfcstm/issues"
-_SOURCE_INFERENCES = {
-    "unique_event",
-    "unique_initial",
-    "unique_transition",
-    "unique_combo",
-}
 
 
 @dataclass(frozen=True)
@@ -277,210 +270,26 @@ def _and(items: Iterable[z3.ExprRef]) -> z3.BoolRef:
     return z3.And(*values)
 
 
-def _validate_tracked_source_ref(
-    context: BmcPreparedContext, source_ref: BmcSourceRef, label: str
-) -> None:
-    """Validate one tracked source reference against the prepared registry."""
-    if type(source_ref) is not BmcSourceRef:
-        raise BmcBuildError("%s must use exact BmcSourceRef objects." % label)
-    registry = context._source_registry
-    if registry is None:
-        raise BmcBuildError("%s cannot be validated without a source registry." % label)
-    normalized_ref = registry.reference(
-        source_ref.kind,
-        source_ref.path,
-        source_ref.span,
-    )
-    if normalized_ref != source_ref:
-        raise BmcBuildError(
-            "%s source_ref is not valid in the source registry." % label
-        )
+def _or(items: Iterable[z3.ExprRef]) -> z3.BoolRef:
+    values = tuple(items)
+    if not values:  # pragma: no cover - relation callers pass non-empty domains.
+        return z3.BoolVal(False)
+    if len(values) == 1:  # pragma: no cover - current state domains include sentinels.
+        return values[0]
+    return z3.Or(*values)
 
 
-def _tracked_ref_int(
-    refs: Mapping[str, object], key: str, label: str, *, upper: Optional[int] = None
-) -> int:
-    """Read one exact non-negative integer from tracked metadata."""
-    value = refs.get(key)
-    if type(value) is not int or value < 0 or (upper is not None and value > upper):
-        raise BmcBuildError(
-            "%s ref %r must be a valid non-negative int." % (label, key)
-        )
-    return value
+def _state_in(symbol: z3.ArithRef, state_ids: Sequence[int]) -> z3.BoolRef:
+    ids = tuple(state_ids)
+    if not ids:  # pragma: no cover - BmcDomain validates allowed state sets.
+        raise _internal_bmc_error("state domain set is empty while building D_N.")
+    return _or(symbol == z3.IntVal(state_id) for state_id in ids)
 
 
-def _tracked_source_for_query(
-    context: BmcPreparedContext, source: object
-) -> BmcSourceRef:
-    registry = context._source_registry
-    if registry is None:
-        raise BmcBuildError("tracked source validation requires a source registry.")
-    return registry.query_reference(context.query, source)
-
-
-def _tracked_source_for_model(context: BmcPreparedContext, name: str) -> BmcSourceRef:
-    registry = context._source_registry
-    if registry is None:
-        raise BmcBuildError("tracked source validation requires a source registry.")
-    define = context.model.defines.get(name)
-    if define is None:
-        raise BmcBuildError("tracked group references unknown variable %r." % name)
-    return registry.model_reference(define)
-
-
-def _validate_tracked_group_contract(
-    context: BmcPreparedContext, group: BmcTrackedConstraint
-) -> None:
-    """Validate ordinary group identity, references, and source ownership."""
-    refs = dict(group.refs)
-    registry = context._source_registry
-    if registry is None:
-        raise BmcBuildError("tracked group validation requires a source registry.")
-    generated_ref = registry.reference("generated", None, None)
-    expected_refs: Dict[str, object]
-    expected_ref: BmcSourceRef
-
-    if group.stage == "kernel" and group.category == "domain.frame_state":
-        frame = _tracked_ref_int(refs, "frame", "domain frame", upper=context.bound)
-        expected_refs = {"frame": frame, "kind": "state"}
-        if group.stable_id != "domain.frame.%04d.state" % frame:
-            raise BmcBuildError("domain frame tracked group stable_id does not match.")
-        expected_ref = generated_ref
-    elif group.stage == "kernel" and group.category == "transition.step":
-        step = _tracked_ref_int(
-            refs, "step", "transition step", upper=context.bound - 1
-        )
-        expected_refs = {"step": step}
-        if group.stable_id != "transition.step.%04d" % step:
-            raise BmcBuildError(
-                "tracked transition step stable_id does not match step."
-            )
-        expected_ref = generated_ref
-    elif group.stage == "initialization" and group.category == "initial.target":
-        expected_refs = {"frame": 0, "target": _initial_source(context).source_state_id}
-        if group.stable_id != "initial.target":
-            raise BmcBuildError(
-                "initial target tracked group stable_id does not match."
-            )
-        expected_ref = _tracked_source_for_query(context, context.query.initial)
-    elif group.stage == "initialization" and group.category == "initial.variable":
-        name = refs.get("variable")
-        frame = _tracked_ref_int(refs, "frame", "initial variable", upper=0)
-        if type(name) is not str or not name:
-            raise BmcBuildError("initial variable ref must contain a variable name.")
-        expected_refs = {"variable": name, "frame": frame}
-        if group.stable_id != "initial.variable.%s" % name:
-            raise BmcBuildError(
-                "initial variable tracked group stable_id does not match."
-            )
-        expected_ref = _tracked_source_for_model(context, name)
-    elif group.stage == "initialization" and group.category == "initial.where":
-        frame = _tracked_ref_int(refs, "frame", "initial where", upper=0)
-        predicate = context.query.initial.predicate
-        if predicate is None:
-            raise BmcBuildError("initial where tracked group has no predicate source.")
-        expected_refs = {"frame": frame}
-        if group.stable_id != "initial.where":
-            raise BmcBuildError("initial where tracked group stable_id does not match.")
-        expected_ref = _tracked_source_for_query(context, predicate)
-    elif group.stage == "initialization" and group.category == "definedness":
-        variable_match = re.fullmatch(
-            r"initial\.variable\.(?P<name>.+)\.definedness\.(?P<index>[0-9]{4})",
-            group.stable_id,
-        )
-        where_match = re.fullmatch(
-            r"initial\.where\.definedness\.(?P<index>[0-9]{4})", group.stable_id
-        )
-        if variable_match is not None:
-            name = variable_match.group("name")
-            if refs != {"variable": name, "kind": "initializer"}:
-                raise BmcBuildError("initial variable definedness refs do not match.")
-            expected_refs = {"variable": name, "kind": "initializer"}
-            expected_ref = _tracked_source_for_model(context, name)
-        elif where_match is not None:
-            if refs != {"frame": 0, "kind": "where"}:
-                raise BmcBuildError("initial where definedness refs do not match.")
-            predicate = context.query.initial.predicate
-            if predicate is None:
-                raise BmcBuildError(
-                    "initial where definedness has no predicate source."
-                )
-            expected_refs = {"frame": 0, "kind": "where"}
-            expected_ref = _tracked_source_for_query(context, predicate)
-        else:
-            raise BmcBuildError(
-                "initial definedness tracked group stable_id is invalid."
-            )
-    elif group.stage == "assumptions":
-        match = re.fullmatch(
-            r"assumption\.(?P<assumption>[0-9]{4})\.(?P<kind>frame|event|cardinality)\.(?P<index>[0-9]{4})(?P<defined>\.definedness\.[0-9]{4})?",
-            group.stable_id,
-        )
-        if match is None:
-            raise BmcBuildError("assumption tracked group stable_id is invalid.")
-        assumption_index = _tracked_ref_int(
-            refs,
-            "assumption",
-            "assumption",
-            upper=len(context.bound_query.assumptions) - 1,
-        )
-        assumption = context.bound_query.assumptions[assumption_index]
-        token = match.group("kind")
-        index = _tracked_ref_int(
-            refs,
-            "frame" if token == "frame" else "step",
-            "assumption index",
-            upper=context.bound if token == "frame" else context.bound - 1,
-        )
-        if index != int(match.group("index")):
-            raise BmcBuildError("assumption stable_id index does not match refs.")
-        source = assumption.source
-        expected_ref = _tracked_source_for_query(context, source)
-        if token == "frame":
-            if assumption.kind != "frame":
-                raise BmcBuildError(
-                    "assumption frame group does not match bound assumption."
-                )
-            if isinstance(source, FrameAssumption) and source.kind == "at":
-                if source.frame != index:
-                    raise BmcBuildError(
-                        "assumption frame index does not match source assumption."
-                    )
-            expected_refs = {"assumption": assumption_index, "frame": index}
-            if group.category == "definedness":
-                if match.group("defined") is None or refs != expected_refs:
-                    raise BmcBuildError(
-                        "assumption frame definedness refs do not match."
-                    )
-            elif group.category == "assumption.frame":
-                if match.group("defined") is not None or refs != expected_refs:
-                    raise BmcBuildError("assumption frame refs do not match.")
-            else:
-                raise BmcBuildError("assumption frame category does not match.")
-        elif token == "event":
-            if assumption.kind != "event" or group.category != "assumption.event":
-                raise BmcBuildError("assumption event group does not match.")
-            if index not in assumption.cycles:
-                raise BmcBuildError("assumption event step does not match source.")
-            expected_refs = {"assumption": assumption_index, "step": index}
-            if match.group("defined") is not None or refs != expected_refs:
-                raise BmcBuildError("assumption event refs do not match.")
-        else:
-            if (
-                assumption.kind != "event_cardinality"
-                or group.category != "assumption.cardinality"
-            ):
-                raise BmcBuildError("assumption cardinality group does not match.")
-            expected_refs = {"assumption": assumption_index, "step": index}
-            if match.group("defined") is not None or refs != expected_refs:
-                raise BmcBuildError("assumption cardinality refs do not match.")
-    else:
-        return
-
-    if refs != expected_refs:
-        raise BmcBuildError("tracked group refs do not match its stable identity.")
-    if group.source_ref != expected_ref:
-        raise BmcBuildError("tracked group source_ref does not match its source owner.")
+def _safe_symbol_fragment(value: str) -> str:
+    body = re.sub(r"[^0-9A-Za-z_]+", "_", value).strip("_") or "item"
+    digest = hashlib.sha1(value.encode("utf-8")).hexdigest()[:10]
+    return "%s_%s" % (body[:80], digest)
 
 
 def _formula_from_groups(
@@ -575,51 +384,6 @@ def _append_tracked_group(
             refs=refs or {},
         )
     )
-
-
-def _tracked_group_component(group: BmcTrackedConstraint) -> Optional[str]:
-    """Return the canonical formula component owned by one tracked group."""
-    if group.category == "domain.frame_state" and group.stage == "kernel":
-        return "D_N"
-    if group.category == "transition.step" and group.stage == "kernel":
-        return "T_N"
-    if group.stage == "initialization" and group.category in {
-        "definedness",
-        "initial.target",
-        "initial.variable",
-        "initial.where",
-    }:
-        return "I_0"
-    if group.stage == "assumptions" and group.category in {
-        "definedness",
-        "assumption.frame",
-        "assumption.event",
-        "assumption.cardinality",
-    }:
-        return "ENV_N"
-    return None
-
-
-def _or(items: Iterable[z3.ExprRef]) -> z3.BoolRef:
-    values = tuple(items)
-    if not values:  # pragma: no cover - relation callers pass non-empty domains.
-        return z3.BoolVal(False)
-    if len(values) == 1:  # pragma: no cover - current state domains include sentinels.
-        return values[0]
-    return z3.Or(*values)
-
-
-def _state_in(symbol: z3.ArithRef, state_ids: Sequence[int]) -> z3.BoolRef:
-    ids = tuple(state_ids)
-    if not ids:  # pragma: no cover - BmcDomain validates allowed state sets.
-        raise _internal_bmc_error("state domain set is empty while building D_N.")
-    return _or(symbol == z3.IntVal(state_id) for state_id in ids)
-
-
-def _safe_symbol_fragment(value: str) -> str:
-    body = re.sub(r"[^0-9A-Za-z_]+", "_", value).strip("_") or "item"
-    digest = hashlib.sha1(value.encode("utf-8")).hexdigest()[:10]
-    return "%s_%s" % (body[:80], digest)
 
 
 def _case_transition_labels(case: CycleCase) -> Tuple[str, ...]:
@@ -1013,22 +777,6 @@ class BmcTraceSymbols:
             for value in mapping.values()
         ):
             raise BmcBuildError("case_selectors must contain Z3 Boolean expressions.")
-        variable_names = {item.name for item in self.domain.variables}
-        event_paths = {item.path for item in self.domain.events}
-        for frame_index, mapping in enumerate(self.frame_vars):
-            if set(mapping) != variable_names:
-                raise BmcBuildError(
-                    "frame_vars[%d] keys must match domain variables." % frame_index
-                )
-        for step_index, mapping in enumerate(self.event_inputs):
-            if set(mapping) != event_paths:
-                raise BmcBuildError(
-                    "event_inputs[%d] keys must match domain events." % step_index
-                )
-        if not all(
-            type(key) is str for mapping in self.case_selectors for key in mapping
-        ):
-            raise BmcBuildError("case_selectors keys must be strings.")
         symbol_values = tuple(self.frame_states)
         symbol_values += tuple(
             value for mapping in self.frame_vars for value in mapping.values()
@@ -1044,31 +792,6 @@ class BmcTraceSymbols:
         symbol_context = symbol_values[0].ctx
         if any(value.ctx != symbol_context for value in symbol_values[1:]):
             raise BmcBuildError("trace symbols must share one Z3 context.")
-        int_sort = z3.IntSort(symbol_context)
-        for frame_index, symbol in enumerate(self.frame_states):
-            if not symbol.sort().eq(int_sort):
-                raise BmcBuildError(
-                    "frame_states[%d] must use the Int Z3 sort." % frame_index
-                )
-        for frame_index, mapping in enumerate(self.frame_vars):
-            for variable in self.domain.variables:
-                expected_sort = (
-                    int_sort
-                    if variable.declared_type == "int"
-                    else z3.RealSort(symbol_context)
-                    if variable.declared_type == "float"
-                    else None
-                )
-                if expected_sort is None:
-                    raise BmcBuildError(
-                        "Unsupported persistent variable type for trace symbols: %r."
-                        % variable.declared_type
-                    )
-                if not mapping[variable.name].sort().eq(expected_sort):
-                    raise BmcBuildError(
-                        "frame_vars[%d][%r] must use the %s Z3 sort."
-                        % (frame_index, variable.name, expected_sort.name())
-                    )
         object.__setattr__(
             self,
             "frame_vars",
@@ -1752,227 +1475,28 @@ class BmcCoreFormula:
             raise BmcBuildError("steps must contain BmcStepRelation objects.")
         if not all(isinstance(item, str) for item in self.diagnostics):
             raise BmcBuildError("diagnostics must contain strings.")
-        if len(self.steps) != self.context.bound:
-            raise BmcBuildError(
-                "steps must contain exactly one relation per bound step."
-            )
-        step_indexes = tuple(step.step_index for step in self.steps)
-        if step_indexes != tuple(range(self.context.bound)):
-            raise BmcBuildError("steps must cover bound step indexes in order.")
-        for step in self.steps:
-            if 0 <= step.step_index < len(self.symbols.case_selectors):
-                expected_case_labels = set(step.case_registry)
-                actual_case_labels = set(self.symbols.case_selectors[step.step_index])
-                if actual_case_labels != expected_case_labels:
-                    raise BmcBuildError(
-                        "case_selectors[%d] keys must match lowered cases."
-                        % step.step_index
-                    )
         object.__setattr__(self, "steps", tuple(self.steps))
         object.__setattr__(self, "diagnostics", tuple(self.diagnostics))
         groups = tuple(self._tracked_groups)
-        if not all(isinstance(item, BmcTrackedConstraint) for item in groups):
-            raise BmcBuildError(
-                "tracked groups must contain BmcTrackedConstraint objects."
-            )
-        stable_ids = [item.stable_id for item in groups]
-        if len(set(stable_ids)) != len(stable_ids):
-            raise BmcBuildError("tracked groups must have unique stable ids.")
-        for group in groups:
-            _validate_tracked_source_ref(
-                self.context, group.source_ref, "tracked group"
-            )
-            _validate_tracked_group_contract(self.context, group)
-            for expression in group.expressions:
-                if not z3.is_bool(expression):
-                    raise BmcBuildError(
-                        "tracked group expressions must be Z3 Boolean expressions."
-                    )
-                if expression.ctx != self.core.ctx:
-                    raise BmcBuildError(
-                        "tracked group expressions must share the core Z3 context."
-                    )
         case_groups = tuple(self._tracked_case_groups)
-        if not all(isinstance(item, BmcTrackedConstraint) for item in case_groups):
-            raise BmcBuildError(
-                "tracked case groups must contain BmcTrackedConstraint objects."
-            )
-        if not all(item.category == "transition.case" for item in case_groups):
-            raise BmcBuildError(
-                "tracked case groups must have transition.case category."
-            )
-        if not all(item.stage == "kernel" for item in case_groups):
-            raise BmcBuildError("tracked case groups must have kernel stage.")
-        for group in case_groups:
-            _validate_tracked_source_ref(
-                self.context, group.source_ref, "tracked case group"
-            )
-        case_ids = [item.stable_id for item in case_groups]
-        if len(set(case_ids)) != len(case_ids):
-            raise BmcBuildError("tracked case groups must have unique stable ids.")
-        for group in case_groups:
-            for expression in group.expressions:
-                if not z3.is_bool(expression):
-                    raise BmcBuildError(
-                        "tracked case group expressions must be Z3 Boolean expressions."
-                    )
-                if expression.ctx != self.core.ctx:
-                    raise BmcBuildError(
-                        "tracked case group expressions must share the core Z3 context."
-                    )
-        all_ids = [item.stable_id for item in groups + case_groups]
-        if len(set(all_ids)) != len(all_ids):
-            raise BmcBuildError("all tracked groups must have unique stable ids.")
-        groups_by_formula = {name: [] for name in ("D_N", "I_0", "T_N", "ENV_N")}
-        for group in groups:
-            component = _tracked_group_component(group)
-            if component is None:
+        for label, candidates in (
+            ("tracked groups", groups),
+            ("tracked case groups", case_groups),
+        ):
+            if not all(isinstance(item, BmcTrackedConstraint) for item in candidates):
                 raise BmcBuildError(
-                    "tracked group does not belong to a canonical formula component."
+                    "%s must contain BmcTrackedConstraint objects." % label
                 )
-            groups_by_formula[component].append(group)
-        formula_values = {
-            "D_N": self.domain_formula,
-            "I_0": self.initial_formula,
-            "T_N": self.transition_formula,
-            "ENV_N": self.environment_formula,
-        }
-        for name, groups_for_formula in groups_by_formula.items():
-            if not z3.eq(
-                _formula_from_groups(tuple(groups_for_formula)), formula_values[name]
-            ):
-                raise BmcBuildError(
-                    "tracked groups do not reconstruct %s formula." % name
-                )
-        expected_core = _and(
-            (
-                self.domain_formula,
-                self.initial_formula,
-                self.transition_formula,
-                self.environment_formula,
-            )
-        )
-        if not z3.eq(expected_core, self.core):
-            raise BmcBuildError("core formula does not match D_N ∧ I_0 ∧ T_N ∧ ENV_N.")
-        step_relations = {step.step_index: step for step in self.steps}
-        tracked_step_indexes = set()
-        for group in groups:
-            if group.category != "transition.step":
-                continue
-            refs = dict(group.refs)
-            # _validate_tracked_group_contract has already validated this exact
-            # public ref and its stable identity before this formula check.
-            step_index = cast(int, refs["step"])
-            step_relation = step_relations.get(step_index)
-            if step_relation is None:  # pragma: no cover - step contract fixes index.
-                raise BmcBuildError(
-                    "tracked transition step ref does not identify a lowered step."
-                )
-            if len(group.expressions) != 1 or not z3.eq(
-                group.expressions[0], step_relation.formula
-            ):
-                raise BmcBuildError(
-                    "tracked transition step formula does not match step."
-                )
-            tracked_step_indexes.add(step_index)
-        if tracked_step_indexes != set(step_relations):
-            raise BmcBuildError(
-                "tracked transition step groups do not cover every lowered step."
-            )
-        case_relations = {
-            (step.step_index, case_index): case_relation
-            for step in self.steps
-            for case_index, case_relation in enumerate(step.case_relations)
-        }
-        if case_relations and not case_groups:
-            raise BmcBuildError("tracked case groups are missing lowered cases.")
-        registry = self.context._source_registry
-        if registry is None:
-            raise BmcBuildError("tracked case validation requires a source registry.")
-        seen_case_keys = set()
-        for group in case_groups:
-            refs = dict(group.refs)
-            step_value = refs.get("step")
-            if type(step_value) is not int or step_value < 0:
-                raise BmcBuildError(
-                    "tracked case group step must be a non-negative int."
-                )
-            case_index_value = refs.get("case_index")
-            if type(case_index_value) is not int or case_index_value < 0:
-                raise BmcBuildError(
-                    "tracked case group case_index must be a non-negative int."
-                )
-            step_index = step_value
-            case_index = case_index_value
-            key = (step_index, case_index)
-            case_label = refs.get("case_label")
-            case_kind = refs.get("case_kind")
-            transition_labels = refs.get("transition_labels")
-            source_inference = refs.get("source_inference")
-            if type(case_label) is not str or type(case_kind) is not str:
-                raise BmcBuildError(
-                    "tracked case group label and kind must be exact strings."
-                )
-            if not isinstance(transition_labels, (list, tuple)) or not all(
-                type(item) is str for item in transition_labels
-            ):
-                raise BmcBuildError(
-                    "tracked case group transition labels must be strings."
-                )
-            if source_inference is not None and (
-                type(source_inference) is not str
-                or source_inference not in _SOURCE_INFERENCES
-            ):
-                raise BmcBuildError(
-                    "tracked case group source_inference is unsupported."
-                )
-            case_relation = case_relations.get(key)
-            if case_relation is None:
-                raise BmcBuildError(
-                    "tracked case group does not identify a lowered case."
-                )
-            if key in seen_case_keys:
-                raise BmcBuildError(
-                    "tracked case groups must identify each lowered case once."
-                )
-            if refs.get("case_label") != case_relation.case.label:
-                raise BmcBuildError("tracked case group label does not match case.")
-            if refs.get("case_kind") != case_relation.case.kind:
-                raise BmcBuildError("tracked case group kind does not match case.")
-            transition_labels = tuple(cast(Sequence[str], transition_labels))
-            if transition_labels != _case_transition_labels(case_relation.case):
-                raise BmcBuildError(
-                    "tracked case group transition labels do not match case."
-                )
-            expected_source_ref, expected_transition_labels, expected_inference = (
-                _case_source_reference(
-                    self.context,
-                    case_relation.case,
-                    registry.reference("generated", None, None),
-                )
-            )
-            expected_refs = {
-                "step": step_index,
-                "case_index": case_index,
-                "case_label": case_relation.case.label,
-                "case_kind": case_relation.case.kind,
-                "transition_labels": expected_transition_labels,
-            }
-            if expected_inference is not None:
-                expected_refs["source_inference"] = expected_inference
-            if refs != expected_refs:
-                raise BmcBuildError("tracked case group refs do not match case.")
-            if group.source_ref != expected_source_ref:
-                raise BmcBuildError(
-                    "tracked case group source_ref does not match case source."
-                )
-            if len(group.expressions) != 1 or not z3.eq(
-                group.expressions[0], case_relation.formula
-            ):
-                raise BmcBuildError("tracked case group formula does not match case.")
-            seen_case_keys.add(key)
-        if seen_case_keys != set(case_relations):
-            raise BmcBuildError("tracked case groups do not cover every lowered case.")
+            for group in candidates:
+                for expression in group.expressions:
+                    if not z3.is_bool(expression):
+                        raise BmcBuildError(
+                            "%s expressions must be Z3 Boolean expressions." % label
+                        )
+                    if expression.ctx != self.core.ctx:
+                        raise BmcBuildError(
+                            "%s expressions must share the core Z3 context." % label
+                        )
         object.__setattr__(self, "_tracked_groups", groups)
         object.__setattr__(self, "_tracked_case_groups", case_groups)
 

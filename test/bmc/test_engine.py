@@ -376,69 +376,6 @@ def test_programmatic_query_source_override_without_root_span_is_supported(
 
 
 @pytest.mark.unittest
-def test_prepared_context_rejects_stale_bound_query_source_graph(
-    engine_model: StateMachine,
-) -> None:
-    """Canonical equality cannot replace source-object identity validation."""
-    query_text = (
-        'assume event("Root.Tick", 0) == true;\ncheck reach <= 1: active("Root.Done");'
-    )
-    query_with_spans = parse_bmc_query(query_text, source_path="query.fbmcq")
-    stale = BmcEngine(engine_model).prepare(parse_bmc_query(query_text))
-
-    with pytest.raises(BmcBuildError, match="source objects"):
-        BmcPreparedContext(
-            model=stale.model,
-            query=query_with_spans,
-            bound_query=stale.bound_query,
-            domain=stale.domain,
-            options=stale.options,
-            source_text=query_text,
-            query_source_path="query.fbmcq",
-        )
-
-
-@pytest.mark.parametrize("nested_field", ["initial", "property", "assumption"])
-def test_prepared_context_rejects_stale_nested_bound_source(
-    engine_model: StateMachine, nested_field: str
-) -> None:
-    """Nested bound metadata must retain identity with the prepared query."""
-    query_text = (
-        'assume event("Root.Tick", 0) == true;\ncheck reach <= 1: active("Root.Done");'
-    )
-    prepared = BmcEngine(engine_model).prepare(query_text)
-    if nested_field == "initial":
-        bound_query = replace(
-            prepared.bound_query,
-            initial=replace(
-                prepared.bound_query.initial,
-                source=replace(prepared.query.initial),
-            ),
-        )
-    elif nested_field == "property":
-        bound_query = replace(
-            prepared.bound_query,
-            property=replace(
-                prepared.bound_query.property,
-                source=replace(prepared.query.property),
-            ),
-        )
-    else:
-        bound_query = replace(
-            prepared.bound_query,
-            assumptions=(
-                replace(
-                    prepared.bound_query.assumptions[0],
-                    source=replace(prepared.query.assumptions[0]),
-                ),
-            ),
-        )
-
-    with pytest.raises(BmcBuildError, match="source objects"):
-        replace(prepared, bound_query=bound_query)
-
-
-@pytest.mark.unittest
 def test_engine_propagates_parse_errors_before_prepare(
     engine_model: StateMachine,
 ) -> None:

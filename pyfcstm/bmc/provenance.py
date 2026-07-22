@@ -32,7 +32,6 @@ Examples::
 
 from __future__ import annotations
 
-import hashlib
 import os
 from dataclasses import dataclass, field
 from types import MappingProxyType
@@ -90,26 +89,6 @@ def _span_offsets(text: str, span: Span) -> Optional[Tuple[int, int]]:
     if start < 0 or end < start or end > len(text):
         return None
     return start, end
-
-
-def _model_fingerprint(obj: object) -> Optional[str]:
-    """Return the current canonical fingerprint of a source-bearing model object.
-
-    :param obj: Model object that may expose ``to_ast_node``.
-    :type obj: object
-    :return: SHA-256 fingerprint, or ``None`` when the object cannot be exported.
-    :rtype: Optional[str]
-    """
-    exporter = getattr(obj, "to_ast_node", None)
-    if not callable(exporter):
-        return None
-    try:
-        canonical = str(exporter())
-    except (AttributeError, KeyError, TypeError, ValueError):
-        # These exceptions can arise when a caller mutates a public model into
-        # an object that can no longer be exported; provenance must fail closed.
-        return None
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -389,10 +368,6 @@ class SourceDocumentRegistry:
         :return: FCSTM source reference, possibly without path/span.
         :rtype: BmcSourceRef
 
-        A model loaded from source carries a private structural fingerprint.
-        If public mutation makes that fingerprint stale, this method retains
-        the display path for orientation but drops the exact span.
-
         Examples::
 
             >>> SourceDocumentRegistry({}).model_reference(object()).kind
@@ -400,14 +375,6 @@ class SourceDocumentRegistry:
         """
         path = getattr(obj, "_source_path", None)
         span = getattr(obj, "_span", None)
-        expected_fingerprint = getattr(obj, "_source_fingerprint", None)
-        if (
-            expected_fingerprint is not None
-            and _model_fingerprint(obj) != expected_fingerprint
-        ):
-            # The public model is mutable.  Keep the path for orientation, but
-            # never claim that the old source span describes the new formula.
-            span = None
         return self.reference("fcstm", path, span)
 
     def query_reference(self, query: object, obj: object) -> BmcSourceRef:

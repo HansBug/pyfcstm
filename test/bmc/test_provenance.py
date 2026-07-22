@@ -17,6 +17,7 @@ from pyfcstm.dsl import node as dsl_nodes
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.bmc import BmcEngine, BmcPreparedContext, build_bmc_core_formula
 from pyfcstm.bmc.errors import BmcBuildError, InvalidBmcQuery
+from pyfcstm.bmc.macro import ActionBlock
 from pyfcstm.bmc.parse import parse_bmc_query
 from pyfcstm.bmc.provenance import (
     BmcSourceRef,
@@ -801,6 +802,30 @@ def _combo_context_and_case():
     return context, case
 
 
+def _plain_context_and_case():
+    """Build a real public-API context containing a plain transition case."""
+    model = load_state_machine_from_text(
+        """state Root {
+    state A;
+    state B;
+    [*] -> A;
+    A -> B;
+}
+"""
+    )
+    context = BmcEngine(model).prepare(
+        'init state("Root.A"); check reach <= 1: active("Root.B");'
+    )
+    core = build_bmc_core_formula(context)
+    case = next(
+        case_relation.case
+        for step in core.steps
+        for case_relation in step.case_relations
+        if case_relation.case.kind == "transition"
+    )
+    return context, case
+
+
 def _replace_model_transition(model, original, replacement) -> None:
     """Replace one generated transition in its owning state's transition list."""
     for state in model.walk_states():
@@ -809,6 +834,132 @@ def _replace_model_transition(model, original, replacement) -> None:
                 state.transitions[index] = replacement
                 return
     raise AssertionError("transition was not found in the model")
+
+
+@pytest.mark.parametrize(
+    "transition_label",
+    [
+        pytest.param("malformed", id="missing-separators"),
+        pytest.param("Root.A::not-an-index::A->B", id="non-integer-index"),
+        pytest.param("Root.A::-1::A->B", id="negative-index"),
+        pytest.param("Missing::0::A->B", id="missing-owner"),
+        pytest.param("Root.A::0::A-B", id="missing-edge-arrow"),
+        pytest.param("Root.A::0:: ->B", id="empty-source-endpoint"),
+        pytest.param("Root.A::99::A->B", id="index-out-of-range"),
+        pytest.param("Root.A::0::Wrong->B", id="endpoint-mismatch"),
+    ],
+)
+def test_case_source_reference_rejects_malformed_transition_labels(
+    transition_label: str,
+) -> None:
+    """Malformed generated labels fail closed without source inference.
+
+    The prepared context, model, and generated case all come from public BMC
+    APIs.  Only the transition label is malformed deliberately to exercise the
+    defensive boundary that the public macro builder itself rejects.
+    """
+    context, case = _combo_context_and_case()
+    action = ActionBlock(
+        "transition_effect",
+        "transition_effect",
+        case.source_state_id,
+        case.source_state_path,
+        (),
+        transition_label=transition_label,
+    )
+    malformed_case = replace(case, action_blocks=(action,), domain=None)
+    generated_ref = context._source_registry.reference("generated", None, None)
+
+    source_ref, labels, inference = relation_module._case_source_reference(
+        context, malformed_case, generated_ref
+    )
+
+    assert source_ref == generated_ref
+    assert labels == (transition_label,)
+    assert inference is None
+
+
+def test_case_source_reference_rejects_reserved_synthetic_source_path() -> None:
+    """Synthetic source paths do not enter model transition lookup."""
+    context, case = _plain_context_and_case()
+    synthetic_case = replace(
+        case,
+        source_state_path="__synthetic__",
+        label="__synthetic__::transition::Root.B::0",
+        domain=None,
+    )
+    generated_ref = context._source_registry.reference("generated", None, None)
+
+    source_ref, labels, inference = relation_module._case_source_reference(
+        context, synthetic_case, generated_ref
+    )
+
+    assert source_ref == generated_ref
+    assert labels == ()
+    assert inference is None
+
+
+def test_case_source_reference_rejects_model_transition_source_mismatch() -> None:
+    """A mutated transition cannot satisfy a plain case source lookup."""
+    context, case = _plain_context_and_case()
+    source_state = next(
+        state for state in context.model.walk_states() if state.path == ("Root", "A")
+    )
+    transition = next(iter(source_state.transitions_from))
+    _replace_model_transition(
+        context.model, transition, replace(transition, from_state="Other")
+    )
+    generated_ref = context._source_registry.reference("generated", None, None)
+
+    source_ref, labels, inference = relation_module._case_source_reference(
+        context, case, generated_ref
+    )
+
+    assert source_ref == generated_ref
+    assert labels == ()
+    assert inference is None
+
+
+def test_case_source_reference_rejects_invalid_initial_target() -> None:
+    """An invalid initial target is ignored rather than inferred as authored."""
+    model = load_state_machine_from_text("state Root { state A; [*] -> A; }")
+    context = BmcEngine(model).prepare('check reach <= 1: active("Root.A");')
+    core = build_bmc_core_formula(context)
+    case = next(
+        case_relation.case
+        for step in core.steps
+        for case_relation in step.case_relations
+        if case_relation.case.kind == "initial"
+    )
+    root = next(
+        state for state in context.model.walk_states() if state.path == ("Root",)
+    )
+    initial = next(iter(root.init_transitions))
+    _replace_model_transition(
+        context.model, initial, replace(initial, to_state=dsl_nodes.EXIT_STATE)
+    )
+    generated_ref = context._source_registry.reference("generated", None, None)
+
+    source_ref, labels, inference = relation_module._case_source_reference(
+        context, case, generated_ref
+    )
+
+    assert source_ref == generated_ref
+    assert labels == ()
+    assert inference is None
+
+
+def test_transition_target_path_rejects_non_exit_root_transition() -> None:
+    """The synthetic root owner cannot resolve a non-exit transition target."""
+    model = load_state_machine_from_text("state Root;")
+    root = next(model.walk_states())
+    root_exit = next(iter(root.transitions_from))
+    forged_target = replace(root_exit, to_state="Child")
+
+    assert (
+        relation_module._transition_target_path(root, forged_target, initial=False)
+        is None
+    )
 
 
 @pytest.mark.parametrize(

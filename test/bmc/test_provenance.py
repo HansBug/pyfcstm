@@ -487,7 +487,7 @@ state Root {
     }
 }
 """
-    source_path.write_text(source, encoding="utf-8")
+    source_path.write_bytes(source.encode("utf-8"))
 
     model = load_state_machine_from_file(source_path)
     transition = next(
@@ -500,9 +500,7 @@ state Root {
 
     assert transition._source_path == str(source_path.resolve())
     assert effect._source_path == str(source_path.resolve())
-    expected_transition = os.linesep.join(
-        ("A -> B effect {", "        x = x + 1;", "    }")
-    )
+    expected_transition = "\n".join(("A -> B effect {", "        x = x + 1;", "    }"))
     assert registry.excerpt(registry.model_reference(transition)) == expected_transition
     assert registry.excerpt(registry.model_reference(effect)) == "x = x + 1;"
 
@@ -573,6 +571,99 @@ def test_event_only_transition_case_uses_unique_event_source_excerpt(
     assert group.source_ref.kind == "fcstm"
     assert group.source_ref.path == "machine.fcstm"
     assert context._source_registry.excerpt(group.source_ref) == "A -> B :: Go;"
+
+
+def test_plain_transition_case_uses_unique_model_transition_excerpt(
+    tmp_path: Path,
+) -> None:
+    """A plain transition without guard/effect remains source-locatable."""
+    source_path = tmp_path / "machine.fcstm"
+    source = """state Root {
+    state A;
+    state B;
+    [*] -> A;
+    A -> B;
+}
+"""
+    source_path.write_bytes(source.encode("utf-8"))
+
+    model = load_state_machine_from_file(source_path)
+    context = BmcEngine(model).prepare(
+        'init state("Root.A"); check reach <= 1: active("Root.B");',
+        query_source_path="query.fbmcq",
+    )
+    core = build_bmc_core_formula(context)
+    group = next(
+        item
+        for item in core._tracked_case_groups
+        if item.refs.get("source_inference") == "unique_transition"
+    )
+
+    assert context._source_registry.excerpt(group.source_ref) == "A -> B;"
+
+
+def test_parent_event_only_case_uses_unique_parent_transition_excerpt(
+    tmp_path: Path,
+) -> None:
+    """An event-only parent continuation searches its owner prefixes."""
+    source_path = tmp_path / "machine.fcstm"
+    source = """state Root {
+    event Go;
+    state Outer {
+        state A;
+        [*] -> A;
+        A -> [*];
+    }
+    state Sink;
+    [*] -> Outer;
+    Outer -> Sink :: Go;
+}
+"""
+    source_path.write_bytes(source.encode("utf-8"))
+
+    model = load_state_machine_from_file(source_path)
+    context = BmcEngine(model).prepare(
+        'check reach <= 3: active("Root.Sink");',
+        query_source_path="query.fbmcq",
+    )
+    core = build_bmc_core_formula(context)
+    groups = [
+        item
+        for item in core._tracked_case_groups
+        if item.refs.get("source_inference") == "unique_event"
+    ]
+
+    assert groups
+    assert {context._source_registry.excerpt(item.source_ref) for item in groups} == {
+        "Outer -> Sink :: Go;"
+    }
+
+
+def test_plain_initial_case_uses_unique_initial_transition_excerpt(
+    tmp_path: Path,
+) -> None:
+    """A single direct initial transition remains source-locatable."""
+    source_path = tmp_path / "machine.fcstm"
+    source = """state Root {
+    state A;
+    [*] -> A;
+}
+"""
+    source_path.write_bytes(source.encode("utf-8"))
+
+    model = load_state_machine_from_file(source_path)
+    context = BmcEngine(model).prepare(
+        'check reach <= 1: active("Root.A");',
+        query_source_path="query.fbmcq",
+    )
+    core = build_bmc_core_formula(context)
+    group = next(
+        item
+        for item in core._tracked_case_groups
+        if item.refs.get("source_inference") == "unique_initial"
+    )
+
+    assert context._source_registry.excerpt(group.source_ref) == "[*] -> A;"
 
 
 def test_parent_continuation_transition_uses_normal_transition_index(
@@ -1226,7 +1317,72 @@ def test_core_formula_rejects_malformed_tracked_group_payloads() -> None:
     with pytest.raises(BmcBuildError, match="reconstruct D_N"):
         replace(core, domain_formula=z3.BoolVal(True))
 
+    orphan = replace(core._tracked_groups[0], category="orphan")
+    formula_groups = list(core._tracked_groups)
+    formula_groups[0] = orphan
+    with pytest.raises(BmcBuildError, match="does not belong"):
+        replace(core, _tracked_groups=tuple(formula_groups))
+
     case_group = core._tracked_case_groups[0]
+    with pytest.raises(BmcBuildError, match="missing lowered cases"):
+        replace(core, _tracked_case_groups=())
+
+    unknown_case_refs = dict(case_group.refs)
+    unknown_case_refs["case_index"] = 99
+    with pytest.raises(BmcBuildError, match="does not identify a lowered case"):
+        replace(
+            core,
+            _tracked_case_groups=(
+                replace(case_group, refs=unknown_case_refs),
+                core._tracked_case_groups[1],
+            ),
+        )
+
+    duplicate_case_refs = dict(core._tracked_case_groups[1].refs)
+    duplicate_case_refs["step"] = case_group.refs["step"]
+    duplicate_case_refs["case_index"] = case_group.refs["case_index"]
+    with pytest.raises(BmcBuildError, match="identify each lowered case once"):
+        replace(
+            core,
+            _tracked_case_groups=(
+                case_group,
+                replace(core._tracked_case_groups[1], refs=duplicate_case_refs),
+            ),
+        )
+
+    mismatched_label_refs = dict(case_group.refs)
+    mismatched_label_refs["case_label"] = "not-the-lowered-label"
+    with pytest.raises(BmcBuildError, match="label does not match"):
+        replace(
+            core,
+            _tracked_case_groups=(
+                replace(case_group, refs=mismatched_label_refs),
+                core._tracked_case_groups[1],
+            ),
+        )
+
+    mismatched_kind_refs = dict(case_group.refs)
+    mismatched_kind_refs["case_kind"] = "not-the-lowered-kind"
+    with pytest.raises(BmcBuildError, match="kind does not match"):
+        replace(
+            core,
+            _tracked_case_groups=(
+                replace(case_group, refs=mismatched_kind_refs),
+                core._tracked_case_groups[1],
+            ),
+        )
+
+    mismatched_transition_refs = dict(case_group.refs)
+    mismatched_transition_refs["transition_labels"] = ["not-a-real-transition"]
+    with pytest.raises(BmcBuildError, match="transition labels do not match"):
+        replace(
+            core,
+            _tracked_case_groups=(
+                replace(case_group, refs=mismatched_transition_refs),
+                core._tracked_case_groups[1],
+            ),
+        )
+
     with pytest.raises(BmcBuildError, match="transition.case category"):
         replace(
             core,
@@ -1258,6 +1414,17 @@ def test_core_formula_rejects_malformed_tracked_group_payloads() -> None:
                 replace(case_group, stable_id=core._tracked_groups[0].stable_id),
             ),
         )
+
+    with pytest.raises(BmcBuildError, match="cover every lowered case"):
+        replace(core, _tracked_case_groups=core._tracked_case_groups[:-1])
+
+    case_formula_groups = list(core._tracked_case_groups)
+    case_formula_groups[0] = replace(
+        case_formula_groups[0],
+        expressions=(z3.Not(case_formula_groups[0].expressions[0]),),
+    )
+    with pytest.raises(BmcBuildError, match="formula does not match case"):
+        replace(core, _tracked_case_groups=tuple(case_formula_groups))
 
 
 def test_case_provenance_is_not_part_of_formula_group_ledger() -> None:

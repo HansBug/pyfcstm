@@ -341,6 +341,29 @@ def _append_tracked_group(
     )
 
 
+def _tracked_group_component(group: BmcTrackedConstraint) -> Optional[str]:
+    """Return the canonical formula component owned by one tracked group."""
+    if group.category == "domain.frame_state" and group.stage == "kernel":
+        return "D_N"
+    if group.category == "transition.step" and group.stage == "kernel":
+        return "T_N"
+    if group.stage == "initialization" and group.category in {
+        "definedness",
+        "initial.target",
+        "initial.variable",
+        "initial.where",
+    }:
+        return "I_0"
+    if group.stage == "assumptions" and group.category in {
+        "definedness",
+        "assumption.frame",
+        "assumption.event",
+        "assumption.cardinality",
+    }:
+        return "ENV_N"
+    return None
+
+
 def _or(items: Iterable[z3.ExprRef]) -> z3.BoolRef:
     values = tuple(items)
     if not values:  # pragma: no cover - relation callers pass non-empty domains.
@@ -389,6 +412,73 @@ def _model_state_by_path(context: BmcPreparedContext, path: str):
     )
 
 
+def _state_path_prefixes(path: str) -> Tuple[str, ...]:
+    """Return model-state prefixes from the nearest owner to the root."""
+    if not path or path.startswith("__"):
+        return ()
+    parts = tuple(path.split("."))
+    return tuple(".".join(parts[:index]) for index in range(len(parts), 0, -1))
+
+
+def _transition_target_path(owner, transition, *, initial: bool) -> Optional[str]:
+    """Return the public target path represented by one model transition."""
+    target = str(transition.to_state)
+    if target == "EXIT_STATE" or not isinstance(transition.to_state, str):
+        return None
+    if initial:
+        return ".".join(tuple(owner.path) + (target,))
+    parent = owner.parent
+    if parent is None:
+        return None
+    return ".".join(tuple(parent.path) + (target,))
+
+
+def _transition_candidates(
+    context: BmcPreparedContext,
+    case: CycleCase,
+    event_paths: Optional[Set[str]] = None,
+) -> Tuple[Any, ...]:
+    """Find model transitions matching a case's public source and target."""
+    candidates = []
+    if case.kind == "initial":
+        target_path = case.target_state_path
+        for owner in context.model.walk_states():
+            for transition in owner.init_transitions:
+                candidate_path = _transition_target_path(
+                    owner, transition, initial=True
+                )
+                if candidate_path is None:
+                    continue
+                if target_path == candidate_path or target_path.startswith(
+                    candidate_path + "."
+                ):
+                    candidates.append(transition)
+        return tuple(candidates)
+    if case.kind != "transition":
+        return ()
+
+    prefixes = set(_state_path_prefixes(case.source_state_path))
+    for owner in context.model.walk_states():
+        owner_path = ".".join(owner.path)
+        if owner_path not in prefixes:
+            continue
+        for transition in owner.transitions_from:
+            if str(transition.from_state) != owner.name:
+                continue
+            if event_paths:
+                if (
+                    transition.event is None
+                    or transition.event.path_name not in event_paths
+                ):
+                    continue
+            target_path = _transition_target_path(owner, transition, initial=False)
+            if target_path == case.target_state_path or (
+                target_path is None and case.target_state_id == STATE_TERMINATE_ID
+            ):
+                candidates.append(transition)
+    return tuple(candidates)
+
+
 def _unique_event_transition(context: BmcPreparedContext, case: CycleCase):
     """Return an event-only model transition when the source is unambiguous."""
     if case.kind != "transition":
@@ -400,22 +490,23 @@ def _unique_event_transition(context: BmcPreparedContext, case: CycleCase):
     }
     if len(event_paths) != 1:
         return None
-    owner = _model_state_by_path(context, case.source_state_path)
-    if owner is None:
-        return None
-    matches = [
-        transition
-        for transition in owner.transitions_from
-        if transition.event is not None and transition.event.path_name in event_paths
-    ]
+    matches = _transition_candidates(context, case, event_paths)
     return matches[0] if len(matches) == 1 else None
+
+
+def _unique_case_transition(context: BmcPreparedContext, case: CycleCase):
+    """Return a uniquely source/target-matched plain or initial transition."""
+    candidates = _transition_candidates(context, case)
+    if len(candidates) != 1:
+        return None
+    return candidates[0]
 
 
 def _case_source_reference(
     context: BmcPreparedContext,
     case: CycleCase,
     generated_ref,
-) -> Tuple[Any, Tuple[str, ...]]:
+) -> Tuple[Any, Tuple[str, ...], Optional[str]]:
     """Resolve a uniquely transition-backed case to its model source span.
 
     Macro cases may combine several micro-transitions or contain only synthetic
@@ -426,52 +517,59 @@ def _case_source_reference(
     labels = _case_transition_labels(case)
     if not labels:
         transition = _unique_event_transition(context, case)
+        inference = "unique_event" if transition is not None else None
+        if transition is None:
+            transition = _unique_case_transition(context, case)
+            if transition is not None:
+                inference = (
+                    "unique_initial" if case.kind == "initial" else "unique_transition"
+                )
         if transition is not None:
             reference = context._source_registry.model_reference(transition)
             if reference.path is not None or reference.span is not None:
-                return reference, labels
-        return generated_ref, labels
+                return reference, labels, inference
+        return generated_ref, labels, None
     if len(labels) != 1:
-        return generated_ref, labels
+        return generated_ref, labels, None
 
     parts = labels[0].rsplit("::", 2)
     if len(parts) != 3:
-        return generated_ref, labels
+        return generated_ref, labels, None
     owner_path, index_text, _edge = parts
     try:
         transition_index = int(index_text)
     except ValueError:
-        return generated_ref, labels
+        return generated_ref, labels, None
     if transition_index < 0:
-        return generated_ref, labels
+        return generated_ref, labels, None
 
     owner = _model_state_by_path(context, owner_path)
     if owner is None:
-        return generated_ref, labels
+        return generated_ref, labels, None
     edge_parts = _edge.split("->", 1)
     if len(edge_parts) != 2:
-        return generated_ref, labels
+        return generated_ref, labels, None
     from_state, target_state = (part.strip() for part in edge_parts)
     if not from_state or not target_state:
-        return generated_ref, labels
+        return generated_ref, labels, None
     transitions = (
         tuple(owner.init_transitions)
         if from_state == "INIT_STATE"
         else tuple(owner.transitions_from)
     )
     if transition_index >= len(transitions):
-        return generated_ref, labels
+        return generated_ref, labels, None
 
     transition = transitions[transition_index]
     expected_target = (
         "[*]" if str(transition.to_state) == "EXIT_STATE" else str(transition.to_state)
     )
     if str(transition.from_state) != from_state or expected_target != target_state:
-        return generated_ref, labels
+        return generated_ref, labels, None
     reference = context._source_registry.model_reference(transition)
     if reference.path is None and reference.span is None:
-        return generated_ref, labels
-    return reference, labels
+        return generated_ref, labels, None
+    return reference, labels, None
 
 
 def _domain_constraints_exprs(
@@ -1286,14 +1384,14 @@ class BmcCoreFormula:
         all_ids = [item.stable_id for item in groups + case_groups]
         if len(set(all_ids)) != len(all_ids):
             raise BmcBuildError("all tracked groups must have unique stable ids.")
-        groups_by_formula = {
-            "D_N": tuple(
-                item for item in groups if item.category == "domain.frame_state"
-            ),
-            "I_0": tuple(item for item in groups if item.stage == "initialization"),
-            "T_N": tuple(item for item in groups if item.category == "transition.step"),
-            "ENV_N": tuple(item for item in groups if item.stage == "assumptions"),
-        }
+        groups_by_formula = {name: [] for name in ("D_N", "I_0", "T_N", "ENV_N")}
+        for group in groups:
+            component = _tracked_group_component(group)
+            if component is None:
+                raise BmcBuildError(
+                    "tracked group does not belong to a canonical formula component."
+                )
+            groups_by_formula[component].append(group)
         formula_values = {
             "D_N": self.domain_formula,
             "I_0": self.initial_formula,
@@ -1302,11 +1400,48 @@ class BmcCoreFormula:
         }
         for name, groups_for_formula in groups_by_formula.items():
             if not z3.eq(
-                _formula_from_groups(groups_for_formula), formula_values[name]
+                _formula_from_groups(tuple(groups_for_formula)), formula_values[name]
             ):
                 raise BmcBuildError(
                     "tracked groups do not reconstruct %s formula." % name
                 )
+        case_relations = {
+            (step.step_index, case_index): case_relation
+            for step in self.steps
+            for case_index, case_relation in enumerate(step.case_relations)
+        }
+        if case_relations and not case_groups:
+            raise BmcBuildError("tracked case groups are missing lowered cases.")
+        seen_case_keys = set()
+        for group in case_groups:
+            refs = dict(group.refs)
+            key = (refs.get("step"), refs.get("case_index"))
+            case_relation = case_relations.get(key)
+            if case_relation is None:
+                raise BmcBuildError(
+                    "tracked case group does not identify a lowered case."
+                )
+            if key in seen_case_keys:
+                raise BmcBuildError(
+                    "tracked case groups must identify each lowered case once."
+                )
+            if refs.get("case_label") != case_relation.case.label:
+                raise BmcBuildError("tracked case group label does not match case.")
+            if refs.get("case_kind") != case_relation.case.kind:
+                raise BmcBuildError("tracked case group kind does not match case.")
+            if tuple(refs.get("transition_labels", ())) != _case_transition_labels(
+                case_relation.case
+            ):
+                raise BmcBuildError(
+                    "tracked case group transition labels do not match case."
+                )
+            if len(group.expressions) != 1 or not z3.eq(
+                group.expressions[0], case_relation.formula
+            ):
+                raise BmcBuildError("tracked case group formula does not match case.")
+            seen_case_keys.add(key)
+        if seen_case_keys != set(case_relations):
+            raise BmcBuildError("tracked case groups do not cover every lowered case.")
         object.__setattr__(self, "_tracked_groups", groups)
         object.__setattr__(self, "_tracked_case_groups", case_groups)
 
@@ -2685,7 +2820,7 @@ def build_bmc_core_formula(context: BmcPreparedContext) -> BmcCoreFormula:
     case_groups: List[BmcTrackedConstraint] = []
     for step in steps:
         for case_index, case_relation in enumerate(step.case_relations):
-            source_ref, transition_labels = _case_source_reference(
+            source_ref, transition_labels, source_inference = _case_source_reference(
                 prepared, case_relation.case, generated_ref
             )
             refs = {
@@ -2695,8 +2830,8 @@ def build_bmc_core_formula(context: BmcPreparedContext) -> BmcCoreFormula:
                 "case_kind": case_relation.case.kind,
                 "transition_labels": list(transition_labels),
             }
-            if not transition_labels and source_ref.kind == "fcstm":
-                refs["source_inference"] = "unique_event"
+            if source_inference is not None and source_ref.kind == "fcstm":
+                refs["source_inference"] = source_inference
             _append_tracked_group(
                 case_groups,
                 stable_id="transition.case.%04d.%04d" % (step.step_index, case_index),

@@ -479,15 +479,20 @@ def _transition_candidates(
     return tuple(candidates)
 
 
+def _case_trigger_event_paths(case: CycleCase) -> Tuple[str, ...]:
+    """Return trigger-event paths in the order consumed by one case."""
+    return tuple(
+        item.path
+        for item in case.used_events
+        if item.polarity == "positive" and item.reason == "trigger"
+    )
+
+
 def _unique_event_transition(context: BmcPreparedContext, case: CycleCase):
     """Return an event-only model transition when the source is unambiguous."""
     if case.kind != "transition":
         return None
-    event_paths = {
-        item.path
-        for item in case.used_events
-        if item.polarity == "positive" and item.reason == "trigger"
-    }
+    event_paths = set(_case_trigger_event_paths(case))
     if len(event_paths) != 1:
         return None
     matches = _transition_candidates(context, case, event_paths)
@@ -496,10 +501,62 @@ def _unique_event_transition(context: BmcPreparedContext, case: CycleCase):
 
 def _unique_case_transition(context: BmcPreparedContext, case: CycleCase):
     """Return a uniquely source/target-matched plain or initial transition."""
+    if case.kind == "transition" and _case_trigger_event_paths(case):
+        return None
     candidates = _transition_candidates(context, case)
     if len(candidates) != 1:
         return None
     return candidates[0]
+
+
+def _unique_combo_transition(context: BmcPreparedContext, case: CycleCase):
+    """Return the first edge of one uniquely matched combo-transition chain."""
+    event_paths = _case_trigger_event_paths(case)
+    if case.kind != "transition" or len(event_paths) < 2:
+        return None
+
+    routes = [(case.source_state_path, (), None)]
+    for event_path in event_paths:
+        next_routes = []
+        for current_path, chain, origin_id in routes:
+            owner = _model_state_by_path(context, current_path)
+            if owner is None:
+                continue
+            for transition in owner.transitions_from:
+                origin_refs = tuple(getattr(transition, "combo_origin_refs", ()))
+                if not origin_refs:
+                    continue
+                origin_ids = {item.origin_id for item in origin_refs}
+                spans = {item.transition_span for item in origin_refs}
+                if len(origin_ids) != 1 or len(spans) != 1:
+                    continue
+                candidate_origin_id = next(iter(origin_ids))
+                if origin_id is not None and candidate_origin_id != origin_id:
+                    continue
+                if transition.event is None or transition.event.path_name != event_path:
+                    continue
+                target_path = _transition_target_path(owner, transition, initial=False)
+                if target_path is None:
+                    continue
+                next_routes.append(
+                    (
+                        target_path,
+                        chain + (transition,),
+                        candidate_origin_id,
+                    )
+                )
+        routes = next_routes
+        if not routes:
+            return None
+
+    matches = [
+        chain
+        for target_path, chain, _origin_id in routes
+        if target_path == case.target_state_path and chain
+    ]
+    if len(matches) != 1:
+        return None
+    return matches[0][0]
 
 
 def _case_source_reference(
@@ -524,11 +581,15 @@ def _case_source_reference(
                 inference = (
                     "unique_initial" if case.kind == "initial" else "unique_transition"
                 )
+        if transition is None:
+            transition = _unique_combo_transition(context, case)
+            if transition is not None:
+                inference = "unique_combo"
         if transition is not None:
             reference = context._source_registry.model_reference(transition)
             if reference.path is not None or reference.span is not None:
                 return reference, labels, inference
-        return generated_ref, labels, None
+        return generated_ref, labels, inference
     if len(labels) != 1:
         return generated_ref, labels, None
 
@@ -1405,6 +1466,16 @@ class BmcCoreFormula:
                 raise BmcBuildError(
                     "tracked groups do not reconstruct %s formula." % name
                 )
+        expected_core = _and(
+            (
+                self.domain_formula,
+                self.initial_formula,
+                self.transition_formula,
+                self.environment_formula,
+            )
+        )
+        if not z3.eq(expected_core, self.core):
+            raise BmcBuildError("core formula does not match D_N ∧ I_0 ∧ T_N ∧ ENV_N.")
         case_relations = {
             (step.step_index, case_index): case_relation
             for step in self.steps
@@ -2830,7 +2901,7 @@ def build_bmc_core_formula(context: BmcPreparedContext) -> BmcCoreFormula:
                 "case_kind": case_relation.case.kind,
                 "transition_labels": list(transition_labels),
             }
-            if source_inference is not None and source_ref.kind == "fcstm":
+            if source_inference is not None:
                 refs["source_inference"] = source_inference
             _append_tracked_group(
                 case_groups,

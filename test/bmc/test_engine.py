@@ -78,10 +78,10 @@ def test_engine_prepares_query_text_with_domain_references(
     assert context.domain.bound == 1
     assert context.query.property.bound == 1
     assert context.bound_query.property.bound == 1
+
     assert context.options == BmcOptions()
     assert isinstance(context.domain, BmcDomain)
     assert isinstance(context.bound_query, BoundBmcQuery)
-
     references = {(ref.kind, ref.name): ref for ref in context.references}
     assert references[("state", "Root.Done")].resolved_id is not None
     assert references[("event", "Root.Tick")].resolved_id is not None
@@ -108,6 +108,17 @@ def test_engine_prepares_query_text_with_domain_references(
     prepared_canonical = context.bound_query.to_canonical()
     for key in ("query", "initial", "assumptions", "property", "references"):
         assert rebound_canonical[key] == prepared_canonical[key]
+
+
+def test_engine_normalizes_missing_query_span_ledger() -> None:
+    """A malformed absent span ledger fails closed without leaking TypeError."""
+    model = load_state_machine_from_text("state Root;")
+    query = parse_bmc_query('check reach <= 1: active("Root");')
+    object.__setattr__(query, "_source_spans", None)
+
+    context = BmcEngine(model).prepare(query, query_source_path="query.fbmcq")
+
+    assert context.query._source_spans == ()
 
 
 @pytest.mark.unittest

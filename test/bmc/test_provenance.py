@@ -11,6 +11,7 @@ from types import SimpleNamespace
 import pytest
 import z3
 
+import pyfcstm.bmc.relation as relation_module
 import pyfcstm.bmc.provenance as provenance_module
 from pyfcstm.dsl import node as dsl_nodes
 from pyfcstm.dsl import parse_with_grammar_entry
@@ -666,6 +667,178 @@ def test_plain_initial_case_uses_unique_initial_transition_excerpt(
     assert context._source_registry.excerpt(group.source_ref) == "[*] -> A;"
 
 
+def test_combo_transition_case_uses_unique_original_source_excerpt(
+    tmp_path: Path,
+) -> None:
+    """A unique combo chain points back to its authored transition span."""
+    source_path = tmp_path / "machine.fcstm"
+    source = """state Root {
+    event E1;
+    event E2;
+    state A;
+    state B;
+    [*] -> A;
+    A -> B :: E1 + E2;
+}
+"""
+    source_path.write_bytes(source.encode("utf-8"))
+
+    model = load_state_machine_from_file(source_path)
+    context = BmcEngine(model).prepare(
+        'init state("Root.A"); '
+        'assume event("Root.E1", 0) == true; '
+        'assume event("Root.E2", 1) == true; '
+        'check reach <= 2: active("Root.B");',
+        query_source_path="query.fbmcq",
+    )
+    core = build_bmc_core_formula(context)
+    groups = [
+        item
+        for item in core._tracked_case_groups
+        if item.refs.get("case_label") == "Root.A::transition::Root.B::0"
+        and item.refs.get("source_inference") == "unique_combo"
+    ]
+
+    assert groups
+    assert {context._source_registry.excerpt(item.source_ref) for item in groups} == {
+        "A -> B :: E1 + E2;"
+    }
+
+
+def _combo_context_and_case():
+    """Build one compact combo context for defensive resolver tests."""
+    model = load_state_machine_from_text(
+        """state Root {
+    event E1;
+    event E2;
+    state A;
+    state B;
+    [*] -> A;
+    A -> B :: E1 + E2;
+}
+"""
+    )
+    context = BmcEngine(model).prepare(
+        'init state("Root.A"); '
+        'assume event("Root.E1", 0) == true; '
+        'assume event("Root.E2", 1) == true; '
+        'check reach <= 2: active("Root.B");'
+    )
+    core = build_bmc_core_formula(context)
+    case = next(
+        case_relation.case
+        for step in core.steps
+        for case_relation in step.case_relations
+        if case_relation.case.kind == "transition"
+    )
+    return context, case
+
+
+def _replace_model_transition(model, original, replacement) -> None:
+    """Replace one generated transition in its owning state's transition list."""
+    for state in model.walk_states():
+        for index, transition in enumerate(state.transitions):
+            if transition is original:
+                state.transitions[index] = replacement
+                return
+    raise AssertionError("transition was not found in the model")
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        pytest.param("missing-owner", id="missing-owner"),
+        pytest.param("missing-origin", id="missing-origin"),
+        pytest.param("inconsistent-origin", id="inconsistent-origin"),
+        pytest.param("inconsistent-span", id="inconsistent-span"),
+        pytest.param("origin-mismatch", id="origin-mismatch"),
+        pytest.param("event-mismatch", id="event-mismatch"),
+        pytest.param("unresolvable-target", id="unresolvable-target"),
+        pytest.param("ambiguous-chain", id="ambiguous-chain"),
+    ],
+)
+def test_combo_transition_resolver_fails_closed_for_adversarial_shapes(
+    mutation: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Malformed or ambiguous combo metadata never yields a false source edge."""
+    context, case = _combo_context_and_case()
+    if mutation == "missing-owner":
+        monkeypatch.setattr(
+            relation_module,
+            "_model_state_by_path",
+            lambda _context, _path: None,
+        )
+    else:
+        source_state = next(
+            state
+            for state in context.model.walk_states()
+            if state.path == ("Root", "A")
+        )
+        first = next(
+            transition
+            for transition in source_state.transitions_from
+            if transition.event is not None
+            and transition.event.path_name.endswith(".E1")
+        )
+        if mutation == "missing-origin":
+            replacement = replace(first, combo_origin_refs=())
+            _replace_model_transition(context.model, first, replacement)
+        elif mutation == "inconsistent-origin":
+            ref = first.combo_origin_refs[0]
+            replacement = replace(
+                first,
+                combo_origin_refs=(ref, replace(ref, origin_id="other-origin")),
+            )
+            _replace_model_transition(context.model, first, replacement)
+        elif mutation == "inconsistent-span":
+            ref = first.combo_origin_refs[0]
+            replacement = replace(
+                first,
+                combo_origin_refs=(
+                    ref,
+                    replace(ref, transition_span=Span(1, 1, 1, 2)),
+                ),
+            )
+            _replace_model_transition(context.model, first, replacement)
+        elif mutation == "origin-mismatch":
+            target_state = next(
+                state
+                for state in context.model.walk_states()
+                if any(
+                    transition.event is not None
+                    and transition.event.path_name.endswith(".E2")
+                    for transition in state.transitions_from
+                )
+            )
+            second = next(
+                transition
+                for transition in target_state.transitions_from
+                if transition.event is not None
+                and transition.event.path_name.endswith(".E2")
+            )
+            ref = second.combo_origin_refs[0]
+            _replace_model_transition(
+                context.model,
+                second,
+                replace(
+                    second,
+                    combo_origin_refs=(replace(ref, origin_id="other-origin"),),
+                ),
+            )
+        elif mutation == "event-mismatch":
+            _replace_model_transition(context.model, first, replace(first, event=None))
+        elif mutation == "unresolvable-target":
+            _replace_model_transition(
+                context.model, first, replace(first, to_state=dsl_nodes.EXIT_STATE)
+            )
+        elif mutation == "ambiguous-chain":
+            source_state.parent.transitions.append(replace(first))
+        else:  # pragma: no cover - parametrization enumerates every mutation.
+            raise AssertionError("unknown combo mutation: %s" % mutation)
+
+    assert relation_module._unique_combo_transition(context, case) is None
+
+
 def test_parent_continuation_transition_uses_normal_transition_index(
     tmp_path: Path,
 ) -> None:
@@ -1316,6 +1489,9 @@ def test_core_formula_rejects_malformed_tracked_group_payloads() -> None:
 
     with pytest.raises(BmcBuildError, match="reconstruct D_N"):
         replace(core, domain_formula=z3.BoolVal(True))
+
+    with pytest.raises(BmcBuildError, match="core formula does not match"):
+        replace(core, core=z3.BoolVal(False))
 
     orphan = replace(core._tracked_groups[0], category="orphan")
     formula_groups = list(core._tracked_groups)

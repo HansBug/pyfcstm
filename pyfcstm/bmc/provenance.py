@@ -425,7 +425,7 @@ class SourceDocumentRegistry:
             >>> SourceDocumentRegistry({}).query_reference(object(), object()).kind
             'fbmcq'
         """
-        spans = dict(getattr(query, "_source_spans", ()))
+        spans = dict(getattr(query, "_source_spans", ()) or ())
         return self.reference(
             "fbmcq", getattr(query, "_source_path", None), spans.get(id(obj))
         )

@@ -328,16 +328,20 @@ def _with_query_source_path(query: BmcQuery, source_path: Optional[str]) -> BmcQ
     if source_path == getattr(query, "_source_path", None):
         return query
     old_root_id = id(query)
-    source_spans = dict(getattr(query, "_source_spans", ()))
+    source_spans = dict(getattr(query, "_source_spans", ()) or ())
     root_span = source_spans.pop(old_root_id, None)
-    result = replace(query, _source_path=source_path)
+    result = replace(
+        query,
+        _source_path=source_path,
+        _source_spans=tuple(source_spans.items()),
+    )
     if root_span is not None:
         source_spans[id(result)] = root_span
-        object.__setattr__(
-            result,
-            "_source_spans",
-            tuple(sorted(source_spans.items(), key=lambda item: item[0])),
-        )
+    object.__setattr__(
+        result,
+        "_source_spans",
+        tuple(sorted(source_spans.items(), key=lambda item: item[0])),
+    )
     return result
 
 

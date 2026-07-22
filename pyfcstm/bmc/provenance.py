@@ -237,7 +237,7 @@ class SourceDocumentRegistry:
                 raise ValueError("source document paths must be non-empty strings.")
             if not isinstance(text, str):
                 raise TypeError("source document text must be strings.")
-            copied[path] = text
+            copied[path] = text.replace("\r\n", "\n").replace("\r", "\n")
         object.__setattr__(self, "documents", MappingProxyType(copied))
         copied_queries = {}
         for path, text in dict(self.query_documents).items():
@@ -245,7 +245,7 @@ class SourceDocumentRegistry:
                 raise ValueError("query document paths must be non-empty strings.")
             if not isinstance(text, str):
                 raise TypeError("query document text must be strings.")
-            copied_queries[path] = text
+            copied_queries[path] = text.replace("\r\n", "\n").replace("\r", "\n")
         object.__setattr__(self, "query_documents", MappingProxyType(copied_queries))
         if self.display_root is not None:
             object.__setattr__(self, "display_root", os.path.abspath(self.display_root))

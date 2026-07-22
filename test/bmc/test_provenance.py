@@ -690,6 +690,48 @@ def test_generated_combo_transition_fingerprint_drops_stale_span(
     assert registry.excerpt(reference) is None
 
 
+def test_generated_combo_guard_hop_drops_stale_span_after_public_mutation(
+    tmp_path: Path,
+) -> None:
+    """A mutated generated guard hop cannot retain the combo declaration span."""
+    source_path = tmp_path / "machine.fcstm"
+    source_path.write_text(
+        """def int x = 1;
+state Root {
+    event E1;
+    event E2;
+    state A;
+    state B;
+    [*] -> A;
+    A -> B :: E1 + [x > 0] + E2;
+}
+""",
+        encoding="utf-8",
+    )
+    model = load_state_machine_from_file(source_path)
+    registry = SourceDocumentRegistry(
+        model._source_documents, display_root=model._source_root
+    )
+    guard_hops = [
+        transition
+        for state in model.walk_states()
+        for transition in state.transitions
+        if transition.combo_origin_refs and transition.guard is not None
+    ]
+
+    assert len(guard_hops) == 1
+    guard_hop = guard_hops[0]
+    assert getattr(guard_hop, "_source_fingerprint", None)
+    assert registry.model_reference(guard_hop).span is not None
+
+    guard_hop.guard = None
+
+    reference = registry.model_reference(guard_hop)
+    assert reference.path == "machine.fcstm"
+    assert reference.span is None
+    assert registry.excerpt(reference) is None
+
+
 def test_parent_event_only_case_uses_unique_parent_transition_excerpt(
     tmp_path: Path,
 ) -> None:

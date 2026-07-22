@@ -1716,24 +1716,46 @@ def _rewrite_operation_block_variables(items, source_to_target: Dict[str, str]):
         _rewrite_operation_statement_variables(item, source_to_target)
 
 
+def _rewrite_transition_variables(
+    transition: dsl_nodes.TransitionDefinition,
+    source_to_target: Dict[str, str],
+    *,
+    rewrite_effects: bool,
+) -> None:
+    if transition.condition_expr is not None:
+        transition.condition_expr = _rewrite_expr_variables(
+            transition.condition_expr,
+            source_to_target,
+        )
+    combo_trigger = getattr(transition, "combo_trigger", None)
+    if combo_trigger is not None:
+        for term in combo_trigger.terms:
+            if isinstance(term, dsl_nodes.ComboGuardTerm):
+                term.condition_expr = _rewrite_expr_variables(
+                    term.condition_expr,
+                    source_to_target,
+                )
+    if rewrite_effects:
+        _rewrite_operation_block_variables(transition.post_operations, source_to_target)
+
+
 def _rewrite_state_variable_references(
     node: dsl_nodes.StateDefinition,
     source_to_target: Dict[str, str],
 ) -> None:
     for transition in node.transitions:
-        if transition.condition_expr is not None:
-            transition.condition_expr = _rewrite_expr_variables(
-                transition.condition_expr,
-                source_to_target,
-            )
-        _rewrite_operation_block_variables(transition.post_operations, source_to_target)
+        _rewrite_transition_variables(
+            transition,
+            source_to_target,
+            rewrite_effects=True,
+        )
 
     for transition in node.force_transitions:
-        if transition.condition_expr is not None:
-            transition.condition_expr = _rewrite_expr_variables(
-                transition.condition_expr,
-                source_to_target,
-            )
+        _rewrite_transition_variables(
+            transition,
+            source_to_target,
+            rewrite_effects=False,
+        )
 
     for enter_item in node.enters:
         if isinstance(enter_item, dsl_nodes.EnterOperations):

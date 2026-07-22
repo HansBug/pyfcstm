@@ -33,6 +33,48 @@ def _build_state_machine(root_content: str, **extra_files):
 
 @pytest.mark.unittest
 class TestImportPhase4Assembly:
+    def test_default_variable_mapping_rewrites_combo_guard(self):
+        state_machine = _build_state_machine(
+            """
+            state Root {
+                state Host {
+                    import "./worker.fcstm" as Worker;
+                    [*] -> Worker;
+                }
+                [*] -> Host;
+            }
+            """,
+            **{
+                "worker.fcstm": """
+                def int w = 0;
+                state WorkerRoot {
+                    state Outer {
+                        state Idle;
+                        state Done;
+                        [*] -> Idle;
+                        Idle -> Done :: Start + [w == 1] + Finish effect {
+                            w = w + 1;
+                        }
+                    }
+                    [*] -> Outer;
+                }
+                """,
+            },
+        )
+
+        outer = (
+            state_machine.root_state.substates["Host"]
+            .substates["Worker"]
+            .substates["Outer"]
+        )
+        combo_guard = next(
+            transition
+            for transition in outer.transitions
+            if any(item.term_index == 1 for item in transition.combo_origin_refs)
+        )
+
+        assert str(combo_guard.guard) == "Worker_w == 1"
+
     def test_variable_mapping_template_invalid_reports_structured_refs(self):
         with isolated_directory():
             root_file = _write_text_file(

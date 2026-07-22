@@ -755,6 +755,64 @@ def test_combo_transition_case_uses_unique_original_source_excerpt(
     }
 
 
+def test_imported_combo_case_uses_original_source_excerpt(tmp_path: Path) -> None:
+    """An imported combo chain keeps its child-file source ownership."""
+    imported = tmp_path / "worker.fcstm"
+    imported.write_text(
+        """def int w = 1;
+state WorkerRoot {
+    state Outer {
+        state Idle;
+        state Done;
+        [*] -> Idle;
+        Idle -> Done :: Start + [w == 1] + Finish effect {
+            w = w + 1;
+        }
+    }
+    [*] -> Outer;
+}
+""",
+        encoding="utf-8",
+    )
+    main = tmp_path / "main.fcstm"
+    main.write_text(
+        """state Root {
+    state Host {
+        import "./worker.fcstm" as Worker { def w -> w; };
+        [*] -> Worker;
+    }
+    [*] -> Host;
+}
+""",
+        encoding="utf-8",
+    )
+
+    model = load_state_machine_from_file(main)
+    context = BmcEngine(model).prepare(
+        'init state("Root.Host.Worker.Outer.Idle") where w == 1; '
+        'assume event("Root.Host.Worker.Outer.Idle.Start", 0) == true; '
+        'assume event("Root.Host.Worker.Outer.Idle.Finish", 1) == true; '
+        'check reach <= 3: active("Root.Host.Worker.Outer.Done");',
+        query_source_path="query.fbmcq",
+    )
+    core = build_bmc_core_formula(context)
+    groups = [
+        item
+        for item in core._tracked_case_groups
+        if item.refs.get("case_label")
+        == "Root.Host.Worker.Outer.Idle::transition::Root.Host.Worker.Outer.Done::0"
+        and item.refs.get("source_inference") == "unique_combo"
+    ]
+
+    assert groups
+    assert {item.source_ref.path for item in groups} == {"worker.fcstm"}
+    assert {context._source_registry.excerpt(item.source_ref) for item in groups} == {
+        "Idle -> Done :: Start + [w == 1] + Finish effect {\n"
+        "            w = w + 1;\n"
+        "        }"
+    }
+
+
 def test_guarded_combo_transition_case_uses_authored_source_excerpt(
     tmp_path: Path,
 ) -> None:

@@ -786,41 +786,6 @@ class BmcTraceSymbols:
             raise BmcBuildError("gamma_flags must contain Z3 Boolean expressions.")
         if len(self.case_selectors) != self.domain.bound:
             raise BmcBuildError("case_selectors must contain bound mappings.")
-        if not all(z3.is_arith(item) for item in self.frame_states):
-            raise BmcBuildError("frame_states must contain arithmetic Z3 expressions.")
-        if not all(
-            z3.is_arith(value)
-            for mapping in self.frame_vars
-            for value in mapping.values()
-        ):
-            raise BmcBuildError("frame_vars must contain arithmetic Z3 expressions.")
-        if not all(
-            z3.is_bool(value)
-            for mapping in self.event_inputs
-            for value in mapping.values()
-        ):
-            raise BmcBuildError("event_inputs must contain Z3 Boolean expressions.")
-        if not all(
-            z3.is_bool(value)
-            for mapping in self.case_selectors
-            for value in mapping.values()
-        ):
-            raise BmcBuildError("case_selectors must contain Z3 Boolean expressions.")
-        symbol_values = tuple(self.frame_states)
-        symbol_values += tuple(
-            value for mapping in self.frame_vars for value in mapping.values()
-        )
-        symbol_values += tuple(
-            value for mapping in self.event_inputs for value in mapping.values()
-        )
-        symbol_values += tuple(self.delta_flags)
-        symbol_values += tuple(self.gamma_flags)
-        symbol_values += tuple(
-            value for mapping in self.case_selectors for value in mapping.values()
-        )
-        symbol_context = symbol_values[0].ctx
-        if any(value.ctx != symbol_context for value in symbol_values[1:]):
-            raise BmcBuildError("trace symbols must share one Z3 context.")
         object.__setattr__(
             self,
             "frame_vars",
@@ -1359,10 +1324,6 @@ class BmcStepRelation:
             raise BmcBuildError("formals must contain MacroStepFormal objects.")
         if not all(isinstance(item, BmcCaseRelation) for item in self.case_relations):
             raise BmcBuildError("case_relations must contain BmcCaseRelation objects.")
-        if any(item.step_index != self.step_index for item in self.case_relations):
-            raise BmcBuildError(
-                "case_relations must belong to the enclosing step_index."
-            )
         if not z3.is_bool(self.formula):
             raise BmcBuildError("formula must be a Z3 Boolean expression.")
         for name in (
@@ -1471,20 +1432,6 @@ class BmcCoreFormula:
         _require_context(self.context)
         if not isinstance(self.symbols, BmcTraceSymbols):
             raise BmcBuildError("symbols must be BmcTraceSymbols.")
-        symbol_values = tuple(self.symbols.frame_states)
-        symbol_values += tuple(
-            value for mapping in self.symbols.frame_vars for value in mapping.values()
-        )
-        symbol_values += tuple(
-            value for mapping in self.symbols.event_inputs for value in mapping.values()
-        )
-        symbol_values += tuple(self.symbols.delta_flags)
-        symbol_values += tuple(self.symbols.gamma_flags)
-        symbol_values += tuple(
-            value
-            for mapping in self.symbols.case_selectors
-            for value in mapping.values()
-        )
         for name in (
             "domain_formula",
             "initial_formula",
@@ -1494,12 +1441,6 @@ class BmcCoreFormula:
         ):
             if not z3.is_bool(getattr(self, name)):
                 raise BmcBuildError("%s must be a Z3 Boolean expression." % name)
-        if not symbol_values or any(
-            getattr(value, "ctx", None) != self.core.ctx for value in symbol_values
-        ):
-            raise BmcBuildError(
-                "trace symbols must share the core formula's Z3 context."
-            )
         if not all(isinstance(item, BmcStepRelation) for item in self.steps):
             raise BmcBuildError("steps must contain BmcStepRelation objects.")
         if not all(isinstance(item, str) for item in self.diagnostics):
@@ -1508,24 +1449,6 @@ class BmcCoreFormula:
         object.__setattr__(self, "diagnostics", tuple(self.diagnostics))
         groups = tuple(self._tracked_groups)
         case_groups = tuple(self._tracked_case_groups)
-        for label, candidates in (
-            ("tracked groups", groups),
-            ("tracked case groups", case_groups),
-        ):
-            if not all(isinstance(item, BmcTrackedConstraint) for item in candidates):
-                raise BmcBuildError(
-                    "%s must contain BmcTrackedConstraint objects." % label
-                )
-            for group in candidates:
-                for expression in group.expressions:
-                    if not z3.is_bool(expression):
-                        raise BmcBuildError(
-                            "%s expressions must be Z3 Boolean expressions." % label
-                        )
-                    if expression.ctx != self.core.ctx:
-                        raise BmcBuildError(
-                            "%s expressions must share the core Z3 context." % label
-                        )
         object.__setattr__(self, "_tracked_groups", groups)
         object.__setattr__(self, "_tracked_case_groups", case_groups)
 

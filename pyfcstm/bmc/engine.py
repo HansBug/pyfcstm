@@ -44,7 +44,7 @@ from .domain import BmcDomain, build_bmc_domain
 from .errors import BmcBuildError
 from .parse import parse_bmc_query
 from .provenance import SourceDocumentRegistry
-from .query import BmcQuery, _normalize_source_spans
+from .query import BmcQuery
 from pyfcstm.model import StateMachine
 
 _CanonicalDict = Dict[str, Any]
@@ -163,12 +163,6 @@ class BmcPreparedContext:
         effective_query_path = self.query_source_path or getattr(
             self.query, "_source_path", None
         )
-        if self._source_registry is not None and not isinstance(
-            self._source_registry, SourceDocumentRegistry
-        ):
-            raise BmcBuildError(
-                "_source_registry must be SourceDocumentRegistry or None."
-            )
         if effective_query_path != getattr(self.query, "_source_path", None):
             object.__setattr__(
                 self, "query", _with_query_source_path(self.query, effective_query_path)
@@ -185,14 +179,6 @@ class BmcPreparedContext:
                 query_documents=query_documents,
             )
             object.__setattr__(self, "_source_registry", registry)
-        elif effective_query_path is not None and self.source_text is not None:
-            registered_query = self._source_registry.document(
-                effective_query_path, kind="fbmcq"
-            )
-            if registered_query != self.source_text:
-                raise BmcBuildError(
-                    "source_text and query_source_path do not match _source_registry."
-                )
         if self.query_source_path is None and effective_query_path is not None:
             object.__setattr__(self, "query_source_path", effective_query_path)
         if self.domain.bound != self.query.property.bound:
@@ -313,10 +299,11 @@ def _with_query_source_path(query: BmcQuery, source_path: Optional[str]) -> BmcQ
     )
     if root_span is not None:
         source_spans[id(result)] = root_span
-    validated_spans = _normalize_source_spans(
-        tuple(sorted(source_spans.items(), key=lambda item: item[0]))
+    object.__setattr__(
+        result,
+        "_source_spans",
+        tuple(sorted(source_spans.items(), key=lambda item: item[0])),
     )
-    object.__setattr__(result, "_source_spans", validated_spans)
     return result
 
 

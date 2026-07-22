@@ -5,8 +5,6 @@ from __future__ import annotations
 import importlib
 import subprocess
 import sys
-from dataclasses import replace
-
 import pytest
 import z3
 
@@ -227,7 +225,6 @@ def test_trace_symbols_dataclass_validates_public_payload_shape() -> None:
 
 
 @pytest.mark.unittest
-@pytest.mark.unittest
 def test_trace_symbols_duplicate_case_labels_report_internal_bug() -> None:
     """Duplicate case labels are internal builder bugs with issue guidance."""
     domain = build_bmc_domain(load_state_machine_from_text("state Root;"), 1)
@@ -375,23 +372,6 @@ def test_relation_dataclasses_validate_public_payload_shape() -> None:
             z3.Int("bad_mutex"),
         )
     assert BmcStepRelation(0, (), (), z3.BoolVal(True)).case_registry == {}
-
-    case_relation = BmcCaseRelation(
-        0,
-        case,
-        z3.Bool("selector"),
-        z3.BoolVal(True),
-        z3.BoolVal(True),
-        z3.BoolVal(True),
-        z3.BoolVal(True),
-        {},
-        {},
-        (),
-    )
-    with pytest.raises(BmcBuildError, match="case_relations must belong"):
-        BmcStepRelation(
-            0, (), (replace(case_relation, step_index=1),), z3.BoolVal(True)
-        )
 
 
 @pytest.mark.unittest

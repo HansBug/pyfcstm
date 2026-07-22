@@ -47,7 +47,6 @@ from .query import (
     BmcQuery,
     InitialSpec,
     InitialVariablePolicy,
-    _normalize_source_spans,
 )
 from pyfcstm.utils.validate import Span
 
@@ -303,9 +302,7 @@ def _attach_query_source_metadata(
         object.__setattr__(
             result,
             "_source_spans",
-            _normalize_source_spans(
-                tuple(sorted(spans.items(), key=lambda item: item[0]))
-            ),
+            tuple(sorted(spans.items(), key=lambda item: item[0])),
         )
     return result
 

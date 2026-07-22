@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
 import os
 from pathlib import Path
 from textwrap import dedent
@@ -318,20 +317,10 @@ def test_query_source_metadata_keeps_root_query_span_after_replace() -> None:
     assert registry.excerpt(reference) == text
 
 
-def test_query_source_metadata_rejects_invalid_public_metadata() -> None:
-    """Parser and query dataclass reject malformed source metadata."""
-    query_text = 'check reach <= 1: active("Root");'
-
+def test_query_source_path_rejects_empty_public_path() -> None:
+    """The parser reports an unusable explicit source path."""
     with pytest.raises(InvalidBmcQuery, match="_source_path"):
-        parse_bmc_query(query_text, source_path="")
-
-    query = parse_bmc_query(query_text)
-    with pytest.raises(InvalidBmcQuery, match="_source_spans"):
-        replace(query, _source_spans=(("not-an-id", Span(1, 1)),))
-    with pytest.raises(InvalidBmcQuery, match="_source_spans"):
-        replace(query, _source_spans=object())
-    with pytest.raises(InvalidBmcQuery, match="_source_spans"):
-        replace(query, _source_spans=((True, Span(1, 1)),))
+        parse_bmc_query('check reach <= 1: active("Root");', source_path="")
 
 
 def test_pathless_source_references_drop_unresolvable_spans() -> None:

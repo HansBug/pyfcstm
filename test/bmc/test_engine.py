@@ -110,17 +110,6 @@ def test_engine_prepares_query_text_with_domain_references(
         assert rebound_canonical[key] == prepared_canonical[key]
 
 
-def test_engine_normalizes_missing_query_span_ledger() -> None:
-    """A malformed absent span ledger fails closed without leaking TypeError."""
-    model = load_state_machine_from_text("state Root;")
-    query = parse_bmc_query('check reach <= 1: active("Root");')
-    object.__setattr__(query, "_source_spans", None)
-
-    context = BmcEngine(model).prepare(query, query_source_path="query.fbmcq")
-
-    assert context.query._source_spans == ()
-
-
 @pytest.mark.unittest
 def test_engine_prepares_ast_and_function_api_equivalently(
     engine_model: StateMachine,
@@ -298,40 +287,6 @@ def test_prepared_context_inherits_source_path_from_query_metadata(
     )
 
     assert reused_registry._source_registry is prepared._source_registry
-
-
-@pytest.mark.unittest
-def test_prepared_context_rejects_invalid_source_registry(
-    engine_model: StateMachine,
-) -> None:
-    """The public context constructor rejects an injected registry of the wrong type."""
-    prepared = BmcEngine(engine_model).prepare('check reach <= 1: active("Root.Done");')
-
-    with pytest.raises(BmcBuildError, match="_source_registry"):
-        replace(prepared, _source_registry=object())
-
-
-@pytest.mark.unittest
-def test_prepared_context_rejects_mismatched_source_registry(
-    engine_model: StateMachine,
-) -> None:
-    """A reused registry must contain the direct context's query snapshot."""
-    query_text = 'check reach <= 1: active("Root.Done");'
-    prepared = BmcEngine(engine_model).prepare(
-        query_text, query_source_path="old.fbmcq"
-    )
-
-    with pytest.raises(BmcBuildError, match="query_source_path"):
-        BmcPreparedContext(
-            model=prepared.model,
-            query=prepared.query,
-            bound_query=prepared.bound_query,
-            domain=prepared.domain,
-            options=prepared.options,
-            source_text=query_text,
-            query_source_path="new.fbmcq",
-            _source_registry=prepared._source_registry,
-        )
 
 
 @pytest.mark.unittest

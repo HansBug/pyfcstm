@@ -456,6 +456,15 @@ def _transition_target_path(owner, transition, *, initial: bool) -> Optional[str
     return ".".join(tuple(parent.path) + (target,))
 
 
+def _case_target_matches_transition_target(
+    case_target_path: str, transition_target_path: str
+) -> bool:
+    """Return whether a macro target is the transition target or its leaf."""
+    return case_target_path == transition_target_path or case_target_path.startswith(
+        transition_target_path + "."
+    )
+
+
 def _transition_candidates(
     context: BmcPreparedContext,
     case: CycleCase,
@@ -488,16 +497,21 @@ def _transition_candidates(
         for transition in owner.transitions_from:
             if str(transition.from_state) != owner.name:
                 continue
-            if event_paths:
-                if (
+            if event_paths is not None:
+                if event_paths and (
                     transition.event is None
                     or transition.event.path_name not in event_paths
                 ):
                     continue
+                if not event_paths and transition.event is not None:
+                    continue
             target_path = _transition_target_path(owner, transition, initial=False)
-            if target_path == case.target_state_path or (
-                target_path is None and case.target_state_id == STATE_TERMINATE_ID
-            ):
+            if (
+                target_path is not None
+                and _case_target_matches_transition_target(
+                    case.target_state_path, target_path
+                )
+            ) or (target_path is None and case.target_state_id == STATE_TERMINATE_ID):
                 candidates.append(transition)
     return tuple(candidates)
 
@@ -526,7 +540,7 @@ def _unique_case_transition(context: BmcPreparedContext, case: CycleCase):
     """Return a uniquely source/target-matched plain or initial transition."""
     if case.kind == "transition" and _case_trigger_event_paths(case):
         return None
-    candidates = _transition_candidates(context, case)
+    candidates = _transition_candidates(context, case, event_paths=set())
     if len(candidates) != 1:
         return None
     return candidates[0]
@@ -575,7 +589,9 @@ def _unique_combo_transition(context: BmcPreparedContext, case: CycleCase):
     matches = [
         chain
         for target_path, chain, _origin_id in routes
-        if target_path == case.target_state_path and chain
+        if target_path
+        and _case_target_matches_transition_target(case.target_state_path, target_path)
+        and chain
     ]
     if len(matches) != 1:
         return None
@@ -784,6 +800,22 @@ class BmcTraceSymbols:
             for value in mapping.values()
         ):
             raise BmcBuildError("case_selectors must contain Z3 Boolean expressions.")
+        variable_names = {item.name for item in self.domain.variables}
+        event_paths = {item.path for item in self.domain.events}
+        for frame_index, mapping in enumerate(self.frame_vars):
+            if set(mapping) != variable_names:
+                raise BmcBuildError(
+                    "frame_vars[%d] keys must match domain variables." % frame_index
+                )
+        for step_index, mapping in enumerate(self.event_inputs):
+            if set(mapping) != event_paths:
+                raise BmcBuildError(
+                    "event_inputs[%d] keys must match domain events." % step_index
+                )
+        if not all(
+            type(key) is str for mapping in self.case_selectors for key in mapping
+        ):
+            raise BmcBuildError("case_selectors keys must be strings.")
         symbol_values = tuple(self.frame_states)
         symbol_values += tuple(
             value for mapping in self.frame_vars for value in mapping.values()
@@ -799,6 +831,31 @@ class BmcTraceSymbols:
         symbol_context = symbol_values[0].ctx
         if any(value.ctx != symbol_context for value in symbol_values[1:]):
             raise BmcBuildError("trace symbols must share one Z3 context.")
+        int_sort = z3.IntSort(symbol_context)
+        for frame_index, symbol in enumerate(self.frame_states):
+            if not symbol.sort().eq(int_sort):
+                raise BmcBuildError(
+                    "frame_states[%d] must use the Int Z3 sort." % frame_index
+                )
+        for frame_index, mapping in enumerate(self.frame_vars):
+            for variable in self.domain.variables:
+                expected_sort = (
+                    int_sort
+                    if variable.declared_type == "int"
+                    else z3.RealSort(symbol_context)
+                    if variable.declared_type == "float"
+                    else None
+                )
+                if expected_sort is None:
+                    raise BmcBuildError(
+                        "Unsupported persistent variable type for trace symbols: %r."
+                        % variable.declared_type
+                    )
+                if not mapping[variable.name].sort().eq(expected_sort):
+                    raise BmcBuildError(
+                        "frame_vars[%d][%r] must use the %s Z3 sort."
+                        % (frame_index, variable.name, expected_sort.name())
+                    )
         object.__setattr__(
             self,
             "frame_vars",
@@ -1478,6 +1535,15 @@ class BmcCoreFormula:
             raise BmcBuildError("steps must contain BmcStepRelation objects.")
         if not all(isinstance(item, str) for item in self.diagnostics):
             raise BmcBuildError("diagnostics must contain strings.")
+        for step in self.steps:
+            if 0 <= step.step_index < len(self.symbols.case_selectors):
+                expected_case_labels = set(step.case_registry)
+                actual_case_labels = set(self.symbols.case_selectors[step.step_index])
+                if actual_case_labels != expected_case_labels:
+                    raise BmcBuildError(
+                        "case_selectors[%d] keys must match lowered cases."
+                        % step.step_index
+                    )
         object.__setattr__(self, "steps", tuple(self.steps))
         object.__setattr__(self, "diagnostics", tuple(self.diagnostics))
         groups = tuple(self._tracked_groups)

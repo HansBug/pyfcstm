@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 import subprocess
 import sys
+from dataclasses import replace
 
 import pytest
 import z3
@@ -222,6 +223,93 @@ def test_trace_symbols_dataclass_validates_public_payload_shape() -> None:
     with pytest.raises(BmcBuildError, match="case_selectors must contain"):
         BmcTraceSymbols(
             domain, frame_states, frame_vars, event_inputs, delta_flags, gamma_flags, ()
+        )
+
+
+@pytest.mark.unittest
+def test_trace_symbols_match_domain_sorts_and_keys() -> None:
+    """Public trace symbols reject wrong sorts and incomplete mappings."""
+    model = load_state_machine_from_text(
+        """
+        def int count = 0;
+        def float ratio = 0;
+        state Root {
+            event Go;
+            state A;
+            state B;
+            [*] -> A;
+            A -> B :: Go;
+        }
+        """
+    )
+    context = BmcEngine(model).prepare('check reach <= 1: active("Root.B");')
+    core = build_bmc_core_formula(context)
+
+    with pytest.raises(BmcBuildError, match=r"frame_states\[0\].*Int Z3 sort"):
+        replace(
+            core.symbols,
+            frame_states=tuple(
+                z3.Real("wrong_state_%d" % index) for index in range(context.bound + 1)
+            ),
+        )
+
+    wrong_int_vars = []
+    for frame_index, mapping in enumerate(core.symbols.frame_vars):
+        wrong_int_vars.append(
+            dict(
+                mapping,
+                count=z3.Real("wrong_count_%d" % frame_index),
+            )
+        )
+    with pytest.raises(BmcBuildError, match=r"frame_vars\[0\].*'count'.*Int Z3 sort"):
+        replace(core.symbols, frame_vars=tuple(wrong_int_vars))
+
+    incomplete_vars = tuple(
+        {name: value for name, value in mapping.items() if name != "ratio"}
+        for mapping in core.symbols.frame_vars
+    )
+    with pytest.raises(BmcBuildError, match=r"frame_vars\[0\] keys"):
+        replace(core.symbols, frame_vars=incomplete_vars)
+
+    with pytest.raises(BmcBuildError, match=r"event_inputs\[0\] keys"):
+        replace(
+            core.symbols,
+            event_inputs=tuple({} for _ in range(context.bound)),
+        )
+
+    with pytest.raises(BmcBuildError, match=r"case_selectors\[0\] keys"):
+        replace(
+            core,
+            symbols=replace(
+                core.symbols,
+                case_selectors=tuple({} for _ in range(context.bound)),
+            ),
+        )
+
+    with pytest.raises(BmcBuildError, match="case_selectors keys must be strings"):
+        replace(
+            core.symbols,
+            case_selectors=tuple(
+                {1: z3.Bool("non_string_case_key")} for _ in range(context.bound)
+            ),
+        )
+
+    unsupported_domain = replace(
+        context.domain,
+        variables=(
+            replace(context.domain.variables[0], declared_type="decimal"),
+            context.domain.variables[1],
+        ),
+    )
+    with pytest.raises(BmcBuildError, match="Unsupported persistent variable type"):
+        BmcTraceSymbols(
+            domain=unsupported_domain,
+            frame_states=core.symbols.frame_states,
+            frame_vars=core.symbols.frame_vars,
+            event_inputs=core.symbols.event_inputs,
+            delta_flags=core.symbols.delta_flags,
+            gamma_flags=core.symbols.gamma_flags,
+            case_selectors=core.symbols.case_selectors,
         )
 
 

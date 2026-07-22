@@ -6,6 +6,12 @@ pyfcstm.bmc.solver
 .. automodule:: pyfcstm.bmc.solver
 
 
+BmcSolveStatus
+-----------------------------------------------------
+
+.. autodata:: BmcSolveStatus
+
+
 \_\_all\_\_
 -----------------------------------------------------
 

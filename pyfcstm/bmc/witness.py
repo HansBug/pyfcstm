@@ -79,18 +79,12 @@ from .errors import BmcBuildError
 from .properties import BmcPropertyFormula, _lower_predicate
 from .query import EventAssumption
 from .relation import BmcCaseRelation
-from .solver import _SolveBudget, _check_with_budget
+from .solver import BmcSolveStatus, _SolveBudget, _check_with_budget
 from pyfcstm.model import OnAspect, OnStage, StateMachine
 from pyfcstm.simulate import ReadOnlyExecutionContext, SimulationRuntime
 
-try:
-    from typing import Literal
-except ImportError:  # pragma: no cover - Python < 3.8 compatibility
-    from typing_extensions import Literal
-
 _CanonicalDict = Dict[str, Any]
 #: Public solver statuses returned by :class:`BmcSolveResult`.
-BmcSolveStatus = Literal["sat", "unsat", "unknown", "timeout"]
 _INTERNAL_ISSUE_URL = "https://github.com/HansBug/pyfcstm/issues/new"
 _REPLAY_FLOAT_TOLERANCE = 1e-9
 _PRETTY_STR_MAX_ROWS = 50

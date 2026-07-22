@@ -23,11 +23,18 @@ from __future__ import annotations
 
 import math
 import time
-from typing import Optional, Tuple
+from typing import Optional, Tuple, cast
 
 import z3
 
 from .errors import BmcBuildError
+
+try:
+    from typing import Literal
+except ImportError:  # pragma: no cover - Python < 3.8 compatibility
+    from typing_extensions import Literal
+
+BmcSolveStatus = Literal["sat", "unsat", "unknown", "timeout"]
 
 
 class _SolveBudget:
@@ -74,16 +81,13 @@ class _SolveBudget:
         if remaining_seconds <= 0:
             return None
         remaining_ms = max(1, int(math.ceil(remaining_seconds * 1000.0)))
-        timeout_ms = self.timeout_ms
-        if timeout_ms is None:
-            return None
-        return min(timeout_ms, remaining_ms)
+        return min(cast(int, self.timeout_ms), remaining_ms)
 
 
 def _check_with_budget(
     solver: z3.Solver, budget: _SolveBudget
 ) -> Tuple[
-    str,
+    BmcSolveStatus,
     Optional[z3.ModelRef],
     Optional[str],
     float,
@@ -98,7 +102,7 @@ def _check_with_budget(
     :return: ``(status, model, reason, elapsed_ms, check_started)``.  Status is
         ``sat``, ``unsat``, ``unknown``, or ``timeout``; a pre-check deadline
         exhaustion returns ``check_started=False``.
-    :rtype: Tuple[str, Optional[z3.ModelRef], Optional[str], float, bool]
+    :rtype: Tuple[BmcSolveStatus, Optional[z3.ModelRef], Optional[str], float, bool]
     :raises TypeError: If the solver or budget has the wrong type.
 
     Examples::

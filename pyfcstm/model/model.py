@@ -4139,6 +4139,13 @@ def parse_dsl_node_to_state_machine(
             )
             if source_path is not None:
                 setattr(transition, "_source_path", source_path)
+                setattr(
+                    transition,
+                    "_source_fingerprint",
+                    hashlib.sha256(
+                        str(transition.to_ast_node()).encode("utf-8")
+                    ).hexdigest(),
+                )
             transitions.append(transition)
 
         combo_preorder_counter = 0

@@ -612,6 +612,84 @@ def test_plain_transition_case_uses_unique_model_transition_excerpt(
     assert context._source_registry.excerpt(group.source_ref) == "A -> B;"
 
 
+def test_nested_composite_transition_cases_keep_authored_source_excerpts(
+    tmp_path: Path,
+) -> None:
+    """Plain, event, and combo edges to a composite retain FCSTM ownership."""
+    source_path = tmp_path / "machine.fcstm"
+    source = """state Root {
+    event Go;
+    event E1;
+    event E2;
+    state A;
+    state B {
+        state Deep;
+        [*] -> Deep;
+    }
+    [*] -> A;
+    A -> B;
+    A -> B :: Go;
+    A -> B :: E1 + E2;
+}
+"""
+    source_path.write_text(source, encoding="utf-8")
+
+    model = load_state_machine_from_file(source_path)
+    context = BmcEngine(model).prepare(
+        'init state("Root.A"); check reach <= 2: active("Root.B.Deep");',
+        query_source_path="query.fbmcq",
+    )
+    core = build_bmc_core_formula(context)
+
+    excerpts_by_inference = {
+        item.refs["source_inference"]: context._source_registry.excerpt(item.source_ref)
+        for item in core._tracked_case_groups
+        if item.refs.get("source_inference") is not None
+    }
+
+    assert excerpts_by_inference == {
+        "unique_transition": "A -> B;",
+        "unique_event": "A -> B :: Go;",
+        "unique_combo": "A -> B :: E1 + E2;",
+    }
+
+
+def test_generated_combo_transition_fingerprint_drops_stale_span(
+    tmp_path: Path,
+) -> None:
+    """Generated combo edges participate in the public mutation guard."""
+    source_path = tmp_path / "machine.fcstm"
+    source_path.write_text(
+        """state Root {
+    state A;
+    state B;
+    [*] -> A;
+    A -> B :: E1 + E2;
+}
+""",
+        encoding="utf-8",
+    )
+    model = load_state_machine_from_file(source_path)
+    generated = [
+        transition
+        for state in model.walk_states()
+        for transition in state.transitions
+        if transition.combo_origin_refs
+    ]
+    registry = SourceDocumentRegistry(
+        model._source_documents, display_root=model._source_root
+    )
+
+    assert generated
+    assert all(getattr(item, "_source_fingerprint", None) for item in generated)
+    generated[0].to_state = "B"
+
+    reference = registry.model_reference(generated[0])
+    assert reference.path == "machine.fcstm"
+    assert reference.span is None
+    assert registry.excerpt(reference) is None
+
+
 def test_parent_event_only_case_uses_unique_parent_transition_excerpt(
     tmp_path: Path,
 ) -> None:

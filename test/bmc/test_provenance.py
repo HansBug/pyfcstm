@@ -331,6 +331,8 @@ def test_query_source_metadata_rejects_invalid_public_metadata() -> None:
     query = parse_bmc_query(query_text)
     with pytest.raises(InvalidBmcQuery, match="_source_spans"):
         replace(query, _source_spans=(("not-an-id", Span(1, 1)),))
+    with pytest.raises(InvalidBmcQuery, match="_source_spans"):
+        replace(query, _source_spans=object())
 
 
 def test_pathless_source_references_drop_unresolvable_spans() -> None:
@@ -1985,8 +1987,14 @@ def test_core_formula_rejects_forged_transition_step_ledger() -> None:
             _tracked_groups=tuple(forged_groups),
         )
 
-    extra_step = replace(core.steps[0], step_index=999)
-    with pytest.raises(BmcBuildError, match="cover every lowered step"):
+    extra_step = replace(
+        core.steps[0],
+        step_index=999,
+        case_relations=tuple(
+            replace(item, step_index=999) for item in core.steps[0].case_relations
+        ),
+    )
+    with pytest.raises(BmcBuildError, match="exactly one relation"):
         replace(core, steps=core.steps + (extra_step,))
 
 

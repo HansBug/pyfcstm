@@ -1394,6 +1394,10 @@ class BmcStepRelation:
             raise BmcBuildError("formals must contain MacroStepFormal objects.")
         if not all(isinstance(item, BmcCaseRelation) for item in self.case_relations):
             raise BmcBuildError("case_relations must contain BmcCaseRelation objects.")
+        if any(item.step_index != self.step_index for item in self.case_relations):
+            raise BmcBuildError(
+                "case_relations must belong to the enclosing step_index."
+            )
         if not z3.is_bool(self.formula):
             raise BmcBuildError("formula must be a Z3 Boolean expression.")
         for name in (
@@ -1535,6 +1539,13 @@ class BmcCoreFormula:
             raise BmcBuildError("steps must contain BmcStepRelation objects.")
         if not all(isinstance(item, str) for item in self.diagnostics):
             raise BmcBuildError("diagnostics must contain strings.")
+        if len(self.steps) != self.context.bound:
+            raise BmcBuildError(
+                "steps must contain exactly one relation per bound step."
+            )
+        step_indexes = tuple(step.step_index for step in self.steps)
+        if step_indexes != tuple(range(self.context.bound)):
+            raise BmcBuildError("steps must cover bound step indexes in order.")
         for step in self.steps:
             if 0 <= step.step_index < len(self.symbols.case_selectors):
                 expected_case_labels = set(step.case_registry)

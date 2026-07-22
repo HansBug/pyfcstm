@@ -128,7 +128,11 @@ def _normalize_source_spans(value: object) -> Tuple[Tuple[int, Span], ...]:
     :rtype: Tuple[Tuple[int, pyfcstm.utils.validate.Span], ...]
     :raises pyfcstm.bmc.errors.InvalidBmcQuery: If a span entry is malformed.
     """
-    source_spans = tuple(value)
+    try:
+        source_spans = tuple(value)
+    except TypeError as err:
+        # TypeError: a public constructor supplied a non-iterable span ledger.
+        raise InvalidBmcQuery("_source_spans must contain (id, Span) pairs.") from err
     if not all(
         isinstance(item, tuple)
         and len(item) == 2

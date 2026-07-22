@@ -462,6 +462,23 @@ def test_relation_dataclasses_validate_public_payload_shape() -> None:
         )
     assert BmcStepRelation(0, (), (), z3.BoolVal(True)).case_registry == {}
 
+    case_relation = BmcCaseRelation(
+        0,
+        case,
+        z3.Bool("selector"),
+        z3.BoolVal(True),
+        z3.BoolVal(True),
+        z3.BoolVal(True),
+        z3.BoolVal(True),
+        {},
+        {},
+        (),
+    )
+    with pytest.raises(BmcBuildError, match="case_relations must belong"):
+        BmcStepRelation(
+            0, (), (replace(case_relation, step_index=1),), z3.BoolVal(True)
+        )
+
 
 @pytest.mark.unittest
 def test_core_formula_dataclass_validates_public_payload_shape() -> None:
@@ -519,6 +536,19 @@ def test_core_formula_dataclass_validates_public_payload_shape() -> None:
             (),
             (object(),),
         )
+
+    core = build_bmc_core_formula(context)
+    with pytest.raises(BmcBuildError, match="exactly one relation"):
+        replace(core, steps=core.steps + (core.steps[0],))
+    out_of_range_step = replace(
+        core.steps[0],
+        step_index=99,
+        case_relations=tuple(
+            replace(item, step_index=99) for item in core.steps[0].case_relations
+        ),
+    )
+    with pytest.raises(BmcBuildError, match="cover bound step indexes"):
+        replace(core, steps=(out_of_range_step,))
 
 
 @pytest.mark.unittest

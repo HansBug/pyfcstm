@@ -333,6 +333,16 @@ def test_query_source_metadata_rejects_invalid_public_metadata() -> None:
         replace(query, _source_spans=(("not-an-id", Span(1, 1)),))
     with pytest.raises(InvalidBmcQuery, match="_source_spans"):
         replace(query, _source_spans=object())
+    with pytest.raises(InvalidBmcQuery, match="_source_spans"):
+        replace(query, _source_spans=((True, Span(1, 1)),))
+
+    class BrokenIterable:
+        def __iter__(self):
+            raise TypeError("broken public span iterable")
+
+    with pytest.raises(InvalidBmcQuery, match="_source_spans") as exc_info:
+        replace(query, _source_spans=BrokenIterable())
+    assert isinstance(exc_info.value.__cause__, TypeError)
 
 
 def test_pathless_source_references_drop_unresolvable_spans() -> None:
@@ -1639,6 +1649,297 @@ def test_initial_where_definedness_is_tracked_with_the_source_predicate() -> Non
     assert "F_0_y" in str(definedness.expressions[0])
 
 
+def test_core_formula_validates_all_generated_group_owners() -> None:
+    """Real FCSTM/FBMCQ inputs exercise every ordinary ledger owner kind."""
+    model = load_state_machine_from_text(
+        """def int x = 1 / 0;
+def int y = 1;
+state Root {
+    event Go;
+    state A;
+    [*] -> A;
+}
+"""
+    )
+    query = """init cold where x / y > 0;
+assume always: x / 0 > 0;
+assume at 1: x / 0 > 0;
+assume event("Root.Go", 0..1) == true;
+assume events cardinality at_most_one {"Root.Go"};
+check reach <= 2: active("Root.A");
+"""
+
+    core = build_bmc_core_formula(BmcEngine(model).prepare(query))
+    categories = {group.category for group in core._tracked_groups}
+
+    assert {
+        "domain.frame_state",
+        "initial.target",
+        "initial.variable",
+        "initial.where",
+        "definedness",
+        "transition.step",
+        "assumption.frame",
+        "assumption.event",
+        "assumption.cardinality",
+    } <= categories
+    assert all("source_ref" in group for group in core.to_canonical()["tracked_groups"])
+
+
+def test_core_formula_rejects_invalid_ordinary_group_contracts() -> None:
+    """Malformed public ledger identities fail before formula reconstruction."""
+
+    def replace_group(core, lookup_id: str, **changes):
+        groups = list(core._tracked_groups)
+        index = next(
+            index for index, group in enumerate(groups) if group.stable_id == lookup_id
+        )
+        groups[index] = replace(groups[index], **changes)
+        return replace(core, _tracked_groups=tuple(groups))
+
+    core = build_bmc_core_formula(
+        BmcEngine(load_state_machine_from_text("state Root;")).prepare(
+            "check reach <= 1: terminated();"
+        )
+    )
+    domain_group = next(
+        group
+        for group in core._tracked_groups
+        if group.category == "domain.frame_state"
+    )
+    with pytest.raises(BmcBuildError, match="domain frame.*stable_id"):
+        replace_group(core, domain_group.stable_id, stable_id="domain.frame.9999.state")
+    with pytest.raises(BmcBuildError, match="domain frame ref.*valid non-negative int"):
+        replace_group(
+            core,
+            domain_group.stable_id,
+            refs={"frame": True, "kind": "state"},
+        )
+    with pytest.raises(BmcBuildError, match="domain frame ref.*valid non-negative int"):
+        replace_group(
+            core,
+            domain_group.stable_id,
+            refs={"frame": 2, "kind": "state"},
+        )
+
+    with pytest.raises(BmcBuildError, match="initial target.*stable_id"):
+        replace_group(core, "initial.target", stable_id="initial.target.forged")
+
+    where_group = replace(
+        next(
+            group
+            for group in core._tracked_groups
+            if group.stable_id == "initial.target"
+        ),
+        stable_id="initial.where",
+        category="initial.where",
+        refs={"frame": 0},
+    )
+    with pytest.raises(BmcBuildError, match="no predicate source"):
+        replace(core, _tracked_groups=(where_group,) + core._tracked_groups[1:])
+
+    variable_core = build_bmc_core_formula(
+        BmcEngine(load_state_machine_from_text("def int x = 1;\nstate Root;")).prepare(
+            "check reach <= 1: terminated();"
+        )
+    )
+    with pytest.raises(BmcBuildError, match="variable name"):
+        replace_group(
+            variable_core,
+            "initial.variable.x",
+            stable_id="initial.variable.",
+            refs={"variable": "", "frame": 0},
+        )
+    with pytest.raises(BmcBuildError, match="stable_id"):
+        replace_group(
+            variable_core,
+            "initial.variable.x",
+            stable_id="initial.variable.other",
+        )
+    with pytest.raises(
+        BmcBuildError, match="initial variable ref.*valid non-negative int"
+    ):
+        replace_group(
+            variable_core,
+            "initial.variable.x",
+            refs={"variable": "x", "frame": 1},
+        )
+    with pytest.raises(BmcBuildError, match="unknown variable"):
+        replace_group(
+            variable_core,
+            "initial.variable.x",
+            stable_id="initial.variable.missing",
+            refs={"variable": "missing", "frame": 0},
+        )
+
+    where_core = build_bmc_core_formula(
+        BmcEngine(load_state_machine_from_text("def int x = 1; state Root;")).prepare(
+            "init cold where x > 0; check reach <= 1: terminated();"
+        )
+    )
+    with pytest.raises(BmcBuildError, match="initial where.*stable_id"):
+        replace_group(where_core, "initial.where", stable_id="initial.where.forged")
+
+    definedness_core = build_bmc_core_formula(
+        BmcEngine(
+            load_state_machine_from_text("def int x = 1 / 0;\nstate Root;")
+        ).prepare("init cold where x / 0 > 0;\ncheck reach <= 1: terminated();")
+    )
+    variable_definedness = "initial.variable.x.definedness.0000"
+    with pytest.raises(BmcBuildError, match="initial variable definedness refs"):
+        replace_group(
+            definedness_core,
+            variable_definedness,
+            refs={"variable": "x", "kind": "forged"},
+        )
+    with pytest.raises(BmcBuildError, match="initial where definedness refs"):
+        replace_group(
+            definedness_core,
+            "initial.where.definedness.0000",
+            refs={"frame": 0, "kind": "forged"},
+        )
+    with pytest.raises(BmcBuildError, match="initial definedness.*stable_id"):
+        replace_group(
+            definedness_core,
+            variable_definedness,
+            stable_id="initial.invalid.definedness.0000",
+        )
+    no_where_definedness_core = build_bmc_core_formula(
+        BmcEngine(
+            load_state_machine_from_text("def int x = 1 / 0;\nstate Root;")
+        ).prepare("check reach <= 1: terminated();")
+    )
+    with pytest.raises(
+        BmcBuildError, match="initial where definedness has no predicate source"
+    ):
+        replace_group(
+            no_where_definedness_core,
+            variable_definedness,
+            stable_id="initial.where.definedness.0000",
+            refs={"frame": 0, "kind": "where"},
+        )
+
+    assumption_text = """def int x = 1 / 0;
+state Root { event Go; state A; [*] -> A; }
+init cold where x > 0;
+assume always: x / 0 > 0;
+assume at 1: x / 0 > 0;
+assume event("Root.Go", 0..1) == true;
+assume events cardinality at_most_one {"Root.Go"};
+check reach <= 2: active("Root.A");
+"""
+    assumption_core = build_bmc_core_formula(
+        BmcEngine(
+            load_state_machine_from_text(assumption_text.split("init", 1)[0])
+        ).prepare("init" + assumption_text.split("init", 1)[1])
+    )
+
+    frame_group = "assumption.0000.frame.0000"
+    with pytest.raises(BmcBuildError, match="assumption tracked group stable_id"):
+        replace_group(assumption_core, frame_group, stable_id="assumption.invalid")
+    with pytest.raises(BmcBuildError, match="assumption ref.*valid non-negative int"):
+        replace_group(
+            assumption_core,
+            frame_group,
+            refs={"assumption": True, "frame": 0},
+        )
+    with pytest.raises(
+        BmcBuildError, match="assumption index ref.*valid non-negative int"
+    ):
+        replace_group(
+            assumption_core,
+            frame_group,
+            refs={"assumption": 0, "frame": True},
+        )
+    with pytest.raises(
+        BmcBuildError, match="assumption index ref.*valid non-negative int"
+    ):
+        replace_group(
+            assumption_core,
+            frame_group,
+            refs={"assumption": 0, "frame": 99},
+        )
+    with pytest.raises(BmcBuildError, match="stable_id index"):
+        replace_group(
+            assumption_core,
+            frame_group,
+            stable_id="assumption.0000.frame.9999",
+        )
+    with pytest.raises(BmcBuildError, match="frame group does not match"):
+        replace_group(
+            assumption_core,
+            "assumption.0002.event.0000",
+            stable_id="assumption.0002.frame.0000",
+            category="assumption.frame",
+            refs={"assumption": 2, "frame": 0},
+        )
+    with pytest.raises(BmcBuildError, match="frame index does not match"):
+        replace_group(
+            assumption_core,
+            "assumption.0001.frame.0001",
+            stable_id="assumption.0001.frame.0000",
+            refs={"assumption": 1, "frame": 0},
+        )
+    with pytest.raises(BmcBuildError, match="frame definedness refs"):
+        replace_group(
+            assumption_core,
+            frame_group,
+            category="definedness",
+        )
+    with pytest.raises(BmcBuildError, match="assumption frame refs"):
+        replace_group(
+            assumption_core,
+            frame_group,
+            refs={"assumption": 0, "frame": 0, "unexpected": True},
+        )
+    with pytest.raises(BmcBuildError, match="frame category"):
+        replace_group(assumption_core, frame_group, category="assumption.event")
+    with pytest.raises(BmcBuildError, match="assumption event group"):
+        replace_group(
+            assumption_core,
+            "assumption.0002.event.0000",
+            category="assumption.frame",
+        )
+    event_core = build_bmc_core_formula(
+        BmcEngine(load_state_machine_from_text("state Root { event Go; }")).prepare(
+            'assume event("Root.Go", 0) == true; check reach <= 2: terminated();'
+        )
+    )
+    with pytest.raises(BmcBuildError, match="event step does not match"):
+        replace_group(
+            event_core,
+            "assumption.0000.event.0000",
+            stable_id="assumption.0000.event.0001",
+            refs={"assumption": 0, "step": 1},
+        )
+    with pytest.raises(
+        BmcBuildError, match="assumption index ref.*valid non-negative int"
+    ):
+        replace_group(
+            event_core,
+            "assumption.0000.event.0000",
+            refs={"assumption": 0, "step": True},
+        )
+    with pytest.raises(BmcBuildError, match="assumption event refs"):
+        replace_group(
+            assumption_core,
+            "assumption.0002.event.0000",
+            refs={"assumption": 2, "step": 0, "unexpected": True},
+        )
+    with pytest.raises(BmcBuildError, match="assumption cardinality group"):
+        replace_group(
+            assumption_core,
+            "assumption.0003.cardinality.0000",
+            category="assumption.frame",
+        )
+    with pytest.raises(BmcBuildError, match="assumption cardinality refs"):
+        replace_group(
+            assumption_core,
+            "assumption.0003.cardinality.0000",
+            refs={"assumption": 3, "step": 0, "unexpected": True},
+        )
+
+
 def test_basic_core_formulas_match_pre_tracking_sexpression_golden() -> None:
     """Source tracking must not change the existing canonical formula text."""
     model = load_state_machine_from_text("state Root;")
@@ -1693,7 +1994,11 @@ def test_basic_core_formulas_match_pre_tracking_sexpression_golden() -> None:
                 True)"""
         ),
     }
-    assert "tracked_groups" not in core.to_canonical()
+    canonical = core.to_canonical()
+    assert canonical["tracked_groups"]
+    assert canonical["tracked_case_groups"]
+    assert canonical["tracked_groups"][0]["source_ref"]["kind"] == "generated"
+    assert canonical["tracked_case_groups"][0]["category"] == "transition.case"
 
 
 def test_event_assumption_environment_formula_matches_golden() -> None:
@@ -1902,6 +2207,51 @@ def test_core_formula_rejects_unresolvable_tracked_source_span(tmp_path: Path) -
     with pytest.raises(BmcBuildError, match="tracked group source_ref"):
         replace(core, _tracked_groups=tuple(groups))
 
+    forged_group = replace(
+        core._tracked_groups[group_index],
+        source_ref=BmcSourceRef("generated", None, None),
+    )
+    groups[group_index] = forged_group
+    with pytest.raises(BmcBuildError, match="source_ref does not match"):
+        replace(core, _tracked_groups=tuple(groups))
+
+    forged_refs = dict(core._tracked_groups[group_index].refs)
+    forged_refs["unexpected"] = "accepted"
+    groups[group_index] = replace(core._tracked_groups[group_index], refs=forged_refs)
+    with pytest.raises(BmcBuildError, match="refs do not match"):
+        replace(core, _tracked_groups=tuple(groups))
+
+
+def test_core_formula_rejects_forged_case_source_and_refs(tmp_path: Path) -> None:
+    """Case provenance must retain its derived source and exact refs."""
+    source_path = tmp_path / "machine.fcstm"
+    source_path.write_text("state Root { state A; [*] -> A; }\n", encoding="utf-8")
+    model = load_state_machine_from_file(source_path)
+    core = build_bmc_core_formula(
+        BmcEngine(model).prepare('check reach <= 1: active("Root.A");')
+    )
+    case_index = next(
+        index
+        for index, group in enumerate(core._tracked_case_groups)
+        if group.source_ref.kind == "fcstm"
+    )
+    case_group = core._tracked_case_groups[case_index]
+    refs = dict(case_group.refs)
+    forged = replace(
+        case_group,
+        source_ref=BmcSourceRef("generated", None, None),
+    )
+    case_groups = list(core._tracked_case_groups)
+    case_groups[case_index] = forged
+
+    with pytest.raises(BmcBuildError, match="source_ref does not match case"):
+        replace(core, _tracked_case_groups=tuple(case_groups))
+
+    refs["unexpected"] = "accepted"
+    case_groups[case_index] = replace(case_group, refs=refs)
+    with pytest.raises(BmcBuildError, match="refs do not match case"):
+        replace(core, _tracked_case_groups=tuple(case_groups))
+
 
 def test_core_formula_rejects_forged_transition_step_ledger() -> None:
     """Transition groups must identify and reproduce their real lowered step."""
@@ -1985,6 +2335,30 @@ def test_core_formula_rejects_forged_transition_step_ledger() -> None:
             transition_formula=forged_transition_formula,
             core=forged_core,
             _tracked_groups=tuple(forged_groups),
+        )
+
+    missing_groups = tuple(
+        group
+        for index, group in enumerate(core._tracked_groups)
+        if index != group_index
+    )
+    missing_transition_formula = relation_module._formula_from_groups(
+        tuple(group for group in missing_groups if group.category == "transition.step")
+    )
+    missing_core = relation_module._and(
+        (
+            core.domain_formula,
+            core.initial_formula,
+            missing_transition_formula,
+            core.environment_formula,
+        )
+    )
+    with pytest.raises(BmcBuildError, match="cover every lowered step"):
+        replace(
+            core,
+            transition_formula=missing_transition_formula,
+            core=missing_core,
+            _tracked_groups=missing_groups,
         )
 
     extra_step = replace(

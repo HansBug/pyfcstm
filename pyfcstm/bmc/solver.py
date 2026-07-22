@@ -103,24 +103,12 @@ def _check_with_budget(
         ``sat``, ``unsat``, ``unknown``, or ``timeout``; a pre-check deadline
         exhaustion returns ``check_started=False``.
     :rtype: Tuple[BmcSolveStatus, Optional[z3.ModelRef], Optional[str], float, bool]
-    :raises TypeError: If the solver or budget has the wrong type.
-
     Examples::
 
         >>> import z3
         >>> _check_with_budget(z3.Solver(), _SolveBudget(None))[0]
         'sat'
     """
-    if not all(
-        callable(getattr(solver, name, None))
-        for name in ("check", "set", "model", "reason_unknown")
-    ):
-        raise TypeError("solver must provide the Z3 solver check interface.")
-    if not callable(getattr(budget, "remaining_ms", None)) or not hasattr(
-        budget, "deadline"
-    ):
-        raise TypeError("budget must provide the shared budget interface.")
-
     remaining = budget.remaining_ms()
     # ``timeout_ms=None`` leaves ``deadline`` and ``remaining`` unset, so this
     # path intentionally calls Z3 without setting a solver timeout.

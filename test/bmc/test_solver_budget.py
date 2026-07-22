@@ -92,22 +92,6 @@ def test_budget_rejects_invalid_timeout(value) -> None:
         _SolveBudget(value)
 
 
-def test_check_rejects_an_object_without_the_solver_interface() -> None:
-    """The internal check helper reports an invalid solver object explicitly."""
-    with pytest.raises(TypeError, match="solver must provide"):
-        _check_with_budget(object(), _SolveBudget(None))
-
-
-def test_check_rejects_an_object_without_the_budget_interface() -> None:
-    """The internal check helper reports an invalid budget object explicitly."""
-
-    class InvalidBudget:
-        pass
-
-    with pytest.raises(TypeError, match="budget must provide"):
-        _check_with_budget(z3.Solver(), InvalidBudget())
-
-
 def test_solver_module_examples_are_executable() -> None:
     """Solver module and helper docstring examples remain runnable."""
     result = doctest.testmod(solver_module)

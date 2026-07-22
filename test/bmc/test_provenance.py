@@ -705,6 +705,73 @@ def test_combo_transition_case_uses_unique_original_source_excerpt(
     }
 
 
+def test_guarded_combo_transition_case_uses_authored_source_excerpt(
+    tmp_path: Path,
+) -> None:
+    """Generated guard edges retain the authored combo transition source."""
+    source_path = tmp_path / "guarded_combo.fcstm"
+    source = """def int ready = 1;
+state Root {
+    event E1;
+    event E2;
+    state A;
+    state B;
+    [*] -> A;
+    A -> B :: E1 + [ready > 0] + E2;
+}
+"""
+    source_path.write_bytes(source.encode("utf-8"))
+
+    model = load_state_machine_from_file(source_path)
+    context = BmcEngine(model).prepare(
+        'init state("Root.A") where ready == 1; '
+        'assume event("Root.A.E1", 0) == true; '
+        'assume event("Root.A.E2", 2) == true; '
+        'check reach <= 3: active("Root.B");',
+        query_source_path="query.fbmcq",
+    )
+    core = build_bmc_core_formula(context)
+    groups = [
+        item
+        for item in core._tracked_case_groups
+        if item.refs.get("case_kind") == "transition"
+    ]
+
+    assert groups
+    assert {item.source_ref.kind for item in groups} == {"fcstm"}
+    assert {context._source_registry.excerpt(item.source_ref) for item in groups} == {
+        "A -> B :: E1 + [ready > 0] + E2;"
+    }
+
+
+def test_programmatic_combo_does_not_claim_source_inference() -> None:
+    """A source-less model keeps generated provenance without false inference."""
+    model = load_state_machine_from_text(
+        """state Root {
+    event E1;
+    event E2;
+    state A;
+    state B;
+    [*] -> A;
+    A -> B :: E1 + E2;
+}
+"""
+    )
+    context = BmcEngine(model).prepare(
+        'init state("Root.A"); '
+        'assume event("Root.A.E1", 0) == true; '
+        'assume event("Root.A.E2", 1) == true; '
+        'check reach <= 2: active("Root.B");'
+    )
+    core = build_bmc_core_formula(context)
+
+    assert all(
+        item.refs.get("source_inference") is None
+        for item in core._tracked_case_groups
+        if item.source_ref.kind == "generated"
+    )
+
+
 def _combo_context_and_case():
     """Build one compact combo context for defensive resolver tests."""
     model = load_state_machine_from_text(
@@ -1493,6 +1560,30 @@ def test_core_formula_rejects_malformed_tracked_group_payloads() -> None:
     with pytest.raises(BmcBuildError, match="core formula does not match"):
         replace(core, core=z3.BoolVal(False))
 
+    with pytest.raises(BmcBuildError, match="kernel stage"):
+        replace(
+            core,
+            _tracked_case_groups=(
+                replace(core._tracked_case_groups[0], stage="assumptions"),
+                *core._tracked_case_groups[1:],
+            ),
+        )
+
+    class _EqualAny:
+        def __eq__(self, other) -> bool:
+            return True
+
+    forged_refs = dict(core._tracked_case_groups[0].refs)
+    forged_refs["case_label"] = _EqualAny()
+    with pytest.raises(BmcBuildError, match="label and kind"):
+        replace(
+            core,
+            _tracked_case_groups=(
+                replace(core._tracked_case_groups[0], refs=forged_refs),
+                *core._tracked_case_groups[1:],
+            ),
+        )
+
     orphan = replace(core._tracked_groups[0], category="orphan")
     formula_groups = list(core._tracked_groups)
     formula_groups[0] = orphan
@@ -1502,6 +1593,52 @@ def test_core_formula_rejects_malformed_tracked_group_payloads() -> None:
     case_group = core._tracked_case_groups[0]
     with pytest.raises(BmcBuildError, match="missing lowered cases"):
         replace(core, _tracked_case_groups=())
+
+    invalid_step_refs = dict(case_group.refs)
+    invalid_step_refs["step"] = True
+    with pytest.raises(BmcBuildError, match="step must be"):
+        replace(
+            core,
+            _tracked_case_groups=(replace(case_group, refs=invalid_step_refs),),
+        )
+
+    invalid_case_index_refs = dict(case_group.refs)
+    invalid_case_index_refs["case_index"] = True
+    with pytest.raises(BmcBuildError, match="case_index must be"):
+        replace(
+            core,
+            _tracked_case_groups=(replace(case_group, refs=invalid_case_index_refs),),
+        )
+
+    invalid_labels_refs = dict(case_group.refs)
+    invalid_labels_refs["transition_labels"] = [1]
+    with pytest.raises(BmcBuildError, match="transition labels must be"):
+        replace(
+            core,
+            _tracked_case_groups=(replace(case_group, refs=invalid_labels_refs),),
+        )
+
+    invalid_inference_refs = dict(case_group.refs)
+    invalid_inference_refs["source_inference"] = "untrusted"
+    with pytest.raises(BmcBuildError, match="source_inference"):
+        replace(
+            core,
+            _tracked_case_groups=(replace(case_group, refs=invalid_inference_refs),),
+        )
+
+    class _SourceRefSubclass(BmcSourceRef):
+        pass
+
+    with pytest.raises(BmcBuildError, match="exact BmcSourceRef"):
+        replace(
+            core,
+            _tracked_case_groups=(
+                replace(
+                    case_group,
+                    source_ref=_SourceRefSubclass("generated", None, None),
+                ),
+            ),
+        )
 
     unknown_case_refs = dict(case_group.refs)
     unknown_case_refs["case_index"] = 99
@@ -1601,6 +1738,26 @@ def test_core_formula_rejects_malformed_tracked_group_payloads() -> None:
     )
     with pytest.raises(BmcBuildError, match="formula does not match case"):
         replace(core, _tracked_case_groups=tuple(case_formula_groups))
+
+
+def test_core_formula_rejects_unresolvable_case_source_span(tmp_path: Path) -> None:
+    """A case source reference must resolve against the prepared registry."""
+    source_path = tmp_path / "machine.fcstm"
+    source_path.write_text("state Root { state A; [*] -> A; }", encoding="utf-8")
+    model = load_state_machine_from_file(source_path)
+    core = build_bmc_core_formula(
+        BmcEngine(model).prepare('check reach <= 1: active("Root.A");')
+    )
+    forged = replace(
+        core._tracked_case_groups[0],
+        source_ref=BmcSourceRef("fcstm", source_path.name, Span(99, 1, 99, 2)),
+    )
+
+    with pytest.raises(BmcBuildError, match="source_ref"):
+        replace(
+            core,
+            _tracked_case_groups=(forged, *core._tracked_case_groups[1:]),
+        )
 
 
 def test_case_provenance_is_not_part_of_formula_group_ledger() -> None:

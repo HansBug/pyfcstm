@@ -488,8 +488,7 @@ class TestComboModelExpansion:
         prefix_edges = [
             item
             for item in model.root_state.transitions
-            if item.combo_origin_refs
-            and item.combo_origin_refs[0].role == "prefix"
+            if item.combo_origin_refs and item.combo_origin_refs[0].role == "prefix"
         ]
         first_edges = [item for item in prefix_edges if item.from_state == "S1"]
         second_edges = [item for item in prefix_edges if item.from_state != "S1"]
@@ -501,7 +500,6 @@ class TestComboModelExpansion:
             "Root.S1.E4",
         }
         assert len({item.to_state for item in second_edges}) == 2
-
 
     def test_identical_combos_reuse_pseudo_and_emit_terminal_edges(self):
         model = _build_model(
@@ -996,8 +994,7 @@ class TestComboModelExpansion:
             "Root.S1.E2",
         ]
         assert any(
-            item.code == "E_DANGLING_TRANSITION"
-            and item.refs["tgt"] == "Missing"
+            item.code == "E_DANGLING_TRANSITION" and item.refs["tgt"] == "Missing"
             for item in diagnostics
         )
 

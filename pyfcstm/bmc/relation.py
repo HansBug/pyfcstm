@@ -105,7 +105,7 @@ from .source import (
     stable_leaf_source,
     terminated_source,
 )
-from .provenance import BmcTrackedConstraint
+from .provenance import BmcSourceRef, BmcTrackedConstraint
 from pyfcstm.model import Expr
 from pyfcstm.solver.domain import DomainConstraint, DomainSource, translate_expr_domain
 from pyfcstm.solver.operation import execute_operations_domain
@@ -117,6 +117,12 @@ _EVENT_ATOM_PREFIX = "event:"
 _GUARD_ATOM_PREFIX = "guard:"
 _ACCEPTED_ATOM_PREFIX = "accepted:"
 _ISSUE_URL = "https://github.com/HansBug/pyfcstm/issues"
+_SOURCE_INFERENCES = {
+    "unique_event",
+    "unique_initial",
+    "unique_transition",
+    "unique_combo",
+}
 
 
 @dataclass(frozen=True)
@@ -589,7 +595,7 @@ def _case_source_reference(
             reference = context._source_registry.model_reference(transition)
             if reference.path is not None or reference.span is not None:
                 return reference, labels, inference
-        return generated_ref, labels, inference
+        return generated_ref, labels, None
     if len(labels) != 1:
         return generated_ref, labels, None
 
@@ -1429,6 +1435,12 @@ class BmcCoreFormula:
             raise BmcBuildError(
                 "tracked case groups must have transition.case category."
             )
+        if not all(item.stage == "kernel" for item in case_groups):
+            raise BmcBuildError("tracked case groups must have kernel stage.")
+        if not all(type(item.source_ref) is BmcSourceRef for item in case_groups):
+            raise BmcBuildError(
+                "tracked case groups must use exact BmcSourceRef objects."
+            )
         case_ids = [item.stable_id for item in case_groups]
         if len(set(case_ids)) != len(case_ids):
             raise BmcBuildError("tracked case groups must have unique stable ids.")
@@ -1487,6 +1499,44 @@ class BmcCoreFormula:
         for group in case_groups:
             refs = dict(group.refs)
             key = (refs.get("step"), refs.get("case_index"))
+            if type(refs.get("step")) is not int or refs["step"] < 0:
+                raise BmcBuildError(
+                    "tracked case group step must be a non-negative int."
+                )
+            if type(refs.get("case_index")) is not int or refs["case_index"] < 0:
+                raise BmcBuildError(
+                    "tracked case group case_index must be a non-negative int."
+                )
+            case_label = refs.get("case_label")
+            case_kind = refs.get("case_kind")
+            transition_labels = refs.get("transition_labels")
+            source_inference = refs.get("source_inference")
+            if type(case_label) is not str or type(case_kind) is not str:
+                raise BmcBuildError(
+                    "tracked case group label and kind must be exact strings."
+                )
+            if not isinstance(transition_labels, (list, tuple)) or not all(
+                type(item) is str for item in transition_labels
+            ):
+                raise BmcBuildError(
+                    "tracked case group transition labels must be strings."
+                )
+            if source_inference is not None and (
+                type(source_inference) is not str
+                or source_inference not in _SOURCE_INFERENCES
+            ):
+                raise BmcBuildError(
+                    "tracked case group source_inference is unsupported."
+                )
+            normalized_ref = self.context._source_registry.reference(
+                group.source_ref.kind,
+                group.source_ref.path,
+                group.source_ref.span,
+            )
+            if normalized_ref != group.source_ref:
+                raise BmcBuildError(
+                    "tracked case group source_ref is not valid in the source registry."
+                )
             case_relation = case_relations.get(key)
             if case_relation is None:
                 raise BmcBuildError(

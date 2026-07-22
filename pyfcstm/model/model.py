@@ -4120,24 +4120,26 @@ def parse_dsl_node_to_state_machine(
             priority_run_identity: Tuple[str, Optional[int]],
             priority_run_index: int,
             source_span: Optional[Span],
+            source_path: Optional[str],
         ) -> None:
-            transitions.append(
-                Transition(
-                    from_state=from_state,
-                    to_state=to_state,
-                    event=event,
-                    guard=guard,
-                    effects=effects,
-                    event_scope=event_scope,
-                    combo_origin_refs=origin_refs,
-                    combo_projection_key=projection_key,
-                    combo_projection_order_key=projection_order_key,
-                    combo_reuse_group_id=reuse_group_id,
-                    combo_priority_run_identity=priority_run_identity,
-                    combo_priority_run_index=priority_run_index,
-                    _span=source_span,
-                )
+            transition = Transition(
+                from_state=from_state,
+                to_state=to_state,
+                event=event,
+                guard=guard,
+                effects=effects,
+                event_scope=event_scope,
+                combo_origin_refs=origin_refs,
+                combo_projection_key=projection_key,
+                combo_projection_order_key=projection_order_key,
+                combo_reuse_group_id=reuse_group_id,
+                combo_priority_run_identity=priority_run_identity,
+                combo_priority_run_index=priority_run_index,
+                _span=source_span,
             )
+            if source_path is not None:
+                setattr(transition, "_source_path", source_path)
+            transitions.append(transition)
 
         combo_preorder_counter = 0
 
@@ -4199,6 +4201,7 @@ def parse_dsl_node_to_state_machine(
                 priority_run_identity=priority_run_identity,
                 priority_run_index=priority_run_index,
                 source_span=_node_span(first_alt.transnode),
+                source_path=getattr(first_alt.transnode, "_source_path", None),
             )
 
         def _expand_combo_alternatives(

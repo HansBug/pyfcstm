@@ -617,6 +617,18 @@ def _build_bmc_report(
     max_bound: Optional[int],
 ) -> Tuple[str, int, str]:
     """Build one report and retain presentation severity for terminal color."""
+    for option_name, option_value in (
+        ("timeout_ms", timeout_ms),
+        ("max_bound", max_bound),
+    ):
+        if option_value is not None and (
+            isinstance(option_value, bool)
+            or not isinstance(option_value, int)
+            or option_value <= 0
+        ):
+            raise ClickErrorException(
+                "%s must be None or a positive integer." % option_name
+            )
     execution = _execute_bmc(
         input_code_file,
         query_file,

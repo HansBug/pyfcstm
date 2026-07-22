@@ -74,7 +74,10 @@ class _SolveBudget:
         if remaining_seconds <= 0:
             return None
         remaining_ms = max(1, int(math.ceil(remaining_seconds * 1000.0)))
-        return min(self.timeout_ms, remaining_ms)
+        timeout_ms = self.timeout_ms
+        if timeout_ms is None:
+            return None
+        return min(timeout_ms, remaining_ms)
 
 
 def _check_with_budget(

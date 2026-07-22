@@ -44,7 +44,7 @@ from .domain import BmcDomain, build_bmc_domain
 from .errors import BmcBuildError
 from .parse import parse_bmc_query
 from .provenance import SourceDocumentRegistry
-from .query import BmcQuery
+from .query import BmcQuery, _normalize_source_spans
 from pyfcstm.model import StateMachine
 
 _CanonicalDict = Dict[str, Any]
@@ -337,11 +337,10 @@ def _with_query_source_path(query: BmcQuery, source_path: Optional[str]) -> BmcQ
     )
     if root_span is not None:
         source_spans[id(result)] = root_span
-    object.__setattr__(
-        result,
-        "_source_spans",
-        tuple(sorted(source_spans.items(), key=lambda item: item[0])),
+    validated_spans = _normalize_source_spans(
+        tuple(sorted(source_spans.items(), key=lambda item: item[0]))
     )
+    object.__setattr__(result, "_source_spans", validated_spans)
     return result
 
 

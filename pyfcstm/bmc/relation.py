@@ -253,6 +253,23 @@ def _and(items: Iterable[z3.ExprRef]) -> z3.BoolRef:
     return z3.And(*values)
 
 
+def _validate_tracked_source_ref(
+    context: BmcPreparedContext, source_ref: BmcSourceRef, label: str
+) -> None:
+    """Validate one tracked source reference against the prepared registry."""
+    if type(source_ref) is not BmcSourceRef:
+        raise BmcBuildError("%s must use exact BmcSourceRef objects." % label)
+    normalized_ref = context._source_registry.reference(
+        source_ref.kind,
+        source_ref.path,
+        source_ref.span,
+    )
+    if normalized_ref != source_ref:
+        raise BmcBuildError(
+            "%s source_ref is not valid in the source registry." % label
+        )
+
+
 def _formula_from_groups(
     groups: Sequence[BmcTrackedConstraint],
 ) -> z3.BoolRef:
@@ -747,6 +764,41 @@ class BmcTraceSymbols:
             raise BmcBuildError("gamma_flags must contain Z3 Boolean expressions.")
         if len(self.case_selectors) != self.domain.bound:
             raise BmcBuildError("case_selectors must contain bound mappings.")
+        if not all(z3.is_arith(item) for item in self.frame_states):
+            raise BmcBuildError("frame_states must contain arithmetic Z3 expressions.")
+        if not all(
+            z3.is_arith(value)
+            for mapping in self.frame_vars
+            for value in mapping.values()
+        ):
+            raise BmcBuildError("frame_vars must contain arithmetic Z3 expressions.")
+        if not all(
+            z3.is_bool(value)
+            for mapping in self.event_inputs
+            for value in mapping.values()
+        ):
+            raise BmcBuildError("event_inputs must contain Z3 Boolean expressions.")
+        if not all(
+            z3.is_bool(value)
+            for mapping in self.case_selectors
+            for value in mapping.values()
+        ):
+            raise BmcBuildError("case_selectors must contain Z3 Boolean expressions.")
+        symbol_values = tuple(self.frame_states)
+        symbol_values += tuple(
+            value for mapping in self.frame_vars for value in mapping.values()
+        )
+        symbol_values += tuple(
+            value for mapping in self.event_inputs for value in mapping.values()
+        )
+        symbol_values += tuple(self.delta_flags)
+        symbol_values += tuple(self.gamma_flags)
+        symbol_values += tuple(
+            value for mapping in self.case_selectors for value in mapping.values()
+        )
+        symbol_context = symbol_values[0].ctx
+        if any(value.ctx != symbol_context for value in symbol_values[1:]):
+            raise BmcBuildError("trace symbols must share one Z3 context.")
         object.__setattr__(
             self,
             "frame_vars",
@@ -1393,6 +1445,20 @@ class BmcCoreFormula:
         _require_context(self.context)
         if not isinstance(self.symbols, BmcTraceSymbols):
             raise BmcBuildError("symbols must be BmcTraceSymbols.")
+        symbol_values = tuple(self.symbols.frame_states)
+        symbol_values += tuple(
+            value for mapping in self.symbols.frame_vars for value in mapping.values()
+        )
+        symbol_values += tuple(
+            value for mapping in self.symbols.event_inputs for value in mapping.values()
+        )
+        symbol_values += tuple(self.symbols.delta_flags)
+        symbol_values += tuple(self.symbols.gamma_flags)
+        symbol_values += tuple(
+            value
+            for mapping in self.symbols.case_selectors
+            for value in mapping.values()
+        )
         for name in (
             "domain_formula",
             "initial_formula",
@@ -1402,6 +1468,12 @@ class BmcCoreFormula:
         ):
             if not z3.is_bool(getattr(self, name)):
                 raise BmcBuildError("%s must be a Z3 Boolean expression." % name)
+        if not symbol_values or any(
+            getattr(value, "ctx", None) != self.core.ctx for value in symbol_values
+        ):
+            raise BmcBuildError(
+                "trace symbols must share the core formula's Z3 context."
+            )
         if not all(isinstance(item, BmcStepRelation) for item in self.steps):
             raise BmcBuildError("steps must contain BmcStepRelation objects.")
         if not all(isinstance(item, str) for item in self.diagnostics):
@@ -1417,19 +1489,9 @@ class BmcCoreFormula:
         if len(set(stable_ids)) != len(stable_ids):
             raise BmcBuildError("tracked groups must have unique stable ids.")
         for group in groups:
-            if type(group.source_ref) is not BmcSourceRef:
-                raise BmcBuildError(
-                    "tracked groups must use exact BmcSourceRef objects."
-                )
-            normalized_ref = self.context._source_registry.reference(
-                group.source_ref.kind,
-                group.source_ref.path,
-                group.source_ref.span,
+            _validate_tracked_source_ref(
+                self.context, group.source_ref, "tracked group"
             )
-            if normalized_ref != group.source_ref:
-                raise BmcBuildError(
-                    "tracked group source_ref is not valid in the source registry."
-                )
             for expression in group.expressions:
                 if not z3.is_bool(expression):
                     raise BmcBuildError(
@@ -1450,9 +1512,9 @@ class BmcCoreFormula:
             )
         if not all(item.stage == "kernel" for item in case_groups):
             raise BmcBuildError("tracked case groups must have kernel stage.")
-        if not all(type(item.source_ref) is BmcSourceRef for item in case_groups):
-            raise BmcBuildError(
-                "tracked case groups must use exact BmcSourceRef objects."
+        for group in case_groups:
+            _validate_tracked_source_ref(
+                self.context, group.source_ref, "tracked case group"
             )
         case_ids = [item.stable_id for item in case_groups]
         if len(set(case_ids)) != len(case_ids):
@@ -1573,15 +1635,6 @@ class BmcCoreFormula:
             ):
                 raise BmcBuildError(
                     "tracked case group source_inference is unsupported."
-                )
-            normalized_ref = self.context._source_registry.reference(
-                group.source_ref.kind,
-                group.source_ref.path,
-                group.source_ref.span,
-            )
-            if normalized_ref != group.source_ref:
-                raise BmcBuildError(
-                    "tracked case group source_ref is not valid in the source registry."
                 )
             case_relation = case_relations.get(key)
             if case_relation is None:
@@ -2995,7 +3048,7 @@ def build_bmc_core_formula(context: BmcPreparedContext) -> BmcCoreFormula:
                 "case_index": case_index,
                 "case_label": case_relation.case.label,
                 "case_kind": case_relation.case.kind,
-                "transition_labels": list(transition_labels),
+                "transition_labels": tuple(transition_labels),
             }
             if source_inference is not None:
                 refs["source_inference"] = source_inference

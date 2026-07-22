@@ -119,6 +119,27 @@ _FBMCQ_BARE_VAR_RESERVED = {
 }
 
 
+def _normalize_source_spans(value: object) -> Tuple[Tuple[int, Span], ...]:
+    """Validate and normalize the process-local query span ledger.
+
+    :param value: Candidate ``(object_id, Span)`` pairs.
+    :type value: object
+    :return: Immutable tuple of validated span pairs.
+    :rtype: Tuple[Tuple[int, pyfcstm.utils.validate.Span], ...]
+    :raises pyfcstm.bmc.errors.InvalidBmcQuery: If a span entry is malformed.
+    """
+    source_spans = tuple(value)
+    if not all(
+        isinstance(item, tuple)
+        and len(item) == 2
+        and isinstance(item[0], int)
+        and isinstance(item[1], Span)
+        for item in source_spans
+    ):
+        raise InvalidBmcQuery("_source_spans must contain (id, Span) pairs.")
+    return source_spans
+
+
 def _canonical_condition(expr: Optional[BmcCondExpr]) -> Optional[_CanonicalDict]:
     if expr is None:
         return None
@@ -811,16 +832,9 @@ class BmcQuery:
             not isinstance(self._source_path, str) or not self._source_path
         ):
             raise InvalidBmcQuery("_source_path must be None or a non-empty string.")
-        source_spans = tuple(self._source_spans)
-        if not all(
-            isinstance(item, tuple)
-            and len(item) == 2
-            and isinstance(item[0], int)
-            and isinstance(item[1], Span)
-            for item in source_spans
-        ):
-            raise InvalidBmcQuery("_source_spans must contain (id, Span) pairs.")
-        object.__setattr__(self, "_source_spans", source_spans)
+        object.__setattr__(
+            self, "_source_spans", _normalize_source_spans(self._source_spans)
+        )
 
     def to_canonical(self) -> _CanonicalDict:
         """Return a stable canonical query dictionary.

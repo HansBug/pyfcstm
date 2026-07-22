@@ -15,7 +15,12 @@ import pyfcstm.bmc.relation as relation_module
 import pyfcstm.bmc.provenance as provenance_module
 from pyfcstm.dsl import node as dsl_nodes
 from pyfcstm.dsl import parse_with_grammar_entry
-from pyfcstm.bmc import BmcEngine, BmcPreparedContext, build_bmc_core_formula
+from pyfcstm.bmc import (
+    BmcEngine,
+    BmcPreparedContext,
+    BmcTraceSymbols,
+    build_bmc_core_formula,
+)
 from pyfcstm.bmc.errors import BmcBuildError, InvalidBmcQuery
 from pyfcstm.bmc.macro import ActionBlock
 from pyfcstm.bmc.parse import parse_bmc_query
@@ -540,6 +545,9 @@ state Root {
         "A -> B : if [x == 0] effect { x = x + 1; }"
     )
     assert group.refs["case_label"].startswith("Root.A::transition::")
+    assert isinstance(group.refs["transition_labels"], tuple)
+    with pytest.raises(AttributeError):
+        getattr(group.refs["transition_labels"], "append")("forged")
 
 
 def test_event_only_transition_case_uses_unique_event_source_excerpt(
@@ -1085,7 +1093,7 @@ state Root {
     groups = [
         item
         for item in core._tracked_case_groups
-        if dict(item.refs).get("transition_labels") == ["Root.Outer::0::Outer->Sink"]
+        if dict(item.refs).get("transition_labels") == ("Root.Outer::0::Outer->Sink",)
     ]
 
     assert groups
@@ -1685,6 +1693,69 @@ def test_tracked_group_rejects_expression_from_another_z3_context() -> None:
             steps=core.steps,
             _tracked_groups=(foreign,),
         )
+
+
+def test_trace_symbols_reject_cross_context_payloads() -> None:
+    """Trace symbol bundles reject foreign Z3 contexts at construction time."""
+    model = load_state_machine_from_text("state Root;")
+    core = build_bmc_core_formula(
+        BmcEngine(model).prepare('check reach <= 1: active("Root");')
+    )
+    other_context = z3.Context()
+
+    with pytest.raises(BmcBuildError, match="one Z3 context"):
+        replace(
+            core.symbols,
+            frame_states=tuple(
+                z3.Int("foreign_state_%d" % index, ctx=other_context)
+                for index in range(core.context.bound + 1)
+            ),
+        )
+
+    with pytest.raises(BmcBuildError, match="frame_states.*arithmetic"):
+        replace(
+            core.symbols,
+            frame_states=tuple(
+                z3.Bool("wrong_state_%d" % index)
+                for index in range(core.context.bound + 1)
+            ),
+        )
+    with pytest.raises(BmcBuildError, match="frame_vars.*arithmetic"):
+        replace(
+            core.symbols,
+            frame_vars=tuple(
+                {"x": z3.Bool("wrong_var_%d" % index)}
+                for index in range(core.context.bound + 1)
+            ),
+        )
+    with pytest.raises(BmcBuildError, match="event_inputs.*Boolean"):
+        replace(
+            core.symbols,
+            event_inputs=tuple(
+                {"Root.Go": z3.Int("wrong_event_%d" % index)}
+                for index in range(core.context.bound)
+            ),
+        )
+    with pytest.raises(BmcBuildError, match="case_selectors.*Boolean"):
+        replace(
+            core.symbols,
+            case_selectors=tuple(
+                {"case": z3.Int("wrong_case_%d" % index)}
+                for index in range(core.context.bound)
+            ),
+        )
+
+    forged_symbols = BmcTraceSymbols.allocate(core.context.domain)
+    object.__setattr__(
+        forged_symbols,
+        "frame_states",
+        tuple(
+            z3.Int("foreign_state_%d" % index, ctx=other_context)
+            for index in range(core.context.bound + 1)
+        ),
+    )
+    with pytest.raises(BmcBuildError, match="core formula's Z3 context"):
+        replace(core, symbols=forged_symbols)
 
 
 def test_core_formula_rejects_unresolvable_tracked_source_span(tmp_path: Path) -> None:

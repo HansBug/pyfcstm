@@ -47,6 +47,7 @@ from .query import (
     BmcQuery,
     InitialSpec,
     InitialVariablePolicy,
+    _normalize_source_spans,
 )
 from pyfcstm.utils.validate import Span
 
@@ -211,7 +212,7 @@ def _find_error_node_text(parse_tree: ParserRuleContext) -> str:
     while pending:
         node = pending.pop()
         if isinstance(node, ErrorNode):
-            return "recovery node %r" % node.getText()
+            return "recovery node %r" % cast(Any, node).getText()
         if isinstance(node, ParserRuleContext):
             exception = getattr(node, "exception", None)
             if exception is not None:
@@ -302,7 +303,9 @@ def _attach_query_source_metadata(
         object.__setattr__(
             result,
             "_source_spans",
-            tuple(sorted(spans.items(), key=lambda item: item[0])),
+            _normalize_source_spans(
+                tuple(sorted(spans.items(), key=lambda item: item[0]))
+            ),
         )
     return result
 

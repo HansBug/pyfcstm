@@ -192,6 +192,32 @@ def test_build_bmc_output_public_helper_returns_json_report(bmc_files) -> None:
     assert output.endswith("\n")
 
 
+@pytest.mark.parametrize(
+    ("option", "value"),
+    [
+        pytest.param("timeout_ms", 0, id="zero-timeout"),
+        pytest.param("timeout_ms", True, id="boolean-timeout"),
+        pytest.param("max_bound", 0, id="zero-max-bound"),
+        pytest.param("max_bound", -1, id="negative-max-bound"),
+    ],
+)
+def test_build_bmc_output_rejects_invalid_public_limits(
+    bmc_files, option: str, value: object
+) -> None:
+    """Public BMC limits reject invalid values before pipeline execution."""
+    from pyfcstm.entry.bmc import build_bmc_output
+
+    model_path, query = bmc_files
+    query_path = query('check reach <= 1: active("Root");')
+
+    with pytest.raises(ClickErrorException, match=option):
+        build_bmc_output(
+            str(model_path),
+            str(query_path),
+            **{option: value},
+        )
+
+
 def _stderr_text(result) -> str:
     """Return stderr across Click versions with and without split capture."""
     try:

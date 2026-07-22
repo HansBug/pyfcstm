@@ -21,8 +21,10 @@ pyfcstm.bmc
     parse
     pipeline
     properties
+    provenance
     query
     relation
+    solver
     source
     witness
 

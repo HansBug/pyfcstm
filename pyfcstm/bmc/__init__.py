@@ -109,6 +109,11 @@ Public module structure:
        :class:`BmcEngine`, :func:`prepare_bmc_query`
      - Prepare ``StateMachine + .fbmcq`` inputs into bound query and domain
        context without solver, witness, CLI, or verify-registry coupling.
+   * - Internal preparation support
+     - :mod:`pyfcstm.bmc.solver`, :mod:`pyfcstm.bmc.provenance`
+     - Share staged solver-budget mechanics and preserve source documents /
+       tracked constraint groups for later explanation layers; these modules
+       are intentionally not root-package public exports.
    * - BMC relation builder
      - :class:`BmcAbstractCallRecord`, :class:`BmcTraceSymbols`,
        :class:`BmcCaseRelation`, :class:`BmcStepRelation`, :class:`BmcCoreFormula`,

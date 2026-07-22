@@ -1117,8 +1117,16 @@ class TestComboModelExpansion:
         parse_dsl_node_to_state_machine(program)
 
     def test_full_digest_collision_fails_after_extension(self, monkeypatch):
+        collision_name = f"__combo_root_s1__e1_h{'0' * 64}"
+        occupied_recovery_name = collision_name + "__collision_1"
         occupied_names = "\n".join(
-            f"state __combo_root_s1__e1_h{'0' * size};" for size in range(12, 65, 4)
+            [
+                *(
+                    f"state __combo_root_s1__e1_h{'0' * size};"
+                    for size in range(12, 65, 4)
+                ),
+                f"state {occupied_recovery_name};",
+            ]
         )
         program = parse_with_grammar_entry(
             f"""
@@ -1152,11 +1160,12 @@ class TestComboModelExpansion:
             diag for diag in diagnostics if diag.code == "E_COMBO_PSEUDO_NAME_COLLISION"
         ]
         assert len(collect_collisions) == 1
-        occupied_full_name = f"__combo_root_s1__e1_h{'0' * 64}"
-        assert model.root_state.substates[occupied_full_name].is_pseudo is False
+        assert model.root_state.substates[collision_name].is_pseudo is False
+        generated_recovery_name = collision_name + "__collision_2"
+        assert model.root_state.substates[generated_recovery_name].is_pseudo is True
         assert all(
-            transition.from_state != occupied_full_name
-            and transition.to_state != occupied_full_name
+            transition.from_state != collision_name
+            and transition.to_state != collision_name
             for transition in model.root_state.transitions
         )
 

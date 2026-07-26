@@ -445,14 +445,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for candidate in chromium chromium-browser google-chrome google-chrome-stable; do
+          # Only the official Chrome package is accepted here. The runner's
+          # /usr/bin/chromium is the snap wrapper, which cannot open a
+          # DevTools endpoint under Actions confinement.
+          for candidate in google-chrome google-chrome-stable; do
             if command -v "$candidate" >/dev/null 2>&1; then
               echo "CHROME_BIN=$(command -v "$candidate")" >> "$GITHUB_ENV"
               exit 0
             fi
           done
-          # Runner images no longer ship a browser, so install the official
-          # Chrome package instead of letting the export gate time out.
           curl -fsSL -o "$RUNNER_TEMP/google-chrome.deb" \
             https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
           sudo apt-get install -y "$RUNNER_TEMP/google-chrome.deb"

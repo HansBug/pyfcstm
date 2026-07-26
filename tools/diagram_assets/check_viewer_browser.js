@@ -61,9 +61,12 @@ function inflatePdfStreams(base64) {
   }
   return Buffer.concat(chunks).toString('latin1');
 }
-// Same resolution order as the VSCode preview verification scripts, so one
+// Same candidate set as the VSCode preview verification scripts, so one
 // CHROME_BIN works for every browser-backed maintenance gate in the repo.
-const CHROME_CANDIDATES = ['chromium', 'chromium-browser', 'google-chrome', 'google-chrome-stable'];
+// Google Chrome comes first because distributions increasingly ship
+// /usr/bin/chromium as a snap wrapper, which cannot open a DevTools endpoint
+// from a confined environment such as a CI runner.
+const CHROME_CANDIDATES = ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser'];
 
 function locateChrome() {
   const envChrome = process.env.CHROME_BIN || process.env.PUPPETEER_EXECUTABLE_PATH;

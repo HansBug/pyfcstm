@@ -76,6 +76,7 @@ function reportFatal(title: string, message: string): void {
     const app = document.getElementById('app');
     if (!app) return;
     const pre = document.createElement('pre');
+    pre.dataset.fcstmFatal = 'true';
     pre.style.cssText = 'margin:16px;padding:12px;border:1px solid #c44;background:#fee;white-space:pre-wrap';
     pre.textContent = `${title}\n\n${message}`;
     app.appendChild(pre);
@@ -89,4 +90,44 @@ window.addEventListener('unhandledrejection', event => {
     reportFatal('预览异步错误', `${reason?.message || String(event.reason)}\n${reason?.stack || ''}`);
 });
 
-createApp(App).mount('#app');
+async function mountStandalone(): Promise<void> {
+    if (document.readyState === 'loading') {
+        await new Promise<void>(resolve => document.addEventListener('DOMContentLoaded', () => resolve(), {once: true}));
+    }
+    if (document.fonts) {
+        await document.fonts.ready;
+        const locale = ((window as unknown as {
+            __FCSTM_INITIAL_STATE__?: {previewOptions?: {cjkLocale?: string}};
+        }).__FCSTM_INITIAL_STATE__?.previewOptions?.cjkLocale || 'sc').toLowerCase();
+        const cjkFamily = ({sc: 'Noto Sans SC', tc: 'Noto Sans TC', hk: 'Noto Sans HK', jp: 'Noto Sans JP', kr: 'Noto Sans KR'} as Record<string, string>)[locale] || 'Noto Sans SC';
+        const requiredFaces: Array<[string, number]> = [
+            ['JetBrains Mono', 400],
+            ['JetBrains Mono', 500],
+            ['JetBrains Mono', 700],
+            [cjkFamily, 400],
+            [cjkFamily, 700],
+        ];
+        const probes = requiredFaces.map(([family, weight]) => {
+            const probe = document.createElement('span');
+            probe.textContent = family.startsWith('Noto Sans') ? '中日한' : 'ABC123';
+            probe.style.cssText = 'position:fixed;left:-10000px;top:-10000px;visibility:hidden;white-space:nowrap';
+            probe.style.fontFamily = `"${family}"`;
+            probe.style.fontWeight = String(weight);
+            document.body.appendChild(probe);
+            return probe;
+        });
+        await Promise.all([...document.fonts].map(face => face.load()));
+        await Promise.all(requiredFaces.map(([family, weight]) => document.fonts.load(
+            `${weight} 12px "${family}"`,
+            family.startsWith('Noto Sans') ? '中日한' : 'ABC123',
+        )));
+        const missingFaces = requiredFaces.filter(([family, weight]) => !document.fonts.check(`${weight} 12px "${family}"`));
+        probes.forEach(probe => probe.remove());
+        if (missingFaces.length > 0) {
+            throw new Error(`embedded font faces are unavailable: ${missingFaces.map(([family, weight]) => `${family}/${weight}`).join(', ')}`);
+        }
+    }
+    createApp(App).mount('#app');
+}
+
+void mountStandalone();

@@ -67,6 +67,8 @@ class TestComboModelExpansion:
         combo_states = [s for s in model.root_state.substates.values() if s.is_pseudo]
         assert len(combo_states) == 2
         assert all(state.name.startswith("__combo_") for state in combo_states)
+        assert all(state.is_combo_relay for state in combo_states)
+        assert all(not getattr(state, "_generated_combo_pseudo", False) for state in combo_states)
         assert all(re.search(r"_h[0-9a-f]{12}$", state.name) for state in combo_states)
         assert [state.extra_name for state in combo_states] == [
             "combo after E1",

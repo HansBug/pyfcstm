@@ -46,6 +46,12 @@ Click command tree and with the documented human-only boundary facts.
 .. cli-ref-option: command=plantuml option=-c
 .. cli-ref-option: command=plantuml option=--config
 .. cli-ref-option: command=plantuml option=--help
+.. cli-ref-command: name=diagram
+.. cli-ref-option: command=diagram option=-i
+.. cli-ref-option: command=diagram option=-o
+.. cli-ref-option: command=diagram option=--format choices=json,html
+.. cli-ref-option: command=diagram option=--open
+.. cli-ref-option: command=diagram option=--help
 .. cli-ref-command: name=simulate
 .. cli-ref-option: command=simulate option=-i
 .. cli-ref-option: command=simulate option=--input-code
@@ -82,6 +88,7 @@ Click command tree and with the documented human-only boundary facts.
 .. cli-ref-boundary: command=generate stdout stderr exit-status side-effects success-signal failure-taxonomy clear
 .. cli-ref-boundary: command=inspect stdout stderr exit-status side-effects success-signal failure-taxonomy output-formats verify-policy
 .. cli-ref-boundary: command=plantuml stdout stderr exit-status side-effects success-signal failure-taxonomy source-only
+.. cli-ref-boundary: command=diagram stdout stderr exit-status side-effects success-signal failure-taxonomy output-formats browser
 .. cli-ref-boundary: command=simulate stdout stderr exit-status side-effects success-signal failure-taxonomy interactive batch
 .. cli-ref-boundary: command=visualize stdout stderr exit-status side-effects success-signal failure-taxonomy cache suffix open headless check-mode
 
@@ -132,6 +139,10 @@ Top-level command
      - FCSTM DSL file
      - PlantUML source text
      - You want a deterministic diagram source file.
+   * - ``diagram``
+     - FCSTM DSL file
+     - Portable JSON or a self-contained HTML viewer
+     - You want the shared browser diagram without a PlantUML renderer.
    * - ``visualize``
      - FCSTM DSL file or renderer check request
      - Rendered ``png``, ``svg``, or ``pdf`` diagram
@@ -146,6 +157,8 @@ that may depend on external tools:
 * ``simulate``, ``inspect``, ``bmc``, ``generate``, and ``plantuml`` read DSL and use
   Python-side pyfcstm functionality. They do not require Java, a PlantUML jar,
   or a network renderer.
+* ``diagram`` reads DSL and uses the packaged shared renderer assets. JSON and
+  HTML generation do not require MiniRacer, Node, PlantUML, or a network renderer.
 * ``visualize`` first builds PlantUML source and then calls ``plantumlcli``.
   It may require Java and a PlantUML jar for local rendering or a reachable
   PlantUML server for remote rendering.
@@ -479,6 +492,58 @@ Typical examples:
    pyfcstm plantuml -i machine.fcstm -o machine.puml
    pyfcstm plantuml -i machine.fcstm -l full -o machine.full.puml
    pyfcstm plantuml -i machine.fcstm -c show_events=true -c max_depth=2
+
+``diagram``
+-----------
+
+.. code-block:: text
+
+   pyfcstm diagram -i <input-code> [-o <output>] [--format json|html] [--open]
+
+``diagram`` converts an FCSTM file into portable JSON or a self-contained HTML
+viewer. With no ``-o``, JSON is written to standard output. HTML output is
+written to the requested path or to a temporary path when ``--open`` is used.
+
+.. list-table:: ``diagram`` options
+   :header-rows: 1
+
+   * - Option
+     - Default
+     - Values
+     - Meaning
+   * - ``-i``
+     - required
+     - path
+     - FCSTM DSL entry file.
+   * - ``-o``
+     - standard output for JSON
+     - path
+     - Destination ``.json`` or ``.html`` file.
+   * - ``--format``
+     - inferred from suffix
+     - ``json``, ``html``
+     - Explicit output format.
+   * - ``--open``
+     - off
+     - flag
+     - Open the HTML file in a Chromium-family app window.
+   * - ``-h, --help``
+     - n/a
+     - flag
+     - Show command help.
+
+Output and failure facts:
+
+* JSON output is deterministic and omits absolute paths, source ranges, and
+  editor selection state.
+* HTML output embeds the viewer, renderer, resvg WASM, and selected locale fonts;
+  it makes no network request. Browser SVG/PNG/vector PDF downloads are
+  available from the HTML viewer.
+* ``--open`` requires a Chromium-family browser. Without one, the command reports
+  a typed capability error after writing the HTML file. Use ``--format html``
+  without ``--open`` for file-only workflows.
+* Invalid formats, unknown options, unreadable input, parse/model failures, and
+  missing packaged assets exit non-zero with the corresponding error category.
 
 ``visualize``
 -------------

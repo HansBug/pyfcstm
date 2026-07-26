@@ -51,9 +51,38 @@
 
 选项参考会解释每个预设影响哪些事实。
 
+打开离线 Python 查看器
+-----------------------
+
+如果需要一个包含源码/图形对比、并能在浏览器中下载 SVG、PNG 和矢量 PDF
+的自包含 HTML 文件，可以使用 Python ``Diagram`` 接口。运行时不需要
+PlantUML 或 Node。
+
+.. code-block:: python
+
+   from pyfcstm.model import load_state_machine_from_text
+
+   model = load_state_machine_from_text("state Root { state Idle; [*] -> Idle; }")
+   diagram = model.diagram(direction="LR", cjk_locale="sc")
+   data = diagram.to_dict()
+   html = diagram.to_html()
+   output = diagram.show(open_window=False)
+
+前三个结果依次是可移植数据、完整 HTML 文本和生成的 ``.html`` 路径。HTML
+内嵌查看器、渲染器、WASM 和选定字体，因此不依赖网络。只有在存在
+Chromium 系浏览器时才使用默认的 ``open_window=True``。没有浏览器时，
+``show`` 会抛出 ``DiagramUnavailableError``；只想生成文件时使用
+``open_window=False``。
+
+本阶段的同步 ``to_svg()``、``to_png()`` 和 ``to_pdf()`` 只是类型化能力探针，
+会抛出 ``DiagramUnavailableError``。生成的 HTML 中的浏览器导出按钮才是
+当前可用的三格式导出路径；可选的 Python 无头运行时归后续交付阶段负责。
+
 下一步
 ------
 
 * :doc:`/how_to/visualization/index_zh` 展示 PlantUML 源码导出和直接渲染文件导出任务。
-* :doc:`/reference/visualization_options/index_zh` 列出 ``PlantUMLOptions`` 和 CLI ``-c`` 事实。
+  该页还包含 Python Diagram 查看器任务。
+* :doc:`/reference/visualization_options/index_zh` 列出 ``PlantUMLOptions``、CLI ``-c``
+  以及 Python Diagram 选项/取值合同。
 * :doc:`/tutorials/quick_start/index_zh` 在最短端到端路径中包含可视化。

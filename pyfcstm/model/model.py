@@ -1764,8 +1764,7 @@ class State(AstExportable, PlantUMLExportable):
         for substate, substate_node in zip(self.substates.values(), substate_nodes):
             if (
                 substate.is_pseudo
-                and substate.name.startswith(_COMBO_STATE_PREFIX)
-                and getattr(substate, "_generated_combo_pseudo", False)
+                and substate.is_combo_relay
             ):
                 _mark_generated_combo_pseudo_node(substate_node, node)
         return node
@@ -2956,8 +2955,8 @@ def parse_dsl_node_to_state_machine(
         owner_node: Optional[dsl_nodes.StateDefinition] = None,
     ) -> State:
         current_path = tuple((*current_path, node.name))
-        is_exported_combo_pseudo = _is_exported_combo_pseudo_node(node, owner_node)
-        is_combo_relay_pseudo = (
+        is_combo_relay_pseudo = _is_exported_combo_pseudo_node(node, owner_node)
+        is_reserved_combo_pseudo = (
             node.name.startswith(_COMBO_STATE_PREFIX) and node.is_pseudo
         )
         if node.name.startswith(_COMBO_STATE_PREFIX) and not node.is_pseudo:
@@ -3109,7 +3108,7 @@ def parse_dsl_node_to_state_machine(
             if (
                 not d_substates
                 and during_item.aspect is not None
-                and not is_combo_relay_pseudo
+                and not is_reserved_combo_pseudo
             ):
                 sink.emit(
                     ModelDiagnostic(
@@ -3310,7 +3309,7 @@ def parse_dsl_node_to_state_machine(
             # only meaningful on a composite state (it fans out to every
             # descendant leaf). On a leaf state there is nothing to fan
             # into, so the aspect is invalid.
-            if not d_substates and not is_combo_relay_pseudo:
+            if not d_substates and not is_reserved_combo_pseudo:
                 sink.emit(
                     ModelDiagnostic(
                         code="E_DURING_ASPECT_INVALID",
@@ -3433,9 +3432,7 @@ def parse_dsl_node_to_state_machine(
             named_functions=named_functions,
             _span=_node_span(node),
         )
-        if is_exported_combo_pseudo:
-            my_state._generated_combo_pseudo = True
-        if is_combo_relay_pseudo:
+        if is_reserved_combo_pseudo:
             action_kinds = _ast_action_kinds(node)
             if action_kinds:
                 sink.emit(
@@ -4153,8 +4150,8 @@ def parse_dsl_node_to_state_machine(
                 path=(*current_state.path, name),
                 substates={},
                 is_pseudo=True,
+                is_combo_relay=True,
             )
-            state._generated_combo_pseudo = True
             state.parent = current_state
             current_state.substates[name] = state
             current_state.substate_name_to_id[name] = len(

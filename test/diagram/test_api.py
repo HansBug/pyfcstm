@@ -6,6 +6,7 @@ import re
 import pytest
 
 from pyfcstm.diagram import (
+    DiagramAssetError,
     DiagramData,
     DiagramOptions,
     DiagramUnavailableError,
@@ -18,9 +19,55 @@ def _model(source):
     return load_state_machine_from_text(source)
 
 
+@pytest.mark.parametrize(
+    ("resource", "payload", "message"),
+    [
+        ("viewer.js", b"\xff", "not valid UTF-8"),
+        ("fonts/JetBrainsMono-Regular.ttf", b"bad-font", "OpenType"),
+        ("resvg.wasm", b"\x00asm\x01\x00\x00\x00", "WebAssembly"),
+    ],
+)
+def test_html_resource_failures_are_actionable(monkeypatch, resource, payload, message):
+    import importlib
+
+    engine_module = importlib.import_module("pyfcstm.diagram.engine")
+    real_get_data = engine_module.pkgutil.get_data
+
+    def corrupted_resource(package, name):
+        if name == resource:
+            return payload
+        return real_get_data(package, name)
+
+    monkeypatch.setattr(engine_module.pkgutil, "get_data", corrupted_resource)
+    with pytest.raises(DiagramAssetError, match=message):
+        _model("state Root;").diagram().to_html()
+
+
+def test_html_resource_failure_reports_issue_url_outside_checkout(monkeypatch):
+    import importlib
+
+    engine_module = importlib.import_module("pyfcstm.diagram.engine")
+    real_get_data = engine_module.pkgutil.get_data
+
+    def missing_viewer(package, resource):
+        if resource == "viewer.js":
+            return None
+        return real_get_data(package, resource)
+
+    monkeypatch.setattr(engine_module.pkgutil, "get_data", missing_viewer)
+    monkeypatch.setattr(engine_module, "_is_development_checkout", lambda: False)
+    with pytest.raises(
+        DiagramAssetError,
+        match="https://github.com/HansBug/pyfcstm/issues",
+    ):
+        _model("state Root;").diagram().to_html()
+
+
 def test_portable_data_is_deterministic_and_has_no_editor_metadata():
     first = _model("state Root { state Idle; state Run; [*] -> Idle; Idle -> Run; }")
-    second = _model("\nstate Root {\n state Idle;\n state Run;\n [*] -> Idle;\n Idle -> Run;\n}\n")
+    second = _model(
+        "\nstate Root {\n state Idle;\n state Run;\n [*] -> Idle;\n Idle -> Run;\n}\n"
+    )
 
     first_json = first.diagram().to_json()
     second_json = second.diagram().to_json()
@@ -28,8 +75,59 @@ def test_portable_data_is_deterministic_and_has_no_editor_metadata():
     assert "range" not in first_json
     assert "source_path" not in first_json
     assert "filePath" not in first_json
-    transition_ids = [item["id"] for item in first.diagram().to_dict()["rootState"]["transitions"]]
+    transition_ids = [
+        item["id"] for item in first.diagram().to_dict()["rootState"]["transitions"]
+    ]
     assert transition_ids == ["Root::transition::0", "Root::transition::1"]
+
+
+def test_public_diagram_data_value_is_portable_and_immutable():
+    diagram = _model("state Root;").diagram()
+    value = diagram.data.value
+    assert "filePath" not in value
+    assert "range" not in json.dumps(diagram.to_dict(), ensure_ascii=False)
+    with pytest.raises(TypeError):
+        value["kind"] = "changed"
+
+
+def test_diagram_derivations_keep_the_original_model_snapshot():
+    model = _model("state Root;")
+    diagram = model.diagram()
+    model.root_state.name = "Changed"
+
+    derived = diagram.with_options(mode="dark")
+    assert diagram.to_dict()["rootState"]["name"] == "Root"
+    assert derived.to_dict()["rootState"]["name"] == "Root"
+
+    match = re.search(
+        r"window\.__FCSTM_INITIAL_STATE__ = (.*?);</script><script>",
+        diagram.to_html(),
+        re.DOTALL,
+    )
+    assert match is not None
+    assert json.loads(match.group(1))["title"] == "Root"
+
+
+def test_source_text_override_rejects_line_layout_changes():
+    model = _model("state Root;")
+    with pytest.raises(ValueError, match="does not match the source"):
+        model.diagram(source_text="state Other;")
+
+
+def test_state_ids_match_shared_renderer_qualified_paths():
+    source = "state Root { state Slash; state Tilde; [*] -> Slash; }"
+    model = _model(source)
+    model.root_state.substates["Slash"].name = "a/b"
+    model.root_state.substates["Slash"].path = ("Root", "a/b")
+    model.root_state.substates["Tilde"].name = "a~b"
+    model.root_state.substates["Tilde"].path = ("Root", "a~b")
+    children = model.diagram().to_dict()["rootState"]["children"]
+    assert {item["id"] for item in children} == {"Root.a/b", "Root.a~b"}
+
+
+def test_mapping_view_state_rejects_boolean_numbers():
+    with pytest.raises(ValueError, match="finite positive number"):
+        _model("state Root;").diagram(view_state={"zoom": True})
 
 
 def test_source_sidecar_and_three_browser_modes_are_embedded():
@@ -48,17 +146,25 @@ def test_source_sidecar_and_three_browser_modes_are_embedded():
 def test_diagram_options_reach_standalone_colour_preferences():
     model = _model("state Root;")
     html = model.diagram(options=DiagramOptions(palette="nord", mode="dark")).to_html()
-    match = re.search(r"window\.__FCSTM_INITIAL_STATE__ = (.*?);</script><script>", html, re.DOTALL)
+    match = re.search(
+        r"window\.__FCSTM_INITIAL_STATE__ = (.*?);</script><script>", html, re.DOTALL
+    )
     assert match is not None
     state = json.loads(match.group(1))
     assert state["palette"] == "nord"
     assert state["colorMode"] == "dark"
 
 
+def test_html_language_matches_selected_cjk_locale():
+    assert 'lang="ja"' in _model("state Root;").diagram(cjk_locale="jp").to_html()
+
+
 def test_diagram_options_default_to_browser_preferences_and_allow_auto_mode():
     model = _model("state Root;")
     html = model.diagram().to_html()
-    match = re.search(r"window\.__FCSTM_INITIAL_STATE__ = (.*?);</script><script>", html, re.DOTALL)
+    match = re.search(
+        r"window\.__FCSTM_INITIAL_STATE__ = (.*?);</script><script>", html, re.DOTALL
+    )
     assert match is not None
     state = json.loads(match.group(1))
     assert "palette" not in state
@@ -73,7 +179,7 @@ def test_source_highlighting_preserves_multiline_token_state():
     assert rendered.count('class="fcstm-source-line"') == 3
     assert 'data-line-number="1"' in rendered
     assert 'data-line-number="3"' in rendered
-    assert "</span>\n<span class=\"fcstm-source-line\"" in rendered
+    assert '</span>\n<span class="fcstm-source-line"' in rendered
     assert "second line" in rendered
     assert "&lt;" not in rendered
 
@@ -86,7 +192,9 @@ def test_source_line_mapping_prefers_transition_ranges():
     Idle -> Run;
 }"""
     html = _model(source).diagram().to_html()
-    match = re.search(r"window\.__FCSTM_INITIAL_STATE__ = (.*?);</script><script>", html, re.DOTALL)
+    match = re.search(
+        r"window\.__FCSTM_INITIAL_STATE__ = (.*?);</script><script>", html, re.DOTALL
+    )
     assert match is not None
     state = json.loads(match.group(1))
     transition_id = state["sourceLineMap"]["4"]
@@ -181,7 +289,13 @@ def test_html_cache_and_save_replace_are_deterministic(tmp_path):
 
 
 def test_combo_relay_is_explicit_model_data():
-    state = State(name="__combo_relay", path=("Root", "__combo_relay"), substates={}, is_pseudo=True, is_combo_relay=True)
+    state = State(
+        name="__combo_relay",
+        path=("Root", "__combo_relay"),
+        substates={},
+        is_pseudo=True,
+        is_combo_relay=True,
+    )
     assert state.is_combo_relay is True
 
 
@@ -285,7 +399,9 @@ def test_imported_source_ranges_keep_document_identity(tmp_path):
         'state Root { import "./child.fcstm" as Child; [*] -> Child; }',
         encoding="utf-8",
     )
-    state = load_state_machine_from_text(root.read_text(encoding="utf-8"), path=str(root))
+    state = load_state_machine_from_text(
+        root.read_text(encoding="utf-8"), path=str(root)
+    )
     html = state.diagram().to_html()
     assert '"sourceDocuments"' in html
     assert '"documentId":"child.fcstm"' in html
@@ -303,12 +419,18 @@ def test_imported_source_line_map_contains_child_document_lines(tmp_path):
         'state Root { import "./child.fcstm" as Child; [*] -> Child; }',
         encoding="utf-8",
     )
-    model = load_state_machine_from_text(root.read_text(encoding="utf-8"), path=str(root))
+    model = load_state_machine_from_text(
+        root.read_text(encoding="utf-8"), path=str(root)
+    )
     html = model.diagram().to_html()
-    match = re.search(r"window\.__FCSTM_INITIAL_STATE__ = (.*?);</script><script>", html, re.DOTALL)
+    match = re.search(
+        r"window\.__FCSTM_INITIAL_STATE__ = (.*?);</script><script>", html, re.DOTALL
+    )
     assert match is not None
     state = json.loads(match.group(1))
-    child_lines = [key for key in state["sourceLineMap"] if key.startswith("child.fcstm:")]
+    child_lines = [
+        key for key in state["sourceLineMap"] if key.startswith("child.fcstm:")
+    ]
     assert child_lines
     assert all(state["sourceLineMap"][key] for key in child_lines)
 
@@ -328,9 +450,13 @@ def test_imported_documents_with_duplicate_basenames_keep_distinct_ids(tmp_path)
         'import "./b/child.fcstm" as B; [*] -> A; }',
         encoding="utf-8",
     )
-    model = load_state_machine_from_text(root.read_text(encoding="utf-8"), path=str(root))
+    model = load_state_machine_from_text(
+        root.read_text(encoding="utf-8"), path=str(root)
+    )
     html = model.diagram().to_html()
-    match = re.search(r"window\.__FCSTM_INITIAL_STATE__ = (.*?);</script><script>", html, re.DOTALL)
+    match = re.search(
+        r"window\.__FCSTM_INITIAL_STATE__ = (.*?);</script><script>", html, re.DOTALL
+    )
     assert match is not None
     state = json.loads(match.group(1))
     documents = state["sourceDocuments"]
@@ -340,21 +466,30 @@ def test_imported_documents_with_duplicate_basenames_keep_distinct_ids(tmp_path)
 
 
 def test_source_line_map_preserves_multiple_items_on_one_line():
-    model = _model("state Root { state A; state B; state C; [*] -> A; A -> B; A -> C; }")
+    model = _model(
+        "state Root { state A; state B; state C; [*] -> A; A -> B; A -> C; }"
+    )
     html = model.diagram().to_html()
-    match = re.search(r"window\.__FCSTM_INITIAL_STATE__ = (.*?);</script><script>", html, re.DOTALL)
+    match = re.search(
+        r"window\.__FCSTM_INITIAL_STATE__ = (.*?);</script><script>", html, re.DOTALL
+    )
     assert match is not None
     state = json.loads(match.group(1))
     line_value = state["sourceLineMap"]["0"]
     assert isinstance(line_value, list)
     assert len(line_value) >= 3
     assert all(item in state["sourceMap"] for item in line_value)
-    assert {state["sourceMap"][item]["kind"] for item in line_value} >= {"state", "transition"}
+    assert {state["sourceMap"][item]["kind"] for item in line_value} >= {
+        "state",
+        "transition",
+    }
     assert "pyfcstm:0" not in state["sourceLineMap"]
 
 
 def test_programmatic_model_exposes_source_unavailable_state():
-    model = StateMachine(defines={}, root_state=State(name="Root", path=("Root",), substates={}))
+    model = StateMachine(
+        defines={}, root_state=State(name="Root", path=("Root",), substates={})
+    )
     html = model.diagram().to_html()
     assert "sourceUnavailableReason" in html
 
@@ -387,3 +522,44 @@ def test_html_escapes_javascript_line_separators_before_bootstrap_script():
     assert "\u2029" not in html.split("</script>", 1)[0]
     assert "\\u2028" in html
     assert "\\u2029" in html
+
+
+def _wasm_section(section_id, body=b"\x00"):
+    """Build one minimal WASM section with a single-byte LEB128 size."""
+    assert len(body) < 0x80
+    return bytes([section_id, len(body)]) + body
+
+
+def _wasm_module(section_ids):
+    """Build a WASM envelope carrying the requested sections in order."""
+    payload = b"\x00asm\x01\x00\x00\x00"
+    for section_id in section_ids:
+        payload += _wasm_section(section_id)
+    return payload
+
+
+@pytest.mark.unittest
+def test_wasm_envelope_accepts_the_specified_section_order():
+    from pyfcstm.diagram.engine import _valid_wasm_envelope
+
+    # Type, Function, Export and Code are the sections the viewer binding needs.
+    assert _valid_wasm_envelope(_wasm_module([1, 3, 7, 10]))
+    # DataCount is section id 12 but the binary format places it between
+    # Element (9) and Code (10), so raw id ordering must not reject it.
+    assert _valid_wasm_envelope(_wasm_module([1, 3, 7, 9, 12, 10, 11]))
+    # Custom sections (id 0) may repeat anywhere in the stream.
+    assert _valid_wasm_envelope(_wasm_module([0, 1, 3, 0, 7, 10, 0]))
+
+
+@pytest.mark.unittest
+def test_wasm_envelope_rejects_broken_binaries():
+    from pyfcstm.diagram.engine import _valid_wasm_envelope
+
+    assert not _valid_wasm_envelope(b"\x00asm\x01\x00\x00\x00")
+    assert not _valid_wasm_envelope(b"\x00asm\x02\x00\x00\x00" + _wasm_section(1))
+    # Out-of-order sections, duplicates and unknown ids stay rejected.
+    assert not _valid_wasm_envelope(_wasm_module([3, 1, 7, 10]))
+    assert not _valid_wasm_envelope(_wasm_module([1, 1, 3, 7, 10]))
+    assert not _valid_wasm_envelope(_wasm_module([1, 3, 7, 10, 13]))
+    # A truncated final section must not pass as a complete envelope.
+    assert not _valid_wasm_envelope(_wasm_module([1, 3, 7, 10])[:-1])

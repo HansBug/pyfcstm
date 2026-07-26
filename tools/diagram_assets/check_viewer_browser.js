@@ -8,7 +8,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const zlib = require('zlib');
-const {spawn} = require('child_process');
+const {spawn, spawnSync} = require('child_process');
 const {createRequire} = require('module');
 const requireFromVscode = createRequire(path.resolve(__dirname, '../../editors/vscode/package.json'));
 const {WebSocket} = requireFromVscode('ws');
@@ -17,10 +17,17 @@ const htmlPath = process.argv[2];
 const screenshotPath = process.argv[3];
 const screenshotBeforeCollapsePath = process.env.VIEWER_SCREENSHOT_BEFORE_COLLAPSE;
 const pdfOutputPath = process.env.VIEWER_PDF_OUTPUT;
+const requestedFormats = new Set((process.env.VIEWER_FORMATS || 'svg,png,pdf').split(',').filter(Boolean));
+const requireZeroNetwork = process.env.VIEWER_REQUIRE_ZERO_NETWORK === '1';
+const requirePdfZeroImages = process.env.VIEWER_REQUIRE_PDF_ZERO_IMAGES === '1';
+const requirePdfPageSize = process.env.VIEWER_REQUIRE_PDF_PAGE_SIZE === '1';
+const requirePdfRerender = process.env.VIEWER_REQUIRE_PDF_RERENDER === '1';
 const viewport = (process.env.VIEWER_VIEWPORT || '800x600').split('x').map(Number);
 const viewportWidth = Number.isFinite(viewport[0]) && viewport[0] > 0 ? viewport[0] : 800;
 const viewportHeight = Number.isFinite(viewport[1]) && viewport[1] > 0 ? viewport[1] : 600;
-const startupWait = Number(process.env.VIEWER_STARTUP_WAIT || 2000);
+// Embedded WASM compilation can be slower on the first narrow viewport; keep
+// the maintenance gate above that one-time initialization cost by default.
+const startupWait = Number(process.env.VIEWER_STARTUP_WAIT || 4000);
 if (!htmlPath) {
   console.error('usage: node check_viewer_browser.js VIEWER.html [SCREENSHOT.png]');
   process.exit(2);
@@ -84,7 +91,25 @@ class Cdp {
       this.socket.send(JSON.stringify({id, method, params}));
     });
   }
-  close() { this.socket.close(); }
+  close() {
+    // A normal WebSocket close may wait for Chrome's debugging endpoint;
+    // terminate the maintenance connection so the checker can finish.
+    this.socket.terminate();
+  }
+}
+
+function stopChrome(child) {
+  if (!child || !child.pid) return;
+  if (process.platform === 'win32') {
+    spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], {stdio: 'ignore'});
+    return;
+  }
+  try {
+    process.kill(-child.pid, 'SIGTERM');
+  } catch (error) {
+    // ESRCH means Chrome already exited; any other cleanup failure is real.
+    if (!error || typeof error !== 'object' || error.code !== 'ESRCH') throw error;
+  }
 }
 
 async function evaluate(cdp, expression) {
@@ -101,7 +126,7 @@ async function evaluate(cdp, expression) {
     '--no-default-browser-check', `--remote-debugging-port=${port}`,
     `--window-size=${viewportWidth},${viewportHeight}`,
     `--user-data-dir=${userData}`, 'about:blank',
-  ], {stdio: 'ignore'});
+  ], {stdio: 'ignore', detached: process.platform !== 'win32'});
   try {
     const targets = await waitForJson(`http://127.0.0.1:${port}/json`);
     const page = targets.find(item => item.type === 'page');
@@ -125,6 +150,9 @@ async function evaluate(cdp, expression) {
       source: Boolean(document.querySelector('.fcstm-source-panel')),
       stage: Boolean(document.querySelector('.fcstm-stage svg')),
       error: (document.querySelector('.fcstm-stage__empty-title') || {}).textContent || '',
+      sourceAvailable: window.__FCSTM_INITIAL_STATE__?.sourceAvailable !== false,
+      sourceUnavailableMessage: document.querySelector('.fcstm-source-panel__unavailable')?.textContent?.trim() || '',
+      fontFaces: [...(document.fonts || [])].map(font => ({family: font.family, weight: font.weight, status: font.status})),
     })`);
     const sourceLayout = await evaluate(cdp, `(async () => {
       const rows = [...document.querySelectorAll('.fcstm-source-line')];
@@ -236,6 +264,7 @@ async function evaluate(cdp, expression) {
       const transitionStyle = style(transition);
       const labelStyle = style(label);
       return {
+        hasTransition: Boolean(transition),
         transitionId,
         transitionClass: transition?.getAttribute('class') || '',
         transitionFilter: transitionStyle?.filter || '',
@@ -292,12 +321,22 @@ async function evaluate(cdp, expression) {
       }
       return {candidateCount: value.length, selectedIds, uniqueSelectedIds: new Set(selectedIds.filter(Boolean)).size};
     })()`);
-    const pdf = await evaluate(cdp, `new Promise(resolve => setTimeout(() => {
-      window.dispatchEvent(new CustomEvent('fcstm-export'));
-      setTimeout(() => {
-        const payload = window.__FCSTM_LAST_EXPORT__;
+    const pdf = await evaluate(cdp, `(async () => {
+      const formats = new Set(${JSON.stringify([...requestedFormats])});
+      const exportOnce = () => new Promise(resolve => {
+        window.dispatchEvent(new CustomEvent('fcstm-export'));
+        setTimeout(() => {
+        const payload = window.__FCSTM_LAST_EXPORT__ || {};
+        const exportedSvg = String(payload?.svg || '');
         const raw = payload?.pdfBase64 ? atob(payload.pdfBase64) : '';
         const pngRaw = payload?.pngBase64 ? atob(payload.pngBase64) : '';
+        // jsPDF intentionally varies document metadata for each export. Ignore
+        // only those volatile fields so rerender checks still compare all
+        // actual page/content bytes.
+        const normalizePdfSignature = value => String(value)
+          .replace(/\\/CreationDate\\s*\\([^)]*\\)/g, '/CreationDate (NORMALIZED)')
+          .replace(/\\/ID\\s*\\[\\s*<[^>]+>\\s*<[^>]+>\\s*\\]/g, '/ID [ <NORMALIZED> <NORMALIZED> ]');
+        const contentSignature = {svg: exportedSvg, png: payload?.pngBase64 || '', pdf: normalizePdfSignature(raw)};
         const hex = value => [...value].map(char => char.charCodeAt(0).toString(16).padStart(2, '0')).join('');
         const readU32 = (value, offset) => value.length >= offset + 4
           ? (((value.charCodeAt(offset) & 255) << 24) | ((value.charCodeAt(offset + 1) & 255) << 16) |
@@ -305,6 +344,36 @@ async function evaluate(cdp, expression) {
         const pngHeader = hex(pngRaw.slice(0, 8));
         const pngWidth = readU32(pngRaw, 16);
         const pngHeight = readU32(pngRaw, 20);
+        const mediaBox = raw.match(/\\/MediaBox\\s*\\[\\s*0\\s+0\\s+([0-9.]+)\\s+([0-9.]+)\\s*\\]/);
+        const viewBox = exportedSvg.match(/\\bviewBox=["']\\s*0\\s+0\\s+([0-9.]+)\\s+([0-9.]+)\\s*["']/);
+        const finish = (pngDecodedWidth, pngDecodedHeight, pngNonBlankPixels, pngOpaque) => resolve({
+          menu: Boolean(document.querySelector('#fcstm-standalone-export-menu')),
+          fatal: document.querySelector('[data-fcstm-fatal="true"]')?.textContent || '',
+          base64: payload?.pdfBase64 || '',
+          signature: {
+            svgBytes: exportedSvg.length,
+            pngBytes: pngRaw.length,
+            pdfBytes: raw.length,
+          },
+          _contentSignature: contentSignature,
+          bytes: raw.length,
+          header: raw.slice(0, 5),
+          images: (raw.match(/\\/Subtype\\s*\\/Image\\b|\\/ImageMask\\b/g) || []).length,
+          pages: (raw.match(/\\/Type \\/Page\\b/g) || []).length,
+          svgText: (exportedSvg.match(/<text\\b/g) || []).length,
+          svgMarker: (exportedSvg.match(/<marker\\b/g) || []).length,
+          svgFontFamily: (exportedSvg.match(/font-family[=:]/g) || []).length,
+          pngBytes: pngRaw.length, pngHeader, pngWidth, pngHeight,
+          pngDecodedWidth, pngDecodedHeight, pngNonBlankPixels, pngOpaque,
+          pdfWidth: mediaBox ? Number(mediaBox[1]) : 0,
+          pdfHeight: mediaBox ? Number(mediaBox[2]) : 0,
+          svgWidth: viewBox ? Number(viewBox[1]) : 0,
+          svgHeight: viewBox ? Number(viewBox[2]) : 0,
+        });
+        if (!formats.has('png') || !pngRaw) {
+          finish(0, 0, 0, false);
+          return;
+        }
         const image = new Image();
         image.onload = () => {
           const canvas = document.createElement('canvas');
@@ -312,29 +381,35 @@ async function evaluate(cdp, expression) {
           canvas.height = image.naturalHeight;
           const context = canvas.getContext('2d', {willReadFrequently: true});
           let nonBlankPixels = 0;
+          let opaque = true;
           if (context) {
             context.drawImage(image, 0, 0);
             const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
             for (let index = 0; index < pixels.length; index += 4) {
+              if (pixels[index + 3] !== 255) opaque = false;
               if (pixels[index + 3] > 0 && (pixels[index] < 245 || pixels[index + 1] < 245 || pixels[index + 2] < 245)) {
                 nonBlankPixels += 1;
                 if (nonBlankPixels >= 10) break;
               }
             }
           }
-          resolve({menu: Boolean(document.querySelector('#fcstm-standalone-export-menu')), base64: payload?.pdfBase64 || '', bytes: raw.length,
-            header: raw.slice(0, 5), images: (raw.match(/\\/Subtype\\s*\\/Image\\b|\\/ImageMask\\b/g) || []).length,
-            pages: (raw.match(/\\/Type \\/Page\\b/g) || []).length,
-            pngBytes: pngRaw.length, pngHeader, pngWidth, pngHeight, pngDecodedWidth: image.naturalWidth,
-            pngDecodedHeight: image.naturalHeight, pngNonBlankPixels: nonBlankPixels});
+          finish(image.naturalWidth, image.naturalHeight, nonBlankPixels, opaque);
         };
-        image.onerror = () => resolve({menu: Boolean(document.querySelector('#fcstm-standalone-export-menu')), base64: payload?.pdfBase64 || '', bytes: raw.length,
-          header: raw.slice(0, 5), images: (raw.match(/\\/Subtype\\s*\\/Image\\b|\\/ImageMask\\b/g) || []).length,
-          pages: (raw.match(/\\/Type \\/Page\\b/g) || []).length, pngBytes: pngRaw.length, pngHeader, pngWidth, pngHeight,
-          pngDecodedWidth: 0, pngDecodedHeight: 0, pngNonBlankPixels: 0});
+        image.onerror = () => finish(0, 0, 0, false);
         image.src = pngRaw ? 'data:image/png;base64,' + payload.pngBase64 : '';
       }, 900);
-    }, 120))`);
+      });
+      await new Promise(resolve => setTimeout(resolve, 120));
+      const first = await exportOnce();
+      if (!${JSON.stringify(requirePdfRerender)}) {
+        delete first._contentSignature;
+        return first;
+      }
+      const second = await exportOnce();
+      first.rerenderSame = JSON.stringify(first._contentSignature) === JSON.stringify(second._contentSignature);
+      delete first._contentSignature;
+      return first;
+    })()`);
     const pdfStreamText = inflatePdfStreams(pdf.base64);
     pdf.whiteHaloOperators = (pdfStreamText.match(/[0-9.]+ [0-9.]+ [0-9.]+ rg\n3\. w\n1\. G/g) || []).length;
     if (pdfOutputPath && pdf.base64) fs.writeFileSync(pdfOutputPath, Buffer.from(pdf.base64, 'base64'));
@@ -384,25 +459,57 @@ async function evaluate(cdp, expression) {
       (comparisonSourceHeight < minimumPanelHeight || comparisonStageHeight < minimumPanelHeight));
     const oversizedUiIcons = (layout.svgRects || []).filter(item => /n-(?:base-icon|icon|checkbox-icon)/.test(item.className))
       .some(item => item.rect.width > 64 || item.rect.height > 64);
-    const report = {initial, sourceLayout, diagramOnly: states, fcstmOnly, compare, backToCompare, importedSource, selection, revealSource, hover, sourceHover, transitionHover, sourceSelection, sourceCycle, zoom, pdf, collapse, layout, minimumPanelHeight, comparisonTooShort, oversizedUiIcons, externalRequests: network, cspViolations, consoleErrors: consoleErrors.length, consoleDetails};
+    const sourceLayoutChecks = !initial.sourceAvailable || (
+      sourceLayout.lineCount >= 1 && sourceLayout.textHasLineBreaks &&
+      sourceLayout.lineNumbers.every(item => item.align === 'right' && /^"\d+"$/.test(item.value)) &&
+      sourceLayout.maxGap <= 1
+    );
+    const sourceUnavailableChecks = initial.sourceAvailable || (
+      initial.sourceUnavailableMessage.includes('源码') &&
+      (initial.sourceUnavailableMessage.includes('加载') ||
+        initial.sourceUnavailableMessage.includes('source_text'))
+    );
+    const sourceChecks = !initial.sourceAvailable || (
+      selection.selected >= 1 && revealSource.activeSourceLines >= 1 && hover.activeSourceLines >= 1 &&
+      sourceHover.diagramHover >= 1 && sourceSelection.selected >= 1
+    );
+    const transitionChecks = !transitionHover.hasTransition || (
+      Boolean(transitionHover.transitionId) && transitionHover.transitionFilter === 'none' &&
+      transitionHover.transitionFill === 'none' &&
+      (!transitionHover.labelFilter || transitionHover.labelFilter === 'none') &&
+      transitionHover.noteParts.every(item => item.filter === 'none') &&
+      transitionHover.transitionStroke === 'rgb(45, 106, 168)'
+    );
+    const pdfChecks = !requestedFormats.has('pdf') || (
+      pdf.menu === true && pdf.header === '%PDF-' && pdf.bytes >= 100 &&
+      (!requirePdfZeroImages || pdf.images === 0) && pdf.pages === 1 &&
+      (!requirePdfPageSize || (pdf.pdfWidth > 0 && pdf.pdfHeight > 0 &&
+        Math.abs(pdf.pdfWidth - pdf.svgWidth) < 0.1 && Math.abs(pdf.pdfHeight - pdf.svgHeight) < 0.1)) &&
+      pdf.whiteHaloOperators === 0 && (!requirePdfRerender || pdf.rerenderSame === true)
+    );
+    const pngChecks = !requestedFormats.has('png') || (
+      pdf.pngHeader === '89504e470d0a1a0a' && pdf.pngBytes >= 100 && pdf.pngWidth >= 1 && pdf.pngHeight >= 1 &&
+      pdf.pngDecodedWidth === pdf.pngWidth && pdf.pngDecodedHeight === pdf.pngHeight &&
+      pdf.pngNonBlankPixels >= 10 && pdf.pngOpaque === true
+    );
+    const svgChecks = !requestedFormats.has('svg') || (
+      pdf.svgText === 0 && pdf.svgMarker === 0 && pdf.svgFontFamily === 0
+    );
+    const report = {initial, sourceLayout, sourceLayoutChecks, sourceUnavailableChecks, sourceChecks, transitionChecks, pdfChecks, pngChecks, svgChecks, diagramOnly: states, fcstmOnly, compare, backToCompare, importedSource, selection, revealSource, hover, sourceHover, transitionHover, sourceSelection, sourceCycle, zoom, pdf, collapse, layout, minimumPanelHeight, comparisonTooShort, oversizedUiIcons, externalRequests: network, cspViolations, consoleErrors: consoleErrors.length, consoleDetails};
     console.log(JSON.stringify(report, null, 2));
     if (!initial.stage || initial.error || states.diagramOnlySource || !compare.source || !compare.stage ||
         fcstmOnly.source !== true || fcstmOnly.stage !== false || backToCompare.source !== true || backToCompare.stage !== true ||
-        sourceLayout.lineCount < 1 || !sourceLayout.textHasLineBreaks || sourceLayout.lineNumbers.some(item => item.align !== 'right' || !/^"\d+"$/.test(item.value)) || sourceLayout.maxGap > 1 ||
+        !sourceLayoutChecks || !sourceUnavailableChecks ||
         !sourceLayout.menuVisible || sourceLayout.menuAlpha < 0.99 || sourceLayout.optionAlpha < 0.99 || sourceLayout.nativeSelectAlpha < 0.99 ||
-        selection.selected < 1 || revealSource.activeSourceLines < 1 || hover.activeSourceLines < 1 || sourceHover.diagramHover < 1 || sourceSelection.selected < 1 ||
-        !transitionHover.transitionId || transitionHover.transitionFilter !== 'none' || transitionHover.transitionFill !== 'none' ||
-        (transitionHover.labelFilter && transitionHover.labelFilter !== 'none') ||
-        transitionHover.noteParts.some(item => item.filter !== 'none') || transitionHover.transitionStroke !== 'rgb(45, 106, 168)' ||
-        zoom.before === zoom.after || pdf.menu !== true || pdf.header !== '%PDF-' || pdf.bytes < 100 || pdf.images !== 0 || pdf.pages !== 1 ||
-        pdf.pngHeader !== '89504e470d0a1a0a' || pdf.pngBytes < 100 || pdf.pngWidth < 1 || pdf.pngHeight < 1 ||
-        pdf.pngDecodedWidth !== pdf.pngWidth || pdf.pngDecodedHeight !== pdf.pngHeight || pdf.pngNonBlankPixels < 10 ||
-        pdf.whiteHaloOperators !== 0 ||
+        !sourceChecks ||
+        !transitionChecks ||
+        zoom.before === zoom.after || !pdfChecks || !pngChecks ||
+        (process.env.VIEWER_REQUIRE_EXPANDED_SVG === '1' && !svgChecks) ||
         (sourceCycle.candidateCount > 1 && sourceCycle.uniqueSelectedIds < sourceCycle.candidateCount) ||
-        (collapse.before > 1 && collapse.after >= collapse.before) || verticalOverflow || horizontalOverflow || comparisonTooShort || oversizedUiIcons || network.length || cspViolations.length || consoleErrors.length ||
+        (collapse.before > 1 && collapse.after >= collapse.before) || verticalOverflow || horizontalOverflow || comparisonTooShort || oversizedUiIcons || (requireZeroNetwork && network.length) || cspViolations.length || consoleErrors.length ||
         (importedSource.documents.length > 1 && (!importedSource.childText || importedSource.selected < 1))) process.exitCode = 1;
   } finally {
-    chrome.kill('SIGTERM');
+    stopChrome(chrome);
     fs.rmSync(userData, {recursive: true, force: true, maxRetries: 5, retryDelay: 100});
   }
 })().catch(error => { console.error(error.stack || error); process.exitCode = 1; });

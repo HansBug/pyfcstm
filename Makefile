@@ -1,4 +1,4 @@
-.PHONY: docs docs_en docs_zh docs_pdf docs_pdf_en docs_pdf_zh test unittest template_unittest resource antlr antlr_build fcstm_antlr_build fbmcq_antlr_build build build_info build_info_cli package clean build_assets build_assets_clean diagram_assets_check diagram_rendering_check diagram_browser_check diagram_parity_check diagram_reference_check diagram_engine_floor diagram_provenance_check diagram_assets_verify diagram_package_check diagram_corpus docs_auto todos_auto tests_auto rst_auto sha256 jsfcstm jsfcstm_clean vscode vscode_clean vscode_install vscode_uninstall logos logos_clean app_icons app_icons_clean help tpl tpl_clean templates_package template_packaging_check template_source_install_check docs_terminology_check test_boundary_check
+.PHONY: docs docs_en docs_zh docs_pdf docs_pdf_en docs_pdf_zh test unittest template_unittest resource antlr antlr_build fcstm_antlr_build fbmcq_antlr_build build build_info build_info_cli package clean build_assets build_assets_clean diagram_assets_check diagram_rendering_check diagram_browser_check diagram_contract_check diagram_data_check diagram_options_check diagram_csp_check diagram_parity_check diagram_reference_check diagram_engine_floor diagram_provenance_check diagram_assets_verify diagram_package_check diagram_corpus docs_auto todos_auto tests_auto rst_auto sha256 jsfcstm jsfcstm_clean vscode vscode_clean vscode_install vscode_uninstall logos logos_clean app_icons app_icons_clean help tpl tpl_clean templates_package template_packaging_check template_source_install_check docs_terminology_check test_boundary_check
 
 PYTHON := $(shell which python)
 
@@ -93,8 +93,8 @@ help:
 	@echo "  make build_info   - Generate build identity for a package or CLI build"
 	@echo "  make build_assets - Build ignored Python diagram JS/WASM/font assets"
 	@echo "  make diagram_assets_check - Build and validate diagram assets and ignore rules"
-	@echo "  make diagram_browser_check DIAGRAM_HTML=/path/viewer.html - Run offline Chrome viewer gate"
-	@echo "  make diagram_assets_verify - Run provenance, runtime, and visual asset gates"
+	@echo "  make diagram_browser_check - Run representative offline Chrome export gate"
+	@echo "  make diagram_assets_verify - Run provenance, runtime, contract, and visual asset gates"
 	@echo "  make diagram_parity_check DIAGRAM_REFERENCE=/abs/path/reference.json"
 	@echo "  make diagram_reference_check - Verify reference archive retry behavior"
 	@echo "  make diagram_corpus - Rebuild checked-in DiagramData rendering oracles"
@@ -246,8 +246,29 @@ diagram_assets_check: build_assets
 	$(PYTHON) tools/check_diagram_assets.py
 
 diagram_browser_check: build_assets
-	@test -n "$(DIAGRAM_HTML)" || (echo "DIAGRAM_HTML is required" >&2; exit 2)
-	node tools/diagram_assets/check_viewer_browser.js "$(DIAGRAM_HTML)" "$(DIAGRAM_SCREENSHOT)"
+	@if test -n "$(DIAGRAM_HTML)"; then \
+		node tools/diagram_assets/check_viewer_browser.js "$(DIAGRAM_HTML)" "$(DIAGRAM_SCREENSHOT)"; \
+	else \
+		$(PYTHON) tools/check_diagram_browser_exports.py --all-cases --formats svg,png,pdf --zero-network --pdf-require-zero-images --pdf-page-size-match --pdf-rerender; \
+	fi
+
+diagram_contract_check: build_assets
+	$(PYTHON) tools/check_diagram_contract.py
+
+diagram_data_check: build_assets
+	$(PYTHON) tools/check_diagram_data_parity.py
+
+diagram_options_check: build_assets
+	$(PYTHON) tools/check_diagram_options_parity.py
+
+diagram_csp_check: build_assets
+	$(PYTHON) tools/check_diagram_csp.py \
+		--require-default-none --require-connect-none --require-worker-none \
+		--require-script-hashes --require-style-hashes \
+		--require-wasm-unsafe-eval --forbid-unsafe-eval \
+		--require-font-data --require-img-data-blob \
+		--forbid-eval --forbid-new-function --zero-network \
+		--require-embedded-fonts 5 --require-fonts-ready
 
 diagram_rendering_check: build_assets
 	$(PYTHON) tools/check_diagram_rendering.py --check
@@ -283,7 +304,7 @@ diagram_provenance_check:
 diagram_reference_check:
 	$(PYTHON) tools/fetch_diagram_reference.py --check
 
-diagram_assets_verify: diagram_assets_check diagram_rendering_check diagram_parity_check diagram_engine_floor diagram_provenance_check diagram_reference_check
+diagram_assets_verify: diagram_assets_check diagram_rendering_check diagram_contract_check diagram_data_check diagram_options_check diagram_csp_check diagram_parity_check diagram_engine_floor diagram_provenance_check diagram_reference_check
 
 diagram_package_check: package
 

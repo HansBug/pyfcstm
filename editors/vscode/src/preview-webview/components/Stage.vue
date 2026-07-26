@@ -13,8 +13,11 @@ import {getElk} from '../composables/useElk';
 import {decidePreviewPointerAction, PREVIEW_DRAG_THRESHOLD_PX} from '../interaction';
 import {computePreviewFit} from '../layout';
 import type {PreviewWebviewState, SelectionRef, TextRange, PreviewElkNode, PreviewPayload} from '../types';
-import {jsPDF} from 'jspdf';
-import {svg2pdf} from 'svg2pdf.js';
+import {
+    expandSvgForExport,
+    renderVectorPdf,
+    type SvgExpander,
+} from '../../../../jsfcstm/src/diagram/export';
 
 const props = defineProps<{
     state: PreviewWebviewState;
@@ -403,8 +406,8 @@ function onActualEvt() { actualSize(); }
  * same draw order. Returns a Blob so callers can convert to whatever
  * transport they need.
  */
-async function rasterizeCurrentSvg(scale: number): Promise<{blob: Blob; width: number; height: number}> {
-    const svgBlob = new Blob([svgString], {type: 'image/svg+xml;charset=utf-8'});
+async function rasterizeSvg(svg: string, scale: number): Promise<{blob: Blob; width: number; height: number}> {
+    const svgBlob = new Blob([svg], {type: 'image/svg+xml;charset=utf-8'});
     const url = URL.createObjectURL(svgBlob);
     try {
         const img = new Image();
@@ -435,33 +438,16 @@ async function rasterizeCurrentSvg(scale: number): Promise<{blob: Blob; width: n
     }
 }
 
-async function renderCurrentSvgToPng(): Promise<Blob> {
-    const {blob} = await rasterizeCurrentSvg(2);
-    return blob;
+function getSvgExpander(): SvgExpander | undefined {
+    return (window as unknown as {
+        __FCSTM_EXPAND_SVG__?: SvgExpander;
+    }).__FCSTM_EXPAND_SVG__;
 }
 
-/**
- * Remove browser-only text halos from the SVG copy sent to svg2pdf.
- *
- * ``svg2pdf.js`` does not preserve SVG ``paint-order="stroke"`` for the
- * path-expanded text produced by the resvg bridge. It paints the white halo
- * after the glyph fill, which makes ordinary transition labels unreadable on
- * a white page. The browser SVG and PNG keep the original source unchanged;
- * only this PDF export copy drops the halo attributes.
- */
-function prepareSvgForPdf(source: string): string {
-    const parsed = new DOMParser().parseFromString(source, 'image/svg+xml');
-    const root = parsed.documentElement;
-    if (!root || root.nodeName.toLowerCase() !== 'svg') {
-        throw new Error('SVG export produced no root element');
-    }
-    for (const text of root.querySelectorAll('[data-fcstm-kind="transition-label"] text[paint-order="stroke"]')) {
-        text.removeAttribute('paint-order');
-        text.removeAttribute('stroke');
-        text.removeAttribute('stroke-width');
-        text.removeAttribute('stroke-linejoin');
-    }
-    return new XMLSerializer().serializeToString(root);
+async function renderCurrentSvgToPng(): Promise<Blob> {
+    const expanded = await expandSvgForExport(svgString, getSvgExpander());
+    const {blob} = await rasterizeSvg(expanded, 2);
+    return blob;
 }
 
 async function blobToBase64(blob: Blob): Promise<string> {
@@ -484,33 +470,11 @@ function uint8ToBase64(bytes: Uint8Array): string {
 }
 
 async function renderCurrentSvgToPdf(): Promise<Uint8Array> {
-    const widthPt = Math.max(1, svgBounds.value.width);
-    const heightPt = Math.max(1, svgBounds.value.height);
-    const expand = (window as unknown as {
-        __FCSTM_EXPAND_SVG__?: (svg: string) => Promise<string>;
-    }).__FCSTM_EXPAND_SVG__;
-    const pdfSource = prepareSvgForPdf(svgString);
-    const expanded = expand ? await expand(pdfSource) : pdfSource;
-    const parsed = new DOMParser().parseFromString(expanded, 'image/svg+xml');
-    const svg = parsed.documentElement;
-    if (!svg || svg.nodeName.toLowerCase() !== 'svg') {
-        throw new Error('SVG export produced no root element');
-    }
-    const pdf = new jsPDF({
-        orientation: widthPt > heightPt ? 'landscape' : 'portrait',
-        unit: 'pt',
-        format: [widthPt, heightPt],
-        compress: true,
-    });
-    await svg2pdf(svg, pdf, {
-        x: 0,
-        y: 0,
-        width: widthPt,
-        height: heightPt,
-        loadExternalStyleSheets: false,
-    });
-    const buffer = pdf.output('arraybuffer') as ArrayBuffer;
-    return new Uint8Array(buffer);
+    return renderVectorPdf(
+        svgString,
+        {width: svgBounds.value.width, height: svgBounds.value.height},
+        getSvgExpander(),
+    );
 }
 
 /**
@@ -527,17 +491,22 @@ async function renderCurrentSvgToPdf(): Promise<Uint8Array> {
 async function onExportEvt() {
     if (!svgString) return;
     try {
-        const [pngBlob, pdfBytes] = await Promise.all([
-            renderCurrentSvgToPng(),
-            renderCurrentSvgToPdf(),
+        const expanded = await expandSvgForExport(svgString, getSvgExpander());
+        const [pngResult, pdfBytes] = await Promise.all([
+            rasterizeSvg(expanded, 2),
+            renderVectorPdf(
+                svgString,
+                {width: svgBounds.value.width, height: svgBounds.value.height},
+                getSvgExpander(),
+            ),
         ]);
         const [pngBase64, pdfBase64] = await Promise.all([
-            blobToBase64(pngBlob),
+            blobToBase64(pngResult.blob),
             Promise.resolve(uint8ToBase64(pdfBytes)),
         ]);
         window.dispatchEvent(new CustomEvent('fcstm-emit', {detail: {
             type: 'exportDiagram',
-            payload: {svg: svgString, pngBase64, pdfBase64},
+            payload: {svg: expanded, pngBase64, pdfBase64},
         }}));
     } catch (err) {
         // Error/DOMException are the expected failures from canvas, DOMParser,

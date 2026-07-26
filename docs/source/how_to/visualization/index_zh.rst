@@ -357,6 +357,44 @@ CI 图表任务不应依赖桌面查看器：
 4. 渲染路径符合数据边界：私有模型用本地渲染，只有源文本允许离开本机时才用远程。
 5. 页面应链接到 :doc:`/reference/visualization_options/index_zh`，解释所有非显而易见的选项。
 
+使用 Python Diagram 查看器
+--------------------------
+
+需要离线 HTML 查看器，而不是 PlantUML 源码或 PlantUML 渲染文件时，使用下面的路径。
+
+.. list-table:: Python Diagram 任务卡片
+   :header-rows: 1
+
+   * - 任务
+     - 起点
+     - 命令或代码
+     - 预期信号和副作用
+     - 失败时的第一步修复
+   * - 写出可移植 JSON
+     - 已解析的 ``StateMachine``。
+     - ``model.diagram().save("machine.json")`` 或 ``pyfcstm diagram -i machine.fcstm -o machine.json``。
+     - 文件是确定性的 JSON，不包含本地源码路径或范围。
+     - 运行 ``pyfcstm inspect -i machine.fcstm``，先区分 DSL/模型错误与序列化错误。
+   * - 写出自包含查看器
+     - 已解析的 ``StateMachine`` 或 FCSTM 文件。
+     - ``model.diagram().save("machine.html")`` 或 ``pyfcstm diagram -i machine.fcstm -o machine.html``。
+     - 文件内含查看器、渲染器、WASM 和选定地区字体，不需要网络请求。
+     - 在开发 checkout 中运行 ``make diagram_assets_check`` 检查打包资源。
+   * - 打开桌面查看器
+     - 已生成的 HTML 路径和 Chromium 系浏览器。
+     - ``model.show()`` 或 ``pyfcstm diagram -i machine.fcstm --open``。
+     - 打开浏览器应用窗口，并返回生成的 HTML 路径。
+     - 没有浏览器时使用 ``open_window=False``，或省略 ``--open``。
+   * - 下载 SVG/PNG/PDF
+     - 已在浏览器中打开的 HTML 查看器。
+     - 使用查看器的导出菜单。
+     - 三种格式都来自同一张图；矢量 PDF 不包含图像对象。
+     - 导出失败时保留浏览器错误信息，先检查资源/运行时错误，不要先修改模型。
+
+``show`` 会先写出 HTML，再尝试打开窗口。缺少 Chromium 会报告类型化能力错误，
+而不是模型或资源错误。Python 同步 ``to_svg()``、``to_png()`` 和 ``to_pdf()``
+在无头交付阶段之前仍不可用；不要把它们当作浏览器导出回退路径。
+
 排查可视化问题
 --------------
 

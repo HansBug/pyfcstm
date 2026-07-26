@@ -763,6 +763,57 @@ Python API（应用程序接口）例子：
        custom_colors={'System.Start': '#00AA00'},
    )
 
+Python Diagram 接口和浏览器查看器
+----------------------------------
+
+浏览器查看器是独立于上文 PlantUML 选项的公开路径，直接消费已解析模型，
+并写出可移植 JSON 或自包含 HTML 文件。
+
+.. list-table:: Python Diagram 公开取值
+   :header-rows: 1
+
+   * - 取值
+     - 可接受取值或默认值
+     - 行为
+   * - ``DiagramOptions.detail_level``
+     - ``minimal``、``normal``（默认）、``full``
+     - 控制传给共享渲染器的图形细节数量。
+   * - ``DiagramOptions.direction``
+     - ``TB``（默认）或 ``LR``
+     - 选择从上到下或从左到右的布局。
+   * - ``DiagramOptions.palette``
+     - ``default``、``nord``、``solarized``、``darcula`` 或 ``None``
+     - 选择查看器配色。
+   * - ``DiagramOptions.mode``
+     - ``light``、``dark``、``auto`` 或 ``None``
+     - 选择初始颜色模式。
+   * - ``DiagramOptions.cjk_locale``
+     - ``sc``、``tc``、``hk``、``jp`` 或 ``kr``（默认 ``sc``）
+     - 在 HTML 中嵌入对应地区的 CJK 字体对。
+   * - ``DiagramViewState.mode``
+     - ``compare``（默认）、``fcstm`` 或 ``diagram``
+     - 选择源码、图形或联动对比视图。
+   * - ``DiagramViewState.zoom``
+     - 有限正数（默认 ``1.0``）
+     - 设置初始缩放；布尔值、零、负数、NaN 和无穷值会失败。
+   * - ``DiagramViewState.pan_x`` / ``pan_y``
+     - 有限数（默认 ``0.0``）
+     - 设置初始平移量。
+
+``model.diagram(...)`` 返回不可变的 ``Diagram`` 快照。``to_dict()`` 和
+``to_json()`` 不包含绝对路径、源码范围或编辑器选择状态。``to_html()``
+返回一份完整 HTML 字符串；``save("name.json")`` 和 ``save("name.html")``
+使用原子替换。``Diagram.show()`` 和 ``StateMachine.show()`` 同样返回 HTML 路径。
+
+HTML 查看器可以在浏览器中下载 SVG、PNG 和矢量 PDF。Python 的
+``to_svg()``、``to_png()`` 和 ``to_pdf()`` 在后续无头交付阶段之前会主动抛出
+``DiagramUnavailableError``。没有 Chromium 系浏览器时，``show()`` 会先写出
+HTML，再抛出同一类型的能力错误；使用 ``show(open_window=False)`` 可避免浏览器依赖。
+
+未知字段、重复蛇形/驼峰别名、无效枚举值和无效数字会抛出 ``ValueError``。
+缺失或不可用的查看器/WASM/字体资源会抛出 ``DiagramAssetError``，并给出开发
+环境的 ``make build_assets`` 修复指引，或给出已安装包应使用的 issue URL。
+
 渲染器和文件选项
 ----------------
 

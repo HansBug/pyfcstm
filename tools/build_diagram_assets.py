@@ -238,12 +238,19 @@ def ensure_viewer_dependencies() -> None:
             # target also rewrites tracked Python requirement files, which
             # would make release artifacts appear dirty on Windows.
             subprocess.run(["make", "antlr-4.9.3.jar"], cwd=str(ROOT), check=True)
-        subprocess.run([_node_command("npm"), "run", "build"], cwd=str(JSFCSTM_DIR), check=True)
-        subprocess.run([_node_command("npm"), "run", "pack:local"], cwd=str(JSFCSTM_DIR), check=True)
+        subprocess.run(
+            [_node_command("npm"), "run", "build"], cwd=str(JSFCSTM_DIR), check=True
+        )
+        subprocess.run(
+            [_node_command("npm"), "run", "pack:local"],
+            cwd=str(JSFCSTM_DIR),
+            check=True,
+        )
     required = (
+        JSFCSTM_DIR / "node_modules" / "jspdf",
+        JSFCSTM_DIR / "node_modules" / "svg2pdf.js",
         VSCODE_DIR / "node_modules" / "vue" / "compiler-sfc",
         VSCODE_DIR / "node_modules" / "unplugin-vue",
-        VSCODE_DIR / "node_modules" / "svg2pdf.js",
         VSCODE_DIR / "node_modules" / "esbuild",
     )
     if all(path.exists() for path in required):
@@ -262,7 +269,9 @@ def ensure_viewer_dependencies() -> None:
     )
     missing = [str(path) for path in required if not path.exists()]
     if missing:
-        raise FileNotFoundError("viewer dependency installation omitted: %s" % ", ".join(missing))
+        raise FileNotFoundError(
+            "viewer dependency installation omitted: %s" % ", ".join(missing)
+        )
 
 
 def elk_tree_sha256() -> str:
@@ -331,28 +340,41 @@ def validate_viewer_provenance(lock: Dict[str, object]) -> None:
     if not isinstance(expected_version, str) or not expected_version:
         raise ValueError("viewer lock lacks svg2pdf version")
     try:
-        package_lock = json.loads((VSCODE_DIR / "package-lock.json").read_text(encoding="utf-8"))
+        package_lock = json.loads(JSFCSTM_LOCK_PATH.read_text(encoding="utf-8"))
         root_package = package_lock["packages"][""]
         package = package_lock["packages"]["node_modules/svg2pdf.js"]
     except (KeyError, OSError, TypeError, ValueError) as err:
         # KeyError/TypeError/ValueError: the tracked viewer lock has no valid
         # exporter entry; OSError: the lock file cannot be read.
-        raise ValueError("vscode package-lock lacks a valid svg2pdf.js entry") from err
-    dependencies = root_package.get("dependencies")
-    if not isinstance(dependencies, dict) or dependencies.get("svg2pdf.js") != expected_version:
-        raise ValueError("vscode svg2pdf.js dependency differs from asset lock")
+        raise ValueError("jsfcstm package-lock lacks a valid svg2pdf.js entry") from err
+    dev_dependencies = root_package.get("devDependencies")
+    if (
+        not isinstance(dev_dependencies, dict)
+        or dev_dependencies.get("svg2pdf.js") != expected_version
+    ):
+        raise ValueError("jsfcstm svg2pdf.js devDependency differs from asset lock")
     if package.get("version") != expected_version:
         raise ValueError("installed svg2pdf.js version differs from asset lock")
-    if package.get("resolved") != exporter.get("resolved") or package.get("integrity") != exporter.get("integrity"):
+    if package.get("resolved") != exporter.get("resolved") or package.get(
+        "integrity"
+    ) != exporter.get("integrity"):
         raise ValueError("svg2pdf.js lock provenance differs from package-lock")
     if package.get("license") != exporter.get("license"):
         raise ValueError("svg2pdf.js license differs from asset lock")
-    installed = VSCODE_DIR / "node_modules" / "svg2pdf.js" / "package.json"
+    installed = JSFCSTM_DIR / "node_modules" / "svg2pdf.js" / "package.json"
     if not installed.is_file():
         raise FileNotFoundError("installed svg2pdf.js package is missing")
     installed_package = json.loads(installed.read_text(encoding="utf-8"))
     if installed_package.get("version") != expected_version:
         raise ValueError("installed svg2pdf.js package version differs from asset lock")
+    public_entry = JSFCSTM_DIR / "dist" / "diagram" / "index.js"
+    if not public_entry.is_file():
+        raise FileNotFoundError("jsfcstm public diagram entry is missing")
+    public_text = public_entry.read_text(encoding="utf-8")
+    if re.search(r"require\(\s*[\"'](?:jspdf|svg2pdf\.js)[\"']", public_text):
+        raise ValueError(
+            "PDF build dependencies leaked into the jsfcstm public diagram entry"
+        )
 
 
 def validate_elk_provenance(lock: Dict[str, object]) -> None:
@@ -520,19 +542,29 @@ def build_viewer(output_dir: Path) -> Tuple[bytes, bytes, Dict[str, object]]:
         )
     except OSError as err:
         # OSError: Node is unavailable, so the browser asset cannot be built.
-        raise RuntimeError("Node.js is required to build the standalone diagram viewer") from err
+        raise RuntimeError(
+            "Node.js is required to build the standalone diagram viewer"
+        ) from err
     viewer_path = output_dir / "viewer.js"
     css_path = output_dir / "viewer.css"
     meta_path = output_dir / "viewer.meta.json"
     if not viewer_path.is_file() or not css_path.is_file():
-        raise FileNotFoundError("standalone viewer build did not produce viewer.js/viewer.css")
-    metadata = json.loads(meta_path.read_text(encoding="utf-8")) if meta_path.is_file() else {}
+        raise FileNotFoundError(
+            "standalone viewer build did not produce viewer.js/viewer.css"
+        )
+    metadata = (
+        json.loads(meta_path.read_text(encoding="utf-8")) if meta_path.is_file() else {}
+    )
     inputs = metadata.get("inputs", {})
     forbidden = ("canvg", "html2canvas", "fast-png", "dompurify")
     if isinstance(inputs, dict):
         bundled_forbidden = sorted(
-            path for path in inputs
-            if any("/node_modules/%s/" % name in str(path).replace("\\", "/") for name in forbidden)
+            path
+            for path in inputs
+            if any(
+                "/node_modules/%s/" % name in str(path).replace("\\", "/")
+                for name in forbidden
+            )
         )
         if bundled_forbidden:
             raise ValueError(
@@ -551,7 +583,7 @@ def build_viewer(output_dir: Path) -> Tuple[bytes, bytes, Dict[str, object]]:
         )
     # Vue devtools metadata is not needed in a packaged offline viewer and
     # may otherwise leak the maintainer's checkout path into every HTML file.
-    viewer = re.sub(br'__file\",\"[^\"]+\"', b'__file\",\"\"', viewer)
+    viewer = re.sub(rb"__file\",\"[^\"]+\"", b'__file",""', viewer)
     return viewer, css_path.read_bytes(), _canonicalize_metafile(metadata)
 
 

@@ -770,6 +770,62 @@ Python API examples:
        custom_colors={'System.Start': '#00AA00'},
    )
 
+Python Diagram API and browser viewer
+--------------------------------------
+
+The browser viewer is a separate public path from the PlantUML options above.
+It consumes the parsed model directly and writes portable JSON or a
+self-contained HTML file.
+
+.. list-table:: Python Diagram public values
+   :header-rows: 1
+
+   * - Value
+     - Accepted values or default
+     - Behavior
+   * - ``DiagramOptions.detail_level``
+     - ``minimal``, ``normal`` (default), ``full``
+     - Controls the amount of diagram detail passed to the shared renderer.
+   * - ``DiagramOptions.direction``
+     - ``TB`` (default) or ``LR``
+     - Chooses top-to-bottom or left-to-right layout.
+   * - ``DiagramOptions.palette``
+     - ``default``, ``nord``, ``solarized``, ``darcula``, or ``None``
+     - Selects the viewer palette.
+   * - ``DiagramOptions.mode``
+     - ``light``, ``dark``, ``auto``, or ``None``
+     - Selects the initial color mode.
+   * - ``DiagramOptions.cjk_locale``
+     - ``sc``, ``tc``, ``hk``, ``jp``, or ``kr`` (default ``sc``)
+     - Embeds the matching CJK font pair in the HTML file.
+   * - ``DiagramViewState.mode``
+     - ``compare`` (default), ``fcstm``, or ``diagram``
+     - Selects the source-only, diagram-only, or linked split view.
+   * - ``DiagramViewState.zoom``
+     - Finite positive number (default ``1.0``)
+     - Sets the initial diagram zoom; boolean, zero, negative, NaN, and infinity values fail.
+   * - ``DiagramViewState.pan_x`` / ``pan_y``
+     - Finite numbers (default ``0.0``)
+     - Sets the initial diagram translation.
+
+``model.diagram(...)`` returns an immutable ``Diagram`` snapshot. Its
+``to_dict()`` and ``to_json()`` results omit absolute paths, source ranges, and
+editor selection state. ``to_html()`` returns one complete HTML string;
+``save("name.json")`` and ``save("name.html")`` use atomic replacement. The
+HTML path is also returned by ``Diagram.show()`` and ``StateMachine.show()``.
+
+The HTML viewer can download SVG, PNG, and vector PDF in a browser. The Python
+methods ``to_svg()``, ``to_png()``, and ``to_pdf()`` intentionally raise
+``DiagramUnavailableError`` until the later headless delivery stage. Calling
+``show()`` without a Chromium-family browser raises the same typed capability
+error after the HTML file has been written; ``show(open_window=False)`` avoids
+the browser requirement.
+
+Unknown option fields, duplicate snake/camel aliases, invalid enum values, and
+invalid numeric values raise ``ValueError``. Missing or unusable packaged
+viewer/WASM/font assets raise ``DiagramAssetError`` with development recovery
+guidance (``make build_assets``) or the project issue URL for installed packages.
+
 Renderer and file options
 -------------------------
 

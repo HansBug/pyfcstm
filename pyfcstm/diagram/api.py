@@ -21,7 +21,6 @@ import html as html_module
 import json
 import math
 import os
-import pkgutil
 import shutil
 import subprocess
 import sys
@@ -35,9 +34,21 @@ from pygments import lex
 from pygments.formatters import HtmlFormatter
 
 from ..highlight import FcstmLexer
-from ..model.model import Event, IfBlock, Operation, OperationStatement, State, StateMachine, Transition
+from ..model.model import (
+    Event,
+    IfBlock,
+    Operation,
+    OperationStatement,
+    State,
+    StateMachine,
+    Transition,
+)
 from ..utils.validate import Span
-from .engine import DiagramAssetError, DiagramUnavailableError
+from .engine import (
+    DiagramUnavailableError,
+    _asset_bytes,
+    _asset_failure,
+)
 
 __all__ = [
     "DiagramData",
@@ -56,7 +67,9 @@ def _text(value: Any) -> str:
 
 def _freeze_value(value: Any) -> Any:
     if isinstance(value, dict):
-        return MappingProxyType({key: _freeze_value(item) for key, item in value.items()})
+        return MappingProxyType(
+            {key: _freeze_value(item) for key, item in value.items()}
+        )
     if isinstance(value, list):
         return tuple(_freeze_value(item) for item in value)
     return value
@@ -68,6 +81,38 @@ def _thaw_value(value: Any) -> Any:
     if isinstance(value, tuple):
         return [_thaw_value(item) for item in value]
     return value
+
+
+def _portable_value(value: Mapping[str, Any]) -> Dict[str, Any]:
+    """Copy renderer data after removing editor-only source metadata."""
+    copied = json.loads(
+        json.dumps(_thaw_value(value), ensure_ascii=False, sort_keys=True)
+    )
+    if not isinstance(copied, dict) or not isinstance(copied.get("rootState"), dict):
+        raise ValueError("DiagramData requires a rootState mapping")
+
+    def strip(node: Dict[str, Any]) -> None:
+        node.pop("range", None)
+        node.pop("_sourcePath", None)
+        for event in node.get("events", []):
+            if isinstance(event, dict):
+                event.pop("range", None)
+                event.pop("_sourcePath", None)
+        for action in node.get("actions", []):
+            if isinstance(action, dict):
+                action.pop("range", None)
+                action.pop("_sourcePath", None)
+        for transition in node.get("transitions", []):
+            if isinstance(transition, dict):
+                transition.pop("range", None)
+                transition.pop("_sourcePath", None)
+        for child in node.get("children", []):
+            if isinstance(child, dict):
+                strip(child)
+
+    strip(copied["rootState"])
+    copied.pop("filePath", None)
+    return copied
 
 
 def _strip_browser_private_fields(node: Dict[str, Any]) -> None:
@@ -94,7 +139,9 @@ def _span_range(span: Optional[Span]) -> Optional[Dict[str, Dict[str, int]]]:
     start_line = max(0, int(span.line) - 1)
     start_column = max(0, int(span.column) - 1)
     end_line = start_line if span.end_line is None else max(0, int(span.end_line) - 1)
-    end_column = start_column if span.end_column is None else max(0, int(span.end_column) - 1)
+    end_column = (
+        start_column if span.end_column is None else max(0, int(span.end_column) - 1)
+    )
     return {
         "start": {"line": start_line, "character": start_column},
         "end": {"line": end_line, "character": end_column},
@@ -145,7 +192,10 @@ def _action_label(action: Any) -> str:
     if getattr(action, "is_abstract", False):
         return "%s abstract %s" % (prefix, getattr(action, "name", None) or "action")
     if getattr(action, "is_ref", False):
-        return "%s ref %s" % (prefix, ".".join(getattr(action, "ref_state_path", ()) or ()))
+        return "%s ref %s" % (
+            prefix,
+            ".".join(getattr(action, "ref_state_path", ()) or ()),
+        )
     name = getattr(action, "name", None)
     if name:
         return "%s %s" % (prefix, name)
@@ -169,9 +219,14 @@ def _event_reference(transition: Transition) -> str:
     return "/" + ".".join(event.path[1:])
 
 
+def _state_id(path: Tuple[Any, ...]) -> str:
+    """Build the ID shared by Python data and the jsfcstm renderer."""
+    return ".".join(str(segment) for segment in path)
+
+
 def _transition_id(owner: State, index: int) -> str:
     """Build the contract ID from an owner path and final transition order."""
-    return "%s::transition::%d" % (".".join(owner.path), index)
+    return "%s::transition::%d" % (_state_id(owner.path), index)
 
 
 def _is_marker(value: Any, name: str) -> bool:
@@ -219,11 +274,16 @@ def _state_dict(state: State, include_ranges: bool) -> Dict[str, Any]:
             "guardLabel": guard,
             "effectLines": effects,
             "eventName": transition.event.name if transition.event else None,
-            "eventDisplayName": transition.event.extra_name if transition.event else None,
+            "eventDisplayName": transition.event.extra_name
+            if transition.event
+            else None,
             "eventRelativePath": trigger or None,
-            "eventAbsolutePath": ("/" + ".".join(transition.event.path[1:])) if transition.event else None,
+            "eventAbsolutePath": ("/" + ".".join(transition.event.path[1:]))
+            if transition.event
+            else None,
             "triggerScope": transition.event_scope,
-            "label": "%s -> %s%s%s%s" % (
+            "label": "%s -> %s%s%s%s"
+            % (
                 source_label,
                 target_label,
                 (" " + trigger) if trigger else "",
@@ -235,7 +295,9 @@ def _state_dict(state: State, include_ranges: bool) -> Dict[str, Any]:
             "targetKind": "exit" if target_exit else "state",
             "sourceStatePath": _state_path_for(state, transition.from_state),
             "targetStatePath": _state_path_for(state, transition.to_state),
-            "eventQualifiedName": transition.event.path_name if transition.event else None,
+            "eventQualifiedName": transition.event.path_name
+            if transition.event
+            else None,
             "eventColor": None,
         }
         if include_ranges:
@@ -244,13 +306,22 @@ def _state_dict(state: State, include_ranges: bool) -> Dict[str, Any]:
         transitions.append(transition_dict)
 
     actions = []
-    for action in [*state.on_enters, *state.on_durings, *state.on_exits, *state.on_during_aspects]:
+    for action in [
+        *state.on_enters,
+        *state.on_durings,
+        *state.on_exits,
+        *state.on_during_aspects,
+    ]:
         item = {
             "name": action.name,
-            "qualifiedName": ".".join(str(x) for x in action.state_path if x is not None),
+            "qualifiedName": ".".join(
+                str(x) for x in action.state_path if x is not None
+            ),
             "stage": action.stage,
             "aspect": action.aspect,
-            "mode": "ref" if action.is_ref else ("abstract" if action.is_abstract else "operations"),
+            "mode": "ref"
+            if action.is_ref
+            else ("abstract" if action.is_abstract else "operations"),
             "abstract": bool(action.is_abstract),
             "reference": bool(action.is_ref),
             "globalAspect": bool(action.is_aspect),
@@ -262,7 +333,7 @@ def _state_dict(state: State, include_ranges: bool) -> Dict[str, Any]:
         actions.append(item)
 
     result: Dict[str, Any] = {
-        "id": ".".join(state.path),
+        "id": _state_id(state.path),
         "name": state.name,
         "qualifiedName": ".".join(state.path),
         "displayName": state.extra_name,
@@ -270,10 +341,14 @@ def _state_dict(state: State, include_ranges: bool) -> Dict[str, Any]:
         "comboRelay": bool(state.is_combo_relay),
         "leaf": bool(state.is_leaf_state),
         "root": bool(state.is_root_state),
-        "events": [_event_dict(event, include_ranges) for event in state.events.values()],
+        "events": [
+            _event_dict(event, include_ranges) for event in state.events.values()
+        ],
         "actions": actions,
         "transitions": transitions,
-        "children": [_state_dict(child, include_ranges) for child in state.substates.values()],
+        "children": [
+            _state_dict(child, include_ranges) for child in state.substates.values()
+        ],
     }
     if include_ranges:
         result["range"] = _span_range(state._span)
@@ -288,27 +363,50 @@ def _collect_counts(machine: StateMachine) -> Tuple[int, int, int, int]:
     actions = [
         action
         for state in states
-        for action in [*state.on_enters, *state.on_durings, *state.on_exits, *state.on_during_aspects]
+        for action in [
+            *state.on_enters,
+            *state.on_durings,
+            *state.on_exits,
+            *state.on_during_aspects,
+        ]
     ]
     return len(states), len(events), len(transitions), len(actions)
 
 
 def _build_diagram_dict(machine: StateMachine, include_ranges: bool) -> Dict[str, Any]:
     state_count, event_count, transition_count, action_count = _collect_counts(machine)
-    transitions = [transition for state in machine.walk_states() for transition in state.transitions]
+    transitions = [
+        transition
+        for state in machine.walk_states()
+        for transition in state.transitions
+    ]
     event_counts: Dict[str, int] = {}
     for transition in transitions:
         if transition.event:
-            event_counts[transition.event.path_name] = event_counts.get(transition.event.path_name, 0) + 1
-    palette = ["#4E79A7", "#F28E2B", "#E15759", "#76B7B2", "#59A14F", "#EDC948", "#B07AA1"]
+            event_counts[transition.event.path_name] = (
+                event_counts.get(transition.event.path_name, 0) + 1
+            )
+    palette = [
+        "#4E79A7",
+        "#F28E2B",
+        "#E15759",
+        "#76B7B2",
+        "#59A14F",
+        "#EDC948",
+        "#B07AA1",
+    ]
     event_colors = {
         path: palette[index % len(palette)]
-        for index, path in enumerate(sorted(path for path, count in event_counts.items() if count > 1))
+        for index, path in enumerate(
+            sorted(path for path, count in event_counts.items() if count > 1)
+        )
     }
 
     def apply_colors(state_dict: Dict[str, Any]) -> None:
         for transition in state_dict["transitions"]:
-            transition["eventColor"] = event_colors.get(transition.get("eventQualifiedName"))
+            transition["eventColor"] = event_colors.get(
+                transition.get("eventQualifiedName")
+            )
         for child in state_dict["children"]:
             apply_colors(child)
 
@@ -359,7 +457,11 @@ def _source_document_id(machine: StateMachine, source_path: Optional[str]) -> st
     if main_path and source_path != "<memory>":
         try:
             main_absolute = os.path.abspath(main_path)
-            base = main_absolute if os.path.isdir(main_absolute) else os.path.dirname(main_absolute)
+            base = (
+                main_absolute
+                if os.path.isdir(main_absolute)
+                else os.path.dirname(main_absolute)
+            )
             relative = os.path.relpath(source_path, base)
             # Keep ``..`` segments instead of collapsing to a basename. Two
             # imports such as ``../a/child.fcstm`` and ``../b/child.fcstm``
@@ -376,13 +478,35 @@ def _source_document_id(machine: StateMachine, source_path: Optional[str]) -> st
     return Path(source_path).name or "main.fcstm"
 
 
-def _source_sidecar(machine: StateMachine, source_override: Optional[str] = None) -> Tuple[str, Dict[str, Any], Dict[str, Union[str, List[str]]], Dict[str, str]]:
+def _validate_source_override(
+    machine: StateMachine, source_override: Optional[str]
+) -> None:
+    """Reject source overrides that would invalidate model source ranges."""
+    if source_override is None or machine.source_text is None:
+        return
+    original = _text(machine.source_text)
+    override = _text(source_override)
+    if original != override:
+        raise ValueError(
+            "source_text override does not match the source used to build the model; "
+            "reparse the model from the replacement FCSTM text"
+        )
+
+
+def _source_sidecar(
+    machine: StateMachine,
+    source_override: Optional[str] = None,
+    diagram: Optional[Mapping[str, Any]] = None,
+) -> Tuple[str, Dict[str, Any], Dict[str, Union[str, List[str]]], Dict[str, str]]:
+    _validate_source_override(machine, source_override)
     source = machine.source_text if source_override is None else source_override
     source = source or ""
     # Work on a copy: completing the browser sidecar must not mutate the
     # model's imported-document registry when the main source is absent.
     source_paths = dict(machine._source_documents or {})
-    explicit_override = source_override is not None and source_override != machine.source_text
+    explicit_override = (
+        source_override is not None and source_override != machine.source_text
+    )
     if explicit_override or not source_paths:
         main_source_path = machine.source_path or "<memory>"
         source_paths = {main_source_path: source}
@@ -392,7 +516,8 @@ def _source_sidecar(machine: StateMachine, source_override: Optional[str] = None
         _source_document_id(machine, path): text for path, text in source_paths.items()
     }
     main_document_id = _source_document_id(machine, machine.source_path or "<memory>")
-    diagram = _build_diagram_dict(machine, include_ranges=True)
+    if diagram is None:
+        diagram = _build_diagram_dict(machine, include_ranges=True)
     mapping: Dict[str, Any] = {}
     line_to_id: Dict[str, Union[str, List[str]]] = {}
 
@@ -400,11 +525,19 @@ def _source_sidecar(machine: StateMachine, source_override: Optional[str] = None
         state_id = state["id"]
         if state.get("range"):
             source_path = state.get("_sourcePath") or machine.source_path
-            mapping[state_id] = {"kind": "state", "documentId": _source_document_id(machine, source_path), "range": state["range"]}
+            mapping[state_id] = {
+                "kind": "state",
+                "documentId": _source_document_id(machine, source_path),
+                "range": state["range"],
+            }
         for transition in state["transitions"]:
             if transition.get("range"):
                 source_path = transition.get("_sourcePath") or machine.source_path
-                mapping[transition["id"]] = {"kind": "transition", "documentId": _source_document_id(machine, source_path), "range": transition["range"]}
+                mapping[transition["id"]] = {
+                    "kind": "transition",
+                    "documentId": _source_document_id(machine, source_path),
+                    "range": transition["range"],
+                }
         for child in state["children"]:
             visit(child)
 
@@ -418,7 +551,9 @@ def _source_sidecar(machine: StateMachine, source_override: Optional[str] = None
         line = int(value["range"]["start"]["line"])
         span = value["range"]
         length = (int(span["end"]["line"]) - int(span["start"]["line"])) * 100000
-        length += max(0, int(span["end"]["character"]) - int(span["start"]["character"]))
+        length += max(
+            0, int(span["end"]["character"]) - int(span["start"]["character"])
+        )
         priority = 0 if value.get("kind") == "transition" else 1
         candidates.setdefault((document_id, line), []).append((priority, length, key))
     for (document_id, line), items in candidates.items():
@@ -443,7 +578,9 @@ def _highlight_source(source: str) -> str:
         for index, fragment in enumerate(fragments):
             if fragment:
                 escaped = html_module.escape(fragment, quote=False)
-                token_lines[-1].append('<span class="%s">%s</span>' % (css_class, escaped))
+                token_lines[-1].append(
+                    '<span class="%s">%s</span>' % (css_class, escaped)
+                )
             if index < len(fragments) - 1:
                 token_lines.append([])
     expected_line_count = max(1, len(source.splitlines()))
@@ -466,31 +603,50 @@ def _highlight_source(source: str) -> str:
 
 def _highlight_css() -> str:
     """Return the small Pygments CSS fragment used by the source pane."""
-    return HtmlFormatter().get_style_defs(".fcstm-source-panel__code") + "\n" + (
-        ".fcstm-source-panel__code { background-color: var(--fcstm-surface-raised); "
-        "color: var(--fcstm-fg); }\n"
-        ".fcstm-source-panel__code .w { color: var(--fcstm-line-number); }"
+    return (
+        HtmlFormatter().get_style_defs(".fcstm-source-panel__code")
+        + "\n"
+        + (
+            ".fcstm-source-panel__code { background-color: var(--fcstm-surface-raised); "
+            "color: var(--fcstm-fg); }\n"
+            ".fcstm-source-panel__code .w { color: var(--fcstm-line-number); }"
+        )
     )
 
 
 _OPTION_KEYS = {
-    "detail_level", "detailLevel", "direction", "palette", "mode",
-    "cjk_locale", "cjkLocale",
+    "detail_level",
+    "detailLevel",
+    "direction",
+    "palette",
+    "mode",
+    "cjk_locale",
+    "cjkLocale",
 }
 _VIEW_STATE_KEYS = {
-    "mode", "collapsed_state_ids", "collapsedStateIds", "zoom", "pan_x",
-    "panX", "pan_y", "panY",
+    "mode",
+    "collapsed_state_ids",
+    "collapsedStateIds",
+    "zoom",
+    "pan_x",
+    "panX",
+    "pan_y",
+    "panY",
 }
 
 
-def _reject_unknown_mapping_keys(value: Mapping[str, Any], allowed: set, name: str) -> None:
+def _reject_unknown_mapping_keys(
+    value: Mapping[str, Any], allowed: set, name: str
+) -> None:
     unknown = [key for key in value if key not in allowed]
     if unknown:
         labels = ", ".join(sorted(str(key) for key in unknown))
         raise ValueError("unknown %s field(s): %s" % (name, labels))
 
 
-def _mapping_value(value: Mapping[str, Any], snake: str, camel: str, default: Any) -> Any:
+def _mapping_value(
+    value: Mapping[str, Any], snake: str, camel: str, default: Any
+) -> Any:
     has_snake = snake in value
     has_camel = camel in value
     if has_snake and has_camel:
@@ -515,7 +671,9 @@ def _coerce_finite_number(value: Any, field_name: str, positive: bool = False) -
         # TypeError/ValueError: callers supplied a non-numeric option or a
         # string that cannot be parsed as a number.
         if positive:
-            raise ValueError("%s must be a finite positive number" % field_name) from error
+            raise ValueError(
+                "%s must be a finite positive number" % field_name
+            ) from error
         raise ValueError("%s must be finite %s" % (field_name, number_label)) from error
     if not math.isfinite(number) or (positive and number <= 0):
         if positive:
@@ -551,10 +709,18 @@ def _browser_app_executable() -> Optional[str]:
         program_files_x86 = os.environ.get("PROGRAMFILES(X86)", "")
         candidates.extend(
             [
-                os.path.join(local_app_data, "Google", "Chrome", "Application", "chrome.exe"),
-                os.path.join(program_files, "Google", "Chrome", "Application", "chrome.exe"),
-                os.path.join(program_files_x86, "Google", "Chrome", "Application", "chrome.exe"),
-                os.path.join(local_app_data, "Microsoft", "Edge", "Application", "msedge.exe"),
+                os.path.join(
+                    local_app_data, "Google", "Chrome", "Application", "chrome.exe"
+                ),
+                os.path.join(
+                    program_files, "Google", "Chrome", "Application", "chrome.exe"
+                ),
+                os.path.join(
+                    program_files_x86, "Google", "Chrome", "Application", "chrome.exe"
+                ),
+                os.path.join(
+                    local_app_data, "Microsoft", "Edge", "Application", "msedge.exe"
+                ),
                 "chrome.exe",
                 "msedge.exe",
                 "chromium.exe",
@@ -614,14 +780,17 @@ def _open_standalone_window(path: Path, window_size: Tuple[int, int]) -> None:
         "stderr": subprocess.DEVNULL,
     }
     if os.name == "nt":
-        popen_kwargs["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        popen_kwargs["creationflags"] = getattr(
+            subprocess, "CREATE_NEW_PROCESS_GROUP", 0
+        )
     else:
         popen_kwargs["start_new_session"] = True
     try:
         subprocess.Popen(command, **popen_kwargs)
     except OSError as err:
         raise DiagramUnavailableError(
-            "failed to launch the standalone diagram window with %s: %s" % (executable, err)
+            "failed to launch the standalone diagram window with %s: %s"
+            % (executable, err)
         ) from err
 
 
@@ -694,7 +863,10 @@ def _embedded_font_css(locale: str) -> str:
     rules = []
     for item in payload:
         family, weight, encoded, mime = item
-        rules.append("@font-face{font-family:%s;font-style:normal;font-weight:%d;src:url(data:%s;base64,%s) format('opentype');font-display:block}" % (json.dumps(family), weight, mime, encoded))
+        rules.append(
+            "@font-face{font-family:%s;font-style:normal;font-weight:%d;src:url(data:%s;base64,%s) format('opentype');font-display:block}"
+            % (json.dumps(family), weight, mime, encoded)
+        )
     return "\n".join(rules)
 
 
@@ -716,26 +888,24 @@ def _embedded_font_payload(locale: str) -> List[Tuple[str, int, str, str]]:
     ]
     payload: List[Tuple[str, int, str, str]] = []
     for family, weight, path, mime in faces:
-        data = pkgutil.get_data("pyfcstm.diagram.assets", path)
-        if data is None:
-            raise DiagramAssetError("missing browser font asset %s; run `make build_assets`" % path)
+        data = _asset_bytes(path)
         encoded = base64.b64encode(data).decode("ascii")
         payload.append((family, weight, encoded, mime))
     return payload
 
 
 def _asset_text(name: str) -> str:
-    data = pkgutil.get_data("pyfcstm.diagram.assets", name)
-    if data is None:
-        raise DiagramAssetError("missing browser viewer asset %s; run `make build_assets`" % name)
-    return data.decode("utf-8")
+    data = _asset_bytes(name)
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError as err:
+        # UnicodeDecodeError: generated JavaScript or CSS is not valid UTF-8.
+        raise _asset_failure(name, "the text resource is not valid UTF-8", err) from err
 
 
 def _embedded_resvg_script(locale: str) -> str:
     """Build the offline browser helper that expands SVG through resvg WASM."""
-    wasm = pkgutil.get_data("pyfcstm.diagram.assets", "resvg.wasm")
-    if wasm is None:
-        raise DiagramAssetError("missing browser resvg WASM asset; run `make build_assets`")
+    wasm = _asset_bytes("resvg.wasm")
     cjk_family = {
         "sc": "Noto Sans SC",
         "tc": "Noto Sans TC",
@@ -753,6 +923,17 @@ def _embedded_resvg_script(locale: str) -> str:
         + "window.__FCSTM_EXPAND_SVG__=async function(svg){await window.__FCSTM_RESVG_READY__;var css=Array.from(document.querySelectorAll('style')).map(function(x){return x.textContent||''}).join('\\n');var re=/font-family:\\s*\\\"([^\\\"]+)\\\"[^}]*font-weight:\\s*(\\d+)[^}]*base64,([^)'\\s]+)/g,b=[],m;while((m=re.exec(css))!==null){var raw=atob(m[3]),u=new Uint8Array(raw.length);for(var i=0;i<raw.length;i++)u[i]=raw.charCodeAt(i);b.push(u)}if(!b.length)throw new Error('embedded font data is unavailable');var r=new resvg.Resvg(String(svg),{font:{fontBuffers:b,loadSystemFonts:false,defaultFontFamily:%s,monospaceFamily:'JetBrains Mono'},shapeRendering:2,textRendering:2});try{return r.toString()}finally{r.free()}};\n"
         % json.dumps(cjk_family)
     )
+
+
+def _html_language(locale: str) -> str:
+    """Return the document language matching the selected CJK font locale."""
+    return {
+        "sc": "zh-CN",
+        "tc": "zh-TW",
+        "hk": "zh-HK",
+        "jp": "ja",
+        "kr": "ko",
+    }.get(str(locale).lower(), "zh-CN")
 
 
 @dataclass(frozen=True)
@@ -793,7 +974,12 @@ class DiagramOptions:
             raise ValueError("detail_level must be 'minimal', 'normal', or 'full'")
         if self.direction not in ("TB", "LR"):
             raise ValueError("direction must be 'TB' or 'LR'")
-        if self.palette is not None and self.palette not in ("default", "nord", "solarized", "darcula"):
+        if self.palette is not None and self.palette not in (
+            "default",
+            "nord",
+            "solarized",
+            "darcula",
+        ):
             raise ValueError("unsupported palette: %s" % self.palette)
         locale = str(self.cjk_locale).lower()
         if locale not in ("sc", "tc", "hk", "jp", "kr"):
@@ -862,9 +1048,15 @@ class DiagramViewState:
         if self.mode not in ("fcstm", "diagram", "compare"):
             raise ValueError("mode must be 'fcstm', 'diagram', or 'compare'")
         object.__setattr__(self, "collapsed_state_ids", tuple(self.collapsed_state_ids))
-        object.__setattr__(self, "zoom", _coerce_finite_number(self.zoom, "zoom", positive=True))
-        object.__setattr__(self, "pan_x", _coerce_finite_number(self.pan_x, "pan offsets"))
-        object.__setattr__(self, "pan_y", _coerce_finite_number(self.pan_y, "pan offsets"))
+        object.__setattr__(
+            self, "zoom", _coerce_finite_number(self.zoom, "zoom", positive=True)
+        )
+        object.__setattr__(
+            self, "pan_x", _coerce_finite_number(self.pan_x, "pan offsets")
+        )
+        object.__setattr__(
+            self, "pan_y", _coerce_finite_number(self.pan_y, "pan offsets")
+        )
 
     def to_dict(self) -> Dict[str, Any]:
         """
@@ -887,8 +1079,8 @@ class DiagramData:
     """
     Portable, deterministic diagram data without editor-only metadata.
 
-    :param value: Internal renderer data.  ``to_dict`` removes source ranges,
-        local paths and other editor-only fields before exposing it.
+    :param value: Renderer data. Source ranges, local paths and other
+        editor-only fields are removed when the value is stored.
     :type value: collections.abc.Mapping[str, object]
 
     Example::
@@ -903,7 +1095,7 @@ class DiagramData:
     def __post_init__(self) -> None:
         if not isinstance(self.value, Mapping):
             raise TypeError("DiagramData.value must be a mapping")
-        object.__setattr__(self, "value", _freeze_value(dict(self.value)))
+        object.__setattr__(self, "value", _freeze_value(_portable_value(self.value)))
 
     def __hash__(self) -> int:
         """
@@ -918,7 +1110,7 @@ class DiagramData:
             sort_keys=True,
             separators=(",", ":"),
         )
-        return hash(payload)
+        return int(hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16], 16)
 
     def to_dict(self) -> Dict[str, Any]:
         """
@@ -928,26 +1120,9 @@ class DiagramData:
             snapshot.
         :rtype: dict
         """
-        value = json.loads(json.dumps(_thaw_value(self.value), ensure_ascii=False, sort_keys=True))
-
-        def strip(node: Dict[str, Any]) -> None:
-            node.pop("range", None)
-            node.pop("_sourcePath", None)
-            for event in node.get("events", []):
-                event.pop("range", None)
-                event.pop("_sourcePath", None)
-            for action in node.get("actions", []):
-                action.pop("range", None)
-                action.pop("_sourcePath", None)
-            for transition in node.get("transitions", []):
-                transition.pop("range", None)
-                transition.pop("_sourcePath", None)
-            for child in node.get("children", []):
-                strip(child)
-
-        strip(value["rootState"])
-        value.pop("filePath", None)
-        return value
+        return json.loads(
+            json.dumps(_thaw_value(self.value), ensure_ascii=False, sort_keys=True)
+        )
 
     def to_json(self, **kwargs: Any) -> str:
         """
@@ -970,6 +1145,50 @@ class Diagram:
     the optional runtime that implements them belongs to the delivery stage.
     Browser SVG/PNG/PDF export remains available from the embedded viewer.
     """
+
+    @staticmethod
+    def _normalize_options(value: Optional[Any]) -> DiagramOptions:
+        if isinstance(value, Mapping):
+            _reject_unknown_mapping_keys(value, _OPTION_KEYS, "DiagramOptions")
+            return DiagramOptions(
+                detail_level=str(
+                    _mapping_value(value, "detail_level", "detailLevel", "normal")
+                ),
+                direction=str(value.get("direction", "TB")),
+                palette=(
+                    None if value.get("palette") is None else str(value.get("palette"))
+                ),
+                mode=(None if value.get("mode") is None else str(value.get("mode"))),
+                cjk_locale=str(_mapping_value(value, "cjk_locale", "cjkLocale", "sc")),
+            )
+        if value is not None and not isinstance(value, DiagramOptions):
+            raise TypeError("options must be DiagramOptions or a mapping")
+        return value or DiagramOptions()
+
+    @staticmethod
+    def _normalize_view_state(value: Optional[Any]) -> DiagramViewState:
+        if isinstance(value, Mapping):
+            _reject_unknown_mapping_keys(value, _VIEW_STATE_KEYS, "DiagramViewState")
+            return DiagramViewState(
+                mode=str(value.get("mode", "compare")),
+                collapsed_state_ids=tuple(
+                    _mapping_value(
+                        value, "collapsed_state_ids", "collapsedStateIds", ()
+                    )
+                ),
+                zoom=_coerce_finite_number(
+                    value.get("zoom", 1.0), "zoom", positive=True
+                ),
+                pan_x=_coerce_finite_number(
+                    _mapping_value(value, "pan_x", "panX", 0.0), "pan offsets"
+                ),
+                pan_y=_coerce_finite_number(
+                    _mapping_value(value, "pan_y", "panY", 0.0), "pan offsets"
+                ),
+            )
+        if value is not None and not isinstance(value, DiagramViewState):
+            raise TypeError("view_state must be DiagramViewState or a mapping")
+        return value or DiagramViewState()
 
     def __init__(
         self,
@@ -994,34 +1213,39 @@ class Diagram:
         :type source_text: str, optional
         """
         self.model = model
-        if isinstance(options, Mapping):
-            _reject_unknown_mapping_keys(options, _OPTION_KEYS, "DiagramOptions")
-            options = DiagramOptions(
-                detail_level=str(_mapping_value(options, "detail_level", "detailLevel", "normal")),
-                direction=str(options.get("direction", "TB")),
-                palette=(None if options.get("palette") is None else str(options.get("palette"))),
-                mode=(None if options.get("mode") is None else str(options.get("mode"))),
-                cjk_locale=str(_mapping_value(options, "cjk_locale", "cjkLocale", "sc")),
-            )
-        elif options is not None and not isinstance(options, DiagramOptions):
-            raise TypeError("options must be DiagramOptions or a mapping")
-        if isinstance(view_state, Mapping):
-            _reject_unknown_mapping_keys(view_state, _VIEW_STATE_KEYS, "DiagramViewState")
-            view_state = DiagramViewState(
-                mode=str(view_state.get("mode", "compare")),
-                collapsed_state_ids=tuple(_mapping_value(view_state, "collapsed_state_ids", "collapsedStateIds", ())),
-                zoom=float(view_state.get("zoom", 1.0)),
-                pan_x=float(_mapping_value(view_state, "pan_x", "panX", 0.0)),
-                pan_y=float(_mapping_value(view_state, "pan_y", "panY", 0.0)),
-            )
-        elif view_state is not None and not isinstance(view_state, DiagramViewState):
-            raise TypeError("view_state must be DiagramViewState or a mapping")
-        self.options = options or DiagramOptions()
-        self.view_state = view_state or DiagramViewState()
+        self.options = self._normalize_options(options)
+        self.view_state = self._normalize_view_state(view_state)
         self.source_text = model.source_text if source_text is None else source_text
-        self._renderer_diagram = _build_diagram_dict(model, include_ranges=True)
-        self.data = DiagramData(self._renderer_diagram)
+        renderer_diagram = _build_diagram_dict(model, include_ranges=True)
+        self._renderer_diagram = _freeze_value(renderer_diagram)
+        self.data = DiagramData(renderer_diagram)
+        (
+            self._source,
+            self._source_map,
+            self._source_line_map,
+            self._source_documents,
+        ) = _source_sidecar(model, self.source_text, diagram=renderer_diagram)
+        self._source_document_id = _source_document_id(
+            model, model.source_path or "<memory>"
+        )
         self._html_cache: Dict[str, str] = {}
+
+    def _clone_snapshot(self, options: Any, view_state: Any) -> "Diagram":
+        """Create a derived view without rereading the mutable model."""
+        clone = object.__new__(type(self))
+        clone.model = self.model
+        clone.options = self._normalize_options(options)
+        clone.view_state = self._normalize_view_state(view_state)
+        clone.source_text = self.source_text
+        clone._renderer_diagram = self._renderer_diagram
+        clone.data = self.data
+        clone._source = self._source
+        clone._source_map = self._source_map
+        clone._source_line_map = self._source_line_map
+        clone._source_documents = self._source_documents
+        clone._source_document_id = self._source_document_id
+        clone._html_cache = {}
+        return clone
 
     def to_dict(self) -> Dict[str, Any]:
         """
@@ -1065,14 +1289,11 @@ class Diagram:
         if options is not None and kwargs:
             raise TypeError("provide options or keyword fields, not both")
         replacement = options if options is not None else (kwargs or self.options)
-        return Diagram(
-            self.model,
-            options=replacement,
-            view_state=self.view_state,
-            source_text=self.source_text,
-        )
+        return self._clone_snapshot(replacement, self.view_state)
 
-    def with_view_state(self, view_state: Optional[Any] = None, **kwargs: Any) -> "Diagram":
+    def with_view_state(
+        self, view_state: Optional[Any] = None, **kwargs: Any
+    ) -> "Diagram":
         """
         Return a new snapshot with replacement browser view state.
 
@@ -1092,13 +1313,10 @@ class Diagram:
         """
         if view_state is not None and kwargs:
             raise TypeError("provide view_state or keyword fields, not both")
-        replacement = view_state if view_state is not None else (kwargs or self.view_state)
-        return Diagram(
-            self.model,
-            options=self.options,
-            view_state=replacement,
-            source_text=self.source_text,
+        replacement = (
+            view_state if view_state is not None else (kwargs or self.view_state)
         )
+        return self._clone_snapshot(self.options, replacement)
 
     def to_svg(self) -> str:
         """
@@ -1158,22 +1376,27 @@ class Diagram:
         :raises DiagramAssetError: If a bundled viewer, font or resvg asset is
             missing or unreadable.
         """
-        source, source_map, line_to_id, source_documents = _source_sidecar(self.model, self.source_text)
+        source = self._source
+        source_map = self._source_map
+        line_to_id = self._source_line_map
+        source_documents = self._source_documents
         viewer = _asset_text("viewer.js")
         viewer_css = _asset_text("viewer.css")
-        browser_diagram = json.loads(json.dumps(self._renderer_diagram, ensure_ascii=False))
+        browser_diagram = _thaw_value(self._renderer_diagram)
         browser_diagram["filePath"] = ""
         _strip_browser_private_fields(browser_diagram["rootState"])
+        summary = self._renderer_diagram["summary"]
+        title = self._renderer_diagram["machineName"]
         state = {
-            "title": self.model.root_state.name,
+            "title": title,
             "filePath": "",
             "previewOptions": self.options.to_dict(),
             "collapsedStateIds": list(self.view_state.collapsed_state_ids),
             "emptyTitle": "FCSTM Diagram",
             "emptyMessage": "No diagram available.",
             "summary": [
-                {"label": "states", "value": len(list(self.model.walk_states()))},
-                {"label": "transitions", "value": sum(len(s.transitions) for s in self.model.walk_states())},
+                {"label": "states", "value": summary["states"]},
+                {"label": "transitions", "value": summary["transitions"]},
             ],
             "variables": [],
             "sharedEvents": [],
@@ -1187,20 +1410,24 @@ class Diagram:
             "standaloneDiagram": browser_diagram,
             "sourceHtml": _highlight_source(source),
             "sourceAvailable": bool(source),
-            "sourceUnavailableReason": "当前模型没有保留原始 FCSTM 源码；请通过 load_state_machine_from_file/text 加载，或显式传入 source_text。" if not source else "",
+            "sourceUnavailableReason": "当前模型没有保留原始 FCSTM 源码；请通过 load_state_machine_from_file/text 加载，或显式传入 source_text。"
+            if not source
+            else "",
             "sourceMap": source_map,
             "sourceLineMap": line_to_id,
             "sourceDocuments": {
                 document_id: {"html": _highlight_source(document), "label": document_id}
                 for document_id, document in source_documents.items()
             },
-            "sourceDocumentId": _source_document_id(self.model, self.model.source_path or "<memory>"),
+            "sourceDocumentId": self._source_document_id,
         }
         if self.options.palette is not None:
             state["palette"] = self.options.palette
         if self.options.mode is not None:
             state["colorMode"] = self.options.mode
-        state_json = json.dumps(state, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+        state_json = json.dumps(
+            state, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+        )
         # Prevent embedded source text or labels from closing the bootstrap
         # script element while preserving the original characters after JSON
         # parsing in the browser.
@@ -1215,16 +1442,41 @@ class Diagram:
         resvg_script = _embedded_resvg_script(self.options.cjk_locale)
         scripts = [bootstrap, resvg_script, viewer]
         hashes = [
-            "'sha256-%s'" % base64.b64encode(hashlib.sha256(item.encode("utf-8")).digest()).decode("ascii")
+            "'sha256-%s'"
+            % base64.b64encode(hashlib.sha256(item.encode("utf-8")).digest()).decode(
+                "ascii"
+            )
             for item in scripts
         ]
-        css = "html,body,#app{height:100%;margin:0}\n" + _embedded_font_css(self.options.cjk_locale) + "\n" + viewer_css + "\n" + _highlight_css()
-        style_hash = "'sha256-%s'" % base64.b64encode(hashlib.sha256(css.encode("utf-8")).digest()).decode("ascii")
-        cache_payload = "\0".join(("html", state_json, bootstrap, resvg_script, viewer, css))
+        css = (
+            "html,body,#app{height:100%;margin:0}\n"
+            + _embedded_font_css(self.options.cjk_locale)
+            + "\n"
+            + viewer_css
+            + "\n"
+            + _highlight_css()
+        )
+        style_hash = "'sha256-%s'" % base64.b64encode(
+            hashlib.sha256(css.encode("utf-8")).digest()
+        ).decode("ascii")
+        cache_payload = "\0".join(
+            ("html", state_json, bootstrap, resvg_script, viewer, css)
+        )
         cache_key = hashlib.sha256(cache_payload.encode("utf-8")).hexdigest()
         document = self._html_cache.get(cache_key)
         if document is None:
-            document = "<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; base-uri 'none'; object-src 'none'; form-action 'none'; frame-src 'none'; media-src 'none'; manifest-src 'none'; img-src data: blob:; style-src %s; style-src-attr 'none'; font-src data:; script-src %s 'wasm-unsafe-eval'; script-src-attr 'none'; connect-src 'none'; worker-src 'none'\"><style>%s</style></head><body><div id=\"app\"></div><script>%s</script><script>%s</script><script>%s</script></body></html>" % (style_hash, " ".join(hashes), css, bootstrap, resvg_script, viewer)
+            document = (
+                "<!doctype html><html lang=\"%s\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; base-uri 'none'; object-src 'none'; form-action 'none'; frame-src 'none'; media-src 'none'; manifest-src 'none'; img-src data: blob:; style-src %s; style-src-attr 'none'; font-src data:; script-src %s 'wasm-unsafe-eval'; script-src-attr 'none'; connect-src 'none'; worker-src 'none'\"><style>%s</style></head><body><div id=\"app\"></div><script>%s</script><script>%s</script><script>%s</script></body></html>"
+                % (
+                    _html_language(self.options.cjk_locale),
+                    style_hash,
+                    " ".join(hashes),
+                    css,
+                    bootstrap,
+                    resvg_script,
+                    viewer,
+                )
+            )
             self._html_cache[cache_key] = document
         if output is not None:
             _atomic_write_text(output, document)
@@ -1298,7 +1550,9 @@ class Diagram:
         """
         dimensions = _coerce_window_size(window_size)
         if output is None:
-            handle = tempfile.NamedTemporaryFile(prefix="pyfcstm-diagram-", suffix=".html", delete=False)
+            handle = tempfile.NamedTemporaryFile(
+                prefix="pyfcstm-diagram-", suffix=".html", delete=False
+            )
             handle.close()
             output = handle.name
         path = self.save(output, format="html")

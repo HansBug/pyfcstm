@@ -276,12 +276,12 @@ def main() -> int:
         raise ValueError("generated manifest viewer lock differs from source lock")
     try:
         viewer_package = json.loads(
-            (ROOT / "editors" / "vscode" / "package-lock.json").read_text(encoding="utf-8")
+            (ROOT / "editors" / "jsfcstm" / "package-lock.json").read_text(encoding="utf-8")
         )["packages"]["node_modules/svg2pdf.js"]
     except (KeyError, OSError, TypeError, ValueError) as err:
         # KeyError/TypeError/ValueError: the tracked viewer lock lacks the
         # exporter entry; OSError: the lock file cannot be read.
-        raise ValueError("vscode package-lock lacks svg2pdf.js") from err
+        raise ValueError("jsfcstm package-lock lacks svg2pdf.js") from err
     exporter = viewer_lock.get("svg2pdf")
     if not isinstance(exporter, dict) or any(
         viewer_package.get(key) != exporter.get(key)

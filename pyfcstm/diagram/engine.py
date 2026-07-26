@@ -327,14 +327,73 @@ def _asset_bytes(name: str) -> bytes:
             ) from err
         if not text.strip():
             raise _asset_failure(name, "the JavaScript resource is empty")
-    elif name == "resvg.wasm" and not data.startswith(b"\x00asm"):
-        raise _asset_failure(name, "the resource is not a WebAssembly binary")
+    elif name == "resvg.wasm" and not _valid_wasm_envelope(data):
+        raise _asset_failure(
+            name, "the resource is not a valid WebAssembly binary envelope"
+        )
     elif name.startswith("fonts/") and not _valid_opentype(data):
         raise _asset_failure(
             name,
             "the resource failed OpenType table, bounds, or checksum validation",
         )
     return data
+
+
+def _read_wasm_uleb(data: bytes, offset: int) -> Optional[Tuple[int, int]]:
+    """Read one bounded unsigned LEB128 value from a WASM section stream."""
+    value = 0
+    shift = 0
+    while offset < len(data) and shift <= 63:
+        byte = data[offset]
+        offset += 1
+        value |= (byte & 0x7F) << shift
+        if not byte & 0x80:
+            return value, offset
+        shift += 7
+    return None
+
+
+# Known non-custom section ids in the order the WebAssembly binary format
+# requires them to appear. DataCount (12) is placed between Element (9) and
+# Code (10), so the stream position is not the same as the numeric id.
+_WASM_SECTION_POSITIONS = {
+    section_id: position
+    for position, section_id in enumerate(
+        (1, 2, 3, 4, 5, 6, 7, 8, 9, 12, 10, 11), start=1
+    )
+}
+
+
+def _valid_wasm_envelope(data: bytes) -> bool:
+    """Check the ordered section envelope before a browser compiles WASM."""
+    if len(data) < 8 or data[:4] != b"\x00asm" or data[4:8] != b"\x01\x00\x00\x00":
+        return False
+    offset = 8
+    last_position = 0
+    seen = set()
+    required = {1, 3, 7, 10}
+    while offset < len(data):
+        section_id = data[offset]
+        offset += 1
+        parsed = _read_wasm_uleb(data, offset)
+        if parsed is None:
+            return False
+        section_size, offset = parsed
+        end = offset + section_size
+        if end > len(data):
+            return False
+        if section_id == 0:
+            offset = end
+            continue
+        position = _WASM_SECTION_POSITIONS.get(section_id)
+        if position is None or position <= last_position:
+            return False
+        seen.add(section_id)
+        last_position = position
+        if section_id == 10 and section_size == 0:
+            return False
+        offset = end
+    return offset == len(data) and required.issubset(seen)
 
 
 def _valid_opentype(data: bytes) -> bool:

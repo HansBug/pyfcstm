@@ -20,7 +20,7 @@ or programmatic-model behavior.  Changes to those private names or their
 types must update this module and the model loader together; missing metadata
 is reported as an unavailable path or excerpt rather than guessed.
 
-Examples::
+Example::
 
     >>> from pyfcstm.bmc.provenance import BmcSourceRef, SourceDocumentRegistry
     >>> from pyfcstm.utils.validate import Span
@@ -42,18 +42,50 @@ from pyfcstm.utils.validate import Span
 _SOURCE_KINDS = {"fcstm", "fbmcq", "generated"}
 
 
+def _normalize_line_separators(text: str) -> str:
+    """Align a source snapshot with the line model used by the DSL lexers.
+
+    The FCSTM and FBMCQ ANTLR lexers advance token line numbers on ``LF`` only:
+    they treat a ``CRLF`` pair as one line break but consume a lone ``CR`` as
+    ordinary whitespace inside the current line.  A snapshot therefore only
+    rewrites ``CRLF`` to ``LF``, which drops a trailing character that no token
+    column depends on.  Rewriting a lone ``CR`` to ``LF`` as well would insert
+    line breaks the lexers never saw, so every span after the first ``CR``
+    would fall outside its recomputed line and lose its excerpt.
+
+    :param text: Raw source text as read from disk or supplied by a caller.
+    :type text: str
+    :return: Text whose line breaks match the lexer's own line numbering.
+    :rtype: str
+
+    Example::
+
+        >>> _normalize_line_separators("a\\r\\nb")
+        'a\\nb'
+        >>> _normalize_line_separators("a\\rb")
+        'a\\rb'
+    """
+    return text.replace("\r\n", "\n")
+
+
 def _span_offsets(text: str, span: Span) -> Optional[Tuple[int, int]]:
     """Return character offsets for a complete one-based half-open span.
 
-    :param text: Source document text.
+    ``text`` must already be normalized by :func:`_normalize_line_separators`,
+    so that the line numbering here is the same one the lexer used when it
+    produced ``span``.  Line ends are located by scanning ``LF`` and then
+    trimming a trailing ``CR``, which keeps a residual ``CR`` out of a
+    same-line excerpt without inventing a line break for it.
+
+    :param text: Source document text with lexer-aligned line separators.
     :type text: str
     :param span: One-based source span with optional end coordinates.
     :type span: pyfcstm.utils.validate.Span
     :return: Start and end character offsets, or ``None`` for an anchor-only
-        span.
+        span, or when the span cannot be sliced from ``text``.
     :rtype: Optional[Tuple[int, int]]
 
-    Examples::
+    Example::
 
         >>> _span_offsets("abc", Span(1, 1, 1, 3))
         (0, 2)
@@ -101,9 +133,12 @@ class BmcSourceRef:
     :type path: Optional[str]
     :param span: One-based, end-exclusive source span, or ``None``.
     :type span: Optional[pyfcstm.utils.validate.Span]
-    :raises ValueError: If the source kind or path is malformed.
+    :raises ValueError: If the source kind is unsupported, a ``generated``
+        reference carries a path or span, or the path is an empty string.
+    :raises TypeError: If ``span`` is neither ``None`` nor a
+        :class:`pyfcstm.utils.validate.Span`.
 
-    Examples::
+    Example::
 
         >>> BmcSourceRef("generated", None, None).kind
         'generated'
@@ -133,7 +168,7 @@ class BmcSourceRef:
         :return: Canonical source reference dictionary.
         :rtype: Dict[str, object]
 
-        Examples::
+        Example::
 
             >>> BmcSourceRef("generated", None, None).to_canonical()
             {'kind': 'generated', 'path': None, 'span': None}
@@ -169,9 +204,11 @@ class BmcTrackedConstraint:
     :type source_ref: BmcSourceRef
     :param refs: Stable frame/step/case metadata, defaults to ``{}``.
     :type refs: Mapping[str, object], optional
-    :raises ValueError: If the identity or group is malformed.
+    :raises ValueError: If the stable id, stage, or category is empty, or the
+        expression sequence is empty.
+    :raises TypeError: If ``source_ref`` is not a :class:`BmcSourceRef`.
 
-    Examples::
+    Example::
 
         >>> group = BmcTrackedConstraint(
         ...     "initial.target", "initialization", "initial.target", (True,),
@@ -217,8 +254,16 @@ class SourceDocumentRegistry:
     :param query_documents: FBMCQ-only source snapshots kept separate from
         FCSTM documents, defaults to ``{}``.
     :type query_documents: Mapping[str, str], optional
+    :raises ValueError: If any FCSTM or FBMCQ document path is not a non-empty
+        string.
+    :raises TypeError: If any FCSTM or FBMCQ document text is not a string.
 
-    Examples::
+    .. note::
+        Stored snapshots are passed through :func:`_normalize_line_separators`
+        so that excerpt slicing uses the same line model as the lexer that
+        produced the spans.
+
+    Example::
 
         >>> SourceDocumentRegistry({"a.fcstm": "state A;"}).document("a.fcstm")
         'state A;'
@@ -237,7 +282,7 @@ class SourceDocumentRegistry:
                 raise ValueError("source document paths must be non-empty strings.")
             if not isinstance(text, str):
                 raise TypeError("source document text must be strings.")
-            copied[path] = text.replace("\r\n", "\n").replace("\r", "\n")
+            copied[path] = _normalize_line_separators(text)
         object.__setattr__(self, "documents", MappingProxyType(copied))
         copied_queries = {}
         for path, text in dict(self.query_documents).items():
@@ -245,7 +290,7 @@ class SourceDocumentRegistry:
                 raise ValueError("query document paths must be non-empty strings.")
             if not isinstance(text, str):
                 raise TypeError("query document text must be strings.")
-            copied_queries[path] = text.replace("\r\n", "\n").replace("\r", "\n")
+            copied_queries[path] = _normalize_line_separators(text)
         object.__setattr__(self, "query_documents", MappingProxyType(copied_queries))
         if self.display_root is not None:
             object.__setattr__(self, "display_root", os.path.abspath(self.display_root))
@@ -258,7 +303,7 @@ class SourceDocumentRegistry:
         :return: Relative display path when possible, otherwise original path.
         :rtype: Optional[str]
 
-        Examples::
+        Example::
 
             >>> SourceDocumentRegistry({"machine.fcstm": ""}).display_path("machine.fcstm")
             'machine.fcstm'
@@ -284,7 +329,7 @@ class SourceDocumentRegistry:
         :return: Source text, or ``None`` when no document is available.
         :rtype: Optional[str]
 
-        Examples::
+        Example::
 
             >>> SourceDocumentRegistry({"a.fcstm": "state A;"}).document("a.fcstm")
             'state A;'
@@ -318,7 +363,7 @@ class SourceDocumentRegistry:
         :return: Display-normalized source reference.
         :rtype: BmcSourceRef
 
-        Examples::
+        Example::
 
             >>> registry = SourceDocumentRegistry({"a.fcstm": ""})
             >>> registry.reference("fcstm", "a.fcstm", None).path
@@ -342,7 +387,7 @@ class SourceDocumentRegistry:
             when the span is anchor-only/invalid.
         :rtype: Optional[str]
 
-        Examples::
+        Example::
 
             >>> registry = SourceDocumentRegistry({"a.fcstm": "state A;"})
             >>> registry.excerpt(BmcSourceRef("fcstm", "a.fcstm", Span(1, 1, 1, 9)))
@@ -368,7 +413,7 @@ class SourceDocumentRegistry:
         :return: FCSTM source reference, possibly without path/span.
         :rtype: BmcSourceRef
 
-        Examples::
+        Example::
 
             >>> SourceDocumentRegistry({}).model_reference(object()).kind
             'fcstm'
@@ -387,7 +432,7 @@ class SourceDocumentRegistry:
         :return: FBMCQ source reference, possibly without path/span.
         :rtype: BmcSourceRef
 
-        Examples::
+        Example::
 
             >>> SourceDocumentRegistry({}).query_reference(object(), object()).kind
             'fbmcq'

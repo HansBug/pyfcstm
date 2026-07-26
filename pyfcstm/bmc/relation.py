@@ -307,7 +307,7 @@ def _formula_from_groups(
     :return: Conjunction of all group expressions.
     :rtype: z3.BoolRef
 
-    Examples::
+    Example::
 
         >>> import z3
         >>> from pyfcstm.bmc.provenance import BmcSourceRef, BmcTrackedConstraint
@@ -356,7 +356,7 @@ def _append_tracked_group(
     :rtype: None
     :raises pyfcstm.bmc.errors.BmcBuildError: If an expression is not Boolean.
 
-    Examples::
+    Example::
 
         >>> import z3
         >>> from pyfcstm.bmc.provenance import BmcSourceRef
@@ -545,9 +545,6 @@ def _unique_combo_transition(context: BmcPreparedContext, case: CycleCase):
         ):
             if chain:
                 matches.append(chain)
-            continue
-
-        if event_index > len(event_paths):
             continue
 
         owner = _model_state_by_path(context, current_path)

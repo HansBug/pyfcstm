@@ -11,7 +11,14 @@ are shared internal primitives, not part of the public BMC API.  Their exact
 ``check_started`` and reason semantics are documented here because later
 internal modules depend on them.
 
-Examples::
+This module is an extraction of primitives that previously lived inside the
+witness layer, and the extraction is behavior-preserving except for one
+documented point: :meth:`_SolveBudget.remaining_ms` now rounds a partial
+millisecond up instead of truncating it.  A finite budget therefore performs
+one more real check where the predecessor would have reported
+``deadline_exhausted_before_check`` with up to a millisecond still left.
+
+Example::
 
     >>> import z3
     >>> budget = _SolveBudget(None)
@@ -43,10 +50,11 @@ class _SolveBudget:
     :param timeout_ms: Positive total budget in milliseconds, or ``None`` to
         leave Z3's timeout unset and allow unbounded execution.
     :type timeout_ms: Optional[int]
-    :raises pyfcstm.bmc.errors.BmcBuildError: If ``timeout_ms`` is not ``None``
-        or a positive integer.
+    :raises pyfcstm.bmc.errors.BmcBuildError: If ``timeout_ms`` is neither
+        ``None`` nor a positive integer.  ``bool`` is rejected even though it
+        is an ``int`` subclass.
 
-    Examples::
+    Example::
 
         >>> print(_SolveBudget(None).remaining_ms())
         None
@@ -65,12 +73,25 @@ class _SolveBudget:
         )
 
     def remaining_ms(self) -> Optional[int]:
-        """Return remaining whole milliseconds, or ``None`` when unbounded.
+        """Return remaining whole milliseconds, or ``None`` when unavailable.
 
-        :return: Remaining budget, or ``None`` for an unbounded budget.
+        ``None`` covers two different situations that callers must not merge:
+        an unbounded budget, where ``deadline`` is ``None``, and an exhausted
+        finite budget.  :func:`_check_with_budget` separates them by also
+        testing ``deadline``; a caller that only inspects this return value
+        cannot tell "no limit" from "no time left".
+
+        A partial millisecond is rounded up rather than truncated, so a finite
+        budget spends its last fraction of a millisecond on a real check
+        instead of reporting exhaustion.  This differs from the truncating
+        predecessor this budget was extracted from, and is the one intentional
+        behavior change in that extraction.
+
+        :return: Remaining whole milliseconds, never above the configured total
+            budget; ``None`` for an unbounded or already exhausted budget.
         :rtype: Optional[int]
 
-        Examples::
+        Example::
 
             >>> print(_SolveBudget(None).remaining_ms())
             None
@@ -81,6 +102,11 @@ class _SolveBudget:
         if remaining_seconds <= 0:
             return None
         remaining_ms = max(1, int(math.ceil(remaining_seconds * 1000.0)))
+        # Rounding up can land one millisecond above the requested total budget:
+        # ``deadline`` is ``t0 + timeout_ms / 1000.0``, and that float addition
+        # can round upward, so ``deadline - t0`` may exceed ``timeout_ms / 1000``
+        # (with ``t0 = 1e7`` and ``timeout_ms = 1`` the ceiling above yields 2).
+        # Clamping keeps a finite budget an honest upper bound for Z3.
         return min(cast(int, self.timeout_ms), remaining_ms)
 
 
@@ -103,7 +129,8 @@ def _check_with_budget(
         ``sat``, ``unsat``, ``unknown``, or ``timeout``; a pre-check deadline
         exhaustion returns ``check_started=False``.
     :rtype: Tuple[BmcSolveStatus, Optional[z3.ModelRef], Optional[str], float, bool]
-    Examples::
+
+    Example::
 
         >>> import z3
         >>> _check_with_budget(z3.Solver(), _SolveBudget(None))[0]

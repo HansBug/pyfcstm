@@ -1522,3 +1522,170 @@ def test_case_provenance_is_not_part_of_formula_group_ledger() -> None:
         group.category == "transition.case" for group in core._tracked_case_groups
     )
     assert all(group.category != "transition.case" for group in core._tracked_groups)
+
+
+def test_overlapping_combo_prefix_refuses_source_attribution(tmp_path: Path) -> None:
+    """Combos sharing a first event stay unattributed instead of guessing a span.
+
+    Two authored combo transitions leave the same state through the same first
+    event, so the generated first edge belongs to both authored combos.  A macro
+    case built on that shared edge has no unambiguous authored owner, and
+    provenance must keep the generated reference rather than claim either span.
+    """
+    source_path = tmp_path / "shared_prefix.fcstm"
+    source_path.write_text(
+        """state Root {
+    state S1;
+    state S2;
+    state S3;
+    [*] -> S1;
+    S1 -> S2 :: E1 + E2;
+    S1 -> S3 :: E1 + E3;
+}
+""",
+        encoding="utf-8",
+    )
+
+    model = load_state_machine_from_file(source_path)
+    context = BmcEngine(model).prepare(
+        'init state("Root.S1"); check reach <= 4: active("Root.S2");',
+        query_source_path="query.fbmcq",
+    )
+    core = build_bmc_core_formula(context)
+    combo_cases = [
+        item
+        for item in core._tracked_case_groups
+        if item.refs.get("case_label")
+        in {
+            "Root.S1::transition::Root.S2::0",
+            "Root.S1::transition::Root.S3::1",
+        }
+    ]
+
+    assert combo_cases
+    assert all(item.refs.get("source_inference") is None for item in combo_cases)
+    assert all(item.source_ref.path is None for item in combo_cases)
+    assert all(item.source_ref.span is None for item in combo_cases)
+    assert all(
+        context._source_registry.excerpt(item.source_ref) is None
+        for item in combo_cases
+    )
+
+
+def test_reversed_event_combos_keep_distinct_source_spans(tmp_path: Path) -> None:
+    """Combos over the same events in a different order keep their own spans.
+
+    ``E1 + [x > 0] + E2`` and ``E2 + E1`` leave one state through disjoint first
+    events, so each generated chain still resolves to exactly one authored
+    combo.  Each case must excerpt its own authored line, never the other one.
+    """
+    source_path = tmp_path / "reversed_combo.fcstm"
+    source_path.write_text(
+        """def int x = 1;
+state Root {
+    state S1;
+    state S2;
+    state S3;
+    [*] -> S1;
+    S1 -> S2 :: E1 + [x > 0] + E2;
+    S1 -> S3 :: E2 + E1;
+}
+""",
+        encoding="utf-8",
+    )
+
+    model = load_state_machine_from_file(source_path)
+    context = BmcEngine(model).prepare(
+        'init state("Root.S1") where x == 1; check reach <= 5: active("Root.S2");',
+        query_source_path="query.fbmcq",
+    )
+    core = build_bmc_core_formula(context)
+    excerpts = {}
+    inferences = {}
+    for item in core._tracked_case_groups:
+        label = item.refs.get("case_label")
+        if label not in {
+            "Root.S1::transition::Root.S2::0",
+            "Root.S1::transition::Root.S3::1",
+        }:
+            continue
+        excerpts.setdefault(label, set()).add(
+            context._source_registry.excerpt(item.source_ref)
+        )
+        inferences.setdefault(label, set()).add(item.refs.get("source_inference"))
+
+    assert excerpts == {
+        "Root.S1::transition::Root.S2::0": {"S1 -> S2 :: E1 + [x > 0] + E2;"},
+        "Root.S1::transition::Root.S3::1": {"S1 -> S3 :: E2 + E1;"},
+    }
+    assert inferences["Root.S1::transition::Root.S3::1"] == {"unique_combo"}
+
+
+@pytest.mark.parametrize(
+    "newline",
+    ["\n", "\r\n", "\r"],
+    ids=["lf", "crlf", "cr"],
+)
+def test_line_ending_styles_keep_exact_source_excerpts(
+    tmp_path: Path, newline: str
+) -> None:
+    """Every line-ending style keeps exact spans for model, import, and query.
+
+    The FCSTM and FBMCQ lexers only advance line numbers on ``LF``, so a
+    snapshot may rewrite ``CRLF`` but must leave a lone ``CR`` alone.  A
+    snapshot that turned lone ``CR`` into ``LF`` used to disagree with the
+    lexer's line model, and every span after the first ``CR`` silently lost its
+    excerpt: the main file, the imported module, and the query were all
+    affected.  These excerpts must therefore be identical for all three styles.
+    """
+    worker = tmp_path / "worker.fcstm"
+    worker.write_bytes(
+        newline.join(
+            (
+                "def int y = 1;",
+                "def int x = 5;",
+                "state Worker;",
+            )
+        ).encode("utf-8")
+    )
+    main = tmp_path / "main.fcstm"
+    main.write_bytes(
+        newline.join(
+            (
+                "def int host = 0;",
+                "state Root {",
+                '    import "./worker.fcstm" as Child;',
+                "    [*] -> Child;",
+                "}",
+            )
+        ).encode("utf-8")
+    )
+    query_text = newline.join(
+        (
+            "init cold where true;",
+            'assume at 0: var("Child_x") == 5;',
+            'check reach <= 1: active("Root.Child");',
+        )
+    )
+
+    model = load_state_machine_from_file(main)
+    context = BmcEngine(model).prepare(
+        query_text, query_source_path=str(tmp_path / "query.fbmcq")
+    )
+    core = build_bmc_core_formula(context)
+    registry = context._source_registry
+    excerpts = {
+        group.stable_id: registry.excerpt(group.source_ref)
+        for group in core._tracked_groups
+        if group.source_ref.kind != "generated"
+    }
+
+    assert excerpts["initial.variable.host"] == "def int host = 0;"
+    assert excerpts["initial.variable.Child_y"] == "def int y = 1;"
+    assert excerpts["initial.variable.Child_x"] == "def int x = 5;"
+    assert all(value is not None for value in excerpts.values())
+    assert {
+        group.source_ref.path
+        for group in core._tracked_groups
+        if group.source_ref.kind == "fcstm"
+    } == {"main.fcstm", "worker.fcstm"}

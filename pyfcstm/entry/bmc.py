@@ -588,11 +588,12 @@ def build_bmc_output(
     :return: Completed report text and matching process exit status.
     :rtype: Tuple[str, int]
     :raises pyfcstm.entry.base.ClickErrorException: If model/query input is
-        invalid or unsupported.
+        invalid or unsupported, or if ``timeout_ms`` / ``max_bound`` is neither
+        ``None`` nor a positive integer.
     :raises RuntimeError: If solving, witness decoding, or replay encounters an
         internal consistency failure.
 
-    Examples::
+    Example::
 
         >>> # See the module example for a complete temporary-file invocation.
         >>> callable(build_bmc_output)

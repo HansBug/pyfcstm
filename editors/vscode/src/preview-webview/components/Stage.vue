@@ -494,11 +494,7 @@ async function onExportEvt() {
         const expanded = await expandSvgForExport(svgString, getSvgExpander());
         const [pngResult, pdfBytes] = await Promise.all([
             rasterizeSvg(expanded, 2),
-            renderVectorPdf(
-                svgString,
-                {width: svgBounds.value.width, height: svgBounds.value.height},
-                getSvgExpander(),
-            ),
+            renderCurrentSvgToPdf(),
         ]);
         const [pngBase64, pdfBase64] = await Promise.all([
             blobToBase64(pngResult.blob),
@@ -564,7 +560,10 @@ async function copySvgToClipboard() {
     if (!svgString) return;
     try {
         if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
-            await navigator.clipboard.writeText(svgString);
+            // Same expanded product as Export → Save SVG, so pasting into an
+            // external tool does not depend on the viewer's own font stack.
+            const expanded = await expandSvgForExport(svgString, getSvgExpander());
+            await navigator.clipboard.writeText(expanded);
             notifyCopy('svg');
             return;
         }

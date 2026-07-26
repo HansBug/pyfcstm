@@ -246,32 +246,46 @@ def ensure_viewer_dependencies() -> None:
             cwd=str(JSFCSTM_DIR),
             check=True,
         )
-    required = (
-        JSFCSTM_DIR / "node_modules" / "jspdf",
-        JSFCSTM_DIR / "node_modules" / "svg2pdf.js",
-        VSCODE_DIR / "node_modules" / "vue" / "compiler-sfc",
-        VSCODE_DIR / "node_modules" / "unplugin-vue",
-        VSCODE_DIR / "node_modules" / "esbuild",
+    # The exporter packages live in jsfcstm and the Vue build chain lives in
+    # vscode, so each directory has to be repaired in its own tree.
+    required_by_directory = (
+        (
+            JSFCSTM_DIR,
+            (
+                JSFCSTM_DIR / "node_modules" / "jspdf",
+                JSFCSTM_DIR / "node_modules" / "svg2pdf.js",
+            ),
+        ),
+        (
+            VSCODE_DIR,
+            (
+                VSCODE_DIR / "node_modules" / "vue" / "compiler-sfc",
+                VSCODE_DIR / "node_modules" / "unplugin-vue",
+                VSCODE_DIR / "node_modules" / "esbuild",
+            ),
+        ),
     )
-    if all(path.exists() for path in required):
-        return
-    subprocess.run(
-        [
-            _node_command("npm"),
-            "install",
-            "--ignore-scripts",
-            "--package-lock=false",
-            "--no-audit",
-            "--no-fund",
-        ],
-        cwd=str(VSCODE_DIR),
-        check=True,
-    )
-    missing = [str(path) for path in required if not path.exists()]
-    if missing:
-        raise FileNotFoundError(
-            "viewer dependency installation omitted: %s" % ", ".join(missing)
+    for directory, required in required_by_directory:
+        if all(path.exists() for path in required):
+            continue
+        subprocess.run(
+            [
+                _node_command("npm"),
+                "install",
+                "--ignore-scripts",
+                "--package-lock=false",
+                "--no-audit",
+                "--no-fund",
+            ],
+            cwd=str(directory),
+            check=True,
         )
+        missing = [str(path) for path in required if not path.exists()]
+        if missing:
+            raise FileNotFoundError(
+                "viewer dependency installation omitted: %s; run `npm install` in %s"
+                % (", ".join(missing), directory)
+            )
 
 
 def elk_tree_sha256() -> str:
@@ -370,11 +384,44 @@ def validate_viewer_provenance(lock: Dict[str, object]) -> None:
     public_entry = JSFCSTM_DIR / "dist" / "diagram" / "index.js"
     if not public_entry.is_file():
         raise FileNotFoundError("jsfcstm public diagram entry is missing")
-    public_text = public_entry.read_text(encoding="utf-8")
-    if re.search(r"require\(\s*[\"'](?:jspdf|svg2pdf\.js)[\"']", public_text):
+    leaking = _pdf_dependency_importers(public_entry)
+    if leaking:
         raise ValueError(
-            "PDF build dependencies leaked into the jsfcstm public diagram entry"
+            "PDF build dependencies leaked into the jsfcstm public diagram entry via %s"
+            % ", ".join(leaking)
         )
+
+
+def _pdf_dependency_importers(entry: Path) -> List[str]:
+    """List reachable modules that pull a PDF package into a public entry.
+
+    A direct ``require`` in the entry file is only the simplest leak. Adding one
+    re-export line is enough to reach the exporter module indirectly, so the
+    whole local require graph below the entry has to be inspected.
+    """
+    pdf_require = re.compile(r"require\(\s*[\"'](jspdf|svg2pdf\.js)[\"']")
+    local_require = re.compile(r"require\(\s*[\"'](\.[^\"']*)[\"']")
+    pending = [entry.resolve()]
+    visited = set()
+    leaking = []
+    while pending:
+        module = pending.pop()
+        if module in visited or not module.is_file():
+            continue
+        visited.add(module)
+        text = module.read_text(encoding="utf-8")
+        if pdf_require.search(text):
+            leaking.append(str(module.relative_to(JSFCSTM_DIR)))
+        for relative in local_require.findall(text):
+            target = (module.parent / relative).resolve()
+            for candidate in (
+                target if target.suffix == ".js" else target.with_suffix(".js"),
+                target / "index.js",
+            ):
+                if candidate.is_file():
+                    pending.append(candidate)
+                    break
+    return sorted(leaking)
 
 
 def validate_elk_provenance(lock: Dict[str, object]) -> None:

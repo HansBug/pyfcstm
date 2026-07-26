@@ -2454,7 +2454,10 @@ class StateMachine(AstExportable, PlantUMLExportable):
         :type options: object, optional
         :param view_state: Optional browser view state.
         :type view_state: object, optional
-        :param source_text: Optional FCSTM source override for the browser pane.
+        :param source_text: Optional FCSTM source for the browser pane. Models
+            parsed from text or a file already carry it; supplying a different
+            text is rejected because the model's source ranges would no longer
+            match. Programmatic models accept any source.
         :type source_text: str, optional
         :param option_fields: Renderer option fields such as ``direction`` or
             ``cjk_locale``. These are equivalent to passing ``options``.
@@ -2498,7 +2501,10 @@ class StateMachine(AstExportable, PlantUMLExportable):
         :type options: object, optional
         :param view_state: Optional browser view state.
         :type view_state: object, optional
-        :param source_text: Optional FCSTM source override for the source pane.
+        :param source_text: Optional FCSTM source for the source pane. Models
+            parsed from text or a file already carry it; supplying a different
+            text is rejected because the model's source ranges would no longer
+            match. Programmatic models accept any source.
         :type source_text: str, optional
         :param option_fields: Renderer option fields equivalent to ``options``.
         :return: Path to the generated HTML file.

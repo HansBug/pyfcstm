@@ -1,4 +1,7 @@
-ruff
+# ruff 0.16 turned a large set of pyupgrade/refactor rules on by default.
+# Those defaults conflict with the Python 3.7 floor this project supports,
+# so the lint contract stays on the 0.15 rule set until it is retargeted.
+ruff<0.16
 antlr4-python3-runtime==4.9.3
 hbllmutils
 cairosvg

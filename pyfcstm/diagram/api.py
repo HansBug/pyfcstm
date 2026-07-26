@@ -335,7 +335,7 @@ def _state_dict(state: State, include_ranges: bool) -> Dict[str, Any]:
     result: Dict[str, Any] = {
         "id": _state_id(state.path),
         "name": state.name,
-        "qualifiedName": ".".join(state.path),
+        "qualifiedName": _state_id(state.path),
         "displayName": state.extra_name,
         "pseudo": bool(state.is_pseudo),
         "comboRelay": bool(state.is_combo_relay),
@@ -484,9 +484,7 @@ def _validate_source_override(
     """Reject source overrides that would invalidate model source ranges."""
     if source_override is None or machine.source_text is None:
         return
-    original = _text(machine.source_text)
-    override = _text(source_override)
-    if original != override:
+    if _text(machine.source_text) != _text(source_override):
         raise ValueError(
             "source_text override does not match the source used to build the model; "
             "reparse the model from the replacement FCSTM text"
@@ -504,8 +502,12 @@ def _source_sidecar(
     # Work on a copy: completing the browser sidecar must not mutate the
     # model's imported-document registry when the main source is absent.
     source_paths = dict(machine._source_documents or {})
-    explicit_override = (
-        source_override is not None and source_override != machine.source_text
+    # Compare with the same normalization the override validation uses:
+    # a line-ending-only copy is the model's own source, so its imported
+    # documents must survive instead of collapsing to the main file.
+    explicit_override = source_override is not None and (
+        machine.source_text is None
+        or _text(source_override) != _text(machine.source_text)
     )
     if explicit_override or not source_paths:
         main_source_path = machine.source_path or "<memory>"
@@ -1101,7 +1103,12 @@ class DiagramData:
         """
         Hash the immutable snapshot by its canonical JSON representation.
 
-        :return: A hash consistent for equal immutable snapshots in one process.
+        The digest comes from SHA-256 rather than :func:`hash`, so equal
+        snapshots keep the same value across processes and the result stays
+        usable as a persisted content key.
+
+        :return: A hash consistent for equal immutable snapshots, including
+            across separate interpreter processes.
         :rtype: int
         """
         payload = json.dumps(
@@ -1209,7 +1216,9 @@ class Diagram:
         :param view_state: Optional immutable browser state or compatible
             mapping.
         :type view_state: pyfcstm.diagram.DiagramViewState or collections.abc.Mapping, optional
-        :param source_text: Optional source text override for the FCSTM pane.
+        :param source_text: Optional FCSTM source for the source pane. It must
+            match the text the model was parsed from; programmatic models
+            without source ranges accept any value.
         :type source_text: str, optional
         """
         self.model = model

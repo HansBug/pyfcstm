@@ -18,7 +18,8 @@ const screenshotPath = process.argv[3];
 const screenshotBeforeCollapsePath = process.env.VIEWER_SCREENSHOT_BEFORE_COLLAPSE;
 const pdfOutputPath = process.env.VIEWER_PDF_OUTPUT;
 const requestedFormats = new Set((process.env.VIEWER_FORMATS || 'svg,png,pdf').split(',').filter(Boolean));
-const requireZeroNetwork = process.env.VIEWER_REQUIRE_ZERO_NETWORK === '1';
+// Zero external network traffic is an absolute contract of the self-contained
+// viewer, so it is asserted on every run instead of behind an opt-in flag.
 const requirePdfZeroImages = process.env.VIEWER_REQUIRE_PDF_ZERO_IMAGES === '1';
 const requirePdfPageSize = process.env.VIEWER_REQUIRE_PDF_PAGE_SIZE === '1';
 const requirePdfRerender = process.env.VIEWER_REQUIRE_PDF_RERENDER === '1';
@@ -60,7 +61,30 @@ function inflatePdfStreams(base64) {
   }
   return Buffer.concat(chunks).toString('latin1');
 }
-async function waitForJson(url, attempts = 50) {
+// Same resolution order as the VSCode preview verification scripts, so one
+// CHROME_BIN works for every browser-backed maintenance gate in the repo.
+const CHROME_CANDIDATES = ['chromium', 'chromium-browser', 'google-chrome', 'google-chrome-stable'];
+
+function locateChrome() {
+  const envChrome = process.env.CHROME_BIN || process.env.PUPPETEER_EXECUTABLE_PATH;
+  if (envChrome) {
+    if (!fs.existsSync(envChrome)) {
+      throw new Error(`CHROME_BIN points at a missing executable: ${envChrome}`);
+    }
+    return envChrome;
+  }
+  for (const name of CHROME_CANDIDATES) {
+    const found = spawnSync('which', [name]);
+    if (found.status === 0 && found.stdout.toString().trim()) {
+      return found.stdout.toString().trim();
+    }
+  }
+  throw new Error(
+    `no Chromium-family browser found; tried CHROME_BIN, PUPPETEER_EXECUTABLE_PATH and ${CHROME_CANDIDATES.join(', ')}`,
+  );
+}
+
+async function waitForJson(url, attempts = 50, describeBrowser = () => '') {
   for (let i = 0; i < attempts; i += 1) {
     try {
       const response = await fetch(url);
@@ -68,7 +92,7 @@ async function waitForJson(url, attempts = 50) {
     } catch (_) { /* Chrome has not opened its debugging port yet. */ }
     await sleep(100);
   }
-  throw new Error('Chrome DevTools endpoint did not start');
+  throw new Error(`Chrome DevTools endpoint did not start${describeBrowser()}`);
 }
 
 class Cdp {
@@ -121,14 +145,31 @@ async function evaluate(cdp, expression) {
 (async () => {
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'pyfcstm-viewer-'));
   const port = 9222 + Math.floor(Math.random() * 200);
-  const chrome = spawn(process.env.CHROME_BIN || 'google-chrome', [
+  const chromeBinary = locateChrome();
+  const chrome = spawn(chromeBinary, [
     '--headless=new', '--no-sandbox', '--disable-gpu', '--no-first-run',
     '--no-default-browser-check', `--remote-debugging-port=${port}`,
     `--window-size=${viewportWidth},${viewportHeight}`,
     `--user-data-dir=${userData}`, 'about:blank',
-  ], {stdio: 'ignore', detached: process.platform !== 'win32'});
+  ], {stdio: ['ignore', 'ignore', 'pipe'], detached: process.platform !== 'win32'});
+  // Keep the browser's own diagnostics: without them a launch failure is
+  // indistinguishable from a slow start once the port probe times out.
+  let chromeStderr = '';
+  chrome.stderr.on('data', chunk => { chromeStderr += String(chunk); });
+  let chromeSpawnError = null;
+  chrome.on('error', err => { chromeSpawnError = err; });
+  let chromeExit = null;
+  chrome.on('exit', (code, signal) => { chromeExit = signal ? `signal ${signal}` : `exit code ${code}`; });
+  const describeBrowser = () => {
+    const details = [`binary ${chromeBinary}`];
+    if (chromeSpawnError) details.push(`spawn error ${chromeSpawnError.message}`);
+    if (chromeExit !== null) details.push(`browser stopped with ${chromeExit}`);
+    const stderrTail = chromeStderr.trim().split('\n').slice(-5).join('; ');
+    if (stderrTail) details.push(`stderr ${stderrTail}`);
+    return ` (${details.join('; ')})`;
+  };
   try {
-    const targets = await waitForJson(`http://127.0.0.1:${port}/json`);
+    const targets = await waitForJson(`http://127.0.0.1:${port}/json`, 50, describeBrowser);
     const page = targets.find(item => item.type === 'page');
     if (!page) throw new Error('Chrome did not expose a page target');
     const cdp = new Cdp(page.webSocketDebuggerUrl);
@@ -323,10 +364,24 @@ async function evaluate(cdp, expression) {
     })()`);
     const pdf = await evaluate(cdp, `(async () => {
       const formats = new Set(${JSON.stringify([...requestedFormats])});
-      const exportOnce = () => new Promise(resolve => {
+      // Each export runs resvg twice (PNG/SVG once, vector PDF once more), so
+      // wait for a fresh payload instead of a fixed delay: a fixed delay makes
+      // the first export flaky and lets the rerender check silently compare the
+      // previous payload with itself.
+      const awaitFreshExport = previous => new Promise((resolve, reject) => {
+        const deadline = Date.now() + 30000;
         window.dispatchEvent(new CustomEvent('fcstm-export'));
-        setTimeout(() => {
-        const payload = window.__FCSTM_LAST_EXPORT__ || {};
+        const poll = () => {
+          const current = window.__FCSTM_LAST_EXPORT__;
+          if (current && current !== previous) return resolve(current);
+          if (Date.now() > deadline) return reject(new Error('viewer export did not produce a payload'));
+          setTimeout(poll, 50);
+        };
+        poll();
+      });
+      const exportOnce = previous => new Promise((resolve, reject) => {
+        awaitFreshExport(previous).then(fresh => {
+        const payload = fresh || {};
         const exportedSvg = String(payload?.svg || '');
         const raw = payload?.pdfBase64 ? atob(payload.pdfBase64) : '';
         const pngRaw = payload?.pngBase64 ? atob(payload.pngBase64) : '';
@@ -397,15 +452,16 @@ async function evaluate(cdp, expression) {
         };
         image.onerror = () => finish(0, 0, 0, false);
         image.src = pngRaw ? 'data:image/png;base64,' + payload.pngBase64 : '';
-      }, 900);
+        }, reject);
       });
       await new Promise(resolve => setTimeout(resolve, 120));
-      const first = await exportOnce();
+      const firstPayload = window.__FCSTM_LAST_EXPORT__;
+      const first = await exportOnce(firstPayload);
       if (!${JSON.stringify(requirePdfRerender)}) {
         delete first._contentSignature;
         return first;
       }
-      const second = await exportOnce();
+      const second = await exportOnce(window.__FCSTM_LAST_EXPORT__);
       first.rerenderSame = JSON.stringify(first._contentSignature) === JSON.stringify(second._contentSignature);
       delete first._contentSignature;
       return first;
@@ -473,7 +529,10 @@ async function evaluate(cdp, expression) {
       selection.selected >= 1 && revealSource.activeSourceLines >= 1 && hover.activeSourceLines >= 1 &&
       sourceHover.diagramHover >= 1 && sourceSelection.selected >= 1
     );
-    const transitionChecks = !transitionHover.hasTransition || (
+    // Every sample renders transitions, so a missing transition element is a
+    // rendering regression rather than a reason to skip the hover assertions.
+    const transitionChecks = (
+      transitionHover.hasTransition === true &&
       Boolean(transitionHover.transitionId) && transitionHover.transitionFilter === 'none' &&
       transitionHover.transitionFill === 'none' &&
       (!transitionHover.labelFilter || transitionHover.labelFilter === 'none') &&
@@ -506,7 +565,7 @@ async function evaluate(cdp, expression) {
         zoom.before === zoom.after || !pdfChecks || !pngChecks ||
         (process.env.VIEWER_REQUIRE_EXPANDED_SVG === '1' && !svgChecks) ||
         (sourceCycle.candidateCount > 1 && sourceCycle.uniqueSelectedIds < sourceCycle.candidateCount) ||
-        (collapse.before > 1 && collapse.after >= collapse.before) || verticalOverflow || horizontalOverflow || comparisonTooShort || oversizedUiIcons || (requireZeroNetwork && network.length) || cspViolations.length || consoleErrors.length ||
+        (collapse.before > 1 && collapse.after >= collapse.before) || verticalOverflow || horizontalOverflow || comparisonTooShort || oversizedUiIcons || network.length || cspViolations.length || consoleErrors.length ||
         (importedSource.documents.length > 1 && (!importedSource.childText || importedSource.selected < 1))) process.exitCode = 1;
   } finally {
     stopChrome(chrome);

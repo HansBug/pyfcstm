@@ -1,7 +1,9 @@
 """Tests for the public Python diagram facade and browser contract."""
 
 import json
+import os
 import re
+import sys
 
 import pytest
 
@@ -563,3 +565,88 @@ def test_wasm_envelope_rejects_broken_binaries():
     assert not _valid_wasm_envelope(_wasm_module([1, 3, 7, 10, 13]))
     # A truncated final section must not pass as a complete envelope.
     assert not _valid_wasm_envelope(_wasm_module([1, 3, 7, 10])[:-1])
+
+
+@pytest.mark.unittest
+def test_line_ending_equivalent_override_keeps_imported_documents(tmp_path):
+    """A CRLF copy of the model source must not drop imported documents."""
+    main_path = tmp_path / "main.fcstm"
+    child_path = tmp_path / "child.fcstm"
+    source = "state Root;\n"
+    model = StateMachine(
+        defines={},
+        root_state=State(name="Root", path=("Root",), substates={}),
+        source_text=source,
+        source_path=str(main_path),
+        _source_documents={str(main_path): source, str(child_path): "state Child;\n"},
+    )
+    baseline = model.diagram().to_html()
+    override = model.diagram(source_text=source.replace("\n", "\r\n")).to_html()
+    assert '"child.fcstm"' in baseline
+    assert '"child.fcstm"' in override
+
+
+@pytest.mark.unittest
+def test_diagram_data_hash_is_stable_across_processes():
+    """A persisted content key must not depend on PYTHONHASHSEED."""
+    import subprocess
+
+    script = (
+        "from pyfcstm.model import load_state_machine_from_text as load;"
+        "print(hash(load('state Root;').diagram().data))"
+    )
+    digests = set()
+    for seed in ("0", "1", "12345"):
+        environment = dict(os.environ, PYTHONHASHSEED=seed)
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            check=True,
+            capture_output=True,
+            text=True,
+            env=environment,
+        )
+        digests.add(result.stdout.strip())
+    assert len(digests) == 1
+
+
+@pytest.mark.unittest
+def test_derived_snapshots_can_still_render_html():
+    """Derived views copy every field the HTML document consumes."""
+    model = _model('state Root { state Idle named "空闲"; [*] -> Idle; }')
+    original = model.diagram()
+    derived = original.with_options(mode="dark").with_view_state(mode="diagram")
+    document = derived.to_html()
+    assert document.startswith("<!doctype html>")
+    assert '"colorMode":"dark"' in document
+    assert derived.data is original.data
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    ("locale", "language"),
+    [
+        ("sc", "zh-CN"),
+        ("tc", "zh-TW"),
+        ("hk", "zh-HK"),
+        ("jp", "ja"),
+        ("kr", "ko"),
+    ],
+)
+def test_html_language_covers_every_cjk_locale(locale, language):
+    model = _model("state Root;")
+    assert ('<html lang="%s">' % language) in model.diagram(cjk_locale=locale).to_html()
+
+
+@pytest.mark.unittest
+def test_source_text_override_accepts_the_modelled_source():
+    """An override equal to the model source stays a supported input."""
+    source = 'state Root { state Idle named "空闲"; [*] -> Idle; }'
+    model = _model(source)
+    assert model.diagram(source_text=source).to_html()
+    # Programmatic models keep accepting an override because they have no
+    # ranges that the replacement text could invalidate.
+    programmatic = StateMachine(
+        defines={},
+        root_state=State(name="Root", path=("Root",), substates={}),
+    )
+    assert programmatic.diagram(source_text="state Root;").to_html()

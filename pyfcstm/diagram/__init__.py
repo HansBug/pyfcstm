@@ -30,6 +30,13 @@ The package roadmap is intentionally small and explicit:
 The public :class:`Diagram` facade is layered on top of this asset boundary;
 the renderer remains shared with jsfcstm and the VSCode preview.
 
+.. note::
+   :class:`Diagram`, :class:`DiagramData`, :class:`DiagramOptions`,
+   :class:`DiagramViewState` and the error classes are the stable entry
+   points. :class:`DiagramAssetEngine` is the internal asset-runtime bridge;
+   its shape is settled together with the synchronous headless capability, so
+   depend on it only for maintenance tooling.
+
 Example::
 
     >>> from pyfcstm.diagram import DiagramAssetEngine

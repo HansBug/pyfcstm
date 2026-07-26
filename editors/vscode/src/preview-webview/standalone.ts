@@ -90,44 +90,65 @@ window.addEventListener('unhandledrejection', event => {
     reportFatal('预览异步错误', `${reason?.message || String(event.reason)}\n${reason?.stack || ''}`);
 });
 
-async function mountStandalone(): Promise<void> {
-    if (document.readyState === 'loading') {
-        await new Promise<void>(resolve => document.addEventListener('DOMContentLoaded', () => resolve(), {once: true}));
-    }
-    if (document.fonts) {
-        await document.fonts.ready;
-        const locale = ((window as unknown as {
-            __FCSTM_INITIAL_STATE__?: {previewOptions?: {cjkLocale?: string}};
-        }).__FCSTM_INITIAL_STATE__?.previewOptions?.cjkLocale || 'sc').toLowerCase();
-        const cjkFamily = ({sc: 'Noto Sans SC', tc: 'Noto Sans TC', hk: 'Noto Sans HK', jp: 'Noto Sans JP', kr: 'Noto Sans KR'} as Record<string, string>)[locale] || 'Noto Sans SC';
-        const requiredFaces: Array<[string, number]> = [
-            ['JetBrains Mono', 400],
-            ['JetBrains Mono', 500],
-            ['JetBrains Mono', 700],
-            [cjkFamily, 400],
-            [cjkFamily, 700],
-        ];
-        const probes = requiredFaces.map(([family, weight]) => {
-            const probe = document.createElement('span');
-            probe.textContent = family.startsWith('Noto Sans') ? '中日한' : 'ABC123';
-            probe.style.cssText = 'position:fixed;left:-10000px;top:-10000px;visibility:hidden;white-space:nowrap';
-            probe.style.fontFamily = `"${family}"`;
-            probe.style.fontWeight = String(weight);
-            document.body.appendChild(probe);
-            return probe;
-        });
+/**
+ * Decode the embedded font faces before the first paint.
+ *
+ * Layout and every raster/vector export depend on the bundled metrics, so the
+ * viewer waits for them. Returns the faces that never became available; the
+ * caller degrades instead of leaving a blank page, because fonts are an
+ * appearance resource and the diagram itself is still usable without them.
+ */
+async function loadEmbeddedFonts(): Promise<string[]> {
+    // Settles immediately here (no face is pending yet); kept because the
+    // explicit per-face load below is what actually waits.
+    await document.fonts.ready;
+    const locale = ((window as unknown as {
+        __FCSTM_INITIAL_STATE__?: {previewOptions?: {cjkLocale?: string}};
+    }).__FCSTM_INITIAL_STATE__?.previewOptions?.cjkLocale || 'sc').toLowerCase();
+    const cjkFamily = ({sc: 'Noto Sans SC', tc: 'Noto Sans TC', hk: 'Noto Sans HK', jp: 'Noto Sans JP', kr: 'Noto Sans KR'} as Record<string, string>)[locale] || 'Noto Sans SC';
+    const requiredFaces: Array<[string, number]> = [
+        ['JetBrains Mono', 400],
+        ['JetBrains Mono', 500],
+        ['JetBrains Mono', 700],
+        [cjkFamily, 400],
+        [cjkFamily, 700],
+    ];
+    const probes = requiredFaces.map(([family, weight]) => {
+        const probe = document.createElement('span');
+        probe.textContent = family.startsWith('Noto Sans') ? '中日한' : 'ABC123';
+        probe.style.cssText = 'position:fixed;left:-10000px;top:-10000px;visibility:hidden;white-space:nowrap';
+        probe.style.fontFamily = `"${family}"`;
+        probe.style.fontWeight = String(weight);
+        document.body.appendChild(probe);
+        return probe;
+    });
+    try {
         await Promise.all([...document.fonts].map(face => face.load()));
         await Promise.all(requiredFaces.map(([family, weight]) => document.fonts.load(
             `${weight} 12px "${family}"`,
             family.startsWith('Noto Sans') ? '中日한' : 'ABC123',
         )));
-        const missingFaces = requiredFaces.filter(([family, weight]) => !document.fonts.check(`${weight} 12px "${family}"`));
+    } catch (error) {
+        // DOMException/Error: a bundled face failed to decode. Fall through
+        // to the check below, which reports exactly which faces are absent.
+        if (!(error instanceof Error)) throw error;
+    } finally {
         probes.forEach(probe => probe.remove());
-        if (missingFaces.length > 0) {
-            throw new Error(`embedded font faces are unavailable: ${missingFaces.map(([family, weight]) => `${family}/${weight}`).join(', ')}`);
-        }
     }
+    return requiredFaces
+        .filter(([family, weight]) => !document.fonts.check(`${weight} 12px "${family}"`))
+        .map(([family, weight]) => `${family}/${weight}`);
+}
+
+async function mountStandalone(): Promise<void> {
+    if (document.readyState === 'loading') {
+        await new Promise<void>(resolve => document.addEventListener('DOMContentLoaded', () => resolve(), {once: true}));
+    }
+    const missingFaces = document.fonts ? await loadEmbeddedFonts() : [];
     createApp(App).mount('#app');
+    if (missingFaces.length > 0) {
+        reportFatal('嵌入字体不可用', `以下字体未能加载，图形与源码可能使用回退字体：\n${missingFaces.join(', ')}`);
+    }
 }
 
 void mountStandalone();

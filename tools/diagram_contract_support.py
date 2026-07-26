@@ -12,9 +12,26 @@ from pyfcstm.diagram import DiagramOptions, DiagramViewState  # noqa: E402
 from pyfcstm.model import load_state_machine_from_text  # noqa: E402
 
 
-SAMPLE_SOURCE = """state Root {
-    state Idle named "空闲状态";
-    state Running named "控制器运行状态";
+# One representative machine rather than a two-state toy: the gates that share
+# it have to exercise nested composites, a guarded transition with an effect, a
+# self-loop, lifecycle and aspect actions, CJK display names, and several
+# objects declared on one source line (source-link cycling).
+SAMPLE_SOURCE = """def int counter = 0;
+
+state Root {
+    state Idle named "空闲状态" {
+        enter { counter = 0; }
+        during { counter = counter + 1; }
+    }
+    state Running named "控制器运行状态" {
+        state Warmup named "预热阶段";
+        state Steady named "稳态阶段";
+        [*] -> Warmup;
+        Warmup -> Steady : if [counter > 2] effect { counter = 0; }
+        Steady -> Steady;
+        >> during before { counter = counter + 1; }
+        exit abstract Teardown;
+    }
     event Go named "启动事件";
     event Back named "返回事件";
     [*] -> Idle; Idle -> Running :: Go; Running -> Idle :: Back;

@@ -411,11 +411,19 @@ def _pdf_dependency_importers(entry: Path) -> List[str]:
         visited.add(module)
         text = module.read_text(encoding="utf-8")
         if pdf_require.search(text):
-            leaking.append(str(module.relative_to(JSFCSTM_DIR)))
+            try:
+                label = str(module.relative_to(JSFCSTM_DIR))
+            except ValueError:
+                # The require graph left the package; report the absolute path
+                # instead of failing the gate on a path arithmetic error.
+                label = str(module)
+            leaking.append(label)
         for relative in local_require.findall(text):
             target = (module.parent / relative).resolve()
             for candidate in (
                 target if target.suffix == ".js" else target.with_suffix(".js"),
+                # ``./pdf.shim`` resolves to ``pdf.shim.js``, not ``pdf.js``.
+                target.with_name(target.name + ".js"),
                 target / "index.js",
             ):
                 if candidate.is_file():
@@ -698,6 +706,37 @@ def _check_clean_symlink_safety() -> None:
             ASSET_DIR = original
         if victim.read_text(encoding="ascii") != "must survive":
             raise AssertionError("cleanup touched a path outside the asset root")
+
+
+def _check_pdf_leak_scanner() -> None:
+    """Verify the public-entry leak scanner sees indirect PDF imports."""
+    with tempfile.TemporaryDirectory(prefix="pyfcstm-leak-check-") as temp_dir:
+        root = Path(temp_dir)
+        entry = root / "index.js"
+        (root / "nested").mkdir()
+        cases = (
+            ('var a = require("./clean");\n', False),
+            ('var a = require("jspdf");\n', True),
+            ('var a = require("./nested/hop");\n', True),
+            ('var a = require("./pdf.shim");\n', True),
+        )
+        (root / "clean.js").write_text("module.exports = {};\n", encoding="utf-8")
+        (root / "nested" / "hop.js").write_text(
+            'var b = require("../leaky");\n', encoding="utf-8"
+        )
+        (root / "leaky.js").write_text(
+            'var c = require("svg2pdf.js");\n', encoding="utf-8"
+        )
+        (root / "pdf.shim.js").write_text(
+            'var d = require("jspdf");\n', encoding="utf-8"
+        )
+        for source, should_leak in cases:
+            entry.write_text(source, encoding="utf-8")
+            found = bool(_pdf_dependency_importers(entry))
+            if found != should_leak:
+                raise AssertionError(
+                    "PDF leak scanner returned %s for %r" % (found, source.strip())
+                )
 
 
 def font_specs(lock: Dict[str, object]) -> List[Dict[str, object]]:
@@ -1111,6 +1150,7 @@ def main(argv=None) -> int:
         _check_metafile_determinism()
         validate_esbuild_provenance(read_lock())
         _check_clean_symlink_safety()
+        _check_pdf_leak_scanner()
         _check_font_path_safety()
         _check_download_retry()
         print("diagram asset builder: deterministic and safety self-check passed")

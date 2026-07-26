@@ -497,18 +497,18 @@ def _source_sidecar(
     diagram: Optional[Mapping[str, Any]] = None,
 ) -> Tuple[str, Dict[str, Any], Dict[str, Union[str, List[str]]], Dict[str, str]]:
     _validate_source_override(machine, source_override)
-    source = machine.source_text if source_override is None else source_override
-    source = source or ""
-    # Work on a copy: completing the browser sidecar must not mutate the
-    # model's imported-document registry when the main source is absent.
-    source_paths = dict(machine._source_documents or {})
-    # Compare with the same normalization the override validation uses:
-    # a line-ending-only copy is the model's own source, so its imported
-    # documents must survive instead of collapsing to the main file.
+    # A line-ending-only copy is the model's own source: treat it as such for
+    # both the displayed text and the document registry, so the source pane and
+    # ``sourceDocuments`` never disagree on the bytes of the same document.
     explicit_override = source_override is not None and (
         machine.source_text is None
         or _text(source_override) != _text(machine.source_text)
     )
+    source = source_override if explicit_override else machine.source_text
+    source = source or ""
+    # Work on a copy: completing the browser sidecar must not mutate the
+    # model's imported-document registry when the main source is absent.
+    source_paths = dict(machine._source_documents or {})
     if explicit_override or not source_paths:
         main_source_path = machine.source_path or "<memory>"
         source_paths = {main_source_path: source}

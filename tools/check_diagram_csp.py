@@ -96,10 +96,17 @@ def main() -> None:
             r"\bnew\s+Function\s*\(", scripts_text
         ):
             raise SystemExit("standalone HTML contains new Function()")
-    if args.require_fonts_ready and "document.fonts.ready" not in "\n".join(scripts):
-        raise SystemExit("viewer does not wait for document.fonts.ready")
-    if args.require_fonts_ready and "document.fonts.check" not in "\n".join(scripts):
-        raise SystemExit("viewer does not check embedded font faces")
+    if args.require_fonts_ready:
+        scripts_text = "\n".join(scripts)
+        # ``document.fonts.ready`` alone settles before any face is requested,
+        # so the gate anchors on the explicit per-face load plus the readback
+        # that decides whether the viewer degrades.
+        for marker, message in (
+            ("document.fonts.load", "viewer does not request the embedded font faces"),
+            ("document.fonts.check", "viewer does not check embedded font faces"),
+        ):
+            if marker not in scripts_text:
+                raise SystemExit(message)
     print("diagram CSP: embedded scripts, fonts, and zero-network policy passed")
 
 

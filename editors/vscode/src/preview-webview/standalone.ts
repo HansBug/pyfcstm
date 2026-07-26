@@ -94,11 +94,12 @@ window.addEventListener('unhandledrejection', event => {
  * Decode the embedded font faces before the first paint.
  *
  * Layout and every raster/vector export depend on the bundled metrics, so the
- * viewer waits for them. Returns the faces that never became available; the
- * caller degrades instead of leaving a blank page, because fonts are an
- * appearance resource and the diagram itself is still usable without them.
+ * viewer waits for them. Returns the faces that never became available plus
+ * any rejection reason; the caller degrades instead of leaving a blank page,
+ * because fonts are an appearance resource and the diagram itself is still
+ * usable without them.
  */
-async function loadEmbeddedFonts(): Promise<string[]> {
+async function loadEmbeddedFonts(): Promise<{missing: string[]; reasons: string[]}> {
     // Settles immediately here (no face is pending yet); kept because the
     // explicit per-face load below is what actually waits.
     await document.fonts.ready;
@@ -122,32 +123,38 @@ async function loadEmbeddedFonts(): Promise<string[]> {
         document.body.appendChild(probe);
         return probe;
     });
-    try {
-        await Promise.all([...document.fonts].map(face => face.load()));
-        await Promise.all(requiredFaces.map(([family, weight]) => document.fonts.load(
+    // allSettled instead of a catch: `DOMException` and every other decode
+    // failure derive from `Error`, so an `instanceof Error` guard would swallow
+    // unrelated bugs and relabel them as a missing font. Collecting the
+    // rejection reasons keeps the real cause visible in the report.
+    const attempts = await Promise.allSettled([
+        ...[...document.fonts].map(face => face.load()),
+        ...requiredFaces.map(([family, weight]) => document.fonts.load(
             `${weight} 12px "${family}"`,
             family.startsWith('Noto Sans') ? '中日한' : 'ABC123',
-        )));
-    } catch (error) {
-        // DOMException/Error: a bundled face failed to decode. Fall through
-        // to the check below, which reports exactly which faces are absent.
-        if (!(error instanceof Error)) throw error;
-    } finally {
-        probes.forEach(probe => probe.remove());
-    }
-    return requiredFaces
-        .filter(([family, weight]) => !document.fonts.check(`${weight} 12px "${family}"`))
-        .map(([family, weight]) => `${family}/${weight}`);
+        )),
+    ]);
+    probes.forEach(probe => probe.remove());
+    return {
+        missing: requiredFaces
+            .filter(([family, weight]) => !document.fonts.check(`${weight} 12px "${family}"`))
+            .map(([family, weight]) => `${family}/${weight}`),
+        reasons: attempts
+            .filter((item): item is PromiseRejectedResult => item.status === 'rejected')
+            .map(item => String(item.reason)),
+    };
 }
 
 async function mountStandalone(): Promise<void> {
     if (document.readyState === 'loading') {
         await new Promise<void>(resolve => document.addEventListener('DOMContentLoaded', () => resolve(), {once: true}));
     }
-    const missingFaces = document.fonts ? await loadEmbeddedFonts() : [];
+    const fonts = document.fonts ? await loadEmbeddedFonts() : {missing: [], reasons: []};
     createApp(App).mount('#app');
-    if (missingFaces.length > 0) {
-        reportFatal('嵌入字体不可用', `以下字体未能加载，图形与源码可能使用回退字体：\n${missingFaces.join(', ')}`);
+    if (fonts.missing.length > 0 || fonts.reasons.length > 0) {
+        const details = [`未能加载：${fonts.missing.join(', ') || '无'}`];
+        if (fonts.reasons.length > 0) details.push(`原因：${fonts.reasons.join('; ')}`);
+        reportFatal('嵌入字体不可用', `图形与源码可能使用回退字体。\n${details.join('\n')}`);
     }
 }
 

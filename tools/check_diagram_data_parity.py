@@ -7,6 +7,7 @@ any later headless host key off those IDs and that ordering.
 
 import json
 import tempfile
+import weakref
 from pathlib import Path
 import sys
 
@@ -15,7 +16,9 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from pyfcstm.dsl.node import INIT_STATE  # noqa: E402
 from pyfcstm.model import (  # noqa: E402
+    Event,
     State,
     StateMachine,
     Transition,
@@ -53,27 +56,50 @@ def _imported_and_inline_data():
 
 
 def _programmatic_machine() -> StateMachine:
-    """Assemble the compact machine through the model API instead of the DSL."""
+    """Assemble the COMPACT_SOURCE machine through the model API, not the DSL."""
+    # ``:: Go`` is a local event reference rather than a declared ``event Go;``,
+    # so the programmatic model has to reproduce that origin exactly.
+    go = Event(
+        name="Go", state_path=("Root", "Idle"), declared=False, origins=["local"]
+    )
+    idle = State(
+        name="Idle",
+        path=("Root", "Idle"),
+        substates={},
+        events={"Go": go},
+    )
     root = State(
         name="Root",
         path=("Root",),
         substates={
-            "Idle": State(name="Idle", path=("Root", "Idle"), substates={}),
+            "Idle": idle,
             "Running": State(name="Running", path=("Root", "Running"), substates={}),
         },
         transitions=[
+            # Both transitions are declared inside ``state Root { ... }``, so the
+            # composite owns them; the child states carry none of their own.
             Transition(
-                from_state="[*]", to_state="Idle", event=None, guard=None, effects=[]
-            ),
-            Transition(
-                from_state="Idle",
-                to_state="Running",
+                from_state=INIT_STATE,
+                to_state="Idle",
                 event=None,
                 guard=None,
                 effects=[],
             ),
+            Transition(
+                from_state="Idle",
+                to_state="Running",
+                event=go,
+                guard=None,
+                effects=[],
+                event_scope="local",
+            ),
         ],
     )
+    # Only the real root has no parent; without these links every state would
+    # report itself as the root and the comparison would drift for that reason
+    # alone rather than for a genuine data difference.
+    for child in root.substates.values():
+        child.parent_ref = weakref.ref(root)
     return StateMachine(defines={}, root_state=root)
 
 
@@ -99,35 +125,12 @@ def main() -> None:
     )
 
     programmatic = _programmatic_machine()
-    parsed_states = _state_ids(compact.diagram().to_dict()["rootState"])
-    programmatic_states = _state_ids(programmatic.diagram().to_dict()["rootState"])
     _require_equal(
-        parsed_states,
-        programmatic_states,
-        "programmatic and parsed models produced different state IDs",
-    )
-    _require_equal(
-        _transition_ids(compact.diagram().to_dict()["rootState"]),
-        _transition_ids(programmatic.diagram().to_dict()["rootState"]),
-        "programmatic and parsed models produced different transition IDs",
+        compact.diagram().to_json(),
+        programmatic.diagram().to_json(),
+        "programmatic and parsed models produced different DiagramData",
     )
     print("diagram data parity: parsed, imported and programmatic models passed")
-
-
-def _state_ids(node):
-    """Collect state IDs in document order."""
-    collected = [node["id"]]
-    for child in node["children"]:
-        collected.extend(_state_ids(child))
-    return collected
-
-
-def _transition_ids(node):
-    """Collect transition IDs in document order."""
-    collected = [transition["id"] for transition in node["transitions"]]
-    for child in node["children"]:
-        collected.extend(_transition_ids(child))
-    return collected
 
 
 if __name__ == "__main__":

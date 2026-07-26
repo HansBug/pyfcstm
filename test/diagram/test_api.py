@@ -616,9 +616,17 @@ def test_derived_snapshots_can_still_render_html():
     original = model.diagram()
     derived = original.with_options(mode="dark").with_view_state(mode="diagram")
     document = derived.to_html()
+    baseline = original.to_html()
     assert document.startswith("<!doctype html>")
     assert '"colorMode":"dark"' in document
     assert derived.data is original.data
+    # The clone copies its fields one by one, so the source-link payload has to
+    # be asserted explicitly; otherwise a dropped field only breaks at runtime.
+    for field in ("sourceMap", "sourceLineMap", "sourceDocumentId", "sourceHtml"):
+        marker = '"%s":' % field
+        assert marker in document
+        assert document.split(marker, 1)[1][:80] == baseline.split(marker, 1)[1][:80]
+    assert derived.source_text == original.source_text
 
 
 @pytest.mark.unittest

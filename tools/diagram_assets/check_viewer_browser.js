@@ -87,7 +87,12 @@ function locateChrome() {
   );
 }
 
-async function waitForJson(url, attempts = 50, describeBrowser = () => '') {
+// A cold CI runner needs noticeably longer than a warm workstation to bring up
+// the DevTools endpoint, so the budget is seconds rather than a few hundred
+// milliseconds. Chrome's own stderr is reported when the budget runs out.
+const DEVTOOLS_STARTUP_ATTEMPTS = Number(process.env.VIEWER_DEVTOOLS_ATTEMPTS || 300);
+
+async function waitForJson(url, attempts = DEVTOOLS_STARTUP_ATTEMPTS, describeBrowser = () => '') {
   for (let i = 0; i < attempts; i += 1) {
     try {
       const response = await fetch(url);
@@ -146,9 +151,11 @@ async function evaluate(cdp, expression) {
 }
 
 (async () => {
-  const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'pyfcstm-viewer-'));
   const port = 9222 + Math.floor(Math.random() * 200);
+  // Resolve first: a failure here must not leave a profile directory behind,
+  // because the cleanup below only runs once the browser has been spawned.
   const chromeBinary = locateChrome();
+  const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'pyfcstm-viewer-'));
   const chrome = spawn(chromeBinary, [
     '--headless=new', '--no-sandbox', '--disable-gpu', '--no-first-run',
     '--no-default-browser-check', `--remote-debugging-port=${port}`,
@@ -382,8 +389,10 @@ async function evaluate(cdp, expression) {
         };
         poll();
       });
-      const exportOnce = previous => new Promise((resolve, reject) => {
-        awaitFreshExport(previous).then(fresh => {
+      // Chain rather than nest: with a two-argument .then a synchronous throw
+      // inside the body (atob, PDF parsing) escapes the reject handler, and the
+      // untimed CDP evaluate above it would then hang for the whole job.
+      const exportOnce = previous => awaitFreshExport(previous).then(fresh => new Promise(resolve => {
         const payload = fresh || {};
         const exportedSvg = String(payload?.svg || '');
         const raw = payload?.pdfBase64 ? atob(payload.pdfBase64) : '';
@@ -455,8 +464,7 @@ async function evaluate(cdp, expression) {
         };
         image.onerror = () => finish(0, 0, 0, false);
         image.src = pngRaw ? 'data:image/png;base64,' + payload.pngBase64 : '';
-        }, reject);
-      });
+      }));
       await new Promise(resolve => setTimeout(resolve, 120));
       const firstPayload = window.__FCSTM_LAST_EXPORT__;
       const first = await exportOnce(firstPayload);

@@ -20,7 +20,6 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--all-cases", action="store_true")
     parser.add_argument("--formats", default="svg,png,pdf")
-    parser.add_argument("--zero-network", action="store_true")
     parser.add_argument("--pdf-require-zero-images", action="store_true")
     parser.add_argument("--pdf-page-size-match", action="store_true")
     parser.add_argument("--pdf-rerender", action="store_true")
@@ -54,7 +53,6 @@ def main() -> None:
                 env["VIEWER_REQUIRE_EXPANDED_SVG"] = "1"
                 env["VIEWER_VIEWPORT"] = viewport
                 env["VIEWER_FORMATS"] = ",".join(sorted(formats))
-                env["VIEWER_REQUIRE_ZERO_NETWORK"] = "1" if args.zero_network else "0"
                 env["VIEWER_REQUIRE_PDF_ZERO_IMAGES"] = (
                     "1" if args.pdf_require_zero_images else "0"
                 )

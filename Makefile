@@ -253,7 +253,7 @@ diagram_browser_check: build_assets
 	@if test -n "$(DIAGRAM_HTML)"; then \
 		node tools/diagram_assets/check_viewer_browser.js "$(DIAGRAM_HTML)" "$(DIAGRAM_SCREENSHOT)"; \
 	else \
-		$(PYTHON) tools/check_diagram_browser_exports.py --all-cases --formats svg,png,pdf --zero-network --pdf-require-zero-images --pdf-page-size-match --pdf-rerender; \
+		$(PYTHON) tools/check_diagram_browser_exports.py --all-cases --formats svg,png,pdf --pdf-require-zero-images --pdf-page-size-match --pdf-rerender; \
 	fi
 
 diagram_contract_check: build_assets

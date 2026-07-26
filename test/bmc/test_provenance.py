@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from textwrap import dedent
+from typing import Tuple
 
 import pytest
 import z3
@@ -1622,12 +1623,12 @@ state Root {
 
 
 @pytest.mark.parametrize(
-    "newline",
-    ["\n", "\r\n", "\r"],
-    ids=["lf", "crlf", "cr"],
+    "separators",
+    [("\n",), ("\r\n",), ("\r",), ("\r", "\n", "\r\n")],
+    ids=["lf", "crlf", "cr", "mixed"],
 )
 def test_line_ending_styles_keep_exact_source_excerpts(
-    tmp_path: Path, newline: str
+    tmp_path: Path, separators: Tuple[str, ...]
 ) -> None:
     """Every line-ending style keeps exact spans for model, import, and query.
 
@@ -1636,11 +1637,26 @@ def test_line_ending_styles_keep_exact_source_excerpts(
     snapshot that turned lone ``CR`` into ``LF`` used to disagree with the
     lexer's line model, and every span after the first ``CR`` silently lost its
     excerpt: the main file, the imported module, and the query were all
-    affected.  These excerpts must therefore be identical for all three styles.
+    affected.  The ``mixed`` case cycles through separators so a file can change
+    style mid-way, which shifts only part of the line numbering.
+
+    Every excerpt is compared against its exact authored text, including the
+    query ones.  Asserting only that a query excerpt is present would let a
+    non-empty but wrongly attributed excerpt through, which is a worse failure
+    than losing it.
     """
+
+    def _join(lines: Tuple[str, ...]) -> str:
+        parts = []
+        for index, line in enumerate(lines):
+            parts.append(line)
+            if index != len(lines) - 1:
+                parts.append(separators[index % len(separators)])
+        return "".join(parts)
+
     worker = tmp_path / "worker.fcstm"
     worker.write_bytes(
-        newline.join(
+        _join(
             (
                 "def int y = 1;",
                 "def int x = 5;",
@@ -1650,7 +1666,7 @@ def test_line_ending_styles_keep_exact_source_excerpts(
     )
     main = tmp_path / "main.fcstm"
     main.write_bytes(
-        newline.join(
+        _join(
             (
                 "def int host = 0;",
                 "state Root {",
@@ -1660,7 +1676,7 @@ def test_line_ending_styles_keep_exact_source_excerpts(
             )
         ).encode("utf-8")
     )
-    query_text = newline.join(
+    query_text = _join(
         (
             "init cold where true;",
             'assume at 0: var("Child_x") == 5;',
@@ -1683,6 +1699,11 @@ def test_line_ending_styles_keep_exact_source_excerpts(
     assert excerpts["initial.variable.host"] == "def int host = 0;"
     assert excerpts["initial.variable.Child_y"] == "def int y = 1;"
     assert excerpts["initial.variable.Child_x"] == "def int x = 5;"
+    assert excerpts["initial.target"] == "init cold where true;"
+    assert excerpts["initial.where"] == "true"
+    assert excerpts["assumption.0000.frame.0000"] == (
+        'assume at 0: var("Child_x") == 5;'
+    )
     assert all(value is not None for value in excerpts.values())
     assert {
         group.source_ref.path

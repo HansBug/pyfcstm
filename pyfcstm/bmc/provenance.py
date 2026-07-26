@@ -53,6 +53,11 @@ def _normalize_line_separators(text: str) -> str:
     line breaks the lexers never saw, so every span after the first ``CR``
     would fall outside its recomputed line and lose its excerpt.
 
+    The rewrite is a single left-to-right pass, so a ``CR`` immediately before a
+    ``CRLF`` leaves a residual ``CR`` at the end of a line: ``"a\\r\\r\\nb"``
+    becomes ``"a\\r\\nb"``.  Keeping that residual out of a same-line excerpt is
+    :func:`_span_offsets`' job, which trims one trailing ``CR`` after the ``LF``.
+
     :param text: Raw source text as read from disk or supplied by a caller.
     :type text: str
     :return: Text whose line breaks match the lexer's own line numbering.
@@ -134,7 +139,8 @@ class BmcSourceRef:
     :param span: One-based, end-exclusive source span, or ``None``.
     :type span: Optional[pyfcstm.utils.validate.Span]
     :raises ValueError: If the source kind is unsupported, a ``generated``
-        reference carries a path or span, or the path is an empty string.
+        reference carries a path or span, or the path is neither ``None`` nor a
+        non-empty string.
     :raises TypeError: If ``span`` is neither ``None`` nor a
         :class:`pyfcstm.utils.validate.Span`.
 
@@ -204,8 +210,8 @@ class BmcTrackedConstraint:
     :type source_ref: BmcSourceRef
     :param refs: Stable frame/step/case metadata, defaults to ``{}``.
     :type refs: Mapping[str, object], optional
-    :raises ValueError: If the stable id, stage, or category is empty, or the
-        expression sequence is empty.
+    :raises ValueError: If the stable id, stage, or category is not a non-empty
+        string, or the expression sequence is empty.
     :raises TypeError: If ``source_ref`` is not a :class:`BmcSourceRef`.
 
     Example::

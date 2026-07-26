@@ -92,7 +92,8 @@ function locateChrome() {
 // milliseconds. Chrome's own stderr is reported when the budget runs out.
 const DEVTOOLS_STARTUP_ATTEMPTS = Number(process.env.VIEWER_DEVTOOLS_ATTEMPTS || 300);
 
-async function waitForJson(url, attempts = DEVTOOLS_STARTUP_ATTEMPTS, describeBrowser = () => '') {
+async function waitForJson(url, describeBrowser) {
+  const attempts = DEVTOOLS_STARTUP_ATTEMPTS;
   for (let i = 0; i < attempts; i += 1) {
     try {
       const response = await fetch(url);
@@ -179,7 +180,7 @@ async function evaluate(cdp, expression) {
     return ` (${details.join('; ')})`;
   };
   try {
-    const targets = await waitForJson(`http://127.0.0.1:${port}/json`, 50, describeBrowser);
+    const targets = await waitForJson(`http://127.0.0.1:${port}/json`, describeBrowser);
     const page = targets.find(item => item.type === 'page');
     if (!page) throw new Error('Chrome did not expose a page target');
     const cdp = new Cdp(page.webSocketDebuggerUrl);

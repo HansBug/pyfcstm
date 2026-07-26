@@ -145,6 +145,15 @@ function stopChrome(child) {
   }
 }
 
+function awaitChromeExit(child, timeoutMs = 5000) {
+  if (!child || child.exitCode !== null || child.signalCode !== null) return Promise.resolve();
+  return new Promise(resolve => {
+    const done = () => { clearTimeout(timer); resolve(); };
+    const timer = setTimeout(done, timeoutMs);
+    child.once('exit', done);
+  });
+}
+
 async function evaluate(cdp, expression) {
   const result = await cdp.call('Runtime.evaluate', {expression, awaitPromise: true, returnByValue: true});
   if (result.exceptionDetails) throw new Error(result.exceptionDetails.text || 'browser evaluation failed');
@@ -581,6 +590,17 @@ async function evaluate(cdp, expression) {
         (importedSource.documents.length > 1 && (!importedSource.childText || importedSource.selected < 1))) process.exitCode = 1;
   } finally {
     stopChrome(chrome);
-    fs.rmSync(userData, {recursive: true, force: true, maxRetries: 5, retryDelay: 100});
+    // Chrome keeps flushing its profile after SIGTERM, so removing the
+    // directory before it exits races with those writes and raises ENOTEMPTY.
+    await awaitChromeExit(chrome);
+    try {
+      fs.rmSync(userData, {recursive: true, force: true, maxRetries: 5, retryDelay: 200});
+    } catch (error) {
+      // The gate's verdict is about the viewer, not about our own cleanup, so
+      // a leftover directory under the OS temp dir is reported rather than
+      // turned into a failure. Anything that is not a removal race re-throws.
+      if (!['ENOTEMPTY', 'EBUSY', 'EPERM'].includes(error && error.code)) throw error;
+      console.error(`warning: left ${userData} behind (${error.code})`);
+    }
   }
 })().catch(error => { console.error(error.stack || error); process.exitCode = 1; });

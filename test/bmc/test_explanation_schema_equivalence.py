@@ -75,6 +75,11 @@ _INEXPRESSIBLE = {
         "uniqueness over a nested key (items[*].constraint.stable_id) has no "
         "Draft 2020-12 keyword; uniqueItems only catches identical members"
     ),
+    "aggregate reason drift": (
+        "Draft 2020-12 has no way to compare two arbitrary strings, so it "
+        "cannot check that refinement_reason equals explanation.reason; the "
+        "constructor enforces that equality on its own"
+    ),
     "non-string refs key": (
         "JSON object keys are always strings, so a Python mapping keyed by 1 "
         'serializes to "1" and no validator can see the difference; the '
@@ -603,6 +608,9 @@ def _drift_cases():
     def stage_drift(payload):
         payload["infeasible_stage"] = "initialization"
 
+    def reason_drift(payload):
+        payload["refinement_reason"] = "a different reason for the same stage"
+
     def member_outside_scope(payload):
         # Scope membership is judged at aggregate precision, so the escape has
         # to change the category family rather than only the stage.
@@ -627,6 +635,7 @@ def _drift_cases():
         ("aggregate status drift", status_drift),
         ("explanation without a ledger", empty_ledger),
         ("localized stage drift", stage_drift),
+        ("aggregate reason drift", reason_drift),
         ("core member outside its scope", member_outside_scope),
         ("unsupported source kind", untyped_source),
         ("duplicate core member", duplicate_member),
@@ -647,4 +656,95 @@ def test_aggregate_and_explanation_cannot_drift_apart(
     payload = _feasibility_payload()
     mutate(payload)
 
+    if name in _INEXPRESSIBLE:
+        # Pin the asymmetry rather than skipping it: the schema accepts this and
+        # the constructor refuses it, so tightening either side fails here and
+        # sends the reader to the list above.
+        assert not list(feasibility_validator.iter_errors(payload)), (
+            "%s: the schema now rejects it, so update _INEXPRESSIBLE" % name
+        )
+        return
     assert list(feasibility_validator.iter_errors(payload)), name
+
+
+def test_the_constructor_still_enforces_every_named_asymmetry() -> None:
+    """Each named asymmetry must be refused by the side that can express it.
+
+    The list above records what the schema cannot check.  If the constructor
+    ever stopped checking one of them too, the rule would hold nowhere at all
+    while these tests kept passing, so each one is pinned on the Python side
+    here as well.
+    """
+    from dataclasses import replace
+
+    from pyfcstm.bmc.errors import BmcBuildError
+    from pyfcstm.bmc.explanation import BmcConflictCore
+    from pyfcstm.bmc.provenance import BmcSourceRef as _SourceRef
+
+    # aggregate reason drift
+    from pyfcstm.bmc import build_bmc_core_formula, compile_bmc_property
+    from pyfcstm.bmc.engine import BmcEngine
+    from pyfcstm.bmc.witness import solve_bmc_property
+    from pyfcstm.model import load_state_machine_from_text
+
+    machine = load_state_machine_from_text(
+        "def int x = 0;\n"
+        "state Root { event Go; state A; state B; [*] -> A; A -> B :: Go; }"
+    )
+    context = BmcEngine(machine).prepare(
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
+        'check reach <= 2: active("Root.B");'
+    )
+    feasibility = solve_bmc_property(
+        compile_bmc_property(build_bmc_core_formula(context)),
+        infeasibility_explanation="formal",
+    ).feasibility
+    with pytest.raises(BmcBuildError, match="must match the explanation reason"):
+        replace(feasibility, refinement_reason="a forged aggregate reason")
+
+    # duplicate stable_id with differing content
+    def member(text):
+        reference = BmcConstraintRef(
+            "same",
+            "assumptions",
+            "assumption.frame",
+            _SourceRef("generated", None, None),
+            "frame assumption",
+        )
+        return BmcCoreItem(
+            reference,
+            "assumption",
+            None,
+            False,
+            {"kind": "structural_constraint"},
+            text,
+            False,
+        )
+
+    with pytest.raises(ValueError, match="duplicate stable ids"):
+        BmcConflictCore(
+            "assumptions_component",
+            "ENV_N",
+            "source_group",
+            "raw",
+            "not_proven",
+            (member("first reading"), member("second reading")),
+        )
+
+    # non-string refs key
+    with pytest.raises(TypeError, match="keys must be strings"):
+        BmcConstraintRef(
+            "g0",
+            "assumptions",
+            "assumption.frame",
+            _SourceRef("generated", None, None),
+            "s",
+            refs={1: "a"},
+        )
+
+    assert set(_INEXPRESSIBLE) == {
+        "aggregate reason drift",
+        "duplicate stable_id with differing content",
+        "non-string refs key",
+    }

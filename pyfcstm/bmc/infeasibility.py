@@ -668,10 +668,15 @@ def extract_source_core(
         group = by_label.get(name)
         if group is None:
             # Z3 returns a subset of the assumption literals, so this cannot
-            # normally fire; it turns a hypothetical solver-contract violation
-            # into a named error instead of an obscure crash further down.
-            raise BmcBuildError(
-                "unsat core returned unknown activation label %r." % name
+            # normally fire.  Degrading rather than raising keeps the check that
+            # already ran in the ledger: the solver call happened, and reporting
+            # an empty ledger would deny work the deadline actually spent.
+            return CoreExtraction(
+                (),
+                "unknown",
+                "internal mismatch: unsat core returned the unknown activation "
+                "label %r for scope %r" % (name, scope),
+                (record,),
             )
         selected.append(group)
 

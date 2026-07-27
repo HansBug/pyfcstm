@@ -1489,3 +1489,44 @@ def test_a_mapping_failure_without_a_classification_reports_unknown(
     assert explanation.achieved_mode == "none"
     assert explanation.status == "unknown"
     assert "core mapping failed" in explanation.reason
+
+
+def test_an_unmappable_label_keeps_the_check_that_produced_it() -> None:
+    """A solver-contract violation degrades without denying the work it did.
+
+    The extraction check has already run by the time the labels are mapped
+    back, so raising past that point would publish an empty ledger for a
+    deadline that was actually spent.
+    """
+    core = _core_formula(
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
+        'check reach <= 2: active("Root.B");'
+    )
+    real = z3.Solver
+
+    class UnknownLabelSolver:
+        """Return an activation literal the extraction never registered."""
+
+        def __init__(self, *args, **kwargs):
+            self._inner = real(*args, **kwargs)
+
+        def unsat_core(self):
+            return [z3.Bool("core_not_a_registered_label")]
+
+        def __getattr__(self, name):
+            return getattr(self._inner, name)
+
+    z3.Solver = UnknownLabelSolver
+    try:
+        extraction = extract_source_core(
+            core, "assumptions_component", _SolveBudget(None)
+        )
+    finally:
+        z3.Solver = real
+
+    assert extraction.groups == ()
+    assert extraction.status == "unknown"
+    assert "internal mismatch" in extraction.reason
+    assert "unknown activation label" in extraction.reason
+    assert [check.started for check in extraction.checks] == [True]

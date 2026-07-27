@@ -28,11 +28,29 @@ def _check_style_sources(html: str, policy: str, styles: List[str]) -> None:
     nonce must be the one the bootstrap publishes. Without this, widening the
     directive to ``'unsafe-inline'`` or a host source, or letting the policy and
     the bootstrap drift apart, leaves every other check passing.
+
+    ``style-src-elem`` is checked too: when present it *overrides* ``style-src``
+    for ``<style>`` and ``<link rel=stylesheet>``, so a widening moved there
+    takes effect while ``style-src`` itself stays perfectly pinned.
     """
-    match = re.search(r"style-src ([^;]*)", policy)
-    if match is None:
+    matches = re.findall(r"(?:^|;)\s*style-src ([^;]*)", policy)
+    if not matches:
         raise SystemExit("CSP has no style-src directive")
-    sources = match.group(1).split()
+    if len(matches) != 1:
+        # A duplicate directive is ignored by user agents, but it means the
+        # policy no longer says one thing, and this check would only ever see
+        # the first copy.
+        raise SystemExit(
+            "CSP declares style-src %d times; it must appear exactly once"
+            % len(matches)
+        )
+    element_sources = re.findall(r"(?:^|;)\s*style-src-elem ([^;]*)", policy)
+    if element_sources:
+        raise SystemExit(
+            "CSP declares style-src-elem, which overrides style-src for style "
+            "elements and stylesheet links: %s" % "; ".join(element_sources)
+        )
+    sources = matches[0].split()
     expected_hashes = {
         "'sha256-%s'"
         % base64.b64encode(hashlib.sha256(style.encode("utf-8")).digest()).decode(
@@ -54,13 +72,21 @@ def _check_style_sources(html: str, policy: str, styles: List[str]) -> None:
             "nonce: %s" % ", ".join(unexpected)
         )
     declared = nonces[0][len("'nonce-") : -1]
-    published = re.search(r"window\.__FCSTM_STYLE_NONCE__ = \"([^\"]*)\";", html)
-    if published is None:
+    # All occurrences, not the first: the last assignment is what the runtime
+    # ends up with, so checking only the first would validate a value the
+    # browser never sees.
+    published = re.findall(r"window\.__FCSTM_STYLE_NONCE__ = \"([^\"]*)\";", html)
+    if not published:
         raise SystemExit("standalone HTML does not publish a style nonce")
-    if published.group(1) != declared:
+    if len(set(published)) != 1:
+        raise SystemExit(
+            "standalone HTML publishes %d different style nonces: %s"
+            % (len(set(published)), ", ".join(sorted(set(published))))
+        )
+    if published[0] != declared:
         raise SystemExit(
             "style-src nonce %r does not match the published nonce %r"
-            % (declared, published.group(1))
+            % (declared, published[0])
         )
 
 
@@ -121,7 +147,13 @@ def main() -> None:
             ).decode("ascii")
             if "sha256-%s" % digest not in policy:
                 raise SystemExit("CSP script hash does not match embedded script")
-    styles = re.findall(r"<style>(.*?)</style>", html, re.DOTALL)
+    # Match attributes too: a `<style nonce="...">` block is accepted by the
+    # policy but was invisible to the hash check, which is the one shape the
+    # nonce makes newly loadable. Script bodies are removed first because the
+    # bundled component library's source contains a `<style cssr-id="...">`
+    # template literal, and that string is not a stylesheet in this document.
+    markup = re.sub(r"<script[^>]*>.*?</script>", "", html, flags=re.DOTALL)
+    styles = re.findall(r"<style[^>]*>(.*?)</style>", markup, re.DOTALL)
     if args.require_style_hashes:
         if not styles:
             raise SystemExit("standalone HTML has no inline style block")

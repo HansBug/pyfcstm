@@ -13,7 +13,10 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from diagram_contract_support import write_sample_html  # noqa: E402
+from diagram_contract_support import (  # noqa: E402
+    write_multi_document_sample_html,
+    write_sample_html,
+)
 
 
 def main() -> None:
@@ -31,23 +34,27 @@ def main() -> None:
     if node is None:
         raise SystemExit("Node.js is required for the browser export gate")
 
-    cases = [("default", "sc", "TB")]
+    # The multi-document case is the only one that renders the source-document
+    # picker, so without it the gate's imported-source and native-select
+    # assertions never run at all.
+    cases = [("default", "sc", "TB", write_sample_html)]
     if args.all_cases:
         cases.extend(
             [
-                ("cjk-tc", "tc", "TB"),
-                ("cjk-hk", "hk", "LR"),
-                ("cjk-jp", "jp", "LR"),
-                ("cjk-kr", "kr", "TB"),
+                ("cjk-tc", "tc", "TB", write_sample_html),
+                ("cjk-hk", "hk", "LR", write_sample_html),
+                ("cjk-jp", "jp", "LR", write_sample_html),
+                ("cjk-kr", "kr", "TB", write_sample_html),
+                ("imports", "sc", "TB", write_multi_document_sample_html),
             ]
         )
     viewports = ["800x600"]
     if args.all_cases:
         viewports = ["800x600", "320x480", "750x900", "1365x768"]
     with tempfile.TemporaryDirectory(prefix="pyfcstm-diagram-browser-") as directory:
-        for name, locale, direction in cases:
+        for name, locale, direction, write_fixture in cases:
             html_path = Path(directory) / (name + ".html")
-            write_sample_html(html_path, cjk_locale=locale, direction=direction)
+            write_fixture(html_path, cjk_locale=locale, direction=direction)
             for viewport in viewports:
                 env = dict(os.environ)
                 env["VIEWER_REQUIRE_EXPANDED_SVG"] = "1"

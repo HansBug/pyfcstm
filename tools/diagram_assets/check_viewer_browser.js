@@ -323,27 +323,30 @@ async function evaluate(cdp, expression) {
     // resulting wrong-mode failure surfaced far away, in the export step. A
     // missing handle throws here so the cause stays where the problem is.
     // The browser side settles with reject rather than throw: an exception
-    // raised from a timer callback has already left the executor frame, so it
-    // becomes an uncaught window error and leaves the promise pending. Since
-    // Runtime.evaluate is awaited here with no per-call deadline, that would
-    // hang the run instead of naming the missing handle.
-    const clickMode = mode => `new Promise((resolve, reject) => setTimeout(() => {
+    // A missing handle is reported as a field rather than thrown. Throwing from
+    // a timer callback does not reject the promise at all, and rejecting aborts
+    // before the JSON report — the only diagnostic a red run produces.
+    const clickMode = mode => `new Promise(resolve => setTimeout(() => {
       const button = document.querySelector('.fcstm-standalone-mode button[data-fcstm-mode="${mode}"]');
-      if (!button) { reject(new Error('mode button not found: ${mode}')); return; }
+      if (!button) {
+        resolve({buttonFound: false, source: false, stage: false, renderedStage: false});
+        return;
+      }
       button.click();
       setTimeout(() => resolve({
+        buttonFound: true,
         source: Boolean(document.querySelector('.fcstm-source-panel')),
         stage: Boolean(document.querySelector('.fcstm-stage')),
         renderedStage: Boolean(document.querySelector('.fcstm-stage svg')),
       }), 120);
     }, 80))`;
     const diagramOnlyRaw = await evaluate(cdp, clickMode('diagram'));
-    const states = {diagramOnlySource: diagramOnlyRaw.source, diagramOnlyStage: diagramOnlyRaw.stage};
+    const states = {diagramOnlySource: diagramOnlyRaw.source, diagramOnlyStage: diagramOnlyRaw.stage, buttonFound: diagramOnlyRaw.buttonFound};
     const compare = await evaluate(cdp, clickMode('compare'));
     const fcstmOnlyRaw = await evaluate(cdp, clickMode('fcstm'));
-    const fcstmOnly = {source: fcstmOnlyRaw.source, stage: fcstmOnlyRaw.renderedStage};
+    const fcstmOnly = {source: fcstmOnlyRaw.source, stage: fcstmOnlyRaw.renderedStage, buttonFound: fcstmOnlyRaw.buttonFound};
     const backToCompareRaw = await evaluate(cdp, clickMode('compare'));
-    const backToCompare = {source: backToCompareRaw.source, stage: backToCompareRaw.renderedStage};
+    const backToCompare = {source: backToCompareRaw.source, stage: backToCompareRaw.renderedStage, buttonFound: backToCompareRaw.buttonFound};
     const importedSource = await evaluate(cdp, `new Promise(resolve => setTimeout(() => {
       const select = document.querySelector('.fcstm-source-panel__header select');
       const options = select ? [...select.options].map(option => option.value) : [];
@@ -413,9 +416,9 @@ async function evaluate(cdp, expression) {
     // assertion is that the control is present and leaves the source link
     // intact; a renamed or removed button now fails here instead of silently
     // skipping, which is how the mode buttons used to behave.
-    const revealSource = await evaluate(cdp, `new Promise((resolve, reject) => setTimeout(() => {
+    const revealSource = await evaluate(cdp, `new Promise(resolve => setTimeout(() => {
       const button = [...document.querySelectorAll('.fcstm-details button')].find(item => item.textContent.includes('Reveal source'));
-      if (!button) { reject(new Error('reveal-source control not found in the details panel')); return; }
+      if (!button) { resolve({buttonFound: false, activeSourceLines: document.querySelectorAll('.fcstm-source-line--active').length}); return; }
       button.dispatchEvent(new MouseEvent('click', {bubbles: true, button: 0}));
       setTimeout(() => resolve({buttonFound: true, activeSourceLines: document.querySelectorAll('.fcstm-source-line--active').length}), 220);
     }, 180))`);
@@ -427,12 +430,12 @@ async function evaluate(cdp, expression) {
     }, 220))`);
     hover.before = hoverBefore;
     const sourceHoverBefore = await evaluate(cdp, CLEAR_INTERACTION);
-    const sourceHover = await evaluate(cdp, `new Promise((resolve, reject) => setTimeout(() => {
+    const sourceHover = await evaluate(cdp, `new Promise(resolve => setTimeout(() => {
       const selector = ${sourceLineSelector};
       const line = selector ? document.querySelector(selector) : null;
-      if (!line) { reject(new Error('no source line matched the published source map')); return; }
+      if (!line) { resolve({lineFound: false, diagramHover: 0}); return; }
       line.dispatchEvent(new MouseEvent('mouseover', {bubbles: true, relatedTarget: null}));
-      setTimeout(() => resolve({diagramHover: document.querySelectorAll('.fcstm-source-hover').length}), 220);
+      setTimeout(() => resolve({lineFound: true, diagramHover: document.querySelectorAll('.fcstm-source-hover').length}), 220);
     }, 220))`);
     sourceHover.before = sourceHoverBefore;
     const transitionHover = await evaluate(cdp, `(async () => {
@@ -473,12 +476,12 @@ async function evaluate(cdp, expression) {
       };
     })()`);
     const sourceSelectionBefore = await evaluate(cdp, CLEAR_INTERACTION);
-    const sourceSelection = await evaluate(cdp, `new Promise((resolve, reject) => setTimeout(() => {
+    const sourceSelection = await evaluate(cdp, `new Promise(resolve => setTimeout(() => {
       const selector = ${sourceLineSelector};
       const line = selector ? document.querySelector(selector) : null;
-      if (!line) { reject(new Error('no source line matched the published source map')); return; }
+      if (!line) { resolve({lineFound: false, selected: 0}); return; }
       line.dispatchEvent(new MouseEvent('click', {bubbles: true, button: 0}));
-      setTimeout(() => resolve({selected: document.querySelectorAll('.fcstm-selected').length}), 220);
+      setTimeout(() => resolve({lineFound: true, selected: document.querySelectorAll('.fcstm-selected').length}), 220);
     }, 220))`);
     sourceSelection.before = sourceSelectionBefore;
     const sourceCycle = await evaluate(cdp, `(async () => {
@@ -516,7 +519,11 @@ async function evaluate(cdp, expression) {
       }
       return {candidateCount: value.length, selectedIds, uniqueSelectedIds: new Set(selectedIds.filter(Boolean)).size};
     })()`);
-    const pdf = await evaluate(cdp, `(async () => {
+    // Recorded rather than thrown, for the same reason as the handles above:
+    // a missing export control or a payload that never arrives is a finding the
+    // report should carry, not a reason to exit without one.
+    let exportError = '';
+    const pdfExpression = `(async () => {
       const formats = new Set(${JSON.stringify([...requestedFormats])});
       // Each export runs resvg twice (PNG/SVG once, vector PDF once more), so
       // wait for a fresh payload instead of a fixed delay: a fixed delay makes
@@ -626,7 +633,18 @@ async function evaluate(cdp, expression) {
       first.rerenderSame = JSON.stringify(first._contentSignature) === JSON.stringify(second._contentSignature);
       delete first._contentSignature;
       return first;
-    })()`);
+    })()`;
+    let pdf;
+    try {
+      pdf = await evaluate(cdp, pdfExpression);
+    } catch (error) {
+      // Error: `evaluate` wraps every browser-side rejection in one, including
+      // the export deadline and the missing-control guard. Anything that is not
+      // an Error did not come from there and propagates.
+      if (!(error instanceof Error)) throw error;
+      exportError = error.message;
+      pdf = {fatal: '', menu: false, signature: {}, base64: ''};
+    }
     const pdfStreamText = inflatePdfStreams(pdf.base64);
     // The halo check is a zero-count, so it passes trivially when no stream
     // inflates — a filter change or an object-stream layout would retire the
@@ -657,9 +675,10 @@ async function evaluate(cdp, expression) {
       const stage = document.querySelector('.fcstm-stage');
       const shell = document.querySelector('.fcstm-preview-shell');
       const drawer = document.querySelector('.fcstm-bottom-drawer');
+      const drawerBody = document.querySelector('.fcstm-bottom-drawer__body');
       const rect = el => el ? ({x: el.getBoundingClientRect().x, y: el.getBoundingClientRect().y, width: el.getBoundingClientRect().width, height: el.getBoundingClientRect().height}) : null;
       const style = el => el ? ({display: getComputedStyle(el).display, flex: getComputedStyle(el).flex, minHeight: getComputedStyle(el).minHeight, height: getComputedStyle(el).height, overflow: getComputedStyle(el).overflow}) : null;
-      return {viewport: {width: innerWidth, height: innerHeight}, shell: rect(shell), drawer: rect(drawer), main: rect(main), source: rect(source), stage: rect(stage), stageCount: document.querySelectorAll('.fcstm-stage').length, sourceCount: document.querySelectorAll('.fcstm-source-panel').length, stageRects: [...document.querySelectorAll('.fcstm-stage')].map(rect), sourceRects: [...document.querySelectorAll('.fcstm-source-panel')].map(rect), svgRects: [...document.querySelectorAll('svg')].map(svg => ({className: svg.parentElement?.className || '', rect: rect(svg)})), bottomIconStyles: [...document.querySelectorAll('.fcstm-bottom .n-base-icon')].map(icon => ({rect: rect(icon), width: getComputedStyle(icon).width, height: getComputedStyle(icon).height, display: getComputedStyle(icon).display})), mainStyle: style(main), shellStyle: style(shell), drawerStyle: style(drawer), mainScrollHeight: main?.scrollHeight || 0, mainClientHeight: main?.clientHeight || 0, mainScrollWidth: main?.scrollWidth || 0, mainClientWidth: main?.clientWidth || 0, bottomScrollWidth: bottom?.scrollWidth || 0, bottomClientWidth: bottom?.clientWidth || 0};
+      return {viewport: {width: innerWidth, height: innerHeight}, shell: rect(shell), drawer: rect(drawer), main: rect(main), source: rect(source), stage: rect(stage), stageCount: document.querySelectorAll('.fcstm-stage').length, sourceCount: document.querySelectorAll('.fcstm-source-panel').length, stageRects: [...document.querySelectorAll('.fcstm-stage')].map(rect), sourceRects: [...document.querySelectorAll('.fcstm-source-panel')].map(rect), svgRects: [...document.querySelectorAll('svg')].map(svg => ({className: svg.parentElement?.className || '', rect: rect(svg)})), bottomIconStyles: [...document.querySelectorAll('.fcstm-bottom .n-base-icon')].map(icon => ({rect: rect(icon), width: getComputedStyle(icon).width, height: getComputedStyle(icon).height, display: getComputedStyle(icon).display})), mainStyle: style(main), shellStyle: style(shell), drawerStyle: style(drawer), drawerBody: rect(drawerBody), mainScrollHeight: main?.scrollHeight || 0, mainClientHeight: main?.clientHeight || 0, mainScrollWidth: main?.scrollWidth || 0, mainClientWidth: main?.clientWidth || 0, bottomScrollWidth: bottom?.scrollWidth || 0, bottomClientWidth: bottom?.clientWidth || 0};
     })()`);
     const network = cdp.events.filter(event => event.method === 'Network.requestWillBeSent').map(event => event.params.request.url).filter(url => !url.startsWith('file://') && !url.startsWith('data:') && !url.startsWith('blob:'));
     const cspViolations = [
@@ -695,7 +714,12 @@ async function evaluate(cdp, expression) {
     // both ends: collapsed to nothing hides Details, and unbounded growth eats
     // the stage. The upper bound matches the CSS max-height of 70vh.
     const drawerHeight = layout.drawer?.height || 0;
-    const drawerChecks = drawerHeight > 0
+    // A collapsed drawer is a ~12px handle, which cleared a bare `height > 0`.
+    // The body is what has to be on screen, and the run expands the drawer
+    // before it reaches here, so requiring it is not viewport-dependent.
+    const drawerBodyHeight = layout.drawerBody?.height || 0;
+    const drawerChecks = drawerBodyHeight > 0
+      && drawerHeight > drawerBodyHeight
       && drawerHeight <= (layout.viewport?.height || 0) * 0.72;
     const minimumPanelHeight = viewportHeight <= 700 ? 200 : 160;
     const comparisonSourceHeight = layout.source?.height || 0;
@@ -737,7 +761,9 @@ async function evaluate(cdp, expression) {
       selection.before.activeSourceLines === 0 && selection.activeSourceLines >= 1 &&
       revealSource.buttonFound === true && revealSource.activeSourceLines >= 1 &&
       hover.before.activeSourceLines === 0 && hover.activeSourceLines >= 1 &&
+      sourceHover.lineFound === true &&
       sourceHover.before.sourceHover === 0 && sourceHover.diagramHover >= 1 &&
+      sourceSelection.lineFound === true &&
       sourceSelection.before.selected === 0 && sourceSelection.selected >= 1
     );
     // The embedded faces are the only reason layout and every export agree
@@ -760,14 +786,14 @@ async function evaluate(cdp, expression) {
       transitionHover.noteParts.every(item => item.filter === 'none') &&
       transitionHover.transitionStroke === 'rgb(45, 106, 168)'
     );
-    const pdfChecks = !requestedFormats.has('pdf') || (
+    const pdfChecks = !exportError && (!requestedFormats.has('pdf') || (
       pdf.menu === true && pdf.header === '%PDF-' && pdf.bytes >= 100 &&
       (!requirePdfZeroImages || pdf.images === 0) && pdf.pages === 1 &&
       (!requirePdfPageSize || (pdf.pdfWidth > 0 && pdf.pdfHeight > 0 &&
         Math.abs(pdf.pdfWidth - pdf.svgWidth) < 0.1 && Math.abs(pdf.pdfHeight - pdf.svgHeight) < 0.1)) &&
       pdf.inflatedStreamBytes > 0 && pdf.whiteHaloOperators === 0 &&
       (!requirePdfRerender || pdf.rerenderSame === true)
-    );
+    ));
     const pngChecks = !requestedFormats.has('png') || (
       pdf.pngHeader === '89504e470d0a1a0a' && pdf.pngBytes >= 100 && pdf.pngWidth >= 1 && pdf.pngHeight >= 1 &&
       pdf.pngDecodedWidth === pdf.pngWidth && pdf.pngDecodedHeight === pdf.pngHeight &&
@@ -779,9 +805,12 @@ async function evaluate(cdp, expression) {
       pdf.signature.svgBytes > 0 &&
       pdf.svgText === 0 && pdf.svgMarker === 0 && pdf.svgFontFamily === 0
     );
-    const report = {initial, sourceLayout, sourceLayoutChecks, selectMenu, selectMenuChecks, sourceUnavailableChecks, sourceChecks, fontChecks, transitionChecks, pdfChecks, pngChecks, svgChecks, diagramOnly: states, fcstmOnly, compare, backToCompare, importedSource, selection, revealSource, hover, sourceHover, transitionHover, sourceSelection, sourceCycle, zoom, pdf, collapse, layout, minimumPanelHeight, comparisonTooShort, drawerChecks, oversizedUiIcons, externalRequests: network, cspViolations, consoleErrors: consoleErrors.length, consoleDetails};
+    const modeButtonsFound = states.buttonFound === true && compare.buttonFound === true
+      && fcstmOnly.buttonFound === true && backToCompare.buttonFound === true;
+    const report = {initial, sourceLayout, sourceLayoutChecks, selectMenu, selectMenuChecks, sourceUnavailableChecks, sourceChecks, fontChecks, transitionChecks, pdfChecks, pngChecks, svgChecks, diagramOnly: states, fcstmOnly, compare, backToCompare, importedSource, selection, revealSource, hover, sourceHover, transitionHover, sourceSelection, sourceCycle, zoom, pdf, collapse, layout, minimumPanelHeight, comparisonTooShort, drawerChecks, modeButtonsFound, exportError, oversizedUiIcons, externalRequests: network, cspViolations, consoleErrors: consoleErrors.length, consoleDetails};
     console.log(JSON.stringify(report, null, 2));
-    if (!initial.stage || initial.error || states.diagramOnlySource || !states.diagramOnlyStage ||
+    if (!initial.stage || initial.error || !modeButtonsFound ||
+        states.diagramOnlySource || !states.diagramOnlyStage ||
         !compare.source || !compare.stage ||
         fcstmOnly.source !== true || fcstmOnly.stage !== false || backToCompare.source !== true || backToCompare.stage !== true ||
         !sourceLayoutChecks || !sourceUnavailableChecks ||

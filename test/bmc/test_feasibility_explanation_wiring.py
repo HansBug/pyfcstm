@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import pytest
 
+from pyfcstm.bmc import build_bmc_core_formula, compile_bmc_property
+from pyfcstm.bmc.engine import BmcEngine
 from pyfcstm.bmc.errors import BmcBuildError
 from pyfcstm.bmc.explanation import (
     BmcConflictCore,
@@ -21,7 +23,9 @@ from pyfcstm.bmc.witness import (
     BmcFeasibilityCheck,
     BmcFeasibilityRefinementCheck,
     BmcFeasibilityResult,
+    solve_bmc_property,
 )
+from pyfcstm.model import load_state_machine_from_text
 
 pytestmark = pytest.mark.unittest
 
@@ -204,3 +208,68 @@ def test_absent_explanation_stays_absent_in_canonical_output() -> None:
     canonical = _localized().to_canonical()
 
     assert canonical["explanation"] is None
+
+
+def _solve(query: str, **kwargs):
+    """Drive the real solve path with real FCSTM and FBMCQ text."""
+    machine = load_state_machine_from_text(
+        "def int x = 0;\n"
+        "state Root { event Go; state A; state B; [*] -> A; A -> B :: Go; }"
+    )
+    context = BmcEngine(machine).prepare(query)
+    formula = compile_bmc_property(build_bmc_core_formula(context))
+    return solve_bmc_property(formula, **kwargs)
+
+
+_ASSUMPTIONS_QUERY = (
+    'init state("Root.A") where x == 0; '
+    'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
+    'check reach <= 2: active("Root.B");'
+)
+_INITIALIZATION_QUERY = (
+    'init state("Root.A") where x == 1 && x == 2; check reach <= 2: active("Root.B");'
+)
+
+
+@pytest.mark.parametrize(
+    "query, stage, classification",
+    [
+        (_ASSUMPTIONS_QUERY, "assumptions", "assumptions_self_conflict"),
+        (_INITIALIZATION_QUERY, "initialization", "initialization_self_conflict"),
+    ],
+)
+def test_every_localized_stage_reaches_the_explanation_hook(
+    query, stage, classification
+) -> None:
+    """Requesting an explanation must work from every localizing return path.
+
+    The solve function returns from several places once a stage is localized.
+    Driving each of them through real text catches a branch that forgot to
+    call the hook, which would silently leave that stage unexplainable.
+    """
+    result = _solve(query, infeasibility_explanation="formal")
+    feasibility = result.feasibility
+
+    assert feasibility.infeasible_stage == stage
+    assert feasibility.explanation is not None
+    assert feasibility.explanation.classification == classification
+    assert feasibility.refinement_status == feasibility.explanation.status
+    assert feasibility.refinement_checks
+
+
+@pytest.mark.parametrize("query", [_ASSUMPTIONS_QUERY, _INITIALIZATION_QUERY])
+def test_the_default_mode_adds_no_refinement_work(query) -> None:
+    """``none`` keeps the previous behaviour: no explanation, no extra check."""
+    feasibility = _solve(query).feasibility
+
+    assert feasibility.infeasible_stage is not None
+    assert feasibility.explanation is None
+    assert feasibility.refinement_status == "not_requested"
+    assert feasibility.refinement_checks == ()
+
+
+@pytest.mark.parametrize("mode", ["formal ", "FORMAL", "", "subset", True, 1, None])
+def test_unknown_explanation_modes_are_rejected_loudly(mode) -> None:
+    """Only the three frozen mode names are accepted, with no coercion."""
+    with pytest.raises(BmcBuildError, match="infeasibility_explanation"):
+        _solve(_ASSUMPTIONS_QUERY, infeasibility_explanation=mode)

@@ -1004,7 +1004,7 @@ npm publish --access public
 
 - VSCode client 侧依赖：`vscode-languageclient@7.0.0`
 - jsfcstm LSP 侧依赖：`vscode-languageserver@7.0.0`、`vscode-languageserver-textdocument@1.0.1`
-- extension 保持 `engines.vscode = ^1.91.0`
+- extension 保持 `engines.vscode = ^1.60.0`
 - bundle 仍保持 CommonJS / ES2015 / pure JS runtime，不依赖 Python、Java、其他扩展或网络服务
 
 ### TODO

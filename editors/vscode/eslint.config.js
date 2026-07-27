@@ -31,13 +31,18 @@ module.exports = [
   // versions supersede, so it must come after ``js.configs.recommended``.
   ...tsPlugin.configs['flat/recommended'],
   {
-    files: ['src/**/*.ts'],
+    // Matches every TypeScript file the old config covered. Scoping this to
+    // ``src`` would make the overrides below narrower than ``.eslintrc.json``
+    // was, so a direct ``eslint .`` would grade differently from ``npm run
+    // lint``.
+    files: ['**/*.ts'],
     languageOptions: {
+      // ``ecmaVersion`` and ``sourceType`` belong on ``languageOptions`` in flat
+      // config; nesting them only under ``parserOptions`` would leave the core
+      // rules running at the flat default instead of the previous ES2020.
+      ecmaVersion: 2020,
+      sourceType: 'module',
       parser: tsParser,
-      parserOptions: {
-        ecmaVersion: 2020,
-        sourceType: 'module',
-      },
     },
     rules: {
       '@typescript-eslint/no-unused-vars': ['warn', {argsIgnorePattern: '^_'}],

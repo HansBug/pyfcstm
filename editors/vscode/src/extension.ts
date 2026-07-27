@@ -20,9 +20,11 @@ let previewController: FcstmPreviewController | null = null;
  * Activate the FCSTM VSCode extension.
  *
  * The extension host stays intentionally thin. All FCSTM language semantics
- * are served through the bundled jsfcstm-based language server.
+ * are served through the bundled jsfcstm-based language server. Activation
+ * deliberately does not wait for, or fail with, the language server: the
+ * preview feature works without it.
  */
-export async function activate(context: vscode.ExtensionContext): Promise<void> {
+export function activate(context: vscode.ExtensionContext): void {
     const serverModule = context.asAbsolutePath(path.join('dist', 'server.js'));
     // ``LanguageClientOptions.outputChannel`` needs a ``LogOutputChannel``: the
     // client logs through ``info``/``warn``/``error``/``debug``, which a plain
@@ -88,13 +90,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     previewController = new FcstmPreviewController(context);
     context.subscriptions.push(outputChannel, previewController);
-    // ``start()`` resolves once the server is up; it is no longer a disposable,
-    // so shutdown goes through ``client.stop()`` in ``deactivate`` instead.
-    await client.start();
+    // ``start()`` is no longer a disposable, so shutdown goes through
+    // ``client.stop()`` in ``deactivate`` instead. It is intentionally not
+    // awaited: activation would otherwise block on the initialize handshake,
+    // and a rejected activation makes VSCode drop the extension without
+    // disposing ``context.subscriptions`` or calling ``deactivate``, which
+    // would take the server-independent preview feature down with it.
+    client.start().catch((err: unknown) => {
+        outputChannel.error('FCSTM language server failed to start', err);
+    });
 }
 
 /**
  * Stop the language client during extension shutdown.
+ *
+ * Shutdown degrades gracefully: a language client that never reached the
+ * running state cannot be stopped, and that must not turn into a deactivation
+ * failure.
  */
 export async function deactivate(): Promise<void> {
     if (previewController) {
@@ -108,5 +120,17 @@ export async function deactivate(): Promise<void> {
 
     const currentClient = client;
     client = null;
-    await currentClient.stop();
+    try {
+        await currentClient.stop();
+    } catch (err) {
+        // ``BaseLanguageClient.stop()`` rejects with an ``Error`` whenever the
+        // client is not in the running state: the server could not be forked,
+        // the initialize handshake failed, or the window closed while the
+        // handshake was still in flight. Nothing is left to shut down in those
+        // cases, so record the reason instead of failing deactivation.
+        if (!(err instanceof Error)) {
+            throw err;
+        }
+        console.error('FCSTM language client was not running at shutdown:', err.message);
+    }
 }

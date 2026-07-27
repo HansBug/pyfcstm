@@ -101,7 +101,14 @@ const vscode = {
     },
     window: {
         activeTextEditor: null,
-        createOutputChannel() { return createDisposable(); },
+        // The channel is handed to the language client as a ``LogOutputChannel``,
+        // so model the log levels it and the extension actually call.
+        createOutputChannel() {
+            return Object.assign(createDisposable(), {
+                append() {}, appendLine() {}, replace() {}, clear() {}, show() {}, hide() {},
+                trace() {}, debug() {}, info() {}, warn() {}, error() {},
+            });
+        },
         createWebviewPanel(viewType, title, showOptions) {
             const disposeListeners = [];
             const panel = {
@@ -146,7 +153,9 @@ const vscode = {
 };
 
 class MockLanguageClient {
-    start() { return createDisposable(); }
+    // ``BaseLanguageClient.start()`` resolves to ``void`` since language client
+    // 8; it is no longer a disposable.
+    start() { return Promise.resolve(); }
     stop() { return Promise.resolve(); }
 }
 

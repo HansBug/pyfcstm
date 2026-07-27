@@ -101,11 +101,21 @@ const vscode = {
     },
     window: {
         activeTextEditor: null,
-        // The channel is handed to the language client as a ``LogOutputChannel``,
-        // so model the log levels it and the extension actually call.
-        createOutputChannel() {
-            return Object.assign(createDisposable(), {
+        // Honour the options argument the way the real API does: only
+        // ``{log: true}`` yields a LogOutputChannel. The language client needs
+        // that shape -- it reads ``logLevel`` in its constructor and logs
+        // through ``info``/``warn``/``error``/``debug``.
+        createOutputChannel(name, options) {
+            const channel = Object.assign(createDisposable(), {
+                name,
                 append() {}, appendLine() {}, replace() {}, clear() {}, show() {}, hide() {},
+            });
+            if (!options || !options.log) {
+                return channel;
+            }
+            return Object.assign(channel, {
+                logLevel: 3,
+                onDidChangeLogLevel() { return createDisposable(); },
                 trace() {}, debug() {}, info() {}, warn() {}, error() {},
             });
         },

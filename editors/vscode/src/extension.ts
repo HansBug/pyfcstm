@@ -97,7 +97,12 @@ export function activate(context: vscode.ExtensionContext): void {
     // disposing ``context.subscriptions`` or calling ``deactivate``, which
     // would take the server-independent preview feature down with it.
     client.start().catch((err: unknown) => {
-        outputChannel.error('FCSTM language server failed to start', err);
+        // The client already reported this to the output channel with a forced
+        // reveal before rejecting, so nothing is dropped silently. This handler
+        // only keeps the rejection from going unhandled, and deliberately does
+        // not write to the channel: the rejection can land after ``deactivate``
+        // has disposed it, and logging to a disposed channel throws.
+        console.error('FCSTM language server failed to start:', err);
     });
 }
 
@@ -123,11 +128,18 @@ export async function deactivate(): Promise<void> {
     try {
         await currentClient.stop();
     } catch (err) {
-        // ``BaseLanguageClient.stop()`` rejects with an ``Error`` whenever the
-        // client is not in the running state: the server could not be forked,
-        // the initialize handshake failed, or the window closed while the
-        // handshake was still in flight. Nothing is left to shut down in those
-        // cases, so record the reason instead of failing deactivation.
+        // ``stop()`` must be called even when it is known to reject: the node
+        // transport reaps the forked server process in a ``finally`` attached to
+        // ``shutdown()``, and that runs on the rejection path too. Guarding this
+        // call behind ``isRunning()`` would look tidier and would leak the child.
+        //
+        // It rejects with a bare ``Error`` whenever the client is not in the
+        // running state -- the server could not be forked, the initialize
+        // handshake failed, or the window closed while the handshake was still
+        // in flight. The client throws no dedicated subclass, so ``Error`` is
+        // the narrowest class available here; anything else is unexpected and
+        // propagates. Reaping is best effort: the transport allows itself two
+        // seconds, inside VSCode's deactivation budget.
         if (!(err instanceof Error)) {
             throw err;
         }

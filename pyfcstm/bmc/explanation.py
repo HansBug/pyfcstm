@@ -137,8 +137,8 @@ MAX_SOURCE_EXCERPT_CHARS = 4096
 #: Frozen slots whose content a later delivery stage produces.  Populating one
 #: now would break the frozen rule that the published JSON schema and this
 #: constructor accept the same payload set, because neither slot has a schema
-#: yet.  Because a ``complete`` explanation needs a narrative, that status is
-#: unreachable for exactly as long as this tuple is non-empty.
+#: yet.  A ``complete`` explanation depends on ``narrative`` alone, so removing
+#: that entry unlocks complete formal artifacts even while ``proof`` remains.
 UNBUILT_SLOTS = ("proof", "narrative")
 
 #: The two scopes that stay honest when classification never completed.
@@ -800,15 +800,17 @@ class BmcInfeasibilityExplanation:
                     "a complete explanation requires a subset-minimal core, got "
                     "reduction %r." % self.core.reduction
                 )
-            # A complete explanation also needs a narrative, and narrative is
-            # an unbuilt slot below, so 'complete' is not reachable yet.  The
-            # rule is stated here rather than left to emerge from two separate
-            # checks, so a later stage that starts building narratives sees
-            # exactly one place to revisit.
-            raise ValueError(
-                "a complete explanation requires a complete narrative, which "
-                "%s does not build yet." % ", ".join(UNBUILT_SLOTS)
-            )
+            # A complete explanation needs a narrative.  The rule names that
+            # one slot rather than the whole unbuilt set, so a later stage that
+            # implements narratives unlocks complete formal artifacts even
+            # while the proof DAG is still outstanding.
+            if self.narrative is None:
+                detail = (
+                    ", which is not built yet" if "narrative" in UNBUILT_SLOTS else ""
+                )
+                raise ValueError(
+                    "a complete explanation requires a complete narrative%s." % detail
+                )
         for name in UNBUILT_SLOTS:
             if getattr(self, name) is not None:
                 raise ValueError(

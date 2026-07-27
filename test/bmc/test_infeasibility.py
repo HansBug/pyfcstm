@@ -489,28 +489,41 @@ def test_a_satisfiable_target_is_reported_as_an_internal_mismatch() -> None:
 
 
 def test_semantic_role_covers_every_produced_category() -> None:
-    """Every category the relation builder emits has a frozen reading."""
+    """Every category the relation builder emits maps to one frozen reading.
+
+    The expected role is pinned per category rather than checked for mere
+    membership in the vocabulary: a mapping that silently moved a whole family
+    to a different role would still satisfy a membership assertion.
+    """
+    expected = {
+        "domain.frame_state": "domain_rule",
+        "domain.variable": "domain_rule",
+        "initial.target": "initial_fact",
+        "initial.variable": "initial_fact",
+        "initial.where": "initial_fact",
+        "transition.step": "transition_rule",
+        "transition.case": "transition_rule",
+        "assumption.frame": "assumption",
+        "assumption.event": "assumption",
+        "assumption.cardinality": "assumption",
+        "definedness": "definedness",
+    }
+    for category, role in expected.items():
+        assert _semantic_role(category) == role, category
+
     core = _core_formula(
         'init state("Root.A") where x == 0; '
         'assume at 0: var("x") == 1; assume event("Root.Go", 0) == true; '
         'check reach <= 2: active("Root.B");'
     )
-    roles = {
-        group.category: _semantic_role(group.category)
-        for group in core._tracked_groups + core._tracked_case_groups
+    produced = {
+        group.category for group in core._tracked_groups + core._tracked_case_groups
     }
 
-    assert set(roles.values()) <= {
-        "domain_rule",
-        "initial_fact",
-        "transition_rule",
-        "assumption",
-        "definedness",
-    }
-    assert roles["domain.frame_state"] == "domain_rule"
-    assert roles["initial.variable"] == "initial_fact"
-    assert roles["transition.step"] == "transition_rule"
-    assert roles["assumption.frame"] == "assumption"
+    assert produced
+    assert produced <= set(expected)
+    for category in produced:
+        assert _semantic_role(category) == expected[category], category
 
 
 def test_an_unknown_category_has_no_invented_reading() -> None:
@@ -537,23 +550,46 @@ def test_index_metadata_is_normalized_deterministically(refs, expected) -> None:
 
 
 def test_core_items_quote_authored_source_when_a_registry_is_given() -> None:
-    """An editable core member points back at the text the author wrote."""
+    """An editable core member points back at the text the author wrote.
+
+    The registry is passed explicitly here so the excerpt itself is asserted,
+    not merely the identity fields that would still be filled in without one.
+    """
     machine = load_state_machine_from_text(_MODEL)
-    context = BmcEngine(machine).prepare(
-        'init state("Root.A") where x == 0; '
-        'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
-        'check reach <= 2: active("Root.B");'
+    query = (
+        'init state("Root.A") where x == 0;\n'
+        'assume at 0: var("x") == 1;\n'
+        'check reach <= 2: active("Root.B");\n'
     )
+    context = BmcEngine(machine).prepare(query, query_source_path="q.fbmcq")
     core = build_bmc_core_formula(context)
+    registry = context._source_registry
     group = next(g for g in core._tracked_groups if g.source_ref.kind == "fbmcq")
 
-    item = build_core_item(group)
+    item = build_core_item(group, registry)
 
+    assert item.source_excerpt == registry.excerpt(group.source_ref)
+    assert item.source_excerpt
+    assert item.source_excerpt_truncated is False
     assert item.constraint.stable_id == group.stable_id
     assert item.semantic_role == _semantic_role(group.category)
     assert item.editable is True
+    assert item.normalized_fact["kind"] == "structural_constraint"
     assert item.normalized_fact["stage"] == group.stage
     assert item.human_text
+
+
+def test_a_core_item_without_a_registry_has_no_excerpt() -> None:
+    """Identity survives without documents; the quotation does not."""
+    core = _core_formula(
+        'init state("Root.A") where x == 0; check reach <= 2: active("Root.B");'
+    )
+    group = core._tracked_groups[0]
+
+    item = build_core_item(group)
+
+    assert item.source_excerpt is None
+    assert item.constraint.stable_id == group.stable_id
 
 
 def test_generated_core_items_are_not_editable_entry_points() -> None:

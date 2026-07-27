@@ -1454,3 +1454,38 @@ def test_an_authored_member_names_its_file() -> None:
 
     assert "q.fbmcq" in item.human_text
     assert "no single authored line" not in item.human_text
+
+
+def test_a_mapping_failure_without_a_classification_reports_unknown(
+    monkeypatch,
+) -> None:
+    """With no metadata left, the aggregate says unknown rather than partial.
+
+    ``partial`` means part of the request survived.  When the classification
+    degraded to a stage fallback *and* the mapping then failed, nothing is left
+    to report, which the frozen table calls unknown.
+    """
+    core = _core_formula(
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") == 7; '
+        'check reach <= 2: active("Root.B");'
+    )
+    counter = [0]
+    real, factory = _patch_solver(counter, 1, "incomplete", once=True)
+
+    def refuse(*args, **kwargs):
+        raise BmcBuildError("simulated mapping drift")
+
+    monkeypatch.setattr("pyfcstm.bmc.infeasibility.BmcConflictCore", refuse)
+    z3.Solver = factory
+    try:
+        outcome = explain_infeasibility(core, "assumptions", _SolveBudget(None))
+    finally:
+        z3.Solver = real
+
+    explanation = outcome.explanation
+
+    assert explanation.classification is None
+    assert explanation.achieved_mode == "none"
+    assert explanation.status == "unknown"
+    assert "core mapping failed" in explanation.reason

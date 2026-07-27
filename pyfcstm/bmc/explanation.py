@@ -142,6 +142,32 @@ CATEGORY_ROLES = MappingProxyType(
 )
 
 
+def is_printable_ascii(value: str) -> bool:
+    """Report whether a string is entirely printable ASCII.
+
+    Stable ids are generated from fixed category/index/path encodings and are
+    used downstream as solver literal names and as JSON keys, so the frozen
+    contract keeps them ASCII.  ``str.isascii`` is not the right test: it also
+    admits control characters, which would survive the Python boundary and then
+    fail the published pattern.  Both sides therefore share this predicate.
+
+    :param value: Candidate string.
+    :type value: str
+    :return: ``True`` when every character is in the printable ASCII range.
+    :rtype: bool
+
+    Example::
+
+        >>> is_printable_ascii("assumption.0000.frame.0000")
+        True
+        >>> is_printable_ascii("a" + chr(9) + "b")
+        False
+        >>> is_printable_ascii("\u51b2\u7a81")
+        False
+    """
+    return bool(value) and all("\x20" <= char <= "\x7e" for char in value)
+
+
 def category_role(category: str) -> str:
     """Return the frozen semantic role of a group category.
 
@@ -467,13 +493,9 @@ class BmcConstraintRef:
             value = getattr(self, name)
             if not isinstance(value, str) or not value:
                 raise ValueError("constraint %s must be a non-empty string." % name)
-        if not self.stable_id.isascii():
-            # Stable ids are generated from fixed category/index/path encodings
-            # and are used as solver literal names and JSON keys, so the frozen
-            # contract keeps them ASCII rather than letting a model identifier
-            # decide how they round-trip.
+        if not is_printable_ascii(self.stable_id):
             raise ValueError(
-                "constraint stable_id must be ASCII, got %r." % self.stable_id
+                "constraint stable_id must be printable ASCII, got %r." % self.stable_id
             )
         _require_member(self.stage, _STAGES, "constraint stage")
         if not isinstance(self.source, BmcSourceRef):

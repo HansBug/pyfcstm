@@ -991,14 +991,17 @@ def test_every_produced_pairing_resolves_to_one_aggregate() -> None:
 
 
 @pytest.mark.parametrize("stable_id", ["冲突", "assumé", "id with nbsp"])
-def test_a_stable_id_must_be_ascii(stable_id) -> None:
-    """Stable ids stay ASCII because they become names in two other systems.
+def test_a_stable_id_must_be_printable_ascii(stable_id) -> None:
+    """Stable ids stay printable ASCII because they name things elsewhere.
 
     Each id is generated from a fixed category/index/path encoding and is used
     downstream as a solver literal name and as a JSON key, so letting a model
     identifier through would put its round-tripping outside this contract.
+
+    ``str.isascii`` is deliberately not the test: it admits control characters,
+    which the published pattern rejects, so the two boundaries would disagree.
     """
-    with pytest.raises(ValueError, match="must be ASCII"):
+    with pytest.raises(ValueError, match="must be printable ASCII"):
         BmcConstraintRef(
             stable_id,
             "initialization",

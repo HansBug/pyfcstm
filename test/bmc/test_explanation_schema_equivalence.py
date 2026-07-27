@@ -433,6 +433,19 @@ def _structural_corpus():
             ]
         ),
     )
+    for label, stable_id in (
+        ("tab", "a\tb"),
+        ("newline", "a\nb"),
+        ("nul", "a\x00b"),
+        ("delete", "a\x7fb"),
+        ("non-ascii", "\u51b2\u7a81"),
+        ("printable space", "a b"),
+        ("printable tilde", "~max"),
+    ):
+        yield (
+            "stable id: %s" % label,
+            _payload(members=[_member(stable_id, "initialization")]),
+        )
     yield (
         "structural refs mapping",
         _payload(members=[_member("g0", "initialization", refs={"frame": 0})]),

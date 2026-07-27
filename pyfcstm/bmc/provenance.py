@@ -234,12 +234,14 @@ class BmcTrackedConstraint:
     def __post_init__(self) -> None:
         if not isinstance(self.stable_id, str) or not self.stable_id:
             raise ValueError("tracked constraint stable_id must be non-empty.")
-        if not self.stable_id.isascii():
+        if not all("\x20" <= char <= "\x7e" for char in self.stable_id):
             # The id becomes a solver literal name and a JSON key downstream, so
-            # the frozen contract keeps it ASCII instead of letting a model
-            # identifier decide how it round-trips.
+            # the frozen contract keeps it printable ASCII.  ``str.isascii`` is
+            # the wrong test here: it also admits control characters, which the
+            # published pattern rejects, so the two boundaries would disagree.
             raise ValueError(
-                "tracked constraint stable_id must be ASCII, got %r." % self.stable_id
+                "tracked constraint stable_id must be printable ASCII, got %r."
+                % self.stable_id
             )
         if not isinstance(self.stage, str) or not self.stage:
             raise ValueError("tracked constraint stage must be non-empty.")

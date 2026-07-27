@@ -144,6 +144,12 @@ BmcInfeasibilityExplanation
     :members: __post_init__,to_canonical,requested_mode,achieved_mode,status,classification,core,proof,narrative,reason,elapsed_ms
 
 
+is\_printable\_ascii
+-----------------------------------------------------
+
+.. autofunction:: is_printable_ascii
+
+
 category\_role
 -----------------------------------------------------
 

@@ -1713,14 +1713,14 @@ def test_line_ending_styles_keep_exact_source_excerpts(
 
 
 @pytest.mark.unittest
-@pytest.mark.parametrize("stable_id", ["冲突", "assumé"])
-def test_tracked_constraint_stable_ids_must_be_ascii(stable_id) -> None:
+@pytest.mark.parametrize("stable_id", ["冲突", "assumé", "a\tb", "a\x00b"])
+def test_tracked_constraint_stable_ids_must_be_printable_ascii(stable_id) -> None:
     """The internal boundary keeps the same ASCII rule as the public one.
 
     A non-ASCII id reaching the relation layer would become a solver literal
     name, so the check belongs here as well as on the published reference.
     """
-    with pytest.raises(ValueError, match="must be ASCII"):
+    with pytest.raises(ValueError, match="must be printable ASCII"):
         BmcTrackedConstraint(
             stable_id,
             "assumptions",

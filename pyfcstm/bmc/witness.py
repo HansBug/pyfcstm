@@ -4855,12 +4855,31 @@ def _attach_explanation(
             budget,
             requested_mode=requested_mode,
         )
-    except BmcBuildError:
-        # The explanation is optional, so a fail-closed guard inside it must
-        # not destroy an otherwise usable verdict: asking for an explanation
-        # would then be strictly worse than not asking.  The localized stage
-        # and every mandatory check survive untouched.
-        return feasibility
+    except BmcBuildError as err:
+        # The explanation is optional, so a fail-closed guard inside it must not
+        # destroy an otherwise usable verdict: asking for an explanation would
+        # then be strictly worse than not asking.  The localized stage and every
+        # mandatory check survive untouched.
+        #
+        # The failure is still reported, though.  Returning the untouched result
+        # would say "no refinement was requested" to a caller who did request
+        # one, and would leave the internal mismatch recorded nowhere at all.
+        from .explanation import BmcInfeasibilityExplanation
+
+        mismatch = BmcInfeasibilityExplanation(
+            requested_mode=requested_mode,
+            achieved_mode="none",
+            status="unknown",
+            classification=None,
+            reason="internal mismatch in the optional explanation stage: %s" % err,
+        )
+        return replace(
+            feasibility,
+            refinement_status=mismatch.status,
+            refinement_reason=mismatch.reason,
+            refinement_checks=(),
+            explanation=mismatch,
+        )
     # The published ledger lists checks that actually ran.  An attempt the
     # budget refused to start is not evidence of solver work, and reporting it
     # as a finished check would overstate what the deadline allowed.

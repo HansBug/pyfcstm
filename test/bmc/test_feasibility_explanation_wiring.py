@@ -598,9 +598,18 @@ def test_an_optional_explanation_never_destroys_a_usable_verdict(monkeypatch) ->
         formula, infeasibility_explanation="formal"
     ).feasibility
 
+    # The mandatory verdict survives untouched, and the failure is reported
+    # rather than left looking like a request that never happened.  The frozen
+    # table reserves not_requested for a caller who did not ask, and separately
+    # requires an internal mismatch to be recorded somewhere observable.
     assert degraded.infeasible_stage == baseline.infeasible_stage
-    assert degraded.explanation is None
-    assert degraded.refinement_status == "not_requested"
+    assert degraded.explanation is not None
+    assert degraded.explanation.achieved_mode == "none"
+    assert degraded.explanation.status == "unknown"
+    assert degraded.refinement_status == "unknown"
+    assert "internal mismatch" in degraded.refinement_reason
+    assert "drift" in degraded.refinement_reason
+    assert degraded.refinement_checks == ()
 
 
 @pytest.mark.parametrize("status", ["partial", "unknown", "timeout"])

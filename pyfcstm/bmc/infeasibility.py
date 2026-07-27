@@ -1002,7 +1002,12 @@ def explain_infeasibility(
             BmcInfeasibilityExplanation(
                 requested_mode=requested_mode,
                 achieved_mode="none",
-                status="partial",
+                status=(
+                    # A surviving classification is usable metadata, which the
+                    # frozen table calls partial.  With nothing left to report
+                    # the same table asks for unknown instead.
+                    "partial" if outcome.classification is not None else "unknown"
+                ),
                 classification=outcome.classification,
                 reason="core mapping failed after the solver work: %s" % err,
                 elapsed_ms=elapsed_ms,

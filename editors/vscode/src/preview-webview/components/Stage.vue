@@ -543,7 +543,22 @@ async function renderCurrentSvgToPdf(): Promise<Uint8Array> {
 async function onExportEvt() {
     if (!svgString) return;
     try {
-        const expanded = await expandSvgForExport(svgString, getSvgExpander());
+        // Two failures hide inside one call. Validating the on-screen SVG is
+        // genuinely fatal -- a malformed diagram puts every format out of reach
+        // -- so it stays outside the settled set. Expanding it is not: the
+        // string has already parsed by then, so a font-inlining failure used to
+        // discard all three formats including the one that needed no expanding.
+        const canonical = await expandSvgForExport(svgString);
+        const failed: string[] = [];
+        let expanded = canonical;
+        try {
+            expanded = await expandSvgForExport(svgString, getSvgExpander());
+        } catch (err) {
+            // The expander inlines fonts and re-parses its own output; both
+            // report failure as Error/DOMException, and the helper re-raises
+            // renderer defects rather than letting them read as export errors.
+            failed.push(`SVG font expansion: ${expectedErrorMessage(err)}`);
+        }
         // Settled per format rather than all-or-nothing. The SVG is a string
         // that needs neither a canvas nor a PDF writer, so a raster failure
         // must not be able to withhold it.
@@ -551,7 +566,6 @@ async function onExportEvt() {
             rasterizeSvg(expanded, 2).then(result => blobToBase64(result.blob)),
             renderCurrentSvgToPdf().then(uint8ToBase64),
         ]);
-        const failed: string[] = [];
         if (png.status === 'rejected') failed.push(`PNG: ${expectedErrorMessage(png.reason)}`);
         if (pdf.status === 'rejected') failed.push(`PDF: ${expectedErrorMessage(pdf.reason)}`);
         window.dispatchEvent(new CustomEvent('fcstm-emit', {detail: {

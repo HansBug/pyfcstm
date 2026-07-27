@@ -4,6 +4,8 @@ import json
 import os
 import re
 import sys
+import tempfile
+from pathlib import Path
 
 import pytest
 
@@ -801,3 +803,44 @@ def test_snapshots_reject_attribute_assignment():
     derived = view.with_options(mode="dark")
     assert derived.options.mode == "dark"
     assert derived._source_map is not view._source_map
+
+
+@pytest.mark.unittest
+def test_a_temporary_viewer_opened_in_a_window_outlives_this_process():
+    """A launched browser reads the file long after the launcher has exited.
+
+    Cleaning temporary viewers at interpreter exit made every
+    ``pyfcstm diagram --open`` show "file not found": the CLI returned as soon
+    as the browser was spawned, the hook deleted the document, and the window
+    opened against nothing.
+    """
+    from pyfcstm.diagram.api import (
+        _TEMPORARY_VIEWERS,
+        _remember_temporary_viewer,
+        _remove_temporary_viewer,
+    )
+
+    opened = Path(tempfile.mkdtemp()) / "opened.html"
+    opened.write_text("viewer", encoding="utf-8")
+    _remember_temporary_viewer(opened, remove=False)
+    _remove_temporary_viewer(opened)
+    assert opened.exists()
+
+    unopened = opened.parent / "unopened.html"
+    unopened.write_text("viewer", encoding="utf-8")
+    _remember_temporary_viewer(unopened, remove=True)
+    _remove_temporary_viewer(unopened)
+    assert not unopened.exists()
+
+    # Ownership is given up once and never taken back, whichever order the
+    # calls arrive in.
+    for order in ((True, False), (False, True)):
+        mixed = opened.parent / ("mixed-%s.html" % str(order))
+        mixed.write_text("viewer", encoding="utf-8")
+        for remove in order:
+            _remember_temporary_viewer(mixed, remove=remove)
+        _remove_temporary_viewer(mixed)
+        assert mixed.exists()
+        _TEMPORARY_VIEWERS.pop(mixed, None)
+    _TEMPORARY_VIEWERS.pop(opened, None)
+    _TEMPORARY_VIEWERS.pop(unopened, None)

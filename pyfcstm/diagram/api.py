@@ -815,15 +815,46 @@ def _open_standalone_window(path: Path, window_size: Tuple[int, int]) -> None:
         ) from err
 
 
+# Temporary viewers created by :meth:`Diagram.show`, mapped to whether this
+# interpreter still owns them. A browser window outlives the process that
+# launched it, so a file handed to one must survive interpreter shutdown.
+_TEMPORARY_VIEWERS: Dict[Path, bool] = {}
+
+
+def _remember_temporary_viewer(path: Path, remove: bool) -> None:
+    """
+    Record a temporary viewer and whether it may be deleted at exit.
+
+    :param path: Temporary viewer path.
+    :type path: pathlib.Path
+    :param remove: Whether this call leaves the file safe to delete.
+    :type remove: bool
+    :return: ``None``.
+    :rtype: None
+    """
+    if path not in _TEMPORARY_VIEWERS:
+        atexit.register(_remove_temporary_viewer, path)
+        _TEMPORARY_VIEWERS[path] = remove
+        return
+    # Ownership is given up once and never taken back: a single window opened
+    # against this path is enough to make deleting it wrong.
+    _TEMPORARY_VIEWERS[path] = _TEMPORARY_VIEWERS[path] and remove
+
+
 def _remove_temporary_viewer(path: Path) -> None:
     """
     Delete a viewer file that :meth:`Diagram.show` created for the caller.
+
+    Files that were opened in a browser are kept: the window reads them
+    asynchronously and typically long after the interpreter is gone.
 
     :param path: Temporary viewer path.
     :type path: pathlib.Path
     :return: ``None``.
     :rtype: None
     """
+    if not _TEMPORARY_VIEWERS.get(path, False):
+        return
     try:
         path.unlink()
     except OSError as error:
@@ -1855,9 +1886,11 @@ class Diagram:
         Write an HTML viewer and optionally open it in a standalone app window.
 
         :param output: Optional destination path. When omitted, one temporary
-            file is created per snapshot and reused by later calls, then removed
-            at interpreter exit. Each viewer is roughly 30 MB, so pass an
-            explicit path when the document should outlive the process.
+            file is created per snapshot and reused by later calls. It is
+            removed at interpreter exit **unless** a window was opened against
+            it, because the window outlives this process. Each viewer is
+            roughly 30 MB, so pass an explicit path when you want to manage the
+            file yourself.
         :type output: str or os.PathLike, optional
         :param open_window: Whether to launch a Chromium-family app window,
             defaults to ``True``.
@@ -1879,8 +1912,12 @@ class Diagram:
                 )
                 handle.close()
                 object.__setattr__(self, "_temporary_html", Path(handle.name))
-                atexit.register(_remove_temporary_viewer, self._temporary_html)
             output = self._temporary_html
+            # Registered before the launch, and marked non-removable when a
+            # window is involved: the browser reads the file asynchronously, so
+            # deleting it at exit raced the window open and showed "file not
+            # found" for every `pyfcstm diagram --open`.
+            _remember_temporary_viewer(self._temporary_html, remove=not open_window)
         path = self.save(output, format="html")
         if open_window:
             _open_standalone_window(path, dimensions)

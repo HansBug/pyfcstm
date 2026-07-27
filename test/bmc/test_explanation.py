@@ -458,6 +458,82 @@ def test_canonical_output_uses_only_json_containers() -> None:
     assert type(canonical["nested"]["seq"][1]) is dict
 
 
+def test_a_string_subclass_cannot_talk_its_way_into_a_frozen_vocabulary() -> None:
+    """Membership is decided on the text, not on the value's own ``__eq__``.
+
+    ``in`` calls ``__eq__``, so a ``str`` subclass returning ``True`` satisfies
+    every vocabulary check and is then published verbatim -- the schema would
+    reject the canonical output that the constructor just accepted.
+    """
+
+    class LyingStage(str):
+        def __eq__(self, other):
+            return True
+
+        __hash__ = str.__hash__
+
+    with pytest.raises(ValueError, match="must be one of"):
+        BmcConstraintRef(
+            "g0",
+            LyingStage("not-a-stage"),
+            "assumption.frame",
+            _GENERATED,
+            "s",
+        )
+
+    class Shouty(str):
+        def __str__(self):
+            return "LIE"
+
+    # A well-behaved subclass is accepted, and published as exact text.
+    accepted = BmcConstraintRef(
+        "g0",
+        Shouty("assumptions"),
+        "assumption.frame",
+        _GENERATED,
+        "s",
+    )
+    assert accepted.stage == "assumptions"
+    assert type(accepted.stage) is str
+
+
+def test_a_frozen_vocabulary_refuses_a_string_impostor() -> None:
+    """An object claiming to be a ``str`` cannot enter a frozen vocabulary.
+
+    It passes ``isinstance``, so without reading the real text the membership
+    test would run against something that has no text at all.
+    """
+    impostor = type(
+        "Impostor", (object,), {"__class__": property(lambda self: str)}
+    )()
+
+    with pytest.raises(ValueError, match="must be one of"):
+        BmcConstraintRef(
+            "g0",
+            impostor,
+            "assumption.frame",
+            _GENERATED,
+            "s",
+        )
+
+
+def test_the_canonical_exit_is_bounded_like_the_validator() -> None:
+    """The public converter cannot be handed data the validator never saw.
+
+    It is exported, so a caller may pass a graph built by hand.  Without its own
+    bound, the depth problem the validator names precisely comes back as a bare
+    ``RecursionError`` from the converter instead.
+    """
+    from pyfcstm.bmc.provenance import MAX_METADATA_DEPTH, json_canonical
+
+    value = None
+    for _ in range(MAX_METADATA_DEPTH + 5):
+        value = {"x": value}
+
+    with pytest.raises(ValueError, match="nests deeper than the published limit"):
+        json_canonical(value)
+
+
 def test_a_numeric_subclass_cannot_answer_its_own_validation() -> None:
     """The value under validation must not be the one answering the questions.
 

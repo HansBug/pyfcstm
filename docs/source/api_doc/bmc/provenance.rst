@@ -39,6 +39,24 @@ SourceDocumentRegistry
     :members: __post_init__,display_path,document,reference,excerpt,model_reference,query_reference,documents,display_root,query_documents
 
 
+exact\_str
+-----------------------------------------------------
+
+.. autofunction:: exact_str
+
+
+exact\_int
+-----------------------------------------------------
+
+.. autofunction:: exact_int
+
+
+exact\_float
+-----------------------------------------------------
+
+.. autofunction:: exact_float
+
+
 json\_canonical
 -----------------------------------------------------
 

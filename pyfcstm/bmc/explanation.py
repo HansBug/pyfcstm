@@ -54,6 +54,9 @@ from typing import Any, Dict, Mapping, Optional, Tuple
 from .provenance import (
     BmcSourceRef,
     _require_json_mapping,
+    exact_float,
+    exact_int,
+    exact_str,
     json_canonical,
 )
 
@@ -401,6 +404,8 @@ def index_value(value: Any, label: str) -> int:
     :return: The canonical non-negative integer index.
     :rtype: int
     :raises ValueError: If the value is not a non-negative integer index.
+    :raises TypeError: If the value only claims to be a number, for instance by
+        faking ``__class__``, so that no real value can be read from it.
 
     Example::
 
@@ -429,7 +434,7 @@ def index_value(value: Any, label: str) -> int:
         # published tuple integral without rejecting valid JSON.
         # Extract the real value once through the base type; everything after
         # this point works on a genuine float, so ordinary methods are safe.
-        plain = float.__float__(value)
+        plain = exact_float(value, label)
         if not math.isfinite(plain) or not plain.is_integer():
             raise ValueError(
                 "%s must contain non-negative integers, got %r." % (label, value)
@@ -443,7 +448,7 @@ def index_value(value: Any, label: str) -> int:
     # check above but keeps its own repr, so the published tuple would carry an
     # object that is only incidentally an integer.  JSON renders it as a number
     # either way, but a canonical field should not depend on that.
-    canonical = int.__int__(value)
+    canonical = exact_int(value, label)
     if canonical < 0:
         raise ValueError(
             "%s must contain non-negative integers, got %r." % (label, value)
@@ -537,13 +542,18 @@ def _require_optional_text(value: Any, label: str) -> Optional[str]:
 def _require_member(value: Any, allowed: Tuple[str, ...], label: str) -> str:
     """Reject anything outside a frozen vocabulary, including ``bool``.
 
+    Membership is decided on the plain text the value actually holds.  ``in``
+    uses ``__eq__``, so a ``str`` subclass overriding it satisfies any vocabulary
+    check and is then published verbatim -- the value being validated would be
+    the one deciding whether it is valid.
+
     :param value: Candidate value supplied by a caller.
     :type value: object
     :param allowed: Frozen vocabulary for this field.
     :type allowed: Tuple[str, ...]
     :param label: Field name used in the error message.
     :type label: str
-    :return: The validated value.
+    :return: The validated value as an exact ``str``.
     :rtype: str
     :raises ValueError: If the value is not one of the allowed names.
 
@@ -552,11 +562,22 @@ def _require_member(value: Any, allowed: Tuple[str, ...], label: str) -> str:
         >>> _require_member("formal", ("none", "formal"), "mode")
         'formal'
     """
-    if isinstance(value, bool) or not isinstance(value, str) or value not in allowed:
+    if isinstance(value, bool) or not isinstance(value, str):
         raise ValueError(
             "%s must be one of %s, got %r." % (label, ", ".join(allowed), value)
         )
-    return value
+    try:
+        plain = exact_str(value, label)
+    except TypeError:
+        # exact_str refuses an object that only claims to be a str.
+        raise ValueError(
+            "%s must be one of %s, got %r." % (label, ", ".join(allowed), value)
+        ) from None
+    if plain not in allowed:
+        raise ValueError(
+            "%s must be one of %s, got %r." % (label, ", ".join(allowed), value)
+        )
+    return plain
 
 
 @dataclass(frozen=True)
@@ -613,7 +634,12 @@ class BmcConstraintRef:
             raise ValueError(
                 "constraint stable_id must be printable ASCII, got %r." % self.stable_id
             )
-        _require_member(self.stage, _STAGES, "constraint stage")
+        # The validated text is written back, not just checked: a well-behaved
+        # str subclass would otherwise be published verbatim, so the frozen
+        # vocabulary would hold a value whose repr is not the vocabulary's.
+        object.__setattr__(
+            self, "stage", _require_member(self.stage, _STAGES, "constraint stage")
+        )
         if not isinstance(self.source, BmcSourceRef):
             raise TypeError("constraint source must be BmcSourceRef.")
         object.__setattr__(self, "frames", _require_indices(self.frames, "frames"))
@@ -695,7 +721,13 @@ class BmcCoreItem:
     def __post_init__(self) -> None:
         if not isinstance(self.constraint, BmcConstraintRef):
             raise TypeError("core item constraint must be BmcConstraintRef.")
-        _require_member(self.semantic_role, _SEMANTIC_ROLES, "core item semantic_role")
+        object.__setattr__(
+            self,
+            "semantic_role",
+            _require_member(
+                self.semantic_role, _SEMANTIC_ROLES, "core item semantic_role"
+            ),
+        )
         _require_optional_text(self.source_excerpt, "core item source_excerpt")
         if (
             self.source_excerpt is not None
@@ -824,10 +856,26 @@ class BmcConflictCore:
     items: Tuple[BmcCoreItem, ...]
 
     def __post_init__(self) -> None:
-        _require_member(self.scope, _SCOPES, "core scope")
-        _require_member(self.granularity, _GRANULARITIES, "core granularity")
-        _require_member(self.reduction, _REDUCTIONS, "core reduction")
-        _require_member(self.subset_minimality, _MINIMALITIES, "core subset_minimality")
+        object.__setattr__(
+            self, "scope", _require_member(self.scope, _SCOPES, "core scope")
+        )
+        object.__setattr__(
+            self,
+            "granularity",
+            _require_member(self.granularity, _GRANULARITIES, "core granularity"),
+        )
+        object.__setattr__(
+            self,
+            "reduction",
+            _require_member(self.reduction, _REDUCTIONS, "core reduction"),
+        )
+        object.__setattr__(
+            self,
+            "subset_minimality",
+            _require_member(
+                self.subset_minimality, _MINIMALITIES, "core subset_minimality"
+            ),
+        )
         expected_minimality = _REDUCTION_MINIMALITY[self.reduction]
         if self.subset_minimality != expected_minimality:
             raise ValueError(
@@ -1007,9 +1055,19 @@ class BmcInfeasibilityExplanation:
     elapsed_ms: Optional[float] = None
 
     def __post_init__(self) -> None:
-        _require_member(self.requested_mode, _MODES, "requested_mode")
-        _require_member(self.achieved_mode, _MODES, "achieved_mode")
-        _require_member(self.status, _STATUSES, "status")
+        object.__setattr__(
+            self,
+            "requested_mode",
+            _require_member(self.requested_mode, _MODES, "requested_mode"),
+        )
+        object.__setattr__(
+            self,
+            "achieved_mode",
+            _require_member(self.achieved_mode, _MODES, "achieved_mode"),
+        )
+        object.__setattr__(
+            self, "status", _require_member(self.status, _STATUSES, "status")
+        )
         if self.classification is not None:
             _require_member(
                 self.classification, tuple(CLASSIFICATION_SCOPES), "classification"

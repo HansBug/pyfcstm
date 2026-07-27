@@ -70,6 +70,8 @@ _ALL_SCOPES = tuple(CLASSIFICATION_SCOPES.values()) + STAGE_FALLBACK_SCOPES
 #: asserted rather than skipped, so tightening the schema later fails this list
 #: instead of passing silently, and so no summary can quietly report the corpus
 #: as fully equivalent.
+from pyfcstm.bmc.provenance import MAX_METADATA_DEPTH as _MAX_METADATA_DEPTH
+
 _INEXPRESSIBLE = {
     "duplicate stable_id with differing content": (
         "uniqueness over a nested key (items[*].constraint.stable_id) has no "
@@ -79,6 +81,12 @@ _INEXPRESSIBLE = {
         "Draft 2020-12 has no way to compare two arbitrary strings, so it "
         "cannot check that refinement_reason equals explanation.reason; the "
         "constructor enforces that equality on its own"
+    ),
+    "published metadata nested deeper than the published limit": (
+        "Draft 2020-12 has no depth keyword at all, so a schema cannot state a "
+        "nesting bound; the constructor refuses anything past "
+        "MAX_METADATA_DEPTH because the recursive walk and the JSON encoder "
+        "share the interpreter stack"
     ),
     "non-finite number anywhere in a published mapping": (
         "NaN and Infinity are not JSON numbers, but a Draft 2020-12 validator "
@@ -499,6 +507,13 @@ def _structural_corpus():
             ]
         ),
     )
+    deep = {"leaf": 1}
+    for _ in range(_MAX_METADATA_DEPTH + 5):
+        deep = {"n": deep}
+    yield (
+        "published metadata nested deeper than the published limit",
+        _payload(members=[_member("g0", "initialization", refs=deep)]),
+    )
     yield (
         "non-finite number anywhere in a published mapping",
         _payload(
@@ -855,6 +870,20 @@ def test_the_constructor_still_enforces_every_named_asymmetry() -> None:
             ),
         )
 
+    # published metadata nested deeper than the published limit
+    deep_refs = {"leaf": 1}
+    for _ in range(_MAX_METADATA_DEPTH + 5):
+        deep_refs = {"n": deep_refs}
+    with pytest.raises(ValueError, match="nests deeper than the published limit"):
+        BmcConstraintRef(
+            "g0",
+            "assumptions",
+            "assumption.frame",
+            _SourceRef("generated", None, None),
+            "s",
+            refs=deep_refs,
+        )
+
     # non-finite number anywhere in a published mapping
     for bad_refs in ({"x": float("nan")}, {"n": {"x": float("inf")}}):
         with pytest.raises(ValueError, match="finite"):
@@ -922,6 +951,7 @@ def test_the_constructor_still_enforces_every_named_asymmetry() -> None:
         "aggregate reason drift",
         "duplicate stable_id with differing content",
         "non-string object key in any published mapping",
+        "published metadata nested deeper than the published limit",
         "non-finite number anywhere in a published mapping",
         "non-JSON value anywhere in a published mapping",
         "proven minimality without one deletion per member",

@@ -129,6 +129,90 @@ def _span_offsets(text: str, span: Span) -> Optional[Tuple[int, int]]:
     return start, end
 
 
+def exact_str(value: Any, where: str) -> str:
+    """Return the plain ``str`` a value actually is.
+
+    ``str`` subclasses may override ``__str__``, ``__eq__`` and ``__hash__``, and
+    an object may even fake ``__class__`` to pass ``isinstance``.  Reading any of
+    those from the instance lets the value being validated answer questions about
+    itself: a subclass could satisfy a frozen-vocabulary check and then publish
+    something else, or carry state that changes its hash after the fact.  Going
+    through the base type's own method reads the real characters and refuses an
+    impostor outright.
+
+    :param value: Candidate string.
+    :type value: object
+    :param where: Field or path name used in the error message.
+    :type where: str
+    :return: The same text as an exact ``str``.
+    :rtype: str
+    :raises TypeError: If the value is not really a ``str``.
+
+    Example::
+
+        >>> class Shouty(str):
+        ...     def __str__(self):
+        ...         return "LIE"
+        >>> exact_str(Shouty("real"), "stage")
+        'real'
+    """
+    try:
+        return str.__str__(value)
+    except TypeError as err:
+        # str.__str__ is a descriptor bound to str, so it refuses anything whose
+        # real type is not str -- including an object faking __class__.
+        raise TypeError("%s must be a string, got %r." % (where, value)) from err
+
+
+def exact_int(value: Any, where: str) -> int:
+    """Return the plain ``int`` a value actually is.
+
+    :param value: Candidate integer.
+    :type value: object
+    :param where: Field or path name used in the error message.
+    :type where: str
+    :return: The same number as an exact ``int``.
+    :rtype: int
+    :raises TypeError: If the value is not really an ``int``.
+
+    Example::
+
+        >>> import enum
+        >>> class Frame(enum.IntEnum):
+        ...     SECOND = 1
+        >>> exact_int(Frame.SECOND, "frames")
+        1
+    """
+    try:
+        return int.__int__(value)
+    except TypeError as err:
+        # Same reasoning as exact_str: the descriptor refuses a non-int.
+        raise TypeError("%s must be an integer, got %r." % (where, value)) from err
+
+
+def exact_float(value: Any, where: str) -> float:
+    """Return the plain ``float`` a value actually is.
+
+    :param value: Candidate number.
+    :type value: object
+    :param where: Field or path name used in the error message.
+    :type where: str
+    :return: The same number as an exact ``float``.
+    :rtype: float
+    :raises TypeError: If the value is not really a ``float``.
+
+    Example::
+
+        >>> exact_float(1.5, "threshold")
+        1.5
+    """
+    try:
+        return float.__float__(value)
+    except TypeError as err:
+        # Same reasoning as exact_str.
+        raise TypeError("%s must be a number, got %r." % (where, value)) from err
+
+
 #: How deeply published metadata may nest.
 #:
 #: The recursive walk that validates and rebuilds this metadata is bounded by
@@ -194,15 +278,28 @@ def _require_json_mapping(value: Any, label: str) -> Dict[str, Any]:
                 "%s nests deeper than the published limit of %d levels."
                 % (where, MAX_METADATA_DEPTH)
             )
-        if entry is None or isinstance(entry, (str, bool, int)):
+        if entry is None:
             return entry
+        # ``bool`` cannot be subclassed and both values are singletons, so
+        # identity is the exact test.  It comes first because a bool is also an
+        # int.
+        if entry is True or entry is False:
+            return entry
+        if isinstance(entry, bool):
+            # Only an object claiming to be a bool reaches here.
+            raise TypeError("%s is not JSON-compatible, got %r." % (where, entry))
+        if isinstance(entry, int):
+            return exact_int(entry, where)
         if isinstance(entry, float):
             # NaN and Infinity are not JSON numbers.  json.dumps emits them by
             # default and refuses them under allow_nan=False, so either way the
             # payload stops being interchangeable.
-            if not math.isfinite(entry):
+            plain = exact_float(entry, where)
+            if not math.isfinite(plain):
                 raise ValueError("%s must be a finite number, got %r." % (where, entry))
-            return entry
+            return plain
+        if isinstance(entry, str):
+            return exact_str(entry, where)
         if isinstance(entry, (list, tuple)):
             return tuple(
                 _normalize(item, "%s[%d]" % (where, index), depth + 1)
@@ -213,7 +310,12 @@ def _require_json_mapping(value: Any, label: str) -> Dict[str, Any]:
             for key, item in entry.items():
                 if not isinstance(key, str):
                     raise TypeError("%s keys must be strings, got %r." % (where, key))
-                normalized[key] = _normalize(item, "%s[%r]" % (where, key), depth + 1)
+                # The key is rebuilt too.  A str subclass can carry state that
+                # changes its hash later, and then the published mapping breaks
+                # when something merely looks a key up.
+                normalized[exact_str(key, "%s key" % where)] = _normalize(
+                    item, "%s[%r]" % (where, key), depth + 1
+                )
             return MappingProxyType(normalized)
         raise TypeError("%s is not JSON-compatible, got %r." % (where, entry))
 
@@ -242,6 +344,8 @@ def json_canonical(value: Any) -> Any:
     :type value: object
     :return: The same data using only JSON containers.
     :rtype: object
+    :raises ValueError: If the value nests deeper than
+        :data:`MAX_METADATA_DEPTH`, which the validator also refuses.
 
     Example::
 
@@ -249,10 +353,41 @@ def json_canonical(value: Any) -> Any:
         >>> json_canonical({"a": MappingProxyType({"b": (1, 2)})})
         {'a': {'b': [1, 2]}}
     """
+    return _json_canonical(value, 0)
+
+
+def _json_canonical(value: Any, depth: int) -> Any:
+    """Recursive worker for :func:`json_canonical`, bounded by depth.
+
+    The public entry point is bounded for the same reason the validator is: the
+    JSON encoder that consumes this output shares the interpreter stack, so an
+    unbounded walk turns a depth problem into a bare ``RecursionError`` with no
+    field name.  A value built through the validator cannot exceed the limit, but
+    this function is public and can be handed data that never went through it.
+
+    :param value: Normalized metadata value.
+    :type value: object
+    :param depth: Current nesting depth.
+    :type depth: int
+    :return: The same data using only JSON containers.
+    :rtype: object
+    :raises ValueError: If the value nests deeper than
+        :data:`MAX_METADATA_DEPTH`.
+
+    Example::
+
+        >>> _json_canonical({"a": (1,)}, 0)
+        {'a': [1]}
+    """
+    if depth > MAX_METADATA_DEPTH:
+        raise ValueError(
+            "value nests deeper than the published limit of %d levels."
+            % MAX_METADATA_DEPTH
+        )
     if isinstance(value, Mapping):
-        return {key: json_canonical(item) for key, item in value.items()}
+        return {key: _json_canonical(item, depth + 1) for key, item in value.items()}
     if isinstance(value, (list, tuple)):
-        return [json_canonical(item) for item in value]
+        return [_json_canonical(item, depth + 1) for item in value]
     return value
 
 
@@ -593,7 +728,12 @@ class SourceDocumentRegistry:
 
 
 __all__ = [
+    "MAX_METADATA_DEPTH",
     "BmcSourceRef",
     "BmcTrackedConstraint",
     "SourceDocumentRegistry",
+    "exact_float",
+    "exact_int",
+    "exact_str",
+    "json_canonical",
 ]

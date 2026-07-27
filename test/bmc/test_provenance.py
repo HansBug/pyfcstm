@@ -1768,3 +1768,107 @@ def test_tracked_refs_get_the_same_validation_as_published_metadata() -> None:
     alias["late"] = object()
     assert "late" not in group.refs["nested"]
     assert isinstance(group.refs["nested"], MappingProxyType)
+
+
+def test_metadata_scalars_and_keys_become_exact_builtins() -> None:
+    """A value must not be the one answering questions about itself.
+
+    ``__str__``, ``__int__``, ``__eq__`` and ``__hash__`` are all overridable, and
+    ``__class__`` can be faked so that ``isinstance`` agrees.  Storing whatever
+    passed the check lets a subclass carry state that changes its hash later, or
+    lets an impostor reach the JSON encoder and fail there instead of here.
+    """
+    import json
+
+    from pyfcstm.bmc.provenance import BmcSourceRef, BmcTrackedConstraint
+
+    source = BmcSourceRef("generated", None, None)
+
+    def tracked(refs):
+        return BmcTrackedConstraint(
+            "assumption.0000.frame.0000",
+            "assumptions",
+            "assumption.frame",
+            (z3.BoolVal(True),),
+            source,
+            refs=refs,
+        )
+
+    class MutableHashStr(str):
+        def __new__(cls, value):
+            obj = str.__new__(cls, value)
+            obj.broken = False
+            return obj
+
+        def __hash__(self):
+            if self.broken:
+                raise RuntimeError("the caller changed this key's hash")
+            return str.__hash__(self)
+
+    class PretendInt:
+        @property
+        def __class__(self):
+            return int
+
+    # A key is rebuilt, so breaking the original afterwards cannot reach it.
+    key = MutableHashStr("nested")
+    group = tracked({key: {"ok": 1}})
+    key.broken = True
+    assert [type(name) for name in group.refs] == [str]
+    json.dumps({name: dict(value) for name, value in group.refs.items()})
+
+    # Values are rebuilt too, and an impostor is refused here rather than later.
+    with pytest.raises(TypeError, match="must be an integer"):
+        tracked({"x": PretendInt()})
+
+    class Shouty(str):
+        def __str__(self):
+            return "LIE"
+
+    stored = tracked({"note": Shouty("real")})
+    assert stored.refs["note"] == "real"
+    assert type(stored.refs["note"]) is str
+
+
+def test_exact_readers_refuse_an_impostor_of_every_primitive() -> None:
+    """Each reader refuses an object that only claims to be its type.
+
+    ``isinstance`` consults ``__class__``, so a plain object can satisfy it.  The
+    base type's own descriptor cannot be fooled, and refusing here is what keeps
+    the failure attributable instead of surfacing much later in a serializer.
+    """
+    from pyfcstm.bmc.provenance import exact_float, exact_int, exact_str
+
+    def impostor_of(cls):
+        return type("Impostor", (object,), {"__class__": property(lambda self: cls)})()
+
+    with pytest.raises(TypeError, match="must be a string"):
+        exact_str(impostor_of(str), "note")
+    with pytest.raises(TypeError, match="must be an integer"):
+        exact_int(impostor_of(int), "frames")
+    with pytest.raises(TypeError, match="must be a number"):
+        exact_float(impostor_of(float), "threshold")
+
+
+def test_a_bool_impostor_is_not_json_compatible() -> None:
+    """Only the two real singletons count as a JSON boolean.
+
+    ``bool`` cannot be subclassed, so anything that merely claims to be one is an
+    impostor with no JSON counterpart.
+    """
+    from pyfcstm.bmc.provenance import BmcSourceRef, BmcTrackedConstraint
+
+    fake_bool = type(
+        "FakeBool", (object,), {"__class__": property(lambda self: bool)}
+    )()
+
+    with pytest.raises(TypeError, match="not JSON-compatible"):
+        BmcTrackedConstraint(
+            "assumption.0000.frame.0000",
+            "assumptions",
+            "assumption.frame",
+            (z3.BoolVal(True),),
+            BmcSourceRef("generated", None, None),
+            refs={"flag": fake_bool},
+        )
+

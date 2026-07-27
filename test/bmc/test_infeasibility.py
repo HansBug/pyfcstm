@@ -611,6 +611,37 @@ def test_index_keys_are_published_the_same_way_in_both_fields() -> None:
     assert canonical["refs"]["kind"] == "state"
 
 
+def test_both_published_copies_of_the_metadata_are_byte_identical() -> None:
+    """One item publishes ``refs`` twice, so the two copies must match as JSON.
+
+    Equality is blind to this: ``1 == 1.0`` in Python, so an ``==`` assertion
+    over the two mappings passes even when one holds an int and the other a
+    float.  Comparing the serialized text is what makes the difference visible,
+    and JSON type is exactly what a machine consumer reads.
+    """
+    import json
+
+    group = BmcTrackedConstraint(
+        "assumption.0000.frame.0000",
+        "assumptions",
+        "assumption.frame",
+        (True,),
+        BmcSourceRef("generated", None, None),
+        refs={"frame": 1.0, "step": [2.0], "assumption": 0},
+    )
+
+    canonical = build_core_item(group).to_canonical()
+    constraint_refs = canonical["constraint"]["refs"]
+    fact_refs = canonical["normalized_fact"]["refs"]
+
+    assert json.dumps(constraint_refs, sort_keys=True) == json.dumps(
+        fact_refs, sort_keys=True
+    )
+    # And the fact's own two views of one index agree as well.
+    assert canonical["normalized_fact"]["frames"] == [1]
+    assert json.dumps(fact_refs["frame"]) == "1"
+
+
 def test_plural_index_keys_are_canonicalized_element_by_element() -> None:
     """A recorded sequence of indices is canonicalized the same way."""
     group = BmcTrackedConstraint(

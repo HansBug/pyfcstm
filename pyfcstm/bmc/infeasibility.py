@@ -929,8 +929,12 @@ def build_core_item(
             "steps": list(steps),
             # The builder's own metadata is carried through in sorted order so
             # a machine reader sees which assumption, transition or variable
-            # the conflict came from, not only its frame index.
-            "refs": {key: group.refs[key] for key in sorted(group.refs)},
+            # the conflict came from, not only its frame index.  It is the same
+            # mapping the constraint publishes: echoing the raw values here would
+            # put two JSON types for one index in a single published item, and
+            # the two copies compare equal in Python because 1 == 1.0, so an
+            # equality assertion could not see the difference.
+            "refs": dict(published_refs),
         },
         human_text=human_text,
         editable=group.source_ref.kind in ("fcstm", "fbmcq"),

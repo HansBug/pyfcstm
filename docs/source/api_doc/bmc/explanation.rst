@@ -96,6 +96,12 @@ STAGE\_FALLBACK\_SCOPES
 .. autodata:: STAGE_FALLBACK_SCOPES
 
 
+INDEX\_REF\_KEYS
+-----------------------------------------------------
+
+.. autodata:: INDEX_REF_KEYS
+
+
 \_\_all\_\_
 -----------------------------------------------------
 

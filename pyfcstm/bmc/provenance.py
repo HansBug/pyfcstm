@@ -495,8 +495,37 @@ class BmcTrackedConstraint:
     refs: Mapping[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        if not isinstance(self.stable_id, str) or not self.stable_id:
+        # The exact text replaces the field before anything reads it: iterating
+        # the value, measuring it or comparing it all go through methods the
+        # value itself provides, so a subclass could pass the check below and
+        # then publish characters the check would have refused.
+        if not isinstance(self.stable_id, str):
             raise ValueError("tracked constraint stable_id must be non-empty.")
+        try:
+            plain_id = exact_str(self.stable_id, "tracked constraint stable_id")
+        except TypeError:
+            # exact_str refuses an object that only claims to be a str.
+            raise ValueError(
+                "tracked constraint stable_id must be non-empty."
+            ) from None
+        if not plain_id:
+            raise ValueError("tracked constraint stable_id must be non-empty.")
+        object.__setattr__(self, "stable_id", plain_id)
+        for name in ("stage", "category"):
+            value = getattr(self, name)
+            if not isinstance(value, str):
+                raise ValueError("tracked constraint %s must be a string." % name)
+            try:
+                object.__setattr__(
+                    self, name, exact_str(value, "tracked constraint %s" % name)
+                )
+            except TypeError:
+                # exact_str refuses an object that only claims to be a str.
+                # Storing it would leave the group carrying a value that has no
+                # text for anything downstream to read.
+                raise ValueError(
+                    "tracked constraint %s must be a string." % name
+                ) from None
         if not all("\x20" <= char <= "\x7e" for char in self.stable_id):
             # The id becomes a solver literal name and a JSON key downstream, so
             # the frozen contract keeps it printable ASCII.  ``str.isascii`` is

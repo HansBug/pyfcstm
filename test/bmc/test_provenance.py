@@ -1872,3 +1872,85 @@ def test_a_bool_impostor_is_not_json_compatible() -> None:
             refs={"flag": fake_bool},
         )
 
+
+def test_tracked_identifiers_are_stored_as_exact_text() -> None:
+    """The builder container replaces its own identifiers too.
+
+    ``build_core_item`` revalidates at the public boundary, so a subclass stored
+    here still cannot reach a published document -- which is exactly why no
+    published-output test can see this.  What it can reach is anything that reads
+    the group directly: the ASCII scan, a dict lookup, a sort.
+    """
+    from pyfcstm.bmc.provenance import BmcSourceRef, BmcTrackedConstraint
+
+    class Shouty(str):
+        def __str__(self):
+            return "LIE"
+
+    class AsciiLie(str):
+        def __iter__(self):
+            return iter("ok")
+
+    group = BmcTrackedConstraint(
+        Shouty("assumption.0000.frame.0000"),
+        Shouty("assumptions"),
+        Shouty("assumption.frame"),
+        (z3.BoolVal(True),),
+        BmcSourceRef("generated", None, None),
+    )
+
+    assert type(group.stable_id) is str
+    assert type(group.stage) is str
+    assert type(group.category) is str
+    assert group.stable_id == "assumption.0000.frame.0000"
+
+    # A subclass hiding a control character behind __iter__ is still refused.
+    with pytest.raises(ValueError, match="printable ASCII"):
+        BmcTrackedConstraint(
+            AsciiLie("a\x00b"),
+            "assumptions",
+            "assumption.frame",
+            (z3.BoolVal(True),),
+            BmcSourceRef("generated", None, None),
+        )
+
+
+def test_tracked_identifier_gates_refuse_impostors() -> None:
+    """The builder container refuses an object that only claims to be text."""
+    from pyfcstm.bmc.provenance import BmcSourceRef, BmcTrackedConstraint
+
+    impostor = type("Impostor", (object,), {"__class__": property(lambda self: str)})()
+
+    with pytest.raises(ValueError, match="stable_id must be non-empty"):
+        BmcTrackedConstraint(
+            123,
+            "assumptions",
+            "assumption.frame",
+            (z3.BoolVal(True),),
+            BmcSourceRef("generated", None, None),
+        )
+    with pytest.raises(ValueError, match="stable_id must be non-empty"):
+        BmcTrackedConstraint(
+            impostor,
+            "assumptions",
+            "assumption.frame",
+            (z3.BoolVal(True),),
+            BmcSourceRef("generated", None, None),
+        )
+    with pytest.raises(ValueError, match="category must be a string"):
+        BmcTrackedConstraint(
+            "assumption.0000.frame.0000",
+            "assumptions",
+            123,
+            (z3.BoolVal(True),),
+            BmcSourceRef("generated", None, None),
+        )
+    with pytest.raises(ValueError, match="stage must be a string"):
+        BmcTrackedConstraint(
+            "assumption.0000.frame.0000",
+            impostor,
+            "assumption.frame",
+            (z3.BoolVal(True),),
+            BmcSourceRef("generated", None, None),
+        )
+

@@ -17,6 +17,7 @@ import sys
 import pytest
 
 from pyfcstm.bmc.explanation import (
+    MAX_SOURCE_EXCERPT_CHARS,
     index_value,
     BmcConflictCore,
     BmcConflictNarrative,
@@ -497,15 +498,286 @@ def test_a_string_subclass_cannot_talk_its_way_into_a_frozen_vocabulary() -> Non
     assert type(accepted.stage) is str
 
 
+def test_every_string_gate_refuses_an_impostor() -> None:
+    """Each gate that reads text must refuse an object that only claims to be one.
+
+    ``isinstance`` consults ``__class__``, so a plain object passes it.  Each of
+    these gates then reads characters, a prefix or a length from the value, so
+    letting an impostor through moves the failure somewhere unattributable.
+    """
+    from pyfcstm.bmc.explanation import (
+        _canonical_index_refs,
+        category_role,
+        is_printable_ascii,
+    )
+
+    impostor = type("Impostor", (object,), {"__class__": property(lambda self: str)})()
+
+    assert is_printable_ascii(impostor) is False
+    with pytest.raises(ValueError, match="belongs to no known family"):
+        category_role(impostor)
+    with pytest.raises(TypeError, match="must be a string or None"):
+        BmcCoreItem(
+            _constraint(),
+            "initial_fact",
+            impostor,
+            False,
+            {"kind": "structural_constraint"},
+            "t",
+            False,
+        )
+    for position in (0, 2, 4):
+        for bad in (impostor, 123):
+            args = [
+                "initial.target",
+                "initialization",
+                "initial.target",
+                _GENERATED,
+                "s",
+            ]
+            args[position] = bad
+            with pytest.raises(ValueError, match="must be a non-empty string"):
+                BmcConstraintRef(*args)
+
+    # Free-form metadata keeps a value that is not an index rather than failing.
+    assert _canonical_index_refs({"frame": "not-an-index"}) == {
+        "frame": "not-an-index"
+    }
+
+
+def test_a_flag_impostor_is_refused() -> None:
+    """Only the two real booleans are booleans.
+
+    ``bool`` cannot be subclassed, so an object satisfying ``isinstance`` only
+    claims to be one through ``__class__`` and has no JSON counterpart.
+    """
+    fake = type("FakeBool", (object,), {"__class__": property(lambda self: bool)})()
+
+    with pytest.raises(TypeError, match="must be a bool"):
+        BmcCoreItem(
+            _constraint(),
+            "initial_fact",
+            None,
+            fake,
+            {"kind": "structural_constraint"},
+            "t",
+            False,
+        )
+    with pytest.raises(TypeError, match="must be a bool"):
+        BmcCoreItem(
+            _constraint(),
+            "initial_fact",
+            None,
+            False,
+            {"kind": "structural_constraint"},
+            "t",
+            fake,
+        )
+
+
+def test_a_lying_length_cannot_smuggle_an_oversized_excerpt() -> None:
+    """The excerpt bound is measured on the text, not on what it reports.
+
+    ``len()`` calls ``type(x).__len__``, so a subclass decides both whether it
+    fits the published bound and whether a truncation happened.  Both directions
+    matter: an oversized excerpt could be published silently, and a two-character
+    one could claim a truncation that never occurred.
+    """
+
+    class ShortLie(str):
+        def __len__(self):
+            return 5
+
+    class LongLie(str):
+        def __len__(self):
+            return MAX_SOURCE_EXCERPT_CHARS
+
+    reference = _constraint()
+
+    with pytest.raises(ValueError, match="must not exceed"):
+        BmcCoreItem(
+            reference,
+            "initial_fact",
+            ShortLie("X" * (MAX_SOURCE_EXCERPT_CHARS + 1)),
+            False,
+            {"kind": "structural_constraint"},
+            "t",
+            False,
+        )
+    with pytest.raises(ValueError, match="truncated excerpt"):
+        BmcCoreItem(
+            reference,
+            "initial_fact",
+            LongLie("ab"),
+            True,
+            {"kind": "structural_constraint"},
+            "t",
+            False,
+        )
+
+
+def test_a_category_cannot_choose_its_own_semantic_role() -> None:
+    """The family prefix is matched on the text, not via ``startswith``.
+
+    ``str.startswith`` is an instance method, so a subclass could claim any family
+    and pass the role agreement check while publishing a category from a
+    different one.  ``category`` is a machine dispatch key, so it has to be
+    trustworthy.
+    """
+
+    class Sneaky(str):
+        def startswith(self, prefix, *args, **kwargs):
+            return "assumption" in prefix
+
+    # category_role is exported, so a caller can reach it without going through
+    # a constructor that has already replaced the text.
+    from pyfcstm.bmc.explanation import category_role
+
+    assert category_role(Sneaky("initial.target")) == "initial_fact"
+
+    with pytest.raises(ValueError, match="contradicts category"):
+        BmcCoreItem(
+            BmcConstraintRef(
+                "initial.target",
+                "initialization",
+                Sneaky("initial.target"),
+                _GENERATED,
+                "initial target",
+            ),
+            "assumption",
+            None,
+            False,
+            {"kind": "structural_constraint"},
+            "t",
+            False,
+        )
+
+
+def test_published_order_does_not_depend_on_a_members_own_comparison() -> None:
+    """Members are ordered by their text, so ``__lt__`` cannot pick the order.
+
+    The published order is meant to be stable across runs and independent of the
+    solver's own core ordering; letting a member decide where it sorts would make
+    the order a property of the data rather than of the contract.
+    """
+
+    class Reversed(str):
+        def __lt__(self, other):
+            return str.__gt__(self, other)
+
+        def __gt__(self, other):
+            return str.__lt__(self, other)
+
+    items = tuple(
+        BmcCoreItem(
+            BmcConstraintRef(
+                Reversed(name),
+                "initialization",
+                "initial.target",
+                _GENERATED,
+                "initial target",
+            ),
+            "initial_fact",
+            None,
+            False,
+            {"kind": "structural_constraint", "stable_id": name},
+            "t",
+            False,
+        )
+        for name in ("a", "b", "c")
+    )
+
+    core = BmcConflictCore(
+        "initialization_component", "I_0", "source_group", "raw", "not_proven", items
+    )
+
+    assert [item.constraint.stable_id for item in core.items] == ["a", "b", "c"]
+
+
+def test_a_lying_iterator_cannot_hide_a_control_character() -> None:
+    """The ASCII scan reads the characters the value holds.
+
+    ``for char in value`` goes through ``__iter__``, so a subclass could present
+    harmless characters while really holding a NUL that later becomes a solver
+    literal name and a JSON key.
+    """
+    from pyfcstm.bmc.explanation import is_printable_ascii
+
+    class AsciiLie(str):
+        def __iter__(self):
+            return iter("ok")
+
+    assert is_printable_ascii(AsciiLie("a\x00b")) is False
+    with pytest.raises(ValueError, match="printable ASCII"):
+        BmcConstraintRef(
+            AsciiLie("a\x00b"),
+            "initialization",
+            "initial.target",
+            _GENERATED,
+            "initial target",
+        )
+
+
+def test_the_depth_limit_itself_is_guarded_by_an_absolute_bound() -> None:
+    """A relative test cannot falsify the constant it is derived from.
+
+    Every other depth test nests ``MAX_METADATA_DEPTH + 5`` levels, so raising the
+    constant to a billion keeps them green -- they would simply build a billion
+    levels and hang rather than fail.  Pinning an absolute depth and an absolute
+    ceiling on the constant is what makes the limit itself observable.
+    """
+    from pyfcstm.bmc.provenance import MAX_METADATA_DEPTH
+
+    assert MAX_METADATA_DEPTH <= 200
+
+    payload = {"leaf": 1}
+    for _ in range(200):
+        payload = {"n": payload}
+
+    with pytest.raises(ValueError, match="nests deeper than the published limit"):
+        BmcConstraintRef(
+            "g0",
+            "assumptions",
+            "assumption.frame",
+            _GENERATED,
+            "s",
+            refs=payload,
+        )
+
+
+def test_index_keys_are_canonical_on_the_public_path_too() -> None:
+    """Both doors publish one index the same way.
+
+    The orchestration canonicalizes the index keys it reads from the builder, so
+    a public constructor that echoed a whole-valued float back would put ``1`` and
+    ``1.0`` for one position in two documents that are supposed to agree.
+    """
+    reference = BmcConstraintRef(
+        "g0",
+        "assumptions",
+        "assumption.frame",
+        _GENERATED,
+        "s",
+        frames=[1.0],
+        refs={"frame": 1.0, "steps": [2.0], "threshold": 2.5},
+    )
+
+    canonical = reference.to_canonical()
+
+    assert canonical["refs"]["frame"] == 1
+    assert canonical["refs"]["steps"] == [2]
+    assert type(canonical["refs"]["frame"]) is type(canonical["frames"][0])
+    # Free-form metadata keeps the value it was given.
+    assert canonical["refs"]["threshold"] == 2.5
+
+
 def test_a_frozen_vocabulary_refuses_a_string_impostor() -> None:
     """An object claiming to be a ``str`` cannot enter a frozen vocabulary.
 
     It passes ``isinstance``, so without reading the real text the membership
     test would run against something that has no text at all.
     """
-    impostor = type(
-        "Impostor", (object,), {"__class__": property(lambda self: str)}
-    )()
+    impostor = type("Impostor", (object,), {"__class__": property(lambda self: str)})()
 
     with pytest.raises(ValueError, match="must be one of"):
         BmcConstraintRef(

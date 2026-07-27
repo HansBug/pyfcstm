@@ -263,7 +263,14 @@ def is_printable_ascii(value: str) -> bool:
         >>> is_printable_ascii("\u51b2\u7a81")
         False
     """
-    return bool(value) and all("\x20" <= char <= "\x7e" for char in value)
+    # Iteration goes through __iter__, which a subclass may override to hide the
+    # characters it really holds, so the scan runs on the exact text.
+    try:
+        plain = exact_str(value, "value")
+    except TypeError:
+        # exact_str refuses an object that only claims to be a str.
+        return False
+    return bool(plain) and all("\x20" <= char <= "\x7e" for char in plain)
 
 
 def category_role(category: str) -> str:
@@ -282,8 +289,15 @@ def category_role(category: str) -> str:
         >>> category_role("assumption.frame")
         'assumption'
     """
+    # str.startswith is an instance method, so a subclass could claim any family
+    # and pick its own semantic role.  The prefix test runs on the exact text.
+    try:
+        plain = exact_str(category, "category")
+    except TypeError:
+        # exact_str refuses an object that only claims to be a str.
+        raise ValueError("category %r belongs to no known family." % category) from None
     for prefix, role in CATEGORY_ROLES.items():
-        if category.startswith(prefix):
+        if plain.startswith(prefix):
             return role
     raise ValueError("category %r belongs to no known family." % category)
 
@@ -513,7 +527,10 @@ def _require_flag(value: Any, label: str) -> bool:
         >>> _require_flag(False, "editable")
         False
     """
-    if not isinstance(value, bool):
+    # ``bool`` cannot be subclassed and both values are singletons, so identity
+    # is the exact test.  An object merely claiming to be a bool through
+    # ``__class__`` satisfies ``isinstance`` and has no JSON counterpart.
+    if value is not True and value is not False:
         raise TypeError("%s must be a bool, got %r." % (label, value))
     return value
 
@@ -534,9 +551,19 @@ def _require_optional_text(value: Any, label: str) -> Optional[str]:
         >>> _require_optional_text(None, "reason") is None
         True
     """
-    if value is not None and not isinstance(value, str):
+    if value is None:
+        return None
+    if not isinstance(value, str):
         raise TypeError("%s must be a string or None, got %r." % (label, value))
-    return value
+    try:
+        # The exact text is returned so that a later length or content check
+        # reads the characters the value holds rather than what it reports.
+        return exact_str(value, label)
+    except TypeError:
+        # exact_str refuses an object that only claims to be a str.
+        raise TypeError(
+            "%s must be a string or None, got %r." % (label, value)
+        ) from None
 
 
 def _require_member(value: Any, allowed: Tuple[str, ...], label: str) -> str:
@@ -578,6 +605,49 @@ def _require_member(value: Any, allowed: Tuple[str, ...], label: str) -> str:
             "%s must be one of %s, got %r." % (label, ", ".join(allowed), value)
         )
     return plain
+
+
+#: Metadata keys whose values are indices rather than free-form values.
+INDEX_REF_KEYS = ("frame", "frames", "step", "steps")
+
+
+def _canonical_index_refs(refs: Dict[str, Any]) -> Dict[str, Any]:
+    """Publish the index keys of a metadata mapping in their canonical form.
+
+    ``frames`` and ``steps`` are canonicalized to integers, so echoing a
+    whole-valued float back under ``frame`` would put two JSON types for one
+    position in the same document.  Only these keys are touched: a whole-valued
+    float under any other key may well be a measurement rather than a position.
+
+    A value that is not an index is left alone here rather than refused: this
+    mapping is free-form metadata, and the dedicated fields are where an index is
+    required.
+
+    :param refs: Validated metadata mapping.
+    :type refs: Dict[str, object]
+    :return: The same mapping with canonical index values.
+    :rtype: Dict[str, object]
+
+    Example::
+
+        >>> _canonical_index_refs({"frame": 1.0, "threshold": 2.5})
+        {'frame': 1, 'threshold': 2.5}
+    """
+    canonical = {}
+    for key, value in refs.items():
+        if key not in INDEX_REF_KEYS:
+            canonical[key] = value
+            continue
+        try:
+            if isinstance(value, (list, tuple)):
+                canonical[key] = tuple(index_value(item, key) for item in value)
+            else:
+                canonical[key] = index_value(value, key)
+        except (TypeError, ValueError):
+            # index_value refuses a value that is not an index; metadata is
+            # free-form, so it is republished as recorded instead.
+            canonical[key] = value
+    return canonical
 
 
 @dataclass(frozen=True)
@@ -626,10 +696,25 @@ class BmcConstraintRef:
     refs: Mapping[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        # Every published string is replaced by the exact text it holds before
+        # anything reads it.  Otherwise the checks below run against methods the
+        # value itself provides: `len`, `startswith`, `__iter__`, `__bool__` and
+        # `__lt__` are all overridable, so a subclass could pass a check and then
+        # publish something the check would have refused.
         for name in ("stable_id", "category", "summary"):
             value = getattr(self, name)
-            if not isinstance(value, str) or not value:
+            if not isinstance(value, str):
                 raise ValueError("constraint %s must be a non-empty string." % name)
+            try:
+                plain = exact_str(value, "constraint %s" % name)
+            except TypeError:
+                # exact_str refuses an object that only claims to be a str.
+                raise ValueError(
+                    "constraint %s must be a non-empty string." % name
+                ) from None
+            if not plain:
+                raise ValueError("constraint %s must be a non-empty string." % name)
+            object.__setattr__(self, name, plain)
         if not is_printable_ascii(self.stable_id):
             raise ValueError(
                 "constraint stable_id must be printable ASCII, got %r." % self.stable_id
@@ -645,7 +730,11 @@ class BmcConstraintRef:
         object.__setattr__(self, "frames", _require_indices(self.frames, "frames"))
         object.__setattr__(self, "steps", _require_indices(self.steps, "steps"))
         object.__setattr__(
-            self, "refs", MappingProxyType(_require_json_mapping(self.refs, "refs"))
+            self,
+            "refs",
+            MappingProxyType(
+                _canonical_index_refs(_require_json_mapping(self.refs, "refs"))
+            ),
         )
 
     def to_canonical(self) -> Dict[str, Any]:
@@ -728,7 +817,26 @@ class BmcCoreItem:
                 self.semantic_role, _SEMANTIC_ROLES, "core item semantic_role"
             ),
         )
-        _require_optional_text(self.source_excerpt, "core item source_excerpt")
+        object.__setattr__(
+            self,
+            "source_excerpt",
+            _require_optional_text(self.source_excerpt, "core item source_excerpt"),
+        )
+        object.__setattr__(
+            self,
+            "human_text",
+            _require_optional_text(self.human_text, "core item human_text"),
+        )
+        object.__setattr__(
+            self,
+            "source_excerpt_truncated",
+            _require_flag(
+                self.source_excerpt_truncated, "core item source_excerpt_truncated"
+            ),
+        )
+        object.__setattr__(
+            self, "editable", _require_flag(self.editable, "core item editable")
+        )
         if (
             self.source_excerpt is not None
             and len(self.source_excerpt) > MAX_SOURCE_EXCERPT_CHARS
@@ -737,10 +845,6 @@ class BmcCoreItem:
                 "core item source_excerpt must not exceed %d code points, got %d."
                 % (MAX_SOURCE_EXCERPT_CHARS, len(self.source_excerpt))
             )
-        _require_flag(
-            self.source_excerpt_truncated, "core item source_excerpt_truncated"
-        )
-        _require_flag(self.editable, "core item editable")
         expected_role = category_role(self.constraint.category)
         if self.semantic_role != expected_role:
             raise ValueError(
@@ -913,7 +1017,12 @@ class BmcConflictCore:
         object.__setattr__(
             self,
             "items",
-            tuple(sorted(items, key=lambda item: item.constraint.stable_id)),
+            tuple(
+                # Every member's constraint is a BmcConstraintRef, whose stable_id is
+                # already replaced by its exact text, so ordering here cannot be
+                # steered by a member's own comparison methods.
+                sorted(items, key=lambda item: item.constraint.stable_id)
+            ),
         )
 
     def to_canonical(self) -> Dict[str, Any]:

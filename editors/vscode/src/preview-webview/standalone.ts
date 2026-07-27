@@ -6,6 +6,8 @@ interface StandaloneExportPayload {
     svg: string;
     pngBase64: string;
     pdfBase64: string;
+    /** Formats this export could not produce, with the reason for each. */
+    failed?: string[];
 }
 
 function decodeBase64(value: string): Uint8Array {
@@ -34,11 +36,18 @@ function showExportMenu(payload: StandaloneExportPayload): void {
     const title = document.createElement('span');
     title.textContent = 'Download diagram:';
     menu.appendChild(title);
+    // Only formats this export actually produced are offered; a very large
+    // diagram can exceed the browser's raster limits while its vector output
+    // remains perfect, and a button that downloads nothing is worse than none.
     const choices: Array<[string, () => void]> = [
         ['SVG', () => download('diagram.svg', payload.svg, 'image/svg+xml;charset=utf-8')],
-        ['PNG', () => download('diagram.png', decodeBase64(payload.pngBase64), 'image/png')],
-        ['PDF', () => download('diagram.pdf', decodeBase64(payload.pdfBase64), 'application/pdf')],
     ];
+    if (payload.pngBase64) {
+        choices.push(['PNG', () => download('diagram.png', decodeBase64(payload.pngBase64), 'image/png')]);
+    }
+    if (payload.pdfBase64) {
+        choices.push(['PDF', () => download('diagram.pdf', decodeBase64(payload.pdfBase64), 'application/pdf')]);
+    }
     for (const [label, action] of choices) {
         const button = document.createElement('button');
         button.type = 'button';
@@ -54,6 +63,13 @@ function showExportMenu(payload: StandaloneExportPayload): void {
     close.style.cssText = 'border:0;background:transparent;font-size:18px;line-height:1;cursor:pointer;color:#6b7280';
     close.addEventListener('click', () => menu.remove());
     menu.appendChild(close);
+    if (payload.failed && payload.failed.length > 0) {
+        const note = document.createElement('div');
+        note.style.cssText = 'flex-basis:100%;font-size:12px;color:#b45309';
+        note.textContent = `Unavailable for this diagram — ${payload.failed.join('; ')}`;
+        menu.style.flexWrap = 'wrap';
+        menu.appendChild(note);
+    }
     document.body.appendChild(menu);
 }
 

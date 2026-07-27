@@ -1163,18 +1163,16 @@ class DiagramOptions:
         :return: A new JSON-compatible option mapping.
         :rtype: dict
         """
+        # The eight keys the detail level governs are deliberately absent. The
+        # renderer fills them from its preset for the requested level, and
+        # spelling them out here — with what happened to be the ``normal``
+        # values — made ``detail_level`` inert: an explicit value always won, so
+        # ``minimal`` and ``full`` rendered exactly like ``normal``. The keys
+        # below are the ones no preset covers.
         return {
             "detailLevel": self.detail_level,
             "direction": self.direction,
             "cjkLocale": self.cjk_locale,
-            "showVariableDefinitions": True,
-            "showEvents": True,
-            "showTransitionGuards": True,
-            "showTransitionEffects": True,
-            "transitionEffectMode": "note",
-            "eventVisualizationMode": "both",
-            "showStateEvents": True,
-            "showStateActions": False,
             "eventNameFormat": ["extra_name", "relpath"],
             "maxStateEvents": 4,
             "maxStateActions": 4,
@@ -1975,6 +1973,10 @@ class Diagram:
         if output is None:
             document = self.to_html()
             path = _temporary_viewer_path(document, for_window=open_window)
+            # Recorded before the write: if the launch below fails, whether this
+            # file is ours to remove depends on whether we are the process that
+            # created it.
+            preexisting = path.exists()
             # 0600, and forced rather than preserved. The name is derived from
             # the document, so on a shared temp directory anyone can predict
             # it: both to read the model's own source out of the viewer, and to
@@ -1983,8 +1985,19 @@ class Diagram:
             _atomic_write_text(path, document, mode=0o600)
             if not open_window:
                 _register_temporary_viewer(path)
+            temporary = None if preexisting else path
         else:
             path = self.save(output, format="html")
+            temporary = None
         if open_window:
-            _open_standalone_window(path, dimensions)
+            try:
+                _open_standalone_window(path, dimensions)
+            except DiagramUnavailableError:
+                # No window opened this document, so the reason it is kept does
+                # not apply. It is only ours to remove if we created it: an
+                # earlier run in another process may have a window on the very
+                # same path, since the name is shared by design.
+                if temporary is not None:
+                    _register_temporary_viewer(temporary)
+                raise
         return path

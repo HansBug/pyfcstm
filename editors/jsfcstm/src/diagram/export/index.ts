@@ -53,6 +53,48 @@ export async function expandSvgForExport(
 }
 
 /**
+ * Largest canvas side a browser will rasterise, in device pixels.
+ *
+ * Chrome refuses anything past 65535 and `toBlob` then yields null with no
+ * error; Firefox stops at 32767 and Safari at 16384. The standalone viewer is
+ * a plain HTML file that can be opened in any of them, so the lowest common
+ * limit that still leaves room for detail is used.
+ */
+export const RASTER_MAX_SIDE = 32767;
+
+/**
+ * Largest canvas area a browser will rasterise, in device pixels.
+ */
+export const RASTER_MAX_AREA = 268435456;
+
+/**
+ * Largest scale at or below `requested` whose canvas a browser will accept.
+ *
+ * A tall diagram at the nominal 2x exceeded the side limit, and `toBlob` then
+ * returned null — which took the SVG and PDF down with it and left a large
+ * model with no export at all. Scaling down loses raster detail; the vector
+ * formats still carry the full drawing.
+ *
+ * @param width  Diagram width in CSS pixels.
+ * @param height Diagram height in CSS pixels.
+ * @param requested Preferred scale factor.
+ */
+export function rasterScaleWithinLimits(
+    width: number,
+    height: number,
+    requested: number,
+): number {
+    const w = Math.max(1, width);
+    const h = Math.max(1, height);
+    return Math.min(
+        requested,
+        RASTER_MAX_SIDE / w,
+        RASTER_MAX_SIDE / h,
+        Math.sqrt(RASTER_MAX_AREA / (w * h)),
+    );
+}
+
+/**
  * Largest page dimension jsPDF will accept, in PDF units.
  *
  * Anything beyond this is clamped by the library without an error, so a page

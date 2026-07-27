@@ -15,6 +15,7 @@ import {computePreviewFit} from '../layout';
 import type {PreviewWebviewState, SelectionRef, TextRange, PreviewElkNode, PreviewPayload} from '../types';
 import {
     expandSvgForExport,
+    rasterScaleWithinLimits,
     renderVectorPdf,
     type SvgExpander,
 } from '../../../../jsfcstm/src/diagram/export';
@@ -440,8 +441,17 @@ async function rasterizeSvg(svg: string, scale: number): Promise<{blob: Blob; wi
             img.onerror = (e) => reject(e);
             img.src = url;
         });
-        const width = Math.max(1, Math.ceil(svgBounds.value.width * scale));
-        const height = Math.max(1, Math.ceil(svgBounds.value.height * scale));
+        // Clamped to what a browser will actually rasterise. Past its side
+        // limit `toBlob` returns null with no error, which used to leave a tall
+        // diagram with no PNG — and, through the all-or-nothing export below,
+        // no SVG or PDF either.
+        const fit = rasterScaleWithinLimits(
+            svgBounds.value.width,
+            svgBounds.value.height,
+            scale,
+        );
+        const width = Math.max(1, Math.ceil(svgBounds.value.width * fit));
+        const height = Math.max(1, Math.ceil(svgBounds.value.height * fit));
         const canvas = document.createElement('canvas');
         canvas.width = width;
         canvas.height = height;
@@ -516,17 +526,24 @@ async function onExportEvt() {
     if (!svgString) return;
     try {
         const expanded = await expandSvgForExport(svgString, getSvgExpander());
-        const [pngResult, pdfBytes] = await Promise.all([
-            rasterizeSvg(expanded, 2),
-            renderCurrentSvgToPdf(),
+        // Settled per format rather than all-or-nothing. The SVG is a string
+        // that needs neither a canvas nor a PDF writer, so a raster failure
+        // must not be able to withhold it.
+        const [png, pdf] = await Promise.allSettled([
+            rasterizeSvg(expanded, 2).then(result => blobToBase64(result.blob)),
+            renderCurrentSvgToPdf().then(uint8ToBase64),
         ]);
-        const [pngBase64, pdfBase64] = await Promise.all([
-            blobToBase64(pngResult.blob),
-            Promise.resolve(uint8ToBase64(pdfBytes)),
-        ]);
+        const failed: string[] = [];
+        if (png.status === 'rejected') failed.push(`PNG: ${expectedErrorMessage(png.reason)}`);
+        if (pdf.status === 'rejected') failed.push(`PDF: ${expectedErrorMessage(pdf.reason)}`);
         window.dispatchEvent(new CustomEvent('fcstm-emit', {detail: {
             type: 'exportDiagram',
-            payload: {svg: expanded, pngBase64, pdfBase64},
+            payload: {
+                svg: expanded,
+                pngBase64: png.status === 'fulfilled' ? png.value : '',
+                pdfBase64: pdf.status === 'fulfilled' ? pdf.value : '',
+                failed,
+            },
         }}));
     } catch (err) {
         // Canvas, DOMParser, svg2pdf.js, and the WebAssembly export path report

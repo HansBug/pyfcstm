@@ -777,7 +777,10 @@ Python Diagram 接口和浏览器查看器
      - 行为
    * - ``DiagramOptions.detail_level``
      - ``minimal``、``normal``（默认）、``full``
-     - 控制传给共享渲染器的图形细节数量。
+     - 选择渲染器的细节预设。``minimal`` 把转换 effect 内联显示、事件移入图例；
+       ``normal`` 使用 effect 注释并同时显示事件。``full`` 目前渲染出与 ``normal``
+       相同的图形：两者只差 ``showStateActions``\ ，而浏览器渲染器有意不把叶子状态
+       的细节画进图中，而是交给详情面板——后者无论哪个预设都会列出动作。
    * - ``DiagramOptions.direction``
      - ``TB``（默认）或 ``LR``
      - 选择从上到下或从左到右的布局。

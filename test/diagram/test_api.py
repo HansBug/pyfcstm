@@ -874,3 +874,35 @@ def test_a_temporary_viewer_is_private_and_process_scoped():
         diagram_api._TEMPORARY_VIEWERS.discard(path)
         if path.exists():
             path.unlink()
+
+
+@pytest.mark.unittest
+def test_detail_level_reaches_the_renderer_preset():
+    """A level that changes nothing is worse than no level at all.
+
+    ``to_dict()`` used to spell out every key the preset governs, using what
+    happened to be the ``normal`` values, and the renderer prefers an explicit
+    value over its preset — so ``minimal`` and ``full`` rendered exactly like
+    ``normal``. The preset-governed keys must be absent for the level to mean
+    anything.
+    """
+    preset_governed = {
+        "showVariableDefinitions",
+        "showEvents",
+        "showTransitionGuards",
+        "showTransitionEffects",
+        "transitionEffectMode",
+        "eventVisualizationMode",
+        "showStateEvents",
+        "showStateActions",
+    }
+    for level in ("minimal", "normal", "full"):
+        emitted = DiagramOptions(detail_level=level).to_dict()
+        assert emitted["detailLevel"] == level
+        assert preset_governed.isdisjoint(emitted), (
+            "%s must leave the preset to the renderer" % level
+        )
+    # The keys no preset covers still have to be supplied.
+    normal = DiagramOptions().to_dict()
+    for name in ("direction", "cjkLocale", "eventNameFormat", "maxLabelLength"):
+        assert name in normal

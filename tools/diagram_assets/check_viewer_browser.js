@@ -841,17 +841,32 @@ async function evaluate(cdp, expression) {
       transitionHover.noteParts.every(item => item.filter === 'none') &&
       transitionHover.transitionStroke === 'rgb(45, 106, 168)'
     );
+    // Mirrors renderVectorPdf: the largest scale at or below 1 that keeps both
+    // sides within jsPDF's cap, clamped after multiplying so the product cannot
+    // land a couple of ulps above it.
+    const expectedPdfPage = pdf.svgWidth > 0 && pdf.svgHeight > 0
+      ? (() => {
+          const cap = 14400;
+          const fit = Math.min(1, cap / Math.max(pdf.svgWidth, pdf.svgHeight));
+          return {
+            width: Math.min(cap, pdf.svgWidth * fit),
+            height: Math.min(cap, pdf.svgHeight * fit),
+          };
+        })()
+      : null;
     const pdfChecks = !exportError && (!requestedFormats.has('pdf') || (
       pdf.menu === true && pdf.header === '%PDF-' && pdf.bytes >= 100 &&
       (!requirePdfZeroImages || pdf.images === 0) && pdf.pages === 1 &&
-      // Aspect ratio rather than absolute size: jsPDF caps a page at 14400
-      // units, and a diagram past that is scaled to fit rather than clipped, so
-      // the page legitimately stops matching the SVG one-for-one. What must
-      // always hold is that the whole diagram is on the page in proportion —
-      // clipping shows up as a ratio mismatch.
+      // The page must be exactly what correct scaling produces, not merely
+      // proportional to the drawing. jsPDF caps a page at 14400 units, so a
+      // diagram past that is scaled to fit and legitimately stops matching the
+      // SVG one-for-one — but a page that is proportional *and* clipped passes
+      // a ratio test, which is how a build clipping 69% of the drawing stayed
+      // green. Recomputing the expected page pins both dimensions.
       (!requirePdfPageSize || (pdf.pdfWidth > 0 && pdf.pdfHeight > 0 &&
-        pdf.pdfWidth <= 14400.5 && pdf.pdfHeight <= 14400.5 &&
-        Math.abs((pdf.pdfWidth / pdf.pdfHeight) - (pdf.svgWidth / pdf.svgHeight)) < 1e-4)) &&
+        expectedPdfPage !== null &&
+        Math.abs(pdf.pdfWidth - expectedPdfPage.width) < 0.01 &&
+        Math.abs(pdf.pdfHeight - expectedPdfPage.height) < 0.01)) &&
       pdf.inflatedStreamBytes > 0 && pdf.whiteHaloOperators === 0 &&
       (!requirePdfRerender || pdf.rerenderSame === true)
     ));
@@ -868,7 +883,7 @@ async function evaluate(cdp, expression) {
     );
     const modeButtonsFound = states.buttonFound === true && compare.buttonFound === true
       && fcstmOnly.buttonFound === true && backToCompare.buttonFound === true;
-    const report = {initial, sourceLayout, sourceLayoutChecks, selectMenu, selectMenuChecks, sourceUnavailableChecks, sourceChecks, fontChecks, transitionChecks, pdfChecks, pngChecks, svgChecks, diagramOnly: states, fcstmOnly, compare, backToCompare, importedSource, selection, revealSource, hover, sourceHover, transitionHover, sourceSelection, sourceCycle, zoom, pdf, collapse, layout, minimumPanelHeight, comparisonTooShort, drawerChecks, modeButtonsFound, exportError, oversizedUiIcons, externalRequests: network, cspViolations, consoleErrors: consoleErrors.length, consoleDetails};
+    const report = {initial, sourceLayout, sourceLayoutChecks, selectMenu, selectMenuChecks, sourceUnavailableChecks, sourceChecks, fontChecks, transitionChecks, pdfChecks, pngChecks, svgChecks, diagramOnly: states, fcstmOnly, compare, backToCompare, importedSource, selection, revealSource, hover, sourceHover, transitionHover, sourceSelection, sourceCycle, zoom, pdf, collapse, layout, minimumPanelHeight, comparisonTooShort, drawerChecks, modeButtonsFound, exportError, expectedPdfPage, oversizedUiIcons, externalRequests: network, cspViolations, consoleErrors: consoleErrors.length, consoleDetails};
     console.log(JSON.stringify(report, null, 2));
     if (!initial.stage || initial.error || !modeButtonsFound ||
         states.diagramOnlySource || !states.diagramOnlyStage ||

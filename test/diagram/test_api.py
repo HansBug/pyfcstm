@@ -2,6 +2,7 @@
 
 import json
 import os
+from pathlib import Path
 import re
 import stat
 import sys
@@ -979,3 +980,45 @@ def test_detail_level_is_recorded_and_leaves_the_diagram_data_alone():
         "detail_level now changes the diagram data; the DiagramOptions "
         "docstring says it does not and has to be updated"
     )
+
+
+def test_atomic_writes_remove_their_temporary_when_interrupted(tmp_path, monkeypatch):
+    # Only OSError was cleaned up, so Ctrl-C part-way through a ~30 MB document
+    # left the temporary sibling behind at full size. SIGKILL cannot be covered
+    # from inside the process; an interrupt can.
+    from pyfcstm.diagram import api
+
+    def interrupt(*_args, **_kwargs):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(api, "_apply_target_mode", interrupt)
+    for writer, payload, name in (
+        (api._atomic_write_text, "x" * 4096, "page.html"),
+        (api._atomic_write_bytes, b"x" * 4096, "image.png"),
+    ):
+        with pytest.raises(KeyboardInterrupt):
+            writer(tmp_path / name, payload)
+    assert sorted(item.name for item in tmp_path.iterdir()) == [], (
+        "an interrupted atomic write must not leave its temporary sibling"
+    )
+
+
+def test_atomic_writes_still_report_a_failed_cleanup_with_both_causes(
+    tmp_path, monkeypatch
+):
+    # The interrupt cleanup must not swallow the case where the write failed and
+    # removing the temporary failed too: both reasons stay in the message.
+    from pyfcstm.diagram import api
+
+    def fail_mode(*_args, **_kwargs):
+        raise OSError("mode could not be applied")
+
+    def fail_unlink(self, *_args, **_kwargs):
+        raise PermissionError("cannot unlink")
+
+    monkeypatch.setattr(api, "_apply_target_mode", fail_mode)
+    monkeypatch.setattr(Path, "unlink", fail_unlink)
+    with pytest.raises(OSError) as caught:
+        api._atomic_write_text(tmp_path / "page.html", "x")
+    assert "mode could not be applied" in str(caught.value)
+    assert "cannot unlink" in str(caught.value)

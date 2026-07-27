@@ -1038,6 +1038,7 @@ def _atomic_write_text(
         delete=False,
     )
     temporary_path = Path(temporary.name)
+    replaced = False
     try:
         with temporary:
             temporary.write(content)
@@ -1045,6 +1046,7 @@ def _atomic_write_text(
             os.fsync(temporary.fileno())
         _apply_target_mode(temporary_path, target, mode)
         os.replace(str(temporary_path), str(target))
+        replaced = True
     except OSError as write_error:
         try:
             temporary_path.unlink()
@@ -1057,6 +1059,21 @@ def _atomic_write_text(
                 % (write_error, temporary_path, cleanup_error)
             ) from write_error
         raise
+    finally:
+        if not replaced:
+            # Reached by anything the branch above does not name, and Ctrl-C
+            # part-way through a ~30 MB document is the case that matters:
+            # without this the temporary sibling stays behind at full size. A
+            # SIGKILL cannot be covered by anything running in this process.
+            try:
+                temporary_path.unlink()
+            except OSError:
+                # FileNotFoundError: the branch above already removed it, or
+                # the replace succeeded and there is nothing to remove.
+                # PermissionError/IsADirectoryError: the destination directory
+                # changed underneath us, and the original failure is the one
+                # worth propagating -- this cleanup must not mask it.
+                pass
     return target
 
 
@@ -1073,6 +1090,7 @@ def _atomic_write_bytes(
         delete=False,
     )
     temporary_path = Path(temporary.name)
+    replaced = False
     try:
         with temporary:
             temporary.write(content)
@@ -1080,6 +1098,7 @@ def _atomic_write_bytes(
             os.fsync(temporary.fileno())
         _apply_target_mode(temporary_path, target, mode)
         os.replace(str(temporary_path), str(target))
+        replaced = True
     except OSError as write_error:
         try:
             temporary_path.unlink()
@@ -1092,6 +1111,21 @@ def _atomic_write_bytes(
                 % (write_error, temporary_path, cleanup_error)
             ) from write_error
         raise
+    finally:
+        if not replaced:
+            # Reached by anything the branch above does not name, and Ctrl-C
+            # part-way through a ~30 MB document is the case that matters:
+            # without this the temporary sibling stays behind at full size. A
+            # SIGKILL cannot be covered by anything running in this process.
+            try:
+                temporary_path.unlink()
+            except OSError:
+                # FileNotFoundError: the branch above already removed it, or
+                # the replace succeeded and there is nothing to remove.
+                # PermissionError/IsADirectoryError: the destination directory
+                # changed underneath us, and the original failure is the one
+                # worth propagating -- this cleanup must not mask it.
+                pass
     return target
 
 

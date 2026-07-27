@@ -66,6 +66,12 @@ CLASSIFICATION\_SCOPES
 .. autodata:: CLASSIFICATION_SCOPES
 
 
+UNBUILT\_SLOTS
+-----------------------------------------------------
+
+.. autodata:: UNBUILT_SLOTS
+
+
 STAGE\_FALLBACK\_SCOPES
 -----------------------------------------------------
 

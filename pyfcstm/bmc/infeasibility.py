@@ -56,6 +56,12 @@ from .solver import _SolveBudget
 if TYPE_CHECKING:  # pragma: no cover - import cycle guard for annotations only
     from .relation import BmcCoreFormula
 
+#: Frozen upper bound on a published excerpt, in Unicode code points.  A long
+#: authored line would otherwise put an unbounded slice of the user's source
+#: into canonical JSON, so the excerpt is cut here and the cut is declared
+#: through ``source_excerpt_truncated`` rather than happening silently.
+MAX_SOURCE_EXCERPT_CHARS = 4096
+
 #: Category prefix to frozen semantic role.  The relation builder names every
 #: group after the domain concept it encodes, so the prefix already carries the
 #: role and no guessing is needed.
@@ -634,10 +640,17 @@ def extract_source_core(
     by_label: Dict[str, BmcTrackedConstraint] = {}
     labels = []
     for group in targets:
-        # Stable ids are unique here because partition_tracked_groups already
-        # proved the rebuilt aggregates reproduce the builder's own formulas;
-        # a repeated group would have changed those conjunctions.
+        # A stable id is metadata and never enters a group's expressions, so
+        # the partition assertion cannot see two groups sharing one id: the
+        # rebuilt aggregates stay identical.  Without this check the second
+        # group would silently overwrite the first in by_label, one activation
+        # literal would gate two different formulas, and the core would map
+        # back to the wrong group.
         label_name = "core_%s" % group.stable_id
+        if label_name in by_label:
+            raise BmcBuildError(
+                "two tracked groups share the stable id %r." % group.stable_id
+            )
         label = z3.Bool(label_name)
         by_label[label_name] = group
         labels.append(label)
@@ -722,26 +735,41 @@ def _semantic_role(category: str) -> str:
 def _indices(refs: Mapping[str, object], key: str) -> Tuple[int, ...]:
     """Read a sorted index tuple out of a tracked group's structural metadata.
 
+    The relation builder records one index per group under a singular key
+    (``frame``, ``step``), so that spelling is authoritative.  The plural
+    spelling is also accepted because the public field is a tuple and a future
+    group may well constrain several frames at once.
+
+    ``bool`` is excluded deliberately: it is an ``int`` subclass in Python but
+    is not a frame index, and letting it through would publish ``True`` where
+    the schema promises an integer.
+
     :param refs: Structural metadata recorded by the relation builder.
     :type refs: Mapping[str, object]
-    :param key: Metadata key such as ``frames`` or ``steps``.
+    :param key: Singular metadata key such as ``frame`` or ``step``.
     :type key: str
-    :return: Sorted, de-duplicated indices; empty when absent.
+    :return: Sorted, de-duplicated, non-negative indices; empty when absent.
     :rtype: Tuple[int, ...]
 
     Example::
 
-        >>> _indices({"frames": [1, 0, 1]}, "frames")
+        >>> _indices({"frame": 2}, "frame")
+        (2,)
+        >>> _indices({"frames": [1, 0, 1]}, "frame")
         (0, 1)
     """
-    value = refs.get(key)
-    if value is None:
-        return ()
-    if isinstance(value, int) and not isinstance(value, bool):
-        return (value,)
-    if isinstance(value, (list, tuple)):
-        return tuple(sorted({item for item in value if isinstance(item, int)}))
-    return ()
+
+    def _usable(value: object) -> bool:
+        return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+    found = []
+    for name in (key, "%ss" % key):
+        value = refs.get(name)
+        if _usable(value):
+            found.append(value)
+        elif isinstance(value, (list, tuple)):
+            found.extend(item for item in value if _usable(item))
+    return tuple(sorted(set(found)))
 
 
 def build_core_item(
@@ -777,8 +805,8 @@ def build_core_item(
         >>> build_core_item(group).semantic_role
         'assumption'
     """
-    frames = _indices(group.refs, "frames")
-    steps = _indices(group.refs, "steps")
+    frames = _indices(group.refs, "frame")
+    steps = _indices(group.refs, "step")
     summary = "%s group %s" % (group.category, group.stable_id)
     reference = BmcConstraintRef(
         stable_id=group.stable_id,
@@ -791,6 +819,9 @@ def build_core_item(
         refs={key: group.refs[key] for key in sorted(group.refs)},
     )
     excerpt = None if registry is None else registry.excerpt(group.source_ref)
+    truncated = excerpt is not None and len(excerpt) > MAX_SOURCE_EXCERPT_CHARS
+    if truncated:
+        excerpt = excerpt[:MAX_SOURCE_EXCERPT_CHARS]
     location = group.source_ref.path or group.source_ref.kind
     human_text = "%s constraint %s from %s" % (
         _semantic_role(group.category).replace("_", " "),
@@ -801,15 +832,17 @@ def build_core_item(
         constraint=reference,
         semantic_role=_semantic_role(group.category),
         source_excerpt=excerpt,
-        # The registry returns whole spans, so nothing is shortened yet; the
-        # flag stays part of the frozen shape for the stage that truncates.
-        source_excerpt_truncated=False,
+        source_excerpt_truncated=truncated,
         normalized_fact={
             "stable_id": group.stable_id,
             "stage": group.stage,
             "category": group.category,
             "frames": list(frames),
             "steps": list(steps),
+            # The builder's own metadata is carried through in sorted order so
+            # a machine reader sees which assumption, transition or variable
+            # the conflict came from, not only its frame index.
+            "refs": {key: group.refs[key] for key in sorted(group.refs)},
         },
         human_text=human_text,
         editable=group.source_ref.kind in ("fcstm", "fbmcq"),
@@ -869,9 +902,19 @@ def explain_infeasibility(
     """
     started = time.monotonic()
     if registry is None:
-        registry = getattr(core.context, "_source_registry", None)
+        # Read the field directly rather than through getattr: the prepared
+        # context always builds a registry, so a rename must surface as an
+        # AttributeError instead of silently blanking every excerpt.
+        registry = core.context._source_registry
     outcome = classify_infeasibility(core, stage, budget)
-    if outcome.classification is None:
+    # An unclassified stage still has a target the mandatory solve already
+    # proved unsatisfiable, so the remaining budget goes into a fallback core
+    # rather than being left unspent.  Giving up here would withhold the source
+    # lines purely because the *shape* of the conflict stayed undetermined.
+    extraction = extract_source_core(core, outcome.scope, budget)
+    elapsed_ms = (time.monotonic() - started) * 1000.0
+    checks = outcome.checks + extraction.checks
+    if outcome.classification is None and not extraction.groups:
         return ExplanationOutcome(
             BmcInfeasibilityExplanation(
                 requested_mode=requested_mode,
@@ -879,23 +922,24 @@ def explain_infeasibility(
                 status=outcome.status,
                 classification=None,
                 reason=outcome.reason,
-                elapsed_ms=(time.monotonic() - started) * 1000.0,
+                elapsed_ms=elapsed_ms,
             ),
-            outcome.checks,
+            checks,
         )
-
-    extraction = extract_source_core(core, outcome.scope, budget)
-    elapsed_ms = (time.monotonic() - started) * 1000.0
-    checks = outcome.checks + extraction.checks
     if not extraction.groups:
         # The classification is sound on its own, so it is still published;
         # only the core slot degrades.  Dropping it here would throw away the
         # answer the caller actually asked for.
+        #
+        # The status is 'partial' rather than the extraction's own status: a
+        # usable classification means part of the request was delivered, and
+        # the frozen truth table reserves 'unknown'/'timeout' for the case
+        # where nothing at all could be established.
         return ExplanationOutcome(
             BmcInfeasibilityExplanation(
                 requested_mode=requested_mode,
                 achieved_mode="none",
-                status=extraction.status,
+                status="partial",
                 classification=outcome.classification,
                 reason=extraction.reason,
                 elapsed_ms=elapsed_ms,
@@ -913,6 +957,13 @@ def explain_infeasibility(
         subset_minimality="not_proven",
         items=tuple(build_core_item(group, registry) for group in extraction.groups),
     )
+    if outcome.classification is None:
+        reason = (
+            "classification degraded to the %s scope (%s); the published core "
+            "is sound but not proven minimal" % (outcome.scope, outcome.reason)
+        )
+    else:
+        reason = "sound source core published without a minimality proof"
     return ExplanationOutcome(
         BmcInfeasibilityExplanation(
             requested_mode=requested_mode,
@@ -920,7 +971,7 @@ def explain_infeasibility(
             status="partial",
             classification=outcome.classification,
             core=published,
-            reason="sound source core published without a minimality proof",
+            reason=reason,
             elapsed_ms=elapsed_ms,
         ),
         checks,

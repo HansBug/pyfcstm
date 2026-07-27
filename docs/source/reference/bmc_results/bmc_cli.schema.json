@@ -913,7 +913,311 @@
             }
           ]
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "explanation": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "const": "complete"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              }
+            },
+            "required": [
+              "explanation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "refinement_status": {
+                "const": "complete"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "explanation": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "const": "partial"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              }
+            },
+            "required": [
+              "explanation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "refinement_status": {
+                "const": "partial"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "explanation": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "const": "unknown"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              }
+            },
+            "required": [
+              "explanation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "refinement_status": {
+                "const": "unknown"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "explanation": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "const": "timeout"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              }
+            },
+            "required": [
+              "explanation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "refinement_status": {
+                "const": "timeout"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "explanation": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "explanation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "refinement_checks": {
+                "minItems": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "infeasible_stage": {
+                "const": "kernel"
+              },
+              "explanation": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "infeasible_stage",
+              "explanation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "explanation": {
+                "properties": {
+                  "classification": {
+                    "enum": [
+                      "kernel_conflict",
+                      null
+                    ]
+                  },
+                  "core": {
+                    "anyOf": [
+                      {
+                        "type": "null"
+                      },
+                      {
+                        "properties": {
+                          "scope": {
+                            "enum": [
+                              "kernel"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "infeasible_stage": {
+                "const": "initialization"
+              },
+              "explanation": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "infeasible_stage",
+              "explanation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "explanation": {
+                "properties": {
+                  "classification": {
+                    "enum": [
+                      "initialization_self_conflict",
+                      "initialization_domain_conflict",
+                      "initialization_kernel_conflict",
+                      null
+                    ]
+                  },
+                  "core": {
+                    "anyOf": [
+                      {
+                        "type": "null"
+                      },
+                      {
+                        "properties": {
+                          "scope": {
+                            "enum": [
+                              "initialization_component",
+                              "initialization_domain",
+                              "initialization_prefix",
+                              "initialization_stage_fallback"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "infeasible_stage": {
+                "const": "assumptions"
+              },
+              "explanation": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "infeasible_stage",
+              "explanation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "explanation": {
+                "properties": {
+                  "classification": {
+                    "enum": [
+                      "assumptions_self_conflict",
+                      "assumptions_domain_conflict",
+                      "assumptions_prefix_conflict",
+                      null
+                    ]
+                  },
+                  "core": {
+                    "anyOf": [
+                      {
+                        "type": "null"
+                      },
+                      {
+                        "properties": {
+                          "scope": {
+                            "enum": [
+                              "assumptions_component",
+                              "assumptions_domain",
+                              "assumptions_prefix",
+                              "assumptions_stage_fallback"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "infeasible_stage": {
+                "const": "kernel"
+              },
+              "explanation": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "infeasible_stage",
+              "explanation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "explanation": {
+                "properties": {
+                  "classification": {
+                    "const": "kernel_conflict"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
     },
     "feasibility": {
       "type": "object",
@@ -1788,6 +2092,308 @@
             "properties": {
               "refinement_checks": {
                 "minItems": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "explanation": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "const": "complete"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              }
+            },
+            "required": [
+              "explanation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "refinement_status": {
+                "const": "complete"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "explanation": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "const": "partial"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              }
+            },
+            "required": [
+              "explanation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "refinement_status": {
+                "const": "partial"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "explanation": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "const": "unknown"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              }
+            },
+            "required": [
+              "explanation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "refinement_status": {
+                "const": "unknown"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "explanation": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "const": "timeout"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              }
+            },
+            "required": [
+              "explanation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "refinement_status": {
+                "const": "timeout"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "explanation": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "explanation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "refinement_checks": {
+                "minItems": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "infeasible_stage": {
+                "const": "kernel"
+              },
+              "explanation": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "infeasible_stage",
+              "explanation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "explanation": {
+                "properties": {
+                  "classification": {
+                    "enum": [
+                      "kernel_conflict",
+                      null
+                    ]
+                  },
+                  "core": {
+                    "anyOf": [
+                      {
+                        "type": "null"
+                      },
+                      {
+                        "properties": {
+                          "scope": {
+                            "enum": [
+                              "kernel"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "infeasible_stage": {
+                "const": "initialization"
+              },
+              "explanation": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "infeasible_stage",
+              "explanation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "explanation": {
+                "properties": {
+                  "classification": {
+                    "enum": [
+                      "initialization_self_conflict",
+                      "initialization_domain_conflict",
+                      "initialization_kernel_conflict",
+                      null
+                    ]
+                  },
+                  "core": {
+                    "anyOf": [
+                      {
+                        "type": "null"
+                      },
+                      {
+                        "properties": {
+                          "scope": {
+                            "enum": [
+                              "initialization_component",
+                              "initialization_domain",
+                              "initialization_prefix",
+                              "initialization_stage_fallback"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "infeasible_stage": {
+                "const": "assumptions"
+              },
+              "explanation": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "infeasible_stage",
+              "explanation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "explanation": {
+                "properties": {
+                  "classification": {
+                    "enum": [
+                      "assumptions_self_conflict",
+                      "assumptions_domain_conflict",
+                      "assumptions_prefix_conflict",
+                      null
+                    ]
+                  },
+                  "core": {
+                    "anyOf": [
+                      {
+                        "type": "null"
+                      },
+                      {
+                        "properties": {
+                          "scope": {
+                            "enum": [
+                              "assumptions_component",
+                              "assumptions_domain",
+                              "assumptions_prefix",
+                              "assumptions_stage_fallback"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "infeasible_stage": {
+                "const": "kernel"
+              },
+              "explanation": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "infeasible_stage",
+              "explanation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "explanation": {
+                "properties": {
+                  "classification": {
+                    "const": "kernel_conflict"
+                  }
+                }
               }
             }
           }
@@ -4119,7 +4725,7 @@
           "minLength": 1
         },
         "source": {
-          "type": "object"
+          "$ref": "#/$defs/constraintSourceRef"
         },
         "summary": {
           "type": "string",
@@ -4237,7 +4843,9 @@
           "minItems": 1,
           "items": {
             "$ref": "#/$defs/coreItem"
-          }
+          },
+          "uniqueItems": true,
+          "$comment": "Members are ordered by constraint.stable_id and each id appears once. Draft 2020-12 cannot express uniqueness over a nested key, so uniqueItems covers identical members and the stable_id-level rule is enforced by BmcConflictCore plus its equivalence test."
         }
       },
       "allOf": [
@@ -4278,6 +4886,293 @@
             "properties": {
               "subset_minimality": {
                 "const": "proven"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "scope": {
+                "const": "kernel"
+              }
+            },
+            "required": [
+              "scope"
+            ]
+          },
+          "then": {
+            "properties": {
+              "items": {
+                "items": {
+                  "properties": {
+                    "constraint": {
+                      "properties": {
+                        "stage": {
+                          "enum": [
+                            "kernel"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "scope": {
+                "const": "initialization_component"
+              }
+            },
+            "required": [
+              "scope"
+            ]
+          },
+          "then": {
+            "properties": {
+              "items": {
+                "items": {
+                  "properties": {
+                    "constraint": {
+                      "properties": {
+                        "stage": {
+                          "enum": [
+                            "initialization"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "scope": {
+                "const": "initialization_domain"
+              }
+            },
+            "required": [
+              "scope"
+            ]
+          },
+          "then": {
+            "properties": {
+              "items": {
+                "items": {
+                  "properties": {
+                    "constraint": {
+                      "properties": {
+                        "stage": {
+                          "enum": [
+                            "kernel",
+                            "initialization"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "scope": {
+                "const": "initialization_prefix"
+              }
+            },
+            "required": [
+              "scope"
+            ]
+          },
+          "then": {
+            "properties": {
+              "items": {
+                "items": {
+                  "properties": {
+                    "constraint": {
+                      "properties": {
+                        "stage": {
+                          "enum": [
+                            "kernel",
+                            "initialization"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "scope": {
+                "const": "assumptions_component"
+              }
+            },
+            "required": [
+              "scope"
+            ]
+          },
+          "then": {
+            "properties": {
+              "items": {
+                "items": {
+                  "properties": {
+                    "constraint": {
+                      "properties": {
+                        "stage": {
+                          "enum": [
+                            "assumptions"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "scope": {
+                "const": "assumptions_domain"
+              }
+            },
+            "required": [
+              "scope"
+            ]
+          },
+          "then": {
+            "properties": {
+              "items": {
+                "items": {
+                  "properties": {
+                    "constraint": {
+                      "properties": {
+                        "stage": {
+                          "enum": [
+                            "kernel",
+                            "assumptions"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "scope": {
+                "const": "assumptions_prefix"
+              }
+            },
+            "required": [
+              "scope"
+            ]
+          },
+          "then": {
+            "properties": {
+              "items": {
+                "items": {
+                  "properties": {
+                    "constraint": {
+                      "properties": {
+                        "stage": {
+                          "enum": [
+                            "kernel",
+                            "initialization",
+                            "assumptions"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "scope": {
+                "const": "initialization_stage_fallback"
+              }
+            },
+            "required": [
+              "scope"
+            ]
+          },
+          "then": {
+            "properties": {
+              "items": {
+                "items": {
+                  "properties": {
+                    "constraint": {
+                      "properties": {
+                        "stage": {
+                          "enum": [
+                            "kernel",
+                            "initialization"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "scope": {
+                "const": "assumptions_stage_fallback"
+              }
+            },
+            "required": [
+              "scope"
+            ]
+          },
+          "then": {
+            "properties": {
+              "items": {
+                "items": {
+                  "properties": {
+                    "constraint": {
+                      "properties": {
+                        "stage": {
+                          "enum": [
+                            "kernel",
+                            "initialization",
+                            "assumptions"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
               }
             }
           }
@@ -4758,6 +5653,86 @@
             "required": [
               "proof"
             ]
+          }
+        }
+      ]
+    },
+    "constraintSourceRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "path",
+        "span"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "fcstm",
+            "fbmcq",
+            "generated"
+          ]
+        },
+        "path": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "span": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": false,
+          "required": [
+            "line",
+            "column",
+            "end_line",
+            "end_column"
+          ],
+          "properties": {
+            "line": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "column": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "end_line": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "end_column": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "generated"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "path": {
+                "type": "null"
+              },
+              "span": {
+                "type": "null"
+              }
+            }
           }
         }
       ]

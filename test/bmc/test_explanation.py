@@ -586,3 +586,58 @@ def test_reserved_slots_are_rejected_rather_than_silently_dropped(slot) -> None:
             reason="r",
             **{slot: filled},
         )
+
+
+@pytest.mark.parametrize("bad", [(True,), (-1,), ("0",), (1.0,)])
+def test_frame_and_step_indices_must_be_non_negative_integers(bad) -> None:
+    """A published index must survive the JSON contract unchanged.
+
+    ``bool`` is an ``int`` subclass in Python, so an unchecked flag would be
+    serialized as ``true`` where the schema promises a number.
+    """
+    with pytest.raises(ValueError, match="non-negative integers"):
+        BmcConstraintRef(
+            "initial.target",
+            "initialization",
+            "initial.target",
+            _GENERATED,
+            "initial target state",
+            frames=bad,
+        )
+
+    with pytest.raises(ValueError, match="non-negative integers"):
+        BmcConstraintRef(
+            "initial.target",
+            "initialization",
+            "initial.target",
+            _GENERATED,
+            "initial target state",
+            steps=bad,
+        )
+
+
+@pytest.mark.parametrize("field", ["source_excerpt_truncated", "editable"])
+def test_core_item_flags_must_be_real_booleans(field) -> None:
+    """A truthy stand-in would publish a non-boolean where JSON needs one."""
+    payload = dict(
+        constraint=_constraint(),
+        semantic_role="initial_fact",
+        source_excerpt=None,
+        source_excerpt_truncated=False,
+        normalized_fact={},
+        human_text="initial target state",
+        editable=False,
+    )
+    payload[field] = "yes"
+
+    with pytest.raises(TypeError, match="must be a bool"):
+        BmcCoreItem(**payload)
+
+
+def test_optional_text_fields_reject_non_strings() -> None:
+    """An excerpt or a reason is text, so a number is not a quiet substitute."""
+    with pytest.raises(TypeError, match="source_excerpt"):
+        BmcCoreItem(_constraint(), "initial_fact", 123, False, {}, "t", False)
+
+    with pytest.raises(TypeError, match="reason"):
+        BmcInfeasibilityExplanation("formal", "none", "unknown", None, reason=123)

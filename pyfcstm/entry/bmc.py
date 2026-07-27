@@ -241,6 +241,7 @@ def _execute_bmc(
     query_file: str,
     timeout_ms: Optional[int],
     max_bound: Optional[int],
+    infeasibility_explanation: str = "none",
 ) -> _BmcExecution:
     from ..bmc import BmcBuildError
 
@@ -253,7 +254,17 @@ def _execute_bmc(
         query_source_path=query_file,
     )
     try:
-        result = _solve_bmc_property(formula, timeout_ms=timeout_ms)
+        # The default depth leaves the solver call exactly as it was before
+        # explanations existed, so the untouched path keeps its previous shape
+        # instead of gaining an argument it would only ever ignore.
+        if infeasibility_explanation == "none":
+            result = _solve_bmc_property(formula, timeout_ms=timeout_ms)
+        else:
+            result = _solve_bmc_property(
+                formula,
+                timeout_ms=timeout_ms,
+                infeasibility_explanation=infeasibility_explanation,
+            )
     except BmcBuildError as err:
         # solve_bmc_property receives validated CLI arguments and a compiled
         # formula, so a build failure here is an internal implementation error.
@@ -568,6 +579,7 @@ def build_bmc_output(
     json_output: bool = False,
     timeout_ms: Optional[int] = None,
     max_bound: Optional[int] = None,
+    infeasibility_explanation: str = "none",
 ) -> Tuple[str, int]:
     """Run one bounded query and build its complete CLI report.
 
@@ -585,6 +597,10 @@ def build_bmc_output(
     :type timeout_ms: int, optional
     :param max_bound: Maximum accepted query bound, defaults to ``None``.
     :type max_bound: int, optional
+    :param infeasibility_explanation: Explanation depth to attempt once a
+        stage has been localized: ``none``, ``formal`` or ``proof``, defaults
+        to ``'none'``.  The default runs no additional solver check.
+    :type infeasibility_explanation: str, optional
     :return: Completed report text and matching process exit status.
     :rtype: Tuple[str, int]
     :raises pyfcstm.entry.base.ClickErrorException: If model/query input is
@@ -605,6 +621,7 @@ def build_bmc_output(
         json_output=json_output,
         timeout_ms=timeout_ms,
         max_bound=max_bound,
+        infeasibility_explanation=infeasibility_explanation,
     )
     return text, exit_code
 
@@ -616,6 +633,7 @@ def _build_bmc_report(
     json_output: bool,
     timeout_ms: Optional[int],
     max_bound: Optional[int],
+    infeasibility_explanation: str = "none",
 ) -> Tuple[str, int, str]:
     """Build one report and retain presentation severity for terminal color."""
     for option_name, option_value in (
@@ -630,11 +648,22 @@ def _build_bmc_report(
             raise ClickErrorException(
                 "%s must be None or a positive integer." % option_name
             )
+    if isinstance(infeasibility_explanation, bool) or infeasibility_explanation not in (
+        "none",
+        "formal",
+        "proof",
+    ):
+        # A bad depth is a caller mistake like any other option value, so it
+        # reports as an argument error rather than as an internal failure.
+        raise ClickErrorException(
+            "infeasibility_explanation must be one of none, formal, proof."
+        )
     execution = _execute_bmc(
         input_code_file,
         query_file,
         timeout_ms,
         max_bound,
+        infeasibility_explanation,
     )
     if json_output:
         return (

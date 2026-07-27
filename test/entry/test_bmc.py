@@ -1766,3 +1766,93 @@ def test_bmc_human_color_rejects_unknown_severity() -> None:
         bmc_entry._BmcCliInternalError, match="Unsupported human report severity"
     ):
         bmc_entry._colorize_human_report("BMC report\n", "purple")
+
+
+_EXPLAIN_MODEL = """def int x = 0;
+state Root {
+    event Go;
+    state A;
+    state B;
+    [*] -> A;
+    A -> B :: Go;
+}
+"""
+
+_EXPLAIN_QUERY = """init state("Root.A") where x == 0;
+assume at 0: var("x") == 1;
+assume at 0: var("x") == 2;
+check reach <= 2: active("Root.B");
+"""
+
+
+@pytest.fixture()
+def explain_files(tmp_path):
+    """Write one model and one self-conflicting query to disk."""
+    model = tmp_path / "machine.fcstm"
+    query = tmp_path / "scenario.fbmcq"
+    model.write_text(_EXPLAIN_MODEL, encoding="utf-8")
+    query.write_text(_EXPLAIN_QUERY, encoding="utf-8")
+    return str(model), str(query)
+
+
+@pytest.mark.unittest
+def test_build_bmc_output_default_publishes_no_explanation(explain_files):
+    """The file helper keeps its previous behaviour unless asked otherwise."""
+    from pyfcstm.entry.bmc import build_bmc_output
+
+    model, query = explain_files
+
+    text, exit_code = build_bmc_output(model, query, json_output=True)
+    payload = json.loads(text)
+    feasibility = payload["result"]["feasibility"]
+
+    assert exit_code == 3
+    assert feasibility["infeasible_stage"] == "assumptions"
+    assert feasibility["explanation"] is None
+    assert feasibility["refinement_status"] == "not_requested"
+    assert feasibility["refinement_checks"] == []
+
+
+@pytest.mark.unittest
+def test_build_bmc_output_can_publish_a_source_mapped_explanation(explain_files):
+    """Asking for an explanation reaches JSON with the authored lines in it."""
+    from pyfcstm.entry.bmc import build_bmc_output
+
+    model, query = explain_files
+
+    text, exit_code = build_bmc_output(
+        model, query, json_output=True, infeasibility_explanation="formal"
+    )
+    payload = json.loads(text)
+    feasibility = payload["result"]["feasibility"]
+    explanation = feasibility["explanation"]
+
+    assert exit_code == 3
+    assert explanation["classification"] == "assumptions_self_conflict"
+    assert explanation["achieved_mode"] == "formal"
+    assert explanation["core"]["scope"] == "assumptions_component"
+    assert [item["source_excerpt"] for item in explanation["core"]["items"]] == [
+        'assume at 0: var("x") == 1;',
+        'assume at 0: var("x") == 2;',
+    ]
+    assert feasibility["refinement_status"] == explanation["status"]
+    assert feasibility["refinement_checks"]
+
+    schema = json.loads(
+        Path("docs/source/reference/bmc_results/bmc_cli.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    _assert_bmc_schema_instance(schema, payload)
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize("mode", ["FORMAL", "formal ", "", "subset", True, None])
+def test_build_bmc_output_rejects_unknown_explanation_modes(explain_files, mode):
+    """A bad depth is an argument error, not an internal failure."""
+    from pyfcstm.entry.bmc import build_bmc_output
+
+    model, query = explain_files
+
+    with pytest.raises(ClickErrorException, match="infeasibility_explanation"):
+        build_bmc_output(model, query, infeasibility_explanation=mode)

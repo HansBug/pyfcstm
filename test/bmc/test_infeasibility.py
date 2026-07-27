@@ -23,6 +23,7 @@ from pyfcstm.bmc.explanation import (
 )
 from pyfcstm.bmc.infeasibility import (
     AGGREGATE_SELECTORS,
+    MAX_SOURCE_EXCERPT_CHARS,
     SCOPE_TARGETS,
     _activation_solver,
     _indices,
@@ -39,7 +40,9 @@ from pyfcstm.bmc.provenance import (
     SourceDocumentRegistry,
 )
 from pyfcstm.bmc.solver import _SolveBudget
+from pyfcstm.bmc.witness import solve_bmc_property
 from pyfcstm.model import load_state_machine_from_text
+from pyfcstm.utils.validate import Span
 
 pytestmark = pytest.mark.unittest
 
@@ -589,7 +592,13 @@ def test_explain_publishes_a_classification_and_a_mapped_core() -> None:
 
 
 def test_explain_keeps_the_classification_when_the_core_degrades() -> None:
-    """Losing the core must not lose the answer the caller asked for."""
+    """Losing the core must not lose the answer the caller asked for.
+
+    A usable classification means part of the request was delivered, so the
+    frozen truth table calls this ``partial``.  Passing the extraction's own
+    ``unknown``/``timeout`` through would claim nothing was established, which
+    is the status reserved for a classification that never completed.
+    """
     core = _core_formula(
         'init state("Root.A") where x == 0; '
         'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
@@ -614,7 +623,7 @@ def test_explain_keeps_the_classification_when_the_core_degrades() -> None:
     assert explanation.classification == "assumptions_self_conflict"
     assert explanation.achieved_mode == "none"
     assert explanation.core is None
-    assert explanation.status == "timeout"
+    assert explanation.status == "partial"
     assert explanation.reason
 
 
@@ -715,10 +724,12 @@ def test_domain_conflicts_are_classified_against_production_formulas(
 ) -> None:
     """A component that only conflicts with ``D_N`` is named a domain conflict.
 
-    The relation builder never emits a frame-state value outside the domain,
-    so this classification cannot be reached from authored FBMCQ text.  The
-    contract is therefore pinned against the real domain formula and a real
-    frame symbol.
+    No authored query in this suite reaches this branch: the binder resolves
+    every state reference to a value the domain already admits.  That is an
+    observation about the queries tried here, not a proof of impossibility, so
+    the branch is pinned against the real domain formula and a real frame
+    symbol instead of being left untested.  If a natural witness turns up
+    later it should replace this contract test.
     """
     core = _core_formula(
         'init state("Root.A") where x == 0; '
@@ -739,54 +750,72 @@ def test_domain_conflicts_are_classified_against_production_formulas(
     ]
 
 
-def test_initialization_kernel_conflict_is_classified_against_production_formulas() -> (
-    None
-):
+def test_initialization_kernel_conflict_is_reachable_from_authored_text() -> None:
     """An initializer that only the transition relation rejects is a kernel conflict.
 
-    The generated transition relation is total over the domain, so ``D_N`` and
-    ``I_0`` being satisfiable always extends to a full path.  This branch is
-    consequently unreachable from authored text and is pinned by contract: the
-    transition aggregate is replaced with the real negation of the initializer.
+    A guard whose runtime definedness fails leaves the encoded step with no
+    successor, because an undefined guard must block the transition rather
+    than quietly read as false.  ``D_N`` and ``I_0`` are then satisfiable
+    together while the full kernel is not, which is exactly this
+    classification.  Driving it from authored FCSTM keeps the branch pinned to
+    behaviour a user can actually produce.
     """
+    source = """def int x = 1;
+def int y = 0;
+state Root {
+    state A { during { x = x + 1; } }
+    state B;
+    [*] -> A;
+    A -> B : if [x / y > 0];
+}"""
     core = _core_formula(
-        'init state("Root.A") where x == 0; check reach <= 2: active("Root.B");'
+        'init state("Root.A") where x == 1 && y == 0; '
+        'check reach <= 1: active("Root.A");',
+        source,
     )
-    frame = _frame_symbol(core)
-    tampered = _with_aggregate(core, "initial", frame == 0)
-    tampered = _with_aggregate(tampered, "transition", z3.Not(frame == 0))
+    with_domain = z3.Solver()
+    with_domain.add(core.domain_formula, core.initial_formula)
+    with_transition = z3.Solver()
+    with_transition.add(
+        core.domain_formula, core.transition_formula, core.initial_formula
+    )
 
-    outcome = classify_infeasibility(tampered, "initialization", _SolveBudget(None))
+    assert with_domain.check() == z3.sat
+    assert with_transition.check() == z3.unsat
+
+    outcome = classify_infeasibility(core, "initialization", _SolveBudget(None))
 
     assert outcome.classification == "initialization_kernel_conflict"
     assert outcome.scope == "initialization_prefix"
 
 
-def test_the_generated_transition_relation_is_total_over_the_domain() -> None:
-    """Explains why one classification cannot be reached from authored text.
+def test_a_divergent_guard_reaches_the_kernel_conflict_through_the_public_solve() -> (
+    None
+):
+    """The same conflict is what a user sees from the public entry point."""
+    machine = load_state_machine_from_text(
+        """def int x = 1;
+def int y = 0;
+state Root {
+    state A { during { x = x + 1; } }
+    state B;
+    [*] -> A;
+    A -> B : if [x / y > 0];
+}"""
+    )
+    context = BmcEngine(machine).prepare(
+        'init state("Root.A") where x == 1 && y == 0; '
+        'check reach <= 1: active("Root.A");'
+    )
+    result = solve_bmc_property(
+        compile_bmc_property(build_bmc_core_formula(context)),
+        infeasibility_explanation="formal",
+    )
+    explanation = result.feasibility.explanation
 
-    If ``D_N`` and ``I_0`` are satisfiable together, the generated relation
-    always admits a continuation, so ``initialization_kernel_conflict`` has no
-    natural witness.  Pinning that here keeps the contract test above honest
-    if the relation ever stops being total.
-    """
-    for source in (
-        "def int x = 0;\nstate Root { event Go; state A; state B; [*] -> A;"
-        " A -> B :: Go; }",
-        "def int x = 0;\nstate Root { state A; [*] -> A; A -> A effect { x = x + 1; } }",
-        "state Root { state P { state C1; state C2; [*] -> C1; C1 -> C2; }"
-        " state Q; [*] -> P; P -> Q; }",
-    ):
-        core = _core_formula("check reach <= 3: false;", source)
-        with_domain = z3.Solver()
-        with_domain.add(core.domain_formula, core.initial_formula)
-        with_transition = z3.Solver()
-        with_transition.add(
-            core.domain_formula, core.transition_formula, core.initial_formula
-        )
-
-        assert with_domain.check() == z3.sat
-        assert with_transition.check() == z3.sat
+    assert result.feasibility.infeasible_stage == "initialization"
+    assert explanation.classification == "initialization_kernel_conflict"
+    assert explanation.core.scope == "initialization_prefix"
 
 
 class _UnknownAfter:
@@ -797,18 +826,25 @@ class _UnknownAfter:
     every other behaviour real while making the degradation deterministic.
     """
 
-    def __init__(self, real, counter, threshold, reason):
+    def __init__(self, real, counter, threshold, reason, once=False):
         self._real = real
         self._counter = counter
         self._threshold = threshold
         self._reason = reason
+        self._once = once
         self._degraded = False
 
     def check(self, *assumptions):
         self._counter[0] += 1
-        if self._counter[0] >= self._threshold:
+        hit = (
+            self._counter[0] == self._threshold
+            if self._once
+            else self._counter[0] >= self._threshold
+        )
+        if hit:
             self._degraded = True
             return z3.unknown
+        self._degraded = False
         return self._real.check(*assumptions)
 
     def reason_unknown(self):
@@ -818,11 +854,16 @@ class _UnknownAfter:
         return getattr(self._real, name)
 
 
-def _patch_solver(counter, threshold, reason):
+def _patch_solver(counter, threshold, reason, once=False):
+    """Swap in a solver wrapper that degrades at a chosen check.
+
+    ``once`` degrades only that single check, which is what a transient
+    ``unknown`` looks like; otherwise every later check degrades too.
+    """
     real = z3.Solver
 
     def factory(*args, **kwargs):
-        return _UnknownAfter(real(*args, **kwargs), counter, threshold, reason)
+        return _UnknownAfter(real(*args, **kwargs), counter, threshold, reason, once)
 
     return real, factory
 
@@ -1010,3 +1051,114 @@ def test_programmatic_queries_stay_editable_without_an_excerpt() -> None:
     assert [item.constraint.source.kind for item in items] == ["fbmcq", "fbmcq"]
     assert all(item.editable for item in items)
     assert all(item.source_excerpt is None for item in items)
+
+
+def test_a_long_excerpt_is_cut_and_declares_the_cut() -> None:
+    """A published excerpt is bounded and never shortened silently.
+
+    One very long authored line would otherwise put an unbounded slice of the
+    user's source into canonical JSON.  The cut happens at the publication
+    point and ``source_excerpt_truncated`` states that it happened, so a
+    consumer can tell a complete quote from a clipped one.
+    """
+    machine = load_state_machine_from_text(_MODEL)
+    padding = " " * (MAX_SOURCE_EXCERPT_CHARS + 500)
+    query = (
+        'init state("Root.A") where x == 0;\n'
+        'assume at 0:%s var("x") == 1;\n'
+        'assume at 0: var("x") == 2;\n'
+        'check reach <= 2: active("Root.B");\n' % padding
+    )
+    context = BmcEngine(machine).prepare(query, query_source_path="q.fbmcq")
+
+    outcome = explain_infeasibility(
+        build_bmc_core_formula(context), "assumptions", _SolveBudget(None)
+    )
+    items = outcome.explanation.core.items
+    long_item = max(items, key=lambda item: len(item.source_excerpt or ""))
+    short_item = min(items, key=lambda item: len(item.source_excerpt or ""))
+
+    assert len(long_item.source_excerpt) == MAX_SOURCE_EXCERPT_CHARS
+    assert long_item.source_excerpt_truncated is True
+    assert short_item.source_excerpt == 'assume at 0: var("x") == 2;'
+    assert short_item.source_excerpt_truncated is False
+
+
+def test_an_excerpt_at_the_limit_is_not_reported_as_cut() -> None:
+    """The bound is inclusive, so an exactly-sized excerpt stays whole."""
+    reference = BmcSourceRef(
+        "fbmcq", "q.fbmcq", Span(1, 1, 1, MAX_SOURCE_EXCERPT_CHARS + 1)
+    )
+    document = "x" * MAX_SOURCE_EXCERPT_CHARS
+    group = BmcTrackedConstraint(
+        "assumption.0000.frame.0000",
+        "assumptions",
+        "assumption.frame",
+        (True,),
+        reference,
+    )
+
+    item = build_core_item(
+        group, SourceDocumentRegistry({}, query_documents={"q.fbmcq": document})
+    )
+
+    assert len(item.source_excerpt) == MAX_SOURCE_EXCERPT_CHARS
+    assert item.source_excerpt_truncated is False
+
+
+def test_two_groups_sharing_a_stable_id_fail_closed() -> None:
+    """One activation literal may never gate two different source groups.
+
+    A stable id is metadata and never enters the expressions, so the partition
+    assertion cannot notice the collision: the rebuilt aggregates are
+    identical.  Left unchecked, the second group would overwrite the first in
+    the label map and the core would name the wrong source.
+    """
+    core = _core_formula(
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
+        'check reach <= 2: active("Root.B");'
+    )
+    environment = [g for g in core._tracked_groups if g.stage == "assumptions"]
+    collided = replace(environment[1], stable_id=environment[0].stable_id)
+    tampered = replace(
+        core,
+        _tracked_groups=tuple(
+            collided if group is environment[1] else group
+            for group in core._tracked_groups
+        ),
+    )
+
+    assert partition_tracked_groups(tampered)
+
+    with pytest.raises(BmcBuildError, match="share the stable id"):
+        extract_source_core(tampered, "assumptions_component", _SolveBudget(None))
+
+
+def test_an_unclassified_stage_still_gets_a_fallback_core() -> None:
+    """Remaining budget goes into a fallback core, not to waste.
+
+    The mandatory solve already proved the stage target unsatisfiable, so an
+    undetermined *shape* is no reason to withhold the source lines.
+    """
+    core = _core_formula(
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
+        'check reach <= 2: active("Root.B");'
+    )
+    counter = [0]
+    real, factory = _patch_solver(counter, 1, "incomplete", once=True)
+    z3.Solver = factory
+    try:
+        outcome = explain_infeasibility(core, "assumptions", _SolveBudget(None))
+    finally:
+        z3.Solver = real
+
+    explanation = outcome.explanation
+
+    assert explanation.classification is None
+    assert explanation.achieved_mode == "formal"
+    assert explanation.status == "partial"
+    assert explanation.core.scope == "assumptions_stage_fallback"
+    assert "degraded" in explanation.reason
+    assert explanation.core.items

@@ -2348,6 +2348,21 @@ def _validate_explanation_agreement(
         raise BmcBuildError(
             "an explanation requires at least one recorded refinement check."
         )
+    names = {check.name for check in refinement_checks}
+    core = explanation.core
+    if core is not None and not (names & _FEASIBILITY_CORE_REFINEMENT_NAMES):
+        # A published core is a claim that some check proved its target
+        # unsatisfiable, so the ledger has to contain that check.
+        raise BmcBuildError(
+            "a published core requires a recorded unsat-core refinement check."
+        )
+    if core is not None and core.subset_minimality == "proven":
+        # Minimality is only proven by deletion checks; without one in the
+        # ledger the claim has nothing behind it.
+        if "unsat_core_minimization" not in names:
+            raise BmcBuildError(
+                "a proven-minimal core requires recorded deletion checks."
+            )
 
 
 def _explanation_stage(

@@ -1,0 +1,456 @@
+"""The published schema and the Python constructor must agree on one payload set.
+
+The upstream contract freezes this as a two-way requirement, so a payload that
+one side accepts and the other rejects is a defect regardless of which side is
+"right".  The corpus below deliberately mixes two kinds of dimension:
+
+* scalar dimensions - modes, statuses, classifications, scopes, reductions;
+* structural dimensions - how many core members there are, which stages they
+  come from, and whether their provenance is well formed.
+
+A cross product over scalar enums alone cannot reach a relational invariant: it
+holds the member list fixed at one well-formed entry, so every rule about how
+members relate to their scope or to each other stays untested no matter how
+many thousands of combinations it produces.
+"""
+
+from __future__ import annotations
+
+import itertools
+import json
+from pathlib import Path
+
+import jsonschema
+import pytest
+
+from pyfcstm.bmc.explanation import (
+    CLASSIFICATION_SCOPES,
+    STAGE_FALLBACK_SCOPES,
+    BmcConflictCore,
+    BmcConstraintRef,
+    BmcCoreItem,
+    BmcInfeasibilityExplanation,
+)
+from pyfcstm.bmc.provenance import BmcSourceRef
+
+pytestmark = pytest.mark.unittest
+
+_SCHEMA_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "docs"
+    / "source"
+    / "reference"
+    / "bmc_results"
+    / "bmc_cli.schema.json"
+)
+
+#: One stage that every scope's target formula legitimately contains.
+_SCOPE_MEMBER_STAGE = {
+    "kernel": "kernel",
+    "initialization_component": "initialization",
+    "initialization_domain": "initialization",
+    "initialization_prefix": "initialization",
+    "assumptions_component": "assumptions",
+    "assumptions_domain": "assumptions",
+    "assumptions_prefix": "assumptions",
+    "initialization_stage_fallback": "initialization",
+    "assumptions_stage_fallback": "assumptions",
+}
+
+_STAGE_SHAPE = {
+    "kernel": ("domain.frame_state", "domain_rule"),
+    "initialization": ("initial.target", "initial_fact"),
+    "assumptions": ("assumption.frame", "assumption"),
+}
+
+_ALL_SCOPES = tuple(CLASSIFICATION_SCOPES.values()) + STAGE_FALLBACK_SCOPES
+
+#: Constraints that Draft 2020-12 cannot state, so the two sides cannot be
+#: expected to agree on them.  Each entry names the rule and why it is absent
+#: from the schema; the Python side still enforces every one of them.
+_INEXPRESSIBLE = {
+    "duplicate stable_id with differing content": (
+        "uniqueness over a nested key (items[*].constraint.stable_id) has no "
+        "Draft 2020-12 keyword; uniqueItems only catches identical members"
+    ),
+}
+
+
+@pytest.fixture(scope="module")
+def validator() -> jsonschema.Draft202012Validator:
+    """Return a validator bound to the published explanation definition."""
+    schema = json.loads(_SCHEMA_PATH.read_text(encoding="utf-8"))
+    return jsonschema.Draft202012Validator(
+        {"$ref": "#/$defs/infeasibilityExplanation", "$defs": schema["$defs"]}
+    )
+
+
+def _member(stable_id: str, stage: str, kind: str = "generated", **overrides):
+    """Build one canonical core member, allowing deliberate corruption."""
+    category, role = _STAGE_SHAPE[stage]
+    constraint = {
+        "stable_id": stable_id,
+        "stage": stage,
+        "category": category,
+        "source": {"kind": kind, "path": None, "span": None},
+        "summary": "group %s" % stable_id,
+        "frames": [],
+        "steps": [],
+        "refs": {},
+    }
+    member = {
+        "constraint": constraint,
+        "semantic_role": role,
+        "source_excerpt": None,
+        "source_excerpt_truncated": False,
+        "normalized_fact": {},
+        "human_text": "text for %s" % stable_id,
+        "editable": False,
+    }
+    member.update(overrides)
+    return member
+
+
+def _payload(
+    *,
+    requested_mode="formal",
+    achieved_mode="formal",
+    status="partial",
+    classification="initialization_self_conflict",
+    scope="initialization_component",
+    reduction="raw",
+    subset_minimality="not_proven",
+    members=None,
+    reason="r",
+    elapsed_ms=1.0,
+):
+    """Assemble one canonical explanation payload."""
+    core = None
+    if scope is not None:
+        if members is None:
+            members = [_member("g0", _SCOPE_MEMBER_STAGE[scope])]
+        core = {
+            "scope": scope,
+            "formula_summary": "F",
+            "granularity": "source_group",
+            "reduction": reduction,
+            "subset_minimality": subset_minimality,
+            "items": members,
+        }
+    return {
+        "requested_mode": requested_mode,
+        "achieved_mode": achieved_mode,
+        "status": status,
+        "classification": classification,
+        "core": core,
+        "proof": None,
+        "narrative": None,
+        "reason": reason,
+        "elapsed_ms": elapsed_ms,
+    }
+
+
+def _constructor_accepts(payload) -> bool:
+    """Report whether the public constructors accept a canonical payload."""
+    try:
+        core = None
+        if payload["core"] is not None:
+            raw = payload["core"]
+            items = tuple(
+                BmcCoreItem(
+                    BmcConstraintRef(
+                        entry["constraint"]["stable_id"],
+                        entry["constraint"]["stage"],
+                        entry["constraint"]["category"],
+                        BmcSourceRef(
+                            entry["constraint"]["source"]["kind"],
+                            entry["constraint"]["source"]["path"],
+                            None,
+                        ),
+                        entry["constraint"]["summary"],
+                    ),
+                    entry["semantic_role"],
+                    entry["source_excerpt"],
+                    entry["source_excerpt_truncated"],
+                    entry["normalized_fact"],
+                    entry["human_text"],
+                    entry["editable"],
+                )
+                for entry in raw["items"]
+            )
+            core = BmcConflictCore(
+                raw["scope"],
+                raw["formula_summary"],
+                raw["granularity"],
+                raw["reduction"],
+                raw["subset_minimality"],
+                items,
+            )
+        BmcInfeasibilityExplanation(
+            payload["requested_mode"],
+            payload["achieved_mode"],
+            payload["status"],
+            payload["classification"],
+            core,
+            payload["proof"],
+            payload["narrative"],
+            payload["reason"],
+            payload["elapsed_ms"],
+        )
+        return True
+    except (ValueError, TypeError) as err:
+        # ValueError: a frozen vocabulary or cross-field rule rejected it.
+        # TypeError: a slot received a value of the wrong type.
+        del err
+        return False
+
+
+def _scalar_corpus():
+    """Yield the scalar cross product over every frozen vocabulary."""
+    classifications = [None] + list(CLASSIFICATION_SCOPES)
+    for requested, achieved in itertools.product(
+        ["none", "formal", "proof"], ["none", "formal", "proof"]
+    ):
+        for status in ["complete", "partial", "unknown", "timeout"]:
+            for classification in classifications:
+                for scope in [None] + list(_ALL_SCOPES):
+                    for reduction, minimality in [
+                        ("raw", "not_proven"),
+                        ("partial_minimized", "not_proven"),
+                        ("subset_minimal", "proven"),
+                    ]:
+                        for reason in [None, "r"]:
+                            yield (
+                                "scalar",
+                                _payload(
+                                    requested_mode=requested,
+                                    achieved_mode=achieved,
+                                    status=status,
+                                    classification=classification,
+                                    scope=scope,
+                                    reduction=reduction,
+                                    subset_minimality=minimality,
+                                    reason=reason,
+                                ),
+                            )
+
+
+def _structural_corpus():
+    """Yield payloads that only differ in how the core members relate."""
+    yield (
+        "two members",
+        _payload(
+            members=[
+                _member("g1", "initialization"),
+                _member("g0", "initialization"),
+            ]
+        ),
+    )
+    yield (
+        "member outside a component scope",
+        _payload(
+            scope="assumptions_component",
+            classification="assumptions_self_conflict",
+            members=[_member("g0", "initialization")],
+        ),
+    )
+    yield (
+        "kernel member inside a component scope",
+        _payload(members=[_member("g0", "kernel")]),
+    )
+    yield (
+        "prefix scope reaching earlier stages",
+        _payload(
+            scope="assumptions_prefix",
+            classification="assumptions_prefix_conflict",
+            members=[
+                _member("g0", "kernel"),
+                _member("g1", "initialization"),
+                _member("g2", "assumptions"),
+            ],
+        ),
+    )
+    yield (
+        "unsupported source kind",
+        _payload(members=[_member("g0", "initialization", kind="bogus")]),
+    )
+    yield (
+        "generated reference carrying a path",
+        _payload(
+            members=[
+                _member(
+                    "g0",
+                    "initialization",
+                    constraint={
+                        "stable_id": "g0",
+                        "stage": "initialization",
+                        "category": "initial.target",
+                        "source": {
+                            "kind": "generated",
+                            "path": "machine.fcstm",
+                            "span": None,
+                        },
+                        "summary": "s",
+                        "frames": [],
+                        "steps": [],
+                        "refs": {},
+                    },
+                )
+            ]
+        ),
+    )
+    yield (
+        "identical duplicate members",
+        _payload(
+            members=[_member("g0", "initialization"), _member("g0", "initialization")]
+        ),
+    )
+    yield "empty member list", _payload(members=[])
+    yield "negative elapsed time", _payload(elapsed_ms=-1.0)
+
+
+def test_scalar_corpus_agrees(validator) -> None:
+    """Every frozen vocabulary combination is judged the same by both sides."""
+    disagreements = []
+    accepted = 0
+    total = 0
+    for _, payload in _scalar_corpus():
+        total += 1
+        by_schema = validator.is_valid(payload)
+        by_constructor = _constructor_accepts(payload)
+        accepted += by_constructor
+        if by_schema != by_constructor:
+            disagreements.append((payload, by_schema, by_constructor))
+
+    assert total > 5000
+    assert accepted, "the corpus must contain payloads both sides accept"
+    assert disagreements == []
+
+
+@pytest.mark.parametrize("name, payload", list(_structural_corpus()))
+def test_structural_corpus_agrees(validator, name, payload) -> None:
+    """Relational rules about core members bind both sides equally.
+
+    These are the cases a scalar cross product can never reach, because it
+    never varies the member list.
+    """
+    by_schema = validator.is_valid(payload)
+    by_constructor = _constructor_accepts(payload)
+
+    if name in _INEXPRESSIBLE:
+        pytest.skip("%s: %s" % (name, _INEXPRESSIBLE[name]))
+    assert by_schema == by_constructor, name
+
+
+def test_the_one_inexpressible_rule_is_still_enforced_in_python() -> None:
+    """The documented schema gap must not become a Python gap too.
+
+    Draft 2020-12 has no keyword for uniqueness over a nested key, so two
+    members sharing a ``stable_id`` while differing elsewhere pass the schema.
+    The constructor is the only thing standing between that payload and a core
+    that quotes one source group twice, so it is pinned here explicitly.
+    """
+    payload = _payload(
+        members=[
+            _member("same", "initialization", human_text="first"),
+            _member("same", "initialization", human_text="second"),
+        ]
+    )
+
+    assert _constructor_accepts(payload) is False
+    assert "duplicate stable_id with differing content" in _INEXPRESSIBLE
+
+
+def _feasibility_payload():
+    """Return a real solved feasibility payload carrying an explanation."""
+    from pyfcstm.bmc import build_bmc_core_formula, compile_bmc_property
+    from pyfcstm.bmc.engine import BmcEngine
+    from pyfcstm.bmc.witness import solve_bmc_property
+    from pyfcstm.model import load_state_machine_from_text
+
+    machine = load_state_machine_from_text(
+        "def int x = 0;\n"
+        "state Root { event Go; state A; state B; [*] -> A; A -> B :: Go; }"
+    )
+    context = BmcEngine(machine).prepare(
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
+        'check reach <= 2: active("Root.B");'
+    )
+    result = solve_bmc_property(
+        compile_bmc_property(build_bmc_core_formula(context)),
+        infeasibility_explanation="formal",
+    )
+    return result.feasibility.to_canonical()
+
+
+@pytest.fixture(scope="module")
+def feasibility_validator() -> jsonschema.Draft202012Validator:
+    """Return a validator bound to the published feasibility definition."""
+    schema = json.loads(_SCHEMA_PATH.read_text(encoding="utf-8"))
+    return jsonschema.Draft202012Validator(
+        {"$ref": "#/$defs/feasibility", "$defs": schema["$defs"]}
+    )
+
+
+def test_a_real_solved_payload_is_schema_valid(feasibility_validator) -> None:
+    """The payload the solver actually produces must satisfy the schema."""
+    payload = _feasibility_payload()
+
+    assert payload["explanation"] is not None
+    assert list(feasibility_validator.iter_errors(payload)) == []
+
+
+def _drift_cases():
+    """Yield aggregate payloads that contradict the explanation beside them."""
+
+    def status_drift(payload):
+        payload["refinement_status"] = "timeout"
+
+    def empty_ledger(payload):
+        payload["refinement_checks"] = []
+
+    def stage_drift(payload):
+        payload["infeasible_stage"] = "initialization"
+
+    def member_outside_scope(payload):
+        member = payload["explanation"]["core"]["items"][0]
+        member["constraint"]["stage"] = "initialization"
+
+    def untyped_source(payload):
+        member = payload["explanation"]["core"]["items"][0]
+        member["constraint"]["source"] = {
+            "kind": "bogus",
+            "path": None,
+            "span": None,
+        }
+
+    def duplicate_member(payload):
+        items = payload["explanation"]["core"]["items"]
+        items.append(json.loads(json.dumps(items[0])))
+
+    return [
+        ("aggregate status drift", status_drift),
+        ("explanation without a ledger", empty_ledger),
+        ("localized stage drift", stage_drift),
+        ("core member outside its scope", member_outside_scope),
+        ("unsupported source kind", untyped_source),
+        ("duplicate core member", duplicate_member),
+    ]
+
+
+@pytest.mark.parametrize("name, mutate", _drift_cases())
+def test_aggregate_and_explanation_cannot_drift_apart(
+    feasibility_validator, name, mutate
+) -> None:
+    """The schema rejects every contradiction the constructor rejects.
+
+    These are cross-layer rules: the aggregate telemetry, the localized stage
+    and the published explanation are three views of one run, so a payload
+    that makes them disagree must fail on both sides rather than only in
+    Python.
+    """
+    payload = _feasibility_payload()
+    mutate(payload)
+
+    assert list(feasibility_validator.iter_errors(payload)), name

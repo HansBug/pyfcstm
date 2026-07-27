@@ -128,6 +128,13 @@ CLASSIFICATION_SCOPES = MappingProxyType(
     }
 )
 
+#: Frozen slots whose content a later delivery stage produces.  Populating one
+#: now would break the frozen rule that the published JSON schema and this
+#: constructor accept the same payload set, because neither slot has a schema
+#: yet.  Because a ``complete`` explanation needs a narrative, that status is
+#: unreachable for exactly as long as this tuple is non-empty.
+UNBUILT_SLOTS = ("proof", "narrative")
+
 #: The two scopes that stay honest when classification never completed.
 STAGE_FALLBACK_SCOPES = ("initialization_stage_fallback", "assumptions_stage_fallback")
 
@@ -149,6 +156,77 @@ _SCOPE_STAGES = MappingProxyType(
         "assumptions_stage_fallback": ("kernel", "initialization", "assumptions"),
     }
 )
+
+
+def _require_indices(values: Any, label: str) -> Tuple[int, ...]:
+    """Reject anything that is not a tuple of non-negative integers.
+
+    ``bool`` is an ``int`` subclass in Python but is not an index, and letting
+    it through would publish ``true`` where the JSON contract promises a
+    number.
+
+    :param values: Candidate index sequence.
+    :type values: object
+    :param label: Field name used in the error message.
+    :type label: str
+    :return: The validated indices as a tuple.
+    :rtype: Tuple[int, ...]
+    :raises ValueError: If any entry is not a non-negative integer.
+
+    Example::
+
+        >>> _require_indices([1, 0], "frames")
+        (1, 0)
+    """
+    indices = tuple(values)
+    for entry in indices:
+        if isinstance(entry, bool) or not isinstance(entry, int) or entry < 0:
+            raise ValueError(
+                "%s must contain non-negative integers, got %r." % (label, entry)
+            )
+    return indices
+
+
+def _require_flag(value: Any, label: str) -> bool:
+    """Reject a truthy stand-in where the JSON contract promises a boolean.
+
+    :param value: Candidate flag.
+    :type value: object
+    :param label: Field name used in the error message.
+    :type label: str
+    :return: The validated flag.
+    :rtype: bool
+    :raises TypeError: If the value is not a ``bool``.
+
+    Example::
+
+        >>> _require_flag(False, "editable")
+        False
+    """
+    if not isinstance(value, bool):
+        raise TypeError("%s must be a bool, got %r." % (label, value))
+    return value
+
+
+def _require_optional_text(value: Any, label: str) -> Optional[str]:
+    """Reject a non-string stand-in for an optional text field.
+
+    :param value: Candidate text, or ``None``.
+    :type value: object
+    :param label: Field name used in the error message.
+    :type label: str
+    :return: The validated text.
+    :rtype: Optional[str]
+    :raises TypeError: If the value is neither ``None`` nor a string.
+
+    Example::
+
+        >>> _require_optional_text(None, "reason") is None
+        True
+    """
+    if value is not None and not isinstance(value, str):
+        raise TypeError("%s must be a string or None, got %r." % (label, value))
+    return value
 
 
 def _require_member(value: Any, allowed: Tuple[str, ...], label: str) -> str:
@@ -229,8 +307,8 @@ class BmcConstraintRef:
         _require_member(self.stage, _STAGES, "constraint stage")
         if not isinstance(self.source, BmcSourceRef):
             raise TypeError("constraint source must be BmcSourceRef.")
-        object.__setattr__(self, "frames", tuple(self.frames))
-        object.__setattr__(self, "steps", tuple(self.steps))
+        object.__setattr__(self, "frames", _require_indices(self.frames, "frames"))
+        object.__setattr__(self, "steps", _require_indices(self.steps, "steps"))
         object.__setattr__(self, "refs", MappingProxyType(dict(self.refs)))
 
     def to_canonical(self) -> Dict[str, Any]:
@@ -306,6 +384,11 @@ class BmcCoreItem:
         if not isinstance(self.constraint, BmcConstraintRef):
             raise TypeError("core item constraint must be BmcConstraintRef.")
         _require_member(self.semantic_role, _SEMANTIC_ROLES, "core item semantic_role")
+        _require_optional_text(self.source_excerpt, "core item source_excerpt")
+        _require_flag(
+            self.source_excerpt_truncated, "core item source_excerpt_truncated"
+        )
+        _require_flag(self.editable, "core item editable")
         if not isinstance(self.human_text, str) or not self.human_text:
             raise ValueError("core item human_text must be a non-empty string.")
         object.__setattr__(
@@ -579,6 +662,7 @@ class BmcInfeasibilityExplanation:
             _require_member(
                 self.classification, tuple(CLASSIFICATION_SCOPES), "classification"
             )
+        _require_optional_text(self.reason, "explanation reason")
         if self.status == "complete":
             if self.reason is not None:
                 raise ValueError("complete explanations must not carry a reason.")
@@ -649,16 +733,16 @@ class BmcInfeasibilityExplanation:
                     "a complete explanation requires a subset-minimal core, got "
                     "reduction %r." % self.core.reduction
                 )
-            if self.narrative is None:
-                raise ValueError(
-                    "a complete explanation requires a complete narrative."
-                )
-        # The proof DAG and the semantic narrative are frozen slots that a
-        # later delivery stage fills.  Accepting a populated slot here would
-        # break the frozen rule that the published JSON schema and this
-        # constructor accept exactly the same payload set, because neither slot
-        # has a published schema yet.
-        for name in ("proof", "narrative"):
+            # A complete explanation also needs a narrative, and narrative is
+            # an unbuilt slot below, so 'complete' is not reachable yet.  The
+            # rule is stated here rather than left to emerge from two separate
+            # checks, so a later stage that starts building narratives sees
+            # exactly one place to revisit.
+            raise ValueError(
+                "a complete explanation requires a complete narrative, which "
+                "%s does not build yet." % ", ".join(UNBUILT_SLOTS)
+            )
+        for name in UNBUILT_SLOTS:
             if getattr(self, name) is not None:
                 raise ValueError(
                     "explanation %s is not produced at this stage; it must be "

@@ -273,3 +273,80 @@ def test_unknown_explanation_modes_are_rejected_loudly(mode) -> None:
     """Only the three frozen mode names are accepted, with no coercion."""
     with pytest.raises(BmcBuildError, match="infeasibility_explanation"):
         _solve(_ASSUMPTIONS_QUERY, infeasibility_explanation=mode)
+
+
+def _core_with(reduction: str = "raw", subset_minimality: str = "not_proven"):
+    """Build one publishable core at a chosen minimality level."""
+    reference = BmcConstraintRef(
+        stable_id="assumption.0000.frame.0000",
+        stage="assumptions",
+        category="assumption.frame",
+        source=BmcSourceRef("generated", None, None),
+        summary="frame assumption",
+    )
+    return BmcConflictCore(
+        scope="assumptions_component",
+        formula_summary="ENV_N",
+        granularity="source_group",
+        reduction=reduction,
+        subset_minimality=subset_minimality,
+        items=(
+            BmcCoreItem(
+                constraint=reference,
+                semantic_role="assumption",
+                source_excerpt=None,
+                source_excerpt_truncated=False,
+                normalized_fact={},
+                human_text="frame assumption",
+                editable=False,
+            ),
+        ),
+    )
+
+
+def test_a_published_core_needs_a_recorded_core_check() -> None:
+    """A core is a claim that some check proved its target unsatisfiable.
+
+    Accepting one without the matching ledger entry would let a result assert
+    solver work that never happened.
+    """
+    explanation = _explanation(
+        "partial",
+        achieved_mode="formal",
+        classification="assumptions_self_conflict",
+        core=_core_with(),
+    )
+
+    with pytest.raises(BmcBuildError, match="unsat-core"):
+        _localized(
+            refinement_status="partial",
+            refinement_reason="probe returned unknown",
+            refinement_checks=(_probe("component_assumptions"),),
+            explanation=explanation,
+        )
+
+    accepted = _localized(
+        refinement_status="partial",
+        refinement_reason="probe returned unknown",
+        refinement_checks=(_probe("component_assumptions"), _probe("unsat_core")),
+        explanation=explanation,
+    )
+    assert accepted.explanation is explanation
+
+
+def test_a_minimal_core_needs_recorded_deletion_checks() -> None:
+    """Minimality is only proven by deletion checks, never asserted for free."""
+    explanation = _explanation(
+        "partial",
+        achieved_mode="formal",
+        classification="assumptions_self_conflict",
+        core=_core_with("subset_minimal", "proven"),
+    )
+
+    with pytest.raises(BmcBuildError, match="deletion checks"):
+        _localized(
+            refinement_status="partial",
+            refinement_reason="probe returned unknown",
+            refinement_checks=(_probe("unsat_core"),),
+            explanation=explanation,
+        )

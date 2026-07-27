@@ -10,9 +10,12 @@ The module owns the diagram asset boundary:
 * Runtime selection, resource recovery guidance, CJK font registration, and
   timeout/context lifecycle handling are kept in one Python boundary.
 
-This is an internal feasibility surface for the asset closure work. The
-stable ``StateMachine.diagram`` facade and user-facing export commands remain
-follow-up API work.
+This is the internal asset boundary, not the API users reach for. That is
+:class:`pyfcstm.diagram.Diagram`, via :meth:`pyfcstm.model.StateMachine.diagram`
+and the ``pyfcstm diagram`` command; both are delivered and layered on top of
+this module. Depend on the engine directly only from maintenance tooling, and
+note that it needs the optional MiniRacer runtime that
+``pip install pyfcstm[viz]`` provides.
 
 Example::
 

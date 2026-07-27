@@ -68,7 +68,10 @@ def _subset_minimal_core() -> BmcConflictCore:
                 semantic_role="assumption",
                 source_excerpt=None,
                 source_excerpt_truncated=False,
-                normalized_fact={"stable_id": reference.stable_id},
+                normalized_fact={
+                    "kind": "structural_constraint",
+                    "stable_id": reference.stable_id,
+                },
                 human_text="frame assumption",
                 editable=False,
             ),
@@ -277,32 +280,42 @@ def test_unknown_explanation_modes_are_rejected_loudly(mode) -> None:
         _solve(_ASSUMPTIONS_QUERY, infeasibility_explanation=mode)
 
 
-def _core_with(reduction: str = "raw", subset_minimality: str = "not_proven"):
-    """Build one publishable core at a chosen minimality level."""
-    reference = BmcConstraintRef(
-        stable_id="assumption.0000.frame.0000",
-        stage="assumptions",
-        category="assumption.frame",
-        source=BmcSourceRef("generated", None, None),
-        summary="frame assumption",
-    )
+def _core_with(
+    reduction: str = "raw", subset_minimality: str = "not_proven", members: int = 1
+):
+    """Build one publishable core at a chosen minimality level.
+
+    ``members`` exists so a test about per-member evidence can actually use
+    more than one member; a single-member fixture would make "every member"
+    and "some member" indistinguishable.
+    """
+    items = []
+    for index in range(members):
+        reference = BmcConstraintRef(
+            stable_id="assumption.%04d.frame.0000" % index,
+            stage="assumptions",
+            category="assumption.frame",
+            source=BmcSourceRef("generated", None, None),
+            summary="frame assumption %d" % index,
+        )
+        items.append(
+            BmcCoreItem(
+                constraint=reference,
+                semantic_role="assumption",
+                source_excerpt=None,
+                source_excerpt_truncated=False,
+                normalized_fact={"kind": "structural_constraint"},
+                human_text="frame assumption %d" % index,
+                editable=False,
+            )
+        )
     return BmcConflictCore(
         scope="assumptions_component",
         formula_summary="ENV_N",
         granularity="source_group",
         reduction=reduction,
         subset_minimality=subset_minimality,
-        items=(
-            BmcCoreItem(
-                constraint=reference,
-                semantic_role="assumption",
-                source_excerpt=None,
-                source_excerpt_truncated=False,
-                normalized_fact={},
-                human_text="frame assumption",
-                editable=False,
-            ),
-        ),
+        items=tuple(items),
     )
 
 
@@ -381,13 +394,15 @@ def test_deletion_checks_must_have_shown_each_member_necessary() -> None:
     """Minimality follows from satisfiable deletions, not from any deletion.
 
     A deletion check that comes back unsat shows the removed member was
-    redundant, which is the opposite of what a minimal core claims.
+    redundant, which is the opposite of what a minimal core claims.  The core
+    carries several members so "some deletion" and "every deletion" are
+    distinguishable.
     """
     explanation = _explanation(
         "partial",
         achieved_mode="formal",
         classification="assumptions_self_conflict",
-        core=_core_with("subset_minimal", "proven"),
+        core=_core_with("subset_minimal", "proven", members=3),
     )
 
     with pytest.raises(BmcBuildError, match="returned sat"):
@@ -445,3 +460,91 @@ def test_no_attempted_check_means_no_explanation() -> None:
     assert attached.explanation is None
     assert attached.refinement_status == "not_requested"
     assert attached.refinement_checks == ()
+
+
+def test_a_partially_minimized_core_needs_a_finished_deletion_check() -> None:
+    """The middle reduction level also has to be backed by evidence.
+
+    ``partial_minimized`` states that at least one deletion check finished.
+    With none in the ledger the core is simply raw, and claiming otherwise
+    reports progress that never happened.
+    """
+    explanation = _explanation(
+        "partial",
+        achieved_mode="formal",
+        classification="assumptions_self_conflict",
+        core=_core_with("partial_minimized", "not_proven"),
+    )
+
+    with pytest.raises(BmcBuildError, match="at least one recorded"):
+        _localized(
+            refinement_status="partial",
+            refinement_reason="probe returned unknown",
+            refinement_checks=(_probe("unsat_core"),),
+            explanation=explanation,
+        )
+
+    accepted = _localized(
+        refinement_status="partial",
+        refinement_reason="probe returned unknown",
+        refinement_checks=(
+            _probe("unsat_core"),
+            _probe("unsat_core_minimization", "unsat"),
+        ),
+        explanation=explanation,
+    )
+    assert accepted.explanation is explanation
+
+
+def test_a_raw_core_needs_no_deletion_evidence() -> None:
+    """``raw`` claims nothing about minimality, so it asks for nothing."""
+    accepted = _localized(
+        refinement_status="partial",
+        refinement_reason="probe returned unknown",
+        refinement_checks=(_probe("unsat_core"),),
+        explanation=_explanation(
+            "partial",
+            achieved_mode="formal",
+            classification="assumptions_self_conflict",
+            core=_core_with(),
+        ),
+    )
+
+    assert accepted.explanation.core.reduction == "raw"
+
+
+def test_an_optional_explanation_never_destroys_a_usable_verdict(monkeypatch) -> None:
+    """A fail-closed guard inside the optional stage must not reach the caller.
+
+    Asking for an explanation would otherwise be strictly worse than not
+    asking: the same query returns a localized verdict with ``none`` and
+    crashes with ``formal``.
+    """
+    from pyfcstm.bmc import build_bmc_core_formula, compile_bmc_property
+    from pyfcstm.bmc.engine import BmcEngine
+    from pyfcstm.bmc.witness import solve_bmc_property
+    from pyfcstm.model import load_state_machine_from_text
+
+    machine = load_state_machine_from_text(
+        "def int x = 0;\n"
+        "state Root { event Go; state A; state B; [*] -> A; A -> B :: Go; }"
+    )
+    context = BmcEngine(machine).prepare(
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
+        'check reach <= 2: active("Root.B");'
+    )
+    formula = compile_bmc_property(build_bmc_core_formula(context))
+    baseline = solve_bmc_property(formula).feasibility
+
+    def drift(_core):
+        raise BmcBuildError("simulated relation-builder drift")
+
+    monkeypatch.setattr("pyfcstm.bmc.infeasibility.partition_tracked_groups", drift)
+    degraded = solve_bmc_property(
+        formula, infeasibility_explanation="formal"
+    ).feasibility
+
+    assert degraded.infeasible_stage == baseline.infeasible_stage
+    assert degraded.explanation is None
+    assert degraded.refinement_status == "not_requested"

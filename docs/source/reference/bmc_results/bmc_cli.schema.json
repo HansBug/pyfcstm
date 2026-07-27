@@ -4821,13 +4821,29 @@
           ]
         },
         "source_excerpt": {
-          "$ref": "#/$defs/nullableString"
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 4096,
+          "$comment": "Bounded at 4096 Unicode code points so one long authored line cannot put an unbounded slice of the user's source into canonical JSON; the cut is declared through source_excerpt_truncated."
         },
         "source_excerpt_truncated": {
           "type": "boolean"
         },
         "normalized_fact": {
-          "type": "object"
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "enum": [
+                "structural_constraint"
+              ]
+            }
+          },
+          "$comment": "Machine consumers dispatch on kind rather than on human text, so the tag is required.  Later stages extend the enum as recognizers land."
         },
         "human_text": {
           "type": "string",

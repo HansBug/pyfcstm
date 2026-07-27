@@ -2365,16 +2365,24 @@ def _validate_explanation_agreement(
                 "a published core requires an unsat-core refinement check that "
                 "returned unsat."
             )
+        deletions = [
+            check
+            for check in refinement_checks
+            if check.name == "unsat_core_minimization"
+        ]
+        if core.reduction == "partial_minimized" and not deletions:
+            # This level means at least one deletion check finished.  Without
+            # one the core is simply raw, and saying otherwise claims progress
+            # that never happened.
+            raise BmcBuildError(
+                "a partially minimized core requires at least one recorded "
+                "deletion check."
+            )
         if core.subset_minimality == "proven":
             # Minimality is proven by deletion checks that came back sat: each
             # one shows the removed member was necessary.  An unsat deletion
             # check shows the opposite, so it cannot support the claim.
-            minimized = [
-                check
-                for check in refinement_checks
-                if check.name == "unsat_core_minimization" and check.status == "sat"
-            ]
-            if not minimized:
+            if not [check for check in deletions if check.status == "sat"]:
                 raise BmcBuildError(
                     "a proven-minimal core requires deletion checks that returned sat."
                 )
@@ -4802,12 +4810,19 @@ def _attach_explanation(
 
     from .infeasibility import explain_infeasibility
 
-    outcome = explain_infeasibility(
-        core,
-        feasibility.infeasible_stage,
-        budget,
-        requested_mode=requested_mode,
-    )
+    try:
+        outcome = explain_infeasibility(
+            core,
+            feasibility.infeasible_stage,
+            budget,
+            requested_mode=requested_mode,
+        )
+    except BmcBuildError:
+        # The explanation is optional, so a fail-closed guard inside it must
+        # not destroy an otherwise usable verdict: asking for an explanation
+        # would then be strictly worse than not asking.  The localized stage
+        # and every mandatory check survive untouched.
+        return feasibility
     # The published ledger lists checks that actually ran.  An attempt the
     # budget refused to start is not evidence of solver work, and reporting it
     # as a finished check would overstate what the deadline allowed.

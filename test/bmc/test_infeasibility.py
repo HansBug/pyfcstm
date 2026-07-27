@@ -969,12 +969,31 @@ def test_scope_stage_table_is_derived_from_the_scope_targets() -> None:
     an aggregate but keeps its old stage set would let a core member escape the
     formula its scope actually proves.
     """
-    stage_of_aggregate = {
-        "domain": "kernel",
-        "transition": "kernel",
-        "initial": "initialization",
-        "environment": "assumptions",
-    }
+    # The aggregate-to-stage map is derived from the real selectors rather
+    # than written out again: a third hand-kept table would just move the
+    # drift one level further away.
+    stage_of_aggregate = {}
+    for name, predicate in AGGREGATE_SELECTORS.items():
+        accepted = {
+            stage
+            for stage, category in (
+                ("kernel", "domain.frame_state"),
+                ("kernel", "transition.step"),
+                ("initialization", "initial.target"),
+                ("assumptions", "assumption.frame"),
+            )
+            if predicate(
+                BmcTrackedConstraint(
+                    "probe",
+                    stage,
+                    category,
+                    (True,),
+                    BmcSourceRef("generated", None, None),
+                )
+            )
+        }
+        assert len(accepted) == 1, name
+        stage_of_aggregate[name] = accepted.pop()
 
     assert set(stage_of_aggregate) == set(AGGREGATE_SELECTORS)
     for scope, aggregates in SCOPE_TARGETS.items():

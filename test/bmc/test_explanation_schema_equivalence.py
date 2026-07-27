@@ -125,7 +125,7 @@ def _member(
         "semantic_role": role,
         "source_excerpt": None,
         "source_excerpt_truncated": False,
-        "normalized_fact": {},
+        "normalized_fact": {"kind": "structural_constraint"},
         "human_text": "text for %s" % stable_id,
         "editable": False,
     }

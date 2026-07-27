@@ -129,6 +129,11 @@ CLASSIFICATION_SCOPES = MappingProxyType(
     }
 )
 
+#: Recognized ``normalized_fact`` tags.  An expression this stage cannot
+#: reduce declares itself structural rather than guessing a domain reading;
+#: later stages add their recognizers here.
+_FACT_KINDS = ("structural_constraint",)
+
 #: Frozen upper bound on a published excerpt, in Unicode code points.  A long
 #: authored line would otherwise put an unbounded slice of the user's source
 #: into canonical JSON.
@@ -217,7 +222,14 @@ def _require_json_mapping(value: Any, label: str) -> Dict[str, Any]:
     """
 
     def _check(entry: Any, where: str) -> None:
-        if entry is None or isinstance(entry, (str, bool, int, float)):
+        if entry is None or isinstance(entry, (str, bool, int)):
+            return
+        if isinstance(entry, float):
+            # NaN and Infinity are not JSON numbers.  json.dumps emits them by
+            # default and refuses them under allow_nan=False, so either way the
+            # payload stops being interchangeable.
+            if not math.isfinite(entry):
+                raise ValueError("%s must be a finite number, got %r." % (where, entry))
             return
         if isinstance(entry, (list, tuple)):
             for index, item in enumerate(entry):
@@ -231,6 +243,11 @@ def _require_json_mapping(value: Any, label: str) -> Dict[str, Any]:
             return
         raise TypeError("%s is not JSON-compatible, got %r." % (where, entry))
 
+    if not isinstance(value, Mapping):
+        # A sequence would be silently normalized into an empty mapping by
+        # dict(), which loses the caller's data and disagrees with the JSON
+        # contract that names this field an object.
+        raise TypeError("%s must be a mapping, got %r." % (label, value))
     mapping = dict(value)
     _check(mapping, label)
     return mapping
@@ -418,7 +435,8 @@ class BmcCoreItem:
         ...     "initial.target", "initialization", "initial.target",
         ...     BmcSourceRef("generated", None, None), "initial target",
         ... )
-        >>> BmcCoreItem(ref, "domain_rule", None, False, {}, "initial target",
+        >>> BmcCoreItem(ref, "domain_rule", None, False,
+        ...             {"kind": "structural_constraint"}, "initial target",
         ...             False).editable
         False
     """
@@ -450,13 +468,15 @@ class BmcCoreItem:
         _require_flag(self.editable, "core item editable")
         if not isinstance(self.human_text, str) or not self.human_text:
             raise ValueError("core item human_text must be a non-empty string.")
-        object.__setattr__(
-            self,
-            "normalized_fact",
-            MappingProxyType(
-                _require_json_mapping(self.normalized_fact, "normalized_fact")
-            ),
-        )
+        fact = _require_json_mapping(self.normalized_fact, "normalized_fact")
+        kind = fact.get("kind")
+        if not isinstance(kind, str) or kind not in _FACT_KINDS:
+            raise ValueError(
+                "core item normalized_fact must carry a kind from %s, got %r; "
+                "machine consumers dispatch on it instead of on human text."
+                % (", ".join(_FACT_KINDS), kind)
+            )
+        object.__setattr__(self, "normalized_fact", MappingProxyType(fact))
 
     def to_canonical(self) -> Dict[str, Any]:
         """Return a JSON-compatible core item.
@@ -471,7 +491,8 @@ class BmcCoreItem:
             ...     "initial.target", "initialization", "initial.target",
             ...     BmcSourceRef("generated", None, None), "initial target",
             ... )
-            >>> item = BmcCoreItem(ref, "domain_rule", None, False, {},
+            >>> item = BmcCoreItem(ref, "domain_rule", None, False,
+            ...                    {"kind": "structural_constraint"},
             ...                    "initial target", False)
             >>> item.to_canonical()["semantic_role"]
             'domain_rule'
@@ -523,7 +544,8 @@ class BmcConflictCore:
         ...     "initial.target", "initialization", "initial.target",
         ...     BmcSourceRef("generated", None, None), "initial target",
         ... )
-        >>> item = BmcCoreItem(ref, "domain_rule", None, False, {},
+        >>> item = BmcCoreItem(ref, "domain_rule", None, False,
+        ...                    {"kind": "structural_constraint"},
         ...                    "initial target", False)
         >>> core = BmcConflictCore("initialization_component", "I_0",
         ...                        "source_group", "raw", "not_proven", (item,))
@@ -593,7 +615,8 @@ class BmcConflictCore:
             ...     "initial.target", "initialization", "initial.target",
             ...     BmcSourceRef("generated", None, None), "initial target",
             ... )
-            >>> item = BmcCoreItem(ref, "domain_rule", None, False, {},
+            >>> item = BmcCoreItem(ref, "domain_rule", None, False,
+            ...                    {"kind": "structural_constraint"},
             ...                    "initial target", False)
             >>> core = BmcConflictCore("initialization_component", "I_0",
             ...                        "source_group", "raw", "not_proven", (item,))
@@ -805,11 +828,9 @@ class BmcInfeasibilityExplanation:
             # implements narratives unlocks complete formal artifacts even
             # while the proof DAG is still outstanding.
             if self.narrative is None:
-                detail = (
-                    ", which is not built yet" if "narrative" in UNBUILT_SLOTS else ""
-                )
                 raise ValueError(
-                    "a complete explanation requires a complete narrative%s." % detail
+                    "a complete explanation requires a complete narrative, "
+                    "which is not built yet."
                 )
         for name in UNBUILT_SLOTS:
             if getattr(self, name) is not None:

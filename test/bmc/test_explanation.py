@@ -71,7 +71,7 @@ def _item(
         semantic_role=role,
         source_excerpt=None,
         source_excerpt_truncated=False,
-        normalized_fact={"stable_id": stable_id},
+        normalized_fact={"kind": "structural_constraint", "stable_id": stable_id},
         human_text="initial target state",
         editable=False,
     )
@@ -405,10 +405,26 @@ def test_constraint_requires_a_real_source_reference() -> None:
 def test_core_item_requires_a_typed_constraint_and_a_reading() -> None:
     """Every published member carries both an identity and a sentence."""
     with pytest.raises(TypeError, match="BmcConstraintRef"):
-        BmcCoreItem("initial.target", "initial_fact", None, False, {}, "text", False)
+        BmcCoreItem(
+            "initial.target",
+            "initial_fact",
+            None,
+            False,
+            {"kind": "structural_constraint"},
+            "text",
+            False,
+        )
 
     with pytest.raises(ValueError, match="human_text"):
-        BmcCoreItem(_constraint(), "initial_fact", None, False, {}, "", False)
+        BmcCoreItem(
+            _constraint(),
+            "initial_fact",
+            None,
+            False,
+            {"kind": "structural_constraint"},
+            "",
+            False,
+        )
 
 
 def test_core_rejects_an_empty_or_untyped_membership() -> None:
@@ -625,7 +641,7 @@ def test_core_item_flags_must_be_real_booleans(field) -> None:
         semantic_role="initial_fact",
         source_excerpt=None,
         source_excerpt_truncated=False,
-        normalized_fact={},
+        normalized_fact={"kind": "structural_constraint"},
         human_text="initial target state",
         editable=False,
     )
@@ -638,7 +654,15 @@ def test_core_item_flags_must_be_real_booleans(field) -> None:
 def test_optional_text_fields_reject_non_strings() -> None:
     """An excerpt or a reason is text, so a number is not a quiet substitute."""
     with pytest.raises(TypeError, match="source_excerpt"):
-        BmcCoreItem(_constraint(), "initial_fact", 123, False, {}, "t", False)
+        BmcCoreItem(
+            _constraint(),
+            "initial_fact",
+            123,
+            False,
+            {"kind": "structural_constraint"},
+            "t",
+            False,
+        )
 
     with pytest.raises(TypeError, match="reason"):
         BmcInfeasibilityExplanation("formal", "none", "unknown", None, reason=123)
@@ -692,7 +716,7 @@ def test_nested_json_metadata_is_accepted() -> None:
         "initial_fact",
         None,
         False,
-        {"stable_id": "initial.target", "frames": [0]},
+        {"kind": "structural_constraint", "stable_id": "initial.target", "frames": [0]},
         "initial target state",
         False,
     )
@@ -719,7 +743,7 @@ def test_a_hand_built_item_cannot_exceed_the_published_excerpt_bound() -> None:
             "initial_fact",
             "x" * (MAX_SOURCE_EXCERPT_CHARS + 1),
             True,
-            {},
+            {"kind": "structural_constraint"},
             "text",
             False,
         )
@@ -729,7 +753,7 @@ def test_a_hand_built_item_cannot_exceed_the_published_excerpt_bound() -> None:
         "initial_fact",
         "x" * MAX_SOURCE_EXCERPT_CHARS,
         False,
-        {},
+        {"kind": "structural_constraint"},
         "text",
         False,
     )
@@ -747,4 +771,56 @@ def test_timings_must_be_finite(value) -> None:
     with pytest.raises(ValueError, match="must be finite"):
         BmcInfeasibilityExplanation(
             "formal", "none", "unknown", None, reason="probe", elapsed_ms=value
+        )
+
+
+@pytest.mark.parametrize(
+    "value, match",
+    [
+        (float("nan"), "finite number"),
+        (float("inf"), "finite number"),
+        ({"nested": float("-inf")}, "finite number"),
+        ([], "must be a mapping"),
+        ("text", "must be a mapping"),
+    ],
+)
+def test_structural_metadata_rejects_values_json_cannot_carry(value, match) -> None:
+    """A mapping field must really be a mapping, and its numbers must be finite.
+
+    ``dict([])`` would silently turn a sequence into an empty mapping, losing
+    the caller's data while the JSON contract calls this field an object.
+    ``NaN`` and ``Infinity`` are not JSON numbers at all.
+    """
+    refs = value if isinstance(value, (list, str)) else {"v": value}
+    if isinstance(value, dict):
+        refs = value
+
+    with pytest.raises((TypeError, ValueError), match=match):
+        BmcConstraintRef(
+            "initial.target",
+            "initialization",
+            "initial.target",
+            _GENERATED,
+            "initial target state",
+            refs=refs,
+        )
+
+
+@pytest.mark.parametrize("fact", [{}, {"kind": "bogus"}, {"kind": 1}, {"other": 1}])
+def test_a_core_item_must_declare_a_recognized_fact_kind(fact) -> None:
+    """The dispatch key machine consumers rely on cannot be absent or invented.
+
+    The frozen contract tells machine readers to branch on ``kind`` rather
+    than on human text, so an item without a recognized tag gives them nothing
+    to branch on.
+    """
+    with pytest.raises(ValueError, match="normalized_fact must carry a kind"):
+        BmcCoreItem(
+            _constraint(),
+            "initial_fact",
+            None,
+            False,
+            fact,
+            "initial target state",
+            False,
         )

@@ -154,6 +154,57 @@ function awaitChromeExit(child, timeoutMs = 5000) {
   });
 }
 
+async function realClick(cdp, x, y) {
+  await cdp.call('Input.dispatchMouseEvent', {type: 'mouseMoved', x, y});
+  await sleep(80);
+  await cdp.call('Input.dispatchMouseEvent', {type: 'mousePressed', x, y, button: 'left', clickCount: 1});
+  await sleep(60);
+  await cdp.call('Input.dispatchMouseEvent', {type: 'mouseReleased', x, y, button: 'left', clickCount: 1});
+}
+
+/**
+ * Open the first option-list control with a real input sequence and report how
+ * its popup is actually painted. A popup that is invisible, unpainted or wider
+ * than the page is a styling failure, not a passing run.
+ */
+async function openSelectMenu(cdp) {
+  const box = await evaluate(cdp, `(() => {
+    const el = document.querySelector('.n-base-selection');
+    if (!el) return {found: false};
+    const rect = el.getBoundingClientRect();
+    return {found: true, x: Math.round(rect.x + rect.width / 2), y: Math.round(rect.y + rect.height / 2), triggerWidth: Math.round(rect.width)};
+  })()`);
+  if (!box.found) return {found: false};
+  await realClick(cdp, box.x, box.y);
+  await sleep(400);
+  const menu = await evaluate(cdp, `(() => {
+    const el = document.querySelector('.n-base-select-menu');
+    if (!el || !el.getClientRects().length) return {menuVisible: false};
+    const style = getComputedStyle(el);
+    const rect = el.getBoundingClientRect();
+    const option = el.querySelector('.n-base-select-option');
+    const optionStyle = option ? getComputedStyle(option) : null;
+    const alpha = value => {
+      const match = String(value).match(/^rgba\\([^)]*,\\s*([0-9.]+)\\)$/);
+      return match ? Number(match[1]) : 1;
+    };
+    return {
+      menuVisible: true,
+      menuBackground: style.backgroundColor,
+      menuAlpha: alpha(style.backgroundColor),
+      menuBoxShadow: style.boxShadow,
+      menuWidth: Math.round(rect.width),
+      optionCount: el.querySelectorAll('.n-base-select-option').length,
+      optionBackground: optionStyle ? optionStyle.backgroundColor : '',
+      optionAlpha: optionStyle ? alpha(optionStyle.backgroundColor) : 0,
+    };
+  })()`);
+  const closer = await evaluate(cdp, `(() => ({x: Math.round(innerWidth / 2), y: Math.round(innerHeight - 8)}))()`);
+  await realClick(cdp, closer.x, closer.y);
+  await sleep(200);
+  return {found: true, triggerWidth: box.triggerWidth, ...menu};
+}
+
 async function evaluate(cdp, expression) {
   const result = await cdp.call('Runtime.evaluate', {expression, awaitPromise: true, returnByValue: true});
   if (result.exceptionDetails) throw new Error(result.exceptionDetails.text || 'browser evaluation failed');
@@ -198,6 +249,10 @@ async function evaluate(cdp, expression) {
     await cdp.call('Runtime.enable');
     await cdp.call('Network.enable');
     await cdp.call('Security.enable');
+    // Inline-style CSP violations are only surfaced through Log.entryAdded;
+    // Security.securityPolicyViolationReported never reports them, so relying
+    // on that domain alone reports a clean policy for a page that has none.
+    await cdp.call('Log.enable');
     await cdp.call('Emulation.setDeviceMetricsOverride', {
       width: viewportWidth,
       height: viewportHeight,
@@ -223,56 +278,47 @@ async function evaluate(cdp, expression) {
         value: getComputedStyle(row, '::before').content,
         align: getComputedStyle(row, '::before').textAlign,
       }));
-      const select = document.querySelector('.n-base-selection');
-      select?.dispatchEvent(new MouseEvent('click', {bubbles: true, button: 0}));
-      await new Promise(resolve => setTimeout(resolve, 120));
-      const menu = document.querySelector('.n-base-select-menu');
+      const nativeSelect = document.querySelector('.fcstm-source-panel__header select');
+      const nativeSelectStyle = nativeSelect ? getComputedStyle(nativeSelect) : null;
       const alpha = value => {
         const match = value.match(/^rgba\\([^)]*,\\s*([0-9.]+)\\)$/);
         return match ? Number(match[1]) : 1;
       };
-      const menuStyle = menu ? getComputedStyle(menu) : null;
-      const option = menu?.querySelector('.n-base-select-option');
-      const optionStyle = option ? getComputedStyle(option) : null;
-      const nativeSelect = document.querySelector('.fcstm-source-panel__header select');
-      const nativeSelectStyle = nativeSelect ? getComputedStyle(nativeSelect) : null;
-      document.body.dispatchEvent(new MouseEvent('click', {bubbles: true, button: 0}));
       return {
         lineCount: rows.length,
         textHasLineBreaks: rows.length < 2 || (document.querySelector('.fcstm-source-panel__code')?.textContent || '').includes('\\n'),
         lineNumbers,
         lineHeights: boxes.map(box => box.height),
         maxGap: Math.max(0, ...gaps),
-        menuVisible: Boolean(menu),
-        menuBackground: menuStyle?.backgroundColor || '',
-        menuAlpha: menuStyle ? alpha(menuStyle.backgroundColor) : 0,
-        optionBackground: optionStyle?.backgroundColor || '',
-        optionAlpha: optionStyle ? alpha(optionStyle.backgroundColor) : 0,
         nativeSelectBackground: nativeSelectStyle?.backgroundColor || '',
         nativeSelectAlpha: nativeSelectStyle ? alpha(nativeSelectStyle.backgroundColor) : 1,
       };
     })()`);
-    const states = await evaluate(cdp, `new Promise(resolve => setTimeout(() => {
-      const buttons = [...document.querySelectorAll('.fcstm-standalone-mode button')];
-      const click = label => buttons.find(button => button.textContent.includes(label))?.click();
-      click('图形');
-      setTimeout(() => resolve({diagramOnlySource: Boolean(document.querySelector('.fcstm-source-panel')), diagramOnlyStage: Boolean(document.querySelector('.fcstm-stage'))}), 120);
-    }, 80))`);
-    const compare = await evaluate(cdp, `new Promise(resolve => setTimeout(() => {
-      const buttons = [...document.querySelectorAll('.fcstm-standalone-mode button')];
-      buttons.find(button => button.textContent.includes('对比'))?.click();
-      setTimeout(() => resolve({source: Boolean(document.querySelector('.fcstm-source-panel')), stage: Boolean(document.querySelector('.fcstm-stage'))}), 120);
-    }, 80))`);
-    const fcstmOnly = await evaluate(cdp, `new Promise(resolve => setTimeout(() => {
-      const buttons = [...document.querySelectorAll('.fcstm-standalone-mode button')];
-      buttons.find(button => button.textContent.includes('FCSTM'))?.click();
-      setTimeout(() => resolve({source: Boolean(document.querySelector('.fcstm-source-panel')), stage: Boolean(document.querySelector('.fcstm-stage svg'))}), 120);
-    }, 80))`);
-    const backToCompare = await evaluate(cdp, `new Promise(resolve => setTimeout(() => {
-      const buttons = [...document.querySelectorAll('.fcstm-standalone-mode button')];
-      buttons.find(button => button.textContent.includes('对比'))?.click();
-      setTimeout(() => resolve({source: Boolean(document.querySelector('.fcstm-source-panel')), stage: Boolean(document.querySelector('.fcstm-stage svg'))}), 120);
-    }, 80))`);
+    // The component library ignores synthesised MouseEvents, so the popup has
+    // to be opened with a real input sequence or every assertion below it is
+    // silently skipped on a null menu.
+    const selectMenu = await openSelectMenu(cdp);
+    // Mode buttons are selected through `data-fcstm-mode`, not their visible
+    // label: matching display copy made a renamed button click nothing and the
+    // resulting wrong-mode failure surfaced far away, in the export step. A
+    // missing handle throws here so the cause stays where the problem is.
+    const clickMode = mode => `new Promise(resolve => setTimeout(() => {
+      const button = document.querySelector('.fcstm-standalone-mode button[data-fcstm-mode="${mode}"]');
+      if (!button) throw new Error('mode button not found: ${mode}');
+      button.click();
+      setTimeout(() => resolve({
+        source: Boolean(document.querySelector('.fcstm-source-panel')),
+        stage: Boolean(document.querySelector('.fcstm-stage')),
+        renderedStage: Boolean(document.querySelector('.fcstm-stage svg')),
+      }), 120);
+    }, 80))`;
+    const diagramOnlyRaw = await evaluate(cdp, clickMode('diagram'));
+    const states = {diagramOnlySource: diagramOnlyRaw.source, diagramOnlyStage: diagramOnlyRaw.stage};
+    const compare = await evaluate(cdp, clickMode('compare'));
+    const fcstmOnlyRaw = await evaluate(cdp, clickMode('fcstm'));
+    const fcstmOnly = {source: fcstmOnlyRaw.source, stage: fcstmOnlyRaw.renderedStage};
+    const backToCompareRaw = await evaluate(cdp, clickMode('compare'));
+    const backToCompare = {source: backToCompareRaw.source, stage: backToCompareRaw.renderedStage};
     const importedSource = await evaluate(cdp, `new Promise(resolve => setTimeout(() => {
       const select = document.querySelector('.fcstm-source-panel__header select');
       const options = select ? [...select.options].map(option => option.value) : [];
@@ -517,7 +563,15 @@ async function evaluate(cdp, expression) {
       return {viewport: {width: innerWidth, height: innerHeight}, shell: rect(shell), drawer: rect(drawer), main: rect(main), source: rect(source), stage: rect(stage), stageCount: document.querySelectorAll('.fcstm-stage').length, sourceCount: document.querySelectorAll('.fcstm-source-panel').length, stageRects: [...document.querySelectorAll('.fcstm-stage')].map(rect), sourceRects: [...document.querySelectorAll('.fcstm-source-panel')].map(rect), svgRects: [...document.querySelectorAll('svg')].map(svg => ({className: svg.parentElement?.className || '', rect: rect(svg)})), bottomIconStyles: [...document.querySelectorAll('.fcstm-bottom .n-base-icon')].map(icon => ({rect: rect(icon), width: getComputedStyle(icon).width, height: getComputedStyle(icon).height, display: getComputedStyle(icon).display})), mainStyle: style(main), shellStyle: style(shell), drawerStyle: style(drawer), mainScrollHeight: main?.scrollHeight || 0, mainClientHeight: main?.clientHeight || 0, mainScrollWidth: main?.scrollWidth || 0, mainClientWidth: main?.clientWidth || 0};
     })()`);
     const network = cdp.events.filter(event => event.method === 'Network.requestWillBeSent').map(event => event.params.request.url).filter(url => !url.startsWith('file://') && !url.startsWith('data:') && !url.startsWith('blob:'));
-    const cspViolations = cdp.events.filter(event => event.method === 'Security.securityPolicyViolationReported');
+    const cspViolations = [
+      ...cdp.events
+        .filter(event => event.method === 'Security.securityPolicyViolationReported')
+        .map(event => ({source: 'security', text: event.params.violatedDirective || 'violation'})),
+      ...cdp.events
+        .filter(event => event.method === 'Log.entryAdded')
+        .filter(event => /Content Security Policy/i.test(event.params.entry.text || ''))
+        .map(event => ({source: 'log', text: (event.params.entry.text || '').slice(0, 160)})),
+    ];
     const consoleErrors = cdp.events.filter(event => event.method === 'Runtime.exceptionThrown' || (event.method === 'Runtime.consoleAPICalled' && ['error', 'warning'].includes(event.params.type)));
     if (screenshotPath) {
       const shot = await cdp.call('Page.captureScreenshot', {format: 'png'});
@@ -540,6 +594,16 @@ async function evaluate(cdp, expression) {
       sourceLayout.lineCount >= 1 && sourceLayout.textHasLineBreaks &&
       sourceLayout.lineNumbers.every(item => item.align === 'right' && /^"\d+"$/.test(item.value)) &&
       sourceLayout.maxGap <= 1
+    );
+    // A control that renders an option list must paint an opaque popup that is
+    // anchored to its trigger. An unstyled popup is transparent, shadowless and
+    // stretches to the page width.
+    const selectMenuChecks = !selectMenu.found || (
+      selectMenu.menuVisible === true &&
+      selectMenu.optionCount >= 1 &&
+      selectMenu.menuAlpha === 1 &&
+      selectMenu.menuBoxShadow !== 'none' &&
+      selectMenu.menuWidth <= selectMenu.triggerWidth * 3
     );
     const sourceUnavailableChecks = initial.sourceAvailable || (
       initial.sourceUnavailableMessage.includes('源码') &&
@@ -575,14 +639,15 @@ async function evaluate(cdp, expression) {
     const svgChecks = !requestedFormats.has('svg') || (
       pdf.svgText === 0 && pdf.svgMarker === 0 && pdf.svgFontFamily === 0
     );
-    const report = {initial, sourceLayout, sourceLayoutChecks, sourceUnavailableChecks, sourceChecks, transitionChecks, pdfChecks, pngChecks, svgChecks, diagramOnly: states, fcstmOnly, compare, backToCompare, importedSource, selection, revealSource, hover, sourceHover, transitionHover, sourceSelection, sourceCycle, zoom, pdf, collapse, layout, minimumPanelHeight, comparisonTooShort, oversizedUiIcons, externalRequests: network, cspViolations, consoleErrors: consoleErrors.length, consoleDetails};
+    const report = {initial, sourceLayout, sourceLayoutChecks, selectMenu, selectMenuChecks, sourceUnavailableChecks, sourceChecks, transitionChecks, pdfChecks, pngChecks, svgChecks, diagramOnly: states, fcstmOnly, compare, backToCompare, importedSource, selection, revealSource, hover, sourceHover, transitionHover, sourceSelection, sourceCycle, zoom, pdf, collapse, layout, minimumPanelHeight, comparisonTooShort, oversizedUiIcons, externalRequests: network, cspViolations, consoleErrors: consoleErrors.length, consoleDetails};
     console.log(JSON.stringify(report, null, 2));
-    if (!initial.stage || initial.error || states.diagramOnlySource || !compare.source || !compare.stage ||
+    if (!initial.stage || initial.error || states.diagramOnlySource || !states.diagramOnlyStage ||
+        !compare.source || !compare.stage ||
         fcstmOnly.source !== true || fcstmOnly.stage !== false || backToCompare.source !== true || backToCompare.stage !== true ||
         !sourceLayoutChecks || !sourceUnavailableChecks ||
-        !sourceLayout.menuVisible || sourceLayout.menuAlpha < 0.99 || sourceLayout.optionAlpha < 0.99 || sourceLayout.nativeSelectAlpha < 0.99 ||
+        sourceLayout.nativeSelectAlpha < 0.99 ||
         !sourceChecks ||
-        !transitionChecks ||
+        !transitionChecks || !selectMenuChecks ||
         zoom.before === zoom.after || !pdfChecks || !pngChecks ||
         (process.env.VIEWER_REQUIRE_EXPANDED_SVG === '1' && !svgChecks) ||
         (sourceCycle.candidateCount > 1 && sourceCycle.uniqueSelectedIds < sourceCycle.candidateCount) ||

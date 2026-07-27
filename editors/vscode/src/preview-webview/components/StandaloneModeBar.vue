@@ -6,10 +6,14 @@ const emit = defineEmits<{(event: 'change', mode: 'fcstm' | 'diagram' | 'compare
 </script>
 
 <template>
-    <nav class="fcstm-standalone-mode" aria-label="查看模式">
-        <button type="button" :class="{active: mode === 'fcstm'}" @click="emit('change', 'fcstm')">FCSTM</button>
-        <button type="button" :class="{active: mode === 'diagram'}" @click="emit('change', 'diagram')">图形</button>
-        <button type="button" :class="{active: mode === 'compare'}" @click="emit('change', 'compare')">对比</button>
+    <!-- `data-fcstm-mode` is the stable handle for automation. Selecting these
+         buttons by their visible label would tie the browser gate to display
+         copy, so a wording change would silently turn a mode switch into a
+         no-op instead of failing loudly. -->
+    <nav class="fcstm-standalone-mode" aria-label="View mode">
+        <button type="button" data-fcstm-mode="fcstm" :class="{active: mode === 'fcstm'}" @click="emit('change', 'fcstm')">FCSTM</button>
+        <button type="button" data-fcstm-mode="diagram" :class="{active: mode === 'diagram'}" @click="emit('change', 'diagram')">Diagram</button>
+        <button type="button" data-fcstm-mode="compare" :class="{active: mode === 'compare'}" @click="emit('change', 'compare')">Compare</button>
     </nav>
 </template>
 

@@ -1419,7 +1419,7 @@ class Diagram:
             "standaloneDiagram": browser_diagram,
             "sourceHtml": _highlight_source(source),
             "sourceAvailable": bool(source),
-            "sourceUnavailableReason": "当前模型没有保留原始 FCSTM 源码；请通过 load_state_machine_from_file/text 加载，或显式传入 source_text。"
+            "sourceUnavailableReason": "This model did not retain its original FCSTM source; load it through load_state_machine_from_file/text, or pass source_text explicitly."
             if not source
             else "",
             "sourceMap": source_map,
@@ -1447,8 +1447,27 @@ class Diagram:
             .replace("\u2028", "\\u2028")
             .replace("\u2029", "\\u2029")
         )
-        bootstrap = "window.__FCSTM_INITIAL_STATE__ = %s;" % state_json
         resvg_script = _embedded_resvg_script(self.options.cjk_locale)
+        # The bundled component library renders its styles at runtime, so the
+        # document needs a style nonce in addition to the hash of the embedded
+        # stylesheet. The nonce is derived from the document's own content
+        # rather than drawn at random, which keeps `to_html` byte-deterministic
+        # and keeps the content-addressed reuse below meaningful. It is derived
+        # before the bootstrap is built so nothing depends on its own hash.
+        style_nonce = base64.b64encode(
+            hashlib.sha256(
+                "\0".join(("style-nonce", state_json, resvg_script, viewer)).encode(
+                    "utf-8"
+                )
+            ).digest()[:16]
+        ).decode("ascii")
+        bootstrap = (
+            'window.__FCSTM_STYLE_NONCE__ = "%s";\nwindow.__FCSTM_INITIAL_STATE__ = %s;'
+            % (
+                style_nonce,
+                state_json,
+            )
+        )
         scripts = [bootstrap, resvg_script, viewer]
         hashes = [
             "'sha256-%s'"
@@ -1465,9 +1484,12 @@ class Diagram:
             + "\n"
             + _highlight_css()
         )
-        style_hash = "'sha256-%s'" % base64.b64encode(
-            hashlib.sha256(css.encode("utf-8")).digest()
-        ).decode("ascii")
+        style_sources = "'sha256-%s' 'nonce-%s'" % (
+            base64.b64encode(hashlib.sha256(css.encode("utf-8")).digest()).decode(
+                "ascii"
+            ),
+            style_nonce,
+        )
         cache_payload = "\0".join(
             ("html", state_json, bootstrap, resvg_script, viewer, css)
         )
@@ -1478,7 +1500,7 @@ class Diagram:
                 "<!doctype html><html lang=\"%s\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; base-uri 'none'; object-src 'none'; form-action 'none'; frame-src 'none'; media-src 'none'; manifest-src 'none'; img-src data: blob:; style-src %s; style-src-attr 'none'; font-src data:; script-src %s 'wasm-unsafe-eval'; script-src-attr 'none'; connect-src 'none'; worker-src 'none'\"><style>%s</style></head><body><div id=\"app\"></div><script>%s</script><script>%s</script><script>%s</script></body></html>"
                 % (
                     _html_language(self.options.cjk_locale),
-                    style_hash,
+                    style_sources,
                     " ".join(hashes),
                     css,
                     bootstrap,

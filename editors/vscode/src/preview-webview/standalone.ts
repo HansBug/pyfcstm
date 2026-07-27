@@ -29,10 +29,10 @@ function showExportMenu(payload: StandaloneExportPayload): void {
     const menu = document.createElement('div');
     menu.id = 'fcstm-standalone-export-menu';
     menu.setAttribute('role', 'dialog');
-    menu.setAttribute('aria-label', '选择导出格式');
+    menu.setAttribute('aria-label', 'Choose an export format');
     menu.style.cssText = 'position:fixed;right:18px;top:138px;z-index:1000;display:flex;gap:6px;align-items:center;padding:10px;border:1px solid #9bb9d8;border-radius:8px;background:#fff;box-shadow:0 6px 24px rgba(0,0,0,.18);font:13px sans-serif;color:#1f2937';
     const title = document.createElement('span');
-    title.textContent = '下载图形：';
+    title.textContent = 'Download diagram:';
     menu.appendChild(title);
     const choices: Array<[string, () => void]> = [
         ['SVG', () => download('diagram.svg', payload.svg, 'image/svg+xml;charset=utf-8')],
@@ -50,7 +50,7 @@ function showExportMenu(payload: StandaloneExportPayload): void {
     const close = document.createElement('button');
     close.type = 'button';
     close.textContent = '×';
-    close.setAttribute('aria-label', '关闭导出菜单');
+    close.setAttribute('aria-label', 'Close the export menu');
     close.style.cssText = 'border:0;background:transparent;font-size:18px;line-height:1;cursor:pointer;color:#6b7280';
     close.addEventListener('click', () => menu.remove());
     menu.appendChild(close);
@@ -64,13 +64,39 @@ window.addEventListener('fcstm-emit', event => {
         (window as unknown as {__FCSTM_LAST_EXPORT__?: StandaloneExportPayload}).__FCSTM_LAST_EXPORT__ = payload;
         showExportMenu(payload);
     } else if (detail?.type === 'exportError') {
-        reportFatal('导出失败', String(detail.payload || '未知导出错误'));
+        reportFatal('Export failed', String(detail.payload || 'Unknown export error'));
     }
 });
 
 // The VSCode host normally injects this constructor before the Vue bundle.
 // Standalone HTML supplies the same contract from its self-contained bundle.
 (window as unknown as {ELK: typeof ELK}).ELK = ELK;
+
+/**
+ * Stamp the document's style nonce onto every stylesheet created at runtime.
+ *
+ * The component library renders its CSS on first mount instead of shipping a
+ * static stylesheet, so those elements are not covered by the build-time hash
+ * in `style-src`. Without the nonce the policy rejects them and the controls
+ * render unstyled — transparent popups, no shadow, no width constraint. The
+ * host supplies the nonce through the bootstrap script, which is itself hash
+ * pinned, so nothing outside the bundle can claim it.
+ */
+function adoptStyleNonce(): void {
+    const nonce = (window as unknown as {__FCSTM_STYLE_NONCE__?: string}).__FCSTM_STYLE_NONCE__;
+    if (!nonce) return;
+    const createElement = document.createElement.bind(document);
+    document.createElement = ((tagName: string, options?: ElementCreationOptions) => {
+        const element = createElement(tagName, options);
+        if (String(tagName).toLowerCase() === 'style') {
+            element.setAttribute('nonce', nonce);
+            (element as HTMLStyleElement).nonce = nonce;
+        }
+        return element;
+    }) as typeof document.createElement;
+}
+
+adoptStyleNonce();
 
 function reportFatal(title: string, message: string): void {
     const app = document.getElementById('app');
@@ -83,11 +109,11 @@ function reportFatal(title: string, message: string): void {
 }
 
 window.addEventListener('error', event => {
-    reportFatal('预览脚本错误', `${event.message || '未知错误'}\n${(event.error as Error | undefined)?.stack || ''}`);
+    reportFatal('Preview script error', `${event.message || 'Unknown error'}\n${(event.error as Error | undefined)?.stack || ''}`);
 });
 window.addEventListener('unhandledrejection', event => {
     const reason = event.reason as Error | undefined;
-    reportFatal('预览异步错误', `${reason?.message || String(event.reason)}\n${reason?.stack || ''}`);
+    reportFatal('Preview async error', `${reason?.message || String(event.reason)}\n${reason?.stack || ''}`);
 });
 
 /**
@@ -152,9 +178,9 @@ async function mountStandalone(): Promise<void> {
     const fonts = document.fonts ? await loadEmbeddedFonts() : {missing: [], reasons: []};
     createApp(App).mount('#app');
     if (fonts.missing.length > 0 || fonts.reasons.length > 0) {
-        const details = [`未能加载：${fonts.missing.join(', ') || '无'}`];
-        if (fonts.reasons.length > 0) details.push(`原因：${fonts.reasons.join('; ')}`);
-        reportFatal('嵌入字体不可用', `图形与源码可能使用回退字体。\n${details.join('\n')}`);
+        const details = [`Unavailable: ${fonts.missing.join(', ') || 'none'}`];
+        if (fonts.reasons.length > 0) details.push(`Reasons: ${fonts.reasons.join('; ')}`);
+        reportFatal('Embedded fonts unavailable', `The diagram and source may fall back to substitute fonts.\n${details.join('\n')}`);
     }
 }
 

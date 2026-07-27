@@ -103,13 +103,13 @@ watch(activeId, scrollActive);
 <template>
     <section ref="panel" class="fcstm-source-panel" @click="onClick" @mouseover="onMouseOver" @mouseout="onMouseOut">
         <div class="fcstm-source-panel__header">
-            <span>FCSTM 源码</span>
-            <select v-if="sourceDocuments && Object.keys(sourceDocuments).length > 1" v-model="documentId" aria-label="选择源码文件">
+            <span>FCSTM Source</span>
+            <select v-if="sourceDocuments && Object.keys(sourceDocuments).length > 1" v-model="documentId" aria-label="Select source document">
                 <option v-for="(document, id) in sourceDocuments" :key="id" :value="id">{{ document.label }}</option>
             </select>
         </div>
         <div v-if="sourceAvailable === false" class="fcstm-source-panel__unavailable">
-            {{ sourceUnavailableReason || '当前模型没有可用的 FCSTM 源码，源码联动已停用。' }}
+            {{ sourceUnavailableReason || 'No FCSTM source is available for this model; source linking is disabled.' }}
         </div>
         <pre v-else class="fcstm-source-panel__code"><code v-html="currentSourceHtml"></code></pre>
     </section>

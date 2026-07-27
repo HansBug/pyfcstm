@@ -23,7 +23,7 @@ BmcPreparedContext
 -----------------------------------------------------
 
 .. autoclass:: BmcPreparedContext
-    :members: __post_init__,bound,references,to_canonical,model,query,bound_query,domain,options,source_text
+    :members: __post_init__,bound,references,to_canonical,model,query,bound_query,domain,options,source_text,query_source_path
 
 
 BmcEngine

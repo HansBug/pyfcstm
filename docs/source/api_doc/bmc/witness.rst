@@ -6,12 +6,6 @@ pyfcstm.bmc.witness
 .. automodule:: pyfcstm.bmc.witness
 
 
-BmcSolveStatus
------------------------------------------------------
-
-.. autodata:: BmcSolveStatus
-
-
 \_\_all\_\_
 -----------------------------------------------------
 

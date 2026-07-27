@@ -52,6 +52,7 @@ except ImportError:  # pragma: no cover - Python < 3.8 compatibility
 
 from .ast import BmcCondExpr
 from .errors import InvalidBmcQuery
+from pyfcstm.utils.validate import Span
 
 _CanonicalDict = Dict[str, Any]
 _QuerySelector = Union[int, Literal["*"], str]
@@ -788,6 +789,10 @@ class BmcQuery:
     property: BmcProperty
     initial: InitialSpec = field(default_factory=InitialSpec)
     assumptions: Tuple[BmcAssumption, ...] = ()
+    _source_path: Optional[str] = field(default=None, repr=False, compare=False)
+    _source_spans: Tuple[Tuple[int, Span], ...] = field(
+        default_factory=tuple, repr=False, compare=False
+    )
 
     def __post_init__(self) -> None:
         if not isinstance(self.property, BmcProperty):
@@ -802,6 +807,11 @@ class BmcQuery:
         if not all(isinstance(assumption, BmcAssumption) for assumption in assumptions):
             raise InvalidBmcQuery("assumptions must contain BmcAssumption objects.")
         object.__setattr__(self, "assumptions", assumptions)
+        if self._source_path is not None and (
+            not isinstance(self._source_path, str) or not self._source_path
+        ):
+            raise InvalidBmcQuery("_source_path must be None or a non-empty string.")
+        object.__setattr__(self, "_source_spans", tuple(self._source_spans))
 
     def to_canonical(self) -> _CanonicalDict:
         """Return a stable canonical query dictionary.

@@ -9,12 +9,15 @@ from pyfcstm.dsl import parse_state_machine_dsl
 from pyfcstm.dsl import node as dsl_nodes
 from pyfcstm.model.imports import assemble_state_machine_imports
 from pyfcstm.model import parse_dsl_node_to_state_machine
+from pyfcstm.utils import ModelValidationError
 
 
 def _write_text_file(path: str, content: str) -> pathlib.Path:
     file_path = pathlib.Path(path)
     file_path.parent.mkdir(parents=True, exist_ok=True)
-    file_path.write_text(textwrap.dedent(content).strip() + os.linesep, encoding="utf-8")
+    file_path.write_text(
+        textwrap.dedent(content).strip() + os.linesep, encoding="utf-8"
+    )
     return file_path
 
 
@@ -30,6 +33,127 @@ def _build_state_machine(root_content: str, **extra_files):
 
 @pytest.mark.unittest
 class TestImportPhase4Assembly:
+    def test_default_variable_mapping_rewrites_combo_guard(self):
+        state_machine = _build_state_machine(
+            """
+            state Root {
+                state Host {
+                    import "./worker.fcstm" as Worker;
+                    [*] -> Worker;
+                }
+                [*] -> Host;
+            }
+            """,
+            **{
+                "worker.fcstm": """
+                def int w = 0;
+                state WorkerRoot {
+                    state Outer {
+                        state Idle;
+                        state Done;
+                        [*] -> Idle;
+                        Idle -> Done :: Start + [w == 1] + Finish effect {
+                            w = w + 1;
+                        }
+                    }
+                    [*] -> Outer;
+                }
+                """,
+            },
+        )
+
+        outer = (
+            state_machine.root_state.substates["Host"]
+            .substates["Worker"]
+            .substates["Outer"]
+        )
+        combo_guard = next(
+            transition
+            for transition in outer.transitions
+            if any(item.term_index == 1 for item in transition.combo_origin_refs)
+        )
+
+        assert str(combo_guard.guard) == "Worker_w == 1"
+
+    def test_variable_mapping_template_invalid_reports_structured_refs(self):
+        with isolated_directory():
+            root_file = _write_text_file(
+                "root.fcstm",
+                """
+                def int left_input = 0;
+                state Host {
+                    import "./worker.fcstm" as Worker {
+                        def sensor_* -> left_${x};
+                    }
+                    [*] -> Worker;
+                }
+                """,
+            )
+            _write_text_file(
+                "worker.fcstm",
+                """
+                def int sensor_input = 0;
+                state Worker {
+                    state Idle;
+                    [*] -> Idle;
+                }
+                """,
+            )
+
+            ast_node = parse_state_machine_dsl(root_file.read_text(encoding="utf-8"))
+            with pytest.raises(ModelValidationError) as exc_info:
+                parse_dsl_node_to_state_machine(ast_node, path=root_file)
+
+        diagnostic = exc_info.value.diagnostics[0]
+        assert diagnostic.code == "E_IMPORT_MAPPING_INVALID"
+        assert diagnostic.refs == {
+            "alias": "Worker",
+            "mapping_kind": "variable",
+            "host_state_path": "Host",
+            "reason": "template_invalid",
+            "detail": "left_${x}",
+        }
+
+    def test_event_mapping_target_conflict_reports_direction_and_target(self):
+        with isolated_directory():
+            root_file = _write_text_file(
+                "root.fcstm",
+                """
+                state Host {
+                    event Shared named "Host Shared";
+                    import "./worker.fcstm" as Worker {
+                        event /Start -> Shared named "Mapped Start";
+                        event /Stop -> Shared named "Mapped Stop";
+                    }
+                    [*] -> Worker;
+                }
+                """,
+            )
+            _write_text_file(
+                "worker.fcstm",
+                """
+                state Worker {
+                    event Start named "Worker Start";
+                    event Stop named "Worker Stop";
+                    state Idle;
+                    [*] -> Idle;
+                }
+                """,
+            )
+
+            ast_node = parse_state_machine_dsl(root_file.read_text(encoding="utf-8"))
+            with pytest.raises(ModelValidationError) as exc_info:
+                parse_dsl_node_to_state_machine(ast_node, path=root_file)
+
+        diagnostic = next(
+            item
+            for item in exc_info.value.diagnostics
+            if item.code == "E_IMPORT_DUPLICATE_MAPPING"
+        )
+        assert diagnostic.refs["mapping_kind"] == "event"
+        assert diagnostic.refs["direction"] == "target_duplicated"
+        assert diagnostic.refs["duplicated_name"] == "/Host.Shared"
+
     def test_event_mapping_duplicate_same_source_is_rejected(self):
         with isolated_directory():
             root_file = _write_text_file(
@@ -93,8 +217,9 @@ class TestImportPhase4Assembly:
             with pytest.raises(SyntaxError) as exc_info:
                 parse_dsl_node_to_state_machine(ast_node, path=root_file)
 
-        assert "maps multiple module events to the same host event '/Root.Shared'" in str(
-            exc_info.value
+        assert (
+            "maps multiple module events to the same host event '/Root.Shared'"
+            in str(exc_info.value)
         )
 
     def test_event_mapping_relative_target_promotes_to_owner_scope(self):
@@ -187,7 +312,9 @@ class TestImportPhase4Assembly:
         assert worker_state.transitions[1].event is worker_state.events["Start"]
         assert "Start" not in state_machine.root_state.events
 
-    def test_event_mapping_preserves_shared_event_identity_for_multiple_transitions(self):
+    def test_event_mapping_preserves_shared_event_identity_for_multiple_transitions(
+        self,
+    ):
         state_machine = _build_state_machine(
             """
             state Root {
@@ -346,6 +473,46 @@ class TestImportPhase4Assembly:
             ("Error", "Error"),
         ]
 
+    @pytest.mark.parametrize("combo_trigger", ["Start + Finish", "/Start + /Finish"])
+    def test_event_mapping_applies_to_combo_transition_events(self, combo_trigger):
+        state_machine = _build_state_machine(
+            """
+            state Root {
+                event HostStart;
+                event HostFinish;
+                import "./worker.fcstm" as Worker {
+                    event /Start -> HostStart;
+                    event /Finish -> HostFinish;
+                }
+                [*] -> Worker;
+            }
+            """,
+            **{
+                "worker.fcstm": f"""
+                state WorkerRoot {{
+                    event Start;
+                    event Finish;
+                    state Idle;
+                    state Done;
+                    [*] -> Idle;
+                    Idle -> Done : {combo_trigger};
+                }}
+                """,
+            },
+        )
+
+        worker_state = state_machine.root_state.substates["Worker"]
+        combo_events = [
+            transition.event
+            for transition in worker_state.transitions
+            if transition.combo_origin_refs
+        ]
+
+        assert [event.path for event in combo_events] == [
+            ("Root", "HostStart"),
+            ("Root", "HostFinish"),
+        ]
+
     def test_event_mapping_conflicting_named_override_is_rejected(self):
         with isolated_directory():
             root_file = _write_text_file(
@@ -412,7 +579,9 @@ class TestImportPhase4Assembly:
 
         assert "must be a module-absolute path" in str(exc_info.value)
 
-    def test_public_ast_event_mapping_rejects_empty_target_paths_and_invalid_host_paths(self):
+    def test_public_ast_event_mapping_rejects_empty_target_paths_and_invalid_host_paths(
+        self,
+    ):
         worker_program = dsl_nodes.StateMachineDSLProgram(
             definitions=[],
             root_state=dsl_nodes.StateDefinition(
@@ -464,7 +633,9 @@ class TestImportPhase4Assembly:
             (
                 dsl_nodes.ImportEventMapping(
                     source_event=dsl_nodes.ChainID(path=["Start"], is_absolute=True),
-                    target_event=dsl_nodes.ChainID(path=["Missing", "Start"], is_absolute=False),
+                    target_event=dsl_nodes.ChainID(
+                        path=["Missing", "Start"], is_absolute=False
+                    ),
                 ),
                 dsl_nodes.StateMachineDSLProgram(
                     definitions=[],
@@ -484,14 +655,18 @@ class TestImportPhase4Assembly:
             ]
 
             with isolated_directory():
-                worker_file = _write_text_file("worker.fcstm", "state WorkerRoot { state Idle; [*] -> Idle; }")
+                worker_file = _write_text_file(
+                    "worker.fcstm", "state WorkerRoot { state Idle; [*] -> Idle; }"
+                )
                 with pytest.MonkeyPatch.context() as mp:
                     mp.setattr(
                         "pyfcstm.model.imports.parse_state_machine_dsl",
                         lambda _content: worker_program,
                     )
                     with pytest.raises(SyntaxError) as exc_info:
-                        assemble_state_machine_imports(host_program, path=worker_file.parent)
+                        assemble_state_machine_imports(
+                            host_program, path=worker_file.parent
+                        )
 
             assert message_fragment in str(exc_info.value)
 
@@ -538,8 +713,12 @@ class TestImportPhase4Assembly:
                 alias="Worker",
                 mappings=[
                     dsl_nodes.ImportEventMapping(
-                        source_event=dsl_nodes.ChainID(path=["Start"], is_absolute=True),
-                        target_event=dsl_nodes.ChainID(path=["Start"], is_absolute=False),
+                        source_event=dsl_nodes.ChainID(
+                            path=["Start"], is_absolute=True
+                        ),
+                        target_event=dsl_nodes.ChainID(
+                            path=["Start"], is_absolute=False
+                        ),
                     )
                 ],
             )
@@ -553,16 +732,22 @@ class TestImportPhase4Assembly:
                     lambda _content: worker_program,
                 )
                 with pytest.raises(SyntaxError) as exc_info:
-                    assemble_state_machine_imports(host_program, path=worker_file.parent)
+                    assemble_state_machine_imports(
+                        host_program, path=worker_file.parent
+                    )
 
         assert "Invalid host root path for event mapping" in str(exc_info.value)
 
-    def test_public_ast_event_mapping_propagates_source_or_existing_host_display_name(self):
+    def test_public_ast_event_mapping_propagates_source_or_existing_host_display_name(
+        self,
+    ):
         worker_program = dsl_nodes.StateMachineDSLProgram(
             definitions=[],
             root_state=dsl_nodes.StateDefinition(
                 name="WorkerRoot",
-                events=[dsl_nodes.EventDefinition(name="Start", extra_name="Worker Start")],
+                events=[
+                    dsl_nodes.EventDefinition(name="Start", extra_name="Worker Start")
+                ],
                 transitions=[
                     dsl_nodes.TransitionDefinition(
                         from_state=dsl_nodes.INIT_STATE,
@@ -587,15 +772,23 @@ class TestImportPhase4Assembly:
             definitions=[],
             root_state=dsl_nodes.StateDefinition(
                 name="Root",
-                events=[dsl_nodes.EventDefinition(name="Existing", extra_name="Existing Name")],
+                events=[
+                    dsl_nodes.EventDefinition(
+                        name="Existing", extra_name="Existing Name"
+                    )
+                ],
                 imports=[
                     dsl_nodes.ImportStatement(
                         source_path="./worker.fcstm",
                         alias="Worker",
                         mappings=[
                             dsl_nodes.ImportEventMapping(
-                                source_event=dsl_nodes.ChainID(path=["Start"], is_absolute=True),
-                                target_event=dsl_nodes.ChainID(path=["Promoted"], is_absolute=False),
+                                source_event=dsl_nodes.ChainID(
+                                    path=["Start"], is_absolute=True
+                                ),
+                                target_event=dsl_nodes.ChainID(
+                                    path=["Promoted"], is_absolute=False
+                                ),
                             ),
                         ],
                     )
@@ -604,18 +797,24 @@ class TestImportPhase4Assembly:
         )
 
         with isolated_directory():
-            worker_file = _write_text_file("worker.fcstm", "state WorkerRoot { state Idle; [*] -> Idle; }")
+            worker_file = _write_text_file(
+                "worker.fcstm", "state WorkerRoot { state Idle; [*] -> Idle; }"
+            )
             with pytest.MonkeyPatch.context() as mp:
                 mp.setattr(
                     "pyfcstm.model.imports.parse_state_machine_dsl",
                     lambda _content: worker_program,
                 )
-                assembled = assemble_state_machine_imports(host_program, path=worker_file.parent)
+                assembled = assemble_state_machine_imports(
+                    host_program, path=worker_file.parent
+                )
 
         assert assembled.root_state.events[0].extra_name == "Existing Name"
         assert assembled.root_state.events[1].extra_name == "Worker Start"
 
-    def test_public_ast_event_mapping_conflicting_named_registrations_are_rejected(self):
+    def test_public_ast_event_mapping_conflicting_named_registrations_are_rejected(
+        self,
+    ):
         worker_program = dsl_nodes.StateMachineDSLProgram(
             definitions=[],
             root_state=dsl_nodes.StateDefinition(
@@ -656,13 +855,21 @@ class TestImportPhase4Assembly:
                         alias="Worker",
                         mappings=[
                             dsl_nodes.ImportEventMapping(
-                                source_event=dsl_nodes.ChainID(path=["Start"], is_absolute=True),
-                                target_event=dsl_nodes.ChainID(path=["Promoted"], is_absolute=False),
+                                source_event=dsl_nodes.ChainID(
+                                    path=["Start"], is_absolute=True
+                                ),
+                                target_event=dsl_nodes.ChainID(
+                                    path=["Promoted"], is_absolute=False
+                                ),
                                 extra_name="Left",
                             ),
                             dsl_nodes.ImportEventMapping(
-                                source_event=dsl_nodes.ChainID(path=["Stop"], is_absolute=True),
-                                target_event=dsl_nodes.ChainID(path=["Promoted"], is_absolute=False),
+                                source_event=dsl_nodes.ChainID(
+                                    path=["Stop"], is_absolute=True
+                                ),
+                                target_event=dsl_nodes.ChainID(
+                                    path=["Promoted"], is_absolute=False
+                                ),
                                 extra_name="Right",
                             ),
                         ],
@@ -679,10 +886,13 @@ class TestImportPhase4Assembly:
                     lambda _content: worker_program,
                 )
                 with pytest.raises(SyntaxError) as exc_info:
-                    assemble_state_machine_imports(host_program, path=worker_file.parent)
+                    assemble_state_machine_imports(
+                        host_program, path=worker_file.parent
+                    )
 
-        assert "maps multiple module events to the same host event '/Root.Promoted'" in str(
-            exc_info.value
+        assert (
+            "maps multiple module events to the same host event '/Root.Promoted'"
+            in str(exc_info.value)
         )
 
     def test_public_ast_event_mapping_rejects_conflicting_pending_display_names(self):
@@ -740,8 +950,12 @@ class TestImportPhase4Assembly:
                         alias="Worker",
                         mappings=[
                             dsl_nodes.ImportEventMapping(
-                                source_event=dsl_nodes.ChainID(path=["Start"], is_absolute=True),
-                                target_event=dsl_nodes.ChainID(path=["Promoted"], is_absolute=False),
+                                source_event=dsl_nodes.ChainID(
+                                    path=["Start"], is_absolute=True
+                                ),
+                                target_event=dsl_nodes.ChainID(
+                                    path=["Promoted"], is_absolute=False
+                                ),
                                 extra_name=shared_name,
                             ),
                         ],
@@ -758,16 +972,22 @@ class TestImportPhase4Assembly:
                     lambda _content: worker_program,
                 )
                 with pytest.raises(SyntaxError) as exc_info:
-                    assemble_state_machine_imports(host_program, path=worker_file.parent)
+                    assemble_state_machine_imports(
+                        host_program, path=worker_file.parent
+                    )
 
         assert "receives conflicting display names" in str(exc_info.value)
 
-    def test_event_mapping_existing_host_event_without_name_adopts_source_display_name(self):
+    def test_event_mapping_existing_host_event_without_name_adopts_source_display_name(
+        self,
+    ):
         worker_program = dsl_nodes.StateMachineDSLProgram(
             definitions=[],
             root_state=dsl_nodes.StateDefinition(
                 name="WorkerRoot",
-                events=[dsl_nodes.EventDefinition(name="Start", extra_name="Worker Start")],
+                events=[
+                    dsl_nodes.EventDefinition(name="Start", extra_name="Worker Start")
+                ],
                 transitions=[
                     dsl_nodes.TransitionDefinition(
                         from_state=dsl_nodes.INIT_STATE,
@@ -798,8 +1018,12 @@ class TestImportPhase4Assembly:
                         alias="Worker",
                         mappings=[
                             dsl_nodes.ImportEventMapping(
-                                source_event=dsl_nodes.ChainID(path=["Start"], is_absolute=True),
-                                target_event=dsl_nodes.ChainID(path=["Promoted"], is_absolute=False),
+                                source_event=dsl_nodes.ChainID(
+                                    path=["Start"], is_absolute=True
+                                ),
+                                target_event=dsl_nodes.ChainID(
+                                    path=["Promoted"], is_absolute=False
+                                ),
                             ),
                         ],
                     )
@@ -814,11 +1038,13 @@ class TestImportPhase4Assembly:
                     "pyfcstm.model.imports.parse_state_machine_dsl",
                     lambda _content: worker_program,
                 )
-                assembled = assemble_state_machine_imports(host_program, path=worker_file.parent)
+                assembled = assemble_state_machine_imports(
+                    host_program, path=worker_file.parent
+                )
 
-        assert [(event.name, event.extra_name) for event in assembled.root_state.events] == [
-            ("Promoted", "Worker Start")
-        ]
+        assert [
+            (event.name, event.extra_name) for event in assembled.root_state.events
+        ] == [("Promoted", "Worker Start")]
 
     def test_phase4_complete_example_to_ast_node_str(self, text_aligner):
         state_machine = _build_state_machine(
@@ -945,12 +1171,14 @@ class TestImportPhase4Assembly:
 
         plant_state = state_machine.root_state.substates["Plant"]
         worker_state = plant_state.substates["Worker"]
-        assert worker_state.transitions[1].event is state_machine.root_state.events[
-            "GlobalFault"
-        ]
-        assert worker_state.transitions[2].event is plant_state.substates["Bus"].events[
-            "Stop"
-        ]
+        assert (
+            worker_state.transitions[1].event
+            is state_machine.root_state.events["GlobalFault"]
+        )
+        assert (
+            worker_state.transitions[2].event
+            is plant_state.substates["Bus"].events["Stop"]
+        )
 
         text_aligner.assert_equal(
             expect=textwrap.dedent(

@@ -117,6 +117,107 @@ def _json_result(model_path: Path, query_path: Path, *args: str):
     return result, json.loads(result.stdout) if result.stdout else None
 
 
+def test_bmc_cli_compile_preserves_query_source_path(bmc_files) -> None:
+    """The file-based entry pipeline preserves FBMCQ provenance metadata."""
+    import pyfcstm.entry.bmc as bmc_entry
+
+    model_path, query = bmc_files
+    query_path = query(
+        'init state("Root") where true;\ncheck reach <= 1: active("Root");'
+    )
+    model = bmc_entry._load_model(str(model_path))
+
+    formula = bmc_entry._compile_query(
+        model,
+        query_path.read_text(encoding="utf-8"),
+        max_bound=None,
+        query_source_path=str(query_path),
+    )
+    context = formula.core.context
+    assert context.query_source_path == str(query_path)
+    target = next(
+        group
+        for group in formula.core._tracked_groups
+        if group.stable_id == "initial.target"
+    )
+    assert target.source_ref.path == context._source_registry.display_path(
+        str(query_path)
+    )
+    assert context._source_registry.excerpt(target.source_ref) == (
+        'init state("Root") where true;'
+    )
+
+
+def test_entry_witness_decoder_wrapper_uses_real_public_decoder(bmc_files) -> None:
+    """The lazy witness wrapper decodes a real SAT model without substitution."""
+    import pyfcstm.entry.bmc as bmc_entry
+
+    model_path, query = bmc_files
+    query_path = query('check reach <= 1: active("Root");')
+    model = bmc_entry._load_model(str(model_path))
+    formula = bmc_entry._compile_query(
+        model,
+        query_path.read_text(encoding="utf-8"),
+        max_bound=None,
+        query_source_path=str(query_path),
+    )
+    result = bmc_entry._solve_bmc_property(formula)
+
+    assert result.status == "sat"
+    trace = bmc_entry._decode_bmc_witness(formula, result.model)
+    assert trace.frames
+    assert trace.steps
+
+
+def test_build_bmc_output_public_helper_returns_json_report(bmc_files) -> None:
+    """The public entry helper runs the real file-based BMC pipeline."""
+    from pyfcstm.entry.bmc import build_bmc_output
+
+    model_path, query = bmc_files
+    query_path = query('check reach <= 1: active("Root");')
+
+    output, exit_code = build_bmc_output(
+        str(model_path),
+        str(query_path),
+        json_output=True,
+    )
+
+    payload = json.loads(output)
+    assert exit_code == 0
+    assert payload["input"]["model_path"] == str(model_path)
+    assert payload["input"]["query_path"] == str(query_path)
+    assert payload["result"]["outcome"] == "witness_found"
+    assert payload["witness"] is not None
+    assert payload["replay"]["ok"] is True
+    assert output.endswith("\n")
+
+
+@pytest.mark.parametrize(
+    ("option", "value"),
+    [
+        pytest.param("timeout_ms", 0, id="zero-timeout"),
+        pytest.param("timeout_ms", True, id="boolean-timeout"),
+        pytest.param("max_bound", 0, id="zero-max-bound"),
+        pytest.param("max_bound", -1, id="negative-max-bound"),
+    ],
+)
+def test_build_bmc_output_rejects_invalid_public_limits(
+    bmc_files, option: str, value: object
+) -> None:
+    """Public BMC limits reject invalid values before pipeline execution."""
+    from pyfcstm.entry.bmc import build_bmc_output
+
+    model_path, query = bmc_files
+    query_path = query('check reach <= 1: active("Root");')
+
+    with pytest.raises(ClickErrorException, match=option):
+        build_bmc_output(
+            str(model_path),
+            str(query_path),
+            **{option: value},
+        )
+
+
 def _stderr_text(result) -> str:
     """Return stderr across Click versions with and without split capture."""
     try:
@@ -860,6 +961,27 @@ def test_bmc_response_incomplete_is_exit_three(bmc_files) -> None:
     assert payload["replay"]["model_role"] == "incomplete_suffix"
 
 
+def test_bmc_incomplete_suffix_internal_error_keeps_traceback(
+    bmc_files, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A suffix witness consistency failure remains an internal CLI error."""
+    import pyfcstm.entry.bmc as bmc_entry
+
+    model_path, query = bmc_files
+    query_path = query("check response <= 1: trigger true -> within 2 false;")
+
+    def fail_suffix_decode(result, *, source):
+        assert source == "incomplete_suffix"
+        raise BmcBuildError("forged incomplete suffix consistency failure")
+
+    monkeypatch.setattr(bmc_entry, "_decode_bmc_result_trace", fail_suffix_decode)
+    result = _run("-i", str(model_path), "-q", str(query_path), "--json")
+
+    assert result.exit_code == 1
+    _assert_stderr_only(result, "Unexpected error found when running pyfcstm!")
+    assert "forged incomplete suffix consistency failure" in _stderr_text(result)
+
+
 def test_bmc_scenario_infeasible_is_not_a_property_failure(bmc_files) -> None:
     """Contradictory assumptions produce a distinct non-verdict CLI result."""
     model_path, query = bmc_files
@@ -1499,7 +1621,7 @@ def test_bmc_internal_compile_and_solve_errors_keep_internal_identity(
     model_path, query = bmc_files
     query_path = query('check reach <= 1: active("Root");')
 
-    def fail_compile(model, query_text, *, options=None):
+    def fail_compile(model, query_text, *, options=None, query_source_path=None):
         raise BmcBuildError("forged compile invariant failure")
 
     monkeypatch.setattr(bmc_entry, "_compile_bmc_query", fail_compile)
@@ -1634,3 +1756,13 @@ check reach <= 1: active("Root.Done");
     diagnostics = bmc_entry._human_diagnostics(execution)
     assert "Horizon reason: incomplete" in diagnostics
     assert "Diagnostic: custom_diagnostic=1" in diagnostics
+
+
+def test_bmc_human_color_rejects_unknown_severity() -> None:
+    """The human formatter rejects severities outside the CLI color contract."""
+    import pyfcstm.entry.bmc as bmc_entry
+
+    with pytest.raises(
+        bmc_entry._BmcCliInternalError, match="Unsupported human report severity"
+    ):
+        bmc_entry._colorize_human_report("BMC report\n", "purple")

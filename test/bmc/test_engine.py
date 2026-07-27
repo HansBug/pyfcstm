@@ -21,8 +21,10 @@ from pyfcstm.bmc import (
     parse_bmc_query,
     prepare_bmc_query,
 )
+from pyfcstm.bmc.ast import Active
 from pyfcstm.bmc.binding import BoundBmcQuery
 from pyfcstm.bmc.domain import BmcDomain
+from pyfcstm.bmc.query import BmcProperty, BmcQuery
 from pyfcstm.model import StateMachine, load_state_machine_from_text
 
 
@@ -76,10 +78,10 @@ def test_engine_prepares_query_text_with_domain_references(
     assert context.domain.bound == 1
     assert context.query.property.bound == 1
     assert context.bound_query.property.bound == 1
+
     assert context.options == BmcOptions()
     assert isinstance(context.domain, BmcDomain)
     assert isinstance(context.bound_query, BoundBmcQuery)
-
     references = {(ref.kind, ref.name): ref for ref in context.references}
     assert references[("state", "Root.Done")].resolved_id is not None
     assert references[("event", "Root.Tick")].resolved_id is not None
@@ -192,6 +194,140 @@ def test_engine_rejects_invalid_query_input(engine_model: StateMachine) -> None:
     """Prepare accepts only query text or parser-independent BmcQuery objects."""
     with pytest.raises(BmcBuildError, match="query must be a str or BmcQuery"):
         BmcEngine(engine_model).prepare(object())
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize("query_source_path", ["", 123])
+def test_engine_rejects_invalid_query_source_path(
+    engine_model: StateMachine, query_source_path
+) -> None:
+    """AST preparation rejects empty and non-string query source paths."""
+    query = parse_bmc_query('check reach <= 1: active("Root.Done");')
+
+    with pytest.raises(BmcBuildError, match="query_source_path"):
+        BmcEngine(engine_model).prepare(query, query_source_path=query_source_path)
+
+
+@pytest.mark.unittest
+def test_prepared_context_rejects_invalid_query_source_path(
+    engine_model: StateMachine,
+) -> None:
+    """The public prepared-context constructor validates explicit metadata."""
+    prepared = BmcEngine(engine_model).prepare('check reach <= 1: active("Root.Done");')
+
+    with pytest.raises(BmcBuildError, match="query_source_path"):
+        BmcPreparedContext(
+            model=prepared.model,
+            query=prepared.query,
+            bound_query=prepared.bound_query,
+            domain=prepared.domain,
+            options=prepared.options,
+            source_text=prepared.source_text,
+            query_source_path="",
+        )
+
+
+@pytest.mark.unittest
+def test_engine_inherits_source_path_from_parsed_query(
+    engine_model: StateMachine,
+) -> None:
+    """AST preparation keeps a source path already attached by the parser."""
+    query = parse_bmc_query(
+        'check reach <= 1: active("Root.Done");', source_path="query.fbmcq"
+    )
+
+    context = BmcEngine(engine_model).prepare(query)
+
+    assert context.query_source_path == "query.fbmcq"
+
+
+@pytest.mark.unittest
+def test_engine_query_source_path_overrides_ast_metadata(
+    engine_model: StateMachine,
+) -> None:
+    """An explicit source path replaces stale AST path metadata."""
+    query = parse_bmc_query(
+        'check reach <= 1: active("Root.Done");', source_path="old.fbmcq"
+    )
+
+    context = BmcEngine(engine_model).prepare(query, query_source_path="new.fbmcq")
+
+    assert context.query_source_path == "new.fbmcq"
+    assert context.query._source_path == "new.fbmcq"
+    assert dict(context.query._source_spans).get(id(context.query)) is not None
+
+
+@pytest.mark.unittest
+def test_prepared_context_inherits_source_path_from_query_metadata(
+    engine_model: StateMachine,
+) -> None:
+    """Direct context construction applies the query metadata fallback."""
+    query = parse_bmc_query(
+        'check reach <= 1: active("Root.Done");', source_path="query.fbmcq"
+    )
+    prepared = BmcEngine(engine_model).prepare(query)
+
+    context = BmcPreparedContext(
+        model=prepared.model,
+        query=prepared.query,
+        bound_query=prepared.bound_query,
+        domain=prepared.domain,
+        options=prepared.options,
+    )
+
+    assert context.query_source_path == "query.fbmcq"
+
+    reused_registry = BmcPreparedContext(
+        model=prepared.model,
+        query=prepared.query,
+        bound_query=prepared.bound_query,
+        domain=prepared.domain,
+        options=prepared.options,
+        _source_registry=prepared._source_registry,
+    )
+
+    assert reused_registry._source_registry is prepared._source_registry
+
+
+@pytest.mark.unittest
+def test_prepared_context_accepts_matching_source_registry_snapshot(
+    engine_model: StateMachine,
+) -> None:
+    """A reused registry is accepted when its query snapshot is identical."""
+    query_text = 'check reach <= 1: active("Root.Done");'
+    prepared = BmcEngine(engine_model).prepare(
+        query_text, query_source_path="query.fbmcq"
+    )
+
+    context = BmcPreparedContext(
+        model=prepared.model,
+        query=prepared.query,
+        bound_query=prepared.bound_query,
+        domain=prepared.domain,
+        options=prepared.options,
+        source_text=query_text,
+        query_source_path="query.fbmcq",
+        _source_registry=prepared._source_registry,
+    )
+
+    assert context._source_registry is prepared._source_registry
+    assert context.source_text == query_text
+
+
+@pytest.mark.unittest
+def test_programmatic_query_source_override_without_root_span_is_supported(
+    engine_model: StateMachine,
+) -> None:
+    """Programmatic queries keep a path without inventing a source span."""
+    query = BmcQuery(property=BmcProperty("reach", 1, predicate=Active("Root.Done")))
+
+    context = BmcEngine(engine_model).prepare(
+        query, query_source_path="programmatic.fbmcq"
+    )
+
+    assert context.query_source_path == "programmatic.fbmcq"
+    assert context.query._source_path == "programmatic.fbmcq"
+    assert id(context.query) not in dict(context.query._source_spans)
 
 
 @pytest.mark.unittest

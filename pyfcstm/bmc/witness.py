@@ -79,17 +79,12 @@ from .errors import BmcBuildError
 from .properties import BmcPropertyFormula, _lower_predicate
 from .query import EventAssumption
 from .relation import BmcCaseRelation
+from .solver import BmcSolveStatus, _SolveBudget, _check_with_budget
 from pyfcstm.model import OnAspect, OnStage, StateMachine
 from pyfcstm.simulate import ReadOnlyExecutionContext, SimulationRuntime
 
-try:
-    from typing import Literal
-except ImportError:  # pragma: no cover - Python < 3.8 compatibility
-    from typing_extensions import Literal
-
 _CanonicalDict = Dict[str, Any]
 #: Public solver statuses returned by :class:`BmcSolveResult`.
-BmcSolveStatus = Literal["sat", "unsat", "unknown", "timeout"]
 _INTERNAL_ISSUE_URL = "https://github.com/HansBug/pyfcstm/issues/new"
 _REPLAY_FLOAT_TOLERANCE = 1e-9
 _PRETTY_STR_MAX_ROWS = 50
@@ -2028,27 +2023,27 @@ def _z3_number_value(
 def _solve(
     expr: z3.BoolRef, timeout_ms: Optional[int]
 ) -> Tuple[BmcSolveStatus, Optional[z3.ModelRef], Optional[str], float]:
+    """Solve one Boolean expression through the shared budget primitive.
+
+    :param expr: Boolean expression to solve.
+    :type expr: z3.BoolRef
+    :param timeout_ms: Optional total solver budget in milliseconds, defaults
+        to ``None``.
+    :type timeout_ms: int, optional
+    :return: Status, model, reason, and elapsed milliseconds.
+    :rtype: Tuple[str, Optional[z3.ModelRef], Optional[str], float]
+
+    Example::
+
+        >>> _solve(z3.BoolVal(True), None)[0]
+        'sat'
+    """
     solver = z3.Solver()
-    if timeout_ms is not None:
-        if (
-            isinstance(timeout_ms, bool)
-            or not isinstance(timeout_ms, int)
-            or timeout_ms <= 0
-        ):
-            raise BmcBuildError("timeout_ms must be a positive integer or None.")
-        solver.set(timeout=timeout_ms)
     solver.add(expr)
-    start = time.monotonic()
-    status = solver.check()
-    elapsed_ms = (time.monotonic() - start) * 1000.0
-    if status == z3.sat:
-        return "sat", solver.model(), None, elapsed_ms
-    if status == z3.unsat:
-        return "unsat", None, None, elapsed_ms
-    reason = solver.reason_unknown()
-    if reason == "timeout":
-        return "timeout", None, reason, elapsed_ms
-    return "unknown", None, reason, elapsed_ms
+    status, model, reason, elapsed_ms, _ = _check_with_budget(
+        solver, _SolveBudget(timeout_ms)
+    )
+    return status, model, reason, elapsed_ms
 
 
 _FEASIBILITY_ORIGINS = {"checked", "inferred", "not_checked"}
@@ -2842,6 +2837,17 @@ class BmcSolveResult(_PrettyPrintableMixin):
             object.__setattr__(self, "feasibility", feasibility)
         elif not isinstance(feasibility, BmcFeasibilityResult):
             raise BmcBuildError("feasibility must be BmcFeasibilityResult or None.")
+        if self.incomplete_reason == "incomplete check disabled" and not (
+            self.kind == "response"
+            and self.status == "unsat"
+            and self.incomplete_status is None
+            and _has_nonempty_incomplete_formula(self.formula)
+            and feasibility.assumptions.status == "sat"
+        ):
+            raise BmcBuildError(
+                "the disabled-check marker is only valid for an unchecked "
+                "response suffix after SAT assumptions feasibility."
+            )
         if self.status in {"unknown", "timeout"} and not _is_not_checked_feasibility(
             feasibility
         ):
@@ -4556,57 +4562,6 @@ def _register_recorder(
             runtime.register_abstract_handler(action_path, wrapper)
 
 
-class _SolveBudget:
-    """Track one optional deadline shared by all staged solver checks."""
-
-    def __init__(self, timeout_ms: Optional[int]) -> None:
-        if timeout_ms is not None and (
-            isinstance(timeout_ms, bool)
-            or not isinstance(timeout_ms, int)
-            or timeout_ms <= 0
-        ):
-            raise BmcBuildError("timeout_ms must be a positive integer or None.")
-        self.timeout_ms = timeout_ms
-        self.deadline = (
-            None if timeout_ms is None else time.monotonic() + timeout_ms / 1000.0
-        )
-
-    def remaining_ms(self) -> Optional[int]:
-        if self.deadline is None:
-            return None
-        remaining = int((self.deadline - time.monotonic()) * 1000.0)
-        return remaining if remaining >= 1 else None
-
-
-def _check_with_budget(
-    solver: z3.Solver, budget: _SolveBudget
-) -> Tuple[
-    BmcSolveStatus,
-    Optional[z3.ModelRef],
-    Optional[str],
-    float,
-    bool,
-]:
-    remaining = budget.remaining_ms()
-    # ``timeout_ms=None`` leaves ``deadline`` and ``remaining`` unset, so this
-    # path intentionally calls Z3 without setting a solver timeout.
-    if budget.deadline is not None and remaining is None:
-        return "timeout", None, "deadline_exhausted_before_check", 0.0, False
-    if remaining is not None:
-        solver.set(timeout=remaining)
-    start = time.monotonic()
-    status = solver.check()
-    elapsed_ms = (time.monotonic() - start) * 1000.0
-    if status == z3.sat:
-        return "sat", solver.model(), None, elapsed_ms, True
-    if status == z3.unsat:
-        return "unsat", None, None, elapsed_ms, True
-    reason = solver.reason_unknown() or "unknown"
-    if reason == "timeout":
-        return "timeout", None, reason, elapsed_ms, True
-    return "unknown", None, reason, elapsed_ms, True
-
-
 def _feasibility_check(
     status: BmcSolveStatus,
     reason: Optional[str],
@@ -4718,7 +4673,6 @@ def solve_bmc_property(
     checked = _require_formula(formula)
     if not isinstance(check_incomplete, bool):
         raise BmcBuildError("check_incomplete must be bool.")
-    budget = _SolveBudget(timeout_ms)
     started_at = time.monotonic()
     core = checked.core
     solver = z3.Solver()
@@ -4730,6 +4684,9 @@ def solve_bmc_property(
     solver.push()
     solver.add(checked.objective_formula)
 
+    # Start the shared check budget after solver construction, so a very small
+    # user budget is spent on Z3 checks rather than Python-side setup.
+    budget = _SolveBudget(timeout_ms)
     status, model, reason, elapsed_ms, _ = _check_with_budget(solver, budget)
     diagnostics = list(checked.diagnostics)
     if status == "sat":

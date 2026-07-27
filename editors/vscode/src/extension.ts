@@ -22,9 +22,12 @@ let previewController: FcstmPreviewController | null = null;
  * The extension host stays intentionally thin. All FCSTM language semantics
  * are served through the bundled jsfcstm-based language server.
  */
-export function activate(context: vscode.ExtensionContext): void {
+export async function activate(context: vscode.ExtensionContext): Promise<void> {
     const serverModule = context.asAbsolutePath(path.join('dist', 'server.js'));
-    const outputChannel = vscode.window.createOutputChannel('FCSTM Language Server');
+    // ``LanguageClientOptions.outputChannel`` needs a ``LogOutputChannel``: the
+    // client logs through ``info``/``warn``/``error``/``debug``, which a plain
+    // output channel does not provide.
+    const outputChannel = vscode.window.createOutputChannel('FCSTM Language Server', {log: true});
 
     const serverOptions: ServerOptions = {
         run: {
@@ -68,10 +71,10 @@ export function activate(context: vscode.ExtensionContext): void {
         },
         errorHandler: {
             error() {
-                return ErrorAction.Continue;
+                return {action: ErrorAction.Continue};
             },
             closed() {
-                return CloseAction.Restart;
+                return {action: CloseAction.Restart};
             },
         },
     };
@@ -84,7 +87,10 @@ export function activate(context: vscode.ExtensionContext): void {
     );
 
     previewController = new FcstmPreviewController(context);
-    context.subscriptions.push(outputChannel, client.start(), previewController);
+    context.subscriptions.push(outputChannel, previewController);
+    // ``start()`` resolves once the server is up; it is no longer a disposable,
+    // so shutdown goes through ``client.stop()`` in ``deactivate`` instead.
+    await client.start();
 }
 
 /**

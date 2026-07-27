@@ -548,3 +548,39 @@ def test_an_optional_explanation_never_destroys_a_usable_verdict(monkeypatch) ->
     assert degraded.infeasible_stage == baseline.infeasible_stage
     assert degraded.explanation is None
     assert degraded.refinement_status == "not_requested"
+
+
+@pytest.mark.parametrize("status", ["partial", "unknown", "timeout"])
+def test_an_unlocalized_result_cannot_report_a_degraded_refinement(status) -> None:
+    """A degraded refinement needs a stage it could have been attempted on.
+
+    These statuses say optional work was tried and fell short.  With no
+    localized stage there was no target to try it against, so the claim
+    describes work that had nothing to work on and a reader can no longer use
+    ``refinement_status`` to tell whether an optional stage existed at all.
+    """
+    with pytest.raises(BmcBuildError, match="unlocalized result"):
+        BmcFeasibilityResult(
+            kernel=_check("sat"),
+            initialization=_check("sat"),
+            assumptions=_check("sat"),
+            infeasible_stage=None,
+            localization_status="not_needed",
+            refinement_status=status,
+            refinement_reason="optional stage allegedly failed",
+        )
+
+
+def test_a_feasible_scenario_still_reports_no_refinement_need() -> None:
+    """The ordinary unlocalized shape is untouched."""
+    result = BmcFeasibilityResult(
+        kernel=_check("sat"),
+        initialization=_check("sat"),
+        assumptions=_check("sat"),
+        infeasible_stage=None,
+        localization_status="not_needed",
+        refinement_status="not_needed",
+    )
+
+    assert result.refinement_status == "not_needed"
+    assert result.explanation is None

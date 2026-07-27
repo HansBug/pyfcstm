@@ -2549,6 +2549,21 @@ class BmcFeasibilityResult(_PrettyPrintableMixin):
             raise BmcBuildError(
                 "localized infeasible stages require refinement_status=not_requested."
             )
+        if self.infeasible_stage is None and self.refinement_status in (
+            "partial",
+            "unknown",
+            "timeout",
+        ):
+            # A degraded refinement status says optional work was attempted
+            # and fell short.  Without a localized stage there was no target
+            # to attempt it against, so the claim describes work that had
+            # nothing to work on.  ``complete`` is left alone here: it is an
+            # older accepted shape for a feasible scenario and changing it
+            # belongs with whoever owns that contract.
+            raise BmcBuildError(
+                "an unlocalized result cannot report refinement_status=%r."
+                % self.refinement_status
+            )
         object.__setattr__(
             self,
             "refinement_checks",

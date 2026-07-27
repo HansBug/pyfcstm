@@ -1238,6 +1238,37 @@
               "infeasible_stage"
             ]
           }
+        },
+        {
+          "if": {
+            "properties": {
+              "infeasible_stage": {
+                "type": "null"
+              }
+            },
+            "required": [
+              "infeasible_stage"
+            ]
+          },
+          "then": {
+            "properties": {
+              "refinement_status": {
+                "not": {
+                  "enum": [
+                    "partial",
+                    "unknown",
+                    "timeout"
+                  ]
+                }
+              },
+              "refinement_checks": {
+                "maxItems": 0
+              },
+              "explanation": {
+                "type": "null"
+              }
+            }
+          }
         }
       ]
     },
@@ -2440,6 +2471,37 @@
             "required": [
               "infeasible_stage"
             ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "infeasible_stage": {
+                "type": "null"
+              }
+            },
+            "required": [
+              "infeasible_stage"
+            ]
+          },
+          "then": {
+            "properties": {
+              "refinement_status": {
+                "not": {
+                  "enum": [
+                    "partial",
+                    "unknown",
+                    "timeout"
+                  ]
+                }
+              },
+              "refinement_checks": {
+                "maxItems": 0
+              },
+              "explanation": {
+                "type": "null"
+              }
+            }
           }
         }
       ]

@@ -15,6 +15,7 @@ Example::
     'Root'
 """
 
+import atexit
 import base64
 import hashlib
 import html as html_module
@@ -28,6 +29,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
+from collections.abc import Iterable
 from typing import Any, Dict, List, Mapping, Optional, Tuple, Union
 
 from pygments import lex
@@ -704,7 +706,24 @@ def _coerce_window_size(value: Tuple[Any, Any]) -> Tuple[int, int]:
 def _browser_app_executable() -> Optional[str]:
     """Find a Chromium-family executable that supports ``--app`` windows."""
     override = os.environ.get("PYFCSTM_BROWSER")
-    candidates = [override] if override else []
+    if override:
+        # An explicit choice is honoured or reported, never quietly replaced by
+        # a guess: a typo or a moved binary used to fall through to whatever
+        # else happened to be installed, while the error text still presented
+        # the variable as authoritative.
+        resolved = shutil.which(override) or (
+            override
+            if os.path.isfile(override) and os.access(override, os.X_OK)
+            else None
+        )
+        if resolved is None:
+            raise DiagramUnavailableError(
+                "PYFCSTM_BROWSER is set to %r, which is not an executable file "
+                "on this system; point it at a Chromium-family browser or unset "
+                "it to search the usual locations" % override
+            )
+        return resolved
+    candidates = []
     if sys.platform == "win32":
         local_app_data = os.environ.get("LOCALAPPDATA", "")
         program_files = os.environ.get("PROGRAMFILES", "")
@@ -796,9 +815,90 @@ def _open_standalone_window(path: Path, window_size: Tuple[int, int]) -> None:
         ) from err
 
 
+def _remove_temporary_viewer(path: Path) -> None:
+    """
+    Delete a viewer file that :meth:`Diagram.show` created for the caller.
+
+    :param path: Temporary viewer path.
+    :type path: pathlib.Path
+    :return: ``None``.
+    :rtype: None
+    """
+    try:
+        path.unlink()
+    except OSError as error:
+        # FileNotFoundError: the user or the OS already removed it.
+        # PermissionError: a browser still holds it open on Windows. Neither is
+        # worth failing interpreter shutdown over, and anything else is a bug.
+        if not isinstance(error, (FileNotFoundError, PermissionError)):
+            raise
+
+
+def _validate_write_target(target: Path) -> None:
+    """
+    Reject a destination before a temporary sibling is created for it.
+
+    Without this the failure surfaces from the sibling file instead: writing to
+    a directory reported a permission error on a hidden dotfile in its parent,
+    naming neither the path the caller passed nor the actual problem.
+
+    :param target: Requested destination path.
+    :type target: pathlib.Path
+    :return: ``None``.
+    :rtype: None
+    :raises IsADirectoryError: If the destination is an existing directory.
+    :raises FileNotFoundError: If the parent directory does not exist.
+    :raises NotADirectoryError: If the parent exists but is not a directory.
+    """
+    if target.is_dir():
+        raise IsADirectoryError("cannot write %s: it is a directory" % target)
+    parent = target.parent
+    if not parent.exists():
+        raise FileNotFoundError(
+            "cannot write %s: the directory %s does not exist" % (target, parent)
+        )
+    if not parent.is_dir():
+        raise NotADirectoryError(
+            "cannot write %s: %s is not a directory" % (target, parent)
+        )
+
+
+def _apply_target_mode(temporary_path: Path, target: Path) -> None:
+    """
+    Give the temporary file the mode the target should end up with.
+
+    ``NamedTemporaryFile`` creates at 0600 and ``os.replace`` carries that mode
+    onto the target, so without this a generated file lands unreadable to
+    everyone else and re-saving silently downgrades an existing world-readable
+    file. An existing target keeps its own mode; a new one follows the umask.
+
+    :param temporary_path: The sibling file about to replace the target.
+    :type temporary_path: pathlib.Path
+    :param target: Final destination path.
+    :type target: pathlib.Path
+    :return: ``None``.
+    :rtype: None
+    """
+    try:
+        mode = target.stat().st_mode & 0o7777
+    except OSError as error:
+        # FileNotFoundError: the usual case of writing a new file.
+        # PermissionError / OSError: an unreadable parent directory; the write
+        # itself will report that, so fall back to the umask default here.
+        if not isinstance(
+            error, (FileNotFoundError, PermissionError, NotADirectoryError)
+        ):
+            raise
+        umask = os.umask(0)
+        os.umask(umask)
+        mode = 0o666 & ~umask
+    os.chmod(str(temporary_path), mode)
+
+
 def _atomic_write_text(path: Union[str, os.PathLike], content: str) -> Path:
     """Replace a text file atomically using a temporary sibling."""
     target = Path(path)
+    _validate_write_target(target)
     temporary = tempfile.NamedTemporaryFile(
         mode="w",
         encoding="utf-8",
@@ -812,6 +912,7 @@ def _atomic_write_text(path: Union[str, os.PathLike], content: str) -> Path:
             temporary.write(content)
             temporary.flush()
             os.fsync(temporary.fileno())
+        _apply_target_mode(temporary_path, target)
         os.replace(str(temporary_path), str(target))
     except OSError as write_error:
         try:
@@ -831,6 +932,7 @@ def _atomic_write_text(path: Union[str, os.PathLike], content: str) -> Path:
 def _atomic_write_bytes(path: Union[str, os.PathLike], content: bytes) -> Path:
     """Replace a binary file atomically using a temporary sibling."""
     target = Path(path)
+    _validate_write_target(target)
     temporary = tempfile.NamedTemporaryFile(
         mode="wb",
         prefix=".%s." % target.name,
@@ -843,6 +945,7 @@ def _atomic_write_bytes(path: Union[str, os.PathLike], content: bytes) -> Path:
             temporary.write(content)
             temporary.flush()
             os.fsync(temporary.fileno())
+        _apply_target_mode(temporary_path, target)
         os.replace(str(temporary_path), str(target))
     except OSError as write_error:
         try:
@@ -983,6 +1086,14 @@ class DiagramOptions:
         """
         Return the renderer-ready jsfcstm option shape.
 
+        .. note::
+           This is the renderer's option vocabulary, not a serialization of
+           this object. ``palette`` and ``mode`` are presentation choices the
+           renderer takes elsewhere and do not appear here, and the remaining
+           keys are fixed renderer defaults. The result is therefore **not**
+           accepted back by :class:`Diagram`; use :func:`dataclasses.replace`
+           or :meth:`Diagram.with_options` to derive changed options.
+
         :return: A new JSON-compatible option mapping.
         :rtype: dict
         """
@@ -1004,6 +1115,31 @@ class DiagramOptions:
             "maxTransitionEffectLines": 8,
             "maxLabelLength": 160,
         }
+
+
+def _source_unavailable_reason(source: str, source_map: Mapping[str, Any]) -> str:
+    """
+    Explain why the viewer cannot link the diagram to its source.
+
+    :param source: Source text carried by the snapshot, empty when absent.
+    :type source: str
+    :param source_map: Mapping from diagram element ID to a source range.
+    :type source_map: collections.abc.Mapping
+    :return: A reason for the viewer to show, or ``''`` when linking works.
+    :rtype: str
+    """
+    if not source:
+        return (
+            "This model did not retain its original FCSTM source; load it through "
+            "load_state_machine_from_file/text, or pass source_text explicitly."
+        )
+    if not source_map:
+        return (
+            "This model carries source text but no source ranges, so the diagram "
+            "cannot be linked to it. Ranges come from parsing; a model built "
+            "programmatically has none."
+        )
+    return ""
 
 
 @dataclass(frozen=True)
@@ -1044,18 +1180,39 @@ class DiagramViewState:
     def __post_init__(self) -> None:
         if self.mode not in ("fcstm", "diagram", "compare"):
             raise ValueError("mode must be 'fcstm', 'diagram', or 'compare'")
-        object.__setattr__(self, "collapsed_state_ids", tuple(self.collapsed_state_ids))
+        ids = self.collapsed_state_ids
+        # A single ID is the obvious mistake here, and str is iterable, so
+        # tuple() would turn "Root.Run" into eight one-character IDs that
+        # collapse nothing and report no error.
+        if isinstance(ids, (str, bytes)):
+            raise TypeError(
+                "collapsed_state_ids must be a sequence of state IDs, not the "
+                "single ID %r; wrap it in a tuple or list" % (ids,)
+            )
+        if not isinstance(ids, Iterable):
+            raise TypeError(
+                "collapsed_state_ids must be an iterable of state IDs, got %s"
+                % type(ids).__name__
+            )
+        ids = tuple(ids)
+        for item in ids:
+            if not isinstance(item, str):
+                raise TypeError(
+                    "collapsed_state_ids entries must be state ID strings, got %r"
+                    % (item,)
+                )
+        object.__setattr__(self, "collapsed_state_ids", ids)
         if self.zoom is not None:
             object.__setattr__(
                 self, "zoom", _coerce_finite_number(self.zoom, "zoom", positive=True)
             )
         if self.pan_x is not None:
             object.__setattr__(
-                self, "pan_x", _coerce_finite_number(self.pan_x, "pan offsets")
+                self, "pan_x", _coerce_finite_number(self.pan_x, "pan_x offsets")
             )
         if self.pan_y is not None:
             object.__setattr__(
-                self, "pan_y", _coerce_finite_number(self.pan_y, "pan offsets")
+                self, "pan_y", _coerce_finite_number(self.pan_y, "pan_y offsets")
             )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -1144,7 +1301,8 @@ class DiagramData:
 
 
 class Diagram:
-    """Facade for portable data and a self-contained browser view.
+    """
+    Facade for portable data and a self-contained browser view.
 
     The synchronous headless methods are present as typed capability probes;
     the optional runtime that implements them belongs to the delivery stage.
@@ -1229,23 +1387,54 @@ class Diagram:
         self._source_document_id = _source_document_id(
             model, model.source_path or "<memory>"
         )
-        self._html_cache: Dict[str, str] = {}
+        self._html_document: Optional[str] = None
+        self._temporary_html: Optional[Path] = None
+        self._frozen = True
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        """
+        Reject attribute assignment once the snapshot is built.
+
+        The class is documented as an immutable snapshot and its data really is
+        frozen, but the container was not: reassigning ``data`` or ``options``
+        after the fact produced a snapshot that no longer described the model it
+        was taken from. Internal setup goes through ``object.__setattr__``.
+
+        :param name: Attribute name.
+        :type name: str
+        :param value: Attribute value.
+        :type value: Any
+        :return: ``None``.
+        :rtype: None
+        :raises AttributeError: If the snapshot has finished initializing.
+        """
+        if getattr(self, "_frozen", False):
+            raise AttributeError(
+                "Diagram snapshots are immutable; derive a new one with "
+                "with_options() or with_view_state() instead of setting %r" % name
+            )
+        object.__setattr__(self, name, value)
 
     def _clone_snapshot(self, options: Any, view_state: Any) -> "Diagram":
         """Create a derived view without rereading the mutable model."""
         clone = object.__new__(type(self))
-        clone.model = self.model
-        clone.options = self._normalize_options(options)
-        clone.view_state = self._normalize_view_state(view_state)
-        clone.source_text = self.source_text
-        clone._renderer_diagram = self._renderer_diagram
-        clone.data = self.data
-        clone._source = self._source
-        clone._source_map = self._source_map
-        clone._source_line_map = self._source_line_map
-        clone._source_documents = self._source_documents
-        clone._source_document_id = self._source_document_id
-        clone._html_cache = {}
+        assign = object.__setattr__
+        assign(clone, "model", self.model)
+        assign(clone, "options", self._normalize_options(options))
+        assign(clone, "view_state", self._normalize_view_state(view_state))
+        assign(clone, "source_text", self.source_text)
+        assign(clone, "_renderer_diagram", self._renderer_diagram)
+        assign(clone, "data", self.data)
+        assign(clone, "_source", self._source)
+        # Copied rather than shared: these are plain containers next to frozen
+        # ones, and a snapshot documented as independent should not alias them.
+        assign(clone, "_source_map", dict(self._source_map))
+        assign(clone, "_source_line_map", dict(self._source_line_map))
+        assign(clone, "_source_documents", dict(self._source_documents))
+        assign(clone, "_source_document_id", self._source_document_id)
+        assign(clone, "_html_document", None)
+        assign(clone, "_temporary_html", None)
+        assign(clone, "_frozen", True)
         return clone
 
     def to_dict(self) -> Dict[str, Any]:
@@ -1269,14 +1458,93 @@ class Diagram:
         """
         return self.data.to_json(**kwargs)
 
+    @staticmethod
+    def _merge_option_fields(
+        current: DiagramOptions, updates: Mapping[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Overlay caller-supplied option fields onto the current options.
+
+        The keyword form reads like :func:`dataclasses.replace`, so treating it
+        as a whole-object replacement silently reset every field the caller did
+        not repeat.
+
+        :param current: Options the snapshot is being derived from.
+        :type current: pyfcstm.diagram.DiagramOptions
+        :param updates: Snake-case or camel-case fields to change.
+        :type updates: collections.abc.Mapping
+        :return: A complete option mapping ready for normalization.
+        :rtype: dict
+        :raises ValueError: If a field is unknown or supplied under both spellings.
+        """
+        _reject_unknown_mapping_keys(updates, _OPTION_KEYS, "DiagramOptions")
+        merged = {
+            "detail_level": current.detail_level,
+            "direction": current.direction,
+            "palette": current.palette,
+            "mode": current.mode,
+            "cjk_locale": current.cjk_locale,
+        }
+        missing = object()
+        for snake, camel in (
+            ("detail_level", "detailLevel"),
+            ("cjk_locale", "cjkLocale"),
+        ):
+            supplied = _mapping_value(updates, snake, camel, missing)
+            if supplied is not missing:
+                merged[snake] = supplied
+        for name in ("direction", "palette", "mode"):
+            if name in updates:
+                merged[name] = updates[name]
+        return merged
+
+    @staticmethod
+    def _merge_view_state_fields(
+        current: DiagramViewState, updates: Mapping[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Overlay caller-supplied view-state fields onto the current view state.
+
+        :param current: View state the snapshot is being derived from.
+        :type current: pyfcstm.diagram.DiagramViewState
+        :param updates: Snake-case or camel-case fields to change.
+        :type updates: collections.abc.Mapping
+        :return: A complete view-state mapping ready for normalization.
+        :rtype: dict
+        :raises ValueError: If a field is unknown or supplied under both spellings.
+        """
+        _reject_unknown_mapping_keys(updates, _VIEW_STATE_KEYS, "DiagramViewState")
+        merged = {
+            "mode": current.mode,
+            "collapsed_state_ids": current.collapsed_state_ids,
+            "zoom": current.zoom,
+            "pan_x": current.pan_x,
+            "pan_y": current.pan_y,
+        }
+        missing = object()
+        for snake, camel in (
+            ("collapsed_state_ids", "collapsedStateIds"),
+            ("pan_x", "panX"),
+            ("pan_y", "panY"),
+        ):
+            supplied = _mapping_value(updates, snake, camel, missing)
+            if supplied is not missing:
+                merged[snake] = supplied
+        for name in ("mode", "zoom"):
+            if name in updates:
+                merged[name] = updates[name]
+        return merged
+
     def with_options(self, options: Optional[Any] = None, **kwargs: Any) -> "Diagram":
         """
         Return a new snapshot with replacement renderer options.
 
-        :param options: An immutable options value or mapping. If omitted,
-            keyword options are collected into a mapping.
+        :param options: An immutable options value or mapping that replaces the
+            current options wholesale. If omitted, the keyword fields below are
+            applied as a partial update instead.
         :type options: pyfcstm.diagram.DiagramOptions or collections.abc.Mapping, optional
-        :param kwargs: Snake-case or camel-case option fields.
+        :param kwargs: Snake-case or camel-case option fields to change. Fields
+            that are not named keep their current value.
         :return: A new independent diagram snapshot.
         :rtype: pyfcstm.diagram.Diagram
         :raises TypeError: If both ``options`` and keyword fields are supplied.
@@ -1289,7 +1557,15 @@ class Diagram:
         """
         if options is not None and kwargs:
             raise TypeError("provide options or keyword fields, not both")
-        replacement = options if options is not None else (kwargs or self.options)
+        replacement = (
+            options
+            if options is not None
+            else (
+                self._merge_option_fields(self.options, kwargs)
+                if kwargs
+                else self.options
+            )
+        )
         return self._clone_snapshot(replacement, self.view_state)
 
     def with_view_state(
@@ -1298,10 +1574,12 @@ class Diagram:
         """
         Return a new snapshot with replacement browser view state.
 
-        :param view_state: An immutable view state value or mapping. If
-            omitted, keyword fields are collected into a mapping.
+        :param view_state: An immutable view state value or mapping that
+            replaces the current view state wholesale. If omitted, the keyword
+            fields below are applied as a partial update instead.
         :type view_state: pyfcstm.diagram.DiagramViewState or collections.abc.Mapping, optional
-        :param kwargs: Snake-case or camel-case view-state fields.
+        :param kwargs: Snake-case or camel-case view-state fields to change.
+            Fields that are not named keep their current value.
         :return: A new independent diagram snapshot.
         :rtype: pyfcstm.diagram.Diagram
         :raises TypeError: If both ``view_state`` and keyword fields are supplied.
@@ -1315,7 +1593,13 @@ class Diagram:
         if view_state is not None and kwargs:
             raise TypeError("provide view_state or keyword fields, not both")
         replacement = (
-            view_state if view_state is not None else (kwargs or self.view_state)
+            view_state
+            if view_state is not None
+            else (
+                self._merge_view_state_fields(self.view_state, kwargs)
+                if kwargs
+                else self.view_state
+            )
         )
         return self._clone_snapshot(self.options, replacement)
 
@@ -1374,8 +1658,10 @@ class Diagram:
         :type output: str or os.PathLike, optional
         :return: Complete self-contained HTML text.
         :rtype: str
-        :raises DiagramAssetError: If a bundled viewer, font or resvg asset is
-            missing or unreadable.
+        :raises pyfcstm.diagram.DiagramAssetError: If a bundled viewer, font or
+            resvg asset is missing or unreadable.
+        :raises OSError: If ``output`` is given and cannot be written, for
+            example a missing parent directory or a read-only destination.
         """
         source = self._source
         source_map = self._source_map
@@ -1410,10 +1696,12 @@ class Diagram:
             },
             "standaloneDiagram": browser_diagram,
             "sourceHtml": _highlight_source(source),
-            "sourceAvailable": bool(source),
-            "sourceUnavailableReason": "This model did not retain its original FCSTM source; load it through load_state_machine_from_file/text, or pass source_text explicitly."
-            if not source
-            else "",
+            # Source linking needs text *and* ranges. A programmatic model with
+            # an explicit source_text has the text but no spans to click, so
+            # reporting it as available showed a pane where nothing responds and
+            # left the reason blank.
+            "sourceAvailable": bool(source) and bool(source_map),
+            "sourceUnavailableReason": _source_unavailable_reason(source, source_map),
             "sourceMap": source_map,
             "sourceLineMap": line_to_id,
             "sourceDocuments": {
@@ -1443,9 +1731,11 @@ class Diagram:
         # The bundled component library renders its styles at runtime, so the
         # document needs a style nonce in addition to the hash of the embedded
         # stylesheet. The nonce is derived from the document's own content
-        # rather than drawn at random, which keeps ``to_html`` byte-deterministic
-        # and keeps the content-addressed reuse below meaningful. It is derived
-        # before the bootstrap is built so nothing depends on its own hash.
+        # rather than drawn at random, which is what keeps ``to_html``
+        # byte-deterministic; it is derived before the bootstrap is built so
+        # nothing depends on its own hash. The nonce is public by construction,
+        # not a secret — see the note in the standalone entry point for the
+        # policy trade-off that follows from that.
         style_nonce = base64.b64encode(
             hashlib.sha256(
                 "\0".join(("style-nonce", state_json, resvg_script, viewer)).encode(
@@ -1482,11 +1772,11 @@ class Diagram:
             ),
             style_nonce,
         )
-        cache_payload = "\0".join(
-            ("html", state_json, bootstrap, resvg_script, viewer, css)
-        )
-        cache_key = hashlib.sha256(cache_payload.encode("utf-8")).hexdigest()
-        document = self._html_cache.get(cache_key)
+        # A single slot, not a content-addressed map: options and view state are
+        # fixed when the snapshot is built, so every call produces the same
+        # document and the old key was a hash of the very bytes it guarded —
+        # which also meant joining a second ~30 MB copy just to compute it.
+        document = self._html_document
         if document is None:
             document = (
                 "<!doctype html><html lang=\"%s\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; base-uri 'none'; object-src 'none'; form-action 'none'; frame-src 'none'; media-src 'none'; manifest-src 'none'; img-src data: blob:; style-src %s; style-src-attr 'none'; font-src data:; script-src %s 'wasm-unsafe-eval'; script-src-attr 'none'; connect-src 'none'; worker-src 'none'\"><style>%s</style></head><body><div id=\"app\"></div><script>%s</script><script>%s</script><script>%s</script></body></html>"
@@ -1505,7 +1795,7 @@ class Diagram:
                     viewer,
                 )
             )
-            self._html_cache[cache_key] = document
+            object.__setattr__(self, "_html_document", document)
         if output is not None:
             _atomic_write_text(output, document)
         return document
@@ -1564,8 +1854,10 @@ class Diagram:
         """
         Write an HTML viewer and optionally open it in a standalone app window.
 
-        :param output: Optional destination path.  A temporary file is used
-            when omitted.
+        :param output: Optional destination path. When omitted, one temporary
+            file is created per snapshot and reused by later calls, then removed
+            at interpreter exit. Each viewer is roughly 30 MB, so pass an
+            explicit path when the document should outlive the process.
         :type output: str or os.PathLike, optional
         :param open_window: Whether to launch a Chromium-family app window,
             defaults to ``True``.
@@ -1578,11 +1870,17 @@ class Diagram:
         """
         dimensions = _coerce_window_size(window_size)
         if output is None:
-            handle = tempfile.NamedTemporaryFile(
-                prefix="pyfcstm-diagram-", suffix=".html", delete=False
-            )
-            handle.close()
-            output = handle.name
+            # One path per snapshot, cleaned up at exit. Allocating a fresh
+            # ~30 MB file on every call filled the temp directory during an
+            # ordinary notebook session, and nothing ever removed them.
+            if self._temporary_html is None:
+                handle = tempfile.NamedTemporaryFile(
+                    prefix="pyfcstm-diagram-", suffix=".html", delete=False
+                )
+                handle.close()
+                object.__setattr__(self, "_temporary_html", Path(handle.name))
+                atexit.register(_remove_temporary_viewer, self._temporary_html)
+            output = self._temporary_html
         path = self.save(output, format="html")
         if open_window:
             _open_standalone_window(path, dimensions)

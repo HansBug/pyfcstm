@@ -284,7 +284,9 @@ def test_html_cache_and_save_replace_are_deterministic(tmp_path):
     first = diagram.to_html()
     second = diagram.to_html()
     assert first == second
-    assert len(diagram._html_cache) == 1
+    # Identity, not equality: the second call must reuse the memoised document
+    # rather than spending another full build to produce an equal one.
+    assert first is second
     output = tmp_path / "diagram.json"
     diagram.save(output)
     assert output.read_text(encoding="utf-8").endswith("\n")
@@ -316,9 +318,10 @@ def test_diagram_value_objects_reject_unknown_values_and_copy_sequences():
 def test_view_state_rejects_boolean_numeric_values():
     with pytest.raises(ValueError, match="zoom must be a finite positive number"):
         DiagramViewState(zoom=True)
-    with pytest.raises(ValueError, match="pan offsets must be finite numbers"):
+    # The axis is named so a caller with two pan values knows which one failed.
+    with pytest.raises(ValueError, match="pan_x offsets must be finite numbers"):
         DiagramViewState(pan_x=True)
-    with pytest.raises(ValueError, match="pan offsets must be finite numbers"):
+    with pytest.raises(ValueError, match="pan_y offsets must be finite numbers"):
         DiagramViewState(pan_y=False)
 
 
@@ -717,3 +720,84 @@ def test_view_transform_fields_still_reject_invalid_numbers(field):
     for value in invalid:
         with pytest.raises((ValueError, TypeError)):
             DiagramViewState(**{field: value})
+
+
+@pytest.mark.unittest
+def test_keyword_form_updates_only_the_named_fields():
+    """``with_options`` reads like ``dataclasses.replace``, so it must behave so.
+
+    Treating the keyword form as a whole-object replacement silently reset every
+    field the caller did not repeat, which changed the rendering direction and
+    the embedded font of a snapshot that only asked to switch colour mode.
+    """
+    model = _model("state Root;")
+    base = model.diagram(direction="LR", cjk_locale="jp")
+    updated = base.with_options(mode="dark")
+    assert updated.options.mode == "dark"
+    assert updated.options.direction == "LR"
+    assert updated.options.cjk_locale == "jp"
+    # camelCase spellings reach the same field.
+    assert base.with_options(cjkLocale="kr").options.direction == "LR"
+    # A positional value still replaces wholesale, which is what it documents.
+    assert base.with_options({"direction": "TB"}).options.cjk_locale == "sc"
+
+    view = model.diagram(view_state={"mode": "diagram", "zoom": 2.0})
+    moved = view.with_view_state(pan_x=10)
+    assert moved.view_state.pan_x == 10.0
+    assert moved.view_state.mode == "diagram"
+    assert moved.view_state.zoom == 2.0
+
+
+@pytest.mark.unittest
+def test_collapsed_state_ids_rejects_a_single_id_and_non_strings():
+    """``str`` is iterable, so one mistyped ID became one ID per character."""
+    with pytest.raises(TypeError):
+        DiagramViewState(collapsed_state_ids="Root.Run")
+    with pytest.raises(TypeError):
+        DiagramViewState(collapsed_state_ids=5)
+    with pytest.raises(TypeError):
+        DiagramViewState(collapsed_state_ids=["Root.Run", None])
+    assert DiagramViewState(collapsed_state_ids=["Root.Run"]).collapsed_state_ids == (
+        "Root.Run",
+    )
+
+
+@pytest.mark.unittest
+def test_source_linking_requires_ranges_not_just_text():
+    """Source text without ranges is a pane where nothing responds."""
+    programmatic = StateMachine(
+        defines={},
+        root_state=State(name="Root", path=("Root",), substates={}),
+    )
+    state = json.loads(
+        re.search(
+            r"window\.__FCSTM_INITIAL_STATE__ = (.*?);</script><script>",
+            programmatic.diagram(source_text="state Root;").to_html(),
+            re.DOTALL,
+        ).group(1)
+    )
+    assert state["sourceAvailable"] is False
+    assert "no source ranges" in state["sourceUnavailableReason"]
+
+    parsed = json.loads(
+        re.search(
+            r"window\.__FCSTM_INITIAL_STATE__ = (.*?);</script><script>",
+            _model("state Root;").diagram().to_html(),
+            re.DOTALL,
+        ).group(1)
+    )
+    assert parsed["sourceAvailable"] is True
+    assert parsed["sourceUnavailableReason"] == ""
+
+
+@pytest.mark.unittest
+def test_snapshots_reject_attribute_assignment():
+    """The class documents an immutable snapshot, so the container must be one."""
+    view = _model("state Root;").diagram()
+    for name in ("options", "data", "model", "view_state"):
+        with pytest.raises(AttributeError):
+            setattr(view, name, None)
+    # Deriving still works and does not alias the parent's source metadata.
+    derived = view.with_options(mode="dark")
+    assert derived.options.mode == "dark"
+    assert derived._source_map is not view._source_map

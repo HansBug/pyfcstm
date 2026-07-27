@@ -1468,11 +1468,55 @@ class DiagramData:
 
 class Diagram:
     """
-    Facade for portable data and a self-contained browser view.
+    Immutable snapshot of a state machine, as portable data or a viewer.
 
-    The synchronous headless methods are present as typed capability probes;
-    the optional runtime that implements them belongs to the delivery stage.
-    Browser SVG/PNG/PDF export remains available from the embedded viewer.
+    Built by :meth:`pyfcstm.model.StateMachine.diagram`.  The snapshot is taken
+    once and detached from the model, so editing the model afterwards cannot
+    change what an already-saved view shows.  Attribute assignment is refused
+    for the same reason; :meth:`with_options` and :meth:`with_view_state` return
+    new snapshots instead of mutating this one.
+
+    :meth:`to_dict` and :meth:`to_json` give the portable form.  :meth:`to_html`
+    gives a single self-contained document -- roughly 29 MB, with the renderer,
+    layout engine, rasteriser and CJK fonts embedded under a strict inline
+    policy and no network access -- and :meth:`show` opens it in a
+    Chromium-family app window.
+
+    :meth:`to_svg`, :meth:`to_png` and :meth:`to_pdf` are typed probes that
+    always raise :class:`pyfcstm.diagram.DiagramUnavailableError`: SVG, PNG and
+    PDF are produced by the embedded viewer's own export, which needs a browser.
+    They exist so the failure names the reason instead of the attribute being
+    absent.
+
+    :param model: State machine to snapshot.
+    :type model: pyfcstm.model.StateMachine
+    :param options: Renderer options, or a mapping of them, defaults to
+        :class:`pyfcstm.diagram.DiagramOptions` with its own defaults.
+    :type options: pyfcstm.diagram.DiagramOptions or collections.abc.Mapping,
+        optional
+    :param view_state: Initial browser view state, or a mapping of it, defaults
+        to :class:`pyfcstm.diagram.DiagramViewState` with its own defaults.
+    :type view_state: pyfcstm.diagram.DiagramViewState or
+        collections.abc.Mapping, optional
+    :param source_text: FCSTM source for the viewer's source pane, defaults to
+        the text the model was parsed from.
+    :type source_text: str, optional
+
+    Example::
+
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> model = load_state_machine_from_text(
+        ...     'state Root { [*] -> A; state A; state B; A -> B :: Go; }'
+        ... )
+        >>> view = model.diagram(direction='LR')
+        >>> view.to_dict()['machineName']
+        'Root'
+        >>> view.options.direction
+        'LR'
+        >>> view.with_options(direction='TB').options.direction
+        'TB'
+        >>> view.options.direction
+        'LR'
     """
 
     @staticmethod
@@ -1804,50 +1848,81 @@ class Diagram:
         """
         Request a synchronous headless SVG export.
 
-        :return: This method does not return while the optional headless
-            runtime is unavailable.
+        :return: Nothing; this method always raises.
         :rtype: str
-        :raises DiagramUnavailableError: Always in the browser-only stage.
+        :raises DiagramUnavailableError: Always.  SVG is produced by the
+            embedded viewer's own export, which needs a browser.
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> view = load_state_machine_from_text('state Root;').diagram()
+            >>> view.to_svg()
+            Traceback (most recent call last):
+            ...
+            pyfcstm.diagram.errors.DiagramUnavailableError: headless SVG export ...
         """
         raise DiagramUnavailableError(
             "headless SVG export is unavailable; use Diagram.to_html() browser export "
-            "or wait for the headless delivery stage; `pip install pyfcstm[viz]` "
-            "adds the rendering runtime but not this synchronous API"
+            "instead; `pip install pyfcstm[viz]` adds the rendering runtime but not "
+            "a synchronous Python export"
         )
 
     def to_png(self, scale: float = 1.0) -> bytes:
         """
         Request a synchronous headless PNG export.
 
-        :param scale: Positive finite output scale reserved for the headless
-            runtime.
+        :param scale: Positive finite output scale, validated before the
+            unavailability is reported so a bad value is named first.
         :type scale: float
-        :return: This method does not return while the optional headless
-            runtime is unavailable.
+        :return: Nothing; this method always raises once ``scale`` is valid.
         :rtype: bytes
         :raises ValueError: If ``scale`` is not finite and positive.
-        :raises DiagramUnavailableError: Always in the browser-only stage.
+        :raises DiagramUnavailableError: Always.  PNG is produced by the
+            embedded viewer's own export, which needs a browser.
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> view = load_state_machine_from_text('state Root;').diagram()
+            >>> view.to_png(scale=-1)
+            Traceback (most recent call last):
+            ...
+            ValueError: scale must be positive ...
+            >>> view.to_png()
+            Traceback (most recent call last):
+            ...
+            pyfcstm.diagram.errors.DiagramUnavailableError: headless PNG export ...
         """
         _coerce_finite_number(scale, "scale", positive=True)
         raise DiagramUnavailableError(
             "headless PNG export is unavailable; use Diagram.to_html() browser export "
-            "or wait for the headless delivery stage; `pip install pyfcstm[viz]` "
-            "adds the rendering runtime but not this synchronous API"
+            "instead; `pip install pyfcstm[viz]` adds the rendering runtime but not "
+            "a synchronous Python export"
         )
 
     def to_pdf(self) -> bytes:
         """
         Request a synchronous headless vector PDF export.
 
-        :return: This method does not return while the optional headless
-            runtime is unavailable.
+        :return: Nothing; this method always raises.
         :rtype: bytes
-        :raises DiagramUnavailableError: Always in the browser-only stage.
+        :raises DiagramUnavailableError: Always.  PDF is produced by the
+            embedded viewer's own export, which needs a browser.
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> view = load_state_machine_from_text('state Root;').diagram()
+            >>> view.to_pdf()
+            Traceback (most recent call last):
+            ...
+            pyfcstm.diagram.errors.DiagramUnavailableError: headless PDF export ...
         """
         raise DiagramUnavailableError(
             "headless PDF export is unavailable; use Diagram.to_html() browser export "
-            "or wait for the headless delivery stage; `pip install pyfcstm[viz]` "
-            "adds the rendering runtime but not this synchronous API"
+            "instead; `pip install pyfcstm[viz]` adds the rendering runtime but not "
+            "a synchronous Python export"
         )
 
     def to_html(self, output: Optional[Union[str, os.PathLike]] = None) -> str:
@@ -2025,14 +2100,15 @@ class Diagram:
         :param format: Explicit ``json`` or ``html`` format; when omitted,
             the suffix is used.
         :type format: str, optional
-        :param scale: PNG scale forwarded to the optional headless exporter.
+        :param scale: PNG scale forwarded to the headless exporter.
         :type scale: float
         :return: The destination path.
         :rtype: pathlib.Path
         :raises ValueError: If the selected format is unsupported or a
             non-default scale is supplied for a non-PNG format.
-        :raises DiagramUnavailableError: If a headless SVG, PNG, or PDF
-            runtime is not installed in this browser-only stage.
+        :raises DiagramUnavailableError: If the suffix selects SVG, PNG or
+            PDF.  Those are produced by the embedded viewer's own export, which
+            needs a browser; save the HTML and export from there.
         """
         target = Path(path)
         selected = (format or target.suffix.lstrip(".") or "json").lower()

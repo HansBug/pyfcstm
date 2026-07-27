@@ -234,6 +234,13 @@ class BmcTrackedConstraint:
     def __post_init__(self) -> None:
         if not isinstance(self.stable_id, str) or not self.stable_id:
             raise ValueError("tracked constraint stable_id must be non-empty.")
+        if not self.stable_id.isascii():
+            # The id becomes a solver literal name and a JSON key downstream, so
+            # the frozen contract keeps it ASCII instead of letting a model
+            # identifier decide how it round-trips.
+            raise ValueError(
+                "tracked constraint stable_id must be ASCII, got %r." % self.stable_id
+            )
         if not isinstance(self.stage, str) or not self.stage:
             raise ValueError("tracked constraint stage must be non-empty.")
         if not isinstance(self.category, str) or not self.category:

@@ -467,6 +467,14 @@ class BmcConstraintRef:
             value = getattr(self, name)
             if not isinstance(value, str) or not value:
                 raise ValueError("constraint %s must be a non-empty string." % name)
+        if not self.stable_id.isascii():
+            # Stable ids are generated from fixed category/index/path encodings
+            # and are used as solver literal names and JSON keys, so the frozen
+            # contract keeps them ASCII rather than letting a model identifier
+            # decide how they round-trip.
+            raise ValueError(
+                "constraint stable_id must be ASCII, got %r." % self.stable_id
+            )
         _require_member(self.stage, _STAGES, "constraint stage")
         if not isinstance(self.source, BmcSourceRef):
             raise TypeError("constraint source must be BmcSourceRef.")

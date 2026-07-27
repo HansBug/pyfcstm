@@ -988,3 +988,21 @@ def test_every_produced_pairing_resolves_to_one_aggregate() -> None:
     assert constraint_aggregate("initialization", "definedness") == "initial"
     assert constraint_aggregate("assumptions", "assumption.event") == "environment"
     assert constraint_aggregate("assumptions", "definedness") == "environment"
+
+
+@pytest.mark.parametrize("stable_id", ["冲突", "assumé", "id with nbsp"])
+def test_a_stable_id_must_be_ascii(stable_id) -> None:
+    """Stable ids stay ASCII because they become names in two other systems.
+
+    Each id is generated from a fixed category/index/path encoding and is used
+    downstream as a solver literal name and as a JSON key, so letting a model
+    identifier through would put its round-tripping outside this contract.
+    """
+    with pytest.raises(ValueError, match="must be ASCII"):
+        BmcConstraintRef(
+            stable_id,
+            "initialization",
+            "initial.target",
+            _GENERATED,
+            "initial target state",
+        )

@@ -4843,7 +4843,9 @@
       "properties": {
         "stable_id": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "pattern": "^[\\x20-\\x7e]+$",
+          "$comment": "Stable ids are generated from fixed category/index/path encodings and are kept ASCII by the frozen contract, because they become solver literal names and JSON keys downstream."
         },
         "stage": {
           "enum": [

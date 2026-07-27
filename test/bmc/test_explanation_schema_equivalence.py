@@ -64,9 +64,12 @@ _STAGE_SHAPE = {
 
 _ALL_SCOPES = tuple(CLASSIFICATION_SCOPES.values()) + STAGE_FALLBACK_SCOPES
 
-#: Constraints that Draft 2020-12 cannot state, so the two sides cannot be
-#: expected to agree on them.  Each entry names the rule and why it is absent
-#: from the schema; the Python side still enforces every one of them.
+#: Rules Draft 2020-12 cannot state, so the schema accepts a payload the Python
+#: side refuses.  These are **known asymmetries, not agreement**: the schema is a
+#: structural gate here and the constructor is the semantic one.  Each entry is
+#: asserted rather than skipped, so tightening the schema later fails this list
+#: instead of passing silently, and so no summary can quietly report the corpus
+#: as fully equivalent.
 _INEXPRESSIBLE = {
     "duplicate stable_id with differing content": (
         "uniqueness over a nested key (items[*].constraint.stable_id) has no "
@@ -489,7 +492,10 @@ def test_scalar_corpus_agrees(validator) -> None:
 
     assert total > 5000
     assert accepted, "the corpus must contain payloads both sides accept"
-    assert disagreements == []
+    assert disagreements == [], (
+        "the scalar corpus must agree exactly; only the structural cases named "
+        "in _INEXPRESSIBLE are allowed to diverge"
+    )
 
 
 @pytest.mark.parametrize("name, payload", list(_structural_corpus()))
@@ -503,7 +509,12 @@ def test_structural_corpus_agrees(validator, name, payload) -> None:
     by_constructor = _constructor_accepts(payload)
 
     if name in _INEXPRESSIBLE:
-        pytest.skip("%s: %s" % (name, _INEXPRESSIBLE[name]))
+        # Pin the asymmetry instead of skipping it: the schema must accept and
+        # the constructor must refuse.  Either side changing makes this fail and
+        # sends the reader to the list above.
+        assert by_schema is True, "%s: schema no longer accepts it" % name
+        assert by_constructor is False, "%s: %s" % (name, _INEXPRESSIBLE[name])
+        return
     assert by_schema == by_constructor, name
 
 

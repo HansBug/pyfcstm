@@ -824,3 +824,111 @@ def test_a_core_item_must_declare_a_recognized_fact_kind(fact) -> None:
             "initial target state",
             False,
         )
+
+
+def test_a_role_that_contradicts_its_category_is_rejected() -> None:
+    """Category decides the reading, so a declared role cannot disagree.
+
+    Machine consumers branch on ``semantic_role`` together with ``category``;
+    letting the two disagree would make a domain rule readable as an
+    assumption depending on which field the reader trusts.
+    """
+    with pytest.raises(ValueError, match="contradicts category"):
+        BmcCoreItem(
+            _constraint(),
+            "assumption",
+            None,
+            False,
+            {"kind": "structural_constraint"},
+            "initial target state",
+            False,
+        )
+
+
+def test_a_generated_constraint_is_not_an_editable_review_surface() -> None:
+    """There is no authored line behind a generated conjunct to edit."""
+    with pytest.raises(ValueError, match="no authored line"):
+        BmcCoreItem(
+            _constraint(),
+            "initial_fact",
+            None,
+            False,
+            {"kind": "structural_constraint"},
+            "initial target state",
+            True,
+        )
+
+
+@pytest.mark.parametrize("excerpt", [None, "short", "x" * 4095])
+def test_a_declared_truncation_must_show_the_cut(excerpt) -> None:
+    """The flag says the excerpt was cut, so the excerpt has to be the cut one."""
+    from pyfcstm.bmc.explanation import MAX_SOURCE_EXCERPT_CHARS
+
+    with pytest.raises(ValueError, match="truncated excerpt"):
+        BmcCoreItem(
+            _constraint(),
+            "initial_fact",
+            excerpt,
+            True,
+            {"kind": "structural_constraint"},
+            "initial target state",
+            False,
+        )
+
+    at_bound = BmcCoreItem(
+        _constraint(),
+        "initial_fact",
+        "x" * MAX_SOURCE_EXCERPT_CHARS,
+        True,
+        {"kind": "structural_constraint"},
+        "initial target state",
+        False,
+    )
+    assert at_bound.source_excerpt_truncated is True
+
+
+def test_scope_membership_separates_the_two_kernel_aggregates() -> None:
+    """A domain scope cannot quote a transition group, though both are kernel.
+
+    ``initialization_domain`` targets ``D_N`` and ``I_0`` but not ``T_N``.  A
+    stage-level check could not tell them apart because both domain and
+    transition groups live in the kernel stage.
+    """
+    from pyfcstm.bmc.explanation import SCOPE_AGGREGATES
+
+    assert "transition" not in SCOPE_AGGREGATES["initialization_domain"]
+    transition = BmcCoreItem(
+        BmcConstraintRef(
+            "transition.step.0000",
+            "kernel",
+            "transition.step",
+            _GENERATED,
+            "step relation",
+        ),
+        "transition_rule",
+        None,
+        False,
+        {"kind": "structural_constraint"},
+        "step relation",
+        False,
+    )
+
+    with pytest.raises(ValueError, match="outside the target"):
+        BmcConflictCore(
+            "initialization_domain",
+            "L_init",
+            "source_group",
+            "raw",
+            "not_proven",
+            (transition,),
+        )
+
+    widened = BmcConflictCore(
+        "initialization_prefix",
+        "L_init",
+        "source_group",
+        "raw",
+        "not_proven",
+        (transition,),
+    )
+    assert widened.items[0].semantic_role == "transition_rule"

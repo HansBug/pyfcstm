@@ -361,7 +361,7 @@ def test_a_minimal_core_needs_recorded_deletion_checks() -> None:
         core=_core_with("subset_minimal", "proven"),
     )
 
-    with pytest.raises(BmcBuildError, match="deletion checks"):
+    with pytest.raises(BmcBuildError, match="deletion check per member"):
         _localized(
             refinement_status="partial",
             refinement_reason="probe returned unknown",
@@ -408,7 +408,7 @@ def test_deletion_checks_must_have_shown_each_member_necessary() -> None:
         core=_core_with("subset_minimal", "proven", members=3),
     )
 
-    with pytest.raises(BmcBuildError, match="returned sat"):
+    with pytest.raises(BmcBuildError, match="every deletion check to"):
         _localized(
             refinement_status="partial",
             refinement_reason="probe returned unknown",
@@ -419,16 +419,32 @@ def test_deletion_checks_must_have_shown_each_member_necessary() -> None:
             explanation=explanation,
         )
 
+    # One satisfiable deletion is not enough for a three-member core: it shows
+    # that *some* member is needed, not that every one of them is.
+    with pytest.raises(BmcBuildError, match="deletion check per member"):
+        _localized(
+            refinement_status="partial",
+            refinement_reason="probe returned unknown",
+            refinement_checks=(
+                _probe("unsat_core", "complete"),
+                _probe("unsat_core_minimization", "sat"),
+            ),
+            explanation=explanation,
+        )
+
     accepted = _localized(
         refinement_status="partial",
         refinement_reason="probe returned unknown",
         refinement_checks=(
             _probe("unsat_core", "complete"),
             _probe("unsat_core_minimization", "sat"),
+            _probe("unsat_core_minimization", "sat"),
+            _probe("unsat_core_minimization", "sat"),
         ),
         explanation=explanation,
     )
     assert accepted.explanation is explanation
+    assert len(accepted.explanation.core.items) == 3
 
 
 def test_no_attempted_check_means_no_explanation() -> None:

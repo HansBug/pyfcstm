@@ -77,6 +77,11 @@ _INEXPRESSIBLE = {
         "the Python side requires a real int because a float index would not "
         "survive the tuple contract"
     ),
+    "non-string refs key": (
+        "JSON object keys are always strings, so a Python mapping keyed by 1 "
+        'serializes to "1" and no validator can see the difference; the '
+        "Python side rejects it so the key never changes shape silently"
+    ),
 }
 
 
@@ -294,6 +299,21 @@ def _structural_corpus():
         ),
     )
     yield (
+        "transition member inside a domain scope",
+        _payload(
+            scope="initialization_domain",
+            classification="initialization_domain_conflict",
+            members=[
+                _member(
+                    "g0",
+                    "kernel",
+                    category="transition.step",
+                    semantic_role="transition_rule",
+                )
+            ],
+        ),
+    )
+    yield (
         "kernel member inside a component scope",
         _payload(members=[_member("g0", "kernel")]),
     )
@@ -416,8 +436,46 @@ def _structural_corpus():
         ),
     )
     yield (
-        "non-string refs key",
+        "structural refs mapping",
         _payload(members=[_member("g0", "initialization", refs={"frame": 0})]),
+    )
+    yield (
+        "non-string refs key",
+        _payload(members=[_member("g0", "initialization", refs={1: "a"})]),
+    )
+    yield (
+        "refs given as an array",
+        _payload(members=[_member("g0", "initialization", refs=[])]),
+    )
+    yield (
+        "excerpt over the published bound",
+        _payload(
+            members=[
+                _member(
+                    "g0",
+                    "initialization",
+                    source_excerpt="x" * 4097,
+                    source_excerpt_truncated=True,
+                )
+            ]
+        ),
+    )
+    yield (
+        "excerpt at the published bound",
+        _payload(
+            members=[
+                _member(
+                    "g0",
+                    "initialization",
+                    source_excerpt="x" * 4096,
+                    source_excerpt_truncated=True,
+                )
+            ]
+        ),
+    )
+    yield (
+        "empty excerpt",
+        _payload(members=[_member("g0", "initialization", source_excerpt="")]),
     )
 
 
@@ -527,8 +585,12 @@ def _drift_cases():
         payload["infeasible_stage"] = "initialization"
 
     def member_outside_scope(payload):
+        # Scope membership is judged at aggregate precision, so the escape has
+        # to change the category family rather than only the stage.
         member = payload["explanation"]["core"]["items"][0]
-        member["constraint"]["stage"] = "initialization"
+        member["constraint"]["stage"] = "kernel"
+        member["constraint"]["category"] = "transition.step"
+        member["semantic_role"] = "transition_rule"
 
     def untyped_source(payload):
         member = payload["explanation"]["core"]["items"][0]

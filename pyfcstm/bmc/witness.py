@@ -2378,12 +2378,20 @@ def _validate_explanation_agreement(
                 "deletion check."
             )
         if core.subset_minimality == "proven":
-            # Minimality is proven by deletion checks that came back sat: each
-            # one shows the removed member was necessary.  An unsat deletion
-            # check shows the opposite, so it cannot support the claim.
-            if not [check for check in deletions if check.status == "sat"]:
+            # Minimality is proven per member: removing any one of them has to
+            # leave the target satisfiable.  So every recorded deletion check
+            # must be sat, and there must be at least one per member -- a
+            # single sat check would only show that *some* member is needed.
+            unsatisfied = [check for check in deletions if check.status != "sat"]
+            if unsatisfied:
                 raise BmcBuildError(
-                    "a proven-minimal core requires deletion checks that returned sat."
+                    "a proven-minimal core requires every deletion check to "
+                    "return sat, got %r." % unsatisfied[0].status
+                )
+            if len(deletions) < len(core.items):
+                raise BmcBuildError(
+                    "a proven-minimal core with %d members requires a deletion "
+                    "check per member, got %d." % (len(core.items), len(deletions))
                 )
 
 

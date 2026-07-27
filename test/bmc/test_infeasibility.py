@@ -1321,3 +1321,50 @@ def test_an_all_unknown_run_stays_unknown() -> None:
         z3.Solver = real
 
     assert outcome.explanation.status == "unknown"
+
+
+def test_a_mapper_failure_keeps_the_checks_that_already_ran(monkeypatch) -> None:
+    """Solver work that happened stays in the ledger.
+
+    Reverting to "nothing was requested" after probes and the recheck have run
+    would hide real solver calls and contradict the rule that an optional stage
+    which truly started still reports an explanation.
+    """
+    core = _core_formula(
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
+        'check reach <= 2: active("Root.B");'
+    )
+
+    def drift(group, registry=None):
+        raise BmcBuildError("simulated mapper drift after the core recheck")
+
+    monkeypatch.setattr("pyfcstm.bmc.infeasibility.build_core_item", drift)
+    outcome = explain_infeasibility(core, "assumptions", _SolveBudget(None))
+    explanation = outcome.explanation
+
+    assert outcome.checks, "the executed ledger must survive"
+    assert any(check.started for check in outcome.checks)
+    assert explanation.achieved_mode == "none"
+    assert explanation.status == "partial"
+    assert explanation.classification == "assumptions_self_conflict"
+    assert "core mapping failed" in explanation.reason
+
+
+def test_the_role_map_has_exactly_one_definition() -> None:
+    """The orchestration reads the data layer's map instead of keeping its own.
+
+    Two copies drifted apart once already, when the mapper read plural refs
+    keys the builder never produced.
+    """
+    from pyfcstm.bmc.explanation import CATEGORY_FAMILIES, category_family
+
+    for category in ("domain.frame_state", "transition.step", "assumption.frame"):
+        assert _semantic_role(category) == category_family(category)[0]
+    assert set(CATEGORY_FAMILIES) == {
+        "domain.",
+        "initial.",
+        "transition.",
+        "assumption.",
+        "definedness",
+    }

@@ -45,6 +45,7 @@ import z3
 from .errors import BmcBuildError
 from .explanation import (
     CLASSIFICATION_SCOPES,
+    category_family,
     MAX_SOURCE_EXCERPT_CHARS,
     BmcConflictCore,
     BmcConstraintRef,
@@ -56,17 +57,6 @@ from .solver import _SolveBudget
 
 if TYPE_CHECKING:  # pragma: no cover - import cycle guard for annotations only
     from .relation import BmcCoreFormula
-
-#: Category prefix to frozen semantic role.  The relation builder names every
-#: group after the domain concept it encodes, so the prefix already carries the
-#: role and no guessing is needed.
-_SEMANTIC_ROLE_BY_PREFIX = (
-    ("domain.", "domain_rule"),
-    ("initial.", "initial_fact"),
-    ("transition.", "transition_rule"),
-    ("assumption.", "assumption"),
-    ("definedness", "definedness"),
-)
 
 
 def _is_domain_group(group: BmcTrackedConstraint) -> bool:
@@ -748,23 +738,30 @@ def extract_source_core(
 def _semantic_role(category: str) -> str:
     """Map a tracked group category onto its frozen semantic role.
 
+    The mapping itself lives in the solver-free data layer so the public
+    constructors and this orchestration cannot drift apart.
+
     :param category: Group category assigned by the relation builder.
     :type category: str
     :return: One of the frozen semantic roles.
     :rtype: str
     :raises pyfcstm.bmc.errors.BmcBuildError: If the category matches no known
-        prefix, which means a new group family was added without deciding how
-        a reader should understand it.
+        prefix, which means a new group family was added without deciding how a
+        reader should understand it.
 
     Example::
 
         >>> _semantic_role("assumption.frame")
         'assumption'
     """
-    for prefix, role in _SEMANTIC_ROLE_BY_PREFIX:
-        if category.startswith(prefix):
-            return role
-    raise BmcBuildError("tracked group category %r has no semantic role." % category)
+    try:
+        return category_family(category)[0]
+    except ValueError as err:
+        # category_family raises ValueError for an unregistered prefix; the
+        # orchestration reports builder-side drift as a build error.
+        raise BmcBuildError(
+            "tracked group category %r has no semantic role." % category
+        ) from err
 
 
 def _indices(refs: Mapping[str, object], key: str) -> Tuple[int, ...]:
@@ -994,6 +991,23 @@ def explain_infeasibility(
             checks,
         )
 
+    try:
+        items = tuple(build_core_item(group, registry) for group in extraction.groups)
+    except BmcBuildError as err:
+        # Solver work already happened, so the ledger is real and must survive.
+        # Reverting to "nothing was requested" here would hide checks that ran.
+        return ExplanationOutcome(
+            BmcInfeasibilityExplanation(
+                requested_mode=requested_mode,
+                achieved_mode="none",
+                status="partial",
+                classification=outcome.classification,
+                reason="core mapping failed after the solver work: %s" % err,
+                elapsed_ms=elapsed_ms,
+            ),
+            checks,
+        )
+
     published = BmcConflictCore(
         scope=outcome.scope,
         formula_summary="target formula of scope %s" % outcome.scope,
@@ -1002,7 +1016,7 @@ def explain_infeasibility(
         # minimal; PR-level minimization upgrades both fields together.
         reduction="raw",
         subset_minimality="not_proven",
-        items=tuple(build_core_item(group, registry) for group in extraction.groups),
+        items=items,
     )
     if outcome.classification is None:
         reason = (

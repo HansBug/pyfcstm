@@ -66,6 +66,18 @@ CLASSIFICATION\_SCOPES
 .. autodata:: CLASSIFICATION_SCOPES
 
 
+CATEGORY\_FAMILIES
+-----------------------------------------------------
+
+.. autodata:: CATEGORY_FAMILIES
+
+
+SCOPE\_AGGREGATES
+-----------------------------------------------------
+
+.. autodata:: SCOPE_AGGREGATES
+
+
 MAX\_SOURCE\_EXCERPT\_CHARS
 -----------------------------------------------------
 
@@ -130,3 +142,9 @@ BmcInfeasibilityExplanation
 
 .. autoclass:: BmcInfeasibilityExplanation
     :members: __post_init__,to_canonical,requested_mode,achieved_mode,status,classification,core,proof,narrative,reason,elapsed_ms
+
+
+category\_family
+-----------------------------------------------------
+
+.. autofunction:: category_family

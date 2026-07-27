@@ -129,6 +129,65 @@ CLASSIFICATION_SCOPES = MappingProxyType(
     }
 )
 
+#: Category prefix to frozen semantic role, and the aggregate each prefix
+#: belongs to.  This is the single source of truth: the orchestration reads it
+#: when building an item, and the constructors below use it to reject an item
+#: whose declared role contradicts its category.
+CATEGORY_FAMILIES = MappingProxyType(
+    {
+        "domain.": ("domain_rule", "domain"),
+        "initial.": ("initial_fact", "initial"),
+        "transition.": ("transition_rule", "transition"),
+        "assumption.": ("assumption", "environment"),
+        "definedness": ("definedness", "domain"),
+    }
+)
+
+
+def category_family(category: str) -> Tuple[str, str]:
+    """Return the frozen semantic role and aggregate of a group category.
+
+    :param category: Group category assigned by the relation builder.
+    :type category: str
+    :return: The role and the aggregate the category belongs to.
+    :rtype: Tuple[str, str]
+    :raises ValueError: If the category matches no known prefix, which means a
+        new group family was added without deciding how a reader should
+        understand it.
+
+    Example::
+
+        >>> category_family("assumption.frame")
+        ('assumption', 'environment')
+    """
+    for prefix, family in CATEGORY_FAMILIES.items():
+        if category.startswith(prefix):
+            return family
+    raise ValueError("category %r belongs to no known family." % category)
+
+
+#: Aggregates each scope's target formula is built from.  Unlike the stage-level
+#: view this distinguishes ``D_N`` from ``T_N``, both of which live in the
+#: kernel stage, so a domain scope cannot quote a transition group.
+SCOPE_AGGREGATES = MappingProxyType(
+    {
+        "kernel": ("domain", "transition"),
+        "initialization_component": ("initial",),
+        "initialization_domain": ("domain", "initial"),
+        "initialization_prefix": ("domain", "transition", "initial"),
+        "assumptions_component": ("environment",),
+        "assumptions_domain": ("domain", "environment"),
+        "assumptions_prefix": ("domain", "transition", "initial", "environment"),
+        "initialization_stage_fallback": ("domain", "transition", "initial"),
+        "assumptions_stage_fallback": (
+            "domain",
+            "transition",
+            "initial",
+            "environment",
+        ),
+    }
+)
+
 #: Recognized ``normalized_fact`` tags.  An expression this stage cannot
 #: reduce declares itself structural rather than guessing a domain reading;
 #: later stages add their recognizers here.
@@ -444,7 +503,7 @@ class BmcCoreItem:
         ...     "initial.target", "initialization", "initial.target",
         ...     BmcSourceRef("generated", None, None), "initial target",
         ... )
-        >>> BmcCoreItem(ref, "domain_rule", None, False,
+        >>> BmcCoreItem(ref, "initial_fact", None, False,
         ...             {"kind": "structural_constraint"}, "initial target",
         ...             False).editable
         False
@@ -475,6 +534,26 @@ class BmcCoreItem:
             self.source_excerpt_truncated, "core item source_excerpt_truncated"
         )
         _require_flag(self.editable, "core item editable")
+        expected_role = category_family(self.constraint.category)[0]
+        if self.semantic_role != expected_role:
+            raise ValueError(
+                "core item semantic_role %r contradicts category %r, which is "
+                "read as %r."
+                % (self.semantic_role, self.constraint.category, expected_role)
+            )
+        if self.constraint.source.kind == "generated" and self.editable:
+            raise ValueError(
+                "a generated constraint has no authored line to edit, so it "
+                "cannot be an editable review surface."
+            )
+        if self.source_excerpt_truncated and (
+            self.source_excerpt is None
+            or len(self.source_excerpt) != MAX_SOURCE_EXCERPT_CHARS
+        ):
+            raise ValueError(
+                "a truncated excerpt must be present and exactly %d code "
+                "points long." % MAX_SOURCE_EXCERPT_CHARS
+            )
         if not isinstance(self.human_text, str) or not self.human_text:
             raise ValueError("core item human_text must be a non-empty string.")
         fact = _require_json_mapping(self.normalized_fact, "normalized_fact")
@@ -500,11 +579,11 @@ class BmcCoreItem:
             ...     "initial.target", "initialization", "initial.target",
             ...     BmcSourceRef("generated", None, None), "initial target",
             ... )
-            >>> item = BmcCoreItem(ref, "domain_rule", None, False,
+            >>> item = BmcCoreItem(ref, "initial_fact", None, False,
             ...                    {"kind": "structural_constraint"},
             ...                    "initial target", False)
             >>> item.to_canonical()["semantic_role"]
-            'domain_rule'
+            'initial_fact'
         """
         return {
             "constraint": self.constraint.to_canonical(),
@@ -553,7 +632,7 @@ class BmcConflictCore:
         ...     "initial.target", "initialization", "initial.target",
         ...     BmcSourceRef("generated", None, None), "initial target",
         ... )
-        >>> item = BmcCoreItem(ref, "domain_rule", None, False,
+        >>> item = BmcCoreItem(ref, "initial_fact", None, False,
         ...                    {"kind": "structural_constraint"},
         ...                    "initial target", False)
         >>> core = BmcConflictCore("initialization_component", "I_0",
@@ -592,17 +671,18 @@ class BmcConflictCore:
         identifiers = [item.constraint.stable_id for item in items]
         if len(set(identifiers)) != len(identifiers):
             raise ValueError("core items contain duplicate stable ids.")
-        allowed_stages = _SCOPE_STAGES[self.scope]
+        allowed = SCOPE_AGGREGATES[self.scope]
         for item in items:
-            if item.constraint.stage not in allowed_stages:
+            aggregate = category_family(item.constraint.category)[1]
+            if aggregate not in allowed:
                 raise ValueError(
-                    "core item %r has stage %r, which is outside the target of "
-                    "scope %r (%s)."
+                    "core item %r is a %s constraint, which is outside the "
+                    "target of scope %r (%s)."
                     % (
                         item.constraint.stable_id,
-                        item.constraint.stage,
+                        aggregate,
                         self.scope,
-                        ", ".join(allowed_stages),
+                        ", ".join(allowed),
                     )
                 )
         object.__setattr__(
@@ -624,7 +704,7 @@ class BmcConflictCore:
             ...     "initial.target", "initialization", "initial.target",
             ...     BmcSourceRef("generated", None, None), "initial target",
             ... )
-            >>> item = BmcCoreItem(ref, "domain_rule", None, False,
+            >>> item = BmcCoreItem(ref, "initial_fact", None, False,
             ...                    {"kind": "structural_constraint"},
             ...                    "initial target", False)
             >>> core = BmcConflictCore("initialization_component", "I_0",

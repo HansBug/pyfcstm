@@ -1260,15 +1260,10 @@
                     "timeout"
                   ]
                 }
-              },
-              "refinement_checks": {
-                "maxItems": 0
-              },
-              "explanation": {
-                "type": "null"
               }
             }
-          }
+          },
+          "$comment": "Only the degraded statuses are excluded, matching the constructor.  A feasible scenario reporting complete with executed checks predates this contract."
         }
       ]
     },
@@ -2494,15 +2489,10 @@
                     "timeout"
                   ]
                 }
-              },
-              "refinement_checks": {
-                "maxItems": 0
-              },
-              "explanation": {
-                "type": "null"
               }
             }
-          }
+          },
+          "$comment": "Only the degraded statuses are excluded, matching the constructor.  A feasible scenario reporting complete with executed checks predates this contract."
         }
       ]
     },
@@ -4914,7 +4904,172 @@
         "editable": {
           "type": "boolean"
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "constraint": {
+                "properties": {
+                  "category": {
+                    "pattern": "^(domain\\.)"
+                  }
+                }
+              }
+            },
+            "required": [
+              "constraint"
+            ]
+          },
+          "then": {
+            "properties": {
+              "semantic_role": {
+                "const": "domain_rule"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "constraint": {
+                "properties": {
+                  "category": {
+                    "pattern": "^(initial\\.)"
+                  }
+                }
+              }
+            },
+            "required": [
+              "constraint"
+            ]
+          },
+          "then": {
+            "properties": {
+              "semantic_role": {
+                "const": "initial_fact"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "constraint": {
+                "properties": {
+                  "category": {
+                    "pattern": "^(transition\\.)"
+                  }
+                }
+              }
+            },
+            "required": [
+              "constraint"
+            ]
+          },
+          "then": {
+            "properties": {
+              "semantic_role": {
+                "const": "transition_rule"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "constraint": {
+                "properties": {
+                  "category": {
+                    "pattern": "^(assumption\\.)"
+                  }
+                }
+              }
+            },
+            "required": [
+              "constraint"
+            ]
+          },
+          "then": {
+            "properties": {
+              "semantic_role": {
+                "const": "assumption"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "constraint": {
+                "properties": {
+                  "category": {
+                    "pattern": "^(definedness)"
+                  }
+                }
+              }
+            },
+            "required": [
+              "constraint"
+            ]
+          },
+          "then": {
+            "properties": {
+              "semantic_role": {
+                "const": "definedness"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "constraint": {
+                "properties": {
+                  "source": {
+                    "properties": {
+                      "kind": {
+                        "const": "generated"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "required": [
+              "constraint"
+            ]
+          },
+          "then": {
+            "properties": {
+              "editable": {
+                "const": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "source_excerpt_truncated": {
+                "const": true
+              }
+            },
+            "required": [
+              "source_excerpt_truncated"
+            ]
+          },
+          "then": {
+            "properties": {
+              "source_excerpt": {
+                "type": "string",
+                "minLength": 4096,
+                "maxLength": 4096
+              }
+            }
+          }
+        }
+      ]
     },
     "conflictCore": {
       "type": "object",
@@ -5033,10 +5188,8 @@
                   "properties": {
                     "constraint": {
                       "properties": {
-                        "stage": {
-                          "enum": [
-                            "kernel"
-                          ]
+                        "category": {
+                          "pattern": "^(definedness|domain\\.|transition\\.)"
                         }
                       }
                     }
@@ -5064,10 +5217,8 @@
                   "properties": {
                     "constraint": {
                       "properties": {
-                        "stage": {
-                          "enum": [
-                            "initialization"
-                          ]
+                        "category": {
+                          "pattern": "^(initial\\.)"
                         }
                       }
                     }
@@ -5095,11 +5246,8 @@
                   "properties": {
                     "constraint": {
                       "properties": {
-                        "stage": {
-                          "enum": [
-                            "kernel",
-                            "initialization"
-                          ]
+                        "category": {
+                          "pattern": "^(definedness|domain\\.|initial\\.)"
                         }
                       }
                     }
@@ -5127,11 +5275,8 @@
                   "properties": {
                     "constraint": {
                       "properties": {
-                        "stage": {
-                          "enum": [
-                            "kernel",
-                            "initialization"
-                          ]
+                        "category": {
+                          "pattern": "^(definedness|domain\\.|initial\\.|transition\\.)"
                         }
                       }
                     }
@@ -5159,10 +5304,8 @@
                   "properties": {
                     "constraint": {
                       "properties": {
-                        "stage": {
-                          "enum": [
-                            "assumptions"
-                          ]
+                        "category": {
+                          "pattern": "^(assumption\\.)"
                         }
                       }
                     }
@@ -5190,11 +5333,8 @@
                   "properties": {
                     "constraint": {
                       "properties": {
-                        "stage": {
-                          "enum": [
-                            "kernel",
-                            "assumptions"
-                          ]
+                        "category": {
+                          "pattern": "^(assumption\\.|definedness|domain\\.)"
                         }
                       }
                     }
@@ -5222,12 +5362,8 @@
                   "properties": {
                     "constraint": {
                       "properties": {
-                        "stage": {
-                          "enum": [
-                            "kernel",
-                            "initialization",
-                            "assumptions"
-                          ]
+                        "category": {
+                          "pattern": "^(assumption\\.|definedness|domain\\.|initial\\.|transition\\.)"
                         }
                       }
                     }
@@ -5255,11 +5391,8 @@
                   "properties": {
                     "constraint": {
                       "properties": {
-                        "stage": {
-                          "enum": [
-                            "kernel",
-                            "initialization"
-                          ]
+                        "category": {
+                          "pattern": "^(definedness|domain\\.|initial\\.|transition\\.)"
                         }
                       }
                     }
@@ -5287,12 +5420,8 @@
                   "properties": {
                     "constraint": {
                       "properties": {
-                        "stage": {
-                          "enum": [
-                            "kernel",
-                            "initialization",
-                            "assumptions"
-                          ]
+                        "category": {
+                          "pattern": "^(assumption\\.|definedness|domain\\.|initial\\.|transition\\.)"
                         }
                       }
                     }

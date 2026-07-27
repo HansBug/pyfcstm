@@ -1,5 +1,7 @@
 """CLI tests for the standalone diagram command."""
 
+from pathlib import Path
+
 import pytest
 from click.testing import CliRunner
 
@@ -133,3 +135,32 @@ def test_diagram_cli_reports_a_bad_output_path_without_a_traceback(tmp_path):
         cli, ["diagram", "-i", str(source), "-o", str(tmp_path / "fine.json")]
     )
     assert result.exit_code == 0
+
+
+def test_diagram_cli_open_failure_names_only_a_document_that_survives(tmp_path):
+    # A failed launch used to print the path of a second temporary copy, which
+    # the exit hook then removed: the user was handed a ~30 MB file that was
+    # already gone. With -o the document is not temporary and naming it is
+    # correct; without -o there is nothing to name.
+    source = tmp_path / "machine.fcstm"
+    source.write_text("state Root;", encoding="utf-8")
+    kept = tmp_path / "kept.html"
+    env = {"PYFCSTM_BROWSER": str(tmp_path / "no-such-browser")}
+
+    result = CliRunner().invoke(
+        cli, ["diagram", "-i", str(source), "-o", str(kept), "--open"], env=env
+    )
+    assert result.exit_code != 0
+    assert str(kept) in result.output
+    assert kept.is_file(), "an explicit output path must survive a failed launch"
+
+    result = CliRunner().invoke(cli, ["diagram", "-i", str(source), "--open"], env=env)
+    assert result.exit_code != 0
+    assert "-o PATH" in result.output
+    for line in result.output.splitlines():
+        for token in line.split():
+            candidate = Path(token.rstrip(";,"))
+            if candidate.name.startswith("pyfcstm-diagram-"):
+                raise AssertionError(
+                    "named a temporary viewer that is removed at exit: %s" % token
+                )

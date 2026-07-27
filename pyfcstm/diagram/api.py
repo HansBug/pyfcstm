@@ -878,6 +878,28 @@ def _register_temporary_viewer(path: Path) -> None:
     atexit.register(_remove_temporary_viewer, path)
 
 
+def _unregister_temporary_viewer(path: Path) -> None:
+    """
+    Stop treating a temporary viewer as this process's to remove.
+
+    A failed window launch registers its path, but a window name is derived
+    from the document alone and is therefore shared across retries and
+    processes. Without this, one failed launch followed by a successful one --
+    the obvious thing a user does after installing a browser -- leaves the
+    successful window's document on the exit list, and the hook deletes it
+    while the window is still showing it.
+
+    Removal is keyed on membership, so discarding is enough; the ``atexit``
+    hook stays registered and becomes a no-op.
+
+    :param path: Temporary viewer path.
+    :type path: pathlib.Path
+    :return: ``None``.
+    :rtype: None
+    """
+    _TEMPORARY_VIEWERS.discard(path)
+
+
 def _remove_temporary_viewer(path: Path) -> None:
     """
     Delete a process-scoped temporary viewer.
@@ -1147,7 +1169,12 @@ class DiagramOptions:
     Immutable renderer options shared by Python and browser diagram views.
 
     :param detail_level: Detail preset, one of ``minimal``, ``normal`` or
-        ``full``.
+        ``full``.  Recorded in the generated document and validated here, but
+        the bundled viewer draws the same diagram for all three: the four
+        settings the presets disagree on are state event labels, state action
+        labels, transition-effect placement and event placement, and none of
+        them reaches the standalone drawing path yet.  Treat it as a stored
+        preference rather than a way to change what a viewer shows.
     :type detail_level: str
     :param direction: Layout direction, either ``TB`` or ``LR``.
     :type direction: str
@@ -2078,4 +2105,8 @@ class Diagram:
                 if temporary is not None:
                     _register_temporary_viewer(temporary)
                 raise
+            # A window is showing this file now, and windows outlive us. An
+            # earlier failed launch in this process may have put the very same
+            # path on the exit list, since the name is shared by design.
+            _unregister_temporary_viewer(path)
         return path

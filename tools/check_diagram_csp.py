@@ -119,6 +119,7 @@ def main() -> None:
     parser.add_argument("--require-style-hashes", action="store_true")
     parser.add_argument("--require-style-nonce", action="store_true")
     parser.add_argument("--require-wasm-unsafe-eval", action="store_true")
+    parser.add_argument("--require-no-fallback-directives", action="store_true")
     parser.add_argument("--forbid-unsafe-eval", action="store_true")
     parser.add_argument("--require-font-data", action="store_true")
     parser.add_argument("--require-img-data-blob", action="store_true")
@@ -148,6 +149,17 @@ def main() -> None:
         required_directives.append("img-src data: blob:")
     if args.require_wasm_unsafe_eval:
         required_directives.append("wasm-unsafe-eval")
+    if args.require_no_fallback_directives:
+        # `base-uri` and `form-action` are the two directives in this policy
+        # that do not fall back to `default-src`, so dropping either leaves it
+        # entirely unrestricted no matter how strict the rest of the policy is.
+        # Without `base-uri 'none'` an injected `<base href>` re-points every
+        # relative URL in the document; without `form-action 'none'` a form can
+        # post the embedded model source to a remote host. The other `'none'`
+        # directives here -- object-src, frame-src, media-src, manifest-src --
+        # do fall back, so they are deliberately not required.
+        required_directives.append("base-uri 'none'")
+        required_directives.append("form-action 'none'")
     for directive in required_directives:
         if directive not in policy:
             raise SystemExit("CSP is missing %s" % directive)
@@ -230,6 +242,7 @@ def main() -> None:
             ("style hashes", args.require_style_hashes),
             ("style nonce", args.require_style_nonce),
             ("wasm-unsafe-eval", args.require_wasm_unsafe_eval),
+            ("base-uri/form-action 'none'", args.require_no_fallback_directives),
             ("no unsafe-eval", args.forbid_unsafe_eval),
             ("font-src data:", args.require_font_data),
             ("img-src data:/blob:", args.require_img_data_blob),

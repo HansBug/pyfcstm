@@ -270,6 +270,7 @@ diagram_csp_check: build_assets
 		--require-default-none --require-connect-none --require-worker-none \
 		--require-script-hashes --require-style-hashes --require-style-nonce \
 		--require-wasm-unsafe-eval --forbid-unsafe-eval \
+		--require-no-fallback-directives \
 		--require-font-data --require-img-data-blob \
 		--forbid-eval --forbid-new-function --zero-network \
 		--require-embedded-fonts 5 --require-fonts-ready

@@ -163,17 +163,20 @@ def diagram_command(
                 lambda: view.show(output, open_window=True),
             )
         except DiagramUnavailableError as error:
-            # The document is written before the window opens, so the path is
-            # the useful part of this failure; without it the user is left with
-            # a traceback and a 30 MB file they cannot find. Repeating the call
-            # without the launch returns that same path — the document is
-            # memoised and a temporary path is reused per snapshot.
-            written = _write(
-                output or "the temporary viewer",
-                lambda: view.show(output, open_window=False),
+            if output is not None:
+                # The document is written before the window is launched, and an
+                # explicit output path is never temporary, so it is still there
+                # -- naming it is the useful part of this failure.
+                click.echo(str(Path(output)))
+                raise click.ClickException(str(error))
+            # Without -o there is no document left to name. A failed launch
+            # removes what it wrote at exit, precisely because no window is
+            # showing it, and asking for one more temporary copy would both
+            # write another ~30 MB and print a path that is already gone by the
+            # time the user reads it. Point at the flag that keeps a document.
+            raise click.ClickException(
+                "%s; re-run with -o PATH to keep the generated viewer" % error
             )
-            click.echo(str(written))
-            raise click.ClickException(str(error))
         click.echo(str(path))
         return
     if output is None:

@@ -949,3 +949,33 @@ def test_diagram_data_rejects_numbers_json_cannot_represent():
     # Ordinary numbers are unaffected, and the result really parses.
     ok = DiagramData(dict(root, probe=1.5))
     assert json.loads(ok.to_json())["probe"] == 1.5
+
+
+def test_detail_level_is_recorded_and_leaves_the_diagram_data_alone():
+    # The DiagramOptions docstring says the preset is stored rather than acted
+    # on. Measured in Chrome across the three levels for a machine carrying a
+    # state action and a transition effect: all render the same seven labels
+    # ["Root", "A", "B", "\u25cf Go", "\u25b8 c = c + 1;", "c = c * 2;",
+    # "\u25cf Back"], because the four settings the presets disagree on --
+    # state event labels, state action labels, transition-effect placement and
+    # event placement -- do not reach the standalone drawing path. What a unit
+    # test can hold is the half that needs no browser: the value is carried
+    # into the document, and the portable data does not vary with it.
+    model = load_state_machine_from_text(
+        "def int c = 0;\n"
+        "state Root {\n"
+        "    [*] -> A;\n"
+        "    state A { enter { c = 1; } }\n"
+        "    state B;\n"
+        "    A -> B :: Go effect { c = c + 1; }\n"
+        "}\n"
+    )
+    snapshots = set()
+    for level in ("minimal", "normal", "full"):
+        view = model.diagram(detail_level=level)
+        assert view.options.to_dict()["detailLevel"] == level
+        snapshots.add(view.to_json())
+    assert len(snapshots) == 1, (
+        "detail_level now changes the diagram data; the DiagramOptions "
+        "docstring says it does not and has to be updated"
+    )

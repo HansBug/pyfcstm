@@ -6,7 +6,10 @@ from typing import Optional
 import click
 
 from ..diagram import DiagramUnavailableError
+from ..dsl.error import GrammarParseError
 from ..model import load_state_machine_from_file
+from ..utils import ModelValidationError
+from .base import ClickErrorException
 
 # The suffixes this command can actually produce. `Diagram.save` infers any
 # suffix it knows, including the headless SVG/PNG/PDF exports that are
@@ -43,6 +46,51 @@ def _validate_output_suffix(output: str, format_name: Optional[str]) -> None:
     )
 
 
+def _load_model(input_code_file: str):
+    """
+    Load the input model, reporting user-input failures as CLI errors.
+
+    A typo in the DSL is the most common way this command fails, and letting it
+    escape as a traceback buries the parser's own message — which already names
+    the line and column — under an unrelated stack.
+
+    :param input_code_file: Path to the input FCSTM file.
+    :type input_code_file: str
+    :return: The loaded state machine.
+    :rtype: pyfcstm.model.StateMachine
+    :raises pyfcstm.entry.base.ClickErrorException: If the file cannot be read,
+        decoded, parsed, or assembled into a valid model.
+    """
+    try:
+        return load_state_machine_from_file(input_code_file)
+    except FileNotFoundError:
+        # The path is validated by click, but it can disappear between the
+        # check and the read.
+        raise ClickErrorException("Input DSL file not found: %s" % input_code_file)
+    except UnicodeDecodeError as err:
+        # auto_decode raises this when no supported encoding fits the bytes.
+        raise ClickErrorException(
+            "Failed to decode input DSL file %s: %s" % (input_code_file, err)
+        )
+    except OSError as err:
+        # Path.read_bytes raises OSError subclasses for permission problems and
+        # for a path that turns out to be a directory.
+        raise ClickErrorException(
+            "Failed to read input DSL file %s: %s" % (input_code_file, err)
+        )
+    except GrammarParseError as err:
+        # Syntax and lexical failures in the user's FCSTM text.
+        raise ClickErrorException(
+            "Failed to parse input DSL file %s: %s" % (input_code_file, err)
+        )
+    except ModelValidationError as err:
+        # Model-level contract violations after a syntactically valid parse,
+        # including a failed import.
+        raise ClickErrorException(
+            "Invalid state machine model in %s: %s" % (input_code_file, err)
+        )
+
+
 @click.command("diagram")
 @click.option(
     "-i",
@@ -77,7 +125,7 @@ def diagram_command(
     open_window: bool,
 ) -> None:
     """Generate portable JSON or a standalone HTML diagram viewer."""
-    model = load_state_machine_from_file(input_code_file)
+    model = _load_model(input_code_file)
     view = model.diagram()
     if open_window:
         if format_name not in (None, "html"):

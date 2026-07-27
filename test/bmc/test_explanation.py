@@ -17,6 +17,7 @@ import sys
 import pytest
 
 from pyfcstm.bmc.explanation import (
+    index_value,
     BmcConflictCore,
     BmcConflictNarrative,
     BmcConflictProof,
@@ -455,6 +456,51 @@ def test_canonical_output_uses_only_json_containers() -> None:
     assert type(canonical["nested"]) is dict
     assert type(canonical["nested"]["seq"]) is list
     assert type(canonical["nested"]["seq"][1]) is dict
+
+
+def test_a_numeric_subclass_cannot_answer_its_own_validation() -> None:
+    """The value under validation must not be the one answering the questions.
+
+    ``int()``, ``float()`` and ``is_integer()`` are all overridable.  Reading
+    them from the instance lets a subclass decide both whether it is an index and
+    which index it is, so a float holding 2.5 could claim to be whole and a
+    subclass of 1 could publish 999.  Both readings go through the base type
+    instead.
+    """
+
+    class LyingInt(int):
+        def __int__(self):
+            return 999
+
+        def __index__(self):
+            return 888
+
+    class LyingFloat(float):
+        def __int__(self):
+            return 777
+
+        def __float__(self):
+            return 1.0
+
+        def is_integer(self):
+            return True
+
+    # The real value wins over what the subclass reports.
+    assert index_value(LyingInt(1), "frames") == 1
+    assert index_value(LyingInt(0), "frames") == 0
+    # A float claiming to be whole is still refused for what it actually holds.
+    with pytest.raises(ValueError, match="non-negative integers"):
+        index_value(LyingFloat(2.5), "frames")
+    with pytest.raises(ValueError, match="non-negative integers"):
+        index_value(LyingFloat(float("inf")), "frames")
+    # A negative value cannot hide behind an override either.
+    with pytest.raises(ValueError, match="non-negative integers"):
+        index_value(LyingInt(-1), "frames")
+    # A whole-valued float whose __int__ lies must still publish its own value.
+    # This is the case that reaches the conversion at all: a fractional liar is
+    # rejected before it, so only a genuinely whole one can expose the read.
+    assert index_value(LyingFloat(2.0), "frames") == 2
+    assert type(index_value(LyingFloat(2.0), "frames")) is int
 
 
 def test_int_subclasses_are_canonicalized_to_plain_ints() -> None:

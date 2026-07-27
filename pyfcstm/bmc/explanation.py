@@ -417,24 +417,38 @@ def index_value(value: Any, label: str) -> int:
         raise ValueError(
             "%s must contain non-negative integers, got %r." % (label, value)
         )
+    # Every read below goes through the base type's own method rather than the
+    # instance's.  A subclass may override __int__, __float__ or is_integer, and
+    # then both the check and the canonicalization would be answered by the value
+    # being validated: a float subclass claiming is_integer() would be accepted
+    # as an index while really holding 2.5, and int() would publish whatever
+    # __int__ chose to return instead of the number the object is.
     if isinstance(value, float):
         # A JSON document may write a whole number as 1.0, and a validator
         # judging "integer" by value accepts it.  Canonicalizing here keeps the
         # published tuple integral without rejecting valid JSON.
-        if not math.isfinite(value) or not value.is_integer():
+        # Extract the real value once through the base type; everything after
+        # this point works on a genuine float, so ordinary methods are safe.
+        plain = float.__float__(value)
+        if not math.isfinite(plain) or not plain.is_integer():
             raise ValueError(
                 "%s must contain non-negative integers, got %r." % (label, value)
             )
-        value = int(value)
-    if not isinstance(value, int) or value < 0:
+        value = int(plain)
+    if not isinstance(value, int):
         raise ValueError(
             "%s must contain non-negative integers, got %r." % (label, value)
         )
-    # int() rather than the value itself: an int subclass such as IntEnum passes
-    # the check above but keeps its own repr, so the published tuple would carry
-    # an object that is only incidentally an integer.  JSON renders it as a
-    # number either way, but a canonical field should not depend on that.
-    return int(value)
+    # int.__int__ rather than int(): an int subclass such as IntEnum passes the
+    # check above but keeps its own repr, so the published tuple would carry an
+    # object that is only incidentally an integer.  JSON renders it as a number
+    # either way, but a canonical field should not depend on that.
+    canonical = int.__int__(value)
+    if canonical < 0:
+        raise ValueError(
+            "%s must contain non-negative integers, got %r." % (label, value)
+        )
+    return canonical
 
 
 def _require_indices(values: Any, label: str) -> Tuple[int, ...]:

@@ -343,7 +343,10 @@ def test_a_published_core_needs_a_recorded_core_check() -> None:
     accepted = _localized(
         refinement_status="partial",
         refinement_reason="probe returned unknown",
-        refinement_checks=(_probe("component_assumptions"), _probe("unsat_core")),
+        refinement_checks=(
+            _probe("component_assumptions"),
+            _probe("unsat_core", "complete"),
+        ),
         explanation=explanation,
     )
     assert accepted.explanation is explanation
@@ -362,7 +365,7 @@ def test_a_minimal_core_needs_recorded_deletion_checks() -> None:
         _localized(
             refinement_status="partial",
             refinement_reason="probe returned unknown",
-            refinement_checks=(_probe("unsat_core"),),
+            refinement_checks=(_probe("unsat_core", "complete"),),
             explanation=explanation,
         )
 
@@ -381,7 +384,7 @@ def test_a_core_check_that_did_not_prove_anything_cannot_back_a_core() -> None:
         core=_core_with(),
     )
 
-    with pytest.raises(BmcBuildError, match="returned unsat"):
+    with pytest.raises(BmcBuildError, match="completed unsat-core"):
         _localized(
             refinement_status="partial",
             refinement_reason="probe returned unknown",
@@ -410,7 +413,7 @@ def test_deletion_checks_must_have_shown_each_member_necessary() -> None:
             refinement_status="partial",
             refinement_reason="probe returned unknown",
             refinement_checks=(
-                _probe("unsat_core"),
+                _probe("unsat_core", "complete"),
                 _probe("unsat_core_minimization", "unsat"),
             ),
             explanation=explanation,
@@ -420,7 +423,7 @@ def test_deletion_checks_must_have_shown_each_member_necessary() -> None:
         refinement_status="partial",
         refinement_reason="probe returned unknown",
         refinement_checks=(
-            _probe("unsat_core"),
+            _probe("unsat_core", "complete"),
             _probe("unsat_core_minimization", "sat"),
         ),
         explanation=explanation,
@@ -480,7 +483,7 @@ def test_a_partially_minimized_core_needs_a_finished_deletion_check() -> None:
         _localized(
             refinement_status="partial",
             refinement_reason="probe returned unknown",
-            refinement_checks=(_probe("unsat_core"),),
+            refinement_checks=(_probe("unsat_core", "complete"),),
             explanation=explanation,
         )
 
@@ -488,7 +491,7 @@ def test_a_partially_minimized_core_needs_a_finished_deletion_check() -> None:
         refinement_status="partial",
         refinement_reason="probe returned unknown",
         refinement_checks=(
-            _probe("unsat_core"),
+            _probe("unsat_core", "complete"),
             _probe("unsat_core_minimization", "unsat"),
         ),
         explanation=explanation,
@@ -501,7 +504,7 @@ def test_a_raw_core_needs_no_deletion_evidence() -> None:
     accepted = _localized(
         refinement_status="partial",
         refinement_reason="probe returned unknown",
-        refinement_checks=(_probe("unsat_core"),),
+        refinement_checks=(_probe("unsat_core", "complete"),),
         explanation=_explanation(
             "partial",
             achieved_mode="formal",

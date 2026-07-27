@@ -455,7 +455,11 @@ def test_exhausted_budget_stops_before_the_core_recheck() -> None:
     assert extraction.groups == ()
     assert extraction.status == "timeout"
     assert "did not re-check as unsat" in extraction.reason
-    assert [check.started for check in extraction.checks] == [True, False]
+    # The step is reported once; it started, because extraction ran before the
+    # recheck was refused.
+    assert [check.name for check in extraction.checks] == ["unsat_core"]
+    assert extraction.checks[0].started is True
+    assert extraction.checks[0].status == "timeout"
 
 
 def test_a_scope_with_no_target_group_degrades_instead_of_publishing() -> None:

@@ -2358,12 +2358,11 @@ def _validate_explanation_agreement(
             check
             for check in refinement_checks
             if check.name in _FEASIBILITY_CORE_REFINEMENT_NAMES
-            and check.status == "unsat"
+            and check.status == "complete"
         ]
         if not proved:
             raise BmcBuildError(
-                "a published core requires an unsat-core refinement check that "
-                "returned unsat."
+                "a published core requires a completed unsat-core refinement check."
             )
         deletions = [
             check

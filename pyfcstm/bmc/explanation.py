@@ -154,6 +154,15 @@ _SCOPES = tuple(CLASSIFICATION_SCOPES.values()) + STAGE_FALLBACK_SCOPES
 #: Stages each scope's target formula is built from.  A domain or prefix scope
 #: legitimately reaches back to earlier stages, so membership is checked
 #: against this set rather than against the localized stage itself.
+#:
+#: This is deliberately a stage-level approximation.  ``SCOPE_TARGETS`` is
+#: aggregate-level, so for example ``initialization_domain`` excludes ``T_N``
+#: while a ``T_N`` member still carries stage ``kernel`` and passes here.
+#: Aggregate-level precision comes from the candidate set in
+#: :func:`pyfcstm.bmc.infeasibility.extract_source_core`, which only ever offers
+#: groups the scope actually targets.  Tightening this check would also need a
+#: category-to-scope rule the JSON schema cannot express, which would break the
+#: harder requirement that both sides accept the same payload set.
 _SCOPE_STAGES = MappingProxyType(
     {
         "kernel": ("kernel",),

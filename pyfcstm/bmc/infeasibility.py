@@ -481,6 +481,40 @@ def _run_probe(
     return resolved, ProbeRecord(name, resolved, True, elapsed, reason)
 
 
+def _step_record(
+    extraction: ProbeRecord, recheck: ProbeRecord, status: str
+) -> ProbeRecord:
+    """Collapse the two calls of the core step into one reportable record.
+
+    The frozen result shape carries a single ``unsat_core`` entry, so the
+    published timing is the whole step and the status describes the step rather
+    than one solver verdict inside it.
+
+    :param extraction: Record of the labelled extraction check.
+    :type extraction: ProbeRecord
+    :param recheck: Record of the independent soundness recheck.
+    :type recheck: ProbeRecord
+    :param status: Step outcome to publish.
+    :type status: str
+    :return: One record covering both calls.
+    :rtype: ProbeRecord
+
+    Example::
+
+        >>> a = ProbeRecord("unsat_core", "unsat", True, 1.0)
+        >>> b = ProbeRecord("unsat_core", "unsat", True, 2.0)
+        >>> _step_record(a, b, "complete").elapsed_ms
+        3.0
+    """
+    return ProbeRecord(
+        "unsat_core",
+        status,
+        extraction.started or recheck.started,
+        extraction.elapsed_ms + recheck.elapsed_ms,
+        recheck.reason or extraction.reason,
+    )
+
+
 def classify_infeasibility(
     core: "BmcCoreFormula", stage: str, budget: _SolveBudget
 ) -> ClassificationOutcome:
@@ -691,18 +725,24 @@ def extract_source_core(
     verifier = z3.Solver()
     verifier.add(_conjunction(ordered))
     # The recheck is a second solver call of the same extraction step, so it
-    # shares the caller's budget and is recorded rather than run unbounded.
+    # shares the caller's budget rather than running unbounded.
     recheck, verify_record = _run_probe(verifier, budget, "unsat_core", ())
-    checks = (record, verify_record)
     if recheck != "unsat":
         return CoreExtraction(
             (),
             "unknown" if recheck != "timeout" else "timeout",
             "extracted core for scope %r did not re-check as unsat (%s)"
             % (scope, recheck),
-            checks,
+            (_step_record(record, verify_record, recheck),),
         )
-    return CoreExtraction(ordered, "complete", None, checks)
+    # The published ledger reports one entry for the whole step, matching the
+    # frozen result shape: 'complete' says extraction *and* the independent
+    # recheck both succeeded, which is stronger evidence than either raw
+    # solver verdict on its own.  Two entries sharing the name would instead
+    # read as the same check having run twice.
+    return CoreExtraction(
+        ordered, "complete", None, (_step_record(record, verify_record, "complete"),)
+    )
 
 
 def _semantic_role(category: str) -> str:

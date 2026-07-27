@@ -6,6 +6,7 @@ import hashlib
 from pathlib import Path
 import re
 import sys
+from typing import List
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -15,6 +16,54 @@ if str(ROOT) not in sys.path:
 from diagram_contract_support import sample_diagram  # noqa: E402
 
 
+def _check_style_sources(html: str, policy: str, styles: List[str]) -> None:
+    """
+    Pin the exact contents of ``style-src``.
+
+    The component library renders its stylesheets at runtime, so the policy
+    carries a nonce in addition to the hash of the static stylesheet. A nonce
+    matches ``<link rel=stylesheet>`` from any origin, which a hash-only list
+    made structurally impossible, so the source list is worth pinning: only the
+    hashes of the styles actually embedded here plus exactly one nonce, and that
+    nonce must be the one the bootstrap publishes. Without this, widening the
+    directive to ``'unsafe-inline'`` or a host source, or letting the policy and
+    the bootstrap drift apart, leaves every other check passing.
+    """
+    match = re.search(r"style-src ([^;]*)", policy)
+    if match is None:
+        raise SystemExit("CSP has no style-src directive")
+    sources = match.group(1).split()
+    expected_hashes = {
+        "'sha256-%s'"
+        % base64.b64encode(hashlib.sha256(style.encode("utf-8")).digest()).decode(
+            "ascii"
+        )
+        for style in styles
+    }
+    nonces = [item for item in sources if item.startswith("'nonce-")]
+    if len(nonces) != 1:
+        raise SystemExit(
+            "style-src must carry exactly one nonce, found %d" % len(nonces)
+        )
+    unexpected = [
+        item for item in sources if item not in expected_hashes and item not in nonces
+    ]
+    if unexpected:
+        raise SystemExit(
+            "style-src carries sources beyond the embedded style hashes and its "
+            "nonce: %s" % ", ".join(unexpected)
+        )
+    declared = nonces[0][len("'nonce-") : -1]
+    published = re.search(r"window\.__FCSTM_STYLE_NONCE__ = \"([^\"]*)\";", html)
+    if published is None:
+        raise SystemExit("standalone HTML does not publish a style nonce")
+    if published.group(1) != declared:
+        raise SystemExit(
+            "style-src nonce %r does not match the published nonce %r"
+            % (declared, published.group(1))
+        )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--require-default-none", action="store_true")
@@ -22,6 +71,7 @@ def main() -> None:
     parser.add_argument("--require-worker-none", action="store_true")
     parser.add_argument("--require-script-hashes", action="store_true")
     parser.add_argument("--require-style-hashes", action="store_true")
+    parser.add_argument("--require-style-nonce", action="store_true")
     parser.add_argument("--require-wasm-unsafe-eval", action="store_true")
     parser.add_argument("--forbid-unsafe-eval", action="store_true")
     parser.add_argument("--require-font-data", action="store_true")
@@ -81,6 +131,8 @@ def main() -> None:
             ).decode("ascii")
             if "sha256-%s" % digest not in policy:
                 raise SystemExit("CSP style hash does not match embedded style")
+    if args.require_style_nonce:
+        _check_style_sources(html, policy, styles)
     if args.require_embedded_fonts is not None:
         faces = re.findall(r"@font-face\{", html)
         if len(faces) != args.require_embedded_fonts:

@@ -268,7 +268,7 @@ diagram_options_check: build_assets
 diagram_csp_check: build_assets
 	$(PYTHON) tools/check_diagram_csp.py \
 		--require-default-none --require-connect-none --require-worker-none \
-		--require-script-hashes --require-style-hashes \
+		--require-script-hashes --require-style-hashes --require-style-nonce \
 		--require-wasm-unsafe-eval --forbid-unsafe-eval \
 		--require-font-data --require-img-data-blob \
 		--forbid-eval --forbid-new-function --zero-network \

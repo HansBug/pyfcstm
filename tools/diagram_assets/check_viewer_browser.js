@@ -164,8 +164,9 @@ async function realClick(cdp, x, y) {
 
 /**
  * Open the first option-list control with a real input sequence and report how
- * its popup is actually painted. A popup that is invisible, unpainted or wider
- * than the page is a styling failure, not a passing run.
+ * its popup is actually painted, including the trigger width it should stay
+ * anchored to. A popup that is invisible, unpainted, or far wider than its
+ * trigger is a styling failure, not a passing run.
  */
 async function openSelectMenu(cdp) {
   const box = await evaluate(cdp, `(() => {
@@ -185,8 +186,17 @@ async function openSelectMenu(cdp) {
     const option = el.querySelector('.n-base-select-option');
     const optionStyle = option ? getComputedStyle(option) : null;
     const alpha = value => {
-      const match = String(value).match(/^rgba\\([^)]*,\\s*([0-9.]+)\\)$/);
-      return match ? Number(match[1]) : 1;
+      // rgb() carries no alpha channel and is opaque; rgba() and color() carry
+      // one. Anything else yields NaN so the verdict fails rather than reading
+      // an unrecognised serialisation as fully opaque.
+      const text = String(value);
+      if (/^rgb\\([^)]*\\)$/.test(text)) return 1;
+      const legacy = text.match(/^rgba\\([^)]*,\\s*([0-9.]+)\\)$/);
+      if (legacy) return Number(legacy[1]);
+      const modern = text.match(/^color\\([^)]*\\/\\s*([0-9.]+)\\s*\\)$/);
+      if (modern) return Number(modern[1]);
+      if (/^color\\([^/)]*\\)$/.test(text)) return 1;
+      return NaN;
     };
     return {
       menuVisible: true,
@@ -199,8 +209,9 @@ async function openSelectMenu(cdp) {
       optionAlpha: optionStyle ? alpha(optionStyle.backgroundColor) : 0,
     };
   })()`);
-  const closer = await evaluate(cdp, `(() => ({x: Math.round(innerWidth / 2), y: Math.round(innerHeight - 8)}))()`);
-  await realClick(cdp, closer.x, closer.y);
+  const escape = {key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27};
+  await cdp.call('Input.dispatchKeyEvent', {type: 'keyDown', ...escape});
+  await cdp.call('Input.dispatchKeyEvent', {type: 'keyUp', ...escape});
   await sleep(200);
   return {found: true, triggerWidth: box.triggerWidth, ...menu};
 }
@@ -268,6 +279,7 @@ async function evaluate(cdp, expression) {
       error: (document.querySelector('.fcstm-stage__empty-title') || {}).textContent || '',
       sourceAvailable: window.__FCSTM_INITIAL_STATE__?.sourceAvailable !== false,
       sourceUnavailableMessage: document.querySelector('.fcstm-source-panel__unavailable')?.textContent?.trim() || '',
+      sourceCodePanel: Boolean(document.querySelector('.fcstm-source-panel__code')),
       fontFaces: [...(document.fonts || [])].map(font => ({family: font.family, weight: font.weight, status: font.status})),
     })`);
     const sourceLayout = await evaluate(cdp, `(async () => {
@@ -281,8 +293,16 @@ async function evaluate(cdp, expression) {
       const nativeSelect = document.querySelector('.fcstm-source-panel__header select');
       const nativeSelectStyle = nativeSelect ? getComputedStyle(nativeSelect) : null;
       const alpha = value => {
-        const match = value.match(/^rgba\\([^)]*,\\s*([0-9.]+)\\)$/);
-        return match ? Number(match[1]) : 1;
+        // Same fail-closed rule as openSelectMenu: an unrecognised colour
+        // serialisation must not read as opaque.
+        const text = String(value);
+        if (/^rgb\\([^)]*\\)$/.test(text)) return 1;
+        const legacy = text.match(/^rgba\\([^)]*,\\s*([0-9.]+)\\)$/);
+        if (legacy) return Number(legacy[1]);
+        const modern = text.match(/^color\\([^)]*\\/\\s*([0-9.]+)\\s*\\)$/);
+        if (modern) return Number(modern[1]);
+        if (/^color\\([^/)]*\\)$/.test(text)) return 1;
+        return NaN;
       };
       return {
         lineCount: rows.length,
@@ -302,9 +322,14 @@ async function evaluate(cdp, expression) {
     // label: matching display copy made a renamed button click nothing and the
     // resulting wrong-mode failure surfaced far away, in the export step. A
     // missing handle throws here so the cause stays where the problem is.
-    const clickMode = mode => `new Promise(resolve => setTimeout(() => {
+    // The browser side settles with reject rather than throw: an exception
+    // raised from a timer callback has already left the executor frame, so it
+    // becomes an uncaught window error and leaves the promise pending. Since
+    // Runtime.evaluate is awaited here with no per-call deadline, that would
+    // hang the run instead of naming the missing handle.
+    const clickMode = mode => `new Promise((resolve, reject) => setTimeout(() => {
       const button = document.querySelector('.fcstm-standalone-mode button[data-fcstm-mode="${mode}"]');
-      if (!button) throw new Error('mode button not found: ${mode}');
+      if (!button) { reject(new Error('mode button not found: ${mode}')); return; }
       button.click();
       setTimeout(() => resolve({
         source: Boolean(document.querySelector('.fcstm-source-panel')),
@@ -338,29 +363,87 @@ async function evaluate(cdp, expression) {
           selected: document.querySelectorAll('.fcstm-selected').length}), 220);
       }, 120);
     }, 80))`);
+    // Every link assertion below measures a transition out of a cleared state
+    // instead of a level. Sharing one page across steps meant the previous
+    // step's selection or hover already satisfied the next assertion — four
+    // source lines were active and one element was hovered before their own
+    // actions ran — so breaking the behaviour under test left the gate green.
+    const CLEAR_INTERACTION = `(async () => {
+      for (const element of document.querySelectorAll('[data-fcstm-kind], .fcstm-source-line')) {
+        element.dispatchEvent(new MouseEvent('mouseout', {bubbles: true, relatedTarget: null}));
+      }
+      document.querySelector('.fcstm-stage__viewport')
+        ?.dispatchEvent(new MouseEvent('click', {bubbles: true, button: 0}));
+      await new Promise(resolve => setTimeout(resolve, 240));
+      return {
+        selected: document.querySelectorAll('.fcstm-selected').length,
+        activeSourceLines: document.querySelectorAll('.fcstm-source-line--active').length,
+        sourceHover: document.querySelectorAll('.fcstm-source-hover').length,
+      };
+    })()`;
+    // The sidecar publishes a document-qualified key next to a legacy numeric
+    // one, and api.py marks the numeric form as compatibility-only. Taking the
+    // line from the qualified key survives that form being dropped; indexing
+    // the raw key relied on JS enumerating integer-like keys first, and would
+    // otherwise match no element and let these steps pass on residue.
+    const sourceLineSelector = `(() => {
+      const map = window.__FCSTM_INITIAL_STATE__?.sourceLineMap || {};
+      const key = Object.keys(map)[0];
+      if (key === undefined) return '';
+      const line = key.includes(':') ? key.slice(key.lastIndexOf(':') + 1) : key;
+      return '.fcstm-source-line[data-line="' + line + '"]';
+    })()`;
+    const selectionBefore = await evaluate(cdp, CLEAR_INTERACTION);
     const selection = await evaluate(cdp, `new Promise(resolve => setTimeout(() => {
       const target = document.querySelector('[data-fcstm-kind="state"]');
       target?.dispatchEvent(new MouseEvent('click', {bubbles: true, button: 0}));
-      setTimeout(() => resolve({selected: document.querySelectorAll('.fcstm-selected').length, target: target?.getAttribute('data-fcstm-id') || '', kind: target?.getAttribute('data-fcstm-kind') || ''}), 220);
+      setTimeout(() => resolve({selected: document.querySelectorAll('.fcstm-selected').length, activeSourceLines: document.querySelectorAll('.fcstm-source-line--active').length, target: target?.getAttribute('data-fcstm-id') || '', kind: target?.getAttribute('data-fcstm-kind') || ''}), 220);
     }, 220))`);
-    const revealSource = await evaluate(cdp, `new Promise(resolve => setTimeout(() => {
+    selection.before = selectionBefore;
+    // Details lives behind the drawer, which starts collapsed on short narrow
+    // viewports, so the reveal control has to be brought on screen before it can
+    // be required to exist.
+    await evaluate(cdp, `new Promise(resolve => {
+      const toggle = document.querySelector('[data-fcstm-action="toggle-details"]');
+      if (toggle && toggle.getAttribute('aria-pressed') === 'false') toggle.click();
+      setTimeout(resolve, 240);
+    })`);
+    // In the standalone host the reveal control re-applies the range that is
+    // already selected, so there is no state transition to observe. The honest
+    // assertion is that the control is present and leaves the source link
+    // intact; a renamed or removed button now fails here instead of silently
+    // skipping, which is how the mode buttons used to behave.
+    const revealSource = await evaluate(cdp, `new Promise((resolve, reject) => setTimeout(() => {
       const button = [...document.querySelectorAll('.fcstm-details button')].find(item => item.textContent.includes('Reveal source'));
-      button?.dispatchEvent(new MouseEvent('click', {bubbles: true, button: 0}));
-      setTimeout(() => resolve({activeSourceLines: document.querySelectorAll('.fcstm-source-line--active').length}), 220);
+      if (!button) { reject(new Error('reveal-source control not found in the details panel')); return; }
+      button.dispatchEvent(new MouseEvent('click', {bubbles: true, button: 0}));
+      setTimeout(() => resolve({buttonFound: true, activeSourceLines: document.querySelectorAll('.fcstm-source-line--active').length}), 220);
     }, 180))`);
+    const hoverBefore = await evaluate(cdp, CLEAR_INTERACTION);
     const hover = await evaluate(cdp, `new Promise(resolve => setTimeout(() => {
       const target = document.querySelector('[data-fcstm-kind="state"]');
       target?.dispatchEvent(new MouseEvent('mouseover', {bubbles: true, relatedTarget: null}));
       setTimeout(() => resolve({activeSourceLines: document.querySelectorAll('.fcstm-source-line--active').length}), 220);
     }, 220))`);
-    const sourceHover = await evaluate(cdp, `new Promise(resolve => setTimeout(() => {
-      const lineNumber = Object.keys(window.__FCSTM_INITIAL_STATE__?.sourceLineMap || {})[0];
-      const line = lineNumber === undefined ? null : document.querySelector('.fcstm-source-line[data-line="' + lineNumber + '"]');
-      line?.dispatchEvent(new MouseEvent('mouseover', {bubbles: true, relatedTarget: null}));
+    hover.before = hoverBefore;
+    const sourceHoverBefore = await evaluate(cdp, CLEAR_INTERACTION);
+    const sourceHover = await evaluate(cdp, `new Promise((resolve, reject) => setTimeout(() => {
+      const selector = ${sourceLineSelector};
+      const line = selector ? document.querySelector(selector) : null;
+      if (!line) { reject(new Error('no source line matched the published source map')); return; }
+      line.dispatchEvent(new MouseEvent('mouseover', {bubbles: true, relatedTarget: null}));
       setTimeout(() => resolve({diagramHover: document.querySelectorAll('.fcstm-source-hover').length}), 220);
     }, 220))`);
+    sourceHover.before = sourceHoverBefore;
     const transitionHover = await evaluate(cdp, `(async () => {
-      const transition = document.querySelector('[data-fcstm-kind="transition"][data-fcstm-id]');
+      // Prefer a labelled transition: the first element ELK emits is often a
+      // composite's initial transition, which carries no label, and the label
+      // and note clauses below would then assert over an empty set.
+      const labelled = new Set([...document.querySelectorAll('[data-fcstm-kind="transition-label"]')]
+        .map(item => item.getAttribute('data-fcstm-id')));
+      const transitions = [...document.querySelectorAll('[data-fcstm-kind="transition"][data-fcstm-id]')];
+      const transition = transitions.find(item => labelled.has(item.getAttribute('data-fcstm-id')))
+        || transitions[0] || null;
       const transitionId = transition?.getAttribute('data-fcstm-id') || '';
       transition?.dispatchEvent(new MouseEvent('mouseover', {bubbles: true, relatedTarget: null}));
       await new Promise(resolve => setTimeout(resolve, 220));
@@ -372,6 +455,8 @@ async function evaluate(cdp, expression) {
       const labelStyle = style(label);
       return {
         hasTransition: Boolean(transition),
+        hasLabel: Boolean(label),
+        noteCount: noteParts.length,
         transitionId,
         transitionClass: transition?.getAttribute('class') || '',
         transitionFilter: transitionStyle?.filter || '',
@@ -387,12 +472,15 @@ async function evaluate(cdp, expression) {
         })),
       };
     })()`);
-    const sourceSelection = await evaluate(cdp, `new Promise(resolve => setTimeout(() => {
-      const lineNumber = Object.keys(window.__FCSTM_INITIAL_STATE__?.sourceLineMap || {})[0];
-      const line = lineNumber === undefined ? null : document.querySelector('.fcstm-source-line[data-line="' + lineNumber + '"]');
-      line?.dispatchEvent(new MouseEvent('click', {bubbles: true, button: 0}));
+    const sourceSelectionBefore = await evaluate(cdp, CLEAR_INTERACTION);
+    const sourceSelection = await evaluate(cdp, `new Promise((resolve, reject) => setTimeout(() => {
+      const selector = ${sourceLineSelector};
+      const line = selector ? document.querySelector(selector) : null;
+      if (!line) { reject(new Error('no source line matched the published source map')); return; }
+      line.dispatchEvent(new MouseEvent('click', {bubbles: true, button: 0}));
       setTimeout(() => resolve({selected: document.querySelectorAll('.fcstm-selected').length}), 220);
     }, 220))`);
+    sourceSelection.before = sourceSelectionBefore;
     const sourceCycle = await evaluate(cdp, `(async () => {
       const entries = Object.entries(window.__FCSTM_INITIAL_STATE__?.sourceLineMap || {})
         .filter(([, value]) => Array.isArray(value) && value.length > 1);
@@ -436,7 +524,13 @@ async function evaluate(cdp, expression) {
       // previous payload with itself.
       const awaitFreshExport = previous => new Promise((resolve, reject) => {
         const deadline = Date.now() + 30000;
-        window.dispatchEvent(new CustomEvent('fcstm-export'));
+        // Click the control a user clicks rather than dispatching the internal
+        // event it emits. Firing the event directly leaves the button, its
+        // handler, and its wiring untested, so an export that no user can reach
+        // still produced payloads and a green run.
+        const button = document.querySelector('[data-fcstm-action="export"]');
+        if (!button) return reject(new Error('export control not found'));
+        button.click();
         const poll = () => {
           const current = window.__FCSTM_LAST_EXPORT__;
           if (current && current !== previous) return resolve(current);
@@ -534,6 +628,10 @@ async function evaluate(cdp, expression) {
       return first;
     })()`);
     const pdfStreamText = inflatePdfStreams(pdf.base64);
+    // The halo check is a zero-count, so it passes trivially when no stream
+    // inflates — a filter change or an object-stream layout would retire the
+    // check without a word. Record the scanned size and assert it below.
+    pdf.inflatedStreamBytes = pdfStreamText.length;
     pdf.whiteHaloOperators = (pdfStreamText.match(/[0-9.]+ [0-9.]+ [0-9.]+ rg\n3\. w\n1\. G/g) || []).length;
     if (pdfOutputPath && pdf.base64) fs.writeFileSync(pdfOutputPath, Buffer.from(pdf.base64, 'base64'));
     delete pdf.base64;
@@ -554,13 +652,14 @@ async function evaluate(cdp, expression) {
     }, 220))`);
     const layout = await evaluate(cdp, `(() => {
       const main = document.querySelector('.fcstm-main-view');
+      const bottom = document.querySelector('.fcstm-bottom');
       const source = document.querySelector('.fcstm-source-panel');
       const stage = document.querySelector('.fcstm-stage');
       const shell = document.querySelector('.fcstm-preview-shell');
       const drawer = document.querySelector('.fcstm-bottom-drawer');
       const rect = el => el ? ({x: el.getBoundingClientRect().x, y: el.getBoundingClientRect().y, width: el.getBoundingClientRect().width, height: el.getBoundingClientRect().height}) : null;
       const style = el => el ? ({display: getComputedStyle(el).display, flex: getComputedStyle(el).flex, minHeight: getComputedStyle(el).minHeight, height: getComputedStyle(el).height, overflow: getComputedStyle(el).overflow}) : null;
-      return {viewport: {width: innerWidth, height: innerHeight}, shell: rect(shell), drawer: rect(drawer), main: rect(main), source: rect(source), stage: rect(stage), stageCount: document.querySelectorAll('.fcstm-stage').length, sourceCount: document.querySelectorAll('.fcstm-source-panel').length, stageRects: [...document.querySelectorAll('.fcstm-stage')].map(rect), sourceRects: [...document.querySelectorAll('.fcstm-source-panel')].map(rect), svgRects: [...document.querySelectorAll('svg')].map(svg => ({className: svg.parentElement?.className || '', rect: rect(svg)})), bottomIconStyles: [...document.querySelectorAll('.fcstm-bottom .n-base-icon')].map(icon => ({rect: rect(icon), width: getComputedStyle(icon).width, height: getComputedStyle(icon).height, display: getComputedStyle(icon).display})), mainStyle: style(main), shellStyle: style(shell), drawerStyle: style(drawer), mainScrollHeight: main?.scrollHeight || 0, mainClientHeight: main?.clientHeight || 0, mainScrollWidth: main?.scrollWidth || 0, mainClientWidth: main?.clientWidth || 0};
+      return {viewport: {width: innerWidth, height: innerHeight}, shell: rect(shell), drawer: rect(drawer), main: rect(main), source: rect(source), stage: rect(stage), stageCount: document.querySelectorAll('.fcstm-stage').length, sourceCount: document.querySelectorAll('.fcstm-source-panel').length, stageRects: [...document.querySelectorAll('.fcstm-stage')].map(rect), sourceRects: [...document.querySelectorAll('.fcstm-source-panel')].map(rect), svgRects: [...document.querySelectorAll('svg')].map(svg => ({className: svg.parentElement?.className || '', rect: rect(svg)})), bottomIconStyles: [...document.querySelectorAll('.fcstm-bottom .n-base-icon')].map(icon => ({rect: rect(icon), width: getComputedStyle(icon).width, height: getComputedStyle(icon).height, display: getComputedStyle(icon).display})), mainStyle: style(main), shellStyle: style(shell), drawerStyle: style(drawer), mainScrollHeight: main?.scrollHeight || 0, mainClientHeight: main?.clientHeight || 0, mainScrollWidth: main?.scrollWidth || 0, mainClientWidth: main?.clientWidth || 0, bottomScrollWidth: bottom?.scrollWidth || 0, bottomClientWidth: bottom?.clientWidth || 0};
     })()`);
     const network = cdp.events.filter(event => event.method === 'Network.requestWillBeSent').map(event => event.params.request.url).filter(url => !url.startsWith('file://') && !url.startsWith('data:') && !url.startsWith('blob:'));
     const cspViolations = [
@@ -582,7 +681,22 @@ async function evaluate(cdp, expression) {
       ? event.params.exceptionDetails?.text || event.params.exceptionDetails?.exception?.description || 'exception'
       : event.params.args?.map(arg => arg.value || arg.description || '').join(' '));
     const verticalOverflow = layout.main && layout.mainScrollHeight > layout.mainClientHeight + 1;
-    const horizontalOverflow = layout.mainScrollWidth > layout.mainClientWidth + 1;
+    // The bottom panels are a sibling of .fcstm-main-view, so a card row that
+    // pushes past its container sat entirely outside the probed subtree. It is
+    // not visible at document level either: measured at a 320px viewport, a
+    // 320px grid track inside a 266px container gives bottomScrollWidth 320 vs
+    // clientWidth 266 while documentElement.scrollWidth stays at 305, because
+    // the excess is clipped rather than scrolled. So the container itself is
+    // what has to be measured.
+    const horizontalOverflow = layout.mainScrollWidth > layout.mainClientWidth + 1
+      || layout.bottomClientWidth <= 0
+      || layout.bottomScrollWidth > layout.bottomClientWidth + 1;
+    // The drawer is content-sized until a drag fixes it, so it needs a bound at
+    // both ends: collapsed to nothing hides Details, and unbounded growth eats
+    // the stage. The upper bound matches the CSS max-height of 70vh.
+    const drawerHeight = layout.drawer?.height || 0;
+    const drawerChecks = drawerHeight > 0
+      && drawerHeight <= (layout.viewport?.height || 0) * 0.72;
     const minimumPanelHeight = viewportHeight <= 700 ? 200 : 160;
     const comparisonSourceHeight = layout.source?.height || 0;
     const comparisonStageHeight = layout.stage?.height || 0;
@@ -593,34 +707,56 @@ async function evaluate(cdp, expression) {
     const sourceLayoutChecks = !initial.sourceAvailable || (
       sourceLayout.lineCount >= 1 && sourceLayout.textHasLineBreaks &&
       sourceLayout.lineNumbers.every(item => item.align === 'right' && /^"\d+"$/.test(item.value)) &&
-      sourceLayout.maxGap <= 1
+      sourceLayout.maxGap <= 1 &&
+      // Rows must be painted. Every other clause here holds for a hidden panel:
+      // the elements exist, textContent still reads, ::before still resolves,
+      // and the gap between zero-height rects is zero.
+      sourceLayout.lineHeights.length === sourceLayout.lineCount &&
+      sourceLayout.lineHeights.every(height => height > 4)
     );
-    // A control that renders an option list must paint an opaque popup that is
-    // anchored to its trigger. An unstyled popup is transparent, shadowless and
-    // stretches to the page width.
-    const selectMenuChecks = !selectMenu.found || (
+    // Every sample renders the option controls, so a missing trigger is a
+    // rendering regression rather than a reason to skip these assertions. An
+    // unstyled popup is transparent, shadowless, and grows far past its
+    // trigger instead of staying anchored to it.
+    const selectMenuChecks = (
+      selectMenu.found === true &&
       selectMenu.menuVisible === true &&
       selectMenu.optionCount >= 1 &&
       selectMenu.menuAlpha === 1 &&
       selectMenu.menuBoxShadow !== 'none' &&
       selectMenu.menuWidth <= selectMenu.triggerWidth * 3
     );
+    // A model without source must say so and must not present a code view.
+    // Asserting the sentence itself would tie the gate to display copy, which
+    // is how a renamed mode button turned into a silent no-op above.
     const sourceUnavailableChecks = initial.sourceAvailable || (
-      initial.sourceUnavailableMessage.includes('源码') &&
-      (initial.sourceUnavailableMessage.includes('加载') ||
-        initial.sourceUnavailableMessage.includes('source_text'))
+      initial.sourceUnavailableMessage.length > 0 && initial.sourceCodePanel === false
     );
     const sourceChecks = !initial.sourceAvailable || (
-      selection.selected >= 1 && revealSource.activeSourceLines >= 1 && hover.activeSourceLines >= 1 &&
-      sourceHover.diagramHover >= 1 && sourceSelection.selected >= 1
+      selection.before.selected === 0 && selection.selected >= 1 &&
+      selection.before.activeSourceLines === 0 && selection.activeSourceLines >= 1 &&
+      revealSource.buttonFound === true && revealSource.activeSourceLines >= 1 &&
+      hover.before.activeSourceLines === 0 && hover.activeSourceLines >= 1 &&
+      sourceHover.before.sourceHover === 0 && sourceHover.diagramHover >= 1 &&
+      sourceSelection.before.selected === 0 && sourceSelection.selected >= 1
     );
+    // The embedded faces are the only reason layout and every export agree
+    // across machines, and a decode failure is reported as a banner rather than
+    // an exception, so nothing else in this run would notice it.
+    const fontChecks = initial.fontFaces.length > 0
+      && initial.fontFaces.every(face => face.status === 'loaded')
+      && pdf.fatal === '';
     // Every sample renders transitions, so a missing transition element is a
     // rendering regression rather than a reason to skip the hover assertions.
     const transitionChecks = (
       transitionHover.hasTransition === true &&
       Boolean(transitionHover.transitionId) && transitionHover.transitionFilter === 'none' &&
       transitionHover.transitionFill === 'none' &&
-      (!transitionHover.labelFilter || transitionHover.labelFilter === 'none') &&
+      // Require the label and its note geometry rather than treating their
+      // absence as a pass: an unlabelled target made the halo clauses vacuous,
+      // which is the behaviour the transition-hover work was about.
+      transitionHover.hasLabel === true && transitionHover.labelFilter === 'none' &&
+      transitionHover.noteCount >= 1 &&
       transitionHover.noteParts.every(item => item.filter === 'none') &&
       transitionHover.transitionStroke === 'rgb(45, 106, 168)'
     );
@@ -629,7 +765,8 @@ async function evaluate(cdp, expression) {
       (!requirePdfZeroImages || pdf.images === 0) && pdf.pages === 1 &&
       (!requirePdfPageSize || (pdf.pdfWidth > 0 && pdf.pdfHeight > 0 &&
         Math.abs(pdf.pdfWidth - pdf.svgWidth) < 0.1 && Math.abs(pdf.pdfHeight - pdf.svgHeight) < 0.1)) &&
-      pdf.whiteHaloOperators === 0 && (!requirePdfRerender || pdf.rerenderSame === true)
+      pdf.inflatedStreamBytes > 0 && pdf.whiteHaloOperators === 0 &&
+      (!requirePdfRerender || pdf.rerenderSame === true)
     );
     const pngChecks = !requestedFormats.has('png') || (
       pdf.pngHeader === '89504e470d0a1a0a' && pdf.pngBytes >= 100 && pdf.pngWidth >= 1 && pdf.pngHeight >= 1 &&
@@ -637,21 +774,24 @@ async function evaluate(cdp, expression) {
       pdf.pngNonBlankPixels >= 10 && pdf.pngOpaque === true
     );
     const svgChecks = !requestedFormats.has('svg') || (
+      // The three clauses below count absences, so an empty export scores a
+      // perfect zero on all of them. Require a payload first.
+      pdf.signature.svgBytes > 0 &&
       pdf.svgText === 0 && pdf.svgMarker === 0 && pdf.svgFontFamily === 0
     );
-    const report = {initial, sourceLayout, sourceLayoutChecks, selectMenu, selectMenuChecks, sourceUnavailableChecks, sourceChecks, transitionChecks, pdfChecks, pngChecks, svgChecks, diagramOnly: states, fcstmOnly, compare, backToCompare, importedSource, selection, revealSource, hover, sourceHover, transitionHover, sourceSelection, sourceCycle, zoom, pdf, collapse, layout, minimumPanelHeight, comparisonTooShort, oversizedUiIcons, externalRequests: network, cspViolations, consoleErrors: consoleErrors.length, consoleDetails};
+    const report = {initial, sourceLayout, sourceLayoutChecks, selectMenu, selectMenuChecks, sourceUnavailableChecks, sourceChecks, fontChecks, transitionChecks, pdfChecks, pngChecks, svgChecks, diagramOnly: states, fcstmOnly, compare, backToCompare, importedSource, selection, revealSource, hover, sourceHover, transitionHover, sourceSelection, sourceCycle, zoom, pdf, collapse, layout, minimumPanelHeight, comparisonTooShort, drawerChecks, oversizedUiIcons, externalRequests: network, cspViolations, consoleErrors: consoleErrors.length, consoleDetails};
     console.log(JSON.stringify(report, null, 2));
     if (!initial.stage || initial.error || states.diagramOnlySource || !states.diagramOnlyStage ||
         !compare.source || !compare.stage ||
         fcstmOnly.source !== true || fcstmOnly.stage !== false || backToCompare.source !== true || backToCompare.stage !== true ||
         !sourceLayoutChecks || !sourceUnavailableChecks ||
-        sourceLayout.nativeSelectAlpha < 0.99 ||
-        !sourceChecks ||
+        !(sourceLayout.nativeSelectAlpha >= 0.99) ||
+        !sourceChecks || !fontChecks ||
         !transitionChecks || !selectMenuChecks ||
         zoom.before === zoom.after || !pdfChecks || !pngChecks ||
         (process.env.VIEWER_REQUIRE_EXPANDED_SVG === '1' && !svgChecks) ||
         (sourceCycle.candidateCount > 1 && sourceCycle.uniqueSelectedIds < sourceCycle.candidateCount) ||
-        (collapse.before > 1 && collapse.after >= collapse.before) || verticalOverflow || horizontalOverflow || comparisonTooShort || oversizedUiIcons || network.length || cspViolations.length || consoleErrors.length ||
+        (collapse.before > 1 && collapse.after >= collapse.before) || verticalOverflow || horizontalOverflow || comparisonTooShort || !drawerChecks || oversizedUiIcons || network.length || cspViolations.length || consoleErrors.length ||
         (importedSource.documents.length > 1 && (!importedSource.childText || importedSource.selected < 1))) process.exitCode = 1;
   } finally {
     stopChrome(chrome);

@@ -5022,14 +5022,15 @@
             "type": "integer",
             "minimum": 0
           },
-          "$comment": "Draft 2020-12 accepts 1.0 as an integer because it judges by numeric value; the Python constructor requires a real int, and that one-sided difference is pinned by the equivalence test's inexpressible list."
+          "$comment": "Both the schema and the Python constructor accept a whole-valued 1.0 here and canonicalize it to 1, because a validator judging \"integer\" by numeric value cannot tell it from 1. The constructor additionally requires an array and refuses bool, fractional and negative entries, which this schema also refuses."
         },
         "steps": {
           "type": "array",
           "items": {
             "type": "integer",
             "minimum": 0
-          }
+          },
+          "$comment": "Both the schema and the Python constructor accept a whole-valued 1.0 here and canonicalize it to 1, because a validator judging \"integer\" by numeric value cannot tell it from 1. The constructor additionally requires an array and refuses bool, fractional and negative entries, which this schema also refuses."
         },
         "refs": {
           "type": "object"

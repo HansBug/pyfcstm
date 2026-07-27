@@ -160,3 +160,9 @@ constraint\_aggregate
 -----------------------------------------------------
 
 .. autofunction:: constraint_aggregate
+
+
+index\_value
+-----------------------------------------------------
+
+.. autofunction:: index_value

@@ -131,8 +131,19 @@ _DELIVERY_MATRIX_ROWS = (
     # Row 5: a diagnostic subset-minimal core with complete semantic facts.
     # Requesting 'proof' cannot land here: an unclosed proof forces row 7.
     (("formal",), "formal", "complete", True, True, False, False),
-    # Row 9: a verified proof over a stage-fallback artifact.
-    (("proof",), "proof", "partial", None, True, True, True),
+    # Row 9: a verified proof over a stage-fallback artifact.  A stage-fallback
+    # scope means the classification did not finish, so this row carries none.
+    # The frozen timeout boundary spells the same row out as "proof 完整，但
+    # classification 未完成".
+    #
+    # A verified proof beside a classification that *did* finish is row 8, which
+    # is complete rather than partial.  The frozen table lists no partial row for
+    # that shape, so one must be added deliberately when narratives land: the
+    # boundary table's "semantic fact without a dedicated recognizer" case forces
+    # status=partial with a narrative of structural_only, and at proof depth that
+    # combination has no row yet.  Widening this row to "either" would hide that
+    # gap instead of recording it.
+    (("proof",), "proof", "partial", False, True, True, True),
     # Row 8: a verified proof over a diagnostic artifact.
     (("proof",), "proof", "complete", True, True, True, False),
 )
@@ -354,8 +365,14 @@ STAGE_FALLBACK_SCOPES = ("initialization_stage_fallback", "assumptions_stage_fal
 _SCOPES = tuple(CLASSIFICATION_SCOPES.values()) + STAGE_FALLBACK_SCOPES
 
 
-def _require_indices(values: Any, label: str) -> Tuple[int, ...]:
-    """Reject anything that is not a tuple of non-negative integers.
+def index_value(value: Any, label: str) -> int:
+    """Canonicalize one recorded index, or refuse it.
+
+    This is the single answer to "is this an index", shared by the public
+    constructors and by the orchestration that reads the relation builder's
+    metadata.  When each side decides for itself, the two disagree on inputs
+    neither side's tests cover, and the published ``frames``/``steps`` can end
+    up contradicting the ``refs`` mapping they were derived from.
 
     ``bool`` is an ``int`` subclass in Python but is not an index, and letting
     it through would publish ``true`` where the JSON contract promises a
@@ -363,12 +380,66 @@ def _require_indices(values: Any, label: str) -> Tuple[int, ...]:
     because ``1.0`` is valid JSON for an integer and a validator judging by
     numeric value cannot tell it apart from ``1``.
 
+    :param value: Candidate index.
+    :type value: object
+    :param label: Field or metadata key name used in the error message.
+    :type label: str
+    :return: The canonical non-negative integer index.
+    :rtype: int
+    :raises ValueError: If the value is not a non-negative integer index.
+
+    Example::
+
+        >>> index_value(2, "frames")
+        2
+        >>> index_value(1.0, "frames")
+        1
+        >>> index_value(True, "frames")
+        Traceback (most recent call last):
+            ...
+        ValueError: frames must contain non-negative integers, got True.
+    """
+    if isinstance(value, bool):
+        raise ValueError(
+            "%s must contain non-negative integers, got %r." % (label, value)
+        )
+    if isinstance(value, float):
+        # A JSON document may write a whole number as 1.0, and a validator
+        # judging "integer" by value accepts it.  Canonicalizing here keeps the
+        # published tuple integral without rejecting valid JSON.
+        if not math.isfinite(value) or not value.is_integer():
+            raise ValueError(
+                "%s must contain non-negative integers, got %r." % (label, value)
+            )
+        value = int(value)
+    if not isinstance(value, int) or value < 0:
+        raise ValueError(
+            "%s must contain non-negative integers, got %r." % (label, value)
+        )
+    return value
+
+
+def _require_indices(values: Any, label: str) -> Tuple[int, ...]:
+    """Reject anything that is not a sequence of non-negative integer indices.
+
+    The container is checked too.  Iterating an arbitrary object silently
+    accepts values the published schema refuses: ``""`` and ``{}`` both iterate
+    empty, so without this check the constructor would accept two payloads that
+    are not arrays at all.
+
+    The caller's order is preserved.  Only the reader in
+    :mod:`pyfcstm.bmc.infeasibility` sorts, because it merges the singular and
+    plural metadata keys and needs a deterministic merge; the frozen field is
+    just ``Tuple[int, ...]``, so reordering an explicitly supplied sequence
+    would be this function inventing a rule the contract does not state.
+
     :param values: Candidate index sequence.
     :type values: object
     :param label: Field name used in the error message.
     :type label: str
-    :return: The validated indices as a tuple.
+    :return: The validated indices, in the order given.
     :rtype: Tuple[int, ...]
+    :raises TypeError: If ``values`` is not a list or tuple.
     :raises ValueError: If any entry is not a non-negative integer.
 
     Example::
@@ -377,28 +448,16 @@ def _require_indices(values: Any, label: str) -> Tuple[int, ...]:
         (1, 0)
         >>> _require_indices([1.0], "frames")
         (1,)
+        >>> _require_indices("", "frames")
+        Traceback (most recent call last):
+            ...
+        TypeError: frames must be a list or tuple of indices, got ''.
     """
-    normalized = []
-    for entry in values:
-        if isinstance(entry, bool):
-            raise ValueError(
-                "%s must contain non-negative integers, got %r." % (label, entry)
-            )
-        if isinstance(entry, float):
-            # A JSON document may write a whole number as 1.0, and a validator
-            # judging "integer" by value accepts it.  Canonicalizing here keeps
-            # the published tuple integral without rejecting valid JSON.
-            if not math.isfinite(entry) or not entry.is_integer():
-                raise ValueError(
-                    "%s must contain non-negative integers, got %r." % (label, entry)
-                )
-            entry = int(entry)
-        if not isinstance(entry, int) or entry < 0:
-            raise ValueError(
-                "%s must contain non-negative integers, got %r." % (label, entry)
-            )
-        normalized.append(entry)
-    return tuple(normalized)
+    if not isinstance(values, (list, tuple)):
+        raise TypeError(
+            "%s must be a list or tuple of indices, got %r." % (label, values)
+        )
+    return tuple(index_value(entry, label) for entry in values)
 
 
 def _require_json_mapping(value: Any, label: str) -> Dict[str, Any]:
@@ -425,6 +484,22 @@ def _require_json_mapping(value: Any, label: str) -> Dict[str, Any]:
     """
 
     def _check(entry: Any, where: str) -> None:
+        """Reject one value that could not survive a JSON round trip.
+
+        The walk is recursive because a nested mapping or list is just as
+        published as the top-level one: a non-string key or a non-finite number
+        two levels down breaks interchange exactly the same way.
+
+        :param entry: Candidate value somewhere inside the mapping.
+        :type entry: object
+        :param where: Dotted path used in the error message.
+        :type where: str
+        :return: ``None``.
+        :rtype: None
+        :raises TypeError: If a mapping key is not a string, or the value is of
+            a type with no JSON counterpart.
+        :raises ValueError: If a float is not finite.
+        """
         if entry is None or isinstance(entry, (str, bool, int)):
             return
         if isinstance(entry, float):

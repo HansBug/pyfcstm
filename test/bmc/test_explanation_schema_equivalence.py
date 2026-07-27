@@ -85,10 +85,12 @@ _INEXPRESSIBLE = {
         "compare len(refinement_checks deletions) against len(core.items); the "
         "constructor requires one recorded deletion per member"
     ),
-    "non-string refs key": (
+    "non-string object key in any published mapping": (
         "JSON object keys are always strings, so a Python mapping keyed by 1 "
-        'serializes to "1" and no validator can see the difference; the '
-        "Python side rejects it so the key never changes shape silently"
+        'serializes to "1" and no validator can see the difference. This covers '
+        "every published mapping -- refs, normalized_fact and their nested "
+        "mappings -- because the same argument applies to all of them; the "
+        "Python side rejects them so a key never changes shape silently"
     ),
 }
 
@@ -461,8 +463,30 @@ def _structural_corpus():
         _payload(members=[_member("g0", "initialization", refs={"frame": 0})]),
     )
     yield (
-        "non-string refs key",
+        "non-string object key in any published mapping",
         _payload(members=[_member("g0", "initialization", refs={1: "a"})]),
+    )
+    # The same argument applies to every published mapping, so vary the other
+    # ones too.  Pinning only refs let normalized_fact drift with the exact
+    # content assertion still green.
+    yield (
+        "non-string object key in any published mapping",
+        _payload(members=[_member("g0", "initialization", refs={"nested": {2: "b"}})]),
+    )
+    yield (
+        "non-string object key in any published mapping",
+        _payload(
+            members=[
+                _member(
+                    "g0",
+                    "initialization",
+                    normalized_fact={
+                        "kind": "structural_constraint",
+                        "nested": {3: "c"},
+                    },
+                )
+            ]
+        ),
     )
     yield (
         "refs given as an array",
@@ -793,7 +817,9 @@ def test_the_constructor_still_enforces_every_named_asymmetry() -> None:
             ),
         )
 
-    # non-string refs key
+    # non-string object key in any published mapping.  One entry covers every
+    # published mapping, so every one of them is pinned here; a rule checked on
+    # refs alone would leave normalized_fact free to drift.
     with pytest.raises(TypeError, match="keys must be strings"):
         BmcConstraintRef(
             "g0",
@@ -803,10 +829,36 @@ def test_the_constructor_still_enforces_every_named_asymmetry() -> None:
             "s",
             refs={1: "a"},
         )
+    with pytest.raises(TypeError, match="keys must be strings"):
+        BmcConstraintRef(
+            "g0",
+            "assumptions",
+            "assumption.frame",
+            _SourceRef("generated", None, None),
+            "s",
+            refs={"nested": {2: "b"}},
+        )
+    for bad_fact in ({3: "c"}, {"kind": "structural_constraint", "nested": {4: "d"}}):
+        with pytest.raises(TypeError, match="keys must be strings"):
+            BmcCoreItem(
+                BmcConstraintRef(
+                    "g0",
+                    "assumptions",
+                    "assumption.frame",
+                    _SourceRef("generated", None, None),
+                    "s",
+                ),
+                "assumption",
+                None,
+                False,
+                bad_fact,
+                "frame assumption",
+                False,
+            )
 
     assert set(_INEXPRESSIBLE) == {
         "aggregate reason drift",
         "duplicate stable_id with differing content",
-        "non-string refs key",
+        "non-string object key in any published mapping",
         "proven minimality without one deletion per member",
     }

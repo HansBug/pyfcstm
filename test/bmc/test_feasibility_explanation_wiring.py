@@ -619,6 +619,11 @@ def test_an_optional_explanation_never_destroys_a_usable_verdict(monkeypatch) ->
     # below covers the same branch after the budget has been spent.
     assert all(check.status for check in degraded.refinement_checks)
     assert degraded.refinement_checks == ()
+    # The stage did spend wall-clock time before failing, and the frozen
+    # contract defines elapsed_ms as that total.  Without this assertion the
+    # field could go back to None with every other check here still green.
+    assert degraded.explanation.elapsed_ms is not None
+    assert degraded.explanation.elapsed_ms >= 0.0
 
 
 @pytest.mark.parametrize("status", ["partial", "unknown", "timeout"])

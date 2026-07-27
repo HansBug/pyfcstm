@@ -44,6 +44,7 @@ import z3
 
 from .errors import BmcBuildError
 from .explanation import (
+    index_value,
     CLASSIFICATION_SCOPES,
     SCOPE_AGGREGATES,
     category_role,
@@ -769,32 +770,27 @@ def _indices(refs: Mapping[str, object], key: str) -> Tuple[int, ...]:
         (0, 1)
     """
 
-    def _index_of(value: object) -> Optional[int]:
-        """Canonicalize one recorded value, or report that it is not an index."""
-        if isinstance(value, bool):
-            return None
-        if isinstance(value, int):
-            return value if value >= 0 else None
-        # A whole-valued float names the same index, and the public constructor
-        # already canonicalizes it.  Dropping it here instead would publish a
-        # member whose frames silently disagree with the recorded metadata,
-        # which is the one outcome neither reading of the contract wants.
-        if isinstance(value, float) and value.is_integer() and value >= 0:
-            return int(value)
-        return None
-
     found = []
     for name in (key, "%ss" % key):
-        value = refs.get(name)
-        index = _index_of(value)
-        if index is not None:
-            found.append(index)
-        elif isinstance(value, (list, tuple)):
-            found.extend(
-                index
-                for index in (_index_of(item) for item in value)
-                if index is not None
-            )
+        if name not in refs:
+            continue
+        value = refs[name]
+        # The singular spelling records one index directly; the plural one
+        # records a sequence.  Everything past this point is the same rule the
+        # public constructor applies, so both doors publish the same tuple.
+        entries = value if isinstance(value, (list, tuple)) else (value,)
+        for entry in entries:
+            try:
+                found.append(index_value(entry, name))
+            except ValueError as err:
+                # index_value refuses anything that is not a non-negative
+                # integer index.  Filtering it out instead would publish
+                # frames/steps that contradict the refs mapping beside them,
+                # with nothing recorded anywhere; the frozen boundary asks for a
+                # fail-closed internal mismatch on inconsistent provenance.
+                raise BmcBuildError(
+                    "tracked group metadata %r is not an index: %s" % (name, err)
+                ) from err
     return tuple(sorted(set(found)))
 
 

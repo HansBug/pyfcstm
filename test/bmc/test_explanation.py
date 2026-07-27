@@ -251,10 +251,15 @@ _AUTHORED_DELIVERY_ROWS = frozenset(
         ("proof", "formal", "partial", True, True, True),
         # Row 5: a diagnostic subset-minimal core with complete semantic facts.
         ("formal", "formal", "complete", True, True, False),
-        # Rows 8 and 9: a verified proof DAG.
+        # Row 8: a verified proof DAG over a diagnostic artifact.
         ("proof", "proof", "complete", True, True, False),
+        # Row 9: a verified proof DAG over a stage-fallback artifact.  A
+        # stage-fallback scope means the classification did not finish, which
+        # the frozen boundary states as "proof 完整，但 classification 未完成",
+        # so this row carries no classification.  A verified proof beside a
+        # finished classification is row 8, which is complete rather than
+        # partial; the table lists no partial row for that shape.
         ("proof", "proof", "partial", False, True, True),
-        ("proof", "proof", "partial", True, True, True),
     ]
 )
 
@@ -320,6 +325,53 @@ def test_delivery_matrix_accepts_exactly_the_authored_rows(
     else:
         with pytest.raises(ValueError):
             BmcInfeasibilityExplanation(**kwargs)
+
+
+@pytest.mark.parametrize("values", ["", "12", {}, {"a": 1}, 1, None, {0, 1}])
+def test_index_fields_require_an_actual_array(values) -> None:
+    """A non-array container is refused instead of being iterated.
+
+    Iterating whatever is handed in silently accepts values the published schema
+    refuses: ``""`` and ``{}`` both iterate empty, so the constructor would
+    publish ``[]`` for two payloads that are not arrays at all, while the schema
+    rejects them.  A ``set`` is not JSON either, and its iteration order is not
+    the caller's.
+    """
+    with pytest.raises(TypeError, match="must be a list or tuple of indices"):
+        BmcConstraintRef(
+            "initial.target",
+            "initialization",
+            "initial.target",
+            _GENERATED,
+            "initial target state",
+            frames=values,
+        )
+
+
+def test_the_implementation_matrix_equals_the_authored_table() -> None:
+    """Compare the two transcriptions directly, including unreachable rows.
+
+    ``complete`` needs a narrative and ``achieved_mode='proof'`` needs a proof
+    DAG, so those rows cannot be constructed at this stage and no behavioural
+    test can distinguish them.  Widening one of them would therefore go
+    unnoticed until a later stage builds the missing slot and inherits a row the
+    frozen table never listed.  Comparing the sets pins them now.
+    """
+    from pyfcstm.bmc.explanation import _DELIVERY_SIGNATURES
+
+    # The implementation carries proof and narrative as separate slots; this
+    # table folds narrative into 'status == complete', so drop the proof slot to
+    # compare like with like.
+    implemented = {
+        (requested, achieved, status, has_classification, has_core, has_reason)
+        for requested, achieved, status, has_classification, has_core, _, has_reason in (
+            _DELIVERY_SIGNATURES
+        )
+    }
+
+    assert implemented == set(_AUTHORED_DELIVERY_ROWS)
+    # Folding away the proof slot must not have merged two distinct rows.
+    assert len(_DELIVERY_SIGNATURES) == len(_AUTHORED_DELIVERY_ROWS)
 
 
 def test_every_reachable_authored_row_has_a_positive_case() -> None:

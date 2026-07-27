@@ -540,25 +540,50 @@ def test_an_unknown_category_has_no_invented_reading() -> None:
     "refs, expected",
     [
         ({}, ()),
-        ({"frames": None}, ()),
         ({"frames": 3}, (3,)),
-        ({"frames": True}, ()),
         ({"frames": [2, 0, 2]}, (0, 2)),
-        ({"frames": (1, "x")}, (1,)),
-        ({"frames": "nope"}, ()),
         # A whole-valued float names an index; the public constructor accepts
         # one, so this reader must not answer differently.
         ({"frames": 1.0}, (1,)),
         ({"frames": [2.0, 0]}, (0, 2)),
-        # Still not indices: a fraction names no frame and a negative one names
-        # no position at all.
-        ({"frames": 1.5}, ()),
-        ({"frames": -1.0}, ()),
     ],
 )
 def test_index_metadata_is_normalized_deterministically(refs, expected) -> None:
     """Frame and step indices are sorted, de-duplicated and type-checked."""
     assert _indices(refs, "frames") == expected
+
+
+@pytest.mark.parametrize(
+    "refs",
+    [
+        {"frames": None},
+        {"frames": True},
+        {"frames": (1, "x")},
+        {"frames": "nope"},
+        {"frames": 1.5},
+        {"frames": -1.0},
+        {"frames": [1, True]},
+        {"frames": {"a": 1}},
+        {"frames": [float("nan")]},
+    ],
+)
+def test_unusable_index_metadata_fails_closed(refs) -> None:
+    """Metadata that is present but not an index is a mismatch, not a filter.
+
+    Dropping the bad entry would publish ``frames``/``steps`` that contradict
+    the ``refs`` mapping beside them, with the disagreement recorded nowhere.
+    The frozen boundary asks for a fail-closed internal mismatch on inconsistent
+    label/provenance mapping, and the public constructor already refuses the
+    same values, so filtering here would also make the two doors disagree.
+    """
+    with pytest.raises(BmcBuildError, match="is not an index"):
+        _indices(refs, "frames")
+
+
+def test_absent_index_metadata_is_not_a_mismatch() -> None:
+    """A group with no frame constraint records no frame key at all."""
+    assert _indices({"kind": "state"}, "frames") == ()
+    assert _indices({}, "steps") == ()
 
 
 def test_mapped_and_direct_indices_agree_on_whole_valued_floats() -> None:

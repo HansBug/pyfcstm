@@ -471,6 +471,20 @@ async function evaluate(cdp, expression) {
     // assertion is that the control is present and leaves the source link
     // intact; a renamed or removed button now fails here instead of silently
     // skipping, which is how the mode buttons used to behave.
+    // Ctrl/Cmd+click must reveal the element under the cursor. Resolving the
+    // clicked line back to an element instead picked whichever one in any
+    // source document had the smallest range covering it, so in a model built
+    // from several files it selected something else entirely while the source
+    // panel still highlighted the original line.
+    const revealTarget = await evaluate(cdp, `new Promise(resolve => setTimeout(() => {
+      const target = document.querySelector('[data-fcstm-kind="state"][data-fcstm-id]');
+      const wanted = target?.getAttribute('data-fcstm-id') || '';
+      target?.dispatchEvent(new MouseEvent('click', {bubbles: true, button: 0, ctrlKey: true}));
+      setTimeout(() => resolve({
+        wanted,
+        selected: document.querySelector('[data-fcstm-id].fcstm-selected')?.getAttribute('data-fcstm-id') || '',
+      }), 320);
+    }, 200))`);
     const revealSource = await evaluate(cdp, `new Promise(resolve => setTimeout(() => {
       const button = [...document.querySelectorAll('.fcstm-details button')].find(item => item.textContent.includes('Reveal source'));
       if (!button) { resolve({buttonFound: false, activeSourceLines: document.querySelectorAll('.fcstm-source-line--active').length}); return; }
@@ -815,6 +829,7 @@ async function evaluate(cdp, expression) {
       selection.before.selected === 0 && selection.selected >= 1 &&
       selection.before.activeSourceLines === 0 && selection.activeSourceLines >= 1 &&
       revealSource.buttonFound === true && revealSource.activeSourceLines >= 1 &&
+      revealTarget.wanted !== '' && revealTarget.selected === revealTarget.wanted &&
       hover.before.activeSourceLines === 0 && hover.activeSourceLines >= 1 &&
       sourceHover.lineFound === true &&
       sourceHover.before.sourceHover === 0 && sourceHover.diagramHover >= 1 &&
@@ -883,7 +898,7 @@ async function evaluate(cdp, expression) {
     );
     const modeButtonsFound = states.buttonFound === true && compare.buttonFound === true
       && fcstmOnly.buttonFound === true && backToCompare.buttonFound === true;
-    const report = {initial, sourceLayout, sourceLayoutChecks, selectMenu, selectMenuChecks, sourceUnavailableChecks, sourceChecks, fontChecks, transitionChecks, pdfChecks, pngChecks, svgChecks, diagramOnly: states, fcstmOnly, compare, backToCompare, importedSource, selection, revealSource, hover, sourceHover, transitionHover, sourceSelection, sourceCycle, zoom, pdf, collapse, layout, minimumPanelHeight, comparisonTooShort, drawerChecks, modeButtonsFound, exportError, expectedPdfPage, oversizedUiIcons, externalRequests: network, cspViolations, consoleErrors: consoleErrors.length, consoleDetails};
+    const report = {initial, sourceLayout, sourceLayoutChecks, selectMenu, selectMenuChecks, sourceUnavailableChecks, sourceChecks, fontChecks, revealTarget, transitionChecks, pdfChecks, pngChecks, svgChecks, diagramOnly: states, fcstmOnly, compare, backToCompare, importedSource, selection, revealSource, hover, sourceHover, transitionHover, sourceSelection, sourceCycle, zoom, pdf, collapse, layout, minimumPanelHeight, comparisonTooShort, drawerChecks, modeButtonsFound, exportError, expectedPdfPage, oversizedUiIcons, externalRequests: network, cspViolations, consoleErrors: consoleErrors.length, consoleDetails};
     console.log(JSON.stringify(report, null, 2));
     if (!initial.stage || initial.error || !modeButtonsFound ||
         states.diagramOnlySource || !states.diagramOnlyStage ||

@@ -31,7 +31,7 @@ const emit = defineEmits<{
     (e: 'select', sel: SelectionRef): void;
     (e: 'hover', sel: SelectionRef): void;
     (e: 'toggleCollapse', id: string): void;
-    (e: 'revealSource', range: TextRange): void;
+    (e: 'revealSource', range: TextRange, target: SelectionRef): void;
 }>();
 
 const viewportRef = ref<HTMLDivElement | null>(null);
@@ -387,7 +387,13 @@ function onClick(ev: MouseEvent) {
         return;
     }
     if (action.type === 'revealSource' && range) {
-        emit('revealSource', range);
+        // The element is known here. Letting the host resolve the range back to
+        // an element picks whichever one in *any* source document has the
+        // smallest range covering that line, which selects the wrong thing in a
+        // model assembled from several files.
+        const id = target?.getAttribute('data-fcstm-id') || '';
+        const isTransition = kind === 'transition' || kind === 'transition-label';
+        emit('revealSource', range, id ? {kind: isTransition ? 'transition' : 'state', id} : null);
         return;
     }
     if (action.type === 'select' && target) {

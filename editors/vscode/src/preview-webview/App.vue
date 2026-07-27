@@ -407,12 +407,18 @@ function toggleCollapse(id: string) {
     vscode.postMessage({type: 'setCollapsed', collapsed});
 }
 
-function revealSource(range: {start: {line: number; character: number}; end: {line: number; character: number}}) {
+function revealSource(range: TextRange, target?: SelectionRef) {
     if (state.value.standalone) {
-        // The standalone host has no VSCode editor to reveal. Reusing the
-        // same range-to-selection path keeps the action useful: the source
-        // panel switches to the owning document and scrolls to the range.
-        applyActiveRange(range);
+        // The standalone host has no VSCode editor to reveal, so the action
+        // becomes "show me this in the source panel". The caller says which
+        // element it means; only a cue that arrives without one has to be
+        // resolved from the range, and that lookup cannot tell two documents
+        // apart when both have an element on the same line.
+        if (target) {
+            selection.value = target;
+        } else {
+            applyActiveRange(range);
+        }
         return;
     }
     vscode.postMessage({type: 'revealSource', range});

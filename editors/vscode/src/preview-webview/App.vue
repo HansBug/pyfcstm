@@ -91,14 +91,18 @@ const drawerCollapsed = ref<boolean>(
     readStorage(STORAGE_KEY_DRAWER_COLLAPSED) === '1'
     || (typeof window !== 'undefined' && window.innerWidth <= 760 && window.innerHeight < 900),
 );
-function readInitialDrawerHeight(): number {
+// Until the drawer is resized by hand it sizes to its own content, so the
+// space Details does not need stays with the diagram instead of showing as a
+// blank band above the bottom panels. A stored height means the user chose one.
+function readInitialDrawerHeight(): number | null {
     const raw = readStorage(STORAGE_KEY_DRAWER_HEIGHT);
-    if (!raw) return DRAWER_DEFAULT_HEIGHT;
+    if (!raw) return null;
     const n = Number(raw);
-    if (!Number.isFinite(n)) return DRAWER_DEFAULT_HEIGHT;
+    if (!Number.isFinite(n)) return null;
     return Math.max(DRAWER_MIN_HEIGHT, Math.round(n));
 }
-const drawerHeight = ref<number>(readInitialDrawerHeight());
+const drawerHeight = ref<number | null>(readInitialDrawerHeight());
+const drawerElement = ref<HTMLElement | null>(null);
 
 let drawerDragStartY = 0;
 let drawerDragStartHeight = 0;
@@ -117,13 +121,15 @@ function onDrawerHandleMouseUp() {
     window.removeEventListener('mousemove', onDrawerHandleMouseMove);
     window.removeEventListener('mouseup', onDrawerHandleMouseUp);
     document.body.classList.remove('fcstm-drawer-resizing');
-    writeStorage(STORAGE_KEY_DRAWER_HEIGHT, String(drawerHeight.value));
+    if (drawerHeight.value !== null) writeStorage(STORAGE_KEY_DRAWER_HEIGHT, String(drawerHeight.value));
 }
 function onDrawerHandleMouseDown(ev: MouseEvent) {
     if (drawerCollapsed.value) return;
     ev.preventDefault();
     drawerDragStartY = ev.clientY;
-    drawerDragStartHeight = drawerHeight.value;
+    // Content-sized until now, so the drag starts from the painted height.
+    drawerDragStartHeight = drawerHeight.value
+        ?? Math.round(drawerElement.value?.getBoundingClientRect().height ?? DRAWER_DEFAULT_HEIGHT);
     document.body.classList.add('fcstm-drawer-resizing');
     window.addEventListener('mousemove', onDrawerHandleMouseMove);
     window.addEventListener('mouseup', onDrawerHandleMouseUp);
@@ -480,9 +486,10 @@ const naiveTheme = computed(() => effectiveMode.value === 'dark' ? darkTheme : n
                     </div>
                 </div>
                 <div
+                    ref="drawerElement"
                     class="fcstm-bottom-drawer"
                     :class="{'fcstm-bottom-drawer--collapsed': drawerCollapsed}"
-                    :style="drawerCollapsed ? undefined : {height: drawerHeight + 'px'}"
+                    :style="drawerCollapsed || drawerHeight === null ? undefined : {height: drawerHeight + 'px'}"
                 >
                     <div
                         class="fcstm-bottom-drawer__handle"

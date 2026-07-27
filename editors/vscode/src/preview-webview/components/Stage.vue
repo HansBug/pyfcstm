@@ -185,7 +185,12 @@ async function relayout() {
         await nextTick();
         applySelection();
         const initialView = props.state.standaloneViewState;
-        if (props.state.standalone && initialView) {
+        // A neutral view state means the caller expressed no preference, so the
+        // document should open showing the whole diagram. Applying 100% / no pan
+        // literally clips every graph taller than the stage on first paint.
+        const viewStateIsNeutral = !initialView
+            || (initialView.zoom === 1 && initialView.panX === 0 && initialView.panY === 0);
+        if (props.state.standalone && initialView && !viewStateIsNeutral) {
             setTransform(initialView.panX, initialView.panY, initialView.zoom);
         } else {
             fitToView();

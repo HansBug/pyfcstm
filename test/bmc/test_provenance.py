@@ -1728,3 +1728,43 @@ def test_tracked_constraint_stable_ids_must_be_printable_ascii(stable_id) -> Non
             (True,),
             BmcSourceRef("generated", None, None),
         )
+
+
+def test_tracked_refs_get_the_same_validation_as_published_metadata() -> None:
+    """The builder's own mapping is not a third door with looser rules.
+
+    A shallow copy here still passes every published check downstream, because
+    ``build_core_item`` revalidates at the public boundary -- which is precisely
+    why no published-output test can tell the two apart.  What differs is where
+    the failure surfaces: unvalidated builder metadata carries a caller's nested
+    aliases and values that only fail once something serializes them.
+    """
+    from types import MappingProxyType
+
+    from pyfcstm.bmc.provenance import BmcSourceRef, BmcTrackedConstraint
+
+    source = BmcSourceRef("generated", None, None)
+
+    def tracked(refs):
+        return BmcTrackedConstraint(
+            "assumption.0000.frame.0000",
+            "assumptions",
+            "assumption.frame",
+            (z3.BoolVal(True),),
+            source,
+            refs=refs,
+        )
+
+    with pytest.raises(TypeError, match="not JSON-compatible"):
+        tracked({"bad": object()})
+    with pytest.raises(TypeError, match="keys must be strings"):
+        tracked({"nested": {1: "a"}})
+    with pytest.raises(ValueError, match="finite"):
+        tracked({"nested": {"x": float("nan")}})
+
+    # A nested mapping the caller keeps writing to must not reach the group.
+    alias = {}
+    group = tracked({"nested": alias})
+    alias["late"] = object()
+    assert "late" not in group.refs["nested"]
+    assert isinstance(group.refs["nested"], MappingProxyType)

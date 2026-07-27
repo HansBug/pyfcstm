@@ -804,6 +804,40 @@ def _indices(refs: Mapping[str, object], key: str) -> Tuple[int, ...]:
     return tuple(sorted(set(found)))
 
 
+#: Metadata keys whose values the reader interprets as indices.
+_INDEX_REF_KEYS = ("frame", "frames", "step", "steps")
+
+
+def _canonical_refs_value(key: str, value: object) -> object:
+    """Return one metadata value in the form it is published under.
+
+    Only the index keys are touched, and only because :func:`_indices` has
+    already asserted they hold indices: a value that is not one fails closed
+    before this point.  Every other key is free-form metadata and is republished
+    untouched, since a whole-valued float elsewhere may well mean a measurement
+    rather than a position.
+
+    :param key: Metadata key the value was recorded under.
+    :type key: str
+    :param value: Recorded metadata value.
+    :type value: object
+    :return: The value as it should appear in the published mapping.
+    :rtype: object
+
+    Example::
+
+        >>> _canonical_refs_value("frame", 1.0)
+        1
+        >>> _canonical_refs_value("threshold", 1.0)
+        1.0
+    """
+    if key not in _INDEX_REF_KEYS:
+        return value
+    if isinstance(value, (list, tuple)):
+        return tuple(index_value(item, key) for item in value)
+    return index_value(value, key)
+
+
 def build_core_item(
     group: BmcTrackedConstraint,
     registry: Optional[SourceDocumentRegistry] = None,
@@ -840,6 +874,13 @@ def build_core_item(
     frames = _indices(group.refs, "frame")
     steps = _indices(group.refs, "step")
     summary = "%s group %s" % (group.category, group.stable_id)
+    # The index keys are republished in the same canonical form the dedicated
+    # fields use.  Reading 1.0 as frame 1 and then echoing 1.0 back under 'frame'
+    # would have two published fields disagree about one fact's JSON type, and
+    # refs is the mapping machine consumers are told to read.
+    published_refs = {
+        key: _canonical_refs_value(key, group.refs[key]) for key in sorted(group.refs)
+    }
     reference = BmcConstraintRef(
         stable_id=group.stable_id,
         stage=group.stage,
@@ -848,7 +889,7 @@ def build_core_item(
         summary=summary,
         frames=frames,
         steps=steps,
-        refs={key: group.refs[key] for key in sorted(group.refs)},
+        refs=published_refs,
     )
     excerpt = None if registry is None else registry.excerpt(group.source_ref)
     truncated = excerpt is not None and len(excerpt) > MAX_SOURCE_EXCERPT_CHARS

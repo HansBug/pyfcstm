@@ -80,6 +80,17 @@ _INEXPRESSIBLE = {
         "cannot check that refinement_reason equals explanation.reason; the "
         "constructor enforces that equality on its own"
     ),
+    "non-finite number anywhere in a published mapping": (
+        "NaN and Infinity are not JSON numbers, but a Draft 2020-12 validator "
+        "walking Python objects sees float('nan') as a legal number, so it "
+        "cannot refuse one; the constructor rejects them at every nesting depth"
+    ),
+    "non-JSON value anywhere in a published mapping": (
+        "a value with no JSON counterpart, such as bytes or an arbitrary "
+        "object, has no representation for a validator to reject -- by the time "
+        "a payload reaches one it has already been parsed from JSON text; the "
+        "constructor rejects them at every nesting depth"
+    ),
     "proven minimality without one deletion per member": (
         "Draft 2020-12 can constrain each array on its own, but it cannot "
         "compare len(refinement_checks deletions) against len(core.items); the "
@@ -489,6 +500,33 @@ def _structural_corpus():
         ),
     )
     yield (
+        "non-finite number anywhere in a published mapping",
+        _payload(
+            members=[_member("g0", "initialization", refs={"n": {"x": float("nan")}})]
+        ),
+    )
+    yield (
+        "non-finite number anywhere in a published mapping",
+        _payload(
+            members=[
+                _member(
+                    "g0",
+                    "initialization",
+                    normalized_fact={
+                        "kind": "structural_constraint",
+                        "n": {"x": float("inf")},
+                    },
+                )
+            ]
+        ),
+    )
+    yield (
+        "non-JSON value anywhere in a published mapping",
+        _payload(
+            members=[_member("g0", "initialization", refs={"n": {"x": b"bytes"}})]
+        ),
+    )
+    yield (
         "refs given as an array",
         _payload(members=[_member("g0", "initialization", refs=[])]),
     )
@@ -817,6 +855,30 @@ def test_the_constructor_still_enforces_every_named_asymmetry() -> None:
             ),
         )
 
+    # non-finite number anywhere in a published mapping
+    for bad_refs in ({"x": float("nan")}, {"n": {"x": float("inf")}}):
+        with pytest.raises(ValueError, match="finite"):
+            BmcConstraintRef(
+                "g0",
+                "assumptions",
+                "assumption.frame",
+                _SourceRef("generated", None, None),
+                "s",
+                refs=bad_refs,
+            )
+
+    # non-JSON value anywhere in a published mapping
+    for bad_refs in ({"x": b"bytes"}, {"n": {"x": object()}}):
+        with pytest.raises(TypeError, match="not JSON-compatible"):
+            BmcConstraintRef(
+                "g0",
+                "assumptions",
+                "assumption.frame",
+                _SourceRef("generated", None, None),
+                "s",
+                refs=bad_refs,
+            )
+
     # non-string object key in any published mapping.  One entry covers every
     # published mapping, so every one of them is pinned here; a rule checked on
     # refs alone would leave normalized_fact free to drift.
@@ -860,5 +922,7 @@ def test_the_constructor_still_enforces_every_named_asymmetry() -> None:
         "aggregate reason drift",
         "duplicate stable_id with differing content",
         "non-string object key in any published mapping",
+        "non-finite number anywhere in a published mapping",
+        "non-JSON value anywhere in a published mapping",
         "proven minimality without one deletion per member",
     }

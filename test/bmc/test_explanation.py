@@ -330,6 +330,44 @@ def test_delivery_matrix_accepts_exactly_the_authored_rows(
             BmcInfeasibilityExplanation(**kwargs)
 
 
+def test_metadata_deeper_than_the_published_limit_is_named() -> None:
+    """A depth the serializer cannot handle is refused with the field named.
+
+    The recursive walk and the JSON encoder are both bounded by the interpreter
+    stack.  Without an explicit limit a legal but very deep mapping passes
+    validation and then dies during serialization with a bare ``RecursionError``
+    that names neither the field nor the object -- the exact failure mode this
+    boundary exists to prevent.
+    """
+    from pyfcstm.bmc.provenance import MAX_METADATA_DEPTH
+
+    def nest(depth):
+        payload = {"leaf": 1}
+        for _ in range(depth):
+            payload = {"n": payload}
+        return payload
+
+    accepted = BmcConstraintRef(
+        "g0",
+        "assumptions",
+        "assumption.frame",
+        _GENERATED,
+        "s",
+        refs=nest(MAX_METADATA_DEPTH - 2),
+    )
+    assert accepted.refs
+
+    with pytest.raises(ValueError, match="nests deeper than the published limit"):
+        BmcConstraintRef(
+            "g0",
+            "assumptions",
+            "assumption.frame",
+            _GENERATED,
+            "s",
+            refs=nest(MAX_METADATA_DEPTH + 5),
+        )
+
+
 def test_published_metadata_is_detached_from_the_caller() -> None:
     """A frozen object must not change when the caller's own dict changes.
 

@@ -6,6 +6,12 @@ pyfcstm.bmc.provenance
 .. automodule:: pyfcstm.bmc.provenance
 
 
+MAX\_METADATA\_DEPTH
+-----------------------------------------------------
+
+.. autodata:: MAX_METADATA_DEPTH
+
+
 \_\_all\_\_
 -----------------------------------------------------
 
@@ -31,3 +37,9 @@ SourceDocumentRegistry
 
 .. autoclass:: SourceDocumentRegistry
     :members: __post_init__,display_path,document,reference,excerpt,model_reference,query_reference,documents,display_root,query_documents
+
+
+json\_canonical
+-----------------------------------------------------
+
+.. autofunction:: json_canonical

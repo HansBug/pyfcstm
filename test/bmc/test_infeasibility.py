@@ -580,6 +580,56 @@ def test_unusable_index_metadata_fails_closed(refs) -> None:
         _indices(refs, "frames")
 
 
+def test_index_keys_are_published_the_same_way_in_both_fields() -> None:
+    """``frames`` and ``refs`` must not disagree about one fact's JSON type.
+
+    The dedicated field canonicalizes a whole-valued float to an integer, so
+    echoing the original float back under the same key would publish two
+    different types for one position.  ``refs`` is the mapping machine consumers
+    are told to read, so the divergence would be visible exactly there.  Keys
+    that are not indices stay untouched: a whole-valued float elsewhere may well
+    be a measurement.
+    """
+    group = BmcTrackedConstraint(
+        "assumption.0000.frame.0000",
+        "assumptions",
+        "assumption.frame",
+        (True,),
+        BmcSourceRef("generated", None, None),
+        refs={"frame": 1.0, "step": 2.0, "kind": "state", "threshold": 2.5},
+    )
+
+    canonical = build_core_item(group).constraint.to_canonical()
+
+    assert canonical["frames"] == [1]
+    assert canonical["steps"] == [2]
+    assert canonical["refs"]["frame"] == 1
+    assert canonical["refs"]["step"] == 2
+    assert type(canonical["refs"]["frame"]) is type(canonical["frames"][0])
+    # Free-form metadata is republished as recorded.
+    assert canonical["refs"]["threshold"] == 2.5
+    assert canonical["refs"]["kind"] == "state"
+
+
+def test_plural_index_keys_are_canonicalized_element_by_element() -> None:
+    """A recorded sequence of indices is canonicalized the same way."""
+    group = BmcTrackedConstraint(
+        "assumption.0000.frame.0000",
+        "assumptions",
+        "assumption.frame",
+        (True,),
+        BmcSourceRef("generated", None, None),
+        refs={"frames": [1.0, 0], "steps": (2.0,)},
+    )
+
+    canonical = build_core_item(group).constraint.to_canonical()
+
+    assert canonical["frames"] == [0, 1]
+    assert canonical["refs"]["frames"] == [1, 0]
+    assert canonical["refs"]["steps"] == [2]
+    assert [type(value) for value in canonical["refs"]["frames"]] == [int, int]
+
+
 def test_only_the_singular_metadata_key_unwraps_a_bare_index() -> None:
     """The plural key follows the same container rule as the public field.
 

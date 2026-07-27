@@ -51,7 +51,11 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any, Dict, Mapping, Optional, Tuple
 
-from .provenance import BmcSourceRef
+from .provenance import (
+    BmcSourceRef,
+    _require_json_mapping,
+    json_canonical,
+)
 
 try:
     from typing import Literal
@@ -472,114 +476,6 @@ def _require_indices(values: Any, label: str) -> Tuple[int, ...]:
             "%s must be a list or tuple of indices, got %r." % (label, values)
         )
     return tuple(index_value(entry, label) for entry in values)
-
-
-def _require_json_mapping(value: Any, label: str) -> Dict[str, Any]:
-    """Reject metadata that could not survive a round trip through JSON.
-
-    These mappings are free-form by design, which is exactly why they need a
-    boundary: an unserializable value placed here would not fail until the
-    whole result is dumped, and the error would name neither the field nor the
-    object it came from.
-
-    :param value: Candidate mapping.
-    :type value: object
-    :param label: Field name used in the error message.
-    :type label: str
-    :return: The validated mapping as a plain dict.
-    :rtype: Dict[str, object]
-    :raises TypeError: If a key is not a string, or a value is outside the
-        JSON data model.
-
-    Example::
-
-        >>> _require_json_mapping({"frame": 0}, "refs")
-        {'frame': 0}
-    """
-
-    def _normalize(entry: Any, where: str) -> Any:
-        """Return one value in its canonical, detached, immutable form.
-
-        The walk both validates and rebuilds.  Checking alone is not enough: a
-        nested mapping the caller still holds a reference to can be written to
-        after this frozen object is built, so the value that finally reaches
-        JSON is not the one that was validated.  A nested mapping that is not a
-        ``dict`` has the same problem in reverse -- it passes a ``Mapping``
-        check and then fails to serialize.
-
-        Sequences become tuples and mappings become read-only views, so nothing
-        published here can be reached through the caller's own reference.
-
-        :param entry: Candidate value somewhere inside the mapping.
-        :type entry: object
-        :param where: Dotted path used in the error message.
-        :type where: str
-        :return: The canonical form of ``entry``.
-        :rtype: object
-        :raises TypeError: If a mapping key is not a string, or the value is of
-            a type with no JSON counterpart.
-        :raises ValueError: If a float is not finite.
-        """
-        if entry is None or isinstance(entry, (str, bool, int)):
-            return entry
-        if isinstance(entry, float):
-            # NaN and Infinity are not JSON numbers.  json.dumps emits them by
-            # default and refuses them under allow_nan=False, so either way the
-            # payload stops being interchangeable.
-            if not math.isfinite(entry):
-                raise ValueError("%s must be a finite number, got %r." % (where, entry))
-            return entry
-        if isinstance(entry, (list, tuple)):
-            return tuple(
-                _normalize(item, "%s[%d]" % (where, index))
-                for index, item in enumerate(entry)
-            )
-        if isinstance(entry, Mapping):
-            normalized = {}
-            for key, item in entry.items():
-                if not isinstance(key, str):
-                    raise TypeError("%s keys must be strings, got %r." % (where, key))
-                normalized[key] = _normalize(item, "%s[%r]" % (where, key))
-            return MappingProxyType(normalized)
-        raise TypeError("%s is not JSON-compatible, got %r." % (where, entry))
-
-    if not isinstance(value, Mapping):
-        # A sequence would be silently normalized into an empty mapping by
-        # dict(), which loses the caller's data and disagrees with the JSON
-        # contract that names this field an object.
-        raise TypeError("%s must be a mapping, got %r." % (label, value))
-    # The top level stays a plain dict because the caller wraps it; every level
-    # below it is already detached and read-only.
-    return {
-        key: value_
-        for key, value_ in dict(_normalize(value, label)).items()  # type: ignore[arg-type]
-    }
-
-
-def json_canonical(value: Any) -> Any:
-    """Convert a normalized metadata graph back to plain JSON containers.
-
-    :func:`_require_json_mapping` stores nested mappings as read-only views and
-    nested sequences as tuples so that a published value cannot be mutated
-    through the caller's reference.  Those types have no JSON counterpart, so
-    this restores ``dict`` and ``list`` on the way out.
-
-    :param value: Normalized metadata value.
-    :type value: object
-    :return: The same data using only JSON containers.
-    :rtype: object
-
-    Example::
-
-        >>> from types import MappingProxyType
-        >>> json_canonical({"a": MappingProxyType({"b": (1, 2)})})
-        {'a': {'b': [1, 2]}}
-    """
-    if isinstance(value, Mapping):
-        return {key: json_canonical(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [json_canonical(item) for item in value]
-    return value
 
 
 def _require_flag(value: Any, label: str) -> bool:

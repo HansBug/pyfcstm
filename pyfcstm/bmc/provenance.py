@@ -32,6 +32,7 @@ Example::
 
 from __future__ import annotations
 
+import math
 import os
 from dataclasses import dataclass, field
 from types import MappingProxyType
@@ -126,6 +127,133 @@ def _span_offsets(text: str, span: Span) -> Optional[Tuple[int, int]]:
     if start < 0 or end < start or end > len(text):
         return None
     return start, end
+
+
+#: How deeply published metadata may nest.
+#:
+#: The recursive walk that validates and rebuilds this metadata is bounded by
+#: the interpreter's own stack, and so is the JSON encoder that later serializes
+#: it.  Left implicit, a legal but very deep mapping passes validation and then
+#: fails during serialization with a bare ``RecursionError`` naming neither the
+#: field nor the object -- exactly the failure this boundary exists to prevent.
+#: The limit is far above any shape the relation builder produces, whose
+#: metadata is one level of scalars.
+MAX_METADATA_DEPTH = 64
+
+
+def _require_json_mapping(value: Any, label: str) -> Dict[str, Any]:
+    """Reject metadata that could not survive a round trip through JSON.
+
+    These mappings are free-form by design, which is exactly why they need a
+    boundary: an unserializable value placed here would not fail until the
+    whole result is dumped, and the error would name neither the field nor the
+    object it came from.
+
+    :param value: Candidate mapping.
+    :type value: object
+    :param label: Field name used in the error message.
+    :type label: str
+    :return: The validated mapping as a plain dict.
+    :rtype: Dict[str, object]
+    :raises TypeError: If a key is not a string, or a value is outside the
+        JSON data model.
+    :raises ValueError: If a float is not finite, or the mapping nests deeper
+        than :data:`MAX_METADATA_DEPTH`.
+
+    Example::
+
+        >>> _require_json_mapping({"frame": 0}, "refs")
+        {'frame': 0}
+    """
+
+    def _normalize(entry: Any, where: str, depth: int) -> Any:
+        """Return one value in its canonical, detached, immutable form.
+
+        The walk both validates and rebuilds.  Checking alone is not enough: a
+        nested mapping the caller still holds a reference to can be written to
+        after this frozen object is built, so the value that finally reaches
+        JSON is not the one that was validated.  A nested mapping that is not a
+        ``dict`` has the same problem in reverse -- it passes a ``Mapping``
+        check and then fails to serialize.
+
+        Sequences become tuples and mappings become read-only views, so nothing
+        published here can be reached through the caller's own reference.
+
+        :param entry: Candidate value somewhere inside the mapping.
+        :type entry: object
+        :param where: Dotted path used in the error message.
+        :type where: str
+        :return: The canonical form of ``entry``.
+        :rtype: object
+        :raises TypeError: If a mapping key is not a string, or the value is of
+            a type with no JSON counterpart.
+        :raises ValueError: If a float is not finite.
+        """
+        if depth > MAX_METADATA_DEPTH:
+            raise ValueError(
+                "%s nests deeper than the published limit of %d levels."
+                % (where, MAX_METADATA_DEPTH)
+            )
+        if entry is None or isinstance(entry, (str, bool, int)):
+            return entry
+        if isinstance(entry, float):
+            # NaN and Infinity are not JSON numbers.  json.dumps emits them by
+            # default and refuses them under allow_nan=False, so either way the
+            # payload stops being interchangeable.
+            if not math.isfinite(entry):
+                raise ValueError("%s must be a finite number, got %r." % (where, entry))
+            return entry
+        if isinstance(entry, (list, tuple)):
+            return tuple(
+                _normalize(item, "%s[%d]" % (where, index), depth + 1)
+                for index, item in enumerate(entry)
+            )
+        if isinstance(entry, Mapping):
+            normalized = {}
+            for key, item in entry.items():
+                if not isinstance(key, str):
+                    raise TypeError("%s keys must be strings, got %r." % (where, key))
+                normalized[key] = _normalize(item, "%s[%r]" % (where, key), depth + 1)
+            return MappingProxyType(normalized)
+        raise TypeError("%s is not JSON-compatible, got %r." % (where, entry))
+
+    if not isinstance(value, Mapping):
+        # A sequence would be silently normalized into an empty mapping by
+        # dict(), which loses the caller's data and disagrees with the JSON
+        # contract that names this field an object.
+        raise TypeError("%s must be a mapping, got %r." % (label, value))
+    # The top level stays a plain dict because the caller wraps it; every level
+    # below it is already detached and read-only.
+    return {
+        key: value_
+        for key, value_ in dict(_normalize(value, label, 0)).items()  # type: ignore[arg-type]
+    }
+
+
+def json_canonical(value: Any) -> Any:
+    """Convert a normalized metadata graph back to plain JSON containers.
+
+    :func:`_require_json_mapping` stores nested mappings as read-only views and
+    nested sequences as tuples so that a published value cannot be mutated
+    through the caller's reference.  Those types have no JSON counterpart, so
+    this restores ``dict`` and ``list`` on the way out.
+
+    :param value: Normalized metadata value.
+    :type value: object
+    :return: The same data using only JSON containers.
+    :rtype: object
+
+    Example::
+
+        >>> from types import MappingProxyType
+        >>> json_canonical({"a": MappingProxyType({"b": (1, 2)})})
+        {'a': {'b': [1, 2]}}
+    """
+    if isinstance(value, Mapping):
+        return {key: json_canonical(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [json_canonical(item) for item in value]
+    return value
 
 
 @dataclass(frozen=True)
@@ -253,7 +381,13 @@ class BmcTrackedConstraint:
         if not isinstance(self.source_ref, BmcSourceRef):
             raise TypeError("tracked constraint source_ref must be BmcSourceRef.")
         object.__setattr__(self, "expressions", expressions)
-        object.__setattr__(self, "refs", MappingProxyType(dict(self.refs)))
+        # The same validation the published metadata gets.  A shallow copy here
+        # would make this a third door with its own rules: the builder's mapping
+        # would keep a caller's nested aliases and could hold values that only
+        # fail once the whole result is serialized.
+        object.__setattr__(
+            self, "refs", MappingProxyType(_require_json_mapping(self.refs, "refs"))
+        )
 
 
 @dataclass(frozen=True)

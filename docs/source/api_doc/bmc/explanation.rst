@@ -166,9 +166,3 @@ index\_value
 -----------------------------------------------------
 
 .. autofunction:: index_value
-
-
-json\_canonical
------------------------------------------------------
-
-.. autofunction:: json_canonical

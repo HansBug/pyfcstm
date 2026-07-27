@@ -66,6 +66,12 @@ CLASSIFICATION\_SCOPES
 .. autodata:: CLASSIFICATION_SCOPES
 
 
+MAX\_SOURCE\_EXCERPT\_CHARS
+-----------------------------------------------------
+
+.. autodata:: MAX_SOURCE_EXCERPT_CHARS
+
+
 UNBUILT\_SLOTS
 -----------------------------------------------------
 

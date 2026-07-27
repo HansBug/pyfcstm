@@ -702,3 +702,49 @@ def test_nested_json_metadata_is_accepted() -> None:
         "labels": ["a", "b"],
         "nested": {"flag": True, "ratio": 1.5, "absent": None},
     }
+
+
+def test_a_hand_built_item_cannot_exceed_the_published_excerpt_bound() -> None:
+    """The 4096 bound applies to direct construction, not only to the mapper.
+
+    The orchestration truncates what it publishes, but these dataclasses are
+    root exports: a report generator building an item by hand would otherwise
+    put an unbounded slice of the user's source into canonical JSON.
+    """
+    from pyfcstm.bmc.explanation import MAX_SOURCE_EXCERPT_CHARS
+
+    with pytest.raises(ValueError, match="must not exceed"):
+        BmcCoreItem(
+            _constraint(),
+            "initial_fact",
+            "x" * (MAX_SOURCE_EXCERPT_CHARS + 1),
+            True,
+            {},
+            "text",
+            False,
+        )
+
+    at_limit = BmcCoreItem(
+        _constraint(),
+        "initial_fact",
+        "x" * MAX_SOURCE_EXCERPT_CHARS,
+        False,
+        {},
+        "text",
+        False,
+    )
+    assert len(at_limit.source_excerpt) == MAX_SOURCE_EXCERPT_CHARS
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_timings_must_be_finite(value) -> None:
+    """A non-finite timing cannot round-trip through strict JSON.
+
+    ``json.dumps`` emits ``NaN`` and ``Infinity`` by default, which are not
+    valid JSON, and refuses them under ``allow_nan=False``.  Either way the
+    published payload would stop being interchangeable.
+    """
+    with pytest.raises(ValueError, match="must be finite"):
+        BmcInfeasibilityExplanation(
+            "formal", "none", "unknown", None, reason="probe", elapsed_ms=value
+        )

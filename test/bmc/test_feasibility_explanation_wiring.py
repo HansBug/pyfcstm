@@ -76,9 +76,11 @@ def _subset_minimal_core() -> BmcConflictCore:
     )
 
 
-def _probe(name: str = "component_assumptions") -> BmcFeasibilityRefinementCheck:
+def _probe(
+    name: str = "component_assumptions", status: str = "unsat"
+) -> BmcFeasibilityRefinementCheck:
     return BmcFeasibilityRefinementCheck(
-        name=name, status="unsat", reason=None, elapsed_ms=0.1
+        name=name, status=status, reason=None, elapsed_ms=0.1
     )
 
 
@@ -350,3 +352,96 @@ def test_a_minimal_core_needs_recorded_deletion_checks() -> None:
             refinement_checks=(_probe("unsat_core"),),
             explanation=explanation,
         )
+
+
+def test_a_core_check_that_did_not_prove_anything_cannot_back_a_core() -> None:
+    """The ledger must show the proof, not merely the right check name.
+
+    A satisfiable target would in fact disprove the core, so an entry that
+    only matches by name is weaker evidence than none at all: it looks like
+    corroboration while contradicting the claim.
+    """
+    explanation = _explanation(
+        "partial",
+        achieved_mode="formal",
+        classification="assumptions_self_conflict",
+        core=_core_with(),
+    )
+
+    with pytest.raises(BmcBuildError, match="returned unsat"):
+        _localized(
+            refinement_status="partial",
+            refinement_reason="probe returned unknown",
+            refinement_checks=(_probe("unsat_core", "sat"),),
+            explanation=explanation,
+        )
+
+
+def test_deletion_checks_must_have_shown_each_member_necessary() -> None:
+    """Minimality follows from satisfiable deletions, not from any deletion.
+
+    A deletion check that comes back unsat shows the removed member was
+    redundant, which is the opposite of what a minimal core claims.
+    """
+    explanation = _explanation(
+        "partial",
+        achieved_mode="formal",
+        classification="assumptions_self_conflict",
+        core=_core_with("subset_minimal", "proven"),
+    )
+
+    with pytest.raises(BmcBuildError, match="returned sat"):
+        _localized(
+            refinement_status="partial",
+            refinement_reason="probe returned unknown",
+            refinement_checks=(
+                _probe("unsat_core"),
+                _probe("unsat_core_minimization", "unsat"),
+            ),
+            explanation=explanation,
+        )
+
+    accepted = _localized(
+        refinement_status="partial",
+        refinement_reason="probe returned unknown",
+        refinement_checks=(
+            _probe("unsat_core"),
+            _probe("unsat_core_minimization", "sat"),
+        ),
+        explanation=explanation,
+    )
+    assert accepted.explanation is explanation
+
+
+def test_no_attempted_check_means_no_explanation() -> None:
+    """A deadline that refused every attempt leaves nothing to explain.
+
+    Publishing a not-started attempt as a finished check would overstate the
+    solver work the budget actually allowed.
+    """
+    from pyfcstm.bmc import build_bmc_core_formula, compile_bmc_property
+    from pyfcstm.bmc.engine import BmcEngine
+    from pyfcstm.bmc.solver import _SolveBudget
+    from pyfcstm.bmc.witness import _attach_explanation, solve_bmc_property
+    from pyfcstm.model import load_state_machine_from_text
+
+    machine = load_state_machine_from_text(
+        "def int x = 0;\n"
+        "state Root { event Go; state A; state B; [*] -> A; A -> B :: Go; }"
+    )
+    context = BmcEngine(machine).prepare(
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
+        'check reach <= 2: active("Root.B");'
+    )
+    formula = compile_bmc_property(build_bmc_core_formula(context))
+    baseline = solve_bmc_property(formula).feasibility
+
+    spent = _SolveBudget(1)
+    spent.deadline = spent.deadline - 10.0
+    attached = _attach_explanation(baseline, formula.core, spent, "formal")
+
+    assert attached is baseline
+    assert attached.explanation is None
+    assert attached.refinement_status == "not_requested"
+    assert attached.refinement_checks == ()

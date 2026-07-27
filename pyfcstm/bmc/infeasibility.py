@@ -45,6 +45,7 @@ import z3
 from .errors import BmcBuildError
 from .explanation import (
     CLASSIFICATION_SCOPES,
+    MAX_SOURCE_EXCERPT_CHARS,
     BmcConflictCore,
     BmcConstraintRef,
     BmcCoreItem,
@@ -55,12 +56,6 @@ from .solver import _SolveBudget
 
 if TYPE_CHECKING:  # pragma: no cover - import cycle guard for annotations only
     from .relation import BmcCoreFormula
-
-#: Frozen upper bound on a published excerpt, in Unicode code points.  A long
-#: authored line would otherwise put an unbounded slice of the user's source
-#: into canonical JSON, so the excerpt is cut here and the cut is declared
-#: through ``source_excerpt_truncated`` rather than happening silently.
-MAX_SOURCE_EXCERPT_CHARS = 4096
 
 #: Category prefix to frozen semantic role.  The relation builder names every
 #: group after the domain concept it encodes, so the prefix already carries the
@@ -834,6 +829,11 @@ def build_core_item(
         source_excerpt=excerpt,
         source_excerpt_truncated=truncated,
         normalized_fact={
+            # Machine consumers dispatch on this tag rather than on human
+            # text.  No semantic recognizer runs at this stage, so every fact
+            # honestly declares itself structural instead of guessing a
+            # domain reading.
+            "kind": "structural_constraint",
             "stable_id": group.stable_id,
             "stage": group.stage,
             "category": group.category,

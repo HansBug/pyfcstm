@@ -1216,6 +1216,28 @@
               }
             }
           }
+        },
+        {
+          "if": {
+            "properties": {
+              "explanation": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "explanation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "infeasible_stage": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "infeasible_stage"
+            ]
+          }
         }
       ]
     },
@@ -2396,6 +2418,28 @@
                 }
               }
             }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "explanation": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "explanation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "infeasible_stage": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "infeasible_stage"
+            ]
           }
         }
       ]

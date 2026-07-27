@@ -2348,21 +2348,36 @@ def _validate_explanation_agreement(
         raise BmcBuildError(
             "an explanation requires at least one recorded refinement check."
         )
-    names = {check.name for check in refinement_checks}
     core = explanation.core
-    if core is not None and not (names & _FEASIBILITY_CORE_REFINEMENT_NAMES):
-        # A published core is a claim that some check proved its target
-        # unsatisfiable, so the ledger has to contain that check.
-        raise BmcBuildError(
-            "a published core requires a recorded unsat-core refinement check."
-        )
-    if core is not None and core.subset_minimality == "proven":
-        # Minimality is only proven by deletion checks; without one in the
-        # ledger the claim has nothing behind it.
-        if "unsat_core_minimization" not in names:
+    if core is not None:
+        # A published core claims some check proved its target unsatisfiable.
+        # The check has to be present *and* to have come back unsat: a ledger
+        # entry that merely carries the right name proves nothing, and a
+        # satisfiable target would in fact disprove the core.
+        proved = [
+            check
+            for check in refinement_checks
+            if check.name in _FEASIBILITY_CORE_REFINEMENT_NAMES
+            and check.status == "unsat"
+        ]
+        if not proved:
             raise BmcBuildError(
-                "a proven-minimal core requires recorded deletion checks."
+                "a published core requires an unsat-core refinement check that "
+                "returned unsat."
             )
+        if core.subset_minimality == "proven":
+            # Minimality is proven by deletion checks that came back sat: each
+            # one shows the removed member was necessary.  An unsat deletion
+            # check shows the opposite, so it cannot support the claim.
+            minimized = [
+                check
+                for check in refinement_checks
+                if check.name == "unsat_core_minimization" and check.status == "sat"
+            ]
+            if not minimized:
+                raise BmcBuildError(
+                    "a proven-minimal core requires deletion checks that returned sat."
+                )
 
 
 def _explanation_stage(
@@ -4793,6 +4808,14 @@ def _attach_explanation(
         budget,
         requested_mode=requested_mode,
     )
+    # The published ledger lists checks that actually ran.  An attempt the
+    # budget refused to start is not evidence of solver work, and reporting it
+    # as a finished check would overstate what the deadline allowed.
+    executed = [record for record in outcome.checks if record.started]
+    if not executed:
+        # Nothing was attempted, so there is no optional stage to describe and
+        # the aggregate keeps saying no refinement was requested.
+        return feasibility
     return replace(
         feasibility,
         refinement_status=outcome.explanation.status,
@@ -4804,7 +4827,7 @@ def _attach_explanation(
                 reason=record.reason,
                 elapsed_ms=record.elapsed_ms,
             )
-            for record in outcome.checks
+            for record in executed
         ),
         explanation=outcome.explanation,
     )

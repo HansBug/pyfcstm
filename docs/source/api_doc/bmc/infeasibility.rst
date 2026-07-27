@@ -6,12 +6,6 @@ pyfcstm.bmc.infeasibility
 .. automodule:: pyfcstm.bmc.infeasibility
 
 
-MAX\_SOURCE\_EXCERPT\_CHARS
------------------------------------------------------
-
-.. autodata:: MAX_SOURCE_EXCERPT_CHARS
-
-
 AGGREGATE\_SELECTORS
 -----------------------------------------------------
 

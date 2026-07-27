@@ -46,6 +46,7 @@ Example::
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any, Dict, Mapping, Optional, Tuple
@@ -127,6 +128,11 @@ CLASSIFICATION_SCOPES = MappingProxyType(
         "assumptions_prefix_conflict": "assumptions_prefix",
     }
 )
+
+#: Frozen upper bound on a published excerpt, in Unicode code points.  A long
+#: authored line would otherwise put an unbounded slice of the user's source
+#: into canonical JSON.
+MAX_SOURCE_EXCERPT_CHARS = 4096
 
 #: Frozen slots whose content a later delivery stage produces.  Populating one
 #: now would break the frozen rule that the published JSON schema and this
@@ -430,6 +436,14 @@ class BmcCoreItem:
             raise TypeError("core item constraint must be BmcConstraintRef.")
         _require_member(self.semantic_role, _SEMANTIC_ROLES, "core item semantic_role")
         _require_optional_text(self.source_excerpt, "core item source_excerpt")
+        if (
+            self.source_excerpt is not None
+            and len(self.source_excerpt) > MAX_SOURCE_EXCERPT_CHARS
+        ):
+            raise ValueError(
+                "core item source_excerpt must not exceed %d code points, got %d."
+                % (MAX_SOURCE_EXCERPT_CHARS, len(self.source_excerpt))
+            )
         _require_flag(
             self.source_excerpt_truncated, "core item source_excerpt_truncated"
         )
@@ -724,6 +738,10 @@ class BmcInfeasibilityExplanation:
                 self.elapsed_ms, (int, float)
             ):
                 raise TypeError("explanation elapsed_ms must be a number or None.")
+            if not math.isfinite(self.elapsed_ms):
+                raise ValueError(
+                    "explanation elapsed_ms must be finite, got %r." % self.elapsed_ms
+                )
             if self.elapsed_ms < 0:
                 raise ValueError("explanation elapsed_ms must not be negative.")
         if self.core is not None:

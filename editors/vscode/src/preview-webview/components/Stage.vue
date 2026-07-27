@@ -185,13 +185,16 @@ async function relayout() {
         await nextTick();
         applySelection();
         const initialView = props.state.standaloneViewState;
-        // A neutral view state means the caller expressed no preference, so the
-        // document should open showing the whole diagram. Applying 100% / no pan
-        // literally clips every graph taller than the stage on first paint.
-        const viewStateIsNeutral = !initialView
-            || (initialView.zoom === 1 && initialView.panX === 0 && initialView.panY === 0);
-        if (props.state.standalone && initialView && !viewStateIsNeutral) {
-            setTransform(initialView.panX, initialView.panY, initialView.zoom);
+        // An all-null transform means the producer expressed no preference, so
+        // the document opens showing the whole diagram; applying 100% / no pan
+        // literally clips every graph taller than the stage on first paint. The
+        // nulls come from the producer rather than being inferred from the
+        // values, so an explicit 100% at the origin stays requestable.
+        const requestedTransform = Boolean(initialView) && (
+            initialView.zoom !== null || initialView.panX !== null || initialView.panY !== null
+        );
+        if (props.state.standalone && requestedTransform) {
+            setTransform(initialView.panX ?? 0, initialView.panY ?? 0, initialView.zoom ?? 1);
         } else {
             fitToView();
         }

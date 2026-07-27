@@ -802,11 +802,14 @@ self-contained HTML file.
      - ``compare`` (default), ``fcstm``, or ``diagram``
      - Selects the source-only, diagram-only, or linked split view.
    * - ``DiagramViewState.zoom``
-     - Finite positive number (default ``1.0``)
+     - Finite positive number or ``None`` (default ``None``)
      - Sets the initial diagram zoom; boolean, zero, negative, NaN, and infinity values fail.
+       ``None`` leaves the framing to the viewer, which fits the whole diagram to the viewport.
    * - ``DiagramViewState.pan_x`` / ``pan_y``
-     - Finite numbers (default ``0.0``)
-     - Sets the initial diagram translation.
+     - Finite numbers or ``None`` (default ``None``)
+     - Sets the initial diagram translation. ``None`` defers to the fitted framing; when any one
+       of ``zoom`` / ``pan_x`` / ``pan_y`` is set, the remaining ``None`` fields fall back to
+       ``1.0`` and ``0.0`` so an explicit request is honoured exactly.
 
 ``model.diagram(...)`` returns an immutable ``Diagram`` snapshot. Its
 ``to_dict()`` and ``to_json()`` results omit absolute paths, source ranges, and

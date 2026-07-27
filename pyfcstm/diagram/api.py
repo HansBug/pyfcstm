@@ -927,17 +927,6 @@ def _embedded_resvg_script(locale: str) -> str:
     )
 
 
-def _html_language(locale: str) -> str:
-    """Return the document language matching the selected CJK font locale."""
-    return {
-        "sc": "zh-CN",
-        "tc": "zh-TW",
-        "hk": "zh-HK",
-        "jp": "ja",
-        "kr": "ko",
-    }.get(str(locale).lower(), "zh-CN")
-
-
 @dataclass(frozen=True)
 class DiagramOptions:
     """
@@ -1027,12 +1016,15 @@ class DiagramViewState:
     :type mode: str
     :param collapsed_state_ids: Qualified state IDs hidden in the diagram.
     :type collapsed_state_ids: tuple[str, ...]
-    :param zoom: Positive initial zoom factor.
-    :type zoom: float
-    :param pan_x: Initial horizontal pan offset in CSS pixels.
-    :type pan_x: float
-    :param pan_y: Initial vertical pan offset in CSS pixels.
-    :type pan_y: float
+    :param zoom: Positive initial zoom factor. ``None`` leaves the initial
+        framing to the viewer, which fits the whole diagram to the viewport.
+    :type zoom: float, optional
+    :param pan_x: Initial horizontal pan offset in CSS pixels. ``None`` defers
+        to the fitted framing, or to ``0`` when another field is set.
+    :type pan_x: float, optional
+    :param pan_y: Initial vertical pan offset in CSS pixels. ``None`` defers
+        to the fitted framing, or to ``0`` when another field is set.
+    :type pan_y: float, optional
 
     Example::
 
@@ -1042,23 +1034,29 @@ class DiagramViewState:
 
     mode: str = "compare"
     collapsed_state_ids: Tuple[str, ...] = ()
-    zoom: float = 1.0
-    pan_x: float = 0.0
-    pan_y: float = 0.0
+    # None is "no preference", which the viewer renders as fit-to-view. Keeping
+    # the neutral numbers as defaults would make an explicit 1.0 / 0.0 request
+    # indistinguishable from an absent one, and the viewer could only guess.
+    zoom: Optional[float] = None
+    pan_x: Optional[float] = None
+    pan_y: Optional[float] = None
 
     def __post_init__(self) -> None:
         if self.mode not in ("fcstm", "diagram", "compare"):
             raise ValueError("mode must be 'fcstm', 'diagram', or 'compare'")
         object.__setattr__(self, "collapsed_state_ids", tuple(self.collapsed_state_ids))
-        object.__setattr__(
-            self, "zoom", _coerce_finite_number(self.zoom, "zoom", positive=True)
-        )
-        object.__setattr__(
-            self, "pan_x", _coerce_finite_number(self.pan_x, "pan offsets")
-        )
-        object.__setattr__(
-            self, "pan_y", _coerce_finite_number(self.pan_y, "pan offsets")
-        )
+        if self.zoom is not None:
+            object.__setattr__(
+                self, "zoom", _coerce_finite_number(self.zoom, "zoom", positive=True)
+            )
+        if self.pan_x is not None:
+            object.__setattr__(
+                self, "pan_x", _coerce_finite_number(self.pan_x, "pan offsets")
+            )
+        if self.pan_y is not None:
+            object.__setattr__(
+                self, "pan_y", _coerce_finite_number(self.pan_y, "pan offsets")
+            )
 
     def to_dict(self) -> Dict[str, Any]:
         """
@@ -1183,15 +1181,9 @@ class Diagram:
                         value, "collapsed_state_ids", "collapsedStateIds", ()
                     )
                 ),
-                zoom=_coerce_finite_number(
-                    value.get("zoom", 1.0), "zoom", positive=True
-                ),
-                pan_x=_coerce_finite_number(
-                    _mapping_value(value, "pan_x", "panX", 0.0), "pan offsets"
-                ),
-                pan_y=_coerce_finite_number(
-                    _mapping_value(value, "pan_y", "panY", 0.0), "pan offsets"
-                ),
+                zoom=value.get("zoom", None),
+                pan_x=_mapping_value(value, "pan_x", "panX", None),
+                pan_y=_mapping_value(value, "pan_y", "panY", None),
             )
         if value is not None and not isinstance(value, DiagramViewState):
             raise TypeError("view_state must be DiagramViewState or a mapping")
@@ -1451,7 +1443,7 @@ class Diagram:
         # The bundled component library renders its styles at runtime, so the
         # document needs a style nonce in addition to the hash of the embedded
         # stylesheet. The nonce is derived from the document's own content
-        # rather than drawn at random, which keeps `to_html` byte-deterministic
+        # rather than drawn at random, which keeps ``to_html`` byte-deterministic
         # and keeps the content-addressed reuse below meaningful. It is derived
         # before the bootstrap is built so nothing depends on its own hash.
         style_nonce = base64.b64encode(
@@ -1499,7 +1491,12 @@ class Diagram:
             document = (
                 "<!doctype html><html lang=\"%s\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; base-uri 'none'; object-src 'none'; form-action 'none'; frame-src 'none'; media-src 'none'; manifest-src 'none'; img-src data: blob:; style-src %s; style-src-attr 'none'; font-src data:; script-src %s 'wasm-unsafe-eval'; script-src-attr 'none'; connect-src 'none'; worker-src 'none'\"><style>%s</style></head><body><div id=\"app\"></div><script>%s</script><script>%s</script><script>%s</script></body></html>"
                 % (
-                    _html_language(self.options.cjk_locale),
+                    # The viewer's own interface is English regardless of which
+                    # CJK font pair the diagram text needs, and the declared
+                    # document language drives assistive-technology voice and
+                    # translation prompts. Deriving it from ``cjk_locale`` made
+                    # a screen reader announce English controls in Mandarin.
+                    "en",
                     style_sources,
                     " ".join(hashes),
                     css,

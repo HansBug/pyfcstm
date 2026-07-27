@@ -183,7 +183,9 @@ export interface PreviewWebviewState {
     /** Browser-only data and source sidecar used by the standalone host. */
     standalone?: boolean;
     standaloneMode?: 'fcstm' | 'diagram' | 'compare';
-    standaloneViewState?: {zoom: number; panX: number; panY: number};
+    // null means the producer expressed no preference and the viewer picks the
+    // framing; a number is an explicit request, including a literal 1 / 0.
+    standaloneViewState?: {zoom: number | null; panX: number | null; panY: number | null};
     standaloneDiagram?: FcstmDiagram;
     sourceHtml?: string;
     sourceAvailable?: boolean;

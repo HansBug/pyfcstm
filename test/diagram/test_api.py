@@ -157,8 +157,10 @@ def test_diagram_options_reach_standalone_colour_preferences():
     assert state["colorMode"] == "dark"
 
 
-def test_html_language_matches_selected_cjk_locale():
-    assert 'lang="ja"' in _model("state Root;").diagram(cjk_locale="jp").to_html()
+def test_html_language_is_the_interface_language():
+    assert (
+        '<html lang="en">' in _model("state Root;").diagram(cjk_locale="jp").to_html()
+    )
 
 
 def test_diagram_options_default_to_browser_preferences_and_allow_auto_mode():
@@ -630,19 +632,19 @@ def test_derived_snapshots_can_still_render_html():
 
 
 @pytest.mark.unittest
-@pytest.mark.parametrize(
-    ("locale", "language"),
-    [
-        ("sc", "zh-CN"),
-        ("tc", "zh-TW"),
-        ("hk", "zh-HK"),
-        ("jp", "ja"),
-        ("kr", "ko"),
-    ],
-)
-def test_html_language_covers_every_cjk_locale(locale, language):
-    model = _model("state Root;")
-    assert ('<html lang="%s">' % language) in model.diagram(cjk_locale=locale).to_html()
+@pytest.mark.parametrize("locale", ["sc", "tc", "hk", "jp", "kr"])
+def test_font_locale_never_changes_the_document_language(locale):
+    """The interface is English, so no CJK font choice may relabel the document."""
+    html = _model("state Root;").diagram(cjk_locale=locale).to_html()
+    assert '<html lang="en">' in html
+    for leaked in (
+        'lang="zh-CN"',
+        'lang="zh-TW"',
+        'lang="zh-HK"',
+        'lang="ja"',
+        'lang="ko"',
+    ):
+        assert leaked not in html
 
 
 @pytest.mark.unittest
@@ -658,3 +660,60 @@ def test_source_text_override_accepts_the_modelled_source():
         root_state=State(name="Root", path=("Root",), substates={}),
     )
     assert programmatic.diagram(source_text="state Root;").to_html()
+
+
+def _browser_view_state(html):
+    match = re.search(
+        r"window\.__FCSTM_INITIAL_STATE__ = (.*?);</script><script>", html, re.DOTALL
+    )
+    assert match is not None
+    return json.loads(match.group(1))["standaloneViewState"]
+
+
+@pytest.mark.unittest
+def test_absent_view_transform_stays_distinguishable_from_an_explicit_one():
+    """The viewer must tell "no preference" from a literal 100% at the origin.
+
+    Both were once spelled ``zoom=1.0, pan_x=0.0, pan_y=0.0``, so the viewer
+    could only guess which one the caller meant, and one of the two intents was
+    unreachable whichever way it guessed.
+    """
+    model = _model("state Root;")
+    default = model.diagram()
+    assert default.view_state.zoom is None
+    assert default.view_state.pan_x is None
+    assert default.view_state.pan_y is None
+    assert _browser_view_state(default.to_html()) == {
+        "zoom": None,
+        "panX": None,
+        "panY": None,
+    }
+
+    explicit = model.diagram().with_view_state(zoom=1.0, pan_x=0.0, pan_y=0.0)
+    assert _browser_view_state(explicit.to_html()) == {
+        "zoom": 1.0,
+        "panX": 0.0,
+        "panY": 0.0,
+    }
+
+    # Choosing a mode is not a framing request, so it must not silently pin the
+    # transform and reintroduce the clipped first paint.
+    mode_only = model.diagram().with_view_state(mode="fcstm")
+    assert mode_only.view_state.mode == "fcstm"
+    assert _browser_view_state(mode_only.to_html()) == {
+        "zoom": None,
+        "panX": None,
+        "panY": None,
+    }
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize("field", ["zoom", "pan_x", "pan_y"])
+def test_view_transform_fields_still_reject_invalid_numbers(field):
+    """Optional does not mean unchecked: only ``None`` is a new valid input."""
+    invalid = [True, float("nan"), float("inf")]
+    if field == "zoom":
+        invalid += [0, -1]
+    for value in invalid:
+        with pytest.raises((ValueError, TypeError)):
+            DiagramViewState(**{field: value})

@@ -1568,9 +1568,13 @@ class Diagram:
 
         Example::
 
-            >>> dark = model.diagram().with_options(mode="dark")
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('state Root;')
+            >>> dark = model.diagram(direction="LR").with_options(mode="dark")
             >>> dark.options.mode
             'dark'
+            >>> dark.options.direction  # keyword fields are a partial update
+            'LR'
         """
         if options is not None and kwargs:
             raise TypeError("provide options or keyword fields, not both")
@@ -1603,9 +1607,14 @@ class Diagram:
 
         Example::
 
-            >>> source_only = model.diagram().with_view_state(mode="fcstm")
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('state Root;')
+            >>> zoomed = model.diagram(view_state={"zoom": 2.0})
+            >>> source_only = zoomed.with_view_state(mode="fcstm")
             >>> source_only.view_state.mode
             'fcstm'
+            >>> source_only.view_state.zoom  # unnamed fields keep their value
+            2.0
         """
         if view_state is not None and kwargs:
             raise TypeError("provide view_state or keyword fields, not both")

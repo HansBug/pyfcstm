@@ -506,8 +506,10 @@ class DiagramAssetEngine:
 
     Example::
 
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> model = load_state_machine_from_text('state Root { state A; [*] -> A; }')
         >>> engine = DiagramAssetEngine()
-        >>> svg = engine.render_svg({"diagram": diagram_data})
+        >>> svg = engine.render_svg({"diagram": model.diagram().to_dict()})
         >>> svg.startswith("<svg")
         True
     """
@@ -845,8 +847,11 @@ class DiagramAssetEngine:
 
         Example::
 
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('state Root { state A; [*] -> A; }')
+            >>> request = {"diagram": model.diagram().to_dict()}
             >>> engine = DiagramAssetEngine()
-            >>> svg = engine.render_svg(diagram_data)
+            >>> svg = engine.render_svg(request)
             >>> svg.startswith("<svg")
             True
         """
@@ -1020,7 +1025,11 @@ class DiagramAssetEngine:
 
         Example::
 
-            >>> png = engine.render_png(diagram_data, scale=2.0)
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('state Root { state A; [*] -> A; }')
+            >>> request = {"diagram": model.diagram().to_dict()}
+            >>> engine = DiagramAssetEngine()
+            >>> png = engine.render_png(request, scale=2.0)
             >>> png.startswith(b"\\x89PNG")
             True
         """
@@ -1077,7 +1086,11 @@ class DiagramAssetEngine:
 
         Example::
 
-            >>> expanded = engine.expand_svg(diagram_data)
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('state Root { state A; [*] -> A; }')
+            >>> request = {"diagram": model.diagram().to_dict()}
+            >>> engine = DiagramAssetEngine()
+            >>> expanded = engine.expand_svg(request)
             >>> "<path" in expanded
             True
         """

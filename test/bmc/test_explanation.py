@@ -498,6 +498,72 @@ def test_a_string_subclass_cannot_talk_its_way_into_a_frozen_vocabulary() -> Non
     assert type(accepted.stage) is str
 
 
+def test_a_duration_cannot_report_itself_as_non_negative() -> None:
+    """The sign check reads the number, not the value's own comparison.
+
+    ``__lt__`` and ``__float__`` are overridable, so a negative duration could
+    answer the non-negative check itself and then be published as recorded.
+    """
+
+    class NegativeElapsed(int):
+        def __float__(self):
+            return 1.0
+
+        def __lt__(self, other):
+            return False
+
+    with pytest.raises(ValueError, match="must not be negative"):
+        BmcInfeasibilityExplanation(
+            requested_mode="formal",
+            achieved_mode="none",
+            status="unknown",
+            classification=None,
+            reason="probe unknown",
+            elapsed_ms=NegativeElapsed(-1),
+        )
+
+    impostor = type("Impostor", (object,), {"__class__": property(lambda self: int)})()
+    with pytest.raises(TypeError, match="must be a number or None"):
+        BmcInfeasibilityExplanation(
+            requested_mode="formal",
+            achieved_mode="none",
+            status="unknown",
+            classification=None,
+            reason="probe unknown",
+            elapsed_ms=impostor,
+        )
+
+    # A well-behaved subclass is accepted and published as a plain float.
+    published = BmcInfeasibilityExplanation(
+        requested_mode="formal",
+        achieved_mode="none",
+        status="unknown",
+        classification=None,
+        reason="probe unknown",
+        elapsed_ms=3,
+    )
+    assert type(published.elapsed_ms) is float
+
+
+def test_a_classification_is_stored_as_the_vocabulary_member_it_matched() -> None:
+    """The last frozen-vocabulary field also writes its validated text back."""
+
+    class Shouty(str):
+        def __str__(self):
+            return "FORGED"
+
+    explanation = BmcInfeasibilityExplanation(
+        requested_mode="formal",
+        achieved_mode="none",
+        status="partial",
+        classification=Shouty("assumptions_self_conflict"),
+        reason="raw core unknown",
+    )
+
+    assert type(explanation.classification) is str
+    assert explanation.classification == "assumptions_self_conflict"
+
+
 def test_every_string_gate_refuses_an_impostor() -> None:
     """Each gate that reads text must refuse an object that only claims to be one.
 
@@ -540,9 +606,7 @@ def test_every_string_gate_refuses_an_impostor() -> None:
                 BmcConstraintRef(*args)
 
     # Free-form metadata keeps a value that is not an index rather than failing.
-    assert _canonical_index_refs({"frame": "not-an-index"}) == {
-        "frame": "not-an-index"
-    }
+    assert _canonical_index_refs({"frame": "not-an-index"}) == {"frame": "not-an-index"}
 
 
 def test_a_flag_impostor_is_refused() -> None:

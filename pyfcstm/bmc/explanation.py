@@ -1178,10 +1178,18 @@ class BmcInfeasibilityExplanation:
             self, "status", _require_member(self.status, _STATUSES, "status")
         )
         if self.classification is not None:
-            _require_member(
-                self.classification, tuple(CLASSIFICATION_SCOPES), "classification"
+            object.__setattr__(
+                self,
+                "classification",
+                _require_member(
+                    self.classification, tuple(CLASSIFICATION_SCOPES), "classification"
+                ),
             )
-        _require_optional_text(self.reason, "explanation reason")
+        object.__setattr__(
+            self,
+            "reason",
+            _require_optional_text(self.reason, "explanation reason"),
+        )
         if self.status == "complete":
             if self.reason is not None:
                 raise ValueError("complete explanations must not carry a reason.")
@@ -1194,12 +1202,27 @@ class BmcInfeasibilityExplanation:
                 self.elapsed_ms, (int, float)
             ):
                 raise TypeError("explanation elapsed_ms must be a number or None.")
-            if not math.isfinite(self.elapsed_ms):
+            # The comparisons below would otherwise be answered by the value's
+            # own __lt__ and __float__, so a negative duration could report
+            # itself as non-negative and be published as recorded.
+            try:
+                plain = (
+                    exact_float(self.elapsed_ms, "explanation elapsed_ms")
+                    if isinstance(self.elapsed_ms, float)
+                    else float(exact_int(self.elapsed_ms, "explanation elapsed_ms"))
+                )
+            except TypeError:
+                # exact_* refuse a value that only claims to be a number.
+                raise TypeError(
+                    "explanation elapsed_ms must be a number or None."
+                ) from None
+            if not math.isfinite(plain):
                 raise ValueError(
                     "explanation elapsed_ms must be finite, got %r." % self.elapsed_ms
                 )
-            if self.elapsed_ms < 0:
+            if plain < 0:
                 raise ValueError("explanation elapsed_ms must not be negative.")
+            object.__setattr__(self, "elapsed_ms", plain)
         if self.core is not None:
             if not isinstance(self.core, BmcConflictCore):
                 raise TypeError("explanation core must be BmcConflictCore.")

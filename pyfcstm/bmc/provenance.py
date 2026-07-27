@@ -313,7 +313,16 @@ def _require_json_mapping(value: Any, label: str) -> Dict[str, Any]:
                 # The key is rebuilt too.  A str subclass can carry state that
                 # changes its hash later, and then the published mapping breaks
                 # when something merely looks a key up.
-                normalized[exact_str(key, "%s key" % where)] = _normalize(
+                plain_key = exact_str(key, "%s key" % where)
+                if plain_key in normalized:
+                    # Two distinct keys that coexist in the caller's mapping can
+                    # canonicalize to one.  Overwriting would drop a piece of
+                    # provenance with nothing recorded, so this fails closed.
+                    raise ValueError(
+                        "%s has two keys that both canonicalize to %r."
+                        % (where, plain_key)
+                    )
+                normalized[plain_key] = _normalize(
                     item, "%s[%r]" % (where, key), depth + 1
                 )
             return MappingProxyType(normalized)
@@ -418,16 +427,37 @@ class BmcSourceRef:
     span: Optional[Span]
 
     def __post_init__(self) -> None:
-        if self.kind not in _SOURCE_KINDS:
+        # Membership uses __eq__ and __hash__, both overridable, so the check
+        # runs on the exact text and the field is replaced by it.
+        if not isinstance(self.kind, str):
             raise ValueError("Unsupported BMC source kind: %r." % self.kind)
+        try:
+            plain_kind = exact_str(self.kind, "BMC source kind")
+        except TypeError:
+            # exact_str refuses an object that only claims to be a str.
+            raise ValueError("Unsupported BMC source kind: %r." % self.kind) from None
+        if plain_kind not in _SOURCE_KINDS:
+            raise ValueError("Unsupported BMC source kind: %r." % self.kind)
+        object.__setattr__(self, "kind", plain_kind)
         if self.kind == "generated" and (
             self.path is not None or self.span is not None
         ):
             raise ValueError(
                 "generated BMC source references cannot carry path or span."
             )
-        if self.path is not None and (not isinstance(self.path, str) or not self.path):
-            raise ValueError("BMC source path must be None or a non-empty string.")
+        if self.path is not None:
+            if not isinstance(self.path, str):
+                raise ValueError("BMC source path must be None or a non-empty string.")
+            try:
+                plain_path = exact_str(self.path, "BMC source path")
+            except TypeError:
+                # exact_str refuses an object that only claims to be a str.
+                raise ValueError(
+                    "BMC source path must be None or a non-empty string."
+                ) from None
+            if not plain_path:
+                raise ValueError("BMC source path must be None or a non-empty string.")
+            object.__setattr__(self, "path", plain_path)
         if self.span is not None and not isinstance(self.span, Span):
             raise TypeError("BMC source span must be Span or None.")
 

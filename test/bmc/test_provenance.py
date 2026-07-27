@@ -1954,3 +1954,57 @@ def test_tracked_identifier_gates_refuse_impostors() -> None:
             BmcSourceRef("generated", None, None),
         )
 
+
+def test_a_source_kind_cannot_talk_its_way_past_the_vocabulary() -> None:
+    """``in`` uses ``__eq__`` and ``__hash__``, so membership reads the text."""
+    from pyfcstm.bmc.provenance import BmcSourceRef
+
+    class InvalidKind(str):
+        def __hash__(self):
+            return hash("generated")
+
+        def __eq__(self, other):
+            return True
+
+    with pytest.raises(ValueError, match="Unsupported BMC source kind"):
+        BmcSourceRef(InvalidKind("nonsense"), None, None)
+
+    impostor = type("Impostor", (object,), {"__class__": property(lambda self: str)})()
+    with pytest.raises(ValueError, match="Unsupported BMC source kind"):
+        BmcSourceRef(impostor, None, None)
+    with pytest.raises(ValueError, match="Unsupported BMC source kind"):
+        BmcSourceRef(123, None, None)
+    with pytest.raises(ValueError, match="source path must be None"):
+        BmcSourceRef("fcstm", impostor, None)
+    with pytest.raises(ValueError, match="source path must be None"):
+        BmcSourceRef("fcstm", 123, None)
+    with pytest.raises(ValueError, match="source path must be None"):
+        BmcSourceRef("fcstm", "", None)
+
+
+def test_two_keys_canonicalizing_to_one_fail_closed() -> None:
+    """Folding two distinct keys into one would drop provenance silently.
+
+    Both keys coexist in the caller's mapping because their ``__eq__`` says they
+    differ, but they hold the same text.  Overwriting the first would lose a
+    recorded fact with nothing to show for it.
+    """
+    from pyfcstm.bmc.provenance import _require_json_mapping
+
+    class DuplicateKey(str):
+        def __new__(cls, text, salt):
+            obj = str.__new__(cls, text)
+            obj.salt = salt
+            return obj
+
+        def __hash__(self):
+            return hash((str.__str__(self), self.salt))
+
+        def __eq__(self, other):
+            return self is other
+
+    source = {DuplicateKey("same", 1): "first", DuplicateKey("same", 2): "second"}
+    assert len(source) == 2
+
+    with pytest.raises(ValueError, match="both canonicalize to"):
+        _require_json_mapping(source, "refs")

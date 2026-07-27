@@ -37,27 +37,30 @@ def main() -> None:
     # The multi-document case is the only one that renders the source-document
     # picker, so without it the gate's imported-source and native-select
     # assertions never run at all.
-    cases = [("default", "sc", "TB", write_sample_html)]
+    cases = [("default", "sc", "TB", write_sample_html, 1)]
     if args.all_cases:
         cases.extend(
             [
-                ("cjk-tc", "tc", "TB", write_sample_html),
-                ("cjk-hk", "hk", "LR", write_sample_html),
-                ("cjk-jp", "jp", "LR", write_sample_html),
-                ("cjk-kr", "kr", "TB", write_sample_html),
-                ("imports", "sc", "TB", write_multi_document_sample_html),
+                ("cjk-tc", "tc", "TB", write_sample_html, 1),
+                ("cjk-hk", "hk", "LR", write_sample_html, 1),
+                ("cjk-jp", "jp", "LR", write_sample_html, 1),
+                ("cjk-kr", "kr", "TB", write_sample_html, 1),
+                ("imports", "sc", "TB", write_multi_document_sample_html, 2),
             ]
         )
     viewports = ["800x600"]
     if args.all_cases:
         viewports = ["800x600", "320x480", "750x900", "1365x768"]
     with tempfile.TemporaryDirectory(prefix="pyfcstm-diagram-browser-") as directory:
-        for name, locale, direction, write_fixture in cases:
+        for name, locale, direction, write_fixture, documents in cases:
             html_path = Path(directory) / (name + ".html")
             write_fixture(html_path, cjk_locale=locale, direction=direction)
             for viewport in viewports:
                 env = dict(os.environ)
                 env["VIEWER_REQUIRE_EXPANDED_SVG"] = "1"
+                # The driver knows how many source documents it wrote; the page
+                # cannot be trusted to report that about itself.
+                env["VIEWER_EXPECT_DOCUMENTS"] = str(documents)
                 env["VIEWER_VIEWPORT"] = viewport
                 env["VIEWER_FORMATS"] = ",".join(sorted(formats))
                 env["VIEWER_REQUIRE_PDF_ZERO_IMAGES"] = (

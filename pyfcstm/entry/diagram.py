@@ -91,6 +91,31 @@ def _load_model(input_code_file: str):
         )
 
 
+def _write(target, write):
+    """
+    Run a viewer write, reporting filesystem failures as CLI errors.
+
+    ``_validate_write_target`` already produces a message that names the path
+    and the actual problem, and letting the exception escape buried it inside a
+    stack — the same defect the input side had.
+
+    :param target: Destination the caller asked for.
+    :type target: str or os.PathLike
+    :param write: Zero-argument callable performing the write.
+    :type write: collections.abc.Callable
+    :return: Whatever ``write`` returns.
+    :raises pyfcstm.entry.base.ClickErrorException: If the destination cannot
+        be written.
+    """
+    try:
+        return write()
+    except OSError as err:
+        # IsADirectoryError, FileNotFoundError and NotADirectoryError come from
+        # _validate_write_target; PermissionError and the rest come from the
+        # write itself.
+        raise ClickErrorException("Failed to write %s: %s" % (target, err))
+
+
 @click.command("diagram")
 @click.option(
     "-i",
@@ -133,14 +158,20 @@ def diagram_command(
         if output is not None and Path(output).suffix.lower() not in (".html", ".htm"):
             raise click.UsageError("--open requires an .html or .htm output path")
         try:
-            path = view.show(output, open_window=True)
+            path = _write(
+                output or "the temporary viewer",
+                lambda: view.show(output, open_window=True),
+            )
         except DiagramUnavailableError as error:
             # The document is written before the window opens, so the path is
             # the useful part of this failure; without it the user is left with
             # a traceback and a 30 MB file they cannot find. Repeating the call
             # without the launch returns that same path — the document is
             # memoised and a temporary path is reused per snapshot.
-            written = view.show(output, open_window=False)
+            written = _write(
+                output or "the temporary viewer",
+                lambda: view.show(output, open_window=False),
+            )
             click.echo(str(written))
             raise click.ClickException(str(error))
         click.echo(str(path))
@@ -154,7 +185,7 @@ def diagram_command(
         return
     _validate_output_suffix(output, format_name)
     target = Path(output)
-    view.save(target, format=format_name)
+    _write(target, lambda: view.save(target, format=format_name))
     click.echo(str(target))
 
 

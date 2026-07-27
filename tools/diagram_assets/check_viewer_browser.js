@@ -29,6 +29,11 @@ const viewportHeight = Number.isFinite(viewport[1]) && viewport[1] > 0 ? viewpor
 // Embedded WASM compilation can be slower on the first narrow viewport; keep
 // the maintenance gate above that one-time initialization cost by default.
 const startupWait = Number(process.env.VIEWER_STARTUP_WAIT || 4000);
+// How many source documents the fixture was built with. The page's own
+// document list cannot answer this: deleting `sourceDocuments` emptied both the
+// list and the expectation, so the imported-source assertion retired itself on
+// the one fixture that exists to exercise it.
+const expectDocuments = Number(process.env.VIEWER_EXPECT_DOCUMENTS || 0);
 if (!htmlPath) {
   console.error('usage: node check_viewer_browser.js VIEWER.html [SCREENSHOT.png]');
   process.exit(2);
@@ -104,10 +109,24 @@ async function waitForJson(url, describeBrowser) {
   throw new Error(`Chrome DevTools endpoint did not start${describeBrowser()}`);
 }
 
+// A browser that dies mid-run used to leave the awaiting call pending forever:
+// neither the catch nor the finally ran and node exited 0 with no output, which
+// is a false green in the likeliest CI failure of all — the renderer running out
+// of memory on a 29 MB page. Every call is bounded and the socket's death fails
+// the ones in flight. The budget covers the slowest legitimate step, the export,
+// which waits up to 30s for a fresh payload.
+const CALL_TIMEOUT_MS = Number(process.env.VIEWER_CALL_TIMEOUT_MS || 120000);
+
 class Cdp {
-  constructor(url) { this.socket = new WebSocket(url); this.next = 0; this.pending = new Map(); this.events = []; }
+  constructor(url) { this.socket = new WebSocket(url); this.next = 0; this.pending = new Map(); this.events = []; this.dead = null; }
   async connect() {
-    await new Promise((resolve, reject) => { this.socket.once('open', resolve); this.socket.once('error', reject); });
+    await new Promise((resolve, reject) => {
+      this.socket.once('open', resolve);
+      this.socket.once('error', reject);
+    });
+    // The connect listener stays attached otherwise, so every later socket
+    // error is delivered to an already-settled promise and vanishes.
+    this.socket.removeAllListeners('error');
     this.socket.on('message', data => {
       const message = JSON.parse(String(data));
       if (message.id && this.pending.has(message.id)) {
@@ -116,11 +135,28 @@ class Cdp {
         if (message.error) reject(new Error(message.error.message)); else resolve(message.result);
       } else if (message.method) this.events.push(message);
     });
+    const fail = reason => {
+      this.dead = this.dead || reason;
+      for (const [id, {reject}] of [...this.pending]) {
+        this.pending.delete(id);
+        reject(new Error(reason));
+      }
+    };
+    this.socket.on('close', code => fail(`DevTools connection closed (code ${code}); the browser died mid-run`));
+    this.socket.on('error', error => fail(`DevTools connection error: ${error && error.message}`));
   }
   call(method, params = {}) {
+    if (this.dead) return Promise.reject(new Error(`${method} after ${this.dead}`));
     const id = ++this.next;
     return new Promise((resolve, reject) => {
-      this.pending.set(id, {resolve, reject});
+      const timer = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new Error(`${method} did not answer within ${CALL_TIMEOUT_MS}ms`));
+      }, CALL_TIMEOUT_MS);
+      this.pending.set(id, {
+        resolve: value => { clearTimeout(timer); resolve(value); },
+        reject: error => { clearTimeout(timer); reject(error); },
+      });
       this.socket.send(JSON.stringify({id, method, params}));
     });
   }
@@ -801,8 +837,14 @@ async function evaluate(cdp, expression) {
     const pdfChecks = !exportError && (!requestedFormats.has('pdf') || (
       pdf.menu === true && pdf.header === '%PDF-' && pdf.bytes >= 100 &&
       (!requirePdfZeroImages || pdf.images === 0) && pdf.pages === 1 &&
+      // Aspect ratio rather than absolute size: jsPDF caps a page at 14400
+      // units, and a diagram past that is scaled to fit rather than clipped, so
+      // the page legitimately stops matching the SVG one-for-one. What must
+      // always hold is that the whole diagram is on the page in proportion —
+      // clipping shows up as a ratio mismatch.
       (!requirePdfPageSize || (pdf.pdfWidth > 0 && pdf.pdfHeight > 0 &&
-        Math.abs(pdf.pdfWidth - pdf.svgWidth) < 0.1 && Math.abs(pdf.pdfHeight - pdf.svgHeight) < 0.1)) &&
+        pdf.pdfWidth <= 14400.5 && pdf.pdfHeight <= 14400.5 &&
+        Math.abs((pdf.pdfWidth / pdf.pdfHeight) - (pdf.svgWidth / pdf.svgHeight)) < 1e-4)) &&
       pdf.inflatedStreamBytes > 0 && pdf.whiteHaloOperators === 0 &&
       (!requirePdfRerender || pdf.rerenderSame === true)
     ));
@@ -833,7 +875,8 @@ async function evaluate(cdp, expression) {
         (process.env.VIEWER_REQUIRE_EXPANDED_SVG === '1' && !svgChecks) ||
         (sourceCycle.candidateCount > 1 && sourceCycle.uniqueSelectedIds < sourceCycle.candidateCount) ||
         (collapse.before > 1 && collapse.after >= collapse.before) || verticalOverflow || horizontalOverflow || comparisonTooShort || !drawerChecks || oversizedUiIcons || network.length || cspViolations.length || consoleErrors.length ||
-        (importedSource.published.length > 1 && (
+        (expectDocuments > 0 && importedSource.published.length !== expectDocuments) ||
+        (Math.max(importedSource.published.length, expectDocuments) > 1 && (
           !importedSource.pickerFound
           || importedSource.documents.length !== importedSource.published.length
           || !importedSource.childText

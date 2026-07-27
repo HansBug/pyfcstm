@@ -15,6 +15,7 @@ Example::
     'Root'
 """
 
+import atexit
 import base64
 import hashlib
 import html as html_module
@@ -833,6 +834,54 @@ def _temporary_viewer_path(document: str) -> Path:
     return Path(tempfile.gettempdir()) / ("pyfcstm-diagram-%s.html" % digest)
 
 
+# Temporary viewers this process wrote, mapped to whether they must outlive it.
+# A browser window reads its document asynchronously and long after the command
+# that launched it has exited, so anything handed to one has to stay; anything
+# else is this process's litter and is removed at exit.
+_TEMPORARY_VIEWERS: Dict[Path, bool] = {}
+
+
+def _register_temporary_viewer(path: Path, retain: bool) -> None:
+    """
+    Record a temporary viewer and whether a window was opened against it.
+
+    :param path: Temporary viewer path.
+    :type path: pathlib.Path
+    :param retain: Whether this call handed the file to a browser.
+    :type retain: bool
+    :return: ``None``.
+    :rtype: None
+    """
+    if path not in _TEMPORARY_VIEWERS:
+        atexit.register(_remove_temporary_viewer, path)
+        _TEMPORARY_VIEWERS[path] = retain
+        return
+    # Retention is one-way: a single window opened against this path is enough
+    # to make deleting it wrong, whichever order the calls arrive in.
+    _TEMPORARY_VIEWERS[path] = _TEMPORARY_VIEWERS[path] or retain
+
+
+def _remove_temporary_viewer(path: Path) -> None:
+    """
+    Delete a temporary viewer that no window ever opened.
+
+    :param path: Temporary viewer path.
+    :type path: pathlib.Path
+    :return: ``None``.
+    :rtype: None
+    """
+    if _TEMPORARY_VIEWERS.get(path, True):
+        return
+    try:
+        path.unlink()
+    except OSError as error:
+        # FileNotFoundError: the user or the OS already removed it.
+        # PermissionError: a browser still holds it open on Windows. Neither is
+        # worth failing interpreter shutdown over, and anything else is a bug.
+        if not isinstance(error, (FileNotFoundError, PermissionError)):
+            raise
+
+
 def _validate_write_target(target: Path) -> None:
     """
     Reject a destination before a temporary sibling is created for it.
@@ -862,7 +911,9 @@ def _validate_write_target(target: Path) -> None:
         )
 
 
-def _apply_target_mode(temporary_path: Path, target: Path) -> None:
+def _apply_target_mode(
+    temporary_path: Path, target: Path, mode: Optional[int] = None
+) -> None:
     """
     Give the temporary file the mode the target should end up with.
 
@@ -875,9 +926,16 @@ def _apply_target_mode(temporary_path: Path, target: Path) -> None:
     :type temporary_path: pathlib.Path
     :param target: Final destination path.
     :type target: pathlib.Path
+    :param mode: Force this mode instead of preserving or deriving one. Used
+        for paths whose name is predictable, where an existing file may have
+        been placed there by someone else.
+    :type mode: int, optional
     :return: ``None``.
     :rtype: None
     """
+    if mode is not None:
+        os.chmod(str(temporary_path), mode)
+        return
     try:
         mode = target.stat().st_mode & 0o7777
     except FileNotFoundError:
@@ -890,7 +948,9 @@ def _apply_target_mode(temporary_path: Path, target: Path) -> None:
     os.chmod(str(temporary_path), mode)
 
 
-def _atomic_write_text(path: Union[str, os.PathLike], content: str) -> Path:
+def _atomic_write_text(
+    path: Union[str, os.PathLike], content: str, mode: Optional[int] = None
+) -> Path:
     """Replace a text file atomically using a temporary sibling."""
     target = Path(path)
     _validate_write_target(target)
@@ -907,7 +967,7 @@ def _atomic_write_text(path: Union[str, os.PathLike], content: str) -> Path:
             temporary.write(content)
             temporary.flush()
             os.fsync(temporary.fileno())
-        _apply_target_mode(temporary_path, target)
+        _apply_target_mode(temporary_path, target, mode)
         os.replace(str(temporary_path), str(target))
     except OSError as write_error:
         try:
@@ -924,7 +984,9 @@ def _atomic_write_text(path: Union[str, os.PathLike], content: str) -> Path:
     return target
 
 
-def _atomic_write_bytes(path: Union[str, os.PathLike], content: bytes) -> Path:
+def _atomic_write_bytes(
+    path: Union[str, os.PathLike], content: bytes, mode: Optional[int] = None
+) -> Path:
     """Replace a binary file atomically using a temporary sibling."""
     target = Path(path)
     _validate_write_target(target)
@@ -940,7 +1002,7 @@ def _atomic_write_bytes(path: Union[str, os.PathLike], content: bytes) -> Path:
             temporary.write(content)
             temporary.flush()
             os.fsync(temporary.fileno())
-        _apply_target_mode(temporary_path, target)
+        _apply_target_mode(temporary_path, target, mode)
         os.replace(str(temporary_path), str(target))
     except OSError as write_error:
         try:
@@ -1881,11 +1943,12 @@ class Diagram:
         Write an HTML viewer and optionally open it in a standalone app window.
 
         :param output: Optional destination path. When omitted the viewer is
-            written to a temporary path derived from its own content, so the
-            same diagram always reuses one file however often it is shown. The
-            file is left in place because the browser window outlives this
-            process; each viewer is roughly 30 MB, so pass an explicit path
-            when you want to manage the file yourself.
+            written 0600 to a temporary path derived from its own content, so
+            the same diagram always reuses one file however often it is shown.
+            It is removed at interpreter exit unless a window was opened
+            against it, because that window outlives this process. Each viewer
+            is roughly 30 MB, so pass an explicit path when you want to manage
+            the file yourself.
         :type output: str or os.PathLike, optional
         :param open_window: Whether to launch a Chromium-family app window,
             defaults to ``True``.
@@ -1898,8 +1961,17 @@ class Diagram:
         """
         dimensions = _coerce_window_size(window_size)
         if output is None:
-            output = _temporary_viewer_path(self.to_html())
-        path = self.save(output, format="html")
+            document = self.to_html()
+            path = _temporary_viewer_path(document)
+            # 0600, and forced rather than preserved. The name is derived from
+            # the document, so on a shared temp directory anyone can predict
+            # it: both to read the model's own source out of the viewer, and to
+            # pre-create the path with a permissive mode that a mode-preserving
+            # write would then copy onto our content.
+            _atomic_write_text(path, document, mode=0o600)
+            _register_temporary_viewer(path, retain=open_window)
+        else:
+            path = self.save(output, format="html")
         if open_window:
             _open_standalone_window(path, dimensions)
         return path

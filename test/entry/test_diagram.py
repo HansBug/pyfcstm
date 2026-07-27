@@ -90,3 +90,41 @@ def test_diagram_cli_reports_bad_input_without_a_traceback(tmp_path):
         cli, ["diagram", "-i", str(good), "-o", str(tmp_path / "out3.json")]
     )
     assert result.exit_code == 0
+
+
+def test_diagram_cli_reports_a_bad_output_path_without_a_traceback(tmp_path):
+    """The write side had the same defect the input side did.
+
+    ``_validate_write_target`` produces a message naming the path and the real
+    problem, and letting the exception escape buried it in a stack.
+    """
+    runner = CliRunner()
+    source = tmp_path / "machine.fcstm"
+    source.write_text("state Root { state A; [*] -> A; }\n", encoding="utf-8")
+    existing = tmp_path / "already.json"
+    existing.write_text("{}", encoding="utf-8")
+
+    for target in (
+        tmp_path / "absent" / "out.json",  # parent directory does not exist
+        existing / "out.json",  # parent is a file
+    ):
+        result = runner.invoke(
+            cli, ["diagram", "-i", str(source), "-o", str(target), "--format", "json"]
+        )
+        assert result.exit_code == 1, target
+        assert "Traceback" not in result.output, target
+        assert "Failed to write" in result.output, target
+
+    # A directory destination is rejected earlier, by click's own -o validation,
+    # which says so more directly than the writer could.
+    result = runner.invoke(
+        cli, ["diagram", "-i", str(source), "-o", str(tmp_path), "--format", "json"]
+    )
+    assert result.exit_code == 2
+    assert "Traceback" not in result.output
+    assert "is a directory" in result.output
+
+    result = runner.invoke(
+        cli, ["diagram", "-i", str(source), "-o", str(tmp_path / "fine.json")]
+    )
+    assert result.exit_code == 0

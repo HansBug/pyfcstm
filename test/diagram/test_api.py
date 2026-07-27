@@ -3,6 +3,7 @@
 import json
 import os
 import re
+import stat
 import sys
 
 import pytest
@@ -832,3 +833,30 @@ def test_a_shown_viewer_survives_and_does_not_accumulate():
 
     for path in (first, other):
         path.unlink()
+
+
+@pytest.mark.unittest
+def test_a_temporary_viewer_is_private_and_reaped_when_no_window_opened_it():
+    """The viewer embeds the model's own source, in a world-readable directory.
+
+    Deriving the name from the document made it predictable, and dropping the
+    pre-created file took away the 0600 that had been protecting it by accident,
+    so on a shared temp directory any local user could read another user's state
+    machine. The mode is forced rather than preserved, which also stops a
+    pre-created permissive file from lending its mode to fresh content.
+    """
+    from pyfcstm.diagram.api import _TEMPORARY_VIEWERS, _remove_temporary_viewer
+
+    model = _model("state Root { state Secret; [*] -> Secret; }")
+    path = model.diagram().show(open_window=False)
+    try:
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
+        assert "Secret" in path.read_text(encoding="utf-8")
+        # No window opened it, so this process still owns it.
+        assert _TEMPORARY_VIEWERS[path] is False
+        _remove_temporary_viewer(path)
+        assert not path.exists()
+    finally:
+        _TEMPORARY_VIEWERS.pop(path, None)
+        if path.exists():
+            path.unlink()

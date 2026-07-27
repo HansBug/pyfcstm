@@ -33,7 +33,7 @@ def _check_style_sources(html: str, policy: str, styles: List[str]) -> None:
     for ``<style>`` and ``<link rel=stylesheet>``, so a widening moved there
     takes effect while ``style-src`` itself stays perfectly pinned.
     """
-    matches = re.findall(r"(?:^|;)\s*style-src ([^;]*)", policy)
+    matches = re.findall(r"(?:^|;)\s*style-src\s+([^;]*)", policy)
     if not matches:
         raise SystemExit("CSP has no style-src directive")
     if len(matches) != 1:
@@ -45,7 +45,7 @@ def _check_style_sources(html: str, policy: str, styles: List[str]) -> None:
             % len(matches)
         )
     for directive in ("style-src-elem", "script-src-elem"):
-        overriding = re.findall(r"(?:^|;)\s*%s ([^;]*)" % directive, policy)
+        overriding = re.findall(r"(?:^|;)\s*%s\s+([^;]*)" % directive, policy)
         if overriding:
             raise SystemExit(
                 "CSP declares %s, which overrides its base directive for the "
@@ -55,7 +55,7 @@ def _check_style_sources(html: str, policy: str, styles: List[str]) -> None:
     # The -attr directives are pinned to 'none' by the producer; anything else
     # re-enables inline style and event-handler attributes.
     for directive in ("style-src-attr", "script-src-attr"):
-        values = re.findall(r"(?:^|;)\s*%s ([^;]*)" % directive, policy)
+        values = re.findall(r"(?:^|;)\s*%s\s+([^;]*)" % directive, policy)
         if values != ["'none'"]:
             raise SystemExit(
                 "CSP must declare %s exactly once as 'none', found %s"
@@ -143,7 +143,7 @@ def main() -> None:
         if directive not in policy:
             raise SystemExit("CSP is missing %s" % directive)
     if args.forbid_unsafe_eval and re.search(
-        r"(?:^|[ ;])'unsafe-eval'(?:$|[ ;])", policy
+        r"(?:^|[\s;])'unsafe-eval'(?:$|[\s;])", policy
     ):
         raise SystemExit("CSP enables JavaScript unsafe-eval")
     if args.zero_network and re.search(

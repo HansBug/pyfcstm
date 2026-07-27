@@ -327,6 +327,38 @@ def test_delivery_matrix_accepts_exactly_the_authored_rows(
             BmcInfeasibilityExplanation(**kwargs)
 
 
+def test_int_subclasses_are_canonicalized_to_plain_ints() -> None:
+    """A canonical index is an ``int``, not merely something that acts like one.
+
+    ``IntEnum`` and other ``int`` subclasses pass an ``isinstance`` check but keep
+    their own ``repr``, so the published tuple would carry an object that is only
+    incidentally an integer.  JSON renders it as a number either way, which is
+    exactly why nothing else would notice.
+    """
+    import enum
+
+    class Frame(enum.IntEnum):
+        SECOND = 1
+
+    class Step(int):
+        pass
+
+    reference = BmcConstraintRef(
+        "initial.target",
+        "initialization",
+        "initial.target",
+        _GENERATED,
+        "initial target state",
+        frames=[Frame.SECOND],
+        steps=[Step(4)],
+    )
+
+    assert reference.frames == (1,)
+    assert reference.steps == (4,)
+    assert [type(value) for value in reference.frames] == [int]
+    assert [type(value) for value in reference.steps] == [int]
+
+
 @pytest.mark.parametrize("values", ["", "12", {}, {"a": 1}, 1, None, {0, 1}])
 def test_index_fields_require_an_actual_array(values) -> None:
     """A non-array container is refused instead of being iterated.

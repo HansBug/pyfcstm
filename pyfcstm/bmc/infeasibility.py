@@ -775,10 +775,20 @@ def _indices(refs: Mapping[str, object], key: str) -> Tuple[int, ...]:
         if name not in refs:
             continue
         value = refs[name]
-        # The singular spelling records one index directly; the plural one
-        # records a sequence.  Everything past this point is the same rule the
-        # public constructor applies, so both doors publish the same tuple.
-        entries = value if isinstance(value, (list, tuple)) else (value,)
+        # The singular spelling records one index directly, so it is the only
+        # one that unwraps a bare value.  The plural spelling must be a sequence,
+        # which is the container rule the public constructor applies: accepting a
+        # scalar there too would make the two doors disagree on the same field
+        # value, with only a comment claiming otherwise.
+        if name == key and not isinstance(value, (list, tuple)):
+            entries = (value,)
+        elif isinstance(value, (list, tuple)):
+            entries = value
+        else:
+            raise BmcBuildError(
+                "tracked group metadata %r must be a list or tuple of indices, "
+                "got %r." % (name, value)
+            )
         for entry in entries:
             try:
                 found.append(index_value(entry, name))

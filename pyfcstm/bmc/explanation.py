@@ -360,6 +360,16 @@ MAX_SOURCE_EXCERPT_CHARS = 4096
 UNBUILT_SLOTS = ("proof", "narrative")
 
 #: The two scopes that stay honest when classification never completed.
+#:
+#: The frozen design counts three honest fallback targets for an unfinished
+#: classification: ``kernel``, ``initialization_stage_fallback`` and
+#: ``assumptions_stage_fallback``.  Only two appear here, because ``kernel`` is
+#: not a *degraded* scope: the kernel stage has no weaker component or domain
+#: probe, so localizing it already fixes ``kernel_conflict`` and its scope name
+#: is the diagnostic one.  This tuple names the scopes that carry no
+#: classification, which is what :meth:`BmcInfeasibilityExplanation._validate_scope`
+#: needs, so a reader counting three targets against it would come up one short
+#: without this note.
 STAGE_FALLBACK_SCOPES = ("initialization_stage_fallback", "assumptions_stage_fallback")
 
 _SCOPES = tuple(CLASSIFICATION_SCOPES.values()) + STAGE_FALLBACK_SCOPES
@@ -416,7 +426,11 @@ def index_value(value: Any, label: str) -> int:
         raise ValueError(
             "%s must contain non-negative integers, got %r." % (label, value)
         )
-    return value
+    # int() rather than the value itself: an int subclass such as IntEnum passes
+    # the check above but keeps its own repr, so the published tuple would carry
+    # an object that is only incidentally an integer.  JSON renders it as a
+    # number either way, but a canonical field should not depend on that.
+    return int(value)
 
 
 def _require_indices(values: Any, label: str) -> Tuple[int, ...]:

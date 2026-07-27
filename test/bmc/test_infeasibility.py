@@ -580,6 +580,36 @@ def test_unusable_index_metadata_fails_closed(refs) -> None:
         _indices(refs, "frames")
 
 
+def test_only_the_singular_metadata_key_unwraps_a_bare_index() -> None:
+    """The plural key follows the same container rule as the public field.
+
+    The singular spelling records one index, so unwrapping it is the reader's
+    documented job.  The plural spelling is a sequence, and the public
+    constructor refuses a scalar for it; accepting one here would leave the two
+    doors disagreeing on the same field value while a comment claimed they
+    agreed.
+    """
+    from pyfcstm.bmc.explanation import BmcConstraintRef
+
+    # Singular: a bare index is the recorded form.
+    assert _indices({"frame": 1}, "frame") == (1,)
+    # Plural: a scalar is refused, exactly as the constructor refuses it.
+    with pytest.raises(BmcBuildError, match="must be a list or tuple"):
+        _indices({"frames": 1}, "frame")
+    with pytest.raises(TypeError, match="must be a list or tuple"):
+        BmcConstraintRef(
+            "g0",
+            "initialization",
+            "initial.target",
+            BmcSourceRef("generated", None, None),
+            "s",
+            frames=1,
+        )
+    # A sequence under either spelling stays acceptable.
+    assert _indices({"frame": [1, 0]}, "frame") == (0, 1)
+    assert _indices({"frames": [1, 0]}, "frame") == (0, 1)
+
+
 def test_absent_index_metadata_is_not_a_mismatch() -> None:
     """A group with no frame constraint records no frame key at all."""
     assert _indices({"kind": "state"}, "frames") == ()

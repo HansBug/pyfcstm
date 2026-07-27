@@ -30,7 +30,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
 from collections.abc import Iterable
-from typing import Any, Dict, List, Mapping, Optional, Tuple, Union
+from typing import Any, Dict, List, Mapping, Optional, Set, Tuple, Union
 
 from pygments import lex
 from pygments.formatters import HtmlFormatter
@@ -815,70 +815,79 @@ def _open_standalone_window(path: Path, window_size: Tuple[int, int]) -> None:
         ) from err
 
 
-def _temporary_viewer_path(document: str) -> Path:
+def _temporary_viewer_path(document: str, for_window: bool) -> Path:
     """
-    Return a stable temporary path for a rendered viewer document.
+    Return a temporary path for a rendered viewer document.
 
-    The name is derived from the document itself, so showing the same diagram
-    twice reuses one file instead of leaving another ~30 MB behind. Deleting it
-    afterwards is not an option: the browser is launched detached and reads the
-    file after this process is gone, which is how a cleanup hook once made
-    ``pyfcstm diagram --open`` open a window onto a file that no longer existed.
+    The two callers want opposite lifetimes, and a shared name cannot serve
+    both: a document handed to a window must outlive this process, because the
+    browser is launched detached and reads the file after we are gone, while a
+    document nobody opened is this process's litter. Giving them one
+    content-derived name meant an unrelated process rendering the same model
+    could delete a live window's document at its own exit, so the names differ.
+
+    A window's name is derived from the document alone, so showing the same
+    diagram twice — in this process or any other — reuses one file instead of
+    leaving another ~30 MB behind. A no-window name also carries the process
+    id, which makes it unambiguously ours to remove.
 
     :param document: The rendered HTML document.
     :type document: str
+    :param for_window: Whether the caller is about to open a browser window.
+    :type for_window: bool
     :return: A path under the system temporary directory.
     :rtype: pathlib.Path
     """
     digest = hashlib.sha256(document.encode("utf-8")).hexdigest()[:16]
-    return Path(tempfile.gettempdir()) / ("pyfcstm-diagram-%s.html" % digest)
+    suffix = "" if for_window else "-%d" % os.getpid()
+    return Path(tempfile.gettempdir()) / (
+        "pyfcstm-diagram-%s%s.html" % (digest, suffix)
+    )
 
 
-# Temporary viewers this process wrote, mapped to whether they must outlive it.
-# A browser window reads its document asynchronously and long after the command
-# that launched it has exited, so anything handed to one has to stay; anything
-# else is this process's litter and is removed at exit.
-_TEMPORARY_VIEWERS: Dict[Path, bool] = {}
+# Process-scoped temporary viewers, removed when this interpreter exits. Names
+# carry our process id, so nothing here can belong to another process and no
+# coordination is needed to decide who may delete what.
+_TEMPORARY_VIEWERS: Set[Path] = set()
 
 
-def _register_temporary_viewer(path: Path, retain: bool) -> None:
+def _register_temporary_viewer(path: Path) -> None:
     """
-    Record a temporary viewer and whether a window was opened against it.
+    Arrange for a process-scoped temporary viewer to be removed at exit.
 
-    :param path: Temporary viewer path.
+    :param path: Temporary viewer path carrying this process id.
     :type path: pathlib.Path
-    :param retain: Whether this call handed the file to a browser.
-    :type retain: bool
     :return: ``None``.
     :rtype: None
     """
-    if path not in _TEMPORARY_VIEWERS:
-        atexit.register(_remove_temporary_viewer, path)
-        _TEMPORARY_VIEWERS[path] = retain
+    if path in _TEMPORARY_VIEWERS:
         return
-    # Retention is one-way: a single window opened against this path is enough
-    # to make deleting it wrong, whichever order the calls arrive in.
-    _TEMPORARY_VIEWERS[path] = _TEMPORARY_VIEWERS[path] or retain
+    _TEMPORARY_VIEWERS.add(path)
+    atexit.register(_remove_temporary_viewer, path)
 
 
 def _remove_temporary_viewer(path: Path) -> None:
     """
-    Delete a temporary viewer that no window ever opened.
+    Delete a process-scoped temporary viewer.
 
     :param path: Temporary viewer path.
     :type path: pathlib.Path
     :return: ``None``.
     :rtype: None
     """
-    if _TEMPORARY_VIEWERS.get(path, True):
+    if path not in _TEMPORARY_VIEWERS:
         return
     try:
         path.unlink()
     except OSError as error:
         # FileNotFoundError: the user or the OS already removed it.
-        # PermissionError: a browser still holds it open on Windows. Neither is
-        # worth failing interpreter shutdown over, and anything else is a bug.
-        if not isinstance(error, (FileNotFoundError, PermissionError)):
+        # PermissionError: a browser still holds it open on Windows.
+        # IsADirectoryError: the predictable path was replaced by a directory.
+        # None is worth a traceback out of an atexit hook, and anything else is
+        # a bug worth seeing.
+        if not isinstance(
+            error, (FileNotFoundError, PermissionError, IsADirectoryError)
+        ):
             raise
 
 
@@ -1943,12 +1952,15 @@ class Diagram:
         Write an HTML viewer and optionally open it in a standalone app window.
 
         :param output: Optional destination path. When omitted the viewer is
-            written 0600 to a temporary path derived from its own content, so
-            the same diagram always reuses one file however often it is shown.
-            It is removed at interpreter exit unless a window was opened
-            against it, because that window outlives this process. Each viewer
-            is roughly 30 MB, so pass an explicit path when you want to manage
-            the file yourself.
+            written 0600 to a temporary path, and which path depends on
+            ``open_window``. With a window, the name is derived from the
+            document alone: the file is left in place, because the browser is
+            detached and reads it after this process is gone, and showing the
+            same diagram again — here or in another process — reuses that one
+            file. Without a window the name also carries this process id and
+            the file is removed at interpreter exit. Each viewer is roughly
+            30 MB, so pass an explicit path when you want to manage the file
+            yourself.
         :type output: str or os.PathLike, optional
         :param open_window: Whether to launch a Chromium-family app window,
             defaults to ``True``.
@@ -1962,14 +1974,15 @@ class Diagram:
         dimensions = _coerce_window_size(window_size)
         if output is None:
             document = self.to_html()
-            path = _temporary_viewer_path(document)
+            path = _temporary_viewer_path(document, for_window=open_window)
             # 0600, and forced rather than preserved. The name is derived from
             # the document, so on a shared temp directory anyone can predict
             # it: both to read the model's own source out of the viewer, and to
             # pre-create the path with a permissive mode that a mode-preserving
             # write would then copy onto our content.
             _atomic_write_text(path, document, mode=0o600)
-            _register_temporary_viewer(path, retain=open_window)
+            if not open_window:
+                _register_temporary_viewer(path)
         else:
             path = self.save(output, format="html")
         if open_window:

@@ -33,7 +33,14 @@ const startupWait = Number(process.env.VIEWER_STARTUP_WAIT || 4000);
 // document list cannot answer this: deleting `sourceDocuments` emptied both the
 // list and the expectation, so the imported-source assertion retired itself on
 // the one fixture that exists to exercise it.
-const expectDocuments = Number(process.env.VIEWER_EXPECT_DOCUMENTS || 0);
+const expectDocumentsRaw = process.env.VIEWER_EXPECT_DOCUMENTS;
+const expectDocuments = expectDocumentsRaw === undefined ? 0 : Number(expectDocumentsRaw);
+if (!Number.isInteger(expectDocuments) || expectDocuments < 0) {
+  // NaN loses every comparison, so a typo in the value would have retired both
+  // the count and the picker assertions without a word.
+  console.error(`VIEWER_EXPECT_DOCUMENTS must be a non-negative integer, got ${JSON.stringify(expectDocumentsRaw)}`);
+  process.exit(2);
+}
 if (!htmlPath) {
   console.error('usage: node check_viewer_browser.js VIEWER.html [SCREENSHOT.png]');
   process.exit(2);

@@ -53,9 +53,6 @@ export async function expandSvgForExport(
 }
 
 /**
- * Render one diagram-sized vector PDF from the shared expanded SVG path.
- */
-/**
  * Largest page dimension jsPDF will accept, in PDF units.
  *
  * Anything beyond this is clamped by the library without an error, so a page
@@ -63,6 +60,9 @@ export async function expandSvgForExport(
  */
 export const PDF_MAX_UNITS = 14400;
 
+/**
+ * Render one diagram-sized vector PDF from the shared expanded SVG path.
+ */
 export async function renderVectorPdf(
     source: string,
     bounds: {width: number; height: number},
@@ -76,8 +76,11 @@ export async function renderVectorPdf(
     // arbitrary for a diagram, so this costs absolute size and nothing else,
     // and the page keeps the diagram's aspect ratio.
     const fit = Math.min(1, PDF_MAX_UNITS / Math.max(width, height));
-    const pageWidth = width * fit;
-    const pageHeight = height * fit;
+    // Clamped after multiplying, not just before: `width * (CAP / width)` lands
+    // a couple of ulps above CAP for about a tenth of integer sizes, which is
+    // geometrically irrelevant but still trips jsPDF's clamp warning.
+    const pageWidth = Math.min(PDF_MAX_UNITS, width * fit);
+    const pageHeight = Math.min(PDF_MAX_UNITS, height * fit);
     const normalized = prepareSvgForPdf(source);
     const expanded = await expandSvgForExport(normalized, expand);
     const svg = parseSvg(expanded);

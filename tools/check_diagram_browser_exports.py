@@ -84,6 +84,11 @@ def main() -> None:
                     check=True,
                     cwd=str(ROOT),
                     env=env,
+                    # A hang inside the browser gate has to become a failure
+                    # rather than an unbounded wait. The slowest legitimate case
+                    # measured here is well under a minute; this leaves an order
+                    # of magnitude of headroom for a cold CI runner.
+                    timeout=900,
                 )
     print(
         "diagram browser exports: %d cases x %d viewports passed"

@@ -1,8 +1,13 @@
 """CLI tests for the standalone diagram command."""
 
+import pytest
 from click.testing import CliRunner
 
 from pyfcstm.entry.cli import cli
+
+# Without this the whole file is deselected by `pytest -m unittest`, which is
+# the only Python path CI runs, so every test here would be dead weight.
+pytestmark = pytest.mark.unittest
 
 
 def test_diagram_cli_json_and_html(tmp_path):

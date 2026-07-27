@@ -805,58 +805,72 @@ def test_snapshots_reject_attribute_assignment():
 
 
 @pytest.mark.unittest
-def test_a_shown_viewer_survives_and_does_not_accumulate():
-    """The window outlives this process, and repeats must not pile up files.
+def test_a_shown_viewer_does_not_accumulate():
+    """Repeats must reuse one file, and the window's copy must outlive us.
 
-    A cleanup hook made ``pyfcstm diagram --open`` open onto a file that no
-    longer existed: the browser is launched detached, so the interpreter exited
-    and deleted the document before the window read it. Keeping every file
-    instead traded that for ~30 MB per call. The path is derived from the
-    document, so the same diagram always lands on one file.
+    A cleanup hook once made ``pyfcstm diagram --open`` open a window onto a
+    file that no longer existed, because the browser is launched detached and
+    reads the document after the command has exited. Keeping every file instead
+    traded that for ~30 MB per call, so the name is derived from the document.
     """
-    from pyfcstm.diagram.api import _temporary_viewer_path
+    from pyfcstm.diagram import api as diagram_api
 
     model = _model("state Root { state Idle; state Busy; [*] -> Idle; Idle -> Busy; }")
-    first = model.diagram().show(open_window=False)
-    second = model.diagram().show(open_window=False)
-    assert first == second, "the same diagram must reuse one temporary viewer"
-    assert first.exists(), "the viewer has to outlive the process that shows it"
-    assert first.read_text(encoding="utf-8") == model.diagram().to_html()
-
-    other = _model("state Root;").diagram().show(open_window=False)
+    document = model.diagram().to_html()
+    first = diagram_api._temporary_viewer_path(document, for_window=True)
+    assert diagram_api._temporary_viewer_path(document, for_window=True) == first
+    other = diagram_api._temporary_viewer_path(
+        _model("state Root;").diagram().to_html(), for_window=True
+    )
     assert other != first, "different diagrams need different files"
-
-    # The name is a pure function of the document, so nothing about where or
-    # when it ran can make two runs disagree.
-    assert _temporary_viewer_path("a") == _temporary_viewer_path("a")
-    assert _temporary_viewer_path("a") != _temporary_viewer_path("b")
-
-    for path in (first, other):
-        path.unlink()
 
 
 @pytest.mark.unittest
-def test_a_temporary_viewer_is_private_and_reaped_when_no_window_opened_it():
-    """The viewer embeds the model's own source, in a world-readable directory.
+def test_a_temporary_viewer_is_private_and_process_scoped():
+    """The viewer embeds the model's own source into a world-readable directory.
 
     Deriving the name from the document made it predictable, and dropping the
-    pre-created file took away the 0600 that had been protecting it by accident,
-    so on a shared temp directory any local user could read another user's state
-    machine. The mode is forced rather than preserved, which also stops a
-    pre-created permissive file from lending its mode to fresh content.
+    pre-created file removed the 0600 that had been protecting it by accident,
+    so any local user could read another user's state machine. The mode is
+    forced rather than preserved, which also stops a pre-created permissive file
+    from lending its mode to fresh content.
+
+    The name also has to say who owns the file. One shared content-derived name
+    let an unrelated process rendering the same model delete, at its own exit,
+    the document a live browser window was still reading.
     """
-    from pyfcstm.diagram.api import _TEMPORARY_VIEWERS, _remove_temporary_viewer
+    import atexit as atexit_module
+
+    from pyfcstm.diagram import api as diagram_api
 
     model = _model("state Root { state Secret; [*] -> Secret; }")
-    path = model.diagram().show(open_window=False)
+    document = model.diagram().to_html()
+    windowed = diagram_api._temporary_viewer_path(document, for_window=True)
+    scoped = diagram_api._temporary_viewer_path(document, for_window=False)
+    assert windowed != scoped, "a window's document must not share a reapable name"
+    assert str(os.getpid()) in scoped.name
+    assert str(os.getpid()) not in windowed.name
+    # Reusable across processes, which is what keeps repeats from accumulating.
+    assert diagram_api._temporary_viewer_path(document, for_window=True) == windowed
+
+    registered = []
+    original = atexit_module.register
+    diagram_api.atexit.register = lambda func, *args: registered.append((func, args))
     try:
-        assert stat.S_IMODE(path.stat().st_mode) == 0o600
+        path = model.diagram().show(open_window=False)
+    finally:
+        diagram_api.atexit.register = original
+    try:
+        assert path == scoped
+        # Windows cannot represent a POSIX mode, so it reports 0o666 here.
+        if os.name != "nt":
+            assert stat.S_IMODE(path.stat().st_mode) == 0o600
         assert "Secret" in path.read_text(encoding="utf-8")
-        # No window opened it, so this process still owns it.
-        assert _TEMPORARY_VIEWERS[path] is False
-        _remove_temporary_viewer(path)
+        # The removal must be wired to interpreter exit, not merely callable.
+        assert (diagram_api._remove_temporary_viewer, (path,)) in registered
+        diagram_api._remove_temporary_viewer(path)
         assert not path.exists()
     finally:
-        _TEMPORARY_VIEWERS.pop(path, None)
+        diagram_api._TEMPORARY_VIEWERS.discard(path)
         if path.exists():
             path.unlink()

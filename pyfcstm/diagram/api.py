@@ -26,6 +26,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
@@ -1067,13 +1068,25 @@ def _atomic_write_text(
             # SIGKILL cannot be covered by anything running in this process.
             try:
                 temporary_path.unlink()
-            except OSError:
-                # FileNotFoundError: the branch above already removed it, or
-                # the replace succeeded and there is nothing to remove.
-                # PermissionError/IsADirectoryError: the destination directory
-                # changed underneath us, and the original failure is the one
-                # worth propagating -- this cleanup must not mask it.
+            except FileNotFoundError:
+                # The branch above already removed it, which is the common path
+                # and not worth reporting.
                 pass
+            except OSError as cleanup_error:
+                # The in-flight exception is the one the caller needs, so this
+                # cannot be raised -- doing so would replace a KeyboardInterrupt
+                # or the chained error above with a cleanup detail. Warned
+                # instead, because the alternative is a full-size file left
+                # behind with nothing said about it. RuntimeWarning rather than
+                # ResourceWarning: the latter is filtered out by default, which
+                # would satisfy the letter of "record it somewhere observable"
+                # while leaving the user with a silent ~30 MB leftover.
+                warnings.warn(
+                    "could not remove the temporary file %s: %s"
+                    % (temporary_path, cleanup_error),
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
     return target
 
 
@@ -1119,13 +1132,25 @@ def _atomic_write_bytes(
             # SIGKILL cannot be covered by anything running in this process.
             try:
                 temporary_path.unlink()
-            except OSError:
-                # FileNotFoundError: the branch above already removed it, or
-                # the replace succeeded and there is nothing to remove.
-                # PermissionError/IsADirectoryError: the destination directory
-                # changed underneath us, and the original failure is the one
-                # worth propagating -- this cleanup must not mask it.
+            except FileNotFoundError:
+                # The branch above already removed it, which is the common path
+                # and not worth reporting.
                 pass
+            except OSError as cleanup_error:
+                # The in-flight exception is the one the caller needs, so this
+                # cannot be raised -- doing so would replace a KeyboardInterrupt
+                # or the chained error above with a cleanup detail. Warned
+                # instead, because the alternative is a full-size file left
+                # behind with nothing said about it. RuntimeWarning rather than
+                # ResourceWarning: the latter is filtered out by default, which
+                # would satisfy the letter of "record it somewhere observable"
+                # while leaving the user with a silent ~30 MB leftover.
+                warnings.warn(
+                    "could not remove the temporary file %s: %s"
+                    % (temporary_path, cleanup_error),
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
     return target
 
 

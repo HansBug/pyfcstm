@@ -6,6 +6,7 @@ from pathlib import Path
 import re
 import stat
 import sys
+import warnings
 
 import pytest
 
@@ -1022,3 +1023,53 @@ def test_atomic_writes_still_report_a_failed_cleanup_with_both_causes(
         api._atomic_write_text(tmp_path / "page.html", "x")
     assert "mode could not be applied" in str(caught.value)
     assert "cannot unlink" in str(caught.value)
+
+
+def test_atomic_writes_report_a_cleanup_they_could_not_perform(tmp_path, monkeypatch):
+    # The cleanup cannot raise: doing so would replace the KeyboardInterrupt the
+    # caller needs with a detail about a temporary file. Swallowing it silently
+    # would leave a full-size file behind with nothing said, so it warns.
+    from pyfcstm.diagram import api
+
+    def interrupt(*_args, **_kwargs):
+        raise KeyboardInterrupt
+
+    def fail_unlink(self, *_args, **_kwargs):
+        raise PermissionError("locked")
+
+    monkeypatch.setattr(api, "_apply_target_mode", interrupt)
+    monkeypatch.setattr(Path, "unlink", fail_unlink)
+    with pytest.warns(RuntimeWarning, match="could not remove the temporary file"):
+        with pytest.raises(KeyboardInterrupt):
+            api._atomic_write_text(tmp_path / "page.html", "x")
+
+
+def test_atomic_writes_stay_quiet_when_cleanup_works(tmp_path, monkeypatch):
+    # The warning must not fire on the ordinary interrupted path, or every
+    # cancelled write would look like a leak.
+    from pyfcstm.diagram import api
+
+    def interrupt(*_args, **_kwargs):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(api, "_apply_target_mode", interrupt)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        with pytest.raises(KeyboardInterrupt):
+            api._atomic_write_text(tmp_path / "page.html", "x")
+    assert [str(item.message) for item in caught] == []
+    assert list(tmp_path.iterdir()) == []
+
+    # The other quiet path: an OSError write cleans up in its own branch, so the
+    # `finally` finds nothing left. Without a FileNotFoundError arm that second
+    # attempt reads as a cleanup failure and warns about a file it just removed.
+    def fail_mode(*_args, **_kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(api, "_apply_target_mode", fail_mode)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        with pytest.raises(OSError, match="disk full"):
+            api._atomic_write_text(tmp_path / "other.html", "x")
+    assert [str(item.message) for item in caught] == []
+    assert list(tmp_path.iterdir()) == []

@@ -16,7 +16,11 @@ from z3.z3util import get_vars
 from pyfcstm.bmc import build_bmc_core_formula, compile_bmc_property
 from pyfcstm.bmc.engine import BmcEngine
 from pyfcstm.bmc.errors import BmcBuildError
-from pyfcstm.bmc.explanation import CLASSIFICATION_SCOPES, STAGE_FALLBACK_SCOPES
+from pyfcstm.bmc.explanation import (
+    CLASSIFICATION_SCOPES,
+    STAGE_FALLBACK_SCOPES,
+    _SCOPE_STAGES,
+)
 from pyfcstm.bmc.infeasibility import (
     AGGREGATE_SELECTORS,
     SCOPE_TARGETS,
@@ -29,7 +33,11 @@ from pyfcstm.bmc.infeasibility import (
     extract_source_core,
     partition_tracked_groups,
 )
-from pyfcstm.bmc.provenance import BmcSourceRef, BmcTrackedConstraint
+from pyfcstm.bmc.provenance import (
+    BmcSourceRef,
+    BmcTrackedConstraint,
+    SourceDocumentRegistry,
+)
 from pyfcstm.bmc.solver import _SolveBudget
 from pyfcstm.model import load_state_machine_from_text
 
@@ -873,3 +881,75 @@ def test_an_undetermined_core_extraction_publishes_nothing() -> None:
     assert extraction.groups == ()
     assert extraction.status == "unknown"
     assert "core extraction returned unknown" in extraction.reason
+
+
+def test_scope_stage_table_is_derived_from_the_scope_targets() -> None:
+    """The two scope tables are hand-synced, so they are pinned to each other.
+
+    ``SCOPE_TARGETS`` lives beside the solver and ``_SCOPE_STAGES`` lives in the
+    Z3-free data layer, so they cannot share one definition.  Deriving one from
+    the other here turns a silent drift into a failing test: a scope that gains
+    an aggregate but keeps its old stage set would let a core member escape the
+    formula its scope actually proves.
+    """
+    stage_of_aggregate = {
+        "domain": "kernel",
+        "transition": "kernel",
+        "initial": "initialization",
+        "environment": "assumptions",
+    }
+
+    assert set(stage_of_aggregate) == set(AGGREGATE_SELECTORS)
+    for scope, aggregates in SCOPE_TARGETS.items():
+        derived = {stage_of_aggregate[name] for name in aggregates}
+
+        assert derived == set(_SCOPE_STAGES[scope]), scope
+
+
+def test_a_published_core_quotes_the_authored_query_text() -> None:
+    """The end-to-end path answers "which source lines suffice", not just "how".
+
+    The prepared context already owns a source registry, so the orchestration
+    reuses it by default.  Without that wiring every ``source_excerpt`` would
+    be ``None`` in production while still passing every component test.
+    """
+    machine = load_state_machine_from_text(_MODEL)
+    query = (
+        'init state("Root.A") where x == 0;\n'
+        'assume at 0: var("x") == 1;\n'
+        'assume at 0: var("x") == 2;\n'
+        'check reach <= 2: active("Root.B");\n'
+    )
+    context = BmcEngine(machine).prepare(query, query_source_path="prop.fbmcq")
+    core = build_bmc_core_formula(context)
+
+    outcome = explain_infeasibility(core, "assumptions", _SolveBudget(None))
+    items = outcome.explanation.core.items
+
+    assert [item.source_excerpt for item in items] == [
+        'assume at 0: var("x") == 1;',
+        'assume at 0: var("x") == 2;',
+    ]
+    assert all(item.editable for item in items)
+    assert all(item.constraint.source.path == "prop.fbmcq" for item in items)
+    assert [item.constraint.source.span.line for item in items] == [2, 3]
+
+
+def test_an_explicit_registry_overrides_the_context_default() -> None:
+    """A caller may still supply its own documents, for example for a UI."""
+    machine = load_state_machine_from_text(_MODEL)
+    context = BmcEngine(machine).prepare(
+        'init state("Root.A") where x == 1 && x == 2; '
+        'check reach <= 2: active("Root.B");'
+    )
+    core = build_bmc_core_formula(context)
+
+    outcome = explain_infeasibility(
+        core,
+        "initialization",
+        _SolveBudget(None),
+        registry=SourceDocumentRegistry({}),
+    )
+
+    assert outcome.explanation.classification == "initialization_self_conflict"
+    assert all(item.source_excerpt is None for item in outcome.explanation.core.items)

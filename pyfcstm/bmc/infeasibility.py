@@ -840,8 +840,10 @@ def explain_infeasibility(
     :param requested_mode: Explanation depth the caller asked for, defaults to
         ``'formal'``.
     :type requested_mode: str, optional
-    :param registry: Source documents used to quote authored text, defaults to
-        ``None``.
+    :param registry: Source documents used to quote authored text.  Defaults
+        to ``None``, which reuses the registry the prepared context already
+        built, so a core quotes real FCSTM/FBMCQ text without the caller
+        having to supply it.
     :type registry: Optional[pyfcstm.bmc.provenance.SourceDocumentRegistry],
         optional
     :return: Public explanation plus the probe ledger that produced it.
@@ -866,6 +868,8 @@ def explain_infeasibility(
         'kernel_conflict'
     """
     started = time.monotonic()
+    if registry is None:
+        registry = getattr(core.context, "_source_registry", None)
     outcome = classify_infeasibility(core, stage, budget)
     if outcome.classification is None:
         return ExplanationOutcome(

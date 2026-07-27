@@ -20,7 +20,6 @@ import itertools
 import json
 from pathlib import Path
 
-import jsonschema
 import pytest
 
 from pyfcstm.bmc.explanation import (
@@ -77,8 +76,14 @@ _INEXPRESSIBLE = {
 
 
 @pytest.fixture(scope="module")
-def validator() -> jsonschema.Draft202012Validator:
-    """Return a validator bound to the published explanation definition."""
+def validator():
+    """Return a validator bound to the published explanation definition.
+
+    ``jsonschema`` is a local development convenience rather than a declared
+    test dependency, so this follows the repository's existing convention of
+    skipping schema checks when it is absent.
+    """
+    jsonschema = pytest.importorskip("jsonschema")
     schema = json.loads(_SCHEMA_PATH.read_text(encoding="utf-8"))
     return jsonschema.Draft202012Validator(
         {"$ref": "#/$defs/infeasibilityExplanation", "$defs": schema["$defs"]}
@@ -385,8 +390,9 @@ def _feasibility_payload():
 
 
 @pytest.fixture(scope="module")
-def feasibility_validator() -> jsonschema.Draft202012Validator:
+def feasibility_validator():
     """Return a validator bound to the published feasibility definition."""
+    jsonschema = pytest.importorskip("jsonschema")
     schema = json.loads(_SCHEMA_PATH.read_text(encoding="utf-8"))
     return jsonschema.Draft202012Validator(
         {"$ref": "#/$defs/feasibility", "$defs": schema["$defs"]}

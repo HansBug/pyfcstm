@@ -4,8 +4,6 @@ import json
 import os
 import re
 import sys
-import tempfile
-from pathlib import Path
 
 import pytest
 
@@ -806,41 +804,31 @@ def test_snapshots_reject_attribute_assignment():
 
 
 @pytest.mark.unittest
-def test_a_temporary_viewer_opened_in_a_window_outlives_this_process():
-    """A launched browser reads the file long after the launcher has exited.
+def test_a_shown_viewer_survives_and_does_not_accumulate():
+    """The window outlives this process, and repeats must not pile up files.
 
-    Cleaning temporary viewers at interpreter exit made every
-    ``pyfcstm diagram --open`` show "file not found": the CLI returned as soon
-    as the browser was spawned, the hook deleted the document, and the window
-    opened against nothing.
+    A cleanup hook made ``pyfcstm diagram --open`` open onto a file that no
+    longer existed: the browser is launched detached, so the interpreter exited
+    and deleted the document before the window read it. Keeping every file
+    instead traded that for ~30 MB per call. The path is derived from the
+    document, so the same diagram always lands on one file.
     """
-    from pyfcstm.diagram.api import (
-        _TEMPORARY_VIEWERS,
-        _remember_temporary_viewer,
-        _remove_temporary_viewer,
-    )
+    from pyfcstm.diagram.api import _temporary_viewer_path
 
-    opened = Path(tempfile.mkdtemp()) / "opened.html"
-    opened.write_text("viewer", encoding="utf-8")
-    _remember_temporary_viewer(opened, remove=False)
-    _remove_temporary_viewer(opened)
-    assert opened.exists()
+    model = _model("state Root { state Idle; state Busy; [*] -> Idle; Idle -> Busy; }")
+    first = model.diagram().show(open_window=False)
+    second = model.diagram().show(open_window=False)
+    assert first == second, "the same diagram must reuse one temporary viewer"
+    assert first.exists(), "the viewer has to outlive the process that shows it"
+    assert first.read_text(encoding="utf-8") == model.diagram().to_html()
 
-    unopened = opened.parent / "unopened.html"
-    unopened.write_text("viewer", encoding="utf-8")
-    _remember_temporary_viewer(unopened, remove=True)
-    _remove_temporary_viewer(unopened)
-    assert not unopened.exists()
+    other = _model("state Root;").diagram().show(open_window=False)
+    assert other != first, "different diagrams need different files"
 
-    # Ownership is given up once and never taken back, whichever order the
-    # calls arrive in.
-    for order in ((True, False), (False, True)):
-        mixed = opened.parent / ("mixed-%s.html" % str(order))
-        mixed.write_text("viewer", encoding="utf-8")
-        for remove in order:
-            _remember_temporary_viewer(mixed, remove=remove)
-        _remove_temporary_viewer(mixed)
-        assert mixed.exists()
-        _TEMPORARY_VIEWERS.pop(mixed, None)
-    _TEMPORARY_VIEWERS.pop(opened, None)
-    _TEMPORARY_VIEWERS.pop(unopened, None)
+    # The name is a pure function of the document, so nothing about where or
+    # when it ran can make two runs disagree.
+    assert _temporary_viewer_path("a") == _temporary_viewer_path("a")
+    assert _temporary_viewer_path("a") != _temporary_viewer_path("b")
+
+    for path in (first, other):
+        path.unlink()

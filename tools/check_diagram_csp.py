@@ -44,12 +44,23 @@ def _check_style_sources(html: str, policy: str, styles: List[str]) -> None:
             "CSP declares style-src %d times; it must appear exactly once"
             % len(matches)
         )
-    element_sources = re.findall(r"(?:^|;)\s*style-src-elem ([^;]*)", policy)
-    if element_sources:
-        raise SystemExit(
-            "CSP declares style-src-elem, which overrides style-src for style "
-            "elements and stylesheet links: %s" % "; ".join(element_sources)
-        )
+    for directive in ("style-src-elem", "script-src-elem"):
+        overriding = re.findall(r"(?:^|;)\s*%s ([^;]*)" % directive, policy)
+        if overriding:
+            raise SystemExit(
+                "CSP declares %s, which overrides its base directive for the "
+                "very elements these checks pin: %s"
+                % (directive, "; ".join(overriding))
+            )
+    # The -attr directives are pinned to 'none' by the producer; anything else
+    # re-enables inline style and event-handler attributes.
+    for directive in ("style-src-attr", "script-src-attr"):
+        values = re.findall(r"(?:^|;)\s*%s ([^;]*)" % directive, policy)
+        if values != ["'none'"]:
+            raise SystemExit(
+                "CSP must declare %s exactly once as 'none', found %s"
+                % (directive, values or "nothing")
+            )
     sources = matches[0].split()
     expected_hashes = {
         "'sha256-%s'"
@@ -136,10 +147,12 @@ def main() -> None:
     ):
         raise SystemExit("CSP enables JavaScript unsafe-eval")
     if args.zero_network and re.search(
-        r'(?:src|href)=["\']https?://', html, re.IGNORECASE
+        r'(?:src|href)\s*=\s*["\']?(?:https?:)?//', html, re.IGNORECASE
     ):
         raise SystemExit("standalone HTML contains a remote resource")
-    scripts = re.findall(r"<script>(.*?)</script>", html, re.DOTALL)
+    scripts = re.findall(
+        r"<script[^>]*>(.*?)</script>", html, re.DOTALL | re.IGNORECASE
+    )
     if args.require_script_hashes:
         for script in scripts:
             digest = base64.b64encode(
@@ -152,8 +165,10 @@ def main() -> None:
     # nonce makes newly loadable. Script bodies are removed first because the
     # bundled component library's source contains a `<style cssr-id="...">`
     # template literal, and that string is not a stylesheet in this document.
-    markup = re.sub(r"<script[^>]*>.*?</script>", "", html, flags=re.DOTALL)
-    styles = re.findall(r"<style[^>]*>(.*?)</style>", markup, re.DOTALL)
+    markup = re.sub(
+        r"<script[^>]*>.*?</script>", "", html, flags=re.DOTALL | re.IGNORECASE
+    )
+    styles = re.findall(r"<style[^>]*>(.*?)</style>", markup, re.DOTALL | re.IGNORECASE)
     if args.require_style_hashes:
         if not styles:
             raise SystemExit("standalone HTML has no inline style block")

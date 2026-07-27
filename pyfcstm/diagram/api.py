@@ -15,7 +15,6 @@ Example::
     'Root'
 """
 
-import atexit
 import base64
 import hashlib
 import html as html_module
@@ -815,54 +814,23 @@ def _open_standalone_window(path: Path, window_size: Tuple[int, int]) -> None:
         ) from err
 
 
-# Temporary viewers created by :meth:`Diagram.show`, mapped to whether this
-# interpreter still owns them. A browser window outlives the process that
-# launched it, so a file handed to one must survive interpreter shutdown.
-_TEMPORARY_VIEWERS: Dict[Path, bool] = {}
-
-
-def _remember_temporary_viewer(path: Path, remove: bool) -> None:
+def _temporary_viewer_path(document: str) -> Path:
     """
-    Record a temporary viewer and whether it may be deleted at exit.
+    Return a stable temporary path for a rendered viewer document.
 
-    :param path: Temporary viewer path.
-    :type path: pathlib.Path
-    :param remove: Whether this call leaves the file safe to delete.
-    :type remove: bool
-    :return: ``None``.
-    :rtype: None
+    The name is derived from the document itself, so showing the same diagram
+    twice reuses one file instead of leaving another ~30 MB behind. Deleting it
+    afterwards is not an option: the browser is launched detached and reads the
+    file after this process is gone, which is how a cleanup hook once made
+    ``pyfcstm diagram --open`` open a window onto a file that no longer existed.
+
+    :param document: The rendered HTML document.
+    :type document: str
+    :return: A path under the system temporary directory.
+    :rtype: pathlib.Path
     """
-    if path not in _TEMPORARY_VIEWERS:
-        atexit.register(_remove_temporary_viewer, path)
-        _TEMPORARY_VIEWERS[path] = remove
-        return
-    # Ownership is given up once and never taken back: a single window opened
-    # against this path is enough to make deleting it wrong.
-    _TEMPORARY_VIEWERS[path] = _TEMPORARY_VIEWERS[path] and remove
-
-
-def _remove_temporary_viewer(path: Path) -> None:
-    """
-    Delete a viewer file that :meth:`Diagram.show` created for the caller.
-
-    Files that were opened in a browser are kept: the window reads them
-    asynchronously and typically long after the interpreter is gone.
-
-    :param path: Temporary viewer path.
-    :type path: pathlib.Path
-    :return: ``None``.
-    :rtype: None
-    """
-    if not _TEMPORARY_VIEWERS.get(path, False):
-        return
-    try:
-        path.unlink()
-    except OSError as error:
-        # FileNotFoundError: the user or the OS already removed it.
-        # PermissionError: a browser still holds it open on Windows. Neither is
-        # worth failing interpreter shutdown over, and anything else is a bug.
-        if not isinstance(error, (FileNotFoundError, PermissionError)):
-            raise
+    digest = hashlib.sha256(document.encode("utf-8")).hexdigest()[:16]
+    return Path(tempfile.gettempdir()) / ("pyfcstm-diagram-%s.html" % digest)
 
 
 def _validate_write_target(target: Path) -> None:
@@ -912,14 +880,10 @@ def _apply_target_mode(temporary_path: Path, target: Path) -> None:
     """
     try:
         mode = target.stat().st_mode & 0o7777
-    except OSError as error:
-        # FileNotFoundError: the usual case of writing a new file.
-        # PermissionError / OSError: an unreadable parent directory; the write
-        # itself will report that, so fall back to the umask default here.
-        if not isinstance(
-            error, (FileNotFoundError, PermissionError, NotADirectoryError)
-        ):
-            raise
+    except FileNotFoundError:
+        # The usual case: the target does not exist yet, so there is no mode to
+        # preserve. Other stat failures surface from _validate_write_target,
+        # which runs first and re-raises them from its own is_dir() call.
         umask = os.umask(0)
         os.umask(umask)
         mode = 0o666 & ~umask
@@ -1365,10 +1329,12 @@ class Diagram:
             _reject_unknown_mapping_keys(value, _VIEW_STATE_KEYS, "DiagramViewState")
             return DiagramViewState(
                 mode=str(value.get("mode", "compare")),
-                collapsed_state_ids=tuple(
-                    _mapping_value(
-                        value, "collapsed_state_ids", "collapsedStateIds", ()
-                    )
+                # Forwarded unconverted: calling tuple() here consumed a bare
+                # string into one entry per character before __post_init__
+                # could reject it, so the mapping and keyword paths — which is
+                # how most callers arrive — skipped that validation entirely.
+                collapsed_state_ids=_mapping_value(
+                    value, "collapsed_state_ids", "collapsedStateIds", ()
                 ),
                 zoom=value.get("zoom", None),
                 pan_x=_mapping_value(value, "pan_x", "panX", None),
@@ -1419,7 +1385,6 @@ class Diagram:
             model, model.source_path or "<memory>"
         )
         self._html_document: Optional[str] = None
-        self._temporary_html: Optional[Path] = None
         self._frozen = True
 
     def __setattr__(self, name: str, value: Any) -> None:
@@ -1446,6 +1411,26 @@ class Diagram:
             )
         object.__setattr__(self, name, value)
 
+    def __delattr__(self, name: str) -> None:
+        """
+        Reject attribute deletion once the snapshot is built.
+
+        Guarding only assignment left ``del`` as a way around it: removing the
+        freeze flag reopened the object, and removing a field corrupted the
+        snapshot outright.
+
+        :param name: Attribute name.
+        :type name: str
+        :return: ``None``.
+        :rtype: None
+        :raises AttributeError: If the snapshot has finished initializing.
+        """
+        if getattr(self, "_frozen", False):
+            raise AttributeError(
+                "Diagram snapshots are immutable; %r cannot be deleted" % name
+            )
+        object.__delattr__(self, name)
+
     def _clone_snapshot(self, options: Any, view_state: Any) -> "Diagram":
         """Create a derived view without rereading the mutable model."""
         clone = object.__new__(type(self))
@@ -1457,14 +1442,15 @@ class Diagram:
         assign(clone, "_renderer_diagram", self._renderer_diagram)
         assign(clone, "data", self.data)
         assign(clone, "_source", self._source)
-        # Copied rather than shared: these are plain containers next to frozen
-        # ones, and a snapshot documented as independent should not alias them.
+        # The top level is copied so a derived snapshot cannot have entries
+        # added or removed under it. The nested values stay shared; they are
+        # only ever read, and deep-copying them would duplicate the whole
+        # source sidecar on every derivation.
         assign(clone, "_source_map", dict(self._source_map))
         assign(clone, "_source_line_map", dict(self._source_line_map))
         assign(clone, "_source_documents", dict(self._source_documents))
         assign(clone, "_source_document_id", self._source_document_id)
         assign(clone, "_html_document", None)
-        assign(clone, "_temporary_html", None)
         assign(clone, "_frozen", True)
         return clone
 
@@ -1885,12 +1871,12 @@ class Diagram:
         """
         Write an HTML viewer and optionally open it in a standalone app window.
 
-        :param output: Optional destination path. When omitted, one temporary
-            file is created per snapshot and reused by later calls. It is
-            removed at interpreter exit **unless** a window was opened against
-            it, because the window outlives this process. Each viewer is
-            roughly 30 MB, so pass an explicit path when you want to manage the
-            file yourself.
+        :param output: Optional destination path. When omitted the viewer is
+            written to a temporary path derived from its own content, so the
+            same diagram always reuses one file however often it is shown. The
+            file is left in place because the browser window outlives this
+            process; each viewer is roughly 30 MB, so pass an explicit path
+            when you want to manage the file yourself.
         :type output: str or os.PathLike, optional
         :param open_window: Whether to launch a Chromium-family app window,
             defaults to ``True``.
@@ -1903,21 +1889,7 @@ class Diagram:
         """
         dimensions = _coerce_window_size(window_size)
         if output is None:
-            # One path per snapshot, cleaned up at exit. Allocating a fresh
-            # ~30 MB file on every call filled the temp directory during an
-            # ordinary notebook session, and nothing ever removed them.
-            if self._temporary_html is None:
-                handle = tempfile.NamedTemporaryFile(
-                    prefix="pyfcstm-diagram-", suffix=".html", delete=False
-                )
-                handle.close()
-                object.__setattr__(self, "_temporary_html", Path(handle.name))
-            output = self._temporary_html
-            # Registered before the launch, and marked non-removable when a
-            # window is involved: the browser reads the file asynchronously, so
-            # deleting it at exit raced the window open and showed "file not
-            # found" for every `pyfcstm diagram --open`.
-            _remember_temporary_viewer(self._temporary_html, remove=not open_window)
+            output = _temporary_viewer_path(self.to_html())
         path = self.save(output, format="html")
         if open_window:
             _open_standalone_window(path, dimensions)

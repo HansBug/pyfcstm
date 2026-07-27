@@ -813,7 +813,12 @@ HTML 查看器可以在浏览器中下载 SVG、PNG 和矢量 PDF。Python 的
 ``DiagramUnavailableError``。没有 Chromium 系浏览器时，``show()`` 会先写出
 HTML，再抛出同一类型的能力错误；使用 ``show(open_window=False)`` 可避免浏览器依赖。
 
-未知字段、重复蛇形/驼峰别名、无效枚举值和无效数字会抛出 ``ValueError``。
+未知字段、重复蛇形/驼峰别名、无效枚举值和无效数字会抛出 ``ValueError``\ ；
+``collapsed_state_ids`` 不是 ID 字符串序列时抛出 ``TypeError``\ ，包括把单个 ID
+直接写成字符串这一常见错误。
+
+``with_options`` 与 ``with_view_state`` 的关键字形式是部分更新：未指名的字段保持
+原值；以位置参数传入的值则整体替换。
 缺失或不可用的查看器/WASM/字体资源会抛出 ``DiagramAssetError``，并给出开发
 环境的 ``make build_assets`` 修复指引，或给出已安装包应使用的 issue URL。
 

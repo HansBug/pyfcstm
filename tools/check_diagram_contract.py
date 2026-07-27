@@ -48,7 +48,11 @@ def _json_from_subprocess(seed: str) -> str:
     :return: The child's serialized diagram.
     :rtype: str
     """
-    environment = dict(os.environ, PYTHONHASHSEED=seed)
+    # The fixture carries CJK display names, so the child's stdout has to be
+    # UTF-8 regardless of the console code page it inherits. Without this a
+    # Windows checkout, or PYTHONIOENCODING=ascii, turns a passing check into a
+    # bare non-zero exit status.
+    environment = dict(os.environ, PYTHONHASHSEED=seed, PYTHONIOENCODING="utf-8")
     completed = subprocess.run(
         [
             sys.executable,
@@ -60,6 +64,7 @@ def _json_from_subprocess(seed: str) -> str:
         ],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         check=True,
         env=environment,
         cwd=str(ROOT),

@@ -825,7 +825,13 @@ error after the HTML file has been written; ``show(open_window=False)`` avoids
 the browser requirement.
 
 Unknown option fields, duplicate snake/camel aliases, invalid enum values, and
-invalid numeric values raise ``ValueError``. Missing or unusable packaged
+invalid numeric values raise ``ValueError``; a ``collapsed_state_ids`` that is
+not a sequence of ID strings raises ``TypeError``, including the common mistake
+of passing one ID as a bare string.
+
+``with_options`` and ``with_view_state`` treat their keyword form as a partial
+update: fields that are not named keep their current value. Passing a value
+positionally replaces the whole object instead. Missing or unusable packaged
 viewer/WASM/font assets raise ``DiagramAssetError`` with development recovery
 guidance (``make build_assets``) or the project issue URL for installed packages.
 

@@ -502,7 +502,15 @@ Typical examples:
 
 ``diagram`` converts an FCSTM file into portable JSON or a self-contained HTML
 viewer. With no ``-o``, JSON is written to standard output. HTML output is
-written to the requested path or to a temporary path when ``--open`` is used.
+written to the requested path, or, when ``--open`` is used without one, to a
+temporary path derived from the document's own content. That file is left in
+place because the browser window outlives the command; showing the same
+diagram again reuses the same file rather than adding another.
+
+An output suffix the command cannot produce is a usage error: use ``.json`` or
+``.html``, or pass ``--format`` to choose explicitly. When ``--open`` cannot
+find a browser, the viewer path is still printed before the error, so the
+document can be opened by hand.
 
 .. list-table:: ``diagram`` options
    :header-rows: 1

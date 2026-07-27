@@ -65,7 +65,11 @@ let lastLaidOutSourceRef: unknown = null;
 // derives from Error, so an `instanceof Error` guard is a bare catch: it turned
 // a renderer bug into "Layout failed: x is not a function", blaming the user's
 // model for a mistake of ours. These are re-raised so the host still sees them.
-const RENDERER_BUG_TYPES = [TypeError, ReferenceError, RangeError, SyntaxError, EvalError, URIError];
+// RangeError is deliberately absent: elkjs is GWT-compiled and reports a
+// deeply nested graph as "Maximum call stack size exceeded", which is a
+// property of the user's model rather than a defect here, and that case should
+// stay a recoverable "Layout failed" panel.
+const RENDERER_BUG_TYPES = [TypeError, ReferenceError, SyntaxError, EvalError, URIError];
 
 /**
  * Message for a failure this component is expected to recover from.

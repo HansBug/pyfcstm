@@ -218,7 +218,13 @@ async function openSelectMenu(cdp) {
 
 async function evaluate(cdp, expression) {
   const result = await cdp.call('Runtime.evaluate', {expression, awaitPromise: true, returnByValue: true});
-  if (result.exceptionDetails) throw new Error(result.exceptionDetails.text || 'browser evaluation failed');
+  if (result.exceptionDetails) {
+    // Carry the probe with the failure. Only a handful of steps record their
+    // own outcome; the rest throw, and without this the operator sees a stack
+    // that names this helper rather than the assertion that broke.
+    const probe = expression.replace(/\s+/g, ' ').trim().slice(0, 140);
+    throw new Error(`${result.exceptionDetails.text || 'browser evaluation failed'} [probe: ${probe}]`);
+  }
   return result.result && result.result.value;
 }
 
@@ -250,11 +256,14 @@ async function evaluate(cdp, expression) {
     if (stderrTail) details.push(`stderr ${stderrTail}`);
     return ` (${details.join('; ')})`;
   };
+  // Declared out here so the catch below can still read the session's
+  // events when a probe throws before the report is built.
+  let cdp = null;
   try {
     const targets = await waitForJson(`http://127.0.0.1:${port}/json`, describeBrowser);
     const page = targets.find(item => item.type === 'page');
     if (!page) throw new Error('Chrome did not expose a page target');
-    const cdp = new Cdp(page.webSocketDebuggerUrl);
+    cdp = new Cdp(page.webSocketDebuggerUrl);
     await cdp.connect();
     await cdp.call('Page.enable');
     await cdp.call('Runtime.enable');
@@ -321,11 +330,9 @@ async function evaluate(cdp, expression) {
     // Mode buttons are selected through `data-fcstm-mode`, not their visible
     // label: matching display copy made a renamed button click nothing and the
     // resulting wrong-mode failure surfaced far away, in the export step. A
-    // missing handle throws here so the cause stays where the problem is.
-    // The browser side settles with reject rather than throw: an exception
-    // A missing handle is reported as a field rather than thrown. Throwing from
-    // a timer callback does not reject the promise at all, and rejecting aborts
-    // before the JSON report — the only diagnostic a red run produces.
+    // missing handle is reported as a field so the cause stays where the
+    // problem is: throwing from a timer callback never rejects the promise at
+    // all, and rejecting would abort before the report is printed.
     const clickMode = mode => `new Promise(resolve => setTimeout(() => {
       const button = document.querySelector('.fcstm-standalone-mode button[data-fcstm-mode="${mode}"]');
       if (!button) {
@@ -349,9 +356,14 @@ async function evaluate(cdp, expression) {
     const backToCompare = {source: backToCompareRaw.source, stage: backToCompareRaw.renderedStage, buttonFound: backToCompareRaw.buttonFound};
     const importedSource = await evaluate(cdp, `new Promise(resolve => setTimeout(() => {
       const select = document.querySelector('.fcstm-source-panel__header select');
+      const published = Object.keys(window.__FCSTM_INITIAL_STATE__?.sourceDocuments || {});
       const options = select ? [...select.options].map(option => option.value) : [];
-      if (options.length < 2) {
-        resolve({documents: options, selectedDocument: '', childText: false, selected: 0});
+      if (published.length < 2) {
+        resolve({published, documents: options, pickerFound: Boolean(select), selectedDocument: '', childText: false, selected: 0});
+        return;
+      }
+      if (!select) {
+        resolve({published, documents: [], pickerFound: false, selectedDocument: '', childText: false, selected: 0});
         return;
       }
       const beforeText = document.querySelector('.fcstm-source-panel__code')?.textContent || '';
@@ -362,7 +374,7 @@ async function evaluate(cdp, expression) {
         const childText = selectedText.trim().length > 0 && selectedText !== beforeText;
         const line = document.querySelector('.fcstm-source-line[data-line="0"]');
         line?.dispatchEvent(new MouseEvent('click', {bubbles: true, button: 0}));
-        setTimeout(() => resolve({documents: options, selectedDocument: select.value, childText,
+        setTimeout(() => resolve({published, documents: options, pickerFound: true, selectedDocument: select.value, childText,
           selected: document.querySelectorAll('.fcstm-selected').length}), 220);
       }, 120);
     }, 80))`);
@@ -821,7 +833,35 @@ async function evaluate(cdp, expression) {
         (process.env.VIEWER_REQUIRE_EXPANDED_SVG === '1' && !svgChecks) ||
         (sourceCycle.candidateCount > 1 && sourceCycle.uniqueSelectedIds < sourceCycle.candidateCount) ||
         (collapse.before > 1 && collapse.after >= collapse.before) || verticalOverflow || horizontalOverflow || comparisonTooShort || !drawerChecks || oversizedUiIcons || network.length || cspViolations.length || consoleErrors.length ||
-        (importedSource.documents.length > 1 && (!importedSource.childText || importedSource.selected < 1))) process.exitCode = 1;
+        (importedSource.published.length > 1 && (
+          !importedSource.pickerFound
+          || importedSource.documents.length !== importedSource.published.length
+          || !importedSource.childText
+          || importedSource.selected < 1
+        ))) process.exitCode = 1;
+  } catch (error) {
+    // Most probes throw rather than recording an outcome, and a throw leaves
+    // the report unbuildable. Emit what the session did observe so a red run
+    // is a diagnostic rather than a bare stack trace.
+    const events = (cdp && cdp.events) || [];
+    console.log(JSON.stringify({
+      failed: String((error && error.message) || error),
+      externalRequests: events
+        .filter(event => event.method === 'Network.requestWillBeSent')
+        .map(event => event.params.request.url)
+        .filter(url => !url.startsWith('file://') && !url.startsWith('data:') && !url.startsWith('blob:')),
+      cspViolations: events
+        .filter(event => event.method === 'Log.entryAdded')
+        .filter(event => /Content Security Policy/i.test(event.params.entry.text || ''))
+        .map(event => (event.params.entry.text || '').slice(0, 160)),
+      consoleDetails: events
+        .filter(event => event.method === 'Runtime.exceptionThrown' || (event.method === 'Runtime.consoleAPICalled' && ['error', 'warning'].includes(event.params.type)))
+        .map(event => event.method === 'Runtime.exceptionThrown'
+          ? (event.params.exceptionDetails?.text || event.params.exceptionDetails?.exception?.description || 'exception')
+          : event.params.args?.map(arg => arg.value || arg.description || '').join(' ')),
+    }, null, 2));
+    console.error(error.stack || error);
+    process.exitCode = 1;
   } finally {
     stopChrome(chrome);
     // Chrome keeps flushing its profile after SIGTERM, so removing the

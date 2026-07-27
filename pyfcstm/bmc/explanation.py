@@ -129,41 +129,78 @@ CLASSIFICATION_SCOPES = MappingProxyType(
     }
 )
 
-#: Category prefix to frozen semantic role, and the aggregate each prefix
-#: belongs to.  This is the single source of truth: the orchestration reads it
-#: when building an item, and the constructors below use it to reject an item
-#: whose declared role contradicts its category.
-CATEGORY_FAMILIES = MappingProxyType(
+#: Category prefix to frozen semantic role.  This answers "what kind of fact is
+#: this", which the relation builder encodes in the category name.
+CATEGORY_ROLES = MappingProxyType(
     {
-        "domain.": ("domain_rule", "domain"),
-        "initial.": ("initial_fact", "initial"),
-        "transition.": ("transition_rule", "transition"),
-        "assumption.": ("assumption", "environment"),
-        "definedness": ("definedness", "domain"),
+        "domain.": "domain_rule",
+        "initial.": "initial_fact",
+        "transition.": "transition_rule",
+        "assumption.": "assumption",
+        "definedness": "definedness",
     }
 )
 
 
-def category_family(category: str) -> Tuple[str, str]:
-    """Return the frozen semantic role and aggregate of a group category.
+def category_role(category: str) -> str:
+    """Return the frozen semantic role of a group category.
 
     :param category: Group category assigned by the relation builder.
     :type category: str
-    :return: The role and the aggregate the category belongs to.
-    :rtype: Tuple[str, str]
+    :return: One of the frozen semantic roles.
+    :rtype: str
     :raises ValueError: If the category matches no known prefix, which means a
         new group family was added without deciding how a reader should
         understand it.
 
     Example::
 
-        >>> category_family("assumption.frame")
-        ('assumption', 'environment')
+        >>> category_role("assumption.frame")
+        'assumption'
     """
-    for prefix, family in CATEGORY_FAMILIES.items():
+    for prefix, role in CATEGORY_ROLES.items():
         if category.startswith(prefix):
-            return family
+            return role
     raise ValueError("category %r belongs to no known family." % category)
+
+
+def constraint_aggregate(stage: str, category: str) -> str:
+    """Return the aggregate formula a tracked group belongs to.
+
+    This answers a different question from :func:`category_role`: which of
+    ``D_N`` / ``T_N`` / ``I_0`` / ``ENV_N`` contains the group.  The stage
+    decides it, and only the kernel stage needs the category to split domain
+    from transition.  A ``definedness`` group, for instance, reads as a
+    definedness fact but lives in whichever stage lowered it.
+
+    :param stage: Formula stage recorded for the group.
+    :type stage: str
+    :param category: Group category assigned by the relation builder.
+    :type category: str
+    :return: One of ``domain``, ``transition``, ``initial``, ``environment``.
+    :rtype: str
+    :raises ValueError: If the pairing matches no aggregate.
+
+    Example::
+
+        >>> constraint_aggregate("initialization", "definedness")
+        'initial'
+        >>> constraint_aggregate("kernel", "transition.step")
+        'transition'
+    """
+    if stage == "kernel":
+        if category.startswith("domain"):
+            return "domain"
+        if category.startswith("transition"):
+            return "transition"
+        raise ValueError(
+            "kernel category %r is neither a domain nor a transition group." % category
+        )
+    if stage == "initialization":
+        return "initial"
+    if stage == "assumptions":
+        return "environment"
+    raise ValueError("stage %r belongs to no aggregate." % stage)
 
 
 #: Aggregates each scope's target formula is built from.  Unlike the stage-level
@@ -209,32 +246,6 @@ UNBUILT_SLOTS = ("proof", "narrative")
 STAGE_FALLBACK_SCOPES = ("initialization_stage_fallback", "assumptions_stage_fallback")
 
 _SCOPES = tuple(CLASSIFICATION_SCOPES.values()) + STAGE_FALLBACK_SCOPES
-
-#: Stages each scope's target formula is built from.  A domain or prefix scope
-#: legitimately reaches back to earlier stages, so membership is checked
-#: against this set rather than against the localized stage itself.
-#:
-#: This is deliberately a stage-level approximation.  ``SCOPE_TARGETS`` is
-#: aggregate-level, so for example ``initialization_domain`` excludes ``T_N``
-#: while a ``T_N`` member still carries stage ``kernel`` and passes here.
-#: Aggregate-level precision comes from the candidate set in
-#: :func:`pyfcstm.bmc.infeasibility.extract_source_core`, which only ever offers
-#: groups the scope actually targets.  Tightening this check would also need a
-#: category-to-scope rule the JSON schema cannot express, which would break the
-#: harder requirement that both sides accept the same payload set.
-_SCOPE_STAGES = MappingProxyType(
-    {
-        "kernel": ("kernel",),
-        "initialization_component": ("initialization",),
-        "initialization_domain": ("kernel", "initialization"),
-        "initialization_prefix": ("kernel", "initialization"),
-        "assumptions_component": ("assumptions",),
-        "assumptions_domain": ("kernel", "assumptions"),
-        "assumptions_prefix": ("kernel", "initialization", "assumptions"),
-        "initialization_stage_fallback": ("kernel", "initialization"),
-        "assumptions_stage_fallback": ("kernel", "initialization", "assumptions"),
-    }
-)
 
 
 def _require_indices(values: Any, label: str) -> Tuple[int, ...]:
@@ -534,7 +545,7 @@ class BmcCoreItem:
             self.source_excerpt_truncated, "core item source_excerpt_truncated"
         )
         _require_flag(self.editable, "core item editable")
-        expected_role = category_family(self.constraint.category)[0]
+        expected_role = category_role(self.constraint.category)
         if self.semantic_role != expected_role:
             raise ValueError(
                 "core item semantic_role %r contradicts category %r, which is "
@@ -673,7 +684,9 @@ class BmcConflictCore:
             raise ValueError("core items contain duplicate stable ids.")
         allowed = SCOPE_AGGREGATES[self.scope]
         for item in items:
-            aggregate = category_family(item.constraint.category)[1]
+            aggregate = constraint_aggregate(
+                item.constraint.stage, item.constraint.category
+            )
             if aggregate not in allowed:
                 raise ValueError(
                     "core item %r is a %s constraint, which is outside the "

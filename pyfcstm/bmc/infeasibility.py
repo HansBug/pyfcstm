@@ -45,7 +45,9 @@ import z3
 from .errors import BmcBuildError
 from .explanation import (
     CLASSIFICATION_SCOPES,
-    category_family,
+    SCOPE_AGGREGATES,
+    category_role,
+    constraint_aggregate,
     MAX_SOURCE_EXCERPT_CHARS,
     BmcConflictCore,
     BmcConstraintRef,
@@ -59,79 +61,50 @@ if TYPE_CHECKING:  # pragma: no cover - import cycle guard for annotations only
     from .relation import BmcCoreFormula
 
 
-def _is_domain_group(group: BmcTrackedConstraint) -> bool:
-    """Report whether a kernel group belongs to the domain aggregate.
+def _aggregate_of(group: BmcTrackedConstraint) -> str:
+    """Return the aggregate a tracked group belongs to, or ``""`` when unknown.
+
+    The rule itself lives in the solver-free data layer, so the partition here
+    and the scope check on a published core cannot disagree.
 
     :param group: Tracked source group to classify.
     :type group: pyfcstm.bmc.provenance.BmcTrackedConstraint
-    :return: ``True`` when the group is part of ``D_N``.
-    :rtype: bool
+    :return: Aggregate name, or an empty string when the group fits none.
+    :rtype: str
 
     Example::
 
         >>> from pyfcstm.bmc.provenance import BmcSourceRef, BmcTrackedConstraint
         >>> group = BmcTrackedConstraint(
-        ...     "domain.frame.0000.state", "kernel", "domain.frame_state",
-        ...     (True,), BmcSourceRef("generated", None, None),
+        ...     "initial.where.definedness.0000", "initialization",
+        ...     "definedness", (True,), BmcSourceRef("generated", None, None),
         ... )
-        >>> _is_domain_group(group)
-        True
+        >>> _aggregate_of(group)
+        'initial'
     """
-    return group.stage == "kernel" and group.category.startswith("domain")
-
-
-def _is_transition_group(group: BmcTrackedConstraint) -> bool:
-    """Report whether a kernel group belongs to the transition aggregate.
-
-    :param group: Tracked source group to classify.
-    :type group: pyfcstm.bmc.provenance.BmcTrackedConstraint
-    :return: ``True`` when the group is part of ``T_N``.
-    :rtype: bool
-
-    Example::
-
-        >>> from pyfcstm.bmc.provenance import BmcSourceRef, BmcTrackedConstraint
-        >>> group = BmcTrackedConstraint(
-        ...     "transition.step.0000", "kernel", "transition.step", (True,),
-        ...     BmcSourceRef("generated", None, None),
-        ... )
-        >>> _is_transition_group(group)
-        True
-    """
-    return group.stage == "kernel" and group.category.startswith("transition")
+    try:
+        return constraint_aggregate(group.stage, group.category)
+    except ValueError:
+        # constraint_aggregate raises ValueError for a stage/category pairing
+        # it does not recognize; the caller reports that as builder drift.
+        return ""
 
 
 #: Predicate per aggregate; the kernel stage covers both domain and transition.
 AGGREGATE_SELECTORS: "Mapping[str, Callable[[BmcTrackedConstraint], bool]]" = (
     MappingProxyType(
         {
-            "domain": _is_domain_group,
-            "transition": _is_transition_group,
-            "initial": lambda group: group.stage == "initialization",
-            "environment": lambda group: group.stage == "assumptions",
+            name: (lambda group, expected=name: _aggregate_of(group) == expected)
+            for name in ("domain", "transition", "initial", "environment")
         }
     )
 )
 
-#: Aggregates that make up the target formula of every published scope.
-SCOPE_TARGETS: "Mapping[str, Tuple[str, ...]]" = MappingProxyType(
-    {
-        "kernel": ("domain", "transition"),
-        "initialization_component": ("initial",),
-        "initialization_domain": ("domain", "initial"),
-        "initialization_prefix": ("domain", "transition", "initial"),
-        "assumptions_component": ("environment",),
-        "assumptions_domain": ("domain", "environment"),
-        "assumptions_prefix": ("domain", "transition", "initial", "environment"),
-        "initialization_stage_fallback": ("domain", "transition", "initial"),
-        "assumptions_stage_fallback": (
-            "domain",
-            "transition",
-            "initial",
-            "environment",
-        ),
-    }
-)
+#: Aggregates that make up the target formula of every published scope.  The
+#: table itself lives in the solver-free data layer next to the scope
+#: vocabulary, so the published core's membership rule and the candidate set
+#: used here are the same object rather than two lists kept in step by hand.
+SCOPE_TARGETS: "Mapping[str, Tuple[str, ...]]" = SCOPE_AGGREGATES
 
 _STAGE_FALLBACK_BY_STAGE = MappingProxyType(
     {
@@ -755,7 +728,7 @@ def _semantic_role(category: str) -> str:
         'assumption'
     """
     try:
-        return category_family(category)[0]
+        return category_role(category)
     except ValueError as err:
         # category_family raises ValueError for an unregistered prefix; the
         # orchestration reports builder-side drift as a build error.
@@ -992,10 +965,29 @@ def explain_infeasibility(
         )
 
     try:
-        items = tuple(build_core_item(group, registry) for group in extraction.groups)
-    except BmcBuildError as err:
-        # Solver work already happened, so the ledger is real and must survive.
-        # Reverting to "nothing was requested" here would hide checks that ran.
+        published = BmcConflictCore(
+            scope=outcome.scope,
+            formula_summary="target formula of scope %s" % outcome.scope,
+            granularity="source_group",
+            # No deletion check has run yet, so the core is sound but not
+            # claimed minimal; a later minimization stage upgrades both fields
+            # together.
+            reduction="raw",
+            subset_minimality="not_proven",
+            items=tuple(
+                build_core_item(group, registry) for group in extraction.groups
+            ),
+        )
+    except (BmcBuildError, ValueError, TypeError) as err:
+        # BmcBuildError: this module found builder-side drift while mapping.
+        # ValueError / TypeError: a public constructor in the data layer refused
+        # the mapped payload, for example because a group's stage and category
+        # place it outside the scope being published.
+        #
+        # All three mean the artifact cannot be published.  None of them may
+        # take the mandatory verdict with it, and the ledger stays: solver work
+        # already happened, so reverting to "nothing was requested" would hide
+        # checks that ran.
         return ExplanationOutcome(
             BmcInfeasibilityExplanation(
                 requested_mode=requested_mode,
@@ -1007,17 +999,6 @@ def explain_infeasibility(
             ),
             checks,
         )
-
-    published = BmcConflictCore(
-        scope=outcome.scope,
-        formula_summary="target formula of scope %s" % outcome.scope,
-        granularity="source_group",
-        # No deletion check has run yet, so the core is sound but not claimed
-        # minimal; PR-level minimization upgrades both fields together.
-        reduction="raw",
-        subset_minimality="not_proven",
-        items=items,
-    )
     if outcome.classification is None:
         reason = (
             "classification degraded to the %s scope (%s); the published core "

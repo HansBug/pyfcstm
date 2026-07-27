@@ -932,3 +932,36 @@ def test_scope_membership_separates_the_two_kernel_aggregates() -> None:
         (transition,),
     )
     assert widened.items[0].semantic_role == "transition_rule"
+
+
+@pytest.mark.parametrize(
+    "stage, category",
+    [
+        ("kernel", "assumption.frame"),
+        ("kernel", "definedness"),
+        ("mystery", "domain.frame_state"),
+    ],
+)
+def test_an_unassignable_group_has_no_aggregate(stage, category) -> None:
+    """A pairing the builder never emits must not be guessed into an aggregate.
+
+    Only the kernel stage splits by category, and it splits into exactly domain
+    and transition.  Anything else means a new group family arrived without a
+    decision about which formula contains it.
+    """
+    from pyfcstm.bmc.explanation import constraint_aggregate
+
+    with pytest.raises(ValueError, match="aggregate|domain nor a transition"):
+        constraint_aggregate(stage, category)
+
+
+def test_every_produced_pairing_resolves_to_one_aggregate() -> None:
+    """The pairings the builder does emit each land in exactly one aggregate."""
+    from pyfcstm.bmc.explanation import constraint_aggregate
+
+    assert constraint_aggregate("kernel", "domain.frame_state") == "domain"
+    assert constraint_aggregate("kernel", "transition.case") == "transition"
+    assert constraint_aggregate("initialization", "initial.where") == "initial"
+    assert constraint_aggregate("initialization", "definedness") == "initial"
+    assert constraint_aggregate("assumptions", "assumption.event") == "environment"
+    assert constraint_aggregate("assumptions", "definedness") == "environment"

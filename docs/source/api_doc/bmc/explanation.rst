@@ -66,10 +66,10 @@ CLASSIFICATION\_SCOPES
 .. autodata:: CLASSIFICATION_SCOPES
 
 
-CATEGORY\_FAMILIES
+CATEGORY\_ROLES
 -----------------------------------------------------
 
-.. autodata:: CATEGORY_FAMILIES
+.. autodata:: CATEGORY_ROLES
 
 
 SCOPE\_AGGREGATES
@@ -144,7 +144,13 @@ BmcInfeasibilityExplanation
     :members: __post_init__,to_canonical,requested_mode,achieved_mode,status,classification,core,proof,narrative,reason,elapsed_ms
 
 
-category\_family
+category\_role
 -----------------------------------------------------
 
-.. autofunction:: category_family
+.. autofunction:: category_role
+
+
+constraint\_aggregate
+-----------------------------------------------------
+
+.. autofunction:: constraint_aggregate

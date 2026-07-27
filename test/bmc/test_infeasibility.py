@@ -18,8 +18,8 @@ from pyfcstm.bmc.engine import BmcEngine
 from pyfcstm.bmc.errors import BmcBuildError
 from pyfcstm.bmc.explanation import (
     CLASSIFICATION_SCOPES,
+    SCOPE_AGGREGATES,
     STAGE_FALLBACK_SCOPES,
-    _SCOPE_STAGES,
 )
 from pyfcstm.bmc.infeasibility import (
     AGGREGATE_SELECTORS,
@@ -964,46 +964,18 @@ def test_an_undetermined_core_extraction_publishes_nothing() -> None:
     assert "core extraction returned unknown" in extraction.reason
 
 
-def test_scope_stage_table_is_derived_from_the_scope_targets() -> None:
-    """The two scope tables are hand-synced, so they are pinned to each other.
+def test_the_scope_target_table_has_a_single_definition() -> None:
+    """The candidate set and the published-core rule are the same table.
 
-    ``SCOPE_TARGETS`` lives beside the solver and ``_SCOPE_STAGES`` lives in the
-    Z3-free data layer, so they cannot share one definition.  Deriving one from
-    the other here turns a silent drift into a failing test: a scope that gains
-    an aggregate but keeps its old stage set would let a core member escape the
-    formula its scope actually proves.
+    Two isomorphic tables kept in step by hand is exactly how a definedness
+    group came to be selected into a scope that then rejected it.
     """
-    # The aggregate-to-stage map is derived from the real selectors rather
-    # than written out again: a third hand-kept table would just move the
-    # drift one level further away.
-    stage_of_aggregate = {}
-    for name, predicate in AGGREGATE_SELECTORS.items():
-        accepted = {
-            stage
-            for stage, category in (
-                ("kernel", "domain.frame_state"),
-                ("kernel", "transition.step"),
-                ("initialization", "initial.target"),
-                ("assumptions", "assumption.frame"),
-            )
-            if predicate(
-                BmcTrackedConstraint(
-                    "probe",
-                    stage,
-                    category,
-                    (True,),
-                    BmcSourceRef("generated", None, None),
-                )
-            )
-        }
-        assert len(accepted) == 1, name
-        stage_of_aggregate[name] = accepted.pop()
-
-    assert set(stage_of_aggregate) == set(AGGREGATE_SELECTORS)
+    assert SCOPE_TARGETS is SCOPE_AGGREGATES
+    assert set(SCOPE_TARGETS) == set(CLASSIFICATION_SCOPES.values()) | set(
+        STAGE_FALLBACK_SCOPES
+    )
     for scope, aggregates in SCOPE_TARGETS.items():
-        derived = {stage_of_aggregate[name] for name in aggregates}
-
-        assert derived == set(_SCOPE_STAGES[scope]), scope
+        assert set(aggregates) <= set(AGGREGATE_SELECTORS), scope
 
 
 def test_a_published_core_quotes_the_authored_query_text() -> None:
@@ -1323,12 +1295,100 @@ def test_an_all_unknown_run_stays_unknown() -> None:
     assert outcome.explanation.status == "unknown"
 
 
-def test_a_mapper_failure_keeps_the_checks_that_already_ran(monkeypatch) -> None:
-    """Solver work that happened stays in the ledger.
+def test_the_role_and_aggregate_rules_have_one_definition_each() -> None:
+    """The orchestration reads the data layer instead of keeping its own copies.
 
-    Reverting to "nothing was requested" after probes and the recheck have run
-    would hide real solver calls and contradict the rule that an optional stage
-    which truly started still reports an explanation.
+    Two questions are deliberately separate: the category says what kind of
+    fact a group is, while the stage says which aggregate formula contains it.
+    Deriving the aggregate from the category is what let a definedness group be
+    selected into a scope that then rejected it.
+    """
+    from pyfcstm.bmc.explanation import (
+        CATEGORY_ROLES,
+        category_role,
+        constraint_aggregate,
+    )
+
+    for category in ("domain.frame_state", "transition.step", "assumption.frame"):
+        assert _semantic_role(category) == category_role(category)
+    assert set(CATEGORY_ROLES) == {
+        "domain.",
+        "initial.",
+        "transition.",
+        "assumption.",
+        "definedness",
+    }
+
+    # A definedness group reads as definedness wherever it was lowered, but its
+    # aggregate follows the stage.
+    assert category_role("definedness") == "definedness"
+    assert constraint_aggregate("initialization", "definedness") == "initial"
+    assert constraint_aggregate("assumptions", "definedness") == "environment"
+
+    # The selectors used by the partition agree with that same rule.
+    for stage, category, aggregate in (
+        ("kernel", "domain.frame_state", "domain"),
+        ("kernel", "transition.step", "transition"),
+        ("initialization", "definedness", "initial"),
+        ("assumptions", "definedness", "environment"),
+    ):
+        group = BmcTrackedConstraint(
+            "probe", stage, category, (True,), BmcSourceRef("generated", None, None)
+        )
+        selected = [
+            name for name, predicate in AGGREGATE_SELECTORS.items() if predicate(group)
+        ]
+        assert selected == [aggregate], (stage, category)
+
+
+def test_a_definedness_constraint_reaches_the_public_explanation() -> None:
+    """A guard that needs runtime definedness must not break the public API.
+
+    The definedness groups the builder emits live in the initialization and
+    assumptions stages, never in the kernel.  Deriving their aggregate from the
+    category instead of the stage made the extraction select one and the core
+    constructor then reject it, raising past every degradation path.
+    """
+    machine = load_state_machine_from_text(
+        "def int x = 1;\ndef int y = 0;\n"
+        "state Root { state A; state B; [*] -> A; A -> B; }"
+    )
+    context = BmcEngine(machine).prepare(
+        'init state("Root.A") where x / y > 0; check reach <= 2: active("Root.B");'
+    )
+    core = build_bmc_core_formula(context)
+
+    definedness = [g for g in core._tracked_groups if g.category == "definedness"]
+    assert definedness
+    assert {g.stage for g in definedness} == {"initialization"}
+
+    result = solve_bmc_property(
+        compile_bmc_property(core), infeasibility_explanation="formal"
+    )
+    explanation = result.feasibility.explanation
+
+    assert result.feasibility.infeasible_stage == "initialization"
+    assert explanation.core.scope == "initialization_component"
+    assert "definedness" in {item.semantic_role for item in explanation.core.items}
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        BmcBuildError("builder drift"),
+        ValueError("the data layer refused the mapped payload"),
+        TypeError("a slot received the wrong type"),
+    ],
+)
+def test_any_refusal_while_publishing_keeps_the_verdict_and_the_ledger(
+    monkeypatch, error
+) -> None:
+    """Every way the publication step can refuse degrades the same way.
+
+    The fail-safe used to name only ``BmcBuildError``, but the public
+    constructors in the data layer raise ``ValueError`` and ``TypeError``.  One
+    of those escaping would make asking for an explanation strictly worse than
+    not asking, which is the opposite of an optional stage.
     """
     core = _core_formula(
         'init state("Root.A") where x == 0; '
@@ -1336,35 +1396,16 @@ def test_a_mapper_failure_keeps_the_checks_that_already_ran(monkeypatch) -> None
         'check reach <= 2: active("Root.B");'
     )
 
-    def drift(group, registry=None):
-        raise BmcBuildError("simulated mapper drift after the core recheck")
+    def refuse(*args, **kwargs):
+        raise error
 
-    monkeypatch.setattr("pyfcstm.bmc.infeasibility.build_core_item", drift)
+    monkeypatch.setattr("pyfcstm.bmc.infeasibility.BmcConflictCore", refuse)
     outcome = explain_infeasibility(core, "assumptions", _SolveBudget(None))
     explanation = outcome.explanation
 
-    assert outcome.checks, "the executed ledger must survive"
+    assert outcome.checks
     assert any(check.started for check in outcome.checks)
     assert explanation.achieved_mode == "none"
     assert explanation.status == "partial"
     assert explanation.classification == "assumptions_self_conflict"
     assert "core mapping failed" in explanation.reason
-
-
-def test_the_role_map_has_exactly_one_definition() -> None:
-    """The orchestration reads the data layer's map instead of keeping its own.
-
-    Two copies drifted apart once already, when the mapper read plural refs
-    keys the builder never produced.
-    """
-    from pyfcstm.bmc.explanation import CATEGORY_FAMILIES, category_family
-
-    for category in ("domain.frame_state", "transition.step", "assumption.frame"):
-        assert _semantic_role(category) == category_family(category)[0]
-    assert set(CATEGORY_FAMILIES) == {
-        "domain.",
-        "initial.",
-        "transition.",
-        "assumption.",
-        "definedness",
-    }

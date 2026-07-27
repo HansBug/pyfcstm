@@ -4912,7 +4912,7 @@
               "constraint": {
                 "properties": {
                   "category": {
-                    "pattern": "^(domain\\.)"
+                    "pattern": "^domain\\."
                   }
                 }
               }
@@ -4935,7 +4935,7 @@
               "constraint": {
                 "properties": {
                   "category": {
-                    "pattern": "^(initial\\.)"
+                    "pattern": "^initial\\."
                   }
                 }
               }
@@ -4958,7 +4958,7 @@
               "constraint": {
                 "properties": {
                   "category": {
-                    "pattern": "^(transition\\.)"
+                    "pattern": "^transition\\."
                   }
                 }
               }
@@ -4981,7 +4981,7 @@
               "constraint": {
                 "properties": {
                   "category": {
-                    "pattern": "^(assumption\\.)"
+                    "pattern": "^assumption\\."
                   }
                 }
               }
@@ -5004,7 +5004,7 @@
               "constraint": {
                 "properties": {
                   "category": {
-                    "pattern": "^(definedness)"
+                    "pattern": "^definedness"
                   }
                 }
               }
@@ -5187,11 +5187,34 @@
                 "items": {
                   "properties": {
                     "constraint": {
-                      "properties": {
-                        "category": {
-                          "pattern": "^(definedness|domain\\.|transition\\.)"
+                      "anyOf": [
+                        {
+                          "properties": {
+                            "stage": {
+                              "const": "kernel"
+                            },
+                            "category": {
+                              "pattern": "^domain"
+                            }
+                          },
+                          "required": [
+                            "stage"
+                          ]
+                        },
+                        {
+                          "properties": {
+                            "stage": {
+                              "const": "kernel"
+                            },
+                            "category": {
+                              "pattern": "^transition"
+                            }
+                          },
+                          "required": [
+                            "stage"
+                          ]
                         }
-                      }
+                      ]
                     }
                   }
                 }
@@ -5216,11 +5239,18 @@
                 "items": {
                   "properties": {
                     "constraint": {
-                      "properties": {
-                        "category": {
-                          "pattern": "^(initial\\.)"
+                      "anyOf": [
+                        {
+                          "properties": {
+                            "stage": {
+                              "const": "initialization"
+                            }
+                          },
+                          "required": [
+                            "stage"
+                          ]
                         }
-                      }
+                      ]
                     }
                   }
                 }
@@ -5245,11 +5275,31 @@
                 "items": {
                   "properties": {
                     "constraint": {
-                      "properties": {
-                        "category": {
-                          "pattern": "^(definedness|domain\\.|initial\\.)"
+                      "anyOf": [
+                        {
+                          "properties": {
+                            "stage": {
+                              "const": "kernel"
+                            },
+                            "category": {
+                              "pattern": "^domain"
+                            }
+                          },
+                          "required": [
+                            "stage"
+                          ]
+                        },
+                        {
+                          "properties": {
+                            "stage": {
+                              "const": "initialization"
+                            }
+                          },
+                          "required": [
+                            "stage"
+                          ]
                         }
-                      }
+                      ]
                     }
                   }
                 }
@@ -5274,11 +5324,44 @@
                 "items": {
                   "properties": {
                     "constraint": {
-                      "properties": {
-                        "category": {
-                          "pattern": "^(definedness|domain\\.|initial\\.|transition\\.)"
+                      "anyOf": [
+                        {
+                          "properties": {
+                            "stage": {
+                              "const": "kernel"
+                            },
+                            "category": {
+                              "pattern": "^domain"
+                            }
+                          },
+                          "required": [
+                            "stage"
+                          ]
+                        },
+                        {
+                          "properties": {
+                            "stage": {
+                              "const": "kernel"
+                            },
+                            "category": {
+                              "pattern": "^transition"
+                            }
+                          },
+                          "required": [
+                            "stage"
+                          ]
+                        },
+                        {
+                          "properties": {
+                            "stage": {
+                              "const": "initialization"
+                            }
+                          },
+                          "required": [
+                            "stage"
+                          ]
                         }
-                      }
+                      ]
                     }
                   }
                 }
@@ -5303,11 +5386,18 @@
                 "items": {
                   "properties": {
                     "constraint": {
-                      "properties": {
-                        "category": {
-                          "pattern": "^(assumption\\.)"
+                      "anyOf": [
+                        {
+                          "properties": {
+                            "stage": {
+                              "const": "assumptions"
+                            }
+                          },
+                          "required": [
+                            "stage"
+                          ]
                         }
-                      }
+                      ]
                     }
                   }
                 }
@@ -5332,11 +5422,31 @@
                 "items": {
                   "properties": {
                     "constraint": {
-                      "properties": {
-                        "category": {
-                          "pattern": "^(assumption\\.|definedness|domain\\.)"
+                      "anyOf": [
+                        {
+                          "properties": {
+                            "stage": {
+                              "const": "kernel"
+                            },
+                            "category": {
+                              "pattern": "^domain"
+                            }
+                          },
+                          "required": [
+                            "stage"
+                          ]
+                        },
+                        {
+                          "properties": {
+                            "stage": {
+                              "const": "assumptions"
+                            }
+                          },
+                          "required": [
+                            "stage"
+                          ]
                         }
-                      }
+                      ]
                     }
                   }
                 }
@@ -5361,11 +5471,54 @@
                 "items": {
                   "properties": {
                     "constraint": {
-                      "properties": {
-                        "category": {
-                          "pattern": "^(assumption\\.|definedness|domain\\.|initial\\.|transition\\.)"
+                      "anyOf": [
+                        {
+                          "properties": {
+                            "stage": {
+                              "const": "kernel"
+                            },
+                            "category": {
+                              "pattern": "^domain"
+                            }
+                          },
+                          "required": [
+                            "stage"
+                          ]
+                        },
+                        {
+                          "properties": {
+                            "stage": {
+                              "const": "kernel"
+                            },
+                            "category": {
+                              "pattern": "^transition"
+                            }
+                          },
+                          "required": [
+                            "stage"
+                          ]
+                        },
+                        {
+                          "properties": {
+                            "stage": {
+                              "const": "initialization"
+                            }
+                          },
+                          "required": [
+                            "stage"
+                          ]
+                        },
+                        {
+                          "properties": {
+                            "stage": {
+                              "const": "assumptions"
+                            }
+                          },
+                          "required": [
+                            "stage"
+                          ]
                         }
-                      }
+                      ]
                     }
                   }
                 }
@@ -5390,11 +5543,44 @@
                 "items": {
                   "properties": {
                     "constraint": {
-                      "properties": {
-                        "category": {
-                          "pattern": "^(definedness|domain\\.|initial\\.|transition\\.)"
+                      "anyOf": [
+                        {
+                          "properties": {
+                            "stage": {
+                              "const": "kernel"
+                            },
+                            "category": {
+                              "pattern": "^domain"
+                            }
+                          },
+                          "required": [
+                            "stage"
+                          ]
+                        },
+                        {
+                          "properties": {
+                            "stage": {
+                              "const": "kernel"
+                            },
+                            "category": {
+                              "pattern": "^transition"
+                            }
+                          },
+                          "required": [
+                            "stage"
+                          ]
+                        },
+                        {
+                          "properties": {
+                            "stage": {
+                              "const": "initialization"
+                            }
+                          },
+                          "required": [
+                            "stage"
+                          ]
                         }
-                      }
+                      ]
                     }
                   }
                 }
@@ -5419,11 +5605,54 @@
                 "items": {
                   "properties": {
                     "constraint": {
-                      "properties": {
-                        "category": {
-                          "pattern": "^(assumption\\.|definedness|domain\\.|initial\\.|transition\\.)"
+                      "anyOf": [
+                        {
+                          "properties": {
+                            "stage": {
+                              "const": "kernel"
+                            },
+                            "category": {
+                              "pattern": "^domain"
+                            }
+                          },
+                          "required": [
+                            "stage"
+                          ]
+                        },
+                        {
+                          "properties": {
+                            "stage": {
+                              "const": "kernel"
+                            },
+                            "category": {
+                              "pattern": "^transition"
+                            }
+                          },
+                          "required": [
+                            "stage"
+                          ]
+                        },
+                        {
+                          "properties": {
+                            "stage": {
+                              "const": "initialization"
+                            }
+                          },
+                          "required": [
+                            "stage"
+                          ]
+                        },
+                        {
+                          "properties": {
+                            "stage": {
+                              "const": "assumptions"
+                            }
+                          },
+                          "required": [
+                            "stage"
+                          ]
                         }
-                      }
+                      ]
                     }
                   }
                 }

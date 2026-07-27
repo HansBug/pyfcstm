@@ -1709,7 +1709,8 @@ class Diagram:
         """
         raise DiagramUnavailableError(
             "headless SVG export is unavailable; use Diagram.to_html() browser export "
-            "or install the optional delivery runtime"
+            "or wait for the headless delivery stage; `pip install pyfcstm[viz]` "
+            "adds the rendering runtime but not this synchronous API"
         )
 
     def to_png(self, scale: float = 1.0) -> bytes:
@@ -1728,7 +1729,8 @@ class Diagram:
         _coerce_finite_number(scale, "scale", positive=True)
         raise DiagramUnavailableError(
             "headless PNG export is unavailable; use Diagram.to_html() browser export "
-            "or install the optional delivery runtime"
+            "or wait for the headless delivery stage; `pip install pyfcstm[viz]` "
+            "adds the rendering runtime but not this synchronous API"
         )
 
     def to_pdf(self) -> bytes:
@@ -1742,7 +1744,8 @@ class Diagram:
         """
         raise DiagramUnavailableError(
             "headless PDF export is unavailable; use Diagram.to_html() browser export "
-            "or install the optional delivery runtime"
+            "or wait for the headless delivery stage; `pip install pyfcstm[viz]` "
+            "adds the rendering runtime but not this synchronous API"
         )
 
     def to_html(self, output: Optional[Union[str, os.PathLike]] = None) -> str:

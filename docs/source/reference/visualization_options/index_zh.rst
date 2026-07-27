@@ -816,6 +816,12 @@ HTML 查看器可以在浏览器中下载 SVG、PNG 和矢量 PDF。Python 的
 ``DiagramUnavailableError``。没有 Chromium 系浏览器时，``show()`` 会先写出
 HTML，再抛出同一类型的能力错误；使用 ``show(open_window=False)`` 可避免浏览器依赖。
 
+生成 HTML 查看器只需要浏览器，不需要额外依赖；\ ``DiagramAssetEngine``\ 的无头
+渲染需要可选的 MiniRacer 运行时，由 ``pip install pyfcstm[viz]`` 提供，缺少时
+引擎抛出的 ``DiagramUnavailableError`` 会直接给出该命令。安装这个 extra
+**不会**\ 启用 ``to_svg()`` / ``to_png()`` / ``to_pdf()``\ ——它们无论如何都要
+等无头交付阶段。
+
 未知字段、重复蛇形/驼峰别名、无效枚举值和无效数字会抛出 ``ValueError``\ ；
 ``collapsed_state_ids`` 不是 ID 字符串序列时抛出 ``TypeError``\ ，包括把单个 ID
 直接写成字符串这一常见错误。

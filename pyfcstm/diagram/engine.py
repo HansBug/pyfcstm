@@ -587,8 +587,8 @@ class DiagramAssetEngine:
             )
         if not modern_installed and not legacy_installed:
             raise DiagramUnavailableError(
-                "no supported MiniRacer distribution is installed; install the "
-                "optional diagram runtime for headless rendering"
+                "no supported MiniRacer distribution is installed; run "
+                "`pip install pyfcstm[viz]` to add the headless rendering runtime"
             )
         selected = "mini-racer" if modern_installed else "py-mini-racer"
         selected_version = self._distribution_version(selected) or "unknown"

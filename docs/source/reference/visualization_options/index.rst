@@ -829,6 +829,13 @@ methods ``to_svg()``, ``to_png()``, and ``to_pdf()`` intentionally raise
 error after the HTML file has been written; ``show(open_window=False)`` avoids
 the browser requirement.
 
+The HTML viewer needs nothing beyond a browser. ``DiagramAssetEngine``'s
+headless rendering does need the optional MiniRacer runtime, which
+``pip install pyfcstm[viz]`` provides; without it the engine raises
+``DiagramUnavailableError`` naming that command. Installing the extra does not
+enable ``to_svg()`` / ``to_png()`` / ``to_pdf()`` — those wait for the headless
+delivery stage regardless.
+
 Unknown option fields, duplicate snake/camel aliases, invalid enum values, and
 invalid numeric values raise ``ValueError``; a ``collapsed_state_ids`` that is
 not a sequence of ID strings raises ``TypeError``, including the common mistake

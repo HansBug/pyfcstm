@@ -72,6 +72,11 @@ _INEXPRESSIBLE = {
         "uniqueness over a nested key (items[*].constraint.stable_id) has no "
         "Draft 2020-12 keyword; uniqueItems only catches identical members"
     ),
+    "whole float index": (
+        "Draft 2020-12 judges 'integer' by numeric value, so 1.0 validates; "
+        "the Python side requires a real int because a float index would not "
+        "survive the tuple contract"
+    ),
 }
 
 
@@ -90,18 +95,30 @@ def validator():
     )
 
 
-def _member(stable_id: str, stage: str, kind: str = "generated", **overrides):
+def _member(
+    stable_id: str,
+    stage: str,
+    kind: str = "generated",
+    frames=(),
+    steps=(),
+    span=None,
+    refs=None,
+    **overrides,
+):
     """Build one canonical core member, allowing deliberate corruption."""
     category, role = _STAGE_SHAPE[stage]
+    source = {"kind": kind, "path": None, "span": None}
+    if span is not None:
+        source = {"kind": "fbmcq", "path": "q.fbmcq", "span": dict(span)}
     constraint = {
         "stable_id": stable_id,
         "stage": stage,
         "category": category,
-        "source": {"kind": kind, "path": None, "span": None},
+        "source": source,
         "summary": "group %s" % stable_id,
-        "frames": [],
-        "steps": [],
-        "refs": {},
+        "frames": list(frames),
+        "steps": list(steps),
+        "refs": dict(refs or {}),
     }
     member = {
         "constraint": constraint,
@@ -155,6 +172,20 @@ def _payload(
     }
 
 
+def _span(payload):
+    """Rebuild a span from its canonical mapping, or ``None`` when absent."""
+    if payload is None:
+        return None
+    from pyfcstm.utils.validate import Span
+
+    return Span(
+        payload["line"],
+        payload["column"],
+        payload["end_line"],
+        payload["end_column"],
+    )
+
+
 def _constructor_accepts(payload) -> bool:
     """Report whether the public constructors accept a canonical payload."""
     try:
@@ -170,9 +201,12 @@ def _constructor_accepts(payload) -> bool:
                         BmcSourceRef(
                             entry["constraint"]["source"]["kind"],
                             entry["constraint"]["source"]["path"],
-                            None,
+                            _span(entry["constraint"]["source"]["span"]),
                         ),
                         entry["constraint"]["summary"],
+                        tuple(entry["constraint"]["frames"]),
+                        tuple(entry["constraint"]["steps"]),
+                        entry["constraint"]["refs"],
                     ),
                     entry["semantic_role"],
                     entry["source_excerpt"],
@@ -312,6 +346,79 @@ def _structural_corpus():
     )
     yield "empty member list", _payload(members=[])
     yield "negative elapsed time", _payload(elapsed_ms=-1.0)
+    yield (
+        "negative frame index",
+        _payload(members=[_member("g0", "initialization", frames=(-1,))]),
+    )
+    yield (
+        "negative step index",
+        _payload(members=[_member("g0", "initialization", steps=(-1,))]),
+    )
+    yield (
+        "whole float index",
+        _payload(members=[_member("g0", "initialization", frames=(1.0,))]),
+    )
+    yield (
+        "valid frame and step indices",
+        _payload(members=[_member("g0", "initialization", frames=(0, 2), steps=(1,))]),
+    )
+    yield (
+        "zero span line",
+        _payload(
+            members=[
+                _member(
+                    "g0",
+                    "initialization",
+                    span={"line": 0, "column": 1, "end_line": 1, "end_column": 5},
+                )
+            ]
+        ),
+    )
+    yield (
+        "negative span column",
+        _payload(
+            members=[
+                _member(
+                    "g0",
+                    "initialization",
+                    span={"line": 1, "column": -2, "end_line": 1, "end_column": 5},
+                )
+            ]
+        ),
+    )
+    yield (
+        "anchor-only span",
+        _payload(
+            members=[
+                _member(
+                    "g0",
+                    "initialization",
+                    span={
+                        "line": 1,
+                        "column": 1,
+                        "end_line": None,
+                        "end_column": None,
+                    },
+                )
+            ]
+        ),
+    )
+    yield (
+        "valid one-based span",
+        _payload(
+            members=[
+                _member(
+                    "g0",
+                    "initialization",
+                    span={"line": 1, "column": 1, "end_line": 1, "end_column": 5},
+                )
+            ]
+        ),
+    )
+    yield (
+        "non-string refs key",
+        _payload(members=[_member("g0", "initialization", refs={"frame": 0})]),
+    )
 
 
 def test_scalar_corpus_agrees(validator) -> None:

@@ -187,6 +187,49 @@ def _require_indices(values: Any, label: str) -> Tuple[int, ...]:
     return indices
 
 
+def _require_json_mapping(value: Any, label: str) -> Dict[str, Any]:
+    """Reject metadata that could not survive a round trip through JSON.
+
+    These mappings are free-form by design, which is exactly why they need a
+    boundary: an unserializable value placed here would not fail until the
+    whole result is dumped, and the error would name neither the field nor the
+    object it came from.
+
+    :param value: Candidate mapping.
+    :type value: object
+    :param label: Field name used in the error message.
+    :type label: str
+    :return: The validated mapping as a plain dict.
+    :rtype: Dict[str, object]
+    :raises TypeError: If a key is not a string, or a value is outside the
+        JSON data model.
+
+    Example::
+
+        >>> _require_json_mapping({"frame": 0}, "refs")
+        {'frame': 0}
+    """
+
+    def _check(entry: Any, where: str) -> None:
+        if entry is None or isinstance(entry, (str, bool, int, float)):
+            return
+        if isinstance(entry, (list, tuple)):
+            for index, item in enumerate(entry):
+                _check(item, "%s[%d]" % (where, index))
+            return
+        if isinstance(entry, Mapping):
+            for key, item in entry.items():
+                if not isinstance(key, str):
+                    raise TypeError("%s keys must be strings, got %r." % (where, key))
+                _check(item, "%s[%r]" % (where, key))
+            return
+        raise TypeError("%s is not JSON-compatible, got %r." % (where, entry))
+
+    mapping = dict(value)
+    _check(mapping, label)
+    return mapping
+
+
 def _require_flag(value: Any, label: str) -> bool:
     """Reject a truthy stand-in where the JSON contract promises a boolean.
 
@@ -309,7 +352,9 @@ class BmcConstraintRef:
             raise TypeError("constraint source must be BmcSourceRef.")
         object.__setattr__(self, "frames", _require_indices(self.frames, "frames"))
         object.__setattr__(self, "steps", _require_indices(self.steps, "steps"))
-        object.__setattr__(self, "refs", MappingProxyType(dict(self.refs)))
+        object.__setattr__(
+            self, "refs", MappingProxyType(_require_json_mapping(self.refs, "refs"))
+        )
 
     def to_canonical(self) -> Dict[str, Any]:
         """Return a JSON-compatible constraint reference.
@@ -392,7 +437,11 @@ class BmcCoreItem:
         if not isinstance(self.human_text, str) or not self.human_text:
             raise ValueError("core item human_text must be a non-empty string.")
         object.__setattr__(
-            self, "normalized_fact", MappingProxyType(dict(self.normalized_fact))
+            self,
+            "normalized_fact",
+            MappingProxyType(
+                _require_json_mapping(self.normalized_fact, "normalized_fact")
+            ),
         )
 
     def to_canonical(self) -> Dict[str, Any]:

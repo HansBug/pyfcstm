@@ -915,13 +915,20 @@ def explain_infeasibility(
     elapsed_ms = (time.monotonic() - started) * 1000.0
     checks = outcome.checks + extraction.checks
     if outcome.classification is None and not extraction.groups:
+        # Nothing usable came back, so the aggregate summarizes every stage
+        # that failed rather than only the first.  A spent deadline outranks an
+        # undecided solver: reporting 'unknown' when the budget actually ran
+        # out sends the reader looking for solver incompleteness instead of
+        # raising their timeout.
+        statuses = [outcome.status, extraction.status]
+        reasons = [entry for entry in (outcome.reason, extraction.reason) if entry]
         return ExplanationOutcome(
             BmcInfeasibilityExplanation(
                 requested_mode=requested_mode,
                 achieved_mode="none",
-                status=outcome.status,
+                status="timeout" if "timeout" in statuses else outcome.status,
                 classification=None,
-                reason=outcome.reason,
+                reason="; ".join(reasons) or outcome.reason,
                 elapsed_ms=elapsed_ms,
             ),
             checks,

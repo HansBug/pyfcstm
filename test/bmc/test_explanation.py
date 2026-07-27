@@ -7,6 +7,7 @@ consumers can read an explanation without loading the solver stack.
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 
@@ -641,3 +642,63 @@ def test_optional_text_fields_reject_non_strings() -> None:
 
     with pytest.raises(TypeError, match="reason"):
         BmcInfeasibilityExplanation("formal", "none", "unknown", None, reason=123)
+
+
+@pytest.mark.parametrize(
+    "refs, match",
+    [
+        ({"frame": {1, 2}}, "not JSON-compatible"),
+        ({"frame": object()}, "not JSON-compatible"),
+        ({1: "a"}, "keys must be strings"),
+        ({"outer": {"inner": {3, 4}}}, "not JSON-compatible"),
+        ({"outer": [1, {2, 3}]}, "not JSON-compatible"),
+        ({"outer": {2: "b"}}, "keys must be strings"),
+    ],
+)
+def test_structural_metadata_must_survive_json(refs, match) -> None:
+    """Free-form metadata still has to be serializable.
+
+    Both mappings go straight into the canonical payload, so an unserializable
+    value placed here would not fail until the whole result is dumped, and the
+    error would name neither the field nor the object that produced it.
+    """
+    with pytest.raises(TypeError, match=match):
+        BmcConstraintRef(
+            "initial.target",
+            "initialization",
+            "initial.target",
+            _GENERATED,
+            "initial target state",
+            refs=refs,
+        )
+
+
+def test_nested_json_metadata_is_accepted() -> None:
+    """Lists, nested mappings and every JSON scalar remain usable."""
+    reference = BmcConstraintRef(
+        "initial.target",
+        "initialization",
+        "initial.target",
+        _GENERATED,
+        "initial target state",
+        refs={
+            "frame": 0,
+            "labels": ["a", "b"],
+            "nested": {"flag": True, "ratio": 1.5, "absent": None},
+        },
+    )
+    item = BmcCoreItem(
+        reference,
+        "initial_fact",
+        None,
+        False,
+        {"stable_id": "initial.target", "frames": [0]},
+        "initial target state",
+        False,
+    )
+
+    assert json.loads(json.dumps(item.to_canonical()))["constraint"]["refs"] == {
+        "frame": 0,
+        "labels": ["a", "b"],
+        "nested": {"flag": True, "ratio": 1.5, "absent": None},
+    }

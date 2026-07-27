@@ -18,3 +18,7 @@ cmake<4
 # Those defaults conflict with the Python 3.7 floor this project supports,
 # so the lint contract stays on the 0.15 rule set until it is retargeted.
 ruff<0.16
+# Draft 2020-12 validation backs the frozen "schema and constructor accept the
+# same payload set" contract.  jsonschema 4 requires Python 3.8, and 3.2 has no
+# Draft202012Validator, so the 3.7 cell keeps skipping those checks.
+jsonschema>=4; python_version>='3.8'

@@ -1162,3 +1162,103 @@ def test_an_unclassified_stage_still_gets_a_fallback_core() -> None:
     assert explanation.core.scope == "assumptions_stage_fallback"
     assert "degraded" in explanation.reason
     assert explanation.core.items
+
+
+class _ScriptedSolver:
+    """Return a scripted verdict for each check, then defer to the real solver.
+
+    Mixing an ``unknown`` classification with a ``timeout`` extraction cannot
+    be produced on demand from real inputs, yet the two happen together as soon
+    as a non-linear query makes Z3 give up and the shared deadline then runs
+    out.  Only Z3's verdict is scripted here; the aggregation under test is
+    production code.
+    """
+
+    def __init__(self, real, script, counter):
+        self._real = real
+        self._script = script
+        self._counter = counter
+        self._reason = ""
+
+    def check(self, *assumptions):
+        index = self._counter[0]
+        self._counter[0] += 1
+        verdict = self._script[index] if index < len(self._script) else None
+        if verdict is None:
+            self._reason = ""
+            return self._real.check(*assumptions)
+        self._reason = verdict
+        return z3.unknown
+
+    def reason_unknown(self):
+        return self._reason or self._real.reason_unknown()
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+
+@pytest.mark.parametrize(
+    "script",
+    [
+        ["incomplete", "timeout"],
+        ["timeout", "incomplete"],
+    ],
+)
+def test_a_spent_deadline_outranks_an_undecided_probe(script) -> None:
+    """When nothing is usable, the aggregate reports the timeout.
+
+    Reporting ``unknown`` while the ledger records a timeout sends the reader
+    hunting for solver incompleteness when the real fix is a larger budget, so
+    the frozen table gives timeout priority and asks for every reason to be
+    summarized in check order.
+    """
+    core = _core_formula(
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") == 7; '
+        'check reach <= 2: active("Root.B");'
+    )
+    counter = [0]
+    real = z3.Solver
+
+    def factory(*args, **kwargs):
+        return _ScriptedSolver(real(*args, **kwargs), script, counter)
+
+    z3.Solver = factory
+    try:
+        outcome = explain_infeasibility(core, "assumptions", _SolveBudget(None))
+    finally:
+        z3.Solver = real
+
+    explanation = outcome.explanation
+
+    assert explanation.classification is None
+    assert explanation.achieved_mode == "none"
+    assert explanation.status == "timeout"
+    assert {check.status for check in outcome.checks} == {"unknown", "timeout"}
+    assert ";" in explanation.reason
+    assert "component probe" in explanation.reason
+    assert "core extraction" in explanation.reason
+
+
+def test_an_all_unknown_run_stays_unknown() -> None:
+    """Timeout priority must not relabel a run that never timed out."""
+    core = _core_formula(
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") == 7; '
+        'check reach <= 2: active("Root.B");'
+    )
+    counter = [0]
+    real = z3.Solver
+
+    def factory(*args, **kwargs):
+        return _ScriptedSolver(
+            real(*args, **kwargs), ["incomplete", "incomplete"], counter
+        )
+
+    z3.Solver = factory
+    try:
+        outcome = explain_infeasibility(core, "assumptions", _SolveBudget(None))
+    finally:
+        z3.Solver = real
+
+    assert outcome.explanation.status == "unknown"

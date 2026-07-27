@@ -4734,13 +4734,16 @@
         "frames": {
           "type": "array",
           "items": {
-            "type": "integer"
-          }
+            "type": "integer",
+            "minimum": 0
+          },
+          "$comment": "Draft 2020-12 accepts 1.0 as an integer because it judges by numeric value; the Python constructor requires a real int, and that one-sided difference is pinned by the equivalence test's inexpressible list."
         },
         "steps": {
           "type": "array",
           "items": {
-            "type": "integer"
+            "type": "integer",
+            "minimum": 0
           }
         },
         "refs": {
@@ -5694,22 +5697,25 @@
           ],
           "properties": {
             "line": {
-              "type": "integer",
-              "minimum": 1
+              "type": "integer"
             },
             "column": {
-              "type": "integer",
-              "minimum": 1
+              "type": "integer"
             },
             "end_line": {
-              "type": "integer",
-              "minimum": 1
+              "type": [
+                "integer",
+                "null"
+              ]
             },
             "end_column": {
-              "type": "integer",
-              "minimum": 1
+              "type": [
+                "integer",
+                "null"
+              ]
             }
-          }
+          },
+          "$comment": "Coordinates are 1-based and end-exclusive by producer contract; the source registry degrades any span it cannot slice to a null excerpt rather than rejecting it, and Span itself imposes no bounds, so this definition matches what the constructors actually accept."
         }
       },
       "allOf": [

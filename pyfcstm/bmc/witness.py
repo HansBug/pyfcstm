@@ -2469,6 +2469,15 @@ class BmcFeasibilityResult(_PrettyPrintableMixin):
     :type refinement_reason: str, optional
     :param refinement_checks: Executed refinement checks, defaults to ``()``.
     :type refinement_checks: Sequence[BmcFeasibilityRefinementCheck], optional
+    :param explanation: Published scenario infeasibility explanation, defaults
+        to ``None``.  It only exists once a stage has been localized and the
+        caller asked for one.  When present, the aggregate fields are a summary
+        of the very same optional stage: ``refinement_status`` mirrors
+        ``explanation.status``, ``refinement_reason`` mirrors
+        ``explanation.reason``, the explanation must describe the localized
+        stage, and ``refinement_checks`` must contain the checks the published
+        artifact claims.
+    :type explanation: Optional[pyfcstm.bmc.explanation.BmcInfeasibilityExplanation], optional
     :raises pyfcstm.bmc.errors.BmcBuildError: If stage evidence is inconsistent.
 
     Example::

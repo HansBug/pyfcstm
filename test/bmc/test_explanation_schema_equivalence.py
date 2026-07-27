@@ -72,11 +72,6 @@ _INEXPRESSIBLE = {
         "uniqueness over a nested key (items[*].constraint.stable_id) has no "
         "Draft 2020-12 keyword; uniqueItems only catches identical members"
     ),
-    "whole float index": (
-        "Draft 2020-12 judges 'integer' by numeric value, so 1.0 validates; "
-        "the Python side requires a real int because a float index would not "
-        "survive the tuple contract"
-    ),
     "non-string refs key": (
         "JSON object keys are always strings, so a Python mapping keyed by 1 "
         'serializes to "1" and no validator can see the difference; the '

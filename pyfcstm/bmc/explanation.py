@@ -253,7 +253,9 @@ def _require_indices(values: Any, label: str) -> Tuple[int, ...]:
 
     ``bool`` is an ``int`` subclass in Python but is not an index, and letting
     it through would publish ``true`` where the JSON contract promises a
-    number.
+    number.  A whole-valued ``float`` is accepted and canonicalized instead,
+    because ``1.0`` is valid JSON for an integer and a validator judging by
+    numeric value cannot tell it apart from ``1``.
 
     :param values: Candidate index sequence.
     :type values: object
@@ -267,14 +269,30 @@ def _require_indices(values: Any, label: str) -> Tuple[int, ...]:
 
         >>> _require_indices([1, 0], "frames")
         (1, 0)
+        >>> _require_indices([1.0], "frames")
+        (1,)
     """
-    indices = tuple(values)
-    for entry in indices:
-        if isinstance(entry, bool) or not isinstance(entry, int) or entry < 0:
+    normalized = []
+    for entry in values:
+        if isinstance(entry, bool):
             raise ValueError(
                 "%s must contain non-negative integers, got %r." % (label, entry)
             )
-    return indices
+        if isinstance(entry, float):
+            # A JSON document may write a whole number as 1.0, and a validator
+            # judging "integer" by value accepts it.  Canonicalizing here keeps
+            # the published tuple integral without rejecting valid JSON.
+            if not math.isfinite(entry) or not entry.is_integer():
+                raise ValueError(
+                    "%s must contain non-negative integers, got %r." % (label, entry)
+                )
+            entry = int(entry)
+        if not isinstance(entry, int) or entry < 0:
+            raise ValueError(
+                "%s must contain non-negative integers, got %r." % (label, entry)
+            )
+        normalized.append(entry)
+    return tuple(normalized)
 
 
 def _require_json_mapping(value: Any, label: str) -> Dict[str, Any]:

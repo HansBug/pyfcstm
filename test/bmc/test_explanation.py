@@ -605,12 +605,13 @@ def test_reserved_slots_are_rejected_rather_than_silently_dropped(slot) -> None:
         )
 
 
-@pytest.mark.parametrize("bad", [(True,), (-1,), ("0",), (1.0,)])
+@pytest.mark.parametrize("bad", [(True,), (-1,), ("0",), (1.5,), (-1.0,)])
 def test_frame_and_step_indices_must_be_non_negative_integers(bad) -> None:
     """A published index must survive the JSON contract unchanged.
 
     ``bool`` is an ``int`` subclass in Python, so an unchecked flag would be
-    serialized as ``true`` where the schema promises a number.
+    serialized as ``true`` where the schema promises a number.  A fractional or
+    negative value is not an index at all.
     """
     with pytest.raises(ValueError, match="non-negative integers"):
         BmcConstraintRef(
@@ -631,6 +632,28 @@ def test_frame_and_step_indices_must_be_non_negative_integers(bad) -> None:
             "initial target state",
             steps=bad,
         )
+
+
+def test_whole_float_indices_are_accepted_and_canonicalized() -> None:
+    """``1.0`` is valid JSON for an integer, so it is accepted and normalized.
+
+    A validator judging ``integer`` by numeric value cannot tell ``1.0`` from
+    ``1``, so rejecting it would make the published schema and this constructor
+    disagree on a payload that is legal JSON.
+    """
+    reference = BmcConstraintRef(
+        "initial.target",
+        "initialization",
+        "initial.target",
+        _GENERATED,
+        "initial target state",
+        frames=[1.0, 0.0],
+        steps=[2.0],
+    )
+
+    assert reference.frames == (1, 0)
+    assert reference.steps == (2,)
+    assert all(type(value) is int for value in reference.frames + reference.steps)
 
 
 @pytest.mark.parametrize("field", ["source_excerpt_truncated", "editable"])

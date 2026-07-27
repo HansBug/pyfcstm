@@ -546,11 +546,53 @@ def test_an_unknown_category_has_no_invented_reading() -> None:
         ({"frames": [2, 0, 2]}, (0, 2)),
         ({"frames": (1, "x")}, (1,)),
         ({"frames": "nope"}, ()),
+        # A whole-valued float names an index; the public constructor accepts
+        # one, so this reader must not answer differently.
+        ({"frames": 1.0}, (1,)),
+        ({"frames": [2.0, 0]}, (0, 2)),
+        # Still not indices: a fraction names no frame and a negative one names
+        # no position at all.
+        ({"frames": 1.5}, ()),
+        ({"frames": -1.0}, ()),
     ],
 )
 def test_index_metadata_is_normalized_deterministically(refs, expected) -> None:
     """Frame and step indices are sorted, de-duplicated and type-checked."""
     assert _indices(refs, "frames") == expected
+
+
+def test_mapped_and_direct_indices_agree_on_whole_valued_floats() -> None:
+    """One recorded index must not depend on which door it came through.
+
+    ``build_core_item`` reads the builder's metadata while the public
+    constructor takes an already-built tuple.  When the two canonicalize
+    differently, the mapped path drops an index that the direct path keeps, and
+    the published core disagrees with the metadata it was built from without
+    anything failing.
+    """
+    from pyfcstm.bmc.explanation import BmcConstraintRef
+
+    group = BmcTrackedConstraint(
+        "initial.where",
+        "initialization",
+        "initial.where",
+        (True,),
+        BmcSourceRef("generated", None, None),
+        refs={"frame": 1.0, "step": 2.0},
+    )
+    mapped = build_core_item(group).constraint
+    direct = BmcConstraintRef(
+        "initial.where",
+        "initialization",
+        "initial.where",
+        BmcSourceRef("generated", None, None),
+        "s",
+        frames=(1.0,),
+        steps=(2.0,),
+    )
+
+    assert mapped.frames == direct.frames == (1,)
+    assert mapped.steps == direct.steps == (2,)
 
 
 def test_core_items_quote_authored_source_when_a_registry_is_given() -> None:
@@ -1005,6 +1047,42 @@ def test_a_published_core_quotes_the_authored_query_text() -> None:
     assert all(item.editable for item in items)
     assert all(item.constraint.source.path == "prop.fbmcq" for item in items)
     assert [item.constraint.source.span.line for item in items] == [2, 3]
+
+
+def test_an_unnamed_query_yields_a_core_without_source_slices() -> None:
+    """Programmatic input maps to groups and a classification, but not to lines.
+
+    ``prepare`` only records a span when the caller names the query's origin, so
+    an in-memory query has nothing to slice.  The frozen contract permits that:
+    ``path`` and ``span`` are optional precisely for programmatic input.  Pinning
+    it here keeps the condition visible, so the absent excerpt is read as "this
+    query was never given a path" rather than as a broken source mapping.
+    """
+    machine = load_state_machine_from_text(_MODEL)
+    query = (
+        'init state("Root.A") where x == 0;\n'
+        'assume at 0: var("x") == 1;\n'
+        'assume at 0: var("x") == 2;\n'
+        'check reach <= 2: active("Root.B");\n'
+    )
+    context = BmcEngine(machine).prepare(query)
+    core = build_bmc_core_formula(context)
+
+    outcome = explain_infeasibility(core, "assumptions", _SolveBudget(None))
+    items = outcome.explanation.core.items
+
+    # The classification and the group-level mapping are unaffected.
+    assert outcome.explanation.classification == "assumptions_self_conflict"
+    assert outcome.explanation.core.scope == "assumptions_component"
+    assert [item.semantic_role for item in items] == ["assumption", "assumption"]
+    assert [item.constraint.category for item in items] == [
+        "assumption.frame",
+        "assumption.frame",
+    ]
+    # Only the line-level slice is missing, and it is missing for one reason.
+    assert all(item.constraint.source.path is None for item in items)
+    assert all(item.constraint.source.span is None for item in items)
+    assert all(item.source_excerpt is None for item in items)
 
 
 def test_an_explicit_registry_overrides_the_context_default() -> None:

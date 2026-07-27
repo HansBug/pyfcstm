@@ -80,6 +80,11 @@ _INEXPRESSIBLE = {
         "cannot check that refinement_reason equals explanation.reason; the "
         "constructor enforces that equality on its own"
     ),
+    "proven minimality without one deletion per member": (
+        "Draft 2020-12 can constrain each array on its own, but it cannot "
+        "compare len(refinement_checks deletions) against len(core.items); the "
+        "constructor requires one recorded deletion per member"
+    ),
     "non-string refs key": (
         "JSON object keys are always strings, so a Python mapping keyed by 1 "
         'serializes to "1" and no validator can see the difference; the '
@@ -631,6 +636,26 @@ def _drift_cases():
         items = payload["explanation"]["core"]["items"]
         items.append(json.loads(json.dumps(items[0])))
 
+    def proven_without_one_deletion_per_member(payload):
+        # Two distinct members, but only one recorded deletion check.  Each
+        # array is individually well formed, so only a cross-array cardinality
+        # comparison can see the gap.
+        core = payload["explanation"]["core"]
+        second = json.loads(json.dumps(core["items"][0]))
+        second["constraint"]["stable_id"] += ".second"
+        second["normalized_fact"]["stable_id"] = second["constraint"]["stable_id"]
+        core["items"].append(second)
+        core["reduction"] = "subset_minimal"
+        core["subset_minimality"] = "proven"
+        payload["refinement_checks"].append(
+            {
+                "name": "unsat_core_minimization",
+                "status": "sat",
+                "reason": None,
+                "elapsed_ms": 1.0,
+            }
+        )
+
     return [
         ("aggregate status drift", status_drift),
         ("explanation without a ledger", empty_ledger),
@@ -639,6 +664,10 @@ def _drift_cases():
         ("core member outside its scope", member_outside_scope),
         ("unsupported source kind", untyped_source),
         ("duplicate core member", duplicate_member),
+        (
+            "proven minimality without one deletion per member",
+            proven_without_one_deletion_per_member,
+        ),
     ]
 
 
@@ -732,6 +761,38 @@ def test_the_constructor_still_enforces_every_named_asymmetry() -> None:
             (member("first reading"), member("second reading")),
         )
 
+    # proven minimality without one deletion per member
+    proven_core = replace(
+        feasibility.explanation.core,
+        items=feasibility.explanation.core.items
+        + (
+            replace(
+                feasibility.explanation.core.items[0],
+                constraint=replace(
+                    feasibility.explanation.core.items[0].constraint,
+                    stable_id="second.member",
+                ),
+            ),
+        ),
+        reduction="subset_minimal",
+        subset_minimality="proven",
+    )
+    with pytest.raises(BmcBuildError, match="deletion"):
+        replace(
+            feasibility,
+            explanation=replace(
+                feasibility.explanation, achieved_mode="formal", core=proven_core
+            ),
+            refinement_checks=feasibility.refinement_checks
+            + (
+                replace(
+                    feasibility.refinement_checks[0],
+                    name="unsat_core_minimization",
+                    status="sat",
+                ),
+            ),
+        )
+
     # non-string refs key
     with pytest.raises(TypeError, match="keys must be strings"):
         BmcConstraintRef(
@@ -747,4 +808,5 @@ def test_the_constructor_still_enforces_every_named_asymmetry() -> None:
         "aggregate reason drift",
         "duplicate stable_id with differing content",
         "non-string refs key",
+        "proven minimality without one deletion per member",
     }

@@ -2529,6 +2529,155 @@
             }
           },
           "$comment": "Only the degraded statuses are excluded, matching the constructor.  A feasible scenario reporting complete with executed checks predates this contract."
+        },
+        {
+          "$comment": "A published core claims some check proved its target unsatisfiable, so the ledger has to carry that completed check. Without it the JSON asserts soundness with no recorded evidence.",
+          "if": {
+            "properties": {
+              "explanation": {
+                "type": "object",
+                "properties": {
+                  "core": {
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "core"
+                ]
+              }
+            },
+            "required": [
+              "explanation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "refinement_checks": {
+                "contains": {
+                  "properties": {
+                    "name": {
+                      "enum": [
+                        "unsat_core",
+                        "unsat_core_minimization"
+                      ]
+                    },
+                    "status": {
+                      "const": "complete"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "status"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "refinement_checks"
+            ]
+          }
+        },
+        {
+          "$comment": "partial_minimized means at least one deletion check finished. With none recorded the core is simply raw.",
+          "if": {
+            "properties": {
+              "explanation": {
+                "type": "object",
+                "properties": {
+                  "core": {
+                    "type": "object",
+                    "properties": {
+                      "reduction": {
+                        "const": "partial_minimized"
+                      }
+                    },
+                    "required": [
+                      "reduction"
+                    ]
+                  }
+                },
+                "required": [
+                  "core"
+                ]
+              }
+            },
+            "required": [
+              "explanation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "refinement_checks": {
+                "contains": {
+                  "properties": {
+                    "name": {
+                      "const": "unsat_core_minimization"
+                    }
+                  },
+                  "required": [
+                    "name"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "refinement_checks"
+            ]
+          }
+        },
+        {
+          "$comment": "Proven minimality means removing any single member leaves the target satisfiable, so no recorded deletion check may have come back unsat. The per-member count is the cross-array rule Draft 2020-12 cannot express and stays a named exception.",
+          "if": {
+            "properties": {
+              "explanation": {
+                "type": "object",
+                "properties": {
+                  "core": {
+                    "type": "object",
+                    "properties": {
+                      "subset_minimality": {
+                        "const": "proven"
+                      }
+                    },
+                    "required": [
+                      "subset_minimality"
+                    ]
+                  }
+                },
+                "required": [
+                  "core"
+                ]
+              }
+            },
+            "required": [
+              "explanation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "refinement_checks": {
+                "items": {
+                  "if": {
+                    "properties": {
+                      "name": {
+                        "const": "unsat_core_minimization"
+                      }
+                    },
+                    "required": [
+                      "name"
+                    ]
+                  },
+                  "then": {
+                    "properties": {
+                      "status": {
+                        "const": "sat"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
         }
       ]
     },
@@ -4856,7 +5005,9 @@
         },
         "category": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "pattern": "^(?:domain\\.|initial\\.|transition\\.|assumption\\.|definedness)",
+          "$comment": "category_role() resolves the semantic role by family prefix and refuses anything else, so an unknown family has no role to agree with."
         },
         "source": {
           "$ref": "#/$defs/constraintSourceRef"
@@ -6175,6 +6326,242 @@
               "proof"
             ]
           }
+        },
+        {
+          "$comment": "The frozen delivery truth table, exhaustively. The conditionals above report the common mistakes with a precise message, but their conjunction is weaker than the table: every one of them can hold while the combination appears in no authored row. Requesting 'none' matches no row, which is how the contract's explanation=None rule reads here.",
+          "anyOf": [
+            {
+              "properties": {
+                "requested_mode": {
+                  "enum": [
+                    "formal",
+                    "proof"
+                  ]
+                },
+                "achieved_mode": {
+                  "const": "none"
+                },
+                "status": {
+                  "enum": [
+                    "unknown",
+                    "timeout"
+                  ]
+                },
+                "classification": {
+                  "type": "null"
+                },
+                "core": {
+                  "type": "null"
+                },
+                "proof": {
+                  "type": "null"
+                },
+                "reason": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "achieved_mode",
+                "classification",
+                "core",
+                "proof",
+                "reason",
+                "requested_mode",
+                "status"
+              ]
+            },
+            {
+              "properties": {
+                "requested_mode": {
+                  "enum": [
+                    "formal",
+                    "proof"
+                  ]
+                },
+                "achieved_mode": {
+                  "const": "none"
+                },
+                "status": {
+                  "enum": [
+                    "partial"
+                  ]
+                },
+                "classification": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "core": {
+                  "type": "null"
+                },
+                "proof": {
+                  "type": "null"
+                },
+                "reason": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "achieved_mode",
+                "classification",
+                "core",
+                "proof",
+                "reason",
+                "requested_mode",
+                "status"
+              ]
+            },
+            {
+              "properties": {
+                "requested_mode": {
+                  "enum": [
+                    "formal",
+                    "proof"
+                  ]
+                },
+                "achieved_mode": {
+                  "const": "formal"
+                },
+                "status": {
+                  "enum": [
+                    "partial"
+                  ]
+                },
+                "core": {
+                  "$ref": "#/$defs/conflictCore"
+                },
+                "proof": {
+                  "type": "null"
+                },
+                "reason": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "achieved_mode",
+                "core",
+                "proof",
+                "reason",
+                "requested_mode",
+                "status"
+              ]
+            },
+            {
+              "properties": {
+                "requested_mode": {
+                  "enum": [
+                    "formal"
+                  ]
+                },
+                "achieved_mode": {
+                  "const": "formal"
+                },
+                "status": {
+                  "enum": [
+                    "complete"
+                  ]
+                },
+                "classification": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "core": {
+                  "$ref": "#/$defs/conflictCore"
+                },
+                "proof": {
+                  "type": "null"
+                },
+                "reason": {
+                  "type": "null"
+                }
+              },
+              "required": [
+                "achieved_mode",
+                "classification",
+                "core",
+                "proof",
+                "reason",
+                "requested_mode",
+                "status"
+              ]
+            },
+            {
+              "properties": {
+                "requested_mode": {
+                  "enum": [
+                    "proof"
+                  ]
+                },
+                "achieved_mode": {
+                  "const": "proof"
+                },
+                "status": {
+                  "enum": [
+                    "partial"
+                  ]
+                },
+                "core": {
+                  "$ref": "#/$defs/conflictCore"
+                },
+                "proof": {
+                  "$ref": "#/$defs/jsonValue"
+                },
+                "reason": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "achieved_mode",
+                "core",
+                "proof",
+                "reason",
+                "requested_mode",
+                "status"
+              ]
+            },
+            {
+              "properties": {
+                "requested_mode": {
+                  "enum": [
+                    "proof"
+                  ]
+                },
+                "achieved_mode": {
+                  "const": "proof"
+                },
+                "status": {
+                  "enum": [
+                    "complete"
+                  ]
+                },
+                "classification": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "core": {
+                  "$ref": "#/$defs/conflictCore"
+                },
+                "proof": {
+                  "$ref": "#/$defs/jsonValue"
+                },
+                "reason": {
+                  "type": "null"
+                }
+              },
+              "required": [
+                "achieved_mode",
+                "classification",
+                "core",
+                "proof",
+                "reason",
+                "requested_mode",
+                "status"
+              ]
+            }
+          ]
         }
       ]
     },

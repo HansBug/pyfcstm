@@ -101,6 +101,86 @@ _MINIMALITIES = ("proven", "not_proven")
 #: Explanation depths ordered from weakest to strongest.
 _MODE_ORDER = {"none": 0, "formal": 1, "proof": 2}
 
+#: The frozen delivery truth table, one entry per authored row.
+#:
+#: The frozen contract is an exhaustive table, not a conjunction of independent
+#: field rules.  A conjunction is strictly weaker: every local rule can hold
+#: while the resulting combination appears in no row at all, which is how a
+#: published core once coexisted with ``status='unknown'``.  Membership in this
+#: table is therefore the authoritative check; the targeted checks in
+#: :meth:`BmcInfeasibilityExplanation._validate_delivery` only exist to report
+#: the common mistakes with a specific message.
+#:
+#: Each entry is ``(requested modes, achieved_mode, status, classification,
+#: core, proof, reason)`` where the last four are ``True`` for required,
+#: ``False`` for forbidden and ``None`` for "either".  Rows that differ only in
+#: something an explanation object cannot show — a subset-minimal core versus a
+#: stage-fallback one — share a single entry.
+_DELIVERY_MATRIX_ROWS = (
+    # Row 1: the first optional probe returned unknown, so there is neither a
+    # classification nor a publishable sound core.
+    (("formal", "proof"), "none", "unknown", False, False, False, True),
+    # Row 2: the same shape after the budget expired instead.
+    (("formal", "proof"), "none", "timeout", False, False, False, True),
+    # Row 3: classification finished, the raw core did not.  The classification
+    # metadata is kept, but it must not pose as a formal artifact.
+    (("formal", "proof"), "none", "partial", True, False, False, True),
+    # Rows 4, 6 and 7: a sound core whose minimality, scope or proof is still
+    # open.  All three are indistinguishable from the published fields.
+    (("formal", "proof"), "formal", "partial", None, True, False, True),
+    # Row 5: a diagnostic subset-minimal core with complete semantic facts.
+    # Requesting 'proof' cannot land here: an unclosed proof forces row 7.
+    (("formal",), "formal", "complete", True, True, False, False),
+    # Row 9: a verified proof over a stage-fallback artifact.
+    (("proof",), "proof", "partial", None, True, True, True),
+    # Row 8: a verified proof over a diagnostic artifact.
+    (("proof",), "proof", "complete", True, True, True, False),
+)
+
+
+def _expand_delivery_matrix() -> frozenset:
+    """Expand the authored delivery rows into exact field signatures.
+
+    ``None`` entries mean the row accepts either presence, so they expand into
+    both concrete signatures.  Expanding once at import time keeps the runtime
+    check a single set membership test.
+
+    :return: Every legal delivery signature.
+    :rtype: frozenset
+
+    Example::
+
+        >>> signatures = _expand_delivery_matrix()
+        >>> ("formal", "none", "timeout", False, False, False, True) in signatures
+        True
+        >>> ("none", "none", "unknown", False, False, False, True) in signatures
+        False
+    """
+    signatures = set()
+    for requested_modes, achieved, status, *slots in _DELIVERY_MATRIX_ROWS:
+        choices = [(True, False) if slot is None else (slot,) for slot in slots]
+        for requested in requested_modes:
+            for has_classification in choices[0]:
+                for has_core in choices[1]:
+                    for has_proof in choices[2]:
+                        for has_reason in choices[3]:
+                            signatures.add(
+                                (
+                                    requested,
+                                    achieved,
+                                    status,
+                                    has_classification,
+                                    has_core,
+                                    has_proof,
+                                    has_reason,
+                                )
+                            )
+    return frozenset(signatures)
+
+
+#: Every delivery signature the frozen table admits.
+_DELIVERY_SIGNATURES = _expand_delivery_matrix()
+
 #: A reduction level admits exactly one subset-minimality claim.
 _REDUCTION_MINIMALITY = {
     "raw": "not_proven",
@@ -947,6 +1027,13 @@ class BmcInfeasibilityExplanation:
                 "achieved_mode %r is stronger than requested_mode %r."
                 % (self.achieved_mode, self.requested_mode)
             )
+        # A caller who requested nothing gets no explanation object at all, so
+        # such an object can only misreport what was asked for.
+        if self.requested_mode == "none":
+            raise ValueError(
+                "requesting 'none' publishes no explanation at all, so an "
+                "explanation object cannot record it as the request."
+            )
         if self.achieved_mode == "none":
             if self.core is not None:
                 raise ValueError(
@@ -988,6 +1075,30 @@ class BmcInfeasibilityExplanation:
                     "explanation %s is not produced at this stage; it must be "
                     "None." % name
                 )
+        # The authoritative check.  Everything above reports a specific mistake
+        # well, but the checks are independent, so their conjunction admits
+        # combinations that no authored row describes.
+        signature = (
+            self.requested_mode,
+            self.achieved_mode,
+            self.status,
+            self.classification is not None,
+            self.core is not None,
+            self.proof is not None,
+            self.reason is not None,
+        )
+        if signature not in _DELIVERY_SIGNATURES:
+            raise ValueError(
+                "delivery (requested=%r, achieved=%r, status=%r, "
+                "classification=%s, core=%s, proof=%s, reason=%s) is outside "
+                "the frozen truth table."
+                % (
+                    self.requested_mode,
+                    self.achieved_mode,
+                    self.status,
+                    *("present" if flag else "absent" for flag in signature[3:]),
+                )
+            )
 
     def _validate_scope(self, scope: str) -> None:
         """Enforce the frozen classification-to-scope mapping.

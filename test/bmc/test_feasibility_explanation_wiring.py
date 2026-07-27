@@ -88,11 +88,15 @@ def _probe(
 
 
 def _explanation(status: str = "partial", **kwargs) -> BmcInfeasibilityExplanation:
+    # The frozen table reaches ``partial`` with no core only by keeping the
+    # classification that did finish; ``unknown`` and ``timeout`` mean the first
+    # probe never produced one.  Choosing per status keeps this helper on the
+    # table instead of manufacturing a delivery state that cannot occur.
     payload = dict(
         requested_mode="formal",
         achieved_mode="none",
         status=status,
-        classification=None,
+        classification="assumptions_self_conflict" if status == "partial" else None,
         reason="probe returned unknown",
     )
     payload.update(kwargs)
@@ -609,6 +613,11 @@ def test_an_optional_explanation_never_destroys_a_usable_verdict(monkeypatch) ->
     assert degraded.refinement_status == "unknown"
     assert "internal mismatch" in degraded.refinement_reason
     assert "drift" in degraded.refinement_reason
+    # The rule is that a check which ran stays in the ledger, not that this
+    # branch always reports an empty one.  Here the drift is injected before any
+    # probe starts, so there is genuinely nothing to record; the collision case
+    # below covers the same branch after the budget has been spent.
+    assert all(check.status for check in degraded.refinement_checks)
     assert degraded.refinement_checks == ()
 
 
@@ -700,3 +709,56 @@ def test_a_classification_without_a_core_reaches_the_public_result() -> None:
     assert explanation.core is None
     assert attached.refinement_status == "partial"
     assert attached.refinement_checks
+
+
+def test_a_mismatch_after_the_probes_keeps_their_ledger() -> None:
+    """Corrupt metadata found late must not deny the probes that already ran.
+
+    A stable id is metadata and never enters a group's expressions, so renaming
+    one leaves every aggregate byte-identical and the partition assertion sees
+    nothing.  The collision is caught while the core is extracted, by which time
+    the classification probes have spent the caller's deadline.  Reporting an
+    empty ledger then would deny work that really happened -- the same denial
+    the guards inside extraction already avoid.
+    """
+    import dataclasses
+
+    from pyfcstm.bmc import build_bmc_core_formula, compile_bmc_property
+    from pyfcstm.bmc.engine import BmcEngine
+    from pyfcstm.bmc.solver import _SolveBudget
+    from pyfcstm.bmc.witness import _attach_explanation, solve_bmc_property
+    from pyfcstm.model import load_state_machine_from_text
+
+    machine = load_state_machine_from_text(
+        "def int x = 0;\n"
+        "state Root { event Go; state A; state B; [*] -> A; A -> B :: Go; }"
+    )
+    context = BmcEngine(machine).prepare(
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
+        'check reach <= 2: active("Root.B");'
+    )
+    core = build_bmc_core_formula(context)
+    groups = list(core._tracked_groups)
+    environment = [
+        index for index, group in enumerate(groups) if group.stage == "assumptions"
+    ]
+    groups[environment[1]] = dataclasses.replace(
+        groups[environment[1]], stable_id=groups[environment[0]].stable_id
+    )
+    object.__setattr__(core, "_tracked_groups", tuple(groups))
+
+    baseline = solve_bmc_property(compile_bmc_property(core)).feasibility
+    degraded = _attach_explanation(baseline, core, _SolveBudget(None), "formal")
+
+    assert degraded.infeasible_stage == baseline.infeasible_stage
+    assert degraded.explanation is not None
+    assert degraded.explanation.achieved_mode == "none"
+    assert degraded.explanation.core is None
+    assert "internal mismatch" in degraded.refinement_reason
+    assert "share the stable id" in degraded.refinement_reason
+    # The classification probe ran, so it is still accounted for.
+    assert [check.name for check in degraded.refinement_checks] == [
+        "component_assumptions"
+    ]
+    assert degraded.refinement_status == degraded.explanation.status == "partial"

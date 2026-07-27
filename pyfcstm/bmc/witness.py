@@ -2420,8 +2420,8 @@ def _explanation_stage(
 
         >>> from pyfcstm.bmc.explanation import BmcInfeasibilityExplanation
         >>> _explanation_stage(BmcInfeasibilityExplanation(
-        ...     "formal", "none", "timeout", "assumptions_self_conflict",
-        ...     reason="budget spent",
+        ...     "formal", "none", "partial", "assumptions_self_conflict",
+        ...     reason="raw core extraction returned unknown",
         ... ))
         'assumptions'
     """
@@ -4848,6 +4848,7 @@ def _attach_explanation(
 
     from .infeasibility import explain_infeasibility
 
+    started = time.monotonic()
     try:
         outcome = explain_infeasibility(
             core,
@@ -4872,6 +4873,9 @@ def _attach_explanation(
             status="unknown",
             classification=None,
             reason="internal mismatch in the optional explanation stage: %s" % err,
+            # The stage did consume wall-clock time before failing, so reporting
+            # no duration would understate what the caller's budget paid for.
+            elapsed_ms=(time.monotonic() - started) * 1000.0,
         )
         return replace(
             feasibility,

@@ -227,41 +227,140 @@ def test_kernel_scope_is_not_a_stage_fallback() -> None:
         )
 
 
-@pytest.mark.parametrize(
-    "achieved_mode, status, reason, valid",
+#: The frozen delivery table, transcribed from the authored rows.
+#:
+#: This is deliberately a second, independent copy rather than an import from
+#: the implementation: checking a table against itself proves only that it
+#: equals itself.  Each entry is ``(requested_mode, achieved_mode, status,
+#: classification present, core present, reason present)``.
+_AUTHORED_DELIVERY_ROWS = frozenset(
     [
-        ("none", "unknown", "first probe returned unknown", True),
-        ("none", "unknown", None, False),
-        ("none", "timeout", "first probe exhausted the budget", True),
-        ("none", "timeout", None, False),
-        ("none", "partial", "raw core extraction returned unknown", True),
-        ("none", "partial", None, False),
-        ("formal", "partial", "minimization not attempted", True),
-        ("formal", "partial", None, False),
-        ("formal", "complete", None, False),
-        ("formal", "complete", "unexpected", False),
-    ],
+        # Row 1: first optional probe unknown, so no classification and no core.
+        ("formal", "none", "unknown", False, False, True),
+        ("proof", "none", "unknown", False, False, True),
+        # Row 2: the same after the budget expired.
+        ("formal", "none", "timeout", False, False, True),
+        ("proof", "none", "timeout", False, False, True),
+        # Row 3: classification finished, raw core did not.
+        ("formal", "none", "partial", True, False, True),
+        ("proof", "none", "partial", True, False, True),
+        # Rows 4, 6, 7: a sound core with minimality, scope or proof still open.
+        ("formal", "formal", "partial", False, True, True),
+        ("formal", "formal", "partial", True, True, True),
+        ("proof", "formal", "partial", False, True, True),
+        ("proof", "formal", "partial", True, True, True),
+        # Row 5: a diagnostic subset-minimal core with complete semantic facts.
+        ("formal", "formal", "complete", True, True, False),
+        # Rows 8 and 9: a verified proof DAG.
+        ("proof", "proof", "complete", True, True, False),
+        ("proof", "proof", "partial", False, True, True),
+        ("proof", "proof", "partial", True, True, True),
+    ]
 )
-def test_status_reason_matrix(achieved_mode, status, reason, valid) -> None:
-    """``complete`` forbids a reason; every degraded status requires one."""
+
+#: Rows the table allows but this stage cannot build yet.
+#:
+#: ``complete`` requires a narrative and ``achieved_mode='proof'`` requires a
+#: proof DAG; both slots are unbuilt, so those rows must be rejected here even
+#: though the frozen table lists them.  Naming the reason keeps the exclusion
+#: reviewable instead of quietly shrinking the expected set.
+_UNBUILT_DELIVERY_ROWS = frozenset(
+    row for row in _AUTHORED_DELIVERY_ROWS if row[2] == "complete" or row[1] == "proof"
+)
+
+
+@pytest.mark.parametrize("requested_mode", ["none", "formal", "proof"])
+@pytest.mark.parametrize("achieved_mode", ["none", "formal", "proof"])
+@pytest.mark.parametrize("status", ["complete", "partial", "unknown", "timeout"])
+@pytest.mark.parametrize("has_classification", [False, True])
+@pytest.mark.parametrize("has_core", [False, True])
+@pytest.mark.parametrize("has_reason", [False, True])
+def test_delivery_matrix_accepts_exactly_the_authored_rows(
+    requested_mode, achieved_mode, status, has_classification, has_core, has_reason
+) -> None:
+    """The frozen table is exhaustive, so anything outside it must be refused.
+
+    Independent per-field rules are strictly weaker than the table: each rule
+    can hold while the combination appears in no authored row.  Enumerating the
+    whole cross product is the only way to see that gap, because a combination
+    the implementation wrongly accepts looks exactly like one it should.
+    """
+    row = (
+        requested_mode,
+        achieved_mode,
+        status,
+        has_classification,
+        has_core,
+        has_reason,
+    )
+    expected_valid = (
+        row in _AUTHORED_DELIVERY_ROWS and row not in _UNBUILT_DELIVERY_ROWS
+    )
+
     kwargs = dict(
-        requested_mode="formal",
+        requested_mode=requested_mode,
         achieved_mode=achieved_mode,
         status=status,
-        classification="assumptions_self_conflict",
-        core=_core("assumptions_component") if achieved_mode == "formal" else None,
-        reason=reason,
+        classification="assumptions_self_conflict" if has_classification else None,
+        # An absent classification forces the stage-fallback scope; that is the
+        # frozen scope mapping composing with this table, not a third rule.
+        core=(
+            _core(
+                "assumptions_component"
+                if has_classification
+                else "assumptions_stage_fallback"
+            )
+            if has_core
+            else None
+        ),
+        reason="degraded" if has_reason else None,
     )
-    if valid:
+    if expected_valid:
         assert BmcInfeasibilityExplanation(**kwargs).status == status
     else:
         with pytest.raises(ValueError):
             BmcInfeasibilityExplanation(**kwargs)
 
 
-@pytest.mark.parametrize("mode", ["none", "formal", "proof"])
+def test_every_reachable_authored_row_has_a_positive_case() -> None:
+    """A rejection matrix alone could pass by refusing everything.
+
+    The cross-product test above is only meaningful if some row survives it, so
+    pin that each reachable authored row is genuinely constructible.
+    """
+    reachable = _AUTHORED_DELIVERY_ROWS - _UNBUILT_DELIVERY_ROWS
+
+    assert reachable, "the delivery matrix would be vacuous"
+    for requested, achieved, status, has_classification, has_core, has_reason in sorted(
+        reachable
+    ):
+        explanation = BmcInfeasibilityExplanation(
+            requested_mode=requested,
+            achieved_mode=achieved,
+            status=status,
+            classification=(
+                "assumptions_self_conflict" if has_classification else None
+            ),
+            core=(
+                _core(
+                    "assumptions_component"
+                    if has_classification
+                    else "assumptions_stage_fallback"
+                )
+                if has_core
+                else None
+            ),
+            reason="degraded" if has_reason else None,
+        )
+        assert explanation.achieved_mode == achieved
+    # Rows 1, 2 and 3 for each of the two non-'none' requests, plus rows 4/6/7
+    # for each request and each classification presence.
+    assert len(reachable) == 10
+
+
+@pytest.mark.parametrize("mode", ["formal", "proof"])
 def test_modes_accept_the_frozen_vocabulary(mode) -> None:
-    """Only the three frozen mode names are accepted."""
+    """Only the three frozen mode names are accepted as a request."""
     explanation = BmcInfeasibilityExplanation(
         requested_mode=mode,
         achieved_mode="none",
@@ -271,6 +370,24 @@ def test_modes_accept_the_frozen_vocabulary(mode) -> None:
     )
 
     assert explanation.requested_mode == mode
+
+
+def test_requesting_none_publishes_no_explanation_object() -> None:
+    """``none`` is a mode of the request, never of a published explanation.
+
+    The frozen contract answers a request for ``none`` with ``explanation=None``
+    rather than with an object that records the request, so an object claiming
+    ``requested_mode='none'`` can only misdescribe what happened.  ``none``
+    remains a legal ``achieved_mode``, which is the row above.
+    """
+    with pytest.raises(ValueError, match="publishes no explanation"):
+        BmcInfeasibilityExplanation(
+            requested_mode="none",
+            achieved_mode="none",
+            status="unknown",
+            classification=None,
+            reason="probe unknown",
+        )
 
 
 @pytest.mark.parametrize("mode", ["None", "FORMAL", "Proof", "full", "", True, 1])

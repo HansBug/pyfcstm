@@ -769,16 +769,32 @@ def _indices(refs: Mapping[str, object], key: str) -> Tuple[int, ...]:
         (0, 1)
     """
 
-    def _usable(value: object) -> bool:
-        return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+    def _index_of(value: object) -> Optional[int]:
+        """Canonicalize one recorded value, or report that it is not an index."""
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, int):
+            return value if value >= 0 else None
+        # A whole-valued float names the same index, and the public constructor
+        # already canonicalizes it.  Dropping it here instead would publish a
+        # member whose frames silently disagree with the recorded metadata,
+        # which is the one outcome neither reading of the contract wants.
+        if isinstance(value, float) and value.is_integer() and value >= 0:
+            return int(value)
+        return None
 
     found = []
     for name in (key, "%ss" % key):
         value = refs.get(name)
-        if _usable(value):
-            found.append(value)
+        index = _index_of(value)
+        if index is not None:
+            found.append(index)
         elif isinstance(value, (list, tuple)):
-            found.extend(item for item in value if _usable(item))
+            found.extend(
+                index
+                for index in (_index_of(item) for item in value)
+                if index is not None
+            )
     return tuple(sorted(set(found)))
 
 
@@ -936,7 +952,25 @@ def explain_infeasibility(
     # proved unsatisfiable, so the remaining budget goes into a fallback core
     # rather than being left unspent.  Giving up here would withhold the source
     # lines purely because the *shape* of the conflict stayed undetermined.
-    extraction = extract_source_core(core, outcome.scope, budget)
+    try:
+        extraction = extract_source_core(core, outcome.scope, budget)
+    except BmcBuildError as err:
+        # Extraction fails closed on corrupt group metadata, and by then the
+        # classification probes have already spent the caller's deadline.
+        # Letting the error leave this function would drop their records, which
+        # is the same denial of executed work the guards inside extraction
+        # already avoid.
+        return ExplanationOutcome(
+            BmcInfeasibilityExplanation(
+                requested_mode=requested_mode,
+                achieved_mode="none",
+                status="partial" if outcome.classification is not None else "unknown",
+                classification=outcome.classification,
+                reason="internal mismatch while extracting the core: %s" % err,
+                elapsed_ms=(time.monotonic() - started) * 1000.0,
+            ),
+            outcome.checks,
+        )
     elapsed_ms = (time.monotonic() - started) * 1000.0
     checks = outcome.checks + extraction.checks
     if outcome.classification is None and not extraction.groups:

@@ -227,6 +227,21 @@ from .query import (
 )
 
 if TYPE_CHECKING:
+    from .explanation import (
+        BmcConflictCore,
+        BmcConflictCoreScope,
+        BmcConstraintRef,
+        BmcConstraintStage,
+        BmcCoreGranularity,
+        BmcCoreItem,
+        BmcCoreReduction,
+        BmcInfeasibilityClassification,
+        BmcInfeasibilityExplanation,
+        BmcInfeasibilityExplanationMode,
+        BmcInfeasibilityExplanationStatus,
+        BmcSemanticRole,
+        BmcSubsetMinimality,
+    )
     from .witness import (
         BmcFeasibilityCheck,
         BmcFeasibilityRefinementCheck,
@@ -339,8 +354,25 @@ _WITNESS_EXPORTS = {
     "replay_bmc_witness",
 }
 
+_EXPLANATION_EXPORTS = {
+    "BmcConflictCore",
+    "BmcConflictCoreScope",
+    "BmcConstraintRef",
+    "BmcConstraintStage",
+    "BmcCoreGranularity",
+    "BmcCoreItem",
+    "BmcCoreReduction",
+    "BmcInfeasibilityClassification",
+    "BmcInfeasibilityExplanation",
+    "BmcInfeasibilityExplanationMode",
+    "BmcInfeasibilityExplanationStatus",
+    "BmcSemanticRole",
+    "BmcSubsetMinimality",
+}
+
 _LAZY_EXPORT_MODULES = {
     "pyfcstm.bmc.binding": _BINDING_EXPORTS,
+    "pyfcstm.bmc.explanation": _EXPLANATION_EXPORTS,
     "pyfcstm.bmc.domain": _DOMAIN_EXPORTS,
     "pyfcstm.bmc.source": _SOURCE_EXPORTS,
     "pyfcstm.bmc.macro": _MACRO_EXPORTS,
@@ -536,4 +568,17 @@ __all__ = [
     "decode_bmc_result_trace",
     "decode_bmc_witness",
     "replay_bmc_witness",
+    "BmcConflictCore",
+    "BmcConflictCoreScope",
+    "BmcConstraintRef",
+    "BmcConstraintStage",
+    "BmcCoreGranularity",
+    "BmcCoreItem",
+    "BmcCoreReduction",
+    "BmcInfeasibilityClassification",
+    "BmcInfeasibilityExplanation",
+    "BmcInfeasibilityExplanationMode",
+    "BmcInfeasibilityExplanationStatus",
+    "BmcSemanticRole",
+    "BmcSubsetMinimality",
 ]

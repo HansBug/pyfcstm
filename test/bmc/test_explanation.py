@@ -27,20 +27,47 @@ pytestmark = pytest.mark.unittest
 _GENERATED = BmcSourceRef("generated", None, None)
 
 
-def _constraint(stable_id: str = "initial.target") -> BmcConstraintRef:
+#: One stage that every scope's target formula legitimately contains, so a
+#: fixture core can be built for any scope without leaving its target.
+_SCOPE_MEMBER_STAGE = {
+    "kernel": "kernel",
+    "initialization_component": "initialization",
+    "initialization_domain": "initialization",
+    "initialization_prefix": "initialization",
+    "assumptions_component": "assumptions",
+    "assumptions_domain": "assumptions",
+    "assumptions_prefix": "assumptions",
+    "initialization_stage_fallback": "initialization",
+    "assumptions_stage_fallback": "assumptions",
+}
+
+_STAGE_CATEGORY = {
+    "kernel": ("domain.frame_state", "domain_rule"),
+    "initialization": ("initial.target", "initial_fact"),
+    "assumptions": ("assumption.frame", "assumption"),
+}
+
+
+def _constraint(
+    stable_id: str = "initial.target", stage: str = "initialization"
+) -> BmcConstraintRef:
+    category, _ = _STAGE_CATEGORY[stage]
     return BmcConstraintRef(
         stable_id=stable_id,
-        stage="initialization",
-        category="initial.target",
+        stage=stage,
+        category=category,
         source=_GENERATED,
         summary="initial target state",
     )
 
 
-def _item(stable_id: str = "initial.target") -> BmcCoreItem:
+def _item(
+    stable_id: str = "initial.target", stage: str = "initialization"
+) -> BmcCoreItem:
+    _, role = _STAGE_CATEGORY[stage]
     return BmcCoreItem(
-        constraint=_constraint(stable_id),
-        semantic_role="structural",
+        constraint=_constraint(stable_id, stage),
+        semantic_role=role,
         source_excerpt=None,
         source_excerpt_truncated=False,
         normalized_fact={"stable_id": stable_id},
@@ -49,14 +76,19 @@ def _item(stable_id: str = "initial.target") -> BmcCoreItem:
     )
 
 
-def _core(scope: str = "initialization_component") -> BmcConflictCore:
+def _core(
+    scope: str = "initialization_component",
+    reduction: str = "raw",
+    subset_minimality: str = "not_proven",
+) -> BmcConflictCore:
+    stage = _SCOPE_MEMBER_STAGE[scope]
     return BmcConflictCore(
         scope=scope,
         formula_summary="I_0",
         granularity="source_group",
-        reduction="raw",
-        subset_minimality="not_proven",
-        items=(_item(),),
+        reduction=reduction,
+        subset_minimality=subset_minimality,
+        items=(_item(stage=stage),),
     )
 
 
@@ -205,7 +237,7 @@ def test_kernel_scope_is_not_a_stage_fallback() -> None:
         ("none", "partial", None, False),
         ("formal", "partial", "minimization not attempted", True),
         ("formal", "partial", None, False),
-        ("formal", "complete", None, True),
+        ("formal", "complete", None, False),
         ("formal", "complete", "unexpected", False),
     ],
 )
@@ -279,8 +311,8 @@ def test_core_items_are_sorted_by_stable_id() -> None:
         reduction="raw",
         subset_minimality="not_proven",
         items=(
-            _item("assumption.0002.event.0000"),
-            _item("assumption.0001.frame.0000"),
+            _item("assumption.0002.event.0000", stage="assumptions"),
+            _item("assumption.0001.frame.0000", stage="assumptions"),
         ),
     )
 
@@ -339,3 +371,218 @@ def test_explanation_to_canonical_is_json_compatible() -> None:
     assert canonical["core"]["reduction"] == "raw"
     assert canonical["core"]["subset_minimality"] == "not_proven"
     assert canonical["core"]["items"][0]["constraint"]["stable_id"] == "initial.target"
+
+
+@pytest.mark.parametrize("field", ["stable_id", "category", "summary"])
+def test_constraint_rejects_empty_identity_fields(field) -> None:
+    """An unnamed constraint could never be traced back to its source."""
+    payload = dict(
+        stable_id="initial.target",
+        stage="initialization",
+        category="initial.target",
+        source=_GENERATED,
+        summary="initial target state",
+    )
+    payload[field] = ""
+
+    with pytest.raises(ValueError, match="non-empty string"):
+        BmcConstraintRef(**payload)
+
+
+def test_constraint_requires_a_real_source_reference() -> None:
+    """Provenance is typed so a core member always resolves to a document."""
+    with pytest.raises(TypeError, match="BmcSourceRef"):
+        BmcConstraintRef(
+            stable_id="initial.target",
+            stage="initialization",
+            category="initial.target",
+            source="machine.fcstm",
+            summary="initial target state",
+        )
+
+
+def test_core_item_requires_a_typed_constraint_and_a_reading() -> None:
+    """Every published member carries both an identity and a sentence."""
+    with pytest.raises(TypeError, match="BmcConstraintRef"):
+        BmcCoreItem("initial.target", "initial_fact", None, False, {}, "text", False)
+
+    with pytest.raises(ValueError, match="human_text"):
+        BmcCoreItem(_constraint(), "initial_fact", None, False, {}, "", False)
+
+
+def test_core_rejects_an_empty_or_untyped_membership() -> None:
+    """A core with no members, or with foreign members, proves nothing."""
+    with pytest.raises(ValueError, match="must not be empty"):
+        BmcConflictCore(
+            "initialization_component", "I_0", "source_group", "raw", "not_proven", ()
+        )
+
+    with pytest.raises(TypeError, match="BmcCoreItem"):
+        BmcConflictCore(
+            "initialization_component",
+            "I_0",
+            "source_group",
+            "raw",
+            "not_proven",
+            (_constraint(),),
+        )
+
+    with pytest.raises(ValueError, match="formula_summary"):
+        BmcConflictCore(
+            "initialization_component",
+            "",
+            "source_group",
+            "raw",
+            "not_proven",
+            (_item(),),
+        )
+
+
+@pytest.mark.parametrize(
+    "reduction, subset_minimality",
+    [
+        ("raw", "proven"),
+        ("partial_minimized", "proven"),
+        ("subset_minimal", "not_proven"),
+    ],
+)
+def test_reduction_and_minimality_stay_coupled(reduction, subset_minimality) -> None:
+    """ "Not proven minimal" must never be readable as "proven non-minimal"."""
+    with pytest.raises(ValueError, match="subset_minimality"):
+        BmcConflictCore(
+            "initialization_component",
+            "I_0",
+            "source_group",
+            reduction,
+            subset_minimality,
+            (_item(),),
+        )
+
+
+def test_core_members_stay_inside_their_scope_target() -> None:
+    """A component scope never quotes a stage its target formula excludes.
+
+    A domain or prefix scope legitimately reaches earlier stages, so the check
+    is containment in the scope's target, not equality with one stage.
+    """
+    with pytest.raises(ValueError, match="outside the target"):
+        BmcConflictCore(
+            "assumptions_component",
+            "ENV_N",
+            "source_group",
+            "raw",
+            "not_proven",
+            (_item(stage="initialization"),),
+        )
+
+    widened = BmcConflictCore(
+        "assumptions_prefix",
+        "S_assume",
+        "source_group",
+        "raw",
+        "not_proven",
+        (_item("initial.target", stage="initialization"),),
+    )
+    assert widened.items[0].constraint.stage == "initialization"
+
+
+@pytest.mark.parametrize("elapsed", [-1.0, "fast", True])
+def test_elapsed_time_matches_the_published_schema(elapsed) -> None:
+    """Timing is a non-negative number so the JSON schema can accept it."""
+    with pytest.raises((TypeError, ValueError), match="elapsed_ms"):
+        BmcInfeasibilityExplanation(
+            "formal", "none", "unknown", None, reason="probe", elapsed_ms=elapsed
+        )
+
+
+def test_explanation_core_slot_is_typed() -> None:
+    """The core slot holds a validated core, never a loose mapping."""
+    with pytest.raises(TypeError, match="BmcConflictCore"):
+        BmcInfeasibilityExplanation(
+            "formal", "formal", "partial", None, core={"scope": "kernel"}, reason="r"
+        )
+
+
+def test_achieved_depth_never_exceeds_the_requested_depth() -> None:
+    """A run cannot deliver more than the caller asked for."""
+    with pytest.raises(ValueError, match="stronger than requested_mode"):
+        BmcInfeasibilityExplanation(
+            "none", "formal", "partial", "kernel_conflict", _core("kernel"), reason="r"
+        )
+
+
+def test_the_none_depth_publishes_neither_core_nor_completion() -> None:
+    """``none`` states that nothing publishable survived."""
+    with pytest.raises(ValueError, match="no sound core"):
+        BmcInfeasibilityExplanation(
+            "formal", "none", "partial", "kernel_conflict", _core("kernel"), reason="r"
+        )
+
+    with pytest.raises(ValueError, match="cannot be complete"):
+        BmcInfeasibilityExplanation("formal", "none", "complete", None)
+
+
+def test_the_formal_depth_requires_a_core() -> None:
+    """Claiming a formal explanation without a core would be unfalsifiable."""
+    with pytest.raises(ValueError, match="requires a core"):
+        BmcInfeasibilityExplanation(
+            "formal", "formal", "partial", "kernel_conflict", None, reason="r"
+        )
+
+
+def test_the_proof_depth_requires_a_proof() -> None:
+    """``proof`` is not deliverable until the proof DAG exists."""
+    with pytest.raises(ValueError, match="requires a proof"):
+        BmcInfeasibilityExplanation(
+            "proof", "proof", "partial", "kernel_conflict", _core("kernel"), reason="r"
+        )
+
+
+def test_a_complete_explanation_requires_a_classification() -> None:
+    """Completion without a named cause would explain nothing."""
+    with pytest.raises(ValueError, match="classification"):
+        BmcInfeasibilityExplanation(
+            "formal",
+            "formal",
+            "complete",
+            None,
+            _core("initialization_stage_fallback", "subset_minimal", "proven"),
+        )
+
+
+def test_a_proof_is_only_published_when_proof_was_requested() -> None:
+    """A proof slot filled under a weaker request would misreport the run."""
+    with pytest.raises(ValueError, match="only published when"):
+        BmcInfeasibilityExplanation(
+            "formal",
+            "formal",
+            "partial",
+            "initialization_self_conflict",
+            _core(),
+            proof=BmcConflictProof("initialization_component", "root"),
+            reason="r",
+        )
+
+
+@pytest.mark.parametrize("slot", ["proof", "narrative"])
+def test_reserved_slots_are_rejected_rather_than_silently_dropped(slot) -> None:
+    """A filled slot fails loudly instead of vanishing from the payload.
+
+    Both slots belong to a later delivery stage.  Serializing them to ``null``
+    would let a caller believe a proof or narrative had been published.
+    """
+    filled = {
+        "proof": BmcConflictProof("initialization_component", "root"),
+        "narrative": BmcConflictNarrative("structural_only", "head", "body"),
+    }[slot]
+
+    with pytest.raises(ValueError, match="not produced at this stage"):
+        BmcInfeasibilityExplanation(
+            "proof",
+            "formal",
+            "partial",
+            "initialization_self_conflict",
+            _core(),
+            reason="r",
+            **{slot: filled},
+        )

@@ -1619,6 +1619,7 @@
             "properties": {
               "refinement_status": {
                 "enum": [
+                  "partial",
                   "unknown",
                   "timeout"
                 ]
@@ -1666,8 +1667,15 @@
                   "initialization",
                   "assumptions"
                 ]
+              },
+              "explanation": {
+                "type": "null"
               }
-            }
+            },
+            "required": [
+              "infeasible_stage",
+              "explanation"
+            ]
           },
           "then": {
             "properties": {
@@ -4152,10 +4160,10 @@
         },
         "semantic_role": {
           "enum": [
-            "structural",
-            "value",
-            "state",
-            "event",
+            "domain_rule",
+            "initial_fact",
+            "transition_rule",
+            "assumption",
             "definedness"
           ]
         },
@@ -4214,7 +4222,8 @@
         "reduction": {
           "enum": [
             "raw",
-            "minimized"
+            "partial_minimized",
+            "subset_minimal"
           ]
         },
         "subset_minimality": {
@@ -4230,7 +4239,50 @@
             "$ref": "#/$defs/coreItem"
           }
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "reduction": {
+                "enum": [
+                  "raw",
+                  "partial_minimized"
+                ]
+              }
+            },
+            "required": [
+              "reduction"
+            ]
+          },
+          "then": {
+            "properties": {
+              "subset_minimality": {
+                "const": "not_proven"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "reduction": {
+                "const": "subset_minimal"
+              }
+            },
+            "required": [
+              "reduction"
+            ]
+          },
+          "then": {
+            "properties": {
+              "subset_minimality": {
+                "const": "proven"
+              }
+            }
+          }
+        }
+      ]
     },
     "infeasibilityExplanation": {
       "type": "object",
@@ -4309,7 +4361,406 @@
         "elapsed_ms": {
           "$ref": "#/$defs/nullableNumber"
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "requested_mode": {
+                "const": "none"
+              }
+            },
+            "required": [
+              "requested_mode"
+            ]
+          },
+          "then": {
+            "properties": {
+              "achieved_mode": {
+                "const": "none"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "requested_mode": {
+                "const": "formal"
+              }
+            },
+            "required": [
+              "requested_mode"
+            ]
+          },
+          "then": {
+            "properties": {
+              "achieved_mode": {
+                "enum": [
+                  "none",
+                  "formal"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "achieved_mode": {
+                "const": "none"
+              }
+            },
+            "required": [
+              "achieved_mode"
+            ]
+          },
+          "then": {
+            "properties": {
+              "core": {
+                "type": "null"
+              },
+              "status": {
+                "enum": [
+                  "partial",
+                  "unknown",
+                  "timeout"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "achieved_mode": {
+                "enum": [
+                  "formal",
+                  "proof"
+                ]
+              }
+            },
+            "required": [
+              "achieved_mode"
+            ]
+          },
+          "then": {
+            "properties": {
+              "core": {
+                "$ref": "#/$defs/conflictCore"
+              }
+            },
+            "required": [
+              "core"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "complete"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "reason": {
+                "type": "null"
+              },
+              "classification": {
+                "type": "string"
+              },
+              "core": {
+                "properties": {
+                  "reduction": {
+                    "const": "subset_minimal"
+                  }
+                }
+              },
+              "narrative": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "classification",
+              "core",
+              "narrative"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "enum": [
+                  "partial",
+                  "unknown",
+                  "timeout"
+                ]
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "reason": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "reason"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "classification": {
+                "type": "null"
+              },
+              "core": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "classification",
+              "core"
+            ]
+          },
+          "then": {
+            "properties": {
+              "core": {
+                "properties": {
+                  "scope": {
+                    "enum": [
+                      "initialization_stage_fallback",
+                      "assumptions_stage_fallback"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "classification": {
+                "const": "kernel_conflict"
+              },
+              "core": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "classification",
+              "core"
+            ]
+          },
+          "then": {
+            "properties": {
+              "core": {
+                "properties": {
+                  "scope": {
+                    "const": "kernel"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "classification": {
+                "const": "initialization_self_conflict"
+              },
+              "core": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "classification",
+              "core"
+            ]
+          },
+          "then": {
+            "properties": {
+              "core": {
+                "properties": {
+                  "scope": {
+                    "const": "initialization_component"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "classification": {
+                "const": "initialization_domain_conflict"
+              },
+              "core": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "classification",
+              "core"
+            ]
+          },
+          "then": {
+            "properties": {
+              "core": {
+                "properties": {
+                  "scope": {
+                    "const": "initialization_domain"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "classification": {
+                "const": "initialization_kernel_conflict"
+              },
+              "core": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "classification",
+              "core"
+            ]
+          },
+          "then": {
+            "properties": {
+              "core": {
+                "properties": {
+                  "scope": {
+                    "const": "initialization_prefix"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "classification": {
+                "const": "assumptions_self_conflict"
+              },
+              "core": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "classification",
+              "core"
+            ]
+          },
+          "then": {
+            "properties": {
+              "core": {
+                "properties": {
+                  "scope": {
+                    "const": "assumptions_component"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "classification": {
+                "const": "assumptions_domain_conflict"
+              },
+              "core": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "classification",
+              "core"
+            ]
+          },
+          "then": {
+            "properties": {
+              "core": {
+                "properties": {
+                  "scope": {
+                    "const": "assumptions_domain"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "classification": {
+                "const": "assumptions_prefix_conflict"
+              },
+              "core": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "classification",
+              "core"
+            ]
+          },
+          "then": {
+            "properties": {
+              "core": {
+                "properties": {
+                  "scope": {
+                    "const": "assumptions_prefix"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "achieved_mode": {
+                "const": "proof"
+              }
+            },
+            "required": [
+              "achieved_mode"
+            ]
+          },
+          "then": {
+            "properties": {
+              "proof": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "proof"
+            ]
+          }
+        }
+      ]
     }
   }
 }

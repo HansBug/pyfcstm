@@ -10,7 +10,13 @@ from __future__ import annotations
 import pytest
 
 from pyfcstm.bmc.errors import BmcBuildError
-from pyfcstm.bmc.explanation import BmcInfeasibilityExplanation
+from pyfcstm.bmc.explanation import (
+    BmcConflictCore,
+    BmcConstraintRef,
+    BmcCoreItem,
+    BmcInfeasibilityExplanation,
+)
+from pyfcstm.bmc.provenance import BmcSourceRef
 from pyfcstm.bmc.witness import (
     BmcFeasibilityCheck,
     BmcFeasibilityRefinementCheck,
@@ -38,13 +44,47 @@ def _localized(**kwargs) -> BmcFeasibilityResult:
     return BmcFeasibilityResult(**payload)
 
 
+def _subset_minimal_core() -> BmcConflictCore:
+    reference = BmcConstraintRef(
+        stable_id="assumption.0000.frame.0000",
+        stage="assumptions",
+        category="assumption.frame",
+        source=BmcSourceRef("generated", None, None),
+        summary="frame assumption",
+    )
+    return BmcConflictCore(
+        scope="assumptions_component",
+        formula_summary="ENV_N",
+        granularity="source_group",
+        reduction="subset_minimal",
+        subset_minimality="proven",
+        items=(
+            BmcCoreItem(
+                constraint=reference,
+                semantic_role="assumption",
+                source_excerpt=None,
+                source_excerpt_truncated=False,
+                normalized_fact={"stable_id": reference.stable_id},
+                human_text="frame assumption",
+                editable=False,
+            ),
+        ),
+    )
+
+
+def _probe(name: str = "component_assumptions") -> BmcFeasibilityRefinementCheck:
+    return BmcFeasibilityRefinementCheck(
+        name=name, status="unsat", reason=None, elapsed_ms=0.1
+    )
+
+
 def _explanation(status: str = "partial", **kwargs) -> BmcInfeasibilityExplanation:
     payload = dict(
         requested_mode="formal",
         achieved_mode="none",
         status=status,
         classification=None,
-        reason=None if status == "complete" else "probe returned unknown",
+        reason="probe returned unknown",
     )
     payload.update(kwargs)
     return BmcInfeasibilityExplanation(**payload)
@@ -64,7 +104,7 @@ def test_localized_stage_still_allows_not_requested() -> None:
     assert result.explanation is None
 
 
-@pytest.mark.parametrize("status", ["complete", "partial", "unknown", "timeout"])
+@pytest.mark.parametrize("status", ["partial", "unknown", "timeout"])
 def test_localized_stage_accepts_every_explanation_status(status) -> None:
     """A localized stage may now report the explanation's own status.
 
@@ -74,21 +114,30 @@ def test_localized_stage_accepts_every_explanation_status(status) -> None:
     """
     result = _localized(
         refinement_status=status,
-        refinement_reason=None if status in {"complete"} else "probe returned unknown",
-        refinement_checks=(
-            BmcFeasibilityRefinementCheck(
-                name="component_assumptions",
-                status="unsat",
-                reason=None,
-                elapsed_ms=0.1,
-            ),
-        ),
+        refinement_reason="probe returned unknown",
+        refinement_checks=(_probe(),),
         explanation=_explanation(status),
     )
 
     assert result.refinement_status == status
     assert result.explanation is not None
     assert result.explanation.status == status
+
+
+def test_complete_status_is_not_deliverable_without_a_narrative() -> None:
+    """``complete`` is reserved for a subset-minimal core plus a narrative.
+
+    Neither is produced at this stage, so the frozen matrix rejects it rather
+    than letting a raw candidate core be published as a finished explanation.
+    """
+    with pytest.raises(ValueError, match="narrative"):
+        BmcInfeasibilityExplanation(
+            requested_mode="formal",
+            achieved_mode="formal",
+            status="complete",
+            classification="assumptions_self_conflict",
+            core=_subset_minimal_core(),
+        )
 
 
 def test_partial_refinement_requires_a_reason() -> None:
@@ -140,6 +189,7 @@ def test_explanation_enters_canonical_output() -> None:
     result = _localized(
         refinement_status="unknown",
         refinement_reason="probe returned unknown",
+        refinement_checks=(_probe(),),
         explanation=_explanation("unknown"),
     )
     canonical = result.to_canonical()

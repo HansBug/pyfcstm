@@ -35,7 +35,7 @@ ProbeRecord
 -----------------------------------------------------
 
 .. autoclass:: ProbeRecord
-    :members: name,status,started,elapsed_ms
+    :members: name,status,started,elapsed_ms,reason
 
 
 ClassificationOutcome
@@ -50,6 +50,13 @@ CoreExtraction
 
 .. autoclass:: CoreExtraction
     :members: groups,status,reason,checks
+
+
+ExplanationOutcome
+-----------------------------------------------------
+
+.. autoclass:: ExplanationOutcome
+    :members: explanation,checks
 
 
 partition\_tracked\_groups
@@ -68,3 +75,15 @@ extract\_source\_core
 -----------------------------------------------------
 
 .. autofunction:: extract_source_core
+
+
+build\_core\_item
+-----------------------------------------------------
+
+.. autofunction:: build_core_item
+
+
+explain\_infeasibility
+-----------------------------------------------------
+
+.. autofunction:: explain_infeasibility

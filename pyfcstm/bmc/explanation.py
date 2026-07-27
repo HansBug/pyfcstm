@@ -81,17 +81,39 @@ BmcConflictCoreScope = Literal[
 ]
 BmcConstraintStage = Literal["kernel", "initialization", "assumptions"]
 BmcCoreGranularity = Literal["source_group"]
-BmcCoreReduction = Literal["raw", "minimized"]
+BmcCoreReduction = Literal["raw", "partial_minimized", "subset_minimal"]
 BmcSubsetMinimality = Literal["proven", "not_proven"]
-BmcSemanticRole = Literal["structural", "value", "state", "event", "definedness"]
+BmcSemanticRole = Literal[
+    "domain_rule",
+    "initial_fact",
+    "transition_rule",
+    "assumption",
+    "definedness",
+]
 
 _MODES = ("none", "formal", "proof")
 _STATUSES = ("complete", "partial", "unknown", "timeout")
 _GRANULARITIES = ("source_group",)
-_REDUCTIONS = ("raw", "minimized")
+_REDUCTIONS = ("raw", "partial_minimized", "subset_minimal")
 _MINIMALITIES = ("proven", "not_proven")
+
+#: Explanation depths ordered from weakest to strongest.
+_MODE_ORDER = {"none": 0, "formal": 1, "proof": 2}
+
+#: A reduction level admits exactly one subset-minimality claim.
+_REDUCTION_MINIMALITY = {
+    "raw": "not_proven",
+    "partial_minimized": "not_proven",
+    "subset_minimal": "proven",
+}
 _STAGES = ("kernel", "initialization", "assumptions")
-_SEMANTIC_ROLES = ("structural", "value", "state", "event", "definedness")
+_SEMANTIC_ROLES = (
+    "domain_rule",
+    "initial_fact",
+    "transition_rule",
+    "assumption",
+    "definedness",
+)
 
 #: Every classification maps to exactly one diagnostic scope.
 CLASSIFICATION_SCOPES = MappingProxyType(
@@ -110,6 +132,23 @@ CLASSIFICATION_SCOPES = MappingProxyType(
 STAGE_FALLBACK_SCOPES = ("initialization_stage_fallback", "assumptions_stage_fallback")
 
 _SCOPES = tuple(CLASSIFICATION_SCOPES.values()) + STAGE_FALLBACK_SCOPES
+
+#: Stages each scope's target formula is built from.  A domain or prefix scope
+#: legitimately reaches back to earlier stages, so membership is checked
+#: against this set rather than against the localized stage itself.
+_SCOPE_STAGES = MappingProxyType(
+    {
+        "kernel": ("kernel",),
+        "initialization_component": ("initialization",),
+        "initialization_domain": ("kernel", "initialization"),
+        "initialization_prefix": ("kernel", "initialization"),
+        "assumptions_component": ("assumptions",),
+        "assumptions_domain": ("kernel", "assumptions"),
+        "assumptions_prefix": ("kernel", "initialization", "assumptions"),
+        "initialization_stage_fallback": ("kernel", "initialization"),
+        "assumptions_stage_fallback": ("kernel", "initialization", "assumptions"),
+    }
+)
 
 
 def _require_member(value: Any, allowed: Tuple[str, ...], label: str) -> str:
@@ -250,7 +289,7 @@ class BmcCoreItem:
         ...     "initial.target", "initialization", "initial.target",
         ...     BmcSourceRef("generated", None, None), "initial target",
         ... )
-        >>> BmcCoreItem(ref, "structural", None, False, {}, "initial target",
+        >>> BmcCoreItem(ref, "domain_rule", None, False, {}, "initial target",
         ...             False).editable
         False
     """
@@ -286,10 +325,10 @@ class BmcCoreItem:
             ...     "initial.target", "initialization", "initial.target",
             ...     BmcSourceRef("generated", None, None), "initial target",
             ... )
-            >>> item = BmcCoreItem(ref, "structural", None, False, {},
+            >>> item = BmcCoreItem(ref, "domain_rule", None, False, {},
             ...                    "initial target", False)
             >>> item.to_canonical()["semantic_role"]
-            'structural'
+            'domain_rule'
         """
         return {
             "constraint": self.constraint.to_canonical(),
@@ -315,14 +354,21 @@ class BmcConflictCore:
     :type formula_summary: str
     :param granularity: Core granularity, currently always ``source_group``.
     :type granularity: str
-    :param reduction: Whether the core was minimized.
+    :param reduction: How far deletion checking got: ``raw`` when no deletion
+        check finished, ``partial_minimized`` when some did but the sweep is
+        open, ``subset_minimal`` when every member proved necessary.
     :type reduction: str
-    :param subset_minimality: Whether subset minimality has been proven.
+    :param subset_minimality: Whether subset minimality has been proven.  It
+        is determined by ``reduction``: only ``subset_minimal`` may claim
+        ``proven``, which keeps "not proven minimal" distinct from "proven
+        non-minimal".
     :type subset_minimality: str
     :param items: Core members; reordered by ``stable_id`` on construction.
     :type items: Tuple[BmcCoreItem, ...]
     :raises ValueError: If the scope, granularity, reduction or minimality is
-        unknown, if ``items`` is empty, or if two items share a ``stable_id``.
+        unknown, if the minimality claim does not match the reduction level,
+        if ``items`` is empty, if two items share a ``stable_id``, or if an
+        item's stage lies outside the scope's target formula.
 
     Example::
 
@@ -331,7 +377,7 @@ class BmcConflictCore:
         ...     "initial.target", "initialization", "initial.target",
         ...     BmcSourceRef("generated", None, None), "initial target",
         ... )
-        >>> item = BmcCoreItem(ref, "structural", None, False, {},
+        >>> item = BmcCoreItem(ref, "domain_rule", None, False, {},
         ...                    "initial target", False)
         >>> core = BmcConflictCore("initialization_component", "I_0",
         ...                        "source_group", "raw", "not_proven", (item,))
@@ -351,6 +397,13 @@ class BmcConflictCore:
         _require_member(self.granularity, _GRANULARITIES, "core granularity")
         _require_member(self.reduction, _REDUCTIONS, "core reduction")
         _require_member(self.subset_minimality, _MINIMALITIES, "core subset_minimality")
+        expected_minimality = _REDUCTION_MINIMALITY[self.reduction]
+        if self.subset_minimality != expected_minimality:
+            raise ValueError(
+                "reduction %r requires subset_minimality %r, got %r; only a "
+                "completed deletion sweep may claim 'proven'."
+                % (self.reduction, expected_minimality, self.subset_minimality)
+            )
         if not isinstance(self.formula_summary, str) or not self.formula_summary:
             raise ValueError("core formula_summary must be a non-empty string.")
         items = tuple(self.items)
@@ -362,6 +415,19 @@ class BmcConflictCore:
         identifiers = [item.constraint.stable_id for item in items]
         if len(set(identifiers)) != len(identifiers):
             raise ValueError("core items contain duplicate stable ids.")
+        allowed_stages = _SCOPE_STAGES[self.scope]
+        for item in items:
+            if item.constraint.stage not in allowed_stages:
+                raise ValueError(
+                    "core item %r has stage %r, which is outside the target of "
+                    "scope %r (%s)."
+                    % (
+                        item.constraint.stable_id,
+                        item.constraint.stage,
+                        self.scope,
+                        ", ".join(allowed_stages),
+                    )
+                )
         object.__setattr__(
             self,
             "items",
@@ -381,7 +447,7 @@ class BmcConflictCore:
             ...     "initial.target", "initialization", "initial.target",
             ...     BmcSourceRef("generated", None, None), "initial target",
             ... )
-            >>> item = BmcCoreItem(ref, "structural", None, False, {},
+            >>> item = BmcCoreItem(ref, "domain_rule", None, False, {},
             ...                    "initial target", False)
             >>> core = BmcConflictCore("initialization_component", "I_0",
             ...                        "source_group", "raw", "not_proven", (item,))
@@ -467,9 +533,9 @@ class BmcInfeasibilityExplanation:
     :type classification: Optional[str]
     :param core: Sound source core, defaults to ``None``.
     :type core: Optional[BmcConflictCore], optional
-    :param proof: Reserved for a later stage; always ``None`` here.
+    :param proof: Reserved for a later stage; rejected while non-``None``.
     :type proof: Optional[BmcConflictProof], optional
-    :param narrative: Reserved for a later stage; always ``None`` here.
+    :param narrative: Reserved for a later stage; rejected while non-``None``.
     :type narrative: Optional[BmcConflictNarrative], optional
     :param reason: Why the artifact is degraded, defaults to ``None``.
     :type reason: Optional[str], optional
@@ -478,8 +544,9 @@ class BmcInfeasibilityExplanation:
     :type elapsed_ms: Optional[float], optional
     :raises ValueError: If a mode or status is outside its frozen vocabulary,
         if a ``complete`` status carries a reason, if a degraded status omits
-        one, if a classification and core scope disagree, or if a stage
-        fallback scope carries a classification.
+        one, if a classification and core scope disagree, if a stage fallback
+        scope carries a classification, or if the delivery matrix checked by
+        :meth:`_validate_delivery` is violated.
 
     Example::
 
@@ -519,10 +586,84 @@ class BmcInfeasibilityExplanation:
             raise ValueError(
                 "%s explanations require a non-empty reason." % self.status
             )
+        if self.elapsed_ms is not None:
+            if isinstance(self.elapsed_ms, bool) or not isinstance(
+                self.elapsed_ms, (int, float)
+            ):
+                raise TypeError("explanation elapsed_ms must be a number or None.")
+            if self.elapsed_ms < 0:
+                raise ValueError("explanation elapsed_ms must not be negative.")
         if self.core is not None:
             if not isinstance(self.core, BmcConflictCore):
                 raise TypeError("explanation core must be BmcConflictCore.")
             self._validate_scope(self.core.scope)
+        self._validate_delivery()
+
+    def _validate_delivery(self) -> None:
+        """Enforce the frozen cross-field delivery matrix.
+
+        Each field is separately legal in isolation, so the contract only
+        becomes checkable as a table: what ``achieved_mode`` was reached
+        constrains which of ``core``, ``proof`` and ``narrative`` may be
+        present, and how strong the core's minimality claim must be.
+
+        :return: ``None``.
+        :rtype: None
+        :raises ValueError: If the combination is outside the frozen matrix.
+
+        Example::
+
+            >>> BmcInfeasibilityExplanation(
+            ...     "formal", "none", "timeout", None, reason="budget spent",
+            ... ).achieved_mode
+            'none'
+        """
+        if _MODE_ORDER[self.achieved_mode] > _MODE_ORDER[self.requested_mode]:
+            raise ValueError(
+                "achieved_mode %r is stronger than requested_mode %r."
+                % (self.achieved_mode, self.requested_mode)
+            )
+        if self.achieved_mode == "none":
+            if self.core is not None:
+                raise ValueError(
+                    "achieved_mode 'none' means no sound core was published."
+                )
+            if self.status == "complete":
+                raise ValueError(
+                    "achieved_mode 'none' cannot be complete; it is partial, "
+                    "unknown or timeout."
+                )
+        elif self.core is None:
+            raise ValueError("achieved_mode %r requires a core." % self.achieved_mode)
+        if self.achieved_mode == "proof" and self.proof is None:
+            raise ValueError("achieved_mode 'proof' requires a proof.")
+        if self.proof is not None and self.requested_mode != "proof":
+            raise ValueError("a proof is only published when 'proof' was requested.")
+        if self.status == "complete":
+            if self.classification is None:
+                raise ValueError(
+                    "a complete explanation requires a diagnostic classification."
+                )
+            if self.core.reduction != "subset_minimal":
+                raise ValueError(
+                    "a complete explanation requires a subset-minimal core, got "
+                    "reduction %r." % self.core.reduction
+                )
+            if self.narrative is None:
+                raise ValueError(
+                    "a complete explanation requires a complete narrative."
+                )
+        # The proof DAG and the semantic narrative are frozen slots that a
+        # later delivery stage fills.  Accepting a populated slot here would
+        # break the frozen rule that the published JSON schema and this
+        # constructor accept exactly the same payload set, because neither slot
+        # has a published schema yet.
+        for name in ("proof", "narrative"):
+            if getattr(self, name) is not None:
+                raise ValueError(
+                    "explanation %s is not produced at this stage; it must be "
+                    "None." % name
+                )
 
     def _validate_scope(self, scope: str) -> None:
         """Enforce the frozen classification-to-scope mapping.
@@ -584,11 +725,31 @@ class BmcInfeasibilityExplanation:
             "status": self.status,
             "classification": self.classification,
             "core": None if self.core is None else self.core.to_canonical(),
-            "proof": None,
-            "narrative": None,
+            # Both slots are kept None by the delivery matrix, so emitting the
+            # fields directly can never silently drop a caller's value.
+            "proof": self.proof,
+            "narrative": self.narrative,
             "reason": self.reason,
             "elapsed_ms": self.elapsed_ms,
         }
 
 
-__all__ = []
+__all__ = [
+    "BmcConflictCore",
+    "BmcConflictCoreScope",
+    "BmcConflictNarrative",
+    "BmcConflictProof",
+    "BmcConstraintRef",
+    "BmcConstraintStage",
+    "BmcCoreGranularity",
+    "BmcCoreItem",
+    "BmcCoreReduction",
+    "BmcInfeasibilityClassification",
+    "BmcInfeasibilityExplanation",
+    "BmcInfeasibilityExplanationMode",
+    "BmcInfeasibilityExplanationStatus",
+    "BmcSemanticRole",
+    "BmcSubsetMinimality",
+    "CLASSIFICATION_SCOPES",
+    "STAGE_FALLBACK_SCOPES",
+]

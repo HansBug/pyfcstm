@@ -45,9 +45,10 @@ import math
 import sys
 import time
 from collections.abc import Iterable as IterableABC
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from fractions import Fraction
 from typing import (
+    TYPE_CHECKING,
     Any,
     Callable,
     Dict,
@@ -83,6 +84,10 @@ from .relation import BmcCaseRelation
 from .solver import BmcSolveStatus, _SolveBudget, _check_with_budget
 from pyfcstm.model import OnAspect, OnStage, StateMachine
 from pyfcstm.simulate import ReadOnlyExecutionContext, SimulationRuntime
+
+if TYPE_CHECKING:  # pragma: no cover - annotation-only imports
+    from .explanation import BmcInfeasibilityExplanation
+    from .relation import BmcCoreFormula
 
 _CanonicalDict = Dict[str, Any]
 #: Public solver statuses returned by :class:`BmcSolveResult`.
@@ -2279,12 +2284,14 @@ def _validate_explanation_agreement(
     infeasible_stage: Optional[str],
     refinement_status: str,
     refinement_reason: Optional[str],
+    refinement_checks: Sequence["BmcFeasibilityRefinementCheck"] = (),
 ) -> None:
     """Keep the aggregate telemetry and the published explanation in agreement.
 
     The aggregate fields are a summary of the very same optional stage the
     explanation describes.  Letting them drift apart would hand a reader two
-    contradictory answers about the same run.
+    contradictory answers about the same run: a status, a reason, and a stage
+    that each point somewhere else.
 
     :param explanation: Published infeasibility explanation.
     :type explanation: pyfcstm.bmc.explanation.BmcInfeasibilityExplanation
@@ -2294,16 +2301,26 @@ def _validate_explanation_agreement(
     :type refinement_status: str
     :param refinement_reason: Aggregate refinement reason, or ``None``.
     :type refinement_reason: Optional[str]
+    :param refinement_checks: Aggregate refinement ledger, defaults to ``()``.
+    :type refinement_checks: Sequence[BmcFeasibilityRefinementCheck], optional
     :return: ``None``.
     :rtype: None
-    :raises pyfcstm.bmc.errors.BmcBuildError: If no stage was localized, or if
-        the aggregate status or reason disagrees with the explanation.
+    :raises pyfcstm.bmc.errors.BmcBuildError: If no stage was localized, if the
+        aggregate status or reason disagrees with the explanation, if the
+        explanation describes a different stage, or if it is not backed by any
+        recorded check.
 
     Example::
 
-        >>> _validate_explanation_agreement(None, "assumptions", "x", None)
+        >>> from pyfcstm.bmc.explanation import BmcInfeasibilityExplanation
+        >>> explanation = BmcInfeasibilityExplanation(
+        ...     "formal", "none", "timeout", None, reason="budget spent",
+        ... )
+        >>> _validate_explanation_agreement(
+        ...     explanation, "assumptions", "unknown", "budget spent",
+        ... )
         Traceback (most recent call last):
-        AttributeError: 'NoneType' object has no attribute 'status'
+        pyfcstm.bmc.errors.BmcBuildError: refinement_status 'unknown' must mirror the explanation status 'timeout'.
     """
     if infeasible_stage is None:
         raise BmcBuildError("an explanation requires a localized infeasible stage.")
@@ -2314,6 +2331,59 @@ def _validate_explanation_agreement(
         )
     if refinement_reason != explanation.reason:
         raise BmcBuildError("refinement_reason must match the explanation reason.")
+    explained_stage = _explanation_stage(explanation)
+    if explained_stage is not None and explained_stage != infeasible_stage:
+        raise BmcBuildError(
+            "the explanation describes stage %r but %r was localized."
+            % (explained_stage, infeasible_stage)
+        )
+    if infeasible_stage == "kernel" and explanation.classification is None:
+        # The kernel stage needs no probe, so an explanation attached to it can
+        # always name kernel_conflict; an absent classification would disguise
+        # kernel as one of the two stage fallbacks.
+        raise BmcBuildError(
+            "a kernel explanation must carry the kernel_conflict classification."
+        )
+    if not refinement_checks:
+        raise BmcBuildError(
+            "an explanation requires at least one recorded refinement check."
+        )
+
+
+def _explanation_stage(
+    explanation: "BmcInfeasibilityExplanation",
+) -> Optional[str]:
+    """Derive which stage a published explanation actually describes.
+
+    A domain or prefix core legitimately reaches back into earlier stages, so
+    the stage is read from the classification or the core scope rather than
+    from the stages of individual core members.
+
+    :param explanation: Published infeasibility explanation.
+    :type explanation: pyfcstm.bmc.explanation.BmcInfeasibilityExplanation
+    :return: Stage name, or ``None`` when the explanation names none.
+    :rtype: Optional[str]
+
+    Example::
+
+        >>> from pyfcstm.bmc.explanation import BmcInfeasibilityExplanation
+        >>> _explanation_stage(BmcInfeasibilityExplanation(
+        ...     "formal", "none", "timeout", "assumptions_self_conflict",
+        ...     reason="budget spent",
+        ... ))
+        'assumptions'
+    """
+    from .explanation import CLASSIFICATION_SCOPES
+
+    if explanation.classification is not None:
+        scope = CLASSIFICATION_SCOPES[explanation.classification]
+    elif explanation.core is not None:
+        scope = explanation.core.scope
+    else:
+        return None
+    if scope == "kernel":
+        return "kernel"
+    return scope.split("_", 1)[0]
 
 
 @dataclass(frozen=True)
@@ -2428,6 +2498,7 @@ class BmcFeasibilityResult(_PrettyPrintableMixin):
                 self.infeasible_stage,
                 self.refinement_status,
                 self.refinement_reason,
+                self.refinement_checks,
             )
         elif (
             self.infeasible_stage is not None
@@ -4659,6 +4730,71 @@ def _build_feasibility(
     )
 
 
+_EXPLANATION_MODES = ("none", "formal", "proof")
+
+
+def _attach_explanation(
+    feasibility: BmcFeasibilityResult,
+    core: "BmcCoreFormula",
+    budget: _SolveBudget,
+    requested_mode: str,
+) -> BmcFeasibilityResult:
+    """Run the optional explanation stage and fold it into the aggregate.
+
+    The explanation is strictly optional: it only runs once a stage has been
+    localized and the caller asked for it, and it reuses the solve budget so
+    it can never extend the caller's timeout.  The aggregate refinement fields
+    become a summary of whatever the explanation actually achieved.
+
+    :param feasibility: Aggregate feasibility evidence from the mandatory
+        solve.
+    :type feasibility: BmcFeasibilityResult
+    :param core: Core formula carrying the tracked group ledger.
+    :type core: pyfcstm.bmc.relation.BmcCoreFormula
+    :param budget: Budget shared with the mandatory solve.
+    :type budget: pyfcstm.bmc.solver._SolveBudget
+    :param requested_mode: Explanation depth the caller asked for.
+    :type requested_mode: str
+    :return: The original result, or one carrying the explanation.
+    :rtype: BmcFeasibilityResult
+
+    Example::
+
+        >>> from pyfcstm.bmc.solver import _SolveBudget
+        >>> unchanged = _attach_explanation(
+        ...     _inferred_feasibility(), None, _SolveBudget(None), "none",
+        ... )
+        >>> unchanged.explanation is None
+        True
+    """
+    if requested_mode == "none" or feasibility.infeasible_stage is None:
+        return feasibility
+
+    from .infeasibility import explain_infeasibility
+
+    outcome = explain_infeasibility(
+        core,
+        feasibility.infeasible_stage,
+        budget,
+        requested_mode=requested_mode,
+    )
+    return replace(
+        feasibility,
+        refinement_status=outcome.explanation.status,
+        refinement_reason=outcome.explanation.reason,
+        refinement_checks=tuple(
+            BmcFeasibilityRefinementCheck(
+                name=record.name,
+                status=record.status,
+                reason=record.reason,
+                elapsed_ms=record.elapsed_ms,
+            )
+            for record in outcome.checks
+        ),
+        explanation=outcome.explanation,
+    )
+
+
 def _make_solve_result(
     formula: BmcPropertyFormula,
     *,
@@ -4697,6 +4833,7 @@ def solve_bmc_property(
     *,
     timeout_ms: Optional[int] = None,
     check_incomplete: bool = True,
+    infeasibility_explanation: str = "none",
 ) -> BmcSolveResult:
     """Solve a compiled BMC property formula.
 
@@ -4715,9 +4852,14 @@ def solve_bmc_property(
     :param check_incomplete: Whether to solve incomplete-bound diagnostics,
         defaults to ``True``.
     :type check_incomplete: bool, optional
+    :param infeasibility_explanation: Explanation depth to attempt once a
+        stage has been localized: ``none``, ``formal`` or ``proof``, defaults
+        to ``'none'``.  The default runs no additional solver check at all.
+    :type infeasibility_explanation: str, optional
     :return: Structured solve result.
     :rtype: BmcSolveResult
-    :raises pyfcstm.bmc.errors.BmcBuildError: If arguments are malformed.
+    :raises pyfcstm.bmc.errors.BmcBuildError: If arguments are malformed, or
+        if ``infeasibility_explanation`` is not one of the three modes.
 
     Example::
 
@@ -4732,6 +4874,13 @@ def solve_bmc_property(
     if not isinstance(check_incomplete, bool):
         raise BmcBuildError("check_incomplete must be bool.")
     started_at = time.monotonic()
+    if (
+        isinstance(infeasibility_explanation, bool)
+        or infeasibility_explanation not in _EXPLANATION_MODES
+    ):
+        raise BmcBuildError(
+            "Unsupported infeasibility_explanation: %r." % (infeasibility_explanation,)
+        )
     core = checked.core
     solver = z3.Solver()
     solver.add(core.domain_formula, core.transition_formula)
@@ -4977,6 +5126,9 @@ def solve_bmc_property(
             localization_status="complete",
             refinement_status="not_requested",
         )
+        feasibility = _attach_explanation(
+            feasibility, core, budget, infeasibility_explanation
+        )
         return _make_solve_result(
             checked,
             status=status,
@@ -5044,6 +5196,9 @@ def solve_bmc_property(
             infeasible_stage="kernel" if kernel_status == "unsat" else "initialization",
             localization_status="complete",
             refinement_status="not_requested",
+        )
+        feasibility = _attach_explanation(
+            feasibility, core, budget, infeasibility_explanation
         )
     if kernel_status in {"unknown", "timeout"}:
         diagnostics.append("feasibility_%s:kernel" % kernel_status)

@@ -115,11 +115,16 @@ Public module structure:
        tracked constraint groups for later explanation layers; these modules
        are intentionally not root-package public exports.
    * - Scenario infeasibility explanation
-     - :mod:`pyfcstm.bmc.explanation`, :mod:`pyfcstm.bmc.infeasibility`
-     - Classify how a localized stage is infeasible and extract a sound source
-       core that maps back to authored FCSTM/FBMCQ text.  The explanation data
-       layer stays free of Z3 so readers can consume a result without loading
-       the solver; the orchestration layer owns every probe and shares the
+     - :class:`BmcInfeasibilityExplanation`, :class:`BmcConflictCore`,
+       :class:`BmcCoreItem`, :class:`BmcConstraintRef`
+     - Answer the two questions a localized stage leaves open: *how* it is
+       infeasible, and *which* authored FCSTM/FBMCQ constraints already suffice
+       to make it so.  Request one through
+       ``solve_bmc_property(..., infeasibility_explanation='formal')``; the
+       default ``'none'`` runs no extra solver check.  The data layer in
+       :mod:`pyfcstm.bmc.explanation` stays free of Z3 so a reader can consume
+       a result without loading the solver, while
+       :mod:`pyfcstm.bmc.infeasibility` owns every probe and shares the
        mandatory solve budget.
    * - BMC relation builder
      - :class:`BmcAbstractCallRecord`, :class:`BmcTraceSymbols`,

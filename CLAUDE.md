@@ -285,6 +285,82 @@ make sample / make sample_clean  # Generate/clean test files from sample DSL fil
 make vscode / make vscode_clean  # Build/clean VSCode extension package
 ```
 
+#### VSCode Compatibility Envelope
+
+The extension declares `engines.vscode` as `^1.60.0` in
+[editors/vscode/package.json](editors/vscode/package.json). That floor is part of the repository's
+older-platform commitment, because VSCode itself stops shipping for old operating systems at fixed
+versions:
+
+| Operating system | Last VSCode release available | Highest floor still compatible |
+|---|---|---|
+| 32-bit Linux (`linux-ia32`) | 1.35.1 | `^1.35.0` |
+| CentOS 7 / RHEL 7, and any Linux with GLIBCXX older than 3.4.21 | 1.52.x | `^1.52.0` |
+| Windows 7 | 1.70.3 | `^1.70.0` |
+| Windows 8 / 8.1, Windows Server 2012 / 2012 R2 | 1.79.2 | `^1.79.0` |
+| Windows 32-bit (x86) | 1.83.1 | `^1.83.0` |
+| Linux with glibc older than 2.28 (Ubuntu 18.04, Debian 9) | 1.85.2 | `^1.85.0` |
+
+**`engines.vscode` must never require more than `^1.70.0`.** Windows 7 is the binding constraint among
+the platforms the floor currently reaches, and it is named explicitly in the compatibility paragraph
+under [Project Overview](#project-overview); anything above `1.70.3` removes it.
+
+The two rows above Windows 7 are capped *below* the current floor, so `^1.60.0` already excludes them.
+32-bit Linux is unreachable at any floor this extension could adopt. CentOS 7 and RHEL 7 are not:
+their `1.52.x` cap is exactly the floor `vscode-languageclient` 7 declares, so lowering to `^1.52.0`
+would recover them. Whether to do that is an open decision — the source compiles cleanly against
+`@types/vscode@1.52.0`, and codicon command icons arrived in 1.42, but the remaining `contributes`
+features have not been traced to their introduction versions yet.
+
+`@types/vscode` must stay tilde-pinned to the same minor as the floor (`~1.60.0`). With a caret range
+it resolves to the newest 1.x — sixty minor versions past the floor — and then `tsc` accepts APIs the
+supported VSCode releases do not have. `vsce package` does check this pairing and runs in CI, but it
+compares the *declared* ranges, so a caret that silently resolves forward passes it; that is the hole
+the pin closes. To confirm the guard still works, temporarily use a known newer API such as
+`vscode.window.createOutputChannel(name, {log: true})` (VSCode 1.74) and check that `tsc` rejects it.
+Do not rely on a CI typecheck for this: no job type-checks the extension, and `make build-tsc` is
+currently red on `main` because of five pre-existing `src/preview.ts` errors, so adding that gate means
+fixing those first.
+
+Raising the floor is a deliberate product decision that removes users, and it requires explicit
+approval. It must never arrive as a side effect of a dependency upgrade. In particular, do not adopt a
+dependency whose own `engines.vscode` exceeds the floor: among stable releases `vscode-languageclient`
+9 requires `^1.82.0` and 10 requires `^1.91.0`, so both are out of bounds while Windows 7 is supported,
+whereas 7 (`^1.52.0`) and 8 (`^1.67.0`) are within it. That constraint is what
+[PR #401](https://github.com/HansBug/pyfcstm/pull/401) breached, and it passed type checking, bundling,
+packaging and every CI job while doing so. [.github/dependabot.yml](.github/dependabot.yml) carries
+ignore rules for the majors that would breach it again.
+
+Two further surfaces drift the same way and are worth checking when the floor moves. `@types/node` is
+declared `^16.0.0` and resolves to Node 16 types, while VSCode 1.60 ships Electron 13 with Node 14.
+And the manifest is unguarded outright: `contributes` entries such as codicon command icons,
+`when`-clause context keys and `markdownDescription` each have their own minimum VSCode version, and
+nothing validates them against `engines.vscode` — type checking says nothing about them.
+
+##### Accepted risk: CVE-2026-14257 in brace-expansion
+
+`GHSA-mh99-v99m-4gvg` (high) reports an out-of-memory DoS for `brace-expansion` at `<= 5.0.7`, patched
+only in `5.0.8`. There is no patched release on the `1.x` or `2.x` lines: `1.1.16` and `2.1.2` do ship
+the fix inside a `dist/` directory, but their `main` is still the unfixed root `index.js` and they
+declare no `exports`, so every resolution path gets the vulnerable file. This is verifiable — the
+advisory's own reproducer still exhausts the heap on both.
+
+Neither remedy is available here. Forcing `5.0.8` tree-wide through `overrides` breaks `minimatch` 3.x
+and 5.x, which `require()` the package and call the result: `5.0.8` exports `{expand}` rather than a
+callable default, so every glob containing braces throws while install, lint, typecheck, bundle and
+package all still pass. Reaching `5.0.8` legitimately means `minimatch` 10.x, which for the extension
+arrives via `vscode-languageclient` 10 and breaches the ceiling above.
+
+The exposure is accepted because the vulnerable call site is unreachable. `minimatch` enters the
+bundle only through `vscode-languageclient/lib/common/fileOperations.js`, which maps over
+`registerOptions.filters`; the extension registers no file operations, so that array is never
+populated. On the jsfcstm side the affected copies are dev-only, reached through mocha.
+
+Expect `npm audit` to report this loudly: once the `1.x` line is at `1.1.16`, npm knows no in-range fix
+exists and propagates the single advisory up the whole dependency chain, so the high-severity count
+rises even though exposure fell. It also suggests `vscode-languageclient@10.1.0` as the fix, which is
+the upgrade the ceiling forbids.
+
 ### Logo Generation
 
 ```bash

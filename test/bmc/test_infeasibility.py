@@ -953,3 +953,60 @@ def test_an_explicit_registry_overrides_the_context_default() -> None:
 
     assert outcome.explanation.classification == "initialization_self_conflict"
     assert all(item.source_excerpt is None for item in outcome.explanation.core.items)
+
+
+@pytest.mark.parametrize("separator", ["\n", "\r\n", "\r"])
+def test_core_excerpts_survive_every_line_separator(separator) -> None:
+    """Quoted text stays correct whatever the query file's line endings are.
+
+    Both grammars only advance the lexer's line counter on ``LF``, so a lone
+    ``CR`` file is genuinely one line as far as spans are concerned.  The
+    excerpt must still name the right constraint under all three separators;
+    rewriting a lone ``CR`` into a line break would invent positions the lexer
+    never produced and silently drop the excerpt instead.
+    """
+    machine = load_state_machine_from_text(_MODEL)
+    query = separator.join(
+        [
+            'init state("Root.A") where x == 0;',
+            'assume at 0: var("x") == 1;',
+            'assume at 0: var("x") == 2;',
+            'check reach <= 2: active("Root.B");',
+            "",
+        ]
+    )
+    context = BmcEngine(machine).prepare(query, query_source_path="q.fbmcq")
+
+    outcome = explain_infeasibility(
+        build_bmc_core_formula(context), "assumptions", _SolveBudget(None)
+    )
+    items = outcome.explanation.core.items
+
+    assert [item.source_excerpt for item in items] == [
+        'assume at 0: var("x") == 1;',
+        'assume at 0: var("x") == 2;',
+    ]
+
+
+def test_programmatic_queries_stay_editable_without_an_excerpt() -> None:
+    """A query with no path keeps its authored kind instead of faking one.
+
+    Upstream forbids disguising an ``fbmcq`` constraint as ``generated`` just
+    because no path is available, so the entry stays editable and only the
+    excerpt is absent.
+    """
+    machine = load_state_machine_from_text(_MODEL)
+    context = BmcEngine(machine).prepare(
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
+        'check reach <= 2: active("Root.B");'
+    )
+
+    outcome = explain_infeasibility(
+        build_bmc_core_formula(context), "assumptions", _SolveBudget(None)
+    )
+    items = outcome.explanation.core.items
+
+    assert [item.constraint.source.kind for item in items] == ["fbmcq", "fbmcq"]
+    assert all(item.editable for item in items)
+    assert all(item.source_excerpt is None for item in items)

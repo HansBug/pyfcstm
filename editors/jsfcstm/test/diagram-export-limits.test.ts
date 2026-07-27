@@ -50,4 +50,60 @@ describe('diagram export size limits', () => {
         // number jsPDF clamps to silently.
         assert.equal(PDF_MAX_UNITS, 14400);
     });
+
+    it('pins the raster limits to the lowest a browser enforces', () => {
+        // Every bound above compares against these constants, so widening one
+        // to Chrome's own 65535 would re-green the suite while reintroducing the
+        // Firefox and Safari failures they exist to prevent. Measured in Chrome:
+        // 592x65535 rasterises, 592x65536 does not; 16384x16384 does,
+        // 16384x16385 does not. Firefox stops at 32767, Safari at 16384.
+        assert.equal(RASTER_MAX_SIDE, 32767);
+        assert.equal(RASTER_MAX_AREA, 268435456);
+    });
+
+    it('returns the largest acceptable scale, not merely an acceptable one', () => {
+        // Without this, an implementation that returns a fraction of the legal
+        // scale passes every bound above while destroying raster quality.
+        const cases: Array<[number, number]> = [
+            [296, 34874],
+            [40000, 662],
+            [20000, 20000],
+        ];
+        for (const [width, height] of cases) {
+            const scale = rasterScaleWithinLimits(width, height, 2);
+            const grow = scale * 1.02;
+            const legal = (factor: number) => {
+                const w = Math.ceil(width * factor);
+                const h = Math.ceil(height * factor);
+                return w <= RASTER_MAX_SIDE && h <= RASTER_MAX_SIDE
+                    && w * h <= RASTER_MAX_AREA;
+            };
+            assert.ok(legal(scale), `${width}x${height}: own result must be legal`);
+            assert.ok(
+                !legal(grow),
+                `${width}x${height}: 2% more must not also fit, or the scale is too small`,
+            );
+        }
+    });
+
+    it('keeps the rounded canvas inside the area cap', () => {
+        // The call site rounds each side up, so a scale that fits before
+        // rounding can exceed the cap after it. Browsers enforce the area
+        // exactly and `toBlob` then yields null with no error.
+        for (const side of [16385, 17000, 20000, 21185, 30000, 40000]) {
+            const scale = rasterScaleWithinLimits(side, side, 2);
+            const pixels = Math.ceil(side * scale) * Math.ceil(side * scale);
+            assert.ok(
+                pixels <= RASTER_MAX_AREA,
+                `${side}x${side}: rounded canvas is ${pixels} px, cap is ${RASTER_MAX_AREA}`,
+            );
+        }
+    });
+
+    it('rejects degenerate bounds instead of returning NaN', () => {
+        for (const [w, h] of [[0, 0], [-10, 500], [500, -10], [0, 34874]]) {
+            const scale = rasterScaleWithinLimits(w, h, 2);
+            assert.ok(Number.isFinite(scale) && scale > 0, `${w}x${h} -> ${scale}`);
+        }
+    });
 });

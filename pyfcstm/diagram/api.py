@@ -87,9 +87,21 @@ def _thaw_value(value: Any) -> Any:
 
 def _portable_value(value: Mapping[str, Any]) -> Dict[str, Any]:
     """Copy renderer data after removing editor-only source metadata."""
-    copied = json.loads(
-        json.dumps(_thaw_value(value), ensure_ascii=False, sort_keys=True)
-    )
+    try:
+        payload = json.dumps(
+            _thaw_value(value), ensure_ascii=False, sort_keys=True, allow_nan=False
+        )
+    except ValueError as error:
+        # allow_nan=False raises for NaN and +/-Infinity. Python writes those as
+        # bare NaN/Infinity tokens, which no JSON parser accepts — the browser
+        # this data is built for rejects the document outright — so the class
+        # cannot claim to be JSON-compatible and also carry them.
+        raise ValueError(
+            "DiagramData values must be JSON numbers; NaN and infinity cannot be "
+            "represented and would produce a document no JSON parser accepts (%s)"
+            % error
+        ) from error
+    copied = json.loads(payload)
     if not isinstance(copied, dict) or not isinstance(copied.get("rootState"), dict):
         raise ValueError("DiagramData requires a rootState mapping")
 
@@ -946,15 +958,48 @@ def _apply_target_mode(
         os.chmod(str(temporary_path), mode)
         return
     try:
-        mode = target.stat().st_mode & 0o7777
+        os.chmod(str(temporary_path), target.stat().st_mode & 0o7777)
+        return
     except FileNotFoundError:
         # The usual case: the target does not exist yet, so there is no mode to
         # preserve. Other stat failures surface from _validate_write_target,
         # which runs first and re-raises them from its own is_dir() call.
-        umask = os.umask(0)
-        os.umask(umask)
-        mode = 0o666 & ~umask
-    os.chmod(str(temporary_path), mode)
+        pass
+    os.chmod(str(temporary_path), _umask_default_mode(temporary_path.parent))
+
+
+def _umask_default_mode(directory: Path) -> int:
+    """
+    Return the mode a plain new file receives in ``directory``.
+
+    Read by letting the operating system apply the umask to a throwaway file
+    rather than by calling ``os.umask(0)`` to sample it. The umask is
+    process-wide, not per-thread, so clearing it even briefly means a file
+    another thread creates in that window is born with whatever permissions its
+    own mode argument asked for — measured as 0666 where 0644 was expected.
+    A public write path must not widen the whole process to learn its own
+    default.
+
+    :param directory: Directory the real write is about to happen in, so the
+        probe sees the same filesystem and any inherited default ACL.
+    :type directory: pathlib.Path
+    :return: Permission bits, already masked.
+    :rtype: int
+    """
+    handle, probe = tempfile.mkstemp(prefix=".pyfcstm-umask-", dir=str(directory))
+    os.close(handle)
+    try:
+        # mkstemp forces 0600, so ask for 0666 explicitly and let the kernel
+        # subtract the umask exactly as it would for the real file.
+        os.chmod(probe, 0o666)
+        widened = os.open(probe + ".probe", os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o666)
+        os.close(widened)
+        try:
+            return os.stat(probe + ".probe").st_mode & 0o7777
+        finally:
+            os.unlink(probe + ".probe")
+    finally:
+        os.unlink(probe)
 
 
 def _atomic_write_text(
@@ -1295,7 +1340,7 @@ class DiagramViewState:
         }
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class DiagramData:
     """
     Portable, deterministic diagram data without editor-only metadata.
@@ -1318,6 +1363,40 @@ class DiagramData:
             raise TypeError("DiagramData.value must be a mapping")
         object.__setattr__(self, "value", _freeze_value(_portable_value(self.value)))
 
+    def _canonical(self) -> str:
+        """
+        Return the canonical JSON text both equality and hashing are defined on.
+
+        :return: Deterministic JSON with sorted keys and no insignificant space.
+        :rtype: str
+        """
+        return json.dumps(
+            _thaw_value(self.value),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+
+    def __eq__(self, other: Any) -> bool:
+        """
+        Compare two snapshots by the same representation that hashes them.
+
+        The generated comparison used Python's numeric rules, where ``1`` equals
+        ``1.0`` and ``True`` equals ``1``, while the hash came from the JSON
+        bytes, where they differ. Equal snapshots therefore missed each other in
+        a ``dict`` and stacked up in a ``set``, breaking the invariant that
+        equal objects hash alike. For a content-addressed value, the bytes are
+        the identity.
+
+        :param other: Value to compare against.
+        :type other: Any
+        :return: ``True`` when both are snapshots with identical canonical JSON.
+        :rtype: bool
+        """
+        if not isinstance(other, DiagramData):
+            return NotImplemented
+        return self._canonical() == other._canonical()
+
     def __hash__(self) -> int:
         """
         Hash the immutable snapshot by its canonical JSON representation.
@@ -1330,13 +1409,9 @@ class DiagramData:
             across separate interpreter processes.
         :rtype: int
         """
-        payload = json.dumps(
-            _thaw_value(self.value),
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
+        return int(
+            hashlib.sha256(self._canonical().encode("utf-8")).hexdigest()[:16], 16
         )
-        return int(hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16], 16)
 
     def to_dict(self) -> Dict[str, Any]:
         """

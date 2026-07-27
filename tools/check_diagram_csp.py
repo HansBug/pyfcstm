@@ -215,7 +215,38 @@ def main() -> None:
         ):
             if marker not in scripts_text:
                 raise SystemExit(message)
-    print("diagram CSP: embedded scripts, fonts, and zero-network policy passed")
+    # Name the checks that actually ran. Every assertion here is behind a flag
+    # that defaults to off, so a bare `python tools/check_diagram_csp.py` used to
+    # print a blanket "zero-network policy passed" while verifying nothing —
+    # widening `connect-src` to `*` still exited 0. Reporting the enabled set
+    # makes an under-armed invocation visible instead of reassuring.
+    performed = [
+        name
+        for name, enabled in (
+            ("default-src 'none'", args.require_default_none),
+            ("connect-src 'none'", args.require_connect_none),
+            ("worker-src 'none'", args.require_worker_none),
+            ("script hashes", args.require_script_hashes),
+            ("style hashes", args.require_style_hashes),
+            ("style nonce", args.require_style_nonce),
+            ("wasm-unsafe-eval", args.require_wasm_unsafe_eval),
+            ("no unsafe-eval", args.forbid_unsafe_eval),
+            ("font-src data:", args.require_font_data),
+            ("img-src data:/blob:", args.require_img_data_blob),
+            ("no eval()", args.forbid_eval),
+            ("no new Function()", args.forbid_new_function),
+            ("zero network", args.zero_network),
+            ("embedded fonts", args.require_embedded_fonts is not None),
+            ("fonts ready", args.require_fonts_ready),
+        )
+        if enabled
+    ]
+    if not performed:
+        raise SystemExit(
+            "no CSP checks were requested, so nothing was verified; pass the flags "
+            "`make diagram_csp_check` uses, or --help to choose them"
+        )
+    print("diagram CSP: %d checks passed (%s)" % (len(performed), ", ".join(performed)))
 
 
 if __name__ == "__main__":

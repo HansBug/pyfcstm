@@ -86,12 +86,17 @@ export function rasterScaleWithinLimits(
 ): number {
     const w = Math.max(1, width);
     const h = Math.max(1, height);
-    return Math.min(
+    const fit = Math.min(
         requested,
         RASTER_MAX_SIDE / w,
         RASTER_MAX_SIDE / h,
         Math.sqrt(RASTER_MAX_AREA / (w * h)),
     );
+    // Rounding happens at the call site, and `ceil` can add a pixel to each
+    // side. Leave room for both so the rounded canvas is still inside the area
+    // cap, which browsers enforce exactly.
+    const rounded = (Math.ceil(w * fit) + 1) * (Math.ceil(h * fit) + 1);
+    return rounded <= RASTER_MAX_AREA ? fit : fit * Math.sqrt(RASTER_MAX_AREA / rounded);
 }
 
 /**

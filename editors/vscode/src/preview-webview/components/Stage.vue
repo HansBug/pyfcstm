@@ -15,6 +15,7 @@ import {computePreviewFit} from '../layout';
 import type {PreviewWebviewState, SelectionRef, TextRange, PreviewElkNode, PreviewPayload} from '../types';
 import {
     expandSvgForExport,
+    RASTER_MAX_SIDE,
     rasterScaleWithinLimits,
     renderVectorPdf,
     type SvgExpander,
@@ -456,8 +457,19 @@ async function rasterizeSvg(svg: string, scale: number): Promise<{blob: Blob; wi
             svgBounds.value.height,
             scale,
         );
-        const width = Math.max(1, Math.ceil(svgBounds.value.width * fit));
-        const height = Math.max(1, Math.ceil(svgBounds.value.height * fit));
+        // Clamped after rounding, not just after scaling. `ceil(h * (CAP / h))`
+        // lands one pixel past CAP for about a tenth of integer heights, and the
+        // two ceils together can push the product past the area cap — which the
+        // browser enforces exactly, so the PNG is lost. The PDF page had the
+        // same hazard and fixes it the same way.
+        const width = Math.min(
+            RASTER_MAX_SIDE,
+            Math.max(1, Math.ceil(svgBounds.value.width * fit)),
+        );
+        const height = Math.min(
+            RASTER_MAX_SIDE,
+            Math.max(1, Math.ceil(svgBounds.value.height * fit)),
+        );
         const canvas = document.createElement('canvas');
         canvas.width = width;
         canvas.height = height;

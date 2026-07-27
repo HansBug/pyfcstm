@@ -50,8 +50,19 @@ window.addEventListener('fcstm-emit', (ev: Event) => {
     const detail = (ev as CustomEvent).detail as {type: string; payload: unknown};
     const api = bridge();
     if (detail.type === 'exportDiagram') {
-        const p = detail.payload as {svg: string; pngBase64: string; pdfBase64: string};
-        api.postMessage({type: 'exportDiagram', svg: p.svg, pngBase64: p.pngBase64, pdfBase64: p.pdfBase64});
+        // `failed` has to travel with the payload: the formats settle
+        // independently now, so dropping it left the host offering a format it
+        // never received and writing a zero-byte file with a success message.
+        const p = detail.payload as {
+            svg: string; pngBase64: string; pdfBase64: string; failed?: string[];
+        };
+        api.postMessage({
+            type: 'exportDiagram',
+            svg: p.svg,
+            pngBase64: p.pngBase64,
+            pdfBase64: p.pdfBase64,
+            failed: p.failed || [],
+        });
     } else if (detail.type === 'exportError') {
         api.postMessage({type: 'exportError', message: detail.payload as string});
     } else if (detail.type === 'copyDone') {

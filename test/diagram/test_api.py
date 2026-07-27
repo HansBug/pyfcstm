@@ -906,3 +906,46 @@ def test_detail_level_reaches_the_renderer_preset():
     normal = DiagramOptions().to_dict()
     for name in ("direction", "cjkLocale", "eventNameFormat", "maxLabelLength"):
         assert name in normal
+
+
+@pytest.mark.unittest
+def test_diagram_data_equality_agrees_with_its_hash():
+    """Equal objects must hash alike, and this value is identified by its bytes.
+
+    The generated comparison used Python's numeric rules, where ``1`` equals
+    ``1.0`` and ``True`` equals ``1``, while the hash came from the JSON text
+    where those differ. Equal snapshots therefore missed each other in a dict
+    and stacked up in a set.
+    """
+    root = {"kind": "diagram", "rootState": {"children": []}}
+    for left, right in ((1, 1.0), (True, 1), (0, -0.0)):
+        a = DiagramData(dict(root, probe=left))
+        b = DiagramData(dict(root, probe=right))
+        if a == b:
+            assert hash(a) == hash(b), (left, right)
+            assert len({a, b}) == 1, (left, right)
+            assert {a: "x"}.get(b) == "x", (left, right)
+        else:
+            # Distinct JSON bytes are a distinct content key, which is the
+            # contract this value advertises.
+            assert len({a, b}) == 2, (left, right)
+    same = DiagramData(dict(root, probe=1))
+    assert same == DiagramData(dict(root, probe=1))
+    assert hash(same) == hash(DiagramData(dict(root, probe=1)))
+    assert same != root
+
+
+@pytest.mark.unittest
+def test_diagram_data_rejects_numbers_json_cannot_represent():
+    """``to_json()`` promises JSON text, and no parser accepts NaN or infinity.
+
+    Python writes them as bare ``NaN`` / ``Infinity`` tokens, so a document
+    carrying them is rejected outright by the browser this data is built for.
+    """
+    root = {"kind": "diagram", "rootState": {"children": []}}
+    for bad in (float("nan"), float("inf"), float("-inf")):
+        with pytest.raises(ValueError, match="JSON numbers"):
+            DiagramData(dict(root, probe=bad))
+    # Ordinary numbers are unaffected, and the result really parses.
+    ok = DiagramData(dict(root, probe=1.5))
+    assert json.loads(ok.to_json())["probe"] == 1.5

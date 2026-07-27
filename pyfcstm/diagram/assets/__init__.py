@@ -15,6 +15,7 @@ The public resource contract is:
 * ``fonts/`` plus the tracked notice and license files - deterministic
   provenance resources.
 
-The package does not expose the future ``StateMachine.diagram`` API. That
-API belongs to the continuation Python surface described by PR #383.
+This package exposes no API of its own. :class:`pyfcstm.diagram.Diagram`,
+reached through :meth:`pyfcstm.model.StateMachine.diagram`, is what reads these
+resources; import from :mod:`pyfcstm.diagram` rather than from here.
 """

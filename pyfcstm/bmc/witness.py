@@ -76,6 +76,7 @@ from .ast import (
 from .binding import BoundAssumption
 from .domain import STATE_INIT_ID, STATE_TERMINATE_ID
 from .errors import BmcBuildError
+from .explanation import BmcInfeasibilityExplanation
 from .properties import BmcPropertyFormula, _lower_predicate
 from .query import EventAssumption
 from .relation import BmcCaseRelation
@@ -2273,6 +2274,48 @@ class BmcFeasibilityRefinementCheck(_PrettyPrintableMixin):
         }
 
 
+def _validate_explanation_agreement(
+    explanation: "BmcInfeasibilityExplanation",
+    infeasible_stage: Optional[str],
+    refinement_status: str,
+    refinement_reason: Optional[str],
+) -> None:
+    """Keep the aggregate telemetry and the published explanation in agreement.
+
+    The aggregate fields are a summary of the very same optional stage the
+    explanation describes.  Letting them drift apart would hand a reader two
+    contradictory answers about the same run.
+
+    :param explanation: Published infeasibility explanation.
+    :type explanation: pyfcstm.bmc.explanation.BmcInfeasibilityExplanation
+    :param infeasible_stage: Localized infeasible stage, or ``None``.
+    :type infeasible_stage: Optional[str]
+    :param refinement_status: Aggregate refinement status.
+    :type refinement_status: str
+    :param refinement_reason: Aggregate refinement reason, or ``None``.
+    :type refinement_reason: Optional[str]
+    :return: ``None``.
+    :rtype: None
+    :raises pyfcstm.bmc.errors.BmcBuildError: If no stage was localized, or if
+        the aggregate status or reason disagrees with the explanation.
+
+    Example::
+
+        >>> _validate_explanation_agreement(None, "assumptions", "x", None)
+        Traceback (most recent call last):
+        AttributeError: 'NoneType' object has no attribute 'status'
+    """
+    if infeasible_stage is None:
+        raise BmcBuildError("an explanation requires a localized infeasible stage.")
+    if refinement_status != explanation.status:
+        raise BmcBuildError(
+            "refinement_status %r must mirror the explanation status %r."
+            % (refinement_status, explanation.status)
+        )
+    if refinement_reason != explanation.reason:
+        raise BmcBuildError("refinement_reason must match the explanation reason.")
+
+
 @dataclass(frozen=True)
 class BmcFeasibilityResult(_PrettyPrintableMixin):
     """Structured cumulative feasibility evidence for a BMC solve.
@@ -2330,6 +2373,7 @@ class BmcFeasibilityResult(_PrettyPrintableMixin):
     refinement_status: str = "not_requested"
     refinement_reason: Optional[str] = None
     refinement_checks: Sequence[BmcFeasibilityRefinementCheck] = ()
+    explanation: Optional[BmcInfeasibilityExplanation] = None
 
     def __post_init__(self) -> None:
         checks = (self.kernel, self.initialization, self.assumptions)
@@ -2371,17 +2415,28 @@ class BmcFeasibilityResult(_PrettyPrintableMixin):
                 raise BmcBuildError(
                     "refinement_reason must be None for completed or unused refinement."
                 )
-        elif (
-            self.refinement_status in {"unknown", "timeout"}
-            and not self.refinement_reason
-        ):
+        elif not self.refinement_reason:
+            # partial/unknown/timeout all describe a degraded refinement, and a
+            # reader cannot act on a degradation without knowing its cause.
             raise BmcBuildError(
-                "Unknown/timeout refinement requires a non-empty refinement_reason."
+                "%s refinement requires a non-empty refinement_reason."
+                % self.refinement_status
             )
-        if (
+        if self.explanation is not None:
+            _validate_explanation_agreement(
+                self.explanation,
+                self.infeasible_stage,
+                self.refinement_status,
+                self.refinement_reason,
+            )
+        elif (
             self.infeasible_stage is not None
             and self.refinement_status != "not_requested"
         ):
+            # A localized stage without a published explanation keeps the
+            # original contract: nothing was refined, so nothing may claim it
+            # was.  Once an explanation exists the aggregate mirrors its status
+            # instead, which is checked above.
             raise BmcBuildError(
                 "localized infeasible stages require refinement_status=not_requested."
             )
@@ -2607,6 +2662,9 @@ class BmcFeasibilityResult(_PrettyPrintableMixin):
             "refinement_checks": [
                 item.to_canonical() for item in self.refinement_checks
             ],
+            "explanation": (
+                None if self.explanation is None else self.explanation.to_canonical()
+            ),
         }
 
 

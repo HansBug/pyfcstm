@@ -497,42 +497,50 @@ def _require_json_mapping(value: Any, label: str) -> Dict[str, Any]:
         {'frame': 0}
     """
 
-    def _check(entry: Any, where: str) -> None:
-        """Reject one value that could not survive a JSON round trip.
+    def _normalize(entry: Any, where: str) -> Any:
+        """Return one value in its canonical, detached, immutable form.
 
-        The walk is recursive because a nested mapping or list is just as
-        published as the top-level one: a non-string key or a non-finite number
-        two levels down breaks interchange exactly the same way.
+        The walk both validates and rebuilds.  Checking alone is not enough: a
+        nested mapping the caller still holds a reference to can be written to
+        after this frozen object is built, so the value that finally reaches
+        JSON is not the one that was validated.  A nested mapping that is not a
+        ``dict`` has the same problem in reverse -- it passes a ``Mapping``
+        check and then fails to serialize.
+
+        Sequences become tuples and mappings become read-only views, so nothing
+        published here can be reached through the caller's own reference.
 
         :param entry: Candidate value somewhere inside the mapping.
         :type entry: object
         :param where: Dotted path used in the error message.
         :type where: str
-        :return: ``None``.
-        :rtype: None
+        :return: The canonical form of ``entry``.
+        :rtype: object
         :raises TypeError: If a mapping key is not a string, or the value is of
             a type with no JSON counterpart.
         :raises ValueError: If a float is not finite.
         """
         if entry is None or isinstance(entry, (str, bool, int)):
-            return
+            return entry
         if isinstance(entry, float):
             # NaN and Infinity are not JSON numbers.  json.dumps emits them by
             # default and refuses them under allow_nan=False, so either way the
             # payload stops being interchangeable.
             if not math.isfinite(entry):
                 raise ValueError("%s must be a finite number, got %r." % (where, entry))
-            return
+            return entry
         if isinstance(entry, (list, tuple)):
-            for index, item in enumerate(entry):
-                _check(item, "%s[%d]" % (where, index))
-            return
+            return tuple(
+                _normalize(item, "%s[%d]" % (where, index))
+                for index, item in enumerate(entry)
+            )
         if isinstance(entry, Mapping):
+            normalized = {}
             for key, item in entry.items():
                 if not isinstance(key, str):
                     raise TypeError("%s keys must be strings, got %r." % (where, key))
-                _check(item, "%s[%r]" % (where, key))
-            return
+                normalized[key] = _normalize(item, "%s[%r]" % (where, key))
+            return MappingProxyType(normalized)
         raise TypeError("%s is not JSON-compatible, got %r." % (where, entry))
 
     if not isinstance(value, Mapping):
@@ -540,9 +548,38 @@ def _require_json_mapping(value: Any, label: str) -> Dict[str, Any]:
         # dict(), which loses the caller's data and disagrees with the JSON
         # contract that names this field an object.
         raise TypeError("%s must be a mapping, got %r." % (label, value))
-    mapping = dict(value)
-    _check(mapping, label)
-    return mapping
+    # The top level stays a plain dict because the caller wraps it; every level
+    # below it is already detached and read-only.
+    return {
+        key: value_
+        for key, value_ in dict(_normalize(value, label)).items()  # type: ignore[arg-type]
+    }
+
+
+def json_canonical(value: Any) -> Any:
+    """Convert a normalized metadata graph back to plain JSON containers.
+
+    :func:`_require_json_mapping` stores nested mappings as read-only views and
+    nested sequences as tuples so that a published value cannot be mutated
+    through the caller's reference.  Those types have no JSON counterpart, so
+    this restores ``dict`` and ``list`` on the way out.
+
+    :param value: Normalized metadata value.
+    :type value: object
+    :return: The same data using only JSON containers.
+    :rtype: object
+
+    Example::
+
+        >>> from types import MappingProxyType
+        >>> json_canonical({"a": MappingProxyType({"b": (1, 2)})})
+        {'a': {'b': [1, 2]}}
+    """
+    if isinstance(value, Mapping):
+        return {key: json_canonical(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [json_canonical(item) for item in value]
+    return value
 
 
 def _require_flag(value: Any, label: str) -> bool:
@@ -698,7 +735,7 @@ class BmcConstraintRef:
             "summary": self.summary,
             "frames": list(self.frames),
             "steps": list(self.steps),
-            "refs": dict(self.refs),
+            "refs": json_canonical(self.refs),
         }
 
 
@@ -818,7 +855,7 @@ class BmcCoreItem:
             "semantic_role": self.semantic_role,
             "source_excerpt": self.source_excerpt,
             "source_excerpt_truncated": self.source_excerpt_truncated,
-            "normalized_fact": dict(self.normalized_fact),
+            "normalized_fact": json_canonical(self.normalized_fact),
             "human_text": self.human_text,
             "editable": self.editable,
         }

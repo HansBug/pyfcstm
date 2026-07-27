@@ -7,6 +7,9 @@ consumers can read an explanation without loading the solver stack.
 
 from __future__ import annotations
 
+from collections import UserDict
+from types import MappingProxyType
+
 import json
 import subprocess
 import sys
@@ -325,6 +328,95 @@ def test_delivery_matrix_accepts_exactly_the_authored_rows(
     else:
         with pytest.raises(ValueError):
             BmcInfeasibilityExplanation(**kwargs)
+
+
+def test_published_metadata_is_detached_from_the_caller() -> None:
+    """A frozen object must not change when the caller's own dict changes.
+
+    Validating the mapping and then keeping a shallow copy of it means the value
+    that finally reaches JSON is not the value that was validated: the caller
+    still holds every nested mapping and can write to it afterwards.  Nothing
+    fails at construction time, so the corruption only surfaces when the whole
+    result is dumped, naming neither the field nor the object.
+    """
+    import json
+
+    refs_alias = {}
+    reference = BmcConstraintRef(
+        "g0",
+        "assumptions",
+        "assumption.frame",
+        _GENERATED,
+        "s",
+        refs={"nested": refs_alias},
+    )
+    fact_alias = {}
+    item = BmcCoreItem(
+        reference,
+        "assumption",
+        None,
+        False,
+        {"kind": "structural_constraint", "nested": fact_alias},
+        "frame assumption",
+        False,
+    )
+
+    refs_alias[1] = object()
+    fact_alias[2] = object()
+
+    assert 1 not in reference.refs["nested"]
+    assert 2 not in item.normalized_fact["nested"]
+    json.dumps(reference.to_canonical(), allow_nan=False)
+    json.dumps(item.to_canonical(), allow_nan=False)
+
+
+@pytest.mark.parametrize(
+    "refs",
+    [
+        {"nested": UserDict({"ok": 1})},
+        {"seq": [UserDict({"ok": 1})]},
+        {"seq": [{"deep": UserDict({"ok": 1})}]},
+        {"nested": MappingProxyType({"ok": 1})},
+    ],
+)
+def test_any_nested_mapping_becomes_json_serializable(refs) -> None:
+    """The public field accepts any ``Mapping``, so any of them must serialize.
+
+    A ``UserDict`` passes an ``isinstance(..., Mapping)`` check and then fails in
+    ``json.dumps``, which is the one place the failure is least attributable.
+    Rebuilding the graph during validation is what makes the declared type and
+    the canonical output agree.
+    """
+    import json
+
+    reference = BmcConstraintRef(
+        "g0", "assumptions", "assumption.frame", _GENERATED, "s", refs=refs
+    )
+    payload = json.dumps(reference.to_canonical(), allow_nan=False)
+
+    assert "ok" in payload
+    # Sequences come back as JSON arrays rather than the tuples used internally.
+    assert "(" not in payload
+
+
+def test_canonical_output_uses_only_json_containers() -> None:
+    """Read-only views and tuples have no JSON counterpart, so they convert."""
+    reference = BmcConstraintRef(
+        "g0",
+        "assumptions",
+        "assumption.frame",
+        _GENERATED,
+        "s",
+        refs={"nested": {"seq": [1, {"deep": 2}]}},
+    )
+
+    canonical = reference.to_canonical()["refs"]
+
+    assert canonical == {"nested": {"seq": [1, {"deep": 2}]}}
+    assert type(canonical) is dict
+    assert type(canonical["nested"]) is dict
+    assert type(canonical["nested"]["seq"]) is list
+    assert type(canonical["nested"]["seq"][1]) is dict
 
 
 def test_int_subclasses_are_canonicalized_to_plain_ints() -> None:

@@ -98,8 +98,13 @@ function readInitialDrawerHeight(): number | null {
     const raw = readStorage(STORAGE_KEY_DRAWER_HEIGHT);
     if (!raw) return null;
     const n = Number(raw);
-    if (!Number.isFinite(n)) return null;
-    return Math.max(DRAWER_MIN_HEIGHT, Math.round(n));
+    // Number(' ') is 0, so a blank entry has to be rejected here rather than by
+    // the !raw guard above.
+    if (!Number.isFinite(n) || n <= 0) return null;
+    // Clamped against this window, not just the floor: a height stored on a tall
+    // monitor would otherwise stay above the painted max-height, and the first
+    // drag in a short window would jump straight to the clamp.
+    return clampDrawerHeight(n);
 }
 const drawerHeight = ref<number | null>(readInitialDrawerHeight());
 const drawerElement = ref<HTMLElement | null>(null);
@@ -502,6 +507,7 @@ const naiveTheme = computed(() => effectiveMode.value === 'dark' ? darkTheme : n
                         <button
                             type="button"
                             class="fcstm-bottom-drawer__toggle"
+                            data-fcstm-action="toggle-details"
                             :aria-pressed="!drawerCollapsed"
                             :title="drawerCollapsed ? 'Expand details' : 'Collapse details'"
                             @click.stop="toggleDrawer"

@@ -78,9 +78,20 @@ window.addEventListener('fcstm-emit', event => {
  * The component library renders its CSS on first mount instead of shipping a
  * static stylesheet, so those elements are not covered by the build-time hash
  * in `style-src`. Without the nonce the policy rejects them and the controls
- * render unstyled — transparent popups, no shadow, no width constraint. The
- * host supplies the nonce through the bootstrap script, which is itself hash
- * pinned, so nothing outside the bundle can claim it.
+ * render unstyled — transparent popups, no shadow, no width constraint.
+ *
+ * The nonce is public, not secret: it appears in the policy, in the bootstrap
+ * script, and on `window`, and it is a pure function of the document's own
+ * bytes. Hash-pinning the bootstrap prevents tampering, not reading. So the
+ * accepted trade-off is that `style-src` no longer makes an external
+ * stylesheet load structurally impossible the way a hash-only list did — a
+ * nonce matches `<link rel=stylesheet>` from any origin. That is only
+ * reachable through a markup-injection primitive, and the two sinks that
+ * reach this document escape everything: the highlighted source is escaped
+ * per fragment before it becomes a text node, and the rendered SVG routes
+ * every model string through the renderer's XML escaping. Keep both
+ * invariants when touching either path; the durable fix is to precompute the
+ * runtime stylesheets at build time so the nonce can be dropped entirely.
  */
 function adoptStyleNonce(): void {
     const nonce = (window as unknown as {__FCSTM_STYLE_NONCE__?: string}).__FCSTM_STYLE_NONCE__;
@@ -163,7 +174,10 @@ async function loadEmbeddedFonts(): Promise<{missing: string[]; reasons: string[
     probes.forEach(probe => probe.remove());
     return {
         missing: requiredFaces
-            .filter(([family, weight]) => !document.fonts.check(`${weight} 12px "${family}"`))
+            .filter(([family, weight]) => !document.fonts.check(
+                `${weight} 12px "${family}"`,
+                family.startsWith('Noto Sans') ? '中日한' : 'ABC123',
+            ))
             .map(([family, weight]) => `${family}/${weight}`),
         reasons: attempts
             .filter((item): item is PromiseRejectedResult => item.status === 'rejected')

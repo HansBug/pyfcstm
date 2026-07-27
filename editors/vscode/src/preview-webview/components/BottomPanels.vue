@@ -59,8 +59,10 @@ defineProps<{
 .fcstm-bottom {
     display: grid;
     /* Two cards sit side by side; a lone card spans the row instead of
-       leaving the other half of the shell empty. */
-    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+       leaving the other half of the shell empty. The min() keeps the track
+       from flooring at 320px in a narrower shell, which would push the cards
+       past the right edge and add a horizontal scrollbar. */
+    grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
     gap: 10px;
 }
 .fcstm-bottom__card {

@@ -539,7 +539,7 @@ export class FcstmPreviewController implements vscode.Disposable {
      * first avoids that entire class of mismatch.
      *
      * PDF is a single-page, diagram-sized PDF whose content is a
-     * 4× raster of the current SVG — good enough for paper figure
+     * Vector rendering of the current SVG — text stays selectable and scalable
      * insertion without the reliability problems of in-browser
      * SVG→vector-PDF conversion. The payload arrives as base64.
      */
@@ -548,7 +548,7 @@ export class FcstmPreviewController implements vscode.Disposable {
             [
                 {label: 'SVG', description: 'Vector image', format: 'svg' as const},
                 {label: 'PNG', description: '2× raster image', format: 'png' as const},
-                {label: 'PDF', description: 'Single-page PDF, 4× raster (paper-ready)', format: 'pdf' as const},
+                {label: 'PDF', description: 'Single-page vector PDF (paper-ready)', format: 'pdf' as const},
             ],
             {placeHolder: 'Export diagram as…', matchOnDescription: true}
         );

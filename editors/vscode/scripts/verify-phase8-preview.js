@@ -114,7 +114,7 @@ const vscode = {
                 return channel;
             }
             return Object.assign(channel, {
-                logLevel: 3,
+                logLevel: 3, // vscode.LogLevel.Info
                 onDidChangeLogLevel() { return createDisposable(); },
                 trace() {}, debug() {}, info() {}, warn() {}, error() {},
             });

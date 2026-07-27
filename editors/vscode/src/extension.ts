@@ -97,11 +97,14 @@ export function activate(context: vscode.ExtensionContext): void {
     // disposing ``context.subscriptions`` or calling ``deactivate``, which
     // would take the server-independent preview feature down with it.
     client.start().catch((err: unknown) => {
-        // The client already reported this to the output channel with a forced
-        // reveal before rejecting, so nothing is dropped silently. This handler
-        // only keeps the rejection from going unhandled, and deliberately does
-        // not write to the channel: the rejection can land after ``deactivate``
-        // has disposed it, and logging to a disposed channel throws.
+        // On every rejection path reachable here the client has already written
+        // the failure to the output channel with a forced reveal, so nothing is
+        // dropped silently. This handler only keeps the rejection from going
+        // unhandled, and deliberately does not write to the channel itself: the
+        // rejection can land after ``deactivate`` disposed it, and every log
+        // method on a disposed channel throws. In that same window the client's
+        // own log throws too, so ``err`` there is the channel error rather than
+        // the startup cause -- one more reason to keep this handler trivial.
         console.error('FCSTM language server failed to start:', err);
     });
 }
@@ -133,13 +136,21 @@ export async function deactivate(): Promise<void> {
         // ``shutdown()``, and that runs on the rejection path too. Guarding this
         // call behind ``isRunning()`` would look tidier and would leak the child.
         //
-        // It rejects with a bare ``Error`` whenever the client is not in the
-        // running state -- the server could not be forked, the initialize
-        // handshake failed, or the window closed while the handshake was still
-        // in flight. The client throws no dedicated subclass, so ``Error`` is
-        // the narrowest class available here; anything else is unexpected and
-        // propagates. Reaping is best effort: the transport allows itself two
-        // seconds, inside VSCode's deactivation budget.
+        // Not every non-running state rejects. ``stopped`` and ``initial``
+        // return early and resolve, and ``initial`` is what the ``Restart``
+        // close action leaves behind. What does reject is ``starting`` and
+        // ``startFailed`` -- the server could not be forked, the initialize
+        // handshake failed, or the window closed mid-handshake -- plus a
+        // ``stopping`` client with no stop promise, which rejects with a
+        // different message. The client throws no dedicated subclass, so
+        // ``Error`` is the narrowest class available here; anything else is
+        // unexpected and propagates.
+        //
+        // Reaping is best effort. The transport gives the child two seconds,
+        // but the extension host usually exits first, so the real guarantee is
+        // the server's own parent-liveness watchdog: it is armed at startup
+        // from ``--clientProcessId`` and exits within about three seconds of
+        // the host going away.
         if (!(err instanceof Error)) {
             throw err;
         }

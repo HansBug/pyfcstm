@@ -447,11 +447,16 @@ def test_deletion_checks_must_have_shown_each_member_necessary() -> None:
     assert len(accepted.explanation.core.items) == 3
 
 
-def test_no_attempted_check_means_no_explanation() -> None:
-    """A deadline that refused every attempt leaves nothing to explain.
+def test_a_budget_that_started_nothing_still_reports_the_timeout() -> None:
+    """A refused request is reported as a timeout, not as never having happened.
 
-    Publishing a not-started attempt as a finished check would overstate the
-    solver work the budget actually allowed.
+    The frozen timeout boundary pins this case exactly: when the budget is gone
+    before the first probe, the aggregate says ``timeout`` and the explanation
+    says ``achieved_mode=none`` with no core.  Saying ``not_requested`` instead
+    would tell a caller who did ask that they never asked.
+
+    The ledger stays empty because nothing ran; an attempt the deadline refused
+    is not evidence of solver work.
     """
     from pyfcstm.bmc import build_bmc_core_formula, compile_bmc_property
     from pyfcstm.bmc.engine import BmcEngine
@@ -475,10 +480,39 @@ def test_no_attempted_check_means_no_explanation() -> None:
     spent.deadline = spent.deadline - 10.0
     attached = _attach_explanation(baseline, formula.core, spent, "formal")
 
-    assert attached is baseline
-    assert attached.explanation is None
-    assert attached.refinement_status == "not_requested"
+    assert attached.refinement_status == "timeout"
     assert attached.refinement_checks == ()
+    assert attached.explanation is not None
+    assert attached.explanation.achieved_mode == "none"
+    assert attached.explanation.status == "timeout"
+    assert attached.explanation.core is None
+    assert attached.explanation.reason
+    assert attached.infeasible_stage == baseline.infeasible_stage
+
+
+def test_asking_for_no_explanation_still_reports_not_requested() -> None:
+    """``not_requested`` stays reserved for a caller who did not ask."""
+    from pyfcstm.bmc import build_bmc_core_formula, compile_bmc_property
+    from pyfcstm.bmc.engine import BmcEngine
+    from pyfcstm.bmc.witness import solve_bmc_property
+    from pyfcstm.model import load_state_machine_from_text
+
+    machine = load_state_machine_from_text(
+        "def int x = 0;\n"
+        "state Root { event Go; state A; state B; [*] -> A; A -> B :: Go; }"
+    )
+    context = BmcEngine(machine).prepare(
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
+        'check reach <= 2: active("Root.B");'
+    )
+    feasibility = solve_bmc_property(
+        compile_bmc_property(build_bmc_core_formula(context))
+    ).feasibility
+
+    assert feasibility.infeasible_stage is not None
+    assert feasibility.refinement_status == "not_requested"
+    assert feasibility.explanation is None
 
 
 def test_a_partially_minimized_core_needs_a_finished_deletion_check() -> None:
@@ -603,3 +637,57 @@ def test_a_feasible_scenario_still_reports_no_refinement_need() -> None:
 
     assert result.refinement_status == "not_needed"
     assert result.explanation is None
+
+
+def _localized_baseline():
+    """Return a real localized feasibility result plus its core formula."""
+    from pyfcstm.bmc import build_bmc_core_formula, compile_bmc_property
+    from pyfcstm.bmc.engine import BmcEngine
+    from pyfcstm.bmc.witness import solve_bmc_property
+    from pyfcstm.model import load_state_machine_from_text
+
+    machine = load_state_machine_from_text(
+        "def int x = 0;\n"
+        "state Root { event Go; state A; state B; [*] -> A; A -> B :: Go; }"
+    )
+    context = BmcEngine(machine).prepare(
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
+        'check reach <= 2: active("Root.B");'
+    )
+    formula = compile_bmc_property(build_bmc_core_formula(context))
+    return solve_bmc_property(formula).feasibility, formula.core
+
+
+def test_a_classification_without_a_core_reaches_the_public_result() -> None:
+    """The frozen table's "classification kept, core lost" row is reachable.
+
+    Only the deadline is controlled here; the classification, the extraction
+    and the aggregation are the production ones.  Without an end-to-end case
+    this row of the table would rest on unit tests of the data layer alone.
+    """
+    from pyfcstm.bmc.witness import _attach_explanation
+
+    baseline, core = _localized_baseline()
+
+    class ClassifyOnlyBudget:
+        """Fund the classification probes, then report the deadline spent."""
+
+        deadline = 1.0
+
+        def __init__(self):
+            self.calls = 0
+
+        def remaining_ms(self):
+            self.calls += 1
+            return 60_000 if self.calls <= 2 else None
+
+    attached = _attach_explanation(baseline, core, ClassifyOnlyBudget(), "formal")
+    explanation = attached.explanation
+
+    assert explanation.achieved_mode == "none"
+    assert explanation.status == "partial"
+    assert explanation.classification == "assumptions_self_conflict"
+    assert explanation.core is None
+    assert attached.refinement_status == "partial"
+    assert attached.refinement_checks

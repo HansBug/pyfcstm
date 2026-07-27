@@ -1409,3 +1409,48 @@ def test_any_refusal_while_publishing_keeps_the_verdict_and_the_ledger(
     assert explanation.status == "partial"
     assert explanation.classification == "assumptions_self_conflict"
     assert "core mapping failed" in explanation.reason
+
+
+def test_a_generated_member_says_it_has_no_authored_line() -> None:
+    """A generated constraint explains its missing excerpt instead of hiding it.
+
+    A published core mixes authored entries that quote real lines with
+    generated ones that cannot.  Reading "from generated" beside three quoted
+    entries looks like the tool failed to find this one's source, so the
+    sentence states outright that there is none.
+    """
+    core = _core_formula(
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") == 7; '
+        'check reach <= 2: active("Root.B");'
+    )
+    generated = next(
+        group for group in core._tracked_groups if group.source_ref.kind == "generated"
+    )
+
+    item = build_core_item(generated)
+
+    assert item.source_excerpt is None
+    assert item.editable is False
+    assert "no single authored line" in item.human_text
+    assert "generated from the model" in item.human_text
+
+
+def test_an_authored_member_names_its_file() -> None:
+    """An authored constraint keeps pointing at the document it came from."""
+    machine = load_state_machine_from_text(_MODEL)
+    context = BmcEngine(machine).prepare(
+        'init state("Root.A") where x == 0;\n'
+        'assume at 0: var("x") == 1;\n'
+        'check reach <= 2: active("Root.B");\n',
+        query_source_path="q.fbmcq",
+    )
+    core = build_bmc_core_formula(context)
+    authored = next(
+        group for group in core._tracked_groups if group.source_ref.kind == "fbmcq"
+    )
+
+    item = build_core_item(authored, context._source_registry)
+
+    assert "q.fbmcq" in item.human_text
+    assert "no single authored line" not in item.human_text

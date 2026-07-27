@@ -827,12 +827,22 @@ def build_core_item(
     truncated = excerpt is not None and len(excerpt) > MAX_SOURCE_EXCERPT_CHARS
     if truncated:
         excerpt = excerpt[:MAX_SOURCE_EXCERPT_CHARS]
-    location = group.source_ref.path or group.source_ref.kind
-    human_text = "%s constraint %s from %s" % (
-        _semantic_role(group.category).replace("_", " "),
-        group.stable_id,
-        location,
-    )
+    role = _semantic_role(group.category)
+    if group.source_ref.kind == "generated":
+        # Saying "from generated" beside three entries that quote real lines
+        # reads like the tool failed to find this one's source.  It has none:
+        # the encoding produced it from the model rather than from a line the
+        # author wrote.
+        human_text = (
+            "%s constraint %s, generated from the model with no single "
+            "authored line" % (role.replace("_", " "), group.stable_id)
+        )
+    else:
+        human_text = "%s constraint %s from %s" % (
+            role.replace("_", " "),
+            group.stable_id,
+            group.source_ref.path or group.source_ref.kind,
+        )
     return BmcCoreItem(
         constraint=reference,
         semantic_role=_semantic_role(group.category),

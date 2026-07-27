@@ -1027,7 +1027,24 @@
           "if": {
             "properties": {
               "explanation": {
-                "type": "object"
+                "type": "object",
+                "not": {
+                  "properties": {
+                    "achieved_mode": {
+                      "const": "none"
+                    },
+                    "status": {
+                      "enum": [
+                        "unknown",
+                        "timeout"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "achieved_mode",
+                    "status"
+                  ]
+                }
               }
             },
             "required": [
@@ -1040,7 +1057,8 @@
                 "minItems": 1
               }
             }
-          }
+          },
+          "$comment": "An explanation names the work behind it, except when the budget refused to start anything: the frozen timeout boundary still requires that be reported, with an empty ledger."
         },
         {
           "if": {
@@ -2256,7 +2274,24 @@
           "if": {
             "properties": {
               "explanation": {
-                "type": "object"
+                "type": "object",
+                "not": {
+                  "properties": {
+                    "achieved_mode": {
+                      "const": "none"
+                    },
+                    "status": {
+                      "enum": [
+                        "unknown",
+                        "timeout"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "achieved_mode",
+                    "status"
+                  ]
+                }
               }
             },
             "required": [
@@ -2269,7 +2304,8 @@
                 "minItems": 1
               }
             }
-          }
+          },
+          "$comment": "An explanation names the work behind it, except when the budget refused to start anything: the frozen timeout boundary still requires that be reported, with an empty ledger."
         },
         {
           "if": {

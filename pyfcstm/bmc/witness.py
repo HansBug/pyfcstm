@@ -2344,7 +2344,14 @@ def _validate_explanation_agreement(
         raise BmcBuildError(
             "a kernel explanation must carry the kernel_conflict classification."
         )
-    if not refinement_checks:
+    if not refinement_checks and not (
+        explanation.achieved_mode == "none"
+        and explanation.status in ("unknown", "timeout")
+    ):
+        # An explanation normally has to name the work behind it.  The one
+        # exception is a request the budget refused to start at all: the frozen
+        # timeout boundary still wants that reported, and there is by definition
+        # no executed check to record.
         raise BmcBuildError(
             "an explanation requires at least one recorded refinement check."
         )
@@ -4857,11 +4864,12 @@ def _attach_explanation(
     # The published ledger lists checks that actually ran.  An attempt the
     # budget refused to start is not evidence of solver work, and reporting it
     # as a finished check would overstate what the deadline allowed.
+    #
+    # The explanation itself is still published when nothing could start: the
+    # frozen timeout boundary asks for refinement_status=timeout with
+    # achieved_mode=none in exactly that case, so reporting "no refinement was
+    # requested" would tell the caller their request never happened.
     executed = [record for record in outcome.checks if record.started]
-    if not executed:
-        # Nothing was attempted, so there is no optional stage to describe and
-        # the aggregate keeps saying no refinement was requested.
-        return feasibility
     return replace(
         feasibility,
         refinement_status=outcome.explanation.status,

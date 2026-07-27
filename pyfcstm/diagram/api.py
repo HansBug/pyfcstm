@@ -1863,6 +1863,16 @@ class Diagram:
         :raises OSError: If ``output`` is given and cannot be written, for
             example a missing parent directory or a read-only destination.
         """
+        # Checked before anything is built, not after. Options and view state
+        # are fixed when the snapshot is built, so every call produces the same
+        # document; deciding that at the end still paid for reading the viewer
+        # assets, serialising the state, deriving the nonce and hashing three
+        # multi-megabyte scripts, which left a repeat call only about a tenth
+        # cheaper than the first.
+        if self._html_document is not None:
+            if output is not None:
+                _atomic_write_text(output, self._html_document)
+            return self._html_document
         source = self._source
         source_map = self._source_map
         line_to_id = self._source_line_map
@@ -1972,10 +1982,9 @@ class Diagram:
             ),
             style_nonce,
         )
-        # A single slot, not a content-addressed map: options and view state are
-        # fixed when the snapshot is built, so every call produces the same
-        # document and the old key was a hash of the very bytes it guarded —
-        # which also meant joining a second ~30 MB copy just to compute it.
+        # A single slot, not a content-addressed map: the old key was a hash of
+        # the very bytes it guarded, which meant joining a second ~30 MB copy
+        # just to compute it.
         document = self._html_document
         if document is None:
             document = (

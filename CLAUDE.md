@@ -303,6 +303,9 @@ pyfcstm simulate -i input.fcstm -e "cycle; cycle Start; current"     # Batch mod
 pyfcstm simulate -i input.fcstm -e "init System.Active counter=10; cycle 5"  # Hot start batch
 pyfcstm bmc -i input.fcstm -q property.fbmcq                       # Human BMC report
 pyfcstm bmc -i input.fcstm -q property.fbmcq --json -o result.json # Stable JSON result
+pyfcstm diagram -i input.fcstm                                     # Portable JSON on stdout
+pyfcstm diagram -i input.fcstm -o viewer.html                      # Self-contained HTML viewer
+pyfcstm diagram -i input.fcstm --open                              # Viewer in an app window
 
 # Interactive hot start:
 # > init System.Active counter=10 flag=1
@@ -493,10 +496,25 @@ Mandatory completion rule for built-in template work:
 - Requires every SAT model to decode into a public macro-step trace and pass `SimulationRuntime` replay before the CLI reports a trusted verdict
 - Keeps bounded conclusions explicit: SAT/UNSAT describe the solver objective, while `property_satisfied` / `outcome` describe whether the user property holds within the requested bound
 
+**Diagram Views** ([pyfcstm/diagram/](pyfcstm/diagram/))
+
+- `StateMachine.diagram()` returns a `Diagram`: an immutable snapshot detached from the model, so later edits to the
+  model cannot change what a saved view shows
+- `to_dict()` / `to_json()` give portable data; `to_html()` gives a self-contained ~29 MB viewer with the jsfcstm
+  renderer, ELK layout, resvg WASM rasteriser and CJK fonts embedded, under a strict inline CSP and no network access
+- `with_options()` / `with_view_state()` return new snapshots rather than mutating; `show()` opens the viewer in a
+  Chromium-family app window
+- Runtime assets under [pyfcstm/diagram/assets/](pyfcstm/diagram/assets/) are build products, not tracked sources.
+  `make build_assets` produces them and `make unittest` depends on it, in the same way `make tpl` produces the packaged
+  template assets
+- The gates are `make diagram_assets_check`, `diagram_csp_check`, `diagram_contract_check`, `diagram_browser_check`
+  and `diagram_docstring_check`; each one must be able to fail, so mutation-test a gate before trusting it
+
 **Entry Points** ([pyfcstm/entry/](pyfcstm/entry/))
 
 - [cli.py](pyfcstm/entry/cli.py): Click-based CLI; `pyfcstmcli()` registered as console script
 - [plantuml.py](pyfcstm/entry/plantuml.py): PlantUML diagram generation from state machine models
+- [diagram.py](pyfcstm/entry/diagram.py): `pyfcstm diagram` — portable JSON or a self-contained HTML viewer
 - [generate.py](pyfcstm/entry/generate.py): Orchestrates parsing DSL, building model, and rendering with either `--template-dir` or built-in `--template`
 - [dispatch.py](pyfcstm/entry/dispatch.py): Command dispatching logic for CLI subcommands
 - [simulate/](pyfcstm/entry/simulate/): Interactive simulation REPL (sub-package) with

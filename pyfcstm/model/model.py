@@ -100,13 +100,17 @@ def _node_span(node) -> Optional[Span]:
     return getattr(node, "_span", None)
 
 
-def _span_key(span: Optional[Span]) -> Optional[Tuple[int, int, Optional[int], Optional[int]]]:
+def _span_key(
+    span: Optional[Span],
+) -> Optional[Tuple[int, int, Optional[int], Optional[int]]]:
     if span is None:
         return None
     return (span.line, span.column, span.end_line, span.end_column)
 
 
-def _collect_ast_source_metadata(node: Any, spans: Dict[Any, str], documents: Dict[str, str]) -> None:
+def _collect_ast_source_metadata(
+    node: Any, spans: Dict[Any, str], documents: Dict[str, str]
+) -> None:
     if is_dataclass(node):
         source_path = getattr(node, "_source_path", None)
         source_text = getattr(node, "_source_text", None)
@@ -126,36 +130,58 @@ def _collect_ast_source_metadata(node: Any, spans: Dict[Any, str], documents: Di
             _collect_ast_source_metadata(item, spans, documents)
 
 
-def _attach_model_source_metadata(machine: "StateMachine", dnode: dsl_nodes.StateMachineDSLProgram) -> None:
+def _attach_model_source_metadata(
+    machine: "StateMachine", dnode: dsl_nodes.StateMachineDSLProgram
+) -> None:
     documents: Dict[str, str] = {}
     all_spans: Dict[Any, str] = {}
     _collect_ast_source_metadata(dnode, all_spans, documents)
 
     def attach(value: Any, source_path: Optional[str] = None) -> None:
-        source_path = source_path or all_spans.get(_span_key(getattr(value, "_span", None)))
+        source_path = source_path or all_spans.get(
+            _span_key(getattr(value, "_span", None))
+        )
         if source_path is not None:
             setattr(value, "_source_path", source_path)
 
     for definition in machine.defines.values():
         attach(definition)
+
     def pair_states(ast_state: Any, model_state: "State") -> None:
         state_source = getattr(ast_state, "_source_path", None)
         attach(model_state, state_source)
         transition_sources = {
-            _span_key(getattr(item, "_span", None)): getattr(item, "_source_path", state_source)
-            for item in [*getattr(ast_state, "transitions", ()), *getattr(ast_state, "force_transitions", ())]
+            _span_key(getattr(item, "_span", None)): getattr(
+                item, "_source_path", state_source
+            )
+            for item in [
+                *getattr(ast_state, "transitions", ()),
+                *getattr(ast_state, "force_transitions", ()),
+            ]
         }
         for transition in model_state.transitions:
-            attach(transition, transition_sources.get(_span_key(getattr(transition, "_span", None)), state_source))
+            attach(
+                transition,
+                transition_sources.get(
+                    _span_key(getattr(transition, "_span", None)), state_source
+                ),
+            )
             for effect in transition.effects:
                 attach(effect, state_source)
         for event in model_state.events.values():
             attach(event, state_source)
-        for action in [*model_state.on_enters, *model_state.on_durings, *model_state.on_exits, *model_state.on_during_aspects]:
+        for action in [
+            *model_state.on_enters,
+            *model_state.on_durings,
+            *model_state.on_exits,
+            *model_state.on_during_aspects,
+        ]:
             attach(action, state_source)
             for operation in getattr(action, "operations", ()):
                 attach(operation, state_source)
-        ast_children = {child.name: child for child in getattr(ast_state, "substates", ())}
+        ast_children = {
+            child.name: child for child in getattr(ast_state, "substates", ())
+        }
         for child in model_state.substates.values():
             ast_child = ast_children.get(child.name)
             if ast_child is not None:
@@ -1141,7 +1167,7 @@ class State(AstExportable, PlantUMLExportable):
     extra_name: Optional[str] = None
     is_pseudo: bool = False
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
-    is_combo_relay: bool = field(default=False, compare=False)
+    is_combo_relay: bool = False
 
     def __post_init__(self) -> None:
         """
@@ -1762,10 +1788,7 @@ class State(AstExportable, PlantUMLExportable):
             is_pseudo=bool(self.is_pseudo),
         )
         for substate, substate_node in zip(self.substates.values(), substate_nodes):
-            if (
-                substate.is_pseudo
-                and substate.is_combo_relay
-            ):
+            if substate.is_pseudo and substate.is_combo_relay:
                 _mark_generated_combo_pseudo_node(substate_node, node)
         return node
 
@@ -2321,7 +2344,9 @@ class StateMachine(AstExportable, PlantUMLExportable):
     forced_transitions: Tuple[Dict[str, object], ...] = field(default_factory=tuple)
     source_text: Optional[str] = field(default=None, compare=False, repr=False)
     source_path: Optional[str] = field(default=None, compare=False, repr=False)
-    _source_documents: Dict[str, str] = field(default_factory=dict, compare=False, repr=False)
+    _source_documents: Dict[str, str] = field(
+        default_factory=dict, compare=False, repr=False
+    )
 
     def to_ast_node(self) -> dsl_nodes.StateMachineDSLProgram:
         """
@@ -2475,7 +2500,9 @@ class StateMachine(AstExportable, PlantUMLExportable):
             raise TypeError("provide options or keyword option fields, not both")
         if option_fields:
             options = option_fields
-        return Diagram(self, options=options, view_state=view_state, source_text=source_text)
+        return Diagram(
+            self, options=options, view_state=view_state, source_text=source_text
+        )
 
     def show(
         self,
@@ -2520,9 +2547,7 @@ class StateMachine(AstExportable, PlantUMLExportable):
             view_state=view_state,
             source_text=source_text,
             **option_fields,
-        ).show(
-            output, open_window=open_window, window_size=window_size
-        )
+        ).show(output, open_window=open_window, window_size=window_size)
 
     def resolve_event(
         self,

@@ -61,12 +61,23 @@ let lastLaidOut: PreviewElkNode | null = null;
 let lastLaidOutOptions: PreviewPayload['options'] | null = null;
 let lastLaidOutSourceRef: unknown = null;
 
+// Classes that only a defect in this code produces. Every standard error type
+// derives from Error, so an `instanceof Error` guard is a bare catch: it turned
+// a renderer bug into "Layout failed: x is not a function", blaming the user's
+// model for a mistake of ours. These are re-raised so the host still sees them.
+const RENDERER_BUG_TYPES = [TypeError, ReferenceError, RangeError, SyntaxError, EvalError, URIError];
+
+/**
+ * Message for a failure this component is expected to recover from.
+ *
+ * DOMException covers the documented failure modes of DOMParser, the canvas,
+ * and the Clipboard API; plain Error covers ELK, svg2pdf, and the guards this
+ * component throws itself. Anything else propagates.
+ */
 function expectedErrorMessage(error: unknown): string {
-    // Error: ELK/layout, SVG export, and Clipboard APIs report ordinary
-    // JavaScript failures. DOMException: browser DOMParser and clipboard
-    // implementations use this class for their documented failure modes.
-    if (error instanceof Error) return error.message;
+    if (RENDERER_BUG_TYPES.some(type => error instanceof type)) throw error;
     if (typeof DOMException !== 'undefined' && error instanceof DOMException) return error.message;
+    if (error instanceof Error) return error.message;
     throw error;
 }
 
@@ -199,8 +210,9 @@ async function relayout() {
             fitToView();
         }
     } catch (err) {
-        // Error/DOMException are the expected failures from ELK and SVG DOM
-        // operations; unexpected thrown values must remain visible to the host.
+        // ELK and the SVG DOM report layout problems as Error/DOMException;
+        // a TypeError here would be our bug, so the helper re-raises it rather
+        // than presenting it as a problem with the model.
         const message = expectedErrorMessage(err);
         isEmpty.value = true;
         emptyTitle.value = 'Layout failed';
@@ -513,8 +525,9 @@ async function onExportEvt() {
             payload: {svg: expanded, pngBase64, pdfBase64},
         }}));
     } catch (err) {
-        // Error/DOMException are the expected failures from canvas, DOMParser,
-        // svg2pdf.js, or the browser's WebAssembly export path.
+        // Canvas, DOMParser, svg2pdf.js, and the WebAssembly export path report
+        // their documented failures as Error/DOMException; renderer defects are
+        // re-raised by the helper instead of surfacing as an export error.
         window.dispatchEvent(new CustomEvent('fcstm-emit', {detail: {
             type: 'exportError',
             payload: expectedErrorMessage(err),
@@ -577,7 +590,8 @@ async function copySvgToClipboard() {
         }
         throw new Error('clipboard API not available');
     } catch (err) {
-        // Error/DOMException are the expected failures from the clipboard API.
+        // The clipboard API reports permission and format failures as
+        // DOMException; renderer defects are re-raised by the helper.
         notifyCopy('svg', expectedErrorMessage(err));
     }
 }
@@ -598,8 +612,9 @@ async function copyPngToClipboard() {
         }
         throw new Error('ClipboardItem not available');
     } catch (err) {
-        // Error/DOMException are the expected failures from canvas and the
-        // clipboard API; unknown values are re-raised by the helper.
+        // Canvas and the clipboard API report their documented failures as
+        // Error/DOMException; renderer defects and unknown thrown values are
+        // re-raised by the helper.
         notifyCopy('png', expectedErrorMessage(err));
     }
 }

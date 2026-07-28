@@ -988,7 +988,27 @@ def _apply_target_mode(
         # preserve. Other stat failures surface from _validate_write_target,
         # which runs first and re-raises them from its own is_dir() call.
         pass
-    os.chmod(str(temporary_path), _umask_default_mode(temporary_path.parent))
+    try:
+        default = _umask_default_mode(temporary_path.parent)
+    except OSError as probe_error:
+        # PermissionError/EROFS from a directory that will not accept a new
+        # file, EDQUOT/ENOSPC from an exhausted one, and the explicit raise
+        # below when every candidate name is taken. The same rule the probe's
+        # own cleanup follows: reading a number must
+        # not cost the caller their document. It is already written and one
+        # `os.replace` from being the target, and the probe exists only to
+        # widen the mode from the 0600 `NamedTemporaryFile` chose -- a quota,
+        # a read-only mount or a hostile neighbour taking every candidate name
+        # is not a reason to throw the work away. The file keeps that 0600,
+        # which is restrictive rather than wrong, and the reason is recorded.
+        _logger.warning(
+            "could not read the default file mode in %s, leaving %s as created: %s",
+            temporary_path.parent,
+            temporary_path.name,
+            probe_error,
+        )
+        return
+    os.chmod(str(temporary_path), default)
 
 
 # Collisions need a hostile neighbour guessing 64 bits; a handful of tries
@@ -1013,6 +1033,11 @@ def _umask_default_mode(directory: Path) -> int:
     :type directory: pathlib.Path
     :return: Permission bits, already masked.
     :rtype: int
+    :raises OSError: If a probe file cannot be created -- a directory that
+        refuses new files, an exhausted filesystem, or every candidate name
+        taken. Callers that only want to widen a mode should treat this as
+        advisory; :func:`_apply_target_mode` logs it and keeps the mode the
+        file was created with rather than losing the document over it.
     """
     # One file, and one that is already doomed when it is created. Earlier
     # revisions reserved a name with `mkstemp`, observed a sibling, then
@@ -1028,7 +1053,13 @@ def _umask_default_mode(directory: Path) -> int:
     # served its purpose, while the descriptor stays valid -- so nothing is
     # left to clean up on either platform, and there is no second name-based
     # operation to redirect.
-    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_TEMPORARY", 0)
+    # Read once and branched on by value. Asking `getattr` for the flag but
+    # `hasattr` whether to clean up let the two disagree: a present-but-zero
+    # `O_TEMPORARY` requested no delete-on-close *and* skipped the unlink,
+    # leaving the probe in the caller's directory for good -- the exact leak
+    # this rewrite exists to remove.
+    self_deleting = getattr(os, "O_TEMPORARY", 0)
+    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | self_deleting
     for _ in range(_UMASK_PROBE_ATTEMPTS):
         candidate = os.path.join(
             str(directory), ".pyfcstm-umask-%s" % uuid.uuid4().hex[:16]
@@ -1040,20 +1071,30 @@ def _umask_default_mode(directory: Path) -> int:
             # which is the point; try another.
             continue
         try:
-            mode = os.fstat(descriptor).st_mode & 0o7777
-            if not hasattr(os, "O_TEMPORARY"):
+            # Before the `fstat`, not after. The descriptor stays valid once
+            # the name is gone, so nothing is lost by removing it first -- and
+            # an `fstat` failure used to skip the unlink entirely and leave the
+            # probe behind. The only remaining window is between `os.open`
+            # returning and this `try`, which is the ordinary shape of resource
+            # acquisition in Python and needs an interrupt landing between two
+            # adjacent statements.
+            if not self_deleting:
                 try:
                     os.unlink(candidate)
                 except OSError as cleanup_error:
-                    # Reading a number must not fail the caller's write. The
-                    # descriptor still closes below, and the leftover is named
-                    # so it can be found.
+                    # PermissionError: an indexer or scanner holding the handle,
+                    # or a directory that denies unlink. EROFS/EDQUOT/ENOSPC
+                    # arrive as OSError from the same call on a read-only or
+                    # exhausted filesystem. Reading a number must not fail the
+                    # caller's write, so none of them propagate; the descriptor
+                    # still closes below, and the leftover is named so it can be
+                    # found.
                     _logger.warning(
                         "could not remove the probe file %s: %s",
                         candidate,
                         cleanup_error,
                     )
-            return mode
+            return os.fstat(descriptor).st_mode & 0o7777
         finally:
             os.close(descriptor)
     raise OSError(

@@ -1,7 +1,8 @@
 """Check the ordinary standalone HTML CSP and embedded-resource contract."""
 
 import argparse
-import ast
+import contextlib
+import io
 import base64
 import hashlib
 from pathlib import Path
@@ -158,6 +159,91 @@ _STYLE_SELF_CHECK = (
 )
 
 
+def _check_flag_paths() -> List[str]:
+    """
+    Drive ``main()`` with a policy that must fail, once per flag combination.
+
+    :return: Descriptions of the combinations that did not fail.
+    :rtype: list[str]
+    """
+    style = "body{color:red}"
+    # No hash, no nonce, and `'unsafe-inline'` on top: nothing about this
+    # `style-src` is acceptable to any of the three combinations below.
+    broken = (
+        "default-src 'none'; style-src 'unsafe-inline'; style-src-attr 'none'; "
+        "script-src-attr 'none'"
+    )
+    html = (
+        '<meta http-equiv="Content-Security-Policy" content="%s">'
+        "<style>%s</style>" % (broken, style)
+    )
+
+    digest = base64.b64encode(hashlib.sha256(style.encode("utf-8")).digest()).decode(
+        "ascii"
+    )
+    hash_only = (
+        '<meta http-equiv="Content-Security-Policy" content="%s">'
+        "<style>%s</style>"
+        % (
+            "default-src 'none'; style-src 'sha256-%s'; style-src-attr 'none'; "
+            "script-src-attr 'none'" % digest,
+            style,
+        )
+    )
+    current = {"html": html}
+
+    class _Fake:
+        def to_html(self):
+            return current["html"]
+
+    # This module's own global, not the one on `diagram_contract_support`.
+    # `from ... import sample_diagram` binds the function here at import time,
+    # so patching the source module leaves `main()` using the real document --
+    # and the injection reports nothing while appearing to work.
+    real = globals()["sample_diagram"]
+    saved_argv = sys.argv
+    problems = []
+    try:
+        globals()["sample_diagram"] = lambda **_kw: _Fake()
+        both = ["--require-style-hashes", "--require-style-nonce"]
+        cases = (
+            # (flags, document, must fail, what accepting/rejecting it means)
+            (["--require-style-hashes"], html, True, "no hash and no nonce"),
+            (["--require-style-nonce"], html, True, "no hash and no nonce"),
+            (both, html, True, "no hash and no nonce"),
+            # Hash-only is a legitimate policy, and a stronger one. This pair is
+            # the only thing that can tell whether the nonce flag reaches the
+            # checker: with the argument hard-wired to True the first of these
+            # starts failing, and with the guard weakened neither runs at all.
+            (["--require-style-hashes"], hash_only, False, "a hash-only policy"),
+            (["--require-style-nonce"], hash_only, True, "a hash-only policy"),
+        )
+        for flags, document, must_fail, description in cases:
+            current["html"] = document
+            sys.argv = ["check_diagram_csp.py"] + flags
+            # `main()` prints its own summary on success, which would land in
+            # the middle of this report.
+            with contextlib.redirect_stdout(io.StringIO()):
+                try:
+                    main()
+                    failed = False
+                except SystemExit as outcome:
+                    failed = outcome.code not in (None, 0)
+            if failed != must_fail:
+                problems.append(
+                    "%s %s %s"
+                    % (
+                        " ".join(flags),
+                        "accepted" if must_fail else "rejected",
+                        description,
+                    )
+                )
+    finally:
+        globals()["sample_diagram"] = real
+        sys.argv = saved_argv
+    return problems
+
+
 def _self_check() -> None:
     """
     Prove the style-src checker fails where it says it does.
@@ -207,33 +293,19 @@ def _self_check() -> None:
                 "%s: expected a failure mentioning %r, got %r"
                 % (label, expected, actual)
             )
-    # The call site, not just the function. Checking `_check_style_sources`
-    # alone left the argument that reaches it unverified, so reverting it to a
-    # constant kept both this self-check and the sixteen-flag run green -- the
-    # exact false green this self-check exists to prevent. Read as a syntax
-    # tree rather than as text: a literal to compare against is a literal a
-    # search-and-replace edits too, and the first version of this check passed
-    # on a file where the call had already been changed.
-    tree = ast.parse(Path(__file__).read_text(encoding="utf-8"))
-    passes_the_flag = False
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call):
-            continue
-        if getattr(node.func, "id", None) != "_check_style_sources":
-            continue
-        if len(node.args) < 4:
-            continue
-        fourth = node.args[3]
-        if isinstance(fourth, ast.Attribute) and fourth.attr == "require_style_nonce":
-            passes_the_flag = True
-    if not passes_the_flag:
-        wrong.append(
-            "main() must pass args.require_style_nonce to _check_style_sources; "
-            "a constant there makes the nonce flag meaningless"
-        )
+    # Driven through `main()`, not by calling the checker directly. A direct
+    # call proves the function works and nothing about whether the flags reach
+    # it: with the guard changed from `or` to `and`, `--require-style-hashes`
+    # alone stopped running any style check at all and both this self-check and
+    # the sixteen-flag run stayed green. An AST shape check had the same gap --
+    # it found the call, not the condition guarding it.
+    wrong.extend(_check_flag_paths())
     if wrong:
         raise SystemExit("style-src self-check failed:\n  " + "\n  ".join(wrong))
-    print("style-src self-check: %d cases passed" % (len(_STYLE_SELF_CHECK) + 1))
+    print(
+        "style-src self-check: %d function cases plus 5 flag paths passed"
+        % len(_STYLE_SELF_CHECK)
+    )
 
 
 def main() -> None:

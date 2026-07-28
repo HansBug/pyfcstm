@@ -1,5 +1,6 @@
 """Tests for the public Python diagram facade and browser contract."""
 
+import errno
 import json
 import logging
 import os
@@ -1379,33 +1380,59 @@ def test_the_umask_probe_leaves_nothing_behind(tmp_path):
     assert list(tmp_path.iterdir()) == []
 
 
-@pytest.mark.skipif(os.name == "nt", reason="POSIX probe path")
-def test_the_umask_probe_never_removes_by_name_when_the_os_self_deletes(
-    tmp_path, monkeypatch
-):
-    # Windows has `O_TEMPORARY`: the file goes when the handle closes, whatever
-    # its permissions, so no unlink is needed and none must be attempted --
-    # attempting one is what made a read-only probe undeletable there. The flag
-    # is a no-op on Linux, so this proves the branch is taken, not that the OS
-    # honours it; the deletion itself is Windows-side.
+@pytest.mark.skipif(os.name == "nt", reason="models the Windows branch on POSIX")
+def test_the_umask_probe_asks_the_os_to_self_delete_where_it_can(tmp_path, monkeypatch):
+    # Windows has no `unlink` of a read-only file, so the probe relies on
+    # `O_TEMPORARY`: the file goes when the handle closes, whatever its
+    # permissions. Two things have to hold together, and asserting only one of
+    # them let the flag be dropped from the open while every test stayed green
+    # -- on Windows that is a probe leaked on every successful save.
     from pyfcstm.diagram import api
 
-    monkeypatch.setattr(os, "O_TEMPORARY", 0, raising=False)
-    removed = []
+    sentinel = 0x40000000
+    monkeypatch.setattr(os, "O_TEMPORARY", sentinel, raising=False)
+
+    seen = {}
+    real_open = os.open
+    real_close = os.close
     real_unlink = os.unlink
-    monkeypatch.setattr(
-        os,
-        "unlink",
-        lambda path, *a, **k: (removed.append(str(path)), real_unlink(path, *a, **k))[
-            1
-        ],
-    )
-    previous = os.umask(0o222)
-    try:
-        api._umask_default_mode(tmp_path)
-    finally:
-        os.umask(previous)
-    assert [name for name in removed if "pyfcstm-umask-" in name] == []
+
+    def recording_open(path, flags, mode=0o777):
+        if "pyfcstm-umask-" in str(path):
+            seen["flags"] = flags
+            seen["path"] = str(path)
+            # The real flag does not exist here, so the model stands in for the
+            # kernel: open without it, and remove on close the way Windows
+            # would.
+            return real_open(path, flags & ~sentinel, mode)
+        return real_open(path, flags, mode)
+
+    def recording_close(descriptor):
+        result = real_close(descriptor)
+        if seen.get("path") and os.path.exists(seen["path"]):
+            real_unlink(seen["path"])
+        return result
+
+    removed = []
+
+    def recording_unlink(path, *args, **kwargs):
+        if "pyfcstm-umask-" in str(path):
+            removed.append(str(path))
+        return real_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "open", recording_open)
+    monkeypatch.setattr(os, "close", recording_close)
+    monkeypatch.setattr(os, "unlink", recording_unlink)
+
+    api._umask_default_mode(tmp_path)
+
+    assert seen.get("flags", 0) & sentinel, "O_TEMPORARY must reach os.open"
+    assert removed == [], "nothing may be unlinked by name when the OS self-deletes"
+    # The outcome, not only the mechanism. An earlier version asserted just the
+    # absence of an unlink and passed while a probe sat in its own tmp_path,
+    # because a present-but-zero flag skipped both the delete-on-close request
+    # and the fallback.
+    assert list(tmp_path.iterdir()) == [], "the probe must not outlive the call"
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX probe path")
@@ -1426,3 +1453,64 @@ def test_a_probe_that_cannot_be_removed_does_not_fail_the_write(tmp_path, monkey
     target = tmp_path / "doc.html"
     api._atomic_write_text(target, "x" * 32)
     assert target.read_text(encoding="utf-8") == "x" * 32
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX probe path")
+def test_a_failing_fstat_still_removes_the_probe(tmp_path, monkeypatch):
+    # The unlink used to run after the `fstat`, so a failure there skipped it
+    # and left the probe in the caller's directory. Removing the name first
+    # costs nothing -- the descriptor stays valid once it is gone.
+    from pyfcstm.diagram import api
+
+    def refuse(_descriptor):
+        raise OSError("injected fstat failure")
+
+    monkeypatch.setattr(os, "fstat", refuse)
+    with pytest.raises(OSError, match="injected fstat failure"):
+        api._umask_default_mode(tmp_path)
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX probe path")
+def test_a_present_but_falsy_self_delete_flag_still_removes_the_probe(
+    tmp_path, monkeypatch
+):
+    # The flag's value decided whether delete-on-close was requested while its
+    # mere presence decided whether to unlink, so a present-but-zero value
+    # asked for neither and left the probe behind permanently. Both now read
+    # the same value.
+    from pyfcstm.diagram import api
+
+    monkeypatch.setattr(os, "O_TEMPORARY", 0, raising=False)
+    previous = os.umask(0o222)
+    try:
+        assert api._umask_default_mode(tmp_path) == 0o444
+    finally:
+        os.umask(previous)
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX file modes")
+def test_a_probe_that_cannot_be_created_does_not_cost_the_document(
+    tmp_path, monkeypatch
+):
+    # The rule that a cleanup failure must not cost the caller their document
+    # was applied to the probe's removal and not to its creation, so a quota or
+    # a read-only mount threw away a file that was written and one `os.replace`
+    # from being the target -- to read a permission bit. The mode falls back to
+    # what NamedTemporaryFile chose, which is restrictive rather than wrong.
+    from pyfcstm.diagram import api
+
+    real_open = os.open
+
+    def refuse_probe(path, *args, **kwargs):
+        if "pyfcstm-umask-" in str(path):
+            raise OSError(errno.EDQUOT, "Disk quota exceeded")
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "open", refuse_probe)
+    target = tmp_path / "doc.html"
+    api._atomic_write_text(target, "x" * 64)
+    assert target.read_text(encoding="utf-8") == "x" * 64
+    assert stat.S_IMODE(target.stat().st_mode) == 0o600
+    assert [item.name for item in tmp_path.iterdir()] == ["doc.html"]

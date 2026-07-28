@@ -1,6 +1,7 @@
 """Check the ordinary standalone HTML CSP and embedded-resource contract."""
 
 import argparse
+import ast
 import base64
 import hashlib
 from pathlib import Path
@@ -26,10 +27,17 @@ def _check_style_sources(
     carries a nonce in addition to the hash of the static stylesheet. A nonce
     matches ``<link rel=stylesheet>`` from any origin, which a hash-only list
     made structurally impossible, so the source list is worth pinning: only the
-    hashes of the styles actually embedded here plus exactly one nonce, and that
-    nonce must be the one the bootstrap publishes. Without this, widening the
-    directive to ``'unsafe-inline'`` or a host source, or letting the policy and
-    the bootstrap drift apart, leaves every other check passing.
+    hashes of the styles actually embedded here, plus a nonce when the caller
+    asks for one, and that nonce must be the one the bootstrap publishes.
+    Without this, widening the directive to ``'unsafe-inline'`` or a host
+    source, or letting the policy and the bootstrap drift apart, leaves every
+    other check passing.
+
+    ``require_nonce`` follows ``--require-style-nonce`` rather than being
+    implied. Demanding a nonce unconditionally rejected a hash-only
+    ``style-src`` -- strictly the stronger policy, and the direction the nonce
+    weakness would be fixed in -- and answered a caller who asked only about
+    hashes with an error about nonces. A second nonce is refused either way.
 
     ``style-src-elem`` is checked too: when present it *overrides* ``style-src``
     for ``<style>`` and ``<link rel=stylesheet>``, so a widening moved there
@@ -105,10 +113,11 @@ def _check_style_sources(
             if item not in expected_hashes and item not in nonces
         )
         raise SystemExit(
-            "style-src must list exactly the %d embedded style hash(es) and one "
-            "nonce; missing %s, unexpected %s"
+            "style-src must list exactly the %d embedded style hash(es)%s; "
+            "missing %s, unexpected %s"
             % (
                 len(expected_hashes),
+                " and one nonce" if require_nonce else "",
                 ", ".join(missing) or "nothing",
                 ", ".join(unexpected) or "nothing",
             )
@@ -136,6 +145,97 @@ def _check_style_sources(
         )
 
 
+_STYLE_SELF_CHECK = (
+    # (label, style-src source list, require_nonce, expected failure fragment)
+    ("hash only, hashes asked for", ["HASH"], False, None),
+    ("hash only, nonce asked for", ["HASH"], True, "exactly one nonce"),
+    ("hash and nonce, nonce asked for", ["HASH", "NONCE"], True, None),
+    ("hash and nonce, hashes asked for", ["HASH", "NONCE"], False, None),
+    ("two nonces, hashes asked for", ["HASH", "NONCE", "NONCE2"], False, "2 nonces"),
+    ("two nonces, nonce asked for", ["HASH", "NONCE", "NONCE2"], True, "exactly one"),
+    ("hash missing", ["NONCE"], True, "missing"),
+    ("extra source", ["HASH", "NONCE", "'unsafe-inline'"], True, "unexpected"),
+)
+
+
+def _self_check() -> None:
+    """
+    Prove the style-src checker fails where it says it does.
+
+    The nonce requirement moved behind ``--require-style-nonce`` because
+    demanding it unconditionally rejected a hash-only policy. Nothing in CI
+    could see that change: the only invocation passes both flags, so reverting
+    the argument to a constant left all sixteen checks green. These cases cover
+    the combinations that invocation cannot reach.
+
+    :return: ``None``.
+    :rtype: None
+    :raises SystemExit: If any case resolves the wrong way.
+    """
+    style = "body{color:red}"
+    digest = "'sha256-%s'" % base64.b64encode(
+        hashlib.sha256(style.encode("utf-8")).digest()
+    ).decode("ascii")
+    nonce = "'nonce-AAAAAAAAAAAAAAAAAAAAAA=='"
+    tokens = {
+        "HASH": digest,
+        "NONCE": nonce,
+        "NONCE2": "'nonce-BBBBBBBBBBBBBBBBBBBB=='",
+    }
+    wrong = []
+    for label, sources, require_nonce, expected in _STYLE_SELF_CHECK:
+        listed = " ".join(tokens.get(item, item) for item in sources)
+        policy = (
+            "default-src 'none'; style-src %s; style-src-attr 'none'; "
+            "script-src-attr 'none'" % listed
+        )
+        html = (
+            '<meta http-equiv="Content-Security-Policy" content="%s">'
+            "<style>%s</style>"
+            '<script>window.__FCSTM_STYLE_NONCE__ = "%s";</script>'
+            % (policy, style, nonce[len("'nonce-") : -1])
+        )
+        try:
+            _check_style_sources(html, policy, [style], require_nonce)
+            actual = None
+        except SystemExit as failure:
+            actual = str(failure)
+        if expected is None and actual is not None:
+            wrong.append("%s: expected to pass, failed with %r" % (label, actual))
+        elif expected is not None and (actual is None or expected not in actual):
+            wrong.append(
+                "%s: expected a failure mentioning %r, got %r"
+                % (label, expected, actual)
+            )
+    # The call site, not just the function. Checking `_check_style_sources`
+    # alone left the argument that reaches it unverified, so reverting it to a
+    # constant kept both this self-check and the sixteen-flag run green -- the
+    # exact false green this self-check exists to prevent. Read as a syntax
+    # tree rather than as text: a literal to compare against is a literal a
+    # search-and-replace edits too, and the first version of this check passed
+    # on a file where the call had already been changed.
+    tree = ast.parse(Path(__file__).read_text(encoding="utf-8"))
+    passes_the_flag = False
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if getattr(node.func, "id", None) != "_check_style_sources":
+            continue
+        if len(node.args) < 4:
+            continue
+        fourth = node.args[3]
+        if isinstance(fourth, ast.Attribute) and fourth.attr == "require_style_nonce":
+            passes_the_flag = True
+    if not passes_the_flag:
+        wrong.append(
+            "main() must pass args.require_style_nonce to _check_style_sources; "
+            "a constant there makes the nonce flag meaningless"
+        )
+    if wrong:
+        raise SystemExit("style-src self-check failed:\n  " + "\n  ".join(wrong))
+    print("style-src self-check: %d cases passed" % (len(_STYLE_SELF_CHECK) + 1))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--require-default-none", action="store_true")
@@ -154,7 +254,13 @@ def main() -> None:
     parser.add_argument("--zero-network", action="store_true")
     parser.add_argument("--require-embedded-fonts", type=int, default=None)
     parser.add_argument("--require-fonts-ready", action="store_true")
+    parser.add_argument(
+        "--check", action="store_true", help="run this gate's own self-check"
+    )
     args = parser.parse_args()
+    if args.check:
+        _self_check()
+        return
     html = sample_diagram(cjk_locale="jp").to_html()
     match = re.search(
         r'<meta http-equiv="Content-Security-Policy" content="([^"]+)"', html

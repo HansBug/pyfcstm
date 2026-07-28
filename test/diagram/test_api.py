@@ -1330,41 +1330,6 @@ def test_a_write_denying_mask_is_honoured_like_a_plain_file(tmp_path):
         os.umask(previous)
 
 
-@pytest.mark.skipif(os.name == "nt", reason="POSIX symlinks and modes")
-def test_a_hijacked_probe_name_does_not_change_another_file(tmp_path, monkeypatch):
-    # `.probe` is derived from a reserved name but is not itself reserved, so a
-    # process sharing the directory can put a symlink there first. `O_EXCL`
-    # refuses to follow it, but the cleanup used to `chmod` the path anyway,
-    # and `chmod` follows symlinks: the probe failed while an unrelated file
-    # went from 0744 to 0600. Cleanup now touches only what this call created,
-    # through the descriptor it opened.
-    from pyfcstm.diagram import api
-
-    victim = tmp_path / "victim"
-    victim.write_text("keep", encoding="utf-8")
-    os.chmod(victim, 0o744)
-
-    real_mkstemp = tempfile.mkstemp
-
-    def hijacking_mkstemp(*args, **kwargs):
-        handle, name = real_mkstemp(*args, **kwargs)
-        # Only the probe's own names. Any other mkstemp during this test would
-        # otherwise get a symlink too, and a second one would raise
-        # FileExistsError from here rather than failing an assertion.
-        if ".pyfcstm-umask-" in name:
-            os.symlink(str(victim), name + ".probe")
-        return handle, name
-
-    # `tempfile`, not `api.tempfile`: they are the same module object, and
-    # writing the latter suggests a scope this does not have.
-    monkeypatch.setattr(tempfile, "mkstemp", hijacking_mkstemp)
-    with pytest.raises(FileExistsError):
-        api._umask_default_mode(tmp_path)
-
-    assert stat.S_IMODE(victim.stat().st_mode) == 0o744
-    assert victim.read_text(encoding="utf-8") == "keep"
-
-
 @pytest.mark.skipif(os.name == "nt", reason="POSIX hard links and modes")
 def test_probe_cleanup_cannot_be_redirected_by_a_hard_link(tmp_path, monkeypatch):
     # The symlink fix left a name-based `os.chmod` on the platform without
@@ -1395,48 +1360,69 @@ def test_probe_cleanup_cannot_be_redirected_by_a_hard_link(tmp_path, monkeypatch
     assert victim.read_text(encoding="utf-8") == "keep"
 
 
-@pytest.mark.skipif(not hasattr(os, "fchmod"), reason="requires fchmod")
-def test_probe_removes_its_files_even_when_restoring_the_mode_fails(
+@pytest.mark.skipif(os.name == "nt", reason="POSIX probe path")
+def test_the_umask_probe_leaves_nothing_behind(tmp_path):
+    # The probe used to reserve a name, observe a sibling and remove both by
+    # name. Restoring the write bit first -- Windows will not delete a
+    # read-only file -- was a redirect sink, and where it could not be restored
+    # the pair simply stayed, so on Windows under a write-denying mask every
+    # successful save leaked two hidden files for good. One file now, unlinked
+    # while still open, so there is no name-based cleanup to redirect or fail.
+    from pyfcstm.diagram import api
+
+    previous = os.umask(0o222)
+    try:
+        assert api._umask_default_mode(tmp_path) == 0o444
+    finally:
+        os.umask(previous)
+    assert list(tmp_path.iterdir()) == []
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX probe path")
+def test_the_umask_probe_never_removes_by_name_when_the_os_self_deletes(
     tmp_path, monkeypatch
 ):
-    # Restoring the write bit used to happen before the cleanup `try`, so an
-    # `fchmod` failure left the reserved file in the caller's directory
-    # permanently with nothing logged.
+    # Windows has `O_TEMPORARY`: the file goes when the handle closes, whatever
+    # its permissions, so no unlink is needed and none must be attempted --
+    # attempting one is what made a read-only probe undeletable there. The flag
+    # is a no-op on Linux, so this proves the branch is taken, not that the OS
+    # honours it; the deletion itself is Windows-side.
     from pyfcstm.diagram import api
 
-    def refuse(*_args, **_kwargs):
-        raise PermissionError("injected")
-
-    monkeypatch.setattr(os, "fchmod", refuse)
-    with pytest.raises(PermissionError):
-        api._umask_default_mode(tmp_path)
-    assert list(tmp_path.iterdir()) == [], "the probe leaked its reserved file"
-
-
-@pytest.mark.skipif(not hasattr(os, "fchmod"), reason="requires fchmod")
-def test_the_reserved_probe_file_is_made_writable_before_removal(tmp_path, monkeypatch):
-    # `mkstemp` asks for 0600 and the mask applies to that too, so under a mask
-    # that removes write the reserved file is born read-only -- and Windows
-    # will not delete a read-only file. Checking the directory is empty
-    # afterwards cannot see this: POSIX removes a read-only file happily, so
-    # the restore has to be observed where it happens.
-    from pyfcstm.diagram import api
-
-    restored = []
-    real_fchmod = os.fchmod
-
-    def recording_fchmod(descriptor, mode):
-        restored.append(mode)
-        return real_fchmod(descriptor, mode)
-
-    monkeypatch.setattr(os, "fchmod", recording_fchmod)
+    monkeypatch.setattr(os, "O_TEMPORARY", 0, raising=False)
+    removed = []
+    real_unlink = os.unlink
+    monkeypatch.setattr(
+        os,
+        "unlink",
+        lambda path, *a, **k: (removed.append(str(path)), real_unlink(path, *a, **k))[
+            1
+        ],
+    )
     previous = os.umask(0o222)
     try:
         api._umask_default_mode(tmp_path)
     finally:
         os.umask(previous)
+    assert [name for name in removed if "pyfcstm-umask-" in name] == []
 
-    # One for the reserved file, one for the observation sibling. Dropping
-    # either leaves a file Windows cannot delete.
-    assert restored == [0o600, 0o600], restored
-    assert list(tmp_path.iterdir()) == []
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX probe path")
+def test_a_probe_that_cannot_be_removed_does_not_fail_the_write(tmp_path, monkeypatch):
+    # Reading a number must not break the caller's save. The rewrite briefly
+    # let an unlink failure propagate, which would have turned a routine
+    # cleanup problem into a lost document.
+    from pyfcstm.diagram import api
+
+    real_unlink = os.unlink
+
+    def picky_unlink(path, *args, **kwargs):
+        if "pyfcstm-umask-" in str(path):
+            raise PermissionError("locked")
+        return real_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "unlink", picky_unlink)
+    target = tmp_path / "doc.html"
+    api._atomic_write_text(target, "x" * 32)
+    assert target.read_text(encoding="utf-8") == "x" * 32

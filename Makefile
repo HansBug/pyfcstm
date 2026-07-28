@@ -266,6 +266,7 @@ diagram_options_check: build_assets
 	$(PYTHON) tools/check_diagram_options_parity.py
 
 diagram_csp_check: build_assets
+	$(PYTHON) tools/check_diagram_csp.py --check
 	$(PYTHON) tools/check_diagram_csp.py \
 		--require-default-none --require-connect-none --require-worker-none \
 		--require-script-hashes --require-style-hashes --require-style-nonce \

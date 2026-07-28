@@ -26,6 +26,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
@@ -990,6 +991,11 @@ def _apply_target_mode(
     os.chmod(str(temporary_path), _umask_default_mode(temporary_path.parent))
 
 
+# Collisions need a hostile neighbour guessing 64 bits; a handful of tries
+# turns that into a clear error instead of an unbounded loop.
+_UMASK_PROBE_ATTEMPTS = 8
+
+
 def _umask_default_mode(directory: Path) -> int:
     """
     Return the mode a plain new file receives in ``directory``.
@@ -1008,77 +1014,52 @@ def _umask_default_mode(directory: Path) -> int:
     :return: Permission bits, already masked.
     :rtype: int
     """
-    # mkstemp reserves a name nothing else can take; it forces 0600, so the
-    # observation happens on a sibling opened with 0666 and left for the kernel
-    # to mask.
-    handle, reserved = tempfile.mkstemp(prefix=".pyfcstm-umask-", dir=str(directory))
-    observed = reserved + ".probe"
-    created = False
-    # Everything past this point is inside the cleanup, including restoring the
-    # write bit: doing that before the `try` meant an `fchmod` failure left the
-    # reserved file behind permanently, with nothing logged.
-    try:
+    # One file, and one that is already doomed when it is created. Earlier
+    # revisions reserved a name with `mkstemp`, observed a sibling, then
+    # removed both by name -- which needed the write bit restored first,
+    # because Windows will not delete a read-only file, and restoring it by
+    # name was a redirect sink an attacker could aim at an unrelated file.
+    # Where the write bit could not be restored at all the two files simply
+    # stayed, so on Windows under a mask that removes write every successful
+    # save leaked a pair of them, for good.
+    #
+    # `O_TEMPORARY` (Windows) removes the file when the handle closes, whatever
+    # its permissions. Everywhere else the name is unlinked the moment it has
+    # served its purpose, while the descriptor stays valid -- so nothing is
+    # left to clean up on either platform, and there is no second name-based
+    # operation to redirect.
+    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_TEMPORARY", 0)
+    for _ in range(_UMASK_PROBE_ATTEMPTS):
+        candidate = os.path.join(
+            str(directory), ".pyfcstm-umask-%s" % uuid.uuid4().hex[:16]
+        )
         try:
-            # `mkstemp` asks for 0600, but the mask applies to that too, so
-            # under a mask that removes write this file is born read-only, and
-            # Windows will not delete a read-only file. Through the descriptor,
-            # never by name -- see below.
-            if hasattr(os, "fchmod"):
-                os.fchmod(handle, 0o600)
-        finally:
-            os.close(handle)
-        # `observed` is derived from a reserved name but is not itself
-        # reserved, so a process sharing the directory can put something there
-        # first. `O_EXCL` refuses to follow that, and `created` records whether
-        # the file is ours.
-        descriptor = os.open(observed, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o666)
-        created = True
+            descriptor = os.open(candidate, flags, 0o666)
+        except FileExistsError:
+            # Someone got to this name first. `O_EXCL` refused to open theirs,
+            # which is the point; try another.
+            continue
         try:
             mode = os.fstat(descriptor).st_mode & 0o7777
-            # Restoring the write bit by name is a redirect sink and there is
-            # no safe version of it: between the close and the chmod a
-            # concurrent process can swap the name for a hard link to an
-            # unrelated file, which needs no privilege on any platform, and
-            # `chmod` would then apply to the target. Both were measured
-            # changing a victim from 0744 to 0600. So it happens through the
-            # descriptor or not at all.
-            #
-            # Where `fchmod` is missing -- Windows, which is a third of the
-            # unit-test matrix and reaches this line on every write to a new
-            # path -- the file simply stays as the mask made it. That only
-            # matters under a mask that removes write, where the probe is then
-            # undeletable and the cleanup below logs it; the same mask makes
-            # the atomic writer's own temporary undeletable, so this is a
-            # property of that configuration rather than something the probe
-            # introduces.
-            if hasattr(os, "fchmod"):
-                os.fchmod(descriptor, 0o600)
+            if not hasattr(os, "O_TEMPORARY"):
+                try:
+                    os.unlink(candidate)
+                except OSError as cleanup_error:
+                    # Reading a number must not fail the caller's write. The
+                    # descriptor still closes below, and the leftover is named
+                    # so it can be found.
+                    _logger.warning(
+                        "could not remove the probe file %s: %s",
+                        candidate,
+                        cleanup_error,
+                    )
+            return mode
         finally:
             os.close(descriptor)
-        return mode
-    finally:
-        for path, ours in ((observed, created), (reserved, True)):
-            if not ours:
-                continue
-            try:
-                os.unlink(path)
-            except FileNotFoundError:
-                # Already gone, which is the ordinary outcome for the reserved
-                # name once the sibling has been removed.
-                pass
-            except OSError as cleanup_error:
-                # A throwaway used to read a number must not fail the caller's
-                # write -- an indexer or scanner holding the handle raises
-                # PermissionError here, and that turned a write that would
-                # otherwise have succeeded into a failure with no file
-                # produced. Logged rather than dropped, because a leaked file
-                # nobody is told about is one that accumulates, and logged
-                # rather than warned because `warnings.warn` raises under
-                # `-W error`, reinstating the very failure this branch exists
-                # to prevent.
-                _logger.warning(
-                    "could not remove the probe file %s: %s", path, cleanup_error
-                )
+    raise OSError(
+        "could not create a probe file in %s after %d attempts"
+        % (directory, _UMASK_PROBE_ATTEMPTS)
+    )
 
 
 def _atomic_write_text(

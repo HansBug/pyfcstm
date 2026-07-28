@@ -2313,6 +2313,7 @@ def _published_dataclasses():
     import dataclasses
 
     from pyfcstm.bmc import explanation, provenance
+    from pyfcstm.bmc.witness import BmcFeasibilityResult
 
     found = []
     # Both modules, not just the one this test file is named after: the source
@@ -2327,6 +2328,12 @@ def _published_dataclasses():
                 and value.__module__ == module.__name__
             ):
                 found.append((name, value))
+    # The one class outside those modules that this layer extends: the
+    # feasibility result carries the published ``explanation`` field.  It is
+    # named rather than discovered because pyfcstm.bmc exports many dataclasses
+    # that predate this layer and are hardened by their own suites; adding this
+    # one keeps the class whose contract changed here inside the sweep.
+    found.append(("BmcFeasibilityResult", BmcFeasibilityResult))
     return sorted(found)
 
 
@@ -2335,6 +2342,14 @@ def _published_dataclasses():
 #: The values are authored, but the *field list* is not: each sweep below reads
 #: the dataclass's own fields and requires every one of them to appear here, so a
 #: newly added field fails the sweep until it is given a value.
+#: A feasibility check the constructor accepts, used as the well-formed value
+#: for the three required check fields of BmcFeasibilityResult.
+def _feasibility_check():
+    from pyfcstm.bmc.witness import BmcFeasibilityCheck
+
+    return BmcFeasibilityCheck("unsat", "checked", elapsed_ms=1.0)
+
+
 def _well_formed_arguments():
     """Return ``{class name: {field: value}}`` for the published dataclasses."""
     reference = BmcConstraintRef(
@@ -2380,6 +2395,17 @@ def _well_formed_arguments():
             "expressions": (True,),
             "source_ref": _GENERATED,
             "refs": {"frame": 0},
+        },
+        "BmcFeasibilityResult": {
+            "kernel": _feasibility_check(),
+            "initialization": _feasibility_check(),
+            "assumptions": _feasibility_check(),
+            "infeasible_stage": "assumptions",
+            "localization_status": "not_checked",
+            "refinement_status": "not_requested",
+            "refinement_reason": None,
+            "refinement_checks": (),
+            "explanation": None,
         },
         "BmcInfeasibilityExplanation": {
             "requested_mode": "formal",
@@ -2442,6 +2468,8 @@ def test_no_published_field_accepts_a_hostile_stand_in(class_name) -> None:
     """
     import dataclasses
 
+    from pyfcstm.bmc.errors import BmcBuildError
+
     cls = dict(_published_dataclasses())[class_name]
     baseline = _well_formed_arguments()[class_name]
     impostors = dict(_impostors())
@@ -2470,7 +2498,13 @@ def test_no_published_field_accepts_a_hostile_stand_in(class_name) -> None:
             kwargs[field.name] = (hostile,) if isinstance(good, tuple) else hostile
             try:
                 built = cls(**kwargs)
-            except (TypeError, ValueError):
+            except (TypeError, ValueError, BmcBuildError):
+                # TypeError/ValueError: the explanation and provenance layers
+                # reject a hostile value with the builtin exceptions their
+                # helpers raise.  BmcBuildError: the witness layer rejects with
+                # the package's own build error instead.  Both are a refusal,
+                # which is what this sweep asks for; leaving BmcBuildError out
+                # would report the witness layer's correct refusal as a failure.
                 continue
             stored = getattr(built, field.name)
             if isinstance(stored, tuple):

@@ -2251,20 +2251,34 @@ def test_human_explanation_matches_the_frozen_transcript_line_shapes() -> None:
     # with its ordinal dropped: an authored member contributes a location line
     # and its own text, a generated member contributes a single line.
     #
-    # The ordinals are not transcribed, and that is a positive consequence of the
-    # frozen text rather than a gap in it.  §8.3 step 6 requires the extracted
-    # core to be sorted by stable_id before it enters the Public API, and this
-    # renderer prints the published order without re-sorting; a stable_id sort
+    # The ordinals are not transcribed.  §8.3 step 6 and §15 require the
+    # extracted core to be sorted by stable_id before it enters the Public API,
+    # and this renderer prints that published order without re-sorting; the sort
     # puts the assumption group ahead of the initializer, while the §12.3 sample
-    # shows the initializer first.  Reproducing the sample's order would need a
-    # separate CLI presentation order, and no single deterministic order exists:
-    # §12.2 lists initialization, then transition, then assumption, whereas
-    # §12.3 lists initialization, then assumption, then transition.  The two
-    # samples also print different Classification prose for the same
-    # "Scenario: INFEASIBLE AT ASSUMPTIONS", and §15 states that human text uses
-    # stable templates whose wording may improve across minor versions while
-    # machine consumers read structured fields.  So the frozen transcripts pin
-    # what each line looks like, and §8.3 pins the order.
+    # shows the initializer first.
+    #
+    # Those clauses constrain the published order.  Neither forbids a CLI from
+    # building its own display order, so the frozen text is underdetermined here
+    # and printing the published order is a legitimate choice rather than a
+    # forced one.  What makes the samples' own order unsuitable as a byte
+    # contract is that they are illustrations:
+    #
+    #   * §12 is titled a CLI output prototype, and its two samples give the
+    #     same "Conflict constraints:" block two different layouts -- §12.2 uses
+    #     bracketed semantic-role labels in three aligned columns, one line per
+    #     member, while §12.3 uses ordinals with the member's text on a second
+    #     indented line.
+    #   * §12.2 and §12.3 print different Classification prose for the same
+    #     "Scenario: INFEASIBLE AT ASSUMPTIONS" and the same
+    #     "Core scope: assumptions_prefix", which map to one classification.
+    #   * §15 states that human text uses stable templates whose wording may
+    #     improve across minor versions, while machine consumers read structured
+    #     fields.
+    #
+    # An earlier version of this comment claimed no deterministic display order
+    # could reproduce both samples.  That was wrong: sorting by source position
+    # with position-less members last satisfies both.  The reason to print the
+    # published order is simplicity and agreement with §8.3, not impossibility.
     frozen_12_3_shapes = [
         ("machine.fcstm:1:1-1:15", "persistent initializer: x = 0"),
         ("query.fbmcq:2:1-2:23", "assume at 0: x == 1;"),
@@ -2373,6 +2387,18 @@ def test_human_explanation_matches_the_frozen_transcript_line_shapes() -> None:
             reason="shared timeout budget exhausted during minimization",
         )
     )
+    # Issue #385 §13 requires core scope, reduction, size and granularity, plus a
+    # compact summary of the members' semantic roles, whenever an explanation
+    # exists.  The labels and their order are transcribed from §12.2.
+    assert "Core scope: assumptions_prefix" in lines
+    assert "Core granularity: source_group" in lines
+    assert "Core size: 3" in lines
+    assert "Reduction: partial_minimized" in lines
+    assert "Semantic roles: assumption, initial fact, transition rule" in lines
+    scope_at = lines.index("Core scope: assumptions_prefix")
+    assert lines[scope_at + 1] == "Core granularity: source_group"
+    assert lines[scope_at + 2] == "Core size: 3"
+
     start = lines.index("Conflict constraints:")
     block = lines[start + 1 : lines.index("", start + 1)]
     # Rebuild the block from the frozen shapes in the order the published core

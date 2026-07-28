@@ -494,8 +494,11 @@ def _human_core_position(constraint: "BmcConstraintRef") -> str:
 
     Example::
 
-        >>> _human_core_position.__name__
-        '_human_core_position'
+        >>> class _Ref:
+        ...     frames = ()
+        ...     steps = (0,)
+        >>> _human_core_position(_Ref())
+        'at step 0'
     """
     parts = []
     if constraint.frames:
@@ -527,8 +530,10 @@ def _human_core_structural_refs(constraint: "BmcConstraintRef") -> str:
 
     Example::
 
-        >>> _human_core_structural_refs.__name__
-        '_human_core_structural_refs'
+        >>> class _Ref:
+        ...     refs = {"step": 0, "kind": "state"}
+        >>> _human_core_structural_refs(_Ref())
+        'kind state'
     """
     positional = {"frame", "frames", "step", "steps"}
     rendered = [
@@ -564,10 +569,45 @@ def _human_category_noun(constraint: "BmcConstraintRef") -> str:
 
     Example::
 
-        >>> _human_category_noun.__name__
-        '_human_category_noun'
+        >>> class _Ref:
+        ...     category = "transition.step"
+        >>> _human_category_noun(_Ref())
+        'transition'
     """
     return constraint.category.split(".")[0]
+
+
+def _human_core_roles(core) -> str:
+    """Summarise which semantic roles the core's members carry.
+
+    Issue #385 §13 requires a compact summary of the members' semantic roles
+    whenever an explanation exists.  Roles are counted rather than listed per
+    item, which keeps the summary short on a large core and leaves the numbered
+    item lines in the shape §12.3 gives them.
+
+    :param core: Published conflict core.
+    :type core: pyfcstm.bmc.explanation.BmcConflictCore
+    :return: Text such as ``assumption x2, initial fact``, or ``""`` for an
+        empty core.
+    :rtype: str
+
+    Example::
+
+        >>> class _Item:
+        ...     semantic_role = "initial_fact"
+        >>> class _Core:
+        ...     items = (_Item(), _Item())
+        >>> _human_core_roles(_Core())
+        'initial fact x2'
+    """
+    counts = {}
+    for item in core.items:
+        label = item.semantic_role.replace("_", " ")
+        counts[label] = counts.get(label, 0) + 1
+    return ", ".join(
+        label if count == 1 else "%s x%d" % (label, count)
+        for label, count in sorted(counts.items())
+    )
 
 
 def _human_explanation(execution: "_BmcExecution") -> List[str]:
@@ -661,7 +701,18 @@ def _human_explanation(execution: "_BmcExecution") -> List[str]:
                 "subset-minimal."
             )
         lines.append("Core scope: %s" % core.scope)
+        # Labels and order transcribed from issue #385 §12.2; §13 lists core
+        # scope, reduction, size and granularity among what must be shown
+        # whenever an explanation exists.
+        lines.append("Core granularity: %s" % core.granularity)
+        lines.append("Core size: %d" % len(core.items))
         lines.append("Reduction: %s" % core.reduction)
+        roles = _human_core_roles(core)
+        if roles:
+            # §13 also asks for a compact summary of the members' semantic
+            # roles.  It goes on its own line rather than as a per-item prefix so
+            # the numbered item lines keep the shape §12.3 gives them.
+            lines.append("Semantic roles: %s" % roles)
     if explanation.reason is not None:
         lines.append("Reason: %s" % explanation.reason)
     if core is None and explanation.classification is not None:

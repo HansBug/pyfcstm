@@ -90,8 +90,8 @@ JSON 类型和必需键以模式为准；执行顺序、标准输出/标准错�
      - ``none``
      - 按给定深度请求可选的场景不可行解释。``none``\ 不增加任何求解工作，
        ``explanation`` 保持为空且 ``refinement_status`` 为 ``not_requested``；
-       ``formal`` 发布分类与 sound source core；``proof`` 额外请求可核验证明，
-       本阶段将其如实报告为未闭合而不伪造。该深度不改变 mandatory 判定。
+       ``formal`` 发布分类与可靠源组冲突核（sound source core）；``proof``\ 额外
+       请求可核验证明，本阶段将其如实报告为未闭合而不伪造。该深度不改变强制判定。
    * - ``--color``
      - ``auto``、``always`` 或 ``never``
      - ``auto``

@@ -1130,11 +1130,6 @@ def test_umask_probe_never_widens_the_process(tmp_path, monkeypatch):
 
 
 def test_cleanup_reporting_survives_warnings_as_errors(tmp_path, monkeypatch):
-    # The probe half of this is a no-op on Windows, where `_umask_default_mode`
-    # returns a constant without creating anything -- there is no umask to
-    # discover there. Kept unguarded rather than skipped because the second
-    # half, the interrupted atomic write, applies on every platform.
-    #
     # These cleanups were reported with `warnings.warn`, which raises under
     # `-W error` / `PYTHONWARNINGS=error` / pytest's `filterwarnings = error`.
     # Raising from inside `finally` discards the in-flight exception, so the
@@ -1309,3 +1304,28 @@ def test_a_forked_child_does_not_reap_its_parents_viewer(tmp_path):
     finally:
         _TEMPORARY_VIEWERS = api._TEMPORARY_VIEWERS
         _TEMPORARY_VIEWERS.discard(viewer)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX file modes")
+def test_a_write_denying_mask_is_honoured_like_a_plain_file(tmp_path):
+    # The Windows shortcut this replaced returned 0666 unconditionally, on the
+    # premise that Windows has no umask. It does: the CRT `_umask` governs the
+    # read-only attribute, so a caller masking the write bit asks for
+    # read-only files and used to get writable ones, with `_apply_target_mode`
+    # clearing the very bit the mask had set. This is the POSIX equivalent of
+    # that case -- a mask that removes write -- and the written document has to
+    # match what the platform would have given any other new file.
+    previous = os.umask(0o222)
+    try:
+        target = tmp_path / "doc.html"
+        _atomic_write_text = __import__(
+            "pyfcstm.diagram.api", fromlist=["_atomic_write_text"]
+        )._atomic_write_text
+        _atomic_write_text(target, "x")
+        plain = tmp_path / "plain.txt"
+        handle = os.open(str(plain), os.O_CREAT | os.O_WRONLY, 0o666)
+        os.close(handle)
+        assert stat.S_IMODE(target.stat().st_mode) == stat.S_IMODE(plain.stat().st_mode)
+        assert stat.S_IMODE(target.stat().st_mode) == 0o444
+    finally:
+        os.umask(previous)

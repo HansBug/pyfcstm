@@ -1008,12 +1008,6 @@ def _umask_default_mode(directory: Path) -> int:
     :return: Permission bits, already masked.
     :rtype: int
     """
-    if os.name == "nt":
-        # Windows has no umask, and os.chmod there can only toggle the
-        # read-only bit, so there is no default to discover and 0666 is what
-        # the caller would apply anyway. Probing would mean two file creations
-        # and two deletions per write to compute a constant.
-        return 0o666
     # mkstemp reserves a name nothing else can take; it forces 0600, so the
     # observation happens on a sibling opened with 0666 and left for the kernel
     # to mask.
@@ -1026,6 +1020,16 @@ def _umask_default_mode(directory: Path) -> int:
         return os.stat(observed).st_mode & 0o7777
     finally:
         for path in (observed, reserved):
+            try:
+                # Made writable first: the observation file inherits whatever
+                # the mask allows, and Windows refuses to delete a file whose
+                # read-only attribute is set -- which is exactly what a caller
+                # masking `_S_IWRITE` asks for.
+                os.chmod(path, 0o600)
+            except OSError:
+                # Already gone, or a mode the platform will not accept. The
+                # unlink below reports whatever actually matters.
+                pass
             try:
                 os.unlink(path)
             except FileNotFoundError:

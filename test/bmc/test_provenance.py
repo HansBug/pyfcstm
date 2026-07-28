@@ -2159,3 +2159,88 @@ def test_a_document_cannot_publish_text_the_registry_never_held() -> None:
     assert (
         registry.excerpt(BmcSourceRef("fcstm", "m.fcstm", Span(1, 1, 1, 5))) == "SAFE"
     )
+
+
+def test_container_subclasses_cannot_rewrite_published_metadata() -> None:
+    """A real ``dict`` or ``list`` subclass must not choose what gets published.
+
+    ``items`` and ``__iter__`` are overridable, so a subclass of the concrete
+    type can pass every check and then hand the walk different contents than it
+    holds.  Reading through the base type closes that; a ``Mapping`` by protocol
+    only still goes through its own ``items``, since that is the sole way in.
+    """
+    from collections import UserDict
+
+    from pyfcstm.bmc.provenance import _require_json_mapping
+
+    class LyingDict(dict):
+        def items(self):
+            return iter([("forged", 2)])
+
+    class LyingList(list):
+        def __iter__(self):
+            return iter([999])
+
+    published = _require_json_mapping({"a": LyingDict({"real": 1})}, "refs")
+    assert dict(published["a"]) == {"real": 1}
+
+    published = _require_json_mapping({"a": LyingList([1])}, "refs")
+    assert list(published["a"]) == [1]
+
+    # A well-behaved Mapping that is not a dict is still accepted by protocol.
+    published = _require_json_mapping({"a": UserDict({"ok": 1})}, "refs")
+    assert dict(published["a"]) == {"ok": 1}
+
+
+def test_registry_paths_are_stored_as_exact_text() -> None:
+    """One document's text must never be quoted as another's provenance.
+
+    A ``str`` subclass overriding ``__eq__``/``__hash__`` makes every lookup hit
+    the same entry, so any path would resolve to that document -- exactly the
+    misattribution a provenance registry exists to prevent.
+    """
+    from pyfcstm.bmc.provenance import SourceDocumentRegistry
+
+    class AliasPath(str):
+        def __eq__(self, other):
+            return True
+
+        def __hash__(self):
+            return hash("alias")
+
+    registry = SourceDocumentRegistry({AliasPath("real.fcstm"): "REAL"})
+
+    assert [type(path) for path in registry.documents] == [str]
+    assert registry.document("real.fcstm") == "REAL"
+    assert registry.document("anything-else") is None
+
+    # Two distinct keys holding the same text would silently drop one document.
+    # A dict literal cannot express that -- equal keys collapse before the
+    # registry sees them -- so the pair has to differ by identity.
+    class DistinctPath(str):
+        def __new__(cls, text, salt):
+            obj = str.__new__(cls, text)
+            obj.salt = salt
+            return obj
+
+        def __eq__(self, other):
+            return self is other
+
+        def __hash__(self):
+            return hash((str.__str__(self), self.salt))
+
+    # An object that only claims to be a str is refused, on both mappings.
+    impostor = type("Impostor", (object,), {"__class__": property(lambda self: str)})()
+    for mapping_kwargs in (
+        {"documents": {impostor: "x"}},
+        {"documents": {}, "query_documents": {impostor: "x"}},
+    ):
+        with pytest.raises(ValueError, match="paths must be non-empty strings"):
+            SourceDocumentRegistry(**mapping_kwargs)
+    with pytest.raises(ValueError, match="paths must be non-empty strings"):
+        SourceDocumentRegistry({"": "x"})
+
+    colliding = {DistinctPath("same.fcstm", 1): "A", DistinctPath("same.fcstm", 2): "B"}
+    assert len(colliding) == 2
+    with pytest.raises(ValueError, match="two entries for"):
+        SourceDocumentRegistry(colliding)

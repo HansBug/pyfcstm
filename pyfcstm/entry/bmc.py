@@ -744,6 +744,7 @@ def _run_bmc_command(
     timeout_ms: Optional[int],
     max_bound: Optional[int],
     color_mode: str,
+    infeasibility_explanation: str = "none",
 ) -> int:
     """Build and publish one report behind the CLI exception boundary."""
     text, exit_code, severity = _build_bmc_report(
@@ -752,6 +753,7 @@ def _run_bmc_command(
         json_output=json_output,
         timeout_ms=timeout_ms,
         max_bound=max_bound,
+        infeasibility_explanation=infeasibility_explanation,
     )
     if output_file is None:
         color_enabled = _resolve_bmc_color_enabled(
@@ -838,6 +840,17 @@ def _add_bmc_subcommand(cli: click.Group) -> click.Group:
         help="Reject queries whose bound exceeds this value.",
     )
     @click.option(
+        "--infeasibility-explanation",
+        "infeasibility_explanation",
+        type=click.Choice(("none", "formal", "proof"), case_sensitive=True),
+        default="none",
+        show_default=True,
+        help=(
+            "Depth of the optional scenario-infeasibility explanation. The "
+            "default costs no extra solver work."
+        ),
+    )
+    @click.option(
         "--color",
         "color_mode",
         type=click.Choice(("auto", "always", "never"), case_sensitive=True),
@@ -855,6 +868,7 @@ def _add_bmc_subcommand(cli: click.Group) -> click.Group:
         timeout_ms: Optional[int],
         max_bound: Optional[int],
         color_mode: str,
+        infeasibility_explanation: str,
     ) -> None:
         """Run a bounded model checking query.
 
@@ -874,6 +888,10 @@ def _add_bmc_subcommand(cli: click.Group) -> click.Group:
         :type max_bound: int, optional
         :param color_mode: ANSI color mode for human terminal output.
         :type color_mode: str
+        :param infeasibility_explanation: Depth of the optional
+            scenario-infeasibility explanation, one of ``none``, ``formal`` or
+            ``proof``.  ``none`` adds no solver work.
+        :type infeasibility_explanation: str
         :return: ``None``.
         :rtype: None
 
@@ -881,6 +899,8 @@ def _add_bmc_subcommand(cli: click.Group) -> click.Group:
 
             $ pyfcstm bmc -i machine.fcstm -q property.fbmcq
             $ pyfcstm bmc -i machine.fcstm -q property.fbmcq --json -o result.json
+            $ pyfcstm bmc -i machine.fcstm -q property.fbmcq \
+                --infeasibility-explanation formal --json
         """
         exit_code = _run_bmc_command(
             input_code_file,
@@ -890,6 +910,7 @@ def _add_bmc_subcommand(cli: click.Group) -> click.Group:
             timeout_ms,
             max_bound,
             color_mode,
+            infeasibility_explanation=infeasibility_explanation,
         )
         ctx.exit(exit_code)
 

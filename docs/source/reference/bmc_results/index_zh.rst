@@ -34,6 +34,7 @@ JSON 类型和必需键以模式为准；执行顺序、标准输出/标准错�
 .. cli-ref-option: command=bmc option=--json
 .. cli-ref-option: command=bmc option=--timeout-ms
 .. cli-ref-option: command=bmc option=--max-bound
+.. cli-ref-option: command=bmc option=--infeasibility-explanation choices=none,formal,proof default=none
 .. cli-ref-option: command=bmc option=--color choices=auto,always,never default=auto
 .. cli-ref-option: command=bmc option=--help
 .. cli-ref-boundary: command=bmc stdout stderr exit-status side-effects success-signal failure-taxonomy human json atomic-output witness replay dual-check response-cause packaging property-verdict color timing llm-consumption
@@ -84,6 +85,13 @@ JSON 类型和必需键以模式为准；执行顺序、标准输出/标准错�
      - 未设置；无 CLI 上限
      - 构造 ``BmcOptions(max_bound=N)``。查询边界大于 ``N`` 时，在关系
        构造前作为受控编译错误拒绝；不会改写或截断查询边界。
+   * - ``--infeasibility-explanation``
+     - ``none``、``formal`` 或 ``proof``
+     - ``none``
+     - 按给定深度请求可选的场景不可行解释。``none``\ 不增加任何求解工作，
+       ``explanation`` 保持为空且 ``refinement_status`` 为 ``not_requested``；
+       ``formal`` 发布分类与 sound source core；``proof`` 额外请求可核验证明，
+       本阶段将其如实报告为未闭合而不伪造。该深度不改变 mandatory 判定。
    * - ``--color``
      - ``auto``、``always`` 或 ``never``
      - ``auto``

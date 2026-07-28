@@ -414,13 +414,23 @@ def _require_json_mapping(value: Any, label: str) -> Dict[str, Any]:
         if isinstance(entry, str):
             return exact_str(entry, where)
         if isinstance(entry, (list, tuple)):
+            # A list or tuple subclass may override __iter__, so the items are
+            # read through the base type.  Iterating the instance would let the
+            # value choose what gets published, which is the whole point of
+            # rebuilding rather than merely checking.
+            base = list if isinstance(entry, list) else tuple
+            items = base.__iter__(entry)
             return tuple(
                 _normalize(item, "%s[%d]" % (where, index), depth + 1)
-                for index, item in enumerate(entry)
+                for index, item in enumerate(items)
             )
         if isinstance(entry, Mapping):
             normalized = {}
-            for key, item in entry.items():
+            # A dict subclass may override items(); anything else is a Mapping by
+            # protocol only, and its items() is the sole way in.  Reading a real
+            # dict through the base type keeps the two consistent where it can.
+            pairs = dict.items(entry) if isinstance(entry, dict) else entry.items()
+            for key, item in pairs:
                 if not isinstance(key, str):
                     raise TypeError("%s keys must be strings, got %r." % (where, key))
                 # The key is rebuilt too.  A str subclass can carry state that
@@ -754,23 +764,68 @@ class SourceDocumentRegistry:
         default_factory=dict, repr=False, compare=False
     )
 
+    @staticmethod
+    def _snapshot(documents: Any, label: str) -> Dict[str, str]:
+        """Return an exact-keyed, line-normalized copy of one document mapping.
+
+        :param documents: Mapping from source paths to complete document text.
+        :type documents: Mapping[str, str]
+        :param label: Field name used in the error messages.
+        :type label: str
+        :return: The same documents keyed by exact text.
+        :rtype: Dict[str, str]
+        :raises ValueError: If a path is not a non-empty string.
+        :raises TypeError: If a document text is not a string.
+
+        Example::
+
+            >>> SourceDocumentRegistry._snapshot({"a.fcstm": "x"}, "source document")
+            {'a.fcstm': 'x'}
+        """
+        snapshot = {}
+        pairs = (
+            dict.items(documents)
+            if isinstance(documents, dict)
+            else dict(documents).items()
+        )
+        for path, text in pairs:
+            if not isinstance(path, str):
+                raise ValueError("%s paths must be non-empty strings." % label)
+            try:
+                plain_path = exact_str(path, "%s path" % label)
+            except TypeError:
+                # exact_str refuses an object that only claims to be a str.
+                raise ValueError(
+                    "%s paths must be non-empty strings." % label
+                ) from None
+            if not plain_path:
+                raise ValueError("%s paths must be non-empty strings." % label)
+            if plain_path in snapshot:
+                # Two distinct keys can hold the same text; silently keeping one
+                # would drop a document with nothing recorded.
+                raise ValueError(
+                    "%s paths contain two entries for %r." % (label, plain_path)
+                )
+            if not isinstance(text, str):
+                raise TypeError("%s text must be strings." % label)
+            snapshot[plain_path] = _normalize_line_separators(text)
+        return snapshot
+
     def __post_init__(self) -> None:
-        copied = {}
-        for path, text in dict(self.documents).items():
-            if not isinstance(path, str) or not path:
-                raise ValueError("source document paths must be non-empty strings.")
-            if not isinstance(text, str):
-                raise TypeError("source document text must be strings.")
-            copied[path] = _normalize_line_separators(text)
-        object.__setattr__(self, "documents", MappingProxyType(copied))
-        copied_queries = {}
-        for path, text in dict(self.query_documents).items():
-            if not isinstance(path, str) or not path:
-                raise ValueError("query document paths must be non-empty strings.")
-            if not isinstance(text, str):
-                raise TypeError("query document text must be strings.")
-            copied_queries[path] = _normalize_line_separators(text)
-        object.__setattr__(self, "query_documents", MappingProxyType(copied_queries))
+        # Keys are rebuilt as exact text, not stored as given.  A str subclass
+        # overriding __eq__/__hash__ would otherwise make every lookup hit the
+        # same document, so one file's text would be quoted as another's
+        # provenance -- the one thing this registry exists to rule out.
+        object.__setattr__(
+            self,
+            "documents",
+            MappingProxyType(self._snapshot(self.documents, "source document")),
+        )
+        object.__setattr__(
+            self,
+            "query_documents",
+            MappingProxyType(self._snapshot(self.query_documents, "query document")),
+        )
         if self.display_root is not None:
             object.__setattr__(self, "display_root", os.path.abspath(self.display_root))
 

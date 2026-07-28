@@ -1856,3 +1856,49 @@ def test_build_bmc_output_rejects_unknown_explanation_modes(explain_files, mode)
 
     with pytest.raises(ClickErrorException, match="infeasibility_explanation"):
         build_bmc_output(model, query, infeasibility_explanation=mode)
+
+
+@pytest.mark.unittest
+def test_bmc_cli_can_request_each_explanation_depth(explain_files) -> None:
+    """The three frozen depths are reachable from the command line.
+
+    The helper behind the command has accepted a depth for several rounds, but
+    the option itself was missing, so the capability existed with no user entry
+    point -- and the frozen contract asks for the three modes to be published
+    together across the API, the CLI and the JSON.
+    """
+    model, query = explain_files
+
+    result, payload = _json_result(
+        Path(model), Path(query), "--infeasibility-explanation", "formal"
+    )
+    explanation = payload["result"]["feasibility"]["explanation"]
+
+    assert result.exit_code == 3
+    assert explanation["classification"] == "assumptions_self_conflict"
+    assert explanation["core"]["scope"] == "assumptions_component"
+    assert [item["source_excerpt"] for item in explanation["core"]["items"]] == [
+        'assume at 0: var("x") == 1;',
+        'assume at 0: var("x") == 2;',
+    ]
+
+    # The default stays exactly as it was, with no explanation at all.
+    default_result, default_payload = _json_result(Path(model), Path(query))
+    default_feasibility = default_payload["result"]["feasibility"]
+    assert default_result.exit_code == 3
+    assert default_feasibility["explanation"] is None
+    assert default_feasibility["refinement_status"] == "not_requested"
+
+    # Spelling the default explicitly must agree with omitting it.
+    explicit_result, explicit_payload = _json_result(
+        Path(model), Path(query), "--infeasibility-explanation", "none"
+    )
+    assert explicit_result.exit_code == default_result.exit_code
+    assert explicit_payload["result"]["feasibility"]["explanation"] is None
+
+    # An unknown depth is refused by the option, before any solving happens.
+    rejected = _run(
+        "-i", str(model), "-q", str(query), "--infeasibility-explanation", "bogus"
+    )
+    assert rejected.exit_code != 0
+    assert "is not one of" in rejected.output

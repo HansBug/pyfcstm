@@ -1572,8 +1572,16 @@ def _category_noun(constraint: BmcConstraintRef) -> str:
     dotted form.
 
     The leading segment is used rather than the aggregate formula the group
-    belongs to because the aggregate is neither always available nor stable for a
-    given category.  A ``definedness`` group in the kernel stage belongs to no
+    belongs to, and the decisive reason is that the aggregate cannot reproduce the
+    specified output at all: a transition group reached through the assumptions
+    stage has ``environment`` as its aggregate, so it would render as "generated
+    environment constraint" where the specification requires "generated
+    transition constraint at step 0".  The specification also names such groups
+    by their category segments in its own prose, calling them generated
+    domain/transition support groups.
+
+    Two further properties rule the aggregate out independently: it is neither
+    always available nor stable for a given category.  A ``definedness`` group in the kernel stage belongs to no
     single aggregate at all, and the same category resolves to two different
     aggregates in the other two stages.  A reader would also meet a word they see
     nowhere else: the aggregate for the assumptions stage is not the name that
@@ -1613,6 +1621,9 @@ def depth_line_is_needed(requested_mode: str, achieved_mode: str) -> bool:
     This is a predicate rather than an inline condition so that every mode pair
     the delivery matrix allows can be checked against it, including the pairs no
     published transcript samples and the pairs whose objects cannot yet be built.
+    It is public for the same reason the other helpers in this module are: a test
+    replaces it to prove the renderer actually consults it rather than deciding
+    for itself, which a private name would not make any easier to do honestly.
 
     :param requested_mode: Depth the caller asked for.
     :type requested_mode: str

@@ -2253,24 +2253,22 @@ def test_human_explanation_matches_the_frozen_transcript_line_shapes() -> None:
     # with its ordinal dropped: an authored member contributes a location line
     # and its own text, a generated member contributes a single line.
     #
-    # The ordinals are not transcribed, and the reason is a requirement rather
-    # than an absence of one: core items are published in stable_id order, and
-    # this renderer prints the published order without re-sorting.
+    # The ordinals are not transcribed.  Core items are published in stable_id
+    # order -- sorted where the core is built, in BmcConflictCore's own
+    # constructor, not here -- and this renderer prints the published order as it
+    # receives it.  The sort is asserted directly in test/bmc/test_explanation.py,
+    # so a reader can check the claim without leaving the test tree.  The sample's own in-block
+    # order differs from that; where a requirement and an illustrative sample
+    # conflict, the requirement governs.
     #
-    # The sample's own in-block order disagrees with that requirement.  Where a
-    # normative rule and an illustrative sample conflict, the rule governs, so
-    # the sample's order is not reproduced and must not be: sorting by source
-    # position instead would fit both samples and violate the rule.  What the
-    # samples exclude is any single fixed ordering that reproduces both of them,
-    # including one keyed on semantic role: the proven-minimal sample happens to
-    # list its members in role order and the other does not.
-    #
-    # Three earlier versions of this comment were wrong.  One claimed no
-    # deterministic order could reproduce both samples, which a source-position
-    # rule refutes.  One called the question undecidable, which invited exactly
-    # the change the requirement forbids.  One said neither sample follows role
-    # order, which is false of the proven-minimal one.  Each time the error was
-    # an extra sentence that no evidence supported.
+    # Nothing is claimed here about which orderings the two samples do or do not
+    # admit.  Five versions of this comment tried to make such a claim and all
+    # five were wrong: no-deterministic-order-exists (refuted by ordering on
+    # source position), undecidable (the requirement decides it), neither-sample-
+    # follows-role-order (the proven-minimal one does), and excludes-any-single-
+    # ordering (refuted by "authored before generated, then by path and line").
+    # The claim was never needed for the conclusion, so it is gone rather than
+    # narrowed again.
     partial_core_transcript_shapes = [
         ("machine.fcstm:1:1-1:15", "persistent initializer: x = 0"),
         ("query.fbmcq:2:1-2:23", "assume at 0: x == 1;"),
@@ -2509,6 +2507,50 @@ def test_human_explanation_matches_the_frozen_transcript_line_shapes() -> None:
         ("proof", "none"): False,
         ("proof", "proof"): False,
     }
+
+    # Pinning the predicate is not enough on its own: the renderer could inline
+    # its own condition and the table above would still pass, because the one
+    # pair the two would disagree on is the pair whose object cannot be built.
+    # So the wiring itself is pinned -- replacing the predicate has to change the
+    # rendered output.
+    import pyfcstm.bmc.explanation as explanation_module
+
+    real_predicate = explanation_module.depth_line_is_needed
+    try:
+        explanation_module.depth_line_is_needed = lambda requested, achieved: True
+        forced = render(
+            BmcInfeasibilityExplanation(
+                "formal",
+                "formal",
+                "partial",
+                "initialization_self_conflict",
+                core=BmcConflictCore(
+                    "initialization_component",
+                    "C_init restricted to the conflicting groups",
+                    "source_group",
+                    "raw",
+                    "not_proven",
+                    (
+                        authored(
+                            "machine.fcstm",
+                            Span(1, 1, 1, 15),
+                            "initial.variable",
+                            "initialization",
+                            "initial_fact",
+                            "persistent initializer: x = 0",
+                            {"frame": 0, "variable": "x"},
+                        ),
+                    ),
+                ),
+                reason="sound source core published without a minimality proof",
+            )
+        )
+    finally:
+        explanation_module.depth_line_is_needed = real_predicate
+    # The real predicate says no for this pair, so the line can only be here if
+    # the renderer asked the predicate rather than deciding for itself.
+    assert not depth_line_is_needed("formal", "formal")
+    assert "Explanation depth: requested formal, achieved formal" in forced
 
     # The rendered output is then checked for every pair whose object the current
     # slots allow, so the predicate and the renderer cannot disagree.

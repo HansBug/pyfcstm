@@ -376,9 +376,12 @@ JSON 类型和必需键以模式为准；执行顺序、标准输出/标准错�
 ``classification`` 对应的读者可读句子。冲突约束的每一项要么用两行给出作者约束的
 位置与其源码文本，要么用一行给出生成的支撑组，说明它的类别首段——``domain``、
 ``transition``、``initial``、``assumption`` 或 ``definedness``\ ——以及它约束哪个
-frame 或 step。这里用类别首段而不是该组所属的聚合公式，因为聚合名既不总是存在、
-也不稳定：kernel 阶段的 ``definedness`` 组不属于任何单一聚合，同一个类别在另两个阶段
-会解析出两个不同的聚合名，而 assumptions 阶段的聚合名是报告里其他地方都不出现的词。``Core scope`` 与 ``Reduction`` 说明证明了什么、最小化进行到哪一步，
+frame 或 step。这里用类别首段而不是该组所属的聚合公式，首要原因是聚合名根本
+复现不了规定的输出：经 assumptions 阶段得到的 transition 组，其聚合名是 ``environment``，
+会渲染成 ``generated environment constraint``，而规定要求的是
+``generated transition constraint at step 0``。聚合名也既不总是存在、又不稳定——kernel
+阶段的 ``definedness`` 组不属于任何单一聚合，同一个类别在另两个阶段会解析出两个不同的
+聚合名。``Core scope`` 与 ``Reduction`` 说明证明了什么、最小化进行到哪一步，
 ``Reason`` 说明为什么停在那里。
 
 当请求的深度比实际达成的更深时会多出一行，因此请求 ``proof`` 而得到 ``formal``

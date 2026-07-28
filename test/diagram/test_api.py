@@ -26,6 +26,13 @@ from pyfcstm.model import State, StateMachine, load_state_machine_from_text
 pytestmark = pytest.mark.unittest
 
 
+class _UnprintableArgument:
+    """An argument whose ``__str__`` raises, as a broken ``__repr__`` might."""
+
+    def __str__(self):
+        raise ValueError("str() refused")
+
+
 def _model(source):
     return load_state_machine_from_text(source)
 
@@ -1524,7 +1531,6 @@ def test_a_probe_that_cannot_be_created_does_not_cost_the_document(
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX probe path")
-@pytest.mark.skipif(os.name == "nt", reason="POSIX probe path")
 @pytest.mark.parametrize("writer_name", ["_atomic_write_text", "_atomic_write_bytes"])
 def test_a_failing_logging_backend_does_not_cost_the_document(
     writer_name, tmp_path, monkeypatch
@@ -1574,7 +1580,6 @@ def test_a_failing_logging_backend_does_not_cost_the_document(
     assert target.read_bytes() == b"already rendered payload"
 
 
-@pytest.mark.skipif(os.name == "nt", reason="POSIX probe path")
 @pytest.mark.parametrize("writer_name", ["_atomic_write_text", "_atomic_write_bytes"])
 @pytest.mark.parametrize(
     # A third-party handler can raise anything. Naming only RuntimeError let
@@ -1619,10 +1624,15 @@ def test_a_broken_logging_backend_is_itself_reported(
     captured = capsys.readouterr().err
     assert "logging failed while reporting" in captured
     assert "backend down" in captured
-    # The degradation itself, not only the broken backend. A traceback naming
-    # the handler leaves the reader without the thing they have to act on.
+    # The degradation itself, not only the broken backend. Asserting on the
+    # original error alone proves nothing: `format_exc` prints the whole
+    # exception chain, so `__context__` already carried it before this fix.
+    # The message text is what only the deliberate write provides, and it has
+    # to appear before the traceback that mentions it.
     assert "could not remove the temporary file" in captured
-    assert "locked" in captured
+    assert captured.index("could not remove the temporary file") < captured.index(
+        "logging failed while reporting"
+    )
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX probe path")
@@ -1680,7 +1690,9 @@ def test_both_writers_route_every_degradation_through_the_safe_reporter(
     "raised, propagates",
     [(KeyboardInterrupt, True), (SystemExit, True), (ValueError, False)],
 )
-def test_the_stderr_fallback_does_not_swallow_an_interrupt(raised, propagates):
+def test_the_stderr_fallback_does_not_swallow_an_interrupt(
+    raised, propagates, monkeypatch
+):
     # The fallback exists so a broken logging backend cannot cost the caller
     # their work. Catching `BaseException` there made it swallow an interrupt
     # arriving while it ran -- the same mistake one frame up, where the helper
@@ -1698,8 +1710,7 @@ def test_the_stderr_fallback_does_not_swallow_an_interrupt(raised, propagates):
     logger = logging.getLogger("pyfcstm")
     handler = BrokenHandler()
     logger.addHandler(handler)
-    original = api.sys.stderr
-    api.sys.stderr = FailingStderr()
+    monkeypatch.setattr(sys, "stderr", FailingStderr())
     try:
         if propagates:
             with pytest.raises(raised):
@@ -1707,5 +1718,35 @@ def test_the_stderr_fallback_does_not_swallow_an_interrupt(raised, propagates):
         else:
             api._report_degradation("degraded")
     finally:
-        api.sys.stderr = original
         logger.removeHandler(handler)
+
+
+@pytest.mark.parametrize(
+    "message, args",
+    [
+        ("could not remove %s: %s", ("/tmp/leftover", PermissionError("locked"))),
+        ("100%% done", ()),
+        ("path %s", (_UnprintableArgument(),)),
+    ],
+)
+def test_the_last_resort_report_always_says_something(message, args, capsys):
+    # Interpolating the degradation and the traceback into one write meant one
+    # bad argument took both down, and this is the last place either can be
+    # said -- a `__str__` that raises produced no output at all. Two
+    # independent attempts, so a broken argument costs at most its own line.
+    from pyfcstm.diagram import api
+
+    class BrokenHandler(logging.Handler):
+        def emit(self, record):
+            raise RuntimeError("backend down")
+
+    logger = logging.getLogger("pyfcstm")
+    handler = BrokenHandler()
+    logger.addHandler(handler)
+    try:
+        api._report_degradation(message, *args)
+    finally:
+        logger.removeHandler(handler)
+    captured = capsys.readouterr().err
+    assert captured, "the last-resort report produced nothing"
+    assert "backend down" in captured

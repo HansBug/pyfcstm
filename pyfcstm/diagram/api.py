@@ -967,14 +967,28 @@ def _report_degradation(message: str, *args: Any) -> None:
         # forbids, and it would be a poor answer to a round spent adding
         # observability elsewhere.
         if logging.raiseExceptions:
+            # Written in two independent attempts. Interpolating the
+            # degradation and the traceback into one string means one bad
+            # argument -- a `__str__` that raises, a stray `%` -- takes both
+            # down, and this is the last place either can be said. The
+            # degradation goes first because it is what the reader must act
+            # on; the traceback only names the handler that broke.
+            failure = traceback.format_exc()
             try:
-                # The degradation itself first: that is what the reader has
-                # to act on -- a path left behind, a mode not applied. A
-                # traceback naming only the broken handler makes the backend
-                # visible and the problem it was carrying invisible.
+                sys.stderr.write("pyfcstm: %s\n" % (message % args))
+            except Exception:
+                # An argument whose `__str__` raises, or a format string whose
+                # placeholders do not match. The unformatted message is still
+                # worth more than silence.
+                try:
+                    sys.stderr.write("pyfcstm: %s %r\n" % (message, args))
+                except Exception:
+                    # stderr itself is unusable; the attempt below will say so
+                    # if it can.
+                    pass
+            try:
                 sys.stderr.write(
-                    "pyfcstm: %s\npyfcstm: logging failed while reporting it: %s\n"
-                    % (message % args, traceback.format_exc())
+                    "pyfcstm: logging failed while reporting it: %s\n" % failure
                 )
             except Exception:
                 # ValueError from a closed stream, OSError from one whose
@@ -1243,13 +1257,15 @@ def _atomic_write_text(
                 # raises under `-W error` and so performs that very
                 # substitution.
                 #
-                # Not an absolute guarantee: `_report_degradation` deliberately
-                # lets `SystemExit` and `KeyboardInterrupt` from a logging
-                # handler through, since swallowing an interrupt is worse. Such
-                # a handler can therefore still displace the in-flight
-                # exception here. What it cannot do any more is cost the
-                # caller their document -- by this point the write has either
-                # completed or already failed.
+                # Not an absolute guarantee, and the residue is worth naming.
+                # `_report_degradation` deliberately lets `SystemExit` and
+                # `KeyboardInterrupt` from a logging handler through, since
+                # swallowing an interrupt is worse. Such a handler therefore
+                # still displaces the in-flight exception here, and the report
+                # it was carrying is lost with it -- so the temporary file is
+                # left on disk with nothing said about it. What it can no
+                # longer do is cost the caller their document: by this point
+                # the write has either completed or already failed.
                 _report_degradation(
                     "could not remove the temporary file %s: %s",
                     temporary_path,
@@ -1319,13 +1335,15 @@ def _atomic_write_bytes(
                 # raises under `-W error` and so performs that very
                 # substitution.
                 #
-                # Not an absolute guarantee: `_report_degradation` deliberately
-                # lets `SystemExit` and `KeyboardInterrupt` from a logging
-                # handler through, since swallowing an interrupt is worse. Such
-                # a handler can therefore still displace the in-flight
-                # exception here. What it cannot do any more is cost the
-                # caller their document -- by this point the write has either
-                # completed or already failed.
+                # Not an absolute guarantee, and the residue is worth naming.
+                # `_report_degradation` deliberately lets `SystemExit` and
+                # `KeyboardInterrupt` from a logging handler through, since
+                # swallowing an interrupt is worse. Such a handler therefore
+                # still displaces the in-flight exception here, and the report
+                # it was carrying is lost with it -- so the temporary file is
+                # left on disk with nothing said about it. What it can no
+                # longer do is cost the caller their document: by this point
+                # the write has either completed or already failed.
                 _report_degradation(
                     "could not remove the temporary file %s: %s",
                     temporary_path,

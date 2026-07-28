@@ -1461,35 +1461,46 @@ __all__ = [
 ]
 
 
-EXPLANATION_HEADLINES = {
-    ("formal", "partial"): "PARTIAL FORMAL DOMAIN EXPLANATION",
-    ("formal", "complete"): "COMPLETE FORMAL DOMAIN EXPLANATION",
-    ("proof", "partial"): "PARTIAL VERIFIED DOMAIN PROOF",
-    ("proof", "complete"): "COMPLETE VERIFIED DOMAIN PROOF",
-}
+#: Headline for each achieved depth and status, keyed by ``(mode, status)``.
+#: A depth that was requested but not achieved has no entry: it is named by
+#: the requested mode instead, so the reader is told what they asked for
+#: rather than being shown a headline for a result that does not exist.
+EXPLANATION_HEADLINES = MappingProxyType(
+    {
+        ("formal", "partial"): "PARTIAL FORMAL DOMAIN EXPLANATION",
+        ("formal", "complete"): "COMPLETE FORMAL DOMAIN EXPLANATION",
+        ("proof", "partial"): "PARTIAL VERIFIED DOMAIN PROOF",
+        ("proof", "complete"): "COMPLETE VERIFIED DOMAIN PROOF",
+    }
+)
 
 #: Each classification in the words a reader can act on.
-CLASSIFICATION_PHRASES = {
-    "kernel_conflict": "the model's own domain and transition rules conflict",
-    "initialization_self_conflict": "initialization is internally inconsistent",
-    "initialization_domain_conflict": "initialization conflicts with the frame domain",
-    "initialization_kernel_conflict": (
-        "initialization conflicts with the transition relation"
-    ),
-    "assumptions_self_conflict": "the assumptions are internally inconsistent",
-    "assumptions_domain_conflict": "the assumptions conflict with the frame domain",
-    "assumptions_prefix_conflict": ("assumptions conflict with the feasible prefix"),
-}
+CLASSIFICATION_PHRASES = MappingProxyType(
+    {
+        "kernel_conflict": "the model's own domain and transition rules conflict",
+        "initialization_self_conflict": "initialization is internally inconsistent",
+        "initialization_domain_conflict": "initialization conflicts with the frame domain",
+        "initialization_kernel_conflict": (
+            "initialization conflicts with the transition relation"
+        ),
+        "assumptions_self_conflict": "the assumptions are internally inconsistent",
+        "assumptions_domain_conflict": "the assumptions conflict with the frame domain",
+        "assumptions_prefix_conflict": (
+            "assumptions conflict with the feasible prefix"
+        ),
+    }
+)
 
 
 def _core_position(constraint: BmcConstraintRef) -> str:
     """Return the frame or step position a core member constrains.
 
-    Called only for a generated group.  Issue #385 §12.2 forbids hiding such a
-    group's position for tidiness, and §12.3 prints it inline after the location
-    so a reader can tell which macro-step the constraint belongs to.  An authored
-    group's own text already states its position -- ``assume at 1: ...`` -- so it
-    is not routed through here.
+    Called only for a generated group.  A generated group is part of the proof
+    that no execution exists, so its position may not be hidden for tidiness; it
+    is printed inline after the location, which is where the published transcript
+    puts it, so a reader can tell which macro-step the constraint belongs to.  An
+    authored group's own text already states its position -- ``assume at 1: ...``
+    -- so it is not routed through here.
 
     :param constraint: Published constraint reference of one core member.
     :type constraint: pyfcstm.bmc.explanation.BmcConstraintRef
@@ -1521,11 +1532,11 @@ def _core_structural_refs(constraint: BmcConstraintRef) -> str:
     """Return the builder metadata a machine reader is told to consume.
 
     Called only for a generated group, whose single line carries no source text
-    of its own: issue #385 §12.2 requires such a group to be shown together with
-    its frame/step/refs rather than hidden for tidiness.  ``frame`` and ``step``
-    are already on that line, so only the other keys are added here.  An authored
-    group is not routed through this function -- its own text states its
-    position, and its refs remain a machine contract carried by the JSON.
+    of its own, so it has to be shown together with its frame/step/refs rather
+    than hidden for tidiness.  ``frame`` and ``step`` are already on that line, so
+    only the other keys are added here.  An authored group is not routed through
+    this function -- its own text states its position, and its refs remain a
+    machine contract carried by the JSON.
 
     :param constraint: Published constraint reference of one core member.
     :type constraint: pyfcstm.bmc.explanation.BmcConstraintRef
@@ -1554,13 +1565,12 @@ def _core_structural_refs(constraint: BmcConstraintRef) -> str:
 def _category_noun(constraint: BmcConstraintRef) -> str:
     """Return the reader-facing noun for one tracked group's category.
 
-    The frozen transcript in issue #385 §12.3 names a group by the leading
-    segment of its category followed by the word "constraint" -- "generated
-    transition constraint" -- never by the internal dotted form.  The leading
-    segment is used rather than the aggregate formula because every segment
-    ("domain", "transition", "initial", "assumption", "definedness") is
-    vocabulary the frozen contract already shows a reader, while the aggregate
-    name for the assumptions stage is not.
+    A group is named by the leading segment of its category followed by the word
+    "constraint" -- "generated transition constraint" -- never by the internal
+    dotted form.  The leading segment is used rather than the aggregate formula
+    because every segment ("domain", "transition", "initial", "assumption",
+    "definedness") is vocabulary a reader is already shown elsewhere, while the
+    aggregate name for the assumptions stage is not.
 
     Both the generated and the location-less authored branch read the noun from
     here.  They print different sentences, but they must agree on what the group
@@ -1582,47 +1592,14 @@ def _category_noun(constraint: BmcConstraintRef) -> str:
     return constraint.category.split(".")[0]
 
 
-def _core_roles(core) -> str:
-    """Summarise which semantic roles the core's members carry.
-
-    Issue #385 §13 requires a compact summary of the members' semantic roles
-    whenever an explanation exists.  Roles are counted rather than listed per
-    item, which keeps the summary short on a large core and leaves the numbered
-    item lines in the shape §12.3 gives them.
-
-    :param core: Published conflict core.
-    :type core: pyfcstm.bmc.explanation.BmcConflictCore
-    :return: Text such as ``assumption x2, initial fact``, or ``""`` for an
-        empty core.
-    :rtype: str
-
-    Example::
-
-        >>> class _Item:
-        ...     semantic_role = "initial_fact"
-        >>> class _Core:
-        ...     items = (_Item(), _Item())
-        >>> _core_roles(_Core())
-        'initial fact x2'
-    """
-    counts = {}
-    for item in core.items:
-        label = item.semantic_role.replace("_", " ")
-        counts[label] = counts.get(label, 0) + 1
-    return ", ".join(
-        label if count == 1 else "%s x%d" % (label, count)
-        for label, count in sorted(counts.items())
-    )
-
-
 def explanation_text_lines(explanation) -> List[str]:
     """Render one published explanation as human report lines.
 
-    Issue #385 §18.7 requires ``BmcSolveResult.__str__()``, ``to_text()`` and the
-    CLI to share presentation semantics, and §16.1 places narrative and text
-    rendering in this module rather than in ``witness.py``.  Both callers route
-    through here so neither can drift from the other, and a caller who paid for
-    ``formal`` or ``proof`` sees the result wherever they read it.
+    ``BmcSolveResult.__str__()``, ``to_text()`` and the CLI must present an
+    explanation the same way, and narrative and text rendering belong in this
+    module rather than in the solver-facing one.  Both callers route through here
+    so neither can drift from the other, and a caller who paid for ``formal`` or
+    ``proof`` sees the result wherever they read it.
 
     :param explanation: Published explanation, or ``None``.
     :type explanation: Optional[BmcInfeasibilityExplanation]
@@ -1649,11 +1626,12 @@ def explanation_text_lines(explanation) -> List[str]:
         explanation.achieved_mode != "none"
         and explanation.requested_mode != explanation.achieved_mode
     ):
-        # §13 requires both the requested and the achieved mode.  The headline
-        # names one depth: the achieved one when something was achieved, the
-        # requested one in the "NOT ACHIEVED" shape.  It is therefore ambiguous
-        # only when a deeper request settled for a shallower result, which is
-        # also the one combination the frozen transcripts do not sample.
+        # A reader needs both the depth they asked for and the depth they got.
+        # The headline names one of them: the achieved depth when something was
+        # achieved, the requested depth in the "NOT ACHIEVED" shape.  It is
+        # therefore ambiguous only when a deeper request settled for a shallower
+        # result, which is also the one combination no published transcript
+        # samples.
         lines.append(
             "Explanation depth: requested %s, achieved %s"
             % (explanation.requested_mode, explanation.achieved_mode)
@@ -1716,18 +1694,13 @@ def explanation_text_lines(explanation) -> List[str]:
                 "subset-minimal."
             )
         lines.append("Core scope: %s" % core.scope)
-        # Labels and order transcribed from issue #385 §12.2; §13 lists core
-        # scope, reduction, size and granularity among what must be shown
-        # whenever an explanation exists.
-        lines.append("Core granularity: %s" % core.granularity)
-        lines.append("Core size: %d" % len(core.items))
+        # A not-yet-minimal core reports its scope, its reduction and the reason
+        # the reduction stopped there.  Granularity, member count, a labelled
+        # minimality line and the elapsed time belong to the proven-minimal
+        # shape, which reports no reduction at all: the two shapes publish
+        # different field sets rather than one being a subset of the other, so a
+        # field is shown where its own shape shows it and nowhere else.
         lines.append("Reduction: %s" % core.reduction)
-        roles = _core_roles(core)
-        if roles:
-            # §13 also asks for a compact summary of the members' semantic
-            # roles.  It goes on its own line rather than as a per-item prefix so
-            # the numbered item lines keep the shape §12.3 gives them.
-            lines.append("Semantic roles: %s" % roles)
     if explanation.reason is not None:
         lines.append("Reason: %s" % explanation.reason)
     if core is None and explanation.classification is not None:

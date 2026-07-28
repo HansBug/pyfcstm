@@ -458,10 +458,10 @@ def _human_diagnostics(execution: _BmcExecution) -> Tuple[str, ...]:
 def _human_explanation(execution: "_BmcExecution") -> List[str]:
     """Render the optional infeasibility explanation for a human reader.
 
-    Delegates to the shared renderer in :mod:`pyfcstm.bmc.explanation`.  Issue
-    #385 §18.7 requires the CLI and ``BmcSolveResult.__str__()`` / ``to_text()``
-    to share presentation semantics, and §16.1 places that rendering in the
-    explanation module, so this function only unwraps the execution.
+    Delegates to the shared renderer in :mod:`pyfcstm.bmc.explanation`.  The CLI
+    and ``BmcSolveResult.__str__()`` / ``to_text()`` must present an explanation
+    the same way, and that rendering lives in the explanation module, so this
+    function only unwraps the execution.
 
     :param execution: Completed BMC execution carrying the solve result.
     :type execution: _BmcExecution

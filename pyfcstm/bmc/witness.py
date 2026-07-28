@@ -77,7 +77,11 @@ from .ast import (
 from .binding import BoundAssumption
 from .domain import STATE_INIT_ID, STATE_TERMINATE_ID
 from .errors import BmcBuildError
-from .explanation import BmcInfeasibilityExplanation
+from .explanation import (
+    CLASSIFICATION_SCOPES,
+    BmcInfeasibilityExplanation,
+    explanation_text_lines,
+)
 from .properties import BmcPropertyFormula, _lower_predicate
 from .query import EventAssumption
 from .relation import BmcCaseRelation
@@ -1746,12 +1750,8 @@ def _render_solve_result(result: "BmcSolveResult", tablefmt: str) -> str:
     lines.append("Conclusion: %s" % presentation.conclusion)
     lines.append("Evidence:")
     lines.extend("  %s" % item for item in presentation.evidence)
-    # §18.7 requires this surface and the CLI to share presentation semantics,
-    # and §13 lists what must appear whenever an explanation exists.  The lines
-    # come from the explanation module rather than being rebuilt here, because
-    # §16 forbids piling text rendering into this file.
-    from .explanation import explanation_text_lines
-
+    # This surface and the CLI must present an explanation the same way, so the
+    # lines come from the explanation module rather than being rebuilt here.
     explanation_lines = explanation_text_lines(
         getattr(getattr(result, "feasibility", None), "explanation", None)
     )
@@ -2437,8 +2437,6 @@ def _explanation_stage(
         ... ))
         'assumptions'
     """
-    from .explanation import CLASSIFICATION_SCOPES
-
     if explanation.classification is not None:
         scope = CLASSIFICATION_SCOPES[explanation.classification]
     elif explanation.core is not None:
@@ -4877,8 +4875,6 @@ def _attach_explanation(
         # The failure is still reported, though.  Returning the untouched result
         # would say "no refinement was requested" to a caller who did request
         # one, and would leave the internal mismatch recorded nowhere at all.
-        from .explanation import BmcInfeasibilityExplanation
-
         mismatch = BmcInfeasibilityExplanation(
             requested_mode=requested_mode,
             achieved_mode="none",

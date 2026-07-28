@@ -400,6 +400,55 @@ caveat, and cyan for report labels.  Color never enters JSON or files.  Scripts
 and LLM integrations must consume ``--json`` rather than parse human wording,
 ANSI, or live timing.
 
+Explanation block
+~~~~~~~~~~~~~~~~~
+
+``--explain-infeasibility formal`` or ``proof`` appends an explanation block to
+the human report.  ``BmcSolveResult.__str__()`` and ``to_text()`` render the same
+block from the same helper, so a reader sees identical text whichever surface
+they read.  A real invocation against an infeasible scenario produces:
+
+.. code-block:: text
+
+   Explanation: PARTIAL FORMAL DOMAIN EXPLANATION
+   Classification: assumptions conflict with the feasible prefix
+   
+   Conflict constraints:
+     1. r22.fbmcq:2:1-2:28
+        assume at 1: var("x") == 0;
+     2. r22.fbmcq:1:1-1:35
+        init state("Root.A") where x == 0;
+     3. r22.fcstm:1:1-1:15
+        def int x = 0;
+     4. generated transition constraint at step 0
+   
+   The displayed core is sufficient for UNSAT but is not proven subset-minimal.
+   Core scope: assumptions_prefix
+   Reduction: raw
+   Reason: sound source core published without a minimality proof
+   
+
+``Explanation`` names the depth that was achieved and how complete it is.
+``Classification`` is the reader-facing sentence for the machine
+``classification`` field.  Each conflict-constraint entry gives an authored
+member's location and its own source text on two lines, or a generated support
+group on one line naming the aggregate it belongs to and the frame or step it
+constrains.  ``Core scope`` and ``Reduction`` describe what was proven and how
+far minimization got, and ``Reason`` states why it stopped there.
+
+An additional line appears when a deeper depth was requested than was achieved,
+so a caller who asked for ``proof`` and received ``formal`` is told both:
+
+.. code-block:: text
+
+   Explanation depth: requested proof, achieved formal
+
+Granularity, member count, a labelled minimality line and the elapsed
+explanation time belong to the proven-minimal shape, which reports no reduction
+at all.  The two shapes publish different field sets, so a field appears only in
+the shape that publishes it.
+
+
 Direct Python result text
 -------------------------
 

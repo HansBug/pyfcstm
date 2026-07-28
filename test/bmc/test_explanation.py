@@ -2523,18 +2523,18 @@ def test_no_published_field_accepts_a_hostile_stand_in(class_name) -> None:
 
 @pytest.mark.unittest
 def test_human_vocabularies_are_transcribed_from_the_frozen_transcripts() -> None:
-    """Both human vocabularies, copied from issue #385 rather than paraphrased.
+    """Both human vocabularies, copied from the specification, not paraphrased.
 
     Rewriting a frozen phrase from memory produces text that reads correctly and
     passes every test that uses the same rewritten constant, so the only check
     that can catch it is a transcription compared against the issue.
 
-    The frozen transcripts give two different phrasings for one classification:
-    §12.2 says "assumptions conflict with the initialized transition prefix" and
-    §12.3 says "assumptions conflict with the feasible prefix", both under
-    "Scenario: INFEASIBLE AT ASSUMPTIONS" and "Core scope: assumptions_prefix",
-    which map to ``assumptions_prefix_conflict`` alone.  The implementation has
-    to pick one, and that choice is recorded here rather than left implicit.
+    The published transcripts give two different phrasings for one
+    classification: one says "assumptions conflict with the initialized
+    transition prefix" and the other "assumptions conflict with the feasible
+    prefix", both under identical scenario and core-scope lines that map to
+    ``assumptions_prefix_conflict`` alone.  The implementation has to pick one,
+    and that choice is recorded here rather than left implicit.
     """
     from pyfcstm.bmc.explanation import (
         CLASSIFICATION_PHRASES,
@@ -2542,9 +2542,8 @@ def test_human_vocabularies_are_transcribed_from_the_frozen_transcripts() -> Non
         EXPLANATION_HEADLINES,
     )
 
-    # Headlines: §12.1 line 959, §12.2 line 993, §12.3 line 1027.  The "proof"
-    # partial row has no sample; it follows the same two-word substitution the
-    # sampled proof row uses.
+    # Three of the four are sampled by a transcript.  The partial proof row is
+    # not; it follows the same two-word substitution the sampled proof row uses.
     assert EXPLANATION_HEADLINES == {
         ("formal", "complete"): "COMPLETE FORMAL DOMAIN EXPLANATION",
         ("formal", "partial"): "PARTIAL FORMAL DOMAIN EXPLANATION",
@@ -2560,7 +2559,7 @@ def test_human_vocabularies_are_transcribed_from_the_frozen_transcripts() -> Non
     assert CLASSIFICATION_PHRASES["assumptions_prefix_conflict"] in (
         frozen_prefix_phrasings
     )
-    # §12.4 line 1049.
+    # The classification line of the not-achieved transcript.
     assert (
         CLASSIFICATION_PHRASES["initialization_self_conflict"]
         == "initialization is internally inconsistent"

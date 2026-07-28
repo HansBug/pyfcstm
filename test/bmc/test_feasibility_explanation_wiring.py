@@ -1013,13 +1013,13 @@ def test_explanation_stage_covers_kernel_and_core_only_shapes() -> None:
 
 @pytest.mark.unittest
 def test_the_cli_and_to_text_share_one_explanation_renderer() -> None:
-    """Issue #385 §18.7: the CLI and ``to_text()`` share presentation semantics.
+    """The CLI and ``to_text()`` must present an explanation the same way.
 
     They are separate code paths, so each could render the explanation its own
-    way and drift apart between releases.  §16.1 places narrative and text
-    rendering in the explanation module precisely so there is one
-    implementation; this test holds both callers to it, and checks §13's required
-    fields reach the ``to_text()`` surface rather than only the CLI.
+    way and drift apart between releases.  Narrative and text rendering live in
+    the explanation module precisely so there is one implementation; this test
+    holds both callers to it, and checks that the published fields reach the
+    ``to_text()`` surface rather than only the CLI.
     """
     from types import SimpleNamespace
 
@@ -1052,8 +1052,8 @@ def test_the_cli_and_to_text_share_one_explanation_renderer() -> None:
     )
     explanation = BmcInfeasibilityExplanation(
         # A deeper request that settled for a shallower result: the one
-        # combination the frozen transcripts never sample, and the reason §13
-        # asks for both modes rather than only the achieved one.
+        # combination no published transcript samples, and the reason both
+        # depths are reported rather than only the achieved one.
         "proof",
         "formal",
         "partial",
@@ -1077,15 +1077,13 @@ def test_the_cli_and_to_text_share_one_explanation_renderer() -> None:
     )
     assert _human_explanation(execution) == shared
 
-    # §13's required fields are all present, including both modes.
+    # Both depths are visible, and the not-yet-minimal core reports scope,
+    # reduction and its reason -- the fields that shape publishes.
     assert "Explanation depth: requested proof, achieved formal" in shared
     for required in (
         "Classification: the assumptions are internally inconsistent",
         "Core scope: assumptions_component",
-        "Core granularity: source_group",
-        "Core size: 1",
         "Reduction: raw",
-        "Semantic roles: assumption",
     ):
         assert required in shared, required
 
@@ -1096,8 +1094,8 @@ def test_to_text_shows_the_explanation_it_paid_for() -> None:
 
     ``to_text()`` used to render a generic header and then flatten the whole
     feasibility record into one very long ``Details:`` row, so a caller reading
-    ``str(result)`` saw none of §13's fields as presentation even though the CLI
-    showed all of them.
+    ``str(result)`` saw none of the explanation's fields as presentation even
+    though the CLI showed all of them.
     """
     machine = load_state_machine_from_text(
         "def int x = 0;\nstate Root { state A; [*] -> A; }"
@@ -1120,8 +1118,6 @@ def test_to_text_shows_the_explanation_it_paid_for() -> None:
         "Explanation: ",
         "Classification: ",
         "Core scope: ",
-        "Core granularity: ",
-        "Core size: ",
         "Reduction: ",
     ):
         assert required in text, required

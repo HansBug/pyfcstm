@@ -2067,8 +2067,8 @@ def test_human_explanation_renders_every_published_shape() -> None:
             reason="minimization skipped",
         )
     )
-    # Frozen issue #385 §12.3 names a generated group by the leading segment
-    # of its category plus the word "constraint", on one line of its own.
+    # A generated group is named by the leading segment of its category plus the
+    # word "constraint", on one line of its own.
     assert "  1. generated assumption constraint" in lines
     assert not any("assumption.frame" in line for line in lines)
 
@@ -2144,7 +2144,7 @@ def test_human_explanation_renders_every_published_shape() -> None:
             reason="minimization skipped",
         )
     )
-    # This is the one shape frozen issue #385 §12.3 pins verbatim.
+    # This is the one shape a published transcript pins verbatim.
     assert "  1. generated transition constraint at step 0" in lines
     assert "     kind state" in lines
 
@@ -2230,10 +2230,10 @@ def test_human_explanation_renders_every_published_shape() -> None:
 def test_human_explanation_matches_the_frozen_transcript_line_shapes() -> None:
     """Compare each rendered line against the frozen transcript line it mirrors.
 
-    Frozen issue #385 §12.3 shows a conflict-constraint block in which an
-    authored member occupies exactly two lines -- location then its own text,
-    with no position suffix and no builder metadata -- while a generated member
-    occupies exactly one.  §12.4 ends with two physical lines, not one long one.
+    The published conflict-constraint block gives an authored member exactly two
+    lines -- location then its own text, with no position suffix and no builder
+    metadata -- while a generated member occupies exactly one.  The not-achieved
+    transcript ends with two physical lines, not one long one.
     Substring checks pass on all of those even when the shape is wrong, so the
     frozen lines are transcribed here and compared whole.
     """
@@ -2249,44 +2249,41 @@ def test_human_explanation_matches_the_frozen_transcript_line_shapes() -> None:
     from pyfcstm.entry.bmc import _human_explanation
     from pyfcstm.utils.validate import Span
 
-    # Transcribed from frozen issue #385 §12.3.  Each entry is one frozen line
+    # Transcribed from the published transcript.  Each entry is one line
     # with its ordinal dropped: an authored member contributes a location line
     # and its own text, a generated member contributes a single line.
     #
-    # The ordinals are not transcribed.  §8.3 step 6 and §15 require the
-    # extracted core to be sorted by stable_id before it enters the Public API,
-    # and this renderer prints that published order without re-sorting; the sort
-    # puts the assumption group ahead of the initializer, while the §12.3 sample
-    # shows the initializer first.
+    # The ordinals are not transcribed, and this test does not claim to settle
+    # why.  What is checked here is line shape.
     #
-    # Those clauses constrain the published order.  Neither forbids a CLI from
-    # building its own display order, so the frozen text is underdetermined here
-    # and printing the published order is a legitimate choice rather than a
-    # forced one.  What makes the samples' own order unsuitable as a byte
-    # contract is that they are illustrations:
+    # On order, the position taken is narrow: the published core is sorted by
+    # stable_id before it leaves the data layer, this renderer prints that order
+    # without re-sorting, and nothing in the contract requires a reader-facing
+    # order distinct from the published one.  Whether a reader-facing order
+    # *should* differ is not decidable from the two samples available:
     #
-    #   * §12 is titled a CLI output prototype, and its two samples give the
-    #     same "Conflict constraints:" block two different layouts -- §12.2 uses
-    #     bracketed semantic-role labels in three aligned columns, one line per
-    #     member, while §12.3 uses ordinals with the member's text on a second
-    #     indented line.
-    #   * §12.2 and §12.3 print different Classification prose for the same
-    #     "Scenario: INFEASIBLE AT ASSUMPTIONS" and the same
-    #     "Core scope: assumptions_prefix", which map to one classification.
-    #   * §15 states that human text uses stable templates whose wording may
-    #     improve across minor versions, while machine consumers read structured
-    #     fields.
+    #   * They order their members differently from each other -- one lists
+    #     initialization, transition, assumption; the other initialization,
+    #     assumption, transition -- so no single ordering rule is evidenced by
+    #     both, though "by source position, position-less last" happens to fit
+    #     both and is therefore not excluded either.
+    #   * They also lay the same block out differently, one with bracketed role
+    #     labels in aligned columns and one with ordinals over indented text,
+    #     and that difference tracks the completeness of the core rather than
+    #     anything about order.  The complete shape is unreachable here, so the
+    #     comparison cannot be made from this side.
     #
-    # An earlier version of this comment claimed no deterministic display order
-    # could reproduce both samples.  That was wrong: sorting by source position
-    # with position-less members last satisfies both.  The reason to print the
-    # published order is simplicity and agreement with §8.3, not impossibility.
+    # The choice is therefore recorded as the simplest one consistent with the
+    # published order, to be revisited when the complete shape becomes
+    # reachable.  An earlier version of this comment claimed no deterministic
+    # order could reproduce both samples, which was wrong, and a later one
+    # presented the replacement reasons as settled, which overstates them.
     frozen_12_3_shapes = [
         ("machine.fcstm:1:1-1:15", "persistent initializer: x = 0"),
         ("query.fbmcq:2:1-2:23", "assume at 0: x == 1;"),
         ("generated transition constraint at step 0", None),
     ]
-    # Transcribed from frozen issue #385 §12.4, including where the text breaks.
+    # Transcribed from the not-achieved transcript, including its line break.
     frozen_12_4 = [
         "No conflict core or causal chain was published. The classification is "
         "retained",
@@ -2389,17 +2386,20 @@ def test_human_explanation_matches_the_frozen_transcript_line_shapes() -> None:
             reason="shared timeout budget exhausted during minimization",
         )
     )
-    # Issue #385 §13 requires core scope, reduction, size and granularity, plus a
-    # compact summary of the members' semantic roles, whenever an explanation
-    # exists.  The labels and their order are transcribed from §12.2.
-    assert "Core scope: assumptions_prefix" in lines
-    assert "Core granularity: source_group" in lines
-    assert "Core size: 3" in lines
-    assert "Reduction: partial_minimized" in lines
-    assert "Semantic roles: assumption, initial fact, transition rule" in lines
+    # A not-yet-minimal core reports scope, reduction and the reason its
+    # reduction stopped, and nothing else.  Granularity, member count, a labelled
+    # minimality line and the elapsed time belong to the proven-minimal shape,
+    # which in turn reports no reduction at all -- the two shapes publish
+    # different field sets rather than one extending the other.  An earlier
+    # version of this test asserted the minimal shape's fields here, which locked
+    # in three lines the not-yet-minimal transcript does not have.
     scope_at = lines.index("Core scope: assumptions_prefix")
-    assert lines[scope_at + 1] == "Core granularity: source_group"
-    assert lines[scope_at + 2] == "Core size: 3"
+    assert lines[scope_at + 1] == "Reduction: partial_minimized"
+    assert not any(line.startswith("Core granularity:") for line in lines)
+    assert not any(line.startswith("Core size:") for line in lines)
+    assert not any(line.startswith("Semantic roles:") for line in lines)
+    assert not any(line.startswith("Subset minimality:") for line in lines)
+    assert not any(line.startswith("Explanation time:") for line in lines)
 
     start = lines.index("Conflict constraints:")
     block = lines[start + 1 : lines.index("", start + 1)]
@@ -2434,6 +2434,66 @@ def test_human_explanation_matches_the_frozen_transcript_line_shapes() -> None:
             reason="the source-level core check timed out after classification",
         )
     )
-    assert degraded[-len(frozen_12_4) :] == frozen_12_4
-    # The frozen transcript puts a blank line between the reason and the tail.
-    assert degraded[-len(frozen_12_4) - 1] == ""
+    # The whole block, not just its tail.  Pinning only the last two lines left
+    # the header unguarded, so a stray line between the headline and the
+    # classification -- for instance an unconditional depth line -- passed.
+    assert (
+        degraded
+        == [
+            "Explanation: FORMAL EXPLANATION NOT ACHIEVED",
+            "Classification: initialization is internally inconsistent",
+            "Reason: the source-level core check timed out after classification",
+            "",
+        ]
+        + frozen_12_4
+    )
+
+    # The depth line appears when a deeper request settled for a shallower
+    # result, and only then.  Without both halves the condition can be widened
+    # to always-true and every transcript above still passes.
+    def depth_lines(requested, achieved, status, **kwargs):
+        rendered = render(
+            BmcInfeasibilityExplanation(
+                requested, achieved, status, "initialization_self_conflict", **kwargs
+            )
+        )
+        return [line for line in rendered if line.startswith("Explanation depth:")]
+
+    core_only = dict(
+        core=BmcConflictCore(
+            "initialization_component",
+            "C_init restricted to the conflicting groups",
+            "source_group",
+            "raw",
+            "not_proven",
+            (
+                authored(
+                    "machine.fcstm",
+                    Span(1, 1, 1, 15),
+                    "initial.variable",
+                    "initialization",
+                    "initial_fact",
+                    "persistent initializer: x = 0",
+                    {"frame": 0, "variable": "x"},
+                ),
+            ),
+        ),
+        reason="sound source core published without a minimality proof",
+    )
+    # Requested deeper than achieved: shown, naming both.
+    assert depth_lines("proof", "formal", "partial", **core_only) == [
+        "Explanation depth: requested proof, achieved formal"
+    ]
+    # Requested equals achieved: the headline already names it.
+    assert depth_lines("formal", "formal", "partial", **core_only) == []
+    # Nothing achieved: the headline names the requested depth instead, which is
+    # the shape the transcript above pins.
+    assert (
+        depth_lines(
+            "formal",
+            "none",
+            "partial",
+            reason="the source-level core check timed out after classification",
+        )
+        == []
+    )

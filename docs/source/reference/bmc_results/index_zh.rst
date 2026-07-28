@@ -345,6 +345,50 @@ JSON 类型和必需键以模式为准；执行顺序、标准输出/标准错�
 红色表示缺少见证、发现反例或重放不匹配，黄色表示空场景、无定论、响应未完成和有界提醒，青色表示报告标签；
 颜色不会进入 JSON 或文件。脚本和大语言模型集成必须使用 ``--json``，不得解析人类文案、ANSI 或实时耗时。
 
+解释区块
+~~~~~~~~
+
+``--explain-infeasibility formal`` 或 ``proof`` 会在人类报告后追加一个解释区块。
+``BmcSolveResult.__str__()`` 与 ``to_text()`` 使用同一个辅助函数渲染同一区块，
+因此读者从任一入口看到的文本完全一致。对一个不可行场景的真实调用输出如下：
+
+.. code-block:: text
+
+   Explanation: PARTIAL FORMAL DOMAIN EXPLANATION
+   Classification: assumptions conflict with the feasible prefix
+   
+   Conflict constraints:
+     1. r22.fbmcq:2:1-2:28
+        assume at 1: var("x") == 0;
+     2. r22.fbmcq:1:1-1:35
+        init state("Root.A") where x == 0;
+     3. r22.fcstm:1:1-1:15
+        def int x = 0;
+     4. generated transition constraint at step 0
+   
+   The displayed core is sufficient for UNSAT but is not proven subset-minimal.
+   Core scope: assumptions_prefix
+   Reduction: raw
+   Reason: sound source core published without a minimality proof
+   
+
+``Explanation`` 给出实际达成的深度及其完整程度。``Classification`` 是机器字段
+``classification`` 对应的读者可读句子。冲突约束的每一项要么用两行给出作者约束的
+位置与其源码文本，要么用一行给出生成的支撑组，说明它属于哪个聚合以及它约束哪个
+frame 或 step。``Core scope`` 与 ``Reduction`` 说明证明了什么、最小化进行到哪一步，
+``Reason`` 说明为什么停在那里。
+
+当请求的深度比实际达成的更深时会多出一行，因此请求 ``proof`` 而得到 ``formal``
+的调用者能同时看到两者：
+
+.. code-block:: text
+
+   Explanation depth: requested proof, achieved formal
+
+粒度、成员数、带标签的最小性行以及解释耗时属于\ **已证明最小**\ 的形态，而那个形态
+反过来完全不报告 reduction。两种形态发布的字段集不同，所以每个字段只出现在发布它的
+那个形态里。
+
 直接打印 Python 结果对象
 ------------------------
 

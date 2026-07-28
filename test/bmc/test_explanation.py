@@ -116,6 +116,56 @@ def test_explanation_module_never_imports_z3() -> None:
     assert completed.stdout.strip() == "False"
 
 
+def test_every_frozen_vocabulary_matches_the_authored_list() -> None:
+    """Each vocabulary is compared against an independent transcription.
+
+    Widening a vocabulary is invisible to every other test here: the corpus that
+    checks schema/constructor agreement draws its values from the implementation's
+    own tuples, so adding a member widens the corpus with it.  Adding a bogus
+    entry to the statuses, modes or reductions failed nothing before this test
+    existed.  The lists below are copied from the authored contract rather than
+    imported, because comparing a table with itself proves only that it equals
+    itself.
+    """
+    from pyfcstm.bmc import explanation as module
+
+    assert module._MODES == ("none", "formal", "proof")
+    assert module._STATUSES == ("complete", "partial", "unknown", "timeout")
+    assert module._REDUCTIONS == ("raw", "partial_minimized", "subset_minimal")
+    assert module._MINIMALITIES == ("proven", "not_proven")
+    assert module._GRANULARITIES == ("source_group",)
+    assert module._STAGES == ("kernel", "initialization", "assumptions")
+    assert module._SEMANTIC_ROLES == (
+        "domain_rule",
+        "initial_fact",
+        "transition_rule",
+        "assumption",
+        "definedness",
+    )
+    assert dict(module.CATEGORY_ROLES) == {
+        "domain.": "domain_rule",
+        "initial.": "initial_fact",
+        "transition.": "transition_rule",
+        "assumption.": "assumption",
+        "definedness": "definedness",
+    }
+    assert dict(module.CLASSIFICATION_SCOPES) == {
+        "kernel_conflict": "kernel",
+        "initialization_self_conflict": "initialization_component",
+        "initialization_domain_conflict": "initialization_domain",
+        "initialization_kernel_conflict": "initialization_prefix",
+        "assumptions_self_conflict": "assumptions_component",
+        "assumptions_domain_conflict": "assumptions_domain",
+        "assumptions_prefix_conflict": "assumptions_prefix",
+    }
+    assert module.STAGE_FALLBACK_SCOPES == (
+        "initialization_stage_fallback",
+        "assumptions_stage_fallback",
+    )
+    # The published excerpt bound is stated by the contract, not derived.
+    assert module.MAX_SOURCE_EXCERPT_CHARS == 4096
+
+
 def test_explanation_field_order_matches_frozen_prototype() -> None:
     """The container shape is frozen once; later stages only fill it in."""
     assert tuple(BmcInfeasibilityExplanation.__dataclass_fields__) == (

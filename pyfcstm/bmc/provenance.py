@@ -221,6 +221,51 @@ def exact_float(value: Any, where: str) -> float:
         raise TypeError("%s must be a number, got %r." % (where, value)) from err
 
 
+def exact_index(value: Any, where: str) -> int:
+    """Return a source coordinate as an exact ``int``.
+
+    :param value: Candidate coordinate.
+    :type value: object
+    :param where: Field name used in the error message.
+    :type where: str
+    :return: The coordinate as an exact ``int``.
+    :rtype: int
+    :raises TypeError: If the value is not really an ``int``.
+
+    Example::
+
+        >>> exact_index(1, "line")
+        1
+    """
+    # The value is typed, not bounded.  A span that cannot be sliced degrades to
+    # an absent excerpt by an existing contract, so an out-of-range coordinate is
+    # already handled downstream; the published schema only requires an integer.
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise TypeError("%s must be an integer, got %r." % (where, value))
+    return exact_int(value, where)
+
+
+def exact_optional_index(value: Any, where: str) -> Optional[int]:
+    """Return an optional source coordinate, or ``None``.
+
+    :param value: Candidate coordinate, or ``None``.
+    :type value: object
+    :param where: Field name used in the error message.
+    :type where: str
+    :return: The coordinate as an exact ``int``, or ``None``.
+    :rtype: Optional[int]
+    :raises TypeError: If the value is neither ``None`` nor an ``int``.
+
+    Example::
+
+        >>> exact_optional_index(None, "end_line") is None
+        True
+    """
+    if value is None:
+        return None
+    return exact_index(value, where)
+
+
 #: How many decimal digits a published integer may have.
 #:
 #: CPython refuses to render an integer longer than this into text by default
@@ -487,8 +532,28 @@ class BmcSourceRef:
         # ``isinstance`` consults ``__class__``, which any object can fake, so the
         # real type is what decides here.  A stand-in would reach every later
         # reader of ``span.line`` and friends without holding those fields.
-        if self.span is not None and type(self.span) is not Span:
-            raise TypeError("BMC source span must be Span or None.")
+        if self.span is not None:
+            if type(self.span) is not Span:
+                raise TypeError("BMC source span must be Span or None.")
+            # Span itself imposes no bounds, being a shared utility, so the
+            # coordinates are checked where they are published.  The schema types
+            # them as integers, and this is the one direction the asymmetry
+            # ledger does not cover: a constructor looser than the schema emits
+            # output that fails the contract it publishes.
+            object.__setattr__(
+                self,
+                "span",
+                Span(
+                    exact_index(self.span.line, "BMC source span line"),
+                    exact_index(self.span.column, "BMC source span column"),
+                    exact_optional_index(
+                        self.span.end_line, "BMC source span end_line"
+                    ),
+                    exact_optional_index(
+                        self.span.end_column, "BMC source span end_column"
+                    ),
+                ),
+            )
 
     def to_canonical(self) -> Dict[str, Any]:
         """Return a JSON-compatible source reference.
@@ -821,7 +886,9 @@ __all__ = [
     "BmcTrackedConstraint",
     "SourceDocumentRegistry",
     "exact_float",
+    "exact_index",
     "exact_int",
+    "exact_optional_index",
     "exact_str",
     "json_canonical",
 ]

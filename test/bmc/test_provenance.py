@@ -2024,3 +2024,36 @@ def test_a_span_stand_in_is_refused() -> None:
 
     with pytest.raises(TypeError, match="span must be Span or None"):
         BmcSourceRef("fcstm", "a.fcstm", fake_span)
+
+
+def test_span_coordinates_are_typed_where_they_are_published() -> None:
+    """The constructor must not be looser than the schema it publishes to.
+
+    The asymmetry ledger records cases where the schema accepts what the
+    constructor refuses, which is harmless because the constructor is the
+    stricter side.  This is the mirror image: a constructor looser than the
+    schema lets the tool emit output that fails its own published contract.
+    ``Span`` is a shared utility and imposes no types of its own, so the check
+    belongs at the boundary that publishes it.
+    """
+    import json
+
+    from pyfcstm.bmc.provenance import BmcSourceRef
+
+    for bad in (Span("oops", 1), Span(1.5, 1), Span(True, 1), Span(1, None)):
+        with pytest.raises(TypeError, match="must be an integer"):
+            BmcSourceRef("fcstm", "a.fcstm", bad)
+    for bad in (Span(1, 1, "x", None), Span(1, 1, 1, 2.5)):
+        with pytest.raises(TypeError, match="must be an integer"):
+            BmcSourceRef("fcstm", "a.fcstm", bad)
+
+    # Coordinates are typed, not bounded: a span that cannot be sliced already
+    # degrades to an absent excerpt, and the schema states no bound either.
+    published = BmcSourceRef("fcstm", "a.fcstm", Span(0, -1, None, None))
+    payload = json.dumps(published.to_canonical()["span"])
+    assert json.loads(payload) == {
+        "line": 0,
+        "column": -1,
+        "end_line": None,
+        "end_column": None,
+    }

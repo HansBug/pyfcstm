@@ -63,6 +63,18 @@ exact\_float
 .. autofunction:: exact_float
 
 
+exact\_index
+-----------------------------------------------------
+
+.. autofunction:: exact_index
+
+
+exact\_optional\_index
+-----------------------------------------------------
+
+.. autofunction:: exact_optional_index
+
+
 json\_canonical
 -----------------------------------------------------
 

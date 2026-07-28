@@ -6621,7 +6621,7 @@
               ]
             }
           },
-          "$comment": "Coordinates are 1-based and end-exclusive by producer contract; the source registry degrades any span it cannot slice to a null excerpt rather than rejecting it, and Span itself imposes no bounds, so this definition matches what the constructors actually accept."
+          "$comment": "Coordinates are 1-based and end-exclusive by producer contract. The source registry degrades any span it cannot slice to a null excerpt rather than rejecting it, so no bound is stated here; the constructor types these fields to match, which it previously did not."
         }
       },
       "allOf": [

@@ -821,6 +821,39 @@ def test_a_lying_length_cannot_smuggle_an_oversized_excerpt() -> None:
         )
 
 
+def test_an_aggregate_is_not_chosen_by_the_value_asking_for_it() -> None:
+    """``constraint_aggregate`` hardens its inputs like its sibling does.
+
+    It decides which formula a group belongs to using ``==`` and ``startswith``,
+    both methods of the untrusted value.  It is exported next to
+    ``category_role``, which was hardened for exactly this reason.
+    """
+    from pyfcstm.bmc.explanation import constraint_aggregate
+
+    class Lying(str):
+        def __eq__(self, other):
+            return True
+
+        def startswith(self, prefix, *args, **kwargs):
+            return True
+
+        __hash__ = str.__hash__
+
+    with pytest.raises(ValueError, match="no aggregate"):
+        constraint_aggregate(Lying("nope"), Lying("nope"))
+
+    impostor = type("Impostor", (object,), {"__class__": property(lambda self: str)})()
+    with pytest.raises(ValueError, match="matches no aggregate"):
+        constraint_aggregate(impostor, impostor)
+
+    # A well-behaved subclass still resolves on its real text.
+    class Shouty(str):
+        def __str__(self):
+            return "LIE"
+
+    assert constraint_aggregate(Shouty("kernel"), Shouty("domain.frame")) == "domain"
+
+
 def test_a_category_cannot_choose_its_own_semantic_role() -> None:
     """The family prefix is matched on the text, not via ``startswith``.
 

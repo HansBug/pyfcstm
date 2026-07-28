@@ -326,6 +326,17 @@ def constraint_aggregate(stage: str, category: str) -> str:
         >>> constraint_aggregate("kernel", "transition.step")
         'transition'
     """
+    # Both reads go through the exact text, for the same reason category_role
+    # does: `==` and `startswith` are methods the untrusted value provides, so it
+    # would otherwise decide which aggregate formula it belongs to.
+    try:
+        stage = exact_str(stage, "stage")
+        category = exact_str(category, "category")
+    except TypeError:
+        # exact_str refuses an object that only claims to be a str.
+        raise ValueError(
+            "stage %r with category %r matches no aggregate." % (stage, category)
+        ) from None
     if stage == "kernel":
         if category.startswith("domain"):
             return "domain"

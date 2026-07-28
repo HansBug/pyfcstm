@@ -1130,6 +1130,7 @@ def test_umask_probe_never_widens_the_process(tmp_path, monkeypatch):
     assert calls == [], "the umask must not be touched to read it"
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX probe path")
 def test_cleanup_reporting_survives_warnings_as_errors(tmp_path, monkeypatch):
     # These cleanups were reported with `warnings.warn`, which raises under
     # `-W error` / `PYTHONWARNINGS=error` / pytest's `filterwarnings = error`.
@@ -1523,7 +1524,11 @@ def test_a_probe_that_cannot_be_created_does_not_cost_the_document(
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX probe path")
-def test_a_failing_logging_backend_does_not_cost_the_document(tmp_path, monkeypatch):
+@pytest.mark.skipif(os.name == "nt", reason="POSIX probe path")
+@pytest.mark.parametrize("writer_name", ["_atomic_write_text", "_atomic_write_bytes"])
+def test_a_failing_logging_backend_does_not_cost_the_document(
+    writer_name, tmp_path, monkeypatch
+):
     # The branch that saves an already-written document logs first and returns
     # second. `Handler.emit` is a user extension point, so a handler that
     # raises propagates to whoever logged -- and control then never reached
@@ -1551,21 +1556,35 @@ def test_a_failing_logging_backend_does_not_cost_the_document(tmp_path, monkeypa
         return real_open(path, *args, **kwargs)
 
     monkeypatch.setattr(os, "open", refuse_probe)
-    target = tmp_path / "doc.html"
+    target = tmp_path / "doc.out"
+    writer = getattr(api, writer_name)
+    payload = (
+        "already rendered payload"
+        if writer_name.endswith("text")
+        else b"already rendered payload"
+    )
     try:
         with pytest.raises(SystemExit):
-            api._atomic_write_text(target, "already rendered payload")
+            writer(target, payload)
     finally:
         logger.removeHandler(handler)
     # The interrupt still reaches the caller -- swallowing a SystemExit would
     # be worse than the leak it hides -- but the document is already the
     # target by then.
-    assert target.read_text(encoding="utf-8") == "already rendered payload"
+    assert target.read_bytes() == b"already rendered payload"
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX probe path")
 @pytest.mark.parametrize("writer_name", ["_atomic_write_text", "_atomic_write_bytes"])
+@pytest.mark.parametrize(
+    # A third-party handler can raise anything. Naming only RuntimeError let
+    # the catch be narrowed to it with the suite still green, and a formatter
+    # raising ValueError would then have replaced the caller's interrupt.
+    "backend_error",
+    [RuntimeError, ValueError, TypeError, AttributeError, OSError],
+)
 def test_a_broken_logging_backend_is_itself_reported(
-    writer_name, tmp_path, monkeypatch, capsys
+    backend_error, writer_name, tmp_path, monkeypatch, capsys
 ):
     # The helper that keeps a logging failure from replacing an in-flight
     # exception must not drop it either -- swallowing without a trace is what
@@ -1576,7 +1595,7 @@ def test_a_broken_logging_backend_is_itself_reported(
 
     class FailingHandler(logging.Handler):
         def emit(self, record):
-            raise RuntimeError("backend down")
+            raise backend_error("backend down")
 
     logger = logging.getLogger("pyfcstm")
     handler = FailingHandler()
@@ -1600,8 +1619,13 @@ def test_a_broken_logging_backend_is_itself_reported(
     captured = capsys.readouterr().err
     assert "logging failed while reporting" in captured
     assert "backend down" in captured
+    # The degradation itself, not only the broken backend. A traceback naming
+    # the handler leaves the reader without the thing they have to act on.
+    assert "could not remove the temporary file" in captured
+    assert "locked" in captured
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX probe path")
 @pytest.mark.parametrize("writer_name", ["_atomic_write_text", "_atomic_write_bytes"])
 def test_both_writers_route_every_degradation_through_the_safe_reporter(
     writer_name, tmp_path, monkeypatch
@@ -1649,4 +1673,39 @@ def test_both_writers_route_every_degradation_through_the_safe_reporter(
         assert handler.raised, "the deferred report never reached the helper"
     finally:
         os.umask(previous)
+        logger.removeHandler(handler)
+
+
+@pytest.mark.parametrize(
+    "raised, propagates",
+    [(KeyboardInterrupt, True), (SystemExit, True), (ValueError, False)],
+)
+def test_the_stderr_fallback_does_not_swallow_an_interrupt(raised, propagates):
+    # The fallback exists so a broken logging backend cannot cost the caller
+    # their work. Catching `BaseException` there made it swallow an interrupt
+    # arriving while it ran -- the same mistake one frame up, where the helper
+    # deliberately lets `SystemExit` through.
+    from pyfcstm.diagram import api
+
+    class BrokenHandler(logging.Handler):
+        def emit(self, record):
+            raise RuntimeError("backend down")
+
+    class FailingStderr:
+        def write(self, _value):
+            raise raised("during fallback")
+
+    logger = logging.getLogger("pyfcstm")
+    handler = BrokenHandler()
+    logger.addHandler(handler)
+    original = api.sys.stderr
+    api.sys.stderr = FailingStderr()
+    try:
+        if propagates:
+            with pytest.raises(raised):
+                api._report_degradation("degraded")
+        else:
+            api._report_degradation("degraded")
+    finally:
+        api.sys.stderr = original
         logger.removeHandler(handler)

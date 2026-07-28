@@ -968,13 +968,24 @@ def _report_degradation(message: str, *args: Any) -> None:
         # observability elsewhere.
         if logging.raiseExceptions:
             try:
+                # The degradation itself first: that is what the reader has
+                # to act on -- a path left behind, a mode not applied. A
+                # traceback naming only the broken handler makes the backend
+                # visible and the problem it was carrying invisible.
                 sys.stderr.write(
-                    "pyfcstm: logging failed while reporting: %s\n"
-                    % traceback.format_exc()
+                    "pyfcstm: %s\npyfcstm: logging failed while reporting it: %s\n"
+                    % (message % args, traceback.format_exc())
                 )
-            except BaseException:
-                # stderr itself is gone or closed. There is no third place to
-                # put this, and raising would cost the caller their work.
+            except Exception:
+                # ValueError from a closed stream, OSError from one whose
+                # descriptor has gone, AttributeError from a replacement that
+                # is not file-like, and whatever `format_exc` raises on an
+                # exotic exception. There is no third place to put this, and
+                # raising would cost the caller their work.
+                #
+                # `Exception`, not `BaseException`: an interrupt arriving while
+                # this line runs is the user's, and swallowing it here is the
+                # same mistake as swallowing it one frame up.
                 pass
 
 
@@ -1225,13 +1236,20 @@ def _atomic_write_text(
             except OSError as cleanup_error:
                 # The in-flight exception is the one the caller needs, so this
                 # cannot be raised -- doing so would replace a KeyboardInterrupt
-                # or the chained error above with a cleanup detail. Logged
+                # or the chained error above with a cleanup detail. Reported
                 # instead, because the alternative is a full-size file left
-                # behind with nothing said about it. Logging rather than
-                # `warnings.warn`: a warning raises under `-W error`, and it
-                # raises from inside `finally`, which discards the exception on
-                # its way out -- the exact substitution this comment says
-                # cannot happen. Logging cannot be promoted to an exception.
+                # behind with nothing said about it. Reported through
+                # `_report_degradation` rather than `warnings.warn`, which
+                # raises under `-W error` and so performs that very
+                # substitution.
+                #
+                # Not an absolute guarantee: `_report_degradation` deliberately
+                # lets `SystemExit` and `KeyboardInterrupt` from a logging
+                # handler through, since swallowing an interrupt is worse. Such
+                # a handler can therefore still displace the in-flight
+                # exception here. What it cannot do any more is cost the
+                # caller their document -- by this point the write has either
+                # completed or already failed.
                 _report_degradation(
                     "could not remove the temporary file %s: %s",
                     temporary_path,
@@ -1294,13 +1312,20 @@ def _atomic_write_bytes(
             except OSError as cleanup_error:
                 # The in-flight exception is the one the caller needs, so this
                 # cannot be raised -- doing so would replace a KeyboardInterrupt
-                # or the chained error above with a cleanup detail. Logged
+                # or the chained error above with a cleanup detail. Reported
                 # instead, because the alternative is a full-size file left
-                # behind with nothing said about it. Logging rather than
-                # `warnings.warn`: a warning raises under `-W error`, and it
-                # raises from inside `finally`, which discards the exception on
-                # its way out -- the exact substitution this comment says
-                # cannot happen. Logging cannot be promoted to an exception.
+                # behind with nothing said about it. Reported through
+                # `_report_degradation` rather than `warnings.warn`, which
+                # raises under `-W error` and so performs that very
+                # substitution.
+                #
+                # Not an absolute guarantee: `_report_degradation` deliberately
+                # lets `SystemExit` and `KeyboardInterrupt` from a logging
+                # handler through, since swallowing an interrupt is worse. Such
+                # a handler can therefore still displace the in-flight
+                # exception here. What it cannot do any more is cost the
+                # caller their document -- by this point the write has either
+                # completed or already failed.
                 _report_degradation(
                     "could not remove the temporary file %s: %s",
                     temporary_path,

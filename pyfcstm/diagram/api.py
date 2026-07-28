@@ -1012,49 +1012,49 @@ def _umask_default_mode(directory: Path) -> int:
     # observation happens on a sibling opened with 0666 and left for the kernel
     # to mask.
     handle, reserved = tempfile.mkstemp(prefix=".pyfcstm-umask-", dir=str(directory))
-    try:
-        # `mkstemp` asks for 0600, but the mask applies to that too, so under a
-        # mask that removes write this file is born read-only -- and Windows
-        # refuses to delete a read-only file. Through the descriptor, for the
-        # same reason the observation file uses one.
-        if hasattr(os, "fchmod"):
-            os.fchmod(handle, 0o600)
-    finally:
-        os.close(handle)
-    if not hasattr(os, "fchmod"):
-        os.chmod(reserved, 0o600)
-    # Derived from a reserved name, but not itself reserved: another process in
-    # a shared directory can put something at this path first. `O_EXCL` refuses
-    # to follow that, and `created` records whether the file below is ours --
-    # without it the cleanup chmod'd a path this process never created, and
-    # since `chmod` follows symlinks, an attacker's link turned it into a
-    # permission change on an unrelated file. Measured: a victim went 0744 to
-    # 0600 while the probe itself failed with FileExistsError.
     observed = reserved + ".probe"
     created = False
+    # Everything past this point is inside the cleanup, including restoring the
+    # write bit: doing that before the `try` meant an `fchmod` failure left the
+    # reserved file behind permanently, with nothing logged.
     try:
+        try:
+            # `mkstemp` asks for 0600, but the mask applies to that too, so
+            # under a mask that removes write this file is born read-only, and
+            # Windows will not delete a read-only file. Through the descriptor,
+            # never by name -- see below.
+            if hasattr(os, "fchmod"):
+                os.fchmod(handle, 0o600)
+        finally:
+            os.close(handle)
+        # `observed` is derived from a reserved name but is not itself
+        # reserved, so a process sharing the directory can put something there
+        # first. `O_EXCL` refuses to follow that, and `created` records whether
+        # the file is ours.
         descriptor = os.open(observed, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o666)
         created = True
         try:
-            # fchmod on the descriptor we opened, not chmod on the name: it
-            # cannot be redirected, and the file has to be writable before
-            # Windows will delete it -- which is exactly the state a caller
-            # masking `_S_IWRITE` leaves it in.
-            #
-            # Windows has no fchmod, so it falls back to chmod by name below.
-            # That is narrower than the failure this replaced -- the name is
-            # one this call did create, and the window is only between the
-            # close and the chmod -- but it is not the same guarantee, and
-            # exploiting it would need symlink creation, which Windows gates
-            # behind Developer Mode or SeCreateSymbolicLinkPrivilege. Linux
-            # always has fchmod, so no CI run exercises that branch.
             mode = os.fstat(descriptor).st_mode & 0o7777
+            # Restoring the write bit by name is a redirect sink and there is
+            # no safe version of it: between the close and the chmod a
+            # concurrent process can swap the name for a hard link to an
+            # unrelated file, which needs no privilege on any platform, and
+            # `chmod` would then apply to the target. Both were measured
+            # changing a victim from 0744 to 0600. So it happens through the
+            # descriptor or not at all.
+            #
+            # Where `fchmod` is missing -- Windows, which is a third of the
+            # unit-test matrix and reaches this line on every write to a new
+            # path -- the file simply stays as the mask made it. That only
+            # matters under a mask that removes write, where the probe is then
+            # undeletable and the cleanup below logs it; the same mask makes
+            # the atomic writer's own temporary undeletable, so this is a
+            # property of that configuration rather than something the probe
+            # introduces.
             if hasattr(os, "fchmod"):
                 os.fchmod(descriptor, 0o600)
         finally:
             os.close(descriptor)
-        if not hasattr(os, "fchmod"):
-            os.chmod(observed, 0o600)
         return mode
     finally:
         for path, ours in ((observed, created), (reserved, True)):

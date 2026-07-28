@@ -16,7 +16,9 @@ if str(ROOT) not in sys.path:
 from diagram_contract_support import sample_diagram  # noqa: E402
 
 
-def _check_style_sources(html: str, policy: str, styles: List[str]) -> None:
+def _check_style_sources(
+    html: str, policy: str, styles: List[str], require_nonce: bool = True
+) -> None:
     """
     Pin the exact contents of ``style-src``.
 
@@ -79,10 +81,17 @@ def _check_style_sources(html: str, policy: str, styles: List[str]) -> None:
         for style in styles
     }
     nonces = [item for item in sources if item.startswith("'nonce-")]
-    if len(nonces) != 1:
+    # Only when the caller asked for it. Requiring a nonce unconditionally made
+    # `--require-style-hashes` reject a hash-only `style-src` -- which is
+    # strictly the stronger policy, and the direction issue #405 would be fixed
+    # in -- while reporting an error about nonces to someone who never
+    # mentioned them.
+    if require_nonce and len(nonces) != 1:
         raise SystemExit(
             "style-src must carry exactly one nonce, found %d" % len(nonces)
         )
+    if not require_nonce and len(nonces) > 1:
+        raise SystemExit("style-src carries %d nonces; at most one" % len(nonces))
     # Compared as a multiset, not filtered for surprises. Rejecting only the
     # unexpected let an embedded stylesheet's hash be moved out of `style-src`
     # into a directive a browser ignores: the remaining nonce authorises
@@ -104,6 +113,10 @@ def _check_style_sources(html: str, policy: str, styles: List[str]) -> None:
                 ", ".join(unexpected) or "nothing",
             )
         )
+    if not nonces:
+        # A hash-only policy, which the caller accepted by not asking for a
+        # nonce. There is nothing to cross-check against the bootstrap.
+        return
     declared = nonces[0][len("'nonce-") : -1]
     # All occurrences, not the first: the last assignment is what the runtime
     # ends up with, so checking only the first would validate a value the
@@ -256,7 +269,7 @@ def main() -> None:
         # `_check_style_sources` compares the parsed `style-src` as an exact
         # multiset, which answers both "is it there" and "is it there and
         # nothing else".
-        _check_style_sources(html, policy, styles)
+        _check_style_sources(html, policy, styles, args.require_style_nonce)
     if args.require_embedded_fonts is not None:
         faces = re.findall(r"@font-face\{", html)
         if len(faces) != args.require_embedded_fonts:
@@ -295,8 +308,8 @@ def main() -> None:
             ("connect-src 'none'", args.require_connect_none),
             ("worker-src 'none'", args.require_worker_none),
             ("script hashes", args.require_script_hashes),
-            ("style hashes", args.require_style_hashes),
-            ("style nonce", args.require_style_nonce),
+            ("style-src exact source list", args.require_style_hashes),
+            ("style nonce matches bootstrap", args.require_style_nonce),
             ("wasm-unsafe-eval", args.require_wasm_unsafe_eval),
             ("base-uri/form-action 'none'", args.require_no_fallback_directives),
             ("no unsafe-eval", args.forbid_unsafe_eval),

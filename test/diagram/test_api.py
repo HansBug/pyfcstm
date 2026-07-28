@@ -1348,12 +1348,95 @@ def test_a_hijacked_probe_name_does_not_change_another_file(tmp_path, monkeypatc
 
     def hijacking_mkstemp(*args, **kwargs):
         handle, name = real_mkstemp(*args, **kwargs)
-        os.symlink(str(victim), name + ".probe")
+        # Only the probe's own names. Any other mkstemp during this test would
+        # otherwise get a symlink too, and a second one would raise
+        # FileExistsError from here rather than failing an assertion.
+        if ".pyfcstm-umask-" in name:
+            os.symlink(str(victim), name + ".probe")
         return handle, name
 
-    monkeypatch.setattr(api.tempfile, "mkstemp", hijacking_mkstemp)
+    # `tempfile`, not `api.tempfile`: they are the same module object, and
+    # writing the latter suggests a scope this does not have.
+    monkeypatch.setattr(tempfile, "mkstemp", hijacking_mkstemp)
     with pytest.raises(FileExistsError):
         api._umask_default_mode(tmp_path)
 
     assert stat.S_IMODE(victim.stat().st_mode) == 0o744
     assert victim.read_text(encoding="utf-8") == "keep"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX hard links and modes")
+def test_probe_cleanup_cannot_be_redirected_by_a_hard_link(tmp_path, monkeypatch):
+    # The symlink fix left a name-based `os.chmod` on the platform without
+    # `fchmod`. A hard link needs no privilege anywhere, so swapping the name
+    # between the close and the chmod redirected it just as a symlink had:
+    # measured, a victim went 0744 to 0600. Nothing restores permissions by
+    # name now. `fchmod` is deleted here to force the branch Linux never takes.
+    from pyfcstm.diagram import api
+
+    victim = tmp_path / "victim"
+    victim.write_text("keep", encoding="utf-8")
+    os.chmod(victim, 0o744)
+
+    monkeypatch.delattr(os, "fchmod")
+    real_open = os.open
+
+    def swapping_open(path, *args, **kwargs):
+        descriptor = real_open(path, *args, **kwargs)
+        if str(path).endswith(".probe"):
+            os.unlink(path)
+            os.link(str(victim), str(path))
+        return descriptor
+
+    monkeypatch.setattr(os, "open", swapping_open)
+    api._umask_default_mode(tmp_path)
+
+    assert stat.S_IMODE(victim.stat().st_mode) == 0o744
+    assert victim.read_text(encoding="utf-8") == "keep"
+
+
+@pytest.mark.skipif(not hasattr(os, "fchmod"), reason="requires fchmod")
+def test_probe_removes_its_files_even_when_restoring_the_mode_fails(
+    tmp_path, monkeypatch
+):
+    # Restoring the write bit used to happen before the cleanup `try`, so an
+    # `fchmod` failure left the reserved file in the caller's directory
+    # permanently with nothing logged.
+    from pyfcstm.diagram import api
+
+    def refuse(*_args, **_kwargs):
+        raise PermissionError("injected")
+
+    monkeypatch.setattr(os, "fchmod", refuse)
+    with pytest.raises(PermissionError):
+        api._umask_default_mode(tmp_path)
+    assert list(tmp_path.iterdir()) == [], "the probe leaked its reserved file"
+
+
+@pytest.mark.skipif(not hasattr(os, "fchmod"), reason="requires fchmod")
+def test_the_reserved_probe_file_is_made_writable_before_removal(tmp_path, monkeypatch):
+    # `mkstemp` asks for 0600 and the mask applies to that too, so under a mask
+    # that removes write the reserved file is born read-only -- and Windows
+    # will not delete a read-only file. Checking the directory is empty
+    # afterwards cannot see this: POSIX removes a read-only file happily, so
+    # the restore has to be observed where it happens.
+    from pyfcstm.diagram import api
+
+    restored = []
+    real_fchmod = os.fchmod
+
+    def recording_fchmod(descriptor, mode):
+        restored.append(mode)
+        return real_fchmod(descriptor, mode)
+
+    monkeypatch.setattr(os, "fchmod", recording_fchmod)
+    previous = os.umask(0o222)
+    try:
+        api._umask_default_mode(tmp_path)
+    finally:
+        os.umask(previous)
+
+    # One for the reserved file, one for the observation sibling. Dropping
+    # either leaves a file Windows cannot delete.
+    assert restored == [0o600, 0o600], restored
+    assert list(tmp_path.iterdir()) == []

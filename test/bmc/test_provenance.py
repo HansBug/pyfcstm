@@ -2513,8 +2513,13 @@ def test_stage_and_category_pairings_the_builder_emits() -> None:
         "state Root { event Go; state A; state B; [*] -> A; A -> B :: Go; A -> B; }"
     )
     context = BmcEngine(machine).prepare(
+        # The where clause and the assumption both divide, so definedness groups
+        # are emitted from initialization and from assumptions -- the two places
+        # the rationale compares.  Without the dividing assumption only one of
+        # them appears and the comparison below would pass while checking half of
+        # what it claims.
         'init state("Root.A") where x / y > 0; '
-        'assume at 0: var("x") == 1; '
+        'assume at 0: var("x") / var("y") > 0; '
         'check reach <= 2: active("Root.B");'
     )
     core = build_bmc_core_formula(context)
@@ -2531,15 +2536,15 @@ def test_stage_and_category_pairings_the_builder_emits() -> None:
     assert stages_by_prefix["transition"] == {"kernel"}
     assert constraint_aggregate("kernel", "transition.step") == "transition"
 
-    # A definedness group never comes from the kernel stage.  Where it does come
-    # from, the aggregate is a different word in each case, which is why the
-    # rendered noun reads the category instead.
-    if "definedness" in stages_by_prefix:
-        assert "kernel" not in stages_by_prefix["definedness"]
-        assert {
-            constraint_aggregate(stage, "definedness")
-            for stage in stages_by_prefix["definedness"]
-        } <= {"initial", "environment"}
+    # A definedness group never comes from the kernel stage, and it does come
+    # from both of the others.  Asserting the set rather than testing for
+    # membership keeps this from passing when the query stops reaching one of
+    # them: the rationale compares the two aggregates, so both have to be here.
+    assert stages_by_prefix["definedness"] == {"initialization", "assumptions"}
+    assert {
+        stage: constraint_aggregate(stage, "definedness")
+        for stage in stages_by_prefix["definedness"]
+    } == {"initialization": "initial", "assumptions": "environment"}
 
     # An assumption group's aggregate is a word no reader sees elsewhere.
     assert stages_by_prefix["assumption"] == {"assumptions"}

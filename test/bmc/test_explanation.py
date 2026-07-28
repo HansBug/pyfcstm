@@ -230,6 +230,72 @@ def test_a_subclass_cannot_substitute_its_own_canonical_output() -> None:
         )
 
 
+#: Frozen structures the transcription test above pins by value.
+_TRANSCRIBED_FROZEN_NAMES = frozenset(
+    {
+        "CATEGORY_ROLES",
+        "CLASSIFICATION_SCOPES",
+        "INDEX_REF_KEYS",
+        "SCOPE_AGGREGATES",
+        "STAGE_FALLBACK_SCOPES",
+        "UNBUILT_SLOTS",
+        "_FACT_KINDS",
+        "_GRANULARITIES",
+        "_MINIMALITIES",
+        "_MODES",
+        "_REDUCTIONS",
+        "_SEMANTIC_ROLES",
+        "_STAGES",
+        "_STATUSES",
+    }
+)
+
+#: Frozen structures deliberately not transcribed, each with its reason.
+_DERIVED_FROZEN_NAMES = {
+    "_SCOPES": "concatenation of CLASSIFICATION_SCOPES values and the fallbacks",
+    "_DELIVERY_MATRIX_ROWS": "transcribed by the delivery-matrix test instead",
+    "_DELIVERY_SIGNATURES": "expanded from _DELIVERY_MATRIX_ROWS",
+    "_MODE_ORDER": "an ordering over _MODES, pinned by the delivery matrix",
+    "_REDUCTION_MINIMALITY": "pinned by the reduction/minimality coupling tests",
+}
+
+
+def test_the_transcription_guard_covers_every_frozen_structure() -> None:
+    """The guard has to notice a frozen structure nobody transcribed.
+
+    Listing vocabularies by hand has now missed some three times, most recently
+    in the very test written to stop that happening.  Enumerating the module
+    instead means a newly frozen structure fails here until someone either
+    transcribes it or records why it is derived from one that already is.
+    """
+    from types import MappingProxyType
+
+    from pyfcstm.bmc import explanation as module
+
+    frozen_names = set()
+    for name in dir(module):
+        if name.startswith("__"):
+            continue
+        value = getattr(module, name)
+        # Plain dicts and sets count too: the two module tables that hold an
+        # ordering and a coupling are exactly that, and an enumeration that
+        # skipped them would repeat the mistake this test exists to catch.
+        if isinstance(value, (tuple, frozenset, MappingProxyType, dict, set)):
+            # Type aliases and imported helpers are not frozen data.
+            if name in {"Any", "Dict", "Mapping", "Optional", "Tuple", "Literal"}:
+                continue
+            if not name.isupper() and not name.lstrip("_").isupper():
+                continue
+            frozen_names.add(name)
+
+    accounted = _TRANSCRIBED_FROZEN_NAMES | set(_DERIVED_FROZEN_NAMES)
+    assert frozen_names - accounted == set(), (
+        "a frozen structure is neither transcribed nor recorded as derived"
+    )
+    # And nothing in the lists has quietly disappeared from the module.
+    assert accounted - frozen_names == set()
+
+
 def test_every_frozen_vocabulary_matches_the_authored_list() -> None:
     """Each vocabulary is compared against an independent transcription.
 
@@ -280,6 +346,24 @@ def test_every_frozen_vocabulary_matches_the_authored_list() -> None:
         "assumptions_stage_fallback",
     )
     assert module._FACT_KINDS == ("structural_constraint",)
+    assert module.UNBUILT_SLOTS == ("proof", "narrative")
+    assert module.INDEX_REF_KEYS == ("frame", "frames", "step", "steps")
+    assert dict(module.SCOPE_AGGREGATES) == {
+        "kernel": ("domain", "transition"),
+        "initialization_component": ("initial",),
+        "initialization_domain": ("domain", "initial"),
+        "initialization_prefix": ("domain", "transition", "initial"),
+        "assumptions_component": ("environment",),
+        "assumptions_domain": ("domain", "environment"),
+        "assumptions_prefix": ("domain", "transition", "initial", "environment"),
+        "initialization_stage_fallback": ("domain", "transition", "initial"),
+        "assumptions_stage_fallback": (
+            "domain",
+            "transition",
+            "initial",
+            "environment",
+        ),
+    }
     # The published excerpt bound is stated by the contract, not derived.
     assert module.MAX_SOURCE_EXCERPT_CHARS == 4096
 

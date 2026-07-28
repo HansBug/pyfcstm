@@ -767,3 +767,64 @@ def test_a_mismatch_after_the_probes_keeps_their_ledger() -> None:
         "component_assumptions"
     ]
     assert degraded.refinement_status == degraded.explanation.status == "partial"
+
+
+def test_the_default_path_starts_no_solver_of_its_own() -> None:
+    """Asking for no explanation must cost no solver work at all.
+
+    Asserting that the published fields look untouched is weaker than it sounds:
+    an early return could run a check first and still return the same object.
+    This records the actual solver traffic instead, so a stray ``Solver()`` or
+    ``check()`` on the default path turns red rather than hiding behind an
+    unchanged payload.
+    """
+    import z3
+
+    from pyfcstm.bmc import build_bmc_core_formula, compile_bmc_property
+    from pyfcstm.bmc.engine import BmcEngine
+    from pyfcstm.bmc.witness import solve_bmc_property
+    from pyfcstm.model import load_state_machine_from_text
+
+    machine = load_state_machine_from_text(
+        "def int x = 0;\n"
+        "state Root { event Go; state A; state B; [*] -> A; A -> B :: Go; }"
+    )
+    context = BmcEngine(machine).prepare(
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
+        'check reach <= 2: active("Root.B");'
+    )
+    formula = compile_bmc_property(build_bmc_core_formula(context))
+
+    def trace(**solve_kwargs):
+        """Return the ordered solver operations one solve performs."""
+        operations = []
+        real_solver = z3.Solver
+        real_check = z3.Solver.check
+
+        class TracingSolver(real_solver):
+            def __init__(self, *args, **kwargs):
+                operations.append("Solver()")
+                super().__init__(*args, **kwargs)
+
+            def check(self, *args, **kwargs):
+                operations.append("check")
+                return real_check(self, *args, **kwargs)
+
+        z3.Solver = TracingSolver
+        try:
+            solve_bmc_property(formula, **solve_kwargs)
+        finally:
+            z3.Solver = real_solver
+        return operations
+
+    default_operations = trace()
+    explained_operations = trace(infeasibility_explanation="formal")
+
+    # The mandatory verdict's own traffic, recorded exactly.  Comparing only a
+    # prefix would miss an extra check inserted before the early return, which is
+    # the mutation this test has to catch.
+    assert default_operations == ["Solver()", "check", "check", "check"]
+    # Asking for an explanation adds work; asking for none adds none.
+    assert len(explained_operations) > len(default_operations)
+    assert explained_operations[: len(default_operations)] == default_operations

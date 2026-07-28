@@ -176,7 +176,8 @@ def exact_int(value: Any, where: str) -> int:
     :rtype: int
     :raises TypeError: If the value is not really an ``int``.
     :raises ValueError: If the number needs more decimal digits than
-        :data:`MAX_METADATA_INT_DIGITS`, which no JSON encoder here can render.
+        the smaller of :data:`MAX_METADATA_INT_DIGITS` and this interpreter's
+        own limit, since past that point ``json.dumps`` cannot render it.
 
     Example::
 
@@ -270,11 +271,15 @@ def exact_optional_index(value: Any, where: str) -> Optional[int]:
 
 #: How many decimal digits a published integer may have.
 #:
-#: CPython refuses to render an integer longer than this into text by default
-#: (``sys.set_int_max_str_digits``), so a longer one passes every type check here
-#: and then fails inside ``json.dumps`` with an error naming neither the field nor
-#: the object.  The bound is stated rather than inherited from the interpreter so
-#: that the same payload is accepted or refused on every supported version.
+#: This is the *floor*, not the whole rule.  CPython refuses to render an integer
+#: longer than its own configured limit into text, and a longer one would pass
+#: every type check here only to fail inside ``json.dumps`` with an error naming
+#: neither the field nor the object.  The effective bound is therefore the
+#: smaller of this value and the live interpreter setting -- see
+#: :func:`_effective_int_digit_limit`.  Stating a floor keeps the same payload
+#: accepted on every supported version, including those with no limit at all,
+#: while following the live setting keeps the promise that whatever is accepted
+#: here can actually be encoded in this process.
 MAX_METADATA_INT_DIGITS = 4300
 
 

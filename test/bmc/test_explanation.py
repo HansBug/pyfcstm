@@ -116,12 +116,100 @@ def test_explanation_module_never_imports_z3() -> None:
     assert completed.stdout.strip() == "False"
 
 
+def test_a_subclass_cannot_substitute_its_own_canonical_output() -> None:
+    """Composition boundaries take the exact type, not a subclass.
+
+    Each of these fields is published by calling ``to_canonical()`` on whatever
+    was stored, so a subclass passes the type check and then supplies its own
+    payload: the object that was validated is not the one that reaches JSON.
+    The schema rejects what such a subclass emits, which makes this the
+    direction the asymmetry ledger does not cover -- a constructor looser than
+    the contract it publishes.
+    """
+
+    class EvilSource(BmcSourceRef):
+        def to_canonical(self):
+            return {"kind": "evil", "path": 7, "span": "bad"}
+
+    with pytest.raises(TypeError, match="source must be BmcSourceRef"):
+        BmcConstraintRef(
+            "g",
+            "assumptions",
+            "assumption.frame",
+            EvilSource("generated", None, None),
+            "s",
+        )
+
+    class EvilConstraint(BmcConstraintRef):
+        def to_canonical(self):
+            return {"stable_id": None}
+
+    with pytest.raises(TypeError, match="constraint must be BmcConstraintRef"):
+        BmcCoreItem(
+            EvilConstraint("g", "assumptions", "assumption.frame", _GENERATED, "s"),
+            "assumption",
+            None,
+            False,
+            {"kind": "structural_constraint"},
+            "t",
+            False,
+        )
+
+    class EvilItem(BmcCoreItem):
+        def to_canonical(self):
+            return {"constraint": None}
+
+    evil_item = EvilItem(
+        _constraint(),
+        "initial_fact",
+        None,
+        False,
+        {"kind": "structural_constraint"},
+        "t",
+        False,
+    )
+    with pytest.raises(TypeError, match="core items must be BmcCoreItem"):
+        BmcConflictCore(
+            "initialization_component",
+            "I_0",
+            "source_group",
+            "raw",
+            "not_proven",
+            (evil_item,),
+        )
+
+    class EvilCore(BmcConflictCore):
+        def to_canonical(self):
+            return {"scope": None}
+
+    evil_core = EvilCore(
+        "initialization_component",
+        "I_0",
+        "source_group",
+        "raw",
+        "not_proven",
+        (_item(),),
+    )
+    with pytest.raises(TypeError, match="core must be BmcConflictCore"):
+        BmcInfeasibilityExplanation(
+            requested_mode="formal",
+            achieved_mode="formal",
+            status="partial",
+            classification="initialization_self_conflict",
+            core=evil_core,
+            reason="minimization not attempted",
+        )
+
+
 def test_every_frozen_vocabulary_matches_the_authored_list() -> None:
     """Each vocabulary is compared against an independent transcription.
 
     Widening a vocabulary is invisible to every other test here: the corpus that
     checks schema/constructor agreement draws its values from the implementation's
-    own tuples, so adding a member widens the corpus with it.  Adding a bogus
+    own tuples, so adding a member widens the corpus with it.  The list below has
+    to name every vocabulary the package freezes, including the ones in
+    ``provenance``: the first version of this guard missed two, which is the same
+    "the exhaustive list is itself incomplete" mistake it was written to prevent.  Adding a bogus
     entry to the statuses, modes or reductions failed nothing before this test
     existed.  The lists below are copied from the authored contract rather than
     imported, because comparing a table with itself proves only that it equals
@@ -162,8 +250,15 @@ def test_every_frozen_vocabulary_matches_the_authored_list() -> None:
         "initialization_stage_fallback",
         "assumptions_stage_fallback",
     )
+    assert module._FACT_KINDS == ("structural_constraint",)
     # The published excerpt bound is stated by the contract, not derived.
     assert module.MAX_SOURCE_EXCERPT_CHARS == 4096
+
+    from pyfcstm.bmc import provenance
+
+    assert provenance._SOURCE_KINDS == {"fcstm", "fbmcq", "generated"}
+    assert provenance.MAX_METADATA_DEPTH == 64
+    assert provenance.MAX_METADATA_INT_DIGITS == 4300
 
 
 def test_explanation_field_order_matches_frozen_prototype() -> None:
@@ -581,7 +676,7 @@ def test_an_integer_too_long_to_render_is_refused_by_name() -> None:
         {"refs": {"huge": too_long}},
         {"refs": {"huge": -too_long}},
     ):
-        with pytest.raises(ValueError, match="exceeds the published limit"):
+        with pytest.raises(ValueError, match="exceeds the .* decimal digits"):
             BmcConstraintRef(
                 "g0", "assumptions", "assumption.frame", _GENERATED, "s", **kwargs
             )

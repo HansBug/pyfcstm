@@ -736,7 +736,11 @@ class BmcConstraintRef:
         object.__setattr__(
             self, "stage", _require_member(self.stage, _STAGES, "constraint stage")
         )
-        if not isinstance(self.source, BmcSourceRef):
+        # The exact type, not isinstance: a subclass passes the check and then
+        # supplies its own to_canonical(), so the object that was validated is
+        # not the one that gets published.  The same rule applies at every
+        # composition boundary below.
+        if type(self.source) is not BmcSourceRef:
             raise TypeError("constraint source must be BmcSourceRef.")
         object.__setattr__(self, "frames", _require_indices(self.frames, "frames"))
         object.__setattr__(self, "steps", _require_indices(self.steps, "steps"))
@@ -819,7 +823,7 @@ class BmcCoreItem:
     editable: bool
 
     def __post_init__(self) -> None:
-        if not isinstance(self.constraint, BmcConstraintRef):
+        if type(self.constraint) is not BmcConstraintRef:
             raise TypeError("core item constraint must be BmcConstraintRef.")
         object.__setattr__(
             self,
@@ -1014,7 +1018,7 @@ class BmcConflictCore:
         if not items:
             raise ValueError("core items must not be empty.")
         for item in items:
-            if not isinstance(item, BmcCoreItem):
+            if type(item) is not BmcCoreItem:
                 raise TypeError("core items must be BmcCoreItem values.")
         identifiers = [item.constraint.stable_id for item in items]
         if len(set(identifiers)) != len(identifiers):
@@ -1245,7 +1249,7 @@ class BmcInfeasibilityExplanation:
                 raise ValueError("explanation elapsed_ms must not be negative.")
             object.__setattr__(self, "elapsed_ms", plain)
         if self.core is not None:
-            if not isinstance(self.core, BmcConflictCore):
+            if type(self.core) is not BmcConflictCore:
                 raise TypeError("explanation core must be BmcConflictCore.")
             self._validate_scope(self.core.scope)
         self._validate_delivery()

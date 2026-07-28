@@ -2057,3 +2057,83 @@ def test_span_coordinates_are_typed_where_they_are_published() -> None:
         "end_line": None,
         "end_column": None,
     }
+
+
+def test_the_digit_bound_falls_back_when_no_interpreter_limit_applies() -> None:
+    """Two configurations mean "no interpreter limit", and both use the floor.
+
+    Before Python 3.11 the setting does not exist at all, and from 3.11 on a
+    value of zero disables it.  In both cases the published bound stands on its
+    own, so the same payload is accepted everywhere.
+    """
+    import sys
+
+    from pyfcstm.bmc import provenance
+
+    saved = getattr(sys, "get_int_max_str_digits", None)
+    try:
+        if saved is not None:
+            del sys.get_int_max_str_digits
+        assert (
+            provenance._effective_int_digit_limit()
+            == provenance.MAX_METADATA_INT_DIGITS
+        )
+        sys.get_int_max_str_digits = lambda: 0
+        assert (
+            provenance._effective_int_digit_limit()
+            == provenance.MAX_METADATA_INT_DIGITS
+        )
+        sys.get_int_max_str_digits = lambda: 640
+        assert provenance._effective_int_digit_limit() == 640
+    finally:
+        if saved is None:
+            sys.__dict__.pop("get_int_max_str_digits", None)
+        else:
+            sys.get_int_max_str_digits = saved
+
+
+def test_the_digit_bound_follows_a_lowered_interpreter_limit() -> None:
+    """Whatever this boundary accepts must be encodable in this process.
+
+    A deployment may lower the interpreter's own integer-rendering limit for
+    safety, down to 640.  A fixed published bound would then accept a value that
+    still dies inside ``json.dumps`` -- the failure the boundary exists to
+    prevent, just with a different threshold.  The check runs in a fresh process
+    because the setting is global and changing it here would leak into every
+    other test.
+    """
+    import subprocess
+    import sys
+
+    if not hasattr(sys, "set_int_max_str_digits"):
+        pytest.skip("no interpreter integer limit before Python 3.11")
+
+    probe = (
+        "import json, sys\n"
+        "from pyfcstm.bmc.explanation import BmcConstraintRef\n"
+        "from pyfcstm.bmc.provenance import BmcSourceRef\n"
+        "src = BmcSourceRef('generated', None, None)\n"
+        "def build(value):\n"
+        "    return BmcConstraintRef('g', 'assumptions', 'assumption.frame', src,\n"
+        "                            's', refs={'n': value})\n"
+        "print('limit', sys.get_int_max_str_digits())\n"
+        "try:\n"
+        "    build(10**700)\n"
+        "    print('over accepted')\n"
+        "except ValueError:\n"
+        "    print('over refused')\n"
+        "json.dumps(build(10**600).to_canonical(), allow_nan=False)\n"
+        "print('under encoded')\n"
+    )
+    env = dict(os.environ, PYTHONINTMAXSTRDIGITS="640")
+    completed = subprocess.run(
+        [sys.executable, "-c", probe],
+        capture_output=True,
+        text=True,
+        env=env,
+        check=True,
+    )
+
+    assert "limit 640" in completed.stdout
+    assert "over refused" in completed.stdout
+    assert "under encoded" in completed.stdout

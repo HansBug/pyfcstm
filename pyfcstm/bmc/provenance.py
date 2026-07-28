@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import math
 import os
+import sys
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any, Dict, Mapping, Optional, Tuple
@@ -190,10 +191,11 @@ def exact_int(value: Any, where: str) -> int:
     except TypeError as err:
         # Same reasoning as exact_str: the descriptor refuses a non-int.
         raise TypeError("%s must be an integer, got %r." % (where, value)) from err
-    if not -_MAX_METADATA_INT_VALUE < plain < _MAX_METADATA_INT_VALUE:
+    limit = _effective_int_digit_limit()
+    if not -(10**limit) < plain < 10**limit:
         raise ValueError(
-            "%s exceeds the published limit of %d decimal digits."
-            % (where, MAX_METADATA_INT_DIGITS)
+            "%s exceeds the %d decimal digits this interpreter can render."
+            % (where, limit)
         )
     return plain
 
@@ -275,13 +277,36 @@ def exact_optional_index(value: Any, where: str) -> Optional[int]:
 #: that the same payload is accepted or refused on every supported version.
 MAX_METADATA_INT_DIGITS = 4300
 
-#: The smallest value needing one digit too many, computed once.
-#:
-#: Comparing against it is exact and never renders the number, unlike
-#: ``len(str(...))`` -- which is the very operation that fails on an oversized
-#: integer.  A bit-length proxy cannot express the bound: 10**4300 - 1 and
-#: 10**4300 have the same bit length but differ in digit count.
-_MAX_METADATA_INT_VALUE = 10**MAX_METADATA_INT_DIGITS
+
+def _effective_int_digit_limit() -> int:
+    """Return how many decimal digits this interpreter will actually render.
+
+    The published bound is a floor, not the whole answer.  A deployment may
+    lower the interpreter's own limit (``PYTHONINTMAXSTRDIGITS``, minimum 640)
+    for safety, and then a value this module accepted still dies inside
+    ``json.dumps``.  Reading the live setting keeps the promise the boundary
+    actually makes: whatever is accepted here can be encoded in this process.
+
+    Before Python 3.11 there is no limit at all, so the published bound stands
+    on its own and the same payload is accepted everywhere.
+
+    :return: The digit budget to enforce.
+    :rtype: int
+
+    Example::
+
+        >>> _effective_int_digit_limit() >= 640
+        True
+    """
+    live = getattr(sys, "get_int_max_str_digits", None)
+    if live is None:
+        # No interpreter limit exists before 3.11.
+        return MAX_METADATA_INT_DIGITS
+    configured = live()
+    if configured == 0:
+        # Zero disables the interpreter limit entirely.
+        return MAX_METADATA_INT_DIGITS
+    return min(MAX_METADATA_INT_DIGITS, configured)
 
 
 #: How deeply published metadata may nest.
@@ -666,7 +691,7 @@ class BmcTrackedConstraint:
         expressions = tuple(self.expressions)
         if not expressions:
             raise ValueError("tracked constraint expressions must be non-empty.")
-        if not isinstance(self.source_ref, BmcSourceRef):
+        if type(self.source_ref) is not BmcSourceRef:
             raise TypeError("tracked constraint source_ref must be BmcSourceRef.")
         object.__setattr__(self, "expressions", expressions)
         # The same validation the published metadata gets.  A shallow copy here

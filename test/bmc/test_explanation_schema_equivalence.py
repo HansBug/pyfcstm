@@ -913,7 +913,7 @@ def test_the_constructor_still_enforces_every_named_asymmetry() -> None:
         )
 
     # integer longer than the published digit limit
-    with pytest.raises(ValueError, match="exceeds the published limit"):
+    with pytest.raises(ValueError, match="exceeds the .* decimal digits"):
         BmcConstraintRef(
             "g0",
             "assumptions",

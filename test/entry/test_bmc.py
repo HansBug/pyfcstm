@@ -2045,7 +2045,14 @@ def test_human_explanation_renders_every_published_shape() -> None:
                 reason="minimization skipped",
             )
         )
-        assert "  1. %s assumption.frame (source location unavailable)" % kind in lines
+        # Both the generated and the location-less authored branch read
+        # the noun from one predicate, so neither can leak the dotted
+        # category while the other is clean.
+        assert (
+            "  1. %s assumption constraint (source location unavailable)" % kind
+            in lines
+        )
+        assert not any("assumption.frame" in line for line in lines)
         assert not any("generated" in line for line in lines)
 
     # A generated constraint has no authored location at all.
@@ -2218,9 +2225,8 @@ def test_human_explanation_renders_every_published_shape() -> None:
 
 
 @pytest.mark.unittest
-def test_human_explanation_reproduces_the_frozen_transcript_lines() -> None:
-    """Compare rendered lines against the frozen transcripts character for
-    character.
+def test_human_explanation_matches_the_frozen_transcript_line_shapes() -> None:
+    """Compare each rendered line against the frozen transcript line it mirrors.
 
     Frozen issue #385 §12.3 shows a conflict-constraint block in which an
     authored member occupies exactly two lines -- location then its own text,
@@ -2243,13 +2249,22 @@ def test_human_explanation_reproduces_the_frozen_transcript_lines() -> None:
 
     # Transcribed from frozen issue #385 §12.3.  Each entry is one frozen line
     # with its ordinal dropped: an authored member contributes a location line
-    # and its own text, a generated member contributes a single line.  The
-    # ordinals themselves are not transcribed because the published core is
-    # sorted by ``stable_id`` -- documented in pyfcstm/bmc/explanation.py so the
-    # solver's own core order never leaks -- and that sort puts the assumption
-    # group ahead of the initializer, whereas the frozen sample happens to show
-    # the initializer first.  Line shape is the contract; the sample's ordinal
-    # order is not.
+    # and its own text, a generated member contributes a single line.
+    #
+    # The ordinals are not transcribed, and that is a positive consequence of the
+    # frozen text rather than a gap in it.  §8.3 step 6 requires the extracted
+    # core to be sorted by stable_id before it enters the Public API, and this
+    # renderer prints the published order without re-sorting; a stable_id sort
+    # puts the assumption group ahead of the initializer, while the §12.3 sample
+    # shows the initializer first.  Reproducing the sample's order would need a
+    # separate CLI presentation order, and no single deterministic order exists:
+    # §12.2 lists initialization, then transition, then assumption, whereas
+    # §12.3 lists initialization, then assumption, then transition.  The two
+    # samples also print different Classification prose for the same
+    # "Scenario: INFEASIBLE AT ASSUMPTIONS", and §15 states that human text uses
+    # stable templates whose wording may improve across minor versions while
+    # machine consumers read structured fields.  So the frozen transcripts pin
+    # what each line looks like, and §8.3 pins the order.
     frozen_12_3_shapes = [
         ("machine.fcstm:1:1-1:15", "persistent initializer: x = 0"),
         ("query.fbmcq:2:1-2:23", "assume at 0: x == 1;"),

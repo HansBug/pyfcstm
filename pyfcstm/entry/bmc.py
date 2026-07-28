@@ -480,9 +480,11 @@ _CLASSIFICATION_PHRASES = {
 def _human_core_position(constraint: "BmcConstraintRef") -> str:
     """Return the frame or step position a core member constrains.
 
-    The frozen contract forbids hiding a mathematically necessary member's
-    position, and its own transcript prints it inline after the location, so a
-    reader can tell which macro-step the constraint belongs to.
+    Called only for a generated group.  Issue #385 §12.2 forbids hiding such a
+    group's position for tidiness, and §12.3 prints it inline after the location
+    so a reader can tell which macro-step the constraint belongs to.  An authored
+    group's own text already states its position -- ``assume at 1: ...`` -- so it
+    is not routed through here.
 
     :param constraint: Published constraint reference of one core member.
     :type constraint: pyfcstm.bmc.explanation.BmcConstraintRef
@@ -510,9 +512,12 @@ def _human_core_position(constraint: "BmcConstraintRef") -> str:
 def _human_core_structural_refs(constraint: "BmcConstraintRef") -> str:
     """Return the builder metadata a machine reader is told to consume.
 
-    ``frame`` and ``step`` already appear in the position line, so only the other
-    keys are repeated here; showing them keeps the human report from hiding what
-    the JSON carries.
+    Called only for a generated group, whose single line carries no source text
+    of its own: issue #385 §12.2 requires such a group to be shown together with
+    its frame/step/refs rather than hidden for tidiness.  ``frame`` and ``step``
+    are already on that line, so only the other keys are added here.  An authored
+    group is not routed through this function -- its own text states its
+    position, and its refs remain a machine contract carried by the JSON.
 
     :param constraint: Published constraint reference of one core member.
     :type constraint: pyfcstm.bmc.explanation.BmcConstraintRef
@@ -534,6 +539,35 @@ def _human_core_structural_refs(constraint: "BmcConstraintRef") -> str:
     if not rendered:
         return ""
     return ", ".join(rendered)
+
+
+def _human_category_noun(constraint: "BmcConstraintRef") -> str:
+    """Return the reader-facing noun for one tracked group's category.
+
+    The frozen transcript in issue #385 §12.3 names a group by the leading
+    segment of its category followed by the word "constraint" -- "generated
+    transition constraint" -- never by the internal dotted form.  The leading
+    segment is used rather than the aggregate formula because every segment
+    ("domain", "transition", "initial", "assumption", "definedness") is
+    vocabulary the frozen contract already shows a reader, while the aggregate
+    name for the assumptions stage is not.
+
+    Both the generated and the location-less authored branch read the noun from
+    here.  They print different sentences, but they must agree on what the group
+    is called: cleaning only one of them would leave the dotted category leaking
+    on the other.
+
+    :param constraint: Published constraint reference of one core member.
+    :type constraint: pyfcstm.bmc.explanation.BmcConstraintRef
+    :return: Reader-facing noun such as ``transition`` or ``assumption``.
+    :rtype: str
+
+    Example::
+
+        >>> _human_category_noun.__name__
+        '_human_category_noun'
+    """
+    return constraint.category.split(".")[0]
 
 
 def _human_explanation(execution: "_BmcExecution") -> List[str]:
@@ -585,25 +619,17 @@ def _human_explanation(execution: "_BmcExecution") -> List[str]:
             elif source.path is not None:
                 location = source.path
             elif source.kind == "generated":
-                # The frozen transcript names a generated group by the leading
-                # segment of its category plus the word "constraint": "generated
-                # transition constraint", never the internal dotted form.  The
-                # leading segment is used rather than the aggregate formula
-                # because every segment ("domain", "transition", "initial",
-                # "assumption", "definedness") is vocabulary the frozen contract
-                # already shows a reader, while the aggregate name for the
-                # assumptions stage is not.
-                location = "generated %s constraint" % (
-                    item.constraint.category.split(".")[0],
+                location = "generated %s constraint" % _human_category_noun(
+                    item.constraint
                 )
             else:
                 # An authored constraint whose origin was never named -- a
                 # programmatic query, for instance -- still came from the user's
                 # own text.  Calling it generated would attribute their
                 # constraint to the encoder, which the frozen contract forbids.
-                location = "%s %s (source location unavailable)" % (
+                location = "%s %s constraint (source location unavailable)" % (
                     source.kind,
-                    item.constraint.category,
+                    _human_category_noun(item.constraint),
                 )
             if source.kind == "generated":
                 # The frozen contract is explicit that a generated support group

@@ -2410,8 +2410,13 @@ def test_the_impostor_sweep_covers_every_published_field() -> None:
             "BmcConflictProof",
             "SourceDocumentRegistry",
         ):
-            # Reserved for a later stage; UNBUILT_SLOTS refuses both, so no
-            # published document can carry one yet.
+            # Skipped for two different reasons.  BmcConflictNarrative and
+            # BmcConflictProof are named in UNBUILT_SLOTS, so no published
+            # explanation can carry one yet.  SourceDocumentRegistry is live
+            # production code -- BmcEngine builds one -- but it is a registry
+            # keyed by path rather than a published core field, so it has no
+            # per-field JSON contract for this sweep to check; its own
+            # path/text hardening is covered in test/bmc/test_provenance.py.
             continue
         assert name in arguments, name
         declared = {field.name for field in dataclasses.fields(cls)}

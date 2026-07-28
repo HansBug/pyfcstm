@@ -2261,13 +2261,16 @@ def test_human_explanation_matches_the_frozen_transcript_line_shapes() -> None:
     # normative rule and an illustrative sample conflict, the rule governs, so
     # the sample's order is not reproduced and must not be: sorting by source
     # position instead would fit both samples and violate the rule.  What the
-    # samples do jointly exclude is ordering by semantic role, which neither of
-    # them follows.
+    # samples exclude is any single fixed ordering that reproduces both of them,
+    # including one keyed on semantic role: the proven-minimal sample happens to
+    # list its members in role order and the other does not.
     #
-    # Two earlier versions of this comment were wrong in opposite directions --
-    # one claimed no deterministic order could reproduce both samples, which a
-    # source-position rule refutes; the other called the question undecidable,
-    # which invited exactly the change the requirement forbids.
+    # Three earlier versions of this comment were wrong.  One claimed no
+    # deterministic order could reproduce both samples, which a source-position
+    # rule refutes.  One called the question undecidable, which invited exactly
+    # the change the requirement forbids.  One said neither sample follows role
+    # order, which is false of the proven-minimal one.  Each time the error was
+    # an extra sentence that no evidence supported.
     partial_core_transcript_shapes = [
         ("machine.fcstm:1:1-1:15", "persistent initializer: x = 0"),
         ("query.fbmcq:2:1-2:23", "assume at 0: x == 1;"),
@@ -2492,18 +2495,29 @@ def test_human_explanation_matches_the_frozen_transcript_line_shapes() -> None:
         )
         return [line for line in rendered if line.startswith("Explanation depth:")]
 
-    # Every matrix row that reaches "proof" achieved also requires a proof slot,
-    # and that slot is named as not yet built, so the pair is unconstructible
-    # here.  It is named rather than skipped silently: when the slot lands, this
-    # assertion fails and the pair has to be driven for real.
-    from pyfcstm.bmc.explanation import UNBUILT_SLOTS
+    # The decision itself is a predicate, so every pair is checked against it --
+    # including the one whose object cannot be built here, because it needs a slot
+    # that is named as not yet built.  Naming that pair as unconstructible and
+    # skipping it left the gate open: a widening that only added that one pair
+    # passed the whole suite.
+    from pyfcstm.bmc.explanation import UNBUILT_SLOTS, depth_line_is_needed
 
+    assert {pair: depth_line_is_needed(*pair) for pair in legal_pairs} == {
+        ("formal", "formal"): False,
+        ("formal", "none"): False,
+        ("proof", "formal"): True,
+        ("proof", "none"): False,
+        ("proof", "proof"): False,
+    }
+
+    # The rendered output is then checked for every pair whose object the current
+    # slots allow, so the predicate and the renderer cannot disagree.
     assert "proof" in UNBUILT_SLOTS
-    unconstructible = {("proof", "proof")}
-    assert unconstructible <= set(legal_pairs)
+    needs_unbuilt_slot = {("proof", "proof")}
+    assert needs_unbuilt_slot <= set(legal_pairs)
 
     for requested, achieved in legal_pairs:
-        if (requested, achieved) in unconstructible:
+        if (requested, achieved) in needs_unbuilt_slot:
             continue
         expected = (
             ["Explanation depth: requested %s, achieved %s" % (requested, achieved)]

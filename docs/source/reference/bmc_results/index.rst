@@ -435,8 +435,11 @@ member's location and its own source text on two lines, or a generated support
 group on one line naming the leading segment of its category -- ``domain``,
 ``transition``, ``initial``, ``assumption`` or ``definedness`` -- and the frame
 or step it constrains.  The category segment is used rather than the aggregate
-formula the group belongs to, because the aggregate name for the assumptions
-stage is not vocabulary a reader is shown anywhere else.  ``Core scope`` and ``Reduction`` describe what was proven and how
+formula the group belongs to, because the aggregate is neither always available
+nor stable: a ``definedness`` group in the kernel stage belongs to no single
+aggregate, the same category resolves to two different aggregates in the other
+stages, and the aggregate for the assumptions stage is a word that appears
+nowhere else in the report.  ``Core scope`` and ``Reduction`` describe what was proven and how
 far minimization got, and ``Reason`` states why it stopped there.
 
 An additional line appears when a deeper depth was requested than was achieved,

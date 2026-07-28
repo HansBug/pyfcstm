@@ -186,6 +186,12 @@ index\_value
 .. autofunction:: index_value
 
 
+depth\_line\_is\_needed
+-----------------------------------------------------
+
+.. autofunction:: depth_line_is_needed
+
+
 explanation\_text\_lines
 -----------------------------------------------------
 

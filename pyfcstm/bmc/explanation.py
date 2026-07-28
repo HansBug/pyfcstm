@@ -1569,10 +1569,17 @@ def _category_noun(constraint: BmcConstraintRef) -> str:
 
     A group is named by the leading segment of its category followed by the word
     "constraint" -- "generated transition constraint" -- never by the internal
-    dotted form.  The leading segment is used rather than the aggregate formula
-    because every segment ("domain", "transition", "initial", "assumption",
-    "definedness") is vocabulary a reader is already shown elsewhere, while the
-    aggregate name for the assumptions stage is not.
+    dotted form.
+
+    The leading segment is used rather than the aggregate formula the group
+    belongs to because the aggregate is neither always available nor stable for a
+    given category.  A ``definedness`` group in the kernel stage belongs to no
+    single aggregate at all, and the same category resolves to two different
+    aggregates in the other two stages.  A reader would also meet a word they see
+    nowhere else: the aggregate for the assumptions stage is not the name that
+    stage carries anywhere in the report.  The category's leading segment is
+    always defined, is the same wherever the group appears, and is the group's own
+    name.
 
     Both the generated and the location-less authored branch read the noun from
     here.  They print different sentences, but they must agree on what the group
@@ -1592,6 +1599,38 @@ def _category_noun(constraint: BmcConstraintRef) -> str:
         'transition'
     """
     return constraint.category.split(".")[0]
+
+
+def depth_line_is_needed(requested_mode: str, achieved_mode: str) -> bool:
+    """Return whether both explanation depths have to be stated separately.
+
+    A reader needs the depth they asked for and the depth they got.  The headline
+    already names one of them: the achieved depth when something was achieved,
+    and the requested depth in the "not achieved" shape.  It is therefore
+    ambiguous only when a deeper request settled for a shallower result, and only
+    then is a separate line added.
+
+    This is a predicate rather than an inline condition so that every mode pair
+    the delivery matrix allows can be checked against it, including the pairs no
+    published transcript samples and the pairs whose objects cannot yet be built.
+
+    :param requested_mode: Depth the caller asked for.
+    :type requested_mode: str
+    :param achieved_mode: Depth actually reached, or ``"none"``.
+    :type achieved_mode: str
+    :return: ``True`` when the depths must be stated on their own line.
+    :rtype: bool
+
+    Example::
+
+        >>> depth_line_is_needed("proof", "formal")
+        True
+        >>> depth_line_is_needed("proof", "proof")
+        False
+        >>> depth_line_is_needed("formal", "none")
+        False
+    """
+    return achieved_mode != "none" and requested_mode != achieved_mode
 
 
 def explanation_text_lines(explanation) -> List[str]:
@@ -1624,16 +1663,7 @@ def explanation_text_lines(explanation) -> List[str]:
         # frozen transcript names that explicitly instead of omitting the line.
         headline = "%s EXPLANATION NOT ACHIEVED" % explanation.requested_mode.upper()
     lines.append("Explanation: %s" % headline)
-    if (
-        explanation.achieved_mode != "none"
-        and explanation.requested_mode != explanation.achieved_mode
-    ):
-        # A reader needs both the depth they asked for and the depth they got.
-        # The headline names one of them: the achieved depth when something was
-        # achieved, the requested depth in the "NOT ACHIEVED" shape.  It is
-        # therefore ambiguous only when a deeper request settled for a shallower
-        # result, which is also the one combination no published transcript
-        # samples.
+    if depth_line_is_needed(explanation.requested_mode, explanation.achieved_mode):
         lines.append(
             "Explanation depth: requested %s, achieved %s"
             % (explanation.requested_mode, explanation.achieved_mode)

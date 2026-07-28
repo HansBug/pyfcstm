@@ -2523,11 +2523,11 @@ def test_no_published_field_accepts_a_hostile_stand_in(class_name) -> None:
 
 @pytest.mark.unittest
 def test_human_vocabularies_are_transcribed_from_the_frozen_transcripts() -> None:
-    """Both human vocabularies, copied from the specification, not paraphrased.
+    """Both human vocabularies, copied verbatim, not paraphrased.
 
     Rewriting a frozen phrase from memory produces text that reads correctly and
     passes every test that uses the same rewritten constant, so the only check
-    that can catch it is a transcription compared against the issue.
+    that can catch it is a transcription compared against the governing transcript.
 
     The published transcripts give two different phrasings for one
     classification: one says "assumptions conflict with the initialized

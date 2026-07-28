@@ -356,7 +356,7 @@ JSON 类型和必需键以模式为准；执行顺序、标准输出/标准错�
 
    Explanation: PARTIAL FORMAL DOMAIN EXPLANATION
    Classification: assumptions conflict with the feasible prefix
-   
+
    Conflict constraints:
      1. r22.fbmcq:2:1-2:28
         assume at 1: var("x") == 0;
@@ -365,17 +365,19 @@ JSON 类型和必需键以模式为准；执行顺序、标准输出/标准错�
      3. r22.fcstm:1:1-1:15
         def int x = 0;
      4. generated transition constraint at step 0
-   
+
    The displayed core is sufficient for UNSAT but is not proven subset-minimal.
    Core scope: assumptions_prefix
    Reduction: raw
    Reason: sound source core published without a minimality proof
-   
+
 
 ``Explanation`` 给出实际达成的深度及其完整程度。``Classification`` 是机器字段
 ``classification`` 对应的读者可读句子。冲突约束的每一项要么用两行给出作者约束的
-位置与其源码文本，要么用一行给出生成的支撑组，说明它属于哪个聚合以及它约束哪个
-frame 或 step。``Core scope`` 与 ``Reduction`` 说明证明了什么、最小化进行到哪一步，
+位置与其源码文本，要么用一行给出生成的支撑组，说明它的类别首段——``domain``、
+``transition``、``initial``、``assumption`` 或 ``definedness``\ ——以及它约束哪个
+frame 或 step。这里用类别首段而不是该组所属的聚合公式，因为 assumptions 阶段的聚合
+名称并不是读者在其他任何地方见过的词。``Core scope`` 与 ``Reduction`` 说明证明了什么、最小化进行到哪一步，
 ``Reason`` 说明为什么停在那里。
 
 当请求的深度比实际达成的更深时会多出一行，因此请求 ``proof`` 而得到 ``formal``

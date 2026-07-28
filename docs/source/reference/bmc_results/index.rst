@@ -412,7 +412,7 @@ they read.  A real invocation against an infeasible scenario produces:
 
    Explanation: PARTIAL FORMAL DOMAIN EXPLANATION
    Classification: assumptions conflict with the feasible prefix
-   
+
    Conflict constraints:
      1. r22.fbmcq:2:1-2:28
         assume at 1: var("x") == 0;
@@ -421,19 +421,22 @@ they read.  A real invocation against an infeasible scenario produces:
      3. r22.fcstm:1:1-1:15
         def int x = 0;
      4. generated transition constraint at step 0
-   
+
    The displayed core is sufficient for UNSAT but is not proven subset-minimal.
    Core scope: assumptions_prefix
    Reduction: raw
    Reason: sound source core published without a minimality proof
-   
+
 
 ``Explanation`` names the depth that was achieved and how complete it is.
 ``Classification`` is the reader-facing sentence for the machine
 ``classification`` field.  Each conflict-constraint entry gives an authored
 member's location and its own source text on two lines, or a generated support
-group on one line naming the aggregate it belongs to and the frame or step it
-constrains.  ``Core scope`` and ``Reduction`` describe what was proven and how
+group on one line naming the leading segment of its category -- ``domain``,
+``transition``, ``initial``, ``assumption`` or ``definedness`` -- and the frame
+or step it constrains.  The category segment is used rather than the aggregate
+formula the group belongs to, because the aggregate name for the assumptions
+stage is not vocabulary a reader is shown anywhere else.  ``Core scope`` and ``Reduction`` describe what was proven and how
 far minimization got, and ``Reason`` states why it stopped there.
 
 An additional line appears when a deeper depth was requested than was achieved,

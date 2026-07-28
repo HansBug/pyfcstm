@@ -2253,38 +2253,28 @@ def test_human_explanation_matches_the_frozen_transcript_line_shapes() -> None:
     # with its ordinal dropped: an authored member contributes a location line
     # and its own text, a generated member contributes a single line.
     #
-    # The ordinals are not transcribed, and this test does not claim to settle
-    # why.  What is checked here is line shape.
+    # The ordinals are not transcribed, and the reason is a requirement rather
+    # than an absence of one: core items are published in stable_id order, and
+    # this renderer prints the published order without re-sorting.
     #
-    # On order, the position taken is narrow: the published core is sorted by
-    # stable_id before it leaves the data layer, this renderer prints that order
-    # without re-sorting, and nothing in the contract requires a reader-facing
-    # order distinct from the published one.  Whether a reader-facing order
-    # *should* differ is not decidable from the two samples available:
+    # The sample's own in-block order disagrees with that requirement.  Where a
+    # normative rule and an illustrative sample conflict, the rule governs, so
+    # the sample's order is not reproduced and must not be: sorting by source
+    # position instead would fit both samples and violate the rule.  What the
+    # samples do jointly exclude is ordering by semantic role, which neither of
+    # them follows.
     #
-    #   * They order their members differently from each other -- one lists
-    #     initialization, transition, assumption; the other initialization,
-    #     assumption, transition -- so no single ordering rule is evidenced by
-    #     both, though "by source position, position-less last" happens to fit
-    #     both and is therefore not excluded either.
-    #   * They also lay the same block out differently, one with bracketed role
-    #     labels in aligned columns and one with ordinals over indented text,
-    #     and that difference tracks the completeness of the core rather than
-    #     anything about order.  The complete shape is unreachable here, so the
-    #     comparison cannot be made from this side.
-    #
-    # The choice is therefore recorded as the simplest one consistent with the
-    # published order, to be revisited when the complete shape becomes
-    # reachable.  An earlier version of this comment claimed no deterministic
-    # order could reproduce both samples, which was wrong, and a later one
-    # presented the replacement reasons as settled, which overstates them.
-    frozen_12_3_shapes = [
+    # Two earlier versions of this comment were wrong in opposite directions --
+    # one claimed no deterministic order could reproduce both samples, which a
+    # source-position rule refutes; the other called the question undecidable,
+    # which invited exactly the change the requirement forbids.
+    partial_core_transcript_shapes = [
         ("machine.fcstm:1:1-1:15", "persistent initializer: x = 0"),
         ("query.fbmcq:2:1-2:23", "assume at 0: x == 1;"),
         ("generated transition constraint at step 0", None),
     ]
     # Transcribed from the not-achieved transcript, including its line break.
-    frozen_12_4 = [
+    not_achieved_transcript_tail = [
         "No conflict core or causal chain was published. The classification is "
         "retained",
         "as partial metadata, but it is not presented as a completed formal "
@@ -2407,7 +2397,7 @@ def test_human_explanation_matches_the_frozen_transcript_line_shapes() -> None:
     # actually uses, then compare whole lines.  A wrong shape -- an internal
     # dotted category, a position suffix on an authored member, a leaked
     # stable_id -- changes one of these strings and fails here.
-    by_first_line = {shape[0]: shape for shape in frozen_12_3_shapes}
+    by_first_line = {shape[0]: shape for shape in partial_core_transcript_shapes}
     expected = []
     ordinal = 0
     for first_line in (
@@ -2445,55 +2435,79 @@ def test_human_explanation_matches_the_frozen_transcript_line_shapes() -> None:
             "Reason: the source-level core check timed out after classification",
             "",
         ]
-        + frozen_12_4
+        + not_achieved_transcript_tail
     )
 
     # The depth line appears when a deeper request settled for a shallower
-    # result, and only then.  Without both halves the condition can be widened
-    # to always-true and every transcript above still passes.
-    def depth_lines(requested, achieved, status, **kwargs):
+    # result, and only then.  Every mode pair the delivery matrix allows is
+    # driven from the matrix itself rather than sampled: a hand-picked subset
+    # leaves the condition open to widenings no sampled case contradicts, such
+    # as keying it on the requested mode alone.
+    from pyfcstm.bmc.explanation import _DELIVERY_SIGNATURES
+
+    legal_pairs = sorted({(sig[0], sig[1]) for sig in _DELIVERY_SIGNATURES})
+    assert legal_pairs == [
+        ("formal", "formal"),
+        ("formal", "none"),
+        ("proof", "formal"),
+        ("proof", "none"),
+        ("proof", "proof"),
+    ], legal_pairs
+
+    def depth_lines(requested, achieved):
+        # Each pair needs a payload the matrix accepts for it: a core when a
+        # depth was achieved, a bare reason when none was.
+        if achieved == "none":
+            extra = dict(reason="the component probe returned unknown")
+        else:
+            extra = dict(
+                core=BmcConflictCore(
+                    "initialization_component",
+                    "C_init restricted to the conflicting groups",
+                    "source_group",
+                    "raw",
+                    "not_proven",
+                    (
+                        authored(
+                            "machine.fcstm",
+                            Span(1, 1, 1, 15),
+                            "initial.variable",
+                            "initialization",
+                            "initial_fact",
+                            "persistent initializer: x = 0",
+                            {"frame": 0, "variable": "x"},
+                        ),
+                    ),
+                ),
+                reason="sound source core published without a minimality proof",
+            )
         rendered = render(
             BmcInfeasibilityExplanation(
-                requested, achieved, status, "initialization_self_conflict", **kwargs
+                requested,
+                achieved,
+                "partial",
+                "initialization_self_conflict",
+                **extra,
             )
         )
         return [line for line in rendered if line.startswith("Explanation depth:")]
 
-    core_only = dict(
-        core=BmcConflictCore(
-            "initialization_component",
-            "C_init restricted to the conflicting groups",
-            "source_group",
-            "raw",
-            "not_proven",
-            (
-                authored(
-                    "machine.fcstm",
-                    Span(1, 1, 1, 15),
-                    "initial.variable",
-                    "initialization",
-                    "initial_fact",
-                    "persistent initializer: x = 0",
-                    {"frame": 0, "variable": "x"},
-                ),
-            ),
-        ),
-        reason="sound source core published without a minimality proof",
-    )
-    # Requested deeper than achieved: shown, naming both.
-    assert depth_lines("proof", "formal", "partial", **core_only) == [
-        "Explanation depth: requested proof, achieved formal"
-    ]
-    # Requested equals achieved: the headline already names it.
-    assert depth_lines("formal", "formal", "partial", **core_only) == []
-    # Nothing achieved: the headline names the requested depth instead, which is
-    # the shape the transcript above pins.
-    assert (
-        depth_lines(
-            "formal",
-            "none",
-            "partial",
-            reason="the source-level core check timed out after classification",
+    # Every matrix row that reaches "proof" achieved also requires a proof slot,
+    # and that slot is named as not yet built, so the pair is unconstructible
+    # here.  It is named rather than skipped silently: when the slot lands, this
+    # assertion fails and the pair has to be driven for real.
+    from pyfcstm.bmc.explanation import UNBUILT_SLOTS
+
+    assert "proof" in UNBUILT_SLOTS
+    unconstructible = {("proof", "proof")}
+    assert unconstructible <= set(legal_pairs)
+
+    for requested, achieved in legal_pairs:
+        if (requested, achieved) in unconstructible:
+            continue
+        expected = (
+            ["Explanation depth: requested %s, achieved %s" % (requested, achieved)]
+            if achieved != "none" and requested != achieved
+            else []
         )
-        == []
-    )
+        assert depth_lines(requested, achieved) == expected, (requested, achieved)

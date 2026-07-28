@@ -24,6 +24,8 @@ The module contains:
 * :class:`BmcConflictProof` - reserved container for the verifiable proof DAG
   introduced by a later stage
 * :class:`BmcInfeasibilityExplanation` - the frozen top-level container
+* :func:`explanation_text_lines` - the single renderer that both the CLI and
+  ``BmcSolveResult.to_text()`` use, so neither can drift from the other
 
 .. note::
    :class:`BmcConflictNarrative` and :class:`BmcConflictProof` exist so that

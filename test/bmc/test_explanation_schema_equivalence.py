@@ -527,7 +527,10 @@ def _structural_corpus():
     # integer this long under its default limit -- which is the very reason the
     # constructor rejects it.  Raising the interpreter limit for this one case
     # keeps the corpus able to state the asymmetry at all.
-    sys.set_int_max_str_digits(_MAX_METADATA_INT_DIGITS * 2)
+    # The limit itself only exists from Python 3.11 on; before that an integer of
+    # any length renders, so there is nothing to raise.
+    if hasattr(sys, "set_int_max_str_digits"):
+        sys.set_int_max_str_digits(_MAX_METADATA_INT_DIGITS * 2)
     yield (
         "integer longer than the published digit limit",
         _payload(

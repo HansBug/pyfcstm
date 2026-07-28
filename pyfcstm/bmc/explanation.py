@@ -1572,16 +1572,21 @@ def _category_noun(constraint: BmcConstraintRef) -> str:
     dotted form.
 
     The leading segment is used rather than the aggregate formula the group
-    belongs to, and the decisive reason is that the aggregate cannot reproduce the
-    specified output at all: a transition group reached through the assumptions
-    stage has ``environment`` as its aggregate, so it would render as "generated
-    environment constraint" where the specification requires "generated
-    transition constraint at step 0".  The specification also names such groups
-    by their category segments in its own prose, calling them generated
-    domain/transition support groups.
+    belongs to because the aggregate vocabulary is too small to name every group.
+    It offers four words -- domain, transition, initial and environment -- while
+    five nouns are required, and two of them are not aggregate names at all: an
+    assumption group's aggregate is ``environment``, a word that appears nowhere
+    else a reader can see, and a definedness group in the kernel stage has no
+    aggregate to ask for.  Both of those groups are produced by real queries.
+    The specification also names these groups by their category segments in its
+    own prose, calling them generated domain/transition support groups.
 
-    Two further properties rule the aggregate out independently: it is neither
-    always available nor stable for a given category.  A ``definedness`` group in the kernel stage belongs to no
+    An earlier version of this docstring claimed the aggregate could not
+    reproduce the required "generated transition constraint at step 0" line at
+    all.  That was wrong: a transition group's stage is always the kernel one, so
+    its aggregate is ``transition`` and the line comes out identical.  The claim
+    came from resolving an aggregate for a stage and category pairing the
+    relation builder never produces.  A ``definedness`` group in the kernel stage belongs to no
     single aggregate at all, and the same category resolves to two different
     aggregates in the other two stages.  A reader would also meet a word they see
     nowhere else: the aggregate for the assumptions stage is not the name that

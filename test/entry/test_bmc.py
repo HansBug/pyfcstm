@@ -2259,7 +2259,10 @@ def test_human_explanation_matches_the_frozen_transcript_line_shapes() -> None:
     # receives it.  The sort is asserted directly in test/bmc/test_explanation.py,
     # so a reader can check the claim without leaving the test tree.  The sample's own in-block
     # order differs from that; where a requirement and an illustrative sample
-    # conflict, the requirement governs.
+    # conflict, the requirement governs.  The requirement is the extraction step
+    # that sorts by stable_id before the core enters the public API and keeps
+    # Z3's own order out of it, restated in the determinism section as core items
+    # being published in stable id order.
     #
     # Nothing is claimed here about which orderings the two samples do or do not
     # admit.  Five versions of this comment tried to make such a claim and all
@@ -2563,7 +2566,13 @@ def test_human_explanation_matches_the_frozen_transcript_line_shapes() -> None:
             )
 
     # With the real predicate back, the rendered output matches it for every
-    # buildable pair, so the predicate and the renderer cannot disagree.
+    # buildable pair.  That is as far as this can go: the renderer could keep the
+    # predicate call and combine it with a copy of the decision, and the copy
+    # would only ever differ on the pair that has no object, so no assertion
+    # built on rendered output can reach it.  The ("proof", "proof") render path
+    # is therefore not pinned until its slot exists; the predicate's value for it
+    # is pinned above, and the assertion below is deliberately limited to pairs
+    # the current slots allow rather than dressed up as complete coverage.
     for requested, achieved in buildable:
         expected = (
             ["Explanation depth: requested %s, achieved %s" % (requested, achieved)]

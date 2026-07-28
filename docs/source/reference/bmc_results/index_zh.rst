@@ -374,14 +374,15 @@ JSON 类型和必需键以模式为准；执行顺序、标准输出/标准错�
 
 ``Explanation`` 给出实际达成的深度及其完整程度。``Classification`` 是机器字段
 ``classification`` 对应的读者可读句子。冲突约束的每一项要么用两行给出作者约束的
-位置与其源码文本，要么用一行给出生成的支撑组，说明它的类别首段——``domain``、
+位置与其源码文本，要么给出生成的支撑组，说明它的类别首段——``domain``、
 ``transition``、``initial``、``assumption`` 或 ``definedness``\ ——以及它约束哪个
-frame 或 step。这里用类别首段而不是该组所属的聚合公式，首要原因是聚合名根本
-复现不了规定的输出：经 assumptions 阶段得到的 transition 组，其聚合名是 ``environment``，
-会渲染成 ``generated environment constraint``，而规定要求的是
-``generated transition constraint at step 0``。聚合名也既不总是存在、又不稳定——kernel
-阶段的 ``definedness`` 组不属于任何单一聚合，同一个类别在另两个阶段会解析出两个不同的
-聚合名。``Core scope`` 与 ``Reduction`` 说明证明了什么、最小化进行到哪一步，
+frame 或 step。生成组占一行，若它还带有位置之外的构造元数据（被跟踪的 case 组确实带），
+则再加一行缩进列出。
+
+这里用类别首段而不是该组所属的聚合公式，原因是聚合词表太小：它只提供 ``domain``、
+``transition``、``initial`` 与 ``environment`` 四个词，而需要的名词有五个，其中两个根本
+不是聚合名——assumption 组的聚合名是 ``environment``\ ，这个词在报告其他任何地方都不出现；
+而 kernel 阶段的 definedness 组根本没有聚合名。``Core scope`` 与 ``Reduction`` 说明证明了什么、最小化进行到哪一步，
 ``Reason`` 说明为什么停在那里。
 
 当请求的深度比实际达成的更深时会多出一行，因此请求 ``proof`` 而得到 ``formal``

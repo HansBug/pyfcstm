@@ -432,16 +432,18 @@ they read.  A real invocation against an infeasible scenario produces:
 ``Classification`` is the reader-facing sentence for the machine
 ``classification`` field.  Each conflict-constraint entry gives an authored
 member's location and its own source text on two lines, or a generated support
-group on one line naming the leading segment of its category -- ``domain``,
-``transition``, ``initial``, ``assumption`` or ``definedness`` -- and the frame
-or step it constrains.  The category segment is used rather than the aggregate
-formula the group belongs to, because the aggregate cannot reproduce the
-specified output: a transition group reached through the assumptions stage has
-``environment`` as its aggregate and would render as ``generated environment
-constraint`` where ``generated transition constraint at step 0`` is required.
-The aggregate is also neither always available nor stable -- a ``definedness``
-group in the kernel stage belongs to no single aggregate, and the same category
-resolves to two different aggregates in the other stages.  ``Core scope`` and ``Reduction`` describe what was proven and how
+group naming the leading segment of its category -- ``domain``, ``transition``,
+``initial``, ``assumption`` or ``definedness`` -- and the frame or step it
+constrains.  A generated group takes one line, plus a second indented line
+listing any builder metadata that is not already in the position, which the
+tracked case groups do carry.
+
+The category segment is used rather than the aggregate formula the group belongs
+to because the aggregate vocabulary is too small: it offers ``domain``,
+``transition``, ``initial`` and ``environment``, while five nouns are needed, and
+two of them are not aggregate names.  An assumption group's aggregate is
+``environment``, a word that appears nowhere else in the report, and a
+definedness group in the kernel stage has no aggregate at all.  ``Core scope`` and ``Reduction`` describe what was proven and how
 far minimization got, and ``Reason`` states why it stopped there.
 
 An additional line appears when a deeper depth was requested than was achieved,

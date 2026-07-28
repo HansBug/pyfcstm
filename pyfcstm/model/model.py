@@ -676,7 +676,14 @@ class Transition(AstExportable):
         default=None, compare=False
     )
     combo_priority_run_index: Optional[int] = field(default=None, compare=False)
-    parent_ref: Optional[weakref.ReferenceType] = None
+    # Excluded from comparison: a weakref compares by referent, so a parent
+    # and child pointing at each other recurse without bound and `==` on any
+    # model with substates raises RecursionError. The parent is not
+    # independent information -- `substates` already carries the hierarchy
+    # from the other direction.
+    parent_ref: Optional[weakref.ReferenceType] = field(
+        default=None, repr=False, compare=False
+    )
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     @property
@@ -766,7 +773,14 @@ class OnStage(AstExportable):
     state_path: Tuple[Optional[str], ...]
     ref: Union["OnStage", "OnAspect", None] = None
     ref_state_path: Optional[Tuple[str, ...]] = None
-    parent_ref: Optional[weakref.ReferenceType] = None
+    # Excluded from comparison: a weakref compares by referent, so a parent
+    # and child pointing at each other recurse without bound and `==` on any
+    # model with substates raises RecursionError. The parent is not
+    # independent information -- `substates` already carries the hierarchy
+    # from the other direction.
+    parent_ref: Optional[weakref.ReferenceType] = field(
+        default=None, repr=False, compare=False
+    )
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     @property
@@ -983,7 +997,14 @@ class OnAspect(AstExportable):
     state_path: Tuple[Optional[str], ...]
     ref: Union["OnStage", "OnAspect", None] = None
     ref_state_path: Optional[Tuple[str, ...]] = None
-    parent_ref: Optional[weakref.ReferenceType] = None
+    # Excluded from comparison: a weakref compares by referent, so a parent
+    # and child pointing at each other recurse without bound and `==` on any
+    # model with substates raises RecursionError. The parent is not
+    # independent information -- `substates` already carries the hierarchy
+    # from the other direction.
+    parent_ref: Optional[weakref.ReferenceType] = field(
+        default=None, repr=False, compare=False
+    )
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     @property
@@ -1162,7 +1183,14 @@ class State(AstExportable, PlantUMLExportable):
     on_durings: List[OnStage] = None
     on_exits: List[OnStage] = None
     on_during_aspects: List[OnAspect] = None
-    parent_ref: Optional[weakref.ReferenceType] = None
+    # Excluded from comparison: a weakref compares by referent, so a parent
+    # and child pointing at each other recurse without bound and `==` on any
+    # model with substates raises RecursionError. The parent is not
+    # independent information -- `substates` already carries the hierarchy
+    # from the other direction.
+    parent_ref: Optional[weakref.ReferenceType] = field(
+        default=None, repr=False, compare=False
+    )
     substate_name_to_id: Dict[str, int] = None
     extra_name: Optional[str] = None
     is_pseudo: bool = False

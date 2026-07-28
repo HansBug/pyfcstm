@@ -874,33 +874,22 @@ def _register_temporary_viewer(path: Path) -> None:
     :type path: pathlib.Path
     :return: ``None``.
     :rtype: None
+    :raises ValueError: If the path does not carry this process id.
     """
+    # Enforced rather than assumed. The exit hook deletes whatever is in here,
+    # so a name without our process id is a name another process may have a
+    # window on -- which is exactly what happened when the failed-launch path
+    # registered a shared, content-addressed name and reaped a document a
+    # second process was displaying.
+    if not path.stem.endswith("-%d" % os.getpid()):
+        raise ValueError(
+            "refusing to schedule %s for removal: only this process's own "
+            "temporary viewers may be reaped, and that name is shared" % path
+        )
     if path in _TEMPORARY_VIEWERS:
         return
     _TEMPORARY_VIEWERS.add(path)
     atexit.register(_remove_temporary_viewer, path)
-
-
-def _unregister_temporary_viewer(path: Path) -> None:
-    """
-    Stop treating a temporary viewer as this process's to remove.
-
-    A failed window launch registers its path, but a window name is derived
-    from the document alone and is therefore shared across retries and
-    processes. Without this, one failed launch followed by a successful one --
-    the obvious thing a user does after installing a browser -- leaves the
-    successful window's document on the exit list, and the hook deletes it
-    while the window is still showing it.
-
-    Removal is keyed on membership, so discarding is enough; the ``atexit``
-    hook stays registered and becomes a no-op.
-
-    :param path: Temporary viewer path.
-    :type path: pathlib.Path
-    :return: ``None``.
-    :rtype: None
-    """
-    _TEMPORARY_VIEWERS.discard(path)
 
 
 def _remove_temporary_viewer(path: Path) -> None:
@@ -2141,29 +2130,24 @@ class Diagram:
             ),
             style_nonce,
         )
-        # A single slot, not a content-addressed map: the old key was a hash of
-        # the very bytes it guarded, which meant joining a second ~30 MB copy
-        # just to compute it.
-        document = self._html_document
-        if document is None:
-            document = (
-                "<!doctype html><html lang=\"%s\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; base-uri 'none'; object-src 'none'; form-action 'none'; frame-src 'none'; media-src 'none'; manifest-src 'none'; img-src data: blob:; style-src %s; style-src-attr 'none'; font-src data:; script-src %s 'wasm-unsafe-eval'; script-src-attr 'none'; connect-src 'none'; worker-src 'none'\"><style>%s</style></head><body><div id=\"app\"></div><script>%s</script><script>%s</script><script>%s</script></body></html>"
-                % (
-                    # The viewer's own interface is English regardless of which
-                    # CJK font pair the diagram text needs, and the declared
-                    # document language drives assistive-technology voice and
-                    # translation prompts. Deriving it from ``cjk_locale`` made
-                    # a screen reader announce English controls in Mandarin.
-                    "en",
-                    style_sources,
-                    " ".join(hashes),
-                    css,
-                    bootstrap,
-                    resvg_script,
-                    viewer,
-                )
+        document = (
+            "<!doctype html><html lang=\"%s\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; base-uri 'none'; object-src 'none'; form-action 'none'; frame-src 'none'; media-src 'none'; manifest-src 'none'; img-src data: blob:; style-src %s; style-src-attr 'none'; font-src data:; script-src %s 'wasm-unsafe-eval'; script-src-attr 'none'; connect-src 'none'; worker-src 'none'\"><style>%s</style></head><body><div id=\"app\"></div><script>%s</script><script>%s</script><script>%s</script></body></html>"
+            % (
+                # The viewer's own interface is English regardless of which
+                # CJK font pair the diagram text needs, and the declared
+                # document language drives assistive-technology voice and
+                # translation prompts. Deriving it from ``cjk_locale`` made
+                # a screen reader announce English controls in Mandarin.
+                "en",
+                style_sources,
+                " ".join(hashes),
+                css,
+                bootstrap,
+                resvg_script,
+                viewer,
             )
-            object.__setattr__(self, "_html_document", document)
+        )
+        object.__setattr__(self, "_html_document", document)
         if output is not None:
             _atomic_write_text(output, document)
         return document
@@ -2267,15 +2251,29 @@ class Diagram:
             try:
                 _open_standalone_window(path, dimensions)
             except DiagramUnavailableError:
-                # No window opened this document, so the reason it is kept does
-                # not apply. It is only ours to remove if we created it: an
-                # earlier run in another process may have a window on the very
-                # same path, since the name is shared by design.
+                # Removed now, not at exit. A window name is derived from the
+                # document alone so that one file serves every process showing
+                # the same diagram, which means deferring the removal hands a
+                # long-lived process a licence to delete a file some *other*
+                # process opened a window on in the meantime -- measured with
+                # two processes, where the one whose launch failed reaped the
+                # document the successful one was displaying. Doing it here
+                # narrows that to the instant of failure: nothing of ours is
+                # showing this file, and `preexisting` says we are the ones who
+                # wrote it.
                 if temporary is not None:
-                    _register_temporary_viewer(temporary)
+                    try:
+                        temporary.unlink()
+                    except OSError as removal_error:
+                        # FileNotFoundError: something already removed it.
+                        # PermissionError/IsADirectoryError: the shared temp
+                        # directory changed underneath us. The launch failure
+                        # is what the caller asked about, so it is what
+                        # propagates.
+                        _logger.warning(
+                            "could not remove the unopened viewer %s: %s",
+                            temporary,
+                            removal_error,
+                        )
                 raise
-            # A window is showing this file now, and windows outlive us. An
-            # earlier failed launch in this process may have put the very same
-            # path on the exit list, since the name is shared by design.
-            _unregister_temporary_viewer(path)
         return path

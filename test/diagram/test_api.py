@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 import stat
 import sys
+import tempfile
 import warnings
 
 import pytest
@@ -1167,3 +1168,58 @@ def test_cleanup_reporting_survives_warnings_as_errors(tmp_path, monkeypatch):
         monkeypatch.setattr(Path, "unlink", fail_unlink)
         with pytest.raises(KeyboardInterrupt):
             api._atomic_write_text(tmp_path / "page.html", "x")
+
+
+def test_to_html_second_call_does_not_rebuild(monkeypatch):
+    # `first is second` alone does not pin where the cache is consulted: the
+    # earlier implementation read the viewer assets, serialised the state,
+    # derived the nonce and hashed three multi-megabyte scripts before reaching
+    # a tail-end `if document is None`, and still returned the same object. The
+    # observable difference is whether the build path is touched at all.
+    from pyfcstm.diagram import api
+
+    model = load_state_machine_from_text("state Root;")
+    view = model.diagram()
+    view.to_html()
+
+    def refuse(*_args, **_kwargs):
+        raise AssertionError("a cached to_html() must not read viewer assets")
+
+    monkeypatch.setattr(api, "_asset_text", refuse)
+    monkeypatch.setattr(api, "_embedded_resvg_script", refuse)
+    assert view.to_html().startswith("<!doctype html>")
+
+
+def test_failed_launch_removes_its_document_instead_of_deferring(tmp_path, monkeypatch):
+    # A window name is derived from the document alone so one file serves every
+    # process showing the same diagram. Deferring removal to exit therefore
+    # handed a long-lived process a licence to delete a file another process
+    # had opened a window on -- measured with two processes, where the one
+    # whose launch failed reaped the document the successful one displayed.
+    from pyfcstm.diagram import api
+
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
+
+    def refuse(*_args, **_kwargs):
+        raise DiagramUnavailableError("no browser here")
+
+    monkeypatch.setattr(api, "_open_standalone_window", refuse)
+    view = load_state_machine_from_text("state Root;").diagram()
+    with pytest.raises(DiagramUnavailableError):
+        view.show()
+    assert list(tmp_path.glob("pyfcstm-diagram-*.html")) == [], (
+        "a failed launch must not leave the shared document behind"
+    )
+    assert api._TEMPORARY_VIEWERS == set() or all(
+        str(os.getpid()) in item.stem for item in api._TEMPORARY_VIEWERS
+    )
+
+
+def test_only_this_process_own_viewers_can_be_scheduled_for_removal():
+    # The exit hook deletes whatever is registered, so accepting a shared name
+    # is what made the cross-process reap possible. The invariant the comment
+    # claimed is enforced now rather than assumed.
+    from pyfcstm.diagram import api
+
+    with pytest.raises(ValueError, match="only this process's own"):
+        api._register_temporary_viewer(Path("/tmp/pyfcstm-diagram-deadbeef.html"))

@@ -158,8 +158,26 @@ def main() -> None:
         # post the embedded model source to a remote host. The other `'none'`
         # directives here -- object-src, frame-src, media-src, manifest-src --
         # do fall back, so they are deliberately not required.
-        required_directives.append("base-uri 'none'")
-        required_directives.append("form-action 'none'")
+        #
+        # Parsed rather than matched as a substring. A substring test passes on
+        # `form-action https:; form-action 'none';`, where a user agent honours
+        # the first declaration and ignores the second, and on
+        # `form-action 'none' https:`, where the extra source is what takes
+        # effect -- both measured against this gate before it parsed.
+        for directive in ("base-uri", "form-action"):
+            declared = re.findall(
+                r"(?:^|;)\s*%s\s+([^;]*)" % directive, policy, re.IGNORECASE
+            )
+            if len(declared) != 1:
+                raise SystemExit(
+                    "CSP declares %s %d times; it must appear exactly once"
+                    % (directive, len(declared))
+                )
+            if declared[0].split() != ["'none'"]:
+                raise SystemExit(
+                    "CSP must declare %s as exactly 'none', found %r"
+                    % (directive, declared[0].strip())
+                )
     for directive in required_directives:
         if directive not in policy:
             raise SystemExit("CSP is missing %s" % directive)

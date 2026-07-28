@@ -1135,3 +1135,24 @@ def test_combo_relay_flag_takes_part_in_state_equality():
     assert relay == State(
         name="R", path=("R",), substates={}, is_pseudo=True, is_combo_relay=True
     )
+
+
+@pytest.mark.unittest
+def test_model_equality_works_on_parsed_models():
+    # `parent_ref` was compared, and a weakref compares by referent, so a
+    # parent and child pointing at each other recursed without bound: `==` on
+    # any model with substates raised RecursionError. That made
+    # `State.__eq__` unusable for every model the parser produces, including
+    # the round trip `is_combo_relay` was brought into comparison to protect.
+    source = (
+        "def int c = 0;\n"
+        "state Root {\n"
+        "    [*] -> A;\n"
+        "    state A;\n"
+        "    state B;\n"
+        "    A -> B :: Go;\n"
+        "}\n"
+    )
+    assert _build_model(source) == _build_model(source)
+    other = _build_model(source.replace("state B;", "state C;").replace("-> B", "-> C"))
+    assert _build_model(source) != other

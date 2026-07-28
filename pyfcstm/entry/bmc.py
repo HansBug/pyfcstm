@@ -585,7 +585,17 @@ def _human_explanation(execution: "_BmcExecution") -> List[str]:
             elif source.path is not None:
                 location = source.path
             elif source.kind == "generated":
-                location = "generated %s" % item.constraint.category
+                # The frozen transcript names a generated group by the leading
+                # segment of its category plus the word "constraint": "generated
+                # transition constraint", never the internal dotted form.  The
+                # leading segment is used rather than the aggregate formula
+                # because every segment ("domain", "transition", "initial",
+                # "assumption", "definedness") is vocabulary the frozen contract
+                # already shows a reader, while the aggregate name for the
+                # assumptions stage is not.
+                location = "generated %s constraint" % (
+                    item.constraint.category.split(".")[0],
+                )
             else:
                 # An authored constraint whose origin was never named -- a
                 # programmatic query, for instance -- still came from the user's
@@ -595,20 +605,25 @@ def _human_explanation(execution: "_BmcExecution") -> List[str]:
                     source.kind,
                     item.constraint.category,
                 )
-            # The frozen contract is explicit that a generated support group must
-            # be shown together with its frame/step/refs rather than hidden for
-            # tidiness, and its own transcript prints the position inline as
-            # "... at step 0".
-            position = _human_core_position(item.constraint)
-            if position:
-                location = "%s %s" % (location, position)
-            lines.append("  %d. %s" % (index, location))
-            detail = item.source_excerpt or item.human_text
-            if detail:
-                lines.append("     %s" % detail)
-            structural = _human_core_structural_refs(item.constraint)
-            if structural:
-                lines.append("     %s" % structural)
+            if source.kind == "generated":
+                # The frozen contract is explicit that a generated support group
+                # must be shown together with its frame/step/refs rather than
+                # hidden for tidiness, and its transcript prints that position
+                # inline on the single line it gives the group.  An authored
+                # constraint instead shows its own text, whose "assume at 1"
+                # already states the position.
+                position = _human_core_position(item.constraint)
+                if position:
+                    location = "%s %s" % (location, position)
+                lines.append("  %d. %s" % (index, location))
+                structural = _human_core_structural_refs(item.constraint)
+                if structural:
+                    lines.append("     %s" % structural)
+            else:
+                lines.append("  %d. %s" % (index, location))
+                detail = item.source_excerpt or item.human_text
+                if detail:
+                    lines.append("     %s" % detail)
         lines.append("")
         if core.subset_minimality == "proven":
             lines.append(
@@ -625,10 +640,14 @@ def _human_explanation(execution: "_BmcExecution") -> List[str]:
         lines.append("Reason: %s" % explanation.reason)
     if core is None and explanation.classification is not None:
         lines.append("")
+        # Two physical lines, broken where the frozen transcript breaks them.
         lines.append(
             "No conflict core or causal chain was published. The classification "
-            "is retained as partial metadata, but it is not presented as a "
-            "completed formal explanation."
+            "is retained"
+        )
+        lines.append(
+            "as partial metadata, but it is not presented as a completed formal "
+            "explanation."
         )
     return lines
 

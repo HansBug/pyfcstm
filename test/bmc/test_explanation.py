@@ -27,6 +27,7 @@ from pyfcstm.bmc.explanation import (
     BmcInfeasibilityExplanation,
 )
 from pyfcstm.bmc.provenance import BmcSourceRef
+from pyfcstm.utils.validate import Span
 
 pytestmark = pytest.mark.unittest
 
@@ -2309,17 +2310,21 @@ def _published_dataclasses():
     """
     import dataclasses
 
-    from pyfcstm.bmc import explanation as module
+    from pyfcstm.bmc import explanation, provenance
 
     found = []
-    for name in dir(module):
-        value = getattr(module, name)
-        if (
-            isinstance(value, type)
-            and dataclasses.is_dataclass(value)
-            and value.__module__ == module.__name__
-        ):
-            found.append((name, value))
+    # Both modules, not just the one this test file is named after: the source
+    # reference and the tracked group are published dataclasses too, and a sweep
+    # of one module says nothing about the other.
+    for module in (explanation, provenance):
+        for name in dir(module):
+            value = getattr(module, name)
+            if (
+                isinstance(value, type)
+                and dataclasses.is_dataclass(value)
+                and value.__module__ == module.__name__
+            ):
+                found.append((name, value))
     return sorted(found)
 
 
@@ -2361,6 +2366,19 @@ def _well_formed_arguments():
             "subset_minimality": "not_proven",
             "items": (_item(),),
         },
+        "BmcSourceRef": {
+            "kind": "fbmcq",
+            "path": "q.fbmcq",
+            "span": Span(1, 1, 1, 5),
+        },
+        "BmcTrackedConstraint": {
+            "stable_id": "assumption.0000.frame.0000",
+            "stage": "assumptions",
+            "category": "assumption.frame",
+            "expressions": (True,),
+            "source_ref": _GENERATED,
+            "refs": {"frame": 0},
+        },
         "BmcInfeasibilityExplanation": {
             "requested_mode": "formal",
             "achieved_mode": "none",
@@ -2387,7 +2405,11 @@ def test_the_impostor_sweep_covers_every_published_field() -> None:
 
     arguments = _well_formed_arguments()
     for name, cls in _published_dataclasses():
-        if name in ("BmcConflictNarrative", "BmcConflictProof"):
+        if name in (
+            "BmcConflictNarrative",
+            "BmcConflictProof",
+            "SourceDocumentRegistry",
+        ):
             # Reserved for a later stage; UNBUILT_SLOTS refuses both, so no
             # published document can carry one yet.
             continue
@@ -2407,14 +2429,19 @@ def test_no_published_field_accepts_a_hostile_stand_in(class_name) -> None:
     """
     import dataclasses
 
-    from pyfcstm.bmc import explanation as module
-
-    cls = getattr(module, class_name)
+    cls = dict(_published_dataclasses())[class_name]
     baseline = _well_formed_arguments()[class_name]
     impostors = dict(_impostors())
     plain_types = (str, int, float, bool, type(None))
 
+    # ``expressions`` holds solver objects, not published JSON: it never reaches
+    # ``to_canonical()``, so requiring a plain builtin there would be asserting
+    # the wrong contract.
+    solver_only = {"expressions"}
+
     for field in dataclasses.fields(cls):
+        if field.name in solver_only:
+            continue
         good = baseline[field.name]
         for label, make in impostors.items():
             if label.startswith("str") and not isinstance(good, str):

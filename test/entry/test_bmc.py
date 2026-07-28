@@ -2060,7 +2060,10 @@ def test_human_explanation_renders_every_published_shape() -> None:
             reason="minimization skipped",
         )
     )
-    assert "  1. generated assumption.frame" in lines
+    # Frozen issue #385 §12.3 names a generated group by the leading segment
+    # of its category plus the word "constraint", on one line of its own.
+    assert "  1. generated assumption constraint" in lines
+    assert not any("assumption.frame" in line for line in lines)
 
     # A proven-minimal core says so instead of hedging.
     lines = render(
@@ -2134,7 +2137,8 @@ def test_human_explanation_renders_every_published_shape() -> None:
             reason="minimization skipped",
         )
     )
-    assert "  1. generated transition.step at step 0" in lines
+    # This is the one shape frozen issue #385 §12.3 pins verbatim.
+    assert "  1. generated transition constraint at step 0" in lines
     assert "     kind state" in lines
 
     # Frames, plural positions and index keys that are already inline.
@@ -2170,7 +2174,7 @@ def test_human_explanation_renders_every_published_shape() -> None:
             reason="minimization skipped",
         )
     )
-    assert "  1. generated assumption.frame at frames 0, 1 and step 2" in lines
+    assert "  1. generated assumption constraint at frames 0, 1 and step 2" in lines
     assert "     assumption 3" in lines
     # ``frame`` is already shown inline, so it is not repeated below.
     assert not any(line.strip().startswith("frame 0") for line in lines)
@@ -2211,3 +2215,182 @@ def test_human_explanation_renders_every_published_shape() -> None:
 
     # No explanation at all renders nothing.
     assert render(None) == []
+
+
+@pytest.mark.unittest
+def test_human_explanation_reproduces_the_frozen_transcript_lines() -> None:
+    """Compare rendered lines against the frozen transcripts character for
+    character.
+
+    Frozen issue #385 §12.3 shows a conflict-constraint block in which an
+    authored member occupies exactly two lines -- location then its own text,
+    with no position suffix and no builder metadata -- while a generated member
+    occupies exactly one.  §12.4 ends with two physical lines, not one long one.
+    Substring checks pass on all of those even when the shape is wrong, so the
+    frozen lines are transcribed here and compared whole.
+    """
+    from dataclasses import dataclass
+
+    from pyfcstm.bmc.explanation import (
+        BmcConflictCore,
+        BmcConstraintRef,
+        BmcCoreItem,
+        BmcInfeasibilityExplanation,
+    )
+    from pyfcstm.bmc.provenance import BmcSourceRef
+    from pyfcstm.entry.bmc import _human_explanation
+    from pyfcstm.utils.validate import Span
+
+    # Transcribed from frozen issue #385 §12.3.  Each entry is one frozen line
+    # with its ordinal dropped: an authored member contributes a location line
+    # and its own text, a generated member contributes a single line.  The
+    # ordinals themselves are not transcribed because the published core is
+    # sorted by ``stable_id`` -- documented in pyfcstm/bmc/explanation.py so the
+    # solver's own core order never leaks -- and that sort puts the assumption
+    # group ahead of the initializer, whereas the frozen sample happens to show
+    # the initializer first.  Line shape is the contract; the sample's ordinal
+    # order is not.
+    frozen_12_3_shapes = [
+        ("machine.fcstm:1:1-1:15", "persistent initializer: x = 0"),
+        ("query.fbmcq:2:1-2:23", "assume at 0: x == 1;"),
+        ("generated transition constraint at step 0", None),
+    ]
+    # Transcribed from frozen issue #385 §12.4, including where the text breaks.
+    frozen_12_4 = [
+        "No conflict core or causal chain was published. The classification is "
+        "retained",
+        "as partial metadata, but it is not presented as a completed formal "
+        "explanation.",
+    ]
+
+    @dataclass
+    class _Feasibility:
+        explanation: object
+
+    @dataclass
+    class _Result:
+        feasibility: object
+
+    @dataclass
+    class _Execution:
+        result: object
+
+    def render(explanation):
+        return _human_explanation(_Execution(_Result(_Feasibility(explanation))))
+
+    def authored(path, span, category, stage, role, excerpt, refs):
+        reference = BmcConstraintRef(
+            "%s.0000" % category,
+            stage,
+            category,
+            BmcSourceRef("fcstm" if path.endswith(".fcstm") else "fbmcq", path, span),
+            "authored constraint",
+            # A real builder populates the positional tuple as well as ``refs``,
+            # so the fixture does too: without it the renderer would have no
+            # position to print and "no position suffix on an authored member"
+            # would be asserted against a member that has no position at all.
+            frames=(refs["frame"],),
+            refs=refs,
+        )
+        return BmcCoreItem(
+            reference,
+            role,
+            excerpt,
+            False,
+            {"kind": "structural_constraint"},
+            "authored constraint",
+            True,
+        )
+
+    generated_item = BmcCoreItem(
+        BmcConstraintRef(
+            "transition.step.0000",
+            "kernel",
+            "transition.step",
+            BmcSourceRef("generated", None, None),
+            "transition rule constraint",
+            steps=(0,),
+            refs={"step": 0},
+        ),
+        "transition_rule",
+        None,
+        False,
+        {"kind": "structural_constraint"},
+        "transition rule constraint, generated from the model",
+        False,
+    )
+
+    core = BmcConflictCore(
+        "assumptions_prefix",
+        "S_assume restricted to the conflicting groups",
+        "source_group",
+        "partial_minimized",
+        "not_proven",
+        (
+            authored(
+                "machine.fcstm",
+                Span(1, 1, 1, 15),
+                "initial.variable",
+                "initialization",
+                "initial_fact",
+                "persistent initializer: x = 0",
+                {"frame": 0, "variable": "x"},
+            ),
+            authored(
+                "query.fbmcq",
+                Span(2, 1, 2, 23),
+                "assumption.frame",
+                "assumptions",
+                "assumption",
+                "assume at 0: x == 1;",
+                {"assumption": 0, "frame": 0},
+            ),
+            generated_item,
+        ),
+    )
+    lines = render(
+        BmcInfeasibilityExplanation(
+            "formal",
+            "formal",
+            "partial",
+            "assumptions_prefix_conflict",
+            core=core,
+            reason="shared timeout budget exhausted during minimization",
+        )
+    )
+    start = lines.index("Conflict constraints:")
+    block = lines[start + 1 : lines.index("", start + 1)]
+    # Rebuild the block from the frozen shapes in the order the published core
+    # actually uses, then compare whole lines.  A wrong shape -- an internal
+    # dotted category, a position suffix on an authored member, a leaked
+    # stable_id -- changes one of these strings and fails here.
+    by_first_line = {shape[0]: shape for shape in frozen_12_3_shapes}
+    expected = []
+    ordinal = 0
+    for first_line in (
+        "query.fbmcq:2:1-2:23",
+        "machine.fcstm:1:1-1:15",
+        "generated transition constraint at step 0",
+    ):
+        ordinal += 1
+        head, detail = by_first_line[first_line]
+        expected.append("  %d. %s" % (ordinal, head))
+        if detail is not None:
+            expected.append("     %s" % detail)
+    assert block == expected
+    assert not any("variable x" in line for line in lines)
+    assert not any("assumption 0" in line for line in lines)
+    assert not any("at frame 0" in line for line in lines)
+
+    degraded = render(
+        BmcInfeasibilityExplanation(
+            "formal",
+            "none",
+            "partial",
+            "initialization_self_conflict",
+            reason="the source-level core check timed out after classification",
+        )
+    )
+    assert degraded[-len(frozen_12_4) :] == frozen_12_4
+    # The frozen transcript puts a blank line between the reason and the tail.
+    assert degraded[-len(frozen_12_4) - 1] == ""

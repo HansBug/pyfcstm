@@ -1144,11 +1144,22 @@ def test_model_equality_works_on_parsed_models():
     # any model with substates raised RecursionError. That made
     # `State.__eq__` unusable for every model the parser produces, including
     # the round trip `is_combo_relay` was brought into comparison to protect.
+    # Every dataclass carrying `parent_ref` has to be instantiated, or a
+    # single-point revert stays green: `Transition`, `OnStage` (enter/during/
+    # exit), `OnAspect` (`>> during`) and `State`. A model of bare states and
+    # one transition exercises only two of the four.
     source = (
         "def int c = 0;\n"
         "state Root {\n"
+        "    >> during before {\n"
+        "        c = 0;\n"
+        "    }\n"
         "    [*] -> A;\n"
-        "    state A;\n"
+        "    state A {\n"
+        "        enter { c = 1; }\n"
+        "        during { c = c + 1; }\n"
+        "        exit { c = 2; }\n"
+        "    }\n"
         "    state B;\n"
         "    A -> B :: Go;\n"
         "}\n"

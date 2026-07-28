@@ -8,6 +8,7 @@ import re
 import stat
 import sys
 import tempfile
+import threading
 import warnings
 
 import pytest
@@ -1129,6 +1130,11 @@ def test_umask_probe_never_widens_the_process(tmp_path, monkeypatch):
 
 
 def test_cleanup_reporting_survives_warnings_as_errors(tmp_path, monkeypatch):
+    # The probe half of this is a no-op on Windows, where `_umask_default_mode`
+    # returns a constant without creating anything -- there is no umask to
+    # discover there. Kept unguarded rather than skipped because the second
+    # half, the interrupted atomic write, applies on every platform.
+    #
     # These cleanups were reported with `warnings.warn`, which raises under
     # `-W error` / `PYTHONWARNINGS=error` / pytest's `filterwarnings = error`.
     # Raising from inside `finally` discards the in-flight exception, so the
@@ -1159,15 +1165,21 @@ def test_cleanup_reporting_survives_warnings_as_errors(tmp_path, monkeypatch):
         assert target.read_text(encoding="utf-8") == "x" * 64
         monkeypatch.undo()
 
-        # The atomic write: the interrupt must reach the caller unchanged.
+        # Both atomic writers: the interrupt must reach the caller unchanged.
+        # The binary one is a separate copy of the same `finally`, and this
+        # stayed green when only its report was reverted to `warnings.warn`.
         monkeypatch.setattr(
             api,
             "_apply_target_mode",
             lambda *a, **k: (_ for _ in ()).throw(KeyboardInterrupt),
         )
         monkeypatch.setattr(Path, "unlink", fail_unlink)
-        with pytest.raises(KeyboardInterrupt):
-            api._atomic_write_text(tmp_path / "page.html", "x")
+        for writer, payload, name in (
+            (api._atomic_write_text, "x", "page.html"),
+            (api._atomic_write_bytes, b"x", "image.png"),
+        ):
+            with pytest.raises(KeyboardInterrupt):
+                writer(tmp_path / name, payload)
 
 
 def test_to_html_second_call_does_not_rebuild(monkeypatch):
@@ -1190,28 +1202,56 @@ def test_to_html_second_call_does_not_rebuild(monkeypatch):
     assert view.to_html().startswith("<!doctype html>")
 
 
-def test_failed_launch_removes_its_document_instead_of_deferring(tmp_path, monkeypatch):
-    # A window name is derived from the document alone so one file serves every
-    # process showing the same diagram. Deferring removal to exit therefore
-    # handed a long-lived process a licence to delete a file another process
-    # had opened a window on -- measured with two processes, where the one
-    # whose launch failed reaped the document the successful one displayed.
+def test_failed_launch_leaves_a_document_another_caller_may_be_showing(
+    tmp_path, monkeypatch
+):
+    # A window name comes from the document alone so one file serves every
+    # caller showing the same diagram, which is precisely why a failing caller
+    # cannot prove the file is its own: `path.exists()` is read before the
+    # launch, and another caller can write and open a window on the same path
+    # while this one is still inside it. Deferring the removal to exit was
+    # measured deleting a live window's document, and so was doing it at the
+    # moment of failure -- this pins the ordering that defeats both.
     from pyfcstm.diagram import api
 
     monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
-
-    def refuse(*_args, **_kwargs):
-        raise DiagramUnavailableError("no browser here")
-
-    monkeypatch.setattr(api, "_open_standalone_window", refuse)
     view = load_state_machine_from_text("state Root;").diagram()
-    with pytest.raises(DiagramUnavailableError):
-        view.show()
-    assert list(tmp_path.glob("pyfcstm-diagram-*.html")) == [], (
-        "a failed launch must not leave the shared document behind"
-    )
-    assert api._TEMPORARY_VIEWERS == set() or all(
-        str(os.getpid()) in item.stem for item in api._TEMPORARY_VIEWERS
+    object.__setattr__(view, "_html_document", "<html>tiny</html>")
+
+    inside_launch = threading.Event()
+    peer_finished = threading.Event()
+    outcome = {}
+
+    def launcher(_path, _dimensions):
+        if threading.current_thread().name == "failing":
+            inside_launch.set()
+            peer_finished.wait(30)
+            raise DiagramUnavailableError("injected launch failure")
+
+    monkeypatch.setattr(api, "_open_standalone_window", launcher)
+
+    def failing():
+        with pytest.raises(DiagramUnavailableError):
+            view.show()
+
+    def succeeding():
+        inside_launch.wait(30)
+        outcome["path"] = view.show()
+        outcome["existed"] = outcome["path"].exists()
+        peer_finished.set()
+
+    threads = [
+        threading.Thread(target=failing, name="failing"),
+        threading.Thread(target=succeeding, name="succeeding"),
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(60)
+
+    assert outcome.get("existed") is True
+    assert outcome["path"].exists(), (
+        "the failing caller removed a document the successful one is showing"
     )
 
 
@@ -1223,3 +1263,34 @@ def test_only_this_process_own_viewers_can_be_scheduled_for_removal():
 
     with pytest.raises(ValueError, match="only this process's own"):
         api._register_temporary_viewer(Path("/tmp/pyfcstm-diagram-deadbeef.html"))
+
+
+@pytest.mark.skipif(not hasattr(os, "fork"), reason="requires fork")
+def test_a_forked_child_does_not_reap_its_parents_viewer(tmp_path):
+    # `fork` copies the registry and the atexit hooks with it, so a child that
+    # exits normally runs the parent's hooks. Checking the process id only when
+    # a path is registered does not help: the child inherits an entry that was
+    # valid when it was made. Measured before the removal hook re-checked --
+    # the child deleted a document the parent was still showing.
+    from pyfcstm.diagram import api
+
+    viewer = tmp_path / ("pyfcstm-diagram-forktest-%d.html" % os.getpid())
+    viewer.write_text("x" * 64, encoding="utf-8")
+    api._register_temporary_viewer(viewer)
+    try:
+        child = os.fork()
+        if child == 0:
+            # The registered hook, invoked directly. Running the whole atexit
+            # chain would drag in pytest's own hooks -- which stop it short --
+            # and a plain `sys.exit` makes the child emit a second test summary
+            # on the shared stdout. This is what atexit would call.
+            try:
+                api._remove_temporary_viewer(viewer)
+            finally:
+                os._exit(0)
+        _, status = os.waitpid(child, 0)
+        assert status == 0
+        assert viewer.is_file(), "a forked child reaped its parent's viewer"
+    finally:
+        _TEMPORARY_VIEWERS = api._TEMPORARY_VIEWERS
+        _TEMPORARY_VIEWERS.discard(viewer)

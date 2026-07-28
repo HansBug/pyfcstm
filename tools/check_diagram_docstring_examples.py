@@ -22,6 +22,7 @@ import importlib
 import importlib.util
 import re
 import sys
+from typing import Optional
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -45,21 +46,24 @@ _DOTTED = re.compile(r"\bpyfcstm(?:\.[A-Za-z_][A-Za-z0-9_]*)+")
 
 def _check_dotted_paths(name: str) -> int:
     """
-    Reject a docstring example naming a ``pyfcstm`` module that does not exist.
+    Reject a docstring example naming a ``pyfcstm`` path that cannot be reached.
 
     ``IGNORE_EXCEPTION_DETAIL`` lets doctest match an expected exception by
     class alone, and it discards the module prefix along with the message. An
     example can therefore say ``pyfcstm.diagram.errors.DiagramUnavailableError``
     -- a module this package has never had -- and still pass, while the
-    rendered API documentation sends the reader to an import that fails.
+    rendered API documentation sends the reader to an import that fails. A
+    real module carrying a class name that does not exist fails the reader in
+    exactly the same way, so the attributes are resolved too.
 
-    Trailing segments that start with a capital are treated as attributes and
-    stripped; what remains has to import. Checking whether *any* prefix
-    resolves would accept everything, since ``pyfcstm`` always does.
+    The split between module and attribute is found by importing the longest
+    prefix that imports, rather than by guessing from capitalisation: a
+    lowercase tail is not evidence of a module (``pyfcstm.diagram.api.Diagram``
+    has ``to_html``) and an uppercase one is not evidence of an attribute.
 
     :param name: Importable module whose docstrings are scanned.
     :type name: str
-    :return: Number of unresolvable dotted paths found.
+    :return: Number of unreachable dotted paths found.
     :rtype: int
     """
     module = importlib.import_module(name)
@@ -67,36 +71,87 @@ def _check_dotted_paths(name: str) -> int:
     for test in doctest.DocTestFinder().find(module, name):
         for example in test.examples:
             for candidate in sorted(set(_DOTTED.findall(example.want))):
-                parts = candidate.split(".")
-                while len(parts) > 1 and parts[-1][:1].isupper():
-                    parts.pop()
-                dotted = ".".join(parts)
-                if _importable(dotted):
+                problem = _unreachable(candidate)
+                if problem is None:
                     continue
-                print(
-                    "%s: example names %s, but %s does not import"
-                    % (test.name, candidate, dotted)
-                )
+                print("%s: example names %s, but %s" % (test.name, candidate, problem))
                 bad += 1
     return bad
 
 
-def _importable(dotted: str) -> bool:
+def _unreachable(candidate: str) -> Optional[str]:
     """
-    Report whether ``dotted`` names a module that can be found.
+    Explain why ``candidate`` cannot be resolved, or return ``None``.
 
-    :param dotted: Candidate module path.
-    :type dotted: str
-    :return: ``True`` when ``find_spec`` resolves it.
-    :rtype: bool
+    :param candidate: Dotted path printed by a docstring example.
+    :type candidate: str
+    :return: A reason, or ``None`` when the path resolves.
+    :rtype: str or None
     """
-    try:
-        return importlib.util.find_spec(dotted) is not None
-    except (ImportError, AttributeError, ValueError):
-        # ImportError: a parent package in the path does not exist.
-        # AttributeError/ValueError: the path names an attribute rather than a
-        # module, which find_spec refuses rather than answering.
-        return False
+    parts = candidate.split(".")
+    for stop in range(len(parts), 0, -1):
+        dotted = ".".join(parts[:stop])
+        try:
+            found = importlib.util.find_spec(dotted) is not None
+        except (ImportError, AttributeError, ValueError, TypeError):
+            # ImportError/ModuleNotFoundError: a parent in the path is not a
+            # package, which is the answer rather than an error here.
+            # AttributeError/ValueError/TypeError: find_spec refuses paths that
+            # name an attribute instead of a module.
+            found = False
+        if not found:
+            continue
+        target = importlib.import_module(dotted)
+        for attribute in parts[stop:]:
+            if not hasattr(target, attribute):
+                return "%s has no %s" % (dotted, attribute)
+            target = getattr(target, attribute)
+        return None
+    return "%s does not import" % parts[0]
+
+
+_SELF_CHECK_CASES = (
+    # (path, must be reported)
+    ("pyfcstm.diagram.engine.DiagramUnavailableError", False),
+    ("pyfcstm.diagram.api.Diagram.to_html", False),
+    ("pyfcstm.model.StateMachine", False),
+    ("pyfcstm.diagram.errors.DiagramUnavailableError", True),
+    ("pyfcstm.diagram.engine.ThisClassDoesNotExistAtAll", True),
+    ("pyfcstm.diagram.engine.NotReal.DiagramUnavailableError", True),
+    ("pyfcstm.nope.Thing", True),
+)
+
+
+def _self_check() -> None:
+    """
+    Prove the path resolver reports what it claims to and nothing else.
+
+    The first version of this check guessed the module/attribute boundary from
+    capitalisation. That flagged the legitimate ``Diagram.to_html`` and waved
+    through both a class that does not exist on a real module and a made-up
+    segment in the middle of one, which is the whole failure it exists to
+    catch. A gate whose own behaviour is unverified is worth very little, so
+    the cases that broke it are pinned here.
+
+    :return: ``None``.
+    :rtype: None
+    :raises SystemExit: If any case resolves the wrong way.
+    """
+    wrong = []
+    for candidate, should_report in _SELF_CHECK_CASES:
+        reported = _unreachable(candidate) is not None
+        if reported != should_report:
+            wrong.append(
+                "%s: expected %s, got %s"
+                % (
+                    candidate,
+                    "a report" if should_report else "no report",
+                    "a report" if reported else "no report",
+                )
+            )
+    if wrong:
+        raise SystemExit("path resolver self-check failed:\n  " + "\n  ".join(wrong))
+    print("path resolver self-check: %d cases passed" % len(_SELF_CHECK_CASES))
 
 
 def main() -> None:
@@ -107,6 +162,9 @@ def main() -> None:
     :rtype: None
     :raises SystemExit: If any example fails or raises.
     """
+    if "--check" in sys.argv[1:]:
+        _self_check()
+        return
     attempted = 0
     failed = 0
     for name in MODULES:

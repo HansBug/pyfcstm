@@ -276,6 +276,7 @@ diagram_csp_check: build_assets
 		--require-embedded-fonts 5 --require-fonts-ready
 
 diagram_docstring_check: build_assets
+	$(PYTHON) tools/check_diagram_docstring_examples.py --check
 	$(PYTHON) tools/check_diagram_docstring_examples.py
 
 diagram_rendering_check: build_assets

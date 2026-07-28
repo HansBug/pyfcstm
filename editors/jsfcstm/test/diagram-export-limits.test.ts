@@ -67,8 +67,8 @@ describe('diagram export size limits', () => {
         // The first three sit exactly on 32767 after rounding. They passed
         // while the side bound was computed against the exact size rather than
         // the rounded one, which overflowed for one tall diagram in seven --
-        // 600x33154 and its neighbours below are three of the 3775 heights
-        // between 32768 and 60000 that did.
+        // 600x33154 and its neighbours below are three of the 6311 heights
+        // that did, which start at 16577 rather than at the limit itself.
         const cases: Array<[number, number]> = [
             [296, 34874],
             [40000, 662],

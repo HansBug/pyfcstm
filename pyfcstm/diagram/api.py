@@ -903,6 +903,14 @@ def _remove_temporary_viewer(path: Path) -> None:
     """
     if path not in _TEMPORARY_VIEWERS:
         return
+    # Re-checked here, not only where the path was registered. A `fork` copies
+    # this set and the exit hooks along with it, so a child that exits normally
+    # runs the parent's hooks and deletes a document the parent is still
+    # showing -- measured, with the child removing a viewer the parent had
+    # written moments earlier. The name carries the id of whoever registered
+    # it, so a mismatch means this interpreter is not that one.
+    if not path.stem.endswith("-%d" % os.getpid()):
+        return
     try:
         path.unlink()
     except OSError as error:
@@ -2213,10 +2221,14 @@ class Diagram:
             document alone: the file is left in place, because the browser is
             detached and reads it after this process is gone, and showing the
             same diagram again — here or in another process — reuses that one
-            file. Without a window the name also carries this process id and
-            the file is removed at interpreter exit. Each viewer is roughly
-            30 MB, so pass an explicit path when you want to manage the file
-            yourself.
+            file. A failed launch leaves it too: the name is shared by design,
+            so no caller can prove the file is not one another caller already
+            has a window on, and both removing it at exit and removing it at
+            the moment of failure were measured deleting a live window's
+            document. Without a window the name also carries this process id,
+            which does make it unambiguously ours, and that file is removed at
+            interpreter exit. Each viewer is roughly 30 MB, so pass an explicit
+            path when you want to manage the file yourself.
         :type output: str or os.PathLike, optional
         :param open_window: Whether to launch a Chromium-family app window,
             defaults to ``True``.
@@ -2231,10 +2243,6 @@ class Diagram:
         if output is None:
             document = self.to_html()
             path = _temporary_viewer_path(document, for_window=open_window)
-            # Recorded before the write: if the launch below fails, whether this
-            # file is ours to remove depends on whether we are the process that
-            # created it.
-            preexisting = path.exists()
             # 0600, and forced rather than preserved. The name is derived from
             # the document, so on a shared temp directory anyone can predict
             # it: both to read the model's own source out of the viewer, and to
@@ -2242,38 +2250,32 @@ class Diagram:
             # write would then copy onto our content.
             _atomic_write_text(path, document, mode=0o600)
             if not open_window:
+                # Carries this process id, so it is unambiguously ours and the
+                # exit hook may remove it. The window name deliberately does
+                # not, which is why nothing schedules that one.
                 _register_temporary_viewer(path)
-            temporary = None if preexisting else path
         else:
             path = self.save(output, format="html")
-            temporary = None
         if open_window:
             try:
                 _open_standalone_window(path, dimensions)
             except DiagramUnavailableError:
-                # Removed now, not at exit. A window name is derived from the
-                # document alone so that one file serves every process showing
-                # the same diagram, which means deferring the removal hands a
-                # long-lived process a licence to delete a file some *other*
-                # process opened a window on in the meantime -- measured with
-                # two processes, where the one whose launch failed reaped the
-                # document the successful one was displaying. Doing it here
-                # narrows that to the instant of failure: nothing of ours is
-                # showing this file, and `preexisting` says we are the ones who
-                # wrote it.
-                if temporary is not None:
-                    try:
-                        temporary.unlink()
-                    except OSError as removal_error:
-                        # FileNotFoundError: something already removed it.
-                        # PermissionError/IsADirectoryError: the shared temp
-                        # directory changed underneath us. The launch failure
-                        # is what the caller asked about, so it is what
-                        # propagates.
-                        _logger.warning(
-                            "could not remove the unopened viewer %s: %s",
-                            temporary,
-                            removal_error,
-                        )
+                # The document stays. A window name is derived from the
+                # document alone so one file can serve every process showing
+                # the same diagram, and that is exactly why a failing caller
+                # cannot prove the file is its own to delete: `path.exists()`
+                # was read before the launch, and another process can write and
+                # open a window on the very same path while this one is still
+                # inside it. Both the deferred removal and the immediate one
+                # were measured deleting a document a second caller had a live
+                # window on.
+                #
+                # Leaving it is not a new leak. A successful launch already
+                # keeps its document forever -- windows outlive the interpreter
+                # -- so the bound is unchanged either way: one file per distinct
+                # diagram, reused by every later show of the same one. The CLI
+                # points at `-o` for a document the caller wants to keep track
+                # of, and per-process names, which are unambiguously ours, are
+                # still reaped at exit.
                 raise
         return path

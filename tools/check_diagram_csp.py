@@ -136,19 +136,25 @@ def main() -> None:
     if match is None:
         raise SystemExit("standalone HTML has no CSP meta tag")
     policy = match.group(1)
+    # Every requirement is expressed as an exact source list and checked by
+    # parsing the directive out of the policy, not by searching for its text.
+    # A substring test passes on `connect-src https://evil; connect-src 'none'`,
+    # where a user agent honours the first declaration and ignores the second,
+    # and on `connect-src 'none' https://evil`, where the extra source is what
+    # takes effect. Both were measured against this gate while only `base-uri`
+    # and `form-action` were parsed -- and `connect-src 'none'` is what the
+    # zero-network promise rests on, so it mattered more than either.
     required_directives = []
     if args.require_default_none:
-        required_directives.append("default-src 'none'")
+        required_directives.append(("default-src", ["'none'"]))
     if args.require_connect_none:
-        required_directives.append("connect-src 'none'")
+        required_directives.append(("connect-src", ["'none'"]))
     if args.require_worker_none:
-        required_directives.append("worker-src 'none'")
+        required_directives.append(("worker-src", ["'none'"]))
     if args.require_font_data:
-        required_directives.append("font-src data:")
+        required_directives.append(("font-src", ["data:"]))
     if args.require_img_data_blob:
-        required_directives.append("img-src data: blob:")
-    if args.require_wasm_unsafe_eval:
-        required_directives.append("wasm-unsafe-eval")
+        required_directives.append(("img-src", ["data:", "blob:"]))
     if args.require_no_fallback_directives:
         # `base-uri` and `form-action` are the two directives in this policy
         # that do not fall back to `default-src`, so dropping either leaves it
@@ -158,29 +164,26 @@ def main() -> None:
         # post the embedded model source to a remote host. The other `'none'`
         # directives here -- object-src, frame-src, media-src, manifest-src --
         # do fall back, so they are deliberately not required.
-        #
-        # Parsed rather than matched as a substring. A substring test passes on
-        # `form-action https:; form-action 'none';`, where a user agent honours
-        # the first declaration and ignores the second, and on
-        # `form-action 'none' https:`, where the extra source is what takes
-        # effect -- both measured against this gate before it parsed.
-        for directive in ("base-uri", "form-action"):
-            declared = re.findall(
-                r"(?:^|;)\s*%s\s+([^;]*)" % directive, policy, re.IGNORECASE
+        required_directives.append(("base-uri", ["'none'"]))
+        required_directives.append(("form-action", ["'none'"]))
+    for directive, expected in required_directives:
+        declared = re.findall(
+            r"(?:^|;)\s*%s\s+([^;]*)" % re.escape(directive), policy, re.IGNORECASE
+        )
+        if len(declared) != 1:
+            raise SystemExit(
+                "CSP declares %s %d times; it must appear exactly once"
+                % (directive, len(declared))
             )
-            if len(declared) != 1:
-                raise SystemExit(
-                    "CSP declares %s %d times; it must appear exactly once"
-                    % (directive, len(declared))
-                )
-            if declared[0].split() != ["'none'"]:
-                raise SystemExit(
-                    "CSP must declare %s as exactly 'none', found %r"
-                    % (directive, declared[0].strip())
-                )
-    for directive in required_directives:
-        if directive not in policy:
-            raise SystemExit("CSP is missing %s" % directive)
+        if declared[0].split() != expected:
+            raise SystemExit(
+                "CSP must declare %s as exactly %s, found %r"
+                % (directive, " ".join(expected), declared[0].strip())
+            )
+    if args.require_wasm_unsafe_eval and "wasm-unsafe-eval" not in policy:
+        # A source keyword rather than a directive, so it is looked for inside
+        # `script-src`, whose full contents are pinned by the hash check.
+        raise SystemExit("CSP is missing wasm-unsafe-eval")
     if args.forbid_unsafe_eval and re.search(
         r"(?:^|[\s;])'unsafe-eval'(?:$|[\s;])", policy, re.IGNORECASE
     ):

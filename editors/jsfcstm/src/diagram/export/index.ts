@@ -90,8 +90,9 @@ export function rasterScaleWithinLimits(
     // so both bounds are computed against the rounded size rather than the
     // exact one. The area budget already allowed for that; the side budget did
     // not, and `RASTER_MAX_SIDE / h` alone let `Math.ceil(h * fit)` land on
-    // 32768 for 3775 of the 27232 heights between 32768 and 60000 -- one in
-    // seven of the tall diagrams the clamp exists for.
+    // 32768 for 6311 heights between 1 and 60000 at a width of 600 -- starting
+    // at 16577, which is where the side bound first becomes the binding one
+    // rather than at the 32767 limit itself.
     let fit = Math.min(
         requested,
         (RASTER_MAX_SIDE - 1) / w,

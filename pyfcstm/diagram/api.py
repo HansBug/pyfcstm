@@ -20,12 +20,14 @@ import base64
 import hashlib
 import html as html_module
 import json
+import logging
 import math
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
+import traceback
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -926,7 +928,7 @@ def _remove_temporary_viewer(path: Path) -> None:
             raise
 
 
-def _note(message: str, *args: Any) -> None:
+def _report_degradation(message: str, *args: Any) -> None:
     """
     Record a degradation from a cleanup path, tolerating a broken backend.
 
@@ -946,19 +948,34 @@ def _note(message: str, *args: Any) -> None:
     :param message: ``%``-style format string.
     :type message: str
     :param args: Values for the format string.
+    :type args: object
     :return: ``None``.
     :rtype: None
     """
     try:
         _logger.warning(message, *args)
-    except Exception:  # noqa: BLE001 - see below
+    except Exception:
         # Every class a logging backend can raise short of BaseException. There
         # is no narrower set to name: the exception comes from third-party
-        # handler code rather than from any call this module makes. Nothing is
-        # re-raised because nothing above can act on it -- the report was the
-        # last thing left to try, and the caller's own exception, if any, is
-        # what matters.
-        pass
+        # handler code rather than from any call this module makes, and it must
+        # not replace whatever is already travelling through the `finally` this
+        # is called from.
+        #
+        # Not dropped, though. `logging.Handler.handleError` sets the precedent:
+        # when the logging machinery itself fails, the traceback goes to stderr
+        # under `raiseExceptions`. Swallowing without a trace is what CLAUDE.md
+        # forbids, and it would be a poor answer to a round spent adding
+        # observability elsewhere.
+        if logging.raiseExceptions:
+            try:
+                sys.stderr.write(
+                    "pyfcstm: logging failed while reporting: %s\n"
+                    % traceback.format_exc()
+                )
+            except BaseException:
+                # stderr itself is gone or closed. There is no third place to
+                # put this, and raising would cost the caller their work.
+                pass
 
 
 def _validate_write_target(target: Path) -> None:
@@ -1105,8 +1122,10 @@ def _umask_default_mode(
     # So: `O_TEMPORARY` (Windows) has the OS drop the file when the handle
     # closes, whatever its permissions, and everywhere else the name goes the
     # moment it has served its purpose while the descriptor stays valid.
-    # Nothing is left to clean up on either platform and no second name-based
-    # operation exists to redirect.
+    # No second name-based operation exists to redirect on either platform.
+    # The Windows side does rest entirely on the close succeeding, since that is
+    # when the OS drops the file and there is no fallback pass; a close that
+    # fails leaves the probe behind and says so through the raised OSError.
     #
     # The flag is read once and branched on by value. Taking the value for the
     # open and its mere presence for the cleanup lets the two disagree, and a
@@ -1178,7 +1197,7 @@ def _atomic_write_text(
         # After the replace, never before: the document is the target now, so a
         # handler that raises can propagate without costing anything.
         for message, values in deferred:
-            _note(message, *values)
+            _report_degradation(message, *values)
     except OSError as write_error:
         try:
             temporary_path.unlink()
@@ -1213,7 +1232,7 @@ def _atomic_write_text(
                 # raises from inside `finally`, which discards the exception on
                 # its way out -- the exact substitution this comment says
                 # cannot happen. Logging cannot be promoted to an exception.
-                _note(
+                _report_degradation(
                     "could not remove the temporary file %s: %s",
                     temporary_path,
                     cleanup_error,
@@ -1247,7 +1266,7 @@ def _atomic_write_bytes(
         # After the replace, never before: the document is the target now, so a
         # handler that raises can propagate without costing anything.
         for message, values in deferred:
-            _note(message, *values)
+            _report_degradation(message, *values)
     except OSError as write_error:
         try:
             temporary_path.unlink()
@@ -1282,7 +1301,7 @@ def _atomic_write_bytes(
                 # raises from inside `finally`, which discards the exception on
                 # its way out -- the exact substitution this comment says
                 # cannot happen. Logging cannot be promoted to an exception.
-                _note(
+                _report_degradation(
                     "could not remove the temporary file %s: %s",
                     temporary_path,
                     cleanup_error,

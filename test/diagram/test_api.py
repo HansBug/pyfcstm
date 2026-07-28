@@ -1561,3 +1561,92 @@ def test_a_failing_logging_backend_does_not_cost_the_document(tmp_path, monkeypa
     # be worse than the leak it hides -- but the document is already the
     # target by then.
     assert target.read_text(encoding="utf-8") == "already rendered payload"
+
+
+@pytest.mark.parametrize("writer_name", ["_atomic_write_text", "_atomic_write_bytes"])
+def test_a_broken_logging_backend_is_itself_reported(
+    writer_name, tmp_path, monkeypatch, capsys
+):
+    # The helper that keeps a logging failure from replacing an in-flight
+    # exception must not drop it either -- swallowing without a trace is what
+    # CLAUDE.md forbids, and it would be a poor answer to a round spent adding
+    # observability. `logging.Handler.handleError` sets the precedent: stderr,
+    # under `raiseExceptions`.
+    from pyfcstm.diagram import api
+
+    class FailingHandler(logging.Handler):
+        def emit(self, record):
+            raise RuntimeError("backend down")
+
+    logger = logging.getLogger("pyfcstm")
+    handler = FailingHandler()
+    logger.addHandler(handler)
+
+    def interrupt(*_args, **_kwargs):
+        raise KeyboardInterrupt
+
+    def refuse_unlink(self, *_args, **_kwargs):
+        raise PermissionError("locked")
+
+    monkeypatch.setattr(api, "_apply_target_mode", interrupt)
+    monkeypatch.setattr(Path, "unlink", refuse_unlink)
+    writer = getattr(api, writer_name)
+    payload = "x" * 32 if writer_name.endswith("text") else b"x" * 32
+    try:
+        with pytest.raises(KeyboardInterrupt):
+            writer(tmp_path / "doc.out", payload)
+    finally:
+        logger.removeHandler(handler)
+    captured = capsys.readouterr().err
+    assert "logging failed while reporting" in captured
+    assert "backend down" in captured
+
+
+@pytest.mark.parametrize("writer_name", ["_atomic_write_text", "_atomic_write_bytes"])
+def test_both_writers_route_every_degradation_through_the_safe_reporter(
+    writer_name, tmp_path, monkeypatch
+):
+    # Four reporting sites, one helper. Three of them could be reverted to a
+    # direct `_logger.warning` with the suite still green, which is how the
+    # hazard reached the deferred path in the first place: a direct call there
+    # lets a handler failure replace an in-flight exception, or -- before the
+    # reports were deferred -- cost the document outright.
+    #
+    # Driving both writers through both a deferred report (probe cleanup) and a
+    # `finally` report (temporary cleanup) reaches all four.
+    from pyfcstm.diagram import api
+
+    writer = getattr(api, writer_name)
+    payload = "x" * 32 if writer_name.endswith("text") else b"x" * 32
+
+    class CountingHandler(logging.Handler):
+        def __init__(self):
+            super().__init__()
+            self.raised = 0
+
+        def emit(self, record):
+            self.raised += 1
+            raise RuntimeError("backend down")
+
+    logger = logging.getLogger("pyfcstm")
+    handler = CountingHandler()
+    logger.addHandler(handler)
+    real_unlink = os.unlink
+
+    def refuse_probe_unlink(path, *args, **kwargs):
+        if "pyfcstm-umask-" in str(path):
+            raise PermissionError("locked")
+        return real_unlink(path, *args, **kwargs)
+
+    previous = os.umask(0o222)
+    monkeypatch.setattr(os, "unlink", refuse_probe_unlink)
+    try:
+        target = tmp_path / "doc.out"
+        # A broken backend must not stop the write: the deferred report runs
+        # after `os.replace`, and the helper absorbs the failure.
+        writer(target, payload)
+        assert target.stat().st_size == 32
+        assert handler.raised, "the deferred report never reached the helper"
+    finally:
+        os.umask(previous)
+        logger.removeHandler(handler)

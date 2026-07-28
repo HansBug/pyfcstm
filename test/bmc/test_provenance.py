@@ -2008,3 +2008,19 @@ def test_two_keys_canonicalizing_to_one_fail_closed() -> None:
 
     with pytest.raises(ValueError, match="both canonicalize to"):
         _require_json_mapping(source, "refs")
+
+
+def test_a_span_stand_in_is_refused() -> None:
+    """``isinstance`` accepts a faked ``__class__``; the real type decides.
+
+    Every later reader treats this field as a Span and reads ``line`` and
+    friends from it, so a stand-in would fail somewhere far from here.
+    """
+    from pyfcstm.bmc.provenance import BmcSourceRef
+
+    fake_span = type(
+        "FakeSpan", (object,), {"__class__": property(lambda self: Span)}
+    )()
+
+    with pytest.raises(TypeError, match="span must be Span or None"):
+        BmcSourceRef("fcstm", "a.fcstm", fake_span)

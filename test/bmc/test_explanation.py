@@ -548,6 +548,97 @@ def test_a_string_subclass_cannot_talk_its_way_into_a_frozen_vocabulary() -> Non
     assert type(accepted.stage) is str
 
 
+def test_an_integer_too_long_to_render_is_refused_by_name() -> None:
+    """A number JSON cannot render must fail here, not inside the encoder.
+
+    CPython refuses to turn an integer longer than 4300 digits into text by
+    default, so an oversized one passes every type check and then dies in
+    ``json.dumps`` with an error naming neither the field nor the object -- the
+    failure this boundary exists to prevent.
+    """
+    import json
+
+    from pyfcstm.bmc.provenance import MAX_METADATA_INT_DIGITS
+
+    assert MAX_METADATA_INT_DIGITS == 4300
+
+    largest = 10**MAX_METADATA_INT_DIGITS - 1
+    too_long = 10**MAX_METADATA_INT_DIGITS
+
+    accepted = BmcConstraintRef(
+        "g0",
+        "assumptions",
+        "assumption.frame",
+        _GENERATED,
+        "s",
+        frames=(largest,),
+        refs={"big": largest},
+    )
+    json.dumps(accepted.to_canonical(), allow_nan=False)
+
+    for kwargs in (
+        {"frames": (too_long,)},
+        {"refs": {"huge": too_long}},
+        {"refs": {"huge": -too_long}},
+    ):
+        with pytest.raises(ValueError, match="exceeds the published limit"):
+            BmcConstraintRef(
+                "g0", "assumptions", "assumption.frame", _GENERATED, "s", **kwargs
+            )
+
+
+def test_a_formula_summary_cannot_report_itself_as_non_empty() -> None:
+    """The last published string joins the others.
+
+    ``__bool__`` is overridable, so an empty summary could report itself as
+    present and be published as an empty JSON string.
+    """
+
+    class EmptySummary(str):
+        def __bool__(self):
+            return True
+
+    item = _item()
+
+    with pytest.raises(ValueError, match="formula_summary must be a non-empty"):
+        BmcConflictCore(
+            "initialization_component",
+            EmptySummary(""),
+            "source_group",
+            "raw",
+            "not_proven",
+            (item,),
+        )
+
+    # A non-string and an impostor are both refused by the same gate.
+    impostor = type("Impostor", (object,), {"__class__": property(lambda self: str)})()
+    for bad in (123, impostor):
+        with pytest.raises(ValueError, match="formula_summary must be a non-empty"):
+            BmcConflictCore(
+                "initialization_component",
+                bad,
+                "source_group",
+                "raw",
+                "not_proven",
+                (item,),
+            )
+
+    class Shouty(str):
+        def __str__(self):
+            return "LIE"
+
+    accepted = BmcConflictCore(
+        "initialization_component",
+        Shouty("I_0"),
+        "source_group",
+        "raw",
+        "not_proven",
+        (item,),
+    )
+    assert type(accepted.formula_summary) is str
+    assert accepted.formula_summary == "I_0"
+
+
 def test_a_duration_cannot_report_itself_as_non_negative() -> None:
     """The sign check reads the number, not the value's own comparison.
 

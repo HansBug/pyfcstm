@@ -6,6 +6,12 @@ pyfcstm.bmc.provenance
 .. automodule:: pyfcstm.bmc.provenance
 
 
+MAX\_METADATA\_INT\_DIGITS
+-----------------------------------------------------
+
+.. autodata:: MAX_METADATA_INT_DIGITS
+
+
 MAX\_METADATA\_DEPTH
 -----------------------------------------------------
 

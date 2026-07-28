@@ -174,6 +174,8 @@ def exact_int(value: Any, where: str) -> int:
     :return: The same number as an exact ``int``.
     :rtype: int
     :raises TypeError: If the value is not really an ``int``.
+    :raises ValueError: If the number needs more decimal digits than
+        :data:`MAX_METADATA_INT_DIGITS`, which no JSON encoder here can render.
 
     Example::
 
@@ -184,10 +186,16 @@ def exact_int(value: Any, where: str) -> int:
         1
     """
     try:
-        return int.__int__(value)
+        plain = int.__int__(value)
     except TypeError as err:
         # Same reasoning as exact_str: the descriptor refuses a non-int.
         raise TypeError("%s must be an integer, got %r." % (where, value)) from err
+    if not -_MAX_METADATA_INT_VALUE < plain < _MAX_METADATA_INT_VALUE:
+        raise ValueError(
+            "%s exceeds the published limit of %d decimal digits."
+            % (where, MAX_METADATA_INT_DIGITS)
+        )
+    return plain
 
 
 def exact_float(value: Any, where: str) -> float:
@@ -211,6 +219,24 @@ def exact_float(value: Any, where: str) -> float:
     except TypeError as err:
         # Same reasoning as exact_str.
         raise TypeError("%s must be a number, got %r." % (where, value)) from err
+
+
+#: How many decimal digits a published integer may have.
+#:
+#: CPython refuses to render an integer longer than this into text by default
+#: (``sys.set_int_max_str_digits``), so a longer one passes every type check here
+#: and then fails inside ``json.dumps`` with an error naming neither the field nor
+#: the object.  The bound is stated rather than inherited from the interpreter so
+#: that the same payload is accepted or refused on every supported version.
+MAX_METADATA_INT_DIGITS = 4300
+
+#: The smallest value needing one digit too many, computed once.
+#:
+#: Comparing against it is exact and never renders the number, unlike
+#: ``len(str(...))`` -- which is the very operation that fails on an oversized
+#: integer.  A bit-length proxy cannot express the bound: 10**4300 - 1 and
+#: 10**4300 have the same bit length but differ in digit count.
+_MAX_METADATA_INT_VALUE = 10**MAX_METADATA_INT_DIGITS
 
 
 #: How deeply published metadata may nest.
@@ -458,7 +484,10 @@ class BmcSourceRef:
             if not plain_path:
                 raise ValueError("BMC source path must be None or a non-empty string.")
             object.__setattr__(self, "path", plain_path)
-        if self.span is not None and not isinstance(self.span, Span):
+        # ``isinstance`` consults ``__class__``, which any object can fake, so the
+        # real type is what decides here.  A stand-in would reach every later
+        # reader of ``span.line`` and friends without holding those fields.
+        if self.span is not None and type(self.span) is not Span:
             raise TypeError("BMC source span must be Span or None.")
 
     def to_canonical(self) -> Dict[str, Any]:

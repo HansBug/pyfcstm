@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import itertools
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -71,6 +72,9 @@ _ALL_SCOPES = tuple(CLASSIFICATION_SCOPES.values()) + STAGE_FALLBACK_SCOPES
 #: instead of passing silently, and so no summary can quietly report the corpus
 #: as fully equivalent.
 from pyfcstm.bmc.provenance import MAX_METADATA_DEPTH as _MAX_METADATA_DEPTH
+from pyfcstm.bmc.provenance import (
+    MAX_METADATA_INT_DIGITS as _MAX_METADATA_INT_DIGITS,
+)
 
 _INEXPRESSIBLE = {
     "duplicate stable_id with differing content": (
@@ -87,6 +91,11 @@ _INEXPRESSIBLE = {
         "nesting bound; the constructor refuses anything past "
         "MAX_METADATA_DEPTH because the recursive walk and the JSON encoder "
         "share the interpreter stack"
+    ),
+    "integer longer than the published digit limit": (
+        "Draft 2020-12 bounds a number's value, not the digits it needs to be "
+        "rendered; CPython refuses to render one past 4300 digits, so the "
+        "constructor rejects it while a validator sees an ordinary integer"
     ),
     "non-finite number anywhere in a published mapping": (
         "NaN and Infinity are not JSON numbers, but a Draft 2020-12 validator "
@@ -514,6 +523,21 @@ def _structural_corpus():
         "published metadata nested deeper than the published limit",
         _payload(members=[_member("g0", "initialization", refs=deep)]),
     )
+    # The validator harness renders the payload, and CPython refuses to render an
+    # integer this long under its default limit -- which is the very reason the
+    # constructor rejects it.  Raising the interpreter limit for this one case
+    # keeps the corpus able to state the asymmetry at all.
+    sys.set_int_max_str_digits(_MAX_METADATA_INT_DIGITS * 2)
+    yield (
+        "integer longer than the published digit limit",
+        _payload(
+            members=[
+                _member(
+                    "g0", "initialization", refs={"huge": 10**_MAX_METADATA_INT_DIGITS}
+                )
+            ]
+        ),
+    )
     yield (
         "non-finite number anywhere in a published mapping",
         _payload(
@@ -884,6 +908,17 @@ def test_the_constructor_still_enforces_every_named_asymmetry() -> None:
             refs=deep_refs,
         )
 
+    # integer longer than the published digit limit
+    with pytest.raises(ValueError, match="exceeds the published limit"):
+        BmcConstraintRef(
+            "g0",
+            "assumptions",
+            "assumption.frame",
+            _SourceRef("generated", None, None),
+            "s",
+            refs={"huge": 10**_MAX_METADATA_INT_DIGITS},
+        )
+
     # non-finite number anywhere in a published mapping
     for bad_refs in ({"x": float("nan")}, {"n": {"x": float("inf")}}):
         with pytest.raises(ValueError, match="finite"):
@@ -952,6 +987,7 @@ def test_the_constructor_still_enforces_every_named_asymmetry() -> None:
         "duplicate stable_id with differing content",
         "non-string object key in any published mapping",
         "published metadata nested deeper than the published limit",
+        "integer longer than the published digit limit",
         "non-finite number anywhere in a published mapping",
         "non-JSON value anywhere in a published mapping",
         "proven minimality without one deletion per member",

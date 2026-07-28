@@ -987,8 +987,18 @@ class BmcConflictCore:
                 "completed deletion sweep may claim 'proven'."
                 % (self.reduction, expected_minimality, self.subset_minimality)
             )
-        if not isinstance(self.formula_summary, str) or not self.formula_summary:
+        if not isinstance(self.formula_summary, str):
             raise ValueError("core formula_summary must be a non-empty string.")
+        try:
+            plain_summary = exact_str(self.formula_summary, "core formula_summary")
+        except TypeError:
+            # exact_str refuses an object that only claims to be a str.
+            raise ValueError(
+                "core formula_summary must be a non-empty string."
+            ) from None
+        if not plain_summary:
+            raise ValueError("core formula_summary must be a non-empty string.")
+        object.__setattr__(self, "formula_summary", plain_summary)
         items = tuple(self.items)
         if not items:
             raise ValueError("core items must not be empty.")

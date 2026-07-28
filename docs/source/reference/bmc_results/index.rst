@@ -440,10 +440,12 @@ tracked case groups do carry.
 
 The category segment is used rather than the aggregate formula the group belongs
 to because the aggregate vocabulary is too small: it offers ``domain``,
-``transition``, ``initial`` and ``environment``, while five nouns are needed, and
-two of them are not aggregate names.  An assumption group's aggregate is
-``environment``, a word that appears nowhere else in the report, and a
-definedness group in the kernel stage has no aggregate at all.  ``Core scope`` and ``Reduction`` describe what was proven and how
+``transition``, ``initial`` and ``environment``, while the groups the builder
+emits need five nouns, and two of those are not aggregate names.  An assumption
+group's aggregate is ``environment``, a word that appears nowhere else in the
+report, and a definedness group's aggregate is ``initial`` or ``environment``
+depending on which stage emitted it, naming neither the group nor anything stable
+across the two.  ``Core scope`` and ``Reduction`` describe what was proven and how
 far minimization got, and ``Reason`` states why it stopped there.
 
 An additional line appears when a deeper depth was requested than was achieved,

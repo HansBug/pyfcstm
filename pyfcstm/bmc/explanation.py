@@ -1574,19 +1574,22 @@ def _category_noun(constraint: BmcConstraintRef) -> str:
     The leading segment is used rather than the aggregate formula the group
     belongs to because the aggregate vocabulary is too small to name every group.
     It offers four words -- domain, transition, initial and environment -- while
-    five nouns are required, and two of them are not aggregate names at all: an
-    assumption group's aggregate is ``environment``, a word that appears nowhere
-    else a reader can see, and a definedness group in the kernel stage has no
-    aggregate to ask for.  Both of those groups are produced by real queries.
-    The specification also names these groups by their category segments in its
-    own prose, calling them generated domain/transition support groups.
+    the groups the builder emits need five nouns, and two of those are not
+    aggregate names at all.  An assumption group's aggregate is ``environment``, a
+    word that appears nowhere else a reader can see.  A definedness group's
+    aggregate is ``initial`` when it comes from initialization and ``environment``
+    when it comes from an assumption, so the aggregate names neither the group nor
+    anything stable across the two places it is emitted from.  The specification
+    also names these groups by their category segments in its own prose, calling
+    them generated domain/transition support groups.
 
-    An earlier version of this docstring claimed the aggregate could not
-    reproduce the required "generated transition constraint at step 0" line at
-    all.  That was wrong: a transition group's stage is always the kernel one, so
-    its aggregate is ``transition`` and the line comes out identical.  The claim
-    came from resolving an aggregate for a stage and category pairing the
-    relation builder never produces.  A ``definedness`` group in the kernel stage belongs to no
+    Two earlier versions of this docstring argued from a stage and category
+    pairing the relation builder never produces -- first that a transition group
+    could arrive through the assumptions stage, then that a definedness group
+    could arrive through the kernel one.  Neither happens: a transition group's
+    stage is always the kernel one, and definedness groups are emitted only from
+    initialization and assumptions.  Both claims came from resolving an aggregate
+    for an input rather than checking which inputs occur.  A ``definedness`` group in the kernel stage belongs to no
     single aggregate at all, and the same category resolves to two different
     aggregates in the other two stages.  A reader would also meet a word they see
     nowhere else: the aggregate for the assumptions stage is not the name that

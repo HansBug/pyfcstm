@@ -2068,7 +2068,9 @@ def test_human_explanation_renders_every_published_shape() -> None:
         )
     )
     # A generated group is named by the leading segment of its category plus the
-    # word "constraint", on one line of its own.
+    # word "constraint", on a line of its own -- followed by an indented metadata
+    # line when the group carries builder refs outside its position, which the
+    # tracked case groups do.
     assert "  1. generated assumption constraint" in lines
     assert not any("assumption.frame" in line for line in lines)
 
@@ -2232,8 +2234,9 @@ def test_human_explanation_matches_the_frozen_transcript_line_shapes() -> None:
 
     The published conflict-constraint block gives an authored member exactly two
     lines -- location then its own text, with no position suffix and no builder
-    metadata -- while a generated member occupies exactly one.  The not-achieved
-    transcript ends with two physical lines, not one long one.
+    metadata -- while the generated member in that block occupies exactly one,
+    having no builder refs outside its position.  The not-achieved transcript
+    ends with two physical lines, not one long one.
     Substring checks pass on all of those even when the shape is wrong, so the
     frozen lines are transcribed here and compared whole.
     """
@@ -2251,7 +2254,8 @@ def test_human_explanation_matches_the_frozen_transcript_line_shapes() -> None:
 
     # Transcribed from the published transcript.  Each entry is one line
     # with its ordinal dropped: an authored member contributes a location line
-    # and its own text, a generated member contributes a single line.
+    # and its own text, the generated member here contributes a single line
+    # because its only ref is the position already on that line.
     #
     # The ordinals are not transcribed.  Core items are published in stable_id
     # order -- sorted where the core is built, in BmcConflictCore's own

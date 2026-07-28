@@ -380,9 +380,10 @@ frame 或 step。生成组占一行，若它还带有位置之外的构造元数
 则再加一行缩进列出。
 
 这里用类别首段而不是该组所属的聚合公式，原因是聚合词表太小：它只提供 ``domain``、
-``transition``、``initial`` 与 ``environment`` 四个词，而需要的名词有五个，其中两个根本
-不是聚合名——assumption 组的聚合名是 ``environment``\ ，这个词在报告其他任何地方都不出现；
-而 kernel 阶段的 definedness 组根本没有聚合名。``Core scope`` 与 ``Reduction`` 说明证明了什么、最小化进行到哪一步，
+``transition``、``initial`` 与 ``environment`` 四个词，而构造器实际发布的组需要五个名词，
+其中两个根本不是聚合名——assumption 组的聚合名是 ``environment``\ ，这个词在报告其他任何
+地方都不出现；definedness 组的聚合名则视发布它的阶段而定，来自 initialization 时是
+``initial``\ 、来自 assumption 时是 ``environment``\ ，既没命名该组、在两处之间也不稳定。``Core scope`` 与 ``Reduction`` 说明证明了什么、最小化进行到哪一步，
 ``Reason`` 说明为什么停在那里。
 
 当请求的深度比实际达成的更深时会多出一行，因此请求 ``proof`` 而得到 ``formal``

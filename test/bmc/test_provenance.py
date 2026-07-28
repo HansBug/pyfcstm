@@ -2486,3 +2486,61 @@ def test_registry_fields_are_all_hardened_against_hostile_input() -> None:
     # rejection holds, and pinning the wording here would pin CPython's.
     with pytest.raises(TypeError):
         SourceDocumentRegistry(well_formed, display_root=5)
+
+
+@pytest.mark.unittest
+def test_stage_and_category_pairings_the_builder_emits() -> None:
+    """Enumerate which stage and category pairings actually occur.
+
+    Reasoning about a group by resolving its aggregate for some stage and
+    category is only sound for pairings the builder emits.  Twice a rationale was
+    written about a pairing that never occurs -- a transition group arriving
+    through the assumptions stage, and a definedness group arriving through the
+    kernel one -- because the aggregate function answers for any input, whether or
+    not the builder produces it.
+
+    This pins the pairings themselves, so a rationale can be checked against a
+    list rather than against an assumption, and so a builder change that adds or
+    drops one is visible here.
+    """
+    from pyfcstm.bmc import BmcEngine, build_bmc_core_formula
+    from pyfcstm.bmc.explanation import constraint_aggregate
+
+    # A query that reaches every stage: an initializer, a where clause needing
+    # definedness, a frame assumption, and a transition to reach.
+    machine = load_state_machine_from_text(
+        "def int x = 1;\ndef int y = 0;\n"
+        "state Root { event Go; state A; state B; [*] -> A; A -> B :: Go; A -> B; }"
+    )
+    context = BmcEngine(machine).prepare(
+        'init state("Root.A") where x / y > 0; '
+        'assume at 0: var("x") == 1; '
+        'check reach <= 2: active("Root.B");'
+    )
+    core = build_bmc_core_formula(context)
+    # Every tracked group, not only the case groups: the assumption and
+    # definedness groups live in the wider collection.
+    pairings = sorted({(g.stage, g.category) for g in core._tracked_groups})
+
+    stages_by_prefix = {}
+    for stage, category in pairings:
+        stages_by_prefix.setdefault(category.split(".")[0], set()).add(stage)
+
+    # A transition group is always a kernel-stage group, so its aggregate is
+    # "transition" and the rendered noun and the aggregate happen to agree.
+    assert stages_by_prefix["transition"] == {"kernel"}
+    assert constraint_aggregate("kernel", "transition.step") == "transition"
+
+    # A definedness group never comes from the kernel stage.  Where it does come
+    # from, the aggregate is a different word in each case, which is why the
+    # rendered noun reads the category instead.
+    if "definedness" in stages_by_prefix:
+        assert "kernel" not in stages_by_prefix["definedness"]
+        assert {
+            constraint_aggregate(stage, "definedness")
+            for stage in stages_by_prefix["definedness"]
+        } <= {"initial", "environment"}
+
+    # An assumption group's aggregate is a word no reader sees elsewhere.
+    assert stages_by_prefix["assumption"] == {"assumptions"}
+    assert constraint_aggregate("assumptions", "assumption.frame") == "environment"

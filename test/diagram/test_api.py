@@ -1315,13 +1315,12 @@ def test_a_write_denying_mask_is_honoured_like_a_plain_file(tmp_path):
     # clearing the very bit the mask had set. This is the POSIX equivalent of
     # that case -- a mask that removes write -- and the written document has to
     # match what the platform would have given any other new file.
+    from pyfcstm.diagram import api
+
     previous = os.umask(0o222)
     try:
         target = tmp_path / "doc.html"
-        _atomic_write_text = __import__(
-            "pyfcstm.diagram.api", fromlist=["_atomic_write_text"]
-        )._atomic_write_text
-        _atomic_write_text(target, "x")
+        api._atomic_write_text(target, "x")
         plain = tmp_path / "plain.txt"
         handle = os.open(str(plain), os.O_CREAT | os.O_WRONLY, 0o666)
         os.close(handle)
@@ -1329,3 +1328,32 @@ def test_a_write_denying_mask_is_honoured_like_a_plain_file(tmp_path):
         assert stat.S_IMODE(target.stat().st_mode) == 0o444
     finally:
         os.umask(previous)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX symlinks and modes")
+def test_a_hijacked_probe_name_does_not_change_another_file(tmp_path, monkeypatch):
+    # `.probe` is derived from a reserved name but is not itself reserved, so a
+    # process sharing the directory can put a symlink there first. `O_EXCL`
+    # refuses to follow it, but the cleanup used to `chmod` the path anyway,
+    # and `chmod` follows symlinks: the probe failed while an unrelated file
+    # went from 0744 to 0600. Cleanup now touches only what this call created,
+    # through the descriptor it opened.
+    from pyfcstm.diagram import api
+
+    victim = tmp_path / "victim"
+    victim.write_text("keep", encoding="utf-8")
+    os.chmod(victim, 0o744)
+
+    real_mkstemp = tempfile.mkstemp
+
+    def hijacking_mkstemp(*args, **kwargs):
+        handle, name = real_mkstemp(*args, **kwargs)
+        os.symlink(str(victim), name + ".probe")
+        return handle, name
+
+    monkeypatch.setattr(api.tempfile, "mkstemp", hijacking_mkstemp)
+    with pytest.raises(FileExistsError):
+        api._umask_default_mode(tmp_path)
+
+    assert stat.S_IMODE(victim.stat().st_mode) == 0o744
+    assert victim.read_text(encoding="utf-8") == "keep"

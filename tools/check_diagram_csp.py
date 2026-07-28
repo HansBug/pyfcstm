@@ -245,16 +245,17 @@ def main() -> None:
         r"<script[^>]*>.*?</script>", "", html, flags=re.DOTALL | re.IGNORECASE
     )
     styles = re.findall(r"<style[^>]*>(.*?)</style>", markup, re.DOTALL | re.IGNORECASE)
-    if args.require_style_hashes:
-        if not styles:
-            raise SystemExit("standalone HTML has no inline style block")
-        for style in styles:
-            digest = base64.b64encode(
-                hashlib.sha256(style.encode("utf-8")).digest()
-            ).decode("ascii")
-            if "sha256-%s" % digest not in policy:
-                raise SystemExit("CSP style hash does not match embedded style")
-    if args.require_style_nonce:
+    if args.require_style_hashes and not styles:
+        raise SystemExit("standalone HTML has no inline style block")
+    if args.require_style_hashes or args.require_style_nonce:
+        # Both flags land in the same parser. Asking whether each digest
+        # appears anywhere in the policy is the shape this gate spent two
+        # rounds removing -- it accepts a hash moved into a directive a browser
+        # ignores -- and leaving that shape behind for one flag meant
+        # `--require-style-hashes` on its own was still false-green.
+        # `_check_style_sources` compares the parsed `style-src` as an exact
+        # multiset, which answers both "is it there" and "is it there and
+        # nothing else".
         _check_style_sources(html, policy, styles)
     if args.require_embedded_fonts is not None:
         faces = re.findall(r"@font-face\{", html)

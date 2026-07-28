@@ -1012,24 +1012,54 @@ def _umask_default_mode(directory: Path) -> int:
     # observation happens on a sibling opened with 0666 and left for the kernel
     # to mask.
     handle, reserved = tempfile.mkstemp(prefix=".pyfcstm-umask-", dir=str(directory))
-    os.close(handle)
+    try:
+        # `mkstemp` asks for 0600, but the mask applies to that too, so under a
+        # mask that removes write this file is born read-only -- and Windows
+        # refuses to delete a read-only file. Through the descriptor, for the
+        # same reason the observation file uses one.
+        if hasattr(os, "fchmod"):
+            os.fchmod(handle, 0o600)
+    finally:
+        os.close(handle)
+    if not hasattr(os, "fchmod"):
+        os.chmod(reserved, 0o600)
+    # Derived from a reserved name, but not itself reserved: another process in
+    # a shared directory can put something at this path first. `O_EXCL` refuses
+    # to follow that, and `created` records whether the file below is ours --
+    # without it the cleanup chmod'd a path this process never created, and
+    # since `chmod` follows symlinks, an attacker's link turned it into a
+    # permission change on an unrelated file. Measured: a victim went 0744 to
+    # 0600 while the probe itself failed with FileExistsError.
     observed = reserved + ".probe"
+    created = False
     try:
         descriptor = os.open(observed, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o666)
-        os.close(descriptor)
-        return os.stat(observed).st_mode & 0o7777
+        created = True
+        try:
+            # fchmod on the descriptor we opened, not chmod on the name: it
+            # cannot be redirected, and the file has to be writable before
+            # Windows will delete it -- which is exactly the state a caller
+            # masking `_S_IWRITE` leaves it in.
+            #
+            # Windows has no fchmod, so it falls back to chmod by name below.
+            # That is narrower than the failure this replaced -- the name is
+            # one this call did create, and the window is only between the
+            # close and the chmod -- but it is not the same guarantee, and
+            # exploiting it would need symlink creation, which Windows gates
+            # behind Developer Mode or SeCreateSymbolicLinkPrivilege. Linux
+            # always has fchmod, so no CI run exercises that branch.
+            mode = os.fstat(descriptor).st_mode & 0o7777
+            if hasattr(os, "fchmod"):
+                os.fchmod(descriptor, 0o600)
+        finally:
+            os.close(descriptor)
+        if not hasattr(os, "fchmod"):
+            os.chmod(observed, 0o600)
+        return mode
     finally:
-        for path in (observed, reserved):
-            try:
-                # Made writable first: the observation file inherits whatever
-                # the mask allows, and Windows refuses to delete a file whose
-                # read-only attribute is set -- which is exactly what a caller
-                # masking `_S_IWRITE` asks for.
-                os.chmod(path, 0o600)
-            except OSError:
-                # Already gone, or a mode the platform will not accept. The
-                # unlink below reports whatever actually matters.
-                pass
+        for path, ours in ((observed, created), (reserved, True)):
+            if not ours:
+                continue
             try:
                 os.unlink(path)
             except FileNotFoundError:

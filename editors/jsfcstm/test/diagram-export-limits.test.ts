@@ -64,10 +64,18 @@ describe('diagram export size limits', () => {
     it('returns the largest acceptable scale, not merely an acceptable one', () => {
         // Without this, an implementation that returns a fraction of the legal
         // scale passes every bound above while destroying raster quality.
+        // The first three sit exactly on 32767 after rounding. They passed
+        // while the side bound was computed against the exact size rather than
+        // the rounded one, which overflowed for one tall diagram in seven --
+        // 600x33154 and its neighbours below are three of the 3775 heights
+        // between 32768 and 60000 that did.
         const cases: Array<[number, number]> = [
             [296, 34874],
             [40000, 662],
             [20000, 20000],
+            [600, 33154],
+            [296, 33154],
+            [1000, 33296],
         ];
         for (const [width, height] of cases) {
             const scale = rasterScaleWithinLimits(width, height, 2);
@@ -105,5 +113,24 @@ describe('diagram export size limits', () => {
             const scale = rasterScaleWithinLimits(w, h, 2);
             assert.ok(Number.isFinite(scale) && scale > 0, `${w}x${h} -> ${scale}`);
         }
+    });
+
+    it('keeps the rounded canvas inside the side cap across the whole range', () => {
+        // Three hand-picked sizes cannot show that a bound holds. Sweeping the
+        // tall, wide and square axes does, and it is what caught the side
+        // overflow the area budget had already been fixed for.
+        const offenders: Array<string> = [];
+        const check = (w: number, h: number, requested: number) => {
+            const scale = rasterScaleWithinLimits(w, h, requested);
+            const W = Math.ceil(w * scale);
+            const H = Math.ceil(h * scale);
+            if (W > RASTER_MAX_SIDE || H > RASTER_MAX_SIDE || W * H > RASTER_MAX_AREA) {
+                if (offenders.length < 5) offenders.push(`${w}x${h} -> ${W}x${H}`);
+            }
+        };
+        for (let h = 1; h <= 60000; h += 1) check(600, h, 2);
+        for (let w = 1; w <= 60000; w += 1) check(w, 662, 2);
+        for (let side = 1; side <= 40000; side += 1) check(side, side, 2);
+        assert.deepEqual(offenders, [], 'rounded canvas must stay inside both caps');
     });
 });

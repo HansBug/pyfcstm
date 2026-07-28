@@ -1,6 +1,7 @@
 """Tests for the public Python diagram facade and browser contract."""
 
 import json
+import logging
 import os
 from pathlib import Path
 import re
@@ -18,6 +19,8 @@ from pyfcstm.diagram import (
     DiagramViewState,
 )
 from pyfcstm.model import State, StateMachine, load_state_machine_from_text
+
+pytestmark = pytest.mark.unittest
 
 
 def _model(source):
@@ -1025,7 +1028,9 @@ def test_atomic_writes_still_report_a_failed_cleanup_with_both_causes(
     assert "cannot unlink" in str(caught.value)
 
 
-def test_atomic_writes_report_a_cleanup_they_could_not_perform(tmp_path, monkeypatch):
+def test_atomic_writes_report_a_cleanup_they_could_not_perform(
+    tmp_path, monkeypatch, caplog
+):
     # The cleanup cannot raise: doing so would replace the KeyboardInterrupt the
     # caller needs with a detail about a temporary file. Swallowing it silently
     # would leave a full-size file behind with nothing said, so it warns.
@@ -1039,12 +1044,13 @@ def test_atomic_writes_report_a_cleanup_they_could_not_perform(tmp_path, monkeyp
 
     monkeypatch.setattr(api, "_apply_target_mode", interrupt)
     monkeypatch.setattr(Path, "unlink", fail_unlink)
-    with pytest.warns(RuntimeWarning, match="could not remove the temporary file"):
+    with caplog.at_level(logging.WARNING, logger="pyfcstm.diagram.api"):
         with pytest.raises(KeyboardInterrupt):
             api._atomic_write_text(tmp_path / "page.html", "x")
+    assert "could not remove the temporary file" in caplog.text
 
 
-def test_atomic_writes_stay_quiet_when_cleanup_works(tmp_path, monkeypatch):
+def test_atomic_writes_stay_quiet_when_cleanup_works(tmp_path, monkeypatch, caplog):
     # The warning must not fire on the ordinary interrupted path, or every
     # cancelled write would look like a leak.
     from pyfcstm.diagram import api
@@ -1053,11 +1059,10 @@ def test_atomic_writes_stay_quiet_when_cleanup_works(tmp_path, monkeypatch):
         raise KeyboardInterrupt
 
     monkeypatch.setattr(api, "_apply_target_mode", interrupt)
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
+    with caplog.at_level(logging.WARNING, logger="pyfcstm.diagram.api"):
         with pytest.raises(KeyboardInterrupt):
             api._atomic_write_text(tmp_path / "page.html", "x")
-    assert [str(item.message) for item in caught] == []
+    assert caplog.text == ""
     assert list(tmp_path.iterdir()) == []
 
     # The other quiet path: an OSError write cleans up in its own branch, so the
@@ -1067,16 +1072,15 @@ def test_atomic_writes_stay_quiet_when_cleanup_works(tmp_path, monkeypatch):
         raise OSError("disk full")
 
     monkeypatch.setattr(api, "_apply_target_mode", fail_mode)
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
+    with caplog.at_level(logging.WARNING, logger="pyfcstm.diagram.api"):
         with pytest.raises(OSError, match="disk full"):
             api._atomic_write_text(tmp_path / "other.html", "x")
-    assert [str(item.message) for item in caught] == []
+    assert caplog.text == ""
     assert list(tmp_path.iterdir()) == []
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX file modes")
-def test_umask_probe_failure_does_not_fail_the_write(tmp_path, monkeypatch):
+def test_umask_probe_failure_does_not_fail_the_write(tmp_path, monkeypatch, caplog):
     # The probe exists only to read a number. Removing it used to be able to
     # raise, and an indexer or scanner holding the handle -- routine on Windows
     # -- then turned a write that would otherwise have succeeded into a failure
@@ -1092,8 +1096,9 @@ def test_umask_probe_failure_does_not_fail_the_write(tmp_path, monkeypatch):
 
     monkeypatch.setattr(os, "unlink", picky_unlink)
     target = tmp_path / "doc.html"
-    with pytest.warns(RuntimeWarning, match="could not remove the probe file"):
+    with caplog.at_level(logging.WARNING, logger="pyfcstm.diagram.api"):
         api._atomic_write_text(target, "x" * 128)
+    assert "could not remove the probe file" in caplog.text
     assert target.read_text(encoding="utf-8") == "x" * 128
 
 
@@ -1120,3 +1125,45 @@ def test_umask_probe_never_widens_the_process(tmp_path, monkeypatch):
     finally:
         real_umask(previous)
     assert calls == [], "the umask must not be touched to read it"
+
+
+def test_cleanup_reporting_survives_warnings_as_errors(tmp_path, monkeypatch):
+    # These cleanups were reported with `warnings.warn`, which raises under
+    # `-W error` / `PYTHONWARNINGS=error` / pytest's `filterwarnings = error`.
+    # Raising from inside `finally` discards the in-flight exception, so the
+    # user's KeyboardInterrupt was replaced by a RuntimeWarning about a
+    # temporary file, and the probe's report turned a survivable cleanup
+    # failure back into a failed write with nothing produced -- the exact two
+    # things those branches exist to prevent. The old tests missed it by
+    # installing an "always" filter of their own.
+    from pyfcstm.diagram import api
+
+    def fail_unlink(self, *_args, **_kwargs):
+        raise PermissionError("locked")
+
+    def picky_os_unlink(path, *args, **kwargs):
+        if ".pyfcstm-umask-" in str(path):
+            raise PermissionError("locked")
+        return real_os_unlink(path, *args, **kwargs)
+
+    real_os_unlink = os.unlink
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+
+        # The probe: a cleanup failure must still leave a written file.
+        monkeypatch.setattr(os, "unlink", picky_os_unlink)
+        target = tmp_path / "kept.html"
+        api._atomic_write_text(target, "x" * 64)
+        assert target.read_text(encoding="utf-8") == "x" * 64
+        monkeypatch.undo()
+
+        # The atomic write: the interrupt must reach the caller unchanged.
+        monkeypatch.setattr(
+            api,
+            "_apply_target_mode",
+            lambda *a, **k: (_ for _ in ()).throw(KeyboardInterrupt),
+        )
+        monkeypatch.setattr(Path, "unlink", fail_unlink)
+        with pytest.raises(KeyboardInterrupt):
+            api._atomic_write_text(tmp_path / "page.html", "x")

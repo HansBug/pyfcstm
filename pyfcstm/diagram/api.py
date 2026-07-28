@@ -26,7 +26,6 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
@@ -37,6 +36,7 @@ from pygments import lex
 from pygments.formatters import HtmlFormatter
 
 from ..highlight import FcstmLexer
+from ..utils.logging import get_logger
 from ..model.model import (
     Event,
     IfBlock,
@@ -52,6 +52,8 @@ from .engine import (
     _asset_bytes,
     _asset_failure,
 )
+
+_logger = get_logger(__name__)
 
 __all__ = [
     "DiagramData",
@@ -1038,13 +1040,13 @@ def _umask_default_mode(directory: Path) -> int:
                 # write -- an indexer or scanner holding the handle raises
                 # PermissionError here, and that turned a write that would
                 # otherwise have succeeded into a failure with no file
-                # produced. Warned rather than dropped, for the same reason the
-                # atomic writers warn: a leaked file nobody is told about is
-                # one that accumulates.
-                warnings.warn(
-                    "could not remove the probe file %s: %s" % (path, cleanup_error),
-                    RuntimeWarning,
-                    stacklevel=2,
+                # produced. Logged rather than dropped, because a leaked file
+                # nobody is told about is one that accumulates, and logged
+                # rather than warned because `warnings.warn` raises under
+                # `-W error`, reinstating the very failure this branch exists
+                # to prevent.
+                _logger.warning(
+                    "could not remove the probe file %s: %s", path, cleanup_error
                 )
 
 
@@ -1098,17 +1100,17 @@ def _atomic_write_text(
             except OSError as cleanup_error:
                 # The in-flight exception is the one the caller needs, so this
                 # cannot be raised -- doing so would replace a KeyboardInterrupt
-                # or the chained error above with a cleanup detail. Warned
+                # or the chained error above with a cleanup detail. Logged
                 # instead, because the alternative is a full-size file left
-                # behind with nothing said about it. RuntimeWarning rather than
-                # ResourceWarning: the latter is filtered out by default, which
-                # would satisfy the letter of "record it somewhere observable"
-                # while leaving the user with a silent ~30 MB leftover.
-                warnings.warn(
-                    "could not remove the temporary file %s: %s"
-                    % (temporary_path, cleanup_error),
-                    RuntimeWarning,
-                    stacklevel=2,
+                # behind with nothing said about it. Logging rather than
+                # `warnings.warn`: a warning raises under `-W error`, and it
+                # raises from inside `finally`, which discards the exception on
+                # its way out -- the exact substitution this comment says
+                # cannot happen. Logging cannot be promoted to an exception.
+                _logger.warning(
+                    "could not remove the temporary file %s: %s",
+                    temporary_path,
+                    cleanup_error,
                 )
     return target
 
@@ -1162,17 +1164,17 @@ def _atomic_write_bytes(
             except OSError as cleanup_error:
                 # The in-flight exception is the one the caller needs, so this
                 # cannot be raised -- doing so would replace a KeyboardInterrupt
-                # or the chained error above with a cleanup detail. Warned
+                # or the chained error above with a cleanup detail. Logged
                 # instead, because the alternative is a full-size file left
-                # behind with nothing said about it. RuntimeWarning rather than
-                # ResourceWarning: the latter is filtered out by default, which
-                # would satisfy the letter of "record it somewhere observable"
-                # while leaving the user with a silent ~30 MB leftover.
-                warnings.warn(
-                    "could not remove the temporary file %s: %s"
-                    % (temporary_path, cleanup_error),
-                    RuntimeWarning,
-                    stacklevel=2,
+                # behind with nothing said about it. Logging rather than
+                # `warnings.warn`: a warning raises under `-W error`, and it
+                # raises from inside `finally`, which discards the exception on
+                # its way out -- the exact substitution this comment says
+                # cannot happen. Logging cannot be promoted to an exception.
+                _logger.warning(
+                    "could not remove the temporary file %s: %s",
+                    temporary_path,
+                    cleanup_error,
                 )
     return target
 
@@ -1942,7 +1944,7 @@ class Diagram:
             >>> view.to_svg()
             Traceback (most recent call last):
             ...
-            pyfcstm.diagram.errors.DiagramUnavailableError: headless SVG export ...
+            pyfcstm.diagram.engine.DiagramUnavailableError: headless SVG export ...
         """
         raise DiagramUnavailableError(
             "headless SVG export is unavailable; use Diagram.to_html() browser export "
@@ -1974,7 +1976,7 @@ class Diagram:
             >>> view.to_png()
             Traceback (most recent call last):
             ...
-            pyfcstm.diagram.errors.DiagramUnavailableError: headless PNG export ...
+            pyfcstm.diagram.engine.DiagramUnavailableError: headless PNG export ...
         """
         _coerce_finite_number(scale, "scale", positive=True)
         raise DiagramUnavailableError(
@@ -1999,7 +2001,7 @@ class Diagram:
             >>> view.to_pdf()
             Traceback (most recent call last):
             ...
-            pyfcstm.diagram.errors.DiagramUnavailableError: headless PDF export ...
+            pyfcstm.diagram.engine.DiagramUnavailableError: headless PDF export ...
         """
         raise DiagramUnavailableError(
             "headless PDF export is unavailable; use Diagram.to_html() browser export "

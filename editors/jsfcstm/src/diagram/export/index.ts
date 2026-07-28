@@ -86,17 +86,23 @@ export function rasterScaleWithinLimits(
 ): number {
     const w = Math.max(1, width);
     const h = Math.max(1, height);
-    const fit = Math.min(
+    // Rounding happens at the call site and `ceil` can add a pixel per side,
+    // so both bounds are computed against the rounded size rather than the
+    // exact one. The area budget already allowed for that; the side budget did
+    // not, and `RASTER_MAX_SIDE / h` alone let `Math.ceil(h * fit)` land on
+    // 32768 for 3775 of the 27232 heights between 32768 and 60000 -- one in
+    // seven of the tall diagrams the clamp exists for.
+    let fit = Math.min(
         requested,
-        RASTER_MAX_SIDE / w,
-        RASTER_MAX_SIDE / h,
+        (RASTER_MAX_SIDE - 1) / w,
+        (RASTER_MAX_SIDE - 1) / h,
         Math.sqrt(RASTER_MAX_AREA / (w * h)),
     );
-    // Rounding happens at the call site, and `ceil` can add a pixel to each
-    // side. Leave room for both so the rounded canvas is still inside the area
-    // cap, which browsers enforce exactly.
     const rounded = (Math.ceil(w * fit) + 1) * (Math.ceil(h * fit) + 1);
-    return rounded <= RASTER_MAX_AREA ? fit : fit * Math.sqrt(RASTER_MAX_AREA / rounded);
+    if (rounded > RASTER_MAX_AREA) {
+        fit *= Math.sqrt(RASTER_MAX_AREA / rounded);
+    }
+    return fit;
 }
 
 /**

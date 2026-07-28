@@ -19,6 +19,8 @@ docstring in the diagram package.
 
 import doctest
 import importlib
+import importlib.util
+import re
 import sys
 from pathlib import Path
 
@@ -38,6 +40,65 @@ OPTION_FLAGS = (
 )
 
 
+_DOTTED = re.compile(r"\bpyfcstm(?:\.[A-Za-z_][A-Za-z0-9_]*)+")
+
+
+def _check_dotted_paths(name: str) -> int:
+    """
+    Reject a docstring example naming a ``pyfcstm`` module that does not exist.
+
+    ``IGNORE_EXCEPTION_DETAIL`` lets doctest match an expected exception by
+    class alone, and it discards the module prefix along with the message. An
+    example can therefore say ``pyfcstm.diagram.errors.DiagramUnavailableError``
+    -- a module this package has never had -- and still pass, while the
+    rendered API documentation sends the reader to an import that fails.
+
+    Trailing segments that start with a capital are treated as attributes and
+    stripped; what remains has to import. Checking whether *any* prefix
+    resolves would accept everything, since ``pyfcstm`` always does.
+
+    :param name: Importable module whose docstrings are scanned.
+    :type name: str
+    :return: Number of unresolvable dotted paths found.
+    :rtype: int
+    """
+    module = importlib.import_module(name)
+    bad = 0
+    for test in doctest.DocTestFinder().find(module, name):
+        for example in test.examples:
+            for candidate in sorted(set(_DOTTED.findall(example.want))):
+                parts = candidate.split(".")
+                while len(parts) > 1 and parts[-1][:1].isupper():
+                    parts.pop()
+                dotted = ".".join(parts)
+                if _importable(dotted):
+                    continue
+                print(
+                    "%s: example names %s, but %s does not import"
+                    % (test.name, candidate, dotted)
+                )
+                bad += 1
+    return bad
+
+
+def _importable(dotted: str) -> bool:
+    """
+    Report whether ``dotted`` names a module that can be found.
+
+    :param dotted: Candidate module path.
+    :type dotted: str
+    :return: ``True`` when ``find_spec`` resolves it.
+    :rtype: bool
+    """
+    try:
+        return importlib.util.find_spec(dotted) is not None
+    except (ImportError, AttributeError, ValueError):
+        # ImportError: a parent package in the path does not exist.
+        # AttributeError/ValueError: the path names an attribute rather than a
+        # module, which find_spec refuses rather than answering.
+        return False
+
+
 def main() -> None:
     """
     Execute every diagram docstring example and fail on the first bad one.
@@ -53,6 +114,12 @@ def main() -> None:
         result = doctest.testmod(module, optionflags=OPTION_FLAGS, verbose=False)
         attempted += result.attempted
         failed += result.failed
+    unresolved = sum(_check_dotted_paths(name) for name in MODULES)
+    if unresolved:
+        raise SystemExit(
+            "%d docstring example(s) name a pyfcstm path that does not resolve"
+            % unresolved
+        )
     if failed:
         raise SystemExit(
             "%d of %d diagram docstring examples failed; the output above shows "

@@ -726,6 +726,16 @@ class BmcConstraintRef:
             if not plain:
                 raise ValueError("constraint %s must be a non-empty string." % name)
             object.__setattr__(self, name, plain)
+        # The published schema constrains this to the five known families, so a
+        # category outside them makes to_canonical() emit output that fails the
+        # contract it publishes.  category_role states the same rule and is what
+        # every reader of this field goes through.
+        try:
+            category_role(self.category)
+        except ValueError:
+            raise ValueError(
+                "constraint category %r belongs to no known family." % self.category
+            ) from None
         if not is_printable_ascii(self.stable_id):
             raise ValueError(
                 "constraint stable_id must be printable ASCII, got %r." % self.stable_id

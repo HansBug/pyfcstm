@@ -359,6 +359,15 @@ def _require_json_mapping(value: Any, label: str) -> Dict[str, Any]:
         Sequences become tuples and mappings become read-only views, so nothing
         published here can be reached through the caller's own reference.
 
+        The two container tests are deliberately at different levels: mappings
+        are matched on the ``Mapping`` protocol, sequences on ``list``/``tuple``
+        specifically.  Widening the sequence test to ``Sequence`` would pull in
+        ``str``, which is a sequence of one-character strings and would be taken
+        apart rather than published.  The asymmetry is safe in the direction it
+        leans -- ``json.dumps`` refuses ``UserList`` and ``UserDict`` alike, so
+        refusing the former is the strict side -- but it is easy to mistake for
+        an oversight and "fix".
+
         :param entry: Candidate value somewhere inside the mapping.
         :type entry: object
         :param where: Dotted path used in the error message.

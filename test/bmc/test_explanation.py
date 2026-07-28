@@ -116,6 +116,35 @@ def test_explanation_module_never_imports_z3() -> None:
     assert completed.stdout.strip() == "False"
 
 
+def test_a_category_outside_every_family_is_refused() -> None:
+    """The published schema constrains this field to the five known families.
+
+    Accepting anything else means this exported constructor can emit output that
+    fails the contract it publishes -- the direction the asymmetry ledger does
+    not cover.  ``category_role`` already states the rule; the constructor now
+    goes through it.
+    """
+    with pytest.raises(ValueError, match="belongs to no known family"):
+        BmcConstraintRef("x", "kernel", "not_a_family", _GENERATED, "s")
+
+    # Each known family is still accepted.
+    for category in (
+        "domain.frame_state",
+        "initial.target",
+        "transition.step",
+        "assumption.frame",
+        "definedness",
+    ):
+        stage = "kernel"
+        if category.startswith("initial"):
+            stage = "initialization"
+        elif category.startswith("assumption"):
+            stage = "assumptions"
+        assert (
+            BmcConstraintRef("x", stage, category, _GENERATED, "s").category == category
+        )
+
+
 def test_a_subclass_cannot_substitute_its_own_canonical_output() -> None:
     """Composition boundaries take the exact type, not a subclass.
 

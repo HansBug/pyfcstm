@@ -159,6 +159,22 @@ _STYLE_SELF_CHECK = (
 )
 
 
+def _flag_path_count() -> int:
+    """
+    Report how many flag combinations :func:`_check_flag_paths` drives.
+
+    Derived rather than written down, so the summary cannot claim a number the
+    table no longer has.
+
+    :return: Number of combinations.
+    :rtype: int
+    """
+    return _FLAG_PATH_COUNT["value"]
+
+
+_FLAG_PATH_COUNT = {"value": 0}
+
+
 def _check_flag_paths() -> List[str]:
     """
     Drive ``main()`` with a policy that must fail, once per flag combination.
@@ -190,6 +206,19 @@ def _check_flag_paths() -> List[str]:
             style,
         )
     )
+    published = "AAAAAAAAAAAAAAAAAAAAAA=="
+    nonce = "'nonce-%s'" % published
+    correct = (
+        '<meta http-equiv="Content-Security-Policy" content="%s">'
+        "<style>%s</style>"
+        '<script>window.__FCSTM_STYLE_NONCE__ = "%s";</script>'
+        % (
+            "default-src 'none'; style-src 'sha256-%s' %s; style-src-attr 'none'; "
+            "script-src-attr 'none'" % (digest, nonce),
+            style,
+            published,
+        )
+    )
     current = {"html": html}
 
     class _Fake:
@@ -217,7 +246,14 @@ def _check_flag_paths() -> List[str]:
             # starts failing, and with the guard weakened neither runs at all.
             (["--require-style-hashes"], hash_only, False, "a hash-only policy"),
             (["--require-style-nonce"], hash_only, True, "a hash-only policy"),
+            # A correct policy that the nonce flag must accept. Without it every
+            # nonce case expects a failure, so the table proves the flag causes
+            # one without proving the style check is what caused it -- an
+            # unrelated `raise` guarded by the same flag survived.
+            (["--require-style-nonce"], correct, False, "a correct hash+nonce policy"),
+            (both, correct, False, "a correct hash+nonce policy"),
         )
+        _FLAG_PATH_COUNT["value"] = len(cases)
         for flags, document, must_fail, description in cases:
             current["html"] = document
             sys.argv = ["check_diagram_csp.py"] + flags
@@ -303,8 +339,8 @@ def _self_check() -> None:
     if wrong:
         raise SystemExit("style-src self-check failed:\n  " + "\n  ".join(wrong))
     print(
-        "style-src self-check: %d function cases plus 5 flag paths passed"
-        % len(_STYLE_SELF_CHECK)
+        "style-src self-check: %d function cases plus %d flag paths passed"
+        % (len(_STYLE_SELF_CHECK), _flag_path_count())
     )
 
 

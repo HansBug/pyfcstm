@@ -926,6 +926,35 @@ def _remove_temporary_viewer(path: Path) -> None:
             raise
 
 
+def _note(message: str, *args: Any) -> None:
+    """
+    Record a degradation without letting the recording become one.
+
+    Every caller is on a path that must not fail: a cleanup that could not
+    finish, or a mode that could not be read. ``logging`` does not promise to
+    stay quiet -- ``Handler.emit`` is a user extension point, and a handler or
+    filter that raises propagates to whoever logged. That turned the branch
+    which exists to save an already-written document into the thing that
+    discarded it, because control never reached ``os.replace``. Measured with a
+    handler that raises and ``logging.raiseExceptions`` off.
+
+    :param message: ``%``-style format string.
+    :type message: str
+    :param args: Values for the format string.
+    :return: ``None``.
+    :rtype: None
+    """
+    try:
+        _logger.warning(message, *args)
+    except Exception:  # noqa: BLE001 - see below
+        # Deliberately everything. The alternative to swallowing here is losing
+        # the caller's work to a logging backend, and there is no narrower set:
+        # the exception comes from third-party handler code, not from a call
+        # this module makes. Nothing is re-raised because nothing above can act
+        # on it -- the report was the last thing left to try.
+        pass
+
+
 def _validate_write_target(target: Path) -> None:
     """
     Reject a destination before a temporary sibling is created for it.
@@ -992,8 +1021,9 @@ def _apply_target_mode(
         default = _umask_default_mode(temporary_path.parent)
     except OSError as probe_error:
         # PermissionError/EROFS from a directory that will not accept a new
-        # file, EDQUOT/ENOSPC from an exhausted one, and the explicit raise
-        # below when every candidate name is taken. The same rule the probe's
+        # file, EDQUOT/ENOSPC from an exhausted one, an `fstat` or `close` that
+        # fails on the descriptor, and the explicit raise when every candidate
+        # name is taken. The same rule the probe's
         # own cleanup follows: reading a number must
         # not cost the caller their document. It is already written and one
         # `os.replace` from being the target, and the probe exists only to
@@ -1001,7 +1031,7 @@ def _apply_target_mode(
         # a read-only mount or a hostile neighbour taking every candidate name
         # is not a reason to throw the work away. The file keeps that 0600,
         # which is restrictive rather than wrong, and the reason is recorded.
-        _logger.warning(
+        _note(
             "could not read the default file mode in %s, leaving %s as created: %s",
             temporary_path.parent,
             temporary_path.name,
@@ -1033,31 +1063,28 @@ def _umask_default_mode(directory: Path) -> int:
     :type directory: pathlib.Path
     :return: Permission bits, already masked.
     :rtype: int
-    :raises OSError: If a probe file cannot be created -- a directory that
-        refuses new files, an exhausted filesystem, or every candidate name
-        taken. Callers that only want to widen a mode should treat this as
+    :raises OSError: If the probe cannot be created, read or closed -- a
+        directory that refuses new files, an exhausted or read-only filesystem,
+        every candidate name taken, or an ``fstat``/``close`` that fails on the
+        descriptor. Callers that only want to widen a mode should treat this as
         advisory; :func:`_apply_target_mode` logs it and keeps the mode the
         file was created with rather than losing the document over it.
     """
-    # One file, and one that is already doomed when it is created. Earlier
-    # revisions reserved a name with `mkstemp`, observed a sibling, then
-    # removed both by name -- which needed the write bit restored first,
-    # because Windows will not delete a read-only file, and restoring it by
-    # name was a redirect sink an attacker could aim at an unrelated file.
-    # Where the write bit could not be restored at all the two files simply
-    # stayed, so on Windows under a mask that removes write every successful
-    # save leaked a pair of them, for good.
+    # One file, and one that is already doomed when it is created. A probe that
+    # has to be removed by name afterwards needs its write bit restored first,
+    # because Windows will not delete a read-only file -- and restoring it by
+    # name is a sink an attacker can aim at an unrelated file by swapping the
+    # name for a link. Where it cannot be restored the file just stays.
     #
-    # `O_TEMPORARY` (Windows) removes the file when the handle closes, whatever
-    # its permissions. Everywhere else the name is unlinked the moment it has
-    # served its purpose, while the descriptor stays valid -- so nothing is
-    # left to clean up on either platform, and there is no second name-based
-    # operation to redirect.
-    # Read once and branched on by value. Asking `getattr` for the flag but
-    # `hasattr` whether to clean up let the two disagree: a present-but-zero
-    # `O_TEMPORARY` requested no delete-on-close *and* skipped the unlink,
-    # leaving the probe in the caller's directory for good -- the exact leak
-    # this rewrite exists to remove.
+    # So: `O_TEMPORARY` (Windows) has the OS drop the file when the handle
+    # closes, whatever its permissions, and everywhere else the name goes the
+    # moment it has served its purpose while the descriptor stays valid.
+    # Nothing is left to clean up on either platform and no second name-based
+    # operation exists to redirect.
+    #
+    # The flag is read once and branched on by value. Taking the value for the
+    # open and its mere presence for the cleanup lets the two disagree, and a
+    # present-but-zero value then asks for neither.
     self_deleting = getattr(os, "O_TEMPORARY", 0)
     flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | self_deleting
     for _ in range(_UMASK_PROBE_ATTEMPTS):
@@ -1071,25 +1098,18 @@ def _umask_default_mode(directory: Path) -> int:
             # which is the point; try another.
             continue
         try:
-            # Before the `fstat`, not after. The descriptor stays valid once
-            # the name is gone, so nothing is lost by removing it first -- and
-            # an `fstat` failure used to skip the unlink entirely and leave the
-            # probe behind. The only remaining window is between `os.open`
-            # returning and this `try`, which is the ordinary shape of resource
-            # acquisition in Python and needs an interrupt landing between two
-            # adjacent statements.
+            # Before the `fstat`, so a failure there cannot skip it. The
+            # descriptor stays valid once the name is gone.
             if not self_deleting:
                 try:
                     os.unlink(candidate)
                 except OSError as cleanup_error:
-                    # PermissionError: an indexer or scanner holding the handle,
-                    # or a directory that denies unlink. EROFS/EDQUOT/ENOSPC
-                    # arrive as OSError from the same call on a read-only or
-                    # exhausted filesystem. Reading a number must not fail the
-                    # caller's write, so none of them propagate; the descriptor
-                    # still closes below, and the leftover is named so it can be
-                    # found.
-                    _logger.warning(
+                    # PermissionError from an indexer holding the handle or a
+                    # directory that denies unlink; EROFS/EDQUOT/ENOSPC from a
+                    # read-only or exhausted filesystem. None propagate --
+                    # reading a number must not fail the caller's write -- and
+                    # the leftover is named so it can be found.
+                    _note(
                         "could not remove the probe file %s: %s",
                         candidate,
                         cleanup_error,
@@ -1160,7 +1180,7 @@ def _atomic_write_text(
                 # raises from inside `finally`, which discards the exception on
                 # its way out -- the exact substitution this comment says
                 # cannot happen. Logging cannot be promoted to an exception.
-                _logger.warning(
+                _note(
                     "could not remove the temporary file %s: %s",
                     temporary_path,
                     cleanup_error,
@@ -1224,7 +1244,7 @@ def _atomic_write_bytes(
                 # raises from inside `finally`, which discards the exception on
                 # its way out -- the exact substitution this comment says
                 # cannot happen. Logging cannot be promoted to an exception.
-                _logger.warning(
+                _note(
                     "could not remove the temporary file %s: %s",
                     temporary_path,
                     cleanup_error,

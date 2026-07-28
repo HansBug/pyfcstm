@@ -1492,7 +1492,7 @@ def test_a_present_but_falsy_self_delete_flag_still_removes_the_probe(
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX file modes")
 def test_a_probe_that_cannot_be_created_does_not_cost_the_document(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, caplog
 ):
     # The rule that a cleanup failure must not cost the caller their document
     # was applied to the probe's removal and not to its creation, so a quota or
@@ -1510,7 +1510,46 @@ def test_a_probe_that_cannot_be_created_does_not_cost_the_document(
 
     monkeypatch.setattr(os, "open", refuse_probe)
     target = tmp_path / "doc.html"
-    api._atomic_write_text(target, "x" * 64)
+    with caplog.at_level(logging.WARNING, logger="pyfcstm.diagram.api"):
+        api._atomic_write_text(target, "x" * 64)
     assert target.read_text(encoding="utf-8") == "x" * 64
     assert stat.S_IMODE(target.stat().st_mode) == 0o600
     assert [item.name for item in tmp_path.iterdir()] == ["doc.html"]
+    # The degradation has to be observable, which is the condition CLAUDE.md
+    # puts on swallowing at all. Its twin -- the probe's unlink failure -- has
+    # this assertion; leaving it off here let a silent swallow pass.
+    assert "could not read the default file mode" in caplog.text
+    assert "Disk quota exceeded" in caplog.text
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX probe path")
+def test_a_failing_logging_backend_does_not_cost_the_document(tmp_path, monkeypatch):
+    # The branch that saves an already-written document logs first and returns
+    # second. `Handler.emit` is a user extension point, so a handler that
+    # raises propagates to whoever logged -- and control then never reached
+    # `os.replace`, so the `finally` removed the very file the branch existed
+    # to keep. Reporting a degradation must not become one.
+    from pyfcstm.diagram import api
+
+    class FailingHandler(logging.Handler):
+        def emit(self, record):
+            raise RuntimeError("injected logging backend failure")
+
+    logger = logging.getLogger("pyfcstm")
+    handler = FailingHandler()
+    logger.addHandler(handler)
+    monkeypatch.setattr(logging, "raiseExceptions", False)
+    real_open = os.open
+
+    def refuse_probe(path, *args, **kwargs):
+        if "pyfcstm-umask-" in str(path):
+            raise OSError(errno.EDQUOT, "Disk quota exceeded")
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "open", refuse_probe)
+    target = tmp_path / "doc.html"
+    try:
+        api._atomic_write_text(target, "already rendered payload")
+    finally:
+        logger.removeHandler(handler)
+    assert target.read_text(encoding="utf-8") == "already rendered payload"

@@ -2244,3 +2244,195 @@ def test_registry_paths_are_stored_as_exact_text() -> None:
     assert len(colliding) == 2
     with pytest.raises(ValueError, match="two entries for"):
         SourceDocumentRegistry(colliding)
+
+
+@pytest.mark.unittest
+def test_excerpts_drop_a_residual_carriage_return() -> None:
+    """A ``CR`` the normalizer cannot remove must stay out of the excerpt.
+
+    :func:`_normalize_line_separators` rewrites line breaks in one
+    left-to-right pass, so ``"\r\r\n"`` collapses to ``"\r\n"`` and leaves a
+    residual ``CR`` at the end of that line rather than inventing a second line
+    break for it.  Locating line ends therefore has to trim that ``CR``, or a
+    whole-line span would slice it into the excerpt and put a bare carriage
+    return inside a report whose lines are otherwise exact.
+    """
+    residual = "def int x = 0;\r\r\nstate Root { }\r\n"
+    stored = provenance_module._normalize_line_separators(residual)
+    # The precondition this test exercises: normalization really does leave a
+    # CR behind, so the trim below is not guarding an impossible input.
+    assert stored == "def int x = 0;\r\nstate Root { }\n"
+
+    registry = SourceDocumentRegistry({"m.fcstm": residual})
+    whole_first_line = BmcSourceRef("fcstm", "m.fcstm", Span(1, 1, 1, 15))
+    assert registry.excerpt(whole_first_line) == "def int x = 0;"
+
+    # One column further is past the line's own width and is refused rather
+    # than reaching into the residual CR or the line break after it.
+    over_run = BmcSourceRef("fcstm", "m.fcstm", Span(1, 1, 1, 16))
+    assert registry.excerpt(over_run) is None
+
+    # The line after the residual is unaffected: its own break was normalized,
+    # so its offsets shift by exactly the one retained CR.
+    second_line = BmcSourceRef("fcstm", "m.fcstm", Span(2, 1, 2, 15))
+    assert registry.excerpt(second_line) == "state Root { }"
+
+
+@pytest.mark.unittest
+def test_excerpts_are_identical_for_crlf_and_lf_checkouts() -> None:
+    """A Windows checkout must yield the same excerpts as a Unix one.
+
+    Spans arrive as 1-based line/column pairs with an exclusive end column, so
+    the byte offsets they resolve to differ between ``\\r\\n`` and ``\\n``
+    sources even though the visible text is the same.  A whole-line span is the
+    case that exposes it: the trailing ``CR`` sits inside the span's column
+    range and has to be trimmed, or every excerpt on a Windows checkout would
+    carry a stray carriage return into the report.
+    """
+    unix = "def int x = 0;\nstate Root { }\n"
+    windows = "def int x = 0;\r\nstate Root { }\r\n"
+
+    unix_registry = SourceDocumentRegistry({"m.fcstm": unix})
+    windows_registry = SourceDocumentRegistry({"m.fcstm": windows})
+
+    for line, expected in ((1, "def int x = 0;"), (2, "state Root { }")):
+        # Column 15 is one past the last character of a 14-character line, the
+        # exclusive end that selects the whole line.
+        span = Span(line, 1, line, 15)
+        reference = BmcSourceRef("fcstm", "m.fcstm", span)
+        assert unix_registry.excerpt(reference) == expected
+        assert windows_registry.excerpt(reference) == expected
+
+    # The equivalence comes from storage: the Windows text is held as LF, so
+    # both registries resolve the same offsets rather than compensating later.
+    assert windows_registry.document("m.fcstm", kind="fcstm") == unix
+    assert provenance_module._span_offsets(unix, Span(2, 1, 2, 15)) == (15, 29)
+
+    # A column past the line's own width is refused rather than silently
+    # reaching into the terminator or the next line.
+    over_run = BmcSourceRef("fcstm", "m.fcstm", Span(1, 1, 1, 16))
+    assert unix_registry.excerpt(over_run) is None
+    assert windows_registry.excerpt(over_run) is None
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    ("reason", "labels"),
+    [
+        ("too few separators", ("Root::0",)),
+        ("index is not a number", ("Root::x::A->B",)),
+        ("index is negative", ("Root::-1::A->B",)),
+        ("owner path names no state", ("NoSuchState::0::A->B",)),
+        ("edge has no arrow", ("Root::0::AB",)),
+        ("edge endpoint is blank", ("Root::0:: ->B",)),
+        ("index is past the owner's transitions", ("Root::99::A->B",)),
+        ("endpoints do not match the indexed transition", ("Root::0::B->A",)),
+        ("more than one transition contributed", ("Root::0::A->B", "Root::1::A->B")),
+    ],
+)
+def test_unparsable_transition_labels_fall_back_to_the_generated_reference(
+    tmp_path: Path, reason: str, labels: Tuple[str, ...]
+) -> None:
+    """A label the resolver cannot verify must degrade, not crash or guess.
+
+    Case provenance is inferred by parsing the expander's own transition label
+    back into an owner state, a transition index, and an edge, then checking
+    that the indexed transition really has those endpoints.  Every step can fail
+    if the label shape ever drifts from what the expander emits.  Failing there
+    has to yield the generated reference with no inference recorded: raising
+    would abort a BMC run over a provenance detail, and returning a span anyway
+    would attribute a composite or unrelated formula to one authored line.
+
+    :param reason: Which verification step the label is built to fail.
+    :type reason: str
+    :param labels: Transition labels attached to the case under test.
+    :type labels: Tuple[str, ...]
+    """
+    import dataclasses
+
+    from pyfcstm.bmc import relation as relation_module
+    from pyfcstm.bmc.macro import ActionBlock
+
+    source_path = tmp_path / "machine.fcstm"
+    source_path.write_text(
+        """state Root {
+    event Go;
+    state A;
+    state B;
+    [*] -> A;
+    A -> B;
+    A -> B :: Go;
+}
+""",
+        encoding="utf-8",
+    )
+    model = load_state_machine_from_file(source_path)
+    context = BmcEngine(model).prepare(
+        'init state("Root.A"); check reach <= 2: active("Root.B");',
+        query_source_path="query.fbmcq",
+    )
+
+    # Take a real case and its real generated reference out of a real build, so
+    # only the labels under test are synthetic.
+    captured = []
+    original = relation_module._case_source_reference
+
+    def record(ctx, case, generated_ref):
+        captured.append((ctx, case, generated_ref))
+        return original(ctx, case, generated_ref)
+
+    relation_module._case_source_reference = record
+    try:
+        build_bmc_core_formula(context)
+    finally:
+        relation_module._case_source_reference = original
+
+    build_context, case, generated_ref = next(
+        entry for entry in captured if entry[1].kind == "transition"
+    )
+
+    blocks = tuple(
+        ActionBlock(
+            "transition_effect",
+            "transition_effect",
+            case.source_state_id,
+            case.source_state_path,
+            (),
+            transition_label=label,
+        )
+        for label in labels
+    )
+    mutant = dataclasses.replace(case, action_blocks=blocks, guard_requirements=())
+
+    reference, resolved_labels, inference = relation_module._case_source_reference(
+        build_context, mutant, generated_ref
+    )
+    assert reference is generated_ref, reason
+    assert inference is None, reason
+    # The labels are still reported, so a reader can see what could not be
+    # resolved rather than being told the case had no labels at all.
+    assert resolved_labels == tuple(sorted(labels))
+
+
+@pytest.mark.unittest
+def test_synthetic_state_paths_yield_no_owner_prefixes() -> None:
+    """A synthetic case must not search authored states for its provenance.
+
+    Owner prefixes are how an event-only continuation finds the authored
+    transition that explains it.  Encoder-internal state paths -- the empty path
+    and the ``__``-prefixed synthetic ones -- name no authored state, so they
+    must produce no prefixes at all.  Returning prefixes for them would let a
+    synthetic case match an authored transition and claim a source span the user
+    never wrote.
+    """
+    from pyfcstm.bmc import relation as relation_module
+
+    assert relation_module._state_path_prefixes("") == ()
+    assert relation_module._state_path_prefixes("__synthetic") == ()
+    assert relation_module._state_path_prefixes("__synthetic.Child") == ()
+    # An authored path still yields nearest-owner-first prefixes.
+    assert relation_module._state_path_prefixes("Root.Outer.A") == (
+        "Root.Outer.A",
+        "Root.Outer",
+        "Root",
+    )

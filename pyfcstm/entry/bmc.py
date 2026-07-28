@@ -524,8 +524,17 @@ def _human_explanation(execution: "_BmcExecution") -> List[str]:
                     location += "-%d:%d" % (span.end_line, span.end_column)
             elif source.path is not None:
                 location = source.path
-            else:
+            elif source.kind == "generated":
                 location = "generated %s" % item.constraint.category
+            else:
+                # An authored constraint whose origin was never named -- a
+                # programmatic query, for instance -- still came from the user's
+                # own text.  Calling it generated would attribute their
+                # constraint to the encoder, which the frozen contract forbids.
+                location = "%s %s (source location unavailable)" % (
+                    source.kind,
+                    item.constraint.category,
+                )
             lines.append("  %d. %s" % (index, location))
             detail = item.source_excerpt or item.human_text
             if detail:

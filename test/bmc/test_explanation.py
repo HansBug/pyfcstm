@@ -268,7 +268,7 @@ def test_the_transcription_guard_covers_every_frozen_structure() -> None:
     instead means a newly frozen structure fails here until someone either
     transcribes it or records why it is derived from one that already is.
     """
-    from types import MappingProxyType
+    from collections.abc import Collection, Mapping
 
     from pyfcstm.bmc import explanation as module
 
@@ -277,13 +277,15 @@ def test_the_transcription_guard_covers_every_frozen_structure() -> None:
         if name.startswith("__"):
             continue
         value = getattr(module, name)
-        # Every container type, not a chosen few: the first version matched only
-        # tuples, frozensets and mapping proxies and so missed two plain dicts,
-        # and the second still omitted ``list``.  Naming conventions are not a
-        # filter either -- a lower-case or mixed-case module table is just as
-        # frozen, and every earlier version of this check leaked through one of
-        # those forms.
-        if isinstance(value, (tuple, list, frozenset, MappingProxyType, dict, set)):
+        # Any container at all, decided by the abstract protocols rather than a
+        # list of concrete types.  Each earlier version named the types it knew
+        # about and leaked through the next one -- first plain dicts, then
+        # ``list``, then a ``deque`` holding a frozen table.  ``str`` and
+        # ``bytes`` are Collections too but are scalars here, so they are the
+        # only exclusions.
+        if isinstance(value, (Collection, Mapping)) and not isinstance(
+            value, (str, bytes, bytearray)
+        ):
             # Type aliases and imported helpers are not frozen data.
             if name in {"Any", "Dict", "Mapping", "Optional", "Tuple", "Literal"}:
                 continue
@@ -313,8 +315,8 @@ def test_the_transcription_guard_covers_every_frozen_structure() -> None:
             if name.startswith("__") or name in imported:
                 continue
             value = getattr(sibling, name)
-            if not isinstance(
-                value, (tuple, list, frozenset, MappingProxyType, dict, set)
+            if not isinstance(value, (Collection, Mapping)) or isinstance(
+                value, (str, bytes, bytearray)
             ):
                 continue
             sibling_frozen.add("%s.%s" % (sibling.__name__.rsplit(".", 1)[1], name))
@@ -2299,59 +2301,145 @@ def _impostors():
     ]
 
 
-def test_no_published_string_field_accepts_a_hostile_stand_in() -> None:
-    """Sweep every published text field against every impostor shape.
+def _published_dataclasses():
+    """Return every published dataclass in the explanation layer.
 
-    One sweep instead of one finding per field: a field added later is covered
-    the moment it exists, and a hostile value either fails construction or is
-    stored as exact text -- never stored as the impostor itself.
+    Discovered by reflection rather than listed, so a class added later is swept
+    without anyone remembering to add it here.
     """
-    label_to_factory = dict(_impostors())
-    text_fields = {
-        "stable_id": "initial.target",
-        "stage": "initialization",
-        "category": "initial.target",
-        "summary": "initial target state",
+    import dataclasses
+
+    from pyfcstm.bmc import explanation as module
+
+    found = []
+    for name in dir(module):
+        value = getattr(module, name)
+        if (
+            isinstance(value, type)
+            and dataclasses.is_dataclass(value)
+            and value.__module__ == module.__name__
+        ):
+            found.append((name, value))
+    return sorted(found)
+
+
+#: One well-formed argument set per published dataclass.
+#:
+#: The values are authored, but the *field list* is not: each sweep below reads
+#: the dataclass's own fields and requires every one of them to appear here, so a
+#: newly added field fails the sweep until it is given a value.
+def _well_formed_arguments():
+    """Return ``{class name: {field: value}}`` for the published dataclasses."""
+    reference = BmcConstraintRef(
+        "initial.target", "initialization", "initial.target", _GENERATED, "summary"
+    )
+    return {
+        "BmcConstraintRef": {
+            "stable_id": "initial.target",
+            "stage": "initialization",
+            "category": "initial.target",
+            "source": _GENERATED,
+            "summary": "initial target state",
+            "frames": (0,),
+            "steps": (1,),
+            "refs": {"frame": 0},
+        },
+        "BmcCoreItem": {
+            "constraint": reference,
+            "semantic_role": "initial_fact",
+            "source_excerpt": None,
+            "source_excerpt_truncated": False,
+            "normalized_fact": {"kind": "structural_constraint"},
+            "human_text": "initial target state",
+            "editable": False,
+        },
+        "BmcConflictCore": {
+            "scope": "initialization_component",
+            "formula_summary": "I_0",
+            "granularity": "source_group",
+            "reduction": "raw",
+            "subset_minimality": "not_proven",
+            "items": (_item(),),
+        },
+        "BmcInfeasibilityExplanation": {
+            "requested_mode": "formal",
+            "achieved_mode": "none",
+            "status": "unknown",
+            "classification": None,
+            "core": None,
+            "proof": None,
+            "narrative": None,
+            "reason": "probe unknown",
+            "elapsed_ms": 1.0,
+        },
     }
 
-    for field_name, good in text_fields.items():
-        for label in ("str subclass", "str impostor"):
-            make = label_to_factory[label]
-            kwargs = dict(text_fields)
-            kwargs[field_name] = make(good) if label == "str subclass" else make()
+
+def test_the_impostor_sweep_covers_every_published_field() -> None:
+    """The sweep's own coverage is checked, not asserted in prose.
+
+    The previous version listed four fields of one class by hand while the PR
+    body claimed it enumerated every published field and picked up new ones
+    automatically.  That claim is only true if the field list comes from the
+    dataclasses themselves, so this test compares the two.
+    """
+    import dataclasses
+
+    arguments = _well_formed_arguments()
+    for name, cls in _published_dataclasses():
+        if name in ("BmcConflictNarrative", "BmcConflictProof"):
+            # Reserved for a later stage; UNBUILT_SLOTS refuses both, so no
+            # published document can carry one yet.
+            continue
+        assert name in arguments, name
+        declared = {field.name for field in dataclasses.fields(cls)}
+        assert declared == set(arguments[name]), (name, declared ^ set(arguments[name]))
+
+
+@pytest.mark.parametrize("class_name", sorted(_well_formed_arguments()))
+def test_no_published_field_accepts_a_hostile_stand_in(class_name) -> None:
+    """Sweep every field of every published dataclass against every impostor.
+
+    One sweep instead of one finding per field: the field list comes from the
+    dataclass, so a field added later is covered the moment it exists.  A hostile
+    value either fails construction or is stored as the exact builtin it claims
+    to be -- never as the impostor itself.
+    """
+    import dataclasses
+
+    from pyfcstm.bmc import explanation as module
+
+    cls = getattr(module, class_name)
+    baseline = _well_formed_arguments()[class_name]
+    impostors = dict(_impostors())
+    plain_types = (str, int, float, bool, type(None))
+
+    for field in dataclasses.fields(cls):
+        good = baseline[field.name]
+        for label, make in impostors.items():
+            if label.startswith("str") and not isinstance(good, str):
+                continue
+            if label.startswith("int") and not (
+                isinstance(good, tuple) and good and isinstance(good[0], int)
+            ):
+                continue
+            if label.startswith("float") and not isinstance(good, float):
+                continue
+            hostile = make(good if isinstance(good, str) else 1)
+            kwargs = dict(baseline)
+            kwargs[field.name] = (hostile,) if isinstance(good, tuple) else hostile
             try:
-                reference = BmcConstraintRef(
-                    kwargs["stable_id"],
-                    kwargs["stage"],
-                    kwargs["category"],
-                    _GENERATED,
-                    kwargs["summary"],
-                )
+                built = cls(**kwargs)
             except (TypeError, ValueError):
                 continue
-            stored = getattr(reference, field_name)
-            assert type(stored) is str, (field_name, label)
-            assert stored == good, (field_name, label)
-
-
-def test_no_published_numeric_field_accepts_a_hostile_stand_in() -> None:
-    """The same sweep for the published integer fields."""
-    label_to_factory = dict(_impostors())
-
-    for field_name in ("frames", "steps"):
-        for label in ("int subclass", "int impostor", "float subclass"):
-            value = label_to_factory[label](1)
-            try:
-                reference = BmcConstraintRef(
-                    "initial.target",
-                    "initialization",
-                    "initial.target",
-                    _GENERATED,
-                    "s",
-                    **{field_name: [value]},
+            stored = getattr(built, field.name)
+            if isinstance(stored, tuple):
+                assert all(type(entry) in plain_types for entry in stored), (
+                    class_name,
+                    field.name,
+                    label,
                 )
-            except (TypeError, ValueError):
-                continue
-            published = getattr(reference, field_name)
-            assert [type(entry) for entry in published] == [int], (field_name, label)
-            assert published == (1,), (field_name, label)
+            else:
+                assert type(stored) in plain_types or dataclasses.is_dataclass(
+                    stored
+                ), (class_name, field.name, label)

@@ -1498,9 +1498,7 @@ class TestModelModel:
         )
 
         state_machine = parse_dsl_node_to_state_machine(ast_node)
-        operations = (
-            state_machine.root_state.on_during_aspects[0].operations
-        )
+        operations = state_machine.root_state.on_during_aspects[0].operations
         assert [op.var_name for op in operations] == ["a", "c", "b"]
         assert operations[2].expr == BinaryOp(
             x=Variable(name="c"),

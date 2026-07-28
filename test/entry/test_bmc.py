@@ -1931,7 +1931,10 @@ def test_bmc_human_output_shows_the_explanation_it_paid_for(explain_files) -> No
     assert 'assume at 0: var("x") == 1;' in formal.output
     assert "Core scope: assumptions_component" in formal.output
     assert "Reduction: raw" in formal.output
-    assert "is not proven subset-minimal" in formal.output
+    assert (
+        "The displayed core is sufficient for UNSAT but is not proven "
+        "subset-minimal." in formal.output
+    )
     # The mandatory verdict is untouched.
     for line in default.output.splitlines():
         if line.startswith(("BMC ", "Scenario:", "Property verdict:")):
@@ -1965,7 +1968,6 @@ def test_human_explanation_renders_every_published_shape() -> None:
     )
     from pyfcstm.bmc.provenance import BmcSourceRef
     from pyfcstm.entry.bmc import _human_explanation
-    from pyfcstm.utils.validate import Span
 
     def item(source, excerpt=None, human_text="frame assumption"):
         reference = BmcConstraintRef(
@@ -2027,6 +2029,25 @@ def test_human_explanation_renders_every_published_shape() -> None:
     assert "  1. q.fbmcq" in lines
     assert "     frame assumption" in lines
 
+    # An authored constraint whose origin was never named is still authored.
+    # Calling it generated would attribute the user's own constraint to the
+    # encoder, which the frozen contract forbids -- and a programmatic query
+    # reaches this shape without anything hostile involved.
+    for kind in ("fbmcq", "fcstm"):
+        unnamed = BmcSourceRef(kind, None, None)
+        lines = render(
+            BmcInfeasibilityExplanation(
+                "formal",
+                "formal",
+                "partial",
+                "assumptions_self_conflict",
+                core=core((item(unnamed),)),
+                reason="minimization skipped",
+            )
+        )
+        assert "  1. %s assumption.frame (source location unavailable)" % kind in lines
+        assert not any("generated" in line for line in lines)
+
     # A generated constraint has no authored location at all.
     generated = BmcSourceRef("generated", None, None)
     lines = render(
@@ -2056,7 +2077,12 @@ def test_human_explanation_renders_every_published_shape() -> None:
             reason="narrative not built",
         )
     )
-    assert any("proven subset-minimal" in line for line in lines)
+    # The whole sentence, not a substring: asserting only "proven
+    # subset-minimal" is immune to the claim being inverted to "sufficient for
+    # SAT", which would tell the reader the opposite of the truth.
+    assert (
+        "The displayed core is sufficient for UNSAT and proven subset-minimal." in lines
+    )
 
     # A classification with no core is the frozen "not achieved" transcript.
     lines = render(
@@ -2071,6 +2097,40 @@ def test_human_explanation_renders_every_published_shape() -> None:
     assert "Explanation: FORMAL EXPLANATION NOT ACHIEVED" in lines
     assert "Classification: initialization is internally inconsistent" in lines
     assert any("No conflict core or causal chain" in line for line in lines)
+
+    # Every classification phrase is exercised, so changing any one of them
+    # fails here rather than only the one the fixtures happen to produce.
+    from pyfcstm.bmc.explanation import CLASSIFICATION_SCOPES
+    from pyfcstm.entry.bmc import _CLASSIFICATION_PHRASES
+
+    assert set(_CLASSIFICATION_PHRASES) == set(CLASSIFICATION_SCOPES)
+    expected_phrases = {
+        "kernel_conflict": "the model's own domain and transition rules conflict",
+        "initialization_self_conflict": "initialization is internally inconsistent",
+        "initialization_domain_conflict": (
+            "initialization conflicts with the frame domain"
+        ),
+        "initialization_kernel_conflict": (
+            "initialization conflicts with the transition relation"
+        ),
+        "assumptions_self_conflict": "the assumptions are internally inconsistent",
+        "assumptions_domain_conflict": (
+            "the assumptions conflict with the frame domain"
+        ),
+        "assumptions_prefix_conflict": "assumptions conflict with the feasible prefix",
+    }
+    assert _CLASSIFICATION_PHRASES == expected_phrases
+    for classification, phrase in expected_phrases.items():
+        rendered = render(
+            BmcInfeasibilityExplanation(
+                "formal",
+                "none",
+                "partial",
+                classification,
+                reason="probe unknown",
+            )
+        )
+        assert "Classification: %s" % phrase in rendered
 
     # No explanation at all renders nothing.
     assert render(None) == []

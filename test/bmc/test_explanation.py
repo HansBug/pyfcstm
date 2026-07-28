@@ -2303,10 +2303,12 @@ def _impostors():
 
 
 def _published_dataclasses():
-    """Return every published dataclass in the explanation layer.
+    """Return the dataclasses the explanation and provenance layers define.
 
-    Discovered by reflection rather than listed, so a class added later is swept
-    without anyone remembering to add it here.
+    Discovered by reflection rather than listed, so a class added later is found
+    without anyone remembering to add it here.  Callers decide what to do with
+    each one: the impostor sweep skips those with no per-field published JSON
+    contract, and names them explicitly at the skip site.
     """
     import dataclasses
 
@@ -2393,13 +2395,19 @@ def _well_formed_arguments():
     }
 
 
-def test_the_impostor_sweep_covers_every_published_field() -> None:
+def test_the_impostor_sweep_covers_every_field_it_claims_to() -> None:
     """The sweep's own coverage is checked, not asserted in prose.
 
     The previous version listed four fields of one class by hand while the PR
     body claimed it enumerated every published field and picked up new ones
     automatically.  That claim is only true if the field list comes from the
     dataclasses themselves, so this test compares the two.
+
+    The sweep's scope is the dataclasses that carry a per-field published JSON
+    contract, not literally every dataclass these modules define; the three it
+    skips are named with their reasons at the skip site.  This test holds the
+    sweep to the scope it claims, so neither a new field on a covered class nor a
+    silent widening of that scope can pass unnoticed.
     """
     import dataclasses
 
@@ -2425,7 +2433,7 @@ def test_the_impostor_sweep_covers_every_published_field() -> None:
 
 @pytest.mark.parametrize("class_name", sorted(_well_formed_arguments()))
 def test_no_published_field_accepts_a_hostile_stand_in(class_name) -> None:
-    """Sweep every field of every published dataclass against every impostor.
+    """Sweep every field of each JSON-contract dataclass against every impostor.
 
     One sweep instead of one finding per field: the field list comes from the
     dataclass, so a field added later is covered the moment it exists.  A hostile

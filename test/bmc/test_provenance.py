@@ -2436,3 +2436,53 @@ def test_synthetic_state_paths_yield_no_owner_prefixes() -> None:
         "Root.Outer",
         "Root",
     )
+
+
+@pytest.mark.unittest
+def test_registry_fields_are_all_hardened_against_hostile_input() -> None:
+    """Hold the registry's own field list to its hardening tests.
+
+    The impostor sweep in test/bmc/test_explanation.py skips this class: it is a
+    path-keyed registry rather than a published core field, so it has no
+    per-field JSON contract for that sweep to check.  That skip is only safe
+    while every field it does have is hardened here.  This test names the fields
+    it knows about, so a field added later fails until someone decides how a
+    hostile value for it must be refused.
+    """
+    import dataclasses
+
+    known = {
+        # Every value is normalized and every key stored as exact text; a key
+        # that collides after canonicalization is refused.
+        "documents",
+        # Sliced to a display path; a path the registry never held cannot be
+        # published.
+        "display_root",
+        # Same treatment as ``documents``, on the query side.
+        "query_documents",
+    }
+    actual = {field.name for field in dataclasses.fields(SourceDocumentRegistry)}
+    assert actual == known, (
+        "SourceDocumentRegistry gained or lost a field; decide how a hostile "
+        "value for it is refused, add a test, then update this list"
+    )
+
+    well_formed = {"a.fcstm": "state A;"}
+
+    # Both document maps refuse a non-string body and a non-string path key, and
+    # each says which map it was: a shared message would let a query-side bug be
+    # read as a machine-side one.
+    with pytest.raises(TypeError, match="source document text must be strings"):
+        SourceDocumentRegistry({"a.fcstm": 1})
+    with pytest.raises(ValueError, match="source document paths must be"):
+        SourceDocumentRegistry({1: "state A;"})
+    with pytest.raises(TypeError, match="query document text must be strings"):
+        SourceDocumentRegistry(well_formed, query_documents={"q.fbmcq": 1})
+    with pytest.raises(ValueError, match="query document paths must be"):
+        SourceDocumentRegistry(well_formed, query_documents={1: "x"})
+
+    # ``display_root`` is refused too, but by os.fspath rather than by a message
+    # of the registry's own. That is recorded rather than asserted as good: the
+    # rejection holds, and pinning the wording here would pin CPython's.
+    with pytest.raises(TypeError):
+        SourceDocumentRegistry(well_formed, display_root=5)

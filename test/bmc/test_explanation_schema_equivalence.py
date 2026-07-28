@@ -31,6 +31,12 @@ from pyfcstm.bmc.explanation import (
     BmcCoreItem,
     BmcInfeasibilityExplanation,
 )
+from pyfcstm.bmc.provenance import (
+    MAX_METADATA_DEPTH as _MAX_METADATA_DEPTH,
+)
+from pyfcstm.bmc.provenance import (
+    MAX_METADATA_INT_DIGITS as _MAX_METADATA_INT_DIGITS,
+)
 from pyfcstm.bmc.provenance import BmcSourceRef
 
 pytestmark = pytest.mark.unittest
@@ -71,11 +77,6 @@ _ALL_SCOPES = tuple(CLASSIFICATION_SCOPES.values()) + STAGE_FALLBACK_SCOPES
 #: asserted rather than skipped, so tightening the schema later fails this list
 #: instead of passing silently, and so no summary can quietly report the corpus
 #: as fully equivalent.
-from pyfcstm.bmc.provenance import MAX_METADATA_DEPTH as _MAX_METADATA_DEPTH
-from pyfcstm.bmc.provenance import (
-    MAX_METADATA_INT_DIGITS as _MAX_METADATA_INT_DIGITS,
-)
-
 _INEXPRESSIBLE = {
     "duplicate stable_id with differing content": (
         "uniqueness over a nested key (items[*].constraint.stable_id) has no "

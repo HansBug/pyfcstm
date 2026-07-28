@@ -108,6 +108,18 @@ INDEX\_REF\_KEYS
 .. autodata:: __all__
 
 
+EXPLANATION\_HEADLINES
+-----------------------------------------------------
+
+.. autodata:: EXPLANATION_HEADLINES
+
+
+CLASSIFICATION\_PHRASES
+-----------------------------------------------------
+
+.. autodata:: CLASSIFICATION_PHRASES
+
+
 BmcConstraintRef
 -----------------------------------------------------
 
@@ -172,3 +184,9 @@ index\_value
 -----------------------------------------------------
 
 .. autofunction:: index_value
+
+
+explanation\_text\_lines
+-----------------------------------------------------
+
+.. autofunction:: explanation_text_lines

@@ -1746,6 +1746,18 @@ def _render_solve_result(result: "BmcSolveResult", tablefmt: str) -> str:
     lines.append("Conclusion: %s" % presentation.conclusion)
     lines.append("Evidence:")
     lines.extend("  %s" % item for item in presentation.evidence)
+    # §18.7 requires this surface and the CLI to share presentation semantics,
+    # and §13 lists what must appear whenever an explanation exists.  The lines
+    # come from the explanation module rather than being rebuilt here, because
+    # §16 forbids piling text rendering into this file.
+    from .explanation import explanation_text_lines
+
+    explanation_lines = explanation_text_lines(
+        getattr(getattr(result, "feasibility", None), "explanation", None)
+    )
+    if explanation_lines:
+        lines.append("")
+        lines.extend(explanation_lines)
     lines.extend(("", "Details:", _render_field_value_object(result, tablefmt)))
     return "\n".join(lines)
 

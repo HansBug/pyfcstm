@@ -1870,7 +1870,7 @@ def test_bmc_cli_can_request_each_explanation_depth(explain_files) -> None:
     model, query = explain_files
 
     result, payload = _json_result(
-        Path(model), Path(query), "--infeasibility-explanation", "formal"
+        Path(model), Path(query), "--explain-infeasibility", "formal"
     )
     explanation = payload["result"]["feasibility"]["explanation"]
 
@@ -1891,14 +1891,14 @@ def test_bmc_cli_can_request_each_explanation_depth(explain_files) -> None:
 
     # Spelling the default explicitly must agree with omitting it.
     explicit_result, explicit_payload = _json_result(
-        Path(model), Path(query), "--infeasibility-explanation", "none"
+        Path(model), Path(query), "--explain-infeasibility", "none"
     )
     assert explicit_result.exit_code == default_result.exit_code
     assert explicit_payload["result"]["feasibility"]["explanation"] is None
 
     # An unknown depth is refused by the option, before any solving happens.
     rejected = _run(
-        "-i", str(model), "-q", str(query), "--infeasibility-explanation", "bogus"
+        "-i", str(model), "-q", str(query), "--explain-infeasibility", "bogus"
     )
     assert rejected.exit_code != 0
     assert "is not one of" in rejected.output
@@ -1917,7 +1917,7 @@ def test_bmc_human_output_shows_the_explanation_it_paid_for(explain_files) -> No
 
     default = _run("-i", str(model), "-q", str(query))
     formal = _run(
-        "-i", str(model), "-q", str(query), "--infeasibility-explanation", "formal"
+        "-i", str(model), "-q", str(query), "--explain-infeasibility", "formal"
     )
 
     assert default.exit_code == formal.exit_code == 3
@@ -1943,7 +1943,7 @@ def test_bmc_human_output_shows_the_explanation_it_paid_for(explain_files) -> No
     # Files and JSON stay ANSI-free, and JSON keeps carrying the same data.
     assert "\x1b[" not in formal.output
     _, payload = _json_result(
-        Path(model), Path(query), "--infeasibility-explanation", "formal"
+        Path(model), Path(query), "--explain-infeasibility", "formal"
     )
     explanation = payload["result"]["feasibility"]["explanation"]
     assert explanation["core"]["scope"] == "assumptions_component"
@@ -2188,10 +2188,12 @@ def test_human_explanation_renders_every_published_shape() -> None:
 
     # Every classification phrase is exercised, so changing any one of them
     # fails here rather than only the one the fixtures happen to produce.
-    from pyfcstm.bmc.explanation import CLASSIFICATION_SCOPES
-    from pyfcstm.entry.bmc import _CLASSIFICATION_PHRASES
+    from pyfcstm.bmc.explanation import (
+        CLASSIFICATION_PHRASES,
+        CLASSIFICATION_SCOPES,
+    )
 
-    assert set(_CLASSIFICATION_PHRASES) == set(CLASSIFICATION_SCOPES)
+    assert set(CLASSIFICATION_PHRASES) == set(CLASSIFICATION_SCOPES)
     expected_phrases = {
         "kernel_conflict": "the model's own domain and transition rules conflict",
         "initialization_self_conflict": "initialization is internally inconsistent",
@@ -2207,7 +2209,7 @@ def test_human_explanation_renders_every_published_shape() -> None:
         ),
         "assumptions_prefix_conflict": "assumptions conflict with the feasible prefix",
     }
-    assert _CLASSIFICATION_PHRASES == expected_phrases
+    assert CLASSIFICATION_PHRASES == expected_phrases
     for classification, phrase in expected_phrases.items():
         rendered = render(
             BmcInfeasibilityExplanation(

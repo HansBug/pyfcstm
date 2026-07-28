@@ -57,7 +57,6 @@ from .base import CONTEXT_SETTINGS, ClickErrorException, command_wrap
 
 if TYPE_CHECKING:  # pragma: no cover - static imports are never executed.
     from ..bmc import (
-        BmcConstraintRef,
         BmcPropertyFormula,
         BmcReplayResult,
         BmcSolveResult,
@@ -456,167 +455,13 @@ def _human_diagnostics(execution: _BmcExecution) -> Tuple[str, ...]:
 #: partial formal explanation until minimality and narrative close, a
 #: classification with no core is explicitly *not achieved*, and a request that
 #: produced neither says so rather than staying silent.
-_EXPLANATION_HEADLINES = {
-    ("formal", "partial"): "PARTIAL FORMAL DOMAIN EXPLANATION",
-    ("formal", "complete"): "COMPLETE FORMAL DOMAIN EXPLANATION",
-    ("proof", "partial"): "PARTIAL VERIFIED DOMAIN PROOF",
-    ("proof", "complete"): "COMPLETE VERIFIED DOMAIN PROOF",
-}
-
-#: Each classification in the words a reader can act on.
-_CLASSIFICATION_PHRASES = {
-    "kernel_conflict": "the model's own domain and transition rules conflict",
-    "initialization_self_conflict": "initialization is internally inconsistent",
-    "initialization_domain_conflict": "initialization conflicts with the frame domain",
-    "initialization_kernel_conflict": (
-        "initialization conflicts with the transition relation"
-    ),
-    "assumptions_self_conflict": "the assumptions are internally inconsistent",
-    "assumptions_domain_conflict": "the assumptions conflict with the frame domain",
-    "assumptions_prefix_conflict": ("assumptions conflict with the feasible prefix"),
-}
-
-
-def _human_core_position(constraint: "BmcConstraintRef") -> str:
-    """Return the frame or step position a core member constrains.
-
-    Called only for a generated group.  Issue #385 §12.2 forbids hiding such a
-    group's position for tidiness, and §12.3 prints it inline after the location
-    so a reader can tell which macro-step the constraint belongs to.  An authored
-    group's own text already states its position -- ``assume at 1: ...`` -- so it
-    is not routed through here.
-
-    :param constraint: Published constraint reference of one core member.
-    :type constraint: pyfcstm.bmc.explanation.BmcConstraintRef
-    :return: Text such as ``at step 0``, or ``""`` when the member constrains no
-        particular position.
-    :rtype: str
-
-    Example::
-
-        >>> class _Ref:
-        ...     frames = ()
-        ...     steps = (0,)
-        >>> _human_core_position(_Ref())
-        'at step 0'
-    """
-    parts = []
-    if constraint.frames:
-        label = "frame" if len(constraint.frames) == 1 else "frames"
-        parts.append("%s %s" % (label, ", ".join(str(f) for f in constraint.frames)))
-    if constraint.steps:
-        label = "step" if len(constraint.steps) == 1 else "steps"
-        parts.append("%s %s" % (label, ", ".join(str(s) for s in constraint.steps)))
-    if not parts:
-        return ""
-    return "at %s" % " and ".join(parts)
-
-
-def _human_core_structural_refs(constraint: "BmcConstraintRef") -> str:
-    """Return the builder metadata a machine reader is told to consume.
-
-    Called only for a generated group, whose single line carries no source text
-    of its own: issue #385 §12.2 requires such a group to be shown together with
-    its frame/step/refs rather than hidden for tidiness.  ``frame`` and ``step``
-    are already on that line, so only the other keys are added here.  An authored
-    group is not routed through this function -- its own text states its
-    position, and its refs remain a machine contract carried by the JSON.
-
-    :param constraint: Published constraint reference of one core member.
-    :type constraint: pyfcstm.bmc.explanation.BmcConstraintRef
-    :return: Text such as ``assumption 0, kind state``, or ``""`` when the member
-        records no other metadata.
-    :rtype: str
-
-    Example::
-
-        >>> class _Ref:
-        ...     refs = {"step": 0, "kind": "state"}
-        >>> _human_core_structural_refs(_Ref())
-        'kind state'
-    """
-    positional = {"frame", "frames", "step", "steps"}
-    rendered = [
-        "%s %s" % (key, constraint.refs[key])
-        for key in sorted(constraint.refs)
-        if key not in positional
-    ]
-    if not rendered:
-        return ""
-    return ", ".join(rendered)
-
-
-def _human_category_noun(constraint: "BmcConstraintRef") -> str:
-    """Return the reader-facing noun for one tracked group's category.
-
-    The frozen transcript in issue #385 §12.3 names a group by the leading
-    segment of its category followed by the word "constraint" -- "generated
-    transition constraint" -- never by the internal dotted form.  The leading
-    segment is used rather than the aggregate formula because every segment
-    ("domain", "transition", "initial", "assumption", "definedness") is
-    vocabulary the frozen contract already shows a reader, while the aggregate
-    name for the assumptions stage is not.
-
-    Both the generated and the location-less authored branch read the noun from
-    here.  They print different sentences, but they must agree on what the group
-    is called: cleaning only one of them would leave the dotted category leaking
-    on the other.
-
-    :param constraint: Published constraint reference of one core member.
-    :type constraint: pyfcstm.bmc.explanation.BmcConstraintRef
-    :return: Reader-facing noun such as ``transition`` or ``assumption``.
-    :rtype: str
-
-    Example::
-
-        >>> class _Ref:
-        ...     category = "transition.step"
-        >>> _human_category_noun(_Ref())
-        'transition'
-    """
-    return constraint.category.split(".")[0]
-
-
-def _human_core_roles(core) -> str:
-    """Summarise which semantic roles the core's members carry.
-
-    Issue #385 §13 requires a compact summary of the members' semantic roles
-    whenever an explanation exists.  Roles are counted rather than listed per
-    item, which keeps the summary short on a large core and leaves the numbered
-    item lines in the shape §12.3 gives them.
-
-    :param core: Published conflict core.
-    :type core: pyfcstm.bmc.explanation.BmcConflictCore
-    :return: Text such as ``assumption x2, initial fact``, or ``""`` for an
-        empty core.
-    :rtype: str
-
-    Example::
-
-        >>> class _Item:
-        ...     semantic_role = "initial_fact"
-        >>> class _Core:
-        ...     items = (_Item(), _Item())
-        >>> _human_core_roles(_Core())
-        'initial fact x2'
-    """
-    counts = {}
-    for item in core.items:
-        label = item.semantic_role.replace("_", " ")
-        counts[label] = counts.get(label, 0) + 1
-    return ", ".join(
-        label if count == 1 else "%s x%d" % (label, count)
-        for label, count in sorted(counts.items())
-    )
-
-
 def _human_explanation(execution: "_BmcExecution") -> List[str]:
     """Render the optional infeasibility explanation for a human reader.
 
-    A caller who asked for ``formal`` or ``proof`` paid for extra solver work, so
-    the result has to be visible in the report they are reading.  Without this
-    the human output is byte-identical to the default, which makes the option
-    look like it did nothing.
+    Delegates to the shared renderer in :mod:`pyfcstm.bmc.explanation`.  Issue
+    #385 §18.7 requires the CLI and ``BmcSolveResult.__str__()`` / ``to_text()``
+    to share presentation semantics, and §16.1 places that rendering in the
+    explanation module, so this function only unwraps the execution.
 
     :param execution: Completed BMC execution carrying the solve result.
     :type execution: _BmcExecution
@@ -628,105 +473,13 @@ def _human_explanation(execution: "_BmcExecution") -> List[str]:
         >>> _human_explanation.__name__
         '_human_explanation'
     """
+    # Imported here, like the other BMC entry points in this module, so the CLI
+    # does not pay for the solver-backed package at import time.  The explanation
+    # module itself is solver-free.
+    from ..bmc.explanation import explanation_text_lines
+
     feasibility = getattr(execution.result, "feasibility", None)
-    explanation = getattr(feasibility, "explanation", None)
-    if explanation is None:
-        return []
-    lines = []
-    headline = _EXPLANATION_HEADLINES.get(
-        (explanation.achieved_mode, explanation.status)
-    )
-    if headline is None:
-        # achieved_mode 'none' means the requested depth was not reached; the
-        # frozen transcript names that explicitly instead of omitting the line.
-        headline = "%s EXPLANATION NOT ACHIEVED" % explanation.requested_mode.upper()
-    lines.append("Explanation: %s" % headline)
-    if explanation.classification is not None:
-        lines.append(
-            "Classification: %s" % _CLASSIFICATION_PHRASES[explanation.classification]
-        )
-    core = explanation.core
-    if core is not None:
-        lines.append("")
-        lines.append("Conflict constraints:")
-        for index, item in enumerate(core.items, start=1):
-            source = item.constraint.source
-            span = source.span
-            if source.path is not None and span is not None:
-                location = "%s:%d:%d" % (source.path, span.line, span.column)
-                if span.end_line is not None and span.end_column is not None:
-                    location += "-%d:%d" % (span.end_line, span.end_column)
-            elif source.path is not None:
-                location = source.path
-            elif source.kind == "generated":
-                location = "generated %s constraint" % _human_category_noun(
-                    item.constraint
-                )
-            else:
-                # An authored constraint whose origin was never named -- a
-                # programmatic query, for instance -- still came from the user's
-                # own text.  Calling it generated would attribute their
-                # constraint to the encoder, which the frozen contract forbids.
-                location = "%s %s constraint (source location unavailable)" % (
-                    source.kind,
-                    _human_category_noun(item.constraint),
-                )
-            if source.kind == "generated":
-                # The frozen contract is explicit that a generated support group
-                # must be shown together with its frame/step/refs rather than
-                # hidden for tidiness, and its transcript prints that position
-                # inline on the single line it gives the group.  An authored
-                # constraint instead shows its own text, whose "assume at 1"
-                # already states the position.
-                position = _human_core_position(item.constraint)
-                if position:
-                    location = "%s %s" % (location, position)
-                lines.append("  %d. %s" % (index, location))
-                structural = _human_core_structural_refs(item.constraint)
-                if structural:
-                    lines.append("     %s" % structural)
-            else:
-                lines.append("  %d. %s" % (index, location))
-                detail = item.source_excerpt or item.human_text
-                if detail:
-                    lines.append("     %s" % detail)
-        lines.append("")
-        if core.subset_minimality == "proven":
-            lines.append(
-                "The displayed core is sufficient for UNSAT and proven subset-minimal."
-            )
-        else:
-            lines.append(
-                "The displayed core is sufficient for UNSAT but is not proven "
-                "subset-minimal."
-            )
-        lines.append("Core scope: %s" % core.scope)
-        # Labels and order transcribed from issue #385 §12.2; §13 lists core
-        # scope, reduction, size and granularity among what must be shown
-        # whenever an explanation exists.
-        lines.append("Core granularity: %s" % core.granularity)
-        lines.append("Core size: %d" % len(core.items))
-        lines.append("Reduction: %s" % core.reduction)
-        roles = _human_core_roles(core)
-        if roles:
-            # §13 also asks for a compact summary of the members' semantic
-            # roles.  It goes on its own line rather than as a per-item prefix so
-            # the numbered item lines keep the shape §12.3 gives them.
-            lines.append("Semantic roles: %s" % roles)
-    if explanation.reason is not None:
-        lines.append("Reason: %s" % explanation.reason)
-    if core is None and explanation.classification is not None:
-        lines.append("")
-        # Two physical lines, broken where the frozen transcript breaks them.
-        lines.append(
-            "No conflict core or causal chain was published. The classification "
-            "is retained"
-        )
-        lines.append(
-            "as partial metadata, but it is not presented as a completed formal "
-            "explanation."
-        )
-    return lines
+    return explanation_text_lines(getattr(feasibility, "explanation", None))
 
 
 def _human_report(
@@ -1121,7 +874,7 @@ def _add_bmc_subcommand(cli: click.Group) -> click.Group:
         help="Reject queries whose bound exceeds this value.",
     )
     @click.option(
-        "--infeasibility-explanation",
+        "--explain-infeasibility",
         "infeasibility_explanation",
         type=click.Choice(("none", "formal", "proof"), case_sensitive=True),
         default="none",
@@ -1181,7 +934,7 @@ def _add_bmc_subcommand(cli: click.Group) -> click.Group:
             $ pyfcstm bmc -i machine.fcstm -q property.fbmcq
             $ pyfcstm bmc -i machine.fcstm -q property.fbmcq --json -o result.json
             $ pyfcstm bmc -i machine.fcstm -q property.fbmcq \
-                --infeasibility-explanation formal --json
+                --explain-infeasibility formal --json
         """
         exit_code = _run_bmc_command(
             input_code_file,

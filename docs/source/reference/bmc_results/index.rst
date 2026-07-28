@@ -38,7 +38,7 @@ lines.
 .. cli-ref-option: command=bmc option=--json
 .. cli-ref-option: command=bmc option=--timeout-ms
 .. cli-ref-option: command=bmc option=--max-bound
-.. cli-ref-option: command=bmc option=--infeasibility-explanation choices=none,formal,proof default=none
+.. cli-ref-option: command=bmc option=--explain-infeasibility choices=none,formal,proof default=none
 .. cli-ref-option: command=bmc option=--color choices=auto,always,never default=auto
 .. cli-ref-option: command=bmc option=--help
 .. cli-ref-boundary: command=bmc stdout stderr exit-status side-effects success-signal failure-taxonomy human json atomic-output witness replay dual-check response-cause packaging property-verdict color timing llm-consumption
@@ -94,7 +94,7 @@ Both installed entry forms have the same behavior:
      - Creates ``BmcOptions(max_bound=N)``.  A query bound above ``N`` is
        rejected before relation construction as a controlled compile error.
        It does not rewrite or clamp the query bound.
-   * - ``--infeasibility-explanation``
+   * - ``--explain-infeasibility``
      - ``none``, ``formal``, or ``proof``
      - ``none``
      - Requests the optional scenario-infeasibility explanation at the given

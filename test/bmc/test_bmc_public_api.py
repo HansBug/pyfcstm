@@ -138,6 +138,7 @@ def test_bmc_public_api_exports_exact_names():
         "BmcReplayMismatch",
         "BmcReplayResult",
         "BmcConflictCore",
+        "BmcSourceRef",
         "BmcConflictCoreScope",
         "BmcConstraintRef",
         "BmcConstraintStage",
@@ -217,6 +218,7 @@ def test_bmc_public_api_exports_exact_names():
         "BmcReplayMismatch",
         "BmcReplayResult",
         "BmcConflictCore",
+        "BmcSourceRef",
         "BmcConflictCoreScope",
         "BmcConstraintRef",
         "BmcConstraintStage",
@@ -556,3 +558,31 @@ def test_bmc_schema_freezes_feasibility_localization_contract():
         in feasibility_text
     )
     assert '"status": {"enum": ["unknown", "timeout"]}' in inconclusive_text
+
+
+@pytest.mark.unittest
+def test_every_lazy_export_is_reachable_named_and_discoverable() -> None:
+    """``__getattr__``, ``__all__`` and ``__dir__`` must agree on one name set.
+
+    The three are maintained separately, so a layer can be wired into the lazy
+    resolver and left out of discovery: the name then imports fine, which is
+    what a test usually checks, while ``dir()``, tab completion, ``help()`` and
+    autodoc cannot see it.  That is exactly what happened to the explanation
+    layer -- resolvable and listed in ``__all__``, absent from ``__dir__``.
+    """
+    import pyfcstm.bmc as bmc
+
+    lazy_names = set()
+    for exports in bmc._LAZY_EXPORT_MODULES.values():
+        lazy_names |= set(exports)
+
+    listed = set(bmc.__all__)
+    discoverable = set(dir(bmc))
+
+    # Every lazily wired name is listed and discoverable.
+    assert lazy_names - listed == set(), "lazy exports missing from __all__"
+    assert lazy_names - discoverable == set(), "lazy exports missing from __dir__"
+    # And every listed name actually resolves, so __all__ cannot promise a name
+    # the resolver does not know.
+    for name in sorted(listed):
+        assert hasattr(bmc, name), name

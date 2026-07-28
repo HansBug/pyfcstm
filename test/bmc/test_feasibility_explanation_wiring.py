@@ -1009,3 +1009,119 @@ def test_explanation_stage_covers_kernel_and_core_only_shapes() -> None:
         )
         is None
     )
+
+
+@pytest.mark.unittest
+def test_the_cli_and_to_text_share_one_explanation_renderer() -> None:
+    """Issue #385 §18.7: the CLI and ``to_text()`` share presentation semantics.
+
+    They are separate code paths, so each could render the explanation its own
+    way and drift apart between releases.  §16.1 places narrative and text
+    rendering in the explanation module precisely so there is one
+    implementation; this test holds both callers to it, and checks §13's required
+    fields reach the ``to_text()`` surface rather than only the CLI.
+    """
+    from types import SimpleNamespace
+
+    from pyfcstm.bmc.explanation import (
+        BmcConflictCore,
+        BmcConstraintRef,
+        BmcCoreItem,
+        BmcInfeasibilityExplanation,
+        BmcSourceRef,
+        explanation_text_lines,
+    )
+    from pyfcstm.entry.bmc import _human_explanation
+
+    item = BmcCoreItem(
+        BmcConstraintRef(
+            "assumption.0000.frame.0000",
+            "assumptions",
+            "assumption.frame",
+            BmcSourceRef("generated", None, None),
+            "frame assumption",
+            frames=(0,),
+            refs={"assumption": 0, "frame": 0},
+        ),
+        "assumption",
+        None,
+        False,
+        {"kind": "structural_constraint"},
+        "frame assumption",
+        False,
+    )
+    explanation = BmcInfeasibilityExplanation(
+        # A deeper request that settled for a shallower result: the one
+        # combination the frozen transcripts never sample, and the reason §13
+        # asks for both modes rather than only the achieved one.
+        "proof",
+        "formal",
+        "partial",
+        "assumptions_self_conflict",
+        core=BmcConflictCore(
+            "assumptions_component",
+            "C_assume restricted to the conflicting groups",
+            "source_group",
+            "raw",
+            "not_proven",
+            (item,),
+        ),
+        reason="sound source core published without a minimality proof",
+    )
+
+    shared = explanation_text_lines(explanation)
+
+    # The CLI adds nothing of its own.
+    execution = SimpleNamespace(
+        result=SimpleNamespace(feasibility=SimpleNamespace(explanation=explanation))
+    )
+    assert _human_explanation(execution) == shared
+
+    # §13's required fields are all present, including both modes.
+    assert "Explanation depth: requested proof, achieved formal" in shared
+    for required in (
+        "Classification: the assumptions are internally inconsistent",
+        "Core scope: assumptions_component",
+        "Core granularity: source_group",
+        "Core size: 1",
+        "Reduction: raw",
+        "Semantic roles: assumption",
+    ):
+        assert required in shared, required
+
+
+@pytest.mark.unittest
+def test_to_text_shows_the_explanation_it_paid_for() -> None:
+    """The published result's own text surface must carry the explanation.
+
+    ``to_text()`` used to render a generic header and then flatten the whole
+    feasibility record into one very long ``Details:`` row, so a caller reading
+    ``str(result)`` saw none of §13's fields as presentation even though the CLI
+    showed all of them.
+    """
+    machine = load_state_machine_from_text(
+        "def int x = 0;\nstate Root { state A; [*] -> A; }"
+    )
+    context = BmcEngine(machine).prepare(
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") == 1; '
+        'check reach <= 1: active("Root.A");'
+    )
+    result = solve_bmc_property(
+        compile_bmc_property(build_bmc_core_formula(context)),
+        infeasibility_explanation="formal",
+        timeout_ms=5000,
+    )
+    assert result.feasibility.explanation is not None
+
+    text = result.to_text()
+    assert str(result) == text
+    for required in (
+        "Explanation: ",
+        "Classification: ",
+        "Core scope: ",
+        "Core granularity: ",
+        "Core size: ",
+        "Reduction: ",
+    ):
+        assert required in text, required

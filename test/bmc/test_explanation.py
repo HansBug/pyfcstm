@@ -245,6 +245,8 @@ _TRANSCRIBED_FROZEN_NAMES = frozenset(
         "_MINIMALITIES",
         "_MODES",
         "_REDUCTIONS",
+        "CLASSIFICATION_PHRASES",
+        "EXPLANATION_HEADLINES",
         "_SEMANTIC_ROLES",
         "_STAGES",
         "_STATUSES",
@@ -2517,3 +2519,54 @@ def test_no_published_field_accepts_a_hostile_stand_in(class_name) -> None:
                 assert type(stored) in plain_types or dataclasses.is_dataclass(
                     stored
                 ), (class_name, field.name, label)
+
+
+@pytest.mark.unittest
+def test_human_vocabularies_are_transcribed_from_the_frozen_transcripts() -> None:
+    """Both human vocabularies, copied from issue #385 rather than paraphrased.
+
+    Rewriting a frozen phrase from memory produces text that reads correctly and
+    passes every test that uses the same rewritten constant, so the only check
+    that can catch it is a transcription compared against the issue.
+
+    The frozen transcripts give two different phrasings for one classification:
+    §12.2 says "assumptions conflict with the initialized transition prefix" and
+    §12.3 says "assumptions conflict with the feasible prefix", both under
+    "Scenario: INFEASIBLE AT ASSUMPTIONS" and "Core scope: assumptions_prefix",
+    which map to ``assumptions_prefix_conflict`` alone.  The implementation has
+    to pick one, and that choice is recorded here rather than left implicit.
+    """
+    from pyfcstm.bmc.explanation import (
+        CLASSIFICATION_PHRASES,
+        CLASSIFICATION_SCOPES,
+        EXPLANATION_HEADLINES,
+    )
+
+    # Headlines: §12.1 line 959, §12.2 line 993, §12.3 line 1027.  The "proof"
+    # partial row has no sample; it follows the same two-word substitution the
+    # sampled proof row uses.
+    assert EXPLANATION_HEADLINES == {
+        ("formal", "complete"): "COMPLETE FORMAL DOMAIN EXPLANATION",
+        ("formal", "partial"): "PARTIAL FORMAL DOMAIN EXPLANATION",
+        ("proof", "complete"): "COMPLETE VERIFIED DOMAIN PROOF",
+        ("proof", "partial"): "PARTIAL VERIFIED DOMAIN PROOF",
+    }
+
+    # The two frozen phrasings for assumptions_prefix_conflict, transcribed.
+    frozen_prefix_phrasings = (
+        "assumptions conflict with the initialized transition prefix",
+        "assumptions conflict with the feasible prefix",
+    )
+    assert CLASSIFICATION_PHRASES["assumptions_prefix_conflict"] in (
+        frozen_prefix_phrasings
+    )
+    # §12.4 line 1049.
+    assert (
+        CLASSIFICATION_PHRASES["initialization_self_conflict"]
+        == "initialization is internally inconsistent"
+    )
+    # Every classification has a phrase, and no phrase is left empty or
+    # duplicated onto two classifications.
+    assert set(CLASSIFICATION_PHRASES) == set(CLASSIFICATION_SCOPES)
+    assert all(phrase.strip() for phrase in CLASSIFICATION_PHRASES.values())
+    assert len(set(CLASSIFICATION_PHRASES.values())) == len(CLASSIFICATION_PHRASES)

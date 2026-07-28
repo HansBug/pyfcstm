@@ -234,6 +234,7 @@ from .query import (
 if TYPE_CHECKING:
     from .explanation import (
         BmcConflictCore,
+        BmcSourceRef,
         BmcConflictCoreScope,
         BmcConstraintRef,
         BmcConstraintStage,
@@ -361,6 +362,7 @@ _WITNESS_EXPORTS = {
 
 _EXPLANATION_EXPORTS = {
     "BmcConflictCore",
+    "BmcSourceRef",
     "BmcConflictCoreScope",
     "BmcConstraintRef",
     "BmcConstraintStage",
@@ -438,6 +440,7 @@ def __dir__():
     return sorted(
         set(globals())
         | _BINDING_EXPORTS
+        | _EXPLANATION_EXPORTS
         | _DOMAIN_EXPORTS
         | _SOURCE_EXPORTS
         | _MACRO_EXPORTS
@@ -574,6 +577,7 @@ __all__ = [
     "decode_bmc_witness",
     "replay_bmc_witness",
     "BmcConflictCore",
+    "BmcSourceRef",
     "BmcConflictCoreScope",
     "BmcConstraintRef",
     "BmcConstraintStage",

@@ -72,7 +72,10 @@ def _normalize_line_separators(text: str) -> str:
         >>> _normalize_line_separators("a\\rb")
         'a\\rb'
     """
-    return text.replace("\r\n", "\n")
+    # ``replace`` is an instance method, so a str subclass could return text the
+    # registry never held -- and this text is what every published excerpt is
+    # sliced from.  The exact characters are read first.
+    return exact_str(text, "source document text").replace("\r\n", "\n")
 
 
 def _span_offsets(text: str, span: Span) -> Optional[Tuple[int, int]]:

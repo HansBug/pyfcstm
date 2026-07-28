@@ -277,14 +277,15 @@ def test_the_transcription_guard_covers_every_frozen_structure() -> None:
         if name.startswith("__"):
             continue
         value = getattr(module, name)
-        # Plain dicts and sets count too: the two module tables that hold an
-        # ordering and a coupling are exactly that, and an enumeration that
-        # skipped them would repeat the mistake this test exists to catch.
-        if isinstance(value, (tuple, frozenset, MappingProxyType, dict, set)):
+        # Every container type, not a chosen few: the first version matched only
+        # tuples, frozensets and mapping proxies and so missed two plain dicts,
+        # and the second still omitted ``list``.  Naming conventions are not a
+        # filter either -- a lower-case or mixed-case module table is just as
+        # frozen, and every earlier version of this check leaked through one of
+        # those forms.
+        if isinstance(value, (tuple, list, frozenset, MappingProxyType, dict, set)):
             # Type aliases and imported helpers are not frozen data.
             if name in {"Any", "Dict", "Mapping", "Optional", "Tuple", "Literal"}:
-                continue
-            if not name.isupper() and not name.lstrip("_").isupper():
                 continue
             frozen_names.add(name)
 
@@ -312,9 +313,9 @@ def test_the_transcription_guard_covers_every_frozen_structure() -> None:
             if name.startswith("__") or name in imported:
                 continue
             value = getattr(sibling, name)
-            if not isinstance(value, (tuple, frozenset, MappingProxyType, dict, set)):
-                continue
-            if not name.isupper() and not name.lstrip("_").isupper():
+            if not isinstance(
+                value, (tuple, list, frozenset, MappingProxyType, dict, set)
+            ):
                 continue
             sibling_frozen.add("%s.%s" % (sibling.__name__.rsplit(".", 1)[1], name))
 
@@ -911,6 +912,19 @@ def test_a_duration_cannot_report_itself_as_non_negative() -> None:
             classification=None,
             reason="probe unknown",
             elapsed_ms=NegativeElapsed(-1),
+        )
+
+    # A legal JSON number past the float range: the schema accepts it, so the
+    # refusal has to be stated in the same terms as every other bound here rather
+    # than escaping as OverflowError.
+    with pytest.raises(ValueError, match="too large to represent"):
+        BmcInfeasibilityExplanation(
+            requested_mode="formal",
+            achieved_mode="none",
+            status="unknown",
+            classification=None,
+            reason="probe unknown",
+            elapsed_ms=10**400,
         )
 
     impostor = type("Impostor", (object,), {"__class__": property(lambda self: int)})()

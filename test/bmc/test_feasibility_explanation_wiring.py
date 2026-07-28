@@ -769,33 +769,104 @@ def test_a_mismatch_after_the_probes_keeps_their_ledger() -> None:
     assert degraded.refinement_status == degraded.explanation.status == "partial"
 
 
-@pytest.mark.parametrize(
-    "query",
-    [
+#: The mandatory verdict's own solver traffic, measured per scenario.
+#:
+#: Relative properties alone cannot see drift on the mandatory path: adding an
+#: `add` there changes both the default and the explained trace identically, so
+#: every comparison between them still holds.  An absolute baseline is what makes
+#: that visible.  These are traces, not counts, so a reordering shows up too.
+_MANDATORY_SOLVER_TRACES = {
+    "assumptions_conflict": (
         'init state("Root.A") where x == 0; '
         'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
         'check reach <= 2: active("Root.B");',
+        [
+            "Solver()",
+            "add",
+            "push",
+            "add",
+            "push",
+            "add",
+            "push",
+            "add",
+            "check",
+            "pop",
+            "check",
+            "pop",
+            "check",
+        ],
+    ),
+    "initialization_self_conflict": (
         'init state("Root.A") where x == 1 && x == 2; '
         'check reach <= 2: active("Root.B");',
+        [
+            "Solver()",
+            "add",
+            "push",
+            "add",
+            "push",
+            "add",
+            "push",
+            "add",
+            "check",
+            "pop",
+            "check",
+            "pop",
+            "check",
+            "pop",
+            "check",
+        ],
+    ),
+    "assumptions_prefix_conflict": (
         'init state("Root.A") where x == 0; '
         'assume at 0: var("x") == 7; check reach <= 2: active("Root.B");',
+        [
+            "Solver()",
+            "add",
+            "push",
+            "add",
+            "push",
+            "add",
+            "push",
+            "add",
+            "check",
+            "pop",
+            "check",
+            "pop",
+            "check",
+        ],
+    ),
+    "feasible": (
         'init state("Root.A") where x == 0; check reach <= 2: active("Root.B");',
-    ],
-)
-def test_the_default_path_starts_no_solver_of_its_own(query) -> None:
+        [
+            "Solver()",
+            "add",
+            "push",
+            "add",
+            "push",
+            "add",
+            "push",
+            "add",
+            "check",
+        ],
+    ),
+}
+
+
+@pytest.mark.parametrize("scenario", sorted(_MANDATORY_SOLVER_TRACES))
+def test_the_default_path_starts_no_solver_of_its_own(scenario) -> None:
     """Asking for no explanation must cost no solver work at all.
 
     Asserting that the published fields look untouched is weaker than it sounds:
     an early return could run a check first and still return the same object, so
     the solver traffic itself is what gets recorded here.
 
-    The properties are deliberately shape-independent.  The mandatory verdict's
-    own trace differs per scenario -- a feasible one needs two operations, a
-    self-conflicting initialization five -- so pinning one literal sequence would
-    make this test break whenever the fixture changed, for reasons having nothing
-    to do with what it checks.  What holds for every shape is that the default
-    path builds exactly one solver, that both spellings of "no explanation" cost
-    the same, and that asking for one only ever appends.
+    Two kinds of property are needed.  The absolute baseline per scenario catches
+    drift on the mandatory path -- an extra ``add`` there changes the default and
+    the explained trace identically, so no comparison between the two would
+    notice.  The relative properties catch the opposite failure, an explanation
+    leaking into a path that did not ask for one, and hold whatever the mandatory
+    shape happens to be.
     """
     import z3
 
@@ -804,6 +875,7 @@ def test_the_default_path_starts_no_solver_of_its_own(query) -> None:
     from pyfcstm.bmc.witness import solve_bmc_property
     from pyfcstm.model import load_state_machine_from_text
 
+    query, expected = _MANDATORY_SOLVER_TRACES[scenario]
     machine = load_state_machine_from_text(
         "def int x = 0;\n"
         "state Root { event Go; state A; state B; [*] -> A; A -> B :: Go; }"
@@ -812,20 +884,20 @@ def test_the_default_path_starts_no_solver_of_its_own(query) -> None:
         build_bmc_core_formula(BmcEngine(machine).prepare(query))
     )
 
+    traced_methods = ("check", "add", "push", "pop", "set")
+
     def trace(**solve_kwargs):
         """Return the ordered solver operations one solve performs."""
         operations = []
         real_solver = z3.Solver
-        real_methods = {
-            name: getattr(z3.Solver, name) for name in ("check", "add", "push", "pop")
-        }
+        originals = {name: getattr(z3.Solver, name) for name in traced_methods}
 
         class TracingSolver(real_solver):
             def __init__(self, *args, **kwargs):
                 operations.append("Solver()")
                 super().__init__(*args, **kwargs)
 
-        for name, original in real_methods.items():
+        for name, original in originals.items():
 
             def make(name=name, original=original):
                 def wrapper(self, *args, **kwargs):
@@ -847,12 +919,13 @@ def test_the_default_path_starts_no_solver_of_its_own(query) -> None:
     explicit = trace(infeasibility_explanation="none")
     explained = trace(infeasibility_explanation="formal")
 
-    # Exactly one solver: the mandatory verdict's own.  An extra check smuggled
-    # in before the early return brings a second one with it.
-    assert implicit.count("Solver()") == 1
+    # The mandatory verdict's traffic, operation for operation.
+    assert implicit == expected
     # Both spellings of "no explanation" must cost the same.
     assert explicit == implicit
-    # Asking for an explanation only ever appends to that trace.
+    # Asking for an explanation only ever appends, and builds its own solver.
     assert explained[: len(implicit)] == implicit
-    if solve_bmc_property(formula).feasibility.infeasible_stage is not None:
+    if scenario != "feasible":
         assert explained.count("Solver()") > 1
+    else:
+        assert explained == implicit

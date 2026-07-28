@@ -98,6 +98,11 @@ _INEXPRESSIBLE = {
         "rendered; CPython refuses to render one past 4300 digits, so the "
         "constructor rejects it while a validator sees an ordinary integer"
     ),
+    "duration past the float range": (
+        "Draft 2020-12 bounds a number's value, but an integer larger than the "
+        "float range is still a legal JSON number it accepts; a duration has to "
+        "be representable as one, so the constructor refuses it"
+    ),
     "non-finite number anywhere in a published mapping": (
         "NaN and Infinity are not JSON numbers, but a Draft 2020-12 validator "
         "walking Python objects sees float('nan') as a legal number, so it "
@@ -533,6 +538,10 @@ def _structural_corpus():
     if hasattr(sys, "set_int_max_str_digits"):
         sys.set_int_max_str_digits(_MAX_METADATA_INT_DIGITS * 2)
     yield (
+        "duration past the float range",
+        _payload(elapsed_ms=10**400),
+    )
+    yield (
         "integer longer than the published digit limit",
         _payload(
             members=[
@@ -912,6 +921,17 @@ def test_the_constructor_still_enforces_every_named_asymmetry() -> None:
             refs=deep_refs,
         )
 
+    # duration past the float range
+    with pytest.raises(ValueError, match="too large to represent"):
+        BmcInfeasibilityExplanation(
+            requested_mode="formal",
+            achieved_mode="none",
+            status="unknown",
+            classification=None,
+            reason="probe unknown",
+            elapsed_ms=10**400,
+        )
+
     # integer longer than the published digit limit
     with pytest.raises(ValueError, match="exceeds the .* decimal digits"):
         BmcConstraintRef(
@@ -992,6 +1012,7 @@ def test_the_constructor_still_enforces_every_named_asymmetry() -> None:
         "non-string object key in any published mapping",
         "published metadata nested deeper than the published limit",
         "integer longer than the published digit limit",
+        "duration past the float range",
         "non-finite number anywhere in a published mapping",
         "non-JSON value anywhere in a published mapping",
         "proven minimality without one deletion per member",

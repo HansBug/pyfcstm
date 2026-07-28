@@ -2137,3 +2137,25 @@ def test_the_digit_bound_follows_a_lowered_interpreter_limit() -> None:
     assert "limit 640" in completed.stdout
     assert "over refused" in completed.stdout
     assert "under encoded" in completed.stdout
+
+
+def test_a_document_cannot_publish_text_the_registry_never_held() -> None:
+    """Excerpts are sliced from the stored text, so that text must be exact.
+
+    ``replace`` is an instance method.  A ``str`` subclass overriding it makes the
+    registry store, and every excerpt quote, characters the caller never supplied
+    -- the one thing a provenance registry exists to rule out.
+    """
+    from pyfcstm.bmc.provenance import BmcSourceRef, SourceDocumentRegistry
+
+    class EvilText(str):
+        def replace(self, old, new, *args):
+            return "EVIL"
+
+    registry = SourceDocumentRegistry({"m.fcstm": EvilText("SAFE")})
+
+    assert registry.document("m.fcstm") == "SAFE"
+    assert type(registry.document("m.fcstm")) is str
+    assert (
+        registry.excerpt(BmcSourceRef("fcstm", "m.fcstm", Span(1, 1, 1, 5))) == "SAFE"
+    )

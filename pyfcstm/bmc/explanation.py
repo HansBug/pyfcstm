@@ -1241,11 +1241,21 @@ class BmcInfeasibilityExplanation:
             # own __lt__ and __float__, so a negative duration could report
             # itself as non-negative and be published as recorded.
             try:
-                plain = (
-                    exact_float(self.elapsed_ms, "explanation elapsed_ms")
-                    if isinstance(self.elapsed_ms, float)
-                    else float(exact_int(self.elapsed_ms, "explanation elapsed_ms"))
-                )
+                if isinstance(self.elapsed_ms, float):
+                    plain = exact_float(self.elapsed_ms, "explanation elapsed_ms")
+                else:
+                    whole = exact_int(self.elapsed_ms, "explanation elapsed_ms")
+                    try:
+                        plain = float(whole)
+                    except OverflowError:
+                        # An integer past the float range is a legal JSON number
+                        # the schema accepts, so refusing it has to say so in the
+                        # same terms as every other bound here rather than
+                        # escaping as OverflowError.
+                        raise ValueError(
+                            "explanation elapsed_ms is too large to represent as "
+                            "a duration, got %r." % self.elapsed_ms
+                        ) from None
             except TypeError:
                 # exact_* refuse a value that only claims to be a number.
                 raise TypeError(

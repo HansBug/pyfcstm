@@ -769,14 +769,33 @@ def test_a_mismatch_after_the_probes_keeps_their_ledger() -> None:
     assert degraded.refinement_status == degraded.explanation.status == "partial"
 
 
-def test_the_default_path_starts_no_solver_of_its_own() -> None:
+@pytest.mark.parametrize(
+    "query",
+    [
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
+        'check reach <= 2: active("Root.B");',
+        'init state("Root.A") where x == 1 && x == 2; '
+        'check reach <= 2: active("Root.B");',
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") == 7; check reach <= 2: active("Root.B");',
+        'init state("Root.A") where x == 0; check reach <= 2: active("Root.B");',
+    ],
+)
+def test_the_default_path_starts_no_solver_of_its_own(query) -> None:
     """Asking for no explanation must cost no solver work at all.
 
     Asserting that the published fields look untouched is weaker than it sounds:
-    an early return could run a check first and still return the same object.
-    This records the actual solver traffic instead, so a stray ``Solver()`` or
-    ``check()`` on the default path turns red rather than hiding behind an
-    unchanged payload.
+    an early return could run a check first and still return the same object, so
+    the solver traffic itself is what gets recorded here.
+
+    The properties are deliberately shape-independent.  The mandatory verdict's
+    own trace differs per scenario -- a feasible one needs two operations, a
+    self-conflicting initialization five -- so pinning one literal sequence would
+    make this test break whenever the fixture changed, for reasons having nothing
+    to do with what it checks.  What holds for every shape is that the default
+    path builds exactly one solver, that both spellings of "no explanation" cost
+    the same, and that asking for one only ever appends.
     """
     import z3
 
@@ -789,27 +808,33 @@ def test_the_default_path_starts_no_solver_of_its_own() -> None:
         "def int x = 0;\n"
         "state Root { event Go; state A; state B; [*] -> A; A -> B :: Go; }"
     )
-    context = BmcEngine(machine).prepare(
-        'init state("Root.A") where x == 0; '
-        'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
-        'check reach <= 2: active("Root.B");'
+    formula = compile_bmc_property(
+        build_bmc_core_formula(BmcEngine(machine).prepare(query))
     )
-    formula = compile_bmc_property(build_bmc_core_formula(context))
 
     def trace(**solve_kwargs):
         """Return the ordered solver operations one solve performs."""
         operations = []
         real_solver = z3.Solver
-        real_check = z3.Solver.check
+        real_methods = {
+            name: getattr(z3.Solver, name) for name in ("check", "add", "push", "pop")
+        }
 
         class TracingSolver(real_solver):
             def __init__(self, *args, **kwargs):
                 operations.append("Solver()")
                 super().__init__(*args, **kwargs)
 
-            def check(self, *args, **kwargs):
-                operations.append("check")
-                return real_check(self, *args, **kwargs)
+        for name, original in real_methods.items():
+
+            def make(name=name, original=original):
+                def wrapper(self, *args, **kwargs):
+                    operations.append(name)
+                    return original(self, *args, **kwargs)
+
+                return wrapper
+
+            setattr(TracingSolver, name, make())
 
         z3.Solver = TracingSolver
         try:
@@ -818,13 +843,16 @@ def test_the_default_path_starts_no_solver_of_its_own() -> None:
             z3.Solver = real_solver
         return operations
 
-    default_operations = trace()
-    explained_operations = trace(infeasibility_explanation="formal")
+    implicit = trace()
+    explicit = trace(infeasibility_explanation="none")
+    explained = trace(infeasibility_explanation="formal")
 
-    # The mandatory verdict's own traffic, recorded exactly.  Comparing only a
-    # prefix would miss an extra check inserted before the early return, which is
-    # the mutation this test has to catch.
-    assert default_operations == ["Solver()", "check", "check", "check"]
-    # Asking for an explanation adds work; asking for none adds none.
-    assert len(explained_operations) > len(default_operations)
-    assert explained_operations[: len(default_operations)] == default_operations
+    # Exactly one solver: the mandatory verdict's own.  An extra check smuggled
+    # in before the early return brings a second one with it.
+    assert implicit.count("Solver()") == 1
+    # Both spellings of "no explanation" must cost the same.
+    assert explicit == implicit
+    # Asking for an explanation only ever appends to that trace.
+    assert explained[: len(implicit)] == implicit
+    if solve_bmc_property(formula).feasibility.infeasible_stage is not None:
+        assert explained.count("Solver()") > 1

@@ -928,15 +928,20 @@ def _remove_temporary_viewer(path: Path) -> None:
 
 def _note(message: str, *args: Any) -> None:
     """
-    Record a degradation without letting the recording become one.
+    Record a degradation from a cleanup path, tolerating a broken backend.
 
-    Every caller is on a path that must not fail: a cleanup that could not
-    finish, or a mode that could not be read. ``logging`` does not promise to
-    stay quiet -- ``Handler.emit`` is a user extension point, and a handler or
-    filter that raises propagates to whoever logged. That turned the branch
-    which exists to save an already-written document into the thing that
-    discarded it, because control never reached ``os.replace``. Measured with a
-    handler that raises and ``logging.raiseExceptions`` off.
+    ``Handler.emit`` is a user extension point, and a handler or filter that
+    raises propagates to whoever logged.  Every call here is inside a
+    ``finally`` where an exception may already be travelling, so an ordinary
+    backend failure must not replace it with a complaint about a log line.
+
+    The narrower guarantee is deliberate: ``SystemExit`` and
+    ``KeyboardInterrupt`` pass through, because swallowing an interrupt is
+    worse than the report it would hide.  Where a report *cannot* be allowed to
+    interrupt anything -- between a document being written and ``os.replace``
+    making it the target -- it is not routed here at all; it is collected and
+    emitted afterwards.  See the ``deferred`` argument of
+    :func:`_apply_target_mode`.
 
     :param message: ``%``-style format string.
     :type message: str
@@ -947,11 +952,12 @@ def _note(message: str, *args: Any) -> None:
     try:
         _logger.warning(message, *args)
     except Exception:  # noqa: BLE001 - see below
-        # Deliberately everything. The alternative to swallowing here is losing
-        # the caller's work to a logging backend, and there is no narrower set:
-        # the exception comes from third-party handler code, not from a call
-        # this module makes. Nothing is re-raised because nothing above can act
-        # on it -- the report was the last thing left to try.
+        # Every class a logging backend can raise short of BaseException. There
+        # is no narrower set to name: the exception comes from third-party
+        # handler code rather than from any call this module makes. Nothing is
+        # re-raised because nothing above can act on it -- the report was the
+        # last thing left to try, and the caller's own exception, if any, is
+        # what matters.
         pass
 
 
@@ -985,7 +991,10 @@ def _validate_write_target(target: Path) -> None:
 
 
 def _apply_target_mode(
-    temporary_path: Path, target: Path, mode: Optional[int] = None
+    temporary_path: Path,
+    target: Path,
+    mode: Optional[int] = None,
+    deferred: Optional[List[Tuple[str, Tuple[Any, ...]]]] = None,
 ) -> None:
     """
     Give the temporary file the mode the target should end up with.
@@ -1003,6 +1012,14 @@ def _apply_target_mode(
         for paths whose name is predictable, where an existing file may have
         been placed there by someone else.
     :type mode: int, optional
+    :param deferred: Collects any degradation to report once the write is
+        irreversible.  Reporting one here would sit between the document being
+        written and ``os.replace`` making it the target, and a ``logging``
+        handler is a user extension point: one that raises -- including
+        ``SystemExit`` or ``KeyboardInterrupt``, which no ``except Exception``
+        can hold -- would leave the caller with nothing.  Passing a list moves
+        the reporting after the step that cannot be undone.
+    :type deferred: list, optional
     :return: ``None``.
     :rtype: None
     """
@@ -1018,7 +1035,7 @@ def _apply_target_mode(
         # which runs first and re-raises them from its own is_dir() call.
         pass
     try:
-        default = _umask_default_mode(temporary_path.parent)
+        default = _umask_default_mode(temporary_path.parent, deferred)
     except OSError as probe_error:
         # PermissionError/EROFS from a directory that will not accept a new
         # file, EDQUOT/ENOSPC from an exhausted one, an `fstat` or `close` that
@@ -1031,12 +1048,14 @@ def _apply_target_mode(
         # a read-only mount or a hostile neighbour taking every candidate name
         # is not a reason to throw the work away. The file keeps that 0600,
         # which is restrictive rather than wrong, and the reason is recorded.
-        _note(
-            "could not read the default file mode in %s, leaving %s as created: %s",
-            temporary_path.parent,
-            temporary_path.name,
-            probe_error,
-        )
+        if deferred is not None:
+            deferred.append(
+                (
+                    "could not read the default file mode in %s, leaving %s as "
+                    "created: %s",
+                    (temporary_path.parent, temporary_path.name, probe_error),
+                )
+            )
         return
     os.chmod(str(temporary_path), default)
 
@@ -1046,7 +1065,10 @@ def _apply_target_mode(
 _UMASK_PROBE_ATTEMPTS = 8
 
 
-def _umask_default_mode(directory: Path) -> int:
+def _umask_default_mode(
+    directory: Path,
+    deferred: Optional[List[Tuple[str, Tuple[Any, ...]]]] = None,
+) -> int:
     """
     Return the mode a plain new file receives in ``directory``.
 
@@ -1061,6 +1083,10 @@ def _umask_default_mode(directory: Path) -> int:
     :param directory: Directory the real write is about to happen in, so the
         probe sees the same filesystem and any inherited default ACL.
     :type directory: pathlib.Path
+    :param deferred: Collects a cleanup failure to report once the caller's
+        write is irreversible.  See :func:`_apply_target_mode` for why
+        reporting it here instead would risk the document.
+    :type deferred: list, optional
     :return: Permission bits, already masked.
     :rtype: int
     :raises OSError: If the probe cannot be created, read or closed -- a
@@ -1109,11 +1135,13 @@ def _umask_default_mode(directory: Path) -> int:
                     # read-only or exhausted filesystem. None propagate --
                     # reading a number must not fail the caller's write -- and
                     # the leftover is named so it can be found.
-                    _note(
-                        "could not remove the probe file %s: %s",
-                        candidate,
-                        cleanup_error,
-                    )
+                    if deferred is not None:
+                        deferred.append(
+                            (
+                                "could not remove the probe file %s: %s",
+                                (candidate, cleanup_error),
+                            )
+                        )
             return os.fstat(descriptor).st_mode & 0o7777
         finally:
             os.close(descriptor)
@@ -1138,14 +1166,19 @@ def _atomic_write_text(
     )
     temporary_path = Path(temporary.name)
     replaced = False
+    deferred = []
     try:
         with temporary:
             temporary.write(content)
             temporary.flush()
             os.fsync(temporary.fileno())
-        _apply_target_mode(temporary_path, target, mode)
+        _apply_target_mode(temporary_path, target, mode, deferred)
         os.replace(str(temporary_path), str(target))
         replaced = True
+        # After the replace, never before: the document is the target now, so a
+        # handler that raises can propagate without costing anything.
+        for message, values in deferred:
+            _note(message, *values)
     except OSError as write_error:
         try:
             temporary_path.unlink()
@@ -1202,14 +1235,19 @@ def _atomic_write_bytes(
     )
     temporary_path = Path(temporary.name)
     replaced = False
+    deferred = []
     try:
         with temporary:
             temporary.write(content)
             temporary.flush()
             os.fsync(temporary.fileno())
-        _apply_target_mode(temporary_path, target, mode)
+        _apply_target_mode(temporary_path, target, mode, deferred)
         os.replace(str(temporary_path), str(target))
         replaced = True
+        # After the replace, never before: the document is the target now, so a
+        # handler that raises can propagate without costing anything.
+        for message, values in deferred:
+            _note(message, *values)
     except OSError as write_error:
         try:
             temporary_path.unlink()

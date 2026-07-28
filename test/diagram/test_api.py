@@ -1533,7 +1533,11 @@ def test_a_failing_logging_backend_does_not_cost_the_document(tmp_path, monkeypa
 
     class FailingHandler(logging.Handler):
         def emit(self, record):
-            raise RuntimeError("injected logging backend failure")
+            # BaseException, not Exception. `SystemExit`, `KeyboardInterrupt`
+            # and `GeneratorExit` are all reachable from a handler, and no
+            # `except Exception` holds them -- which is why the report is
+            # deferred past `os.replace` rather than wrapped more widely.
+            raise SystemExit("injected logging backend failure")
 
     logger = logging.getLogger("pyfcstm")
     handler = FailingHandler()
@@ -1549,7 +1553,11 @@ def test_a_failing_logging_backend_does_not_cost_the_document(tmp_path, monkeypa
     monkeypatch.setattr(os, "open", refuse_probe)
     target = tmp_path / "doc.html"
     try:
-        api._atomic_write_text(target, "already rendered payload")
+        with pytest.raises(SystemExit):
+            api._atomic_write_text(target, "already rendered payload")
     finally:
         logger.removeHandler(handler)
+    # The interrupt still reaches the caller -- swallowing a SystemExit would
+    # be worse than the leak it hides -- but the document is already the
+    # target by then.
     assert target.read_text(encoding="utf-8") == "already rendered payload"

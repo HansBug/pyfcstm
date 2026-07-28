@@ -295,6 +295,48 @@ def test_the_transcription_guard_covers_every_frozen_structure() -> None:
     # And nothing in the lists has quietly disappeared from the module.
     assert accounted - frozen_names == set()
 
+    # The sibling modules hold frozen tables too, and an enumeration of one
+    # module would say nothing about them.
+    from pyfcstm.bmc import infeasibility, provenance
+
+    sibling_frozen = set()
+    for sibling, imported in (
+        (provenance, {"Span"}),
+        (
+            infeasibility,
+            # Re-exports of tables this module already accounts for.
+            {"CLASSIFICATION_SCOPES", "SCOPE_AGGREGATES", "SCOPE_TARGETS"},
+        ),
+    ):
+        for name in dir(sibling):
+            if name.startswith("__") or name in imported:
+                continue
+            value = getattr(sibling, name)
+            if not isinstance(value, (tuple, frozenset, MappingProxyType, dict, set)):
+                continue
+            if not name.isupper() and not name.lstrip("_").isupper():
+                continue
+            sibling_frozen.add("%s.%s" % (sibling.__name__.rsplit(".", 1)[1], name))
+
+    assert sibling_frozen == {
+        "provenance._SOURCE_KINDS",
+        "infeasibility.AGGREGATE_SELECTORS",
+        "infeasibility._INDEX_REF_KEYS",
+        "infeasibility._STAGE_FALLBACK_BY_STAGE",
+    }
+    assert provenance._SOURCE_KINDS == {"fcstm", "fbmcq", "generated"}
+    assert infeasibility._INDEX_REF_KEYS == ("frame", "frames", "step", "steps")
+    assert dict(infeasibility._STAGE_FALLBACK_BY_STAGE) == {
+        "initialization": "initialization_stage_fallback",
+        "assumptions": "assumptions_stage_fallback",
+    }
+    assert set(infeasibility.AGGREGATE_SELECTORS) == {
+        "domain",
+        "transition",
+        "initial",
+        "environment",
+    }
+
 
 def test_every_frozen_vocabulary_matches_the_authored_list() -> None:
     """Each vocabulary is compared against an independent transcription.

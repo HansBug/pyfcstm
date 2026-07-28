@@ -1902,3 +1902,175 @@ def test_bmc_cli_can_request_each_explanation_depth(explain_files) -> None:
     )
     assert rejected.exit_code != 0
     assert "is not one of" in rejected.output
+
+
+@pytest.mark.unittest
+def test_bmc_human_output_shows_the_explanation_it_paid_for(explain_files) -> None:
+    """A human reader must see the explanation their request produced.
+
+    Requesting ``formal`` costs extra solver work.  Before this, the human report
+    was byte-identical to the default, so the option looked like it had done
+    nothing at all -- while the frozen terminal transcripts spell out the lines
+    this report has to carry.
+    """
+    model, query = explain_files
+
+    default = _run("-i", str(model), "-q", str(query))
+    formal = _run(
+        "-i", str(model), "-q", str(query), "--infeasibility-explanation", "formal"
+    )
+
+    assert default.exit_code == formal.exit_code == 3
+    assert "Explanation:" not in default.output
+    assert "Explanation: PARTIAL FORMAL DOMAIN EXPLANATION" in formal.output
+    assert (
+        "Classification: the assumptions are internally inconsistent" in formal.output
+    )
+    assert "Conflict constraints:" in formal.output
+    # The authored source location and text, not a paraphrase.
+    assert 'assume at 0: var("x") == 1;' in formal.output
+    assert "Core scope: assumptions_component" in formal.output
+    assert "Reduction: raw" in formal.output
+    assert "is not proven subset-minimal" in formal.output
+    # The mandatory verdict is untouched.
+    for line in default.output.splitlines():
+        if line.startswith(("BMC ", "Scenario:", "Property verdict:")):
+            assert line in formal.output
+
+    # Files and JSON stay ANSI-free, and JSON keeps carrying the same data.
+    assert "\x1b[" not in formal.output
+    _, payload = _json_result(
+        Path(model), Path(query), "--infeasibility-explanation", "formal"
+    )
+    explanation = payload["result"]["feasibility"]["explanation"]
+    assert explanation["core"]["scope"] == "assumptions_component"
+
+
+@pytest.mark.unittest
+def test_human_explanation_renders_every_published_shape() -> None:
+    """Each branch of the human explanation section, driven directly.
+
+    The renderer has to cope with a core member that carries no span, one that is
+    generated rather than authored, a proven-minimal core, and a classification
+    published with no core at all -- the last being the frozen "not achieved"
+    transcript.  Only the first of those is reachable from the fixtures above.
+    """
+    from dataclasses import dataclass
+
+    from pyfcstm.bmc.explanation import (
+        BmcConflictCore,
+        BmcConstraintRef,
+        BmcCoreItem,
+        BmcInfeasibilityExplanation,
+    )
+    from pyfcstm.bmc.provenance import BmcSourceRef
+    from pyfcstm.entry.bmc import _human_explanation
+    from pyfcstm.utils.validate import Span
+
+    def item(source, excerpt=None, human_text="frame assumption"):
+        reference = BmcConstraintRef(
+            "assumption.0000.frame.0000",
+            "assumptions",
+            "assumption.frame",
+            source,
+            "frame assumption",
+        )
+        return BmcCoreItem(
+            reference,
+            "assumption",
+            excerpt,
+            False,
+            {"kind": "structural_constraint"},
+            human_text,
+            source.kind in ("fcstm", "fbmcq"),
+        )
+
+    def core(items, **kwargs):
+        payload = dict(
+            scope="assumptions_component",
+            formula_summary="ENV_N",
+            granularity="source_group",
+            reduction="raw",
+            subset_minimality="not_proven",
+            items=items,
+        )
+        payload.update(kwargs)
+        return BmcConflictCore(**payload)
+
+    @dataclass
+    class _Feasibility:
+        explanation: object
+
+    @dataclass
+    class _Result:
+        feasibility: object
+
+    @dataclass
+    class _Execution:
+        result: object
+
+    def render(explanation):
+        return _human_explanation(_Execution(_Result(_Feasibility(explanation))))
+
+    # A path with no span falls back to the path alone.
+    anchored = BmcSourceRef("fbmcq", "q.fbmcq", None)
+    lines = render(
+        BmcInfeasibilityExplanation(
+            "formal",
+            "formal",
+            "partial",
+            "assumptions_self_conflict",
+            core=core((item(anchored, excerpt=None),)),
+            reason="minimization skipped",
+        )
+    )
+    assert "  1. q.fbmcq" in lines
+    assert "     frame assumption" in lines
+
+    # A generated constraint has no authored location at all.
+    generated = BmcSourceRef("generated", None, None)
+    lines = render(
+        BmcInfeasibilityExplanation(
+            "formal",
+            "formal",
+            "partial",
+            "assumptions_self_conflict",
+            core=core((item(generated),)),
+            reason="minimization skipped",
+        )
+    )
+    assert "  1. generated assumption.frame" in lines
+
+    # A proven-minimal core says so instead of hedging.
+    lines = render(
+        BmcInfeasibilityExplanation(
+            "formal",
+            "formal",
+            "partial",
+            "assumptions_self_conflict",
+            core=core(
+                (item(generated),),
+                reduction="subset_minimal",
+                subset_minimality="proven",
+            ),
+            reason="narrative not built",
+        )
+    )
+    assert any("proven subset-minimal" in line for line in lines)
+
+    # A classification with no core is the frozen "not achieved" transcript.
+    lines = render(
+        BmcInfeasibilityExplanation(
+            "formal",
+            "none",
+            "partial",
+            "initialization_self_conflict",
+            reason="the source-level core check timed out after classification",
+        )
+    )
+    assert "Explanation: FORMAL EXPLANATION NOT ACHIEVED" in lines
+    assert "Classification: initialization is internally inconsistent" in lines
+    assert any("No conflict core or causal chain" in line for line in lines)
+
+    # No explanation at all renders nothing.
+    assert render(None) == []

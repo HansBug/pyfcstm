@@ -49,7 +49,7 @@ import pathlib
 import sys
 import tempfile
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Optional, Tuple
+from typing import TYPE_CHECKING, List, Optional, Tuple
 
 import click
 
@@ -449,6 +449,111 @@ def _human_diagnostics(execution: _BmcExecution) -> Tuple[str, ...]:
     return tuple(lines)
 
 
+#: How a published explanation's delivery state reads in human output.
+#:
+#: The three lines come from the authored terminal transcripts: a sound core is a
+#: partial formal explanation until minimality and narrative close, a
+#: classification with no core is explicitly *not achieved*, and a request that
+#: produced neither says so rather than staying silent.
+_EXPLANATION_HEADLINES = {
+    ("formal", "partial"): "PARTIAL FORMAL DOMAIN EXPLANATION",
+    ("formal", "complete"): "COMPLETE FORMAL DOMAIN EXPLANATION",
+    ("proof", "partial"): "PARTIAL VERIFIED DOMAIN PROOF",
+    ("proof", "complete"): "COMPLETE VERIFIED DOMAIN PROOF",
+}
+
+#: Each classification in the words a reader can act on.
+_CLASSIFICATION_PHRASES = {
+    "kernel_conflict": "the model's own domain and transition rules conflict",
+    "initialization_self_conflict": "initialization is internally inconsistent",
+    "initialization_domain_conflict": "initialization conflicts with the frame domain",
+    "initialization_kernel_conflict": (
+        "initialization conflicts with the transition relation"
+    ),
+    "assumptions_self_conflict": "the assumptions are internally inconsistent",
+    "assumptions_domain_conflict": "the assumptions conflict with the frame domain",
+    "assumptions_prefix_conflict": ("assumptions conflict with the feasible prefix"),
+}
+
+
+def _human_explanation(execution: "_BmcExecution") -> List[str]:
+    """Render the optional infeasibility explanation for a human reader.
+
+    A caller who asked for ``formal`` or ``proof`` paid for extra solver work, so
+    the result has to be visible in the report they are reading.  Without this
+    the human output is byte-identical to the default, which makes the option
+    look like it did nothing.
+
+    :param execution: Completed BMC execution carrying the solve result.
+    :type execution: _BmcExecution
+    :return: Report lines, empty when no explanation was published.
+    :rtype: List[str]
+
+    Example::
+
+        >>> _human_explanation.__name__
+        '_human_explanation'
+    """
+    feasibility = getattr(execution.result, "feasibility", None)
+    explanation = getattr(feasibility, "explanation", None)
+    if explanation is None:
+        return []
+    lines = []
+    headline = _EXPLANATION_HEADLINES.get(
+        (explanation.achieved_mode, explanation.status)
+    )
+    if headline is None:
+        # achieved_mode 'none' means the requested depth was not reached; the
+        # frozen transcript names that explicitly instead of omitting the line.
+        headline = "%s EXPLANATION NOT ACHIEVED" % explanation.requested_mode.upper()
+    lines.append("Explanation: %s" % headline)
+    if explanation.classification is not None:
+        lines.append(
+            "Classification: %s" % _CLASSIFICATION_PHRASES[explanation.classification]
+        )
+    core = explanation.core
+    if core is not None:
+        lines.append("")
+        lines.append("Conflict constraints:")
+        for index, item in enumerate(core.items, start=1):
+            source = item.constraint.source
+            span = source.span
+            if source.path is not None and span is not None:
+                location = "%s:%d:%d" % (source.path, span.line, span.column)
+                if span.end_line is not None and span.end_column is not None:
+                    location += "-%d:%d" % (span.end_line, span.end_column)
+            elif source.path is not None:
+                location = source.path
+            else:
+                location = "generated %s" % item.constraint.category
+            lines.append("  %d. %s" % (index, location))
+            detail = item.source_excerpt or item.human_text
+            if detail:
+                lines.append("     %s" % detail)
+        lines.append("")
+        if core.subset_minimality == "proven":
+            lines.append(
+                "The displayed core is sufficient for UNSAT and proven subset-minimal."
+            )
+        else:
+            lines.append(
+                "The displayed core is sufficient for UNSAT but is not proven "
+                "subset-minimal."
+            )
+        lines.append("Core scope: %s" % core.scope)
+        lines.append("Reduction: %s" % core.reduction)
+    if explanation.reason is not None:
+        lines.append("Reason: %s" % explanation.reason)
+    if core is None and explanation.classification is not None:
+        lines.append("")
+        lines.append(
+            "No conflict core or causal chain was published. The classification "
+            "is retained as partial metadata, but it is not presented as a "
+            "completed formal explanation."
+        )
+    return lines
+
+
 def _human_report(
     execution: _BmcExecution, presentation: Optional[_BmcPresentation] = None
 ) -> str:
@@ -467,10 +572,11 @@ def _human_report(
     if presentation.evidence:
         header.append("Evidence:")
         header.extend("  %s" % item for item in presentation.evidence)
-    sections = [
-        "\n".join(header),
-        "\n".join(_human_diagnostics(execution)),
-    ]
+    sections = ["\n".join(header)]
+    explanation_lines = _human_explanation(execution)
+    if explanation_lines:
+        sections.append("\n".join(explanation_lines))
+    sections.append("\n".join(_human_diagnostics(execution)))
     trace = _human_trace(execution)
     if trace:
         sections.append("\n".join(trace))

@@ -2236,3 +2236,122 @@ def test_a_stable_id_must_be_printable_ascii(stable_id) -> None:
             _GENERATED,
             "initial target state",
         )
+
+
+#: Every way a Python value can pretend to be something it is not.
+#:
+#: Reviewers have found this class of defect one field at a time for seven
+#: rounds.  The space is unbounded by construction -- every published field times
+#: every method the code calls on it -- so enumerating fields here converts an
+#: endless stream of individual findings into one sweep that covers a field the
+#: moment it exists.
+def _impostors():
+    """Yield ``(label, factory)`` pairs producing hostile stand-ins."""
+
+    class LyingStr(str):
+        def __str__(self):
+            return "FORGED"
+
+        def __eq__(self, other):
+            return True
+
+        def __hash__(self):
+            return hash("forged")
+
+        def startswith(self, prefix, *args, **kwargs):
+            return True
+
+        def __iter__(self):
+            return iter("ok")
+
+        def __len__(self):
+            return 1
+
+        def __bool__(self):
+            return True
+
+    class LyingInt(int):
+        def __int__(self):
+            return 999
+
+        def __index__(self):
+            return 999
+
+        def __lt__(self, other):
+            return False
+
+    class LyingFloat(float):
+        def __float__(self):
+            return 1.0
+
+        def is_integer(self):
+            return True
+
+    def class_impostor(cls):
+        return type("Impostor", (object,), {"__class__": property(lambda self: cls)})()
+
+    return [
+        ("str subclass", lambda text="assumptions": LyingStr(text)),
+        ("str impostor", lambda text=None: class_impostor(str)),
+        ("int subclass", lambda value=1: LyingInt(value)),
+        ("int impostor", lambda value=None: class_impostor(int)),
+        ("float subclass", lambda value=2.5: LyingFloat(value)),
+    ]
+
+
+def test_no_published_string_field_accepts_a_hostile_stand_in() -> None:
+    """Sweep every published text field against every impostor shape.
+
+    One sweep instead of one finding per field: a field added later is covered
+    the moment it exists, and a hostile value either fails construction or is
+    stored as exact text -- never stored as the impostor itself.
+    """
+    label_to_factory = dict(_impostors())
+    text_fields = {
+        "stable_id": "initial.target",
+        "stage": "initialization",
+        "category": "initial.target",
+        "summary": "initial target state",
+    }
+
+    for field_name, good in text_fields.items():
+        for label in ("str subclass", "str impostor"):
+            make = label_to_factory[label]
+            kwargs = dict(text_fields)
+            kwargs[field_name] = make(good) if label == "str subclass" else make()
+            try:
+                reference = BmcConstraintRef(
+                    kwargs["stable_id"],
+                    kwargs["stage"],
+                    kwargs["category"],
+                    _GENERATED,
+                    kwargs["summary"],
+                )
+            except (TypeError, ValueError):
+                continue
+            stored = getattr(reference, field_name)
+            assert type(stored) is str, (field_name, label)
+            assert stored == good, (field_name, label)
+
+
+def test_no_published_numeric_field_accepts_a_hostile_stand_in() -> None:
+    """The same sweep for the published integer fields."""
+    label_to_factory = dict(_impostors())
+
+    for field_name in ("frames", "steps"):
+        for label in ("int subclass", "int impostor", "float subclass"):
+            value = label_to_factory[label](1)
+            try:
+                reference = BmcConstraintRef(
+                    "initial.target",
+                    "initialization",
+                    "initial.target",
+                    _GENERATED,
+                    "s",
+                    **{field_name: [value]},
+                )
+            except (TypeError, ValueError):
+                continue
+            published = getattr(reference, field_name)
+            assert [type(entry) for entry in published] == [int], (field_name, label)
+            assert published == (1,), (field_name, label)

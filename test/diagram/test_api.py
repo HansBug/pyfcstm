@@ -1230,15 +1230,27 @@ def test_failed_launch_leaves_a_document_another_caller_may_be_showing(
 
     monkeypatch.setattr(api, "_open_standalone_window", launcher)
 
+    # Outcomes are collected and asserted on the main thread. A `pytest.raises`
+    # inside a worker only produces PytestUnhandledThreadExceptionWarning, so a
+    # failing thread that raised nothing at all still left this green.
     def failing():
-        with pytest.raises(DiagramUnavailableError):
+        try:
             view.show()
+            outcome["failing"] = "returned without raising"
+        except DiagramUnavailableError:
+            outcome["failing"] = "raised"
+        except BaseException as unexpected:  # noqa: BLE001 - reported below
+            outcome["failing"] = "raised %r" % (unexpected,)
 
     def succeeding():
-        inside_launch.wait(30)
-        outcome["path"] = view.show()
-        outcome["existed"] = outcome["path"].exists()
-        peer_finished.set()
+        try:
+            inside_launch.wait(30)
+            outcome["path"] = view.show()
+            outcome["existed"] = outcome["path"].exists()
+        except BaseException as unexpected:  # noqa: BLE001 - reported below
+            outcome["succeeding"] = "raised %r" % (unexpected,)
+        finally:
+            peer_finished.set()
 
     threads = [
         threading.Thread(target=failing, name="failing"),
@@ -1248,7 +1260,10 @@ def test_failed_launch_leaves_a_document_another_caller_may_be_showing(
         thread.start()
     for thread in threads:
         thread.join(60)
+        assert not thread.is_alive(), "%s did not finish" % thread.name
 
+    assert outcome.get("succeeding") is None, outcome.get("succeeding")
+    assert outcome.get("failing") == "raised", outcome.get("failing")
     assert outcome.get("existed") is True
     assert outcome["path"].exists(), (
         "the failing caller removed a document the successful one is showing"

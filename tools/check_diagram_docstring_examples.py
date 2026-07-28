@@ -101,24 +101,51 @@ def _unreachable(candidate: str) -> Optional[str]:
             found = False
         if not found:
             continue
-        target = importlib.import_module(dotted)
+        try:
+            target = importlib.import_module(dotted)
+        except ImportError as error:
+            # A spec can exist for a module that fails to import, typically an
+            # optional dependency. That is a readable report, not a traceback
+            # out of the gate.
+            return "%s could not be imported: %s" % (dotted, error)
+        # `resolved` advances with `target`, so the report names the object
+        # that is actually missing the attribute. Reporting the longest
+        # importable prefix instead blamed the module for a class's missing
+        # method, and `--check` did not notice because it only asserted
+        # whether something was reported.
+        resolved = dotted
         for attribute in parts[stop:]:
             if not hasattr(target, attribute):
-                return "%s has no %s" % (dotted, attribute)
+                return "%s has no %s" % (resolved, attribute)
             target = getattr(target, attribute)
+            resolved = "%s.%s" % (resolved, attribute)
         return None
     return "%s does not import" % parts[0]
 
 
 _SELF_CHECK_CASES = (
-    # (path, must be reported)
-    ("pyfcstm.diagram.engine.DiagramUnavailableError", False),
-    ("pyfcstm.diagram.api.Diagram.to_html", False),
-    ("pyfcstm.model.StateMachine", False),
-    ("pyfcstm.diagram.errors.DiagramUnavailableError", True),
-    ("pyfcstm.diagram.engine.ThisClassDoesNotExistAtAll", True),
-    ("pyfcstm.diagram.engine.NotReal.DiagramUnavailableError", True),
-    ("pyfcstm.nope.Thing", True),
+    # (path, expected report or None). The text is pinned, not just whether
+    # something was said: the report used to name the longest importable
+    # prefix rather than the object actually missing the attribute, blaming a
+    # module for a class's missing method, and a report/no-report assertion
+    # could not see that.
+    ("pyfcstm.diagram.engine.DiagramUnavailableError", None),
+    ("pyfcstm.diagram.api.Diagram.to_html", None),
+    ("pyfcstm.model.StateMachine", None),
+    ("pyfcstm.diagram.errors.DiagramUnavailableError", "pyfcstm.diagram has no errors"),
+    (
+        "pyfcstm.diagram.engine.ThisClassDoesNotExistAtAll",
+        "pyfcstm.diagram.engine has no ThisClassDoesNotExistAtAll",
+    ),
+    (
+        "pyfcstm.diagram.engine.NotReal.DiagramUnavailableError",
+        "pyfcstm.diagram.engine has no NotReal",
+    ),
+    (
+        "pyfcstm.diagram.api.Diagram.nope",
+        "pyfcstm.diagram.api.Diagram has no nope",
+    ),
+    ("pyfcstm.nope.Thing", "pyfcstm has no nope"),
 )
 
 
@@ -138,17 +165,10 @@ def _self_check() -> None:
     :raises SystemExit: If any case resolves the wrong way.
     """
     wrong = []
-    for candidate, should_report in _SELF_CHECK_CASES:
-        reported = _unreachable(candidate) is not None
-        if reported != should_report:
-            wrong.append(
-                "%s: expected %s, got %s"
-                % (
-                    candidate,
-                    "a report" if should_report else "no report",
-                    "a report" if reported else "no report",
-                )
-            )
+    for candidate, expected in _SELF_CHECK_CASES:
+        reported = _unreachable(candidate)
+        if reported != expected:
+            wrong.append("%s: expected %r, got %r" % (candidate, expected, reported))
     if wrong:
         raise SystemExit("path resolver self-check failed:\n  " + "\n  ".join(wrong))
     print("path resolver self-check: %d cases passed" % len(_SELF_CHECK_CASES))

@@ -83,13 +83,26 @@ def _check_style_sources(html: str, policy: str, styles: List[str]) -> None:
         raise SystemExit(
             "style-src must carry exactly one nonce, found %d" % len(nonces)
         )
-    unexpected = [
-        item for item in sources if item not in expected_hashes and item not in nonces
-    ]
-    if unexpected:
+    # Compared as a multiset, not filtered for surprises. Rejecting only the
+    # unexpected let an embedded stylesheet's hash be moved out of `style-src`
+    # into a directive a browser ignores: the remaining nonce authorises
+    # nothing, since the `<style>` tag carries no nonce attribute, so the CSS
+    # is blocked while every check still reported passing. Measured.
+    if sorted(sources) != sorted(list(expected_hashes) + nonces):
+        missing = sorted(expected_hashes - set(sources))
+        unexpected = sorted(
+            item
+            for item in sources
+            if item not in expected_hashes and item not in nonces
+        )
         raise SystemExit(
-            "style-src carries sources beyond the embedded style hashes and its "
-            "nonce: %s" % ", ".join(unexpected)
+            "style-src must list exactly the %d embedded style hash(es) and one "
+            "nonce; missing %s, unexpected %s"
+            % (
+                len(expected_hashes),
+                ", ".join(missing) or "nothing",
+                ", ".join(unexpected) or "nothing",
+            )
         )
     declared = nonces[0][len("'nonce-") : -1]
     # All occurrences, not the first: the last assignment is what the runtime
@@ -180,10 +193,6 @@ def main() -> None:
                 "CSP must declare %s as exactly %s, found %r"
                 % (directive, " ".join(expected), declared[0].strip())
             )
-    if args.require_wasm_unsafe_eval and "wasm-unsafe-eval" not in policy:
-        # A source keyword rather than a directive, so it is looked for inside
-        # `script-src`, whose full contents are pinned by the hash check.
-        raise SystemExit("CSP is missing wasm-unsafe-eval")
     if args.forbid_unsafe_eval and re.search(
         r"(?:^|[\s;])'unsafe-eval'(?:$|[\s;])", policy, re.IGNORECASE
     ):
@@ -195,13 +204,38 @@ def main() -> None:
     scripts = re.findall(
         r"<script[^>]*>(.*?)</script>", html, re.DOTALL | re.IGNORECASE
     )
-    if args.require_script_hashes:
-        for script in scripts:
-            digest = base64.b64encode(
-                hashlib.sha256(script.encode("utf-8")).digest()
-            ).decode("ascii")
-            if "sha256-%s" % digest not in policy:
-                raise SystemExit("CSP script hash does not match embedded script")
+    if args.require_script_hashes or args.require_wasm_unsafe_eval:
+        # Parsed, not searched for anywhere in the policy. Searching accepted a
+        # document whose real directive was `script-src 'none'` -- every inline
+        # script blocked, the viewer dead -- while the hashes and
+        # `wasm-unsafe-eval` sat in an unknown directive a browser ignores.
+        # Measured: 16 checks passed on exactly that document.
+        declared = re.findall(r"(?:^|;)\s*script-src\s+([^;]*)", policy, re.IGNORECASE)
+        if len(declared) != 1:
+            raise SystemExit(
+                "CSP declares script-src %d times; it must appear exactly once"
+                % len(declared)
+            )
+        sources = declared[0].split()
+        expected_script_sources = [
+            "'sha256-%s'"
+            % base64.b64encode(hashlib.sha256(script.encode("utf-8")).digest()).decode(
+                "ascii"
+            )
+            for script in scripts
+        ]
+        if args.require_wasm_unsafe_eval:
+            expected_script_sources.append("'wasm-unsafe-eval'")
+        if sorted(sources) != sorted(expected_script_sources):
+            raise SystemExit(
+                "script-src must list exactly the hashes of the %d embedded "
+                "scripts%s, found %r"
+                % (
+                    len(scripts),
+                    " plus 'wasm-unsafe-eval'" if args.require_wasm_unsafe_eval else "",
+                    declared[0].strip(),
+                )
+            )
     # Match attributes too: a `<style nonce="...">` block is accepted by the
     # policy but was invisible to the hash check, which is the one shape the
     # nonce makes newly loadable. Script bodies are removed first because the

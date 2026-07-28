@@ -2238,6 +2238,33 @@ class Diagram:
         :type window_size: tuple[int, int]
         :return: The generated HTML path.
         :rtype: pathlib.Path
+        :raises ValueError: If ``window_size`` is not two positive integers.
+        :raises pyfcstm.diagram.DiagramAssetError: If a bundled viewer, font or
+            resvg asset is missing or unreadable.
+        :raises OSError: If the document cannot be written, for example a
+            missing parent directory or a read-only destination.
+        :raises pyfcstm.diagram.DiagramUnavailableError: If ``open_window`` is
+            set and no Chromium-family browser can be launched. The document is
+            written before the launch is attempted, so an explicit ``output``
+            still holds a usable viewer afterwards.
+
+        Example::
+
+            >>> import tempfile
+            >>> from pathlib import Path
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> view = load_state_machine_from_text('state Root;').diagram()
+            >>> with tempfile.TemporaryDirectory() as folder:
+            ...     # open_window=False writes the viewer without needing a
+            ...     # browser, which is also what a headless caller wants.
+            ...     written = view.show(Path(folder) / 'viewer.html',
+            ...                         open_window=False)
+            ...     written.is_file()
+            True
+            >>> view.show(window_size=(0, 900))
+            Traceback (most recent call last):
+            ...
+            ValueError: window_size must contain exactly two positive integers
         """
         dimensions = _coerce_window_size(window_size)
         if output is None:

@@ -2569,3 +2569,83 @@ def test_human_vocabularies_are_transcribed_from_the_frozen_transcripts() -> Non
     assert set(CLASSIFICATION_PHRASES) == set(CLASSIFICATION_SCOPES)
     assert all(phrase.strip() for phrase in CLASSIFICATION_PHRASES.values())
     assert len(set(CLASSIFICATION_PHRASES.values())) == len(CLASSIFICATION_PHRASES)
+
+
+@pytest.mark.unittest
+def test_reserved_placeholder_fields_are_pinned() -> None:
+    """Guard the two reserved containers the impostor sweep skips.
+
+    The sweep skips them because no published explanation can carry one yet, so
+    they have no per-field JSON contract for it to check.  That skip is only safe
+    while their field lists are pinned somewhere: both are named in the module's
+    exports and documented, and both can be constructed, so a field added to
+    either would otherwise reach the published surface with nothing checking it.
+    """
+    import dataclasses
+
+    from pyfcstm.bmc.explanation import (
+        UNBUILT_SLOTS,
+        BmcConflictNarrative,
+        BmcConflictProof,
+    )
+
+    assert set(UNBUILT_SLOTS) == {"proof", "narrative"}
+    assert [f.name for f in dataclasses.fields(BmcConflictNarrative)] == [
+        "derivation_status",
+        "headline",
+        "summary",
+    ]
+    assert [f.name for f in dataclasses.fields(BmcConflictProof)] == [
+        "scope",
+        "root_id",
+    ]
+    # Both remain refused on a published explanation, which is what makes the
+    # sweep's skip correct rather than merely convenient.  The two are refused for
+    # different reasons, so each is checked against its own message.
+    from pyfcstm.bmc.explanation import BmcInfeasibilityExplanation
+
+    core = BmcConflictCore(
+        "initialization_component",
+        "C_init restricted to the conflicting groups",
+        "source_group",
+        "raw",
+        "not_proven",
+        (
+            BmcCoreItem(
+                BmcConstraintRef(
+                    "initial.variable.x",
+                    "initialization",
+                    "initial.variable",
+                    BmcSourceRef("generated", None, None),
+                    "initial fact",
+                    refs={"frame": 0},
+                ),
+                "initial_fact",
+                None,
+                False,
+                {"kind": "structural_constraint"},
+                "initial fact",
+                False,
+            ),
+        ),
+    )
+    with pytest.raises(ValueError, match="only published when 'proof' was requested"):
+        BmcInfeasibilityExplanation(
+            "formal",
+            "formal",
+            "partial",
+            "initialization_self_conflict",
+            core=core,
+            reason="sound source core published without a minimality proof",
+            proof=BmcConflictProof("initialization_component", "root"),
+        )
+    with pytest.raises(ValueError, match="narrative is not produced at this stage"):
+        BmcInfeasibilityExplanation(
+            "formal",
+            "formal",
+            "partial",
+            "initialization_self_conflict",
+            core=core,
+            reason="sound source core published without a minimality proof",
+            narrative=BmcConflictNarrative("proven", "headline", "summary"),
+        )

@@ -2455,7 +2455,44 @@ def test_human_explanation_matches_the_frozen_transcript_line_shapes() -> None:
         ("proof", "proof"),
     ], legal_pairs
 
-    def depth_lines(requested, achieved):
+    # The decision itself is a predicate, so every pair is checked against it --
+    # including the one whose object cannot be built here, because it needs a slot
+    # that is named as not yet built.  Naming that pair as unconstructible and
+    # skipping it left the gate open: a widening that only added that one pair
+    # passed the whole suite.
+    import pyfcstm.bmc.explanation as explanation_module
+
+    from pyfcstm.bmc.explanation import (
+        _DELIVERY_SIGNATURES,
+        UNBUILT_SLOTS,
+        depth_line_is_needed,
+    )
+
+    legal_pairs = sorted({(sig[0], sig[1]) for sig in _DELIVERY_SIGNATURES})
+    assert legal_pairs == [
+        ("formal", "formal"),
+        ("formal", "none"),
+        ("proof", "formal"),
+        ("proof", "none"),
+        ("proof", "proof"),
+    ], legal_pairs
+
+    assert {pair: depth_line_is_needed(*pair) for pair in legal_pairs} == {
+        ("formal", "formal"): False,
+        ("formal", "none"): False,
+        ("proof", "formal"): True,
+        ("proof", "none"): False,
+        ("proof", "proof"): False,
+    }
+
+    # Every matrix row reaching an achieved "proof" also needs a proof slot, and
+    # that slot is named as not yet built, so that pair has no object here.
+    assert "proof" in UNBUILT_SLOTS
+    needs_unbuilt_slot = {("proof", "proof")}
+    assert needs_unbuilt_slot <= set(legal_pairs)
+    buildable = [pair for pair in legal_pairs if pair not in needs_unbuilt_slot]
+
+    def render_pair(requested, achieved):
         # Each pair needs a payload the matrix accepts for it: a core when a
         # depth was achieved, a bare reason when none was.
         if achieved == "none":
@@ -2482,7 +2519,7 @@ def test_human_explanation_matches_the_frozen_transcript_line_shapes() -> None:
                 ),
                 reason="sound source core published without a minimality proof",
             )
-        rendered = render(
+        return render(
             BmcInfeasibilityExplanation(
                 requested,
                 achieved,
@@ -2491,79 +2528,46 @@ def test_human_explanation_matches_the_frozen_transcript_line_shapes() -> None:
                 **extra,
             )
         )
-        return [line for line in rendered if line.startswith("Explanation depth:")]
 
-    # The decision itself is a predicate, so every pair is checked against it --
-    # including the one whose object cannot be built here, because it needs a slot
-    # that is named as not yet built.  Naming that pair as unconstructible and
-    # skipping it left the gate open: a widening that only added that one pair
-    # passed the whole suite.
-    from pyfcstm.bmc.explanation import UNBUILT_SLOTS, depth_line_is_needed
+    def depth_lines(requested, achieved):
+        return [
+            line
+            for line in render_pair(requested, achieved)
+            if line.startswith("Explanation depth:")
+        ]
 
-    assert {pair: depth_line_is_needed(*pair) for pair in legal_pairs} == {
-        ("formal", "formal"): False,
-        ("formal", "none"): False,
-        ("proof", "formal"): True,
-        ("proof", "none"): False,
-        ("proof", "proof"): False,
-    }
-
-    # Pinning the predicate is not enough on its own: the renderer could inline
-    # its own condition and the table above would still pass, because the one
-    # pair the two would disagree on is the pair whose object cannot be built.
-    # So the wiring itself is pinned -- replacing the predicate has to change the
-    # rendered output.
-    import pyfcstm.bmc.explanation as explanation_module
-
+    # Pinning the predicate is not enough on its own: the renderer could decide
+    # for itself and the table above would still pass, because the pair the two
+    # disagree on is the pair with no object.  So the wiring is pinned too, and
+    # for every buildable pair rather than one of them -- checking a single pair
+    # let a renderer consult the predicate for that pair and inline the decision
+    # for the rest.
     real_predicate = explanation_module.depth_line_is_needed
-    try:
-        explanation_module.depth_line_is_needed = lambda requested, achieved: True
-        forced = render(
-            BmcInfeasibilityExplanation(
-                "formal",
-                "formal",
-                "partial",
-                "initialization_self_conflict",
-                core=BmcConflictCore(
-                    "initialization_component",
-                    "C_init restricted to the conflicting groups",
-                    "source_group",
-                    "raw",
-                    "not_proven",
-                    (
-                        authored(
-                            "machine.fcstm",
-                            Span(1, 1, 1, 15),
-                            "initial.variable",
-                            "initialization",
-                            "initial_fact",
-                            "persistent initializer: x = 0",
-                            {"frame": 0, "variable": "x"},
-                        ),
-                    ),
-                ),
-                reason="sound source core published without a minimality proof",
+    for requested, achieved in buildable:
+        for forced in (True, False):
+            try:
+                explanation_module.depth_line_is_needed = (
+                    lambda _requested, _achieved, value=forced: value
+                )
+                lines_for_pair = depth_lines(requested, achieved)
+            finally:
+                explanation_module.depth_line_is_needed = real_predicate
+            expected_line = "Explanation depth: requested %s, achieved %s" % (
+                requested,
+                achieved,
             )
-        )
-    finally:
-        explanation_module.depth_line_is_needed = real_predicate
-    # The real predicate says no for this pair, so the line can only be here if
-    # the renderer asked the predicate rather than deciding for itself.
-    assert not depth_line_is_needed("formal", "formal")
-    assert "Explanation depth: requested formal, achieved formal" in forced
+            assert lines_for_pair == ([expected_line] if forced else []), (
+                requested,
+                achieved,
+                forced,
+            )
 
-    # The rendered output is then checked for every pair whose object the current
-    # slots allow, so the predicate and the renderer cannot disagree.
-    assert "proof" in UNBUILT_SLOTS
-    needs_unbuilt_slot = {("proof", "proof")}
-    assert needs_unbuilt_slot <= set(legal_pairs)
-
-    for requested, achieved in legal_pairs:
-        if (requested, achieved) in needs_unbuilt_slot:
-            continue
+    # With the real predicate back, the rendered output matches it for every
+    # buildable pair, so the predicate and the renderer cannot disagree.
+    for requested, achieved in buildable:
         expected = (
             ["Explanation depth: requested %s, achieved %s" % (requested, achieved)]
-            if achieved != "none" and requested != achieved
+            if depth_line_is_needed(requested, achieved)
             else []
         )
         assert depth_lines(requested, achieved) == expected, (requested, achieved)

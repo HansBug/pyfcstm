@@ -2098,6 +2098,83 @@ def test_human_explanation_renders_every_published_shape() -> None:
     assert "Classification: initialization is internally inconsistent" in lines
     assert any("No conflict core or causal chain" in line for line in lines)
 
+    # The frozen contract forbids hiding a necessary member's position: a
+    # generated support group has to appear together with its frame/step/refs
+    # rather than being tidied away, and the transcript prints the position
+    # inline after the location.
+    positioned = BmcConstraintRef(
+        "transition.0000",
+        "kernel",
+        "transition.step",
+        generated,
+        "transition relation",
+        steps=(0,),
+        refs={"step": 0, "kind": "state"},
+    )
+    lines = render(
+        BmcInfeasibilityExplanation(
+            "formal",
+            "formal",
+            "partial",
+            "kernel_conflict",
+            core=core(
+                (
+                    BmcCoreItem(
+                        positioned,
+                        "transition_rule",
+                        None,
+                        False,
+                        {"kind": "structural_constraint"},
+                        "transition relation",
+                        False,
+                    ),
+                ),
+                scope="kernel",
+            ),
+            reason="minimization skipped",
+        )
+    )
+    assert "  1. generated transition.step at step 0" in lines
+    assert "     kind state" in lines
+
+    # Frames, plural positions and index keys that are already inline.
+    multi = BmcConstraintRef(
+        "assumption.0000",
+        "assumptions",
+        "assumption.frame",
+        generated,
+        "frame assumption",
+        frames=(0, 1),
+        steps=(2,),
+        refs={"frame": 0, "assumption": 3},
+    )
+    lines = render(
+        BmcInfeasibilityExplanation(
+            "formal",
+            "formal",
+            "partial",
+            "assumptions_self_conflict",
+            core=core(
+                (
+                    BmcCoreItem(
+                        multi,
+                        "assumption",
+                        None,
+                        False,
+                        {"kind": "structural_constraint"},
+                        "frame assumption",
+                        False,
+                    ),
+                )
+            ),
+            reason="minimization skipped",
+        )
+    )
+    assert "  1. generated assumption.frame at frames 0, 1 and step 2" in lines
+    assert "     assumption 3" in lines
+    # ``frame`` is already shown inline, so it is not repeated below.
+    assert not any(line.strip().startswith("frame 0") for line in lines)
+
     # Every classification phrase is exercised, so changing any one of them
     # fails here rather than only the one the fixtures happen to produce.
     from pyfcstm.bmc.explanation import CLASSIFICATION_SCOPES

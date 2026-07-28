@@ -57,6 +57,7 @@ from .base import CONTEXT_SETTINGS, ClickErrorException, command_wrap
 
 if TYPE_CHECKING:  # pragma: no cover - static imports are never executed.
     from ..bmc import (
+        BmcConstraintRef,
         BmcPropertyFormula,
         BmcReplayResult,
         BmcSolveResult,
@@ -476,6 +477,65 @@ _CLASSIFICATION_PHRASES = {
 }
 
 
+def _human_core_position(constraint: "BmcConstraintRef") -> str:
+    """Return the frame or step position a core member constrains.
+
+    The frozen contract forbids hiding a mathematically necessary member's
+    position, and its own transcript prints it inline after the location, so a
+    reader can tell which macro-step the constraint belongs to.
+
+    :param constraint: Published constraint reference of one core member.
+    :type constraint: pyfcstm.bmc.explanation.BmcConstraintRef
+    :return: Text such as ``at step 0``, or ``""`` when the member constrains no
+        particular position.
+    :rtype: str
+
+    Example::
+
+        >>> _human_core_position.__name__
+        '_human_core_position'
+    """
+    parts = []
+    if constraint.frames:
+        label = "frame" if len(constraint.frames) == 1 else "frames"
+        parts.append("%s %s" % (label, ", ".join(str(f) for f in constraint.frames)))
+    if constraint.steps:
+        label = "step" if len(constraint.steps) == 1 else "steps"
+        parts.append("%s %s" % (label, ", ".join(str(s) for s in constraint.steps)))
+    if not parts:
+        return ""
+    return "at %s" % " and ".join(parts)
+
+
+def _human_core_structural_refs(constraint: "BmcConstraintRef") -> str:
+    """Return the builder metadata a machine reader is told to consume.
+
+    ``frame`` and ``step`` already appear in the position line, so only the other
+    keys are repeated here; showing them keeps the human report from hiding what
+    the JSON carries.
+
+    :param constraint: Published constraint reference of one core member.
+    :type constraint: pyfcstm.bmc.explanation.BmcConstraintRef
+    :return: Text such as ``assumption 0, kind state``, or ``""`` when the member
+        records no other metadata.
+    :rtype: str
+
+    Example::
+
+        >>> _human_core_structural_refs.__name__
+        '_human_core_structural_refs'
+    """
+    positional = {"frame", "frames", "step", "steps"}
+    rendered = [
+        "%s %s" % (key, constraint.refs[key])
+        for key in sorted(constraint.refs)
+        if key not in positional
+    ]
+    if not rendered:
+        return ""
+    return ", ".join(rendered)
+
+
 def _human_explanation(execution: "_BmcExecution") -> List[str]:
     """Render the optional infeasibility explanation for a human reader.
 
@@ -535,10 +595,20 @@ def _human_explanation(execution: "_BmcExecution") -> List[str]:
                     source.kind,
                     item.constraint.category,
                 )
+            # The frozen contract is explicit that a generated support group must
+            # be shown together with its frame/step/refs rather than hidden for
+            # tidiness, and its own transcript prints the position inline as
+            # "... at step 0".
+            position = _human_core_position(item.constraint)
+            if position:
+                location = "%s %s" % (location, position)
             lines.append("  %d. %s" % (index, location))
             detail = item.source_excerpt or item.human_text
             if detail:
                 lines.append("     %s" % detail)
+            structural = _human_core_structural_refs(item.constraint)
+            if structural:
+                lines.append("     %s" % structural)
         lines.append("")
         if core.subset_minimality == "proven":
             lines.append(

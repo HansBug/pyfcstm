@@ -1009,20 +1009,43 @@ def _umask_default_mode(directory: Path) -> int:
     :return: Permission bits, already masked.
     :rtype: int
     """
-    handle, probe = tempfile.mkstemp(prefix=".pyfcstm-umask-", dir=str(directory))
+    if os.name == "nt":
+        # Windows has no umask, and os.chmod there can only toggle the
+        # read-only bit, so there is no default to discover and 0666 is what
+        # the caller would apply anyway. Probing would mean two file creations
+        # and two deletions per write to compute a constant.
+        return 0o666
+    # mkstemp reserves a name nothing else can take; it forces 0600, so the
+    # observation happens on a sibling opened with 0666 and left for the kernel
+    # to mask.
+    handle, reserved = tempfile.mkstemp(prefix=".pyfcstm-umask-", dir=str(directory))
     os.close(handle)
+    observed = reserved + ".probe"
     try:
-        # mkstemp forces 0600, so ask for 0666 explicitly and let the kernel
-        # subtract the umask exactly as it would for the real file.
-        os.chmod(probe, 0o666)
-        widened = os.open(probe + ".probe", os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o666)
-        os.close(widened)
-        try:
-            return os.stat(probe + ".probe").st_mode & 0o7777
-        finally:
-            os.unlink(probe + ".probe")
+        descriptor = os.open(observed, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o666)
+        os.close(descriptor)
+        return os.stat(observed).st_mode & 0o7777
     finally:
-        os.unlink(probe)
+        for path in (observed, reserved):
+            try:
+                os.unlink(path)
+            except FileNotFoundError:
+                # Already gone, which is the ordinary outcome for the reserved
+                # name once the sibling has been removed.
+                pass
+            except OSError as cleanup_error:
+                # A throwaway used to read a number must not fail the caller's
+                # write -- an indexer or scanner holding the handle raises
+                # PermissionError here, and that turned a write that would
+                # otherwise have succeeded into a failure with no file
+                # produced. Warned rather than dropped, for the same reason the
+                # atomic writers warn: a leaked file nobody is told about is
+                # one that accumulates.
+                warnings.warn(
+                    "could not remove the probe file %s: %s" % (path, cleanup_error),
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
 
 
 def _atomic_write_text(

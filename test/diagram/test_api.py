@@ -1073,3 +1073,50 @@ def test_atomic_writes_stay_quiet_when_cleanup_works(tmp_path, monkeypatch):
             api._atomic_write_text(tmp_path / "other.html", "x")
     assert [str(item.message) for item in caught] == []
     assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX file modes")
+def test_umask_probe_failure_does_not_fail_the_write(tmp_path, monkeypatch):
+    # The probe exists only to read a number. Removing it used to be able to
+    # raise, and an indexer or scanner holding the handle -- routine on Windows
+    # -- then turned a write that would otherwise have succeeded into a failure
+    # with no file produced at all.
+    from pyfcstm.diagram import api
+
+    real_unlink = os.unlink
+
+    def picky_unlink(path, *args, **kwargs):
+        if ".pyfcstm-umask-" in str(path):
+            raise PermissionError("in use by another process")
+        return real_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "unlink", picky_unlink)
+    target = tmp_path / "doc.html"
+    with pytest.warns(RuntimeWarning, match="could not remove the probe file"):
+        api._atomic_write_text(target, "x" * 128)
+    assert target.read_text(encoding="utf-8") == "x" * 128
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX file modes")
+def test_umask_probe_never_widens_the_process(tmp_path, monkeypatch):
+    # Reading the umask by clearing it is a process-wide race. The mode a new
+    # file lands with must still be right, and `os.umask` must not be called at
+    # all to work it out.
+    from pyfcstm.diagram import api
+
+    calls = []
+    real_umask = os.umask
+
+    def counting_umask(value):
+        calls.append(value)
+        return real_umask(value)
+
+    monkeypatch.setattr(os, "umask", counting_umask)
+    previous = real_umask(0o027)
+    try:
+        target = tmp_path / "doc.html"
+        api._atomic_write_text(target, "x")
+        assert stat.S_IMODE(target.stat().st_mode) == 0o640
+    finally:
+        real_umask(previous)
+    assert calls == [], "the umask must not be touched to read it"

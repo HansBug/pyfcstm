@@ -800,7 +800,7 @@ def _trial_solver(groups: Sequence["BmcTrackedConstraint"]) -> z3.Solver:
 
     Example::
 
-        >>> isinstance(_trial_solver(()), z3.SolverRef)
+        >>> _trial_solver(()).check() == z3.sat
         True
     """
     solver = z3.Solver()

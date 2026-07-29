@@ -1,5 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Passing this schema is a structural result, not a semantic one. Draft 2020-12 cannot express nine published rules, so a validated payload may still be refused by the Python constructors: uniqueness over items[*].constraint.stable_id, the equality of refinement_reason and explanation.reason, the metadata nesting bound, the digit limit on published integers, a duration inside the float range, non-finite numbers, values with no JSON counterpart, one recorded deletion per member for proven minimality, and non-string object keys. A consumer that needs those guarantees must check them separately.",
   "$id": "https://github.com/HansBug/pyfcstm/blob/main/docs/source/reference/bmc_results/bmc_cli.schema.json",
   "title": "PyFCSTM BMC CLI result",
   "description": "Structured BMC JSON envelope emitted by pyfcstm bmc --json.",
@@ -1337,7 +1338,8 @@
           ]
         },
         "refinement_reason": {
-          "$ref": "#/$defs/nullableString"
+          "$ref": "#/$defs/nullableString",
+          "$comment": "Draft 2020-12 cannot compare two arbitrary strings, so it cannot check that this equals explanation.reason; the constructor enforces that equality."
         },
         "refinement_checks": {
           "type": "array",
@@ -5033,7 +5035,8 @@
           "$comment": "Both the schema and the Python constructor accept a whole-valued 1.0 here and canonicalize it to 1, because a validator judging \"integer\" by numeric value cannot tell it from 1. The constructor additionally requires an array and refuses bool, fractional and negative entries, which this schema also refuses."
         },
         "refs": {
-          "type": "object"
+          "type": "object",
+          "$comment": "Same limits as normalized_fact: nesting depth, integer digit count, non-finite numbers, values with no JSON counterpart and non-string object keys are all outside Draft 2020-12 and are refused by the constructor."
         }
       }
     },
@@ -5085,7 +5088,7 @@
               ]
             }
           },
-          "$comment": "Machine consumers dispatch on kind rather than on human text, so the tag is required.  Later stages extend the enum as recognizers land."
+          "$comment": "Machine consumers dispatch on kind rather than on human text, so the tag is required.  Later stages extend the enum as recognizers land. Draft 2020-12 has no depth keyword, no way to bound an integer's digit count, and no way to see a non-finite number, a value with no JSON counterpart or a non-string object key -- a payload reaching a validator was already parsed from JSON text. The constructor refuses all of those at every nesting depth."
         },
         "human_text": {
           "type": "string",
@@ -5927,7 +5930,8 @@
           "$ref": "#/$defs/nullableString"
         },
         "elapsed_ms": {
-          "$ref": "#/$defs/nullableNumber"
+          "$ref": "#/$defs/nullableNumber",
+          "$comment": "Draft 2020-12 bounds a number's value, but an integer past the float range is still a legal JSON number; a duration has to be representable as one, so the constructor refuses it."
         }
       },
       "allOf": [

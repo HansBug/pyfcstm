@@ -540,9 +540,8 @@ def _require_flag(value: Any, label: str) -> bool:
         >>> _require_flag(False, "editable")
         False
     """
-    # ``bool`` cannot be subclassed and both values are singletons, so identity
-    # is the exact test.  An object merely claiming to be a bool through
-    # ``__class__`` satisfies ``isinstance`` and has no JSON counterpart.
+    # ``bool`` cannot be subclassed and both values are singletons, so identity is
+    # the exact test and needs no isinstance fallback.
     if value is not True and value is not False:
         raise TypeError("%s must be a bool, got %r." % (label, value))
     return value

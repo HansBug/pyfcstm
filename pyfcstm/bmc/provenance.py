@@ -394,10 +394,9 @@ def _require_json_mapping(value: Any, label: str) -> Dict[str, Any]:
         # identity is the exact test.  It comes first because a bool is also an
         # int.
         if entry is True or entry is False:
+            # ``bool`` cannot be subclassed and both values are singletons, so
+            # identity is exact and no further bool check is needed.
             return entry
-        if isinstance(entry, bool):
-            # Only an object claiming to be a bool reaches here.
-            raise TypeError("%s is not JSON-compatible, got %r." % (where, entry))
         if isinstance(entry, int):
             return exact_int(entry, where)
         if isinstance(entry, float):
@@ -434,10 +433,12 @@ def _require_json_mapping(value: Any, label: str) -> Dict[str, Any]:
                 # changes its hash later, and then the published mapping breaks
                 # when something merely looks a key up.
                 plain_key = exact_str(key, "%s key" % where)
-                if plain_key in normalized:
-                    # Two distinct keys that coexist in the caller's mapping can
-                    # canonicalize to one.  Overwriting would drop a piece of
-                    # provenance with nothing recorded, so this fails closed.
+                if plain_key in normalized:  # pragma: no cover - see below.
+                    # Unreachable today: exact_str reads characters and does not
+                    # normalize, so two distinct plain keys never collide, and a
+                    # mapping literal collapses equal ones before this sees them.
+                    # Kept because it fails closed rather than silently dropping a
+                    # recorded fact if a future reader ever does normalize text.
                     raise ValueError(
                         "%s has two keys that both canonicalize to %r."
                         % (where, plain_key)
@@ -821,9 +822,10 @@ class SourceDocumentRegistry:
                 ) from None
             if not plain_path:
                 raise ValueError("%s paths must be non-empty strings." % label)
-            if plain_path in snapshot:
-                # Two distinct keys can hold the same text; silently keeping one
-                # would drop a document with nothing recorded.
+            if plain_path in snapshot:  # pragma: no cover - see the refs key note.
+                # Same shape as the refs key collision above, and unreachable for
+                # the same reason: silently keeping one entry would drop a document
+                # with nothing recorded, so it fails closed instead.
                 raise ValueError(
                     "%s paths contain two entries for %r." % (label, plain_path)
                 )

@@ -270,7 +270,7 @@ def is_printable_ascii(value: str) -> bool:
     try:
         plain = exact_str(value, "value")
     except TypeError:
-        # exact_str refuses an object that only claims to be a str.
+        # exact_str raises for anything that is not a str.
         return False
     return bool(plain) and all("\x20" <= char <= "\x7e" for char in plain)
 
@@ -296,7 +296,7 @@ def category_role(category: str) -> str:
     try:
         plain = exact_str(category, "category")
     except TypeError:
-        # exact_str refuses an object that only claims to be a str.
+        # exact_str raises for anything that is not a str.
         raise ValueError("category %r belongs to no known family." % category) from None
     for prefix, role in CATEGORY_ROLES.items():
         if plain.startswith(prefix):
@@ -335,7 +335,7 @@ def constraint_aggregate(stage: str, category: str) -> str:
         stage = exact_str(stage, "stage")
         category = exact_str(category, "category")
     except TypeError:
-        # exact_str refuses an object that only claims to be a str.
+        # exact_str raises for anything that is not a str.
         raise ValueError(
             "stage %r with category %r matches no aggregate." % (stage, category)
         ) from None
@@ -431,8 +431,8 @@ def index_value(value: Any, label: str) -> int:
     :return: The canonical non-negative integer index.
     :rtype: int
     :raises ValueError: If the value is not a non-negative integer index.
-    :raises TypeError: If the value only claims to be a number, for instance by
-        faking ``__class__``, so that no real value can be read from it.
+    :raises TypeError: If the value is not a real integer, so that no index can
+        be read from it.
 
     Example::
 
@@ -573,7 +573,7 @@ def _require_optional_text(value: Any, label: str) -> Optional[str]:
         # reads the characters the value holds rather than what it reports.
         return exact_str(value, label)
     except TypeError:
-        # exact_str refuses an object that only claims to be a str.
+        # exact_str raises for anything that is not a str.
         raise TypeError(
             "%s must be a string or None, got %r." % (label, value)
         ) from None
@@ -609,7 +609,7 @@ def _require_member(value: Any, allowed: Tuple[str, ...], label: str) -> str:
     try:
         plain = exact_str(value, label)
     except TypeError:
-        # exact_str refuses an object that only claims to be a str.
+        # exact_str raises for anything that is not a str.
         raise ValueError(
             "%s must be one of %s, got %r." % (label, ", ".join(allowed), value)
         ) from None
@@ -721,7 +721,7 @@ class BmcConstraintRef:
             try:
                 plain = exact_str(value, "constraint %s" % name)
             except TypeError:
-                # exact_str refuses an object that only claims to be a str.
+                # exact_str raises for anything that is not a str.
                 raise ValueError(
                     "constraint %s must be a non-empty string." % name
                 ) from None
@@ -1019,7 +1019,7 @@ class BmcConflictCore:
         try:
             plain_summary = exact_str(self.formula_summary, "core formula_summary")
         except TypeError:
-            # exact_str refuses an object that only claims to be a str.
+            # exact_str raises for anything that is not a str.
             raise ValueError(
                 "core formula_summary must be a non-empty string."
             ) from None
@@ -1259,7 +1259,7 @@ class BmcInfeasibilityExplanation:
                             "a duration, got %r." % self.elapsed_ms
                         ) from None
             except TypeError:
-                # exact_* refuse a value that only claims to be a number.
+                # exact_* raise for a value that is not a real number.
                 raise TypeError(
                     "explanation elapsed_ms must be a number or None."
                 ) from None

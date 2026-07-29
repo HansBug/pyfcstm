@@ -72,9 +72,8 @@ def _normalize_line_separators(text: str) -> str:
         >>> _normalize_line_separators("a\\rb")
         'a\\rb'
     """
-    # ``replace`` is an instance method, so a str subclass could return text the
-    # registry never held -- and this text is what every published excerpt is
-    # sliced from.  The exact characters are read first.
+    # This text is what every published excerpt is sliced from, so the exact
+    # characters are read before any rewriting.
     return exact_str(text, "source document text").replace("\r\n", "\n")
 
 
@@ -136,13 +135,10 @@ def _span_offsets(text: str, span: Span) -> Optional[Tuple[int, int]]:
 def exact_str(value: Any, where: str) -> str:
     """Return the plain ``str`` a value actually is.
 
-    ``str`` subclasses may override ``__str__``, ``__eq__`` and ``__hash__``, and
-    an object may even fake ``__class__`` to pass ``isinstance``.  Reading any of
-    those from the instance lets the value being validated answer questions about
-    itself: a subclass could satisfy a frozen-vocabulary check and then publish
-    something else, or carry state that changes its hash after the fact.  Going
-    through the base type's own method reads the real characters and refuses an
-    impostor outright.
+    Published text becomes a JSON value and a solver literal name downstream, so
+    it is stored as an exact ``str`` rather than as whatever was passed in.
+    Reading the characters through the base type's own method keeps the stored
+    text independent of anything a subclass overrides.
 
     :param value: Candidate string.
     :type value: object
@@ -150,21 +146,22 @@ def exact_str(value: Any, where: str) -> str:
     :type where: str
     :return: The same text as an exact ``str``.
     :rtype: str
-    :raises TypeError: If the value is not really a ``str``.
+    :raises TypeError: If the value is not a ``str``.
 
     Example::
 
-        >>> class Shouty(str):
-        ...     def __str__(self):
-        ...         return "LIE"
-        >>> exact_str(Shouty("real"), "stage")
-        'real'
+        >>> exact_str("kernel", "stage")
+        'kernel'
+        >>> exact_str(123, "stage")
+        Traceback (most recent call last):
+          ...
+        TypeError: stage must be a string, got 123.
     """
     try:
         return str.__str__(value)
     except TypeError as err:
         # str.__str__ is a descriptor bound to str, so it refuses anything whose
-        # real type is not str -- including an object faking __class__.
+        # real type is not str.
         raise TypeError("%s must be a string, got %r." % (where, value)) from err
 
 
@@ -557,7 +554,7 @@ class BmcSourceRef:
         try:
             plain_kind = exact_str(self.kind, "BMC source kind")
         except TypeError:
-            # exact_str refuses an object that only claims to be a str.
+            # exact_str raises for anything that is not a str.
             raise ValueError("Unsupported BMC source kind: %r." % self.kind) from None
         if plain_kind not in _SOURCE_KINDS:
             raise ValueError("Unsupported BMC source kind: %r." % self.kind)
@@ -574,7 +571,7 @@ class BmcSourceRef:
             try:
                 plain_path = exact_str(self.path, "BMC source path")
             except TypeError:
-                # exact_str refuses an object that only claims to be a str.
+                # exact_str raises for anything that is not a str.
                 raise ValueError(
                     "BMC source path must be None or a non-empty string."
                 ) from None
@@ -628,6 +625,34 @@ class BmcSourceRef:
         return {"kind": self.kind, "path": self.path, "span": span}
 
 
+#: Every stage and category pairing a tracked group may carry.
+#:
+#: The pair is checked, not each field separately: a stage and a category can
+#: each be individually valid and still describe a group no build emits.  This
+#: class is exported and documented, so a caller can construct such a group
+#: directly -- and then :func:`pyfcstm.bmc.explanation.constraint_aggregate`,
+#: which is equally public, cannot say which aggregate it belongs to.  Refusing
+#: the pair here keeps those two public surfaces from disagreeing.
+#:
+#: Adding a pairing is a deliberate act that belongs in the same change as the
+#: registration that needs it.
+TRACKED_GROUP_PAIRINGS = frozenset(
+    {
+        ("assumptions", "assumption.cardinality"),
+        ("assumptions", "assumption.event"),
+        ("assumptions", "assumption.frame"),
+        ("assumptions", "definedness"),
+        ("initialization", "definedness"),
+        ("initialization", "initial.target"),
+        ("initialization", "initial.variable"),
+        ("initialization", "initial.where"),
+        ("kernel", "domain.frame_state"),
+        ("kernel", "transition.case"),
+        ("kernel", "transition.step"),
+    }
+)
+
+
 @dataclass(frozen=True)
 class BmcTrackedConstraint:
     """One source-group occurrence and its generated Boolean expressions.
@@ -679,7 +704,7 @@ class BmcTrackedConstraint:
         try:
             plain_id = exact_str(self.stable_id, "tracked constraint stable_id")
         except TypeError:
-            # exact_str refuses an object that only claims to be a str.
+            # exact_str raises for anything that is not a str.
             raise ValueError(
                 "tracked constraint stable_id must be non-empty."
             ) from None
@@ -695,12 +720,19 @@ class BmcTrackedConstraint:
                     self, name, exact_str(value, "tracked constraint %s" % name)
                 )
             except TypeError:
-                # exact_str refuses an object that only claims to be a str.
+                # exact_str raises for anything that is not a str.
                 # Storing it would leave the group carrying a value that has no
                 # text for anything downstream to read.
                 raise ValueError(
                     "tracked constraint %s must be a string." % name
                 ) from None
+        if (self.stage, self.category) not in TRACKED_GROUP_PAIRINGS:
+            raise ValueError(
+                "tracked constraint stage/category pairing %r is not one the "
+                "builder registers; add it to TRACKED_GROUP_PAIRINGS in the same "
+                "change as the registration that needs it."
+                % ((self.stage, self.category),)
+            )
         if not all("\x20" <= char <= "\x7e" for char in self.stable_id):
             # The id becomes a solver literal name and a JSON key downstream, so
             # the frozen contract keeps it printable ASCII.  ``str.isascii`` is
@@ -793,7 +825,7 @@ class SourceDocumentRegistry:
             try:
                 plain_path = exact_str(path, "%s path" % label)
             except TypeError:
-                # exact_str refuses an object that only claims to be a str.
+                # exact_str raises for anything that is not a str.
                 raise ValueError(
                     "%s paths must be non-empty strings." % label
                 ) from None

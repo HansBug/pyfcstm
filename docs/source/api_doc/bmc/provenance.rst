@@ -18,6 +18,12 @@ MAX\_METADATA\_DEPTH
 .. autodata:: MAX_METADATA_DEPTH
 
 
+TRACKED\_GROUP\_PAIRINGS
+-----------------------------------------------------
+
+.. autodata:: TRACKED_GROUP_PAIRINGS
+
+
 \_\_all\_\_
 -----------------------------------------------------
 

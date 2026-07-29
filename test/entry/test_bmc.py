@@ -1896,6 +1896,33 @@ def test_bmc_cli_can_request_each_explanation_depth(explain_files) -> None:
     assert explicit_result.exit_code == default_result.exit_code
     assert explicit_payload["result"]["feasibility"]["explanation"] is None
 
+    # The deepest mode is reachable too, and reports the depth it actually
+    # achieved rather than the one that was asked for.  This scenario cannot be
+    # proven subset-minimal, so ``proof`` degrades to ``formal`` -- and the JSON
+    # has to say so, since a caller that asked for a proof and silently received
+    # something weaker would draw a stronger conclusion than the run supports.
+    proof_result, proof_payload = _json_result(
+        Path(model), Path(query), "--explain-infeasibility", "proof"
+    )
+    proof_explanation = proof_payload["result"]["feasibility"]["explanation"]
+
+    assert proof_result.exit_code == 3
+    assert proof_explanation["requested_mode"] == "proof"
+    assert proof_explanation["achieved_mode"] == "formal"
+    assert proof_explanation["classification"] == "assumptions_self_conflict"
+    assert proof_explanation["core"]["scope"] == "assumptions_component"
+
+    # The human report names both depths on one line; the equal-depth runs above
+    # must not carry that line at all.
+    proof_human = _run(
+        "-i", str(model), "-q", str(query), "--explain-infeasibility", "proof"
+    )
+    assert "Explanation depth: requested proof, achieved formal" in proof_human.output
+    formal_human = _run(
+        "-i", str(model), "-q", str(query), "--explain-infeasibility", "formal"
+    )
+    assert "Explanation depth:" not in formal_human.output
+
     # An unknown depth is refused by the option, before any solving happens.
     rejected = _run(
         "-i", str(model), "-q", str(query), "--explain-infeasibility", "bogus"

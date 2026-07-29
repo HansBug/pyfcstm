@@ -1321,6 +1321,22 @@ public constructor argument, a malformed CLI flag, a hostile-looking DSL file), 
 timeout paths, JSON round-trips through the published schema, and cross-checking two public surfaces against each
 other.
 
+Three boundary cases decide themselves the same way every time:
+
+- **A mixed test function is split, not deleted.** When one test holds both in-bounds and out-of-bounds assertions, keep
+  the in-bounds part — folding it into an existing parametrized table where one exists — and remove only the rest.
+  Deleting the whole function silently drops coverage of behavior a real caller reaches.
+- **Removing a test means deciding about its guard.** If the only thing that reached a production guard was an
+  out-of-bounds test, say what happens to the guard in the same change: keep it as stated defensive code, or remove it.
+  Leaving it unmentioned accumulates dead defense that nothing reaches and nothing describes. A guard that a public
+  surface *can* reach is not dead — check whether the type is exported and documented before concluding it is
+  unreachable, because two public surfaces disagreeing about which values exist is itself an in-bounds finding.
+- **Subclassing is in bounds where subclassing is the documented extension point**, such as a generated runtime's
+  override hooks. It is out of bounds only where the value is a closed vocabulary that no caller is invited to extend.
+  Likewise, fault injection is a real degradation path when it simulates what an external dependency actually does — a
+  solver returning `unknown`, a timeout, a failing filesystem call — and is forcing an unreachable branch when it
+  patches an internal invariant helper to a value the system cannot hold.
+
 This is also a **review standard**. A review finding whose only reproduction requires one of the out-of-bounds
 techniques above is not a legitimate finding, and must not be graded as blocking; say so and move on instead of
 building machinery to satisfy it. Genuinely unreachable states need no runtime guard — if a line cannot be reached

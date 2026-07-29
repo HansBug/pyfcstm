@@ -71,6 +71,20 @@ pytestmark = pytest.mark.unittest
             "generated.*path or span",
             id="generated-span",
         ),
+        # A caller can pass the wrong type to a documented constructor, so the
+        # kind and path gates are checked with a plain non-string value.
+        pytest.param(
+            {"kind": 123, "path": None, "span": None},
+            ValueError,
+            "source kind",
+            id="kind-not-a-string",
+        ),
+        pytest.param(
+            {"kind": "fcstm", "path": 123, "span": None},
+            ValueError,
+            "source path",
+            id="path-not-a-string",
+        ),
     ],
 )
 def test_source_reference_rejects_malformed_values(kwargs, exception, message) -> None:
@@ -103,6 +117,11 @@ def test_source_reference_canonicalizes_a_complete_span() -> None:
         pytest.param("category", "", ValueError, "category", id="category"),
         pytest.param("expressions", (), ValueError, "expressions", id="expressions"),
         pytest.param("source_ref", object(), TypeError, "source_ref", id="source-ref"),
+        # The identity fields reject a plain non-string as well as an empty one:
+        # a wrong type is what a caller passes, an impossible one is not.
+        pytest.param("stable_id", 123, ValueError, "stable_id", id="stable-id-type"),
+        pytest.param("stage", 123, ValueError, "stage", id="stage-type"),
+        pytest.param("category", 123, ValueError, "category", id="category-type"),
     ],
 )
 def test_tracked_constraint_rejects_malformed_values(
@@ -2288,6 +2307,52 @@ def _constructed_pairings():
         for group in list(core._tracked_groups) + list(core._tracked_case_groups):
             observed.add((group.stage, group.category))
     return observed
+
+
+@pytest.mark.unittest
+def test_a_tracked_group_and_its_aggregate_agree_on_which_pairings_exist() -> None:
+    """Two public surfaces must not disagree about which groups can exist.
+
+    :class:`~pyfcstm.bmc.provenance.BmcTrackedConstraint` is exported and
+    documented, so a caller can build a group directly rather than through a
+    build.  :func:`~pyfcstm.bmc.explanation.constraint_aggregate` is equally
+    public and answers which aggregate a group belongs to.  Were the constructor
+    to accept a pairing the aggregate cannot classify, a caller following the
+    documentation could hold an object no other published function can read.
+    """
+    import z3
+
+    from pyfcstm.bmc.explanation import constraint_aggregate
+    from pyfcstm.bmc.provenance import TRACKED_GROUP_PAIRINGS
+
+    def build(stage, category):
+        return BmcTrackedConstraint(
+            "group.0000",
+            stage,
+            category,
+            (z3.BoolVal(True),),
+            BmcSourceRef("generated", None, None),
+        )
+
+    # Every pairing the constructor accepts can be classified.
+    for stage, category in sorted(TRACKED_GROUP_PAIRINGS):
+        group = build(stage, category)
+        assert constraint_aggregate(group.stage, group.category)
+
+    # A pairing it does not accept is refused at construction.  Both halves are
+    # individually valid here -- "kernel" is a real stage and "definedness" a
+    # real category -- which is why the pair is what gets checked.
+    assert ("kernel", "definedness") not in TRACKED_GROUP_PAIRINGS
+    with pytest.raises(ValueError, match="is not one the builder registers"):
+        build("kernel", "definedness")
+
+    # And what real builds emit is exactly what the constructor accepts, so the
+    # table cannot drift from the registrations in either direction.
+    observed = _constructed_pairings()
+    assert observed == set(TRACKED_GROUP_PAIRINGS), (
+        set(TRACKED_GROUP_PAIRINGS) - observed,
+        observed - set(TRACKED_GROUP_PAIRINGS),
+    )
 
 
 @pytest.mark.unittest

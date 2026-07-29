@@ -2486,3 +2486,42 @@ def test_a_float_variable_gets_the_same_domain_reading_as_an_integer_one() -> No
     # A real bound is published as a float even when its value is whole, which is
     # what keeps integer-only reasoning off the real domain downstream.
     assert isinstance(fact["value"], float)
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "declarations, assumption",
+    [
+        ("def int x = 0;\ndef int y = 0;", 'var("x") > var("y")'),
+        ("def int x = 0;", 'active("Root.B")'),
+    ],
+    ids=["comparison-between-two-variables", "assertion-about-the-active-state"],
+)
+def test_a_shape_outside_the_reading_keeps_its_identity(
+    declarations, assumption
+) -> None:
+    """Two ordinary assumptions the value reading does not cover.
+
+    A comparison between two variables has no single value to publish, and an
+    assertion about the active state names a frame slot rather than a model
+    variable.  Both are things a reader writes without thinking twice, so the
+    fallback they take is a normal path, not an edge case -- and taking it means
+    saying so, rather than publishing half a fact.
+    """
+    from pyfcstm.bmc.provenance import normalized_fact_for
+
+    groups = _fact_groups(
+        'init state("Root.A") where x == 0; '
+        "assume at 0: %s; "
+        'check reach <= 2: active("Root.B");' % assumption,
+        machine=(
+            "%s\nstate Root { event Go; state A; state B; [*] -> A; A -> B :: Go; }"
+            % declarations
+        ),
+    )
+    fact = normalized_fact_for(groups["assumption.frame"])
+
+    assert fact["kind"] == "structural_constraint"
+    assert fact["category"] == "assumption.frame"
+    # The identity is preserved so a reader can still find the line.
+    assert fact["stable_id"] == groups["assumption.frame"].stable_id

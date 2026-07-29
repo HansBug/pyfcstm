@@ -2228,11 +2228,18 @@ def test_an_interval_is_read_over_the_variable_domain_it_belongs_to(
     """The same two bounds mean different things over integers and reals.
 
     ``x > 0`` with ``x < 1`` admits nothing over the integers and every value
-    between them over the reals.  Reading a real bound with integer tightening
-    would report a conflict the query does not have, which is the one failure a
-    narrative must never produce: a derivation that is fluent and wrong.  The
-    recognizer marks the domain by publishing whole real values as floats, and
-    this is the check that the mark is actually used.
+    between them over the reals, and the recognizer marks which domain it is in
+    by publishing whole real values as floats.
+
+    What this protects is the helper's own stated contract, not a currently
+    reachable verdict.  A published core is always unsatisfiable, and on a core
+    whose members are all bounds on one variable "no value satisfies them"
+    already follows from that -- integer tightening only ever shrinks an
+    interval, so on such a core it can reach a wrong conclusion by a wrong route
+    but not a wrong answer.  The compatible cases below therefore cannot arrive
+    through the orchestrator today.  They are pinned because the function says it
+    reports whether bounds admit a value, and the next caller -- proof mode, or a
+    conjunction group -- will be entitled to believe that sentence.
     """
     from pyfcstm.bmc.explanation import _interval_is_empty
 

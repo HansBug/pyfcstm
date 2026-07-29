@@ -566,6 +566,17 @@ def _numeric_value(expression: Any) -> Optional[Any]:
     return None
 
 
+# Each recognizer below opens with shape preconditions -- one expression, an
+# integer frame, an Or of equalities -- that today's encoder always satisfies for
+# the categories they are called on.  They are kept anyway, and deliberately left
+# without tests: their job is to make a recognizer degrade to
+# "structural_constraint" if the encoder's shape ever changes, and deleting them
+# would turn that degradation into an AttributeError, which is the opposite of
+# what a component whose contract is "read this shape or say you cannot" should
+# do.  Reaching them from a test would mean hand-building a tracked group the
+# builder cannot produce, which the repository's test boundary forbids.  The
+# preconditions that authored queries *do* reach -- a comparison between two
+# variables, an assertion about the active state -- are covered as normal paths.
 def _value_comparison_fact(group: Any) -> Optional[Dict[str, Any]]:
     """Read a one-variable comparison group as a variable-comparison fact.
 

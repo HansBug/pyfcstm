@@ -2676,3 +2676,48 @@ def test_the_complete_transcript_answers_the_five_reader_questions(
     assert "COMPLETE FORMAL DOMAIN EXPLANATION" in output
     assert "Subset minimality: proven" in output
     assert "This is a bounded result over at most" in output
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "declaration, initial, bounds",
+    [
+        ("def int x = 0;", "x == 0", ('var("x") > 5', 'var("x") < 3')),
+        ("def float x = 0.0;", "x == 0.0", ('var("x") > 0.5', 'var("x") < 0.25')),
+    ],
+    ids=["integer-bounds", "float-bounds"],
+)
+def test_bounds_that_cross_are_reported_as_an_empty_range(
+    tmp_path, declaration, initial, bounds
+) -> None:
+    """Two crossing bounds read as a range with nothing in it.
+
+    This is the second pattern the narrative recognizes, and it has to work for
+    both persistent variable types: a reader who declares ``float`` and writes an
+    impossible range deserves the same account as one who declares ``int``.
+    Before the float reading landed, the second case here degraded to the
+    structural fallback no matter how plainly the query contradicted itself.
+    """
+    model = tmp_path / "machine.fcstm"
+    query = tmp_path / "scenario.fbmcq"
+    model.write_text(
+        "%s\nstate Root { event Go; state A; state B; [*] -> A; A -> B :: Go; }\n"
+        % declaration,
+        encoding="utf-8",
+    )
+    query.write_text(
+        'init state("Root.A") where %s; assume at 0: %s; assume at 0: %s; '
+        'check reach <= 2: active("Root.B");\n' % (initial, bounds[0], bounds[1]),
+        encoding="utf-8",
+    )
+
+    result = _run(
+        "-i", str(model), "-q", str(query), "--explain-infeasibility", "formal"
+    )
+
+    assert result.exit_code == 3, result.output
+    assert "COMPLETE FORMAL DOMAIN EXPLANATION" in result.output
+    assert "No value of x satisfies every bound required at frame 0." in result.output
+    # The chain states each bound before concluding, rather than only concluding.
+    assert "requires x to be greater than" in result.output
+    assert "requires x to be less than" in result.output

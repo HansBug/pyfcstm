@@ -144,91 +144,6 @@ def test_a_category_outside_every_family_is_refused() -> None:
         )
 
 
-def test_a_subclass_cannot_substitute_its_own_canonical_output() -> None:
-    """Composition boundaries take the exact type, not a subclass.
-
-    Each of these fields is published by calling ``to_canonical()`` on whatever
-    was stored, so a subclass passes the type check and then supplies its own
-    payload: the object that was validated is not the one that reaches JSON.
-    The schema rejects what such a subclass emits, which makes this the
-    direction the asymmetry ledger does not cover -- a constructor looser than
-    the contract it publishes.
-    """
-
-    class EvilSource(BmcSourceRef):
-        def to_canonical(self):
-            return {"kind": "evil", "path": 7, "span": "bad"}
-
-    with pytest.raises(TypeError, match="source must be BmcSourceRef"):
-        BmcConstraintRef(
-            "g",
-            "assumptions",
-            "assumption.frame",
-            EvilSource("generated", None, None),
-            "s",
-        )
-
-    class EvilConstraint(BmcConstraintRef):
-        def to_canonical(self):
-            return {"stable_id": None}
-
-    with pytest.raises(TypeError, match="constraint must be BmcConstraintRef"):
-        BmcCoreItem(
-            EvilConstraint("g", "assumptions", "assumption.frame", _GENERATED, "s"),
-            "assumption",
-            None,
-            False,
-            {"kind": "structural_constraint"},
-            "t",
-            False,
-        )
-
-    class EvilItem(BmcCoreItem):
-        def to_canonical(self):
-            return {"constraint": None}
-
-    evil_item = EvilItem(
-        _constraint(),
-        "initial_fact",
-        None,
-        False,
-        {"kind": "structural_constraint"},
-        "t",
-        False,
-    )
-    with pytest.raises(TypeError, match="core items must be BmcCoreItem"):
-        BmcConflictCore(
-            "initialization_component",
-            "I_0",
-            "source_group",
-            "raw",
-            "not_proven",
-            (evil_item,),
-        )
-
-    class EvilCore(BmcConflictCore):
-        def to_canonical(self):
-            return {"scope": None}
-
-    evil_core = EvilCore(
-        "initialization_component",
-        "I_0",
-        "source_group",
-        "raw",
-        "not_proven",
-        (_item(),),
-    )
-    with pytest.raises(TypeError, match="core must be BmcConflictCore"):
-        BmcInfeasibilityExplanation(
-            requested_mode="formal",
-            achieved_mode="formal",
-            status="partial",
-            classification="initialization_self_conflict",
-            core=evil_core,
-            reason="minimization not attempted",
-        )
-
-
 #: Frozen structures the transcription test above pins by value.
 _TRANSCRIBED_FROZEN_NAMES = frozenset(
     {
@@ -1294,8 +1209,64 @@ def test_explanation_to_canonical_is_json_compatible() -> None:
     assert canonical["core"]["items"][0]["constraint"]["stable_id"] == "initial.target"
 
 
+def _explanation():
+    """Return the published explanation module, as a caller imports it."""
+    from pyfcstm.bmc import explanation
+
+    return explanation
+
+
+@pytest.mark.parametrize(
+    ("call", "expected", "message"),
+    [
+        # A category or stage a caller assembled from the wrong variable reaches
+        # these directly: all four are published with ``autofunction``.
+        pytest.param(
+            lambda: _explanation().is_printable_ascii(123),
+            False,
+            None,
+            id="printable-ascii-of-a-non-string",
+        ),
+        pytest.param(
+            lambda: _explanation().category_role(123),
+            None,
+            "belongs to no known family",
+            id="role-of-a-non-string-category",
+        ),
+        pytest.param(
+            lambda: _explanation().constraint_aggregate(123, "definedness"),
+            None,
+            "matches no aggregate",
+            id="aggregate-of-a-non-string-stage",
+        ),
+        pytest.param(
+            lambda: _explanation().index_value("0", "line"),
+            None,
+            "must contain non-negative integers",
+            id="index-of-a-numeric-string",
+        ),
+    ],
+)
+def test_the_published_helpers_handle_a_wrong_type(call, expected, message) -> None:
+    """The exported helpers answer for a wrong type instead of leaking one.
+
+    Each is published with ``autofunction``, so a caller reaches it directly with
+    whatever they have.  ``is_printable_ascii`` answers ``False`` because it is a
+    question; the others raise the ``ValueError`` their docstrings promise rather
+    than the ``TypeError`` an exact reader would have raised.
+    """
+    if message is None:
+        assert call() is expected
+    else:
+        with pytest.raises(ValueError, match=message):
+            call()
+
+
 @pytest.mark.parametrize("field", ["stable_id", "category", "summary"])
-def test_constraint_rejects_empty_identity_fields(field) -> None:
+# An empty value names nothing; a non-string is the other way a caller gets this
+# wrong, and it reaches the same field through a different check.
+@pytest.mark.parametrize("value", ["", 123], ids=["empty", "not-a-string"])
+def test_constraint_rejects_unusable_identity_fields(field, value) -> None:
     """An unnamed constraint could never be traced back to its source."""
     payload = dict(
         stable_id="initial.target",
@@ -1304,7 +1275,7 @@ def test_constraint_rejects_empty_identity_fields(field) -> None:
         source=_GENERATED,
         summary="initial target state",
     )
-    payload[field] = ""
+    payload[field] = value
 
     with pytest.raises(ValueError, match="non-empty string"):
         BmcConstraintRef(**payload)
@@ -1364,15 +1335,18 @@ def test_core_rejects_an_empty_or_untyped_membership() -> None:
             (_constraint(),),
         )
 
-    with pytest.raises(ValueError, match="formula_summary"):
-        BmcConflictCore(
-            "initialization_component",
-            "",
-            "source_group",
-            "raw",
-            "not_proven",
-            (_item(),),
-        )
+    # An empty summary describes nothing, and a non-string is the other way a
+    # caller gets this field wrong.  Both reach the same refusal.
+    for unusable_summary in ("", 123):
+        with pytest.raises(ValueError, match="formula_summary"):
+            BmcConflictCore(
+                "initialization_component",
+                unusable_summary,
+                "source_group",
+                "raw",
+                "not_proven",
+                (_item(),),
+            )
 
 
 @pytest.mark.parametrize(

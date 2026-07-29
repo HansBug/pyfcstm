@@ -673,10 +673,11 @@ class BmcTrackedConstraint:
     :type source_ref: BmcSourceRef
     :param refs: Stable frame/step/case metadata, defaults to ``{}``.
     :type refs: Mapping[str, object], optional
-    :raises ValueError: If the stable id, stage, or category is not a non-empty
-        string, the stable id is not printable ASCII, the expression sequence is
+    :raises ValueError: If the stable id is not a non-empty printable-ASCII
+        string, the stage or category is not a string, the expression sequence is
         empty, or the stage and category pair is not one of
-        :data:`TRACKED_GROUP_PAIRINGS`.
+        :data:`TRACKED_GROUP_PAIRINGS` -- which is also how an empty stage or
+        category is refused, since no listed pair contains one.
     :raises TypeError: If ``source_ref`` is not a :class:`BmcSourceRef`.
 
     Example::
@@ -715,8 +716,6 @@ class BmcTrackedConstraint:
         object.__setattr__(self, "stable_id", plain_id)
         for name in ("stage", "category"):
             value = getattr(self, name)
-            if not isinstance(value, str):
-                raise ValueError("tracked constraint %s must be a string." % name)
             try:
                 object.__setattr__(
                     self, name, exact_str(value, "tracked constraint %s" % name)
@@ -744,10 +743,6 @@ class BmcTrackedConstraint:
                 "tracked constraint stable_id must be printable ASCII, got %r."
                 % self.stable_id
             )
-        if not isinstance(self.stage, str) or not self.stage:
-            raise ValueError("tracked constraint stage must be non-empty.")
-        if not isinstance(self.category, str) or not self.category:
-            raise ValueError("tracked constraint category must be non-empty.")
         expressions = tuple(self.expressions)
         if not expressions:
             raise ValueError("tracked constraint expressions must be non-empty.")
@@ -822,8 +817,6 @@ class SourceDocumentRegistry:
             else dict(documents).items()
         )
         for path, text in pairs:
-            if not isinstance(path, str):
-                raise ValueError("%s paths must be non-empty strings." % label)
             try:
                 plain_path = exact_str(path, "%s path" % label)
             except TypeError:

@@ -566,14 +566,11 @@ def _require_optional_text(value: Any, label: str) -> Optional[str]:
     """
     if value is None:
         return None
-    if not isinstance(value, str):
-        raise TypeError("%s must be a string or None, got %r." % (label, value))
     try:
-        # The exact text is returned so that a later length or content check
-        # reads the characters the value holds rather than what it reports.
         return exact_str(value, label)
     except TypeError:
-        # exact_str raises for anything that is not a str.
+        # exact_str raises for anything that is not a str, which is how a wrong
+        # type reaches this optional-text field.
         raise TypeError(
             "%s must be a string or None, got %r." % (label, value)
         ) from None
@@ -709,19 +706,15 @@ class BmcConstraintRef:
     refs: Mapping[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        # Every published string is replaced by the exact text it holds before
-        # anything reads it.  Otherwise the checks below run against methods the
-        # value itself provides: `len`, `startswith`, `__iter__`, `__bool__` and
-        # `__lt__` are all overridable, so a subclass could pass a check and then
-        # publish something the check would have refused.
+        # Each published string is stored as the exact text it holds, so the
+        # emptiness check below and every later reader see the same characters.
         for name in ("stable_id", "category", "summary"):
             value = getattr(self, name)
-            if not isinstance(value, str):
-                raise ValueError("constraint %s must be a non-empty string." % name)
             try:
                 plain = exact_str(value, "constraint %s" % name)
             except TypeError:
-                # exact_str raises for anything that is not a str.
+                # exact_str raises for anything that is not a str, which is how a
+                # wrong type passed to this constructor arrives here.
                 raise ValueError(
                     "constraint %s must be a non-empty string." % name
                 ) from None
@@ -1443,6 +1436,13 @@ class BmcInfeasibilityExplanation:
 
 
 __all__ = [
+    # Published with ``autofunction`` in the API reference, so exported here too.
+    "category_role",
+    "constraint_aggregate",
+    "depth_line_is_needed",
+    "explanation_text_lines",
+    "index_value",
+    "is_printable_ascii",
     "BmcConflictCore",
     "BmcConflictCoreScope",
     "BmcConflictNarrative",

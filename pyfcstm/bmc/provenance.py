@@ -693,6 +693,71 @@ def _definedness_fact(group: Any) -> Optional[Dict[str, Any]]:
     return fact
 
 
+def _state_membership_fact(group: Any) -> Optional[Dict[str, Any]]:
+    """Read a group that pins one frame's state as a state-membership fact.
+
+    Both an initial target and an ``active(...)`` assumption lower to a single
+    equality between a state code and the frame's state slot, so one reader
+    covers both.  The code is published as the plain integer the encoding uses --
+    the model's own name for it is not carried on the group, and the item's source
+    excerpt quotes the line that names it.
+
+    :param group: The tracked group to read.
+    :type group: BmcTrackedConstraint
+    :return: The fact mapping, or ``None`` when the shape is not one state
+        equality on a known frame.
+    :rtype: Optional[Dict[str, Any]]
+    """
+    import z3
+
+    frame = group.refs.get("frame")
+    if not isinstance(frame, int) or len(group.expressions) != 1:
+        return None
+    expression = group.expressions[0]
+    if not z3.is_app(expression) or expression.decl().kind() != z3.Z3_OP_EQ:
+        return None
+    left, right = expression.arg(0), expression.arg(1)
+    for slot, code in ((left, right), (right, left)):
+        if _frame_state_slot(slot, frame):
+            value = _numeric_value(code)
+            if value is not None:
+                return {
+                    "kind": "state_membership",
+                    "frame": frame,
+                    "state": value,
+                }
+    return None
+
+
+def _frame_state_slot(expression: Any, frame: int) -> bool:
+    """Report whether an expression is the state slot of one frame.
+
+    The slot is named ``F_<frame>_state`` by the encoding, which is exactly the
+    shape :func:`_frame_variable_name` rejects for model variables, so the two
+    readers stay disjoint rather than competing for the same operand.
+
+    :param expression: The candidate operand.
+    :type expression: object
+    :param frame: The frame the slot must belong to.
+    :type frame: int
+    :return: ``True`` when the operand is that frame's state slot.
+    :rtype: bool
+
+    Example::
+
+        >>> import z3
+        >>> _frame_state_slot(z3.Int("F_0_state"), 0)
+        True
+        >>> _frame_state_slot(z3.Int("F_0_state"), 1)
+        False
+    """
+    import z3
+
+    if not z3.is_const(expression):
+        return False
+    return str(expression) == "F_%d_state" % frame
+
+
 def normalized_fact_for(group: Any) -> Dict[str, Any]:
     """Return the published domain fact for one tracked source group.
 
@@ -722,6 +787,16 @@ def normalized_fact_for(group: Any) -> Dict[str, Any]:
     """
     if group.category in _VALUE_FACT_CATEGORIES:
         fact = _value_comparison_fact(group)
+        if fact is not None:
+            return fact
+        # An assumption may pin the active state rather than a variable, and both
+        # arrive in the same category, so the state reader gets its turn before
+        # the group falls back.
+        fact = _state_membership_fact(group)
+        if fact is not None:
+            return fact
+    elif group.category == "initial.target":
+        fact = _state_membership_fact(group)
         if fact is not None:
             return fact
     elif group.category == "domain.frame_state":

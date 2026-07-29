@@ -2493,20 +2493,20 @@ def test_a_float_variable_gets_the_same_domain_reading_as_an_integer_one() -> No
     "declarations, assumption",
     [
         ("def int x = 0;\ndef int y = 0;", 'var("x") > var("y")'),
-        ("def int x = 0;", 'active("Root.B")'),
+        ("def int x = 0;", 'var("x") > 0 && var("x") < 5'),
     ],
-    ids=["comparison-between-two-variables", "assertion-about-the-active-state"],
+    ids=["comparison-between-two-variables", "two-bounds-in-one-assumption"],
 )
 def test_a_shape_outside_the_reading_keeps_its_identity(
     declarations, assumption
 ) -> None:
     """Two ordinary assumptions the value reading does not cover.
 
-    A comparison between two variables has no single value to publish, and an
-    assertion about the active state names a frame slot rather than a model
-    variable.  Both are things a reader writes without thinking twice, so the
-    fallback they take is a normal path, not an edge case -- and taking it means
-    saying so, rather than publishing half a fact.
+    A comparison between two variables has no single value to publish, and a
+    conjunction of two bounds is not one comparison, so neither fits the
+    single-relation fact shape.  Both are things a reader writes without thinking
+    twice, so the fallback they take is a normal path, not an edge case -- and
+    taking it means saying so, rather than publishing half a fact.
     """
     from pyfcstm.bmc.provenance import normalized_fact_for
 

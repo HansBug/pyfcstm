@@ -658,7 +658,14 @@ def test_core_items_quote_authored_source_when_a_registry_is_given() -> None:
     context = BmcEngine(machine).prepare(query, query_source_path="q.fbmcq")
     core = build_bmc_core_formula(context)
     registry = context._source_registry
-    group = next(g for g in core._tracked_groups if g.source_ref.kind == "fbmcq")
+    # The initial predicate: an authored group whose conjunction of a state target
+    # and a variable bound no recognizer reads, so the structural fallback below
+    # is asserted on a group that genuinely takes it.
+    group = next(
+        g
+        for g in core._tracked_groups
+        if g.source_ref.kind == "fbmcq" and g.category == "initial.where"
+    )
 
     item = build_core_item(group, registry)
 
@@ -668,6 +675,9 @@ def test_core_items_quote_authored_source_when_a_registry_is_given() -> None:
     assert item.constraint.stable_id == group.stable_id
     assert item.semantic_role == _semantic_role(group.category)
     assert item.editable is True
+    # A structural fallback keeps its identity, which is what the stage assertion
+    # below reads.  This test is about the excerpt, so it asserts the group whose
+    # shape has no reading rather than pinning one tag for every group.
     assert item.normalized_fact["kind"] == "structural_constraint"
     assert item.normalized_fact["stage"] == group.stage
     assert item.human_text
@@ -1399,9 +1409,10 @@ def test_an_authored_member_keeps_pointing_at_its_document() -> None:
     assert item.constraint.source.path == "q.fbmcq"
     assert item.source_excerpt == 'init state("Root.A") where x == 0;'
     assert item.editable is True
-    # This group is the initial predicate, whose shape has no recognizer yet, so
-    # its sentence says that outright rather than inventing a reading.
-    assert "not reduced to a domain fact" in item.human_text
+    # The sentence states the requirement in domain terms; the document it came
+    # from is carried by constraint.source, asserted just above.
+    assert item.human_text.endswith(".")
+    assert "q.fbmcq" not in item.human_text
 
 
 def test_a_core_that_does_not_recheck_as_unsat_is_not_published() -> None:
@@ -1729,9 +1740,13 @@ def test_an_unreadable_shape_says_structural_only_instead_of_inventing_a_chain()
     jointly unsatisfiable, say a more specific derivation is unavailable, and do
     not dress that up as an identified root cause.
     """
+    # Two bounds inside one assumption: the group holds a conjunction rather than
+    # a single comparison, so no recognizer reads it and no pattern applies.  The
+    # value-propagation probe needs an assumption it can read, so it stays silent
+    # here too.
     core = _core_formula(
         'init state("Root.A") where x == 0; '
-        'assume at 1: var("x") == 1; '
+        'assume at 0: var("x") > 5 && var("x") < 3; '
         'check reach <= 2: active("Root.B");'
     )
 

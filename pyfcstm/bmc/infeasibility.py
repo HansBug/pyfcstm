@@ -1064,6 +1064,144 @@ def _canonical_refs_value(key: str, value: object) -> object:
     return index_value(value, key)
 
 
+@dataclass(frozen=True)
+class ForcedValue:
+    """A variable value the core's non-assumption groups leave no choice about.
+
+    The narrative needs this to explain a value carried across a step.  It cannot
+    derive it itself: the transition relation holds one case per outgoing
+    transition, and which case fires is a solver question, not a syntactic one.
+
+    :param variable: Model variable name.
+    :type variable: str
+    :param frame: Frame index the value belongs to.
+    :type frame: int
+    :param value: The forced value.
+    :type value: int
+    :param supporting_ids: Stable ids of the groups that force it.
+    :type supporting_ids: Tuple[str, ...]
+
+    Example::
+
+        >>> ForcedValue("x", 1, 1, ("transition.step.0000",)).value
+        1
+    """
+
+    variable: str
+    frame: int
+    value: int
+    supporting_ids: Tuple[str, ...]
+
+
+def derive_forced_values(
+    core: "BmcCoreFormula",
+    items: Sequence["BmcCoreItem"],
+    budget: _SolveBudget,
+) -> Tuple[Tuple[ForcedValue, ...], Optional[ProbeRecord]]:
+    """Establish which variable values the core's prefix admits no alternative to.
+
+    For each variable an assumption pins, the groups that are *not* assumptions
+    are solved on their own.  If they are satisfiable and additionally exclude
+    every other value for that frame variable, the prefix forces the one they
+    give, and the narrative may say so.  Both facts are checked -- a model value
+    alone would only be one witness among possibly many.
+
+    A probe that cannot start, times out or comes back undetermined yields no
+    forced value for that variable, so the narrative degrades instead of claiming
+    a derivation the solver did not support.
+
+    :param core: The compiled core formula, used for its trace symbols.
+    :type core: pyfcstm.bmc.relation.BmcCoreFormula
+    :param items: The published core members, in stable-id order.
+    :type items: Sequence[pyfcstm.bmc.explanation.BmcCoreItem]
+    :param budget: Remaining solver budget shared with every other probe.
+    :type budget: pyfcstm.bmc.solver._SolveBudget
+    :return: The forced values, and one aggregate probe record when any probe ran.
+    :rtype: Tuple[Tuple[ForcedValue, ...], Optional[ProbeRecord]]
+
+    Example::
+
+        >>> derive_forced_values(None, (), _SolveBudget(None))
+        ((), None)
+    """
+    targets = []
+    prefix = []
+    for item in items:
+        fact = item.normalized_fact
+        if item.constraint.stage == "assumptions":
+            if fact.get("kind") == "variable_comparison" and isinstance(
+                fact.get("value"), int
+            ):
+                targets.append((fact["variable"], fact["frame"]))
+        else:
+            prefix.append(item.constraint.stable_id)
+    if not targets or not prefix:
+        return (), None
+    groups = {group.stable_id: group for group in core._tracked_groups}
+    expressions = [
+        expression
+        for stable_id in prefix
+        if stable_id in groups
+        for expression in groups[stable_id].expressions
+    ]
+    if not expressions:
+        return (), None
+    started = 0
+    status = "complete"
+    reason = None
+    started_at = time.perf_counter()
+    derived = []
+    for variable, frame in targets:
+        symbol = core.symbols.frame_var(frame, variable)
+        solver = z3.Solver()
+        for expression in expressions:
+            solver.add(expression)
+        verdict, record = _run_probe(solver, budget, "value_propagation", ())
+        if not record.started:
+            status, reason = "timeout", "budget exhausted before a prefix solve started"
+            break
+        started += 1
+        if verdict != "sat":
+            # An unsatisfiable prefix means the conflict does not need the
+            # assumption at all, and an undetermined one supports nothing.
+            if verdict != "unsat":
+                status, reason = (
+                    ("timeout", "prefix solve timed out")
+                    if verdict == "timeout"
+                    else ("unknown", "prefix solve returned unknown")
+                )
+            continue
+        # The probe reports only a verdict, so the witness is read from the
+        # solver it just checked -- still the same assertion set, so the model is
+        # the one that verdict belongs to.
+        candidate = solver.model().eval(symbol, model_completion=True)
+        if not isinstance(candidate, z3.IntNumRef):
+            # A non-integer witness has no published value shape here; the
+            # narrative degrades rather than rendering a rational as an integer.
+            continue
+        value = candidate.as_long()
+        solver.add(symbol != candidate)
+        verdict, record = _run_probe(solver, budget, "value_propagation", ())
+        if not record.started:
+            status, reason = "timeout", "budget exhausted before the uniqueness check"
+            break
+        started += 1
+        if verdict == "unsat":
+            derived.append(ForcedValue(variable, frame, value, tuple(prefix)))
+        elif verdict != "sat":
+            status, reason = (
+                ("timeout", "uniqueness check timed out")
+                if verdict == "timeout"
+                else ("unknown", "uniqueness check returned unknown")
+            )
+    if not started:
+        return tuple(derived), None
+    elapsed_ms = (time.perf_counter() - started_at) * 1000.0
+    return tuple(derived), ProbeRecord(
+        "value_propagation", status, True, elapsed_ms, reason
+    )
+
+
 def build_core_item(
     group: BmcTrackedConstraint,
     registry: Optional[SourceDocumentRegistry] = None,
@@ -1309,7 +1447,14 @@ def explain_infeasibility(
             ),
             checks,
         )
-    narrative = build_conflict_narrative(published)
+    # The probe runs on the published members, so it can only ever support a
+    # derivation about groups the reader was shown.
+    forced_values, propagation_record = derive_forced_values(
+        core, published.items, budget
+    )
+    if propagation_record is not None:
+        checks = checks + (propagation_record,)
+    narrative = build_conflict_narrative(published, forced_values)
     formal_is_complete = (
         outcome.classification is not None
         and minimized.subset_minimality == "proven"
@@ -1397,7 +1542,9 @@ __all__ = [
     "ExplanationOutcome",
     "ProbeRecord",
     "TrackedGroupPartition",
+    "ForcedValue",
     "build_core_item",
+    "derive_forced_values",
     "classify_infeasibility",
     "explain_infeasibility",
     "extract_source_core",

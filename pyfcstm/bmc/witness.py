@@ -2072,6 +2072,7 @@ _FEASIBILITY_REFINEMENT_NAMES = {
     "domain_assumptions",
     "unsat_core",
     "unsat_core_minimization",
+    "value_propagation",
 }
 _FEASIBILITY_REFINEMENT_STATUSES = {
     "sat",
@@ -2089,6 +2090,15 @@ _FEASIBILITY_COMPONENT_REFINEMENT_NAMES = {
 _FEASIBILITY_CORE_REFINEMENT_NAMES = {
     "unsat_core",
     "unsat_core_minimization",
+}
+# Checks that report a whole phase rather than one solver verdict, and so may use
+# status="complete".  This is a superset of the core family on purpose: every
+# core check is a phase, but not every phase proves the core.  Value propagation
+# aggregates a prefix solve and a uniqueness check, and it supports the narrative
+# rather than the core, so admitting it to the core family would let it satisfy
+# the "a published core requires a completed unsat-core check" guard below.
+_FEASIBILITY_PHASE_REFINEMENT_NAMES = _FEASIBILITY_CORE_REFINEMENT_NAMES | {
+    "value_propagation",
 }
 _FEASIBILITY_TIMEOUT_BEFORE_ASSUMPTIONS = (
     "feasibility_timeout:deadline_exhausted_before_assumptions_check"
@@ -2264,10 +2274,10 @@ class BmcFeasibilityRefinementCheck(_PrettyPrintableMixin):
             raise BmcBuildError("Feasibility refinement requires elapsed_ms.")
         if (
             self.status == "complete"
-            and self.name not in _FEASIBILITY_CORE_REFINEMENT_NAMES
+            and self.name not in _FEASIBILITY_PHASE_REFINEMENT_NAMES
         ):
             raise BmcBuildError(
-                "Only unsat-core feasibility refinement can use status=complete."
+                "Only phase-level feasibility refinement can use status=complete."
             )
 
     def to_canonical(self) -> _CanonicalDict:

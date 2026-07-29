@@ -2817,7 +2817,8 @@
             "component_assumptions",
             "domain_assumptions",
             "unsat_core",
-            "unsat_core_minimization"
+            "unsat_core_minimization",
+            "value_propagation"
           ]
         },
         "status": {
@@ -2862,7 +2863,8 @@
                 ]
               }
             }
-          }
+          },
+          "$comment": "status=complete reports a whole phase rather than one solver verdict, so only phase-level checks may use it: unsat_core, unsat_core_minimization and value_propagation. The others report a single check."
         },
         {
           "if": {
@@ -5203,6 +5205,7 @@
               "enum": [
                 "structural_constraint",
                 "variable_comparison",
+                "state_membership",
                 "state_domain",
                 "definedness_condition"
               ],

@@ -2721,3 +2721,129 @@ def test_bounds_that_cross_are_reported_as_an_empty_range(
     # The chain states each bound before concluding, rather than only concluding.
     assert "requires x to be greater than" in result.output
     assert "requires x to be less than" in result.output
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "declaration, assumption, sentence",
+    [
+        (
+            "def int x = 0;",
+            'var("x") / 0 > 0',
+            "The division at frame 0 cannot stay defined.",
+        ),
+        (
+            "def float x = 0.0;",
+            "sqrt(-1.0) >= 0.0",
+            "The sqrt at frame 0 cannot stay defined.",
+        ),
+    ],
+    ids=["division-by-zero", "square-root-of-a-negative"],
+)
+def test_an_operation_that_cannot_stay_defined_is_named_as_the_conflict(
+    tmp_path, declaration, assumption, sentence
+) -> None:
+    """A definedness conflict is one of the five patterns the contract lists.
+
+    The core here is the domain condition itself, and it cannot hold, so the
+    reason no execution exists is that the operation is undefined -- not merely
+    that some groups are jointly unsatisfiable.  Reporting the weaker sentence
+    left the reader to work out which operation was at fault.
+    """
+    model = tmp_path / "machine.fcstm"
+    query = tmp_path / "scenario.fbmcq"
+    model.write_text("%s state Root;\n" % declaration, encoding="utf-8")
+    query.write_text(
+        'assume at 0: %s;\ncheck reach <= 1: active("Root");\n' % assumption,
+        encoding="utf-8",
+    )
+
+    result = _run(
+        "-i", str(model), "-q", str(query), "--explain-infeasibility", "formal"
+    )
+
+    assert result.exit_code == 3, result.output
+    assert "COMPLETE FORMAL DOMAIN EXPLANATION" in result.output
+    assert sentence in result.output
+    assert "STRUCTURAL ONLY" not in result.output
+
+
+@pytest.mark.unittest
+def test_two_states_required_at_one_frame_are_named_as_the_conflict(tmp_path) -> None:
+    """Requiring two states of one frame is a conflict the reader should see named.
+
+    ``init state("Root.A")`` and ``assume at 0: active("Root.B")`` each pin frame
+    0 to a different state.  Reporting only that the groups are jointly
+    unsatisfiable makes the reader compare two source lines to find what is a
+    one-sentence fact.
+    """
+    model = tmp_path / "machine.fcstm"
+    query = tmp_path / "scenario.fbmcq"
+    model.write_text(
+        "def int x = 0;\n"
+        "state Root { event Go; state A; state B; [*] -> A; A -> B :: Go; }\n",
+        encoding="utf-8",
+    )
+    query.write_text(
+        'init state("Root.A");\n'
+        'assume at 0: active("Root.B");\n'
+        'check reach <= 2: active("Root.B");\n',
+        encoding="utf-8",
+    )
+
+    result = _run(
+        "-i", str(model), "-q", str(query), "--explain-infeasibility", "formal"
+    )
+
+    assert result.exit_code == 3, result.output
+    assert "COMPLETE FORMAL DOMAIN EXPLANATION" in result.output
+    assert "cannot be in two states at once" in result.output
+    assert "STRUCTURAL ONLY" not in result.output
+    # Both authored lines stay quoted so the reader can open them.
+    assert 'init state("Root.A");' in result.output
+    assert 'assume at 0: active("Root.B");' in result.output
+
+
+@pytest.mark.unittest
+def test_a_value_carried_across_a_step_is_derived_not_left_structural(
+    tmp_path,
+) -> None:
+    """The frozen transcript's own example is a value carried across a step.
+
+    An initializer sets ``x`` to 0, a step increments it, and an assumption then
+    requires 0 at frame 1.  Naming that chain is the point of the formal mode:
+    the reader has to see *why* the prefix and the assumption disagree, not just
+    that four groups are jointly unsatisfiable.  Reading the increment out of the
+    step relation is not syntactic -- the relation holds one case per transition
+    and only the solver knows which fires -- so the value the prefix forces is
+    established by a probe and reported as a derivation.
+    """
+    model = tmp_path / "machine.fcstm"
+    query = tmp_path / "scenario.fbmcq"
+    model.write_text(
+        "def int x = 0;\n"
+        "state Root {\n"
+        "    state A;\n"
+        "    [*] -> A;\n"
+        "    A -> A effect { x = x + 1; };\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    query.write_text(
+        'init state("Root.A");\n'
+        'assume at 1: var("x") == 0;\n'
+        'check reach <= 1: active("Root.A");\n',
+        encoding="utf-8",
+    )
+
+    result = _run(
+        "-i", str(model), "-q", str(query), "--explain-infeasibility", "formal"
+    )
+
+    assert result.exit_code == 3, result.output
+    assert "COMPLETE FORMAL DOMAIN EXPLANATION" in result.output
+    assert "STRUCTURAL ONLY" not in result.output
+    # The derivation states the value the prefix forces, and the conflict names
+    # the frame that cannot hold both.
+    assert "requires x to equal 1 at frame 1" in result.output
+    assert "Frame 1 cannot assign" in result.output

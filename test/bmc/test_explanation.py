@@ -360,6 +360,7 @@ def test_every_frozen_vocabulary_matches_the_authored_list() -> None:
     assert module._FACT_KINDS == (
         "structural_constraint",
         "variable_comparison",
+        "state_membership",
         "state_domain",
         "definedness_condition",
     )
@@ -2200,8 +2201,10 @@ def test_a_published_item_reads_as_a_sentence_about_the_model() -> None:
             "category": "transition.step",
         },
     )
-    assert "transition.0000.step.0000" in structural
+    # It describes the group rather than claiming a requirement it never derived.
+    assert "transition rule" in structural
     assert "requires" not in structural
+    assert structural.endswith(".")
 
 
 @pytest.mark.unittest

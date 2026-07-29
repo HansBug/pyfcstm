@@ -346,6 +346,15 @@ def human_text_for_fact(role: str, fact: Mapping) -> str:
             fact["variable"],
             phrase,
         )
+    if kind == "state_membership":
+        # The state code is published rather than a name: the encoding's map is
+        # not carried on the item, and the source excerpt beside this sentence
+        # quotes the line that names the state.
+        return "At frame %s, %s requires state %s." % (
+            fact["frame"],
+            voice,
+            fact["state"],
+        )
     if kind == "state_domain":
         # The domain is published as encoded integers, so the sentence reports
         # how many states remain legal rather than inventing names the fact does
@@ -369,9 +378,14 @@ def human_text_for_fact(role: str, fact: Mapping) -> str:
             fact["operation"],
             variable,
         )
-    return "%s group %s was not reduced to a domain fact." % (
+    # No recognizer read this group, so the sentence says what the group *is*
+    # rather than what it requires.  Naming the role reads as a description a
+    # reader can place -- "the transition rule for this step" -- instead of an
+    # apology about the reduction, while still promising no derivation.
+    article = "an" if role[0] in "aeiou" else "a"
+    return "%s %s constrains this scenario without a reduced domain fact." % (
+        article.capitalize(),
         role.replace("_", " "),
-        fact.get("stable_id", "?"),
     )
 
 
@@ -483,7 +497,9 @@ SCOPE_AGGREGATES = MappingProxyType(
 #: A fact describes *one* source group, so the vocabulary is deliberately small.
 #: ``variable_comparison`` covers every relation between one frame variable and
 #: one value, carrying the relation in an ``operator`` field rather than splitting
-#: into a tag per relation.  ``state_domain`` gives the legal states of a frame
+#: into a tag per relation.  ``state_membership`` pins one frame to one state code,
+#: which is what an initial target and an ``active(...)`` assumption both lower to.
+#: ``state_domain`` gives the legal states of a frame
 #: and ``definedness_condition`` the operation a group keeps well defined.
 #: ``structural_constraint`` is the honest fallback for a shape no recognizer
 #: reads.
@@ -496,6 +512,7 @@ SCOPE_AGGREGATES = MappingProxyType(
 _FACT_KINDS = (
     "structural_constraint",
     "variable_comparison",
+    "state_membership",
     "state_domain",
     "definedness_condition",
 )
@@ -2017,6 +2034,48 @@ def _conflict_pattern(items: Tuple["BmcCoreItem", ...]) -> Optional[Tuple[str, s
         >>> _conflict_pattern(()) is None
         True
     """
+    definedness = [
+        item
+        for item in items
+        if item.normalized_fact.get("kind") == "definedness_condition"
+    ]
+    if definedness and len(definedness) == len(items):
+        # The core is the domain condition itself, and a published core is
+        # unsatisfiable, so the reason no execution exists is that the operation
+        # cannot be defined there.  Naming the operation is the whole value of
+        # this pattern: "jointly unsatisfiable" leaves the reader to work out
+        # which one was at fault.
+        frames = sorted({item.normalized_fact["frame"] for item in definedness})
+        operations = sorted({item.normalized_fact["operation"] for item in definedness})
+        if len(frames) == 1 and len(operations) == 1:
+            return (
+                "definedness_failure",
+                "The %s at frame %s cannot stay defined." % (operations[0], frames[0]),
+            )
+        return (
+            "definedness_failure",
+            "No execution keeps every operation defined at %s."
+            % ", ".join("frame %s" % frame for frame in frames),
+        )
+    states = [
+        item for item in items if item.normalized_fact.get("kind") == "state_membership"
+    ]
+    if states and len(states) == len(items):
+        frames = {item.normalized_fact["frame"] for item in states}
+        required = sorted({item.normalized_fact["state"] for item in states})
+        if len(frames) == 1 and len(required) > 1:
+            # One frame holds exactly one state, so two different requirements on
+            # it cannot both hold.  This is the same shape as incompatible
+            # equalities, over the state slot instead of a variable.
+            return (
+                "incompatible_equalities",
+                "Frame %s cannot be in two states at once; states %s are each "
+                "required."
+                % (
+                    sorted(frames)[0],
+                    " and ".join(str(code) for code in required),
+                ),
+            )
     comparisons = [
         item
         for item in items
@@ -2112,7 +2171,86 @@ def _interval_is_empty(items: Tuple["BmcCoreItem", ...]) -> bool:
     return lower == upper and (lower_open or upper_open)
 
 
-def build_conflict_narrative(core: "BmcConflictCore") -> BmcConflictNarrative:
+def _propagation_steps(core: "BmcConflictCore", forced_values: Tuple):
+    """Build the chain for a value the prefix forces against an assumption.
+
+    Each forced value was established by a probe over the core's non-assumption
+    groups, so this only arranges what was already proven: the facts those groups
+    publish, then the derivation the probe closed, then the assumption that
+    disagrees, then the contradiction.  Returns ``None`` when no forced value
+    contradicts an assumption, so the caller falls through to the single-shape
+    patterns.
+
+    :param core: The published core.
+    :type core: BmcConflictCore
+    :param forced_values: Values the prefix admits no alternative to.
+    :type forced_values: Tuple[pyfcstm.bmc.infeasibility.ForcedValue, ...]
+    :return: The ordered steps and the closing sentence, or ``None``.
+    :rtype: Optional[Tuple[Tuple[BmcReasoningStep, ...], str]]
+
+    Example::
+
+        >>> _propagation_steps(None, ()) is None
+        True
+    """
+    if not forced_values:
+        return None
+    by_id = {item.constraint.stable_id: item for item in core.items}
+    for forced in forced_values:
+        disagreeing = [
+            item
+            for item in core.items
+            if item.constraint.stage == "assumptions"
+            and item.normalized_fact.get("kind") == "variable_comparison"
+            and item.normalized_fact.get("variable") == forced.variable
+            and item.normalized_fact.get("frame") == forced.frame
+            and item.normalized_fact.get("operator") == "eq"
+            and item.normalized_fact.get("value") != forced.value
+        ]
+        if not disagreeing:
+            continue
+        supporting = [by_id[name] for name in forced.supporting_ids if name in by_id]
+        steps = tuple(
+            BmcReasoningStep("fact", (item.constraint.stable_id,), (), item.human_text)
+            for item in supporting
+        )
+        steps += (
+            BmcReasoningStep(
+                "derivation",
+                tuple(item.constraint.stable_id for item in supporting),
+                (),
+                "The transition prefix therefore requires %s to equal %s at "
+                "frame %s." % (forced.variable, forced.value, forced.frame),
+            ),
+        )
+        steps += tuple(
+            BmcReasoningStep("fact", (item.constraint.stable_id,), (), item.human_text)
+            for item in disagreeing
+        )
+        values = sorted(
+            {forced.value} | {item.normalized_fact["value"] for item in disagreeing}
+        )
+        closing = "Frame %s cannot assign %s to %s at the same time." % (
+            forced.frame,
+            " and ".join(str(value) for value in values),
+            forced.variable,
+        )
+        steps += (
+            BmcReasoningStep(
+                "conflict",
+                tuple(item.constraint.stable_id for item in supporting)
+                + tuple(item.constraint.stable_id for item in disagreeing),
+                (),
+                closing,
+            ),
+        )
+        return steps, closing
+    return None
+
+
+def build_conflict_narrative(
+    core: "BmcConflictCore", forced_values: Tuple = ()
+) -> BmcConflictNarrative:
     """Render the deterministic account of why the published core is unsatisfiable.
 
     The narrative reads the core and its normalized facts only, so it never
@@ -2123,6 +2261,10 @@ def build_conflict_narrative(core: "BmcConflictCore") -> BmcConflictNarrative:
 
     :param core: The published subset core to describe.
     :type core: BmcConflictCore
+    :param forced_values: Values the core's non-assumption groups leave no
+        alternative to, each established by a solver probe rather than read from
+        the formula, defaults to ``()``.
+    :type forced_values: Tuple[pyfcstm.bmc.infeasibility.ForcedValue, ...], optional
     :return: The narrative for this core.
     :rtype: BmcConflictNarrative
 
@@ -2150,6 +2292,20 @@ def build_conflict_narrative(core: "BmcConflictCore") -> BmcConflictNarrative:
     surfaces = tuple(
         sorted(item.constraint.stable_id for item in core.items if item.editable)
     )
+    propagation = _propagation_steps(core, forced_values)
+    if propagation is not None:
+        steps, closing = propagation
+        return BmcConflictNarrative(
+            derivation_status="complete",
+            headline=closing,
+            summary=(
+                "The scenario is empty before the property objective is "
+                "considered: a value carried across the transition prefix "
+                "contradicts an assumption in %s." % core.scope
+            ),
+            reasoning_steps=steps,
+            review_surfaces=surfaces,
+        )
     pattern = _conflict_pattern(core.items)
     if pattern is None:
         # The frozen degradation wording: state the joint fact, say the specific

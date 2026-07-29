@@ -547,8 +547,8 @@ class BmcSourceRef:
     span: Optional[Span]
 
     def __post_init__(self) -> None:
-        # Membership uses __eq__ and __hash__, both overridable, so the check
-        # runs on the exact text and the field is replaced by it.
+        # The kind is checked against the vocabulary as exact text, and the
+        # field is replaced by it so every later reader sees the same value.
         if not isinstance(self.kind, str):
             raise ValueError("Unsupported BMC source kind: %r." % self.kind)
         try:

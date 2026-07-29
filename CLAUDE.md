@@ -1331,6 +1331,12 @@ Three boundary cases decide themselves the same way every time:
   Leaving it unmentioned accumulates dead defense that nothing reaches and nothing describes. A guard that a public
   surface *can* reach is not dead — check whether the type is exported and documented before concluding it is
   unreachable, because two public surfaces disagreeing about which values exist is itself an in-bounds finding.
+- **Adding, removing or reordering a guard means rechecking what its tests now prove.** Guards on one value shadow each
+  other: inserting a stricter check ahead of a looser one makes the looser one unreachable, and deleting a redundant
+  check can move the live refusal into a handler that nothing reached before. The tests keep passing either way, so they
+  stop proving what their names say. After changing a guard, verify which branch a test actually lands in — replacing
+  the branch body with a raise, or removing the guard and watching the test go red, both settle it in one run — and fix
+  the comment or docstring that describes it.
 - **Subclassing is in bounds where subclassing is the documented extension point**, such as a generated runtime's
   override hooks. It is out of bounds only where the value is a closed vocabulary that no caller is invited to extend.
   Likewise, fault injection is a real degradation path when it simulates what an external dependency actually does — a

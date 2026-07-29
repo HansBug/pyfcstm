@@ -265,8 +265,8 @@ def is_printable_ascii(value: str) -> bool:
         >>> is_printable_ascii("\u51b2\u7a81")
         False
     """
-    # Iteration goes through __iter__, which a subclass may override to hide the
-    # characters it really holds, so the scan runs on the exact text.
+    # The scan runs on the exact text, so the answer describes the characters
+    # that would actually be published.
     try:
         plain = exact_str(value, "value")
     except TypeError:
@@ -291,8 +291,8 @@ def category_role(category: str) -> str:
         >>> category_role("assumption.frame")
         'assumption'
     """
-    # str.startswith is an instance method, so a subclass could claim any family
-    # and pick its own semantic role.  The prefix test runs on the exact text.
+    # The prefix test runs on the exact text: the category is a dispatch key, so
+    # the family it resolves to has to follow from the characters themselves.
     try:
         plain = exact_str(category, "category")
     except TypeError:
@@ -737,10 +737,10 @@ class BmcConstraintRef:
         object.__setattr__(
             self, "stage", _require_member(self.stage, _STAGES, "constraint stage")
         )
-        # The exact type, not isinstance: a subclass passes the check and then
-        # supplies its own to_canonical(), so the object that was validated is
-        # not the one that gets published.  The same rule applies at every
-        # composition boundary below.
+        # The exact type, not isinstance: each composition boundary publishes by
+        # calling to_canonical() on what it stored, so it stores only the type
+        # whose canonical output the schema describes.  The same rule applies at
+        # every composition boundary below.
         if type(self.source) is not BmcSourceRef:
             raise TypeError("constraint source must be BmcSourceRef.")
         object.__setattr__(self, "frames", _require_indices(self.frames, "frames"))

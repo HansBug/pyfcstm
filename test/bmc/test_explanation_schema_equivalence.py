@@ -728,6 +728,14 @@ def _drift_cases():
         payload["infeasible_stage"] = "initialization"
 
     def reason_drift(payload):
+        # A complete explanation carries no reason at all, and a completed
+        # refinement's own reason must be null, so the drift is staged on the
+        # degraded delivery where both fields legitimately hold text.  Otherwise
+        # the mutation trips the "completed refinement has no reason" rule and
+        # never reaches the equality this case exists to pin.
+        payload["explanation"]["status"] = "partial"
+        payload["explanation"]["reason"] = "the derivation did not close"
+        payload["refinement_status"] = "partial"
         payload["refinement_reason"] = "a different reason for the same stage"
 
     def member_outside_scope(payload):
@@ -847,8 +855,22 @@ def test_the_constructor_still_enforces_every_named_asymmetry() -> None:
         compile_bmc_property(build_bmc_core_formula(context)),
         infeasibility_explanation="formal",
     ).feasibility
+    # Staged on the degraded delivery: a complete explanation carries no reason
+    # and a completed refinement's own reason must be null, so on the real
+    # complete payload a forged aggregate reason trips that rule first and never
+    # reaches the equality this case exists to pin.
+    degraded = replace(
+        feasibility,
+        refinement_status="partial",
+        refinement_reason="the derivation did not close",
+        explanation=replace(
+            feasibility.explanation,
+            status="partial",
+            reason="the derivation did not close",
+        ),
+    )
     with pytest.raises(BmcBuildError, match="must match the explanation reason"):
-        replace(feasibility, refinement_reason="a forged aggregate reason")
+        replace(degraded, refinement_reason="a forged aggregate reason")
 
     # duplicate stable_id with differing content
     def member(text):

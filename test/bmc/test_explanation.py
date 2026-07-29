@@ -147,6 +147,8 @@ def test_a_category_outside_every_family_is_refused() -> None:
 #: Frozen structures the transcription test above pins by value.
 _TRANSCRIBED_FROZEN_NAMES = frozenset(
     {
+        "_DERIVATION_STATUSES",
+        "_REASONING_STEP_KINDS",
         "_RELATION_PHRASES",
         "_ROLE_VOICES",
         "CATEGORY_ROLES",
@@ -253,6 +255,16 @@ def test_the_transcription_guard_covers_every_frozen_structure() -> None:
     # Transcribed because they are the whole published sentence vocabulary: a
     # relation or role dropped from either mapping renders as a bare tag inside
     # otherwise fluent prose, or silently borrows another role's voice.
+    # Transcribed because they are published dispatch vocabularies: a kind or
+    # status added without a schema enum entry would pass Python and fail
+    # validation, and one removed would silently narrow what can be published.
+    assert module._REASONING_STEP_KINDS == ("fact", "derivation", "conflict")
+    assert module._DERIVATION_STATUSES == (
+        "complete",
+        "partial",
+        "structural_only",
+        "not_available",
+    )
     assert set(module._RELATION_PHRASES) == {"eq", "ne", "le", "lt", "ge", "gt"}
     assert module._RELATION_PHRASES["eq"] == "to equal %s"
     assert module._ROLE_VOICES == {
@@ -351,7 +363,7 @@ def test_every_frozen_vocabulary_matches_the_authored_list() -> None:
         "state_domain",
         "definedness_condition",
     )
-    assert module.UNBUILT_SLOTS == ("proof", "narrative")
+    assert module.UNBUILT_SLOTS == ("proof",)
     assert module.INDEX_REF_KEYS == ("frame", "frames", "step", "steps")
     assert dict(module.SCOPE_AGGREGATES) == {
         "kernel": ("domain", "transition"),
@@ -1528,18 +1540,14 @@ def test_a_proof_is_only_published_when_proof_was_requested() -> None:
         )
 
 
-@pytest.mark.parametrize("slot", ["proof", "narrative"])
-def test_reserved_slots_are_rejected_rather_than_silently_dropped(slot) -> None:
-    """A filled slot fails loudly instead of vanishing from the payload.
+def test_a_reserved_slot_is_rejected_rather_than_silently_dropped() -> None:
+    """A filled ``proof`` fails loudly instead of vanishing from the payload.
 
-    Both slots belong to a later delivery stage.  Serializing them to ``null``
-    would let a caller believe a proof or narrative had been published.
+    The slot belongs to a later delivery stage, and serializing it to ``null``
+    would let a caller believe a proof had been published.  ``narrative`` was
+    reserved the same way until it gained a builder and a schema; it is now
+    accepted, which the delivery tests cover directly.
     """
-    filled = {
-        "proof": BmcConflictProof("initialization_component", "root"),
-        "narrative": BmcConflictNarrative("structural_only", "head", "body"),
-    }[slot]
-
     with pytest.raises(ValueError, match="not produced at this stage"):
         BmcInfeasibilityExplanation(
             "proof",
@@ -1548,7 +1556,7 @@ def test_reserved_slots_are_rejected_rather_than_silently_dropped(slot) -> None:
             "initialization_self_conflict",
             _core(),
             reason="r",
-            **{slot: filled},
+            proof=BmcConflictProof("initialization_component", "root"),
         )
 
 
@@ -2023,11 +2031,13 @@ def test_human_vocabularies_are_transcribed_from_the_frozen_transcripts() -> Non
 
 @pytest.mark.unittest
 def test_reserved_placeholder_fields_are_pinned() -> None:
-    """Pin the field lists of the two reserved containers.
+    """Pin the field lists of the published narrative and the reserved proof.
 
-    Neither can be carried by a published explanation yet, but both are exported,
-    documented, and constructible, so a field added to either would reach the
-    published surface with nothing describing it.
+    ``proof`` cannot be carried by a published explanation yet, but it is
+    exported, documented and constructible, so a field added to it would reach
+    the published surface with nothing describing it.  The narrative is published
+    now, which makes its field list part of the contract rather than a
+    placeholder.
     """
     import dataclasses
 
@@ -2035,13 +2045,22 @@ def test_reserved_placeholder_fields_are_pinned() -> None:
         UNBUILT_SLOTS,
         BmcConflictNarrative,
         BmcConflictProof,
+        BmcReasoningStep,
     )
 
-    assert set(UNBUILT_SLOTS) == {"proof", "narrative"}
+    assert set(UNBUILT_SLOTS) == {"proof"}
     assert [f.name for f in dataclasses.fields(BmcConflictNarrative)] == [
         "derivation_status",
         "headline",
         "summary",
+        "reasoning_steps",
+        "review_surfaces",
+    ]
+    assert [f.name for f in dataclasses.fields(BmcReasoningStep)] == [
+        "kind",
+        "item_ids",
+        "proof_node_ids",
+        "text",
     ]
     assert [f.name for f in dataclasses.fields(BmcConflictProof)] == [
         "scope",
@@ -2087,16 +2106,18 @@ def test_reserved_placeholder_fields_are_pinned() -> None:
             reason="sound source core published without a minimality proof",
             proof=BmcConflictProof("initialization_component", "root"),
         )
-    with pytest.raises(ValueError, match="narrative is not produced at this stage"):
-        BmcInfeasibilityExplanation(
-            "formal",
-            "formal",
-            "partial",
-            "initialization_self_conflict",
-            core=core,
-            reason="sound source core published without a minimality proof",
-            narrative=BmcConflictNarrative("proven", "headline", "summary"),
-        )
+    # The narrative slot is published now, so a degraded artifact may carry the
+    # honest structural reading beside its unproven core.
+    accepted = BmcInfeasibilityExplanation(
+        "formal",
+        "formal",
+        "partial",
+        "initialization_self_conflict",
+        core=core,
+        reason="sound source core published without a minimality proof",
+        narrative=BmcConflictNarrative("structural_only", "headline", "summary"),
+    )
+    assert accepted.narrative.derivation_status == "structural_only"
 
 
 @pytest.mark.parametrize(

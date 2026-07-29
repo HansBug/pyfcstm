@@ -502,10 +502,11 @@ MAX_SOURCE_EXCERPT_CHARS = 4096
 
 #: Frozen slots whose content a later delivery stage produces.  Populating one
 #: now would break the frozen rule that the published JSON schema and this
-#: constructor accept the same payload set, because neither slot has a schema
-#: yet.  A ``complete`` explanation depends on ``narrative`` alone, so removing
-#: that entry unlocks complete formal artifacts even while ``proof`` remains.
-UNBUILT_SLOTS = ("proof", "narrative")
+#: constructor accept the same payload set, because the slot has no schema yet.
+#: ``narrative`` has left this tuple: it now has both a schema and a builder, and
+#: a ``complete`` explanation depended on it alone, so complete formal artifacts
+#: became reachable while ``proof`` stayed reserved.
+UNBUILT_SLOTS = ("proof",)
 
 #: The two scopes that stay honest when classification never completed.
 #:
@@ -1194,20 +1195,112 @@ class BmcConflictCore:
         }
 
 
+#: Every kind a published reasoning step may carry.
+#:
+#: ``fact`` restates one requirement, ``derivation`` combines earlier steps, and
+#: ``conflict`` closes the chain.  A narrative that reached no contradiction has
+#: no ``conflict`` step, which is how ``structural_only`` stays honest.
+_REASONING_STEP_KINDS = ("fact", "derivation", "conflict")
+
+#: How far a derivation was reconstructed.
+#:
+#: ``complete`` closed the chain, ``partial`` got some of the way,
+#: ``structural_only`` established joint unsatisfiability without a value or
+#: state derivation, and ``not_available`` means the renderer produced nothing.
+_DERIVATION_STATUSES = ("complete", "partial", "structural_only", "not_available")
+
+
+@dataclass(frozen=True)
+class BmcReasoningStep:
+    """One step of the deterministic conflict narrative.
+
+    A step never stands alone: it names the core members it reads, so a consumer
+    can jump from a sentence to the source lines behind it.  ``proof_node_ids``
+    stays empty outside proof mode, where the steps also bind to DAG nodes.
+
+    :param kind: ``fact``, ``derivation`` or ``conflict``.
+    :type kind: str
+    :param item_ids: Stable ids of the core members this step reads.
+    :type item_ids: Tuple[str, ...]
+    :param proof_node_ids: Proof nodes this step binds to, empty outside proof
+        mode.
+    :type proof_node_ids: Tuple[str, ...]
+    :param text: One deterministic sentence.
+    :type text: str
+    :raises ValueError: If the kind is unknown, the step reads no member, or a
+        published id repeats.
+
+    Example::
+
+        >>> step = BmcReasoningStep(
+        ...     "fact", ("assumption.0000.frame.0000",), (), "x must equal 1.",
+        ... )
+        >>> step.kind
+        'fact'
+    """
+
+    kind: str
+    item_ids: Tuple[str, ...]
+    proof_node_ids: Tuple[str, ...]
+    text: str
+
+    def __post_init__(self) -> None:
+        _require_member(self.kind, _REASONING_STEP_KINDS, "reasoning step kind")
+        if not self.item_ids:
+            # A step that reads nothing cannot be traced back to a source line,
+            # which is the one thing a narrative step is for.
+            raise ValueError("a reasoning step must reference at least one core item.")
+        for name, ids in (
+            ("item_ids", self.item_ids),
+            ("proof_node_ids", self.proof_node_ids),
+        ):
+            if len(set(ids)) != len(ids):
+                raise ValueError("reasoning step %s must not repeat an id." % name)
+        if not self.text.strip():
+            raise ValueError("a reasoning step must carry text.")
+
+    def to_canonical(self) -> Dict[str, Any]:
+        """Return the published mapping for this step.
+
+        :return: Plain JSON containers in published key order.
+        :rtype: Dict[str, Any]
+
+        Example::
+
+            >>> BmcReasoningStep("fact", ("g0",), (), "t").to_canonical()["kind"]
+            'fact'
+        """
+        return {
+            "kind": self.kind,
+            "item_ids": list(self.item_ids),
+            "proof_node_ids": list(self.proof_node_ids),
+            "text": self.text,
+        }
+
+
 @dataclass(frozen=True)
 class BmcConflictNarrative:
-    """Reserved container for the deterministic conflict narrative.
+    """The deterministic account of why no execution exists.
 
-    The narrative belongs to a later delivery stage.  It is declared here only
-    so that :class:`BmcInfeasibilityExplanation` can freeze its field list
-    once; this stage always leaves the slot empty.
+    The narrative is rendered from the published core and its normalized facts
+    alone.  It reads no file and runs no solver, so it cannot state more than the
+    recognizers established: a shape with no domain reading yields
+    ``structural_only`` and no ``conflict`` step rather than an invented chain.
 
-    :param derivation_status: How far the derivation was reconstructed.
+    :param derivation_status: ``complete``, ``partial``, ``structural_only`` or
+        ``not_available``.
     :type derivation_status: str
     :param headline: One-line human summary.
     :type headline: str
     :param summary: Longer deterministic summary.
     :type summary: str
+    :param reasoning_steps: Steps in causal order, defaults to ``()``.
+    :type reasoning_steps: Tuple[BmcReasoningStep, ...], optional
+    :param review_surfaces: Editable core ids offered for review, defaults to
+        ``()``.
+    :type review_surfaces: Tuple[str, ...], optional
+    :raises ValueError: If the status is unknown, a text is blank, a review
+        surface repeats, or a ``complete`` derivation carries no conflict step.
 
     Example::
 
@@ -1218,6 +1311,47 @@ class BmcConflictNarrative:
     derivation_status: str
     headline: str
     summary: str
+    reasoning_steps: Tuple[BmcReasoningStep, ...] = ()
+    review_surfaces: Tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        _require_member(
+            self.derivation_status, _DERIVATION_STATUSES, "narrative derivation_status"
+        )
+        for name, text in (("headline", self.headline), ("summary", self.summary)):
+            if not text.strip():
+                raise ValueError("narrative %s must not be blank." % name)
+        if len(set(self.review_surfaces)) != len(self.review_surfaces):
+            raise ValueError("narrative review_surfaces must not repeat an id.")
+        if self.derivation_status == "complete" and not [
+            step for step in self.reasoning_steps if step.kind == "conflict"
+        ]:
+            # "Complete" claims the chain reached the contradiction.  Without a
+            # conflict step it claims a closed derivation whose closing step is
+            # missing, which is exactly the overclaim structural_only avoids.
+            raise ValueError(
+                "a complete derivation requires a conflict reasoning step."
+            )
+
+    def to_canonical(self) -> Dict[str, Any]:
+        """Return the published mapping for this narrative.
+
+        :return: Plain JSON containers in published key order.
+        :rtype: Dict[str, Any]
+
+        Example::
+
+            >>> narrative = BmcConflictNarrative("structural_only", "h", "s")
+            >>> narrative.to_canonical()["derivation_status"]
+            'structural_only'
+        """
+        return {
+            "derivation_status": self.derivation_status,
+            "headline": self.headline,
+            "summary": self.summary,
+            "reasoning_steps": [step.to_canonical() for step in self.reasoning_steps],
+            "review_surfaces": list(self.review_surfaces),
+        }
 
 
 @dataclass(frozen=True)
@@ -1534,10 +1668,14 @@ class BmcInfeasibilityExplanation:
             "status": self.status,
             "classification": self.classification,
             "core": None if self.core is None else self.core.to_canonical(),
-            # Both slots are kept None by the delivery matrix, so emitting the
-            # fields directly can never silently drop a caller's value.
+            # ``proof`` is still kept None by the delivery matrix, so emitting the
+            # field directly can never silently drop a caller's value.  The
+            # narrative is published now and has to be serialized, or a populated
+            # one would reach the payload as a repr.
             "proof": self.proof,
-            "narrative": self.narrative,
+            "narrative": (
+                None if self.narrative is None else self.narrative.to_canonical()
+            ),
             "reason": self.reason,
             "elapsed_ms": self.elapsed_ms,
         }
@@ -1548,6 +1686,7 @@ __all__ = [
     "category_role",
     "constraint_aggregate",
     "depth_line_is_needed",
+    "build_conflict_narrative",
     "explanation_text_lines",
     "human_text_for_fact",
     "index_value",
@@ -1555,6 +1694,7 @@ __all__ = [
     "BmcConflictCore",
     "BmcConflictCoreScope",
     "BmcConflictNarrative",
+    "BmcReasoningStep",
     "BmcConflictProof",
     "BmcConstraintRef",
     "BmcConstraintStage",
@@ -1603,6 +1743,52 @@ CLASSIFICATION_PHRASES = MappingProxyType(
         ),
     }
 )
+
+
+def _item_location(item) -> str:
+    """Render one core member's source position for human output.
+
+    The same string serves the conflict list and the review surfaces, so both
+    name a member the same way: a reader comparing the two blocks is looking at
+    one entry, not two spellings of it.
+
+    :param item: The published core member.
+    :type item: BmcCoreItem
+    :return: A path with span when available, or an honest substitute.
+    :rtype: str
+
+    Example::
+
+        >>> reference = BmcConstraintRef(
+        ...     "g0", "assumptions", "assumption.frame",
+        ...     BmcSourceRef("generated", None, None), "s",
+        ... )
+        >>> item = BmcCoreItem(
+        ...     reference, "assumption", None, False,
+        ...     {"kind": "structural_constraint"}, "t", False,
+        ... )
+        >>> _item_location(item)
+        'generated assumption constraint'
+    """
+    source = item.constraint.source
+    span = source.span
+    if source.path is not None and span is not None:
+        location = "%s:%d:%d" % (source.path, span.line, span.column)
+        if span.end_line is not None and span.end_column is not None:
+            location += "-%d:%d" % (span.end_line, span.end_column)
+        return location
+    if source.path is not None:
+        return source.path
+    if source.kind == "generated":
+        return "generated %s constraint" % _category_noun(item.constraint)
+    # An authored constraint whose origin was never named -- a programmatic
+    # query, for instance -- still came from the user's own text.  Calling it
+    # generated would attribute their constraint to the encoder, which the frozen
+    # contract forbids.
+    return "%s %s constraint (source location unavailable)" % (
+        source.kind,
+        _category_noun(item.constraint),
+    )
 
 
 def _core_position(constraint: BmcConstraintRef) -> str:
@@ -1771,6 +1957,178 @@ def depth_line_is_needed(requested_mode: str, achieved_mode: str) -> bool:
     return achieved_mode != "none" and requested_mode != achieved_mode
 
 
+def _conflict_pattern(items: Tuple["BmcCoreItem", ...]) -> Optional[Tuple[str, str]]:
+    """Name the cross-group pattern the published facts support, if any.
+
+    Only patterns the recognized facts actually establish are reported.  A pair
+    of equalities on one variable in one frame is a contradiction outright; a
+    pair of bounds is one when no value satisfies both.  Anything else returns
+    ``None`` so the narrative degrades instead of guessing.
+
+    :param items: Published core members in stable-id order.
+    :type items: Tuple[BmcCoreItem, ...]
+    :return: The rule name and its sentence, or ``None``.
+    :rtype: Optional[Tuple[str, str]]
+
+    Example::
+
+        >>> _conflict_pattern(()) is None
+        True
+    """
+    comparisons = [
+        item
+        for item in items
+        if item.normalized_fact.get("kind") == "variable_comparison"
+    ]
+    if len(comparisons) != len(items) or len(comparisons) < 2:
+        # A pattern over a subset would leave the remaining members unexplained
+        # while the narrative claimed a closed chain.
+        return None
+    frames = {item.normalized_fact["frame"] for item in comparisons}
+    variables = {item.normalized_fact["variable"] for item in comparisons}
+    if len(frames) != 1 or len(variables) != 1:
+        return None
+    frame = comparisons[0].normalized_fact["frame"]
+    variable = comparisons[0].normalized_fact["variable"]
+    equalities = sorted(
+        item.normalized_fact["value"]
+        for item in comparisons
+        if item.normalized_fact["operator"] == "eq"
+    )
+    if len(equalities) == len(comparisons) and len(set(equalities)) > 1:
+        return (
+            "incompatible_equalities",
+            "Frame %s cannot assign %s to %s at the same time."
+            % (frame, " and ".join(str(value) for value in equalities), variable),
+        )
+    if _interval_is_empty(comparisons):
+        return (
+            "interval_intersection",
+            "No value of %s satisfies every bound required at frame %s."
+            % (variable, frame),
+        )
+    return None
+
+
+def _interval_is_empty(items: Tuple["BmcCoreItem", ...]) -> bool:
+    """Report whether published bounds on one variable admit no value.
+
+    Only the closed integer reading is used: the recognizer publishes integer
+    values, so a bound is turned into an inclusive limit and the two limits are
+    compared.  Inequality (``ne``) is deliberately ignored, because excluding one
+    value never empties a range on its own.
+
+    :param items: Published comparison members on one variable and frame.
+    :type items: Tuple[BmcCoreItem, ...]
+    :return: ``True`` when no integer satisfies every bound.
+    :rtype: bool
+
+    Example::
+
+        >>> _interval_is_empty(())
+        False
+    """
+    lower = None
+    upper = None
+    for item in items:
+        fact = item.normalized_fact
+        operator, value = fact["operator"], fact["value"]
+        if operator == "eq":
+            low = high = value
+        elif operator == "ge":
+            low, high = value, None
+        elif operator == "gt":
+            low, high = value + 1, None
+        elif operator == "le":
+            low, high = None, value
+        elif operator == "lt":
+            low, high = None, value - 1
+        else:
+            continue
+        if low is not None:
+            lower = low if lower is None else max(lower, low)
+        if high is not None:
+            upper = high if upper is None else min(upper, high)
+    return lower is not None and upper is not None and lower > upper
+
+
+def build_conflict_narrative(core: "BmcConflictCore") -> BmcConflictNarrative:
+    """Render the deterministic account of why the published core is unsatisfiable.
+
+    The narrative reads the core and its normalized facts only, so it never
+    outruns the recognizers: with a supported pattern it walks each fact and then
+    names the contradiction, and otherwise it states that the listed groups are
+    jointly unsatisfiable and stops.  The steps are ordered causally -- facts
+    first, the closing conflict last -- rather than by stable id.
+
+    :param core: The published subset core to describe.
+    :type core: BmcConflictCore
+    :return: The narrative for this core.
+    :rtype: BmcConflictNarrative
+
+    Example::
+
+        >>> reference = BmcConstraintRef(
+        ...     "g0", "kernel", "transition.step",
+        ...     BmcSourceRef("generated", None, None), "step rule",
+        ... )
+        >>> item = BmcCoreItem(
+        ...     reference, "transition_rule", None, False,
+        ...     {"kind": "structural_constraint"}, "step rule", False,
+        ... )
+        >>> core = BmcConflictCore(
+        ...     "kernel", "target", "source_group", "raw", "not_proven", (item,),
+        ... )
+        >>> build_conflict_narrative(core).derivation_status
+        'structural_only'
+    """
+    ids = tuple(item.constraint.stable_id for item in core.items)
+    # Only authored entries are offered: a generated encoding rule has no line
+    # for the reader to open.  These are review entry points, not a repair
+    # instruction, and editing one does not promise the full target becomes
+    # satisfiable.
+    surfaces = tuple(
+        sorted(item.constraint.stable_id for item in core.items if item.editable)
+    )
+    pattern = _conflict_pattern(core.items)
+    if pattern is None:
+        # The frozen degradation wording: state the joint fact, say the specific
+        # derivation is unavailable, and do not present that as a root cause.
+        summary = (
+            "The listed source groups are jointly unsatisfiable in %s. A more "
+            "specific value/state derivation is not available for this "
+            "expression shape." % core.scope
+        )
+        return BmcConflictNarrative(
+            derivation_status="structural_only",
+            headline="The %s constraints cannot hold together." % core.scope,
+            summary=summary,
+            reasoning_steps=(BmcReasoningStep("fact", ids, (), summary),),
+            review_surfaces=surfaces,
+        )
+    rule, closing = pattern
+    steps = tuple(
+        BmcReasoningStep("fact", (item.constraint.stable_id,), (), item.human_text)
+        for item in core.items
+    ) + (BmcReasoningStep("conflict", ids, (), closing),)
+    return BmcConflictNarrative(
+        derivation_status="complete",
+        headline=closing,
+        summary=(
+            "The scenario is empty before the property objective is considered: "
+            "%s over %d source group%s in %s."
+            % (
+                rule.replace("_", " "),
+                len(core.items),
+                "" if len(core.items) == 1 else "s",
+                core.scope,
+            )
+        ),
+        reasoning_steps=steps,
+        review_surfaces=surfaces,
+    )
+
+
 def explanation_text_lines(explanation) -> List[str]:
     """Render one published explanation as human report lines.
 
@@ -1810,30 +2168,24 @@ def explanation_text_lines(explanation) -> List[str]:
         lines.append(
             "Classification: %s" % CLASSIFICATION_PHRASES[explanation.classification]
         )
+    narrative = explanation.narrative
+    if narrative is not None and narrative.reasoning_steps:
+        lines.append("")
+        lines.append("Why no execution exists:")
+        for index, step in enumerate(narrative.reasoning_steps, start=1):
+            lines.append("  %d. %s" % (index, step.text))
+        if narrative.derivation_status == "structural_only":
+            # The frozen degradation transcript labels the depth outright so a
+            # reader never mistakes a joint-unsatisfiability statement for an
+            # identified root cause.
+            lines.append("Derivation: STRUCTURAL ONLY")
     core = explanation.core
     if core is not None:
         lines.append("")
         lines.append("Conflict constraints:")
         for index, item in enumerate(core.items, start=1):
             source = item.constraint.source
-            span = source.span
-            if source.path is not None and span is not None:
-                location = "%s:%d:%d" % (source.path, span.line, span.column)
-                if span.end_line is not None and span.end_column is not None:
-                    location += "-%d:%d" % (span.end_line, span.end_column)
-            elif source.path is not None:
-                location = source.path
-            elif source.kind == "generated":
-                location = "generated %s constraint" % _category_noun(item.constraint)
-            else:
-                # An authored constraint whose origin was never named -- a
-                # programmatic query, for instance -- still came from the user's
-                # own text.  Calling it generated would attribute their
-                # constraint to the encoder, which the frozen contract forbids.
-                location = "%s %s constraint (source location unavailable)" % (
-                    source.kind,
-                    _category_noun(item.constraint),
-                )
+            location = _item_location(item)
             if source.kind == "generated":
                 # The frozen contract is explicit that a generated support group
                 # must be shown together with its frame/step/refs rather than
@@ -1865,16 +2217,50 @@ def explanation_text_lines(explanation) -> List[str]:
                 "subset-minimal."
             )
         lines.append("Core scope: %s" % core.scope)
-        # Every core reports its scope and its reduction, whether or not
-        # minimality was proven; the sentence above is what distinguishes the
-        # two.  Granularity, member count, a labelled minimality line and the
-        # elapsed time are not rendered: they belong to the fuller published
-        # block, which also carries a narrative and a causal chain this stage
-        # does not build, so emitting a few of its fields here would suggest a
-        # completeness the output does not have.
+        # The fuller block belongs to the closed-derivation transcript.  The
+        # degraded one prints scope, reduction and the reason the reduction
+        # stopped, and nothing else, so emitting granularity, size, a labelled
+        # minimality line and a duration there would claim a completeness that
+        # transcript does not have.  The discriminator is the derivation rather
+        # than the status, because a stage-fallback artifact closes its chain and
+        # is still published as partial.
+        closed = narrative is not None and narrative.derivation_status == "complete"
+        if closed:
+            lines.append("Core granularity: %s" % core.granularity)
+            lines.append("Core size: %d" % len(core.items))
         lines.append("Reduction: %s" % core.reduction)
+        if closed:
+            lines.append("Subset minimality: %s" % core.subset_minimality)
+        if closed and narrative.review_surfaces:
+            lines.append("")
+            lines.append("Review surfaces:")
+            surfaces = {
+                item.constraint.stable_id: item
+                for item in core.items
+                if item.constraint.stable_id in set(narrative.review_surfaces)
+            }
+            for stable_id in narrative.review_surfaces:
+                item = surfaces[stable_id]
+                lines.append(
+                    "  %s  %s"
+                    % (
+                        item.semantic_role.replace("_", " "),
+                        _item_location(item),
+                    )
+                )
+            # Fixed wording from the frozen transcript.  A review surface is an
+            # entry point for the reader to inspect, not a repair the tool chose,
+            # and it is no promise that editing one makes the target satisfiable.
+            lines.append("  No automatic repair has been selected.")
     if explanation.reason is not None:
         lines.append("Reason: %s" % explanation.reason)
+    if (
+        explanation.elapsed_ms is not None
+        and explanation.narrative is not None
+        and explanation.narrative.derivation_status == "complete"
+    ):
+        lines.append("")
+        lines.append("Explanation time: %.3f ms" % explanation.elapsed_ms)
     if core is None and explanation.classification is not None:
         lines.append("")
         # Two physical lines, broken where the frozen transcript breaks them.

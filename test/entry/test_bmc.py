@@ -1978,7 +1978,18 @@ def test_bmc_human_output_shows_the_explanation_it_paid_for(explain_files) -> No
 
     assert default.exit_code == formal.exit_code == 3
     assert "Explanation:" not in default.output
-    assert "Explanation: PARTIAL FORMAL DOMAIN EXPLANATION" in formal.output
+    assert "Explanation: COMPLETE FORMAL DOMAIN EXPLANATION" in formal.output
+    # The transcript now answers "why" as well as "where": a numbered causal
+    # chain whose closing step is the contradiction itself.
+    assert "Why no execution exists:" in formal.output
+    assert "  1. At frame 0, the query requires x to equal 1." in formal.output
+    assert "  3. Frame 0 cannot assign 1 and 2 to x at the same time." in formal.output
+    # And "where do I look": authored entry points, with no repair implied.
+    assert "Review surfaces:" in formal.output
+    assert "No automatic repair has been selected." in formal.output
+    assert "Core granularity: source_group" in formal.output
+    assert "Core size: 2" in formal.output
+    assert "Subset minimality: proven" in formal.output
     assert (
         "Classification: the assumptions are internally inconsistent" in formal.output
     )
@@ -2629,3 +2640,39 @@ def test_bmc_json_reason_does_not_claim_a_probe_that_never_ran(explain_files) ->
     for check in feasibility["refinement_checks"]:
         # And every ledger entry names a probe that has a verdict to report.
         assert check["name"] and check["status"]
+
+
+@pytest.mark.unittest
+def test_the_complete_transcript_answers_the_five_reader_questions(
+    explain_files,
+) -> None:
+    """A reader who does not know Z3 must answer all five from the output alone.
+
+    The frozen acceptance question is exactly that: where did it fail, why,
+    which constraints, where do I review, and how strong is the conclusion.
+    Each block below is the one that answers one of them, so a block dropped in
+    a later refactor fails here with the question it took away.
+    """
+    model, query = explain_files
+
+    output = _run(
+        "-i", str(model), "-q", str(query), "--explain-infeasibility", "formal"
+    ).output
+
+    # Where did it fail.
+    assert "Scenario: INFEASIBLE" in output
+    assert "Classification: the assumptions are internally inconsistent" in output
+    # Why -- a chain, not a restatement of the member list.
+    chain = output.split("Why no execution exists:")[1].split("\n\n")[0]
+    assert chain.count("\n  ") >= 3
+    assert "cannot assign" in chain
+    # Which constraints -- authored text at a resolvable location.
+    assert 'assume at 0: var("x") == 1;' in output
+    assert ".fbmcq:" in output
+    # Where to review, and that nothing was repaired for them.
+    assert "Review surfaces:" in output
+    assert "No automatic repair has been selected." in output
+    # How strong the conclusion is: complete, proven minimal, and still bounded.
+    assert "COMPLETE FORMAL DOMAIN EXPLANATION" in output
+    assert "Subset minimality: proven" in output
+    assert "This is a bounded result over at most" in output

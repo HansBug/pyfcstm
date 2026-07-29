@@ -6045,7 +6045,14 @@
           "type": "null"
         },
         "narrative": {
-          "type": "null"
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/conflictNarrative"
+            }
+          ]
         },
         "reason": {
           "$ref": "#/$defs/nullableString"
@@ -6770,6 +6777,125 @@
                 "type": "null"
               }
             }
+          }
+        }
+      ]
+    },
+    "reasoningStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "item_ids",
+        "proof_node_ids",
+        "text"
+      ],
+      "$comment": "A step names the core members it reads so a consumer can jump from a sentence to the source lines behind it. Draft 2020-12 cannot require those ids to exist in core.items -- that is a cross-array reference -- so the constructor enforces it.",
+      "properties": {
+        "kind": {
+          "enum": [
+            "fact",
+            "derivation",
+            "conflict"
+          ]
+        },
+        "item_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "proof_node_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "conflictNarrative": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "derivation_status",
+        "headline",
+        "summary",
+        "reasoning_steps",
+        "review_surfaces"
+      ],
+      "$comment": "Rendered from the published core and its normalized facts alone: no file read, no solver. A shape with no domain reading yields structural_only and no conflict step rather than an invented chain. review_surfaces are authored entry points for review, not repair suggestions, and editing one is not a promise that the full target becomes satisfiable.",
+      "properties": {
+        "derivation_status": {
+          "enum": [
+            "complete",
+            "partial",
+            "structural_only",
+            "not_available"
+          ]
+        },
+        "headline": {
+          "type": "string",
+          "minLength": 1
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reasoning_steps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/reasoningStep"
+          }
+        },
+        "review_surfaces": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "allOf": [
+        {
+          "$comment": "A complete derivation claims the chain reached the contradiction, so its closing step has to be present.",
+          "if": {
+            "properties": {
+              "derivation_status": {
+                "const": "complete"
+              }
+            },
+            "required": [
+              "derivation_status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "reasoning_steps": {
+                "contains": {
+                  "properties": {
+                    "kind": {
+                      "const": "conflict"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "reasoning_steps"
+            ]
           }
         }
       ]

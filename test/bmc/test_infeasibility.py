@@ -711,7 +711,10 @@ def test_explain_publishes_a_classification_and_a_mapped_core() -> None:
 
     assert explanation.classification == "assumptions_self_conflict"
     assert explanation.achieved_mode == "formal"
-    assert explanation.status == "partial"
+    # Two mutually exclusive equalities are a pattern the recognizers close, so
+    # the formal artifact is complete and carries no reason.
+    assert explanation.status == "complete"
+    assert explanation.reason is None
     assert explanation.core.scope == "assumptions_component"
     assert explanation.core.reduction == "subset_minimal"
     assert explanation.core.subset_minimality == "proven"
@@ -1599,9 +1602,7 @@ def test_a_published_core_carries_the_minimality_the_shrink_proved() -> None:
     assert published_ids <= raw_ids
     assert published_ids
 
-    # The status stays partial because the frozen truth table also requires a
-    # narrative for a complete formal artifact, and that slot is not built here.
-    assert outcome.explanation.status == "partial"
+    assert outcome.explanation.status == "complete"
     assert outcome.explanation.achieved_mode == "formal"
 
 
@@ -1660,3 +1661,113 @@ def test_a_single_member_core_earns_its_minimality_proof() -> None:
     assert minimized.record is not None
     assert minimized.record.status == "complete"
     assert minimized.record.started is True
+
+
+@pytest.mark.unittest
+def test_a_recognized_conflict_gets_a_causal_chain_ending_in_the_clash() -> None:
+    """The narrative walks facts first, then names the contradiction.
+
+    A reader asking "why is there no run" needs the chain, not the member list
+    again.  The frozen prototype orders it causally: each fact step states one
+    requirement, and a closing conflict step says why they cannot hold together.
+    """
+    core = _core_formula(
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
+        'check reach <= 2: active("Root.B");'
+    )
+
+    outcome = explain_infeasibility(core, "assumptions", _SolveBudget(None))
+    narrative = outcome.explanation.narrative
+
+    assert narrative is not None
+    assert narrative.derivation_status == "complete"
+    kinds = [step.kind for step in narrative.reasoning_steps]
+    assert kinds[-1] == "conflict"
+    assert kinds.count("conflict") == 1
+    assert set(kinds[:-1]) == {"fact"}
+
+    # Every referenced id belongs to the published core, and the conflict step
+    # references the members that actually clash.
+    published = {item.constraint.stable_id for item in outcome.explanation.core.items}
+    for step in narrative.reasoning_steps:
+        assert step.item_ids
+        assert set(step.item_ids) <= published
+        # Proof node ids belong to proof mode, which is not built here.
+        assert step.proof_node_ids == ()
+    assert set(narrative.reasoning_steps[-1].item_ids) == published
+
+
+@pytest.mark.unittest
+def test_review_surfaces_offer_only_places_the_reader_can_actually_edit() -> None:
+    """A review surface is an authored entry point, not a repair suggestion."""
+    core = _core_formula(
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
+        'check reach <= 2: active("Root.B");'
+    )
+
+    outcome = explain_infeasibility(core, "assumptions", _SolveBudget(None))
+    explanation = outcome.explanation
+    editable = {
+        item.constraint.stable_id for item in explanation.core.items if item.editable
+    }
+
+    assert set(explanation.narrative.review_surfaces) == editable
+    assert explanation.narrative.review_surfaces == tuple(
+        sorted(explanation.narrative.review_surfaces)
+    )
+
+
+@pytest.mark.unittest
+def test_an_unreadable_shape_says_structural_only_instead_of_inventing_a_chain() -> (
+    None
+):
+    """With no domain reading, the narrative states the joint fact and stops.
+
+    The frozen degradation transcript is explicit: say the listed groups are
+    jointly unsatisfiable, say a more specific derivation is unavailable, and do
+    not dress that up as an identified root cause.
+    """
+    core = _core_formula(
+        'init state("Root.A") where x == 0; '
+        'assume at 1: var("x") == 1; '
+        'check reach <= 2: active("Root.B");'
+    )
+
+    outcome = explain_infeasibility(core, "assumptions", _SolveBudget(None))
+    narrative = outcome.explanation.narrative
+
+    assert narrative is not None
+    assert narrative.derivation_status == "structural_only"
+    # No fabricated equality chain: a structural narrative carries no conflict
+    # step, because none was derived.
+    assert [step.kind for step in narrative.reasoning_steps] == ["fact"]
+    assert "jointly unsatisfiable" in narrative.reasoning_steps[0].text
+    # And the explanation stays partial, since the derivation never closed.
+    assert outcome.explanation.status == "partial"
+
+
+@pytest.mark.unittest
+def test_a_closed_derivation_unlocks_the_complete_formal_verdict() -> None:
+    """``complete`` is reachable once the narrative closes the chain.
+
+    Every other condition -- a diagnostic classification and a subset-minimal
+    core -- was already met, and the frozen delivery table withheld ``complete``
+    on the missing narrative alone.  A complete explanation also carries no
+    reason, because nothing about it was degraded.
+    """
+    core = _core_formula(
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
+        'check reach <= 2: active("Root.B");'
+    )
+
+    outcome = explain_infeasibility(core, "assumptions", _SolveBudget(None))
+    explanation = outcome.explanation
+
+    assert explanation.achieved_mode == "formal"
+    assert explanation.status == "complete"
+    assert explanation.reason is None
+    assert explanation.classification == "assumptions_self_conflict"
+    assert explanation.core.reduction == "subset_minimal"

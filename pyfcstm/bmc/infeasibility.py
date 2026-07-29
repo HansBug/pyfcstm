@@ -54,6 +54,7 @@ from .explanation import (
     BmcConstraintRef,
     BmcCoreItem,
     BmcInfeasibilityExplanation,
+    build_conflict_narrative,
     human_text_for_fact,
 )
 from .provenance import (
@@ -1308,6 +1309,50 @@ def explain_infeasibility(
             ),
             checks,
         )
+    narrative = build_conflict_narrative(published)
+    formal_is_complete = (
+        outcome.classification is not None
+        and minimized.subset_minimality == "proven"
+        and narrative.derivation_status == "complete"
+    )
+    if formal_is_complete and requested_mode == "formal":
+        # Every condition the frozen table names for a complete formal artifact
+        # holds: a diagnostic classification, a proven-minimal core and a closed
+        # derivation.  Such an explanation carries no reason, because nothing
+        # about it was degraded.
+        return ExplanationOutcome(
+            BmcInfeasibilityExplanation(
+                requested_mode=requested_mode,
+                achieved_mode="formal",
+                status="complete",
+                classification=outcome.classification,
+                core=published,
+                narrative=narrative,
+                elapsed_ms=elapsed_ms,
+            ),
+            checks,
+        )
+    if formal_is_complete:
+        # A complete formal artifact still falls short of a requested proof, and
+        # the frozen table reserves 'complete' for the depth that was asked for.
+        # The reason has to name why the proof did not close rather than describe
+        # the formal artifact, which is not what fell short.
+        return ExplanationOutcome(
+            BmcInfeasibilityExplanation(
+                requested_mode=requested_mode,
+                achieved_mode="formal",
+                status="partial",
+                classification=outcome.classification,
+                core=published,
+                narrative=narrative,
+                reason=(
+                    "the formal explanation is complete, but no verifiable proof "
+                    "DAG is produced at this stage"
+                ),
+                elapsed_ms=elapsed_ms,
+            ),
+            checks,
+        )
     if outcome.classification is None:
         reason = (
             "classification degraded to the %s scope (%s); the published core "
@@ -1322,7 +1367,13 @@ def explain_infeasibility(
             minimized.reason or minimized.status
         )
     else:
-        reason = "subset-minimal source core published without a conflict narrative"
+        # The core is proven minimal and the classification finished, so the
+        # shortfall is the derivation: the recognizers read no pattern that closes
+        # the chain, which the narrative already reports as structural_only.
+        reason = (
+            "subset-minimal source core published with a %s derivation"
+            % narrative.derivation_status
+        )
     return ExplanationOutcome(
         BmcInfeasibilityExplanation(
             requested_mode=requested_mode,
@@ -1330,6 +1381,7 @@ def explain_infeasibility(
             status="partial",
             classification=outcome.classification,
             core=published,
+            narrative=narrative,
             reason=reason,
             elapsed_ms=elapsed_ms,
         ),

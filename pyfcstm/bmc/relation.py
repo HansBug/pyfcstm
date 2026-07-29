@@ -312,7 +312,7 @@ def _formula_from_groups(
         >>> import z3
         >>> from pyfcstm.bmc.provenance import BmcSourceRef, BmcTrackedConstraint
         >>> group = BmcTrackedConstraint(
-        ...     "x", "kernel", "domain", (z3.Bool("x"),),
+        ...     "x", "kernel", "domain.frame_state", (z3.Bool("x"),),
         ...     BmcSourceRef("generated", None, None),
         ... )
         >>> str(_formula_from_groups((group,)))
@@ -362,7 +362,7 @@ def _append_tracked_group(
         >>> from pyfcstm.bmc.provenance import BmcSourceRef
         >>> groups = []
         >>> _append_tracked_group(
-        ...     groups, stable_id="x", stage="kernel", category="domain",
+        ...     groups, stable_id="x", stage="kernel", category="domain.frame_state",
         ...     expressions=(z3.BoolVal(True),),
         ...     source_ref=BmcSourceRef("generated", None, None),
         ... )

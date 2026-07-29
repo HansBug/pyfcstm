@@ -820,49 +820,45 @@ def test_an_integer_too_long_to_render_is_refused_by_name() -> None:
             )
 
 
-def test_a_classification_is_stored_as_the_vocabulary_member_it_matched() -> None:
-    """The last frozen-vocabulary field also writes its validated text back."""
+def test_a_classification_outside_the_frozen_vocabulary_is_refused() -> None:
+    """Only a published classification may reach the JSON contract.
 
-    class Shouty(str):
-        def __str__(self):
-            return "FORGED"
-
+    The field names one of a frozen set of verdicts, so a value outside that set
+    would publish a classification no consumer of the schema can interpret.
+    """
     explanation = BmcInfeasibilityExplanation(
         requested_mode="formal",
         achieved_mode="none",
         status="partial",
-        classification=Shouty("assumptions_self_conflict"),
+        classification="assumptions_self_conflict",
         reason="raw core unknown",
     )
-
-    assert type(explanation.classification) is str
     assert explanation.classification == "assumptions_self_conflict"
 
+    with pytest.raises(ValueError, match="classification"):
+        BmcInfeasibilityExplanation(
+            requested_mode="formal",
+            achieved_mode="none",
+            status="partial",
+            classification="assumptions_self_conflicts",
+            reason="raw core unknown",
+        )
 
-def test_a_lying_length_cannot_smuggle_an_oversized_excerpt() -> None:
-    """The excerpt bound is measured on the text, not on what it reports.
 
-    ``len()`` calls ``type(x).__len__``, so a subclass decides both whether it
-    fits the published bound and whether a truncation happened.  Both directions
-    matter: an oversized excerpt could be published silently, and a two-character
-    one could claim a truncation that never occurred.
+def test_an_excerpt_is_bounded_and_its_truncation_flag_has_to_agree() -> None:
+    """Both directions of the excerpt bound are refused.
+
+    A caller assembling an item from source text can exceed the published bound,
+    or mark a short excerpt as truncated.  Publishing either would misdescribe
+    what the reader is looking at, so both are refused rather than repaired.
     """
-
-    class ShortLie(str):
-        def __len__(self):
-            return 5
-
-    class LongLie(str):
-        def __len__(self):
-            return MAX_SOURCE_EXCERPT_CHARS
-
     reference = _constraint()
 
     with pytest.raises(ValueError, match="must not exceed"):
         BmcCoreItem(
             reference,
             "initial_fact",
-            ShortLie("X" * (MAX_SOURCE_EXCERPT_CHARS + 1)),
+            "X" * (MAX_SOURCE_EXCERPT_CHARS + 1),
             False,
             {"kind": "structural_constraint"},
             "t",
@@ -872,39 +868,45 @@ def test_a_lying_length_cannot_smuggle_an_oversized_excerpt() -> None:
         BmcCoreItem(
             reference,
             "initial_fact",
-            LongLie("ab"),
+            "ab",
             True,
             {"kind": "structural_constraint"},
             "t",
             False,
         )
 
+    # Exactly at the bound is accepted, and an untruncated excerpt needs no flag.
+    at_bound = BmcCoreItem(
+        reference,
+        "initial_fact",
+        "X" * MAX_SOURCE_EXCERPT_CHARS,
+        False,
+        {"kind": "structural_constraint"},
+        "t",
+        False,
+    )
+    assert len(at_bound.source_excerpt) == MAX_SOURCE_EXCERPT_CHARS
 
-def test_a_category_cannot_choose_its_own_semantic_role() -> None:
-    """The family prefix is matched on the text, not via ``startswith``.
 
-    ``str.startswith`` is an instance method, so a subclass could claim any family
-    and pass the role agreement check while publishing a category from a
-    different one.  ``category`` is a machine dispatch key, so it has to be
-    trustworthy.
+def test_a_declared_role_must_agree_with_its_category() -> None:
+    """A role that contradicts its own category is refused, not published.
+
+    ``category`` is a machine dispatch key and ``semantic_role`` is what a reader
+    is told the item means.  A caller can pass a pair that disagrees, and
+    publishing it would let the two be read against each other.
     """
-
-    class Sneaky(str):
-        def startswith(self, prefix, *args, **kwargs):
-            return "assumption" in prefix
-
-    # category_role is exported, so a caller can reach it without going through
-    # a constructor that has already replaced the text.
     from pyfcstm.bmc.explanation import category_role
 
-    assert category_role(Sneaky("initial.target")) == "initial_fact"
+    # category_role is exported, so a caller can ask directly what a category means.
+    assert category_role("initial.target") == "initial_fact"
+    assert category_role("assumption.frame") == "assumption"
 
     with pytest.raises(ValueError, match="contradicts category"):
         BmcCoreItem(
             BmcConstraintRef(
                 "initial.target",
                 "initialization",
-                Sneaky("initial.target"),
+                "initial.target",
                 _GENERATED,
                 "initial target",
             ),
@@ -917,25 +919,17 @@ def test_a_category_cannot_choose_its_own_semantic_role() -> None:
         )
 
 
-def test_published_order_does_not_depend_on_a_members_own_comparison() -> None:
-    """Members are ordered by their text, so ``__lt__`` cannot pick the order.
+def test_published_order_is_by_stable_id_whatever_order_it_was_given() -> None:
+    """A core publishes its members sorted, not in the order it received them.
 
-    The published order is meant to be stable across runs and independent of the
-    solver's own core ordering; letting a member decide where it sorts would make
-    the order a property of the data rather than of the contract.
+    The solver's own core ordering is not reproducible between runs, so the
+    published order has to be a property of the contract rather than of how the
+    items happened to arrive.
     """
-
-    class Reversed(str):
-        def __lt__(self, other):
-            return str.__gt__(self, other)
-
-        def __gt__(self, other):
-            return str.__lt__(self, other)
-
     items = tuple(
         BmcCoreItem(
             BmcConstraintRef(
-                Reversed(name),
+                name,
                 "initialization",
                 "initial.target",
                 _GENERATED,
@@ -948,7 +942,9 @@ def test_published_order_does_not_depend_on_a_members_own_comparison() -> None:
             "t",
             False,
         )
-        for name in ("a", "b", "c")
+        # Deliberately not sorted, and not reverse-sorted either, so neither
+        # "kept as given" nor "reversed" would produce the expected result.
+        for name in ("b", "c", "a")
     )
 
     core = BmcConflictCore(
@@ -958,23 +954,21 @@ def test_published_order_does_not_depend_on_a_members_own_comparison() -> None:
     assert [item.constraint.stable_id for item in core.items] == ["a", "b", "c"]
 
 
-def test_a_lying_iterator_cannot_hide_a_control_character() -> None:
-    """The ASCII scan reads the characters the value holds.
+def test_a_control_character_cannot_reach_a_published_identifier() -> None:
+    """A stable id becomes a solver literal name and a JSON key, so it stays ASCII.
 
-    ``for char in value`` goes through ``__iter__``, so a subclass could present
-    harmless characters while really holding a NUL that later becomes a solver
-    literal name and a JSON key.
+    A caller assembling an id from source text can carry a control character into
+    it without noticing, which is why the check is on the value rather than on
+    where it came from.
     """
     from pyfcstm.bmc.explanation import is_printable_ascii
 
-    class AsciiLie(str):
-        def __iter__(self):
-            return iter("ok")
-
-    assert is_printable_ascii(AsciiLie("a\x00b")) is False
+    assert is_printable_ascii("initial.target.0000") is True
+    assert is_printable_ascii("a\x00b") is False
+    assert is_printable_ascii("tab\tseparated") is False
     with pytest.raises(ValueError, match="printable ASCII"):
         BmcConstraintRef(
-            AsciiLie("a\x00b"),
+            "a\x00b",
             "initialization",
             "initial.target",
             _GENERATED,

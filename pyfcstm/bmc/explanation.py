@@ -1634,12 +1634,10 @@ def depth_line_is_needed(requested_mode: str, achieved_mode: str) -> bool:
     ambiguous only when a deeper request settled for a shallower result, and only
     then is a separate line added.
 
-    This is a predicate rather than an inline condition so that every mode pair
-    the delivery matrix allows can be checked against it, including the pairs no
-    published transcript samples and the pairs whose objects cannot yet be built.
-    It is public for the same reason the other helpers in this module are: a test
-    replaces it to prove the renderer actually consults it rather than deciding
-    for itself, which a private name would not make any easier to do honestly.
+    It is a named predicate rather than an inline condition because the built-in
+    report and the command line must not diverge on when the line appears, and
+    because a caller rendering their own report needs the same answer this one
+    uses rather than having to re-derive it from the two mode fields.
 
     :param requested_mode: Depth the caller asked for.
     :type requested_mode: str

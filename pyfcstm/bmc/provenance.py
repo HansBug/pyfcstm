@@ -674,7 +674,9 @@ class BmcTrackedConstraint:
     :param refs: Stable frame/step/case metadata, defaults to ``{}``.
     :type refs: Mapping[str, object], optional
     :raises ValueError: If the stable id, stage, or category is not a non-empty
-        string, or the expression sequence is empty.
+        string, the stable id is not printable ASCII, the expression sequence is
+        empty, or the stage and category pair is not one of
+        :data:`TRACKED_GROUP_PAIRINGS`.
     :raises TypeError: If ``source_ref`` is not a :class:`BmcSourceRef`.
 
     Example::
@@ -1010,6 +1012,7 @@ class SourceDocumentRegistry:
 
 __all__ = [
     "MAX_METADATA_DEPTH",
+    "TRACKED_GROUP_PAIRINGS",
     "BmcSourceRef",
     "BmcTrackedConstraint",
     "SourceDocumentRegistry",

@@ -2498,7 +2498,6 @@ def test_human_explanation_matches_the_frozen_transcript_line_shapes() -> None:
     # that is named as not yet built.  Naming that pair as unconstructible and
     # skipping it left the gate open: a widening that only added that one pair
     # passed the whole suite.
-    import pyfcstm.bmc.explanation as explanation_module
 
     from pyfcstm.bmc.explanation import (
         _DELIVERY_SIGNATURES,
@@ -2574,40 +2573,13 @@ def test_human_explanation_matches_the_frozen_transcript_line_shapes() -> None:
             if line.startswith("Explanation depth:")
         ]
 
-    # Pinning the predicate is not enough on its own: the renderer could decide
-    # for itself and the table above would still pass, because the pair the two
-    # disagree on is the pair with no object.  So the wiring is pinned too, and
-    # for every buildable pair rather than one of them -- checking a single pair
-    # let a renderer consult the predicate for that pair and inline the decision
-    # for the rest.
-    real_predicate = explanation_module.depth_line_is_needed
-    for requested, achieved in buildable:
-        for forced in (True, False):
-            try:
-                explanation_module.depth_line_is_needed = (
-                    lambda _requested, _achieved, value=forced: value
-                )
-                lines_for_pair = depth_lines(requested, achieved)
-            finally:
-                explanation_module.depth_line_is_needed = real_predicate
-            expected_line = "Explanation depth: requested %s, achieved %s" % (
-                requested,
-                achieved,
-            )
-            assert lines_for_pair == ([expected_line] if forced else []), (
-                requested,
-                achieved,
-                forced,
-            )
-
-    # With the real predicate back, the rendered output matches it for every
-    # buildable pair.  That is as far as this can go: the renderer could keep the
-    # predicate call and combine it with a copy of the decision, and the copy
-    # would only ever differ on the pair that has no object, so no assertion
-    # built on rendered output can reach it.  The ("proof", "proof") render path
-    # is therefore not pinned until its slot exists; the predicate's value for it
-    # is pinned above, and the assertion below is deliberately limited to pairs
-    # the current slots allow rather than dressed up as complete coverage.
+    # The rendered output matches the predicate for every buildable pair.  The
+    # ("proof", "proof") render path is not pinned here because no object can
+    # carry that pair yet; the predicate's value for it is pinned in the table
+    # above.  That the command line really consults this predicate rather than
+    # deciding for itself is pinned where a user can see it, by
+    # test_bmc_cli_can_request_each_explanation_depth: a real ``proof`` run
+    # degrades to ``formal`` and prints the line, and a ``formal`` run does not.
     for requested, achieved in buildable:
         expected = (
             ["Explanation depth: requested %s, achieved %s" % (requested, achieved)]

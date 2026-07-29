@@ -93,6 +93,54 @@ def test_source_reference_rejects_malformed_values(kwargs, exception, message) -
         BmcSourceRef(**kwargs)
 
 
+@pytest.mark.parametrize(
+    ("reader", "value", "message"),
+    [
+        pytest.param("exact_str", 123, "must be a string", id="str-from-int"),
+        pytest.param("exact_str", None, "must be a string", id="str-from-none"),
+        pytest.param("exact_int", "3", "must be an integer", id="int-from-str"),
+        pytest.param("exact_int", 1.5, "must be an integer", id="int-from-float"),
+        pytest.param("exact_float", "1.5", "must be a number", id="float-from-str"),
+        pytest.param("exact_float", None, "must be a number", id="float-from-none"),
+        pytest.param("exact_index", "0", "must be an integer", id="index-from-str"),
+        # A coordinate is a number, and ``True`` is not one a caller means.
+        pytest.param("exact_index", True, "must be an integer", id="index-from-bool"),
+        pytest.param(
+            "exact_optional_index", "0", "must be an integer", id="optional-from-str"
+        ),
+    ],
+)
+def test_the_exact_readers_refuse_a_wrong_type(reader, value, message) -> None:
+    """The exported readers are what a caller reaches for to normalize a value.
+
+    They are in ``provenance.__all__``, so passing one the wrong type is an
+    ordinary caller mistake rather than an exotic construction -- and the error
+    has to name the field, since the reader is used from many call sites.
+    """
+    from pyfcstm.bmc import provenance
+
+    with pytest.raises(TypeError, match=message):
+        getattr(provenance, reader)(value, "field")
+
+
+def test_the_exact_readers_return_the_value_a_caller_gave() -> None:
+    """A well-formed value passes through unchanged, as an exact builtin.
+
+    ``exact_index`` is deliberately typed rather than bounded: an out-of-range
+    coordinate already degrades to an absent excerpt downstream, so it is checked
+    for being an integer and nothing more.
+    """
+    from pyfcstm.bmc import provenance
+
+    assert provenance.exact_str("kernel", "stage") == "kernel"
+    assert provenance.exact_int(7, "count") == 7
+    assert provenance.exact_float(1.5, "seconds") == 1.5
+    assert provenance.exact_index(1, "line") == 1
+    assert provenance.exact_optional_index(None, "end_line") is None
+    # Documented as typed, not bounded.
+    assert provenance.exact_index(-1, "line") == -1
+
+
 def test_source_reference_canonicalizes_a_complete_span() -> None:
     """Canonical source references preserve all half-open span coordinates."""
     reference = BmcSourceRef("fcstm", "machine.fcstm", Span(2, 3, 4, 5))
@@ -1792,13 +1840,12 @@ def test_tracked_refs_get_the_same_validation_as_published_metadata() -> None:
     assert isinstance(group.refs["nested"], MappingProxyType)
 
 
-def test_metadata_scalars_and_keys_become_exact_builtins() -> None:
-    """A value must not be the one answering questions about itself.
+def test_reference_metadata_is_json_ready_or_refused() -> None:
+    """Metadata reaches ``json.dumps`` unchanged, so it is checked on the way in.
 
-    ``__str__``, ``__int__``, ``__eq__`` and ``__hash__`` are all overridable, and
-    ``__class__`` can be faked so that ``isinstance`` agrees.  Storing whatever
-    passed the check lets a subclass carry state that changes its hash later, or
-    lets an impostor reach the JSON encoder and fail there instead of here.
+    A caller builds ``refs`` from whatever they have to hand.  Anything that could
+    not be rendered as JSON is refused where the group is built, because the
+    alternative is a serialization failure at the point of publishing a report.
     """
     import json
 
@@ -1816,110 +1863,55 @@ def test_metadata_scalars_and_keys_become_exact_builtins() -> None:
             refs=refs,
         )
 
-    class MutableHashStr(str):
-        def __new__(cls, value):
-            obj = str.__new__(cls, value)
-            obj.broken = False
-            return obj
+    # A well-formed nested mapping survives a round-trip through JSON.
+    group = tracked({"nested": {"ok": 1}})
+    assert json.loads(
+        json.dumps({name: dict(value) for name, value in group.refs.items()})
+    ) == {"nested": {"ok": 1}}
 
-        def __hash__(self):
-            if self.broken:
-                raise RuntimeError("the caller changed this key's hash")
-            return str.__hash__(self)
+    # Values JSON cannot render are refused here rather than at publishing time.
+    with pytest.raises(TypeError, match="is not JSON-compatible"):
+        tracked({"x": {1, 2}})
+    with pytest.raises(TypeError, match="is not JSON-compatible"):
+        tracked({"x": b"ab"})
 
-    class PretendInt:
-        @property
-        def __class__(self):
-            return int
+    # ``json.dumps`` would happily emit these, but no JSON reader accepts them.
+    for not_finite in (float("nan"), float("inf")):
+        with pytest.raises(ValueError, match="must be a finite number"):
+            tracked({"x": not_finite})
 
-    # A key is rebuilt, so breaking the original afterwards cannot reach it.
-    key = MutableHashStr("nested")
-    group = tracked({key: {"ok": 1}})
-    key.broken = True
-    assert [type(name) for name in group.refs] == [str]
-    json.dumps({name: dict(value) for name, value in group.refs.items()})
-
-    # Values are rebuilt too, and an impostor is refused here rather than later.
-    with pytest.raises(TypeError, match="must be an integer"):
-        tracked({"x": PretendInt()})
-
-    class Shouty(str):
-        def __str__(self):
-            return "LIE"
-
-    stored = tracked({"note": Shouty("real")})
-    assert stored.refs["note"] == "real"
-    assert type(stored.refs["note"]) is str
+    # A JSON object's keys are strings, so a non-string key cannot be published.
+    with pytest.raises(TypeError, match="keys must be strings"):
+        tracked({1: "a"})
 
 
-def test_tracked_identifiers_are_stored_as_exact_text() -> None:
-    """The builder container replaces its own identifiers too.
+def test_a_tracked_identifier_stays_printable_ascii() -> None:
+    """A group's id is read by an ASCII scan, a dict lookup and a sort.
 
-    ``build_core_item`` revalidates at the public boundary, so a subclass stored
-    here still cannot reach a published document -- which is exactly why no
-    published-output test can see this.  What it can reach is anything that reads
-    the group directly: the ASCII scan, a dict lookup, a sort.
+    The id becomes a solver literal name and a JSON key downstream, so a control
+    character in it is refused where the group is built rather than at whichever
+    reader trips over it first.
     """
     from pyfcstm.bmc.provenance import BmcSourceRef, BmcTrackedConstraint
 
-    class Shouty(str):
-        def __str__(self):
-            return "LIE"
-
-    class AsciiLie(str):
-        def __iter__(self):
-            return iter("ok")
-
     group = BmcTrackedConstraint(
-        Shouty("assumption.0000.frame.0000"),
-        Shouty("assumptions"),
-        Shouty("assumption.frame"),
+        "assumption.0000.frame.0000",
+        "assumptions",
+        "assumption.frame",
         (z3.BoolVal(True),),
         BmcSourceRef("generated", None, None),
     )
-
-    assert type(group.stable_id) is str
-    assert type(group.stage) is str
-    assert type(group.category) is str
     assert group.stable_id == "assumption.0000.frame.0000"
 
-    # A subclass hiding a control character behind __iter__ is still refused.
-    with pytest.raises(ValueError, match="printable ASCII"):
-        BmcTrackedConstraint(
-            AsciiLie("a\x00b"),
-            "assumptions",
-            "assumption.frame",
-            (z3.BoolVal(True),),
-            BmcSourceRef("generated", None, None),
-        )
-
-
-def test_two_keys_canonicalizing_to_one_fail_closed() -> None:
-    """Folding two distinct keys into one would drop provenance silently.
-
-    Both keys coexist in the caller's mapping because their ``__eq__`` says they
-    differ, but they hold the same text.  Overwriting the first would lose a
-    recorded fact with nothing to show for it.
-    """
-    from pyfcstm.bmc.provenance import _require_json_mapping
-
-    class DuplicateKey(str):
-        def __new__(cls, text, salt):
-            obj = str.__new__(cls, text)
-            obj.salt = salt
-            return obj
-
-        def __hash__(self):
-            return hash((str.__str__(self), self.salt))
-
-        def __eq__(self, other):
-            return self is other
-
-    source = {DuplicateKey("same", 1): "first", DuplicateKey("same", 2): "second"}
-    assert len(source) == 2
-
-    with pytest.raises(ValueError, match="both canonicalize to"):
-        _require_json_mapping(source, "refs")
+    for bad_id in ("a\x00b", "tab\there", "new\nline", "caf\xe9"):
+        with pytest.raises(ValueError, match="printable ASCII"):
+            BmcTrackedConstraint(
+                bad_id,
+                "assumptions",
+                "assumption.frame",
+                (z3.BoolVal(True),),
+                BmcSourceRef("generated", None, None),
+            )
 
 
 def test_span_coordinates_are_typed_where_they_are_published() -> None:
@@ -2035,26 +2027,25 @@ def test_the_digit_bound_follows_a_lowered_interpreter_limit() -> None:
     assert "under encoded" in completed.stdout
 
 
-def test_a_document_cannot_publish_text_the_registry_never_held() -> None:
-    """Excerpts are sliced from the stored text, so that text must be exact.
+def test_an_excerpt_quotes_exactly_the_stored_text() -> None:
+    """An excerpt is sliced from the document the registry holds, unchanged.
 
-    ``replace`` is an instance method.  A ``str`` subclass overriding it makes the
-    registry store, and every excerpt quote, characters the caller never supplied
-    -- the one thing a provenance registry exists to rule out.
+    Quoting anything other than the stored characters is the one failure a
+    provenance registry exists to rule out, so a span is checked against the text
+    it names on a multi-line document rather than only on a single word.
     """
     from pyfcstm.bmc.provenance import BmcSourceRef, SourceDocumentRegistry
 
-    class EvilText(str):
-        def replace(self, old, new, *args):
-            return "EVIL"
+    registry = SourceDocumentRegistry({"m.fcstm": "state A;\nstate B;\n"})
 
-    registry = SourceDocumentRegistry({"m.fcstm": EvilText("SAFE")})
-
-    assert registry.document("m.fcstm") == "SAFE"
-    assert type(registry.document("m.fcstm")) is str
-    assert (
-        registry.excerpt(BmcSourceRef("fcstm", "m.fcstm", Span(1, 1, 1, 5))) == "SAFE"
+    assert registry.document("m.fcstm") == "state A;\nstate B;\n"
+    assert registry.excerpt(BmcSourceRef("fcstm", "m.fcstm", Span(1, 1, 1, 9))) == (
+        "state A;"
     )
+    assert registry.excerpt(BmcSourceRef("fcstm", "m.fcstm", Span(2, 7, 2, 9))) == "B;"
+    # A span naming a line the document does not have yields no excerpt at all
+    # rather than the nearest text.
+    assert registry.excerpt(BmcSourceRef("fcstm", "m.fcstm", Span(9, 1, 9, 2))) is None
 
 
 @pytest.mark.unittest

@@ -629,6 +629,35 @@ class BmcSourceRef:
         return {"kind": self.kind, "path": self.path, "span": span}
 
 
+#: Every stage and category pairing a tracked group may carry.
+#:
+#: The pair is checked, not each field separately: a stage and a category can each
+#: be individually valid and still describe a group the builder never emits, and
+#: reasoning about such a group -- resolving its aggregate, for instance -- gives
+#: an answer for an input that cannot occur.  Guarding the pair here rather than by
+#: reading the builder's source means no call syntax can bypass it: keyword,
+#: positional, derived with ``dataclasses.replace``, or constructed from another
+#: module all arrive through this constructor.
+#:
+#: Adding a pairing is a deliberate act that belongs in the same change as the
+#: registration that needs it.
+TRACKED_GROUP_PAIRINGS = frozenset(
+    {
+        ("assumptions", "assumption.cardinality"),
+        ("assumptions", "assumption.event"),
+        ("assumptions", "assumption.frame"),
+        ("assumptions", "definedness"),
+        ("initialization", "definedness"),
+        ("initialization", "initial.target"),
+        ("initialization", "initial.variable"),
+        ("initialization", "initial.where"),
+        ("kernel", "domain.frame_state"),
+        ("kernel", "transition.case"),
+        ("kernel", "transition.step"),
+    }
+)
+
+
 @dataclass(frozen=True)
 class BmcTrackedConstraint:
     """One source-group occurrence and its generated Boolean expressions.
@@ -702,6 +731,13 @@ class BmcTrackedConstraint:
                 raise ValueError(
                     "tracked constraint %s must be a string." % name
                 ) from None
+        if (self.stage, self.category) not in TRACKED_GROUP_PAIRINGS:
+            raise ValueError(
+                "tracked constraint stage/category pairing %r is not one the "
+                "builder registers; add it to TRACKED_GROUP_PAIRINGS in the same "
+                "change as the registration that needs it."
+                % ((self.stage, self.category),)
+            )
         if not all("\x20" <= char <= "\x7e" for char in self.stable_id):
             # The id becomes a solver literal name and a JSON key downstream, so
             # the frozen contract keeps it printable ASCII.  ``str.isascii`` is

@@ -112,7 +112,10 @@ def test_tracked_constraint_rejects_malformed_values(
     values = {
         "stable_id": "group",
         "stage": "kernel",
-        "category": "domain",
+        # A pairing the builder really registers: the constructor now refuses a
+        # stage and category combination it never emits, so a made-up pairing
+        # would be rejected before the field under test is reached.
+        "category": "domain.frame_state",
         "expressions": (z3.BoolVal(True),),
         "source_ref": BmcSourceRef("generated", None, None),
     }
@@ -2492,132 +2495,82 @@ def test_registry_fields_are_all_hardened_against_hostile_input() -> None:
 #: its own call sites.  Both tests below consume this so neither can drift from
 #: the other; an earlier pair each held its own literal list and agreed only by
 #: coincidence.
-def _registered_pairings():
-    """Read the stage and category pairings the builder can register.
-
-    A query only exercises the branches it reaches, so the pairings are read
-    statically from the call sites instead.
-
-    Two predicates are used together because each alone lets something through.
-    Matching only calls to the two known builders missed a group derived with
-    ``dataclasses.replace(group, stage=..., category=...)``.  Matching only calls
-    that pass both keywords missed a positional construction.  A call qualifies
-    if it satisfies either.
-
-    Argument positions come from the real signatures, and only for parameters a
-    call may actually pass positionally: the append helper takes both as
-    keyword-only, so a positional slot for it would be an unreachable path
-    dressed up as coverage.
-
-    The string is read by attribute rather than by an ``ast.Constant`` isinstance
-    check.  Python 3.7 parses a string keyword into ``ast.Str``, and that check
-    classified every literal as undecidable there while passing locally on a
-    newer interpreter.  Reading ``value`` and then ``s`` covers both node shapes
-    without depending on either version's helper behaviour.
-
-    :return: The registered pairings, the positional slots that are reachable per
-        builder, and the call sites whose arguments are not statically decidable.
-    :rtype: Tuple[Set[Tuple[str, str]], Dict[str, Dict[str, int]],
-        List[Tuple[str, int]]]
-    """
-    import ast
-    import inspect
-
-    import pyfcstm.bmc.relation as relation_module
-    from pyfcstm.bmc.provenance import BmcTrackedConstraint
-
-    positional = {}
-    for func in (relation_module._append_tracked_group, BmcTrackedConstraint):
-        names = list(inspect.signature(func).parameters)
-        slots = {}
-        for wanted in ("stage", "category"):
-            parameter = inspect.signature(func).parameters[wanted]
-            if parameter.kind is inspect.Parameter.POSITIONAL_OR_KEYWORD:
-                slots[wanted] = names.index(wanted)
-        positional[func.__name__] = slots
-
-    source = Path(relation_module.__file__).read_text(encoding="utf-8")
-    pairings = set()
-    undecidable = []
-    for node in ast.walk(ast.parse(source)):
-        if not isinstance(node, ast.Call):
-            continue
-        name = getattr(node.func, "id", None) or getattr(node.func, "attr", None)
-        keywords = {kw.arg: kw.value for kw in node.keywords}
-        known_builder = name in positional
-        carries_both = "stage" in keywords and "category" in keywords
-        if not known_builder and not carries_both:
-            continue
-
-        def string_of(wanted):
-            expression = keywords.get(wanted)
-            if expression is None:
-                slot = positional.get(name, {}).get(wanted)
-                if slot is not None and slot < len(node.args):
-                    expression = node.args[slot]
-            # ast.Constant on 3.8 and later, ast.Str on 3.7.  Anything else --
-            # a name, a call, or an unfilled slot -- reads as None.
-            for attribute in ("value", "s"):
-                value = getattr(expression, attribute, None)
-                if isinstance(value, str):
-                    return value
-            return None
-
-        values = [string_of("stage"), string_of("category")]
-        if all(isinstance(value, str) for value in values):
-            pairings.add((values[0], values[1]))
-        else:
-            undecidable.append((name, node.lineno))
-    return pairings, positional, undecidable
-
-
-#: Every pairing the builder registers, asserted rather than derived, so a
-#: builder change has to be looked at instead of silently widening the set.
-REGISTERED_PAIRINGS = frozenset(
-    {
-        ("assumptions", "assumption.cardinality"),
-        ("assumptions", "assumption.event"),
-        ("assumptions", "assumption.frame"),
-        ("assumptions", "definedness"),
-        ("initialization", "definedness"),
-        ("initialization", "initial.target"),
-        ("initialization", "initial.variable"),
-        ("initialization", "initial.where"),
-        ("kernel", "domain.frame_state"),
-        ("kernel", "transition.case"),
-        ("kernel", "transition.step"),
-    }
+#: Queries chosen so that between them every registered pairing is constructed.
+#: Two are enough today, and the test below fails if they stop covering the table.
+_PAIRING_CORPUS = (
+    (
+        "def int x = 1;\ndef int y = 0;\n"
+        "state Root { event Go; state A; state B; [*] -> A; A -> B :: Go; A -> B; }",
+        'init state("Root.A") where x / y > 0; '
+        'assume at 0: var("x") / var("y") > 0; '
+        'check reach <= 2: active("Root.B");',
+    ),
+    (
+        "def int x = 1;\n"
+        "state Root { event Go; state A; state B; [*] -> A; A -> B :: Go; }",
+        'init state("Root.A"); '
+        'assume event("Root.Go", 0) == true; '
+        'assume events cardinality at_most_one {"Root.Go"}; '
+        'check reach <= 2: active("Root.B");',
+    ),
 )
 
 
-@pytest.mark.unittest
-def test_stage_and_category_pairings_the_builder_registers() -> None:
-    """Every pairing the builder can register, with the aggregate facts on them.
+def _constructed_pairings():
+    """Return every pairing a corpus of real builds actually constructs.
 
-    Reasoning about a group by resolving its aggregate for some stage and
-    category is only sound for pairings that occur.  Three rationales were
-    written about pairings that never do, because the aggregate function answers
-    for any input whether or not the builder produces it.
+    Four rounds of review found four ways to slip a pairing past a scan of the
+    builder's source: a query that reached only some branches, a keyword-only
+    match that missed a positional construction, a call-name match that missed a
+    derivation, and a both-keywords match that missed a derivation overriding one
+    of them.  Each fix widened the syntax the scan recognised and the next round
+    found a narrower way through, because the set of ways to write a construction
+    is not bounded.
+
+    So the pairings are observed instead of parsed.  Whatever syntax a
+    registration uses, the group reaches this list, and the constructor refuses a
+    pairing outside the frozen table before it can get here at all.
+
+    :return: The pairings the corpus constructs.
+    :rtype: Set[Tuple[str, str]]
+    """
+    from pyfcstm.bmc import BmcEngine, build_bmc_core_formula
+
+    observed = set()
+    for source, query in _PAIRING_CORPUS:
+        context = BmcEngine(load_state_machine_from_text(source)).prepare(query)
+        core = build_bmc_core_formula(context)
+        # Two disjoint sibling collections: transition.case groups live only in
+        # the case one.  Reading either alone loses a whole family.
+        assert not (
+            {id(group) for group in core._tracked_groups}
+            & {id(group) for group in core._tracked_case_groups}
+        )
+        for group in list(core._tracked_groups) + list(core._tracked_case_groups):
+            observed.add((group.stage, group.category))
+    return observed
+
+
+@pytest.mark.unittest
+def test_the_frozen_pairing_table_is_exactly_what_builds_construct() -> None:
+    """The table the constructor enforces and what builds emit must agree.
+
+    One direction catches a registration the table does not list -- the
+    constructor refuses it, so this cannot regress silently.  The other catches a
+    table entry nothing constructs, which would let a rationale reason about a
+    group that cannot occur, the mistake this whole guard exists to prevent.
     """
     from pyfcstm.bmc.explanation import constraint_aggregate
+    from pyfcstm.bmc.provenance import TRACKED_GROUP_PAIRINGS
 
-    pairings, positional, undecidable = _registered_pairings()
-
-    # The append helper takes both as keyword-only, so it has no positional slot
-    # to fall back to; only the constructor does.  Asserting a slot for the helper
-    # would pin a path no call can take.
-    assert positional == {
-        "_append_tracked_group": {},
-        "BmcTrackedConstraint": {"stage": 1, "category": 2},
-    }, positional
-    # The only call whose arguments are not literals is the construction inside
-    # the append helper, which forwards what it was given.  Listing the names
-    # rather than counting them keeps the failure message actionable.
-    assert [name for name, _ in undecidable] == ["BmcTrackedConstraint"], undecidable
-    assert pairings == set(REGISTERED_PAIRINGS)
+    observed = _constructed_pairings()
+    assert observed == set(TRACKED_GROUP_PAIRINGS), (
+        set(TRACKED_GROUP_PAIRINGS) - observed,
+        observed - set(TRACKED_GROUP_PAIRINGS),
+    )
 
     stages_by_noun = {}
-    for stage, category in pairings:
+    for stage, category in observed:
         stages_by_noun.setdefault(category.split(".")[0], set()).add(stage)
 
     # The rationale for naming a group by its category segment rests on there
@@ -2630,7 +2583,7 @@ def test_stage_and_category_pairings_the_builder_registers() -> None:
         "initial",
         "transition",
     }
-    assert {constraint_aggregate(stage, category) for stage, category in pairings} == {
+    assert {constraint_aggregate(stage, category) for stage, category in observed} == {
         "domain",
         "environment",
         "initial",
@@ -2654,60 +2607,3 @@ def test_stage_and_category_pairings_the_builder_registers() -> None:
     # An assumption group's aggregate is a word no reader sees elsewhere.
     assert stages_by_noun["assumption"] == {"assumptions"}
     assert constraint_aggregate("assumptions", "assumption.frame") == "environment"
-
-
-@pytest.mark.unittest
-def test_a_real_build_publishes_a_subset_of_the_registered_pairings() -> None:
-    """Check a real build against the same enumeration the other test reads.
-
-    Reading call sites covers every branch but says nothing about whether a build
-    publishes what those sites declare.  This drives a query and compares its
-    groups with the shared enumeration -- not with a second hand-written list,
-    which is what the previous version of this test did while claiming the two
-    could not drift.
-
-    A build publishes a subset: a query only reaches the branches it needs, and
-    the two branches this one does not reach are named so a coverage change is
-    visible rather than absorbed.
-    """
-    from pyfcstm.bmc import BmcEngine, build_bmc_core_formula
-
-    pairings, _, _ = _registered_pairings()
-    assert pairings == set(REGISTERED_PAIRINGS)
-
-    machine = load_state_machine_from_text(
-        "def int x = 1;\ndef int y = 0;\n"
-        "state Root { event Go; state A; state B; [*] -> A; A -> B :: Go; A -> B; }"
-    )
-    context = BmcEngine(machine).prepare(
-        # Divides in both the where clause and the assumption, so definedness
-        # groups come from initialization and from assumptions.
-        'init state("Root.A") where x / y > 0; '
-        'assume at 0: var("x") / var("y") > 0; '
-        'check reach <= 2: active("Root.B");'
-    )
-    core = build_bmc_core_formula(context)
-
-    # The two collections are disjoint siblings, not one containing the other:
-    # transition.case groups live only in the case collection.  An earlier
-    # version read one of them and lost a whole family.
-    assert not (
-        {id(group) for group in core._tracked_groups}
-        & {id(group) for group in core._tracked_case_groups}
-    )
-    published = list(core._tracked_groups) + list(core._tracked_case_groups)
-    observed = {(group.stage, group.category) for group in published}
-
-    # Only the direction that can indicate a defect is asserted: a build must not
-    # publish a pairing no call site declares.  How much of the enumeration one
-    # query happens to reach is a property of the query, so requiring an exact
-    # shortfall would fail when the query's coverage improves -- adding an event
-    # assumption to it, which strictly widens coverage, made an earlier version of
-    # this assertion fail with a message that read backwards.
-    assert observed <= pairings, observed - pairings
-    # It must still reach the branches this test exists to exercise.
-    assert {
-        ("assumptions", "definedness"),
-        ("initialization", "definedness"),
-        ("kernel", "transition.case"),
-    } <= observed, observed

@@ -326,11 +326,29 @@ def test_the_transcription_guard_covers_every_frozen_structure() -> None:
 
     assert sibling_frozen == {
         "provenance._SOURCE_KINDS",
+        "provenance.TRACKED_GROUP_PAIRINGS",
         "infeasibility.AGGREGATE_SELECTORS",
         "infeasibility._INDEX_REF_KEYS",
         "infeasibility._STAGE_FALLBACK_BY_STAGE",
     }
     assert provenance._SOURCE_KINDS == {"fcstm", "fbmcq", "generated"}
+    # Transcribed, not merely registered: this is the table the constructor
+    # refuses unlisted pairings against, so its contents are the contract.
+    assert provenance.TRACKED_GROUP_PAIRINGS == frozenset(
+        {
+            ("assumptions", "assumption.cardinality"),
+            ("assumptions", "assumption.event"),
+            ("assumptions", "assumption.frame"),
+            ("assumptions", "definedness"),
+            ("initialization", "definedness"),
+            ("initialization", "initial.target"),
+            ("initialization", "initial.variable"),
+            ("initialization", "initial.where"),
+            ("kernel", "domain.frame_state"),
+            ("kernel", "transition.case"),
+            ("kernel", "transition.step"),
+        }
+    )
     assert infeasibility._INDEX_REF_KEYS == ("frame", "frames", "step", "steps")
     assert dict(infeasibility._STAGE_FALLBACK_BY_STAGE) == {
         "initialization": "initialization_stage_fallback",

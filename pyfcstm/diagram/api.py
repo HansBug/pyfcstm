@@ -942,8 +942,7 @@ def _report_degradation(message: str, *args: Any) -> None:
     worse than the report it would hide.  Where a report *cannot* be allowed to
     interrupt anything -- between a document being written and ``os.replace``
     making it the target -- it is not routed here at all; it is collected and
-    emitted afterwards.  See the ``deferred`` argument of
-    :func:`_apply_target_mode`.
+    emitted afterwards.
 
     :param message: ``%``-style format string.
     :type message: str
@@ -1032,197 +1031,157 @@ def _validate_write_target(target: Path) -> None:
         )
 
 
-def _apply_target_mode(
-    temporary_path: Path,
-    target: Path,
-    mode: Optional[int] = None,
-    deferred: Optional[List[Tuple[str, Tuple[Any, ...]]]] = None,
-) -> None:
+# A collision needs a neighbour guessing 64 bits; a few tries turn that into a
+# clear error rather than an unbounded loop.
+_TEMPORARY_NAME_ATTEMPTS = 8
+
+
+def _open_temporary_sibling(target: Path) -> Tuple[int, Path, int]:
     """
-    Give the temporary file the mode the target should end up with.
+    Create the temporary file a write will be staged in.
 
-    ``NamedTemporaryFile`` creates at 0600 and ``os.replace`` carries that mode
-    onto the target, so without this a generated file lands unreadable to
-    everyone else and re-saving silently downgrades an existing world-readable
-    file. An existing target keeps its own mode; a new one follows the umask.
+    Opened with 0666 so the operating system applies the umask, exactly as it
+    would for any other new file, and the resulting mode is read back from the
+    descriptor.  That makes the file being written its own answer to "what mode
+    should this end up with": no second file has to be created and measured,
+    which is what an earlier revision did -- with a name an attacker could take,
+    cleanup that could fail, and a platform split over how to remove it.
 
-    :param temporary_path: The sibling file about to replace the target.
-    :type temporary_path: pathlib.Path
-    :param target: Final destination path.
+    The mode is then tightened to 0600 for the duration of the write, because
+    the document carries the model's source and the destination directory may be
+    shared.  :func:`_final_mode` decides what it ends up as.
+
+    :param target: Destination the caller asked for.
     :type target: pathlib.Path
-    :param mode: Force this mode instead of preserving or deriving one. Used
-        for paths whose name is predictable, where an existing file may have
-        been placed there by someone else.
-    :type mode: int, optional
-    :param deferred: Collects any degradation to report once the write is
-        irreversible.  Reporting one here would sit between the document being
-        written and ``os.replace`` making it the target, and a ``logging``
-        handler is a user extension point: one that raises -- including
-        ``SystemExit`` or ``KeyboardInterrupt``, which no ``except Exception``
-        can hold -- would leave the caller with nothing.  Passing a list moves
-        the reporting after the step that cannot be undone.
-    :type deferred: list, optional
-    :return: ``None``.
-    :rtype: None
+    :return: Open descriptor, its path, and the mode a new file gets here.
+    :rtype: tuple[int, pathlib.Path, int]
+    :raises OSError: If the directory will not accept a new file.
     """
-    if mode is not None:
-        os.chmod(str(temporary_path), mode)
-        return
+    # `mkstemp` would force 0600, and `chmod` does not consult the umask -- only
+    # the mode argument of the creating `open` does. So the file is created here
+    # with 0666 and `O_EXCL`, which is exactly how any other new file is made,
+    # and the mode that survives is read back from the descriptor.
+    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
+    for _ in range(_TEMPORARY_NAME_ATTEMPTS):
+        temporary = target.parent / (".%s.%s" % (target.name, uuid.uuid4().hex[:16]))
+        try:
+            handle = os.open(str(temporary), flags, 0o666)
+        except FileExistsError:
+            # `O_EXCL` refused a name something else already holds, which is the
+            # point of using it; try another.
+            continue
+        break
+    else:
+        raise OSError(
+            "could not create a temporary file beside %s after %d attempts"
+            % (target, _TEMPORARY_NAME_ATTEMPTS)
+        )
     try:
-        os.chmod(str(temporary_path), target.stat().st_mode & 0o7777)
-        return
+        default = os.fstat(handle).st_mode & 0o7777
+        if hasattr(os, "fchmod"):
+            # Restrictive for the duration of the write. Windows has no fchmod
+            # and no mode beyond the read-only bit, so there is nothing to
+            # tighten there.
+            os.fchmod(handle, 0o600)
+    except OSError:
+        os.close(handle)
+        try:
+            temporary.unlink()
+        except OSError:
+            # The directory has already refused us once; the error being raised
+            # is the one that matters.
+            pass
+        raise
+    return handle, temporary, default
+
+
+def _final_mode(target: Path, requested: Optional[int], default: int) -> int:
+    """
+    Decide the mode the target should end up with.
+
+    An explicit request wins, because callers use it for paths whose name is
+    predictable and where an existing file may not be theirs.  Otherwise an
+    existing target keeps its own mode -- re-saving must not silently downgrade
+    a file someone made world-readable -- and a new one gets what any other new
+    file in that directory would.
+
+    :param target: Destination the caller asked for.
+    :type target: pathlib.Path
+    :param requested: Mode to force, or ``None``.
+    :type requested: int, optional
+    :param default: Mode a new file receives in the destination directory.
+    :type default: int
+    :return: Permission bits to apply before the replace.
+    :rtype: int
+    """
+    if requested is not None:
+        return requested
+    try:
+        return target.stat().st_mode & 0o7777
     except FileNotFoundError:
         # The usual case: the target does not exist yet, so there is no mode to
         # preserve. Other stat failures surface from _validate_write_target,
         # which runs first and re-raises them from its own is_dir() call.
-        pass
-    try:
-        default = _umask_default_mode(temporary_path.parent, deferred)
-    except OSError as probe_error:
-        # PermissionError/EROFS from a directory that will not accept a new
-        # file, EDQUOT/ENOSPC from an exhausted one, an `fstat` or `close` that
-        # fails on the descriptor, and the explicit raise when every candidate
-        # name is taken. The same rule the probe's
-        # own cleanup follows: reading a number must
-        # not cost the caller their document. It is already written and one
-        # `os.replace` from being the target, and the probe exists only to
-        # widen the mode from the 0600 `NamedTemporaryFile` chose -- a quota,
-        # a read-only mount or a hostile neighbour taking every candidate name
-        # is not a reason to throw the work away. The file keeps that 0600,
-        # which is restrictive rather than wrong, and the reason is recorded.
-        if deferred is not None:
-            deferred.append(
-                (
-                    "could not read the default file mode in %s, leaving %s as "
-                    "created: %s",
-                    (temporary_path.parent, temporary_path.name, probe_error),
-                )
-            )
-        return
-    os.chmod(str(temporary_path), default)
+        return default
 
 
-# Collisions need a hostile neighbour guessing 64 bits; a handful of tries
-# turns that into a clear error instead of an unbounded loop.
-_UMASK_PROBE_ATTEMPTS = 8
-
-
-def _umask_default_mode(
-    directory: Path,
-    deferred: Optional[List[Tuple[str, Tuple[Any, ...]]]] = None,
-) -> int:
+def _validate_write_target(target: Path) -> None:
     """
-    Return the mode a plain new file receives in ``directory``.
+    Reject a destination before a temporary sibling is created for it.
 
-    Read by letting the operating system apply the umask to a throwaway file
-    rather than by calling ``os.umask(0)`` to sample it. The umask is
-    process-wide, not per-thread, so clearing it even briefly means a file
-    another thread creates in that window is born with whatever permissions its
-    own mode argument asked for — measured as 0666 where 0644 was expected.
-    A public write path must not widen the whole process to learn its own
-    default.
+    Without this the failure surfaces from the sibling file instead: writing to
+    a directory reported a permission error on a hidden dotfile in its parent,
+    naming neither the path the caller passed nor the actual problem.
 
-    :param directory: Directory the real write is about to happen in, so the
-        probe sees the same filesystem and any inherited default ACL.
-    :type directory: pathlib.Path
-    :param deferred: Collects a cleanup failure to report once the caller's
-        write is irreversible.  See :func:`_apply_target_mode` for why
-        reporting it here instead would risk the document.
-    :type deferred: list, optional
-    :return: Permission bits, already masked.
-    :rtype: int
-    :raises OSError: If the probe cannot be created, read or closed -- a
-        directory that refuses new files, an exhausted or read-only filesystem,
-        every candidate name taken, or an ``fstat``/``close`` that fails on the
-        descriptor. Callers that only want to widen a mode should treat this as
-        advisory; :func:`_apply_target_mode` logs it and keeps the mode the
-        file was created with rather than losing the document over it.
+    :param target: Requested destination path.
+    :type target: pathlib.Path
+    :return: ``None``.
+    :rtype: None
+    :raises IsADirectoryError: If the destination is an existing directory.
+    :raises FileNotFoundError: If the parent directory does not exist.
+    :raises NotADirectoryError: If the parent exists but is not a directory.
     """
-    # One file, and one that is already doomed when it is created. A probe that
-    # has to be removed by name afterwards needs its write bit restored first,
-    # because Windows will not delete a read-only file -- and restoring it by
-    # name is a sink an attacker can aim at an unrelated file by swapping the
-    # name for a link. Where it cannot be restored the file just stays.
-    #
-    # So: `O_TEMPORARY` (Windows) has the OS drop the file when the handle
-    # closes, whatever its permissions, and everywhere else the name goes the
-    # moment it has served its purpose while the descriptor stays valid.
-    # No second name-based operation exists to redirect on either platform.
-    # The Windows side does rest entirely on the close succeeding, since that is
-    # when the OS drops the file and there is no fallback pass; a close that
-    # fails leaves the probe behind and says so through the raised OSError.
-    #
-    # The flag is read once and branched on by value. Taking the value for the
-    # open and its mere presence for the cleanup lets the two disagree, and a
-    # present-but-zero value then asks for neither.
-    self_deleting = getattr(os, "O_TEMPORARY", 0)
-    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | self_deleting
-    for _ in range(_UMASK_PROBE_ATTEMPTS):
-        candidate = os.path.join(
-            str(directory), ".pyfcstm-umask-%s" % uuid.uuid4().hex[:16]
+    if target.is_dir():
+        raise IsADirectoryError("cannot write %s: it is a directory" % target)
+    parent = target.parent
+    if not parent.exists():
+        raise FileNotFoundError(
+            "cannot write %s: the directory %s does not exist" % (target, parent)
         )
-        try:
-            descriptor = os.open(candidate, flags, 0o666)
-        except FileExistsError:
-            # Someone got to this name first. `O_EXCL` refused to open theirs,
-            # which is the point; try another.
-            continue
-        try:
-            # Before the `fstat`, so a failure there cannot skip it. The
-            # descriptor stays valid once the name is gone.
-            if not self_deleting:
-                try:
-                    os.unlink(candidate)
-                except OSError as cleanup_error:
-                    # PermissionError from an indexer holding the handle or a
-                    # directory that denies unlink; EROFS/EDQUOT/ENOSPC from a
-                    # read-only or exhausted filesystem. None propagate --
-                    # reading a number must not fail the caller's write -- and
-                    # the leftover is named so it can be found.
-                    if deferred is not None:
-                        deferred.append(
-                            (
-                                "could not remove the probe file %s: %s",
-                                (candidate, cleanup_error),
-                            )
-                        )
-            return os.fstat(descriptor).st_mode & 0o7777
-        finally:
-            os.close(descriptor)
-    raise OSError(
-        "could not create a probe file in %s after %d attempts"
-        % (directory, _UMASK_PROBE_ATTEMPTS)
-    )
+    if not parent.is_dir():
+        raise NotADirectoryError(
+            "cannot write %s: %s is not a directory" % (target, parent)
+        )
 
 
 def _atomic_write_text(
     path: Union[str, os.PathLike], content: str, mode: Optional[int] = None
 ) -> Path:
-    """Replace a text file atomically using a temporary sibling."""
+    """
+    Replace a text file atomically using a temporary sibling.
+
+    :param path: Destination path.
+    :type path: str or os.PathLike
+    :param content: Content to write.
+    :type content: str
+    :param mode: Force this mode on the result instead of deriving one.
+    :type mode: int, optional
+    :return: The destination path.
+    :rtype: pathlib.Path
+    :raises OSError: If the destination cannot be written.
+    """
     target = Path(path)
     _validate_write_target(target)
-    temporary = tempfile.NamedTemporaryFile(
-        mode="w",
-        encoding="utf-8",
-        prefix=".%s." % target.name,
-        dir=str(target.parent),
-        delete=False,
-    )
-    temporary_path = Path(temporary.name)
+    handle, temporary_path, default = _open_temporary_sibling(target)
     replaced = False
-    deferred = []
     try:
-        with temporary:
-            temporary.write(content)
-            temporary.flush()
-            os.fsync(temporary.fileno())
-        _apply_target_mode(temporary_path, target, mode, deferred)
+        with os.fdopen(handle, "w", encoding="utf-8") as stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.chmod(str(temporary_path), _final_mode(target, mode, default))
         os.replace(str(temporary_path), str(target))
         replaced = True
-        # After the replace, never before: the document is the target now, so a
-        # handler that raises can propagate without costing anything.
-        for message, values in deferred:
-            _report_degradation(message, *values)
     except OSError as write_error:
         try:
             temporary_path.unlink()
@@ -1239,33 +1198,16 @@ def _atomic_write_text(
         if not replaced:
             # Reached by anything the branch above does not name, and Ctrl-C
             # part-way through a ~30 MB document is the case that matters:
-            # without this the temporary sibling stays behind at full size. A
-            # SIGKILL cannot be covered by anything running in this process.
+            # without this the temporary sibling stays behind at full size.
             try:
                 temporary_path.unlink()
             except FileNotFoundError:
-                # The branch above already removed it, which is the common path
-                # and not worth reporting.
+                # The branch above already removed it, which is the common path.
                 pass
             except OSError as cleanup_error:
-                # The in-flight exception is the one the caller needs, so this
-                # cannot be raised -- doing so would replace a KeyboardInterrupt
-                # or the chained error above with a cleanup detail. Reported
-                # instead, because the alternative is a full-size file left
-                # behind with nothing said about it. Reported through
-                # `_report_degradation` rather than `warnings.warn`, which
-                # raises under `-W error` and so performs that very
-                # substitution.
-                #
-                # Not an absolute guarantee, and the residue is worth naming.
-                # `_report_degradation` deliberately lets `SystemExit` and
-                # `KeyboardInterrupt` from a logging handler through, since
-                # swallowing an interrupt is worse. Such a handler therefore
-                # still displaces the in-flight exception here, and the report
-                # it was carrying is lost with it -- so the temporary file is
-                # left on disk with nothing said about it. What it can no
-                # longer do is cost the caller their document: by this point
-                # the write has either completed or already failed.
+                # PermissionError from an indexer holding the handle, EROFS or
+                # ENOSPC from a read-only or exhausted filesystem. The in-flight
+                # exception is the one the caller needs, so none propagate.
                 _report_degradation(
                     "could not remove the temporary file %s: %s",
                     temporary_path,
@@ -1277,30 +1219,31 @@ def _atomic_write_text(
 def _atomic_write_bytes(
     path: Union[str, os.PathLike], content: bytes, mode: Optional[int] = None
 ) -> Path:
-    """Replace a binary file atomically using a temporary sibling."""
+    """
+    Replace a binary file atomically using a temporary sibling.
+
+    :param path: Destination path.
+    :type path: str or os.PathLike
+    :param content: Content to write.
+    :type content: bytes
+    :param mode: Force this mode on the result instead of deriving one.
+    :type mode: int, optional
+    :return: The destination path.
+    :rtype: pathlib.Path
+    :raises OSError: If the destination cannot be written.
+    """
     target = Path(path)
     _validate_write_target(target)
-    temporary = tempfile.NamedTemporaryFile(
-        mode="wb",
-        prefix=".%s." % target.name,
-        dir=str(target.parent),
-        delete=False,
-    )
-    temporary_path = Path(temporary.name)
+    handle, temporary_path, default = _open_temporary_sibling(target)
     replaced = False
-    deferred = []
     try:
-        with temporary:
-            temporary.write(content)
-            temporary.flush()
-            os.fsync(temporary.fileno())
-        _apply_target_mode(temporary_path, target, mode, deferred)
+        with os.fdopen(handle, "wb") as stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.chmod(str(temporary_path), _final_mode(target, mode, default))
         os.replace(str(temporary_path), str(target))
         replaced = True
-        # After the replace, never before: the document is the target now, so a
-        # handler that raises can propagate without costing anything.
-        for message, values in deferred:
-            _report_degradation(message, *values)
     except OSError as write_error:
         try:
             temporary_path.unlink()
@@ -1317,33 +1260,16 @@ def _atomic_write_bytes(
         if not replaced:
             # Reached by anything the branch above does not name, and Ctrl-C
             # part-way through a ~30 MB document is the case that matters:
-            # without this the temporary sibling stays behind at full size. A
-            # SIGKILL cannot be covered by anything running in this process.
+            # without this the temporary sibling stays behind at full size.
             try:
                 temporary_path.unlink()
             except FileNotFoundError:
-                # The branch above already removed it, which is the common path
-                # and not worth reporting.
+                # The branch above already removed it, which is the common path.
                 pass
             except OSError as cleanup_error:
-                # The in-flight exception is the one the caller needs, so this
-                # cannot be raised -- doing so would replace a KeyboardInterrupt
-                # or the chained error above with a cleanup detail. Reported
-                # instead, because the alternative is a full-size file left
-                # behind with nothing said about it. Reported through
-                # `_report_degradation` rather than `warnings.warn`, which
-                # raises under `-W error` and so performs that very
-                # substitution.
-                #
-                # Not an absolute guarantee, and the residue is worth naming.
-                # `_report_degradation` deliberately lets `SystemExit` and
-                # `KeyboardInterrupt` from a logging handler through, since
-                # swallowing an interrupt is worse. Such a handler therefore
-                # still displaces the in-flight exception here, and the report
-                # it was carrying is lost with it -- so the temporary file is
-                # left on disk with nothing said about it. What it can no
-                # longer do is cost the caller their document: by this point
-                # the write has either completed or already failed.
+                # PermissionError from an indexer holding the handle, EROFS or
+                # ENOSPC from a read-only or exhausted filesystem. The in-flight
+                # exception is the one the caller needs, so none propagate.
                 _report_degradation(
                     "could not remove the temporary file %s: %s",
                     temporary_path,

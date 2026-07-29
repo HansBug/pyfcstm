@@ -2384,13 +2384,13 @@ def test_human_explanation_matches_the_frozen_transcript_line_shapes() -> None:
             reason="shared timeout budget exhausted during minimization",
         )
     )
-    # A not-yet-minimal core reports scope, reduction and the reason its
-    # reduction stopped, and nothing else.  Granularity, member count, a labelled
-    # minimality line and the elapsed time belong to the proven-minimal shape,
-    # which in turn reports no reduction at all -- the two shapes publish
-    # different field sets rather than one extending the other.  An earlier
-    # version of this test asserted the minimal shape's fields here, which locked
-    # in three lines the not-yet-minimal transcript does not have.
+    # A core reports its scope, its reduction and the reason the reduction
+    # stopped, and nothing else.  Granularity, member count, a labelled minimality
+    # line and the elapsed time belong to the fuller published block, which also
+    # carries a narrative this stage does not build.  An earlier version of this
+    # test asserted those fields here, which locked in three lines the transcript
+    # does not have; a later comment claimed the proven-minimal shape reports no
+    # reduction, which is false -- every core prints its reduction.
     scope_at = lines.index("Core scope: assumptions_prefix")
     assert lines[scope_at + 1] == "Reduction: partial_minimized"
     assert not any(line.startswith("Core granularity:") for line in lines)

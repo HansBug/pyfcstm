@@ -455,10 +455,11 @@ so a caller who asked for ``proof`` and received ``formal`` is told both:
 
    Explanation depth: requested proof, achieved formal
 
-Granularity, member count, a labelled minimality line and the elapsed
-explanation time belong to the proven-minimal shape, which reports no reduction
-at all.  The two shapes publish different field sets, so a field appears only in
-the shape that publishes it.
+Every core reports its scope and its reduction, whether or not minimality was
+proven; the sentence above the scope is what distinguishes the two.  Granularity,
+member count, a labelled minimality line and the elapsed explanation time belong
+to the fuller published block, which also carries a narrative and a causal chain
+this depth does not build, so they do not appear here.
 
 
 Direct Python result text

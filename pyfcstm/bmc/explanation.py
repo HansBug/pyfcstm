@@ -1481,7 +1481,9 @@ CLASSIFICATION_PHRASES = MappingProxyType(
     {
         "kernel_conflict": "the model's own domain and transition rules conflict",
         "initialization_self_conflict": "initialization is internally inconsistent",
-        "initialization_domain_conflict": "initialization conflicts with the frame domain",
+        "initialization_domain_conflict": (
+            "initialization conflicts with the frame domain"
+        ),
         "initialization_kernel_conflict": (
             "initialization conflicts with the transition relation"
         ),
@@ -1536,8 +1538,9 @@ def _core_structural_refs(constraint: BmcConstraintRef) -> str:
     Called only for a generated group.  Such a group has no source text of its
     own, so its position and its remaining refs are shown rather than hidden for
     tidiness: the position goes on the group's own line, and this function
-    supplies the indented line that follows when there is anything left.  ``frame`` and ``step`` are already on that line, so
-    only the other keys are added here.  An authored group is not routed through
+    supplies the indented line that follows when there is anything left.
+    ``frame`` and ``step`` are already on that line, so only the other keys are
+    added here.  An authored group is not routed through
     this function -- its own text states its position, and its refs remain a
     machine contract carried by the JSON.
 
@@ -1741,12 +1744,13 @@ def explanation_text_lines(explanation) -> List[str]:
                 "subset-minimal."
             )
         lines.append("Core scope: %s" % core.scope)
-        # Every core reports its scope and its reduction; the prose sentence
-        # above already says whether minimality was proven.  Granularity, member
-        # count, a labelled minimality line and the elapsed time appear only in
-        # the published proven-minimal shape, which this stage cannot reach, so
-        # they are not rendered here: a field is shown where its own shape shows
-        # it and nowhere else.
+        # Every core reports its scope and its reduction, whether or not
+        # minimality was proven; the sentence above is what distinguishes the
+        # two.  Granularity, member count, a labelled minimality line and the
+        # elapsed time are not rendered: they belong to the fuller published
+        # block, which also carries a narrative and a causal chain this stage
+        # does not build, so emitting a few of its fields here would suggest a
+        # completeness the output does not have.
         lines.append("Reduction: %s" % core.reduction)
     if explanation.reason is not None:
         lines.append("Reason: %s" % explanation.reason)

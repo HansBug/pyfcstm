@@ -2,6 +2,7 @@
 
 import ast
 import dis
+import hashlib
 import inspect
 import json
 import logging
@@ -9,7 +10,6 @@ import os
 from pathlib import Path
 import re
 import shutil
-import signal
 import stat
 from unittest import mock
 import sys
@@ -376,11 +376,21 @@ def test_no_line_of_the_launch_leaks_a_browser_profile(monkeypatch, tmp_path):
     # one case no Python program survives -- the same boundary the staging probe
     # draws at the `yield`. Computed, so it cannot drift from where the block is.
     cleanup = _cleanup_line(diagram_api._open_standalone_window)
-    leaks = []
-    injected = 0
-    for line_number in _statement_lines(
+    # The line the directory is born on: everything from here to the cleanup is
+    # what this probe exists to cover.
+    body = source.read_text(encoding="utf-8").splitlines()
+    acquisition = next(
+        line
+        for line in _statement_lines(diagram_api._open_standalone_window)
+        if "mkdtemp(" in body[line - 1]
+    )
+
+    executable = _statement_lines(
         diagram_api._open_standalone_window, through=cleanup - 1
-    ):
+    )
+    leaks = []
+    fired_on = set()
+    for line_number in executable:
         fired = []
 
         def tracer(frame, event, _arg, wanted=line_number, seen=fired):
@@ -405,29 +415,45 @@ def test_no_line_of_the_launch_leaks_a_browser_profile(monkeypatch, tmp_path):
             item.name for item in tmp_path.iterdir() if item.name.startswith("pyfcstm-")
         )
         if fired:
-            injected += 1
+            fired_on.add(line_number)
             if left:
                 leaks.append((line_number, left))
         for item in tmp_path.iterdir():
             if item.name.startswith("pyfcstm-") and item.is_dir():
                 shutil.rmtree(str(item), ignore_errors=True)
-    # Counted, because `if fired` means a probe that never fires reports nothing
-    # rather than reporting that it measured nothing: a wrong filename or a
-    # renamed function would leave this green and blind.
-    assert injected > 5, "the probe fired on only %d lines" % injected
+    # A floor tied to the resource's life rather than a count. A flat one was
+    # satisfied by the fourteen lines before `mkdtemp` runs, where there is
+    # structurally nothing to leave behind, so a probe covering none of the lines
+    # that hold the directory would still have passed. These three are where it is
+    # created and where the call then waits, identified by what they do so that
+    # renaming or moving them cannot quietly drop them from the floor. Lines only a
+    # failure path reaches are not in it: nothing executes them here, so a line
+    # probe cannot inject into them at all.
+    milestones = set()
+    for token in ("mkdtemp(", "Popen(", "communicate("):
+        # The first occurrence of each: `communicate` appears again inside the
+        # interrupt handler, which the ordinary path never runs, so a probe cannot
+        # inject there and must not be asked to.
+        milestones.add(
+            min(
+                line
+                for line in executable
+                if line >= acquisition and token in body[line - 1]
+            )
+        )
+    assert len(milestones) == 3, "the probe's floor no longer names three points"
+    assert milestones <= fired_on, "not injected at %r" % sorted(milestones - fired_on)
     assert leaks == [], "interrupting these lines left a profile behind: %r" % (leaks,)
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX process groups")
-@pytest.mark.parametrize("own_session", [True, False])
-def test_stopping_the_browser_stops_what_it_started(own_session, tmp_path):
+def test_stopping_the_browser_stops_what_it_started(tmp_path):
     # A browser's main process exiting does not mean its children have: after an
     # interrupt, one of them recreated files inside the profile directory that had
     # just been removed, leaving it behind for good. `terminate()` reaches only the
     # process we launched, so the group is signalled instead -- and a fake browser
     # whose `terminate` does nothing cannot tell the two apart, which is why this
-    # uses a real tree. The `own_session=False` case exercises the fallback, where
-    # the group is not ours to signal.
+    # uses a real tree.
     import subprocess
     import time
 
@@ -446,7 +472,7 @@ def test_stopping_the_browser_stops_what_it_started(own_session, tmp_path):
     )
     process = subprocess.Popen(
         [sys.executable, "-c", parent, child, str(record)],
-        start_new_session=own_session,
+        start_new_session=True,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
@@ -466,22 +492,88 @@ def test_stopping_the_browser_stops_what_it_started(own_session, tmp_path):
             try:
                 os.kill(descendant, 0)
             except OSError:
-                # ProcessLookupError once it is reaped; anything else means we may
-                # not ask, which for our own child does not happen.
+                # ProcessLookupError once it is reaped; for our own child there is
+                # no other reason we may not ask.
                 gone = True
                 break
             time.sleep(0.1)
-        if own_session:
-            assert gone, "a descendant outlived the browser and can touch the profile"
-        else:
-            # Not its own group leader, so only the process itself is asked to go.
-            # The descendant is reparented and left alone -- documented, not ideal,
-            # and unreachable through `show`, which always starts a new session.
-            os.kill(descendant, signal.SIGKILL)
+        assert gone, "a descendant outlived the browser and can touch the profile"
     finally:
         if process.poll() is None:
             process.kill()
             process.wait(timeout=30)
+
+
+@pytest.mark.unittest
+def test_an_interrupted_window_stops_the_browser_through_the_helper(
+    monkeypatch, tmp_path
+):
+    # The real-tree test proves `_stop_browser` works; it says nothing about the
+    # launch calling it. Replacing the call with a bare `terminate()` left that
+    # test green, so the call site is pinned here.
+    from pyfcstm.diagram import api as diagram_api
+
+    class Interrupting:
+        returncode = 0
+
+        def __init__(self):
+            self.calls = 0
+
+        def communicate(self):
+            self.calls += 1
+            if self.calls == 1:
+                raise KeyboardInterrupt
+            return None, b""
+
+        def terminate(self):
+            raise AssertionError("the launch must stop the browser through the helper")
+
+    browsers = []
+
+    def fake_popen(*_args, **_kwargs):
+        browsers.append(Interrupting())
+        return browsers[-1]
+
+    stopped = []
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
+    monkeypatch.setattr(diagram_api, "_browser_app_executable", lambda: "/opt/chrome")
+    monkeypatch.setattr(diagram_api.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(
+        diagram_api, "_stop_browser", lambda process: stopped.append(process)
+    )
+    document = tmp_path / "doc.html"
+    document.write_text("<html>tiny</html>", encoding="utf-8")
+
+    with pytest.raises(KeyboardInterrupt):
+        diagram_api._open_standalone_window(document, (800, 600))
+    assert stopped == browsers, "the interrupt path did not go through `_stop_browser`"
+    assert [item.name for item in tmp_path.iterdir()] == ["doc.html"], "profile left"
+
+
+@pytest.mark.unittest
+def test_a_browser_that_leads_no_group_of_its_own_is_asked_directly(monkeypatch):
+    # The guard on the group signal: sending one to a group we do not lead would
+    # take the interpreter with it. Asserted rather than waited for -- the earlier
+    # shape polled ten seconds for a death it then declared would not happen, and
+    # asserted nothing about the branch it was there to cover.
+    from pyfcstm.diagram import api as diagram_api
+
+    class Fake:
+        pid = 4242
+
+        def __init__(self):
+            self.terminated = 0
+
+        def terminate(self):
+            self.terminated += 1
+
+    killed = []
+    monkeypatch.setattr(os, "getpgid", lambda _pid: 1)
+    monkeypatch.setattr(os, "killpg", lambda *args: killed.append(args))
+    process = Fake()
+    diagram_api._stop_browser(process)
+    assert killed == [], "a group we do not lead must not be signalled"
+    assert process.terminated == 1, "and the process itself must still be asked"
 
 
 def test_show_rejects_invalid_window_size(tmp_path):
@@ -791,9 +883,18 @@ def test_a_viewer_name_is_shared_only_where_nothing_removes_it():
     other = diagram_api._kept_viewer_path(_model("state Root;").diagram().to_html())
     assert other != kept, "different diagrams need different files"
 
-    windowed = diagram_api._window_viewer_path()
-    assert windowed != diagram_api._window_viewer_path(), "its own call removes it"
-    assert windowed != kept, "and the two rules must never meet at one name"
+    windowed = diagram_api._temporary_viewer_path()
+    assert windowed != diagram_api._temporary_viewer_path(), "its own call removes it"
+    assert windowed != kept, "and the two must never meet at one name"
+
+    # The name tells nobody which diagram it holds. Deriving it from the document
+    # gave reuse across processes and, with it, a fingerprint: the directory is one
+    # every local user may list, so another user renders their own candidates and
+    # sees whose digest is present. The 0600 does not cover the name.
+    digest = hashlib.sha256(document.encode("utf-8")).hexdigest()
+    for length in (8, 12, 16, 32, 64):
+        assert digest[:length] not in kept.name, "the name carries the document"
+        assert digest[:length] not in windowed.name, "the name carries the document"
 
     # Through `show`, not through the writer. Asserting that `_atomic_write_text`
     # honours a mode this test passed in says nothing about whether `show` passes

@@ -975,45 +975,52 @@ def _open_standalone_window(path: Path, window_size: Tuple[int, int]) -> None:
         )
 
 
+# Viewers this process has written for a caller to keep, by the document each one
+# holds. Reuse lives here rather than in the file name: a name derived from the
+# document is a fingerprint of it, and the temporary directory is listable by every
+# local user even where the file itself is not readable. See `_kept_viewer_path`.
+_KEPT_VIEWERS: Dict[str, Path] = {}
+
+
 def _kept_viewer_path(document: str) -> Path:
     """
-    Return the path a viewer the caller keeps is written to.
+    Return the path this process keeps for a document, choosing one if needed.
 
-    The rule both of these functions follow: **a name is shared only where nothing
-    removes it, and a name that is removed is never shared.**  Getting that
-    backwards is what let one call delete a document another was displaying, and
-    then -- once sharing was removed from both -- what left a fresh ~30 MB behind
-    on every call that keeps its file.
+    Nothing removes these, so showing the same diagram twice must not write it
+    twice -- that left a fresh ~30 MB on every call.  The reuse is recorded in this
+    process instead of being encoded in the name, because the two are not
+    equivalent: a content-derived name is stable across processes, but it is also
+    an offline-verifiable fingerprint.  Another local user cannot read a 0600
+    viewer, and does not need to: they can render their own candidate models and
+    see whose digest is sitting in a directory they are allowed to list.
 
-    Nothing removes this one, so it is derived from the document and shared: a
-    caller showing the same diagram twice writes one file rather than two.  The
-    effective user id is in it because the temporary directory is shared and the
-    document is written 0600, so without it the second person to show a given
-    diagram would be refused their own save.
+    What that costs is cross-process reuse -- two processes showing one diagram
+    write two files -- and what it buys is that the name says nothing about the
+    model, and that nobody can take the name first and deny the save for good.
 
     :param document: The rendered HTML document.
     :type document: str
     :return: A path under the system temporary directory, the same for the same
-        document and user.
+        document within this process.
     :rtype: pathlib.Path
     """
-    digest = hashlib.sha256(document.encode("utf-8")).hexdigest()[:16]
-    owner = "-%d" % os.geteuid() if hasattr(os, "geteuid") else ""
-    return Path(tempfile.gettempdir()) / ("pyfcstm-diagram-%s%s.html" % (digest, owner))
+    digest = hashlib.sha256(document.encode("utf-8")).hexdigest()
+    existing = _KEPT_VIEWERS.get(digest)
+    if existing is None:
+        existing = _temporary_viewer_path()
+        _KEPT_VIEWERS[digest] = existing
+    return existing
 
 
-def _window_viewer_path() -> Path:
+def _temporary_viewer_path() -> Path:
     """
-    Return the path a viewer shown in a window is written to.
+    Return a temporary path for a rendered viewer that nothing else uses.
 
-    :meth:`Diagram.show` removes this one when the window closes, so by the rule
-    in :func:`_kept_viewer_path` it must not be shared: two windows on one diagram
-    would otherwise use one file and the first to close would blind the other, and
-    a later window would delete a path an earlier call had been told it could keep.
-    A distinct prefix rather than a distinct shape, so no arithmetic can bring the
-    two rules to one name.
+    Unguessable, and so telling nobody which diagram it holds and letting nobody
+    take it first.  A window's document uses one of these directly, since its own
+    call removes it when the window closes.
 
-    :return: A path under the system temporary directory that nothing else uses.
+    :return: A path under the system temporary directory.
     :rtype: pathlib.Path
     """
     return Path(tempfile.gettempdir()) / (
@@ -2561,10 +2568,14 @@ class Diagram:
         be left behind, and each one is roughly 30 MB.
 
         :param output: Optional destination path. When omitted the viewer is
-            written 0600 to a fresh temporary path, one per call, so no two calls
-            can reach each other's file. That file is removed when the window
-            closes; without a window it is the file you asked for and it stays.
-            Pass an explicit path for a document you want to keep.
+            written 0600 to a temporary path that says nothing about the diagram --
+            the directory is one every local user can list, so a name derived from
+            the document would be a fingerprint of it. With a window that path is
+            this call's, and this call removes it when the window closes. Without
+            one nothing removes it, and asking again for the same diagram in the
+            same process returns the same file rather than another ~30 MB; a second
+            process writes its own. Pass an explicit path for a document you want
+            to name yourself.
         :type output: str or os.PathLike, optional
         :param open_window: Whether to launch a Chromium-family app window,
             defaults to ``True``.
@@ -2608,9 +2619,11 @@ class Diagram:
         dimensions = _coerce_window_size(window_size)
         if output is None:
             document = self.to_html()
-            # Whether this call removes the file decides whether its name may be
-            # shared; see `_kept_viewer_path`.
-            path = _window_viewer_path() if open_window else _kept_viewer_path(document)
+            # A window's copy is this call's to remove; one the caller keeps is
+            # reused for the rest of the process. Neither name says what it holds.
+            path = (
+                _temporary_viewer_path() if open_window else _kept_viewer_path(document)
+            )
             # 0600, and forced rather than preserved. The temporary directory is
             # readable and listable by every local user and the document carries
             # the model's own source, so the mode is the only thing keeping it

@@ -1611,8 +1611,18 @@ def _category_noun(constraint: BmcConstraintRef) -> str:
         ...     category = "transition.step"
         >>> _category_noun(_Ref())
         'transition'
+
+    The noun comes from the same family prefixes :data:`CATEGORY_ROLES` is keyed
+    on rather than from a split of its own, so the naming table and the role table
+    cannot disagree about where a category's family name ends.
     """
-    return constraint.category.split(".")[0]
+    for prefix in sorted(CATEGORY_ROLES, key=len, reverse=True):
+        if constraint.category.startswith(prefix):
+            return prefix.rstrip(".")
+    raise ValueError(
+        "category %r matches no known family prefix; the naming table and the "
+        "role table must list the same families." % constraint.category
+    )
 
 
 def depth_line_is_needed(requested_mode: str, achieved_mode: str) -> bool:

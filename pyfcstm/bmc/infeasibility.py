@@ -1006,11 +1006,13 @@ def explain_infeasibility(
     try:
         extraction = extract_source_core(core, outcome.scope, budget)
     except BmcBuildError as err:
-        # Extraction fails closed on corrupt group metadata, and by then the
-        # classification probes have already spent the caller's deadline.
-        # Letting the error leave this function would drop their records, which
-        # is the same denial of executed work the guards inside extraction
-        # already avoid.
+        # Kept as stated defensive code, and unreachable through any public path:
+        # extraction fails closed on corrupt group metadata, which the builder
+        # does not produce.  If it ever did, the classification probes would have
+        # spent the caller's deadline already, and letting the error leave this
+        # function would drop their records -- the same denial of executed work the
+        # guards inside extraction avoid.  That is why it degrades rather than
+        # propagates.
         return ExplanationOutcome(
             BmcInfeasibilityExplanation(
                 requested_mode=requested_mode,

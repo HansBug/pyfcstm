@@ -2071,3 +2071,26 @@ def test_reserved_placeholder_fields_are_pinned() -> None:
             reason="sound source core published without a minimality proof",
             narrative=BmcConflictNarrative("proven", "headline", "summary"),
         )
+
+
+@pytest.mark.parametrize(
+    "elapsed_ms",
+    ["1.5", [], True, float("nan"), float("inf")],
+    ids=["string", "list", "bool", "nan", "inf"],
+)
+def test_an_elapsed_duration_must_be_a_real_finite_number(elapsed_ms) -> None:
+    """A duration is published as a JSON number, so only a real one is stored.
+
+    A caller assembling an explanation passes whatever their clock gave them.  A
+    string, a container, a ``bool``, or a non-finite float would each reach the
+    published JSON as something no consumer of the schema can read as a duration.
+    """
+    with pytest.raises((TypeError, ValueError), match="elapsed_ms"):
+        BmcInfeasibilityExplanation(
+            requested_mode="formal",
+            achieved_mode="none",
+            status="partial",
+            classification="assumptions_self_conflict",
+            reason="raw core unknown",
+            elapsed_ms=elapsed_ms,
+        )

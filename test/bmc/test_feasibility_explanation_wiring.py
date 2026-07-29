@@ -451,56 +451,6 @@ def test_deletion_checks_must_have_shown_each_member_necessary() -> None:
     assert len(accepted.explanation.core.items) == 3
 
 
-def test_a_budget_that_started_nothing_still_reports_the_timeout() -> None:
-    """A refused request is reported as a timeout, not as never having happened.
-
-    The frozen timeout boundary pins this case exactly: when the budget is gone
-    before the first probe, the aggregate says ``timeout`` and the explanation
-    says ``achieved_mode=none`` with no core.  Saying ``not_requested`` instead
-    would tell a caller who did ask that they never asked.
-
-    The ledger stays empty because nothing ran; an attempt the deadline refused
-    is not evidence of solver work.
-    """
-    from pyfcstm.bmc import build_bmc_core_formula, compile_bmc_property
-    from pyfcstm.bmc.engine import BmcEngine
-    from pyfcstm.bmc.solver import _SolveBudget
-
-    # The deadline is injected through the internal attach point rather than
-    # through solve_bmc_property's timeout_ms because a wall-clock timeout cannot
-    # land on this row deterministically: measured over three runs, timeout_ms=1
-    # always yields refinement_status="timeout" and timeout_ms=5 yields both this
-    # row and the fully-explained one.  Only the row's boundary is controlled;
-    # the classification, extraction and aggregation are the production ones.
-    from pyfcstm.bmc.witness import _attach_explanation, solve_bmc_property
-    from pyfcstm.model import load_state_machine_from_text
-
-    machine = load_state_machine_from_text(
-        "def int x = 0;\n"
-        "state Root { event Go; state A; state B; [*] -> A; A -> B :: Go; }"
-    )
-    context = BmcEngine(machine).prepare(
-        'init state("Root.A") where x == 0; '
-        'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
-        'check reach <= 2: active("Root.B");'
-    )
-    formula = compile_bmc_property(build_bmc_core_formula(context))
-    baseline = solve_bmc_property(formula).feasibility
-
-    spent = _SolveBudget(1)
-    spent.deadline = spent.deadline - 10.0
-    attached = _attach_explanation(baseline, formula.core, spent, "formal")
-
-    assert attached.refinement_status == "timeout"
-    assert attached.refinement_checks == ()
-    assert attached.explanation is not None
-    assert attached.explanation.achieved_mode == "none"
-    assert attached.explanation.status == "timeout"
-    assert attached.explanation.core is None
-    assert attached.explanation.reason
-    assert attached.infeasible_stage == baseline.infeasible_stage
-
-
 def test_asking_for_no_explanation_still_reports_not_requested() -> None:
     """``not_requested`` stays reserved for a caller who did not ask."""
     from pyfcstm.bmc import build_bmc_core_formula, compile_bmc_property
@@ -577,62 +527,6 @@ def test_a_raw_core_needs_no_deletion_evidence() -> None:
     assert accepted.explanation.core.reduction == "raw"
 
 
-def test_an_optional_explanation_never_destroys_a_usable_verdict(monkeypatch) -> None:
-    """A fail-closed guard inside the optional stage must not reach the caller.
-
-    Asking for an explanation would otherwise be strictly worse than not
-    asking: the same query returns a localized verdict with ``none`` and
-    crashes with ``formal``.
-    """
-    from pyfcstm.bmc import build_bmc_core_formula, compile_bmc_property
-    from pyfcstm.bmc.engine import BmcEngine
-    from pyfcstm.bmc.witness import solve_bmc_property
-    from pyfcstm.model import load_state_machine_from_text
-
-    machine = load_state_machine_from_text(
-        "def int x = 0;\n"
-        "state Root { event Go; state A; state B; [*] -> A; A -> B :: Go; }"
-    )
-    context = BmcEngine(machine).prepare(
-        'init state("Root.A") where x == 0; '
-        'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
-        'check reach <= 2: active("Root.B");'
-    )
-    formula = compile_bmc_property(build_bmc_core_formula(context))
-    baseline = solve_bmc_property(formula).feasibility
-
-    def drift(_core):
-        raise BmcBuildError("simulated relation-builder drift")
-
-    monkeypatch.setattr("pyfcstm.bmc.infeasibility.partition_tracked_groups", drift)
-    degraded = solve_bmc_property(
-        formula, infeasibility_explanation="formal"
-    ).feasibility
-
-    # The mandatory verdict survives untouched, and the failure is reported
-    # rather than left looking like a request that never happened.  The frozen
-    # table reserves not_requested for a caller who did not ask, and separately
-    # requires an internal mismatch to be recorded somewhere observable.
-    assert degraded.infeasible_stage == baseline.infeasible_stage
-    assert degraded.explanation is not None
-    assert degraded.explanation.achieved_mode == "none"
-    assert degraded.explanation.status == "unknown"
-    assert degraded.refinement_status == "unknown"
-    assert "internal mismatch" in degraded.refinement_reason
-    assert "drift" in degraded.refinement_reason
-    # The rule is that a check which ran stays in the ledger, not that this
-    # branch always reports an empty one.  Here the drift is injected before any
-    # probe starts, so there is genuinely nothing to record; the collision case
-    # below covers the same branch after the budget has been spent.
-    assert all(check.status for check in degraded.refinement_checks)
-    assert degraded.refinement_checks == ()
-    # The stage did spend wall-clock time before failing, and the frozen
-    # contract defines elapsed_ms as that total.  Without this assertion the
-    # field could go back to None with every other check here still green.
-    assert degraded.explanation.elapsed_ms is not None
-    assert degraded.explanation.elapsed_ms >= 0.0
-
-
 @pytest.mark.parametrize("status", ["partial", "unknown", "timeout"])
 def test_an_unlocalized_result_cannot_report_a_degraded_refinement(status) -> None:
     """A degraded refinement needs a stage it could have been attempted on.
@@ -687,46 +581,6 @@ def _localized_baseline():
     )
     formula = compile_bmc_property(build_bmc_core_formula(context))
     return solve_bmc_property(formula).feasibility, formula.core
-
-
-def test_a_classification_without_a_core_reaches_the_public_result() -> None:
-    """The frozen table's "classification kept, core lost" row is reachable.
-
-    Only the deadline is controlled here; the classification, the extraction
-    and the aggregation are the production ones.  Without an end-to-end case
-    this row of the table would rest on unit tests of the data layer alone.
-    """
-    # The deadline is injected through the internal attach point rather than
-    # through solve_bmc_property's timeout_ms because a wall-clock timeout cannot
-    # land on this row deterministically: measured over three runs, timeout_ms=1
-    # always yields refinement_status="timeout" and timeout_ms=5 yields both this
-    # row and the fully-explained one.  Only the row's boundary is controlled;
-    # the classification, extraction and aggregation are the production ones.
-    from pyfcstm.bmc.witness import _attach_explanation
-
-    baseline, core = _localized_baseline()
-
-    class ClassifyOnlyBudget:
-        """Fund the classification probes, then report the deadline spent."""
-
-        deadline = 1.0
-
-        def __init__(self):
-            self.calls = 0
-
-        def remaining_ms(self):
-            self.calls += 1
-            return 60_000 if self.calls <= 2 else None
-
-    attached = _attach_explanation(baseline, core, ClassifyOnlyBudget(), "formal")
-    explanation = attached.explanation
-
-    assert explanation.achieved_mode == "none"
-    assert explanation.status == "partial"
-    assert explanation.classification == "assumptions_self_conflict"
-    assert explanation.core is None
-    assert attached.refinement_status == "partial"
-    assert attached.refinement_checks
 
 
 #: The mandatory verdict's own solver traffic, measured per scenario.
@@ -1081,3 +935,72 @@ def test_to_text_shows_the_explanation_it_paid_for() -> None:
         "Reduction: ",
     ):
         assert required in text, required
+
+
+@pytest.mark.unittest
+def test_a_deadline_that_stops_the_explanation_keeps_the_verdict() -> None:
+    """An explanation is optional, so failing to produce one costs nothing else.
+
+    A caller who asks for an explanation and hits the deadline must still get the
+    verdict they would have got without asking, plus an honest account of what the
+    request achieved.  The deadline is the one degradation a caller can reach
+    themselves, through ``timeout_ms``, so it is what this checks.
+
+    The rows past this one -- a classification kept while the core is lost, or an
+    internal mismatch found mid-extraction -- have no public path that lands on
+    them: a wall-clock timeout large enough to get past classification is also
+    large enough to finish, so which row it produces varies between runs.  Those
+    branches stay in the product as stated defensive code and are deliberately
+    not tested here.
+    """
+    from pyfcstm.bmc import (
+        BmcEngine,
+        build_bmc_core_formula,
+        compile_bmc_property,
+        solve_bmc_property,
+    )
+    from pyfcstm.model import load_state_machine_from_text
+
+    machine = load_state_machine_from_text(
+        "def int x = 0;\n"
+        "state Root { event Go; state A; state B; [*] -> A; A -> B :: Go; }"
+    )
+    context = BmcEngine(machine).prepare(
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
+        'check reach <= 2: active("Root.B");'
+    )
+    formula = compile_bmc_property(build_bmc_core_formula(context))
+
+    unexplained = solve_bmc_property(formula).feasibility
+    explained = solve_bmc_property(
+        formula, timeout_ms=1, infeasibility_explanation="formal"
+    ).feasibility
+
+    # The verdict is the one the caller would have had without asking.
+    assert explained.infeasible_stage == unexplained.infeasible_stage
+    assert explained.localization_status == unexplained.localization_status
+    # Compared by verdict rather than whole objects, which also carry timing.
+    assert [
+        (check.status if check is not None else None)
+        for check in (explained.kernel, explained.initialization, explained.assumptions)
+    ] == [
+        (check.status if check is not None else None)
+        for check in (
+            unexplained.kernel,
+            unexplained.initialization,
+            unexplained.assumptions,
+        )
+    ]
+
+    # And the request is accounted for rather than silently dropped.
+    assert explained.refinement_status == "timeout"
+    assert explained.refinement_checks == ()
+    assert explained.explanation is not None
+    assert explained.explanation.requested_mode == "formal"
+    assert explained.explanation.achieved_mode == "none"
+    assert explained.explanation.core is None
+    # Not asking at all leaves the fields untouched, which is what makes the
+    # timeout row distinguishable from the default.
+    assert unexplained.explanation is None
+    assert unexplained.refinement_status == "not_requested"

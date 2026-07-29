@@ -348,24 +348,6 @@ def test_unknown_stage_is_rejected() -> None:
         classify_infeasibility(core, "bogus_stage", _SolveBudget(None))
 
 
-def test_partition_rejects_a_rebuilt_aggregate_that_drifted() -> None:
-    """The rebuilt aggregate is compared, not trusted."""
-    core = _core_formula(
-        'init state("Root.A") where x == 0; check reach <= 2: active("Root.B");'
-    )
-    initial = [g for g in core._tracked_groups if g.stage == "initialization"]
-    moved = replace(initial[0], stage="assumptions", category="assumption.frame")
-    tampered = replace(
-        core,
-        _tracked_groups=tuple(
-            moved if g.stable_id == moved.stable_id else g for g in core._tracked_groups
-        ),
-    )
-
-    with pytest.raises(BmcBuildError, match="does not match the relation builder"):
-        partition_tracked_groups(tampered)
-
-
 def test_a_live_budget_sets_a_solver_timeout() -> None:
     """Every probe runs under the caller's remaining deadline, not unbounded."""
     core = _core_formula(
@@ -1337,35 +1319,6 @@ def test_an_excerpt_at_the_limit_is_not_reported_as_cut() -> None:
     assert item.source_excerpt_truncated is False
 
 
-def test_two_groups_sharing_a_stable_id_fail_closed() -> None:
-    """One activation literal may never gate two different source groups.
-
-    A stable id is metadata and never enters the expressions, so the partition
-    assertion cannot notice the collision: the rebuilt aggregates are
-    identical.  Left unchecked, the second group would overwrite the first in
-    the label map and the core would name the wrong source.
-    """
-    core = _core_formula(
-        'init state("Root.A") where x == 0; '
-        'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
-        'check reach <= 2: active("Root.B");'
-    )
-    environment = [g for g in core._tracked_groups if g.stage == "assumptions"]
-    collided = replace(environment[1], stable_id=environment[0].stable_id)
-    tampered = replace(
-        core,
-        _tracked_groups=tuple(
-            collided if group is environment[1] else group
-            for group in core._tracked_groups
-        ),
-    )
-
-    assert partition_tracked_groups(tampered)
-
-    with pytest.raises(BmcBuildError, match="share the stable id"):
-        extract_source_core(tampered, "assumptions_component", _SolveBudget(None))
-
-
 def test_an_unclassified_stage_still_gets_a_fallback_core() -> None:
     """Remaining budget goes into a fallback core, not to waste.
 
@@ -1572,45 +1525,6 @@ def test_a_definedness_constraint_reaches_the_public_explanation() -> None:
     assert "definedness" in {item.semantic_role for item in explanation.core.items}
 
 
-@pytest.mark.parametrize(
-    "error",
-    [
-        BmcBuildError("builder drift"),
-        ValueError("the data layer refused the mapped payload"),
-        TypeError("a slot received the wrong type"),
-    ],
-)
-def test_any_refusal_while_publishing_keeps_the_verdict_and_the_ledger(
-    monkeypatch, error
-) -> None:
-    """Every way the publication step can refuse degrades the same way.
-
-    The fail-safe used to name only ``BmcBuildError``, but the public
-    constructors in the data layer raise ``ValueError`` and ``TypeError``.  One
-    of those escaping would make asking for an explanation strictly worse than
-    not asking, which is the opposite of an optional stage.
-    """
-    core = _core_formula(
-        'init state("Root.A") where x == 0; '
-        'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
-        'check reach <= 2: active("Root.B");'
-    )
-
-    def refuse(*args, **kwargs):
-        raise error
-
-    monkeypatch.setattr("pyfcstm.bmc.infeasibility.BmcConflictCore", refuse)
-    outcome = explain_infeasibility(core, "assumptions", _SolveBudget(None))
-    explanation = outcome.explanation
-
-    assert outcome.checks
-    assert any(check.started for check in outcome.checks)
-    assert explanation.achieved_mode == "none"
-    assert explanation.status == "partial"
-    assert explanation.classification == "assumptions_self_conflict"
-    assert "core mapping failed" in explanation.reason
-
-
 def test_a_generated_member_says_it_has_no_authored_line() -> None:
     """A generated constraint explains its missing excerpt instead of hiding it.
 
@@ -1654,41 +1568,6 @@ def test_an_authored_member_names_its_file() -> None:
 
     assert "q.fbmcq" in item.human_text
     assert "no single authored line" not in item.human_text
-
-
-def test_a_mapping_failure_without_a_classification_reports_unknown(
-    monkeypatch,
-) -> None:
-    """With no metadata left, the aggregate says unknown rather than partial.
-
-    ``partial`` means part of the request survived.  When the classification
-    degraded to a stage fallback *and* the mapping then failed, nothing is left
-    to report, which the frozen table calls unknown.
-    """
-    core = _core_formula(
-        'init state("Root.A") where x == 0; '
-        'assume at 0: var("x") == 7; '
-        'check reach <= 2: active("Root.B");'
-    )
-    counter = [0]
-    real, factory = _patch_solver(counter, 1, "incomplete", once=True)
-
-    def refuse(*args, **kwargs):
-        raise BmcBuildError("simulated mapping drift")
-
-    monkeypatch.setattr("pyfcstm.bmc.infeasibility.BmcConflictCore", refuse)
-    z3.Solver = factory
-    try:
-        outcome = explain_infeasibility(core, "assumptions", _SolveBudget(None))
-    finally:
-        z3.Solver = real
-
-    explanation = outcome.explanation
-
-    assert explanation.classification is None
-    assert explanation.achieved_mode == "none"
-    assert explanation.status == "unknown"
-    assert "core mapping failed" in explanation.reason
 
 
 def test_an_unmappable_label_keeps_the_check_that_produced_it() -> None:

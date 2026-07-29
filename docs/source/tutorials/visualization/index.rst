@@ -74,8 +74,11 @@ The first three values are, respectively, portable data, complete HTML text,
 and a generated ``.html`` path. The HTML file contains the viewer, renderer,
 WASM, and selected fonts, so it remains usable without a network connection.
 Use ``open_window=True`` (the default) only when a Chromium-family browser is
-available. Without one, ``show`` raises ``DiagramUnavailableError``; use
-``open_window=False`` to create the file without opening a window.
+available. It blocks until you close the window, the way
+``matplotlib.pyplot.show`` does, and then removes the temporary file it wrote —
+pass a path to keep one. Without a browser, or on a machine with no display,
+``show`` raises ``DiagramUnavailableError``; use ``open_window=False`` to create
+the file without opening a window.
 
 The synchronous ``to_svg()``, ``to_png()``, and ``to_pdf()`` methods are typed
 capability probes in this stage and raise ``DiagramUnavailableError``. The

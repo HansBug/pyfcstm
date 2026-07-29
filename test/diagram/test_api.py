@@ -8,10 +8,12 @@ import logging
 import os
 from pathlib import Path
 import re
+import shutil
 import stat
 from unittest import mock
 import sys
 import tempfile
+import textwrap
 
 import pytest
 
@@ -263,12 +265,14 @@ def test_show_launches_a_standalone_app_window(monkeypatch, tmp_path):
     calls = []
 
     class FakeBrowser:
+        returncode = 0
+
         def __init__(self):
             self.waited = 0
 
-        def wait(self):
+        def communicate(self):
             self.waited += 1
-            return 0
+            return None, b""
 
     browsers = []
 
@@ -299,6 +303,107 @@ def test_show_launches_a_standalone_app_window(monkeypatch, tmp_path):
     # predictable names, an exit hook, two naming spaces -- existed because this
     # did not happen.
     assert browsers[0].waited == 1
+
+
+@pytest.mark.unittest
+def test_a_browser_that_never_showed_the_window_is_not_a_success(monkeypatch, tmp_path):
+    # An SSH session or a container without a display is the ordinary way to get
+    # here: the executable exists, so nothing earlier objects, and Chromium exits
+    # within a second saying it found no display. Reading that as "the user closed
+    # the window" deleted the only copy of the document and returned successfully,
+    # and the CLI printed a path that was already gone, with exit status 0.
+    from pyfcstm.diagram import api as diagram_api
+
+    class FailedBrowser:
+        returncode = 1
+
+        def communicate(self):
+            return None, (
+                b"[123:123:0730/000000.0:ERROR:ui/ozone/platform/x11/"
+                b"ozone_platform_x11.cc:249] Missing X server or $DISPLAY\n"
+            )
+
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
+    monkeypatch.setattr(diagram_api, "_browser_app_executable", lambda: "/opt/chrome")
+    monkeypatch.setattr(
+        diagram_api.subprocess, "Popen", lambda *_args, **_kwargs: FailedBrowser()
+    )
+    view = _model("state Root;").diagram()
+    object.__setattr__(view, "_html_document", "<html>tiny</html>")
+
+    with pytest.raises(DiagramUnavailableError, match="Missing X server") as caught:
+        view.show(open_window=True)
+    assert "status 1" in str(caught.value), "the status is what distinguishes this"
+    # The browser's own sentence, without the log prefix that is longer than it.
+    assert "ERROR:ui/ozone" not in str(caught.value)
+    assert list(tmp_path.iterdir()) == [], "a document never shown is not left behind"
+
+
+@pytest.mark.unittest
+def test_no_line_of_the_launch_leaks_a_browser_profile(monkeypatch, tmp_path):
+    # The profile is a resource acquired inside the same call, and this module
+    # argues at length that one taken before its protective block is left behind
+    # by a Ctrl-C on any line between the two. The staging file has a probe for
+    # exactly that; the profile did not, and was indeed acquired a few lines
+    # early. Pressing Ctrl-C as a window opens is listed as an ordinary event.
+    from pyfcstm.diagram import api as diagram_api
+
+    class FakeBrowser:
+        returncode = 0
+
+        def communicate(self):
+            return None, b""
+
+        def terminate(self):
+            return None
+
+    monkeypatch.setattr(diagram_api, "_browser_app_executable", lambda: "/opt/chrome")
+    monkeypatch.setattr(
+        diagram_api.subprocess, "Popen", lambda *_args, **_kwargs: FakeBrowser()
+    )
+    monkeypatch.setattr(tempfile, "tempdir", None)
+    monkeypatch.setenv("TMPDIR", str(tmp_path))
+    source = Path(diagram_api.__file__)
+    document = tmp_path / "doc.html"
+    document.write_text("<html>tiny</html>", encoding="utf-8")
+
+    # Lines inside the `finally` are the cleanup itself, where an interrupt is the
+    # one case no Python program survives -- the same boundary the staging probe
+    # draws at the `yield`. Computed, so it cannot drift from where the block is.
+    cleanup = _cleanup_line(diagram_api._open_standalone_window)
+    leaks = []
+    for line_number in _statement_lines(
+        diagram_api._open_standalone_window, through=cleanup - 1
+    ):
+        fired = []
+
+        def tracer(frame, event, _arg, wanted=line_number, seen=fired):
+            if (
+                event == "line"
+                and frame.f_code.co_filename == str(source)
+                and frame.f_lineno == wanted
+                and not seen
+            ):
+                seen.append(True)
+                raise KeyboardInterrupt
+            return tracer
+
+        sys.settrace(tracer)
+        try:
+            diagram_api._open_standalone_window(document, (800, 600))
+        except BaseException:  # noqa: BLE001 - the directory's state is what matters
+            pass
+        finally:
+            sys.settrace(None)
+        left = sorted(
+            item.name for item in tmp_path.iterdir() if item.name.startswith("pyfcstm-")
+        )
+        if fired and left:
+            leaks.append((line_number, left))
+        for item in tmp_path.iterdir():
+            if item.name.startswith("pyfcstm-") and item.is_dir():
+                shutil.rmtree(str(item), ignore_errors=True)
+    assert leaks == [], "interrupting these lines left a profile behind: %r" % (leaks,)
 
 
 def test_show_rejects_invalid_window_size(tmp_path):
@@ -583,7 +688,7 @@ def _wasm_module(section_ids):
 
 
 @pytest.mark.unittest
-def test_a_temporary_viewer_is_private_and_reused_per_diagram_and_user():
+def test_each_shown_viewer_gets_a_path_of_its_own(tmp_path, monkeypatch):
     """The viewer embeds the model's own source into a world-readable directory.
 
     Deriving the name from the document made it predictable, and dropping the
@@ -592,31 +697,31 @@ def test_a_temporary_viewer_is_private_and_reused_per_diagram_and_user():
     forced rather than preserved, which also stops a pre-created permissive file
     from lending its mode to fresh content.
 
-    The name carries the user because the directory is shared and the file is
-    0600: without that, the second person to show a given diagram on a machine
-    would be refused their own save.
+    Nothing is shared. A content-derived name made two concurrent ``show`` calls
+    on one diagram use one file, and the first window to close deleted the
+    document the second was still displaying. Reuse only ever saved disk while
+    nothing could delete these files; now the window's own call removes its own,
+    so sharing buys nothing and costs that.
     """
     from pyfcstm.diagram import api as diagram_api
 
-    model = _model("state Root { state Secret; [*] -> Secret; }")
-    document = model.diagram().to_html()
-    path = diagram_api._temporary_viewer_path(document)
-    assert diagram_api._temporary_viewer_path(document) == path, (
-        "repeats reuse one file"
-    )
-    other = diagram_api._temporary_viewer_path(
-        _model("state Root;").diagram().to_html()
-    )
-    assert other != path, "different diagrams need different files"
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
+    first = diagram_api._temporary_viewer_path()
+    second = diagram_api._temporary_viewer_path()
+    assert first != second, "two calls must not be able to delete each other's file"
 
-    if hasattr(os, "geteuid"):
-        assert path.name.endswith("-%d.html" % os.geteuid())
-
-    written = diagram_api._atomic_write_text(path, document, mode=0o600)
+    # Through `show`, not through the writer. Asserting that `_atomic_write_text`
+    # honours a mode this test passed in says nothing about whether `show` passes
+    # it: dropping `mode=0o600` there left every gate green while the document --
+    # which carries the model's own source -- became readable to every local user.
+    # This is also the only test covering `show()` with neither a window nor an
+    # explicit path, the one branch whose file is handed to the caller and kept.
+    kept = _model("state Root { state Secret; [*] -> Secret; }").show(open_window=False)
     try:
-        assert stat.S_IMODE(written.stat().st_mode) == 0o600
+        assert stat.S_IMODE(kept.stat().st_mode) == 0o600
+        assert "Secret" in kept.read_text(encoding="utf-8")
     finally:
-        written.unlink()
+        kept.unlink()
 
 
 @pytest.mark.unittest
@@ -671,6 +776,26 @@ def test_only_a_path_the_caller_named_survives_a_window(monkeypatch, tmp_path):
         item.name for item in tmp_path.iterdir() if item.name.startswith("pyfcstm-")
     ]
     assert left == [], "a document no window ever read must not be left behind"
+
+
+@pytest.mark.unittest
+def test_a_kept_document_survives_a_later_window(monkeypatch, tmp_path):
+    # Both calls are documented, and the pydoc says the first one's file stays.
+    # While the name came from the document they resolved to one path, so closing
+    # the second call's window deleted the first call's file -- and the same held
+    # for two windows open at once, where the first to close blinded the other.
+    from pyfcstm.diagram import api as diagram_api
+
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
+    monkeypatch.setattr(diagram_api, "_open_standalone_window", lambda *_: None)
+    view = _model("state Root;").diagram()
+    object.__setattr__(view, "_html_document", "<html>tiny</html>")
+
+    kept = view.show(open_window=False)
+    shown = view.show(open_window=True)
+    assert shown != kept, "one lifetime per file, so neither can delete the other"
+    assert kept.is_file(), "the document the caller was told would stay"
+    assert not shown.exists(), "and the window's own, which goes with the window"
 
 
 @pytest.mark.unittest
@@ -1435,6 +1560,17 @@ def _statement_lines(function, through=None):
         found = {line for line in found if line <= through}
     assert len(found) > 5, "the body of %s was not located" % inner.__name__
     return sorted(found)
+
+
+def _cleanup_line(function):
+    """First line of the outermost ``finally`` in one function."""
+    inner = getattr(function, "__wrapped__", function)
+    source = textwrap.dedent(inspect.getsource(inner))
+    tree = ast.parse(source)
+    body = tree.body[0].body
+    block = next(node for node in body if isinstance(node, ast.Try) and node.finalbody)
+    offset = inner.__code__.co_firstlineno - tree.body[0].lineno
+    return block.finalbody[0].lineno + offset
 
 
 def _yield_line(function):

@@ -23,7 +23,9 @@ import json
 import logging
 import math
 import os
+import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -798,6 +800,60 @@ def _browser_app_executable() -> Optional[str]:
     return None
 
 
+def _stop_browser(process: Any) -> None:
+    """
+    Stop the browser, and everything it started, as far as the platform allows.
+
+    The main process exiting does not mean its children have.  After an interrupt,
+    one of them recreated files inside the profile directory that had just been
+    removed, leaving it behind for good.  On POSIX the browser is a session leader
+    of its own -- that is what ``start_new_session`` bought -- so the group can be
+    signalled as a unit; Windows has no equivalent here, and a profile that
+    survives is reported rather than passed over.
+
+    :param process: The browser process.
+    :type process: subprocess.Popen
+    :return: ``None``.
+    :rtype: None
+    """
+    if hasattr(os, "killpg") and hasattr(os, "getpgid"):
+        try:
+            group = os.getpgid(process.pid)
+            # Only if it really leads its own group. Signalling ours would take
+            # the interpreter down with it.
+            if group == process.pid:
+                os.killpg(group, signal.SIGTERM)
+                return
+        except OSError:
+            # ProcessLookupError once it has already exited; PermissionError if
+            # the group is not ours to signal. Either way, ask the process.
+            pass
+    process.terminate()
+
+
+def _browser_complaint(stderr: Optional[bytes]) -> str:
+    """
+    Return the browser's own last words, as a suffix for a failure message.
+
+    Its stderr is where the reason lives -- "Missing X server or $DISPLAY" is not
+    something this module could have worked out on its own -- and the last lines
+    are the ones that say why.
+
+    :param stderr: Whatever the browser wrote, or ``None``.
+    :type stderr: bytes, optional
+    :return: ``": <reason>"``, or an empty string when it said nothing.
+    :rtype: str
+    """
+    text = (stderr or b"").decode("utf-8", "replace")
+    # Chromium prefixes every line with `[pid:tid:date:LEVEL:file:line]`, which is
+    # longer than the sentence after it and hides it.
+    lines = [re.sub(r"^\[[^]]*\]\s*", "", line).strip() for line in text.splitlines()]
+    lines = [line for line in lines if line]
+    if not lines:
+        return ""
+    return ": %s" % " / ".join(lines[-2:])
+
+
 def _open_standalone_window(path: Path, window_size: Tuple[int, int]) -> None:
     """
     Show the viewer in a browser app window and return when it is closed.
@@ -832,22 +888,29 @@ def _open_standalone_window(path: Path, window_size: Tuple[int, int]) -> None:
             "install Chrome, Chromium, Edge, or Brave, or set PYFCSTM_BROWSER"
         )
     width, height = window_size
-    profile = tempfile.mkdtemp(prefix="pyfcstm-diagram-profile-")
-    command = [
-        executable,
-        "--app=%s" % path.resolve().as_uri(),
-        # Ours, so the browser is a process to wait on rather than a message to
-        # one already running. The two flags after it are what a fresh profile
-        # would otherwise stop and ask about.
-        "--user-data-dir=%s" % profile,
-        "--no-first-run",
-        "--no-default-browser-check",
-        "--window-size=%d,%d" % (width, height),
-    ]
+    profile = None
+
+    def command_of(directory):
+        return [
+            executable,
+            "--app=%s" % path.resolve().as_uri(),
+            # Ours, so the browser is a process to wait on rather than a message to
+            # one already running. The two flags after it are what a fresh profile
+            # would otherwise stop and ask about.
+            "--user-data-dir=%s" % directory,
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--window-size=%d,%d" % (width, height),
+        ]
+
     popen_kwargs: Dict[str, Any] = {
         "stdin": subprocess.DEVNULL,
         "stdout": subprocess.DEVNULL,
-        "stderr": subprocess.DEVNULL,
+        # Kept, because when the browser fails it is the only place the reason
+        # exists: on a machine with no display it says exactly that, and a caller
+        # told merely that something exited cannot act on it. `communicate` drains
+        # it, so a chatty browser cannot fill the pipe and stall.
+        "stderr": subprocess.PIPE,
     }
     if os.name == "nt":
         popen_kwargs["creationflags"] = getattr(
@@ -855,50 +918,81 @@ def _open_standalone_window(path: Path, window_size: Tuple[int, int]) -> None:
         )
     else:
         popen_kwargs["start_new_session"] = True
+    complaint = b""
+    code = 0
+    process = None
     try:
-        try:
-            process = subprocess.Popen(command, **popen_kwargs)
-        except OSError as err:
+        # Acquired inside the protective block, and with no handler entered while
+        # it is held: this module argues both at length about the staging file, and
+        # a nested `try:` line is itself unowned from Python 3.11 on -- measured
+        # here, where two of them leaked this directory on 3.11 and 3.14 while
+        # passing on 3.10.
+        profile = tempfile.mkdtemp(prefix="pyfcstm-diagram-profile-")
+        process = subprocess.Popen(command_of(profile), **popen_kwargs)
+        _, complaint = process.communicate()
+        code = process.returncode
+    except BaseException as error:
+        if process is None and isinstance(error, OSError):
+            # `Popen` could not start it at all -- ENOENT for a path that is not
+            # there any more, EACCES for one that is not executable. A typed
+            # capability error is what callers of `show` are told to expect.
             raise DiagramUnavailableError(
                 "failed to launch the standalone diagram window with %s: %s"
-                % (executable, err)
-            ) from err
-        try:
-            process.wait()
-        except BaseException:
+                % (executable, error)
+            ) from error
+        if process is not None:
             # A Ctrl-C while the window is open. Closing it is the honest
             # response: the caller is about to remove the document under it.
-            process.terminate()
-            process.wait()
-            raise
+            _stop_browser(process)
+            process.communicate()
+        # Anything else -- including an interrupt before the browser existed --
+        # travels on unchanged.
+        raise
     finally:
-        # The browser has exited, so nothing holds the profile. `ignore_errors`
-        # rather than a report: a profile left behind in the temporary directory
-        # is not something a caller can act on, and on Windows a lock can outlive
-        # the process by a moment.
-        shutil.rmtree(profile, ignore_errors=True)
+        if profile is not None:
+            try:
+                shutil.rmtree(profile)
+            except OSError as removal_error:
+                # A few megabytes per call, so it is worth saying. PermissionError
+                # where Windows still holds a lock, ENOTEMPTY where a browser
+                # descendant wrote something back after the tree was walked. The
+                # caller's own outcome is the one that propagates, the same way
+                # `_discard` treats a staging file it cannot remove.
+                _report_degradation(
+                    "could not remove the browser profile %s: %s",
+                    profile,
+                    removal_error,
+                )
+    if code != 0:
+        # The browser exited without the user closing a window, so the diagram was
+        # never shown and saying otherwise is a false success. An SSH session or a
+        # container without a display is the ordinary way to arrive here: the
+        # executable exists, so nothing earlier objects, and Chromium exits within
+        # a second saying it found no display.
+        raise DiagramUnavailableError(
+            "the standalone diagram window closed with status %d%s"
+            % (code, _browser_complaint(complaint))
+        )
 
 
-def _temporary_viewer_path(document: str) -> Path:
+def _temporary_viewer_path() -> Path:
     """
-    Return a temporary path for a rendered viewer document.
+    Return a fresh temporary path for a rendered viewer document.
 
-    Derived from the document, so a caller showing the same diagram twice writes
-    one file rather than another ~30 MB, and from the user, because the temporary
-    directory is shared and the document is written 0600: without that, the second
-    person to show a given diagram on a machine would be refused their own save.
+    Fresh, not derived from the document.  A content-derived name let two calls
+    share one file, and sharing is what put the question "who may delete this"
+    back in play: the first window to close deleted the document the second was
+    still displaying.  The name existed to make repeats reuse one copy, which
+    mattered only while nothing could ever delete them; :meth:`Diagram.show`
+    removes its own when the window closes, so there is nothing left to save by
+    sharing and nothing left to coordinate by not.
 
-    :param document: The rendered HTML document.
-    :type document: str
-    :return: A path under the system temporary directory.
+    :return: A path under the system temporary directory that no other call uses.
     :rtype: pathlib.Path
     """
-    digest = hashlib.sha256(document.encode("utf-8")).hexdigest()[:16]
-    # The effective id, which is the one a file created here is owned by and the
-    # one `_write_protection_reason` compares against. Windows gives each account
-    # its own `%TEMP%` and has no `geteuid` to ask.
-    owner = "-%d" % os.geteuid() if hasattr(os, "geteuid") else ""
-    return Path(tempfile.gettempdir()) / ("pyfcstm-diagram-%s%s.html" % (digest, owner))
+    return Path(tempfile.gettempdir()) / (
+        "pyfcstm-diagram-%s.html" % uuid.uuid4().hex[:16]
+    )
 
 
 def _report_degradation(message: str, *args: Any) -> None:
@@ -2441,11 +2535,10 @@ class Diagram:
         be left behind, and each one is roughly 30 MB.
 
         :param output: Optional destination path. When omitted the viewer is
-            written 0600 to a temporary path derived from the document, so
-            showing the same diagram twice writes one file rather than two. That
-            file is removed when the window closes; without a window it is the
-            file you asked for and it stays. Pass an explicit path for a document
-            you want to keep.
+            written 0600 to a fresh temporary path, one per call, so no two calls
+            can reach each other's file. That file is removed when the window
+            closes; without a window it is the file you asked for and it stays.
+            Pass an explicit path for a document you want to keep.
         :type output: str or os.PathLike, optional
         :param open_window: Whether to launch a Chromium-family app window,
             defaults to ``True``.
@@ -2486,7 +2579,7 @@ class Diagram:
         dimensions = _coerce_window_size(window_size)
         if output is None:
             document = self.to_html()
-            path = _temporary_viewer_path(document)
+            path = _temporary_viewer_path()
             # 0600, and forced rather than preserved. The name is derived from
             # the document, so on a shared temp directory anyone can predict
             # it: both to read the model's own source out of the viewer, and to

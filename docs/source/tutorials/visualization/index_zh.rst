@@ -70,9 +70,10 @@ PlantUML 或 Node。
 
 前三个结果依次是可移植数据、完整 HTML 文本和生成的 ``.html`` 路径。HTML
 内嵌查看器、渲染器、WASM 和选定字体，因此不依赖网络。只有在存在
-Chromium 系浏览器时才使用默认的 ``open_window=True``。没有浏览器时，
-``show`` 会抛出 ``DiagramUnavailableError``；只想生成文件时使用
-``open_window=False``。
+Chromium 系浏览器时才使用默认的 ``open_window=True``：它会像
+``matplotlib.pyplot.show`` 那样阻塞到你关闭窗口，随后删除自己写出的临时文件——
+想保留请显式传入路径。没有浏览器、或机器上没有显示环境时，``show`` 会抛出
+``DiagramUnavailableError``；只想生成文件时使用 ``open_window=False``。
 
 本阶段的同步 ``to_svg()``、``to_png()`` 和 ``to_pdf()`` 只是类型化能力探针，
 会抛出 ``DiagramUnavailableError``。生成的 HTML 中的浏览器导出按钮才是

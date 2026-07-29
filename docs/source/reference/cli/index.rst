@@ -503,14 +503,16 @@ Typical examples:
 ``diagram`` converts an FCSTM file into portable JSON or a self-contained HTML
 viewer. With no ``-o``, JSON is written to standard output. HTML output is
 written to the requested path, or, when ``--open`` is used without one, to a
-temporary path derived from the document's own content. That file is left in
-place because the browser window outlives the command; showing the same
-diagram again reuses the same file rather than adding another.
+fresh temporary path, one per invocation. ``--open`` blocks until
+the window is closed and then removes a temporary file, so nothing accumulates;
+pass ``-o`` for a viewer you want to keep.
 
 An output suffix the command cannot produce is a usage error: use ``.json`` or
-``.html``, or pass ``--format`` to choose explicitly. When ``--open`` cannot
-find a browser, the viewer path is still printed before the error, so the
-document can be opened by hand.
+``.html``, or pass ``--format`` to choose explicitly. When ``--open`` cannot find
+a browser, a path given with ``-o`` is printed before the error and the file is
+left for you to open by hand. Without ``-o`` there is no such file: the temporary
+one is removed, since nothing ever opened it, and the error says to re-run with
+``-o PATH``.
 
 .. list-table:: ``diagram`` options
    :header-rows: 1
@@ -547,9 +549,10 @@ Output and failure facts:
 * HTML output embeds the viewer, renderer, resvg WASM, and selected locale fonts;
   it makes no network request. Browser SVG/PNG/vector PDF downloads are
   available from the HTML viewer.
-* ``--open`` requires a Chromium-family browser. Without one, the command reports
-  a typed capability error after writing the HTML file. Use ``--format html``
-  without ``--open`` for file-only workflows.
+* ``--open`` requires a Chromium-family browser, blocks until the window is
+  closed, and then removes the document unless ``-o`` named it. Without a browser
+  the command reports a typed capability error; the HTML survives only when ``-o``
+  named it. Use ``--format html`` without ``--open`` for file-only workflows.
 * Invalid formats, unknown options, unreadable input, parse/model failures, and
   missing packaged assets exit non-zero with the corresponding error category.
 

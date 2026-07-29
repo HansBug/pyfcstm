@@ -993,13 +993,24 @@ def test_a_deadline_that_stops_the_explanation_keeps_the_verdict() -> None:
         )
     ]
 
-    # And the request is accounted for rather than silently dropped.
-    assert explained.refinement_status == "timeout"
-    assert explained.refinement_checks == ()
+    # And the request is accounted for rather than silently dropped.  Which
+    # degradation row a 1 ms deadline lands on is a property of the host clock,
+    # not of the contract: it is "timeout" on Linux and "partial" on Windows, so
+    # the row is not pinned.  What must hold on every row is that the caller can
+    # tell what their request achieved.
     assert explained.explanation is not None
     assert explained.explanation.requested_mode == "formal"
-    assert explained.explanation.achieved_mode == "none"
-    assert explained.explanation.core is None
+    assert explained.refinement_status in ("timeout", "partial")
+    if explained.refinement_status == "timeout":
+        # Nothing ran, so nothing is claimed: no ledger entries and no core.
+        assert explained.refinement_checks == ()
+        assert explained.explanation.achieved_mode == "none"
+        assert explained.explanation.core is None
+    else:
+        # Something ran, so the achieved depth is at most the requested one and
+        # every ledger entry names a probe with a status to report.
+        assert explained.explanation.achieved_mode in ("none", "formal")
+        assert all(check.name and check.status for check in explained.refinement_checks)
     # Not asking at all leaves the fields untouched, which is what makes the
     # timeout row distinguishable from the default.
     assert unexplained.explanation is None

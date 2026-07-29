@@ -655,13 +655,18 @@ def test_structural_corpus_agrees(validator, name, payload) -> None:
     assert by_schema == by_constructor, name
 
 
-def test_the_one_inexpressible_rule_is_still_enforced_in_python() -> None:
+def test_a_duplicate_stable_id_is_still_refused_in_python() -> None:
     """The documented schema gap must not become a Python gap too.
 
     Draft 2020-12 has no keyword for uniqueness over a nested key, so two
     members sharing a ``stable_id`` while differing elsewhere pass the schema.
     The constructor is the only thing standing between that payload and a core
-    that quotes one source group twice, so it is pinned here explicitly.
+    that quotes one source group twice, so it is pinned here explicitly, on top
+    of the bidirectional pinning every named asymmetry gets above.
+
+    The frozen contract names this gap and eight others: the schema is the
+    structural gate and the constructor the semantic gate, and each exception
+    must be pinned from both sides.
     """
     payload = _payload(
         members=[

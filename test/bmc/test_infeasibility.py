@@ -1390,3 +1390,40 @@ def test_an_authored_member_names_its_file() -> None:
 
     assert "q.fbmcq" in item.human_text
     assert "no single authored line" not in item.human_text
+
+
+def test_a_core_that_does_not_recheck_as_unsat_is_not_published() -> None:
+    """A published core must prove its own target, so a failed recheck withholds it.
+
+    The recheck is the step that makes a source core sound: without it the report
+    could name lines that do not actually conflict.  Only Z3's verdict on that one
+    call is scripted -- which is what a solver giving up on a harder recheck really
+    does -- and the aggregation under test is production code.
+    """
+    core = _core_formula(
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
+        'check reach <= 2: active("Root.B");'
+    )
+    outcome = classify_infeasibility(core, "assumptions", _SolveBudget(None))
+
+    counter = [0]
+    real = z3.Solver
+    # The classification probes have already run above, so the extraction's own
+    # solver is the first this factory sees: let its members check as usual and
+    # script only the recheck that follows.
+    script = [None, "unknown"]
+
+    def factory(*args, **kwargs):
+        return _ScriptedSolver(real(*args, **kwargs), script, counter)
+
+    z3.Solver = factory
+    try:
+        extraction = extract_source_core(core, outcome.scope, _SolveBudget(None))
+    finally:
+        z3.Solver = real
+
+    assert extraction.groups == ()
+    assert extraction.status == "unknown"
+    assert "did not re-check as unsat" in extraction.reason
+    assert len(extraction.checks) == 1

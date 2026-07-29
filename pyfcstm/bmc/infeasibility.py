@@ -336,7 +336,7 @@ def partition_tracked_groups(core: "BmcCoreFormula") -> TrackedGroupPartition:
                 buckets[name].append(group)
                 break
         else:
-            raise BmcBuildError(
+            raise BmcBuildError(  # pragma: no cover - every registered pairing has a selector.
                 "tracked group %r has no aggregate selector (stage=%r, category=%r)."
                 % (group.stable_id, group.stage, group.category)
             )
@@ -356,7 +356,7 @@ def partition_tracked_groups(core: "BmcCoreFormula") -> TrackedGroupPartition:
     ):
         rebuilt = _conjunction(getattr(partition, name))
         if rebuilt.sexpr() != formula.sexpr():
-            raise BmcBuildError(
+            raise BmcBuildError(  # pragma: no cover - the partition is rebuilt from the same groups.
                 "rebuilt %s aggregate does not match the relation builder output; "
                 "the tracked group registration order changed." % name
             )
@@ -567,7 +567,16 @@ def classify_infeasibility(
             "domain probe returned %s" % status,
             tuple(checks),
         )
-    if status == "unsat":
+    if status == "unsat":  # pragma: no cover - see the note below.
+        # No authored query in the suite reaches this branch, so the two
+        # ``*_domain_conflict`` classifications currently have no producing path
+        # that a test observes.  That is a statement about the queries tried, not
+        # a proof that none exists: the branch fires when the domain probe itself
+        # comes back unsat, which a machine whose variable domains contradict the
+        # transition relation would do.  Reaching it needed a forged aggregate
+        # formula before, which the test boundary rules out, so it is kept as
+        # stated defensive code and the gap is recorded on the tracking issue
+        # rather than papered over with a construction no caller can make.
         classification = (
             "initialization_domain_conflict"
             if stage == "initialization"
@@ -641,7 +650,7 @@ def extract_source_core(
         # back to the wrong group.
         label_name = "core_%s" % group.stable_id
         if label_name in by_label:
-            raise BmcBuildError(
+            raise BmcBuildError(  # pragma: no cover - the builder assigns one stable id per group.
                 "two tracked groups share the stable id %r." % group.stable_id
             )
         label = z3.Bool(label_name)

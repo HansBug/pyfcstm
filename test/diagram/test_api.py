@@ -337,7 +337,7 @@ def test_a_browser_that_never_showed_the_window_is_not_a_success(monkeypatch, tm
     assert "status 1" in str(caught.value), "the status is what distinguishes this"
     # The browser's own sentence, without the log prefix that is longer than it.
     assert "ERROR:ui/ozone" not in str(caught.value)
-    assert list(tmp_path.iterdir()) == [], "a document never shown is not left behind"
+    assert _viewers_left(tmp_path) == [], "a document never shown is not left behind"
 
 
 @pytest.mark.unittest
@@ -513,15 +513,18 @@ def test_an_interrupted_window_stops_the_browser_through_the_helper(
     # test green, so the call site is pinned here.
     from pyfcstm.diagram import api as diagram_api
 
+    # The order matters as much as the call: draining first blocks until the
+    # browser exits on its own, so a Ctrl-C waits for the window to be closed by
+    # hand -- measured at the browser's whole lifetime instead of the instant the
+    # signal arrives. Asserting only that the helper ran left that reordering green.
+    events = []
+
     class Interrupting:
         returncode = 0
 
-        def __init__(self):
-            self.calls = 0
-
         def communicate(self):
-            self.calls += 1
-            if self.calls == 1:
+            events.append("communicate")
+            if events.count("communicate") == 1:
                 raise KeyboardInterrupt
             return None, b""
 
@@ -538,19 +541,26 @@ def test_an_interrupted_window_stops_the_browser_through_the_helper(
     monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
     monkeypatch.setattr(diagram_api, "_browser_app_executable", lambda: "/opt/chrome")
     monkeypatch.setattr(diagram_api.subprocess, "Popen", fake_popen)
-    monkeypatch.setattr(
-        diagram_api, "_stop_browser", lambda process: stopped.append(process)
-    )
+
+    def record(process):
+        events.append("stop")
+        stopped.append(process)
+
+    monkeypatch.setattr(diagram_api, "_stop_browser", record)
     document = tmp_path / "doc.html"
     document.write_text("<html>tiny</html>", encoding="utf-8")
 
     with pytest.raises(KeyboardInterrupt):
         diagram_api._open_standalone_window(document, (800, 600))
     assert stopped == browsers, "the interrupt path did not go through `_stop_browser`"
+    assert events == ["communicate", "stop", "communicate"], (
+        "the browser must be stopped before the drain, not after: %r" % (events,)
+    )
     assert [item.name for item in tmp_path.iterdir()] == ["doc.html"], "profile left"
 
 
 @pytest.mark.unittest
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process groups")
 def test_a_browser_that_leads_no_group_of_its_own_is_asked_directly(monkeypatch):
     # The guard on the group signal: sending one to a group we do not lead would
     # take the interpreter with it. Asserted rather than waited for -- the earlier
@@ -887,14 +897,16 @@ def test_a_viewer_name_is_shared_only_where_nothing_removes_it():
     assert windowed != diagram_api._temporary_viewer_path(), "its own call removes it"
     assert windowed != kept, "and the two must never meet at one name"
 
-    # The name tells nobody which diagram it holds. Deriving it from the document
-    # gave reuse across processes and, with it, a fingerprint: the directory is one
-    # every local user may list, so another user renders their own candidates and
-    # sees whose digest is present. The 0600 does not cover the name.
-    digest = hashlib.sha256(document.encode("utf-8")).hexdigest()
-    for length in (8, 12, 16, 32, 64):
-        assert digest[:length] not in kept.name, "the name carries the document"
-        assert digest[:length] not in windowed.name, "the name carries the document"
+    # The kept name may carry the document -- that is what makes the reuse work
+    # between processes -- but only because the directory holding it is nobody
+    # else's to look into. In a listable directory the digest is a fingerprint of
+    # the model, and so is the file's size, which is why the boundary is the
+    # directory and not the name. `test_a_kept_viewer_shows_another_user_nothing_
+    # about_the_diagram` is what holds that end.
+    assert kept.parent == windowed.parent == diagram_api._private_viewer_directory()
+    digest = hashlib.sha256(document.encode("utf-8")).hexdigest()[:16]
+    assert kept.name == "kept-%s.html" % digest, "the reuse is in the name"
+    assert digest not in windowed.name, "a window's file is nobody else's to find"
 
     # Through `show`, not through the writer. Asserting that `_atomic_write_text`
     # honours a mode this test passed in says nothing about whether `show` passes
@@ -930,6 +942,91 @@ def test_a_viewer_name_is_shared_only_where_nothing_removes_it():
         written.unlink()
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX modes and a shared temp directory")
+def test_a_kept_viewer_shows_another_user_nothing_about_the_diagram(
+    tmp_path, monkeypatch
+):
+    # 0600 stops another local user reading the document; it does not stop them
+    # `stat`-ing it, which needs no permission on the file. The system temporary
+    # directory is listable, and a ~29 MB viewer's exact size is a fingerprint:
+    # render a few candidate models, compare byte counts, and the match says which
+    # one is on display. A name derived from the document gave the same thing away
+    # more directly. Neither is closed by changing what the file is called, so what
+    # is asserted here is that nothing another user can reach carries it.
+    from pyfcstm.diagram import api as diagram_api
+
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
+    diagram_api._PRIVATE_DIRECTORIES.clear()
+
+    candidates = [
+        "state ConfidentialProjectAlpha;",
+        "state PublicDemoBeta;",
+        "state B;",
+    ]
+    sizes = {
+        len(_model(source).diagram().to_html().encode("utf-8")) for source in candidates
+    }
+    assert len(sizes) == len(candidates), "the candidates must differ in size to matter"
+
+    kept = _model(candidates[0]).show(open_window=False)
+    try:
+        # Everything a second user can see in the directory they share with us.
+        visible = sorted(tmp_path.iterdir())
+        assert len(visible) == 1 and visible[0].is_dir(), (
+            "the viewer is not in the open"
+        )
+        assert stat.S_IMODE(visible[0].stat().st_mode) == 0o700, "they can look inside"
+        assert kept.parent == visible[0]
+        assert stat.S_IMODE(kept.stat().st_mode) == 0o600
+        # The one thing the directory does say is that pyfcstm ran, which is not
+        # about the model: its own name carries no digest of it.
+        digest = hashlib.sha256(
+            _model(candidates[0]).diagram().to_html().encode("utf-8")
+        ).hexdigest()
+        assert digest[:8] not in visible[0].name
+    finally:
+        kept.unlink()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX modes and ownership")
+@pytest.mark.parametrize(
+    ("kind", "reason"),
+    [("file", "not a directory"), ("open", "mode is")],
+)
+def test_a_viewer_directory_that_cannot_be_trusted_is_not_used(
+    kind, reason, tmp_path, monkeypatch, caplog
+):
+    # The per-user name is predictable and its parent is world-writable, which is
+    # the price of reuse between processes: a directory there has to be checked
+    # rather than assumed. Something else holding the name must not become a
+    # permanent refusal, and must not become a directory other people can read.
+    import logging
+
+    from pyfcstm.diagram import api as diagram_api
+
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
+    diagram_api._PRIVATE_DIRECTORIES.clear()
+    taken = tmp_path / ("pyfcstm-viewers-%d" % os.geteuid())
+    if kind == "file":
+        taken.write_text("not a directory", encoding="utf-8")
+    else:
+        taken.mkdir(mode=0o755)
+
+    with caplog.at_level(logging.WARNING):
+        chosen = diagram_api._private_viewer_directory()
+    try:
+        assert chosen != taken, "the name was taken and must not have been used"
+        assert stat.S_IMODE(chosen.stat().st_mode) == 0o700, "the fallback is private"
+        assert reason in caplog.text, (
+            "the lost reuse must be recorded: %r" % caplog.text
+        )
+        # Still usable: a caller gets a viewer rather than an error.
+        kept = _model("state Root;").show(open_window=False)
+        assert kept.parent == chosen
+    finally:
+        diagram_api._PRIVATE_DIRECTORIES.clear()
+
+
 @pytest.mark.unittest
 def test_a_window_removes_the_document_it_showed(monkeypatch, tmp_path):
     # The reason for waiting rather than detaching: once the window is closed
@@ -952,7 +1049,7 @@ def test_a_window_removes_the_document_it_showed(monkeypatch, tmp_path):
     assert shown and shown[0][1] == "<html>", "the window saw the document"
     assert shown[0][0] == returned
     assert not returned.exists(), "the document outlived the window it was shown in"
-    assert list(tmp_path.iterdir()) == [], "and left nothing beside it"
+    assert _viewers_left(tmp_path) == [], "and left nothing beside it"
 
 
 @pytest.mark.unittest
@@ -978,10 +1075,9 @@ def test_only_a_path_the_caller_named_survives_a_window(monkeypatch, tmp_path):
     monkeypatch.setattr(diagram_api, "_open_standalone_window", refuse)
     with pytest.raises(DiagramUnavailableError):
         view.show(open_window=True)
-    left = [
-        item.name for item in tmp_path.iterdir() if item.name.startswith("pyfcstm-")
-    ]
-    assert left == [], "a document no window ever read must not be left behind"
+    assert _viewers_left(tmp_path, ignore=("kept.html",)) == [], (
+        "a document no window ever read must not be left behind"
+    )
 
 
 @pytest.mark.unittest
@@ -1746,6 +1842,24 @@ def test_no_handler_is_entered_while_the_staging_file_is_held():
     ]
     assert held == [], "a handler is entered while the file is held, at lines %r" % (
         held,
+    )
+
+
+def _viewers_left(root, ignore=()):
+    """Files anywhere under a temporary root, apart from ones the caller named.
+
+    Every file rather than a name pattern: the viewers live inside a private
+    directory, so a non-recursive check passes while they sit there, and a check
+    filtering on their prefix went blind the moment the prefix changed. What is
+    asked here is that nothing is left at all, which no rename can weaken.
+
+    The directory itself stays behind on purpose -- one per user, empty between
+    calls -- so directories are not counted.
+    """
+    return sorted(
+        str(item.relative_to(root))
+        for item in root.glob("**/*")
+        if item.is_file() and item.name not in ignore
     )
 
 

@@ -830,10 +830,12 @@ HTML path is also returned by ``Diagram.show()`` and ``StateMachine.show()``.
 With a window and no explicit path, ``show()`` blocks until the window is closed
 and then removes the document it wrote, so the returned path no longer exists —
 pass an explicit path for a viewer you want to keep. Without a window and without
-a path, nothing removes it: the temporary path is unguessable and says nothing
-about the diagram — the directory is one every local user can list — is written
-0600, and asking again for the same diagram in the same process returns the same
-file. A second process writes its own.
+a path, nothing removes it. Either way the file is written 0600 inside a directory
+of your own that no other local user may look into, because a viewer carries the
+model's source: a name derived from the document, and the exact size of a ~29 MB
+document, each identify which diagram it is to anyone able to list them. Asking
+again for the same diagram returns the same file rather than another copy, in this
+process or another of yours.
 
 The HTML viewer can download SVG, PNG, and vector PDF in a browser. The Python
 methods ``to_svg()``, ``to_png()``, and ``to_pdf()`` intentionally raise

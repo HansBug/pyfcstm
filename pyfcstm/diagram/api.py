@@ -25,6 +25,7 @@ import math
 import os
 import re
 import shutil
+import stat
 import signal
 import subprocess
 import sys
@@ -975,57 +976,129 @@ def _open_standalone_window(path: Path, window_size: Tuple[int, int]) -> None:
         )
 
 
-# Viewers this process has written for a caller to keep, by the document each one
-# holds. Reuse lives here rather than in the file name: a name derived from the
-# document is a fingerprint of it, and the temporary directory is listable by every
-# local user even where the file itself is not readable. See `_kept_viewer_path`.
-_KEPT_VIEWERS: Dict[str, Path] = {}
+# Private viewer directories, by the temporary directory each one sits in. Held so
+# a fallback made once is not remade, and so tests pointed at their own temporary
+# directory are independent; see `_private_viewer_directory`.
+_PRIVATE_DIRECTORIES: Dict[str, Path] = {}
+
+
+def _private_viewer_directory() -> Path:
+    """
+    Return a directory only this user can look inside, one per user.
+
+    A viewer holds the model's own source, and 0600 stops another local user
+    reading it -- but not ``stat``-ing it, which needs no permission on the file at
+    all.  The system temporary directory is listable, so a ~29 MB document's exact
+    size is a fingerprint of the model: render a few candidates, compare byte
+    counts, and the match says which one is on display.  A name derived from the
+    document gave the same thing away more directly.  Neither is closed by changing
+    what the file is called, because the leak is not in the name -- so the boundary
+    is the directory, where number, sizes and times are as invisible as contents.
+
+    Per user rather than per process, because that is what lets the name inside
+    carry reuse: two processes showing one diagram write one file instead of ~30 MB
+    each.  The name of a per-user directory is predictable, so it is verified
+    before use -- a directory, not a link, ours, and 0700 -- and a private one of
+    this process's own is used instead when it is not, which keeps working at the
+    cost of that reuse.
+
+    :return: A directory under the system temporary directory, readable only by
+        this user.
+    :rtype: pathlib.Path
+    """
+    base = tempfile.gettempdir()
+    existing = _PRIVATE_DIRECTORIES.get(base)
+    if existing is not None and existing.is_dir():
+        return existing
+    shared = Path(base) / (
+        "pyfcstm-viewers-%d" % os.geteuid()
+        if hasattr(os, "geteuid")
+        else "pyfcstm-viewers"
+    )
+    complaint = _unusable_viewer_directory(shared)
+    if complaint is None:
+        _PRIVATE_DIRECTORIES[base] = shared
+        return shared
+    # Something else holds the name. A directory of our own still hides everything
+    # a caller cares about; what is lost is only that a second process of ours
+    # cannot find the same file, so it is worth recording rather than passing over.
+    _report_degradation("not reusing %s: %s", shared, complaint)
+    private = Path(tempfile.mkdtemp(prefix="pyfcstm-viewers-", dir=base))
+    _PRIVATE_DIRECTORIES[base] = private
+    return private
+
+
+def _unusable_viewer_directory(path: Path) -> Optional[str]:
+    """
+    Say why a viewer directory cannot be trusted, or ``None`` if it can.
+
+    The name is predictable and its parent is world-writable, so this asks the four
+    questions that make the answer safe: it is there, it is a directory rather than
+    a link to one, it belongs to us, and nobody else may look inside.
+
+    :param path: Directory the viewers would go in.
+    :type path: pathlib.Path
+    :return: A reason, or ``None``.
+    :rtype: str or None
+    """
+    try:
+        os.mkdir(str(path), 0o700)
+        return None
+    except FileExistsError:
+        # The ordinary case after the first run of the day.
+        pass
+    except OSError as error:
+        # EACCES on a temporary directory we may not write, EROFS, ENOSPC.
+        return "%s" % error
+    try:
+        info = os.lstat(str(path))
+    except OSError as error:
+        # It went away between the two calls, which is not something to work
+        # around; the fallback covers it.
+        return "%s" % error
+    if not stat.S_ISDIR(info.st_mode):
+        return "it is not a directory"
+    if hasattr(os, "geteuid") and info.st_uid != os.geteuid():
+        return "it belongs to another user"
+    if os.name != "nt" and stat.S_IMODE(info.st_mode) != 0o700:
+        return "its mode is %04o rather than 0700" % stat.S_IMODE(info.st_mode)
+    return None
 
 
 def _kept_viewer_path(document: str) -> Path:
     """
-    Return the path this process keeps for a document, choosing one if needed.
+    Return the path a viewer the caller keeps is written to.
 
     Nothing removes these, so showing the same diagram twice must not write it
-    twice -- that left a fresh ~30 MB on every call.  The reuse is recorded in this
-    process instead of being encoded in the name, because the two are not
-    equivalent: a content-derived name is stable across processes, but it is also
-    an offline-verifiable fingerprint.  Another local user cannot read a 0600
-    viewer, and does not need to: they can render their own candidate models and
-    see whose digest is sitting in a directory they are allowed to list.
-
-    What that costs is cross-process reuse -- two processes showing one diagram
-    write two files -- and what it buys is that the name says nothing about the
-    model, and that nobody can take the name first and deny the save for good.
+    twice: that left a fresh ~30 MB on every call, and three processes showing one
+    diagram left 85 MB.  The name is the document's digest, which makes the reuse
+    work between processes as well as within one -- safe here only because
+    :func:`_private_viewer_directory` is not listable by anyone else, since the
+    digest in a shared directory is a fingerprint of the model.
 
     :param document: The rendered HTML document.
     :type document: str
-    :return: A path under the system temporary directory, the same for the same
-        document within this process.
+    :return: A path inside this user's private viewer directory.
     :rtype: pathlib.Path
     """
-    digest = hashlib.sha256(document.encode("utf-8")).hexdigest()
-    existing = _KEPT_VIEWERS.get(digest)
-    if existing is None:
-        existing = _temporary_viewer_path()
-        _KEPT_VIEWERS[digest] = existing
-    return existing
+    digest = hashlib.sha256(document.encode("utf-8")).hexdigest()[:16]
+    return _private_viewer_directory() / ("kept-%s.html" % digest)
 
 
 def _temporary_viewer_path() -> Path:
     """
-    Return a temporary path for a rendered viewer that nothing else uses.
+    Return a path for a viewer shown in a window, which nothing else uses.
 
-    Unguessable, and so telling nobody which diagram it holds and letting nobody
-    take it first.  A window's document uses one of these directly, since its own
-    call removes it when the window closes.
+    A window's own call removes this when the window closes, so by the rule in
+    :func:`_kept_viewer_path` it must not be shared: two windows on one diagram
+    would otherwise use one file and the first to close would blind the other.  A
+    distinct prefix as well as a random name, so no arithmetic can bring the two
+    apart.
 
-    :return: A path under the system temporary directory.
+    :return: A path inside this user's private viewer directory.
     :rtype: pathlib.Path
     """
-    return Path(tempfile.gettempdir()) / (
-        "pyfcstm-viewer-%s.html" % uuid.uuid4().hex[:16]
-    )
+    return _private_viewer_directory() / ("window-%s.html" % uuid.uuid4().hex[:16])
 
 
 def _report_degradation(message: str, *args: Any) -> None:
@@ -2568,14 +2641,14 @@ class Diagram:
         be left behind, and each one is roughly 30 MB.
 
         :param output: Optional destination path. When omitted the viewer is
-            written 0600 to a temporary path that says nothing about the diagram --
-            the directory is one every local user can list, so a name derived from
-            the document would be a fingerprint of it. With a window that path is
-            this call's, and this call removes it when the window closes. Without
-            one nothing removes it, and asking again for the same diagram in the
-            same process returns the same file rather than another ~30 MB; a second
-            process writes its own. Pass an explicit path for a document you want
-            to name yourself.
+            written 0600 inside a directory of your own that no other local user
+            may look into -- neither the name of a viewer nor its size says which
+            diagram it holds, and both would to anyone who could list them. With a
+            window that path is this call's, and this call removes it when the
+            window closes. Without one nothing removes it, and asking again for the
+            same diagram returns the same file rather than another ~30 MB, here or
+            in another process of yours. Pass an explicit path for a document you
+            want to name yourself.
         :type output: str or os.PathLike, optional
         :param open_window: Whether to launch a Chromium-family app window,
             defaults to ``True``.

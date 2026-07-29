@@ -529,26 +529,40 @@ def _frame_variable_name(expression: Any) -> Optional[str]:
     return "_".join(parts[2:-1]) or None
 
 
-def _integer_value(expression: Any) -> Optional[int]:
-    """Return the plain integer a Z3 numeral holds, if it is one.
+def _numeric_value(expression: Any) -> Optional[Any]:
+    """Read a z3 numeral as the plain Python number a consumer can use.
 
-    :param expression: Candidate Z3 expression.
+    An integer numeral becomes ``int`` and a rational one becomes ``float``,
+    including when its value is whole.  That distinction is load-bearing: a real
+    variable admits values between consecutive integers, so a reader of the
+    published fact must be able to tell the two domains apart without a separate
+    key, and downstream interval reasoning must not tighten a real bound the way
+    it may tighten an integer one.
+
+    :param expression: The candidate operand.
     :type expression: object
-    :return: The integer value, or ``None`` when the operand is not a numeral.
-    :rtype: Optional[int]
+    :return: The numeral's value, or ``None`` when it is not a numeral.
+    :rtype: Optional[Any]
 
     Example::
 
         >>> import z3
-        >>> _integer_value(z3.IntVal(7))
+        >>> _numeric_value(z3.IntVal(7))
         7
-        >>> _integer_value(z3.Int("x")) is None
+        >>> _numeric_value(z3.RealVal("1/2"))
+        0.5
+        >>> _numeric_value(z3.Int("x")) is None
         True
     """
     import z3
 
     if isinstance(expression, z3.IntNumRef):
         return expression.as_long()
+    if isinstance(expression, z3.RatNumRef):
+        # as_fraction keeps the exact value z3 holds; float() is the published
+        # form, and a rational z3 cannot represent exactly never reaches here
+        # because the query language only accepts decimal literals.
+        return float(expression.as_fraction())
     return None
 
 
@@ -573,11 +587,11 @@ def _value_comparison_fact(group: Any) -> Optional[Dict[str, Any]]:
         return None
     left, right = expression.arg(0), expression.arg(1)
     name = _frame_variable_name(left)
-    value = _integer_value(right)
+    value = _numeric_value(right)
     if name is None or value is None:
         # Operand order is not fixed, so the mirrored shape is read too.
         name = _frame_variable_name(right)
-        value = _integer_value(left)
+        value = _numeric_value(left)
         operator = {"lt": "gt", "gt": "lt", "le": "ge", "ge": "le"}.get(
             operator, operator
         )
@@ -620,9 +634,9 @@ def _state_domain_fact(group: Any) -> Optional[Dict[str, Any]]:
         atom = expression.arg(index)
         if not z3.is_app(atom) or atom.decl().kind() != z3.Z3_OP_EQ:
             return None
-        value = _integer_value(atom.arg(0))
+        value = _numeric_value(atom.arg(0))
         if value is None:
-            value = _integer_value(atom.arg(1))
+            value = _numeric_value(atom.arg(1))
         if value is None:
             return None
         states.append(value)

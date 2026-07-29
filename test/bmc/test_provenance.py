@@ -2315,12 +2315,18 @@ state Root {
 }"""
 
 
-def _fact_groups(query: str):
-    """Return the tracked groups a real build produces, keyed by category."""
+def _fact_groups(query: str, machine: str = None):
+    """Return the tracked groups a real build produces, keyed by category.
+
+    ``machine`` overrides the default integer model so a test can exercise the
+    other persistent variable type without duplicating the whole helper.
+    """
     from pyfcstm.bmc import BmcEngine, build_bmc_core_formula
 
     core = build_bmc_core_formula(
-        BmcEngine(load_state_machine_from_text(_FACT_MODEL)).prepare(query)
+        BmcEngine(
+            load_state_machine_from_text(_FACT_MODEL if machine is None else machine)
+        ).prepare(query)
     )
     groups = {}
     for group in list(core._tracked_groups) + list(core._tracked_case_groups):
@@ -2445,3 +2451,38 @@ def test_a_recognized_fact_is_not_echoed_back_as_its_own_identifier() -> None:
     # The metadata is still published, one level up.
     assert item.constraint.frames == (0,)
     assert item.constraint.refs["frame"] == 0
+
+
+@pytest.mark.unittest
+def test_a_float_variable_gets_the_same_domain_reading_as_an_integer_one() -> None:
+    """``float`` is one of the two persistent variable types, not a special case.
+
+    A reader who declares ``def float x`` and writes contradictory bounds
+    deserves the same account as one who wrote ``def int x``.  Reading only
+    integer numerals would leave every float model stuck at the structural
+    fallback, so the recognizer reads the rational literals z3 builds for the
+    real sort too.
+    """
+    from pyfcstm.bmc.provenance import normalized_fact_for
+
+    groups = _fact_groups(
+        'init state("Root.A") where x == 0.0; '
+        'assume at 0: var("x") > 0.5; '
+        'check reach <= 2: active("Root.B");',
+        machine=(
+            "def float x = 0.0;\n"
+            "state Root { event Go; state A; state B; [*] -> A; A -> B :: Go; }"
+        ),
+    )
+    fact = normalized_fact_for(groups["assumption.frame"])
+
+    assert fact["kind"] == "variable_comparison"
+    assert fact["variable"] == "x"
+    assert fact["frame"] == 0
+    # z3 normalizes ``x > 0.5`` to ``0.5 < x``, so the mirrored operand order is
+    # the one that actually occurs for the real sort.
+    assert fact["operator"] == "gt"
+    assert fact["value"] == 0.5
+    # A real bound is published as a float even when its value is whole, which is
+    # what keeps integer-only reasoning off the real domain downstream.
+    assert isinstance(fact["value"], float)

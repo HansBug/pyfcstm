@@ -2013,14 +2013,21 @@ def _conflict_pattern(items: Tuple["BmcCoreItem", ...]) -> Optional[Tuple[str, s
 def _interval_is_empty(items: Tuple["BmcCoreItem", ...]) -> bool:
     """Report whether published bounds on one variable admit no value.
 
-    Only the closed integer reading is used: the recognizer publishes integer
-    values, so a bound is turned into an inclusive limit and the two limits are
-    compared.  Inequality (``ne``) is deliberately ignored, because excluding one
-    value never empties a range on its own.
+    The domain matters.  Over the integers ``x > 0`` and ``x < 1`` admit nothing,
+    while over the reals they admit every value between them, so the integer
+    tightening is applied only when every published value is an ``int`` -- which
+    is exactly how the recognizer distinguishes the two sorts.  Strict bounds on
+    a real domain are handled by tracking whether each limit is inclusive, so an
+    interval is empty when the limits cross or when they meet at a point neither
+    side includes.
+
+    Inequality (``ne``) is deliberately ignored: excluding a single value never
+    empties a range on its own, and treating it as a bound would claim a conflict
+    the constraints do not have.
 
     :param items: Published comparison members on one variable and frame.
     :type items: Tuple[BmcCoreItem, ...]
-    :return: ``True`` when no integer satisfies every bound.
+    :return: ``True`` when no value of the variable satisfies every bound.
     :rtype: bool
 
     Example::
@@ -2028,28 +2035,39 @@ def _interval_is_empty(items: Tuple["BmcCoreItem", ...]) -> bool:
         >>> _interval_is_empty(())
         False
     """
-    lower = None
-    upper = None
+    integral = all(isinstance(item.normalized_fact["value"], int) for item in items)
+    lower = upper = None
+    lower_open = upper_open = False
     for item in items:
         fact = item.normalized_fact
         operator, value = fact["operator"], fact["value"]
         if operator == "eq":
-            low = high = value
+            bounds = ((value, False), (value, False))
         elif operator == "ge":
-            low, high = value, None
+            bounds = ((value, False), None)
         elif operator == "gt":
-            low, high = value + 1, None
+            bounds = ((value + 1, False) if integral else (value, True), None)
         elif operator == "le":
-            low, high = None, value
+            bounds = (None, (value, False))
         elif operator == "lt":
-            low, high = None, value - 1
+            bounds = (None, (value - 1, False) if integral else (value, True))
         else:
             continue
-        if low is not None:
-            lower = low if lower is None else max(lower, low)
-        if high is not None:
-            upper = high if upper is None else min(upper, high)
-    return lower is not None and upper is not None and lower > upper
+        low, high = bounds
+        if low is not None and (
+            lower is None or low[0] > lower or (low[0] == lower and low[1])
+        ):
+            lower, lower_open = low[0], low[1] or (low[0] == lower and lower_open)
+        if high is not None and (
+            upper is None or high[0] < upper or (high[0] == upper and high[1])
+        ):
+            upper, upper_open = high[0], high[1] or (high[0] == upper and upper_open)
+    if lower is None or upper is None:
+        return False
+    if lower > upper:
+        return True
+    # The limits meet.  A single point survives only when both sides include it.
+    return lower == upper and (lower_open or upper_open)
 
 
 def build_conflict_narrative(core: "BmcConflictCore") -> BmcConflictNarrative:

@@ -2202,3 +2202,66 @@ def test_a_published_item_reads_as_a_sentence_about_the_model() -> None:
     )
     assert "transition.0000.step.0000" in structural
     assert "requires" not in structural
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "values, empty",
+    [
+        ((("gt", 0), ("lt", 1)), True),
+        ((("gt", 0.0), ("lt", 1.0)), False),
+        ((("gt", 1.0), ("le", 1.0)), True),
+        ((("ge", 1.0), ("le", 1.0)), False),
+        ((("ne", 1), ("ge", 0)), False),
+    ],
+    ids=[
+        "integers-admit-nothing-between-0-and-1",
+        "reals-admit-plenty-between-0-and-1",
+        "reals-meeting-at-an-excluded-point",
+        "reals-meeting-at-an-included-point",
+        "excluding-one-value-empties-nothing",
+    ],
+)
+def test_an_interval_is_read_over_the_variable_domain_it_belongs_to(
+    values, empty
+) -> None:
+    """The same two bounds mean different things over integers and reals.
+
+    ``x > 0`` with ``x < 1`` admits nothing over the integers and every value
+    between them over the reals.  Reading a real bound with integer tightening
+    would report a conflict the query does not have, which is the one failure a
+    narrative must never produce: a derivation that is fluent and wrong.  The
+    recognizer marks the domain by publishing whole real values as floats, and
+    this is the check that the mark is actually used.
+    """
+    from pyfcstm.bmc.explanation import _interval_is_empty
+
+    def member(operator, value):
+        reference = BmcConstraintRef(
+            "assumption.%s.%s" % (operator, value),
+            "assumptions",
+            "assumption.frame",
+            BmcSourceRef("generated", None, None),
+            "bound",
+            frames=(0,),
+            refs={"frame": 0},
+        )
+        return BmcCoreItem(
+            reference,
+            "assumption",
+            None,
+            False,
+            {
+                "kind": "variable_comparison",
+                "variable": "x",
+                "frame": 0,
+                "operator": operator,
+                "value": value,
+            },
+            "bound",
+            False,
+        )
+
+    items = tuple(member(operator, value) for operator, value in values)
+
+    assert _interval_is_empty(items) is empty

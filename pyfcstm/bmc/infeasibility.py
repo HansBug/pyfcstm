@@ -753,6 +753,189 @@ def extract_source_core(
     )
 
 
+@dataclass(frozen=True)
+class MinimizedCore:
+    """A source core after deterministic deletion shrink and its acceptance run.
+
+    Shrink only ever deletes members, so ``groups`` stays sound no matter where
+    the budget ran out.  ``reduction`` and ``subset_minimality`` therefore say how
+    far minimization got rather than how the core was built.
+
+    :param groups: Surviving core member groups, ordered by ``stable_id``.
+    :type groups: Tuple[pyfcstm.bmc.provenance.BmcTrackedConstraint, ...]
+    :param reduction: ``raw``, ``partial_minimized`` or ``subset_minimal``.
+    :type reduction: str
+    :param subset_minimality: ``proven`` or ``not_proven``.
+    :type subset_minimality: str
+    :param status: ``complete``, ``unknown`` or ``timeout`` for the whole phase.
+    :type status: str
+    :param reason: Why minimization degraded, defaults to ``None``.
+    :type reason: Optional[str], optional
+    :param record: The single aggregate ledger entry for this phase, defaults to
+        ``None`` when no trial ran at all.
+    :type record: Optional[ProbeRecord], optional
+
+    Example::
+
+        >>> minimized = MinimizedCore((), "raw", "not_proven", "timeout", "no budget")
+        >>> minimized.reduction, minimized.subset_minimality
+        ('raw', 'not_proven')
+    """
+
+    groups: Tuple["BmcTrackedConstraint", ...]
+    reduction: str
+    subset_minimality: str
+    status: str = "complete"
+    reason: Optional[str] = None
+    record: Optional[ProbeRecord] = None
+
+
+def _trial_solver(groups: Sequence["BmcTrackedConstraint"]) -> z3.Solver:
+    """Return a solver asserting every expression of the given groups.
+
+    :param groups: Groups whose conjunction is being tested.
+    :type groups: Sequence[pyfcstm.bmc.provenance.BmcTrackedConstraint]
+    :return: A solver holding exactly those expressions.
+    :rtype: z3.Solver
+
+    Example::
+
+        >>> isinstance(_trial_solver(()), z3.SolverRef)
+        True
+    """
+    solver = z3.Solver()
+    for group in groups:
+        for expression in group.expressions:
+            solver.add(expression)
+    return solver
+
+
+def minimize_source_core(
+    core: "BmcCoreFormula", extraction: CoreExtraction, budget: _SolveBudget
+) -> MinimizedCore:
+    """Shrink a sound source core to a subset-minimal one and verify it.
+
+    The loop follows the frozen algorithm: walk the members in ``stable_id``
+    order, drop one, and keep the smaller set only when it is still unsat.  A
+    satisfiable trial proves the member is load-bearing; an undetermined one
+    proves nothing, so the member stays and the phase can only end partial; an
+    exhausted budget stops immediately and returns what has been reached.
+
+    Because every step only deletes, the returned groups are unsat whenever the
+    input was.  ``subset_minimality`` is upgraded to ``proven`` only after a
+    second pass re-checks every surviving member on its own, so the published
+    claim rests on the final core rather than on the shrink history.
+
+    :param core: The compiled core formula the groups came from.
+    :type core: pyfcstm.bmc.relation.BmcCoreFormula
+    :param extraction: The sound raw core to shrink.
+    :type extraction: CoreExtraction
+    :param budget: Shared solver budget; never exceeded.
+    :type budget: pyfcstm.bmc.solver._SolveBudget
+    :return: The minimized core and the aggregate record for the phase.
+    :rtype: MinimizedCore
+
+    Example::
+
+        >>> from pyfcstm.bmc.solver import _SolveBudget
+        >>> empty = CoreExtraction(())
+        >>> minimize_source_core(None, empty, _SolveBudget(None)).reduction
+        'raw'
+    """
+    candidate = list(extraction.groups)
+    if not candidate:
+        # Nothing to shrink, and nothing to claim about a core that has no
+        # members: the caller decides whether an empty extraction is publishable.
+        return MinimizedCore((), "raw", "not_proven", extraction.status)
+
+    started = 0
+    degraded = None
+    started_at = time.perf_counter()
+    for group in tuple(candidate):
+        if len(candidate) == 1:
+            # A single member cannot be dropped: the empty set is satisfiable by
+            # definition, so the trial would add no information.
+            break
+        trial = [item for item in candidate if item.stable_id != group.stable_id]
+        verdict, record = _run_probe(
+            _trial_solver(trial), budget, "unsat_core_minimization", ()
+        )
+        if not record.started:
+            degraded = "budget exhausted before a deletion trial started"
+            break
+        started += 1
+        if verdict == "unsat":
+            candidate = trial
+        elif verdict == "sat":
+            continue
+        elif verdict == "timeout":
+            degraded = "deletion trial timed out"
+            break
+        else:
+            degraded = "deletion trial returned unknown"
+
+    if degraded is None:
+        status = "complete"
+    elif "timed out" in degraded or "budget exhausted" in degraded:
+        # §9.3 groups an exhausted budget with a timed-out trial: both mean the
+        # deadline stopped minimization, which is a different report from a
+        # solver that ran and gave up.
+        status = "timeout"
+    else:
+        status = "unknown"
+
+    proven = False
+    if status == "complete":
+        proven = True
+        for group in tuple(candidate):
+            if len(candidate) == 1:
+                # One member alone is minimal: dropping it leaves the empty set,
+                # which is satisfiable, so the property holds without a check.
+                break
+            remaining = [
+                item for item in candidate if item.stable_id != group.stable_id
+            ]
+            verdict, record = _run_probe(
+                _trial_solver(remaining), budget, "unsat_core_minimization", ()
+            )
+            if not record.started or verdict != "sat":
+                proven = False
+                status = "timeout" if verdict == "timeout" else "unknown"
+                degraded = (
+                    "acceptance check for %s did not return sat" % group.stable_id
+                )
+                break
+            started += 1
+
+    if proven:
+        reduction = "subset_minimal"
+    elif started:
+        reduction = "partial_minimized"
+    else:
+        reduction = "raw"
+
+    elapsed_ms = (time.perf_counter() - started_at) * 1000.0
+    aggregate = (
+        ProbeRecord(
+            "unsat_core_minimization",
+            status,
+            True,
+            elapsed_ms,
+            degraded,
+        )
+        if started
+        else None
+    )
+    return MinimizedCore(
+        tuple(candidate),
+        reduction,
+        "proven" if proven else "not_proven",
+        status,
+        degraded,
+        aggregate,
+    )
+
+
 def _semantic_role(category: str) -> str:
     """Map a tracked group category onto its frozen semantic role.
 

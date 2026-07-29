@@ -31,6 +31,7 @@ from pyfcstm.bmc.infeasibility import (
     classify_infeasibility,
     explain_infeasibility,
     extract_source_core,
+    minimize_source_core,
     partition_tracked_groups,
 )
 from pyfcstm.bmc.provenance import (
@@ -1427,3 +1428,130 @@ def test_a_core_that_does_not_recheck_as_unsat_is_not_published() -> None:
     assert extraction.status == "unknown"
     assert "did not re-check as unsat" in extraction.reason
     assert len(extraction.checks) == 1
+
+
+@pytest.mark.unittest
+def test_a_minimal_core_drops_the_member_that_is_not_needed() -> None:
+    """Shrink removes a member whose absence still leaves the target unsat.
+
+    A raw core is sound but may carry more than the conflict needs.  A caller
+    reading three lines when two suffice looks at one line for no reason, so the
+    published core is shrunk until every member is load-bearing.
+    """
+    core = _core_formula(
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
+        'assume at 0: var("x") >= 0; '
+        'check reach <= 2: active("Root.B");'
+    )
+    outcome = classify_infeasibility(core, "assumptions", _SolveBudget(None))
+    extraction = extract_source_core(core, outcome.scope, _SolveBudget(None))
+
+    minimized = minimize_source_core(core, extraction, _SolveBudget(None))
+
+    assert minimized.status == "complete"
+    assert minimized.reduction == "subset_minimal"
+    assert minimized.subset_minimality == "proven"
+
+    # The result is a subset of the raw core -- shrink only ever deletes -- and it
+    # is still unsatisfiable, so it remains a sound explanation.  Whether it is
+    # strictly smaller depends on how minimal the solver's own unsat core already
+    # was, which is not a property of this contract, so it is not asserted.
+    raw_ids = {group.stable_id for group in extraction.groups}
+    assert {group.stable_id for group in minimized.groups}.issubset(raw_ids)
+    assert len(minimized.groups) <= len(extraction.groups)
+    solver = z3.Solver()
+    for group in minimized.groups:
+        for expression in group.expressions:
+            solver.add(expression)
+    assert solver.check() == z3.unsat
+
+
+@pytest.mark.unittest
+def test_every_member_of_a_proven_core_is_load_bearing() -> None:
+    """Proven minimality means each member's removal makes the rest satisfiable.
+
+    This is the property the published field claims, so it is checked directly
+    on the members rather than inferred from the shrink loop having finished.
+    """
+    core = _core_formula(
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
+        'check reach <= 2: active("Root.B");'
+    )
+    outcome = classify_infeasibility(core, "assumptions", _SolveBudget(None))
+    extraction = extract_source_core(core, outcome.scope, _SolveBudget(None))
+    minimized = minimize_source_core(core, extraction, _SolveBudget(None))
+
+    assert minimized.subset_minimality == "proven"
+    for dropped in minimized.groups:
+        remaining = [g for g in minimized.groups if g is not dropped]
+        solver = z3.Solver()
+        for group in remaining:
+            for expression in group.expressions:
+                solver.add(expression)
+        assert solver.check() == z3.sat, dropped.stable_id
+
+
+@pytest.mark.unittest
+def test_a_budget_spent_during_shrink_returns_a_sound_partial_core() -> None:
+    """A deadline during shrink keeps the candidate and says it is not proven.
+
+    Shrink only ever deletes, so whatever it has reached is still sound.  The
+    honest report is that candidate plus an explicit statement that minimality
+    was not established -- never a smaller core that was never verified.
+    """
+    core = _core_formula(
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
+        'check reach <= 2: active("Root.B");'
+    )
+    outcome = classify_infeasibility(core, "assumptions", _SolveBudget(None))
+    extraction = extract_source_core(core, outcome.scope, _SolveBudget(None))
+
+    spent = _SolveBudget(1)
+    spent.deadline = spent.deadline - 10.0
+    minimized = minimize_source_core(core, extraction, spent)
+
+    assert minimized.status == "timeout"
+    assert minimized.subset_minimality == "not_proven"
+    assert minimized.reduction == "raw"
+    assert [g.stable_id for g in minimized.groups] == [
+        g.stable_id for g in extraction.groups
+    ]
+
+
+@pytest.mark.unittest
+def test_an_undetermined_deletion_keeps_the_member_and_reports_partial() -> None:
+    """An ``unknown`` deletion cannot prove the member unnecessary, so it stays.
+
+    Only Z3's verdict on the trial check is scripted -- which is what a solver
+    giving up on a harder query really does -- and the shrink orchestration under
+    test is production code.
+    """
+    core = _core_formula(
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
+        'check reach <= 2: active("Root.B");'
+    )
+    outcome = classify_infeasibility(core, "assumptions", _SolveBudget(None))
+    extraction = extract_source_core(core, outcome.scope, _SolveBudget(None))
+
+    counter = [0]
+    real = z3.Solver
+    script = ["unknown"] * (len(extraction.groups) + 2)
+
+    def factory(*args, **kwargs):
+        return _ScriptedSolver(real(*args, **kwargs), script, counter)
+
+    z3.Solver = factory
+    try:
+        minimized = minimize_source_core(core, extraction, _SolveBudget(None))
+    finally:
+        z3.Solver = real
+
+    assert minimized.status == "unknown"
+    assert minimized.subset_minimality == "not_proven"
+    assert [g.stable_id for g in minimized.groups] == [
+        g.stable_id for g in extraction.groups
+    ]

@@ -1,5 +1,7 @@
 """Tests for the public Python diagram facade and browser contract."""
 
+import dis
+import inspect
 import json
 import os
 from pathlib import Path
@@ -839,6 +841,25 @@ def test_a_shown_viewer_does_not_accumulate():
 
 
 @pytest.mark.unittest
+@pytest.mark.skipif(os.name == "nt", reason="POSIX shares one temporary directory")
+def test_a_window_document_is_per_user_in_the_shared_temporary_directory(monkeypatch):
+    # A window's name is derived from the document so that showing the same
+    # diagram twice reuses one file instead of leaving another ~30 MB behind. On
+    # POSIX that name is in a shared directory and the document is written 0600,
+    # so the second person to show a given diagram on a machine got the first
+    # person's file: unwritable, and unreplaceable under the sticky bit `/tmp`
+    # carries. Reuse is still the point, just per user.
+    from pyfcstm.diagram import api
+
+    monkeypatch.setattr(os, "getuid", lambda: 4242)
+    mine = api._temporary_viewer_path("document", for_window=True)
+    again = api._temporary_viewer_path("document", for_window=True)
+    monkeypatch.setattr(os, "getuid", lambda: 4243)
+    theirs = api._temporary_viewer_path("document", for_window=True)
+    assert mine == again, "one user showing one diagram must reuse one file"
+    assert mine != theirs, "two users must not be sent to one 0600 file"
+
+
 def test_a_temporary_viewer_is_private_and_process_scoped():
     """The viewer embeds the model's own source into a world-readable directory.
 
@@ -1411,31 +1432,36 @@ def _next_free_descriptor():
     return handle
 
 
-def _executable_lines(source, function_name):
-    """1-based line numbers of the statements in one top-level function."""
-    lines = source.read_text(encoding="utf-8").splitlines()
-    start = next(
-        index
-        for index, line in enumerate(lines)
-        if line.startswith("def %s(" % function_name)
-    )
-    end = next(
-        index
-        for index in range(start + 1, len(lines))
-        if lines[index].startswith("def ")
-    )
-    found = [
-        index + 1
-        for index in range(start, end)
-        if lines[index].strip()
-        and not lines[index].lstrip().startswith(("#", '"""', ":"))
-    ]
-    assert len(found) > 5, "the body of %s was not located" % function_name
-    return found
+def _statement_lines(function, through=None):
+    """
+    Line numbers that report a ``line`` trace event, optionally up to ``through``.
+
+    Read from the code object rather than the source text, because a text filter
+    counted docstring prose as statements: `_staging_file` has enough of it to
+    satisfy on its own the assertion meant to prove the body had been found, and
+    every one of those lines was an injection that could never fire.
+    """
+    inner = getattr(function, "__wrapped__", function)
+    # `None` for the artificial instructions 3.11 and later emit, which belong to
+    # no source line and can never carry a line event.
+    found = {line for _, line in dis.findlinestarts(inner.__code__) if line is not None}
+    if through is not None:
+        found = {line for line in found if line <= through}
+    assert len(found) > 5, "the body of %s was not located" % inner.__name__
+    return sorted(found)
+
+
+def _yield_line(function):
+    """Source line of the single ``yield`` in a generator function."""
+    inner = getattr(function, "__wrapped__", function)
+    lines, start = inspect.getsourcelines(inner)
+    offsets = [i for i, line in enumerate(lines) if line.strip().startswith("yield ")]
+    assert len(offsets) == 1, "expected one yield in %s" % inner.__name__
+    return start + offsets[0]
 
 
 @pytest.mark.parametrize("writer_name", ["_atomic_write_text", "_atomic_write_bytes"])
-def test_no_line_of_the_write_leaks_on_an_interrupt(writer_name, tmp_path):
+def test_no_line_of_the_write_leaks_on_an_interrupt(writer_name, tmp_path, monkeypatch):
     # Ctrl-C is an ordinary way for a ~29 MB save to end, and the leak it caused
     # moved rather than closed three times: guarding the point that was measured
     # left the next line exposed. Enumerating the writer alone is what let that
@@ -1448,15 +1474,36 @@ def test_no_line_of_the_write_leaks_on_an_interrupt(writer_name, tmp_path):
     writer = getattr(api, writer_name)
     payload = "x" * 64 if writer_name.endswith("text") else b"x" * 64
     source = Path(api.__file__)
-    executable = _executable_lines(source, writer_name) + _executable_lines(
-        source, "_staging_file"
+    # Lines after the yield are the cleanup path, where an interrupt is the one
+    # case no Python program survives -- the boundary is computed, so it cannot
+    # drift away from where the yield actually is.
+    executable = _statement_lines(writer) + _statement_lines(
+        api._staging_file, through=_yield_line(api._staging_file)
     )
+
+    opened = []
+    real_fdopen = os.fdopen
+
+    def recording_fdopen(*args, **kwargs):
+        # Keeping the stream is the point. The earlier probe held no reference to
+        # it, so CPython's refcounting closed the descriptor the moment the
+        # generator frame died and the lowest-free-descriptor number could not
+        # tell whether the cleanup had run at all: deleting the branch that
+        # closes the stream left this test green. `closed` asks the object
+        # instead of the process, and holding it also keeps the descriptor open
+        # for the number to notice.
+        stream = real_fdopen(*args, **kwargs)
+        opened.append(stream)
+        return stream
+
+    monkeypatch.setattr(os, "fdopen", recording_fdopen)
 
     leaks = []
     for line_number in executable:
         directory = tmp_path / ("line%d" % line_number)
         directory.mkdir()
         before = _next_free_descriptor()
+        del opened[:]
         fired = []
 
         def tracer(frame, event, _arg, wanted=line_number, seen=fired):
@@ -1478,6 +1525,17 @@ def test_no_line_of_the_write_leaks_on_an_interrupt(writer_name, tmp_path):
         finally:
             sys.settrace(None)
         left = [item.name for item in directory.iterdir() if item.name.startswith(".")]
-        if fired and (_next_free_descriptor() != before or left):
-            leaks.append((line_number, left))
+        unclosed = [stream for stream in opened if not stream.closed]
+        if fired and (_next_free_descriptor() != before or left or unclosed):
+            leaks.append((line_number, left, len(unclosed)))
+        for stream in opened:
+            try:
+                stream.close()
+            except OSError:
+                # EBADF, where the code under test closed the descriptor from
+                # under the object it had wrapped -- which `unclosed` above has
+                # already counted. Letting it out of the tidy-up would replace the
+                # report of which lines leaked with one bare `Bad file
+                # descriptor`, which is the opposite of what this probe is for.
+                pass
     assert leaks == [], "interrupting these lines leaked: %r" % (leaks,)

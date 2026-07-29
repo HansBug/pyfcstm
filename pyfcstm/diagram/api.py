@@ -858,7 +858,17 @@ def _temporary_viewer_path(document: str, for_window: bool) -> Path:
     :rtype: pathlib.Path
     """
     digest = hashlib.sha256(document.encode("utf-8")).hexdigest()[:16]
-    suffix = "" if for_window else "-%d" % os.getpid()
+    if for_window:
+        # The user id, where there is one, because on POSIX the temporary
+        # directory is shared and the document is written 0600: without it the
+        # second person to show a given diagram on a machine got the first
+        # person's file, which they may neither write nor -- under the sticky bit
+        # `/tmp` carries -- replace. Reuse is still the point, just per user.
+        # Windows gives each account its own `%TEMP%`, so there is nothing to
+        # separate there and no `os.getuid` to ask.
+        suffix = "-%d" % os.getuid() if hasattr(os, "getuid") else ""
+    else:
+        suffix = "-%d" % os.getpid()
     return Path(tempfile.gettempdir()) / (
         "pyfcstm-diagram-%s%s.html" % (digest, suffix)
     )
@@ -1026,6 +1036,15 @@ def _staging_file(target: Path, binary: bool) -> Iterator[Tuple[Any, Path, int]]
     that is what makes every line from the creation to the removal owned, rather
     than moving the unowned line further along.
 
+    A nested ``try`` while a resource is held brings the gap straight back.  From
+    Python 3.11 the statement compiles to no instruction of its own and the line
+    event lands before the exception table covers the block, so the ``try:`` line
+    itself is unowned -- an inner one around the ``yield`` leaked the staging file
+    on 3.11 and 3.14 while passing on 3.10.  The loop below has one, which is safe
+    only because nothing is held when it runs; anything that needs a handler while
+    the descriptor or the file exists belongs in a function of its own, the way
+    :func:`_removal_failure` does.
+
     The file is opened with 0666 so the operating system applies the umask,
     exactly as it would for any other new file, and the mode that survives is
     read back from the descriptor.  That makes the file being written its own
@@ -1072,6 +1091,7 @@ def _staging_file(target: Path, binary: bool) -> Iterator[Tuple[Any, Path, int]]
     staging = None
     handle = -1
     stream = None
+    writing = False
     try:
         for _ in range(_TEMPORARY_NAME_ATTEMPTS):
             # Named before it is created, so no line boundary can leave a file
@@ -1111,29 +1131,30 @@ def _staging_file(target: Path, binary: bool) -> Iterator[Tuple[Any, Path, int]]
         stream = os.fdopen(
             handle, "wb" if binary else "w", **({} if binary else {"encoding": "utf-8"})
         )
-        try:
-            yield stream, staging, default
-        except OSError as body_error:
-            # The write, the mode change or the replace failed, so the staging
-            # file is still there. A removal that also fails is worth saying in
-            # the same breath: the caller is left with a file they did not create,
-            # and only the two errors together explain why.
-            _close_quietly(stream, staging)
-            leftover = staging
-            # Handed over, so the cleanup below does not retry a removal whose
-            # failure is already part of the exception raised here.
-            staging = None
-            try:
-                leftover.unlink()
-            except FileNotFoundError:
-                # The replace did happen and the failure came after it.
-                pass
-            except OSError as removal_error:
-                raise OSError(
-                    "%s; staging cleanup failed for %s: %s"
-                    % (body_error, leftover, removal_error)
-                ) from body_error
+        writing = True
+        yield stream, staging, default
+    except OSError as error:
+        if not writing or staging is None:
+            # The staging file could not be created or prepared. `O_EXCL` means
+            # nothing of ours is beside the target, and the cleanup below has
+            # whatever else there is to do.
             raise
+        # The write, the mode change or the replace failed, so the staging file
+        # is still there. A removal that also fails is worth saying in the same
+        # breath: the caller is left with a file they did not create, and only
+        # the two errors together explain why.
+        _close_quietly(stream, staging)
+        leftover = staging
+        # Handed over, so the cleanup below does not retry a removal whose
+        # failure is already part of the exception raised here.
+        staging = None
+        removal_error = _removal_failure(leftover)
+        if removal_error is not None:
+            raise OSError(
+                "%s; staging cleanup failed for %s: %s"
+                % (error, leftover, removal_error)
+            ) from error
+        raise
     finally:
         # However this ends -- an interrupt at any line above included -- exactly
         # one thing owns the descriptor, and the file exists only if we made it.
@@ -1174,6 +1195,33 @@ def _close_quietly(stream: Any, staging: Path) -> None:
         _report_degradation(
             "could not close the staging file %s: %s", staging, close_error
         )
+
+
+def _removal_failure(staging: Path) -> Optional[OSError]:
+    """
+    Remove a staging file and return what stopped it, rather than raising.
+
+    A return value rather than an exception because the caller is already
+    handling one: it needs both errors to build a single message, and the ``try``
+    this needs cannot live in :func:`_staging_file` itself, where a nested one
+    would leave its own ``try:`` line unowned from Python 3.11 on.
+
+    :param staging: Path to remove.
+    :type staging: pathlib.Path
+    :return: The error that prevented removal, or ``None`` if there is nothing
+        left at the path.
+    :rtype: OSError or None
+    """
+    try:
+        staging.unlink()
+    except FileNotFoundError:
+        # The replace did happen and the failure came after it.
+        return None
+    except OSError as removal_error:
+        # PermissionError from an indexer holding the handle, EROFS or ENOSPC
+        # from a read-only or exhausted filesystem.
+        return removal_error
+    return None
 
 
 def _discard(staging: Path) -> None:
@@ -1248,7 +1296,7 @@ def _write_protection_reason(target: Path) -> Optional[str]:
     :param target: Destination the caller asked for.
     :type target: pathlib.Path
     :return: Sentence completing "cannot write <path>: ...", or ``None``.
-    :rtype: str, optional
+    :rtype: str or None
     """
     try:
         info = target.stat()

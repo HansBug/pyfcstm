@@ -2268,6 +2268,10 @@ def test_human_explanation_matches_the_frozen_transcript_line_shapes() -> None:
     # Z3's own order out of it, restated in the determinism section as core items
     # being published in stable id order.
     #
+    # The conflict between that requirement and the sample's own order is an
+    # inconsistency in the specification rather than a choice this test makes; it
+    # is reported on the tracking issue so it does not live only in this comment.
+    #
     # Nothing is claimed here about which orderings the two samples do or do not
     # admit.  Five versions of this comment tried to make such a claim and all
     # five were wrong: no-deterministic-order-exists (refuted by ordering on

@@ -2493,22 +2493,32 @@ def test_registry_fields_are_all_hardened_against_hostile_input() -> None:
 #: the other; an earlier pair each held its own literal list and agreed only by
 #: coincidence.
 def _registered_pairings():
-    """Return ``(pairings, undecidable)`` read from the builder's call sites.
+    """Read the stage and category pairings the builder can register.
 
     A query only exercises the branches it reaches, so the pairings are read
-    statically.  Both construction paths are covered, and the argument positions
-    come from the real signatures rather than being assumed: matching keywords
-    alone once missed a positional construction entirely.
+    statically from the call sites instead.
+
+    Two predicates are used together because each alone lets something through.
+    Matching only calls to the two known builders missed a group derived with
+    ``dataclasses.replace(group, stage=..., category=...)``.  Matching only calls
+    that pass both keywords missed a positional construction.  A call qualifies
+    if it satisfies either.
+
+    Argument positions come from the real signatures, and only for parameters a
+    call may actually pass positionally: the append helper takes both as
+    keyword-only, so a positional slot for it would be an unreachable path
+    dressed up as coverage.
 
     The string is read by attribute rather than by an ``ast.Constant`` isinstance
-    check: Python 3.7 parses a string keyword into ``ast.Str``, and that check
+    check.  Python 3.7 parses a string keyword into ``ast.Str``, and that check
     classified every literal as undecidable there while passing locally on a
     newer interpreter.  Reading ``value`` and then ``s`` covers both node shapes
     without depending on either version's helper behaviour.
 
-    :return: Registered pairings, and the call sites whose arguments are not
-        statically decidable.
-    :rtype: Tuple[Set[Tuple[str, str]], List[Tuple[str, int]]]
+    :return: The registered pairings, the positional slots that are reachable per
+        builder, and the call sites whose arguments are not statically decidable.
+    :rtype: Tuple[Set[Tuple[str, str]], Dict[str, Dict[str, int]],
+        List[Tuple[str, int]]]
     """
     import ast
     import inspect
@@ -2516,10 +2526,15 @@ def _registered_pairings():
     import pyfcstm.bmc.relation as relation_module
     from pyfcstm.bmc.provenance import BmcTrackedConstraint
 
-    slots = {}
+    positional = {}
     for func in (relation_module._append_tracked_group, BmcTrackedConstraint):
         names = list(inspect.signature(func).parameters)
-        slots[func.__name__] = (names.index("stage"), names.index("category"))
+        slots = {}
+        for wanted in ("stage", "category"):
+            parameter = inspect.signature(func).parameters[wanted]
+            if parameter.kind is inspect.Parameter.POSITIONAL_OR_KEYWORD:
+                slots[wanted] = names.index(wanted)
+        positional[func.__name__] = slots
 
     source = Path(relation_module.__file__).read_text(encoding="utf-8")
     pairings = set()
@@ -2528,17 +2543,18 @@ def _registered_pairings():
         if not isinstance(node, ast.Call):
             continue
         name = getattr(node.func, "id", None) or getattr(node.func, "attr", None)
-        if name not in slots:
-            continue
-        stage_at, category_at = slots[name]
         keywords = {kw.arg: kw.value for kw in node.keywords}
+        known_builder = name in positional
+        carries_both = "stage" in keywords and "category" in keywords
+        if not known_builder and not carries_both:
+            continue
 
-        def argument(slot, keyword):
-            if keyword in keywords:
-                return keywords[keyword]
-            return node.args[slot] if slot < len(node.args) else None
-
-        def string_of(expression):
+        def string_of(wanted):
+            expression = keywords.get(wanted)
+            if expression is None:
+                slot = positional.get(name, {}).get(wanted)
+                if slot is not None and slot < len(node.args):
+                    expression = node.args[slot]
             # ast.Constant on 3.8 and later, ast.Str on 3.7.  Anything else --
             # a name, a call, or an unfilled slot -- reads as None.
             for attribute in ("value", "s"):
@@ -2547,15 +2563,12 @@ def _registered_pairings():
                     return value
             return None
 
-        values = [
-            string_of(argument(slot, keyword))
-            for slot, keyword in ((stage_at, "stage"), (category_at, "category"))
-        ]
+        values = [string_of("stage"), string_of("category")]
         if all(isinstance(value, str) for value in values):
             pairings.add((values[0], values[1]))
         else:
             undecidable.append((name, node.lineno))
-    return pairings, slots, undecidable
+    return pairings, positional, undecidable
 
 
 #: Every pairing the builder registers, asserted rather than derived, so a
@@ -2588,12 +2601,15 @@ def test_stage_and_category_pairings_the_builder_registers() -> None:
     """
     from pyfcstm.bmc.explanation import constraint_aggregate
 
-    pairings, slots, undecidable = _registered_pairings()
+    pairings, positional, undecidable = _registered_pairings()
 
-    assert slots == {
-        "_append_tracked_group": (2, 3),
-        "BmcTrackedConstraint": (1, 2),
-    }, slots
+    # The append helper takes both as keyword-only, so it has no positional slot
+    # to fall back to; only the constructor does.  Asserting a slot for the helper
+    # would pin a path no call can take.
+    assert positional == {
+        "_append_tracked_group": {},
+        "BmcTrackedConstraint": {"stage": 1, "category": 2},
+    }, positional
     # The only call whose arguments are not literals is the construction inside
     # the append helper, which forwards what it was given.  Listing the names
     # rather than counting them keeps the failure message actionable.
@@ -2682,8 +2698,16 @@ def test_a_real_build_publishes_a_subset_of_the_registered_pairings() -> None:
     published = list(core._tracked_groups) + list(core._tracked_case_groups)
     observed = {(group.stage, group.category) for group in published}
 
+    # Only the direction that can indicate a defect is asserted: a build must not
+    # publish a pairing no call site declares.  How much of the enumeration one
+    # query happens to reach is a property of the query, so requiring an exact
+    # shortfall would fail when the query's coverage improves -- adding an event
+    # assumption to it, which strictly widens coverage, made an earlier version of
+    # this assertion fail with a message that read backwards.
     assert observed <= pairings, observed - pairings
-    assert pairings - observed == {
-        ("assumptions", "assumption.cardinality"),
-        ("assumptions", "assumption.event"),
-    }, pairings - observed
+    # It must still reach the branches this test exists to exercise.
+    assert {
+        ("assumptions", "definedness"),
+        ("initialization", "definedness"),
+        ("kernel", "transition.case"),
+    } <= observed, observed

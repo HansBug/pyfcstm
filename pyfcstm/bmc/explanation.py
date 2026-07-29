@@ -1533,9 +1533,10 @@ def _core_position(constraint: BmcConstraintRef) -> str:
 def _core_structural_refs(constraint: BmcConstraintRef) -> str:
     """Return the builder metadata a machine reader is told to consume.
 
-    Called only for a generated group, whose single line carries no source text
-    of its own, so it has to be shown together with its frame/step/refs rather
-    than hidden for tidiness.  ``frame`` and ``step`` are already on that line, so
+    Called only for a generated group.  Such a group has no source text of its
+    own, so its position and its remaining refs are shown rather than hidden for
+    tidiness: the position goes on the group's own line, and this function
+    supplies the indented line that follows when there is anything left.  ``frame`` and ``step`` are already on that line, so
     only the other keys are added here.  An authored group is not routed through
     this function -- its own text states its position, and its refs remain a
     machine contract carried by the JSON.
@@ -1589,13 +1590,7 @@ def _category_noun(constraint: BmcConstraintRef) -> str:
     could arrive through the kernel one.  Neither happens: a transition group's
     stage is always the kernel one, and definedness groups are emitted only from
     initialization and assumptions.  Both claims came from resolving an aggregate
-    for an input rather than checking which inputs occur.  A ``definedness`` group in the kernel stage belongs to no
-    single aggregate at all, and the same category resolves to two different
-    aggregates in the other two stages.  A reader would also meet a word they see
-    nowhere else: the aggregate for the assumptions stage is not the name that
-    stage carries anywhere in the report.  The category's leading segment is
-    always defined, is the same wherever the group appears, and is the group's own
-    name.
+    for an input rather than checking which inputs occur.
 
     Both the generated and the location-less authored branch read the noun from
     here.  They print different sentences, but they must agree on what the group
@@ -1719,7 +1714,8 @@ def explanation_text_lines(explanation) -> List[str]:
                 # The frozen contract is explicit that a generated support group
                 # must be shown together with its frame/step/refs rather than
                 # hidden for tidiness, and its transcript prints that position
-                # inline on the single line it gives the group.  An authored
+                # inline on the group's own line, with any remaining refs on
+                # an indented line after it.  An authored
                 # constraint instead shows its own text, whose "assume at 1"
                 # already states the position.
                 position = _core_position(item.constraint)
@@ -1745,12 +1741,12 @@ def explanation_text_lines(explanation) -> List[str]:
                 "subset-minimal."
             )
         lines.append("Core scope: %s" % core.scope)
-        # A not-yet-minimal core reports its scope, its reduction and the reason
-        # the reduction stopped there.  Granularity, member count, a labelled
-        # minimality line and the elapsed time belong to the proven-minimal
-        # shape, which reports no reduction at all: the two shapes publish
-        # different field sets rather than one being a subset of the other, so a
-        # field is shown where its own shape shows it and nowhere else.
+        # Every core reports its scope and its reduction; the prose sentence
+        # above already says whether minimality was proven.  Granularity, member
+        # count, a labelled minimality line and the elapsed time appear only in
+        # the published proven-minimal shape, which this stage cannot reach, so
+        # they are not rendered here: a field is shown where its own shape shows
+        # it and nowhere else.
         lines.append("Reduction: %s" % core.reduction)
     if explanation.reason is not None:
         lines.append("Reason: %s" % explanation.reason)

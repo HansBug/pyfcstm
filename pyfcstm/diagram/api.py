@@ -17,6 +17,7 @@ Example::
 
 import atexit
 import base64
+import contextlib
 import hashlib
 import html as html_module
 import json
@@ -33,7 +34,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
 from collections.abc import Iterable
-from typing import Any, Dict, List, Mapping, Optional, Set, Tuple, Union
+from typing import Iterator, Any, Dict, List, Mapping, Optional, Set, Tuple, Union
 
 from pygments import lex
 from pygments.formatters import HtmlFormatter
@@ -932,12 +933,6 @@ def _report_degradation(message: str, *args: Any) -> None:
     """
     Record a degradation from a cleanup path, tolerating a broken backend.
 
-    .. note::
-        No test covers the tolerance itself.  Reaching it needs a
-        ``logging.Handler`` that raises, which no caller can produce, so the
-        guards it once had were removed with the rest of the injected-failure
-        suite.  Anyone changing this function is changing untested code.
-
     ``Handler.emit`` is a user extension point, and a handler or filter that
     raises propagates to whoever logged.  Every call here is inside a
     ``finally`` where an exception may already be travelling, so an ordinary
@@ -957,6 +952,9 @@ def _report_degradation(message: str, *args: Any) -> None:
     :return: ``None``.
     :rtype: None
     """
+    # Nothing exercises the tolerance below: reaching it needs a `logging`
+    # handler that raises, which no caller can arrange. Changes here are changes
+    # to code no test will catch.
     try:
         _logger.warning(message, *args)
     except Exception:
@@ -1013,44 +1011,52 @@ def _report_degradation(message: str, *args: Any) -> None:
 _TEMPORARY_NAME_ATTEMPTS = 8
 
 
-def _open_temporary_sibling(target: Path) -> Tuple[int, Path, int]:
+@contextlib.contextmanager
+def _staging_file(target: Path, binary: bool) -> Iterator[Tuple[Any, Path, int]]:
     """
-    Create the temporary file a write will be staged in.
+    Own the file a write is staged in, for as long as it exists.
 
-    Opened with 0666 so the operating system applies the umask, exactly as it
-    would for any other new file, and the resulting mode is read back from the
-    descriptor.  That makes the file being written its own answer to "what mode
-    should this end up with": no second file has to be created and measured,
-    which is what an earlier revision did -- with a name an attacker could take,
-    cleanup that could fail, and a platform split over how to remove it.
+    A context manager rather than a factory, because the descriptor and the path
+    have to be owned from the instant they exist.  Handing them back left a
+    window between the return and the caller's own ``try`` in which a Ctrl-C
+    unwound the stack with nobody holding either -- one leaked descriptor and one
+    leaked file, measured through :meth:`Diagram.save` -- and guarding only the
+    inside of the helper moved that window one line rather than closing it.
 
-    The mode is then tightened to 0600 for the duration of the write, because
-    the document carries the model's source and the destination directory may be
-    shared.  :func:`_final_mode` decides what it ends up as.
+    The file is opened with 0666 so the operating system applies the umask,
+    exactly as it would for any other new file, and the mode that survives is
+    read back from the descriptor.  That makes the file being written its own
+    answer to "what mode should this end up with", so no second file has to be
+    created and measured.  It is then tightened to 0600 for the duration of the
+    write, because the document carries the model's source and the destination
+    directory may be shared.
+
+    On exit the stream is closed and the file removed, unless the body renamed it
+    onto the target -- in which case there is nothing left at the staging path
+    and the removal finds nothing to do.
 
     :param target: Destination the caller asked for.
     :type target: pathlib.Path
-    :return: Open descriptor, its path, and the mode a new file gets here.
-    :rtype: tuple[int, pathlib.Path, int]
+    :param binary: Whether the stream should accept bytes rather than text.
+    :type binary: bool
+    :return: Context manager yielding the open stream, the staging path, and the
+        mode a new file receives in that directory.
+    :rtype: contextlib.AbstractContextManager
     :raises OSError: If the directory will not accept a new file.
     """
-    # `mkstemp` would force 0600, and `chmod` does not consult the umask -- only
-    # the mode argument of the creating `open` does. So the file is created here
-    # with 0666 and `O_EXCL`, which is exactly how any other new file is made,
-    # and the mode that survives is read back from the descriptor.
     # `O_NOFOLLOW` and `O_BINARY` are what `tempfile` adds to its own open, kept
     # here for the same reasons: the first refuses to follow a symlink sitting at
     # the name, the second states binary intent at the point of creation. Both
     # are defensive rather than relied upon -- the name is freshly generated, so
-    # nothing normal puts a symlink there -- and neither has a test, because
-    # what they guard against is not a path a caller can reach.
+    # nothing normal puts a symlink there -- and neither has a test, because what
+    # they guard against is not a path a caller can reach.
     #
     # `O_BINARY` is belt and braces rather than load-bearing. `_io.FileIO` calls
-    # `_setmode(self->fd, O_BINARY)` unconditionally on Windows, including when
-    # it wraps a descriptor it was handed, so `os.fdopen(handle, "wb")` clears
-    # text translation regardless -- checked against CPython 3.7
-    # (Modules/_io/fileio.c:362,469) and 3.14 (:397,508), where the `fd >= 0`
-    # branch only assigns and falls through to that call.
+    # `_setmode(self->fd, O_BINARY)` unconditionally on Windows, including when it
+    # wraps a descriptor it was handed, so `os.fdopen` clears text translation
+    # regardless -- checked against CPython 3.7 (Modules/_io/fileio.c:362,469)
+    # and 3.14 (:397,508), where the `fd >= 0` branch only assigns and falls
+    # through to that call.
     flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
     flags |= getattr(os, "O_NOFOLLOW", 0)
     flags |= getattr(os, "O_BINARY", 0)
@@ -1059,9 +1065,9 @@ def _open_temporary_sibling(target: Path) -> Tuple[int, Path, int]:
         # into the NAME_MAX headroom the target's own name leaves, and turned
         # legal 238-to-245-character names into ENAMETOOLONG. `O_EXCL` plus a
         # retry is what makes a collision harmless, not the width.
-        temporary = target.parent / (".%s.%s" % (target.name, uuid.uuid4().hex[:8]))
+        staging = target.parent / (".%s.%s" % (target.name, uuid.uuid4().hex[:8]))
         try:
-            handle = os.open(str(temporary), flags, 0o666)
+            handle = os.open(str(staging), flags, 0o666)
         except FileExistsError:
             # `O_EXCL` refused a name something else already holds, which is the
             # point of using it; try another.
@@ -1069,35 +1075,99 @@ def _open_temporary_sibling(target: Path) -> Tuple[int, Path, int]:
         break
     else:
         raise OSError(
-            "could not create a temporary file beside %s after %d attempts"
+            "could not create a staging file beside %s after %d attempts"
             % (target, _TEMPORARY_NAME_ATTEMPTS)
         )
     try:
         default = os.fstat(handle).st_mode & 0o7777
         if hasattr(os, "fchmod"):
-            # Restrictive for the duration of the write. Windows has no fchmod
-            # and no mode beyond the read-only bit, so there is nothing to
-            # tighten there.
             os.fchmod(handle, 0o600)
+        stream = os.fdopen(
+            handle, "wb" if binary else "w", **({} if binary else {"encoding": "utf-8"})
+        )
     except BaseException:
-        # Everything, then re-raised. The named failures are `os.fstat` or
-        # `os.fchmod` on the descriptor this call just opened -- EIO or ENOSPC
-        # from the filesystem, EPERM where the mount forbids a mode change --
-        # but the window also covers a Ctrl-C landing between the open and the
-        # caller's own `try`, which is what the `NamedTemporaryFile` this
-        # replaced had `tempfile` handling. The descriptor and the file are both
-        # ours and neither is any use now, so they go before the exception
-        # continues on unchanged.
+        # Everything, then re-raised. The named failures are `os.fstat`,
+        # `os.fchmod` or `os.fdopen` on the descriptor just opened -- EIO or
+        # ENOSPC from the filesystem, EPERM where the mount forbids a mode
+        # change -- and the same window covers a Ctrl-C. The descriptor and the
+        # file are both ours and neither is any use now.
         os.close(handle)
-        try:
-            temporary.unlink()
-        except OSError:
-            # FileNotFoundError if it never got created, PermissionError or
-            # EROFS from a directory that has already refused us once. The
-            # exception on its way out is the one the caller needs.
-            pass
+        _discard(staging)
         raise
-    return handle, temporary, default
+    try:
+        yield stream, staging, default
+    except OSError as body_error:
+        # The write, the mode change or the replace failed. Closing an
+        # already-closed stream is a no-op; the removal has something to do here
+        # because the replace did not happen. A cleanup that also fails is worth
+        # saying in the same breath -- the caller is left with a file they did
+        # not create, and only these two errors together explain why.
+        _close_quietly(stream, staging)
+        try:
+            staging.unlink()
+        except FileNotFoundError:
+            pass
+        except OSError as removal_error:
+            raise OSError(
+                "%s; staging cleanup failed for %s: %s"
+                % (body_error, staging, removal_error)
+            ) from body_error
+        raise
+    except BaseException:
+        # A Ctrl-C, or anything else the body did not name. There is no second
+        # cause to fold in: what is travelling is what the caller needs.
+        _close_quietly(stream, staging)
+        _discard(staging)
+        raise
+    else:
+        # The replace happened, so the staging path is gone and the stream is
+        # already closed. This is only here to leave nothing to chance.
+        _close_quietly(stream, staging)
+        _discard(staging)
+
+
+def _close_quietly(stream: Any, staging: Path) -> None:
+    """
+    Close a staging stream, reporting rather than raising if it will not.
+
+    :param stream: Stream opened on the staging file.
+    :type stream: io.IOBase
+    :param staging: Path the stream was opened on, for the message.
+    :type staging: pathlib.Path
+    :return: ``None``.
+    :rtype: None
+    """
+    try:
+        stream.close()
+    except OSError as close_error:
+        # EIO or ENOSPC surfacing from buffered data that never reached the disk.
+        # Whatever brought us here is the outcome the caller needs.
+        _report_degradation(
+            "could not close the staging file %s: %s", staging, close_error
+        )
+
+
+def _discard(staging: Path) -> None:
+    """
+    Remove a staging file, reporting rather than raising if it cannot be.
+
+    :param staging: Path that may or may not still exist.
+    :type staging: pathlib.Path
+    :return: ``None``.
+    :rtype: None
+    """
+    try:
+        staging.unlink()
+    except FileNotFoundError:
+        # Renamed onto the target, which is the ordinary outcome.
+        pass
+    except OSError as removal_error:
+        # PermissionError from an indexer holding the handle, EROFS or ENOSPC
+        # from a read-only or exhausted filesystem. Whatever brought us here is
+        # what the caller needs to see, so this only gets recorded.
+        _report_degradation(
+            "could not remove the staging file %s: %s", staging, removal_error
+        )
 
 
 def _final_mode(target: Path, requested: Optional[int], default: int) -> int:
@@ -1130,6 +1200,37 @@ def _final_mode(target: Path, requested: Optional[int], default: int) -> int:
         return default
 
 
+def _is_write_protected(target: Path) -> bool:
+    """
+    Report whether replacing ``target`` would override someone else's decision.
+
+    Only a file this user does not own counts.  "Not writable" on its own is the
+    wrong question: under a mask that removes write -- ``umask 0222`` -- this
+    library's own first save produces a 0444 file, so refusing on that basis made
+    :meth:`Diagram.save` a one-shot operation and blamed the user's permissions
+    for it.  An owner can always ``chmod`` their own file back, so replacing it
+    overrides nothing; a file belonging to somebody else is a different matter.
+
+    :param target: Destination the caller asked for.
+    :type target: pathlib.Path
+    :return: ``True`` when the file exists, is not writable, and is not ours.
+    :rtype: bool
+    """
+    try:
+        info = target.stat()
+    except OSError:
+        # FileNotFoundError when there is nothing to protect; any other stat
+        # failure is raised by `_validate_write_target`'s own checks.
+        return False
+    if os.access(str(target), os.W_OK):
+        return False
+    if not hasattr(os, "geteuid"):
+        # Windows has no ownership question to ask, and `os.replace` refuses a
+        # read-only target outright, so the caller has to clear it either way.
+        return True
+    return info.st_uid != os.geteuid()
+
+
 def _validate_write_target(target: Path) -> None:
     """
     Reject a destination before a temporary sibling is created for it.
@@ -1145,8 +1246,8 @@ def _validate_write_target(target: Path) -> None:
     :raises IsADirectoryError: If the destination is an existing directory.
     :raises FileNotFoundError: If the parent directory does not exist.
     :raises NotADirectoryError: If the parent exists but is not a directory.
-    :raises PermissionError: If the target itself is not writable, or the
-        parent directory will not accept a new file.
+    :raises PermissionError: If the target is an unwritable file owned by
+        another user, or the parent directory will not accept a new file.
     """
     if target.is_dir():
         raise IsADirectoryError("cannot write %s: it is a directory" % target)
@@ -1159,14 +1260,17 @@ def _validate_write_target(target: Path) -> None:
         raise NotADirectoryError(
             "cannot write %s: %s is not a directory" % (target, parent)
         )
-    if target.exists() and not os.access(str(target), os.W_OK):
+    if _is_write_protected(target):
         # `os.replace` only needs write permission on the directory, so a file
-        # the user protected with `chmod 444` would be swapped out silently --
-        # and because an existing target keeps its own mode, nothing about the
-        # result would show it. `os.replace` also refuses a read-only target on
-        # Windows, so allowing it here would make the same call succeed on one
-        # platform and fail on another.
-        raise PermissionError("cannot write %s: the file is not writable" % target)
+        # someone else made read-only would be swapped out silently -- and
+        # because an existing target keeps its own mode, nothing about the result
+        # would show it. `os.replace` also refuses a read-only target on Windows,
+        # so allowing it would make the same call succeed on one platform and
+        # fail on another.
+        raise PermissionError(
+            "cannot write %s: the file belongs to another user and is not "
+            "writable" % target
+        )
     if not os.access(str(parent), os.W_OK):
         # Checked here for the same reason as the cases above: the write itself
         # fails on the staging sibling, so the caller is told about a hidden
@@ -1181,7 +1285,7 @@ def _atomic_write_text(
     path: Union[str, os.PathLike], content: str, mode: Optional[int] = None
 ) -> Path:
     """
-    Replace a text file atomically using a temporary sibling.
+    Replace a text file atomically using a staging sibling.
 
     :param path: Destination path.
     :type path: str or os.PathLike
@@ -1191,51 +1295,25 @@ def _atomic_write_text(
     :type mode: int, optional
     :return: The destination path.
     :rtype: pathlib.Path
-    :raises OSError: If the destination cannot be written.
+    :raises FileNotFoundError: If the parent directory does not exist.
+    :raises IsADirectoryError: If ``path`` is an existing directory.
+    :raises NotADirectoryError: If the parent path is not a directory.
+    :raises PermissionError: If the target is an unwritable file owned by
+        another user, or its directory will not accept a new file.
+    :raises OSError: If the write itself fails, for example on a full or
+        read-only filesystem.
     """
     target = Path(path)
     _validate_write_target(target)
-    handle, temporary_path, default = _open_temporary_sibling(target)
-    replaced = False
-    try:
-        with os.fdopen(handle, "w", encoding="utf-8") as stream:
-            stream.write(content)
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.chmod(str(temporary_path), _final_mode(target, mode, default))
-        os.replace(str(temporary_path), str(target))
-        replaced = True
-    except OSError as write_error:
-        try:
-            temporary_path.unlink()
-        except OSError as cleanup_error:
-            # OSError: unlink can fail after a write/replace error on a
-            # read-only or concurrently cleaned directory; keep both causes
-            # observable instead of silently discarding the cleanup failure.
-            raise OSError(
-                "%s; temporary cleanup failed for %s: %s"
-                % (write_error, temporary_path, cleanup_error)
-            ) from write_error
-        raise
-    finally:
-        if not replaced:
-            # Reached by anything the branch above does not name, and Ctrl-C
-            # part-way through a ~30 MB document is the case that matters:
-            # without this the temporary sibling stays behind at full size.
-            try:
-                temporary_path.unlink()
-            except FileNotFoundError:
-                # The branch above already removed it, which is the common path.
-                pass
-            except OSError as cleanup_error:
-                # PermissionError from an indexer holding the handle, EROFS or
-                # ENOSPC from a read-only or exhausted filesystem. The in-flight
-                # exception is the one the caller needs, so none propagate.
-                _report_degradation(
-                    "could not remove the temporary file %s: %s",
-                    temporary_path,
-                    cleanup_error,
-                )
+    # The staging file has an owner for its whole life, so no unwinding -- an
+    # interrupt included -- can leave the descriptor or the file behind.
+    with _staging_file(target, binary=False) as (stream, staging, default):
+        stream.write(content)
+        stream.flush()
+        os.fsync(stream.fileno())
+        stream.close()
+        os.chmod(str(staging), _final_mode(target, mode, default))
+        os.replace(str(staging), str(target))
     return target
 
 
@@ -1243,7 +1321,7 @@ def _atomic_write_bytes(
     path: Union[str, os.PathLike], content: bytes, mode: Optional[int] = None
 ) -> Path:
     """
-    Replace a binary file atomically using a temporary sibling.
+    Replace a binary file atomically using a staging sibling.
 
     :param path: Destination path.
     :type path: str or os.PathLike
@@ -1253,51 +1331,25 @@ def _atomic_write_bytes(
     :type mode: int, optional
     :return: The destination path.
     :rtype: pathlib.Path
-    :raises OSError: If the destination cannot be written.
+    :raises FileNotFoundError: If the parent directory does not exist.
+    :raises IsADirectoryError: If ``path`` is an existing directory.
+    :raises NotADirectoryError: If the parent path is not a directory.
+    :raises PermissionError: If the target is an unwritable file owned by
+        another user, or its directory will not accept a new file.
+    :raises OSError: If the write itself fails, for example on a full or
+        read-only filesystem.
     """
     target = Path(path)
     _validate_write_target(target)
-    handle, temporary_path, default = _open_temporary_sibling(target)
-    replaced = False
-    try:
-        with os.fdopen(handle, "wb") as stream:
-            stream.write(content)
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.chmod(str(temporary_path), _final_mode(target, mode, default))
-        os.replace(str(temporary_path), str(target))
-        replaced = True
-    except OSError as write_error:
-        try:
-            temporary_path.unlink()
-        except OSError as cleanup_error:
-            # OSError: unlink can fail after a write/replace error on a
-            # read-only or concurrently cleaned directory; keep both causes
-            # observable instead of silently discarding the cleanup failure.
-            raise OSError(
-                "%s; temporary cleanup failed for %s: %s"
-                % (write_error, temporary_path, cleanup_error)
-            ) from write_error
-        raise
-    finally:
-        if not replaced:
-            # Reached by anything the branch above does not name, and Ctrl-C
-            # part-way through a ~30 MB document is the case that matters:
-            # without this the temporary sibling stays behind at full size.
-            try:
-                temporary_path.unlink()
-            except FileNotFoundError:
-                # The branch above already removed it, which is the common path.
-                pass
-            except OSError as cleanup_error:
-                # PermissionError from an indexer holding the handle, EROFS or
-                # ENOSPC from a read-only or exhausted filesystem. The in-flight
-                # exception is the one the caller needs, so none propagate.
-                _report_degradation(
-                    "could not remove the temporary file %s: %s",
-                    temporary_path,
-                    cleanup_error,
-                )
+    # The staging file has an owner for its whole life, so no unwinding -- an
+    # interrupt included -- can leave the descriptor or the file behind.
+    with _staging_file(target, binary=True) as (stream, staging, default):
+        stream.write(content)
+        stream.flush()
+        os.fsync(stream.fileno())
+        stream.close()
+        os.chmod(str(staging), _final_mode(target, mode, default))
+        os.replace(str(staging), str(target))
     return target
 
 
@@ -2313,7 +2365,8 @@ class Diagram:
         :raises FileNotFoundError: If the parent directory does not exist.
         :raises IsADirectoryError: If ``path`` is an existing directory.
         :raises NotADirectoryError: If the parent path is not a directory.
-        :raises PermissionError: If the parent directory is not writable.
+        :raises PermissionError: If the target is an unwritable file owned by
+            another user, or its directory will not accept a new file.
         :raises OSError: If the write itself fails, for example on a full or
             read-only filesystem.
         """

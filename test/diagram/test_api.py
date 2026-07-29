@@ -1318,30 +1318,42 @@ def test_an_explicit_mode_wins_over_a_pre_created_file(writer_name, tmp_path):
     assert target.stat().st_size == 32
 
 
-@pytest.mark.skipif(os.name == "nt", reason="POSIX file modes")
-def test_a_read_only_target_is_not_replaced_behind_the_users_back(tmp_path):
-    # `os.replace` only needs write permission on the directory, so a file
-    # protected with `chmod 444` was swapped out while a plain `open(path, "w")`
-    # on it is refused -- and because an existing target keeps its own mode, the
-    # result carried no sign of it. `os.replace` also refuses a read-only target
-    # on Windows, so allowing it made one call succeed on POSIX and fail there.
+@pytest.mark.skipif(os.name == "nt", reason="POSIX ownership and modes")
+def test_a_read_only_file_of_our_own_can_still_be_replaced(tmp_path):
+    # "Not writable" is the wrong test on its own. Under a mask that removes
+    # write this library's own first save produces a 0444 file, so refusing on
+    # that basis made `save()` a one-shot operation and blamed the caller's
+    # permissions for it. An owner can chmod their own file back, so replacing
+    # it overrides nobody.
     from pyfcstm.diagram import api
 
-    target = tmp_path / "report.json"
-    target.write_text("PRECIOUS", encoding="utf-8")
-    os.chmod(target, 0o444)
-    with pytest.raises(PermissionError, match="the file is not writable"):
-        api._atomic_write_text(target, "clobbered")
-    assert target.read_text(encoding="utf-8") == "PRECIOUS"
-    assert list(tmp_path.iterdir()) == [target]
+    target = tmp_path / "out.json"
+    previous = os.umask(0o222)
+    try:
+        api._atomic_write_text(target, "first")
+        assert stat.S_IMODE(target.stat().st_mode) == 0o444
+        api._atomic_write_text(target, "second")
+    finally:
+        os.umask(previous)
+    assert target.read_text(encoding="utf-8") == "second"
+    assert stat.S_IMODE(target.stat().st_mode) == 0o444
 
-    # A writable target is still replaced, keeping its own mode.
-    writable = tmp_path / "ok.json"
-    writable.write_text("old", encoding="utf-8")
-    os.chmod(writable, 0o664)
-    api._atomic_write_text(writable, "new")
-    assert writable.read_text(encoding="utf-8") == "new"
-    assert stat.S_IMODE(writable.stat().st_mode) == 0o664
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX ownership")
+def test_a_read_only_file_of_another_user_is_left_alone():
+    # The case the check exists for: `os.replace` needs write permission on the
+    # directory only, so somebody else's read-only file would be swapped out
+    # silently -- and since an existing target keeps its mode, the result would
+    # carry no sign of it.
+    from pyfcstm.diagram import api
+
+    foreign = Path("/etc/hostname")
+    if not foreign.exists() or os.access(str(foreign), os.W_OK):
+        pytest.skip("no unwritable file owned by another user to test with")
+    if foreign.stat().st_uid == os.geteuid():
+        pytest.skip("running as the owner of the probe file")
+    with pytest.raises(PermissionError, match="belongs to another user"):
+        api._validate_write_target(foreign)
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX NAME_MAX")
@@ -1358,26 +1370,69 @@ def test_a_long_but_legal_target_name_can_still_be_written(length, tmp_path):
     assert target.read_text(encoding="utf-8") == "x" * 16
 
 
-@pytest.mark.skipif(os.name == "nt", reason="reads /proc for the fd count")
+def _next_free_descriptor():
+    """Lowest unused descriptor number, as a portable leak probe."""
+    handle = os.open(os.devnull, os.O_RDONLY)
+    os.close(handle)
+    return handle
+
+
 @pytest.mark.parametrize("writer_name", ["_atomic_write_text", "_atomic_write_bytes"])
-def test_an_interrupt_before_the_write_starts_leaks_nothing(writer_name, monkeypatch):
-    # Ctrl-C is an ordinary way for a ~29 MB save to end. The window between
-    # opening the sibling and the caller's own `try` was covered by `tempfile`
-    # for the `NamedTemporaryFile` this replaced; catching only `OSError` there
-    # left an interrupt leaking both the descriptor and the file. The existing
-    # interrupt test injects at `_final_mode`, which is after the helper returns.
+def test_no_line_of_the_write_leaks_on_an_interrupt(writer_name, tmp_path):
+    # Ctrl-C is an ordinary way for a ~29 MB save to end, and the leak it caused
+    # moved rather than closed twice: guarding the point that was measured left
+    # the next line exposed. So every line of the writer gets an interrupt, and
+    # none of them may leave a descriptor or a staging file behind.
     from pyfcstm.diagram import api
 
-    def interrupt(*_args, **_kwargs):
-        raise KeyboardInterrupt
+    writer = getattr(api, writer_name)
+    payload = "x" * 64 if writer_name.endswith("text") else b"x" * 64
+    source = Path(api.__file__)
+    lines = source.read_text(encoding="utf-8").splitlines()
+    start = next(
+        index
+        for index, line in enumerate(lines)
+        if line.startswith("def %s(" % writer_name)
+    )
+    end = next(
+        index
+        for index in range(start + 1, len(lines))
+        if lines[index].startswith("def ")
+    )
+    executable = [
+        index + 1
+        for index in range(start, end)
+        if lines[index].strip()
+        and not lines[index].lstrip().startswith(("#", '"""', ":"))
+    ]
+    assert len(executable) > 5, "the writer body was not located"
 
-    with tempfile.TemporaryDirectory() as folder:
-        directory = Path(folder)
-        payload = "x" * 64 if writer_name.endswith("text") else b"x" * 64
-        before = len(os.listdir("/proc/self/fd"))
-        monkeypatch.setattr(os, "fchmod", interrupt)
-        with pytest.raises(KeyboardInterrupt):
-            getattr(api, writer_name)(directory / "diagram.out", payload)
-        monkeypatch.undo()
-        assert len(os.listdir("/proc/self/fd")) == before
-        assert list(directory.iterdir()) == []
+    leaks = []
+    for line_number in executable:
+        directory = tmp_path / ("line%d" % line_number)
+        directory.mkdir()
+        before = _next_free_descriptor()
+        fired = []
+
+        def tracer(frame, event, _arg, wanted=line_number, seen=fired):
+            if (
+                event == "line"
+                and frame.f_code.co_filename == str(source)
+                and frame.f_lineno == wanted
+                and not seen
+            ):
+                seen.append(True)
+                raise KeyboardInterrupt
+            return tracer
+
+        sys.settrace(tracer)
+        try:
+            writer(directory / "diagram.out", payload)
+        except BaseException:  # noqa: BLE001 - any outcome is fine, the state is what matters
+            pass
+        finally:
+            sys.settrace(None)
+        left = [item.name for item in directory.iterdir() if item.name.startswith(".")]
+        if fired and (_next_free_descriptor() != before or left):
+            leaks.append((line_number, left))
+    assert leaks == [], "interrupting these lines leaked: %r" % (leaks,)

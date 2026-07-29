@@ -29,6 +29,7 @@ from pyfcstm.bmc.infeasibility import (
     _semantic_role,
     build_core_item,
     classify_infeasibility,
+    derive_forced_values,
     explain_infeasibility,
     extract_source_core,
     minimize_source_core,
@@ -1786,3 +1787,84 @@ def test_a_closed_derivation_unlocks_the_complete_formal_verdict() -> None:
     assert explanation.reason is None
     assert explanation.classification == "assumptions_self_conflict"
     assert explanation.core.reduction == "subset_minimal"
+
+
+@pytest.mark.unittest
+def test_a_prefix_that_admits_several_values_forces_none_of_them() -> None:
+    """One witness is not a requirement, and the probe must not confuse them.
+
+    Solving the core's non-assumption members yields *a* value for the frame
+    variable; claiming the prefix *requires* it needs the alternative excluded as
+    well.  Here a range predicate leaves ten values open, so the model's value is
+    one of ten and the derivation may not be made.  Without the second check the
+    narrative would report that single witness as the value the prefix demands --
+    a sentence that reads exactly like a proof and is not one.
+    """
+    core = _core_formula(
+        'init state("Root.A") where x >= 0 && x <= 9; '
+        'assume at 0: var("x") == 100; '
+        'check reach <= 2: active("Root.B");'
+    )
+    outcome = classify_infeasibility(core, "assumptions", _SolveBudget(None))
+    extraction = extract_source_core(core, outcome.scope, _SolveBudget(None))
+    minimized = minimize_source_core(core, extraction, _SolveBudget(None))
+    items = tuple(build_core_item(group) for group in minimized.groups)
+
+    forced, record = derive_forced_values(core, items, _SolveBudget(None))
+
+    assert forced == ()
+    # The phase still ran and still reports itself, so a reader can tell the
+    # difference between "checked and found nothing" and "never checked".
+    assert record is not None
+    assert record.name == "value_propagation"
+    assert record.started is True
+
+    # The prefix really does admit more than one value, checked independently.
+    prefix = [item for item in items if item.constraint.stage != "assumptions"]
+    assert prefix
+    groups = {group.stable_id: group for group in core._tracked_groups}
+    solver = z3.Solver()
+    for item in prefix:
+        for expression in groups[item.constraint.stable_id].expressions:
+            solver.add(expression)
+    symbol = core.symbols.frame_var(0, "x")
+    assert solver.check() == z3.sat
+    witness = solver.model().eval(symbol, model_completion=True)
+    solver.add(symbol != witness)
+    assert solver.check() == z3.sat
+
+
+@pytest.mark.unittest
+def test_every_forced_value_survives_an_independent_uniqueness_check() -> None:
+    """What the probe publishes must hold under a solver it did not run.
+
+    The claim is strong -- the prefix admits no other value -- so it is rechecked
+    from the published supporting ids with a fresh solver rather than trusted from
+    the probe's own bookkeeping.
+    """
+    core = _core_formula(
+        'init state("Root.A"); '
+        'assume at 1: var("x") == 0; '
+        'check reach <= 1: active("Root.A");',
+        model_text=(
+            "def int x = 0;\n"
+            "state Root { state A; [*] -> A; A -> A effect { x = x + 1; }; }"
+        ),
+    )
+    outcome = classify_infeasibility(core, "assumptions", _SolveBudget(None))
+    extraction = extract_source_core(core, outcome.scope, _SolveBudget(None))
+    minimized = minimize_source_core(core, extraction, _SolveBudget(None))
+    items = tuple(build_core_item(group) for group in minimized.groups)
+
+    forced, _ = derive_forced_values(core, items, _SolveBudget(None))
+
+    assert forced
+    groups = {group.stable_id: group for group in core._tracked_groups}
+    for entry in forced:
+        solver = z3.Solver()
+        for stable_id in entry.supporting_ids:
+            for expression in groups[stable_id].expressions:
+                solver.add(expression)
+        symbol = core.symbols.frame_var(entry.frame, entry.variable)
+        solver.add(symbol != entry.value)
+        assert solver.check() == z3.unsat, entry

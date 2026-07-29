@@ -1151,6 +1151,19 @@ def derive_forced_values(
     reason = None
     started_at = time.perf_counter()
     derived = []
+    # The degradation branches below are deliberately untested.  Which tier a run
+    # lands in -- budget spent before the first solve, a solve that timed out, a
+    # solver that came back undetermined -- is decided by the host clock and the
+    # solver's own search, not by anything a fixture controls; a test pinning one
+    # of them fails on a slower machine, which this project has already paid for
+    # twice.  The two stable ends are covered: a full budget derives the value,
+    # and a prefix that admits several values derives nothing.
+    #
+    # The unsatisfiable-prefix branch is a different case: it cannot be reached
+    # through a proven-minimal core at all, because every member of such a core is
+    # load-bearing, so dropping the assumptions has to leave the rest satisfiable.
+    # It stays as stated defensive code for the degraded cores that skip that
+    # proof.
     for variable, frame in targets:
         symbol = core.symbols.frame_var(frame, variable)
         solver = z3.Solver()

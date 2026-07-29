@@ -932,6 +932,12 @@ def _report_degradation(message: str, *args: Any) -> None:
     """
     Record a degradation from a cleanup path, tolerating a broken backend.
 
+    .. note::
+        No test covers the tolerance itself.  Reaching it needs a
+        ``logging.Handler`` that raises, which no caller can produce, so the
+        guards it once had were removed with the rest of the injected-failure
+        suite.  Anyone changing this function is changing untested code.
+
     ``Handler.emit`` is a user extension point, and a handler or filter that
     raises propagates to whoever logged.  Every call here is inside a
     ``finally`` where an exception may already be travelling, so an ordinary
@@ -1034,7 +1040,10 @@ def _open_temporary_sibling(target: Path) -> Tuple[int, Path, int]:
     # and the mode that survives is read back from the descriptor.
     # `O_NOFOLLOW` and `O_BINARY` are what `tempfile` adds to its own open, kept
     # here for the same reasons: the first refuses to follow a symlink sitting at
-    # the name, the second states binary intent at the point of creation.
+    # the name, the second states binary intent at the point of creation. Both
+    # are defensive rather than relied upon -- the name is freshly generated, so
+    # nothing normal puts a symlink there -- and neither has a test, because
+    # what they guard against is not a path a caller can reach.
     #
     # `O_BINARY` is belt and braces rather than load-bearing. `_io.FileIO` calls
     # `_setmode(self->fd, O_BINARY)` unconditionally on Windows, including when
@@ -1046,7 +1055,11 @@ def _open_temporary_sibling(target: Path) -> Tuple[int, Path, int]:
     flags |= getattr(os, "O_NOFOLLOW", 0)
     flags |= getattr(os, "O_BINARY", 0)
     for _ in range(_TEMPORARY_NAME_ATTEMPTS):
-        temporary = target.parent / (".%s.%s" % (target.name, uuid.uuid4().hex[:16]))
+        # Eight characters, matching `NamedTemporaryFile`: a longer suffix eats
+        # into the NAME_MAX headroom the target's own name leaves, and turned
+        # legal 238-to-245-character names into ENAMETOOLONG. `O_EXCL` plus a
+        # retry is what makes a collision harmless, not the width.
+        temporary = target.parent / (".%s.%s" % (target.name, uuid.uuid4().hex[:8]))
         try:
             handle = os.open(str(temporary), flags, 0o666)
         except FileExistsError:
@@ -1066,13 +1079,22 @@ def _open_temporary_sibling(target: Path) -> Tuple[int, Path, int]:
             # and no mode beyond the read-only bit, so there is nothing to
             # tighten there.
             os.fchmod(handle, 0o600)
-    except OSError:
+    except BaseException:
+        # Everything, then re-raised. The named failures are `os.fstat` or
+        # `os.fchmod` on the descriptor this call just opened -- EIO or ENOSPC
+        # from the filesystem, EPERM where the mount forbids a mode change --
+        # but the window also covers a Ctrl-C landing between the open and the
+        # caller's own `try`, which is what the `NamedTemporaryFile` this
+        # replaced had `tempfile` handling. The descriptor and the file are both
+        # ours and neither is any use now, so they go before the exception
+        # continues on unchanged.
         os.close(handle)
         try:
             temporary.unlink()
         except OSError:
-            # The directory has already refused us once; the error being raised
-            # is the one that matters.
+            # FileNotFoundError if it never got created, PermissionError or
+            # EROFS from a directory that has already refused us once. The
+            # exception on its way out is the one the caller needs.
             pass
         raise
     return handle, temporary, default
@@ -1123,7 +1145,8 @@ def _validate_write_target(target: Path) -> None:
     :raises IsADirectoryError: If the destination is an existing directory.
     :raises FileNotFoundError: If the parent directory does not exist.
     :raises NotADirectoryError: If the parent exists but is not a directory.
-    :raises PermissionError: If the parent directory will not accept a new file.
+    :raises PermissionError: If the target itself is not writable, or the
+        parent directory will not accept a new file.
     """
     if target.is_dir():
         raise IsADirectoryError("cannot write %s: it is a directory" % target)
@@ -1136,6 +1159,14 @@ def _validate_write_target(target: Path) -> None:
         raise NotADirectoryError(
             "cannot write %s: %s is not a directory" % (target, parent)
         )
+    if target.exists() and not os.access(str(target), os.W_OK):
+        # `os.replace` only needs write permission on the directory, so a file
+        # the user protected with `chmod 444` would be swapped out silently --
+        # and because an existing target keeps its own mode, nothing about the
+        # result would show it. `os.replace` also refuses a read-only target on
+        # Windows, so allowing it here would make the same call succeed on one
+        # platform and fail on another.
+        raise PermissionError("cannot write %s: the file is not writable" % target)
     if not os.access(str(parent), os.W_OK):
         # Checked here for the same reason as the cases above: the write itself
         # fails on the staging sibling, so the caller is told about a hidden
@@ -2279,6 +2310,12 @@ class Diagram:
         :raises DiagramUnavailableError: If the suffix selects SVG, PNG or
             PDF.  Those are produced by the embedded viewer's own export, which
             needs a browser; save the HTML and export from there.
+        :raises FileNotFoundError: If the parent directory does not exist.
+        :raises IsADirectoryError: If ``path`` is an existing directory.
+        :raises NotADirectoryError: If the parent path is not a directory.
+        :raises PermissionError: If the parent directory is not writable.
+        :raises OSError: If the write itself fails, for example on a full or
+            read-only filesystem.
         """
         target = Path(path)
         selected = (format or target.suffix.lstrip(".") or "json").lower()

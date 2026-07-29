@@ -1227,12 +1227,14 @@ def test_the_staging_file_is_private_while_it_is_being_written(
 
 
 def test_binary_writes_round_trip_every_byte(tmp_path):
-    # `NamedTemporaryFile(mode="wb")` opened with `O_BINARY`; the descriptor
-    # that replaced it did not, and `os.fdopen(handle, "wb")` cannot undo the
-    # translation mode of a descriptor it was handed. On Windows every 0x0A in a
-    # PNG or PDF would be written as 0x0D 0x0A -- a corrupt file from an
-    # ordinary `save("diagram.png")`. The payload deliberately carries every
-    # byte value plus CR/LF runs and a PNG signature.
+    # What a caller gets from an ordinary `save("diagram.png")`. The bytes have
+    # to survive the descriptor, the `fdopen` wrapper and the replace untouched,
+    # so the payload carries every byte value, CR/LF runs and a PNG signature.
+    #
+    # Windows translation is not the hazard it first looked like: `_io.FileIO`
+    # calls `_setmode(fd, O_BINARY)` even when wrapping a descriptor it was
+    # handed, so `os.fdopen(handle, "wb")` clears it regardless of the open
+    # flags. This holds the outcome rather than that mechanism.
     from pyfcstm.diagram import api
 
     payload = bytes(range(256)) + b"\x0d\x0a\x0a\x0d" * 64 + b"\x89PNG\r\n\x1a\n"
@@ -1293,3 +1295,89 @@ def test_rewriting_a_file_keeps_the_mode_it_already_had(writer_name, tmp_path):
         os.umask(previous)
     assert stat.S_IMODE(target.stat().st_mode) == 0o664
     assert target.stat().st_size == 32
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX file modes")
+@pytest.mark.parametrize("writer_name", ["_atomic_write_text", "_atomic_write_bytes"])
+def test_an_explicit_mode_wins_over_a_pre_created_file(writer_name, tmp_path):
+    # The third branch of `_final_mode`, and the reason it comes first: `show()`
+    # writes to a path derived from the document digest, so someone else may have
+    # got there and left a permissive file behind. Preserving that file's mode
+    # would hand its permissions to fresh content.
+    #
+    # The target has to exist and be permissive for this to mean anything --
+    # against a missing target both branches return something that passes.
+    from pyfcstm.diagram import api
+
+    payload = "x" * 32 if writer_name.endswith("text") else b"x" * 32
+    target = tmp_path / "viewer.html"
+    target.write_bytes(b"")
+    os.chmod(target, 0o666)
+    getattr(api, writer_name)(target, payload, mode=0o600)
+    assert stat.S_IMODE(target.stat().st_mode) == 0o600
+    assert target.stat().st_size == 32
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX file modes")
+def test_a_read_only_target_is_not_replaced_behind_the_users_back(tmp_path):
+    # `os.replace` only needs write permission on the directory, so a file
+    # protected with `chmod 444` was swapped out while a plain `open(path, "w")`
+    # on it is refused -- and because an existing target keeps its own mode, the
+    # result carried no sign of it. `os.replace` also refuses a read-only target
+    # on Windows, so allowing it made one call succeed on POSIX and fail there.
+    from pyfcstm.diagram import api
+
+    target = tmp_path / "report.json"
+    target.write_text("PRECIOUS", encoding="utf-8")
+    os.chmod(target, 0o444)
+    with pytest.raises(PermissionError, match="the file is not writable"):
+        api._atomic_write_text(target, "clobbered")
+    assert target.read_text(encoding="utf-8") == "PRECIOUS"
+    assert list(tmp_path.iterdir()) == [target]
+
+    # A writable target is still replaced, keeping its own mode.
+    writable = tmp_path / "ok.json"
+    writable.write_text("old", encoding="utf-8")
+    os.chmod(writable, 0o664)
+    api._atomic_write_text(writable, "new")
+    assert writable.read_text(encoding="utf-8") == "new"
+    assert stat.S_IMODE(writable.stat().st_mode) == 0o664
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX NAME_MAX")
+@pytest.mark.parametrize("length", [230, 238, 245])
+def test_a_long_but_legal_target_name_can_still_be_written(length, tmp_path):
+    # The staging name is the target's plus a prefix and a random suffix, so it
+    # is what runs into NAME_MAX first. A 16-character suffix cost eight bytes
+    # of headroom against the `NamedTemporaryFile` this replaced and turned
+    # legal 238-to-245-character names into ENAMETOOLONG.
+    from pyfcstm.diagram import api
+
+    target = tmp_path / ("a" * (length - 5) + ".json")
+    api._atomic_write_text(target, "x" * 16)
+    assert target.read_text(encoding="utf-8") == "x" * 16
+
+
+@pytest.mark.skipif(os.name == "nt", reason="reads /proc for the fd count")
+@pytest.mark.parametrize("writer_name", ["_atomic_write_text", "_atomic_write_bytes"])
+def test_an_interrupt_before_the_write_starts_leaks_nothing(writer_name, monkeypatch):
+    # Ctrl-C is an ordinary way for a ~29 MB save to end. The window between
+    # opening the sibling and the caller's own `try` was covered by `tempfile`
+    # for the `NamedTemporaryFile` this replaced; catching only `OSError` there
+    # left an interrupt leaking both the descriptor and the file. The existing
+    # interrupt test injects at `_final_mode`, which is after the helper returns.
+    from pyfcstm.diagram import api
+
+    def interrupt(*_args, **_kwargs):
+        raise KeyboardInterrupt
+
+    with tempfile.TemporaryDirectory() as folder:
+        directory = Path(folder)
+        payload = "x" * 64 if writer_name.endswith("text") else b"x" * 64
+        before = len(os.listdir("/proc/self/fd"))
+        monkeypatch.setattr(os, "fchmod", interrupt)
+        with pytest.raises(KeyboardInterrupt):
+            getattr(api, writer_name)(directory / "diagram.out", payload)
+        monkeypatch.undo()
+        assert len(os.listdir("/proc/self/fd")) == before
+        assert list(directory.iterdir()) == []

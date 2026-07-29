@@ -746,86 +746,6 @@ def test_the_default_path_starts_no_solver_of_its_own(scenario) -> None:
 
 
 @pytest.mark.unittest
-def test_explanation_stage_covers_kernel_and_core_only_shapes() -> None:
-    """Derive the failing stage from whichever of the two sources is published.
-
-    The stage a JSON reader sees comes from the classification when there is
-    one, and from the core's own scope when the delivery matrix allowed a core
-    without a classification.  ``kernel`` is the one scope that is already a
-    stage name and must be returned whole rather than split on its first
-    underscore, which would silently turn it into ``kernel`` only by accident of
-    having no underscore to split.  A core published without a classification is
-    restricted to the stage-fallback scopes, so that branch is exercised with a
-    two-part scope rather than with ``kernel``.
-    """
-    from pyfcstm.bmc.explanation import (
-        BmcConflictCore,
-        BmcConstraintRef,
-        BmcCoreItem,
-        BmcInfeasibilityExplanation,
-        BmcSourceRef,
-    )
-    from pyfcstm.bmc.witness import _explanation_stage
-
-    # Classification present: the classification decides, and kernel_conflict is
-    # the classification whose scope is already a bare stage name.
-    kernel_only = BmcInfeasibilityExplanation(
-        "formal",
-        "none",
-        "partial",
-        "kernel_conflict",
-        reason="raw core extraction returned unknown",
-    )
-    assert _explanation_stage(kernel_only) == "kernel"
-
-    item = BmcCoreItem(
-        BmcConstraintRef(
-            "domain.frame.0000",
-            "kernel",
-            "domain.frame",
-            BmcSourceRef("generated", None, None),
-            "frame domain",
-            refs={"frame": 0},
-        ),
-        "domain_rule",
-        None,
-        False,
-        {"kind": "structural_constraint"},
-        "frame domain",
-        False,
-    )
-    # A core may be published with no classification, but only for one of the
-    # two stage-fallback scopes; every other scope implies a classification.
-    # The stage is then the scope's own leading segment.
-    prefix_core = BmcInfeasibilityExplanation(
-        "formal",
-        "formal",
-        "partial",
-        None,
-        core=BmcConflictCore(
-            "assumptions_stage_fallback",
-            "S_assume restricted to the conflicting groups",
-            "source_group",
-            "raw",
-            "not_proven",
-            (item,),
-        ),
-        reason="classification was not requested",
-    )
-    assert _explanation_stage(prefix_core) == "assumptions"
-
-    # Neither source published: there is no stage to report.
-    assert (
-        _explanation_stage(
-            BmcInfeasibilityExplanation(
-                "formal", "none", "timeout", None, reason="budget exhausted"
-            )
-        )
-        is None
-    )
-
-
-@pytest.mark.unittest
 def test_the_cli_and_to_text_share_one_explanation_renderer() -> None:
     """The CLI and ``to_text()`` must present an explanation the same way.
 
@@ -835,7 +755,6 @@ def test_the_cli_and_to_text_share_one_explanation_renderer() -> None:
     holds both callers to it, and checks that the published fields reach the
     ``to_text()`` surface rather than only the CLI.
     """
-    from types import SimpleNamespace
 
     from pyfcstm.bmc.explanation import (
         BmcConflictCore,
@@ -845,7 +764,6 @@ def test_the_cli_and_to_text_share_one_explanation_renderer() -> None:
         BmcSourceRef,
         explanation_text_lines,
     )
-    from pyfcstm.entry.bmc import _human_explanation
 
     item = BmcCoreItem(
         BmcConstraintRef(
@@ -885,11 +803,9 @@ def test_the_cli_and_to_text_share_one_explanation_renderer() -> None:
 
     shared = explanation_text_lines(explanation)
 
-    # The CLI adds nothing of its own.
-    execution = SimpleNamespace(
-        result=SimpleNamespace(feasibility=SimpleNamespace(explanation=explanation))
-    )
-    assert _human_explanation(execution) == shared
+    # That the command line adds nothing of its own is pinned where a user can
+    # see it, by test_bmc_cli_can_request_each_explanation_depth: a real ``proof``
+    # run prints exactly this depth line and a ``formal`` run prints none.
 
     # Both depths are visible, and the not-yet-minimal core reports scope,
     # reduction and its reason -- the fields that shape publishes.

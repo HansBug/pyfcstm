@@ -549,12 +549,11 @@ class BmcSourceRef:
     def __post_init__(self) -> None:
         # The kind is checked against the vocabulary as exact text, and the
         # field is replaced by it so every later reader sees the same value.
-        if not isinstance(self.kind, str):
-            raise ValueError("Unsupported BMC source kind: %r." % self.kind)
         try:
             plain_kind = exact_str(self.kind, "BMC source kind")
         except TypeError:
-            # exact_str raises for anything that is not a str.
+            # exact_str raises for anything that is not a str, which is how a wrong
+            # type passed to this constructor arrives here.
             raise ValueError("Unsupported BMC source kind: %r." % self.kind) from None
         if plain_kind not in _SOURCE_KINDS:
             raise ValueError("Unsupported BMC source kind: %r." % self.kind)
@@ -566,12 +565,11 @@ class BmcSourceRef:
                 "generated BMC source references cannot carry path or span."
             )
         if self.path is not None:
-            if not isinstance(self.path, str):
-                raise ValueError("BMC source path must be None or a non-empty string.")
             try:
                 plain_path = exact_str(self.path, "BMC source path")
             except TypeError:
-                # exact_str raises for anything that is not a str.
+                # exact_str raises for anything that is not a str, which is how a
+                # wrong type passed to this constructor arrives here.
                 raise ValueError(
                     "BMC source path must be None or a non-empty string."
                 ) from None

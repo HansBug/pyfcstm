@@ -1985,7 +1985,6 @@ def test_human_explanation_renders_every_published_shape() -> None:
     published with no core at all -- the last being the frozen "not achieved"
     transcript.  Only the first of those is reachable from the fixtures above.
     """
-    from dataclasses import dataclass
 
     from pyfcstm.bmc.explanation import (
         BmcConflictCore,
@@ -1994,7 +1993,7 @@ def test_human_explanation_renders_every_published_shape() -> None:
         BmcInfeasibilityExplanation,
     )
     from pyfcstm.bmc.provenance import BmcSourceRef
-    from pyfcstm.entry.bmc import _human_explanation
+    from pyfcstm.bmc.explanation import explanation_text_lines
 
     def item(source, excerpt=None, human_text="frame assumption"):
         reference = BmcConstraintRef(
@@ -2026,20 +2025,11 @@ def test_human_explanation_renders_every_published_shape() -> None:
         payload.update(kwargs)
         return BmcConflictCore(**payload)
 
-    @dataclass
-    class _Feasibility:
-        explanation: object
-
-    @dataclass
-    class _Result:
-        feasibility: object
-
-    @dataclass
-    class _Execution:
-        result: object
-
     def render(explanation):
-        return _human_explanation(_Execution(_Result(_Feasibility(explanation))))
+        # explanation_text_lines is exported and is what the CLI itself calls, so
+        # the line shapes are read from the published renderer rather than from
+        # the CLI's private one-line wrapper around it.
+        return explanation_text_lines(explanation)
 
     # A path with no span falls back to the path alone.
     anchored = BmcSourceRef("fbmcq", "q.fbmcq", None)
@@ -2267,7 +2257,6 @@ def test_human_explanation_matches_the_frozen_transcript_line_shapes() -> None:
     Substring checks pass on all of those even when the shape is wrong, so the
     frozen lines are transcribed here and compared whole.
     """
-    from dataclasses import dataclass
 
     from pyfcstm.bmc.explanation import (
         BmcConflictCore,
@@ -2276,7 +2265,7 @@ def test_human_explanation_matches_the_frozen_transcript_line_shapes() -> None:
         BmcInfeasibilityExplanation,
     )
     from pyfcstm.bmc.provenance import BmcSourceRef
-    from pyfcstm.entry.bmc import _human_explanation
+    from pyfcstm.bmc.explanation import explanation_text_lines
     from pyfcstm.utils.validate import Span
 
     # Transcribed from the published transcript.  Each entry is one line
@@ -2320,20 +2309,11 @@ def test_human_explanation_matches_the_frozen_transcript_line_shapes() -> None:
         "explanation.",
     ]
 
-    @dataclass
-    class _Feasibility:
-        explanation: object
-
-    @dataclass
-    class _Result:
-        feasibility: object
-
-    @dataclass
-    class _Execution:
-        result: object
-
     def render(explanation):
-        return _human_explanation(_Execution(_Result(_Feasibility(explanation))))
+        # explanation_text_lines is exported and is what the CLI itself calls, so
+        # the line shapes are read from the published renderer rather than from
+        # the CLI's private one-line wrapper around it.
+        return explanation_text_lines(explanation)
 
     def authored(path, span, category, stage, role, excerpt, refs):
         reference = BmcConstraintRef(

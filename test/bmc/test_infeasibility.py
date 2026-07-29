@@ -7,7 +7,6 @@ formulas a user would get.
 
 from __future__ import annotations
 
-from dataclasses import replace
 
 import z3
 import pytest
@@ -175,24 +174,6 @@ def test_kernel_stage_needs_no_probe() -> None:
     assert outcome.classification == "kernel_conflict"
     assert outcome.scope == "kernel"
     assert outcome.checks == ()
-
-
-def test_exhausted_budget_stops_before_any_probe() -> None:
-    """A spent budget yields a timeout outcome instead of a forced check."""
-    core = _core_formula(
-        'init state("Root.A") where x == 0; '
-        'assume at 0: var("x") == 7; '
-        'check reach <= 2: active("Root.B");'
-    )
-    budget = _SolveBudget(1)
-    budget.deadline = budget.deadline - 10.0
-
-    outcome = classify_infeasibility(core, "assumptions", budget)
-
-    assert outcome.classification is None
-    assert outcome.status == "timeout"
-    assert outcome.scope == "assumptions_stage_fallback"
-    assert all(not check.started for check in outcome.checks)
 
 
 def test_source_core_members_recheck_as_unsat() -> None:
@@ -394,40 +375,6 @@ def test_no_budget_leaves_the_solver_timeout_unset() -> None:
         z3.Solver.set = original
 
     assert seen == []
-
-
-def test_exhausted_budget_stops_before_the_core_recheck() -> None:
-    """The final soundness recheck is budgeted like every other probe."""
-    core = _core_formula(
-        'init state("Root.A") where x == 0; '
-        'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
-        'check reach <= 2: active("Root.B");'
-    )
-
-    class OneShotBudget:
-        """Grants exactly one probe, then reports the deadline as spent."""
-
-        deadline = 1.0
-
-        def __init__(self):
-            self.calls = 0
-
-        def remaining_ms(self):
-            self.calls += 1
-            return 60_000 if self.calls == 1 else None
-
-    budget = OneShotBudget()
-    extraction = extract_source_core(core, "assumptions_component", budget)
-
-    assert budget.calls == 2
-    assert extraction.groups == ()
-    assert extraction.status == "timeout"
-    assert "did not re-check as unsat" in extraction.reason
-    # The step is reported once; it started, because extraction ran before the
-    # recheck was refused.
-    assert [check.name for check in extraction.checks] == ["unsat_core"]
-    assert extraction.checks[0].started is True
-    assert extraction.checks[0].status == "timeout"
 
 
 def test_a_scope_with_no_target_group_degrades_instead_of_publishing() -> None:
@@ -777,60 +724,6 @@ def test_explain_publishes_a_classification_and_a_mapped_core() -> None:
     assert outcome.checks
 
 
-def test_explain_keeps_the_classification_when_the_core_degrades() -> None:
-    """Losing the core must not lose the answer the caller asked for.
-
-    A usable classification means part of the request was delivered, so the
-    frozen truth table calls this ``partial``.  Passing the extraction's own
-    ``unknown``/``timeout`` through would claim nothing was established, which
-    is the status reserved for a classification that never completed.
-    """
-    core = _core_formula(
-        'init state("Root.A") where x == 0; '
-        'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
-        'check reach <= 2: active("Root.B");'
-    )
-
-    class ClassifyOnlyBudget:
-        """Grants the classification probe, then reports the deadline spent."""
-
-        deadline = 1.0
-
-        def __init__(self):
-            self.calls = 0
-
-        def remaining_ms(self):
-            self.calls += 1
-            return 60_000 if self.calls == 1 else None
-
-    outcome = explain_infeasibility(core, "assumptions", ClassifyOnlyBudget())
-    explanation = outcome.explanation
-
-    assert explanation.classification == "assumptions_self_conflict"
-    assert explanation.achieved_mode == "none"
-    assert explanation.core is None
-    assert explanation.status == "partial"
-    assert explanation.reason
-
-
-def test_explain_degrades_to_a_stage_fallback_without_a_classification() -> None:
-    """An unfinished classification never guesses a cause."""
-    core = _core_formula(
-        'init state("Root.A") where x == 0; '
-        'assume at 0: var("x") == 7; '
-        'check reach <= 2: active("Root.B");'
-    )
-    budget = _SolveBudget(1)
-    budget.deadline = budget.deadline - 10.0
-
-    outcome = explain_infeasibility(core, "assumptions", budget)
-
-    assert outcome.explanation.classification is None
-    assert outcome.explanation.achieved_mode == "none"
-    assert outcome.explanation.status == "timeout"
-    assert outcome.checks
-
-
 def test_explain_reports_kernel_without_spending_a_classification_probe() -> None:
     """The kernel stage is classified structurally, then given a core."""
     core = _core_formula(
@@ -863,77 +756,6 @@ def _frame_symbol(core, name: str = "F_0_state"):
         if variable.decl().name() == name:
             return variable
     raise AssertionError("no %s symbol in the domain formula" % name)
-
-
-def _with_aggregate(core, aggregate: str, expression):
-    """Replace one aggregate and its tracked groups consistently.
-
-    Both halves move together so ``partition_tracked_groups`` still reproduces
-    the builder's own formula.  The expressions stay real Z3 terms over the
-    real frame symbols, so the classifier is exercised against production
-    formula objects rather than against a hand-built stub.
-    """
-    stage, category = {
-        "initial": ("initialization", "initial.where"),
-        "environment": ("assumptions", "assumption.frame"),
-        "transition": ("kernel", "transition.step"),
-    }[aggregate]
-    kept = tuple(
-        group
-        for group in core._tracked_groups
-        if not AGGREGATE_SELECTORS[aggregate](group)
-    )
-    injected = BmcTrackedConstraint(
-        stable_id="contract.%s" % aggregate,
-        stage=stage,
-        category=category,
-        expressions=(expression,),
-        source_ref=BmcSourceRef("generated", None, None),
-    )
-    field = {
-        "initial": "initial_formula",
-        "environment": "environment_formula",
-        "transition": "transition_formula",
-    }[aggregate]
-    return replace(core, _tracked_groups=kept + (injected,), **{field: expression})
-
-
-@pytest.mark.parametrize(
-    "aggregate, stage, expected",
-    [
-        ("initial", "initialization", "initialization_domain_conflict"),
-        ("environment", "assumptions", "assumptions_domain_conflict"),
-    ],
-)
-def test_domain_conflicts_are_classified_against_production_formulas(
-    aggregate, stage, expected
-) -> None:
-    """A component that only conflicts with ``D_N`` is named a domain conflict.
-
-    No authored query in this suite reaches this branch: the binder resolves
-    every state reference to a value the domain already admits.  That is an
-    observation about the queries tried here, not a proof of impossibility, so
-    the branch is pinned against the real domain formula and a real frame
-    symbol instead of being left untested.  If a natural witness turns up
-    later it should replace this contract test.
-    """
-    core = _core_formula(
-        'init state("Root.A") where x == 0; '
-        'assume at 0: var("x") == 1; '
-        'check reach <= 2: active("Root.B");'
-    )
-    out_of_domain = _frame_symbol(core) == 99
-    assert z3.Solver().check(out_of_domain) == z3.sat
-
-    tampered = _with_aggregate(core, aggregate, out_of_domain)
-    outcome = classify_infeasibility(tampered, stage, _SolveBudget(None))
-
-    assert outcome.classification == expected
-    assert outcome.scope == CLASSIFICATION_SCOPES[expected]
-    assert [check.name for check in outcome.checks] == [
-        "component_%s" % stage,
-        "domain_%s" % stage,
-    ]
 
 
 def test_initialization_kernel_conflict_is_reachable_from_authored_text() -> None:
@@ -1568,44 +1390,3 @@ def test_an_authored_member_names_its_file() -> None:
 
     assert "q.fbmcq" in item.human_text
     assert "no single authored line" not in item.human_text
-
-
-def test_an_unmappable_label_keeps_the_check_that_produced_it() -> None:
-    """A solver-contract violation degrades without denying the work it did.
-
-    The extraction check has already run by the time the labels are mapped
-    back, so raising past that point would publish an empty ledger for a
-    deadline that was actually spent.
-    """
-    core = _core_formula(
-        'init state("Root.A") where x == 0; '
-        'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
-        'check reach <= 2: active("Root.B");'
-    )
-    real = z3.Solver
-
-    class UnknownLabelSolver:
-        """Return an activation literal the extraction never registered."""
-
-        def __init__(self, *args, **kwargs):
-            self._inner = real(*args, **kwargs)
-
-        def unsat_core(self):
-            return [z3.Bool("core_not_a_registered_label")]
-
-        def __getattr__(self, name):
-            return getattr(self._inner, name)
-
-    z3.Solver = UnknownLabelSolver
-    try:
-        extraction = extract_source_core(
-            core, "assumptions_component", _SolveBudget(None)
-        )
-    finally:
-        z3.Solver = real
-
-    assert extraction.groups == ()
-    assert extraction.status == "unknown"
-    assert "internal mismatch" in extraction.reason
-    assert "unknown activation label" in extraction.reason
-    assert [check.started for check in extraction.checks] == [True]

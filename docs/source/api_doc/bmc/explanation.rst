@@ -54,6 +54,18 @@ BmcSubsetMinimality
 .. autodata:: BmcSubsetMinimality
 
 
+BmcDerivationStatus
+-----------------------------------------------------
+
+.. autodata:: BmcDerivationStatus
+
+
+BmcReasoningStepKind
+-----------------------------------------------------
+
+.. autodata:: BmcReasoningStepKind
+
+
 BmcSemanticRole
 -----------------------------------------------------
 

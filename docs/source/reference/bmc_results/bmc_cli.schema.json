@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$comment": "Passing this schema is a structural result, not a semantic one. Draft 2020-12 cannot express eight published rules, so a validated payload may still be refused by the Python constructors: uniqueness over items[*].constraint.stable_id, the equality of refinement_reason and explanation.reason, the metadata nesting bound, the digit limit on published integers, a duration inside the float range, non-finite numbers, values with no JSON counterpart, and non-string object keys. A consumer that needs those guarantees must check them separately.",
+  "$comment": "Passing this schema is a structural result, not a semantic one. Draft 2020-12 cannot express ten published rules, so a validated payload may still be refused by the Python constructors: uniqueness over items[*].constraint.stable_id, the equality of refinement_reason and explanation.reason, the metadata nesting bound, the digit limit on published integers, a duration inside the float range, non-finite numbers, values with no JSON counterpart, non-string object keys, a narrative step citing a member outside the core, and a review surface naming a member that cannot be edited. A consumer that needs those guarantees must check them separately.",
   "$id": "https://github.com/HansBug/pyfcstm/blob/main/docs/source/reference/bmc_results/bmc_cli.schema.json",
   "title": "PyFCSTM BMC CLI result",
   "description": "Structured BMC JSON envelope emitted by pyfcstm bmc --json.",
@@ -6182,7 +6182,16 @@
                 }
               },
               "narrative": {
-                "type": "object"
+                "type": "object",
+                "properties": {
+                  "derivation_status": {
+                    "const": "complete"
+                  }
+                },
+                "required": [
+                  "derivation_status"
+                ],
+                "$comment": "A complete verdict needs a derivation that closed, not merely a narrative object. structural_only says outright that the conflict was not derived."
               }
             },
             "required": [
@@ -6790,7 +6799,7 @@
         "proof_node_ids",
         "text"
       ],
-      "$comment": "A step names the core members it reads so a consumer can jump from a sentence to the source lines behind it. Draft 2020-12 cannot require those ids to exist in core.items -- that is a cross-array reference -- so the constructor enforces it.",
+      "$comment": "A step names the core members it reads so a consumer can jump from a sentence to the source lines behind it. Draft 2020-12 cannot require those ids to exist in core.items -- that is a relation between two sibling arrays, not a property of either -- so BmcInfeasibilityExplanation enforces it, together with the rule that a review surface names an editable member. Both are named semantic-gate exceptions.",
       "properties": {
         "kind": {
           "enum": [

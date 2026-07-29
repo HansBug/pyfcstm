@@ -63,6 +63,9 @@ class DomainSource:
     :type snapshot: Optional[str], optional
     :param prefix_id: Path or branch prefix identifier, defaults to ``None``.
     :type prefix_id: Optional[str], optional
+    :param operation: Name of the operation whose domain this constraint guards,
+        such as ``"division"`` or ``"sqrt"``, defaults to ``None``.
+    :type operation: Optional[str], optional
 
     Example::
 
@@ -70,12 +73,20 @@ class DomainSource:
         >>> source = DomainSource(label="guard", step=0)
         >>> source.label
         'guard'
+        >>> DomainSource(label="assumption", operation="sqrt").operation
+        'sqrt'
     """
 
     label: Optional[str] = None
     step: Optional[int] = None
     snapshot: Optional[str] = None
     prefix_id: Optional[str] = None
+    #: Two operations can produce domain conditions of the same shape -- a
+    #: divisor check and a non-negativity check both compare one operand against
+    #: zero -- so a consumer cannot recover the operation from the constraint.
+    #: Recording it here is what lets an explanation name the real operation
+    #: instead of guessing one.
+    operation: Optional[str] = None
 
 
 @dataclass(frozen=True)

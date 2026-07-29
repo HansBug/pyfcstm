@@ -2525,3 +2525,35 @@ def test_a_shape_outside_the_reading_keeps_its_identity(
     assert fact["category"] == "assumption.frame"
     # The identity is preserved so a reader can still find the line.
     assert fact["stable_id"] == groups["assumption.frame"].stable_id
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "declaration, assumption, operation",
+    [
+        ("def int x = 0;", 'var("x") / 0 > 0', "division"),
+        ("def float x = 0.0;", "sqrt(-1.0) >= 0.0", "sqrt"),
+    ],
+    ids=["division-by-zero", "square-root-of-a-negative"],
+)
+def test_a_definedness_fact_names_the_operation_it_actually_guards(
+    declaration, assumption, operation
+) -> None:
+    """The published operation must be the one the source line performs.
+
+    A definedness group carries only its domain condition, and two different
+    operations can produce conditions of the same shape, so the operation cannot
+    be inferred from the expression.  Naming it anyway produced a fact and a
+    sentence that contradicted the source: ``sqrt(-1.0)`` was reported as a
+    division that must stay defined.
+    """
+    from pyfcstm.bmc.provenance import normalized_fact_for
+
+    groups = _fact_groups(
+        'assume at 0: %s; check reach <= 1: active("Root");' % assumption,
+        machine="%s state Root;" % declaration,
+    )
+    fact = normalized_fact_for(groups["definedness"])
+
+    assert fact["kind"] == "definedness_condition"
+    assert fact["operation"] == operation

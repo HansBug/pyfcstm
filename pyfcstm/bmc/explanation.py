@@ -63,9 +63,12 @@ from .provenance import (
 )
 
 try:
-    from typing import Literal
+    from typing import Literal, get_args
 except ImportError:  # pragma: no cover - Python < 3.8 compatibility
-    from typing_extensions import Literal
+    # ``Literal`` and ``get_args`` both arrived in 3.8; the 3.7 floor this project
+    # supports gets them from typing_extensions, which the runtime vocabularies
+    # below read so a published type and its check cannot drift apart.
+    from typing_extensions import Literal, get_args
 
 BmcInfeasibilityExplanationMode = Literal["none", "formal", "proof"]
 BmcInfeasibilityExplanationStatus = Literal["complete", "partial", "unknown", "timeout"]
@@ -93,6 +96,8 @@ BmcConstraintStage = Literal["kernel", "initialization", "assumptions"]
 BmcCoreGranularity = Literal["source_group"]
 BmcCoreReduction = Literal["raw", "partial_minimized", "subset_minimal"]
 BmcSubsetMinimality = Literal["proven", "not_proven"]
+BmcDerivationStatus = Literal["complete", "partial", "structural_only", "not_available"]
+BmcReasoningStepKind = Literal["fact", "derivation", "conflict"]
 BmcSemanticRole = Literal[
     "domain_rule",
     "initial_fact",
@@ -1200,14 +1205,19 @@ class BmcConflictCore:
 #: ``fact`` restates one requirement, ``derivation`` combines earlier steps, and
 #: ``conflict`` closes the chain.  A narrative that reached no contradiction has
 #: no ``conflict`` step, which is how ``structural_only`` stays honest.
-_REASONING_STEP_KINDS = ("fact", "derivation", "conflict")
+#:
+#: Derived from the published :data:`BmcReasoningStepKind` rather than retyped, so
+#: the runtime check and the type a caller annotates against cannot drift apart.
+_REASONING_STEP_KINDS = get_args(BmcReasoningStepKind)
 
 #: How far a derivation was reconstructed.
 #:
 #: ``complete`` closed the chain, ``partial`` got some of the way,
 #: ``structural_only`` established joint unsatisfiability without a value or
 #: state derivation, and ``not_available`` means the renderer produced nothing.
-_DERIVATION_STATUSES = ("complete", "partial", "structural_only", "not_available")
+#:
+#: Derived from the published :data:`BmcDerivationStatus` for the same reason.
+_DERIVATION_STATUSES = get_args(BmcDerivationStatus)
 
 
 @dataclass(frozen=True)
@@ -1399,7 +1409,8 @@ class BmcInfeasibilityExplanation:
     :type core: Optional[BmcConflictCore], optional
     :param proof: Reserved for a later stage; rejected while non-``None``.
     :type proof: Optional[BmcConflictProof], optional
-    :param narrative: Reserved for a later stage; rejected while non-``None``.
+    :param narrative: Deterministic account of why no execution exists, or
+        ``None`` when no core was published; defaults to ``None``.
     :type narrative: Optional[BmcConflictNarrative], optional
     :param reason: Why the artifact is degraded, defaults to ``None``.
     :type reason: Optional[str], optional
@@ -1568,15 +1579,46 @@ class BmcInfeasibilityExplanation:
                     "a complete explanation requires a subset-minimal core, got "
                     "reduction %r." % self.core.reduction
                 )
-            # A complete explanation needs a narrative.  The rule names that
-            # one slot rather than the whole unbuilt set, so a later stage that
-            # implements narratives unlocks complete formal artifacts even
-            # while the proof DAG is still outstanding.
+            # A complete explanation needs a narrative whose derivation closed.
+            # Present-but-degraded is the case worth naming: a structural_only
+            # account says outright that it could not derive the conflict, so
+            # publishing full confidence over it is the overclaim the frozen row
+            # exists to prevent.
             if self.narrative is None:
+                raise ValueError("a complete explanation requires a narrative.")
+            if self.narrative.derivation_status != "complete":
                 raise ValueError(
-                    "a complete explanation requires a complete narrative, "
-                    "which is not built yet."
+                    "a complete explanation requires a complete narrative, got "
+                    "derivation_status %r." % self.narrative.derivation_status
                 )
+        if self.narrative is not None and self.core is not None:
+            # These two are separate published arrays, so neither class can check
+            # the relation alone: the narrative cannot see the core it describes.
+            # This is the object that holds both, which is where the ids a reader
+            # will follow have to be shown to exist.
+            members = {item.constraint.stable_id: item for item in self.core.items}
+            for step in self.narrative.reasoning_steps:
+                unknown = [name for name in step.item_ids if name not in members]
+                if unknown:
+                    raise ValueError(
+                        "reasoning step cites %r, which is not a member of the "
+                        "published core." % unknown[0]
+                    )
+            for name in self.narrative.review_surfaces:
+                item = members.get(name)
+                if item is None:
+                    raise ValueError(
+                        "review surface %r is not a member of the published core."
+                        % name
+                    )
+                if not item.editable:
+                    # A generated rule has no authored line, so offering it for
+                    # review sends the reader looking for a file that does not
+                    # exist.
+                    raise ValueError(
+                        "review surface %r is not editable; only authored "
+                        "members are offered for review." % name
+                    )
         for name in UNBUILT_SLOTS:
             if getattr(self, name) is not None:
                 raise ValueError(

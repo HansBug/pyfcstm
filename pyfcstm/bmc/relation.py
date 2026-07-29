@@ -321,6 +321,41 @@ def _formula_from_groups(
     return _and(expression for group in groups for expression in group.expressions)
 
 
+def _definedness_refs(item: DomainConstraint, **refs: Any) -> Dict[str, Any]:
+    """Attach the guarded operation to a definedness group's published refs.
+
+    The domain condition alone cannot say which operation produced it: a divisor
+    check and a non-negativity check both compare one operand against zero.  The
+    lowering records the operation on the constraint's source, and this carries it
+    through so an explanation names the real operation rather than guessing one.
+    A constraint whose source did not record an operation contributes no key, so a
+    consumer sees its absence instead of a default that might be wrong.
+
+    :param item: The lowered definedness constraint.
+    :type item: pyfcstm.solver.domain.DomainConstraint
+    :param refs: Builder metadata already known for this group.
+    :return: The published refs mapping for the group.
+    :rtype: Dict[str, Any]
+
+    Example::
+
+        >>> import z3
+        >>> from pyfcstm.solver.domain import DomainConstraint, DomainSource
+        >>> item = DomainConstraint(
+        ...     z3.Int("d") != 0, DomainSource(label="assumption", operation="division")
+        ... )
+        >>> _definedness_refs(item, frame=0)["operation"]
+        'division'
+        >>> "operation" in _definedness_refs(DomainConstraint(z3.BoolVal(True)), frame=0)
+        False
+    """
+    published = dict(refs)
+    operation = None if item.source is None else item.source.operation
+    if operation is not None:
+        published["operation"] = operation
+    return published
+
+
 def _append_tracked_group(
     groups: List[BmcTrackedConstraint],
     *,
@@ -1632,7 +1667,10 @@ def _z3_ufunc(func: str, operand: z3.ArithRef, label: str) -> _LoweredValue:
             return _LoweredValue(python_round_to_z3(operand))
         if func == "sqrt":
             constraints.append(
-                DomainConstraint(operand >= 0, DomainSource(label=label))
+                DomainConstraint(
+                    operand >= 0,
+                    DomainSource(label=label, operation="sqrt"),
+                )
             )
             root = z3.Sqrt(operand if z3.is_real(operand) else z3.ToReal(operand))
             return _LoweredValue(root, tuple(constraints))
@@ -1753,7 +1791,10 @@ def _lower_bmc_num_expr(
         constraints = [*left.definedness_constraints, *right.definedness_constraints]
         if expr.op in ("/", "%"):
             constraints.append(
-                DomainConstraint(right_expr != 0, DomainSource(label=label))
+                DomainConstraint(
+                    right_expr != 0,
+                    DomainSource(label=label, operation="division"),
+                )
             )
         return _LoweredValue(
             _z3_arith_binary(expr.op, left_expr, right_expr, label),
@@ -2621,7 +2662,7 @@ def _build_initial_formula(
                 category="definedness",
                 expressions=(item.constraint,),
                 source_ref=define_ref,
-                refs={"variable": var.name, "kind": "initializer"},
+                refs=_definedness_refs(item, variable=var.name, kind="initializer"),
             )
         assignment = symbols.frame_var(0, var.name) == value
         constraints.append(assignment)
@@ -2649,7 +2690,7 @@ def _build_initial_formula(
                 category="definedness",
                 expressions=(item.constraint,),
                 source_ref=predicate_ref,
-                refs={"frame": 0, "kind": "where"},
+                refs=_definedness_refs(item, frame=0, kind="where"),
             )
         where_constraint = _expect_bool(lowered.expr, "initial where predicate")
         constraints.append(where_constraint)
@@ -2712,7 +2753,9 @@ def _build_environment_formula(
                         category="definedness",
                         expressions=(item.constraint,),
                         source_ref=source_ref,
-                        refs={"assumption": assumption_index, "frame": frame},
+                        refs=_definedness_refs(
+                            item, assumption=assumption_index, frame=frame
+                        ),
                     )
                 frame_constraint = _expect_bool(lowered.expr, "frame assumption")
                 constraints.append(frame_constraint)

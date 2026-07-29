@@ -657,20 +657,31 @@ def _state_domain_fact(group: Any) -> Optional[Dict[str, Any]]:
 def _definedness_fact(group: Any) -> Optional[Dict[str, Any]]:
     """Read a definedness group as the operation it keeps well defined.
 
+    The operation is taken from the builder's own metadata, never inferred from
+    the condition: a divisor check and a non-negativity check both compare one
+    operand against zero, so the shape cannot distinguish ``x / 0`` from
+    ``sqrt(-1.0)``.  A group whose builder recorded no operation returns ``None``
+    so the caller degrades honestly instead of publishing a guess -- an earlier
+    version named every definedness group a division, which reported
+    ``sqrt(-1.0) >= 0.0`` as a division that must stay defined.
+
     :param group: The tracked group to read.
     :type group: BmcTrackedConstraint
-    :return: The fact mapping, or ``None`` when the frame is unknown.
+    :return: The fact mapping, or ``None`` when the frame or the operation is
+        unknown.
     :rtype: Optional[Dict[str, Any]]
     """
     import z3
 
     frame = group.refs.get("frame")
-    if not isinstance(frame, int):
+    operation = group.refs.get("operation")
+    if not isinstance(frame, int) or not isinstance(operation, str):
         return None
-    # Not plain "definedness": that word is already a semantic_role, which says
-    # where a group came from.  The fact says what the group requires, so the tag
-    # names the condition instead of repeating the role.
-    fact = {"kind": "definedness_condition", "frame": frame, "operation": "division"}
+    fact = {
+        "kind": "definedness_condition",
+        "frame": frame,
+        "operation": operation,
+    }
     if len(group.expressions) == 1:
         expression = group.expressions[0]
         if z3.is_app(expression) and expression.decl().kind() == z3.Z3_OP_DISTINCT:

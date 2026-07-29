@@ -30,6 +30,7 @@ from pyfcstm.bmc.explanation import (
     BmcConstraintRef,
     BmcCoreItem,
     BmcInfeasibilityExplanation,
+    BmcReasoningStep,
 )
 from pyfcstm.bmc.provenance import (
     MAX_METADATA_DEPTH as _MAX_METADATA_DEPTH,
@@ -78,6 +79,17 @@ _ALL_SCOPES = tuple(CLASSIFICATION_SCOPES.values()) + STAGE_FALLBACK_SCOPES
 #: instead of passing silently, and so no summary can quietly report the corpus
 #: as fully equivalent.
 _INEXPRESSIBLE = {
+    "narrative step citing a member outside the core": (
+        "Draft 2020-12 can constrain reasoning_steps[*].item_ids and core.items "
+        "each on their own, but membership of one array's strings in a key of the "
+        "other is a relation between siblings rather than a property of either; "
+        "the constructor enforces it"
+    ),
+    "review surface naming a member that cannot be edited": (
+        "the same cross-array relation, plus a condition on the referenced "
+        "member's own editable flag; Draft 2020-12 cannot follow a string to the "
+        "member it names, so the constructor checks both"
+    ),
     "duplicate stable_id with differing content": (
         "uniqueness over a nested key (items[*].constraint.stable_id) has no "
         "Draft 2020-12 keyword; uniqueItems only catches identical members"
@@ -754,6 +766,26 @@ def _drift_cases():
             "span": None,
         }
 
+    def step_outside_core(payload):
+        # A step citing an id no member carries.  Both arrays stay individually
+        # well formed, so only a relation between them can see the gap.
+        payload["explanation"]["narrative"]["reasoning_steps"].append(
+            {
+                "kind": "fact",
+                "item_ids": ["absent.member"],
+                "proof_node_ids": [],
+                "text": "a step pointing nowhere",
+            }
+        )
+
+    def surface_not_editable(payload):
+        # A surface naming a member that exists but carries editable=false.
+        member = payload["explanation"]["core"]["items"][0]
+        member["editable"] = False
+        payload["explanation"]["narrative"]["review_surfaces"] = [
+            member["constraint"]["stable_id"]
+        ]
+
     def duplicate_member(payload):
         items = payload["explanation"]["core"]["items"]
         items.append(json.loads(json.dumps(items[0])))
@@ -783,6 +815,8 @@ def _drift_cases():
         ]
 
     return [
+        ("narrative step citing a member outside the core", step_outside_core),
+        ("review surface naming a member that cannot be edited", surface_not_editable),
         ("aggregate status drift", status_drift),
         ("explanation without a ledger", empty_ledger),
         ("localized stage drift", stage_drift),
@@ -871,6 +905,35 @@ def test_the_constructor_still_enforces_every_named_asymmetry() -> None:
     )
     with pytest.raises(BmcBuildError, match="must match the explanation reason"):
         replace(degraded, refinement_reason="a forged aggregate reason")
+
+    # narrative step citing a member outside the core, and a review surface that
+    # names a member the reader cannot edit.  Both go through the public
+    # constructor with a real published core beside them.
+    narrative = feasibility.explanation.narrative
+    with pytest.raises(ValueError, match="reasoning step cites"):
+        replace(
+            feasibility.explanation,
+            narrative=replace(
+                narrative,
+                reasoning_steps=narrative.reasoning_steps
+                + (BmcReasoningStep("fact", ("absent.member",), (), "text"),),
+            ),
+        )
+    with pytest.raises(ValueError, match="not editable"):
+        replace(
+            feasibility.explanation,
+            core=replace(
+                feasibility.explanation.core,
+                items=(replace(feasibility.explanation.core.items[0], editable=False),)
+                + feasibility.explanation.core.items[1:],
+            ),
+            narrative=replace(
+                narrative,
+                review_surfaces=(
+                    feasibility.explanation.core.items[0].constraint.stable_id,
+                ),
+            ),
+        )
 
     # duplicate stable_id with differing content
     def member(text):
@@ -1001,6 +1064,8 @@ def test_the_constructor_still_enforces_every_named_asymmetry() -> None:
             )
 
     assert set(_INEXPRESSIBLE) == {
+        "narrative step citing a member outside the core",
+        "review surface naming a member that cannot be edited",
         "aggregate reason drift",
         "duplicate stable_id with differing content",
         "non-string object key in any published mapping",

@@ -2272,3 +2272,143 @@ def test_an_interval_is_read_over_the_variable_domain_it_belongs_to(
     items = tuple(member(operator, value) for operator, value in values)
 
     assert _interval_is_empty(items) is empty
+
+
+def _published_core_and_narrative():
+    """Return a real published core plus a narrative that matches it."""
+    from pyfcstm.bmc import (
+        BmcEngine,
+        build_bmc_core_formula,
+        compile_bmc_property,
+        solve_bmc_property,
+    )
+    from pyfcstm.model import load_state_machine_from_text
+
+    context = BmcEngine(
+        load_state_machine_from_text("def int x = 0; state Root;")
+    ).prepare(
+        'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
+        'check reach <= 1: active("Root");'
+    )
+    explanation = solve_bmc_property(
+        compile_bmc_property(build_bmc_core_formula(context)),
+        infeasibility_explanation="formal",
+    ).feasibility.explanation
+    return explanation.core, explanation.narrative
+
+
+@pytest.mark.unittest
+def test_a_complete_verdict_requires_a_derivation_that_closed() -> None:
+    """``status="complete"`` may not sit on a narrative that gave up.
+
+    The frozen delivery row asks for a *complete* narrative, not merely a present
+    one.  Accepting ``structural_only`` there publishes full confidence over an
+    account that says outright it could not derive the conflict.
+    """
+    from pyfcstm.bmc.explanation import (
+        BmcConflictNarrative,
+        BmcInfeasibilityExplanation,
+    )
+
+    core, _ = _published_core_and_narrative()
+
+    with pytest.raises(ValueError, match="complete narrative"):
+        BmcInfeasibilityExplanation(
+            "formal",
+            "formal",
+            "complete",
+            "assumptions_self_conflict",
+            core=core,
+            narrative=BmcConflictNarrative("structural_only", "headline", "summary"),
+        )
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "field, message",
+    [
+        ("reasoning_steps", "reasoning step"),
+        ("review_surfaces", "review surface"),
+    ],
+    ids=["step-cites-a-member-that-is-not-there", "surface-offers-a-missing-member"],
+)
+def test_a_narrative_may_only_reference_the_core_beside_it(field, message) -> None:
+    """Every id a narrative publishes has to exist in the core it describes.
+
+    A step citing an absent member sends a reader to a line the report never
+    listed, and a review surface offering one points at nothing to edit.  Neither
+    can be checked inside the narrative, which cannot see the core, so the class
+    that holds both is where the check belongs.
+    """
+    from pyfcstm.bmc.explanation import (
+        BmcConflictNarrative,
+        BmcInfeasibilityExplanation,
+        BmcReasoningStep,
+    )
+
+    core, good = _published_core_and_narrative()
+    if field == "reasoning_steps":
+        broken = BmcConflictNarrative(
+            good.derivation_status,
+            good.headline,
+            good.summary,
+            good.reasoning_steps
+            + (BmcReasoningStep("fact", ("absent.member",), (), "text"),),
+            good.review_surfaces,
+        )
+    else:
+        broken = BmcConflictNarrative(
+            good.derivation_status,
+            good.headline,
+            good.summary,
+            good.reasoning_steps,
+            good.review_surfaces + ("absent.member",),
+        )
+
+    with pytest.raises(ValueError, match=message):
+        BmcInfeasibilityExplanation(
+            "formal",
+            "formal",
+            "complete",
+            "assumptions_self_conflict",
+            core=core,
+            narrative=broken,
+        )
+
+
+@pytest.mark.unittest
+def test_a_review_surface_must_be_a_member_the_reader_can_edit() -> None:
+    """Offering a generated rule for review points at no authored line.
+
+    ``editable=False`` means the encoding produced the member, so there is no
+    file and no span for the reader to open.  Listing it as a review surface
+    would send them looking for something that does not exist.
+    """
+    from pyfcstm.bmc.explanation import (
+        BmcConflictNarrative,
+        BmcInfeasibilityExplanation,
+    )
+
+    core, good = _published_core_and_narrative()
+    # Publish an existing member that the core marks as not editable.
+    non_editable = [item for item in core.items if not item.editable]
+    if not non_editable:
+        pytest.skip("this corpus publishes only authored members")
+
+    broken = BmcConflictNarrative(
+        good.derivation_status,
+        good.headline,
+        good.summary,
+        good.reasoning_steps,
+        (non_editable[0].constraint.stable_id,),
+    )
+
+    with pytest.raises(ValueError, match="editable"):
+        BmcInfeasibilityExplanation(
+            "formal",
+            "formal",
+            "complete",
+            "assumptions_self_conflict",
+            core=core,
+            narrative=broken,
+        )

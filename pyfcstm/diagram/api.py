@@ -975,23 +975,49 @@ def _open_standalone_window(path: Path, window_size: Tuple[int, int]) -> None:
         )
 
 
-def _temporary_viewer_path() -> Path:
+def _kept_viewer_path(document: str) -> Path:
     """
-    Return a fresh temporary path for a rendered viewer document.
+    Return the path a viewer the caller keeps is written to.
 
-    Fresh, not derived from the document.  A content-derived name let two calls
-    share one file, and sharing is what put the question "who may delete this"
-    back in play: the first window to close deleted the document the second was
-    still displaying.  The name existed to make repeats reuse one copy, which
-    mattered only while nothing could ever delete them; :meth:`Diagram.show`
-    removes its own when the window closes, so there is nothing left to save by
-    sharing and nothing left to coordinate by not.
+    The rule both of these functions follow: **a name is shared only where nothing
+    removes it, and a name that is removed is never shared.**  Getting that
+    backwards is what let one call delete a document another was displaying, and
+    then -- once sharing was removed from both -- what left a fresh ~30 MB behind
+    on every call that keeps its file.
 
-    :return: A path under the system temporary directory that no other call uses.
+    Nothing removes this one, so it is derived from the document and shared: a
+    caller showing the same diagram twice writes one file rather than two.  The
+    effective user id is in it because the temporary directory is shared and the
+    document is written 0600, so without it the second person to show a given
+    diagram would be refused their own save.
+
+    :param document: The rendered HTML document.
+    :type document: str
+    :return: A path under the system temporary directory, the same for the same
+        document and user.
+    :rtype: pathlib.Path
+    """
+    digest = hashlib.sha256(document.encode("utf-8")).hexdigest()[:16]
+    owner = "-%d" % os.geteuid() if hasattr(os, "geteuid") else ""
+    return Path(tempfile.gettempdir()) / ("pyfcstm-diagram-%s%s.html" % (digest, owner))
+
+
+def _window_viewer_path() -> Path:
+    """
+    Return the path a viewer shown in a window is written to.
+
+    :meth:`Diagram.show` removes this one when the window closes, so by the rule
+    in :func:`_kept_viewer_path` it must not be shared: two windows on one diagram
+    would otherwise use one file and the first to close would blind the other, and
+    a later window would delete a path an earlier call had been told it could keep.
+    A distinct prefix rather than a distinct shape, so no arithmetic can bring the
+    two rules to one name.
+
+    :return: A path under the system temporary directory that nothing else uses.
     :rtype: pathlib.Path
     """
     return Path(tempfile.gettempdir()) / (
-        "pyfcstm-diagram-%s.html" % uuid.uuid4().hex[:16]
+        "pyfcstm-viewer-%s.html" % uuid.uuid4().hex[:16]
     )
 
 
@@ -2554,9 +2580,12 @@ class Diagram:
         :raises OSError: If the document cannot be written, for example a
             missing parent directory or a read-only destination.
         :raises pyfcstm.diagram.DiagramUnavailableError: If ``open_window`` is
-            set and no Chromium-family browser can be launched. The document is
-            written before the launch is attempted, so an explicit ``output``
-            still holds a usable viewer afterwards.
+            set and no Chromium-family browser can be launched, or one is launched
+            and exits without showing a window -- an SSH session or a container
+            with no display, where the browser is found and then reports that it
+            has nowhere to draw. The document is written before the launch is
+            attempted, so an explicit ``output`` still holds a usable viewer
+            afterwards; a temporary one is removed either way.
 
         Example::
 
@@ -2579,12 +2608,14 @@ class Diagram:
         dimensions = _coerce_window_size(window_size)
         if output is None:
             document = self.to_html()
-            path = _temporary_viewer_path()
-            # 0600, and forced rather than preserved. The name is derived from
-            # the document, so on a shared temp directory anyone can predict
-            # it: both to read the model's own source out of the viewer, and to
-            # pre-create the path with a permissive mode that a mode-preserving
-            # write would then copy onto our content.
+            # Whether this call removes the file decides whether its name may be
+            # shared; see `_kept_viewer_path`.
+            path = _window_viewer_path() if open_window else _kept_viewer_path(document)
+            # 0600, and forced rather than preserved. The temporary directory is
+            # readable and listable by every local user and the document carries
+            # the model's own source, so the mode is the only thing keeping it
+            # private. Forced, because a permissive file already at the path would
+            # otherwise lend its mode to our content.
             _atomic_write_text(path, document, mode=0o600)
             ours = True
         else:

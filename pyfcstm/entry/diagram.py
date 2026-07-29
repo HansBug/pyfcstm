@@ -180,7 +180,13 @@ def diagram_command(
             raise click.ClickException(
                 "%s; re-run with -o PATH to keep the generated viewer" % error
             )
-        click.echo(str(path))
+        if output is not None:
+            click.echo(str(path))
+        # Without -o there is nothing left to name: the window has closed and
+        # `show` removed the document, exactly as on the failure branch above.
+        # Every other mode of this command prints a path that can be opened now,
+        # so printing a removed one would be the only exception -- and
+        # `p=$(pyfcstm diagram -i x.fcstm --open)` would collect a dead path.
         return
     if output is None:
         if format_name not in (None, "json"):

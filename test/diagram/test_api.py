@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import signal
 import stat
 from unittest import mock
 import sys
@@ -361,8 +362,12 @@ def test_no_line_of_the_launch_leaks_a_browser_profile(monkeypatch, tmp_path):
     monkeypatch.setattr(
         diagram_api.subprocess, "Popen", lambda *_args, **_kwargs: FakeBrowser()
     )
-    monkeypatch.setattr(tempfile, "tempdir", None)
-    monkeypatch.setenv("TMPDIR", str(tmp_path))
+    # `gettempdir`, not the environment: `mkdtemp` resolves this function at call
+    # time, whereas `TMPDIR` is read once into `tempfile.tempdir` and then cached,
+    # so a test setting the variable depends on whether anything has already asked.
+    # (`TMPDIR` itself is honoured on every platform -- it is the first candidate
+    # in `_candidate_tempdir_list`, ahead of the Windows-specific fallbacks.)
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
     source = Path(diagram_api.__file__)
     document = tmp_path / "doc.html"
     document.write_text("<html>tiny</html>", encoding="utf-8")
@@ -372,6 +377,7 @@ def test_no_line_of_the_launch_leaks_a_browser_profile(monkeypatch, tmp_path):
     # draws at the `yield`. Computed, so it cannot drift from where the block is.
     cleanup = _cleanup_line(diagram_api._open_standalone_window)
     leaks = []
+    injected = 0
     for line_number in _statement_lines(
         diagram_api._open_standalone_window, through=cleanup - 1
     ):
@@ -398,12 +404,84 @@ def test_no_line_of_the_launch_leaks_a_browser_profile(monkeypatch, tmp_path):
         left = sorted(
             item.name for item in tmp_path.iterdir() if item.name.startswith("pyfcstm-")
         )
-        if fired and left:
-            leaks.append((line_number, left))
+        if fired:
+            injected += 1
+            if left:
+                leaks.append((line_number, left))
         for item in tmp_path.iterdir():
             if item.name.startswith("pyfcstm-") and item.is_dir():
                 shutil.rmtree(str(item), ignore_errors=True)
+    # Counted, because `if fired` means a probe that never fires reports nothing
+    # rather than reporting that it measured nothing: a wrong filename or a
+    # renamed function would leave this green and blind.
+    assert injected > 5, "the probe fired on only %d lines" % injected
     assert leaks == [], "interrupting these lines left a profile behind: %r" % (leaks,)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process groups")
+@pytest.mark.parametrize("own_session", [True, False])
+def test_stopping_the_browser_stops_what_it_started(own_session, tmp_path):
+    # A browser's main process exiting does not mean its children have: after an
+    # interrupt, one of them recreated files inside the profile directory that had
+    # just been removed, leaving it behind for good. `terminate()` reaches only the
+    # process we launched, so the group is signalled instead -- and a fake browser
+    # whose `terminate` does nothing cannot tell the two apart, which is why this
+    # uses a real tree. The `own_session=False` case exercises the fallback, where
+    # the group is not ours to signal.
+    import subprocess
+    import time
+
+    from pyfcstm.diagram import api as diagram_api
+
+    record = tmp_path / "child.pid"
+    child = (
+        "import os, pathlib, sys, time\n"
+        "pathlib.Path(sys.argv[1]).write_text(str(os.getpid()))\n"
+        "time.sleep(60)\n"
+    )
+    parent = (
+        "import subprocess, sys, time\n"
+        "subprocess.Popen([sys.executable, '-c', sys.argv[1], sys.argv[2]])\n"
+        "time.sleep(60)\n"
+    )
+    process = subprocess.Popen(
+        [sys.executable, "-c", parent, child, str(record)],
+        start_new_session=own_session,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        for _ in range(100):
+            if record.exists() and record.read_text().strip():
+                break
+            time.sleep(0.1)
+        descendant = int(record.read_text().strip())
+
+        diagram_api._stop_browser(process)
+        process.wait(timeout=30)
+
+        gone = False
+        for _ in range(100):
+            try:
+                os.kill(descendant, 0)
+            except OSError:
+                # ProcessLookupError once it is reaped; anything else means we may
+                # not ask, which for our own child does not happen.
+                gone = True
+                break
+            time.sleep(0.1)
+        if own_session:
+            assert gone, "a descendant outlived the browser and can touch the profile"
+        else:
+            # Not its own group leader, so only the process itself is asked to go.
+            # The descendant is reparented and left alone -- documented, not ideal,
+            # and unreachable through `show`, which always starts a new session.
+            os.kill(descendant, signal.SIGKILL)
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait(timeout=30)
 
 
 def test_show_rejects_invalid_window_size(tmp_path):
@@ -688,7 +766,7 @@ def _wasm_module(section_ids):
 
 
 @pytest.mark.unittest
-def test_each_shown_viewer_gets_a_path_of_its_own(tmp_path, monkeypatch):
+def test_a_viewer_name_is_shared_only_where_nothing_removes_it():
     """The viewer embeds the model's own source into a world-readable directory.
 
     Deriving the name from the document made it predictable, and dropping the
@@ -697,18 +775,25 @@ def test_each_shown_viewer_gets_a_path_of_its_own(tmp_path, monkeypatch):
     forced rather than preserved, which also stops a pre-created permissive file
     from lending its mode to fresh content.
 
-    Nothing is shared. A content-derived name made two concurrent ``show`` calls
-    on one diagram use one file, and the first window to close deleted the
-    document the second was still displaying. Reuse only ever saved disk while
-    nothing could delete these files; now the window's own call removes its own,
-    so sharing buys nothing and costs that.
+    The two lifetimes name their files by opposite rules, and each rule follows
+    from who removes the file. A window's copy is removed when the window closes,
+    so sharing it let one window blind another and let a later window delete a
+    path an earlier caller had been told it could keep. A kept copy is removed by
+    nobody, so sharing it costs nothing and saves ~30 MB every time the same
+    diagram is shown again -- taking it away from both branches at once turned
+    that branch into a fresh 30 MB per call.
     """
     from pyfcstm.diagram import api as diagram_api
 
-    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
-    first = diagram_api._temporary_viewer_path()
-    second = diagram_api._temporary_viewer_path()
-    assert first != second, "two calls must not be able to delete each other's file"
+    document = _model("state Root { state Secret; [*] -> Secret; }").diagram().to_html()
+    kept = diagram_api._kept_viewer_path(document)
+    assert diagram_api._kept_viewer_path(document) == kept, "nobody removes it"
+    other = diagram_api._kept_viewer_path(_model("state Root;").diagram().to_html())
+    assert other != kept, "different diagrams need different files"
+
+    windowed = diagram_api._window_viewer_path()
+    assert windowed != diagram_api._window_viewer_path(), "its own call removes it"
+    assert windowed != kept, "and the two rules must never meet at one name"
 
     # Through `show`, not through the writer. Asserting that `_atomic_write_text`
     # honours a mode this test passed in says nothing about whether `show` passes
@@ -716,12 +801,32 @@ def test_each_shown_viewer_gets_a_path_of_its_own(tmp_path, monkeypatch):
     # which carries the model's own source -- became readable to every local user.
     # This is also the only test covering `show()` with neither a window nor an
     # explicit path, the one branch whose file is handed to the caller and kept.
-    kept = _model("state Root { state Secret; [*] -> Secret; }").show(open_window=False)
+    # A permissive umask, pinned: under one that already clears the group and other
+    # bits -- 077 is ordinary -- the file comes out 0600 whether or not `show` asks
+    # for it, so this gate passed with the production `mode=0o600` deleted.
+    previous = os.umask(0o022)
     try:
-        assert stat.S_IMODE(kept.stat().st_mode) == 0o600
-        assert "Secret" in kept.read_text(encoding="utf-8")
+        written = _model("state Root { state Secret; [*] -> Secret; }").show(
+            open_window=False
+        )
+        again = _model("state Root { state Secret; [*] -> Secret; }").show(
+            open_window=False
+        )
     finally:
-        kept.unlink()
+        os.umask(previous)
+    assert again == written, "two calls that both keep their file must write one"
+    try:
+        # Windows maps `chmod` onto the read-only bit alone, so asking for 0o600
+        # clears it and `S_IMODE` reports 0o666. The guard was two revisions back,
+        # in `test_a_temporary_viewer_is_private_and_process_scoped`, and writing
+        # its replacement without one turned all eight Windows jobs red while
+        # Linux and macOS stayed green -- which is also how we know these tests do
+        # run there, and that the gap was this assertion rather than the coverage.
+        if os.name != "nt":
+            assert stat.S_IMODE(written.stat().st_mode) == 0o600
+        assert "Secret" in written.read_text(encoding="utf-8")
+    finally:
+        written.unlink()
 
 
 @pytest.mark.unittest

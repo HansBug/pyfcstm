@@ -551,8 +551,9 @@ Output and failure facts:
   available from the HTML viewer.
 * ``--open`` requires a Chromium-family browser, blocks until the window is
   closed, and then removes the document unless ``-o`` named it. Without a browser
-  the command reports a typed capability error; the HTML survives only when ``-o``
-  named it. Use ``--format html`` without ``--open`` for file-only workflows.
+  -- or with one that exits without showing a window, as on a machine with no
+  display -- the command reports a typed capability error; the HTML survives only
+  when ``-o`` named it. Use ``--format html`` without ``--open`` for file-only workflows.
 * Invalid formats, unknown options, unreadable input, parse/model failures, and
   missing packaged assets exit non-zero with the corresponding error category.
 

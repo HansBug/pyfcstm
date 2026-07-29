@@ -69,6 +69,30 @@ def test_diagram_cli_open_rejects_non_html_output(tmp_path):
     assert "--open requires an .html or .htm output path" in result.output
 
 
+def test_diagram_cli_open_prints_no_path_it_has_already_removed(tmp_path, monkeypatch):
+    # Every other mode prints a path that can be opened now. Without -o there is
+    # nothing left to print: the window has closed and the document is gone, so a
+    # path here would be the only ghost -- and `p=$(pyfcstm diagram -i x --open)`
+    # would collect it.
+    import pyfcstm.diagram.api as diagram_api
+
+    source = tmp_path / "machine.fcstm"
+    source.write_text("state Root;", encoding="utf-8")
+    monkeypatch.setattr(diagram_api, "_open_standalone_window", lambda *_: None)
+
+    result = CliRunner().invoke(cli, ["diagram", "-i", str(source), "--open"])
+    assert result.exit_code == 0, result.output
+    assert result.output.strip() == "", "a removed document has no path to print"
+
+    named = tmp_path / "kept.html"
+    result = CliRunner().invoke(
+        cli, ["diagram", "-i", str(source), "-o", str(named), "--open"]
+    )
+    assert result.exit_code == 0, result.output
+    assert result.output.strip() == str(named)
+    assert named.is_file()
+
+
 def test_diagram_cli_help_is_english_and_does_not_leak_rst():
     result = CliRunner().invoke(cli, ["diagram", "--help"])
     assert result.exit_code == 0, result.output

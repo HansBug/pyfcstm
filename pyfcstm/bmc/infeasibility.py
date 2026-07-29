@@ -855,11 +855,13 @@ def minimize_source_core(
     started = 0
     degraded = None
     started_at = time.perf_counter()
+    # Every member gets its trial, including the last one.  The empty set is
+    # satisfiable, so a trial that would empty the candidate always comes back
+    # sat and the member is kept -- that is what makes deleting unconditionally
+    # safe here, and it is also why the trial has to run: skipping it would leave
+    # a one-member core claiming minimality no check ever established, and the
+    # phase record that carries the claim would be missing entirely.
     for group in tuple(candidate):
-        if len(candidate) == 1:
-            # A single member cannot be dropped: the empty set is satisfiable by
-            # definition, so the trial would add no information.
-            break
         trial = [item for item in candidate if item.stable_id != group.stable_id]
         verdict, record = _run_probe(
             _trial_solver(trial), budget, "unsat_core_minimization", ()
@@ -892,10 +894,6 @@ def minimize_source_core(
     if status == "complete":
         proven = True
         for group in tuple(candidate):
-            if len(candidate) == 1:
-                # One member alone is minimal: dropping it leaves the empty set,
-                # which is satisfiable, so the property holds without a check.
-                break
             remaining = [
                 item for item in candidate if item.stable_id != group.stable_id
             ]
@@ -1289,19 +1287,23 @@ def explain_infeasibility(
             checks,
         )
 
+    minimized = minimize_source_core(core, extraction, budget)
+    if minimized.record is not None:
+        # One aggregate phase record, not one per deletion trial: the ledger
+        # names decisions a reader can act on, and trial count is an artifact of
+        # the core's size.
+        checks = checks + (minimized.record,)
+    elapsed_ms = (time.monotonic() - started) * 1000.0
     try:
         published = BmcConflictCore(
             scope=outcome.scope,
             formula_summary="target formula of scope %s" % outcome.scope,
             granularity="source_group",
-            # No deletion check has run yet, so the core is sound but not
-            # claimed minimal; a later minimization stage upgrades both fields
-            # together.
-            reduction="raw",
-            subset_minimality="not_proven",
-            items=tuple(
-                build_core_item(group, registry) for group in extraction.groups
-            ),
+            # Shrink only ever deletes, so whatever it returns is still sound;
+            # these two fields say how far the deletion pass actually got.
+            reduction=minimized.reduction,
+            subset_minimality=minimized.subset_minimality,
+            items=tuple(build_core_item(group, registry) for group in minimized.groups),
         )
     except (BmcBuildError, ValueError, TypeError) as err:
         # BmcBuildError: this module found builder-side drift while mapping.
@@ -1334,8 +1336,16 @@ def explain_infeasibility(
             "classification degraded to the %s scope (%s); the published core "
             "is sound but not proven minimal" % (outcome.scope, outcome.reason)
         )
+    elif minimized.subset_minimality != "proven":
+        # Name the deletion pass that stopped early rather than the missing
+        # narrative: an unproven core is the weaker of the two shortfalls, and
+        # reporting the stronger one first would send the reader to the wrong
+        # remedy.
+        reason = "sound source core published without a minimality proof (%s)" % (
+            minimized.reason or minimized.status
+        )
     else:
-        reason = "sound source core published without a minimality proof"
+        reason = "subset-minimal source core published without a conflict narrative"
     return ExplanationOutcome(
         BmcInfeasibilityExplanation(
             requested_mode=requested_mode,

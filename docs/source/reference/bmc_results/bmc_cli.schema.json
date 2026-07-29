@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$comment": "Passing this schema is a structural result, not a semantic one. Draft 2020-12 cannot express nine published rules, so a validated payload may still be refused by the Python constructors: uniqueness over items[*].constraint.stable_id, the equality of refinement_reason and explanation.reason, the metadata nesting bound, the digit limit on published integers, a duration inside the float range, non-finite numbers, values with no JSON counterpart, one recorded deletion per member for proven minimality, and non-string object keys. A consumer that needs those guarantees must check them separately.",
+  "$comment": "Passing this schema is a structural result, not a semantic one. Draft 2020-12 cannot express eight published rules, so a validated payload may still be refused by the Python constructors: uniqueness over items[*].constraint.stable_id, the equality of refinement_reason and explanation.reason, the metadata nesting bound, the digit limit on published integers, a duration inside the float range, non-finite numbers, values with no JSON counterpart, and non-string object keys. A consumer that needs those guarantees must check them separately.",
   "$id": "https://github.com/HansBug/pyfcstm/blob/main/docs/source/reference/bmc_results/bmc_cli.schema.json",
   "title": "PyFCSTM BMC CLI result",
   "description": "Structured BMC JSON envelope emitted by pyfcstm bmc --json.",
@@ -2628,58 +2628,175 @@
           }
         },
         {
-          "$comment": "Proven minimality means removing any single member leaves the target satisfiable, so no recorded deletion check may have come back unsat. The per-member count is the cross-array rule Draft 2020-12 cannot express and stays a named exception.",
-          "if": {
-            "properties": {
-              "explanation": {
-                "type": "object",
+          "$comment": "Minimization publishes one aggregate phase record, so each reduction level maps to a ledger shape: raw has no record, partial_minimized has a degraded one, and proven has a completed one. Per-trial verdicts are steps inside the algorithm and never become rows -- a rule reading them as rows would reject a normal shrink, whose successful deletions come back unsat.",
+          "allOf": [
+            {
+              "if": {
                 "properties": {
-                  "core": {
+                  "explanation": {
                     "type": "object",
                     "properties": {
-                      "subset_minimality": {
-                        "const": "proven"
+                      "core": {
+                        "type": "object",
+                        "properties": {
+                          "reduction": {
+                            "const": "raw"
+                          }
+                        },
+                        "required": [
+                          "reduction"
+                        ]
                       }
                     },
                     "required": [
-                      "subset_minimality"
+                      "core"
                     ]
                   }
                 },
                 "required": [
-                  "core"
+                  "explanation"
                 ]
-              }
-            },
-            "required": [
-              "explanation"
-            ]
-          },
-          "then": {
-            "properties": {
-              "refinement_checks": {
-                "items": {
-                  "if": {
-                    "properties": {
-                      "name": {
-                        "const": "unsat_core_minimization"
-                      }
-                    },
-                    "required": [
-                      "name"
-                    ]
-                  },
-                  "then": {
-                    "properties": {
-                      "status": {
-                        "const": "sat"
+              },
+              "then": {
+                "properties": {
+                  "refinement_checks": {
+                    "not": {
+                      "contains": {
+                        "properties": {
+                          "name": {
+                            "const": "unsat_core_minimization"
+                          },
+                          "status": {
+                            "enum": [
+                              "sat",
+                              "unsat",
+                              "complete",
+                              "unknown",
+                              "timeout"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "status"
+                        ]
                       }
                     }
                   }
-                }
+                },
+                "required": [
+                  "refinement_checks"
+                ]
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "explanation": {
+                    "type": "object",
+                    "properties": {
+                      "core": {
+                        "type": "object",
+                        "properties": {
+                          "reduction": {
+                            "const": "partial_minimized"
+                          }
+                        },
+                        "required": [
+                          "reduction"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "core"
+                    ]
+                  }
+                },
+                "required": [
+                  "explanation"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "refinement_checks": {
+                    "contains": {
+                      "properties": {
+                        "name": {
+                          "const": "unsat_core_minimization"
+                        },
+                        "status": {
+                          "enum": [
+                            "unknown",
+                            "timeout"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "status"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "refinement_checks"
+                ]
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "explanation": {
+                    "type": "object",
+                    "properties": {
+                      "core": {
+                        "type": "object",
+                        "properties": {
+                          "subset_minimality": {
+                            "const": "proven"
+                          }
+                        },
+                        "required": [
+                          "subset_minimality"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "core"
+                    ]
+                  }
+                },
+                "required": [
+                  "explanation"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "refinement_checks": {
+                    "contains": {
+                      "properties": {
+                        "name": {
+                          "const": "unsat_core_minimization"
+                        },
+                        "status": {
+                          "enum": [
+                            "complete"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "status"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "refinement_checks"
+                ]
               }
             }
-          }
+          ]
         }
       ]
     },

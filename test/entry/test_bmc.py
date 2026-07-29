@@ -1796,6 +1796,35 @@ def explain_files(tmp_path):
 
 
 @pytest.mark.unittest
+def test_a_one_group_conflict_still_reports_instead_of_crashing(tmp_path) -> None:
+    """A conflict inside a single assumption must produce a report, not an error.
+
+    ``var("x") > 5 && var("x") < 3`` is one authored assumption, so the core it
+    yields has one member.  Nothing about that shape is exotic -- a reader who
+    writes an impossible range hits it on the first try -- and it must reach the
+    same formal explanation any larger conflict does.
+    """
+    model = tmp_path / "machine.fcstm"
+    query = tmp_path / "scenario.fbmcq"
+    model.write_text(_EXPLAIN_MODEL, encoding="utf-8")
+    query.write_text(
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") > 5 && var("x") < 3; '
+        'check reach <= 2: active("Root.B");\n',
+        encoding="utf-8",
+    )
+
+    result = _run(
+        "-i", str(model), "-q", str(query), "--explain-infeasibility", "formal"
+    )
+
+    assert result.exit_code == 3, result.output
+    assert "Unexpected error" not in result.output
+    assert "Explanation:" in result.output
+    assert "Reduction: subset_minimal" in result.output
+
+
+@pytest.mark.unittest
 def test_build_bmc_output_default_publishes_no_explanation(explain_files):
     """The file helper keeps its previous behaviour unless asked otherwise."""
     from pyfcstm.entry.bmc import build_bmc_output
@@ -1957,10 +1986,10 @@ def test_bmc_human_output_shows_the_explanation_it_paid_for(explain_files) -> No
     # The authored source location and text, not a paraphrase.
     assert 'assume at 0: var("x") == 1;' in formal.output
     assert "Core scope: assumptions_component" in formal.output
-    assert "Reduction: raw" in formal.output
+    assert "Reduction: subset_minimal" in formal.output
     assert (
-        "The displayed core is sufficient for UNSAT but is not proven "
-        "subset-minimal." in formal.output
+        "The displayed core is sufficient for UNSAT and proven subset-minimal."
+        in formal.output
     )
     # The mandatory verdict is untouched.
     for line in default.output.splitlines():

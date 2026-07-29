@@ -114,11 +114,6 @@ _INEXPRESSIBLE = {
         "a payload reaches one it has already been parsed from JSON text; the "
         "constructor rejects them at every nesting depth"
     ),
-    "proven minimality without one deletion per member": (
-        "Draft 2020-12 can constrain each array on its own, but it cannot "
-        "compare len(refinement_checks deletions) against len(core.items); the "
-        "constructor requires one recorded deletion per member"
-    ),
     "non-string object key in any published mapping": (
         "JSON object keys are always strings, so a Python mapping keyed by 1 "
         'serializes to "1" and no validator can see the difference. This covers '
@@ -755,25 +750,29 @@ def _drift_cases():
         items = payload["explanation"]["core"]["items"]
         items.append(json.loads(json.dumps(items[0])))
 
-    def proven_without_one_deletion_per_member(payload):
-        # Two distinct members, but only one recorded deletion check.  Each
-        # array is individually well formed, so only a cross-array cardinality
-        # comparison can see the gap.
+    def proven_without_a_completed_minimization_record(payload):
+        # A proven core whose minimization phase timed out.  Each array is
+        # individually well formed -- the status is in the published vocabulary
+        # and the reduction level is legal -- so only a conditional relation
+        # between the two arrays can see that the proof was never closed.
         core = payload["explanation"]["core"]
-        second = json.loads(json.dumps(core["items"][0]))
-        second["constraint"]["stable_id"] += ".second"
-        second["normalized_fact"]["stable_id"] = second["constraint"]["stable_id"]
-        core["items"].append(second)
         core["reduction"] = "subset_minimal"
         core["subset_minimality"] = "proven"
-        payload["refinement_checks"].append(
+        # Replace the phase record rather than adding to it: a run that really
+        # proved minimality already published a completed one, and leaving it in
+        # place would make the payload consistent again.
+        payload["refinement_checks"] = [
+            check
+            for check in payload["refinement_checks"]
+            if check["name"] != "unsat_core_minimization"
+        ] + [
             {
                 "name": "unsat_core_minimization",
-                "status": "sat",
-                "reason": None,
+                "status": "timeout",
+                "reason": "deletion trial timed out",
                 "elapsed_ms": 1.0,
             }
-        )
+        ]
 
     return [
         ("aggregate status drift", status_drift),
@@ -784,8 +783,8 @@ def _drift_cases():
         ("unsupported source kind", untyped_source),
         ("duplicate core member", duplicate_member),
         (
-            "proven minimality without one deletion per member",
-            proven_without_one_deletion_per_member,
+            "proven minimality without a completed minimization record",
+            proven_without_a_completed_minimization_record,
         ),
     ]
 
@@ -878,38 +877,6 @@ def test_the_constructor_still_enforces_every_named_asymmetry() -> None:
             "raw",
             "not_proven",
             (member("first reading"), member("second reading")),
-        )
-
-    # proven minimality without one deletion per member
-    proven_core = replace(
-        feasibility.explanation.core,
-        items=feasibility.explanation.core.items
-        + (
-            replace(
-                feasibility.explanation.core.items[0],
-                constraint=replace(
-                    feasibility.explanation.core.items[0].constraint,
-                    stable_id="second.member",
-                ),
-            ),
-        ),
-        reduction="subset_minimal",
-        subset_minimality="proven",
-    )
-    with pytest.raises(BmcBuildError, match="deletion"):
-        replace(
-            feasibility,
-            explanation=replace(
-                feasibility.explanation, achieved_mode="formal", core=proven_core
-            ),
-            refinement_checks=feasibility.refinement_checks
-            + (
-                replace(
-                    feasibility.refinement_checks[0],
-                    name="unsat_core_minimization",
-                    status="sat",
-                ),
-            ),
         )
 
     # published metadata nested deeper than the published limit
@@ -1020,5 +987,4 @@ def test_the_constructor_still_enforces_every_named_asymmetry() -> None:
         "duration past the float range",
         "non-finite number anywhere in a published mapping",
         "non-JSON value anywhere in a published mapping",
-        "proven minimality without one deletion per member",
     }

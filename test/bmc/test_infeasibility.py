@@ -717,8 +717,8 @@ def test_explain_publishes_a_classification_and_a_mapped_core() -> None:
     assert explanation.achieved_mode == "formal"
     assert explanation.status == "partial"
     assert explanation.core.scope == "assumptions_component"
-    assert explanation.core.reduction == "raw"
-    assert explanation.core.subset_minimality == "not_proven"
+    assert explanation.core.reduction == "subset_minimal"
+    assert explanation.core.subset_minimality == "proven"
     assert [item.constraint.stable_id for item in explanation.core.items] == sorted(
         item.constraint.stable_id for item in explanation.core.items
     )
@@ -1555,3 +1555,100 @@ def test_an_undetermined_deletion_keeps_the_member_and_reports_partial() -> None
     assert [g.stable_id for g in minimized.groups] == [
         g.stable_id for g in extraction.groups
     ]
+
+
+@pytest.mark.unittest
+def test_a_published_core_carries_the_minimality_the_shrink_proved() -> None:
+    """The orchestrator publishes shrink's verdict instead of a fixed ``raw``.
+
+    Minimality is what makes the core worth reading: it tells the caller every
+    listed line is load-bearing.  Computing it and then publishing ``raw``
+    anyway would hide the answer behind a field that always says the same thing.
+    """
+    core = _core_formula(
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
+        'assume at 0: var("x") >= 0; '
+        'check reach <= 2: active("Root.B");'
+    )
+    raw = extract_source_core(
+        core,
+        classify_infeasibility(core, "assumptions", _SolveBudget(None)).scope,
+        _SolveBudget(None),
+    )
+
+    outcome = explain_infeasibility(core, "assumptions", _SolveBudget(None))
+
+    published = outcome.explanation.core
+    assert published.reduction == "subset_minimal"
+    assert published.subset_minimality == "proven"
+
+    # Shrink only deletes, so the published members stay a subset of the sound
+    # raw core.  A published id absent from the raw extraction would mean the
+    # orchestrator invented a member rather than selecting one.
+    raw_ids = {group.stable_id for group in raw.groups}
+    published_ids = {item.constraint.stable_id for item in published.items}
+    assert published_ids <= raw_ids
+    assert published_ids
+
+    # The status stays partial because the frozen truth table also requires a
+    # narrative for a complete formal artifact, and that slot is not built here.
+    assert outcome.explanation.status == "partial"
+    assert outcome.explanation.achieved_mode == "formal"
+
+
+@pytest.mark.unittest
+def test_the_ledger_records_the_minimization_as_one_phase() -> None:
+    """Deletion trials publish a single aggregate record, not one per trial.
+
+    The frozen ledger rule counts phases a reader can act on.  Emitting one
+    record per deleted candidate would make the ledger's length an artifact of
+    the core's size and drown the stages that actually name a decision.
+    """
+    core = _core_formula(
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
+        'assume at 0: var("x") >= 0; '
+        'check reach <= 2: active("Root.B");'
+    )
+
+    outcome = explain_infeasibility(core, "assumptions", _SolveBudget(None))
+
+    minimization = [
+        check for check in outcome.checks if check.name == "unsat_core_minimization"
+    ]
+    assert len(minimization) == 1
+    assert minimization[0].started is True
+    assert minimization[0].status == "complete"
+    assert minimization[0].reason is None
+
+
+@pytest.mark.unittest
+def test_a_single_member_core_earns_its_minimality_proof() -> None:
+    """One conflicting group is still a core whose minimality can be proven.
+
+    Deleting the only member leaves the empty set, which is satisfiable, so the
+    member is load-bearing and the core is subset-minimal.  Claiming that
+    without running the check would assert the property for free, and the
+    published artifact would carry no evidence of the phase at all.
+    """
+    core = _core_formula(
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") > 5 && var("x") < 3; '
+        'check reach <= 2: active("Root.B");'
+    )
+    outcome = classify_infeasibility(core, "assumptions", _SolveBudget(None))
+    extraction = extract_source_core(core, outcome.scope, _SolveBudget(None))
+    assert len(extraction.groups) == 1
+
+    minimized = minimize_source_core(core, extraction, _SolveBudget(None))
+
+    assert minimized.reduction == "subset_minimal"
+    assert minimized.subset_minimality == "proven"
+    assert len(minimized.groups) == 1
+    # The proof needs a record: a proven claim with an empty ledger cannot be
+    # published at all, so the phase has to appear even when the core has one
+    # member and the trial is trivial.
+    assert minimized.record is not None
+    assert minimized.record.status == "complete"
+    assert minimized.record.started is True

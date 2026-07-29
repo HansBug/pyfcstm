@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import re
 import stat
+from unittest import mock
 import sys
 import tempfile
 import threading
@@ -1188,21 +1189,107 @@ def test_a_write_denying_mask_is_honoured_like_a_plain_file(tmp_path):
         os.umask(previous)
 
 
-@pytest.mark.skipif(os.name == "nt", reason="POSIX probe path")
-def test_a_probe_that_cannot_be_removed_does_not_fail_the_write(tmp_path, monkeypatch):
-    # Reading a number must not break the caller's save. The rewrite briefly
-    # let an unlink failure propagate, which would have turned a routine
-    # cleanup problem into a lost document.
+@pytest.mark.skipif(os.name == "nt", reason="POSIX file modes")
+@pytest.mark.parametrize("writer_name", ["_atomic_write_text", "_atomic_write_bytes"])
+@pytest.mark.parametrize("mask", [0o022, 0o002])
+def test_the_staging_file_is_private_while_it_is_being_written(
+    writer_name, mask, tmp_path
+):
+    # The document carries the model's source and the destination directory may
+    # be shared, so the sibling is created at the umask default and tightened to
+    # 0600 before anything is written into it. Asserting the final mode cannot
+    # see that: dropping the tightening leaves the target correct and the
+    # staging file world-readable for the length of a ~29 MB write.
     from pyfcstm.diagram import api
 
-    real_unlink = os.unlink
+    payload = "x" * 65536 if writer_name.endswith("text") else b"x" * 65536
+    observed = []
+    real_fdopen = os.fdopen
 
-    def picky_unlink(path, *args, **kwargs):
-        if "pyfcstm-umask-" in str(path):
-            raise PermissionError("locked")
-        return real_unlink(path, *args, **kwargs)
+    def sampling_fdopen(handle, *args, **kwargs):
+        # The descriptor is open and the sibling exists, and nothing has been
+        # written into it yet: this is the start of the window.
+        for item in tmp_path.iterdir():
+            if item.name.startswith("."):
+                observed.append(stat.S_IMODE(item.stat().st_mode))
+        return real_fdopen(handle, *args, **kwargs)
 
-    monkeypatch.setattr(os, "unlink", picky_unlink)
-    target = tmp_path / "doc.html"
-    api._atomic_write_text(target, "x" * 32)
-    assert target.read_text(encoding="utf-8") == "x" * 32
+    previous = os.umask(mask)
+    try:
+        with mock.patch.object(os, "fdopen", sampling_fdopen):
+            getattr(api, writer_name)(tmp_path / "doc.out", payload)
+    finally:
+        os.umask(previous)
+
+    assert observed, "the staging file was never sampled mid-write"
+    assert observed[0] == 0o600, "staging mode was %04o" % observed[0]
+    assert stat.S_IMODE((tmp_path / "doc.out").stat().st_mode) == 0o666 & ~mask
+
+
+def test_binary_writes_round_trip_every_byte(tmp_path):
+    # `NamedTemporaryFile(mode="wb")` opened with `O_BINARY`; the descriptor
+    # that replaced it did not, and `os.fdopen(handle, "wb")` cannot undo the
+    # translation mode of a descriptor it was handed. On Windows every 0x0A in a
+    # PNG or PDF would be written as 0x0D 0x0A -- a corrupt file from an
+    # ordinary `save("diagram.png")`. The payload deliberately carries every
+    # byte value plus CR/LF runs and a PNG signature.
+    from pyfcstm.diagram import api
+
+    payload = bytes(range(256)) + b"\x0d\x0a\x0a\x0d" * 64 + b"\x89PNG\r\n\x1a\n"
+    target = tmp_path / "diagram.png"
+    api._atomic_write_bytes(target, payload)
+    assert target.read_bytes() == payload
+    assert target.stat().st_size == len(payload)
+
+
+def test_text_writes_round_trip_through_save(tmp_path):
+    # The public path a caller actually uses, asserting content rather than just
+    # that a file appeared.
+    model = load_state_machine_from_text("state Root;")
+    view = model.diagram()
+    target = tmp_path / "diagram.json"
+    view.save(target)
+    assert json.loads(target.read_text(encoding="utf-8")) == view.to_dict()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX directory permissions")
+def test_an_unwritable_output_directory_names_the_path_the_caller_gave(tmp_path):
+    # A read-only output directory is an ordinary mistake. Without this check the
+    # failure comes from the staging sibling, so the caller is told about a
+    # hidden `.doc.html.<random>` they never asked for -- the class of message
+    # `_validate_write_target` exists to remove.
+    from pyfcstm.diagram import api
+
+    directory = tmp_path / "readonly"
+    directory.mkdir()
+    os.chmod(directory, 0o555)
+    try:
+        with pytest.raises(PermissionError, match="is not writable") as caught:
+            api._atomic_write_text(directory / "doc.html", "x")
+    finally:
+        os.chmod(directory, 0o755)
+    message = str(caught.value)
+    assert str(directory / "doc.html") in message
+    assert ".doc.html." not in message
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX file modes")
+@pytest.mark.parametrize("writer_name", ["_atomic_write_text", "_atomic_write_bytes"])
+def test_rewriting_a_file_keeps_the_mode_it_already_had(writer_name, tmp_path):
+    # Re-saving must not silently tighten a file someone widened. Under the
+    # common umask 022 a 0664 target would come back 0644 if the mode were taken
+    # from the staging file instead of the target -- the content is still correct,
+    # so nothing that checks only content or only new files can see it.
+    from pyfcstm.diagram import api
+
+    payload = "x" * 32 if writer_name.endswith("text") else b"x" * 32
+    target = tmp_path / "doc.out"
+    target.write_bytes(b"old")
+    os.chmod(target, 0o664)
+    previous = os.umask(0o022)
+    try:
+        getattr(api, writer_name)(target, payload)
+    finally:
+        os.umask(previous)
+    assert stat.S_IMODE(target.stat().st_mode) == 0o664
+    assert target.stat().st_size == 32

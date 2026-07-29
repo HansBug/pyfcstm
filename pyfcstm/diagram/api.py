@@ -1002,35 +1002,6 @@ def _report_degradation(message: str, *args: Any) -> None:
                 pass
 
 
-def _validate_write_target(target: Path) -> None:
-    """
-    Reject a destination before a temporary sibling is created for it.
-
-    Without this the failure surfaces from the sibling file instead: writing to
-    a directory reported a permission error on a hidden dotfile in its parent,
-    naming neither the path the caller passed nor the actual problem.
-
-    :param target: Requested destination path.
-    :type target: pathlib.Path
-    :return: ``None``.
-    :rtype: None
-    :raises IsADirectoryError: If the destination is an existing directory.
-    :raises FileNotFoundError: If the parent directory does not exist.
-    :raises NotADirectoryError: If the parent exists but is not a directory.
-    """
-    if target.is_dir():
-        raise IsADirectoryError("cannot write %s: it is a directory" % target)
-    parent = target.parent
-    if not parent.exists():
-        raise FileNotFoundError(
-            "cannot write %s: the directory %s does not exist" % (target, parent)
-        )
-    if not parent.is_dir():
-        raise NotADirectoryError(
-            "cannot write %s: %s is not a directory" % (target, parent)
-        )
-
-
 # A collision needs a neighbour guessing 64 bits; a few tries turn that into a
 # clear error rather than an unbounded loop.
 _TEMPORARY_NAME_ATTEMPTS = 8
@@ -1061,7 +1032,19 @@ def _open_temporary_sibling(target: Path) -> Tuple[int, Path, int]:
     # the mode argument of the creating `open` does. So the file is created here
     # with 0666 and `O_EXCL`, which is exactly how any other new file is made,
     # and the mode that survives is read back from the descriptor.
+    # `O_NOFOLLOW` and `O_BINARY` are what `tempfile` adds to its own open, kept
+    # here for the same reasons: the first refuses to follow a symlink sitting at
+    # the name, the second states binary intent at the point of creation.
+    #
+    # `O_BINARY` is belt and braces rather than load-bearing. `_io.FileIO` calls
+    # `_setmode(self->fd, O_BINARY)` unconditionally on Windows, including when
+    # it wraps a descriptor it was handed, so `os.fdopen(handle, "wb")` clears
+    # text translation regardless -- checked against CPython 3.7
+    # (Modules/_io/fileio.c:362,469) and 3.14 (:397,508), where the `fd >= 0`
+    # branch only assigns and falls through to that call.
     flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    flags |= getattr(os, "O_BINARY", 0)
     for _ in range(_TEMPORARY_NAME_ATTEMPTS):
         temporary = target.parent / (".%s.%s" % (target.name, uuid.uuid4().hex[:16]))
         try:
@@ -1140,6 +1123,7 @@ def _validate_write_target(target: Path) -> None:
     :raises IsADirectoryError: If the destination is an existing directory.
     :raises FileNotFoundError: If the parent directory does not exist.
     :raises NotADirectoryError: If the parent exists but is not a directory.
+    :raises PermissionError: If the parent directory will not accept a new file.
     """
     if target.is_dir():
         raise IsADirectoryError("cannot write %s: it is a directory" % target)
@@ -1151,6 +1135,14 @@ def _validate_write_target(target: Path) -> None:
     if not parent.is_dir():
         raise NotADirectoryError(
             "cannot write %s: %s is not a directory" % (target, parent)
+        )
+    if not os.access(str(parent), os.W_OK):
+        # Checked here for the same reason as the cases above: the write itself
+        # fails on the staging sibling, so the caller is told about a hidden
+        # `.doc.html.<random>` they never asked for. A read-only output
+        # directory is an ordinary mistake and deserves an ordinary message.
+        raise PermissionError(
+            "cannot write %s: the directory %s is not writable" % (target, parent)
         )
 
 

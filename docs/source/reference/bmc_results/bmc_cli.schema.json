@@ -2879,14 +2879,16 @@
               "name": {
                 "enum": [
                   "unsat_core",
-                  "unsat_core_minimization"
+                  "unsat_core_minimization",
+                  "value_propagation"
                 ]
               },
               "reason": {
                 "const": null
               }
             }
-          }
+          },
+          "$comment": "status=complete reports a finished phase rather than one solver verdict, so it is reserved for phase-level checks. value_propagation aggregates a prefix solve and a uniqueness check, so it belongs here; it deliberately does not join the core-proof family, which the published-core rule reads."
         },
         {
           "if": {

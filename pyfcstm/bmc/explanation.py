@@ -2039,6 +2039,27 @@ def _conflict_pattern(items: Tuple["BmcCoreItem", ...]) -> Optional[Tuple[str, s
         for item in items
         if item.normalized_fact.get("kind") == "definedness_condition"
     ]
+    if len(definedness) == 1 and len(items) > 1:
+        # One domain condition beside facts about the very variable it guards.
+        # Every member of a subset-minimal core is load-bearing, so the condition
+        # is part of the contradiction, and the facts beside it are why it fails.
+        # Requiring the core to hold *nothing but* domain conditions sent the most
+        # natural way of writing this -- a divisor the initializer pins to zero --
+        # to the structural fallback.
+        guard = definedness[0].normalized_fact
+        subject, frame = guard.get("variable"), guard["frame"]
+        others = [item for item in items if item is not definedness[0]]
+        if subject is not None and all(
+            item.normalized_fact.get("kind") == "variable_comparison"
+            and item.normalized_fact.get("variable") == subject
+            and item.normalized_fact.get("frame") == frame
+            for item in others
+        ):
+            return (
+                "definedness_failure",
+                "The %s at frame %s cannot stay defined: %s is required to be a "
+                "value it rules out." % (guard["operation"], frame, subject),
+            )
     if definedness and len(definedness) == len(items):
         # The core is the domain condition itself, and a published core is
         # unsatisfiable, so the reason no execution exists is that the operation

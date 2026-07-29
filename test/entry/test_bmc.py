@@ -2847,3 +2847,108 @@ def test_a_value_carried_across_a_step_is_derived_not_left_structural(
     # the frame that cannot hold both.
     assert "requires x to equal 1 at frame 1" in result.output
     assert "Frame 1 cannot assign" in result.output
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "query, machine",
+    [
+        (
+            'init state("Root.A"); assume at 1: var("x") == 0; '
+            'check reach <= 1: active("Root.A");',
+            "def int x = 0;\n"
+            "state Root { state A; [*] -> A; A -> A effect { x = x + 1; }; }",
+        ),
+        (
+            'init state("Root.A") where x == 0; assume at 0: var("x") == 1; '
+            'assume at 0: var("x") == 2; check reach <= 2: active("Root.B");',
+            "def int x = 0;\n"
+            "state Root { event Go; state A; state B; [*] -> A; A -> B :: Go; }",
+        ),
+        (
+            'assume at 0: var("x") / 0 > 0; check reach <= 1: active("Root");',
+            "def int x = 0; state Root;",
+        ),
+    ],
+    ids=["value-propagation", "incompatible-equalities", "definedness-failure"],
+)
+def test_real_json_output_validates_under_a_conforming_validator(
+    tmp_path, query, machine
+) -> None:
+    """The published schema must accept what the CLI actually prints.
+
+    The harness this module uses elsewhere understands only the keyword subset a
+    Python 3.7 cell can be held to, so it silently passes any rule written with
+    ``allOf``, ``if``/``then``, ``contains`` or ``not`` -- which is every ledger
+    and narrative rule the formal mode added.  A missing enum entry therefore made
+    the CLI emit JSON that a standard validator rejects while every gate stayed
+    green.  This test closes that hole for the scenarios that exercise those
+    rules: an external consumer runs a conforming validator, so the contract is
+    only real if a conforming validator agrees.
+    """
+    jsonschema = pytest.importorskip("jsonschema")
+
+    model = tmp_path / "machine.fcstm"
+    query_file = tmp_path / "scenario.fbmcq"
+    model.write_text(machine + "\n", encoding="utf-8")
+    query_file.write_text(query + "\n", encoding="utf-8")
+
+    _, payload = _json_result(model, query_file, "--explain-infeasibility", "formal")
+    schema = json.loads(
+        (
+            Path(__file__).resolve().parents[2]
+            / "docs"
+            / "source"
+            / "reference"
+            / "bmc_results"
+            / "bmc_cli.schema.json"
+        ).read_text(encoding="utf-8")
+    )
+
+    errors = [
+        "%s at %s"
+        % (error.message, "/".join(str(part) for part in error.absolute_path))
+        for error in jsonschema.Draft202012Validator(schema).iter_errors(payload)
+    ]
+
+    assert errors == []
+
+
+@pytest.mark.unittest
+def test_a_divisor_pinned_to_zero_names_the_division_not_just_the_groups(
+    tmp_path,
+) -> None:
+    """The most natural way to write this must reach the same account.
+
+    ``var("x") / var("x")`` with an initializer pinning ``x`` to 0 is how a reader
+    writes a division that cannot be defined -- more natural than the literal
+    ``/ 0`` the first goldens used.  Its core carries the initializer alongside
+    the domain condition, and requiring the core to be *only* domain conditions
+    sent this shape to the structural fallback.  Every member of a subset-minimal
+    core is load-bearing, so a domain condition in one is part of the
+    contradiction, and naming it is sound.
+    """
+    model = tmp_path / "machine.fcstm"
+    query = tmp_path / "scenario.fbmcq"
+    model.write_text(
+        "def int x = 0;\n"
+        "state Root { event Go; state A; state B; [*] -> A; A -> B :: Go; }\n",
+        encoding="utf-8",
+    )
+    query.write_text(
+        'init state("Root.A") where x == 0;\n'
+        'assume at 0: var("x") / var("x") > 0;\n'
+        'check reach <= 1: active("Root.B");\n',
+        encoding="utf-8",
+    )
+
+    result = _run(
+        "-i", str(model), "-q", str(query), "--explain-infeasibility", "formal"
+    )
+
+    assert result.exit_code == 3, result.output
+    assert "COMPLETE FORMAL DOMAIN EXPLANATION" in result.output
+    assert "STRUCTURAL ONLY" not in result.output
+    assert "The division at frame 0 cannot stay defined" in result.output
+    # And the sentence says which requirement makes it undefined.
+    assert "x" in result.output

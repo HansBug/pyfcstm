@@ -30,7 +30,7 @@ BmcFeasibilityResult
 -----------------------------------------------------
 
 .. autoclass:: BmcFeasibilityResult
-    :members: __post_init__,scenario_infeasible,to_canonical,pretty_print,to_text,__str__,kernel,initialization,assumptions,infeasible_stage,localization_status,refinement_status,refinement_reason,refinement_checks
+    :members: __post_init__,scenario_infeasible,to_canonical,pretty_print,to_text,__str__,kernel,initialization,assumptions,infeasible_stage,localization_status,refinement_status,refinement_reason,refinement_checks,explanation
 
 
 BmcSolveResult

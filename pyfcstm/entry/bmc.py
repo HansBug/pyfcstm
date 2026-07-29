@@ -49,7 +49,7 @@ import pathlib
 import sys
 import tempfile
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Optional, Tuple
+from typing import TYPE_CHECKING, List, Optional, Tuple
 
 import click
 
@@ -241,6 +241,7 @@ def _execute_bmc(
     query_file: str,
     timeout_ms: Optional[int],
     max_bound: Optional[int],
+    infeasibility_explanation: str = "none",
 ) -> _BmcExecution:
     from ..bmc import BmcBuildError
 
@@ -253,7 +254,17 @@ def _execute_bmc(
         query_source_path=query_file,
     )
     try:
-        result = _solve_bmc_property(formula, timeout_ms=timeout_ms)
+        # The default depth leaves the solver call exactly as it was before
+        # explanations existed, so the untouched path keeps its previous shape
+        # instead of gaining an argument it would only ever ignore.
+        if infeasibility_explanation == "none":
+            result = _solve_bmc_property(formula, timeout_ms=timeout_ms)
+        else:
+            result = _solve_bmc_property(
+                formula,
+                timeout_ms=timeout_ms,
+                infeasibility_explanation=infeasibility_explanation,
+            )
     except BmcBuildError as err:
         # solve_bmc_property receives validated CLI arguments and a compiled
         # formula, so a build failure here is an internal implementation error.
@@ -438,6 +449,39 @@ def _human_diagnostics(execution: _BmcExecution) -> Tuple[str, ...]:
     return tuple(lines)
 
 
+#: How a published explanation's delivery state reads in human output.
+#:
+#: The three lines come from the authored terminal transcripts: a sound core is a
+#: partial formal explanation until minimality and narrative close, a
+#: classification with no core is explicitly *not achieved*, and a request that
+#: produced neither says so rather than staying silent.
+def _human_explanation(execution: "_BmcExecution") -> List[str]:
+    """Render the optional infeasibility explanation for a human reader.
+
+    Delegates to the shared renderer in :mod:`pyfcstm.bmc.explanation`.  The CLI
+    and ``BmcSolveResult.__str__()`` / ``to_text()`` must present an explanation
+    the same way, and that rendering lives in the explanation module, so this
+    function only unwraps the execution.
+
+    :param execution: Completed BMC execution carrying the solve result.
+    :type execution: _BmcExecution
+    :return: Report lines, empty when no explanation was published.
+    :rtype: List[str]
+
+    Example::
+
+        >>> _human_explanation.__name__
+        '_human_explanation'
+    """
+    # Imported here, like the other BMC entry points in this module, so the CLI
+    # does not pay for the solver-backed package at import time.  The explanation
+    # module itself is solver-free.
+    from ..bmc.explanation import explanation_text_lines
+
+    feasibility = getattr(execution.result, "feasibility", None)
+    return explanation_text_lines(getattr(feasibility, "explanation", None))
+
+
 def _human_report(
     execution: _BmcExecution, presentation: Optional[_BmcPresentation] = None
 ) -> str:
@@ -456,10 +500,11 @@ def _human_report(
     if presentation.evidence:
         header.append("Evidence:")
         header.extend("  %s" % item for item in presentation.evidence)
-    sections = [
-        "\n".join(header),
-        "\n".join(_human_diagnostics(execution)),
-    ]
+    sections = ["\n".join(header)]
+    explanation_lines = _human_explanation(execution)
+    if explanation_lines:
+        sections.append("\n".join(explanation_lines))
+    sections.append("\n".join(_human_diagnostics(execution)))
     trace = _human_trace(execution)
     if trace:
         sections.append("\n".join(trace))
@@ -568,6 +613,7 @@ def build_bmc_output(
     json_output: bool = False,
     timeout_ms: Optional[int] = None,
     max_bound: Optional[int] = None,
+    infeasibility_explanation: str = "none",
 ) -> Tuple[str, int]:
     """Run one bounded query and build its complete CLI report.
 
@@ -585,6 +631,10 @@ def build_bmc_output(
     :type timeout_ms: int, optional
     :param max_bound: Maximum accepted query bound, defaults to ``None``.
     :type max_bound: int, optional
+    :param infeasibility_explanation: Explanation depth to attempt once a
+        stage has been localized: ``none``, ``formal`` or ``proof``, defaults
+        to ``'none'``.  The default runs no additional solver check.
+    :type infeasibility_explanation: str, optional
     :return: Completed report text and matching process exit status.
     :rtype: Tuple[str, int]
     :raises pyfcstm.entry.base.ClickErrorException: If model/query input is
@@ -605,6 +655,7 @@ def build_bmc_output(
         json_output=json_output,
         timeout_ms=timeout_ms,
         max_bound=max_bound,
+        infeasibility_explanation=infeasibility_explanation,
     )
     return text, exit_code
 
@@ -616,6 +667,7 @@ def _build_bmc_report(
     json_output: bool,
     timeout_ms: Optional[int],
     max_bound: Optional[int],
+    infeasibility_explanation: str = "none",
 ) -> Tuple[str, int, str]:
     """Build one report and retain presentation severity for terminal color."""
     for option_name, option_value in (
@@ -630,11 +682,22 @@ def _build_bmc_report(
             raise ClickErrorException(
                 "%s must be None or a positive integer." % option_name
             )
+    if isinstance(infeasibility_explanation, bool) or infeasibility_explanation not in (
+        "none",
+        "formal",
+        "proof",
+    ):
+        # A bad depth is a caller mistake like any other option value, so it
+        # reports as an argument error rather than as an internal failure.
+        raise ClickErrorException(
+            "infeasibility_explanation must be one of none, formal, proof."
+        )
     execution = _execute_bmc(
         input_code_file,
         query_file,
         timeout_ms,
         max_bound,
+        infeasibility_explanation,
     )
     if json_output:
         return (
@@ -715,6 +778,7 @@ def _run_bmc_command(
     timeout_ms: Optional[int],
     max_bound: Optional[int],
     color_mode: str,
+    infeasibility_explanation: str = "none",
 ) -> int:
     """Build and publish one report behind the CLI exception boundary."""
     text, exit_code, severity = _build_bmc_report(
@@ -723,6 +787,7 @@ def _run_bmc_command(
         json_output=json_output,
         timeout_ms=timeout_ms,
         max_bound=max_bound,
+        infeasibility_explanation=infeasibility_explanation,
     )
     if output_file is None:
         color_enabled = _resolve_bmc_color_enabled(
@@ -809,6 +874,17 @@ def _add_bmc_subcommand(cli: click.Group) -> click.Group:
         help="Reject queries whose bound exceeds this value.",
     )
     @click.option(
+        "--explain-infeasibility",
+        "infeasibility_explanation",
+        type=click.Choice(("none", "formal", "proof"), case_sensitive=True),
+        default="none",
+        show_default=True,
+        help=(
+            "Depth of the optional scenario-infeasibility explanation. The "
+            "default costs no extra solver work."
+        ),
+    )
+    @click.option(
         "--color",
         "color_mode",
         type=click.Choice(("auto", "always", "never"), case_sensitive=True),
@@ -826,6 +902,7 @@ def _add_bmc_subcommand(cli: click.Group) -> click.Group:
         timeout_ms: Optional[int],
         max_bound: Optional[int],
         color_mode: str,
+        infeasibility_explanation: str,
     ) -> None:
         """Run a bounded model checking query.
 
@@ -845,6 +922,10 @@ def _add_bmc_subcommand(cli: click.Group) -> click.Group:
         :type max_bound: int, optional
         :param color_mode: ANSI color mode for human terminal output.
         :type color_mode: str
+        :param infeasibility_explanation: Depth of the optional
+            scenario-infeasibility explanation, one of ``none``, ``formal`` or
+            ``proof``.  ``none`` adds no solver work.
+        :type infeasibility_explanation: str
         :return: ``None``.
         :rtype: None
 
@@ -852,6 +933,8 @@ def _add_bmc_subcommand(cli: click.Group) -> click.Group:
 
             $ pyfcstm bmc -i machine.fcstm -q property.fbmcq
             $ pyfcstm bmc -i machine.fcstm -q property.fbmcq --json -o result.json
+            $ pyfcstm bmc -i machine.fcstm -q property.fbmcq \
+                --explain-infeasibility formal --json
         """
         exit_code = _run_bmc_command(
             input_code_file,
@@ -861,6 +944,7 @@ def _add_bmc_subcommand(cli: click.Group) -> click.Group:
             timeout_ms,
             max_bound,
             color_mode,
+            infeasibility_explanation=infeasibility_explanation,
         )
         ctx.exit(exit_code)
 

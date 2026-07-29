@@ -114,6 +114,18 @@ Public module structure:
      - Share staged solver-budget mechanics and preserve source documents /
        tracked constraint groups for later explanation layers; these modules
        are intentionally not root-package public exports.
+   * - Scenario infeasibility explanation
+     - :class:`BmcInfeasibilityExplanation`, :class:`BmcConflictCore`,
+       :class:`BmcCoreItem`, :class:`BmcConstraintRef`
+     - Answer the two questions a localized stage leaves open: *how* it is
+       infeasible, and *which* authored FCSTM/FBMCQ constraints already suffice
+       to make it so.  Request one through
+       ``solve_bmc_property(..., infeasibility_explanation='formal')``; the
+       default ``'none'`` runs no extra solver check.  The data layer in
+       :mod:`pyfcstm.bmc.explanation` stays free of Z3 so a reader can consume
+       a result without loading the solver, while
+       :mod:`pyfcstm.bmc.infeasibility` owns every probe and shares the
+       mandatory solve budget.
    * - BMC relation builder
      - :class:`BmcAbstractCallRecord`, :class:`BmcTraceSymbols`,
        :class:`BmcCaseRelation`, :class:`BmcStepRelation`, :class:`BmcCoreFormula`,
@@ -220,6 +232,22 @@ from .query import (
 )
 
 if TYPE_CHECKING:
+    from .explanation import (
+        BmcConflictCore,
+        BmcSourceRef,
+        BmcConflictCoreScope,
+        BmcConstraintRef,
+        BmcConstraintStage,
+        BmcCoreGranularity,
+        BmcCoreItem,
+        BmcCoreReduction,
+        BmcInfeasibilityClassification,
+        BmcInfeasibilityExplanation,
+        BmcInfeasibilityExplanationMode,
+        BmcInfeasibilityExplanationStatus,
+        BmcSemanticRole,
+        BmcSubsetMinimality,
+    )
     from .witness import (
         BmcFeasibilityCheck,
         BmcFeasibilityRefinementCheck,
@@ -332,8 +360,26 @@ _WITNESS_EXPORTS = {
     "replay_bmc_witness",
 }
 
+_EXPLANATION_EXPORTS = {
+    "BmcConflictCore",
+    "BmcSourceRef",
+    "BmcConflictCoreScope",
+    "BmcConstraintRef",
+    "BmcConstraintStage",
+    "BmcCoreGranularity",
+    "BmcCoreItem",
+    "BmcCoreReduction",
+    "BmcInfeasibilityClassification",
+    "BmcInfeasibilityExplanation",
+    "BmcInfeasibilityExplanationMode",
+    "BmcInfeasibilityExplanationStatus",
+    "BmcSemanticRole",
+    "BmcSubsetMinimality",
+}
+
 _LAZY_EXPORT_MODULES = {
     "pyfcstm.bmc.binding": _BINDING_EXPORTS,
+    "pyfcstm.bmc.explanation": _EXPLANATION_EXPORTS,
     "pyfcstm.bmc.domain": _DOMAIN_EXPORTS,
     "pyfcstm.bmc.source": _SOURCE_EXPORTS,
     "pyfcstm.bmc.macro": _MACRO_EXPORTS,
@@ -394,6 +440,7 @@ def __dir__():
     return sorted(
         set(globals())
         | _BINDING_EXPORTS
+        | _EXPLANATION_EXPORTS
         | _DOMAIN_EXPORTS
         | _SOURCE_EXPORTS
         | _MACRO_EXPORTS
@@ -529,4 +576,18 @@ __all__ = [
     "decode_bmc_result_trace",
     "decode_bmc_witness",
     "replay_bmc_witness",
+    "BmcConflictCore",
+    "BmcSourceRef",
+    "BmcConflictCoreScope",
+    "BmcConstraintRef",
+    "BmcConstraintStage",
+    "BmcCoreGranularity",
+    "BmcCoreItem",
+    "BmcCoreReduction",
+    "BmcInfeasibilityClassification",
+    "BmcInfeasibilityExplanation",
+    "BmcInfeasibilityExplanationMode",
+    "BmcInfeasibilityExplanationStatus",
+    "BmcSemanticRole",
+    "BmcSubsetMinimality",
 ]

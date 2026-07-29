@@ -15,7 +15,9 @@ pyfcstm.bmc
     engine
     errors
     expand
+    explanation
     grammar/index
+    infeasibility
     listener
     macro
     parse

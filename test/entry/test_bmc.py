@@ -1766,3 +1766,837 @@ def test_bmc_human_color_rejects_unknown_severity() -> None:
         bmc_entry._BmcCliInternalError, match="Unsupported human report severity"
     ):
         bmc_entry._colorize_human_report("BMC report\n", "purple")
+
+
+_EXPLAIN_MODEL = """def int x = 0;
+state Root {
+    event Go;
+    state A;
+    state B;
+    [*] -> A;
+    A -> B :: Go;
+}
+"""
+
+_EXPLAIN_QUERY = """init state("Root.A") where x == 0;
+assume at 0: var("x") == 1;
+assume at 0: var("x") == 2;
+check reach <= 2: active("Root.B");
+"""
+
+
+@pytest.fixture()
+def explain_files(tmp_path):
+    """Write one model and one self-conflicting query to disk."""
+    model = tmp_path / "machine.fcstm"
+    query = tmp_path / "scenario.fbmcq"
+    model.write_text(_EXPLAIN_MODEL, encoding="utf-8")
+    query.write_text(_EXPLAIN_QUERY, encoding="utf-8")
+    return str(model), str(query)
+
+
+@pytest.mark.unittest
+def test_build_bmc_output_default_publishes_no_explanation(explain_files):
+    """The file helper keeps its previous behaviour unless asked otherwise."""
+    from pyfcstm.entry.bmc import build_bmc_output
+
+    model, query = explain_files
+
+    text, exit_code = build_bmc_output(model, query, json_output=True)
+    payload = json.loads(text)
+    feasibility = payload["result"]["feasibility"]
+
+    assert exit_code == 3
+    assert feasibility["infeasible_stage"] == "assumptions"
+    assert feasibility["explanation"] is None
+    assert feasibility["refinement_status"] == "not_requested"
+    assert feasibility["refinement_checks"] == []
+
+
+@pytest.mark.unittest
+def test_build_bmc_output_can_publish_a_source_mapped_explanation(explain_files):
+    """Asking for an explanation reaches JSON with the authored lines in it."""
+    from pyfcstm.entry.bmc import build_bmc_output
+
+    model, query = explain_files
+
+    text, exit_code = build_bmc_output(
+        model, query, json_output=True, infeasibility_explanation="formal"
+    )
+    payload = json.loads(text)
+    feasibility = payload["result"]["feasibility"]
+    explanation = feasibility["explanation"]
+
+    assert exit_code == 3
+    assert explanation["classification"] == "assumptions_self_conflict"
+    assert explanation["achieved_mode"] == "formal"
+    assert explanation["core"]["scope"] == "assumptions_component"
+    assert [item["source_excerpt"] for item in explanation["core"]["items"]] == [
+        'assume at 0: var("x") == 1;',
+        'assume at 0: var("x") == 2;',
+    ]
+    assert feasibility["refinement_status"] == explanation["status"]
+    assert feasibility["refinement_checks"]
+
+    schema = json.loads(
+        Path("docs/source/reference/bmc_results/bmc_cli.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    _assert_bmc_schema_instance(schema, payload)
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize("mode", ["FORMAL", "formal ", "", "subset", True, None])
+def test_build_bmc_output_rejects_unknown_explanation_modes(explain_files, mode):
+    """A bad depth is an argument error, not an internal failure."""
+    from pyfcstm.entry.bmc import build_bmc_output
+
+    model, query = explain_files
+
+    with pytest.raises(ClickErrorException, match="infeasibility_explanation"):
+        build_bmc_output(model, query, infeasibility_explanation=mode)
+
+
+@pytest.mark.unittest
+def test_bmc_cli_can_request_each_explanation_depth(explain_files) -> None:
+    """The three frozen depths are reachable from the command line.
+
+    The helper behind the command has accepted a depth for several rounds, but
+    the option itself was missing, so the capability existed with no user entry
+    point -- and the frozen contract asks for the three modes to be published
+    together across the API, the CLI and the JSON.
+    """
+    model, query = explain_files
+
+    result, payload = _json_result(
+        Path(model), Path(query), "--explain-infeasibility", "formal"
+    )
+    explanation = payload["result"]["feasibility"]["explanation"]
+
+    assert result.exit_code == 3
+    assert explanation["classification"] == "assumptions_self_conflict"
+    assert explanation["core"]["scope"] == "assumptions_component"
+    assert [item["source_excerpt"] for item in explanation["core"]["items"]] == [
+        'assume at 0: var("x") == 1;',
+        'assume at 0: var("x") == 2;',
+    ]
+
+    # The default stays exactly as it was, with no explanation at all.
+    default_result, default_payload = _json_result(Path(model), Path(query))
+    default_feasibility = default_payload["result"]["feasibility"]
+    assert default_result.exit_code == 3
+    assert default_feasibility["explanation"] is None
+    assert default_feasibility["refinement_status"] == "not_requested"
+
+    # Spelling the default explicitly must agree with omitting it.
+    explicit_result, explicit_payload = _json_result(
+        Path(model), Path(query), "--explain-infeasibility", "none"
+    )
+    assert explicit_result.exit_code == default_result.exit_code
+    assert explicit_payload["result"]["feasibility"]["explanation"] is None
+
+    # The deepest mode is reachable too, and reports the depth it actually
+    # achieved rather than the one that was asked for.  This scenario cannot be
+    # proven subset-minimal, so ``proof`` degrades to ``formal`` -- and the JSON
+    # has to say so, since a caller that asked for a proof and silently received
+    # something weaker would draw a stronger conclusion than the run supports.
+    proof_result, proof_payload = _json_result(
+        Path(model), Path(query), "--explain-infeasibility", "proof"
+    )
+    proof_explanation = proof_payload["result"]["feasibility"]["explanation"]
+
+    assert proof_result.exit_code == 3
+    assert proof_explanation["requested_mode"] == "proof"
+    assert proof_explanation["achieved_mode"] == "formal"
+    assert proof_explanation["classification"] == "assumptions_self_conflict"
+    assert proof_explanation["core"]["scope"] == "assumptions_component"
+
+    # The human report names both depths on one line; the equal-depth runs above
+    # must not carry that line at all.
+    proof_human = _run(
+        "-i", str(model), "-q", str(query), "--explain-infeasibility", "proof"
+    )
+    assert "Explanation depth: requested proof, achieved formal" in proof_human.output
+    formal_human = _run(
+        "-i", str(model), "-q", str(query), "--explain-infeasibility", "formal"
+    )
+    assert "Explanation depth:" not in formal_human.output
+
+    # An unknown depth is refused by the option, before any solving happens.
+    rejected = _run(
+        "-i", str(model), "-q", str(query), "--explain-infeasibility", "bogus"
+    )
+    assert rejected.exit_code != 0
+    assert "is not one of" in rejected.output
+
+
+@pytest.mark.unittest
+def test_bmc_human_output_shows_the_explanation_it_paid_for(explain_files) -> None:
+    """A human reader must see the explanation their request produced.
+
+    Requesting ``formal`` costs extra solver work.  Before this, the human report
+    was byte-identical to the default, so the option looked like it had done
+    nothing at all -- while the frozen terminal transcripts spell out the lines
+    this report has to carry.
+    """
+    model, query = explain_files
+
+    default = _run("-i", str(model), "-q", str(query))
+    formal = _run(
+        "-i", str(model), "-q", str(query), "--explain-infeasibility", "formal"
+    )
+
+    assert default.exit_code == formal.exit_code == 3
+    assert "Explanation:" not in default.output
+    assert "Explanation: PARTIAL FORMAL DOMAIN EXPLANATION" in formal.output
+    assert (
+        "Classification: the assumptions are internally inconsistent" in formal.output
+    )
+    assert "Conflict constraints:" in formal.output
+    # The authored source location and text, not a paraphrase.
+    assert 'assume at 0: var("x") == 1;' in formal.output
+    assert "Core scope: assumptions_component" in formal.output
+    assert "Reduction: raw" in formal.output
+    assert (
+        "The displayed core is sufficient for UNSAT but is not proven "
+        "subset-minimal." in formal.output
+    )
+    # The mandatory verdict is untouched.
+    for line in default.output.splitlines():
+        if line.startswith(("BMC ", "Scenario:", "Property verdict:")):
+            assert line in formal.output
+
+    # Files and JSON stay ANSI-free, and JSON keeps carrying the same data.
+    assert "\x1b[" not in formal.output
+    _, payload = _json_result(
+        Path(model), Path(query), "--explain-infeasibility", "formal"
+    )
+    explanation = payload["result"]["feasibility"]["explanation"]
+    assert explanation["core"]["scope"] == "assumptions_component"
+
+
+@pytest.mark.unittest
+def test_human_explanation_renders_every_published_shape() -> None:
+    """Each branch of the human explanation section, driven directly.
+
+    The renderer has to cope with a core member that carries no span, one that is
+    generated rather than authored, a proven-minimal core, and a classification
+    published with no core at all -- the last being the frozen "not achieved"
+    transcript.  Only the first of those is reachable from the fixtures above.
+    """
+
+    from pyfcstm.bmc.explanation import (
+        BmcConflictCore,
+        BmcConstraintRef,
+        BmcCoreItem,
+        BmcInfeasibilityExplanation,
+    )
+    from pyfcstm.bmc.provenance import BmcSourceRef
+    from pyfcstm.bmc.explanation import explanation_text_lines
+
+    def item(source, excerpt=None, human_text="frame assumption"):
+        reference = BmcConstraintRef(
+            "assumption.0000.frame.0000",
+            "assumptions",
+            "assumption.frame",
+            source,
+            "frame assumption",
+        )
+        return BmcCoreItem(
+            reference,
+            "assumption",
+            excerpt,
+            False,
+            {"kind": "structural_constraint"},
+            human_text,
+            source.kind in ("fcstm", "fbmcq"),
+        )
+
+    def core(items, **kwargs):
+        payload = dict(
+            scope="assumptions_component",
+            formula_summary="ENV_N",
+            granularity="source_group",
+            reduction="raw",
+            subset_minimality="not_proven",
+            items=items,
+        )
+        payload.update(kwargs)
+        return BmcConflictCore(**payload)
+
+    def render(explanation):
+        # explanation_text_lines is exported and is what the CLI itself calls, so
+        # the line shapes are read from the published renderer rather than from
+        # the CLI's private one-line wrapper around it.
+        return explanation_text_lines(explanation)
+
+    # A path with no span falls back to the path alone.
+    anchored = BmcSourceRef("fbmcq", "q.fbmcq", None)
+    lines = render(
+        BmcInfeasibilityExplanation(
+            "formal",
+            "formal",
+            "partial",
+            "assumptions_self_conflict",
+            core=core((item(anchored, excerpt=None),)),
+            reason="minimization skipped",
+        )
+    )
+    assert "  1. q.fbmcq" in lines
+    assert "     frame assumption" in lines
+
+    # An authored constraint whose origin was never named is still authored.
+    # Calling it generated would attribute the user's own constraint to the
+    # encoder, which the frozen contract forbids -- and a programmatic query
+    # reaches this shape without anything hostile involved.
+    for kind in ("fbmcq", "fcstm"):
+        unnamed = BmcSourceRef(kind, None, None)
+        lines = render(
+            BmcInfeasibilityExplanation(
+                "formal",
+                "formal",
+                "partial",
+                "assumptions_self_conflict",
+                core=core((item(unnamed),)),
+                reason="minimization skipped",
+            )
+        )
+        # Both the generated and the location-less authored branch read
+        # the noun from one predicate, so neither can leak the dotted
+        # category while the other is clean.
+        assert (
+            "  1. %s assumption constraint (source location unavailable)" % kind
+            in lines
+        )
+        assert not any("assumption.frame" in line for line in lines)
+        assert not any("generated" in line for line in lines)
+
+    # A generated constraint has no authored location at all.
+    generated = BmcSourceRef("generated", None, None)
+    lines = render(
+        BmcInfeasibilityExplanation(
+            "formal",
+            "formal",
+            "partial",
+            "assumptions_self_conflict",
+            core=core((item(generated),)),
+            reason="minimization skipped",
+        )
+    )
+    # A generated group is named by the leading segment of its category plus the
+    # word "constraint", on a line of its own -- followed by an indented metadata
+    # line when the group carries builder refs outside its position, which the
+    # tracked case groups do.
+    assert "  1. generated assumption constraint" in lines
+    assert not any("assumption.frame" in line for line in lines)
+
+    # A proven-minimal core says so instead of hedging.
+    lines = render(
+        BmcInfeasibilityExplanation(
+            "formal",
+            "formal",
+            "partial",
+            "assumptions_self_conflict",
+            core=core(
+                (item(generated),),
+                reduction="subset_minimal",
+                subset_minimality="proven",
+            ),
+            reason="narrative not built",
+        )
+    )
+    # The whole sentence, not a substring: asserting only "proven
+    # subset-minimal" is immune to the claim being inverted to "sufficient for
+    # SAT", which would tell the reader the opposite of the truth.
+    assert (
+        "The displayed core is sufficient for UNSAT and proven subset-minimal." in lines
+    )
+
+    # A classification with no core is the frozen "not achieved" transcript.
+    lines = render(
+        BmcInfeasibilityExplanation(
+            "formal",
+            "none",
+            "partial",
+            "initialization_self_conflict",
+            reason="the source-level core check timed out after classification",
+        )
+    )
+    assert "Explanation: FORMAL EXPLANATION NOT ACHIEVED" in lines
+    assert "Classification: initialization is internally inconsistent" in lines
+    assert any("No conflict core or causal chain" in line for line in lines)
+
+    # The frozen contract forbids hiding a necessary member's position: a
+    # generated support group has to appear together with its frame/step/refs
+    # rather than being tidied away, and the transcript prints the position
+    # inline after the location.
+    positioned = BmcConstraintRef(
+        "transition.0000",
+        "kernel",
+        "transition.step",
+        generated,
+        "transition relation",
+        steps=(0,),
+        refs={"step": 0, "kind": "state"},
+    )
+    lines = render(
+        BmcInfeasibilityExplanation(
+            "formal",
+            "formal",
+            "partial",
+            "kernel_conflict",
+            core=core(
+                (
+                    BmcCoreItem(
+                        positioned,
+                        "transition_rule",
+                        None,
+                        False,
+                        {"kind": "structural_constraint"},
+                        "transition relation",
+                        False,
+                    ),
+                ),
+                scope="kernel",
+            ),
+            reason="minimization skipped",
+        )
+    )
+    # This is the one shape a published transcript pins verbatim.
+    assert "  1. generated transition constraint at step 0" in lines
+    assert "     kind state" in lines
+
+    # Frames, plural positions and index keys that are already inline.
+    multi = BmcConstraintRef(
+        "assumption.0000",
+        "assumptions",
+        "assumption.frame",
+        generated,
+        "frame assumption",
+        frames=(0, 1),
+        steps=(2,),
+        refs={"frame": 0, "assumption": 3},
+    )
+    lines = render(
+        BmcInfeasibilityExplanation(
+            "formal",
+            "formal",
+            "partial",
+            "assumptions_self_conflict",
+            core=core(
+                (
+                    BmcCoreItem(
+                        multi,
+                        "assumption",
+                        None,
+                        False,
+                        {"kind": "structural_constraint"},
+                        "frame assumption",
+                        False,
+                    ),
+                )
+            ),
+            reason="minimization skipped",
+        )
+    )
+    assert "  1. generated assumption constraint at frames 0, 1 and step 2" in lines
+    assert "     assumption 3" in lines
+    # ``frame`` is already shown inline, so it is not repeated below.
+    assert not any(line.strip().startswith("frame 0") for line in lines)
+
+    # Every classification phrase is exercised, so changing any one of them
+    # fails here rather than only the one the fixtures happen to produce.
+    from pyfcstm.bmc.explanation import (
+        CLASSIFICATION_PHRASES,
+        CLASSIFICATION_SCOPES,
+    )
+
+    assert set(CLASSIFICATION_PHRASES) == set(CLASSIFICATION_SCOPES)
+    expected_phrases = {
+        "kernel_conflict": "the model's own domain and transition rules conflict",
+        "initialization_self_conflict": "initialization is internally inconsistent",
+        "initialization_domain_conflict": (
+            "initialization conflicts with the frame domain"
+        ),
+        "initialization_kernel_conflict": (
+            "initialization conflicts with the transition relation"
+        ),
+        "assumptions_self_conflict": "the assumptions are internally inconsistent",
+        "assumptions_domain_conflict": (
+            "the assumptions conflict with the frame domain"
+        ),
+        "assumptions_prefix_conflict": "assumptions conflict with the feasible prefix",
+    }
+    assert CLASSIFICATION_PHRASES == expected_phrases
+    for classification, phrase in expected_phrases.items():
+        rendered = render(
+            BmcInfeasibilityExplanation(
+                "formal",
+                "none",
+                "partial",
+                classification,
+                reason="probe unknown",
+            )
+        )
+        assert "Classification: %s" % phrase in rendered
+
+    # No explanation at all renders nothing.
+    assert render(None) == []
+
+
+@pytest.mark.unittest
+def test_human_explanation_matches_the_frozen_transcript_line_shapes() -> None:
+    """Compare each rendered line against the frozen transcript line it mirrors.
+
+    The published conflict-constraint block gives an authored member exactly two
+    lines -- location then its own text, with no position suffix and no builder
+    metadata -- while the generated member in that block occupies exactly one,
+    having no builder refs outside its position.  The not-achieved transcript
+    ends with two physical lines, not one long one.
+    Substring checks pass on all of those even when the shape is wrong, so the
+    frozen lines are transcribed here and compared whole.
+    """
+
+    from pyfcstm.bmc.explanation import (
+        BmcConflictCore,
+        BmcConstraintRef,
+        BmcCoreItem,
+        BmcInfeasibilityExplanation,
+    )
+    from pyfcstm.bmc.provenance import BmcSourceRef
+    from pyfcstm.bmc.explanation import explanation_text_lines
+    from pyfcstm.utils.validate import Span
+
+    # Transcribed from the published transcript.  Each entry is one line
+    # with its ordinal dropped: an authored member contributes a location line
+    # and its own text, the generated member here contributes a single line
+    # because its only ref is the position already on that line.
+    #
+    # The ordinals are not transcribed.  Core items are published in stable_id
+    # order -- sorted where the core is built, in BmcConflictCore's own
+    # constructor, not here -- and this renderer prints the published order as it
+    # receives it.  The sort is asserted directly in test/bmc/test_explanation.py,
+    # so a reader can check the claim without leaving the test tree.  The sample's own in-block
+    # order differs from that; where a requirement and an illustrative sample
+    # conflict, the requirement governs.  The requirement is the extraction step
+    # that sorts by stable_id before the core enters the public API and keeps
+    # Z3's own order out of it, restated in the determinism section as core items
+    # being published in stable id order.
+    #
+    # The conflict between that requirement and the sample's own order is an
+    # inconsistency in the specification rather than a choice this test makes; it
+    # is reported on the tracking issue so it does not live only in this comment.
+    #
+    # Nothing is claimed here about which orderings the two samples do or do not
+    # admit.  Five versions of this comment tried to make such a claim and all
+    # five were wrong: no-deterministic-order-exists (refuted by ordering on
+    # source position), undecidable (the requirement decides it), neither-sample-
+    # follows-role-order (the proven-minimal one does), and excludes-any-single-
+    # ordering (refuted by "authored before generated, then by path and line").
+    # The claim was never needed for the conclusion, so it is gone rather than
+    # narrowed again.
+    partial_core_transcript_shapes = [
+        ("machine.fcstm:1:1-1:15", "persistent initializer: x = 0"),
+        ("query.fbmcq:2:1-2:23", "assume at 0: x == 1;"),
+        ("generated transition constraint at step 0", None),
+    ]
+    # Transcribed from the not-achieved transcript, including its line break.
+    not_achieved_transcript_tail = [
+        "No conflict core or causal chain was published. The classification is "
+        "retained",
+        "as partial metadata, but it is not presented as a completed formal "
+        "explanation.",
+    ]
+
+    def render(explanation):
+        # explanation_text_lines is exported and is what the CLI itself calls, so
+        # the line shapes are read from the published renderer rather than from
+        # the CLI's private one-line wrapper around it.
+        return explanation_text_lines(explanation)
+
+    def authored(path, span, category, stage, role, excerpt, refs):
+        reference = BmcConstraintRef(
+            "%s.0000" % category,
+            stage,
+            category,
+            BmcSourceRef("fcstm" if path.endswith(".fcstm") else "fbmcq", path, span),
+            "authored constraint",
+            # A real builder populates the positional tuple as well as ``refs``,
+            # so the fixture does too: without it the renderer would have no
+            # position to print and "no position suffix on an authored member"
+            # would be asserted against a member that has no position at all.
+            frames=(refs["frame"],),
+            refs=refs,
+        )
+        return BmcCoreItem(
+            reference,
+            role,
+            excerpt,
+            False,
+            {"kind": "structural_constraint"},
+            "authored constraint",
+            True,
+        )
+
+    generated_item = BmcCoreItem(
+        BmcConstraintRef(
+            "transition.step.0000",
+            "kernel",
+            "transition.step",
+            BmcSourceRef("generated", None, None),
+            "transition rule constraint",
+            steps=(0,),
+            refs={"step": 0},
+        ),
+        "transition_rule",
+        None,
+        False,
+        {"kind": "structural_constraint"},
+        "transition rule constraint, generated from the model",
+        False,
+    )
+
+    core = BmcConflictCore(
+        "assumptions_prefix",
+        "S_assume restricted to the conflicting groups",
+        "source_group",
+        "partial_minimized",
+        "not_proven",
+        (
+            authored(
+                "machine.fcstm",
+                Span(1, 1, 1, 15),
+                "initial.variable",
+                "initialization",
+                "initial_fact",
+                "persistent initializer: x = 0",
+                {"frame": 0, "variable": "x"},
+            ),
+            authored(
+                "query.fbmcq",
+                Span(2, 1, 2, 23),
+                "assumption.frame",
+                "assumptions",
+                "assumption",
+                "assume at 0: x == 1;",
+                {"assumption": 0, "frame": 0},
+            ),
+            generated_item,
+        ),
+    )
+    lines = render(
+        BmcInfeasibilityExplanation(
+            "formal",
+            "formal",
+            "partial",
+            "assumptions_prefix_conflict",
+            core=core,
+            reason="shared timeout budget exhausted during minimization",
+        )
+    )
+    # A core reports its scope, its reduction and the reason the reduction
+    # stopped, and nothing else.  Granularity, member count, a labelled minimality
+    # line and the elapsed time belong to the fuller published block, which also
+    # carries a narrative this stage does not build.  An earlier version of this
+    # test asserted those fields here, which locked in three lines the transcript
+    # does not have; a later comment claimed the proven-minimal shape reports no
+    # reduction, which is false -- every core prints its reduction.
+    scope_at = lines.index("Core scope: assumptions_prefix")
+    assert lines[scope_at + 1] == "Reduction: partial_minimized"
+    assert not any(line.startswith("Core granularity:") for line in lines)
+    assert not any(line.startswith("Core size:") for line in lines)
+    assert not any(line.startswith("Semantic roles:") for line in lines)
+    assert not any(line.startswith("Subset minimality:") for line in lines)
+    assert not any(line.startswith("Explanation time:") for line in lines)
+
+    start = lines.index("Conflict constraints:")
+    block = lines[start + 1 : lines.index("", start + 1)]
+    # Rebuild the block from the frozen shapes in the order the published core
+    # actually uses, then compare whole lines.  A wrong shape -- an internal
+    # dotted category, a position suffix on an authored member, a leaked
+    # stable_id -- changes one of these strings and fails here.
+    by_first_line = {shape[0]: shape for shape in partial_core_transcript_shapes}
+    expected = []
+    ordinal = 0
+    for first_line in (
+        "query.fbmcq:2:1-2:23",
+        "machine.fcstm:1:1-1:15",
+        "generated transition constraint at step 0",
+    ):
+        ordinal += 1
+        head, detail = by_first_line[first_line]
+        expected.append("  %d. %s" % (ordinal, head))
+        if detail is not None:
+            expected.append("     %s" % detail)
+    assert block == expected
+    assert not any("variable x" in line for line in lines)
+    assert not any("assumption 0" in line for line in lines)
+    assert not any("at frame 0" in line for line in lines)
+
+    degraded = render(
+        BmcInfeasibilityExplanation(
+            "formal",
+            "none",
+            "partial",
+            "initialization_self_conflict",
+            reason="the source-level core check timed out after classification",
+        )
+    )
+    # The whole block, not just its tail.  Pinning only the last two lines left
+    # the header unguarded, so a stray line between the headline and the
+    # classification -- for instance an unconditional depth line -- passed.
+    assert (
+        degraded
+        == [
+            "Explanation: FORMAL EXPLANATION NOT ACHIEVED",
+            "Classification: initialization is internally inconsistent",
+            "Reason: the source-level core check timed out after classification",
+            "",
+        ]
+        + not_achieved_transcript_tail
+    )
+
+    # The depth line appears when a deeper request settled for a shallower
+    # result, and only then.  Every mode pair the delivery matrix allows is
+    # driven from the matrix itself rather than sampled: a hand-picked subset
+    # leaves the condition open to widenings no sampled case contradicts, such
+    # as keying it on the requested mode alone.
+    from pyfcstm.bmc.explanation import _DELIVERY_SIGNATURES
+
+    legal_pairs = sorted({(sig[0], sig[1]) for sig in _DELIVERY_SIGNATURES})
+    assert legal_pairs == [
+        ("formal", "formal"),
+        ("formal", "none"),
+        ("proof", "formal"),
+        ("proof", "none"),
+        ("proof", "proof"),
+    ], legal_pairs
+
+    # The decision itself is a predicate, so every pair is checked against it --
+    # including the one whose object cannot be built here, because it needs a slot
+    # that is named as not yet built.  Naming that pair as unconstructible and
+    # skipping it left the gate open: a widening that only added that one pair
+    # passed the whole suite.
+
+    from pyfcstm.bmc.explanation import (
+        _DELIVERY_SIGNATURES,
+        UNBUILT_SLOTS,
+        depth_line_is_needed,
+    )
+
+    legal_pairs = sorted({(sig[0], sig[1]) for sig in _DELIVERY_SIGNATURES})
+    assert legal_pairs == [
+        ("formal", "formal"),
+        ("formal", "none"),
+        ("proof", "formal"),
+        ("proof", "none"),
+        ("proof", "proof"),
+    ], legal_pairs
+
+    assert {pair: depth_line_is_needed(*pair) for pair in legal_pairs} == {
+        ("formal", "formal"): False,
+        ("formal", "none"): False,
+        ("proof", "formal"): True,
+        ("proof", "none"): False,
+        ("proof", "proof"): False,
+    }
+
+    # Every matrix row reaching an achieved "proof" also needs a proof slot, and
+    # that slot is named as not yet built, so that pair has no object here.
+    assert "proof" in UNBUILT_SLOTS
+    needs_unbuilt_slot = {("proof", "proof")}
+    assert needs_unbuilt_slot <= set(legal_pairs)
+    buildable = [pair for pair in legal_pairs if pair not in needs_unbuilt_slot]
+
+    def render_pair(requested, achieved):
+        # Each pair needs a payload the matrix accepts for it: a core when a
+        # depth was achieved, a bare reason when none was.
+        if achieved == "none":
+            extra = dict(reason="the component probe returned unknown")
+        else:
+            extra = dict(
+                core=BmcConflictCore(
+                    "initialization_component",
+                    "C_init restricted to the conflicting groups",
+                    "source_group",
+                    "raw",
+                    "not_proven",
+                    (
+                        authored(
+                            "machine.fcstm",
+                            Span(1, 1, 1, 15),
+                            "initial.variable",
+                            "initialization",
+                            "initial_fact",
+                            "persistent initializer: x = 0",
+                            {"frame": 0, "variable": "x"},
+                        ),
+                    ),
+                ),
+                reason="sound source core published without a minimality proof",
+            )
+        return render(
+            BmcInfeasibilityExplanation(
+                requested,
+                achieved,
+                "partial",
+                "initialization_self_conflict",
+                **extra,
+            )
+        )
+
+    def depth_lines(requested, achieved):
+        return [
+            line
+            for line in render_pair(requested, achieved)
+            if line.startswith("Explanation depth:")
+        ]
+
+    # The rendered output matches the predicate for every buildable pair.  The
+    # ("proof", "proof") render path is not pinned here because no object can
+    # carry that pair yet; the predicate's value for it is pinned in the table
+    # above.  That the command line really consults this predicate rather than
+    # deciding for itself is pinned where a user can see it, by
+    # test_bmc_cli_can_request_each_explanation_depth: a real ``proof`` run
+    # degrades to ``formal`` and prints the line, and a ``formal`` run does not.
+    for requested, achieved in buildable:
+        expected = (
+            ["Explanation depth: requested %s, achieved %s" % (requested, achieved)]
+            if depth_line_is_needed(requested, achieved)
+            else []
+        )
+        assert depth_lines(requested, achieved) == expected, (requested, achieved)
+
+
+@pytest.mark.unittest
+def test_bmc_json_reason_does_not_claim_a_probe_that_never_ran(explain_files) -> None:
+    """A published reason must not contradict the ledger beside it.
+
+    ``refinement_checks`` records probes that actually started, so a reason saying
+    a probe "returned" a verdict while the ledger is empty gives a machine reader
+    two statements that cannot both be true.  A budget spent before the first
+    probe is the case that produces it, and ``--timeout-ms 1`` reaches that case
+    on any host: whether or not the deadline also stops other work, a probe that
+    did not start must not be described as having returned anything.
+    """
+    model, query = explain_files
+
+    result, payload = _json_result(
+        Path(model),
+        Path(query),
+        "--timeout-ms",
+        "1",
+        "--explain-infeasibility",
+        "formal",
+    )
+    feasibility = payload["result"]["feasibility"]
+    reason = feasibility["refinement_reason"] or ""
+
+    assert result.exit_code in (3, 4)
+    if not feasibility["refinement_checks"]:
+        # Nothing started, so nothing may be reported as having returned.
+        assert "returned" not in reason, reason
+    for check in feasibility["refinement_checks"]:
+        # And every ledger entry names a probe that has a verdict to report.
+        assert check["name"] and check["status"]

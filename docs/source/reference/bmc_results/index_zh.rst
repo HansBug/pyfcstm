@@ -34,6 +34,7 @@ JSON 类型和必需键以模式为准；执行顺序、标准输出/标准错�
 .. cli-ref-option: command=bmc option=--json
 .. cli-ref-option: command=bmc option=--timeout-ms
 .. cli-ref-option: command=bmc option=--max-bound
+.. cli-ref-option: command=bmc option=--explain-infeasibility choices=none,formal,proof default=none
 .. cli-ref-option: command=bmc option=--color choices=auto,always,never default=auto
 .. cli-ref-option: command=bmc option=--help
 .. cli-ref-boundary: command=bmc stdout stderr exit-status side-effects success-signal failure-taxonomy human json atomic-output witness replay dual-check response-cause packaging property-verdict color timing llm-consumption
@@ -84,6 +85,13 @@ JSON 类型和必需键以模式为准；执行顺序、标准输出/标准错�
      - 未设置；无 CLI 上限
      - 构造 ``BmcOptions(max_bound=N)``。查询边界大于 ``N`` 时，在关系
        构造前作为受控编译错误拒绝；不会改写或截断查询边界。
+   * - ``--explain-infeasibility``
+     - ``none``、``formal`` 或 ``proof``
+     - ``none``
+     - 按给定深度请求可选的场景不可行解释。``none``\ 不增加任何求解工作，
+       ``explanation`` 保持为空且 ``refinement_status`` 为 ``not_requested``；
+       ``formal`` 发布分类与可靠源组冲突核（sound source core）；``proof``\ 额外
+       请求可核验证明，本阶段将其如实报告为未闭合而不伪造。该深度不改变强制判定。
    * - ``--color``
      - ``auto``、``always`` 或 ``never``
      - ``auto``
@@ -336,6 +344,58 @@ JSON 类型和必需键以模式为准；执行顺序、标准输出/标准错�
 各节之间恰好一个空行，报告末尾恰好一个换行。``--color auto`` 在终端中用绿色表示见证或有界保证，
 红色表示缺少见证、发现反例或重放不匹配，黄色表示空场景、无定论、响应未完成和有界提醒，青色表示报告标签；
 颜色不会进入 JSON 或文件。脚本和大语言模型集成必须使用 ``--json``，不得解析人类文案、ANSI 或实时耗时。
+
+解释区块
+~~~~~~~~
+
+``--explain-infeasibility formal`` 或 ``proof`` 会在人类报告后追加一个解释区块。
+``BmcSolveResult.__str__()`` 与 ``to_text()`` 使用同一个辅助函数渲染同一区块，
+因此读者从任一入口看到的文本完全一致。对一个不可行场景的真实调用输出如下：
+
+.. code-block:: text
+
+   Explanation: PARTIAL FORMAL DOMAIN EXPLANATION
+   Classification: assumptions conflict with the feasible prefix
+
+   Conflict constraints:
+     1. r22.fbmcq:2:1-2:28
+        assume at 1: var("x") == 0;
+     2. r22.fbmcq:1:1-1:35
+        init state("Root.A") where x == 0;
+     3. r22.fcstm:1:1-1:15
+        def int x = 0;
+     4. generated transition constraint at step 0
+
+   The displayed core is sufficient for UNSAT but is not proven subset-minimal.
+   Core scope: assumptions_prefix
+   Reduction: raw
+   Reason: sound source core published without a minimality proof
+
+
+``Explanation`` 给出实际达成的深度及其完整程度。``Classification`` 是机器字段
+``classification`` 对应的读者可读句子。冲突约束的每一项要么用两行给出作者约束的
+位置与其源码文本，要么给出生成的支撑组，说明它的类别首段——``domain``、
+``transition``、``initial``、``assumption`` 或 ``definedness``\ ——以及它约束哪个
+frame 或 step。生成组占一行，若它还带有位置之外的构造元数据（被跟踪的 case 组确实带），
+则再加一行缩进列出。
+
+这里用类别首段而不是该组所属的聚合公式，原因是聚合词表太小：它只提供 ``domain``、
+``transition``、``initial`` 与 ``environment`` 四个词，而构造器实际发布的组需要五个名词，
+其中两个根本不是聚合名——assumption 组的聚合名是 ``environment``\ ，这个词在报告其他任何
+地方都不出现；definedness 组的聚合名则视发布它的阶段而定，来自 initialization 时是
+``initial``\ 、来自 assumption 时是 ``environment``\ ，既没命名该组、在两处之间也不稳定。``Core scope`` 与 ``Reduction`` 说明证明了什么、最小化进行到哪一步，
+``Reason`` 说明为什么停在那里。
+
+当请求的深度比实际达成的更深时会多出一行，因此请求 ``proof`` 而得到 ``formal``
+的调用者能同时看到两者：
+
+.. code-block:: text
+
+   Explanation depth: requested proof, achieved formal
+
+每个 core 都会报告自己的 scope 与 reduction，无论最小性是否已证明；区分两者的是
+scope 上面那句话。粒度、成员数、带标签的最小性行以及解释耗时属于更完整的发布区块，
+而那个区块还带有本深度不构造的叙述与因果链，所以这里不出现它们。
 
 直接打印 Python 结果对象
 ------------------------

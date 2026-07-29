@@ -6,6 +6,10 @@ from pyfcstm.dsl import node as dsl_nodes
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model.expr import *
 from pyfcstm.model.model import *
+
+# Explicit alongside the star imports above: this file calls the public loader
+# 30+ times, and naming it here keeps those calls resolvable to a linter.
+from pyfcstm.model.model import parse_dsl_node_to_state_machine
 from pyfcstm.model.plantuml import PlantUMLOptions
 
 
@@ -1498,9 +1502,7 @@ class TestModelModel:
         )
 
         state_machine = parse_dsl_node_to_state_machine(ast_node)
-        operations = (
-            state_machine.root_state.on_during_aspects[0].operations
-        )
+        operations = state_machine.root_state.on_during_aspects[0].operations
         assert [op.var_name for op in operations] == ["a", "c", "b"]
         assert operations[2].expr == BinaryOp(
             x=Variable(name="c"),

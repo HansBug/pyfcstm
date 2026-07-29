@@ -71,12 +71,74 @@ pytestmark = pytest.mark.unittest
             "generated.*path or span",
             id="generated-span",
         ),
+        # A caller can pass the wrong type to a documented constructor, so the
+        # kind and path gates are checked with a plain non-string value.
+        pytest.param(
+            {"kind": 123, "path": None, "span": None},
+            ValueError,
+            "source kind",
+            id="kind-not-a-string",
+        ),
+        pytest.param(
+            {"kind": "fcstm", "path": 123, "span": None},
+            ValueError,
+            "source path",
+            id="path-not-a-string",
+        ),
     ],
 )
 def test_source_reference_rejects_malformed_values(kwargs, exception, message) -> None:
     """Source references reject invalid kind, path, and span values."""
     with pytest.raises(exception, match=message):
         BmcSourceRef(**kwargs)
+
+
+@pytest.mark.parametrize(
+    ("reader", "value", "message"),
+    [
+        pytest.param("exact_str", 123, "must be a string", id="str-from-int"),
+        pytest.param("exact_str", None, "must be a string", id="str-from-none"),
+        pytest.param("exact_int", "3", "must be an integer", id="int-from-str"),
+        pytest.param("exact_int", 1.5, "must be an integer", id="int-from-float"),
+        pytest.param("exact_float", "1.5", "must be a number", id="float-from-str"),
+        pytest.param("exact_float", None, "must be a number", id="float-from-none"),
+        pytest.param("exact_index", "0", "must be an integer", id="index-from-str"),
+        # A coordinate is a number, and ``True`` is not one a caller means.
+        pytest.param("exact_index", True, "must be an integer", id="index-from-bool"),
+        pytest.param(
+            "exact_optional_index", "0", "must be an integer", id="optional-from-str"
+        ),
+    ],
+)
+def test_the_exact_readers_refuse_a_wrong_type(reader, value, message) -> None:
+    """The exported readers are what a caller reaches for to normalize a value.
+
+    They are in ``provenance.__all__``, so passing one the wrong type is an
+    ordinary caller mistake rather than an exotic construction -- and the error
+    has to name the field, since the reader is used from many call sites.
+    """
+    from pyfcstm.bmc import provenance
+
+    with pytest.raises(TypeError, match=message):
+        getattr(provenance, reader)(value, "field")
+
+
+def test_the_exact_readers_return_the_value_a_caller_gave() -> None:
+    """A well-formed value passes through unchanged, as an exact builtin.
+
+    ``exact_index`` is deliberately typed rather than bounded: an out-of-range
+    coordinate already degrades to an absent excerpt downstream, so it is checked
+    for being an integer and nothing more.
+    """
+    from pyfcstm.bmc import provenance
+
+    assert provenance.exact_str("kernel", "stage") == "kernel"
+    assert provenance.exact_int(7, "count") == 7
+    assert provenance.exact_float(1.5, "seconds") == 1.5
+    assert provenance.exact_index(1, "line") == 1
+    assert provenance.exact_optional_index(None, "end_line") is None
+    # Documented as typed, not bounded.
+    assert provenance.exact_index(-1, "line") == -1
 
 
 def test_source_reference_canonicalizes_a_complete_span() -> None:
@@ -103,6 +165,11 @@ def test_source_reference_canonicalizes_a_complete_span() -> None:
         pytest.param("category", "", ValueError, "category", id="category"),
         pytest.param("expressions", (), ValueError, "expressions", id="expressions"),
         pytest.param("source_ref", object(), TypeError, "source_ref", id="source-ref"),
+        # The identity fields reject a plain non-string as well as an empty one:
+        # a wrong type is what a caller passes, an impossible one is not.
+        pytest.param("stable_id", 123, ValueError, "stable_id", id="stable-id-type"),
+        pytest.param("stage", 123, ValueError, "stage", id="stage-type"),
+        pytest.param("category", 123, ValueError, "category", id="category-type"),
     ],
 )
 def test_tracked_constraint_rejects_malformed_values(
@@ -112,7 +179,10 @@ def test_tracked_constraint_rejects_malformed_values(
     values = {
         "stable_id": "group",
         "stage": "kernel",
-        "category": "domain",
+        # A pairing the builder really registers: the constructor now refuses a
+        # stage and category combination it never emits, so a made-up pairing
+        # would be rejected before the field under test is reached.
+        "category": "domain.frame_state",
         "expressions": (z3.BoolVal(True),),
         "source_ref": BmcSourceRef("generated", None, None),
     }
@@ -1710,3 +1780,525 @@ def test_line_ending_styles_keep_exact_source_excerpts(
         for group in core._tracked_groups
         if group.source_ref.kind == "fcstm"
     } == {"main.fcstm", "worker.fcstm"}
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize("stable_id", ["冲突", "assumé", "a\tb", "a\x00b"])
+def test_tracked_constraint_stable_ids_must_be_printable_ascii(stable_id) -> None:
+    """The internal boundary keeps the same ASCII rule as the public one.
+
+    A non-ASCII id reaching the relation layer would become a solver literal
+    name, so the check belongs here as well as on the published reference.
+    """
+    with pytest.raises(ValueError, match="must be printable ASCII"):
+        BmcTrackedConstraint(
+            stable_id,
+            "assumptions",
+            "assumption.frame",
+            (True,),
+            BmcSourceRef("generated", None, None),
+        )
+
+
+def test_tracked_refs_get_the_same_validation_as_published_metadata() -> None:
+    """The builder's own mapping is not a third door with looser rules.
+
+    A shallow copy here still passes every published check downstream, because
+    ``build_core_item`` revalidates at the public boundary -- which is precisely
+    why no published-output test can tell the two apart.  What differs is where
+    the failure surfaces: unvalidated builder metadata carries a caller's nested
+    aliases and values that only fail once something serializes them.
+    """
+    from types import MappingProxyType
+
+    from pyfcstm.bmc.provenance import BmcSourceRef, BmcTrackedConstraint
+
+    source = BmcSourceRef("generated", None, None)
+
+    def tracked(refs):
+        return BmcTrackedConstraint(
+            "assumption.0000.frame.0000",
+            "assumptions",
+            "assumption.frame",
+            (z3.BoolVal(True),),
+            source,
+            refs=refs,
+        )
+
+    with pytest.raises(TypeError, match="not JSON-compatible"):
+        tracked({"bad": object()})
+    with pytest.raises(TypeError, match="keys must be strings"):
+        tracked({"nested": {1: "a"}})
+    with pytest.raises(ValueError, match="finite"):
+        tracked({"nested": {"x": float("nan")}})
+
+    # A nested mapping the caller keeps writing to must not reach the group.
+    alias = {}
+    group = tracked({"nested": alias})
+    alias["late"] = object()
+    assert "late" not in group.refs["nested"]
+    assert isinstance(group.refs["nested"], MappingProxyType)
+
+
+def test_reference_metadata_is_json_ready_or_refused() -> None:
+    """Metadata reaches ``json.dumps`` unchanged, so it is checked on the way in.
+
+    A caller builds ``refs`` from whatever they have to hand.  Anything that could
+    not be rendered as JSON is refused where the group is built, because the
+    alternative is a serialization failure at the point of publishing a report.
+    """
+    import json
+
+    from pyfcstm.bmc.provenance import BmcSourceRef, BmcTrackedConstraint
+
+    source = BmcSourceRef("generated", None, None)
+
+    def tracked(refs):
+        return BmcTrackedConstraint(
+            "assumption.0000.frame.0000",
+            "assumptions",
+            "assumption.frame",
+            (z3.BoolVal(True),),
+            source,
+            refs=refs,
+        )
+
+    # A well-formed nested mapping survives a round-trip through JSON.
+    group = tracked({"nested": {"ok": 1}})
+    assert json.loads(
+        json.dumps({name: dict(value) for name, value in group.refs.items()})
+    ) == {"nested": {"ok": 1}}
+
+    # Values JSON cannot render are refused here rather than at publishing time.
+    with pytest.raises(TypeError, match="is not JSON-compatible"):
+        tracked({"x": {1, 2}})
+    with pytest.raises(TypeError, match="is not JSON-compatible"):
+        tracked({"x": b"ab"})
+
+    # ``json.dumps`` would happily emit these, but no JSON reader accepts them.
+    for not_finite in (float("nan"), float("inf")):
+        with pytest.raises(ValueError, match="must be a finite number"):
+            tracked({"x": not_finite})
+
+    # A JSON object's keys are strings, so a non-string key cannot be published.
+    with pytest.raises(TypeError, match="keys must be strings"):
+        tracked({1: "a"})
+
+
+def test_a_tracked_identifier_stays_printable_ascii() -> None:
+    """A group's id is read by an ASCII scan, a dict lookup and a sort.
+
+    The id becomes a solver literal name and a JSON key downstream, so a control
+    character in it is refused where the group is built rather than at whichever
+    reader trips over it first.
+    """
+    from pyfcstm.bmc.provenance import BmcSourceRef, BmcTrackedConstraint
+
+    group = BmcTrackedConstraint(
+        "assumption.0000.frame.0000",
+        "assumptions",
+        "assumption.frame",
+        (z3.BoolVal(True),),
+        BmcSourceRef("generated", None, None),
+    )
+    assert group.stable_id == "assumption.0000.frame.0000"
+
+    for bad_id in ("a\x00b", "tab\there", "new\nline", "caf\xe9"):
+        with pytest.raises(ValueError, match="printable ASCII"):
+            BmcTrackedConstraint(
+                bad_id,
+                "assumptions",
+                "assumption.frame",
+                (z3.BoolVal(True),),
+                BmcSourceRef("generated", None, None),
+            )
+
+
+def test_span_coordinates_are_typed_where_they_are_published() -> None:
+    """The constructor must not be looser than the schema it publishes to.
+
+    The asymmetry ledger records cases where the schema accepts what the
+    constructor refuses, which is harmless because the constructor is the
+    stricter side.  This is the mirror image: a constructor looser than the
+    schema lets the tool emit output that fails its own published contract.
+    ``Span`` is a shared utility and imposes no types of its own, so the check
+    belongs at the boundary that publishes it.
+    """
+    import json
+
+    from pyfcstm.bmc.provenance import BmcSourceRef
+
+    for bad in (Span("oops", 1), Span(1.5, 1), Span(True, 1), Span(1, None)):
+        with pytest.raises(TypeError, match="must be an integer"):
+            BmcSourceRef("fcstm", "a.fcstm", bad)
+    for bad in (Span(1, 1, "x", None), Span(1, 1, 1, 2.5)):
+        with pytest.raises(TypeError, match="must be an integer"):
+            BmcSourceRef("fcstm", "a.fcstm", bad)
+
+    # Coordinates are typed, not bounded: a span that cannot be sliced already
+    # degrades to an absent excerpt, and the schema states no bound either.
+    published = BmcSourceRef("fcstm", "a.fcstm", Span(0, -1, None, None))
+    payload = json.dumps(published.to_canonical()["span"])
+    assert json.loads(payload) == {
+        "line": 0,
+        "column": -1,
+        "end_line": None,
+        "end_column": None,
+    }
+
+
+def test_the_digit_bound_falls_back_when_no_interpreter_limit_applies() -> None:
+    """Two configurations mean "no interpreter limit", and both use the floor.
+
+    Before Python 3.11 the setting does not exist at all, and from 3.11 on a
+    value of zero disables it.  In both cases the published bound stands on its
+    own, so the same payload is accepted everywhere.
+    """
+    import sys
+
+    from pyfcstm.bmc import provenance
+
+    saved = getattr(sys, "get_int_max_str_digits", None)
+    try:
+        if saved is not None:
+            del sys.get_int_max_str_digits
+        assert (
+            provenance._effective_int_digit_limit()
+            == provenance.MAX_METADATA_INT_DIGITS
+        )
+        sys.get_int_max_str_digits = lambda: 0
+        assert (
+            provenance._effective_int_digit_limit()
+            == provenance.MAX_METADATA_INT_DIGITS
+        )
+        sys.get_int_max_str_digits = lambda: 640
+        assert provenance._effective_int_digit_limit() == 640
+    finally:
+        if saved is None:
+            sys.__dict__.pop("get_int_max_str_digits", None)
+        else:
+            sys.get_int_max_str_digits = saved
+
+
+def test_the_digit_bound_follows_a_lowered_interpreter_limit() -> None:
+    """Whatever this boundary accepts must be encodable in this process.
+
+    A deployment may lower the interpreter's own integer-rendering limit for
+    safety, down to 640.  A fixed published bound would then accept a value that
+    still dies inside ``json.dumps`` -- the failure the boundary exists to
+    prevent, just with a different threshold.  The check runs in a fresh process
+    because the setting is global and changing it here would leak into every
+    other test.
+    """
+    import subprocess
+    import sys
+
+    if not hasattr(sys, "set_int_max_str_digits"):
+        pytest.skip("no interpreter integer limit before Python 3.11")
+
+    probe = (
+        "import json, sys\n"
+        "from pyfcstm.bmc.explanation import BmcConstraintRef\n"
+        "from pyfcstm.bmc.provenance import BmcSourceRef\n"
+        "src = BmcSourceRef('generated', None, None)\n"
+        "def build(value):\n"
+        "    return BmcConstraintRef('g', 'assumptions', 'assumption.frame', src,\n"
+        "                            's', refs={'n': value})\n"
+        "print('limit', sys.get_int_max_str_digits())\n"
+        "try:\n"
+        "    build(10**700)\n"
+        "    print('over accepted')\n"
+        "except ValueError:\n"
+        "    print('over refused')\n"
+        "json.dumps(build(10**600).to_canonical(), allow_nan=False)\n"
+        "print('under encoded')\n"
+    )
+    env = dict(os.environ, PYTHONINTMAXSTRDIGITS="640")
+    completed = subprocess.run(
+        [sys.executable, "-c", probe],
+        capture_output=True,
+        text=True,
+        env=env,
+        check=True,
+    )
+
+    assert "limit 640" in completed.stdout
+    assert "over refused" in completed.stdout
+    assert "under encoded" in completed.stdout
+
+
+def test_an_excerpt_quotes_exactly_the_stored_text() -> None:
+    """An excerpt is sliced from the document the registry holds, unchanged.
+
+    Quoting anything other than the stored characters is the one failure a
+    provenance registry exists to rule out, so a span is checked against the text
+    it names on a multi-line document rather than only on a single word.
+    """
+    from pyfcstm.bmc.provenance import BmcSourceRef, SourceDocumentRegistry
+
+    registry = SourceDocumentRegistry({"m.fcstm": "state A;\nstate B;\n"})
+
+    assert registry.document("m.fcstm") == "state A;\nstate B;\n"
+    assert registry.excerpt(BmcSourceRef("fcstm", "m.fcstm", Span(1, 1, 1, 9))) == (
+        "state A;"
+    )
+    assert registry.excerpt(BmcSourceRef("fcstm", "m.fcstm", Span(2, 7, 2, 9))) == "B;"
+    # A span naming a line the document does not have yields no excerpt at all
+    # rather than the nearest text.
+    assert registry.excerpt(BmcSourceRef("fcstm", "m.fcstm", Span(9, 1, 9, 2))) is None
+
+
+@pytest.mark.unittest
+def test_registry_refuses_a_path_that_names_no_document() -> None:
+    """An empty path cannot identify a document, so the registry refuses it.
+
+    A path is what a later report quotes provenance against.  Accepting one that
+    names nothing would let a span be attributed to a document no one can look
+    up.
+    """
+    from pyfcstm.bmc.provenance import SourceDocumentRegistry
+
+    with pytest.raises(ValueError, match="paths must be non-empty strings"):
+        SourceDocumentRegistry({"": "state A;"})
+
+    # A well-formed registry resolves the path it was given and nothing else.
+    registry = SourceDocumentRegistry({"real.fcstm": "REAL"})
+    assert registry.document("real.fcstm") == "REAL"
+    assert registry.document("anything-else") is None
+
+
+@pytest.mark.unittest
+def test_excerpts_drop_a_residual_carriage_return() -> None:
+    """A ``CR`` the normalizer cannot remove must stay out of the excerpt.
+
+    :func:`_normalize_line_separators` rewrites line breaks in one
+    left-to-right pass, so ``"\r\r\n"`` collapses to ``"\r\n"`` and leaves a
+    residual ``CR`` at the end of that line rather than inventing a second line
+    break for it.  Locating line ends therefore has to trim that ``CR``, or a
+    whole-line span would slice it into the excerpt and put a bare carriage
+    return inside a report whose lines are otherwise exact.
+    """
+    residual = "def int x = 0;\r\r\nstate Root { }\r\n"
+    stored = provenance_module._normalize_line_separators(residual)
+    # The precondition this test exercises: normalization really does leave a
+    # CR behind, so the trim below is not guarding an impossible input.
+    assert stored == "def int x = 0;\r\nstate Root { }\n"
+
+    registry = SourceDocumentRegistry({"m.fcstm": residual})
+    whole_first_line = BmcSourceRef("fcstm", "m.fcstm", Span(1, 1, 1, 15))
+    assert registry.excerpt(whole_first_line) == "def int x = 0;"
+
+    # One column further is past the line's own width and is refused rather
+    # than reaching into the residual CR or the line break after it.
+    over_run = BmcSourceRef("fcstm", "m.fcstm", Span(1, 1, 1, 16))
+    assert registry.excerpt(over_run) is None
+
+    # The line after the residual is unaffected: its own break was normalized,
+    # so its offsets shift by exactly the one retained CR.
+    second_line = BmcSourceRef("fcstm", "m.fcstm", Span(2, 1, 2, 15))
+    assert registry.excerpt(second_line) == "state Root { }"
+
+
+@pytest.mark.unittest
+def test_excerpts_are_identical_for_crlf_and_lf_checkouts() -> None:
+    """A Windows checkout must yield the same excerpts as a Unix one.
+
+    Spans arrive as 1-based line/column pairs with an exclusive end column, so
+    the byte offsets they resolve to differ between ``\\r\\n`` and ``\\n``
+    sources even though the visible text is the same.  A whole-line span is the
+    case that exposes it: the trailing ``CR`` sits inside the span's column
+    range and has to be trimmed, or every excerpt on a Windows checkout would
+    carry a stray carriage return into the report.
+    """
+    unix = "def int x = 0;\nstate Root { }\n"
+    windows = "def int x = 0;\r\nstate Root { }\r\n"
+
+    unix_registry = SourceDocumentRegistry({"m.fcstm": unix})
+    windows_registry = SourceDocumentRegistry({"m.fcstm": windows})
+
+    for line, expected in ((1, "def int x = 0;"), (2, "state Root { }")):
+        # Column 15 is one past the last character of a 14-character line, the
+        # exclusive end that selects the whole line.
+        span = Span(line, 1, line, 15)
+        reference = BmcSourceRef("fcstm", "m.fcstm", span)
+        assert unix_registry.excerpt(reference) == expected
+        assert windows_registry.excerpt(reference) == expected
+
+    # The equivalence comes from storage: the Windows text is held as LF, so
+    # both registries resolve the same offsets rather than compensating later.
+    assert windows_registry.document("m.fcstm", kind="fcstm") == unix
+    assert provenance_module._span_offsets(unix, Span(2, 1, 2, 15)) == (15, 29)
+
+    # A column past the line's own width is refused rather than silently
+    # reaching into the terminator or the next line.
+    over_run = BmcSourceRef("fcstm", "m.fcstm", Span(1, 1, 1, 16))
+    assert unix_registry.excerpt(over_run) is None
+    assert windows_registry.excerpt(over_run) is None
+
+
+@pytest.mark.unittest
+def test_synthetic_state_paths_yield_no_owner_prefixes() -> None:
+    """A synthetic case must not search authored states for its provenance.
+
+    Owner prefixes are how an event-only continuation finds the authored
+    transition that explains it.  Encoder-internal state paths -- the empty path
+    and the ``__``-prefixed synthetic ones -- name no authored state, so they
+    must produce no prefixes at all.  Returning prefixes for them would let a
+    synthetic case match an authored transition and claim a source span the user
+    never wrote.
+    """
+    from pyfcstm.bmc import relation as relation_module
+
+    assert relation_module._state_path_prefixes("") == ()
+    assert relation_module._state_path_prefixes("__synthetic") == ()
+    assert relation_module._state_path_prefixes("__synthetic.Child") == ()
+    # An authored path still yields nearest-owner-first prefixes.
+    assert relation_module._state_path_prefixes("Root.Outer.A") == (
+        "Root.Outer.A",
+        "Root.Outer",
+        "Root",
+    )
+
+
+#: Queries whose builds between them register every stage and category pairing
+#: the relation builder produces, so the naming rationale below rests on groups a
+#: real build emitted rather than on a hand-written list of them.
+_PAIRING_CORPUS = (
+    (
+        "def int x = 1;\ndef int y = 0;\n"
+        "state Root { event Go; state A; state B; [*] -> A; A -> B :: Go; A -> B; }",
+        'init state("Root.A") where x / y > 0; '
+        'assume at 0: var("x") / var("y") > 0; '
+        'check reach <= 2: active("Root.B");',
+    ),
+    (
+        "def int x = 1;\n"
+        "state Root { event Go; state A; state B; [*] -> A; A -> B :: Go; }",
+        'init state("Root.A"); '
+        'assume event("Root.Go", 0) == true; '
+        'assume events cardinality at_most_one {"Root.Go"}; '
+        'check reach <= 2: active("Root.B");',
+    ),
+)
+
+
+def _constructed_pairings():
+    """Return every stage and category pairing a corpus of real builds constructs.
+
+    Read back from ``to_canonical()`` on the core the public builder returns,
+    which publishes both group collections and gives each group's stage and
+    category, so nothing here reaches past the published surface.
+
+    :return: The pairings the corpus constructs.
+    :rtype: Set[Tuple[str, str]]
+    """
+    from pyfcstm.bmc import BmcEngine, build_bmc_core_formula
+
+    observed = set()
+    for source, query in _PAIRING_CORPUS:
+        context = BmcEngine(load_state_machine_from_text(source)).prepare(query)
+        canonical = build_bmc_core_formula(context).to_canonical()
+        # Case groups are published in their own key; reading only the first
+        # would lose the whole transition.case family.
+        for key in ("tracked_groups", "tracked_case_groups"):
+            for group in canonical[key]:
+                observed.add((group["stage"], group["category"]))
+    return observed
+
+
+@pytest.mark.unittest
+def test_a_tracked_group_and_its_aggregate_agree_on_which_pairings_exist() -> None:
+    """Two public surfaces must not disagree about which groups can exist.
+
+    :class:`~pyfcstm.bmc.provenance.BmcTrackedConstraint` is exported and
+    documented, so a caller can build a group directly rather than through a
+    build.  :func:`~pyfcstm.bmc.explanation.constraint_aggregate` is equally
+    public and answers which aggregate a group belongs to.  Were the constructor
+    to accept a pairing the aggregate cannot classify, a caller following the
+    documentation could hold an object no other published function can read.
+    """
+    import z3
+
+    from pyfcstm.bmc.explanation import constraint_aggregate
+    from pyfcstm.bmc.provenance import TRACKED_GROUP_PAIRINGS
+
+    def build(stage, category):
+        return BmcTrackedConstraint(
+            "group.0000",
+            stage,
+            category,
+            (z3.BoolVal(True),),
+            BmcSourceRef("generated", None, None),
+        )
+
+    # Every pairing the constructor accepts can be classified.
+    for stage, category in sorted(TRACKED_GROUP_PAIRINGS):
+        group = build(stage, category)
+        assert constraint_aggregate(group.stage, group.category)
+
+    # A pairing it does not accept is refused at construction.  Both halves are
+    # individually valid here -- "kernel" is a real stage and "definedness" a
+    # real category -- which is why the pair is what gets checked.
+    assert ("kernel", "definedness") not in TRACKED_GROUP_PAIRINGS
+    with pytest.raises(ValueError, match="is not one the builder registers"):
+        build("kernel", "definedness")
+
+    # And what real builds emit is exactly what the constructor accepts, so the
+    # table cannot drift from the registrations in either direction.
+    observed = _constructed_pairings()
+    assert observed == set(TRACKED_GROUP_PAIRINGS), (
+        set(TRACKED_GROUP_PAIRINGS) - observed,
+        observed - set(TRACKED_GROUP_PAIRINGS),
+    )
+
+
+@pytest.mark.unittest
+def test_the_group_noun_reads_the_category_because_the_aggregate_cannot() -> None:
+    """Pin the facts that decide how a source group is named to the reader.
+
+    A rendered group is named from its category's leading segment rather than
+    from its aggregate.  That choice is only correct because of the pairings real
+    builds actually emit, so the deciding facts are asserted here against those
+    builds instead of being asserted in prose in the reference documentation.
+    """
+    from pyfcstm.bmc.explanation import constraint_aggregate
+
+    observed = _constructed_pairings()
+    stages_by_noun = {}
+    for stage, category in observed:
+        stages_by_noun.setdefault(category.split(".")[0], set()).add(stage)
+
+    # The rationale for naming a group by its category segment rests on there
+    # being five nouns while the aggregate vocabulary offers four words, so both
+    # sets are asserted rather than merely computed.
+    assert set(stages_by_noun) == {
+        "assumption",
+        "definedness",
+        "domain",
+        "initial",
+        "transition",
+    }
+    assert {constraint_aggregate(stage, category) for stage, category in observed} == {
+        "domain",
+        "environment",
+        "initial",
+        "transition",
+    }
+
+    # A transition group is always a kernel-stage group, so its aggregate is
+    # "transition" and the rendered noun happens to agree with it.
+    assert stages_by_noun["transition"] == {"kernel"}
+    assert constraint_aggregate("kernel", "transition.step") == "transition"
+
+    # A definedness group never comes from the kernel stage, and comes from both
+    # of the others with a different aggregate in each -- which is why the
+    # rendered noun reads the category instead of the aggregate.
+    assert stages_by_noun["definedness"] == {"initialization", "assumptions"}
+    assert {
+        stage: constraint_aggregate(stage, "definedness")
+        for stage in stages_by_noun["definedness"]
+    } == {"initialization": "initial", "assumptions": "environment"}
+
+    # An assumption group's aggregate is a word no reader sees elsewhere.
+    assert stages_by_noun["assumption"] == {"assumptions"}
+    assert constraint_aggregate("assumptions", "assumption.frame") == "environment"

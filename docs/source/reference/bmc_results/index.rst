@@ -38,6 +38,7 @@ lines.
 .. cli-ref-option: command=bmc option=--json
 .. cli-ref-option: command=bmc option=--timeout-ms
 .. cli-ref-option: command=bmc option=--max-bound
+.. cli-ref-option: command=bmc option=--explain-infeasibility choices=none,formal,proof default=none
 .. cli-ref-option: command=bmc option=--color choices=auto,always,never default=auto
 .. cli-ref-option: command=bmc option=--help
 .. cli-ref-boundary: command=bmc stdout stderr exit-status side-effects success-signal failure-taxonomy human json atomic-output witness replay dual-check response-cause packaging property-verdict color timing llm-consumption
@@ -93,6 +94,16 @@ Both installed entry forms have the same behavior:
      - Creates ``BmcOptions(max_bound=N)``.  A query bound above ``N`` is
        rejected before relation construction as a controlled compile error.
        It does not rewrite or clamp the query bound.
+   * - ``--explain-infeasibility``
+     - ``none``, ``formal``, or ``proof``
+     - ``none``
+     - Requests the optional scenario-infeasibility explanation at the given
+       depth.  ``none`` performs no additional solver work and leaves
+       ``explanation`` null with ``refinement_status`` as ``not_requested``.
+       ``formal`` publishes the classification and a sound source core;
+       ``proof`` additionally requests a verified proof, which this stage
+       reports as unclosed rather than fabricating.  The depth never changes the
+       mandatory verdict.
    * - ``--color``
      - ``auto``, ``always``, or ``never``
      - ``auto``
@@ -388,6 +399,68 @@ mismatch, yellow for an empty/unknown/incomplete scenario and the bounded
 caveat, and cyan for report labels.  Color never enters JSON or files.  Scripts
 and LLM integrations must consume ``--json`` rather than parse human wording,
 ANSI, or live timing.
+
+Explanation block
+~~~~~~~~~~~~~~~~~
+
+``--explain-infeasibility formal`` or ``proof`` appends an explanation block to
+the human report.  ``BmcSolveResult.__str__()`` and ``to_text()`` render the same
+block from the same helper, so a reader sees identical text whichever surface
+they read.  A real invocation against an infeasible scenario produces:
+
+.. code-block:: text
+
+   Explanation: PARTIAL FORMAL DOMAIN EXPLANATION
+   Classification: assumptions conflict with the feasible prefix
+
+   Conflict constraints:
+     1. r22.fbmcq:2:1-2:28
+        assume at 1: var("x") == 0;
+     2. r22.fbmcq:1:1-1:35
+        init state("Root.A") where x == 0;
+     3. r22.fcstm:1:1-1:15
+        def int x = 0;
+     4. generated transition constraint at step 0
+
+   The displayed core is sufficient for UNSAT but is not proven subset-minimal.
+   Core scope: assumptions_prefix
+   Reduction: raw
+   Reason: sound source core published without a minimality proof
+
+
+``Explanation`` names the depth that was achieved and how complete it is.
+``Classification`` is the reader-facing sentence for the machine
+``classification`` field.  Each conflict-constraint entry gives an authored
+member's location and its own source text on two lines, or a generated support
+group naming the leading segment of its category -- ``domain``, ``transition``,
+``initial``, ``assumption`` or ``definedness`` -- and the frame or step it
+constrains.  A generated group takes one line, plus a second indented line
+listing any builder metadata that is not already in the position, which the
+tracked case groups do carry.
+
+The category segment is used rather than the aggregate formula the group belongs
+to because the aggregate vocabulary is too small: it offers ``domain``,
+``transition``, ``initial`` and ``environment``, while the groups the builder
+emits need five nouns, and two of those are not aggregate names.  An assumption
+group's aggregate is ``environment``, a word that appears nowhere else in the
+report, and a definedness group's aggregate is ``initial`` or ``environment``
+depending on which stage emitted it, naming neither the group nor anything stable
+across the two.  ``Core scope`` and ``Reduction`` describe what was proven and how
+far minimization got, and ``Reason`` states why it stopped there.
+
+An additional line appears when a deeper depth was requested than was achieved,
+so a caller who asked for ``proof`` and received ``formal`` is told both:
+
+.. code-block:: text
+
+   Explanation depth: requested proof, achieved formal
+
+Every core reports its scope and its reduction, whether or not minimality was
+proven; the sentence above the scope is what distinguishes the two.  Granularity,
+member count, a labelled minimality line and the elapsed explanation time belong
+to the fuller published block, which also carries a narrative and a causal chain
+this depth does not build, so they do not appear here.
+
 
 Direct Python result text
 -------------------------

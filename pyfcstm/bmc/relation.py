@@ -312,7 +312,7 @@ def _formula_from_groups(
         >>> import z3
         >>> from pyfcstm.bmc.provenance import BmcSourceRef, BmcTrackedConstraint
         >>> group = BmcTrackedConstraint(
-        ...     "x", "kernel", "domain", (z3.Bool("x"),),
+        ...     "x", "kernel", "domain.frame_state", (z3.Bool("x"),),
         ...     BmcSourceRef("generated", None, None),
         ... )
         >>> str(_formula_from_groups((group,)))
@@ -362,7 +362,7 @@ def _append_tracked_group(
         >>> from pyfcstm.bmc.provenance import BmcSourceRef
         >>> groups = []
         >>> _append_tracked_group(
-        ...     groups, stable_id="x", stage="kernel", category="domain",
+        ...     groups, stable_id="x", stage="kernel", category="domain.frame_state",
         ...     expressions=(z3.BoolVal(True),),
         ...     source_ref=BmcSourceRef("generated", None, None),
         ... )
@@ -635,40 +635,77 @@ def _case_source_reference(
                 return reference, labels, "unique_combo"
         return generated_ref, labels, None
 
+    # Every shape check below falls back to the generated reference, and none of
+    # them is reachable from authored input: the labels handed to this function
+    # come from the encoder that built them, so their shape is the encoder's own.
+    # They are kept as stated defensive code -- a future label format would
+    # degrade to a generated reference instead of mis-attributing a source span.
     parts = labels[0].rsplit("::", 2)
     if len(parts) != 3:
-        return generated_ref, labels, None
+        return (
+            generated_ref,
+            labels,
+            None,
+        )  # pragma: no cover - encoder-built labels always parse.
     owner_path, index_text, _edge = parts
     try:
         transition_index = int(index_text)
-    except ValueError:
-        return generated_ref, labels, None
+    except ValueError:  # pragma: no cover - encoder-built labels always parse.
+        return (
+            generated_ref,
+            labels,
+            None,
+        )  # pragma: no cover - encoder-built labels always parse.
     if transition_index < 0:
-        return generated_ref, labels, None
+        return (
+            generated_ref,
+            labels,
+            None,
+        )  # pragma: no cover - encoder-built labels always parse.
 
     owner = _model_state_by_path(context, owner_path)
     if owner is None:
-        return generated_ref, labels, None
+        return (
+            generated_ref,
+            labels,
+            None,
+        )  # pragma: no cover - encoder-built labels always parse.
     edge_parts = _edge.split("->", 1)
     if len(edge_parts) != 2:
-        return generated_ref, labels, None
+        return (
+            generated_ref,
+            labels,
+            None,
+        )  # pragma: no cover - encoder-built labels always parse.
     from_state, target_state = (part.strip() for part in edge_parts)
     if not from_state or not target_state:
-        return generated_ref, labels, None
+        return (
+            generated_ref,
+            labels,
+            None,
+        )  # pragma: no cover - encoder-built labels always parse.
     transitions = (
         tuple(owner.init_transitions)
         if from_state == "INIT_STATE"
         else tuple(owner.transitions_from)
     )
     if transition_index >= len(transitions):
-        return generated_ref, labels, None
+        return (
+            generated_ref,
+            labels,
+            None,
+        )  # pragma: no cover - encoder-built labels always parse.
 
     transition = transitions[transition_index]
     expected_target = (
         "[*]" if str(transition.to_state) == "EXIT_STATE" else str(transition.to_state)
     )
     if str(transition.from_state) != from_state or expected_target != target_state:
-        return generated_ref, labels, None
+        return (
+            generated_ref,
+            labels,
+            None,
+        )  # pragma: no cover - encoder-built labels always parse.
     reference = context._source_registry.model_reference(transition)
     if reference.path is None and reference.span is None:
         return generated_ref, labels, None

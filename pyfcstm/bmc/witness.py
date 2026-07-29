@@ -2443,8 +2443,8 @@ def _explanation_stage(
         scope = explanation.core.scope
     else:
         return None
-    if scope == "kernel":
-        return "kernel"
+    # "kernel" needs no special case: it has no underscore, so the split below
+    # returns it unchanged.
     return scope.split("_", 1)[0]
 
 

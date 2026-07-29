@@ -568,15 +568,17 @@ def classify_infeasibility(
             tuple(checks),
         )
     if status == "unsat":  # pragma: no cover - see the note below.
-        # No authored query in the suite reaches this branch, so the two
-        # ``*_domain_conflict`` classifications currently have no producing path
-        # that a test observes.  That is a statement about the queries tried, not
-        # a proof that none exists: the branch fires when the domain probe itself
-        # comes back unsat, which a machine whose variable domains contradict the
-        # transition relation would do.  Reaching it needed a forged aggregate
-        # formula before, which the test boundary rules out, so it is kept as
-        # stated defensive code and the gap is recorded on the tracking issue
-        # rather than papered over with a construction no caller can make.
+        # The two ``*_domain_conflict`` classifications have no observed producing
+        # path, and what would produce one is an open question rather than
+        # something this comment can assert.  The probe above checks the domain
+        # aggregate against one component literal only -- no transition literal is
+        # involved -- and the domain aggregate as built today carries just
+        # ``domain.frame_state`` enumerations, which are satisfiable on their own.
+        # So no authored FCSTM/FBMCQ text in this suite reaches it, and an earlier
+        # attempt to reach it forged the aggregate formula, which the test boundary
+        # rules out.  Whether these two values are reachable at all, reserved for a
+        # later delivery, or should leave the frozen vocabulary is a contract
+        # decision recorded on the tracking issue, not one this branch settles.
         classification = (
             "initialization_domain_conflict"
             if stage == "initialization"

@@ -931,3 +931,84 @@ def test_a_deadline_that_stops_the_explanation_keeps_the_verdict() -> None:
     # timeout row distinguishable from the default.
     assert unexplained.explanation is None
     assert unexplained.refinement_status == "not_requested"
+
+
+@pytest.mark.unittest
+def test_a_stage_fallback_core_agrees_with_the_localized_stage() -> None:
+    """A fallback core names its stage the same way a classified one does.
+
+    When no classification was reached, the stage a result describes comes from
+    the core's own scope, and the frozen fallback scopes carry the stage as their
+    first segment.  A published result whose core says ``assumptions`` must not be
+    read as describing a different stage, so the agreement is checked here through
+    the published constructors a caller uses to assemble one.
+    """
+    from pyfcstm.bmc.explanation import (
+        BmcConflictCore,
+        BmcConstraintRef,
+        BmcCoreItem,
+        BmcInfeasibilityExplanation,
+    )
+    from pyfcstm.bmc.provenance import BmcSourceRef
+    from pyfcstm.bmc.witness import (
+        BmcFeasibilityCheck,
+        BmcFeasibilityRefinementCheck,
+        BmcFeasibilityResult,
+    )
+
+    reference = BmcConstraintRef(
+        stable_id="assumption.frame.0000",
+        stage="assumptions",
+        category="assumption.frame",
+        source=BmcSourceRef("generated", None, None),
+        summary="frame assumption",
+    )
+    core = BmcConflictCore(
+        "assumptions_stage_fallback",
+        "A_0",
+        "source_group",
+        "raw",
+        "not_proven",
+        (
+            BmcCoreItem(
+                reference,
+                "assumption",
+                None,
+                False,
+                {"kind": "structural_constraint"},
+                "frame assumption",
+                False,
+            ),
+        ),
+    )
+    explanation = BmcInfeasibilityExplanation(
+        requested_mode="formal",
+        achieved_mode="formal",
+        status="partial",
+        classification=None,
+        core=core,
+        reason="stage fallback core published without a classification",
+    )
+
+    result = BmcFeasibilityResult(
+        kernel=BmcFeasibilityCheck("sat", "checked", elapsed_ms=1.0),
+        initialization=BmcFeasibilityCheck("sat", "checked", elapsed_ms=1.0),
+        assumptions=BmcFeasibilityCheck("unsat", "checked", elapsed_ms=1.0),
+        infeasible_stage="assumptions",
+        localization_status="complete",
+        refinement_status="partial",
+        # The result and the explanation must agree on the reason, which the
+        # constructor enforces: passing a different one is refused.
+        refinement_reason="stage fallback core published without a classification",
+        # An explanation must be accompanied by the ledger of what produced it;
+        # the constructor refuses an empty one.
+        refinement_checks=(
+            BmcFeasibilityRefinementCheck("component_assumptions", "unsat", None, 1.0),
+            # A published core also needs the recheck that proved it.
+            BmcFeasibilityRefinementCheck("unsat_core", "complete", None, 1.0),
+        ),
+        explanation=explanation,
+    )
+
+    assert result.explanation.core.scope == "assumptions_stage_fallback"
+    assert result.infeasible_stage == "assumptions"

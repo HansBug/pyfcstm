@@ -819,8 +819,17 @@ self-contained HTML file.
 ``model.diagram(...)`` returns an immutable ``Diagram`` snapshot. Its
 ``to_dict()`` and ``to_json()`` results omit absolute paths, source ranges, and
 editor selection state. ``to_html()`` returns one complete HTML string;
-``save("name.json")`` and ``save("name.html")`` use atomic replacement. The
+``save("name.json")`` and ``save("name.html")`` use atomic replacement: an
+interrupted save leaves the file that was already there, with its content and
+permissions intact. A file being replaced keeps the permissions it had, and a new
+one gets what your umask gives any other new file in that directory — so a umask
+that clears the write bit produces a read-only result which ``save()`` can still
+replace, because it is yours. A file belonging to another user that you cannot
+write is refused instead, and on Windows so is one marked read-only. The
 HTML path is also returned by ``Diagram.show()`` and ``StateMachine.show()``.
+With a window and no explicit path, ``show()`` blocks until the window is closed
+and then removes the document it wrote, so the returned path no longer exists —
+pass an explicit path for a viewer you want to keep.
 
 The HTML viewer can download SVG, PNG, and vector PDF in a browser. The Python
 methods ``to_svg()``, ``to_png()``, and ``to_pdf()`` intentionally raise

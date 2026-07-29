@@ -74,6 +74,59 @@ Applies to all code in [pyfcstm/](pyfcstm/), [editors/jsfcstm/src/](editors/jsfc
 [editors/jsfcstm/src/dsl/grammar/](editors/jsfcstm/src/dsl/grammar/))
 are exempt — they are produced by ANTLR.
 
+## Code Review Scope (findings must be reachable through the public surface)
+
+A code-review finding about this repository's behaviour must describe a failure a
+real user can reach through a documented entry point, used the way the
+documentation says to use it. Anything else is not a finding, however true it is
+about the internals.
+
+**In scope.** The public Python API and the CLI, called normally:
+
+- `StateMachine.diagram()`, `Diagram.to_dict` / `to_json` / `to_html` / `save` /
+  `show` / `with_options` / `with_view_state`, and the equivalents on other
+  modules' public surfaces.
+- `pyfcstm generate` / `simulate` / `bmc` / `plantuml` / `inspect` / `diagram`
+  with the argument combinations their `--help` documents.
+- Ordinary environmental failures a user actually meets on those paths: Ctrl-C
+  part-way through, a destination directory that does not exist or is not
+  writable, a full disk, a missing optional dependency, a common umask, a shared
+  temporary directory, a second user on the same machine, a supported Python
+  version, a supported platform.
+
+**Out of scope.** A defect that exists only in a path constructed for the purpose
+is not reported:
+
+- Calling a private helper directly to reach a state the public API cannot
+  produce.
+- Patching production internals to create a state the public API cannot produce.
+- Injecting a failure into an internal call site — a `logging.Handler` that
+  raises, a broken `sys.stderr`, an argument whose `__str__` raises, a forced
+  `os.fstat` / `os.fchmod` / `unlink` error, a synthesised `EDQUOT`.
+- Faking a platform constant, or forcing a branch that does not exist on the
+  platform under test.
+- Races that need preemption between adjacent bytecodes, or a hard link or
+  symlink swapped in at a freshly generated random name.
+- Branches that need two or more independent failures at once.
+
+**Instruments are not findings.** The exclusions above are about what may be
+*reported*, not about how a property may be *tested*. A test may drive a private
+helper, inject an interrupt at every line, or fake an identity, provided the
+property it pins is one the public surface exposes: `save()` being interrupted is
+an ordinary user event, so a line-granularity probe over the private writer is a
+legitimate way to gate it.
+
+**The question to answer before reporting.** "A user who only reads the public
+documentation and runs the documented commands — how do they arrive here?" If that
+has no answer, the finding is not one. Reporting "nothing found on normal paths,
+and here is what I checked" is the correct outcome in that case, and is more useful
+than a list of unreachable branches.
+
+This section governs correctness reviews of this repository's own code. It does
+not narrow security review of untrusted *input* — a malicious `.fcstm` source, a
+hostile template, or a crafted `.fbmcq` query arrives through a public entry point
+and is therefore in scope by the rule above, not excluded by it.
+
 ## Conversation Language
 
 Reply in whatever language the user wrote their most recent message in. Do not default to English on your own. If the user writes in Chinese, reply in Chinese; if the user writes in English, reply in English; if the user mixes languages, mirror their dominant language and keep technical terms in their original form. When the user switches languages mid-conversation, switch with them on the very next turn — do not keep using the previous language.

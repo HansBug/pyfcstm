@@ -809,7 +809,13 @@ Python Diagram 接口和浏览器查看器
 ``model.diagram(...)`` 返回不可变的 ``Diagram`` 快照。``to_dict()`` 和
 ``to_json()`` 不包含绝对路径、源码范围或编辑器选择状态。``to_html()``
 返回一份完整 HTML 字符串；``save("name.json")`` 和 ``save("name.html")``
-使用原子替换。``Diagram.show()`` 和 ``StateMachine.show()`` 同样返回 HTML 路径。
+使用原子替换：保存被中断时，原有文件的内容与权限原样保留。被覆盖的文件保持它
+原来的权限，新建的文件则按你的 umask 取值，与该目录下任何新文件一致——因此去掉
+写位的 umask 会产出只读结果，而 ``save()`` 仍能替换它，因为它属于你。属于其他
+用户且你无法写入的文件会被拒绝；在 Windows 上，被标记为只读的文件同样被拒绝。
+``Diagram.show()`` 和 ``StateMachine.show()`` 同样返回 HTML 路径。
+带窗口且未指定路径时，``show()`` 会阻塞到窗口关闭，随后删除它写出的文档，因此
+返回的路径届时已不存在——想保留查看器请显式指定输出路径。
 
 HTML 查看器可以在浏览器中下载 SVG、PNG 和矢量 PDF。Python 的
 ``to_svg()``、``to_png()`` 和 ``to_pdf()`` 在后续无头交付阶段之前会主动抛出

@@ -4,6 +4,7 @@ import ast
 import dis
 import inspect
 import json
+import logging
 import os
 from pathlib import Path
 import re
@@ -11,7 +12,6 @@ import stat
 from unittest import mock
 import sys
 import tempfile
-import threading
 
 import pytest
 
@@ -262,9 +262,20 @@ def test_show_launches_a_standalone_app_window(monkeypatch, tmp_path):
 
     calls = []
 
+    class FakeBrowser:
+        def __init__(self):
+            self.waited = 0
+
+        def wait(self):
+            self.waited += 1
+            return 0
+
+    browsers = []
+
     def fake_popen(command, **kwargs):
         calls.append((command, kwargs))
-        return object()
+        browsers.append(FakeBrowser())
+        return browsers[-1]
 
     monkeypatch.setattr(diagram_api, "_browser_app_executable", lambda: "/opt/chrome")
     monkeypatch.setattr(diagram_api.subprocess, "Popen", fake_popen)
@@ -276,9 +287,18 @@ def test_show_launches_a_standalone_app_window(monkeypatch, tmp_path):
     command, kwargs = calls[0]
     assert command[0] == "/opt/chrome"
     assert command[1].startswith("--app=file://")
-    assert "--new-window" in command
     assert "--window-size=960,640" in command
     assert kwargs["stdin"] is diagram_api.subprocess.DEVNULL
+    # Its own profile, which is what makes waiting mean anything: without it a
+    # Chromium-family browser hands the document to an instance already running
+    # and exits at once.
+    profiles = [item for item in command if item.startswith("--user-data-dir=")]
+    assert len(profiles) == 1
+    assert not Path(profiles[0].split("=", 1)[1]).exists(), "the profile is removed"
+    # Waited on, not detached. Everything the earlier revisions had to invent --
+    # predictable names, an exit hook, two naming spaces -- existed because this
+    # did not happen.
+    assert browsers[0].waited == 1
 
 
 def test_show_rejects_invalid_window_size(tmp_path):
@@ -563,6 +583,97 @@ def _wasm_module(section_ids):
 
 
 @pytest.mark.unittest
+def test_a_temporary_viewer_is_private_and_reused_per_diagram_and_user():
+    """The viewer embeds the model's own source into a world-readable directory.
+
+    Deriving the name from the document made it predictable, and dropping the
+    pre-created file removed the 0600 that had been protecting it by accident,
+    so any local user could read another user's state machine. The mode is
+    forced rather than preserved, which also stops a pre-created permissive file
+    from lending its mode to fresh content.
+
+    The name carries the user because the directory is shared and the file is
+    0600: without that, the second person to show a given diagram on a machine
+    would be refused their own save.
+    """
+    from pyfcstm.diagram import api as diagram_api
+
+    model = _model("state Root { state Secret; [*] -> Secret; }")
+    document = model.diagram().to_html()
+    path = diagram_api._temporary_viewer_path(document)
+    assert diagram_api._temporary_viewer_path(document) == path, (
+        "repeats reuse one file"
+    )
+    other = diagram_api._temporary_viewer_path(
+        _model("state Root;").diagram().to_html()
+    )
+    assert other != path, "different diagrams need different files"
+
+    if hasattr(os, "geteuid"):
+        assert path.name.endswith("-%d.html" % os.geteuid())
+
+    written = diagram_api._atomic_write_text(path, document, mode=0o600)
+    try:
+        assert stat.S_IMODE(written.stat().st_mode) == 0o600
+    finally:
+        written.unlink()
+
+
+@pytest.mark.unittest
+def test_a_window_removes_the_document_it_showed(monkeypatch, tmp_path):
+    # The reason for waiting rather than detaching: once the window is closed
+    # nothing is reading the file, so it can simply go. A detached browser reads
+    # it after this process is gone, which is what forced every earlier revision
+    # to leave ~30 MB behind and to invent names that said whose it was.
+    from pyfcstm.diagram import api as diagram_api
+
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
+    shown = []
+
+    def fake_window(path, _dimensions):
+        shown.append((path, path.read_text(encoding="utf-8")[:6]))
+
+    monkeypatch.setattr(diagram_api, "_open_standalone_window", fake_window)
+    view = _model("state Root;").diagram()
+    object.__setattr__(view, "_html_document", "<html>tiny</html>")
+
+    returned = view.show(open_window=True)
+    assert shown and shown[0][1] == "<html>", "the window saw the document"
+    assert shown[0][0] == returned
+    assert not returned.exists(), "the document outlived the window it was shown in"
+    assert list(tmp_path.iterdir()) == [], "and left nothing beside it"
+
+
+@pytest.mark.unittest
+def test_only_a_path_the_caller_named_survives_a_window(monkeypatch, tmp_path):
+    # The one file this must not remove is the one the caller named. A temporary
+    # document goes however the window ends, including when there was no browser
+    # to open one: nothing ever read it, and ~30 MB on a machine that cannot show
+    # it is not a service. The CLI points at `-o` instead.
+    from pyfcstm.diagram import api as diagram_api
+
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
+    view = _model("state Root;").diagram()
+    object.__setattr__(view, "_html_document", "<html>tiny</html>")
+
+    named = tmp_path / "kept.html"
+    monkeypatch.setattr(diagram_api, "_open_standalone_window", lambda *_: None)
+    assert view.show(named, open_window=True) == named
+    assert named.is_file(), "a path the caller gave is theirs to keep"
+
+    def refuse(*_args):
+        raise DiagramUnavailableError("no browser")
+
+    monkeypatch.setattr(diagram_api, "_open_standalone_window", refuse)
+    with pytest.raises(DiagramUnavailableError):
+        view.show(open_window=True)
+    left = [
+        item.name for item in tmp_path.iterdir() if item.name.startswith("pyfcstm-")
+    ]
+    assert left == [], "a document no window ever read must not be left behind"
+
+
+@pytest.mark.unittest
 def test_wasm_envelope_accepts_the_specified_section_order():
     from pyfcstm.diagram.engine import _valid_wasm_envelope
 
@@ -821,121 +932,6 @@ def test_snapshots_reject_attribute_assignment():
 
 
 @pytest.mark.unittest
-def test_a_shown_viewer_does_not_accumulate():
-    """Repeats must reuse one file, and the window's copy must outlive us.
-
-    A cleanup hook once made ``pyfcstm diagram --open`` open a window onto a
-    file that no longer existed, because the browser is launched detached and
-    reads the document after the command has exited. Keeping every file instead
-    traded that for ~30 MB per call, so the name is derived from the document.
-    """
-    from pyfcstm.diagram import api as diagram_api
-
-    model = _model("state Root { state Idle; state Busy; [*] -> Idle; Idle -> Busy; }")
-    document = model.diagram().to_html()
-    first = diagram_api._temporary_viewer_path(document, for_window=True)
-    assert diagram_api._temporary_viewer_path(document, for_window=True) == first
-    other = diagram_api._temporary_viewer_path(
-        _model("state Root;").diagram().to_html(), for_window=True
-    )
-    assert other != first, "different diagrams need different files"
-
-
-@pytest.mark.unittest
-@pytest.mark.skipif(os.name == "nt", reason="POSIX shares one temporary directory")
-def test_a_window_document_is_per_user_in_the_shared_temporary_directory(monkeypatch):
-    # A window's name is derived from the document so that showing the same
-    # diagram twice reuses one file instead of leaving another ~30 MB behind. On
-    # POSIX that name is in a shared directory and the document is written 0600,
-    # so the second person to show a given diagram on a machine got the first
-    # person's file: unwritable, and unreplaceable under the sticky bit `/tmp`
-    # carries. Reuse is still the point, just per user.
-    from pyfcstm.diagram import api
-
-    # The effective id, matching what `_write_protection_reason` compares against
-    # and what a file created here is owned by.
-    monkeypatch.setattr(os, "geteuid", lambda: 4242)
-    mine = api._temporary_viewer_path("document", for_window=True)
-    again = api._temporary_viewer_path("document", for_window=True)
-    monkeypatch.setattr(os, "geteuid", lambda: 4243)
-    theirs = api._temporary_viewer_path("document", for_window=True)
-    assert mine == again, "one user showing one diagram must reuse one file"
-    assert mine != theirs, "two users must not be sent to one 0600 file"
-
-
-@pytest.mark.skipif(os.name == "nt", reason="POSIX shares one temporary directory")
-def test_opposite_viewer_lifetimes_never_share_a_name(monkeypatch):
-    # A window document must outlive this process, because the browser is
-    # detached and reads it afterwards; a document nobody opened is this
-    # process's litter and the exit hook deletes it. The two numbers that
-    # separate them share a range -- 1000 is an ordinary user id and an ordinary
-    # process id at once -- so with a bare integer on each side the two landed on
-    # one path, and the deletable one won. The identities are pinned equal here
-    # because that is the case a difference in the numbers hides.
-    from pyfcstm.diagram import api
-
-    monkeypatch.setattr(os, "geteuid", lambda: 1000)
-    monkeypatch.setattr(os, "getpid", lambda: 1000)
-    windowed = api._temporary_viewer_path("document", for_window=True)
-    scoped = api._temporary_viewer_path("document", for_window=False)
-    assert windowed != scoped, "the exit hook would delete a live window's document"
-
-
-def test_a_temporary_viewer_is_private_and_process_scoped():
-    """The viewer embeds the model's own source into a world-readable directory.
-
-    Deriving the name from the document made it predictable, and dropping the
-    pre-created file removed the 0600 that had been protecting it by accident,
-    so any local user could read another user's state machine. The mode is
-    forced rather than preserved, which also stops a pre-created permissive file
-    from lending its mode to fresh content.
-
-    The name also has to say who owns the file. One shared content-derived name
-    let an unrelated process rendering the same model delete, at its own exit,
-    the document a live browser window was still reading.
-    """
-    import atexit as atexit_module
-
-    from pyfcstm.diagram import api as diagram_api
-
-    model = _model("state Root { state Secret; [*] -> Secret; }")
-    document = model.diagram().to_html()
-    windowed = diagram_api._temporary_viewer_path(document, for_window=True)
-    scoped = diagram_api._temporary_viewer_path(document, for_window=False)
-    assert windowed != scoped, "a window's document must not share a reapable name"
-    # The suffix rather than the digits anywhere in the name. Scanning the whole
-    # string for the process id fails on ordinary values -- euid 1000 with pid 100
-    # makes one a substring of the other, and a pid's digits can land in the hex
-    # digest -- so the assertion went red while the runtime was correct.
-    assert scoped.stem.endswith(diagram_api._process_scoped_suffix())
-    assert not windowed.stem.endswith(diagram_api._process_scoped_suffix())
-    # Reusable across processes, which is what keeps repeats from accumulating.
-    assert diagram_api._temporary_viewer_path(document, for_window=True) == windowed
-
-    registered = []
-    original = atexit_module.register
-    diagram_api.atexit.register = lambda func, *args: registered.append((func, args))
-    try:
-        path = model.diagram().show(open_window=False)
-    finally:
-        diagram_api.atexit.register = original
-    try:
-        assert path == scoped
-        # Windows cannot represent a POSIX mode, so it reports 0o666 here.
-        if os.name != "nt":
-            assert stat.S_IMODE(path.stat().st_mode) == 0o600
-        assert "Secret" in path.read_text(encoding="utf-8")
-        # The removal must be wired to interpreter exit, not merely callable.
-        assert (diagram_api._remove_temporary_viewer, (path,)) in registered
-        diagram_api._remove_temporary_viewer(path)
-        assert not path.exists()
-    finally:
-        diagram_api._TEMPORARY_VIEWERS.discard(path)
-        if path.exists():
-            path.unlink()
-
-
-@pytest.mark.unittest
 def test_detail_level_reaches_the_renderer_preset():
     """A level that changes nothing is worse than no level at all.
 
@@ -1061,25 +1057,55 @@ def test_atomic_writes_remove_their_temporary_when_interrupted(tmp_path, monkeyp
     )
 
 
-def test_atomic_writes_still_report_a_failed_cleanup_with_both_causes(
-    tmp_path, monkeypatch
-):
-    # The interrupt cleanup must not swallow the case where the write failed and
-    # removing the temporary failed too: both reasons stay in the message.
+@pytest.mark.skipif(os.name == "nt", reason="RLIMIT_FSIZE is a POSIX rule")
+def test_a_write_failure_names_the_file_the_caller_asked_for(tmp_path):
+    # A real out-of-space failure rather than an injected one: `RLIMIT_FSIZE` is
+    # the controllable stand-in for a full disk, and it arrives on a descriptor,
+    # so the OS names nothing. Callers saw a bare `[Errno 27] File too large` and
+    # could not tell which save it was. The class and errno are what they branch
+    # on, so those are left alone, and the staging file they never asked about
+    # stays out of the message.
+    import resource
+
     from pyfcstm.diagram import api
 
-    def fail_mode(*_args, **_kwargs):
-        raise OSError("mode could not be applied")
+    target = tmp_path / "page.html"
+    soft, hard = resource.getrlimit(resource.RLIMIT_FSIZE)
+    resource.setrlimit(resource.RLIMIT_FSIZE, (1 << 20, hard))
+    try:
+        with pytest.raises(OSError) as caught:
+            api._atomic_write_text(target, "x" * (4 << 20))
+    finally:
+        resource.setrlimit(resource.RLIMIT_FSIZE, (soft, hard))
+    assert caught.value.errno in (27, 28), "EFBIG or ENOSPC, not a bug in the test"
+    assert str(target) in str(caught.value)
+    assert ".page.html." not in str(caught.value), (
+        "the staging name is not the caller's"
+    )
+    assert not target.exists(), "and a failed write leaves no half-written target"
+
+
+def test_a_cleanup_that_fails_is_recorded_rather_than_replacing_the_error(
+    tmp_path, monkeypatch, caplog
+):
+    # Removing the staging file can fail after a failed write. Folding that into
+    # the exception cost the caller its class -- `except PermissionError` stopped
+    # matching -- so it is recorded instead, where it can still be found.
+    from pyfcstm.diagram import api
+
+    def denied(*_args, **_kwargs):
+        raise PermissionError(13, "Permission denied")
 
     def fail_unlink(self, *_args, **_kwargs):
         raise PermissionError("cannot unlink")
 
-    monkeypatch.setattr(api, "_final_mode", fail_mode)
+    monkeypatch.setattr(api, "_final_mode", denied)
     monkeypatch.setattr(Path, "unlink", fail_unlink)
-    with pytest.raises(OSError) as caught:
-        api._atomic_write_text(tmp_path / "page.html", "x")
-    assert "mode could not be applied" in str(caught.value)
-    assert "cannot unlink" in str(caught.value)
+    with caplog.at_level(logging.WARNING):
+        with pytest.raises(PermissionError) as caught:
+            api._atomic_write_text(tmp_path / "page.html", "x")
+    assert caught.value.errno == 13, "the class and errno reach the caller intact"
+    assert "cannot unlink" in caplog.text, "and the removal failure is still findable"
 
 
 def test_to_html_second_call_does_not_rebuild(monkeypatch):
@@ -1100,120 +1126,6 @@ def test_to_html_second_call_does_not_rebuild(monkeypatch):
     monkeypatch.setattr(api, "_asset_text", refuse)
     monkeypatch.setattr(api, "_embedded_resvg_script", refuse)
     assert view.to_html().startswith("<!doctype html>")
-
-
-def test_failed_launch_leaves_a_document_another_caller_may_be_showing(
-    tmp_path, monkeypatch
-):
-    # A window name comes from the document alone so one file serves every
-    # caller showing the same diagram, which is precisely why a failing caller
-    # cannot prove the file is its own: `path.exists()` is read before the
-    # launch, and another caller can write and open a window on the same path
-    # while this one is still inside it. Deferring the removal to exit was
-    # measured deleting a live window's document, and so was doing it at the
-    # moment of failure -- this pins the ordering that defeats both.
-    from pyfcstm.diagram import api
-
-    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
-    view = load_state_machine_from_text("state Root;").diagram()
-    object.__setattr__(view, "_html_document", "<html>tiny</html>")
-
-    inside_launch = threading.Event()
-    peer_finished = threading.Event()
-    outcome = {}
-
-    def launcher(_path, _dimensions):
-        if threading.current_thread().name == "failing":
-            inside_launch.set()
-            peer_finished.wait(30)
-            raise DiagramUnavailableError("injected launch failure")
-
-    monkeypatch.setattr(api, "_open_standalone_window", launcher)
-
-    # Outcomes are collected and asserted on the main thread. A `pytest.raises`
-    # inside a worker only produces PytestUnhandledThreadExceptionWarning, so a
-    # failing thread that raised nothing at all still left this green.
-    def failing():
-        try:
-            view.show()
-            outcome["failing"] = "returned without raising"
-        except DiagramUnavailableError:
-            outcome["failing"] = "raised"
-        except BaseException as unexpected:  # noqa: BLE001 - reported below
-            outcome["failing"] = "raised %r" % (unexpected,)
-
-    def succeeding():
-        try:
-            inside_launch.wait(30)
-            outcome["path"] = view.show()
-            outcome["existed"] = outcome["path"].exists()
-        except BaseException as unexpected:  # noqa: BLE001 - reported below
-            outcome["succeeding"] = "raised %r" % (unexpected,)
-        finally:
-            peer_finished.set()
-
-    threads = [
-        threading.Thread(target=failing, name="failing"),
-        threading.Thread(target=succeeding, name="succeeding"),
-    ]
-    for thread in threads:
-        thread.start()
-    for thread in threads:
-        thread.join(60)
-        assert not thread.is_alive(), "%s did not finish" % thread.name
-
-    assert outcome.get("succeeding") is None, outcome.get("succeeding")
-    assert outcome.get("failing") == "raised", outcome.get("failing")
-    assert outcome.get("existed") is True
-    assert outcome["path"].exists(), (
-        "the failing caller removed a document the successful one is showing"
-    )
-
-
-def test_only_this_process_own_viewers_can_be_scheduled_for_removal():
-    # The exit hook deletes whatever is registered, so accepting a shared name
-    # is what made the cross-process reap possible. The invariant the comment
-    # claimed is enforced now rather than assumed.
-    from pyfcstm.diagram import api
-
-    with pytest.raises(ValueError, match="only this process's own"):
-        api._register_temporary_viewer(Path("/tmp/pyfcstm-diagram-deadbeef.html"))
-
-
-@pytest.mark.skipif(not hasattr(os, "fork"), reason="requires fork")
-def test_a_forked_child_does_not_reap_its_parents_viewer(tmp_path):
-    # `fork` copies the registry and the atexit hooks with it, so a child that
-    # exits normally runs the parent's hooks. Checking the process id only when
-    # a path is registered does not help: the child inherits an entry that was
-    # valid when it was made. Measured before the removal hook re-checked --
-    # the child deleted a document the parent was still showing.
-    from pyfcstm.diagram import api
-
-    # Built from the same function the registry checks against, so a change to
-    # what a reapable name looks like cannot leave this test asserting about a
-    # shape nothing produces any more.
-    viewer = tmp_path / (
-        "pyfcstm-diagram-forktest%s.html" % api._process_scoped_suffix()
-    )
-    viewer.write_text("x" * 64, encoding="utf-8")
-    api._register_temporary_viewer(viewer)
-    try:
-        child = os.fork()
-        if child == 0:
-            # The registered hook, invoked directly. Running the whole atexit
-            # chain would drag in pytest's own hooks -- which stop it short --
-            # and a plain `sys.exit` makes the child emit a second test summary
-            # on the shared stdout. This is what atexit would call.
-            try:
-                api._remove_temporary_viewer(viewer)
-            finally:
-                os._exit(0)
-        _, status = os.waitpid(child, 0)
-        assert status == 0
-        assert viewer.is_file(), "a forked child reaped its parent's viewer"
-    finally:
-        _TEMPORARY_VIEWERS = api._TEMPORARY_VIEWERS
-        _TEMPORARY_VIEWERS.discard(viewer)
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX file modes")
@@ -1471,6 +1383,12 @@ def test_no_handler_is_entered_while_the_staging_file_is_held():
     # sees it on every version, which is what makes the rule a gate rather than a
     # paragraph. The two nested handlers that remain are exempt for reasons that
     # are not "nothing is held", so neither can stand in for a third.
+    #
+    # `ast.Try` only, deliberately. A handler written as a `with` -- a
+    # `contextlib.suppress`, say -- does not have the defect: `BEFORE_WITH` is a
+    # real instruction, so its line event lands inside the enclosing range.
+    # Measured on 3.10, 3.11 and 3.14, where only the cleanup's own body line
+    # escapes and that is true of every version.
     from pyfcstm.diagram import api
 
     function = next(

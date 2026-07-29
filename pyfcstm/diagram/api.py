@@ -15,7 +15,6 @@ Example::
     'Root'
 """
 
-import atexit
 import base64
 import contextlib
 import hashlib
@@ -34,7 +33,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
 from collections.abc import Iterable
-from typing import Iterator, Any, Dict, List, Mapping, Optional, Set, Tuple, Union
+from typing import Iterator, Any, Dict, List, Mapping, Optional, Tuple, Union
 
 from pygments import lex
 from pygments.formatters import HtmlFormatter
@@ -800,7 +799,32 @@ def _browser_app_executable() -> Optional[str]:
 
 
 def _open_standalone_window(path: Path, window_size: Tuple[int, int]) -> None:
-    """Launch the self-contained viewer in a browser app window."""
+    """
+    Show the viewer in a browser app window and return when it is closed.
+
+    Blocking, the way :func:`matplotlib.pyplot.show` blocks, because that is what
+    lets the caller delete the document afterwards.  A detached launch cannot:
+    the browser reads the file after this process is gone, so the document had to
+    outlive it -- and everything that followed from that was machinery for a file
+    nobody could ever remove.  A name every process could predict so repeats
+    would reuse one copy, an exit hook that had to be kept away from that name,
+    and two naming spaces to tell the two lifetimes apart, one of which deleted a
+    live window's document when a user id and a process id happened to match.
+
+    The window gets a profile directory of its own, which is what makes the wait
+    mean anything: a Chromium-family browser handed a document without
+    ``--user-data-dir`` passes it to whatever instance is already running and
+    exits at once, so waiting on it would return before the window appeared.
+
+    :param path: Document to show.
+    :type path: pathlib.Path
+    :param window_size: Width and height in pixels.
+    :type window_size: tuple[int, int]
+    :return: ``None``, once the window has closed.
+    :rtype: None
+    :raises DiagramUnavailableError: If no Chromium-family browser is available,
+        or it cannot be launched.
+    """
     executable = _browser_app_executable()
     if executable is None:
         raise DiagramUnavailableError(
@@ -808,10 +832,16 @@ def _open_standalone_window(path: Path, window_size: Tuple[int, int]) -> None:
             "install Chrome, Chromium, Edge, or Brave, or set PYFCSTM_BROWSER"
         )
     width, height = window_size
+    profile = tempfile.mkdtemp(prefix="pyfcstm-diagram-profile-")
     command = [
         executable,
         "--app=%s" % path.resolve().as_uri(),
-        "--new-window",
+        # Ours, so the browser is a process to wait on rather than a message to
+        # one already running. The two flags after it are what a fresh profile
+        # would otherwise stop and ask about.
+        "--user-data-dir=%s" % profile,
+        "--no-first-run",
+        "--no-default-browser-check",
         "--window-size=%d,%d" % (width, height),
     ]
     popen_kwargs: Dict[str, Any] = {
@@ -826,149 +856,49 @@ def _open_standalone_window(path: Path, window_size: Tuple[int, int]) -> None:
     else:
         popen_kwargs["start_new_session"] = True
     try:
-        subprocess.Popen(command, **popen_kwargs)
-    except OSError as err:
-        raise DiagramUnavailableError(
-            "failed to launch the standalone diagram window with %s: %s"
-            % (executable, err)
-        ) from err
+        try:
+            process = subprocess.Popen(command, **popen_kwargs)
+        except OSError as err:
+            raise DiagramUnavailableError(
+                "failed to launch the standalone diagram window with %s: %s"
+                % (executable, err)
+            ) from err
+        try:
+            process.wait()
+        except BaseException:
+            # A Ctrl-C while the window is open. Closing it is the honest
+            # response: the caller is about to remove the document under it.
+            process.terminate()
+            process.wait()
+            raise
+    finally:
+        # The browser has exited, so nothing holds the profile. `ignore_errors`
+        # rather than a report: a profile left behind in the temporary directory
+        # is not something a caller can act on, and on Windows a lock can outlive
+        # the process by a moment.
+        shutil.rmtree(profile, ignore_errors=True)
 
 
-def _process_scoped_suffix() -> str:
-    """
-    Return the tag a viewer name carries when only this process may remove it.
-
-    One function owns the rule because three places hold it:
-    :func:`_temporary_viewer_path` writes the name, and
-    :func:`_register_temporary_viewer` and :func:`_remove_temporary_viewer` both
-    refuse to reap one without it.  Spelling the tag out separately in each is
-    how they came to disagree when it changed, and the failure mode of
-    disagreeing is a live window's document being deleted.
-
-    :return: Suffix that marks a name as this process's own litter.
-    :rtype: str
-    """
-    return "-p%d" % os.getpid()
-
-
-def _temporary_viewer_path(document: str, for_window: bool) -> Path:
+def _temporary_viewer_path(document: str) -> Path:
     """
     Return a temporary path for a rendered viewer document.
 
-    The two callers want opposite lifetimes, and a shared name cannot serve
-    both: a document handed to a window must outlive this process, because the
-    browser is launched detached and reads the file after we are gone, while a
-    document nobody opened is this process's litter. Giving them one
-    content-derived name meant an unrelated process rendering the same model
-    could delete a live window's document at its own exit, so the names differ.
-
-    A window's name is derived from the document and the user, so showing the
-    same diagram twice — in this process or any other of theirs — reuses one file
-    instead of leaving another ~30 MB behind. A no-window name carries the
-    process id, which makes it unambiguously ours to remove.
-
-    The two are told apart by what the number means and not by the number, since
-    1000 is an ordinary user id and an ordinary process id at once: a bare integer
-    on each side let the two lifetimes land on one path, and the removable one
-    wins that tie.
+    Derived from the document, so a caller showing the same diagram twice writes
+    one file rather than another ~30 MB, and from the user, because the temporary
+    directory is shared and the document is written 0600: without that, the second
+    person to show a given diagram on a machine would be refused their own save.
 
     :param document: The rendered HTML document.
     :type document: str
-    :param for_window: Whether the caller is about to open a browser window.
-    :type for_window: bool
     :return: A path under the system temporary directory.
     :rtype: pathlib.Path
     """
     digest = hashlib.sha256(document.encode("utf-8")).hexdigest()[:16]
-    if for_window:
-        # The user id, where there is one, because on POSIX the temporary
-        # directory is shared and the document is written 0600: without it the
-        # second person to show a given diagram on a machine got the first
-        # person's file, which they may neither write nor -- under the sticky bit
-        # `/tmp` carries -- replace. Reuse is still the point, just per user.
-        # Windows gives each account its own `%TEMP%`, so there is nothing to
-        # separate there and no `os.geteuid` to ask.
-        #
-        # The effective id, because that is the one a file this process creates
-        # is owned by, and so the one `_write_protection_reason` compares against
-        # -- keying the name on the real id instead would let two processes share
-        # a name while disagreeing about who owns what is at it.
-        #
-        # Tagged `u`, and the process-scoped name below `p`, because the numbers
-        # share a range: euid 1000 and pid 1000 are both ordinary, and two bare
-        # integers put a live window's document on the same path as one the exit
-        # hook is entitled to delete.
-        suffix = "-u%d" % os.geteuid() if hasattr(os, "geteuid") else ""
-    else:
-        suffix = _process_scoped_suffix()
-    return Path(tempfile.gettempdir()) / (
-        "pyfcstm-diagram-%s%s.html" % (digest, suffix)
-    )
-
-
-# Process-scoped temporary viewers, removed when this interpreter exits. Names
-# carry our process id, so nothing here can belong to another process and no
-# coordination is needed to decide who may delete what.
-_TEMPORARY_VIEWERS: Set[Path] = set()
-
-
-def _register_temporary_viewer(path: Path) -> None:
-    """
-    Arrange for a process-scoped temporary viewer to be removed at exit.
-
-    :param path: Temporary viewer path carrying this process id.
-    :type path: pathlib.Path
-    :return: ``None``.
-    :rtype: None
-    :raises ValueError: If the path does not carry this process id.
-    """
-    # Enforced rather than assumed. The exit hook deletes whatever is in here,
-    # so a name without our process id is a name another process may have a
-    # window on -- which is exactly what happened when the failed-launch path
-    # registered a shared, content-addressed name and reaped a document a
-    # second process was displaying.
-    if not path.stem.endswith(_process_scoped_suffix()):
-        raise ValueError(
-            "refusing to schedule %s for removal: only this process's own "
-            "temporary viewers may be reaped, and that name is shared" % path
-        )
-    if path in _TEMPORARY_VIEWERS:
-        return
-    _TEMPORARY_VIEWERS.add(path)
-    atexit.register(_remove_temporary_viewer, path)
-
-
-def _remove_temporary_viewer(path: Path) -> None:
-    """
-    Delete a process-scoped temporary viewer.
-
-    :param path: Temporary viewer path.
-    :type path: pathlib.Path
-    :return: ``None``.
-    :rtype: None
-    """
-    if path not in _TEMPORARY_VIEWERS:
-        return
-    # Re-checked here, not only where the path was registered. A `fork` copies
-    # this set and the exit hooks along with it, so a child that exits normally
-    # runs the parent's hooks and deletes a document the parent is still
-    # showing -- measured, with the child removing a viewer the parent had
-    # written moments earlier. The name carries the id of whoever registered
-    # it, so a mismatch means this interpreter is not that one.
-    if not path.stem.endswith(_process_scoped_suffix()):
-        return
-    try:
-        path.unlink()
-    except OSError as error:
-        # FileNotFoundError: the user or the OS already removed it.
-        # PermissionError: a browser still holds it open on Windows.
-        # IsADirectoryError: the predictable path was replaced by a directory.
-        # None is worth a traceback out of an atexit hook, and anything else is
-        # a bug worth seeing.
-        if not isinstance(
-            error, (FileNotFoundError, PermissionError, IsADirectoryError)
-        ):
-            raise
+    # The effective id, which is the one a file created here is owned by and the
+    # one `_write_protection_reason` compares against. Windows gives each account
+    # its own `%TEMP%` and has no `geteuid` to ask.
+    owner = "-%d" % os.geteuid() if hasattr(os, "geteuid") else ""
+    return Path(tempfile.gettempdir()) / ("pyfcstm-diagram-%s%s.html" % (digest, owner))
 
 
 def _report_degradation(message: str, *args: Any) -> None:
@@ -1073,8 +1003,7 @@ def _staging_file(target: Path, binary: bool) -> Iterator[Tuple[Any, Path, int]]
     event lands before the exception table covers the block, so the ``try:`` line
     itself is unowned -- an inner one around the ``yield`` leaked the staging file
     on 3.11 and 3.14 while passing on 3.10.  Anything needing a handler while the
-    descriptor or the file exists therefore belongs in a function of its own, the
-    way :func:`_removal_failure` does.
+    descriptor or the file exists therefore belongs in a function of its own.
 
     Two nested ones remain, each exempt for its own reason and neither of them
     "nothing is held".  The one in the loop runs before the file exists, so an
@@ -1082,7 +1011,11 @@ def _staging_file(target: Path, binary: bool) -> Iterator[Tuple[Any, Path, int]]
     ``finally`` does hold a descriptor, and is exempt only because it is past the
     ``yield``: an interrupt delivered into cleanup is the single case no Python
     program survives, which is where the probe stops for the same reason.  A third
-    one, anywhere between the creation and the ``yield``, would be a defect.
+    one, anywhere between the creation and the ``yield``, would be a defect --
+    which is why the handler that names the failed path does nothing else, and a
+    removal that fails is recorded by :func:`_discard` rather than folded into the
+    exception.  Folding it in cost the caller the exception's class, which is what
+    they catch on.
 
     The file is opened with 0666 so the operating system applies the umask,
     exactly as it would for any other new file, and the mode that survives is
@@ -1130,7 +1063,6 @@ def _staging_file(target: Path, binary: bool) -> Iterator[Tuple[Any, Path, int]]
     staging = None
     handle = -1
     stream = None
-    writing = False
     try:
         for _ in range(_TEMPORARY_NAME_ATTEMPTS):
             # Named before it is created, so no line boundary can leave a file
@@ -1170,7 +1102,6 @@ def _staging_file(target: Path, binary: bool) -> Iterator[Tuple[Any, Path, int]]
         stream = os.fdopen(
             handle, "wb" if binary else "w", **({} if binary else {"encoding": "utf-8"})
         )
-        writing = True
         yield stream, staging, default
     except OSError as error:
         # The path the caller asked for, whatever the operation names. A full disk
@@ -1189,32 +1120,13 @@ def _staging_file(target: Path, binary: bool) -> Iterator[Tuple[Any, Path, int]]
         # the target themselves.
         if error.errno is not None:
             error.filename = str(target)
-        if error.filename2 is not None:
-            # `os.replace` names both of its paths, and the first is the staging
-            # file. Deleting the attribute rather than assigning ``None`` is what
-            # gets `OSError.__str__` back to its one-path form: the member is a
-            # pointer, so ``None`` still reads as set and renders `-> None`.
-            del error.filename2
-        if not writing or staging is None:
-            # The staging file could not be created or prepared. `O_EXCL` means
-            # nothing of ours is beside the target, and the cleanup below has
-            # whatever else there is to do.
-            raise
-        # The write, the mode change or the replace failed, so the staging file
-        # is still there. A removal that also fails is worth saying in the same
-        # breath: the caller is left with a file they did not create, and only
-        # the two errors together explain why.
-        _close_quietly(stream, staging)
-        leftover = staging
-        # Handed over, so the cleanup below does not retry a removal whose
-        # failure is already part of the exception raised here.
-        staging = None
-        removal_error = _removal_failure(leftover)
-        if removal_error is not None:
-            raise OSError(
-                "%s; staging cleanup failed for %s: %s"
-                % (error, leftover, removal_error)
-            ) from error
+            if error.filename2 is not None:
+                # `os.replace` names both of its paths, and the first is the
+                # staging file. Deleting the attribute rather than assigning
+                # ``None`` is what gets `OSError.__str__` back to its one-path
+                # form: the member is a pointer, so ``None`` still reads as set
+                # and renders `-> None`.
+                del error.filename2
         raise
     finally:
         # However this ends -- an interrupt at any line above included -- exactly
@@ -1260,55 +1172,27 @@ def _close_quietly(stream: Any, staging: Optional[Path]) -> None:
         )
 
 
-def _removal_failure(staging: Path) -> Optional[OSError]:
+def _discard(path: Path) -> None:
     """
-    Remove a staging file and return what stopped it, rather than raising.
+    Remove a temporary file, reporting rather than raising if it cannot be.
 
-    A return value rather than an exception because the caller is already
-    handling one: it needs both errors to build a single message, and the ``try``
-    this needs cannot live in :func:`_staging_file` itself, where a nested one
-    would leave its own ``try:`` line unowned from Python 3.11 on.
-
-    :param staging: Path to remove.
-    :type staging: pathlib.Path
-    :return: The error that prevented removal, or ``None`` if there is nothing
-        left at the path.
-    :rtype: OSError or None
-    """
-    try:
-        staging.unlink()
-    except FileNotFoundError:
-        # Nothing at the path. The writers put `os.replace` last, so a failure
-        # they report always leaves the staging file behind and this is defensive
-        # rather than a branch they reach.
-        return None
-    except OSError as removal_error:
-        # PermissionError from an indexer holding the handle, EROFS or ENOSPC
-        # from a read-only or exhausted filesystem.
-        return removal_error
-    return None
-
-
-def _discard(staging: Path) -> None:
-    """
-    Remove a staging file, reporting rather than raising if it cannot be.
-
-    :param staging: Path that may or may not still exist.
-    :type staging: pathlib.Path
+    :param path: Path that may or may not still exist.
+    :type path: pathlib.Path
     :return: ``None``.
     :rtype: None
     """
     try:
-        staging.unlink()
+        path.unlink()
     except FileNotFoundError:
-        # Renamed onto the target, which is the ordinary outcome.
+        # A staging file renamed onto its target, or a viewer the user removed
+        # while the window was open. Both are ordinary.
         pass
     except OSError as removal_error:
-        # PermissionError from an indexer holding the handle, EROFS or ENOSPC
-        # from a read-only or exhausted filesystem. Whatever brought us here is
-        # what the caller needs to see, so this only gets recorded.
+        # PermissionError from an indexer or a browser holding the handle, EROFS
+        # or ENOSPC from a read-only or exhausted filesystem. Whatever brought us
+        # here is what the caller needs to see, so this only gets recorded.
         _report_degradation(
-            "could not remove the staging file %s: %s", staging, removal_error
+            "could not remove the temporary file %s: %s", path, removal_error
         )
 
 
@@ -2549,23 +2433,19 @@ class Diagram:
         """
         Write an HTML viewer and optionally open it in a standalone app window.
 
+        With ``open_window`` this blocks until the window is closed, the way
+        :func:`matplotlib.pyplot.show` does, and then removes the document it
+        wrote — so the returned path no longer exists unless you passed
+        ``output``.  Waiting is what makes that removal safe: a detached browser
+        reads the file after this process is gone, so the document would have to
+        be left behind, and each one is roughly 30 MB.
+
         :param output: Optional destination path. When omitted the viewer is
-            written 0600 to a temporary path, and which path depends on
-            ``open_window``. With a window, the name is derived from the
-            document and, where the platform has user ids, from yours: the file
-            is left in place, because the browser is detached and reads it after
-            this process is gone, and showing the same diagram again — here or in
-            another process of yours — reuses that one file. A failed launch
-            leaves it too: the name is shared between your processes by design,
-            so no caller can prove the file is not one another caller already
-            has a window on, and both removing it at exit and removing it at the
-            moment of failure were measured deleting a live window's document.
-            It is not shared between users: the temporary directory is, and a
-            0600 file in it that somebody else made is one you could not write.
-            Without a window the name carries this process id instead, which does
-            make it unambiguously ours, and that file is removed at interpreter
-            exit. Each viewer is roughly 30 MB, so pass an explicit path when you
-            want to manage the file yourself.
+            written 0600 to a temporary path derived from the document, so
+            showing the same diagram twice writes one file rather than two. That
+            file is removed when the window closes; without a window it is the
+            file you asked for and it stays. Pass an explicit path for a document
+            you want to keep.
         :type output: str or os.PathLike, optional
         :param open_window: Whether to launch a Chromium-family app window,
             defaults to ``True``.
@@ -2606,42 +2486,29 @@ class Diagram:
         dimensions = _coerce_window_size(window_size)
         if output is None:
             document = self.to_html()
-            path = _temporary_viewer_path(document, for_window=open_window)
+            path = _temporary_viewer_path(document)
             # 0600, and forced rather than preserved. The name is derived from
             # the document, so on a shared temp directory anyone can predict
             # it: both to read the model's own source out of the viewer, and to
             # pre-create the path with a permissive mode that a mode-preserving
             # write would then copy onto our content.
             _atomic_write_text(path, document, mode=0o600)
-            if not open_window:
-                # Carries this process id, so it is unambiguously ours and the
-                # exit hook may remove it. The window name deliberately does
-                # not, which is why nothing schedules that one.
-                _register_temporary_viewer(path)
+            ours = True
         else:
             path = self.save(output, format="html")
-        if open_window:
-            try:
-                _open_standalone_window(path, dimensions)
-            except DiagramUnavailableError:
-                # The document stays. A window name is derived from the
-                # document and the user, so one file can serve every process of
-                # theirs showing the same diagram, and that is exactly why a
-                # failing caller cannot prove the file is its own to delete:
-                # `path.exists()`
-                # was read before the launch, and another process can write and
-                # open a window on the very same path while this one is still
-                # inside it. Both the deferred removal and the immediate one
-                # were measured deleting a document a second caller had a live
-                # window on.
-                #
-                # Leaving it is not a new leak. A successful launch already
-                # keeps its document forever -- windows outlive the interpreter
-                # -- so the bound is unchanged either way: one file per distinct
-                # diagram per user, reused by every later show of the same one by
-                # the same user. The CLI
-                # points at `-o` for a document the caller wants to keep track
-                # of, and per-process names, which are unambiguously ours, are
-                # still reaped at exit.
-                raise
+            ours = False
+        if not open_window:
+            # The caller asked for a file and a path to it, so it stays.
+            return path
+        try:
+            # Blocks until the window closes.
+            _open_standalone_window(path, dimensions)
+        finally:
+            if ours:
+                # However this ends -- the window closed, a Ctrl-C closed it, or
+                # there was no browser to open one -- nothing is reading a
+                # document we wrote, so it goes. Being able to say that is the
+                # whole reason for waiting rather than detaching. Only a path the
+                # caller named survives, which is what `-o` is for.
+                _discard(path)
         return path

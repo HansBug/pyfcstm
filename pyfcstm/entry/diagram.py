@@ -174,11 +174,9 @@ def diagram_command(
                 # -- naming it is the useful part of this failure.
                 click.echo(str(Path(output)))
                 raise click.ClickException(str(error))
-            # Without -o there is no document left to name. A failed launch
-            # removes what it wrote at exit, precisely because no window is
-            # showing it, and asking for one more temporary copy would both
-            # write another ~30 MB and print a path that is already gone by the
-            # time the user reads it. Point at the flag that keeps a document.
+            # Without -o there is no document to name: no window opened, so
+            # nothing was ever reading the ~30 MB that was written and `show`
+            # removes it. Point at the flag that keeps one instead.
             raise click.ClickException(
                 "%s; re-run with -o PATH to keep the generated viewer" % error
             )

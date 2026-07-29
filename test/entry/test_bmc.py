@@ -2872,8 +2872,13 @@ def test_a_value_carried_across_a_step_is_derived_not_left_structural(
     ],
     ids=["value-propagation", "incompatible-equalities", "definedness-failure"],
 )
+@pytest.mark.parametrize(
+    "budget",
+    [(), ("--timeout-ms", "12"), ("--timeout-ms", "8")],
+    ids=["full-budget", "a-tight-budget", "a-tighter-budget"],
+)
 def test_real_json_output_validates_under_a_conforming_validator(
-    tmp_path, query, machine
+    tmp_path, query, machine, budget
 ) -> None:
     """The published schema must accept what the CLI actually prints.
 
@@ -2893,7 +2898,15 @@ def test_real_json_output_validates_under_a_conforming_validator(
     model.write_text(machine + "\n", encoding="utf-8")
     query_file.write_text(query + "\n", encoding="utf-8")
 
-    _, payload = _json_result(model, query_file, "--explain-infeasibility", "formal")
+    # A budget steers the run through the degraded ledger shapes -- a raw core
+    # with no minimization record, or a partially minimized one with a degraded
+    # record -- whose schema rules use the same keyword family as the rest and
+    # were equally unverified.  Which tier a given budget reaches depends on the
+    # host, and that is fine: this asserts the payload is valid whichever tier it
+    # lands in, never that it lands in a particular one.
+    _, payload = _json_result(
+        model, query_file, "--explain-infeasibility", "formal", *budget
+    )
     schema = json.loads(
         (
             Path(__file__).resolve().parents[2]
@@ -2952,3 +2965,85 @@ def test_a_divisor_pinned_to_zero_names_the_division_not_just_the_groups(
     assert "The division at frame 0 cannot stay defined" in result.output
     # And the sentence says which requirement makes it undefined.
     assert "x" in result.output
+
+
+@pytest.mark.unittest
+def test_two_long_variable_names_still_reach_a_complete_explanation(
+    tmp_path,
+) -> None:
+    """A name the encoder truncates must not break the explanation stage.
+
+    The forced-value probe asks the symbol table for a variable by name, and the
+    table is keyed by the declared name.  While facts published the encoder's
+    truncation, the probe handed that truncation back and the stage failed with
+    an internal mismatch -- visible to the reader as "FORMAL EXPLANATION NOT
+    ACHIEVED".  Two names sharing their first eighty characters make the
+    truncation ambiguous as well as wrong.
+    """
+    long_a = "v" * 80 + "a"
+    long_b = "v" * 80 + "b"
+    model = tmp_path / "machine.fcstm"
+    query = tmp_path / "scenario.fbmcq"
+    model.write_text(
+        "def int %s = 0;\ndef int %s = 0;\n"
+        "state Root { state A; state B; [*] -> A; }\n" % (long_a, long_b),
+        encoding="utf-8",
+    )
+    query.write_text(
+        'assume at 0: var("%s") == 1;\nassume at 0: var("%s") == 2;\n'
+        'check reach <= 1: active("Root.A");\n' % (long_a, long_b),
+        encoding="utf-8",
+    )
+
+    result = _run(
+        "-i", str(model), "-q", str(query), "--explain-infeasibility", "formal"
+    )
+
+    assert result.exit_code == 3, result.output
+    assert "NOT ACHIEVED" not in result.output
+    assert "internal mismatch" not in result.output
+    # Whatever the narrative concludes, a name it prints is the declared one --
+    # never the eighty-character prefix the two share, which names neither.
+    printed = [name for name in (long_a, long_b) if name in result.output]
+    assert printed
+    assert ("v" * 80 + " ") not in result.output
+    assert ("v" * 80 + ".") not in result.output
+
+
+@pytest.mark.unittest
+def test_a_frame_with_every_state_ruled_out_says_so(tmp_path) -> None:
+    """Exhausting a frame's legal states is its own pattern in the contract.
+
+    §7.5 lists "two different states required at one frame" and "every legal
+    state excluded" separately, and they read differently: the first is a clash
+    between two requirements, the second leaves the frame with nothing to be.
+    Reaching it needs the negated assertions read as exclusions rather than
+    requirements -- calling them requirements would invert every source line.
+    """
+    model = tmp_path / "machine.fcstm"
+    query = tmp_path / "scenario.fbmcq"
+    model.write_text(
+        "state Root {\n    state A;\n    state B;\n"
+        "    [*] -> A;\n    A -> B;\n    B -> A;\n}\n",
+        encoding="utf-8",
+    )
+    query.write_text(
+        'init state("Root.A");\n'
+        'assume at 1: !active("Root.A");\n'
+        'assume at 1: !active("Root.B");\n'
+        "assume at 1: !terminated();\n"
+        'check reach <= 1: active("Root.A");\n',
+        encoding="utf-8",
+    )
+
+    result = _run(
+        "-i", str(model), "-q", str(query), "--explain-infeasibility", "formal"
+    )
+
+    assert result.exit_code == 3, result.output
+    assert "COMPLETE FORMAL DOMAIN EXPLANATION" in result.output
+    assert "STRUCTURAL ONLY" not in result.output
+    assert "Frame 1 has no state left" in result.output
+    # A negated assertion rules a state out; it does not require it.
+    assert "rules out state" in result.output
+    assert "the query requires state" not in result.output

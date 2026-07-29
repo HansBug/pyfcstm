@@ -1218,6 +1218,7 @@ def derive_forced_values(
 def build_core_item(
     group: BmcTrackedConstraint,
     registry: Optional[SourceDocumentRegistry] = None,
+    declared: Optional[Sequence[str]] = None,
 ) -> BmcCoreItem:
     """Turn one tracked source group into a publishable core member.
 
@@ -1279,7 +1280,7 @@ def build_core_item(
     # instead of inviting a guess.  Frames, steps and refs stay in the constraint
     # reference above: publishing them here as well would give a reader two
     # copies of the same values and blur which keys are the fact itself.
-    fact = normalized_fact_for(group)
+    fact = normalized_fact_for(group, declared)
     return BmcCoreItem(
         constraint=reference,
         semantic_role=role,
@@ -1348,6 +1349,9 @@ def explain_infeasibility(
         # context always builds a registry, so a rename must surface as an
         # AttributeError instead of silently blanking every excerpt.
         registry = core.context._source_registry
+    # The declared names let a published fact name the variable the author wrote
+    # rather than the encoder's truncation of it.
+    declared = tuple(core.context.model.defines)
     outcome = classify_infeasibility(core, stage, budget)
     # An unclassified stage still has a target the mandatory solve already
     # proved unsatisfiable, so the remaining budget goes into a fallback core
@@ -1432,7 +1436,9 @@ def explain_infeasibility(
             # these two fields say how far the deletion pass actually got.
             reduction=minimized.reduction,
             subset_minimality=minimized.subset_minimality,
-            items=tuple(build_core_item(group, registry) for group in minimized.groups),
+            items=tuple(
+                build_core_item(group, registry, declared) for group in minimized.groups
+            ),
         )
     except (BmcBuildError, ValueError, TypeError) as err:
         # BmcBuildError: this module found builder-side drift while mapping.

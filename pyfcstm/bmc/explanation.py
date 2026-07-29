@@ -19,8 +19,9 @@ The module contains:
 * :class:`BmcCoreItem` - one core member together with its semantic reading
 * :class:`BmcConflictCore` - an ordered, sound set of core members for one
   diagnostic scope
-* :class:`BmcConflictNarrative` - reserved container for the deterministic
-  narrative introduced by a later stage
+* :class:`BmcReasoningStep` - one step of the deterministic conflict narrative
+* :class:`BmcConflictNarrative` - the deterministic account of why no execution
+  exists, rendered from the published core and its normalized facts alone
 * :class:`BmcConflictProof` - reserved container for the verifiable proof DAG
   introduced by a later stage
 * :class:`BmcInfeasibilityExplanation` - the frozen top-level container
@@ -28,9 +29,18 @@ The module contains:
   ``BmcSolveResult.to_text()`` use, so neither can drift from the other
 
 .. note::
-   :class:`BmcConflictNarrative` and :class:`BmcConflictProof` exist so that
-   :class:`BmcInfeasibilityExplanation` can freeze its full field list once.
-   This stage never populates them; both slots stay ``None``.
+   :class:`BmcConflictProof` is still a reserved container: it exists so that
+   :class:`BmcInfeasibilityExplanation` can freeze its full field list once, and
+   that slot stays ``None`` until the proof stage lands.
+   :class:`BmcConflictNarrative` was reserved the same way and is published now;
+   a complete formal explanation requires one whose derivation closed.
+
+.. note::
+   Nothing in this module imports ``z3``, reads a file or runs a solver.  A
+   narrative is rendered from the published core and its normalized facts, so it
+   cannot state more than the recognizers established: a shape none of them reads
+   yields ``derivation_status="structural_only"`` and no conflict step rather than
+   an invented chain.
 
 Example::
 
@@ -349,10 +359,13 @@ def human_text_for_fact(role: str, fact: Mapping) -> str:
     if kind == "state_membership":
         # The state code is published rather than a name: the encoding's map is
         # not carried on the item, and the source excerpt beside this sentence
-        # quotes the line that names the state.
-        return "At frame %s, %s requires state %s." % (
+        # quotes the line that names the state.  A negated assertion rules the
+        # state out instead of requiring it, and saying "requires" there would
+        # invert the source line.
+        return "At frame %s, %s %s state %s." % (
             fact["frame"],
             voice,
+            "rules out" if fact.get("excluded") else "requires",
             fact["state"],
         )
     if kind == "state_domain":
@@ -1246,7 +1259,7 @@ class BmcReasoningStep:
     stays empty outside proof mode, where the steps also bind to DAG nodes.
 
     :param kind: ``fact``, ``derivation`` or ``conflict``.
-    :type kind: str
+    :type kind: BmcReasoningStepKind
     :param item_ids: Stable ids of the core members this step reads.
     :type item_ids: Tuple[str, ...]
     :param proof_node_ids: Proof nodes this step binds to, empty outside proof
@@ -1266,7 +1279,7 @@ class BmcReasoningStep:
         'fact'
     """
 
-    kind: str
+    kind: BmcReasoningStepKind
     item_ids: Tuple[str, ...]
     proof_node_ids: Tuple[str, ...]
     text: str
@@ -1316,7 +1329,7 @@ class BmcConflictNarrative:
 
     :param derivation_status: ``complete``, ``partial``, ``structural_only`` or
         ``not_available``.
-    :type derivation_status: str
+    :type derivation_status: BmcDerivationStatus
     :param headline: One-line human summary.
     :type headline: str
     :param summary: Longer deterministic summary.
@@ -1335,7 +1348,7 @@ class BmcConflictNarrative:
         'conflict'
     """
 
-    derivation_status: str
+    derivation_status: BmcDerivationStatus
     headline: str
     summary: str
     reasoning_steps: Tuple[BmcReasoningStep, ...] = ()
@@ -2016,7 +2029,9 @@ def depth_line_is_needed(requested_mode: str, achieved_mode: str) -> bool:
     return achieved_mode != "none" and requested_mode != achieved_mode
 
 
-def _conflict_pattern(items: Tuple["BmcCoreItem", ...]) -> Optional[Tuple[str, str]]:
+def _conflict_pattern(
+    items: Tuple["BmcCoreItem", ...], minimality: str = "not_proven"
+) -> Optional[Tuple[str, str]]:
     """Name the cross-group pattern the published facts support, if any.
 
     Only patterns the recognized facts actually establish are reported.  A pair
@@ -2026,6 +2041,10 @@ def _conflict_pattern(items: Tuple["BmcCoreItem", ...]) -> Optional[Tuple[str, s
 
     :param items: Published core members in stable-id order.
     :type items: Tuple[BmcCoreItem, ...]
+    :param minimality: The core's published ``subset_minimality``; a pattern whose
+        soundness argument needs every member to be load-bearing is only offered
+        when it is ``proven``, defaults to ``"not_proven"``.
+    :type minimality: str, optional
     :return: The rule name and its sentence, or ``None``.
     :rtype: Optional[Tuple[str, str]]
 
@@ -2039,10 +2058,13 @@ def _conflict_pattern(items: Tuple["BmcCoreItem", ...]) -> Optional[Tuple[str, s
         for item in items
         if item.normalized_fact.get("kind") == "definedness_condition"
     ]
-    if len(definedness) == 1 and len(items) > 1:
+    if len(definedness) == 1 and len(items) > 1 and minimality == "proven":
         # One domain condition beside facts about the very variable it guards.
-        # Every member of a subset-minimal core is load-bearing, so the condition
-        # is part of the contradiction, and the facts beside it are why it fails.
+        # Every member of a *proven* subset-minimal core is load-bearing, so the
+        # condition is part of the contradiction and the facts beside it are why
+        # it fails.  The minimality is checked rather than assumed: in a raw core
+        # a redundant guard can ride along, and calling it the cause would point
+        # the reader at a line that is not why anything failed.
         # Requiring the core to hold *nothing but* domain conditions sent the most
         # natural way of writing this -- a divisor the initializer pins to zero --
         # to the structural fallback.
@@ -2078,8 +2100,36 @@ def _conflict_pattern(items: Tuple["BmcCoreItem", ...]) -> Optional[Tuple[str, s
             "No execution keeps every operation defined at %s."
             % ", ".join("frame %s" % frame for frame in frames),
         )
+    domains = [
+        item for item in items if item.normalized_fact.get("kind") == "state_domain"
+    ]
+    exclusions = [
+        item
+        for item in items
+        if item.normalized_fact.get("kind") == "state_membership"
+        and item.normalized_fact.get("excluded")
+    ]
+    if len(domains) == 1 and exclusions:
+        legal = domains[0].normalized_fact
+        removed = {
+            item.normalized_fact["state"]
+            for item in exclusions
+            if item.normalized_fact["frame"] == legal["frame"]
+        }
+        if set(legal["states"]) <= removed:
+            # Every state the frame may hold has been ruled out, so the frame has
+            # nothing left to be.  Checked against the published domain rather
+            # than inferred from how many exclusions happen to be present.
+            return (
+                "state_domain_exhaustion",
+                "Frame %s has no state left: every one of its %d legal states is "
+                "ruled out." % (legal["frame"], len(legal["states"])),
+            )
     states = [
-        item for item in items if item.normalized_fact.get("kind") == "state_membership"
+        item
+        for item in items
+        if item.normalized_fact.get("kind") == "state_membership"
+        and not item.normalized_fact.get("excluded")
     ]
     if states and len(states) == len(items):
         frames = {item.normalized_fact["frame"] for item in states}
@@ -2327,7 +2377,7 @@ def build_conflict_narrative(
             reasoning_steps=steps,
             review_surfaces=surfaces,
         )
-    pattern = _conflict_pattern(core.items)
+    pattern = _conflict_pattern(core.items, core.subset_minimality)
     if pattern is None:
         # The frozen degradation wording: state the joint fact, say the specific
         # derivation is unavailable, and do not present that as a root cause.

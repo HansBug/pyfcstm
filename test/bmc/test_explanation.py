@@ -2415,3 +2415,132 @@ def test_a_review_surface_must_be_a_member_the_reader_can_edit() -> None:
             core=core,
             narrative=broken,
         )
+
+
+def _guard_item(variable, frame=0, operation="division"):
+    """A definedness member guarding one variable at one frame."""
+    fact = {"kind": "definedness_condition", "frame": frame, "operation": operation}
+    if variable is not None:
+        fact["variable"] = variable
+    reference = BmcConstraintRef(
+        "definedness.%s.%s" % (variable, frame),
+        "assumptions",
+        "definedness",
+        BmcSourceRef("generated", None, None),
+        "guard",
+        frames=(frame,),
+        refs={"frame": frame},
+    )
+    return BmcCoreItem(reference, "definedness", None, False, fact, "guard", False)
+
+
+def _comparison_item(variable, frame=0, operator="eq", value=0):
+    """A comparison member on one variable at one frame."""
+    reference = BmcConstraintRef(
+        "assumption.%s.%s.%s" % (variable, frame, value),
+        "assumptions",
+        "assumption.frame",
+        BmcSourceRef("generated", None, None),
+        "bound",
+        frames=(frame,),
+        refs={"frame": frame},
+    )
+    return BmcCoreItem(
+        reference,
+        "assumption",
+        None,
+        False,
+        {
+            "kind": "variable_comparison",
+            "variable": variable,
+            "frame": frame,
+            "operator": operator,
+            "value": value,
+        },
+        "bound",
+        False,
+    )
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "members, named",
+    [
+        ((("guard", "x", 0), ("cmp", "x", 0)), True),
+        ((("guard", "x", 0), ("cmp", "y", 0)), False),
+        ((("guard", "x", 0), ("cmp", "x", 1)), False),
+        ((("guard", None, 0), ("cmp", "x", 0)), False),
+        ((("guard", "x", 0), ("guard", "y", 0), ("cmp", "x", 0)), False),
+    ],
+    ids=[
+        "the-facts-are-about-the-guarded-variable",
+        "the-facts-are-about-another-variable",
+        "the-facts-are-about-another-frame",
+        "the-guard-does-not-name-its-variable",
+        "two-guards-leave-it-ambiguous",
+    ],
+)
+def test_a_definedness_failure_is_claimed_only_when_the_facts_explain_it(
+    members, named
+) -> None:
+    """Relaxing the pattern must not let it explain a conflict it did not cause.
+
+    A domain condition in a subset-minimal core is load-bearing, but that alone
+    does not make it *the* story: if the facts beside it constrain a different
+    variable or a different frame, the contradiction is somewhere else and naming
+    the operation would misattribute it.  The pattern therefore claims the
+    failure only when every other member speaks about the variable the guard
+    protects, at the frame it protects.
+    """
+    from pyfcstm.bmc.explanation import _conflict_pattern
+
+    items = tuple(
+        _guard_item(name, frame) if kind == "guard" else _comparison_item(name, frame)
+        for kind, name, frame in members
+    )
+
+    # The branch reasons from every member being load-bearing, so it is only
+    # offered for a proven-minimal core; the raw case has its own test.
+    pattern = _conflict_pattern(items, "proven")
+
+    if named:
+        assert pattern is not None
+        assert pattern[0] == "definedness_failure"
+    else:
+        assert pattern is None or pattern[0] != "definedness_failure"
+
+
+@pytest.mark.unittest
+def test_a_redundant_guard_is_not_reported_as_the_reason() -> None:
+    """The load-bearing argument needs the minimality it argues from.
+
+    The relaxed branch reasons that a domain condition inside a subset-minimal
+    core must be part of the contradiction.  That is true of a *proven* core and
+    false of a raw one, where a redundant member can ride along: here ``x != 0``
+    is compatible with either equality and dropping it leaves the rest
+    unsatisfiable, so the division is not why anything failed.  Publishing it as
+    the cause is the exact failure this mode exists to avoid -- a sentence that
+    reads like an explanation and points at the wrong line.
+    """
+    from pyfcstm.bmc.explanation import build_conflict_narrative
+
+    core = BmcConflictCore(
+        "assumptions_component",
+        "target",
+        "source_group",
+        "raw",
+        "not_proven",
+        (
+            _guard_item("x"),
+            _comparison_item("x", value=1),
+            _comparison_item("x", value=2),
+        ),
+    )
+
+    narrative = build_conflict_narrative(core)
+
+    assert "division" not in narrative.headline
+    # The equalities are still readable, so the honest reading is available.
+    assert narrative.derivation_status in ("complete", "structural_only")
+    if narrative.derivation_status == "complete":
+        assert "cannot assign" in narrative.headline

@@ -2557,3 +2557,88 @@ def test_a_definedness_fact_names_the_operation_it_actually_guards(
 
     assert fact["kind"] == "definedness_condition"
     assert fact["operation"] == operation
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "symbol, frame, is_slot",
+    [
+        ("F_0_state", 0, True),
+        ("F_0_state", 1, False),
+        ("F_10_state", 1, False),
+        ("F_1_state", 10, False),
+        ("F_0_state_9f8e7d6c5b", 0, False),
+    ],
+    ids=[
+        "the-slot-of-its-own-frame",
+        "the-slot-of-another-frame",
+        "a-longer-frame-index-is-not-a-prefix-match",
+        "a-shorter-frame-index-is-not-a-prefix-match",
+        "a-model-variable-that-happens-to-be-called-state",
+    ],
+)
+def test_the_state_slot_is_told_apart_from_everything_that_looks_like_it(
+    symbol, frame, is_slot
+) -> None:
+    """The state reader must not claim a symbol that merely resembles the slot.
+
+    Frame indices are decimal, so ``F_1_state`` and ``F_10_state`` share a prefix,
+    and a model variable may legitimately be named ``state``.  Reading either as
+    the frame's state slot would publish a state fact about something that is not
+    a state, which the narrative would then build a conflict on.
+    """
+    import z3
+
+    from pyfcstm.bmc.provenance import _frame_state_slot
+
+    assert _frame_state_slot(z3.Int(symbol), frame) is is_slot
+
+
+@pytest.mark.unittest
+def test_the_two_operand_readers_never_claim_the_same_symbol() -> None:
+    """A slot is not a variable and a variable is not a slot.
+
+    The two readers run against the same operands, so an overlap would let one
+    group publish two contradictory facts depending on dispatch order.  The case
+    that makes this concrete is a model variable actually named ``state``.
+    """
+    import z3
+
+    from pyfcstm.bmc.provenance import _frame_state_slot, _frame_variable_name
+
+    for name in ("F_0_state", "F_0_x_11f6ad8ec5", "F_0_state_9f8e7d6c5b"):
+        symbol = z3.Int(name)
+        slot = _frame_state_slot(symbol, 0)
+        variable = _frame_variable_name(symbol)
+        assert not (slot and variable is not None), name
+
+    # And each reader does claim the operand it is for.
+    assert _frame_state_slot(z3.Int("F_0_state"), 0) is True
+    assert _frame_variable_name(z3.Int("F_0_state_9f8e7d6c5b")) == "state"
+
+
+@pytest.mark.unittest
+def test_a_long_variable_name_is_published_as_the_name_that_was_declared() -> None:
+    """The published variable must be one the reader can find in their source.
+
+    The encoding truncates a long name when it builds its symbol, so recovering
+    the name from the symbol recovers the truncation, not the declaration.  A
+    fact naming a variable that does not exist is the same defect as naming the
+    wrong operation: the key is right and the value is a guess.
+    """
+    from pyfcstm.bmc.provenance import normalized_fact_for
+
+    name = "v" * 81
+    groups = _fact_groups(
+        'assume at 0: var("%s") == 1; check reach <= 1: active("Root.A");' % name,
+        machine=("def int %s = 0;\nstate Root { state A; state B; [*] -> A; }" % name),
+    )
+    fact = normalized_fact_for(groups["assumption.frame"], (name,))
+
+    assert fact["kind"] == "variable_comparison"
+    assert fact["variable"] == name
+
+    # Without the declared names there is nothing to resolve against, so the
+    # reader falls back to the body it can see rather than inventing one.
+    fallback = normalized_fact_for(groups["assumption.frame"])
+    assert fallback["variable"] == name[:80]

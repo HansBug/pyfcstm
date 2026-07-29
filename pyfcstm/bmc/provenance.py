@@ -32,6 +32,7 @@ Example::
 
 from __future__ import annotations
 
+import hashlib
 import math
 import os
 import sys
@@ -499,16 +500,30 @@ def _relational_operators(z3: Any) -> Dict[int, str]:
     }
 
 
-def _frame_variable_name(expression: Any) -> Optional[str]:
-    """Return the model variable a frame-scoped Z3 constant stands for.
+def _frame_variable_name(
+    expression: Any, declared: Optional[Any] = None
+) -> Optional[str]:
+    """Return the model variable a frame symbol stands for.
 
-    Frame variables are named ``F_<frame>_<variable>_<digest>``, so the model
-    name is the middle segment.  Anything else is not a frame variable and gets
-    no name, which is how an unrecognized shape degrades instead of guessing.
+    The encoding builds a symbol as ``F_<frame>_<body>_<digest>``, where the body
+    is the variable name with unsafe characters replaced and then **truncated**,
+    and the digest is a hash of the whole name.  Reading the body back therefore
+    recovers the truncation rather than the declaration, and publishing it names a
+    variable the reader cannot find in their source.
 
-    :param expression: Candidate Z3 expression.
+    Passing ``declared`` -- the model's variable names -- resolves that: each name
+    is hashed the same way the encoder hashes it and compared against the symbol,
+    so the answer is the declared name or nothing.  Without it the reader falls
+    back to the body, which is correct for every name short enough to survive
+    truncation intact.
+
+    :param expression: The candidate operand.
     :type expression: object
-    :return: The model variable name, or ``None``.
+    :param declared: Model variable names to resolve against, defaults to
+        ``None``.
+    :type declared: Optional[Iterable[str]], optional
+    :return: The declared variable name, or ``None`` when the operand is not a
+        frame variable.
     :rtype: Optional[str]
 
     Example::
@@ -525,6 +540,14 @@ def _frame_variable_name(expression: Any) -> Optional[str]:
     parts = text.split("_")
     if len(parts) < 4:
         # "F_0_state" and friends name a frame slot, not a model variable.
+        return None
+    if declared:
+        digest = parts[-1]
+        for name in declared:
+            if hashlib.sha1(name.encode("utf-8")).hexdigest()[:10] == digest:
+                return name
+        # A symbol whose digest matches no declared name is not this model's
+        # variable, so saying nothing beats publishing a truncated guess.
         return None
     return "_".join(parts[2:-1]) or None
 
@@ -577,7 +600,9 @@ def _numeric_value(expression: Any) -> Optional[Any]:
 # builder cannot produce, which the repository's test boundary forbids.  The
 # preconditions that authored queries *do* reach -- a comparison between two
 # variables, an assertion about the active state -- are covered as normal paths.
-def _value_comparison_fact(group: Any) -> Optional[Dict[str, Any]]:
+def _value_comparison_fact(
+    group: Any, declared: Optional[Any] = None
+) -> Optional[Dict[str, Any]]:
     """Read a one-variable comparison group as a variable-comparison fact.
 
     :param group: The tracked group to read.
@@ -597,11 +622,11 @@ def _value_comparison_fact(group: Any) -> Optional[Dict[str, Any]]:
     if operator is None or expression.num_args() != 2:
         return None
     left, right = expression.arg(0), expression.arg(1)
-    name = _frame_variable_name(left)
+    name = _frame_variable_name(left, declared)
     value = _numeric_value(right)
     if name is None or value is None:
         # Operand order is not fixed, so the mirrored shape is read too.
-        name = _frame_variable_name(right)
+        name = _frame_variable_name(right, declared)
         value = _numeric_value(left)
         operator = {"lt": "gt", "gt": "lt", "le": "ge", "ge": "le"}.get(
             operator, operator
@@ -654,7 +679,9 @@ def _state_domain_fact(group: Any) -> Optional[Dict[str, Any]]:
     return {"kind": "state_domain", "frame": frame, "states": sorted(states)}
 
 
-def _definedness_fact(group: Any) -> Optional[Dict[str, Any]]:
+def _definedness_fact(
+    group: Any, declared: Optional[Any] = None
+) -> Optional[Dict[str, Any]]:
     """Read a definedness group as the operation it keeps well defined.
 
     The operation is taken from the builder's own metadata, never inferred from
@@ -685,9 +712,9 @@ def _definedness_fact(group: Any) -> Optional[Dict[str, Any]]:
     if len(group.expressions) == 1:
         expression = group.expressions[0]
         if z3.is_app(expression) and expression.decl().kind() == z3.Z3_OP_DISTINCT:
-            name = _frame_variable_name(expression.arg(0)) or _frame_variable_name(
-                expression.arg(1)
-            )
+            name = _frame_variable_name(
+                expression.arg(0), declared
+            ) or _frame_variable_name(expression.arg(1), declared)
             if name is not None:
                 fact["variable"] = name
     return fact
@@ -714,7 +741,19 @@ def _state_membership_fact(group: Any) -> Optional[Dict[str, Any]]:
     if not isinstance(frame, int) or len(group.expressions) != 1:
         return None
     expression = group.expressions[0]
-    if not z3.is_app(expression) or expression.decl().kind() != z3.Z3_OP_EQ:
+    if not z3.is_app(expression):
+        return None
+    # "not active(S)" lowers to Not(code == slot), which excludes one state
+    # rather than requiring it.  Both readings publish the same tag with an
+    # ``excluded`` flag, so a consumer sees one shape for one concept.
+    excluded = expression.decl().kind() == z3.Z3_OP_NOT
+    if excluded:
+        if expression.num_args() != 1:
+            return None
+        expression = expression.arg(0)
+        if not z3.is_app(expression):
+            return None
+    if expression.decl().kind() != z3.Z3_OP_EQ:
         return None
     left, right = expression.arg(0), expression.arg(1)
     for slot, code in ((left, right), (right, left)):
@@ -725,6 +764,7 @@ def _state_membership_fact(group: Any) -> Optional[Dict[str, Any]]:
                     "kind": "state_membership",
                     "frame": frame,
                     "state": value,
+                    "excluded": excluded,
                 }
     return None
 
@@ -758,7 +798,7 @@ def _frame_state_slot(expression: Any, frame: int) -> bool:
     return str(expression) == "F_%d_state" % frame
 
 
-def normalized_fact_for(group: Any) -> Dict[str, Any]:
+def normalized_fact_for(group: Any, declared: Optional[Any] = None) -> Dict[str, Any]:
     """Return the published domain fact for one tracked source group.
 
     The reading is deterministic and carries no Z3 object: a machine consumer
@@ -786,7 +826,7 @@ def normalized_fact_for(group: Any) -> Dict[str, Any]:
         ('variable_comparison', 'x', 'eq', 1)
     """
     if group.category in _VALUE_FACT_CATEGORIES:
-        fact = _value_comparison_fact(group)
+        fact = _value_comparison_fact(group, declared)
         if fact is not None:
             return fact
         # An assumption may pin the active state rather than a variable, and both
@@ -804,7 +844,7 @@ def normalized_fact_for(group: Any) -> Dict[str, Any]:
         if fact is not None:
             return fact
     elif group.category == "definedness":
-        fact = _definedness_fact(group)
+        fact = _definedness_fact(group, declared)
         if fact is not None:
             return fact
     return {

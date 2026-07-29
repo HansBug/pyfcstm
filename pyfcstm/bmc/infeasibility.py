@@ -479,6 +479,34 @@ def _step_record(
     )
 
 
+def _probe_outcome_reason(what: str, record: "ProbeRecord") -> str:
+    """Describe a probe outcome without claiming a verdict it never produced.
+
+    A probe whose budget was already spent never ran, so saying it "returned"
+    anything would contradict the published ledger, which records started probes
+    only: a reader would see a returned verdict beside an empty ledger.
+
+    :param what: Human name of the probe, used as the sentence subject.
+    :type what: str
+    :param record: The probe record, whose ``started`` flag decides the wording.
+    :type record: ProbeRecord
+    :return: One clause describing what happened to that probe.
+    :rtype: str
+
+    Example::
+
+        >>> started = ProbeRecord("component_assumptions", "timeout", True, 1.0, None)
+        >>> _probe_outcome_reason("component probe", started)
+        'component probe returned timeout'
+        >>> skipped = ProbeRecord("component_assumptions", "timeout", False, 0.0, "no budget")
+        >>> _probe_outcome_reason("component probe", skipped)
+        'component probe did not start: no budget'
+    """
+    if record.started:
+        return "%s returned %s" % (what, record.status)
+    return "%s did not start: %s" % (what, record.reason)
+
+
 def classify_infeasibility(
     core: "BmcCoreFormula", stage: str, budget: _SolveBudget
 ) -> ClassificationOutcome:
@@ -538,7 +566,7 @@ def classify_infeasibility(
             None,
             fallback_scope,
             status,
-            "component probe returned %s" % status,
+            _probe_outcome_reason("component probe", record),
             tuple(checks),
         )
     if status == "unsat":
@@ -564,7 +592,7 @@ def classify_infeasibility(
             None,
             fallback_scope,
             status,
-            "domain probe returned %s" % status,
+            _probe_outcome_reason("domain probe", record),
             tuple(checks),
         )
     if status == "unsat":  # pragma: no cover - see the note below.
@@ -663,7 +691,7 @@ def extract_source_core(
     status, record = _run_probe(solver, budget, "unsat_core", labels)
     if status in ("unknown", "timeout"):
         return CoreExtraction(
-            (), status, "core extraction returned %s" % status, (record,)
+            (), status, _probe_outcome_reason("core extraction", record), (record,)
         )
     if status == "sat":
         return CoreExtraction(

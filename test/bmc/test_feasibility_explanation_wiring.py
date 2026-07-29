@@ -853,8 +853,6 @@ def test_to_text_shows_the_explanation_it_paid_for() -> None:
         assert required in text, required
 
 
-
-
 @pytest.mark.unittest
 def test_a_stage_fallback_core_agrees_with_the_localized_stage() -> None:
     """A fallback core names its stage the same way a classified one does.
@@ -934,3 +932,27 @@ def test_a_stage_fallback_core_agrees_with_the_localized_stage() -> None:
 
     assert result.explanation.core.scope == "assumptions_stage_fallback"
     assert result.infeasible_stage == "assumptions"
+
+    # And the agreement is enforced, not merely observed: the same core published
+    # on a result that localized a different stage is refused.  Without this the
+    # cross-check would pass for a stage it never computed, since it treats an
+    # unknown stage as agreement.
+    with pytest.raises(BmcBuildError, match="describes stage"):
+        BmcFeasibilityResult(
+            kernel=BmcFeasibilityCheck("sat", "checked", elapsed_ms=1.0),
+            initialization=BmcFeasibilityCheck("unsat", "checked", elapsed_ms=1.0),
+            assumptions=BmcFeasibilityCheck("sat", "checked", elapsed_ms=1.0),
+            infeasible_stage="initialization",
+            localization_status="complete",
+            refinement_status="partial",
+            refinement_reason=(
+                "stage fallback core published without a classification"
+            ),
+            refinement_checks=(
+                BmcFeasibilityRefinementCheck(
+                    "component_initialization", "unsat", None, 1.0
+                ),
+                BmcFeasibilityRefinementCheck("unsat_core", "complete", None, 1.0),
+            ),
+            explanation=explanation,
+        )

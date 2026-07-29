@@ -2567,3 +2567,36 @@ def test_human_explanation_matches_the_frozen_transcript_line_shapes() -> None:
             else []
         )
         assert depth_lines(requested, achieved) == expected, (requested, achieved)
+
+
+@pytest.mark.unittest
+def test_bmc_json_reason_does_not_claim_a_probe_that_never_ran(explain_files) -> None:
+    """A published reason must not contradict the ledger beside it.
+
+    ``refinement_checks`` records probes that actually started, so a reason saying
+    a probe "returned" a verdict while the ledger is empty gives a machine reader
+    two statements that cannot both be true.  A budget spent before the first
+    probe is the case that produces it, and ``--timeout-ms 1`` reaches that case
+    on any host: whether or not the deadline also stops other work, a probe that
+    did not start must not be described as having returned anything.
+    """
+    model, query = explain_files
+
+    result, payload = _json_result(
+        Path(model),
+        Path(query),
+        "--timeout-ms",
+        "1",
+        "--explain-infeasibility",
+        "formal",
+    )
+    feasibility = payload["result"]["feasibility"]
+    reason = feasibility["refinement_reason"] or ""
+
+    assert result.exit_code in (3, 4)
+    if not feasibility["refinement_checks"]:
+        # Nothing started, so nothing may be reported as having returned.
+        assert "returned" not in reason, reason
+    for check in feasibility["refinement_checks"]:
+        # And every ledger entry names a probe that has a verdict to report.
+        assert check["name"] and check["status"]

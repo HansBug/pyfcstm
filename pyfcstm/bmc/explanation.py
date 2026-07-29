@@ -525,7 +525,7 @@ def _require_indices(values: Any, label: str) -> Tuple[int, ...]:
 
 
 def _require_flag(value: Any, label: str) -> bool:
-    """Reject a truthy stand-in where the JSON contract promises a boolean.
+    """Reject a non-boolean where the JSON contract promises a boolean.
 
     :param value: Candidate flag.
     :type value: object
@@ -549,7 +549,7 @@ def _require_flag(value: Any, label: str) -> bool:
 
 
 def _require_optional_text(value: Any, label: str) -> Optional[str]:
-    """Reject a non-string stand-in for an optional text field.
+    """Reject a non-string value for an optional text field.
 
     :param value: Candidate text, or ``None``.
     :type value: object

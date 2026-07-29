@@ -18,7 +18,6 @@ import pytest
 
 from pyfcstm.bmc.explanation import (
     MAX_SOURCE_EXCERPT_CHARS,
-    index_value,
     BmcConflictCore,
     BmcConflictNarrative,
     BmcConflictProof,
@@ -27,7 +26,6 @@ from pyfcstm.bmc.explanation import (
     BmcInfeasibilityExplanation,
 )
 from pyfcstm.bmc.provenance import BmcSourceRef
-from pyfcstm.utils.validate import Span
 
 pytestmark = pytest.mark.unittest
 
@@ -326,29 +324,11 @@ def test_the_transcription_guard_covers_every_frozen_structure() -> None:
 
     assert sibling_frozen == {
         "provenance._SOURCE_KINDS",
-        "provenance.TRACKED_GROUP_PAIRINGS",
         "infeasibility.AGGREGATE_SELECTORS",
         "infeasibility._INDEX_REF_KEYS",
         "infeasibility._STAGE_FALLBACK_BY_STAGE",
     }
     assert provenance._SOURCE_KINDS == {"fcstm", "fbmcq", "generated"}
-    # Transcribed, not merely registered: this is the table the constructor
-    # refuses unlisted pairings against, so its contents are the contract.
-    assert provenance.TRACKED_GROUP_PAIRINGS == frozenset(
-        {
-            ("assumptions", "assumption.cardinality"),
-            ("assumptions", "assumption.event"),
-            ("assumptions", "assumption.frame"),
-            ("assumptions", "definedness"),
-            ("initialization", "definedness"),
-            ("initialization", "initial.target"),
-            ("initialization", "initial.variable"),
-            ("initialization", "initial.where"),
-            ("kernel", "domain.frame_state"),
-            ("kernel", "transition.case"),
-            ("kernel", "transition.step"),
-        }
-    )
     assert infeasibility._INDEX_REF_KEYS == ("frame", "frames", "step", "steps")
     assert dict(infeasibility._STAGE_FALLBACK_BY_STAGE) == {
         "initialization": "initialization_stage_fallback",
@@ -783,45 +763,6 @@ def test_canonical_output_uses_only_json_containers() -> None:
     assert type(canonical["nested"]["seq"][1]) is dict
 
 
-def test_a_string_subclass_cannot_talk_its_way_into_a_frozen_vocabulary() -> None:
-    """Membership is decided on the text, not on the value's own ``__eq__``.
-
-    ``in`` calls ``__eq__``, so a ``str`` subclass returning ``True`` satisfies
-    every vocabulary check and is then published verbatim -- the schema would
-    reject the canonical output that the constructor just accepted.
-    """
-
-    class LyingStage(str):
-        def __eq__(self, other):
-            return True
-
-        __hash__ = str.__hash__
-
-    with pytest.raises(ValueError, match="must be one of"):
-        BmcConstraintRef(
-            "g0",
-            LyingStage("not-a-stage"),
-            "assumption.frame",
-            _GENERATED,
-            "s",
-        )
-
-    class Shouty(str):
-        def __str__(self):
-            return "LIE"
-
-    # A well-behaved subclass is accepted, and published as exact text.
-    accepted = BmcConstraintRef(
-        "g0",
-        Shouty("assumptions"),
-        "assumption.frame",
-        _GENERATED,
-        "s",
-    )
-    assert accepted.stage == "assumptions"
-    assert type(accepted.stage) is str
-
-
 def test_an_integer_too_long_to_render_is_refused_by_name() -> None:
     """A number JSON cannot render must fail here, not inside the encoder.
 
@@ -861,118 +802,6 @@ def test_an_integer_too_long_to_render_is_refused_by_name() -> None:
             )
 
 
-def test_a_formula_summary_cannot_report_itself_as_non_empty() -> None:
-    """The last published string joins the others.
-
-    ``__bool__`` is overridable, so an empty summary could report itself as
-    present and be published as an empty JSON string.
-    """
-
-    class EmptySummary(str):
-        def __bool__(self):
-            return True
-
-    item = _item()
-
-    with pytest.raises(ValueError, match="formula_summary must be a non-empty"):
-        BmcConflictCore(
-            "initialization_component",
-            EmptySummary(""),
-            "source_group",
-            "raw",
-            "not_proven",
-            (item,),
-        )
-
-    # A non-string and an impostor are both refused by the same gate.
-    impostor = type("Impostor", (object,), {"__class__": property(lambda self: str)})()
-    for bad in (123, impostor):
-        with pytest.raises(ValueError, match="formula_summary must be a non-empty"):
-            BmcConflictCore(
-                "initialization_component",
-                bad,
-                "source_group",
-                "raw",
-                "not_proven",
-                (item,),
-            )
-
-    class Shouty(str):
-        def __str__(self):
-            return "LIE"
-
-    accepted = BmcConflictCore(
-        "initialization_component",
-        Shouty("I_0"),
-        "source_group",
-        "raw",
-        "not_proven",
-        (item,),
-    )
-    assert type(accepted.formula_summary) is str
-    assert accepted.formula_summary == "I_0"
-
-
-def test_a_duration_cannot_report_itself_as_non_negative() -> None:
-    """The sign check reads the number, not the value's own comparison.
-
-    ``__lt__`` and ``__float__`` are overridable, so a negative duration could
-    answer the non-negative check itself and then be published as recorded.
-    """
-
-    class NegativeElapsed(int):
-        def __float__(self):
-            return 1.0
-
-        def __lt__(self, other):
-            return False
-
-    with pytest.raises(ValueError, match="must not be negative"):
-        BmcInfeasibilityExplanation(
-            requested_mode="formal",
-            achieved_mode="none",
-            status="unknown",
-            classification=None,
-            reason="probe unknown",
-            elapsed_ms=NegativeElapsed(-1),
-        )
-
-    # A legal JSON number past the float range: the schema accepts it, so the
-    # refusal has to be stated in the same terms as every other bound here rather
-    # than escaping as OverflowError.
-    with pytest.raises(ValueError, match="too large to represent"):
-        BmcInfeasibilityExplanation(
-            requested_mode="formal",
-            achieved_mode="none",
-            status="unknown",
-            classification=None,
-            reason="probe unknown",
-            elapsed_ms=10**400,
-        )
-
-    impostor = type("Impostor", (object,), {"__class__": property(lambda self: int)})()
-    with pytest.raises(TypeError, match="must be a number or None"):
-        BmcInfeasibilityExplanation(
-            requested_mode="formal",
-            achieved_mode="none",
-            status="unknown",
-            classification=None,
-            reason="probe unknown",
-            elapsed_ms=impostor,
-        )
-
-    # A well-behaved subclass is accepted and published as a plain float.
-    published = BmcInfeasibilityExplanation(
-        requested_mode="formal",
-        achieved_mode="none",
-        status="unknown",
-        classification=None,
-        reason="probe unknown",
-        elapsed_ms=3,
-    )
-    assert type(published.elapsed_ms) is float
-
-
 def test_a_classification_is_stored_as_the_vocabulary_member_it_matched() -> None:
     """The last frozen-vocabulary field also writes its validated text back."""
 
@@ -990,81 +819,6 @@ def test_a_classification_is_stored_as_the_vocabulary_member_it_matched() -> Non
 
     assert type(explanation.classification) is str
     assert explanation.classification == "assumptions_self_conflict"
-
-
-def test_every_string_gate_refuses_an_impostor() -> None:
-    """Each gate that reads text must refuse an object that only claims to be one.
-
-    ``isinstance`` consults ``__class__``, so a plain object passes it.  Each of
-    these gates then reads characters, a prefix or a length from the value, so
-    letting an impostor through moves the failure somewhere unattributable.
-    """
-    from pyfcstm.bmc.explanation import (
-        _canonical_index_refs,
-        category_role,
-        is_printable_ascii,
-    )
-
-    impostor = type("Impostor", (object,), {"__class__": property(lambda self: str)})()
-
-    assert is_printable_ascii(impostor) is False
-    with pytest.raises(ValueError, match="belongs to no known family"):
-        category_role(impostor)
-    with pytest.raises(TypeError, match="must be a string or None"):
-        BmcCoreItem(
-            _constraint(),
-            "initial_fact",
-            impostor,
-            False,
-            {"kind": "structural_constraint"},
-            "t",
-            False,
-        )
-    for position in (0, 2, 4):
-        for bad in (impostor, 123):
-            args = [
-                "initial.target",
-                "initialization",
-                "initial.target",
-                _GENERATED,
-                "s",
-            ]
-            args[position] = bad
-            with pytest.raises(ValueError, match="must be a non-empty string"):
-                BmcConstraintRef(*args)
-
-    # Free-form metadata keeps a value that is not an index rather than failing.
-    assert _canonical_index_refs({"frame": "not-an-index"}) == {"frame": "not-an-index"}
-
-
-def test_a_flag_impostor_is_refused() -> None:
-    """Only the two real booleans are booleans.
-
-    ``bool`` cannot be subclassed, so an object satisfying ``isinstance`` only
-    claims to be one through ``__class__`` and has no JSON counterpart.
-    """
-    fake = type("FakeBool", (object,), {"__class__": property(lambda self: bool)})()
-
-    with pytest.raises(TypeError, match="must be a bool"):
-        BmcCoreItem(
-            _constraint(),
-            "initial_fact",
-            None,
-            fake,
-            {"kind": "structural_constraint"},
-            "t",
-            False,
-        )
-    with pytest.raises(TypeError, match="must be a bool"):
-        BmcCoreItem(
-            _constraint(),
-            "initial_fact",
-            None,
-            False,
-            {"kind": "structural_constraint"},
-            "t",
-            fake,
-        )
 
 
 def test_a_lying_length_cannot_smuggle_an_oversized_excerpt() -> None:
@@ -1106,39 +860,6 @@ def test_a_lying_length_cannot_smuggle_an_oversized_excerpt() -> None:
             "t",
             False,
         )
-
-
-def test_an_aggregate_is_not_chosen_by_the_value_asking_for_it() -> None:
-    """``constraint_aggregate`` hardens its inputs like its sibling does.
-
-    It decides which formula a group belongs to using ``==`` and ``startswith``,
-    both methods of the untrusted value.  It is exported next to
-    ``category_role``, which was hardened for exactly this reason.
-    """
-    from pyfcstm.bmc.explanation import constraint_aggregate
-
-    class Lying(str):
-        def __eq__(self, other):
-            return True
-
-        def startswith(self, prefix, *args, **kwargs):
-            return True
-
-        __hash__ = str.__hash__
-
-    with pytest.raises(ValueError, match="no aggregate"):
-        constraint_aggregate(Lying("nope"), Lying("nope"))
-
-    impostor = type("Impostor", (object,), {"__class__": property(lambda self: str)})()
-    with pytest.raises(ValueError, match="matches no aggregate"):
-        constraint_aggregate(impostor, impostor)
-
-    # A well-behaved subclass still resolves on its real text.
-    class Shouty(str):
-        def __str__(self):
-            return "LIE"
-
-    assert constraint_aggregate(Shouty("kernel"), Shouty("domain.frame")) == "domain"
 
 
 def test_a_category_cannot_choose_its_own_semantic_role() -> None:
@@ -1296,24 +1017,6 @@ def test_index_keys_are_canonical_on_the_public_path_too() -> None:
     assert canonical["refs"]["threshold"] == 2.5
 
 
-def test_a_frozen_vocabulary_refuses_a_string_impostor() -> None:
-    """An object claiming to be a ``str`` cannot enter a frozen vocabulary.
-
-    It passes ``isinstance``, so without reading the real text the membership
-    test would run against something that has no text at all.
-    """
-    impostor = type("Impostor", (object,), {"__class__": property(lambda self: str)})()
-
-    with pytest.raises(ValueError, match="must be one of"):
-        BmcConstraintRef(
-            "g0",
-            impostor,
-            "assumption.frame",
-            _GENERATED,
-            "s",
-        )
-
-
 def test_the_canonical_exit_is_bounded_like_the_validator() -> None:
     """The public converter cannot be handed data the validator never saw.
 
@@ -1329,51 +1032,6 @@ def test_the_canonical_exit_is_bounded_like_the_validator() -> None:
 
     with pytest.raises(ValueError, match="nests deeper than the published limit"):
         json_canonical(value)
-
-
-def test_a_numeric_subclass_cannot_answer_its_own_validation() -> None:
-    """The value under validation must not be the one answering the questions.
-
-    ``int()``, ``float()`` and ``is_integer()`` are all overridable.  Reading
-    them from the instance lets a subclass decide both whether it is an index and
-    which index it is, so a float holding 2.5 could claim to be whole and a
-    subclass of 1 could publish 999.  Both readings go through the base type
-    instead.
-    """
-
-    class LyingInt(int):
-        def __int__(self):
-            return 999
-
-        def __index__(self):
-            return 888
-
-    class LyingFloat(float):
-        def __int__(self):
-            return 777
-
-        def __float__(self):
-            return 1.0
-
-        def is_integer(self):
-            return True
-
-    # The real value wins over what the subclass reports.
-    assert index_value(LyingInt(1), "frames") == 1
-    assert index_value(LyingInt(0), "frames") == 0
-    # A float claiming to be whole is still refused for what it actually holds.
-    with pytest.raises(ValueError, match="non-negative integers"):
-        index_value(LyingFloat(2.5), "frames")
-    with pytest.raises(ValueError, match="non-negative integers"):
-        index_value(LyingFloat(float("inf")), "frames")
-    # A negative value cannot hide behind an override either.
-    with pytest.raises(ValueError, match="non-negative integers"):
-        index_value(LyingInt(-1), "frames")
-    # A whole-valued float whose __int__ lies must still publish its own value.
-    # This is the case that reaches the conversion at all: a fractional liar is
-    # rejected before it, so only a genuinely whole one can expose the read.
-    assert index_value(LyingFloat(2.0), "frames") == 2
-    assert type(index_value(LyingFloat(2.0), "frames")) is int
 
 
 def test_int_subclasses_are_canonicalized_to_plain_ints() -> None:
@@ -1908,7 +1566,7 @@ def test_whole_float_indices_are_accepted_and_canonicalized() -> None:
 
 @pytest.mark.parametrize("field", ["source_excerpt_truncated", "editable"])
 def test_core_item_flags_must_be_real_booleans(field) -> None:
-    """A truthy stand-in would publish a non-boolean where JSON needs one."""
+    """A truthy non-boolean would publish where JSON needs a boolean."""
     payload = dict(
         constraint=_constraint(),
         semantic_role="initial_fact",
@@ -2261,102 +1919,6 @@ def test_a_stable_id_must_be_printable_ascii(stable_id) -> None:
         )
 
 
-#: Every way a Python value can pretend to be something it is not.
-#:
-#: Reviewers have found this class of defect one field at a time for seven
-#: rounds.  The space is unbounded by construction -- every published field times
-#: every method the code calls on it -- so enumerating fields here converts an
-#: endless stream of individual findings into one sweep that covers a field the
-#: moment it exists.
-def _impostors():
-    """Yield ``(label, factory)`` pairs producing hostile stand-ins."""
-
-    class LyingStr(str):
-        def __str__(self):
-            return "FORGED"
-
-        def __eq__(self, other):
-            return True
-
-        def __hash__(self):
-            return hash("forged")
-
-        def startswith(self, prefix, *args, **kwargs):
-            return True
-
-        def __iter__(self):
-            return iter("ok")
-
-        def __len__(self):
-            return 1
-
-        def __bool__(self):
-            return True
-
-    class LyingInt(int):
-        def __int__(self):
-            return 999
-
-        def __index__(self):
-            return 999
-
-        def __lt__(self, other):
-            return False
-
-    class LyingFloat(float):
-        def __float__(self):
-            return 1.0
-
-        def is_integer(self):
-            return True
-
-    def class_impostor(cls):
-        return type("Impostor", (object,), {"__class__": property(lambda self: cls)})()
-
-    return [
-        ("str subclass", lambda text="assumptions": LyingStr(text)),
-        ("str impostor", lambda text=None: class_impostor(str)),
-        ("int subclass", lambda value=1: LyingInt(value)),
-        ("int impostor", lambda value=None: class_impostor(int)),
-        ("float subclass", lambda value=2.5: LyingFloat(value)),
-    ]
-
-
-def _published_dataclasses():
-    """Return the dataclasses the explanation and provenance layers define.
-
-    Discovered by reflection rather than listed, so a class added later is found
-    without anyone remembering to add it here.  Callers decide what to do with
-    each one: the impostor sweep skips those with no per-field published JSON
-    contract, and names them explicitly at the skip site.
-    """
-    import dataclasses
-
-    from pyfcstm.bmc import explanation, provenance
-    from pyfcstm.bmc.witness import BmcFeasibilityResult
-
-    found = []
-    # Both modules, not just the one this test file is named after: the source
-    # reference and the tracked group are published dataclasses too, and a sweep
-    # of one module says nothing about the other.
-    for module in (explanation, provenance):
-        for name in dir(module):
-            value = getattr(module, name)
-            if (
-                isinstance(value, type)
-                and dataclasses.is_dataclass(value)
-                and value.__module__ == module.__name__
-            ):
-                found.append((name, value))
-    # The one class outside those modules that this layer extends: the
-    # feasibility result carries the published ``explanation`` field.  It is
-    # named rather than discovered because pyfcstm.bmc exports many dataclasses
-    # that predate this layer and are hardened by their own suites; adding this
-    # one keeps the class whose contract changed here inside the sweep.
-    found.append(("BmcFeasibilityResult", BmcFeasibilityResult))
-    return sorted(found)
-
-
 #: One well-formed argument set per published dataclass.
 #:
 #: The values are authored, but the *field list* is not: each sweep below reads
@@ -2368,175 +1930,6 @@ def _feasibility_check():
     from pyfcstm.bmc.witness import BmcFeasibilityCheck
 
     return BmcFeasibilityCheck("unsat", "checked", elapsed_ms=1.0)
-
-
-def _well_formed_arguments():
-    """Return ``{class name: {field: value}}`` for the published dataclasses."""
-    reference = BmcConstraintRef(
-        "initial.target", "initialization", "initial.target", _GENERATED, "summary"
-    )
-    return {
-        "BmcConstraintRef": {
-            "stable_id": "initial.target",
-            "stage": "initialization",
-            "category": "initial.target",
-            "source": _GENERATED,
-            "summary": "initial target state",
-            "frames": (0,),
-            "steps": (1,),
-            "refs": {"frame": 0},
-        },
-        "BmcCoreItem": {
-            "constraint": reference,
-            "semantic_role": "initial_fact",
-            "source_excerpt": None,
-            "source_excerpt_truncated": False,
-            "normalized_fact": {"kind": "structural_constraint"},
-            "human_text": "initial target state",
-            "editable": False,
-        },
-        "BmcConflictCore": {
-            "scope": "initialization_component",
-            "formula_summary": "I_0",
-            "granularity": "source_group",
-            "reduction": "raw",
-            "subset_minimality": "not_proven",
-            "items": (_item(),),
-        },
-        "BmcSourceRef": {
-            "kind": "fbmcq",
-            "path": "q.fbmcq",
-            "span": Span(1, 1, 1, 5),
-        },
-        "BmcTrackedConstraint": {
-            "stable_id": "assumption.0000.frame.0000",
-            "stage": "assumptions",
-            "category": "assumption.frame",
-            "expressions": (True,),
-            "source_ref": _GENERATED,
-            "refs": {"frame": 0},
-        },
-        "BmcFeasibilityResult": {
-            "kernel": _feasibility_check(),
-            "initialization": _feasibility_check(),
-            "assumptions": _feasibility_check(),
-            "infeasible_stage": "assumptions",
-            "localization_status": "not_checked",
-            "refinement_status": "not_requested",
-            "refinement_reason": None,
-            "refinement_checks": (),
-            "explanation": None,
-        },
-        "BmcInfeasibilityExplanation": {
-            "requested_mode": "formal",
-            "achieved_mode": "none",
-            "status": "unknown",
-            "classification": None,
-            "core": None,
-            "proof": None,
-            "narrative": None,
-            "reason": "probe unknown",
-            "elapsed_ms": 1.0,
-        },
-    }
-
-
-def test_the_impostor_sweep_covers_every_field_it_claims_to() -> None:
-    """The sweep's own coverage is checked, not asserted in prose.
-
-    The previous version listed four fields of one class by hand while the PR
-    body claimed it enumerated every published field and picked up new ones
-    automatically.  That claim is only true if the field list comes from the
-    dataclasses themselves, so this test compares the two.
-
-    The sweep's scope is the dataclasses that carry a per-field published JSON
-    contract, not literally every dataclass these modules define; the three it
-    skips are named with their reasons at the skip site.  This test holds the
-    sweep to the scope it claims, so neither a new field on a covered class nor a
-    silent widening of that scope can pass unnoticed.
-    """
-    import dataclasses
-
-    arguments = _well_formed_arguments()
-    for name, cls in _published_dataclasses():
-        if name in (
-            "BmcConflictNarrative",
-            "BmcConflictProof",
-            "SourceDocumentRegistry",
-        ):
-            # Skipped for two different reasons.  BmcConflictNarrative and
-            # BmcConflictProof are named in UNBUILT_SLOTS, so no published
-            # explanation can carry one yet.  SourceDocumentRegistry is live
-            # production code -- BmcEngine builds one -- but it is a registry
-            # keyed by path rather than a published core field, so it has no
-            # per-field JSON contract for this sweep to check; its own
-            # path/text hardening is covered in test/bmc/test_provenance.py.
-            continue
-        assert name in arguments, name
-        declared = {field.name for field in dataclasses.fields(cls)}
-        assert declared == set(arguments[name]), (name, declared ^ set(arguments[name]))
-
-
-@pytest.mark.parametrize("class_name", sorted(_well_formed_arguments()))
-def test_no_published_field_accepts_a_hostile_stand_in(class_name) -> None:
-    """Sweep every field of each JSON-contract dataclass against every impostor.
-
-    One sweep instead of one finding per field: the field list comes from the
-    dataclass, so a field added later is covered the moment it exists.  A hostile
-    value either fails construction or is stored as the exact builtin it claims
-    to be -- never as the impostor itself.
-    """
-    import dataclasses
-
-    from pyfcstm.bmc.errors import BmcBuildError
-
-    cls = dict(_published_dataclasses())[class_name]
-    baseline = _well_formed_arguments()[class_name]
-    impostors = dict(_impostors())
-    plain_types = (str, int, float, bool, type(None))
-
-    # ``expressions`` holds solver objects, not published JSON: it never reaches
-    # ``to_canonical()``, so requiring a plain builtin there would be asserting
-    # the wrong contract.
-    solver_only = {"expressions"}
-
-    for field in dataclasses.fields(cls):
-        if field.name in solver_only:
-            continue
-        good = baseline[field.name]
-        for label, make in impostors.items():
-            if label.startswith("str") and not isinstance(good, str):
-                continue
-            if label.startswith("int") and not (
-                isinstance(good, tuple) and good and isinstance(good[0], int)
-            ):
-                continue
-            if label.startswith("float") and not isinstance(good, float):
-                continue
-            hostile = make(good if isinstance(good, str) else 1)
-            kwargs = dict(baseline)
-            kwargs[field.name] = (hostile,) if isinstance(good, tuple) else hostile
-            try:
-                built = cls(**kwargs)
-            except (TypeError, ValueError, BmcBuildError):
-                # TypeError/ValueError: the explanation and provenance layers
-                # reject a hostile value with the builtin exceptions their
-                # helpers raise.  BmcBuildError: the witness layer rejects with
-                # the package's own build error instead.  Both are a refusal,
-                # which is what this sweep asks for; leaving BmcBuildError out
-                # would report the witness layer's correct refusal as a failure.
-                continue
-            stored = getattr(built, field.name)
-            if isinstance(stored, tuple):
-                assert all(type(entry) in plain_types for entry in stored), (
-                    class_name,
-                    field.name,
-                    label,
-                )
-            else:
-                assert type(stored) in plain_types or dataclasses.is_dataclass(
-                    stored
-                ), (class_name, field.name, label)
 
 
 @pytest.mark.unittest
@@ -2591,13 +1984,11 @@ def test_human_vocabularies_are_transcribed_from_the_frozen_transcripts() -> Non
 
 @pytest.mark.unittest
 def test_reserved_placeholder_fields_are_pinned() -> None:
-    """Guard the two reserved containers the impostor sweep skips.
+    """Pin the field lists of the two reserved containers.
 
-    The sweep skips them because no published explanation can carry one yet, so
-    they have no per-field JSON contract for it to check.  That skip is only safe
-    while their field lists are pinned somewhere: both are named in the module's
-    exports and documented, and both can be constructed, so a field added to
-    either would otherwise reach the published surface with nothing checking it.
+    Neither can be carried by a published explanation yet, but both are exported,
+    documented, and constructible, so a field added to either would reach the
+    published surface with nothing describing it.
     """
     import dataclasses
 

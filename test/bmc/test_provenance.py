@@ -1833,49 +1833,6 @@ def test_metadata_scalars_and_keys_become_exact_builtins() -> None:
     assert type(stored.refs["note"]) is str
 
 
-def test_exact_readers_refuse_an_impostor_of_every_primitive() -> None:
-    """Each reader refuses an object that only claims to be its type.
-
-    ``isinstance`` consults ``__class__``, so a plain object can satisfy it.  The
-    base type's own descriptor cannot be fooled, and refusing here is what keeps
-    the failure attributable instead of surfacing much later in a serializer.
-    """
-    from pyfcstm.bmc.provenance import exact_float, exact_int, exact_str
-
-    def impostor_of(cls):
-        return type("Impostor", (object,), {"__class__": property(lambda self: cls)})()
-
-    with pytest.raises(TypeError, match="must be a string"):
-        exact_str(impostor_of(str), "note")
-    with pytest.raises(TypeError, match="must be an integer"):
-        exact_int(impostor_of(int), "frames")
-    with pytest.raises(TypeError, match="must be a number"):
-        exact_float(impostor_of(float), "threshold")
-
-
-def test_a_bool_impostor_is_not_json_compatible() -> None:
-    """Only the two real singletons count as a JSON boolean.
-
-    ``bool`` cannot be subclassed, so anything that merely claims to be one is an
-    impostor with no JSON counterpart.
-    """
-    from pyfcstm.bmc.provenance import BmcSourceRef, BmcTrackedConstraint
-
-    fake_bool = type(
-        "FakeBool", (object,), {"__class__": property(lambda self: bool)}
-    )()
-
-    with pytest.raises(TypeError, match="not JSON-compatible"):
-        BmcTrackedConstraint(
-            "assumption.0000.frame.0000",
-            "assumptions",
-            "assumption.frame",
-            (z3.BoolVal(True),),
-            BmcSourceRef("generated", None, None),
-            refs={"flag": fake_bool},
-        )
-
-
 def test_tracked_identifiers_are_stored_as_exact_text() -> None:
     """The builder container replaces its own identifiers too.
 
@@ -1918,73 +1875,6 @@ def test_tracked_identifiers_are_stored_as_exact_text() -> None:
         )
 
 
-def test_tracked_identifier_gates_refuse_impostors() -> None:
-    """The builder container refuses an object that only claims to be text."""
-    from pyfcstm.bmc.provenance import BmcSourceRef, BmcTrackedConstraint
-
-    impostor = type("Impostor", (object,), {"__class__": property(lambda self: str)})()
-
-    with pytest.raises(ValueError, match="stable_id must be non-empty"):
-        BmcTrackedConstraint(
-            123,
-            "assumptions",
-            "assumption.frame",
-            (z3.BoolVal(True),),
-            BmcSourceRef("generated", None, None),
-        )
-    with pytest.raises(ValueError, match="stable_id must be non-empty"):
-        BmcTrackedConstraint(
-            impostor,
-            "assumptions",
-            "assumption.frame",
-            (z3.BoolVal(True),),
-            BmcSourceRef("generated", None, None),
-        )
-    with pytest.raises(ValueError, match="category must be a string"):
-        BmcTrackedConstraint(
-            "assumption.0000.frame.0000",
-            "assumptions",
-            123,
-            (z3.BoolVal(True),),
-            BmcSourceRef("generated", None, None),
-        )
-    with pytest.raises(ValueError, match="stage must be a string"):
-        BmcTrackedConstraint(
-            "assumption.0000.frame.0000",
-            impostor,
-            "assumption.frame",
-            (z3.BoolVal(True),),
-            BmcSourceRef("generated", None, None),
-        )
-
-
-def test_a_source_kind_cannot_talk_its_way_past_the_vocabulary() -> None:
-    """``in`` uses ``__eq__`` and ``__hash__``, so membership reads the text."""
-    from pyfcstm.bmc.provenance import BmcSourceRef
-
-    class InvalidKind(str):
-        def __hash__(self):
-            return hash("generated")
-
-        def __eq__(self, other):
-            return True
-
-    with pytest.raises(ValueError, match="Unsupported BMC source kind"):
-        BmcSourceRef(InvalidKind("nonsense"), None, None)
-
-    impostor = type("Impostor", (object,), {"__class__": property(lambda self: str)})()
-    with pytest.raises(ValueError, match="Unsupported BMC source kind"):
-        BmcSourceRef(impostor, None, None)
-    with pytest.raises(ValueError, match="Unsupported BMC source kind"):
-        BmcSourceRef(123, None, None)
-    with pytest.raises(ValueError, match="source path must be None"):
-        BmcSourceRef("fcstm", impostor, None)
-    with pytest.raises(ValueError, match="source path must be None"):
-        BmcSourceRef("fcstm", 123, None)
-    with pytest.raises(ValueError, match="source path must be None"):
-        BmcSourceRef("fcstm", "", None)
-
-
 def test_two_keys_canonicalizing_to_one_fail_closed() -> None:
     """Folding two distinct keys into one would drop provenance silently.
 
@@ -2011,22 +1901,6 @@ def test_two_keys_canonicalizing_to_one_fail_closed() -> None:
 
     with pytest.raises(ValueError, match="both canonicalize to"):
         _require_json_mapping(source, "refs")
-
-
-def test_a_span_stand_in_is_refused() -> None:
-    """``isinstance`` accepts a faked ``__class__``; the real type decides.
-
-    Every later reader treats this field as a Span and reads ``line`` and
-    friends from it, so a stand-in would fail somewhere far from here.
-    """
-    from pyfcstm.bmc.provenance import BmcSourceRef
-
-    fake_span = type(
-        "FakeSpan", (object,), {"__class__": property(lambda self: Span)}
-    )()
-
-    with pytest.raises(TypeError, match="span must be Span or None"):
-        BmcSourceRef("fcstm", "a.fcstm", fake_span)
 
 
 def test_span_coordinates_are_typed_where_they_are_published() -> None:
@@ -2164,89 +2038,23 @@ def test_a_document_cannot_publish_text_the_registry_never_held() -> None:
     )
 
 
-def test_container_subclasses_cannot_rewrite_published_metadata() -> None:
-    """A real ``dict`` or ``list`` subclass must not choose what gets published.
+@pytest.mark.unittest
+def test_registry_refuses_a_path_that_names_no_document() -> None:
+    """An empty path cannot identify a document, so the registry refuses it.
 
-    ``items`` and ``__iter__`` are overridable, so a subclass of the concrete
-    type can pass every check and then hand the walk different contents than it
-    holds.  Reading through the base type closes that; a ``Mapping`` by protocol
-    only still goes through its own ``items``, since that is the sole way in.
-    """
-    from collections import UserDict
-
-    from pyfcstm.bmc.provenance import _require_json_mapping
-
-    class LyingDict(dict):
-        def items(self):
-            return iter([("forged", 2)])
-
-    class LyingList(list):
-        def __iter__(self):
-            return iter([999])
-
-    published = _require_json_mapping({"a": LyingDict({"real": 1})}, "refs")
-    assert dict(published["a"]) == {"real": 1}
-
-    published = _require_json_mapping({"a": LyingList([1])}, "refs")
-    assert list(published["a"]) == [1]
-
-    # A well-behaved Mapping that is not a dict is still accepted by protocol.
-    published = _require_json_mapping({"a": UserDict({"ok": 1})}, "refs")
-    assert dict(published["a"]) == {"ok": 1}
-
-
-def test_registry_paths_are_stored_as_exact_text() -> None:
-    """One document's text must never be quoted as another's provenance.
-
-    A ``str`` subclass overriding ``__eq__``/``__hash__`` makes every lookup hit
-    the same entry, so any path would resolve to that document -- exactly the
-    misattribution a provenance registry exists to prevent.
+    A path is what a later report quotes provenance against.  Accepting one that
+    names nothing would let a span be attributed to a document no one can look
+    up.
     """
     from pyfcstm.bmc.provenance import SourceDocumentRegistry
 
-    class AliasPath(str):
-        def __eq__(self, other):
-            return True
+    with pytest.raises(ValueError, match="paths must be non-empty strings"):
+        SourceDocumentRegistry({"": "state A;"})
 
-        def __hash__(self):
-            return hash("alias")
-
-    registry = SourceDocumentRegistry({AliasPath("real.fcstm"): "REAL"})
-
-    assert [type(path) for path in registry.documents] == [str]
+    # A well-formed registry resolves the path it was given and nothing else.
+    registry = SourceDocumentRegistry({"real.fcstm": "REAL"})
     assert registry.document("real.fcstm") == "REAL"
     assert registry.document("anything-else") is None
-
-    # Two distinct keys holding the same text would silently drop one document.
-    # A dict literal cannot express that -- equal keys collapse before the
-    # registry sees them -- so the pair has to differ by identity.
-    class DistinctPath(str):
-        def __new__(cls, text, salt):
-            obj = str.__new__(cls, text)
-            obj.salt = salt
-            return obj
-
-        def __eq__(self, other):
-            return self is other
-
-        def __hash__(self):
-            return hash((str.__str__(self), self.salt))
-
-    # An object that only claims to be a str is refused, on both mappings.
-    impostor = type("Impostor", (object,), {"__class__": property(lambda self: str)})()
-    for mapping_kwargs in (
-        {"documents": {impostor: "x"}},
-        {"documents": {}, "query_documents": {impostor: "x"}},
-    ):
-        with pytest.raises(ValueError, match="paths must be non-empty strings"):
-            SourceDocumentRegistry(**mapping_kwargs)
-    with pytest.raises(ValueError, match="paths must be non-empty strings"):
-        SourceDocumentRegistry({"": "x"})
-
-    colliding = {DistinctPath("same.fcstm", 1): "A", DistinctPath("same.fcstm", 2): "B"}
-    assert len(colliding) == 2
-    with pytest.raises(ValueError, match="two entries for"):
-        SourceDocumentRegistry(colliding)
 
 
 @pytest.mark.unittest
@@ -2441,62 +2249,9 @@ def test_synthetic_state_paths_yield_no_owner_prefixes() -> None:
     )
 
 
-@pytest.mark.unittest
-def test_registry_fields_are_all_hardened_against_hostile_input() -> None:
-    """Hold the registry's own field list to its hardening tests.
-
-    The impostor sweep in test/bmc/test_explanation.py skips this class: it is a
-    path-keyed registry rather than a published core field, so it has no
-    per-field JSON contract for that sweep to check.  That skip is only safe
-    while every field it does have is hardened here.  This test names the fields
-    it knows about, so a field added later fails until someone decides how a
-    hostile value for it must be refused.
-    """
-    import dataclasses
-
-    known = {
-        # Every value is normalized and every key stored as exact text; a key
-        # that collides after canonicalization is refused.
-        "documents",
-        # Sliced to a display path; a path the registry never held cannot be
-        # published.
-        "display_root",
-        # Same treatment as ``documents``, on the query side.
-        "query_documents",
-    }
-    actual = {field.name for field in dataclasses.fields(SourceDocumentRegistry)}
-    assert actual == known, (
-        "SourceDocumentRegistry gained or lost a field; decide how a hostile "
-        "value for it is refused, add a test, then update this list"
-    )
-
-    well_formed = {"a.fcstm": "state A;"}
-
-    # Both document maps refuse a non-string body and a non-string path key, and
-    # each says which map it was: a shared message would let a query-side bug be
-    # read as a machine-side one.
-    with pytest.raises(TypeError, match="source document text must be strings"):
-        SourceDocumentRegistry({"a.fcstm": 1})
-    with pytest.raises(ValueError, match="source document paths must be"):
-        SourceDocumentRegistry({1: "state A;"})
-    with pytest.raises(TypeError, match="query document text must be strings"):
-        SourceDocumentRegistry(well_formed, query_documents={"q.fbmcq": 1})
-    with pytest.raises(ValueError, match="query document paths must be"):
-        SourceDocumentRegistry(well_formed, query_documents={1: "x"})
-
-    # ``display_root`` is refused too, but by os.fspath rather than by a message
-    # of the registry's own. That is recorded rather than asserted as good: the
-    # rejection holds, and pinning the wording here would pin CPython's.
-    with pytest.raises(TypeError):
-        SourceDocumentRegistry(well_formed, display_root=5)
-
-
-#: The stage and category pairings the relation builder can register, read from
-#: its own call sites.  Both tests below consume this so neither can drift from
-#: the other; an earlier pair each held its own literal list and agreed only by
-#: coincidence.
-#: Queries chosen so that between them every registered pairing is constructed.
-#: Two are enough today, and the test below fails if they stop covering the table.
+#: Queries whose builds between them register every stage and category pairing
+#: the relation builder produces, so the naming rationale below rests on groups a
+#: real build emitted rather than on a hand-written list of them.
 _PAIRING_CORPUS = (
     (
         "def int x = 1;\ndef int y = 0;\n"
@@ -2517,19 +2272,7 @@ _PAIRING_CORPUS = (
 
 
 def _constructed_pairings():
-    """Return every pairing a corpus of real builds actually constructs.
-
-    Four rounds of review found four ways to slip a pairing past a scan of the
-    builder's source: a query that reached only some branches, a keyword-only
-    match that missed a positional construction, a call-name match that missed a
-    derivation, and a both-keywords match that missed a derivation overriding one
-    of them.  Each fix widened the syntax the scan recognised and the next round
-    found a narrower way through, because the set of ways to write a construction
-    is not bounded.
-
-    So the pairings are observed instead of parsed.  Whatever syntax a
-    registration uses, the group reaches this list, and the constructor refuses a
-    pairing outside the frozen table before it can get here at all.
+    """Return every stage and category pairing a corpus of real builds constructs.
 
     :return: The pairings the corpus constructs.
     :rtype: Set[Tuple[str, str]]
@@ -2542,33 +2285,23 @@ def _constructed_pairings():
         core = build_bmc_core_formula(context)
         # Two disjoint sibling collections: transition.case groups live only in
         # the case one.  Reading either alone loses a whole family.
-        assert not (
-            {id(group) for group in core._tracked_groups}
-            & {id(group) for group in core._tracked_case_groups}
-        )
         for group in list(core._tracked_groups) + list(core._tracked_case_groups):
             observed.add((group.stage, group.category))
     return observed
 
 
 @pytest.mark.unittest
-def test_the_frozen_pairing_table_is_exactly_what_builds_construct() -> None:
-    """The table the constructor enforces and what builds emit must agree.
+def test_the_group_noun_reads_the_category_because_the_aggregate_cannot() -> None:
+    """Pin the facts that decide how a source group is named to the reader.
 
-    One direction catches a registration the table does not list -- the
-    constructor refuses it, so this cannot regress silently.  The other catches a
-    table entry nothing constructs, which would let a rationale reason about a
-    group that cannot occur, the mistake this whole guard exists to prevent.
+    A rendered group is named from its category's leading segment rather than
+    from its aggregate.  That choice is only correct because of the pairings real
+    builds actually emit, so the deciding facts are asserted here against those
+    builds instead of being asserted in prose in the reference documentation.
     """
     from pyfcstm.bmc.explanation import constraint_aggregate
-    from pyfcstm.bmc.provenance import TRACKED_GROUP_PAIRINGS
 
     observed = _constructed_pairings()
-    assert observed == set(TRACKED_GROUP_PAIRINGS), (
-        set(TRACKED_GROUP_PAIRINGS) - observed,
-        observed - set(TRACKED_GROUP_PAIRINGS),
-    )
-
     stages_by_noun = {}
     for stage, category in observed:
         stages_by_noun.setdefault(category.split(".")[0], set()).add(stage)

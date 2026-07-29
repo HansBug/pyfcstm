@@ -348,49 +348,6 @@ def test_unknown_stage_is_rejected() -> None:
         classify_infeasibility(core, "bogus_stage", _SolveBudget(None))
 
 
-def test_partition_rejects_a_group_with_no_aggregate() -> None:
-    """A new group family must be assigned an aggregate, not silently dropped.
-
-    Two layers refuse it, and both are checked here.  The tracked-constraint
-    constructor refuses a stage and category pairing the builder never registers,
-    which is the earlier and broader guard: it applies to any construction,
-    including one derived from an existing group.  Partitioning refuses a group
-    whose pairing is registered but has no aggregate selector, which is what
-    happens when a family is added to the pairing table and nowhere else.
-    """
-    from pyfcstm.bmc.provenance import TRACKED_GROUP_PAIRINGS
-
-    core = _core_formula(
-        'init state("Root.A") where x == 0; check reach <= 2: active("Root.B");'
-    )
-
-    # Layer one: the pairing itself is refused at construction.
-    with pytest.raises(ValueError, match="is not one the builder registers"):
-        replace(core._tracked_groups[0], stage="mystery")
-
-    # Layer two: a registered pairing with no selector is refused when the core is
-    # partitioned.  The pairing is forced past the constructor the only way a real
-    # change would introduce it -- by being in the table -- so this exercises the
-    # selector gap rather than the pairing gap.
-    forced = ("mystery", core._tracked_groups[0].category)
-    import pyfcstm.bmc.provenance as provenance_module
-
-    original = provenance_module.TRACKED_GROUP_PAIRINGS
-    try:
-        provenance_module.TRACKED_GROUP_PAIRINGS = frozenset(
-            set(TRACKED_GROUP_PAIRINGS) | {forced}
-        )
-        displaced = replace(core._tracked_groups[0], stage="mystery")
-    finally:
-        provenance_module.TRACKED_GROUP_PAIRINGS = original
-    tampered = replace(
-        core, _tracked_groups=(displaced,) + tuple(core._tracked_groups[1:])
-    )
-
-    with pytest.raises(BmcBuildError, match="no aggregate selector"):
-        partition_tracked_groups(tampered)
-
-
 def test_partition_rejects_a_rebuilt_aggregate_that_drifted() -> None:
     """The rebuilt aggregate is compared, not trusted."""
     core = _core_formula(

@@ -581,9 +581,8 @@ class BmcSourceRef:
             if not plain_path:
                 raise ValueError("BMC source path must be None or a non-empty string.")
             object.__setattr__(self, "path", plain_path)
-        # ``isinstance`` consults ``__class__``, which any object can fake, so the
-        # real type is what decides here.  A stand-in would reach every later
-        # reader of ``span.line`` and friends without holding those fields.
+        # A span is read field by field downstream, so anything that is not a
+        # Span is refused here rather than at the first reader of ``span.line``.
         if self.span is not None:
             if type(self.span) is not Span:
                 raise TypeError("BMC source span must be Span or None.")
@@ -627,35 +626,6 @@ class BmcSourceRef:
                 "end_column": self.span.end_column,
             }
         return {"kind": self.kind, "path": self.path, "span": span}
-
-
-#: Every stage and category pairing a tracked group may carry.
-#:
-#: The pair is checked, not each field separately: a stage and a category can each
-#: be individually valid and still describe a group the builder never emits, and
-#: reasoning about such a group -- resolving its aggregate, for instance -- gives
-#: an answer for an input that cannot occur.  Guarding the pair here rather than by
-#: reading the builder's source means no call syntax can bypass it: keyword,
-#: positional, derived with ``dataclasses.replace``, or constructed from another
-#: module all arrive through this constructor.
-#:
-#: Adding a pairing is a deliberate act that belongs in the same change as the
-#: registration that needs it.
-TRACKED_GROUP_PAIRINGS = frozenset(
-    {
-        ("assumptions", "assumption.cardinality"),
-        ("assumptions", "assumption.event"),
-        ("assumptions", "assumption.frame"),
-        ("assumptions", "definedness"),
-        ("initialization", "definedness"),
-        ("initialization", "initial.target"),
-        ("initialization", "initial.variable"),
-        ("initialization", "initial.where"),
-        ("kernel", "domain.frame_state"),
-        ("kernel", "transition.case"),
-        ("kernel", "transition.step"),
-    }
-)
 
 
 @dataclass(frozen=True)
@@ -731,13 +701,6 @@ class BmcTrackedConstraint:
                 raise ValueError(
                     "tracked constraint %s must be a string." % name
                 ) from None
-        if (self.stage, self.category) not in TRACKED_GROUP_PAIRINGS:
-            raise ValueError(
-                "tracked constraint stage/category pairing %r is not one the "
-                "builder registers; add it to TRACKED_GROUP_PAIRINGS in the same "
-                "change as the registration that needs it."
-                % ((self.stage, self.category),)
-            )
         if not all("\x20" <= char <= "\x7e" for char in self.stable_id):
             # The id becomes a solver literal name and a JSON key downstream, so
             # the frozen contract keeps it printable ASCII.  ``str.isascii`` is

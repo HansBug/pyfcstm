@@ -1,5 +1,6 @@
 """Tests for the public Python diagram facade and browser contract."""
 
+import ast
 import dis
 import inspect
 import json
@@ -862,6 +863,24 @@ def test_a_window_document_is_per_user_in_the_shared_temporary_directory(monkeyp
     assert mine != theirs, "two users must not be sent to one 0600 file"
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX shares one temporary directory")
+def test_opposite_viewer_lifetimes_never_share_a_name(monkeypatch):
+    # A window document must outlive this process, because the browser is
+    # detached and reads it afterwards; a document nobody opened is this
+    # process's litter and the exit hook deletes it. The two numbers that
+    # separate them share a range -- 1000 is an ordinary user id and an ordinary
+    # process id at once -- so with a bare integer on each side the two landed on
+    # one path, and the deletable one won. The identities are pinned equal here
+    # because that is the case a difference in the numbers hides.
+    from pyfcstm.diagram import api
+
+    monkeypatch.setattr(os, "geteuid", lambda: 1000)
+    monkeypatch.setattr(os, "getpid", lambda: 1000)
+    windowed = api._temporary_viewer_path("document", for_window=True)
+    scoped = api._temporary_viewer_path("document", for_window=False)
+    assert windowed != scoped, "the exit hook would delete a live window's document"
+
+
 def test_a_temporary_viewer_is_private_and_process_scoped():
     """The viewer embeds the model's own source into a world-readable directory.
 
@@ -884,8 +903,12 @@ def test_a_temporary_viewer_is_private_and_process_scoped():
     windowed = diagram_api._temporary_viewer_path(document, for_window=True)
     scoped = diagram_api._temporary_viewer_path(document, for_window=False)
     assert windowed != scoped, "a window's document must not share a reapable name"
-    assert str(os.getpid()) in scoped.name
-    assert str(os.getpid()) not in windowed.name
+    # The suffix rather than the digits anywhere in the name. Scanning the whole
+    # string for the process id fails on ordinary values -- euid 1000 with pid 100
+    # makes one a substring of the other, and a pid's digits can land in the hex
+    # digest -- so the assertion went red while the runtime was correct.
+    assert scoped.stem.endswith(diagram_api._process_scoped_suffix())
+    assert not windowed.stem.endswith(diagram_api._process_scoped_suffix())
     # Reusable across processes, which is what keeps repeats from accumulating.
     assert diagram_api._temporary_viewer_path(document, for_window=True) == windowed
 
@@ -1166,7 +1189,12 @@ def test_a_forked_child_does_not_reap_its_parents_viewer(tmp_path):
     # the child deleted a document the parent was still showing.
     from pyfcstm.diagram import api
 
-    viewer = tmp_path / ("pyfcstm-diagram-forktest-%d.html" % os.getpid())
+    # Built from the same function the registry checks against, so a change to
+    # what a reapable name looks like cannot leave this test asserting about a
+    # shape nothing produces any more.
+    viewer = tmp_path / (
+        "pyfcstm-diagram-forktest%s.html" % api._process_scoped_suffix()
+    )
     viewer.write_text("x" * 64, encoding="utf-8")
     api._register_temporary_viewer(viewer)
     try:
@@ -1434,6 +1462,44 @@ def _next_free_descriptor():
     return handle
 
 
+def test_no_handler_is_entered_while_the_staging_file_is_held():
+    # The rule this states in a form that can fail. The same leak came back three
+    # times, the last because a nested `try` for the two-cause message sat between
+    # the descriptor and the `yield`: from 3.11 the `try:` line is itself unowned,
+    # so entering one while something is held reopens the window the outer `try`
+    # exists to close. The line probe sees that only on 3.11 and later -- this
+    # sees it on every version, which is what makes the rule a gate rather than a
+    # paragraph. The two nested handlers that remain are exempt for reasons that
+    # are not "nothing is held", so neither can stand in for a third.
+    from pyfcstm.diagram import api
+
+    function = next(
+        node
+        for node in ast.walk(ast.parse(Path(api.__file__).read_text(encoding="utf-8")))
+        if isinstance(node, ast.FunctionDef) and node.name == "_staging_file"
+    )
+    outer = next(node for node in function.body if isinstance(node, ast.Try))
+    yield_line = min(
+        node.lineno for node in ast.walk(function) if isinstance(node, ast.Yield)
+    )
+    creation = min(
+        node.lineno
+        for node in ast.walk(outer)
+        if isinstance(node, ast.Call) and getattr(node.func, "attr", None) == "open"
+    )
+    assert creation < yield_line, "the staging file is not created before the yield"
+    held = [
+        node.lineno
+        for node in ast.walk(outer)
+        if isinstance(node, ast.Try)
+        and node is not outer
+        and creation < node.lineno < yield_line
+    ]
+    assert held == [], "a handler is entered while the file is held, at lines %r" % (
+        held,
+    )
+
+
 def _statement_lines(function, through=None):
     """
     Line numbers that report a ``line`` trace event, optionally up to ``through``.
@@ -1460,6 +1526,66 @@ def _yield_line(function):
     offsets = [i for i, line in enumerate(lines) if line.strip().startswith("yield ")]
     assert len(offsets) == 1, "expected one yield in %s" % inner.__name__
     return start + offsets[0]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX modes")
+@pytest.mark.parametrize("writer_name", ["_atomic_write_text", "_atomic_write_bytes"])
+def test_an_interrupted_overwrite_leaves_the_earlier_file_whole(writer_name, tmp_path):
+    # The property a caller actually depends on, which the leak probe cannot see:
+    # it watches descriptors, streams and staging files, so moving `os.replace`
+    # ahead of the write kept every test green while a Ctrl-C truncated the
+    # document that was already there. Real SIGINT runs measured this by hand;
+    # here it is a gate. At every line the file is either what it was -- content
+    # and mode -- or the new content in full, and never anything between.
+    from pyfcstm.diagram import api
+
+    writer = getattr(api, writer_name)
+    earlier = b"EARLIER-CONTENT-MUST-SURVIVE"
+    fresh = b"N" * 64
+    payload = fresh.decode("ascii") if writer_name.endswith("text") else fresh
+    source = Path(api.__file__)
+    executable = _statement_lines(writer) + _statement_lines(
+        api._staging_file, through=_yield_line(api._staging_file)
+    )
+
+    damaged = []
+    for line_number in executable:
+        directory = tmp_path / ("line%d" % line_number)
+        directory.mkdir()
+        target = directory / "diagram.out"
+        target.write_bytes(earlier)
+        os.chmod(str(target), 0o604)
+        fired = []
+
+        def tracer(frame, event, _arg, wanted=line_number, seen=fired):
+            if (
+                event == "line"
+                and frame.f_code.co_filename == str(source)
+                and frame.f_lineno == wanted
+                and not seen
+            ):
+                seen.append(True)
+                raise KeyboardInterrupt
+            return tracer
+
+        sys.settrace(tracer)
+        try:
+            writer(target, payload)
+        except BaseException:  # noqa: BLE001 - the file's state is what matters
+            pass
+        finally:
+            sys.settrace(None)
+        if not fired:
+            continue
+        found = target.read_bytes() if target.exists() else None
+        mode = stat.S_IMODE(target.stat().st_mode) if target.exists() else None
+        if found == earlier and mode != 0o604:
+            damaged.append((line_number, "mode became %r" % (mode,)))
+        elif found not in (earlier, fresh):
+            damaged.append((line_number, "content became %r" % (found,)))
+    assert damaged == [], "interrupting these lines damaged the earlier file: %r" % (
+        damaged,
+    )
 
 
 @pytest.mark.parametrize("writer_name", ["_atomic_write_text", "_atomic_write_bytes"])

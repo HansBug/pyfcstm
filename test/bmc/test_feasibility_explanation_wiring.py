@@ -465,6 +465,13 @@ def test_a_budget_that_started_nothing_still_reports_the_timeout() -> None:
     from pyfcstm.bmc import build_bmc_core_formula, compile_bmc_property
     from pyfcstm.bmc.engine import BmcEngine
     from pyfcstm.bmc.solver import _SolveBudget
+
+    # The deadline is injected through the internal attach point rather than
+    # through solve_bmc_property's timeout_ms because a wall-clock timeout cannot
+    # land on this row deterministically: measured over three runs, timeout_ms=1
+    # always yields refinement_status="timeout" and timeout_ms=5 yields both this
+    # row and the fully-explained one.  Only the row's boundary is controlled;
+    # the classification, extraction and aggregation are the production ones.
     from pyfcstm.bmc.witness import _attach_explanation, solve_bmc_property
     from pyfcstm.model import load_state_machine_from_text
 
@@ -689,6 +696,12 @@ def test_a_classification_without_a_core_reaches_the_public_result() -> None:
     and the aggregation are the production ones.  Without an end-to-end case
     this row of the table would rest on unit tests of the data layer alone.
     """
+    # The deadline is injected through the internal attach point rather than
+    # through solve_bmc_property's timeout_ms because a wall-clock timeout cannot
+    # land on this row deterministically: measured over three runs, timeout_ms=1
+    # always yields refinement_status="timeout" and timeout_ms=5 yields both this
+    # row and the fully-explained one.  Only the row's boundary is controlled;
+    # the classification, extraction and aggregation are the production ones.
     from pyfcstm.bmc.witness import _attach_explanation
 
     baseline, core = _localized_baseline()
@@ -714,59 +727,6 @@ def test_a_classification_without_a_core_reaches_the_public_result() -> None:
     assert explanation.core is None
     assert attached.refinement_status == "partial"
     assert attached.refinement_checks
-
-
-def test_a_mismatch_after_the_probes_keeps_their_ledger() -> None:
-    """Corrupt metadata found late must not deny the probes that already ran.
-
-    A stable id is metadata and never enters a group's expressions, so renaming
-    one leaves every aggregate byte-identical and the partition assertion sees
-    nothing.  The collision is caught while the core is extracted, by which time
-    the classification probes have spent the caller's deadline.  Reporting an
-    empty ledger then would deny work that really happened -- the same denial
-    the guards inside extraction already avoid.
-    """
-    import dataclasses
-
-    from pyfcstm.bmc import build_bmc_core_formula, compile_bmc_property
-    from pyfcstm.bmc.engine import BmcEngine
-    from pyfcstm.bmc.solver import _SolveBudget
-    from pyfcstm.bmc.witness import _attach_explanation, solve_bmc_property
-    from pyfcstm.model import load_state_machine_from_text
-
-    machine = load_state_machine_from_text(
-        "def int x = 0;\n"
-        "state Root { event Go; state A; state B; [*] -> A; A -> B :: Go; }"
-    )
-    context = BmcEngine(machine).prepare(
-        'init state("Root.A") where x == 0; '
-        'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
-        'check reach <= 2: active("Root.B");'
-    )
-    core = build_bmc_core_formula(context)
-    groups = list(core._tracked_groups)
-    environment = [
-        index for index, group in enumerate(groups) if group.stage == "assumptions"
-    ]
-    groups[environment[1]] = dataclasses.replace(
-        groups[environment[1]], stable_id=groups[environment[0]].stable_id
-    )
-    object.__setattr__(core, "_tracked_groups", tuple(groups))
-
-    baseline = solve_bmc_property(compile_bmc_property(core)).feasibility
-    degraded = _attach_explanation(baseline, core, _SolveBudget(None), "formal")
-
-    assert degraded.infeasible_stage == baseline.infeasible_stage
-    assert degraded.explanation is not None
-    assert degraded.explanation.achieved_mode == "none"
-    assert degraded.explanation.core is None
-    assert "internal mismatch" in degraded.refinement_reason
-    assert "share the stable id" in degraded.refinement_reason
-    # The classification probe ran, so it is still accounted for.
-    assert [check.name for check in degraded.refinement_checks] == [
-        "component_assumptions"
-    ]
-    assert degraded.refinement_status == degraded.explanation.status == "partial"
 
 
 #: The mandatory verdict's own solver traffic, measured per scenario.

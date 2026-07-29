@@ -1321,7 +1321,7 @@ public constructor argument, a malformed CLI flag, a hostile-looking DSL file), 
 timeout paths, JSON round-trips through the published schema, and cross-checking two public surfaces against each
 other.
 
-Three boundary cases decide themselves the same way every time:
+These boundary cases decide themselves the same way every time:
 
 - **A mixed test function is split, not deleted.** When one test holds both in-bounds and out-of-bounds assertions, keep
   the in-bounds part — folding it into an existing parametrized table where one exists — and remove only the rest.

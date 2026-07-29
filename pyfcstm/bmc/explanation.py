@@ -1615,6 +1615,10 @@ def _category_noun(constraint: BmcConstraintRef) -> str:
     for prefix in sorted(CATEGORY_ROLES, key=len, reverse=True):
         if constraint.category.startswith(prefix):
             return prefix.rstrip(".")
+    # Unreachable through any public path, and kept as stated defensive code: the
+    # constructor already ran category_role over the same CATEGORY_ROLES keys with
+    # the same prefix test, so a category that got this far matched one of them.
+    # It fires only if a later change gives the two lookups different families.
     raise ValueError(
         "category %r matches no known family prefix; the naming table and the "
         "role table must list the same families." % constraint.category

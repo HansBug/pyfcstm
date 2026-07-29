@@ -168,6 +168,12 @@ is\_printable\_ascii
 .. autofunction:: is_printable_ascii
 
 
+human\_text\_for\_fact
+-----------------------------------------------------
+
+.. autofunction:: human_text_for_fact
+
+
 category\_role
 -----------------------------------------------------
 

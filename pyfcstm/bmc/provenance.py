@@ -487,15 +487,15 @@ def _relational_operators(z3: Any) -> Dict[int, str]:
 
         >>> import z3 as z3_module
         >>> _relational_operators(z3_module)[z3_module.Z3_OP_EQ]
-        '=='
+        'eq'
     """
     return {
-        z3.Z3_OP_EQ: "==",
-        z3.Z3_OP_DISTINCT: "!=",
-        z3.Z3_OP_LE: "<=",
-        z3.Z3_OP_LT: "<",
-        z3.Z3_OP_GE: ">=",
-        z3.Z3_OP_GT: ">",
+        z3.Z3_OP_EQ: "eq",
+        z3.Z3_OP_DISTINCT: "ne",
+        z3.Z3_OP_LE: "le",
+        z3.Z3_OP_LT: "lt",
+        z3.Z3_OP_GE: "ge",
+        z3.Z3_OP_GT: "gt",
     }
 
 
@@ -553,7 +553,7 @@ def _integer_value(expression: Any) -> Optional[int]:
 
 
 def _value_comparison_fact(group: Any) -> Optional[Dict[str, Any]]:
-    """Read a one-variable comparison group as an equality or range fact.
+    """Read a one-variable comparison group as a variable-comparison fact.
 
     :param group: The tracked group to read.
     :type group: BmcTrackedConstraint
@@ -578,16 +578,20 @@ def _value_comparison_fact(group: Any) -> Optional[Dict[str, Any]]:
         # Operand order is not fixed, so the mirrored shape is read too.
         name = _frame_variable_name(right)
         value = _integer_value(left)
-        operator = {"<": ">", ">": "<", "<=": ">=", ">=": "<="}.get(operator, operator)
+        operator = {"lt": "gt", "gt": "lt", "le": "ge", "ge": "le"}.get(
+            operator, operator
+        )
     if name is None or value is None:
         return None
     frame = group.refs.get("frame")
     if not isinstance(frame, int):
         return None
-    kind = "equality" if operator in ("==", "!=") else "range"
+    # One tag with an operator field, not one tag per relation: a consumer that
+    # wants only equalities filters on the operator, while one that wants any
+    # bound on a variable does not have to enumerate tags to find them.
     return {
-        "kind": kind,
-        "subject": name,
+        "kind": "variable_comparison",
+        "variable": name,
         "frame": frame,
         "operator": operator,
         "value": value,
@@ -638,7 +642,10 @@ def _definedness_fact(group: Any) -> Optional[Dict[str, Any]]:
     frame = group.refs.get("frame")
     if not isinstance(frame, int):
         return None
-    fact = {"kind": "definedness", "frame": frame, "operation": "division"}
+    # Not plain "definedness": that word is already a semantic_role, which says
+    # where a group came from.  The fact says what the group requires, so the tag
+    # names the condition instead of repeating the role.
+    fact = {"kind": "definedness_condition", "frame": frame, "operation": "division"}
     if len(group.expressions) == 1:
         expression = group.expressions[0]
         if z3.is_app(expression) and expression.decl().kind() == z3.Z3_OP_DISTINCT:
@@ -646,7 +653,7 @@ def _definedness_fact(group: Any) -> Optional[Dict[str, Any]]:
                 expression.arg(1)
             )
             if name is not None:
-                fact["subject"] = name
+                fact["variable"] = name
     return fact
 
 
@@ -674,8 +681,8 @@ def normalized_fact_for(group: Any) -> Dict[str, Any]:
         ...     refs={"frame": 0, "assumption": 0},
         ... )
         >>> fact = normalized_fact_for(group)
-        >>> fact["kind"], fact["subject"], fact["operator"], fact["value"]
-        ('equality', 'x', '==', 1)
+        >>> fact["kind"], fact["variable"], fact["operator"], fact["value"]
+        ('variable_comparison', 'x', 'eq', 1)
     """
     if group.category in _VALUE_FACT_CATEGORIES:
         fact = _value_comparison_fact(group)

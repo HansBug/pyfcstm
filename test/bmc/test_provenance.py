@@ -2329,7 +2329,7 @@ def _fact_groups(query: str):
 
 
 @pytest.mark.unittest
-def test_a_variable_equality_reads_as_a_domain_fact_not_a_structural_one() -> None:
+def test_a_variable_comparison_reads_as_a_domain_fact_not_a_structural_one() -> None:
     """An assumption pinning a variable publishes the variable, frame and value.
 
     A machine reader dispatching on ``kind`` needs the operator and the operand,
@@ -2345,10 +2345,10 @@ def test_a_variable_equality_reads_as_a_domain_fact_not_a_structural_one() -> No
     )
     fact = normalized_fact_for(groups["assumption.frame"])
 
-    assert fact["kind"] == "equality"
-    assert fact["subject"] == "x"
+    assert fact["kind"] == "variable_comparison"
+    assert fact["variable"] == "x"
     assert fact["frame"] == 0
-    assert fact["operator"] == "=="
+    assert fact["operator"] == "eq"
     assert fact["value"] == 1
 
 
@@ -2364,9 +2364,10 @@ def test_an_initial_variable_reads_as_an_initializer_fact() -> None:
     )
     fact = normalized_fact_for(groups["initial.variable"])
 
-    assert fact["kind"] == "equality"
-    assert fact["subject"] == "x"
+    assert fact["kind"] == "variable_comparison"
+    assert fact["variable"] == "x"
     assert fact["frame"] == 0
+    assert fact["operator"] == "eq"
     assert fact["value"] == 0
 
 
@@ -2398,7 +2399,7 @@ def test_a_definedness_rule_reads_as_the_operation_it_guards() -> None:
     )
     fact = normalized_fact_for(groups["definedness"])
 
-    assert fact["kind"] == "definedness"
+    assert fact["kind"] == "definedness_condition"
     assert fact["operation"] == "division"
     assert fact["frame"] == 1
 
@@ -2415,3 +2416,32 @@ def test_an_unreduced_group_says_so_instead_of_guessing() -> None:
 
     assert fact["kind"] == "structural_constraint"
     assert fact["category"] == "transition.step"
+
+
+@pytest.mark.unittest
+def test_a_recognized_fact_is_not_echoed_back_as_its_own_identifier() -> None:
+    """``normalized_fact`` publishes the fact, and ``constraint`` the metadata.
+
+    The frozen result prototype puts ``frames``, ``steps`` and ``refs`` inside
+    ``constraint``; repeating them inside the fact makes a reader carry two
+    copies of the same values and obscures which keys are the fact itself.
+    """
+    from pyfcstm.bmc.infeasibility import build_core_item
+
+    groups = _fact_groups(
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") == 1; '
+        'check reach <= 2: active("Root.B");'
+    )
+    item = build_core_item(groups["assumption.frame"])
+
+    assert set(item.normalized_fact) == {
+        "kind",
+        "variable",
+        "frame",
+        "operator",
+        "value",
+    }
+    # The metadata is still published, one level up.
+    assert item.constraint.frames == (0,)
+    assert item.constraint.refs["frame"] == 0

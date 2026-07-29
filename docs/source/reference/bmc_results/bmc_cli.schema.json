@@ -5202,13 +5202,11 @@
             "kind": {
               "enum": [
                 "structural_constraint",
-                "equality",
-                "range",
+                "variable_comparison",
                 "state_domain",
-                "value_propagation",
-                "definedness"
+                "definedness_condition"
               ],
-              "$comment": "The dispatch tag a machine consumer reads. structural_constraint is the honest fallback for a shape no recognizer reduced; the other five are the domain readings the formal mode covers."
+              "$comment": "A fact describes one source group. variable_comparison carries the relation in its operator field instead of splitting into a tag per relation. Cross-group patterns -- incompatible equalities, an empty interval, an exhausted state domain, a value carried across a step, a definedness failure -- are derivations over several facts and are named by the narrative's rule vocabulary, never here. structural_constraint is the honest fallback for a shape no recognizer reads."
             }
           },
           "$comment": "Machine consumers dispatch on kind rather than on human text, so the tag is required.  Later stages extend the enum as recognizers land. Draft 2020-12 has no depth keyword, no way to bound an integer's digit count, and no way to see a non-finite number, a value with no JSON counterpart or a non-string object key -- a payload reaching a validator was already parsed from JSON text. The constructor refuses all of those at every nesting depth."

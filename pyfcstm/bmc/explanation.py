@@ -275,6 +275,101 @@ def is_printable_ascii(value: str) -> bool:
     return bool(plain) and all("\x20" <= char <= "\x7e" for char in plain)
 
 
+#: How each published relation reads in an English sentence.
+#:
+#: The keys are the operator tags a ``variable_comparison`` fact may carry, so a
+#: relation added to the recognizer without a phrase here fails loudly instead of
+#: rendering as a bare tag inside otherwise fluent prose.
+_RELATION_PHRASES = {
+    "eq": "to equal %s",
+    "ne": "to differ from %s",
+    "le": "to be at most %s",
+    "lt": "to be less than %s",
+    "ge": "to be at least %s",
+    "gt": "to be greater than %s",
+}
+
+#: Which authority a role speaks for, in the voice the sentence needs.
+#:
+#: A reader deciding where to make an edit cares whether a requirement came from
+#: their query, their machine definition or the encoding, so the sentence names
+#: that rather than the role tag.
+_ROLE_VOICES = {
+    "assumption": "the query",
+    "initial_fact": "the initializer",
+    "domain_rule": "the model",
+    "transition_rule": "the transition",
+    "definedness": "the expression",
+}
+
+
+def human_text_for_fact(role: str, fact: Mapping) -> str:
+    """Render one published fact as a deterministic domain sentence.
+
+    The sentence is derived from the fact alone, so it never states more than a
+    recognizer established.  A fact that carries no domain reading renders as its
+    own identity instead of being dressed up as a derivation nobody made.
+
+    :param role: The item's semantic role.
+    :type role: str
+    :param fact: The published normalized fact.
+    :type fact: Mapping
+    :return: One sentence describing what the group requires.
+    :rtype: str
+
+    Example::
+
+        >>> human_text_for_fact(
+        ...     "assumption",
+        ...     {
+        ...         "kind": "variable_comparison",
+        ...         "variable": "x",
+        ...         "frame": 0,
+        ...         "operator": "eq",
+        ...         "value": 1,
+        ...     },
+        ... )
+        'At frame 0, the query requires x to equal 1.'
+    """
+    kind = fact.get("kind")
+    voice = _ROLE_VOICES.get(role, "the model")
+    if kind == "variable_comparison":
+        phrase = _RELATION_PHRASES[fact["operator"]] % fact["value"]
+        return "At frame %s, %s requires %s %s." % (
+            fact["frame"],
+            voice,
+            fact["variable"],
+            phrase,
+        )
+    if kind == "state_domain":
+        # The domain is published as encoded integers, so the sentence reports
+        # how many states remain legal rather than inventing names the fact does
+        # not carry.
+        count = len(fact["states"])
+        return "At frame %s, %s allows %d state%s." % (
+            fact["frame"],
+            voice,
+            count,
+            "" if count == 1 else "s",
+        )
+    if kind == "definedness_condition":
+        variable = fact.get("variable")
+        if variable is None:
+            return "At frame %s, a %s must stay defined." % (
+                fact["frame"],
+                fact["operation"],
+            )
+        return "At frame %s, the %s requires %s to be non-zero." % (
+            fact["frame"],
+            fact["operation"],
+            variable,
+        )
+    return "%s group %s was not reduced to a domain fact." % (
+        role.replace("_", " "),
+        fact.get("stable_id", "?"),
+    )
+
+
 def category_role(category: str) -> str:
     """Return the frozen semantic role of a group category.
 
@@ -378,21 +473,26 @@ SCOPE_AGGREGATES = MappingProxyType(
 
 #: Recognized ``normalized_fact`` tags.  An expression this stage cannot
 #: reduce declares itself structural rather than guessing a domain reading;
-#: later stages add their recognizers here.
 #: Every tag a published normalized fact may carry.
 #:
+#: A fact describes *one* source group, so the vocabulary is deliberately small.
+#: ``variable_comparison`` covers every relation between one frame variable and
+#: one value, carrying the relation in an ``operator`` field rather than splitting
+#: into a tag per relation.  ``state_domain`` gives the legal states of a frame
+#: and ``definedness_condition`` the operation a group keeps well defined.
 #: ``structural_constraint`` is the honest fallback for a shape no recognizer
-#: reads.  The other five are the domain readings §18.7 requires the formal mode
-#: to cover: equalities, numeric ranges, the legal state set of a frame, a value
-#: carried across a step, and an operation kept well defined.  A machine consumer
+#: reads.
+#:
+#: The cross-group patterns -- mutually exclusive equalities, an empty interval,
+#: an exhausted state domain, a value carried across a step, a definedness
+#: failure -- are *derivations* over several facts, so they are named by the
+#: narrative's rule vocabulary and never appear here.  A machine consumer
 #: dispatches on this tag, so adding one is a published-contract change.
 _FACT_KINDS = (
     "structural_constraint",
-    "equality",
-    "range",
+    "variable_comparison",
     "state_domain",
-    "value_propagation",
-    "definedness",
+    "definedness_condition",
 )
 
 #: Frozen upper bound on a published excerpt, in Unicode code points.  A long
@@ -1449,6 +1549,7 @@ __all__ = [
     "constraint_aggregate",
     "depth_line_is_needed",
     "explanation_text_lines",
+    "human_text_for_fact",
     "index_value",
     "is_printable_ascii",
     "BmcConflictCore",

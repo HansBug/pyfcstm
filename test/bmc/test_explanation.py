@@ -147,6 +147,8 @@ def test_a_category_outside_every_family_is_refused() -> None:
 #: Frozen structures the transcription test above pins by value.
 _TRANSCRIBED_FROZEN_NAMES = frozenset(
     {
+        "_RELATION_PHRASES",
+        "_ROLE_VOICES",
         "CATEGORY_ROLES",
         "CLASSIFICATION_SCOPES",
         "INDEX_REF_KEYS",
@@ -248,6 +250,18 @@ def test_the_transcription_guard_covers_every_frozen_structure() -> None:
     assert provenance._SOURCE_KINDS == {"fcstm", "fbmcq", "generated"}
     # Transcribed because it decides which groups get a value-level reading at
     # all: a category dropped from here silently degrades to structural.
+    # Transcribed because they are the whole published sentence vocabulary: a
+    # relation or role dropped from either mapping renders as a bare tag inside
+    # otherwise fluent prose, or silently borrows another role's voice.
+    assert set(module._RELATION_PHRASES) == {"eq", "ne", "le", "lt", "ge", "gt"}
+    assert module._RELATION_PHRASES["eq"] == "to equal %s"
+    assert module._ROLE_VOICES == {
+        "assumption": "the query",
+        "initial_fact": "the initializer",
+        "domain_rule": "the model",
+        "transition_rule": "the transition",
+        "definedness": "the expression",
+    }
     assert provenance._VALUE_FACT_CATEGORIES == (
         "assumption.frame",
         "initial.variable",
@@ -333,11 +347,9 @@ def test_every_frozen_vocabulary_matches_the_authored_list() -> None:
     )
     assert module._FACT_KINDS == (
         "structural_constraint",
-        "equality",
-        "range",
+        "variable_comparison",
         "state_domain",
-        "value_propagation",
-        "definedness",
+        "definedness_condition",
     )
     assert module.UNBUILT_SLOTS == ("proof", "narrative")
     assert module.INDEX_REF_KEYS == ("frame", "frames", "step", "steps")
@@ -2108,3 +2120,64 @@ def test_an_elapsed_duration_must_be_a_real_finite_number(elapsed_ms) -> None:
             reason="raw core unknown",
             elapsed_ms=elapsed_ms,
         )
+
+
+@pytest.mark.unittest
+def test_a_published_item_reads_as_a_sentence_about_the_model() -> None:
+    """``human_text`` states the domain fact, not the group's identifier.
+
+    A reader who does not know the encoding gets nothing from
+    "assumption constraint assumption.0000.frame.0000 from q.fbmcq".  The frozen
+    prototype renders the same item as a sentence naming the frame, the variable
+    and the value, and that is what the recognized facts now make possible.
+    """
+    from pyfcstm.bmc.explanation import human_text_for_fact
+
+    assumption = human_text_for_fact(
+        "assumption",
+        {
+            "kind": "variable_comparison",
+            "variable": "x",
+            "frame": 0,
+            "operator": "eq",
+            "value": 1,
+        },
+    )
+    assert assumption == "At frame 0, the query requires x to equal 1."
+
+    initial = human_text_for_fact(
+        "initial_fact",
+        {
+            "kind": "variable_comparison",
+            "variable": "x",
+            "frame": 0,
+            "operator": "eq",
+            "value": 0,
+        },
+    )
+    assert initial == "At frame 0, the initializer requires x to equal 0."
+
+    bounded = human_text_for_fact(
+        "assumption",
+        {
+            "kind": "variable_comparison",
+            "variable": "x",
+            "frame": 2,
+            "operator": "lt",
+            "value": 3,
+        },
+    )
+    assert bounded == "At frame 2, the query requires x to be less than 3."
+
+    # A shape no recognizer read must not be dressed up as a domain sentence.
+    structural = human_text_for_fact(
+        "transition_rule",
+        {
+            "kind": "structural_constraint",
+            "stable_id": "transition.0000.step.0000",
+            "stage": "kernel",
+            "category": "transition.step",
+        },
+    )
+    assert "transition.0000.step.0000" in structural
+    assert "requires" not in structural

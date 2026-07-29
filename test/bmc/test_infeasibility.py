@@ -527,13 +527,13 @@ def test_index_keys_are_published_the_same_way_in_both_fields() -> None:
     assert canonical["refs"]["kind"] == "state"
 
 
-def test_both_published_copies_of_the_metadata_are_byte_identical() -> None:
-    """One item publishes ``refs`` twice, so the two copies must match as JSON.
+def test_a_published_index_is_an_integer_in_the_json_a_consumer_reads() -> None:
+    """An index arriving as a float must be published as a JSON integer.
 
     Equality is blind to this: ``1 == 1.0`` in Python, so an ``==`` assertion
-    over the two mappings passes even when one holds an int and the other a
-    float.  Comparing the serialized text is what makes the difference visible,
-    and JSON type is exactly what a machine consumer reads.
+    passes on a mapping that serializes as ``1.0``.  Comparing the serialized
+    text is what makes the difference visible, and JSON type is exactly what a
+    machine consumer dispatches on.
     """
     import json
 
@@ -547,15 +547,11 @@ def test_both_published_copies_of_the_metadata_are_byte_identical() -> None:
     )
 
     canonical = build_core_item(group).to_canonical()
-    constraint_refs = canonical["constraint"]["refs"]
-    fact_refs = canonical["normalized_fact"]["refs"]
 
-    assert json.dumps(constraint_refs, sort_keys=True) == json.dumps(
-        fact_refs, sort_keys=True
+    assert canonical["constraint"]["frames"] == [1]
+    assert json.dumps(canonical["constraint"]["refs"], sort_keys=True) == (
+        '{"assumption": 0, "frame": 1, "step": [2]}'
     )
-    # And the fact's own two views of one index agree as well.
-    assert canonical["normalized_fact"]["frames"] == [1]
-    assert json.dumps(fact_refs["frame"]) == "1"
 
 
 def test_plural_index_keys_are_canonicalized_element_by_element() -> None:
@@ -1352,9 +1348,9 @@ def test_a_generated_member_says_it_has_no_authored_line() -> None:
     """A generated constraint explains its missing excerpt instead of hiding it.
 
     A published core mixes authored entries that quote real lines with
-    generated ones that cannot.  Reading "from generated" beside three quoted
-    entries looks like the tool failed to find this one's source, so the
-    sentence states outright that there is none.
+    generated ones that cannot.  The missing excerpt is not silence: the item
+    still says which source kind it has and that it carries no editable entry,
+    and its sentence describes the requirement rather than claiming a line.
     """
     core = _core_formula(
         'init state("Root.A") where x == 0; '
@@ -1369,12 +1365,20 @@ def test_a_generated_member_says_it_has_no_authored_line() -> None:
 
     assert item.source_excerpt is None
     assert item.editable is False
-    assert "no single authored line" in item.human_text
-    assert "generated from the model" in item.human_text
+    assert item.constraint.source.kind == "generated"
+    assert item.constraint.source.path is None
+    # The sentence describes the constraint, and names no file it does not have.
+    assert item.human_text.endswith(".")
+    assert "generated" not in item.human_text
 
 
-def test_an_authored_member_names_its_file() -> None:
-    """An authored constraint keeps pointing at the document it came from."""
+def test_an_authored_member_keeps_pointing_at_its_document() -> None:
+    """An authored constraint keeps a resolvable pointer to its own source.
+
+    The pointer lives in ``constraint.source`` and ``source_excerpt``, which is
+    what the human transcript prints beside the quoted line.  ``human_text``
+    describes the requirement instead of repeating the path.
+    """
     machine = load_state_machine_from_text(_MODEL)
     context = BmcEngine(machine).prepare(
         'init state("Root.A") where x == 0;\n'
@@ -1389,8 +1393,12 @@ def test_an_authored_member_names_its_file() -> None:
 
     item = build_core_item(authored, context._source_registry)
 
-    assert "q.fbmcq" in item.human_text
-    assert "no single authored line" not in item.human_text
+    assert item.constraint.source.path == "q.fbmcq"
+    assert item.source_excerpt == 'init state("Root.A") where x == 0;'
+    assert item.editable is True
+    # This group is the initial predicate, whose shape has no recognizer yet, so
+    # its sentence says that outright rather than inventing a reading.
+    assert "not reduced to a domain fact" in item.human_text
 
 
 def test_a_core_that_does_not_recheck_as_unsat_is_not_published() -> None:

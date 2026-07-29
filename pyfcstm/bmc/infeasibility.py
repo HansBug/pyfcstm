@@ -54,6 +54,7 @@ from .explanation import (
     BmcConstraintRef,
     BmcCoreItem,
     BmcInfeasibilityExplanation,
+    human_text_for_fact,
 )
 from .provenance import (
     BmcTrackedConstraint,
@@ -1120,44 +1121,20 @@ def build_core_item(
     if truncated:
         excerpt = excerpt[:MAX_SOURCE_EXCERPT_CHARS]
     role = _semantic_role(group.category)
-    if group.source_ref.kind == "generated":
-        # Saying "from generated" beside three entries that quote real lines
-        # reads like the tool failed to find this one's source.  It has none:
-        # the encoding produced it from the model rather than from a line the
-        # author wrote.
-        human_text = (
-            "%s constraint %s, generated from the model with no single "
-            "authored line" % (role.replace("_", " "), group.stable_id)
-        )
-    else:
-        human_text = "%s constraint %s from %s" % (
-            role.replace("_", " "),
-            group.stable_id,
-            group.source_ref.path or group.source_ref.kind,
-        )
+    # Machine consumers dispatch on this tag rather than on human text.  The
+    # recognizers live in the provenance layer, which owns fact generation; a
+    # shape none of them reads keeps its identity under "structural_constraint"
+    # instead of inviting a guess.  Frames, steps and refs stay in the constraint
+    # reference above: publishing them here as well would give a reader two
+    # copies of the same values and blur which keys are the fact itself.
+    fact = normalized_fact_for(group)
     return BmcCoreItem(
         constraint=reference,
-        semantic_role=_semantic_role(group.category),
+        semantic_role=role,
         source_excerpt=excerpt,
         source_excerpt_truncated=truncated,
-        normalized_fact={
-            # Machine consumers dispatch on this tag rather than on human text.
-            # The recognizers live in the provenance layer, which owns fact
-            # generation; a shape none of them reads keeps its identity under
-            # "structural_constraint" instead of inviting a guess.
-            **normalized_fact_for(group),
-            "frames": list(frames),
-            "steps": list(steps),
-            # The builder's own metadata is carried through in sorted order so
-            # a machine reader sees which assumption, transition or variable
-            # the conflict came from, not only its frame index.  It is the same
-            # mapping the constraint publishes: echoing the raw values here would
-            # put two JSON types for one index in a single published item, and
-            # the two copies compare equal in Python because 1 == 1.0, so an
-            # equality assertion could not see the difference.
-            "refs": dict(published_refs),
-        },
-        human_text=human_text,
+        normalized_fact=fact,
+        human_text=human_text_for_fact(role, fact),
         editable=group.source_ref.kind in ("fcstm", "fbmcq"),
     )
 

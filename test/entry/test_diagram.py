@@ -1,5 +1,7 @@
 """CLI tests for the standalone diagram command."""
 
+import os
+import stat
 from pathlib import Path
 
 import pytest
@@ -26,6 +28,34 @@ def test_diagram_cli_json_and_html(tmp_path):
     result = runner.invoke(cli, ["diagram", "-i", str(source), "-o", str(html_path)])
     assert result.exit_code == 0, result.output
     assert "Content-Security-Policy" in html_path.read_text(encoding="utf-8")
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX modes")
+@pytest.mark.parametrize("name", ["machine.json", "machine.html"])
+def test_diagram_cli_can_overwrite_its_own_output_under_a_write_clearing_umask(
+    name, tmp_path
+):
+    # `-o` used to carry Click's `writable=True`, which is `os.access(W_OK)` --
+    # the criterion the library dropped precisely because it cannot tell a file
+    # the user protected from one whose write bit a umask cleared. Under a umask
+    # like this the first run produced a 0444 file and the second was refused at
+    # argument parsing, so the CLI kept the one-shot behaviour after the library
+    # had lost it, and the two disagreed about the same file.
+    source = tmp_path / "machine.fcstm"
+    source.write_text("state Root;", encoding="utf-8")
+    target = tmp_path / name
+
+    runner = CliRunner()
+    previous = os.umask(0o222)
+    try:
+        first = runner.invoke(cli, ["diagram", "-i", str(source), "-o", str(target)])
+        assert first.exit_code == 0, first.output
+        assert stat.S_IMODE(target.stat().st_mode) == 0o444, "the umask cleared it"
+        second = runner.invoke(cli, ["diagram", "-i", str(source), "-o", str(target)])
+    finally:
+        os.umask(previous)
+    assert second.exit_code == 0, second.output
+    assert stat.S_IMODE(target.stat().st_mode) == 0o444, "and it stays cleared"
 
 
 def test_diagram_cli_open_rejects_non_html_output(tmp_path):

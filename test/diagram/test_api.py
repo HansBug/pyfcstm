@@ -1340,20 +1340,54 @@ def test_a_read_only_file_of_our_own_can_still_be_replaced(tmp_path):
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX ownership")
-def test_a_read_only_file_of_another_user_is_left_alone():
+def test_a_read_only_file_of_another_user_is_left_alone(tmp_path, monkeypatch):
     # The case the check exists for: `os.replace` needs write permission on the
     # directory only, so somebody else's read-only file would be swapped out
     # silently -- and since an existing target keeps its mode, the result would
     # carry no sign of it.
+    #
+    # The owner is faked rather than the file. Probing a host file (`/etc/hostname`)
+    # skipped on every macOS runner, where that path does not exist, so deleting
+    # this rule outright stayed green on five of the platforms it has to hold on
+    # -- the quiet counterpart of the `/proc` dependency that at least failed
+    # loudly. Faking `os.geteuid` is faking the one thing the rule reads, and it
+    # lets the same file answer both ways in one test.
     from pyfcstm.diagram import api
 
-    foreign = Path("/etc/hostname")
-    if not foreign.exists() or os.access(str(foreign), os.W_OK):
-        pytest.skip("no unwritable file owned by another user to test with")
-    if foreign.stat().st_uid == os.geteuid():
-        pytest.skip("running as the owner of the probe file")
+    target = tmp_path / "diagram.html"
+    api._atomic_write_text(target, "first")
+    os.chmod(str(target), 0o444)
+    if os.access(str(target), os.W_OK):
+        pytest.skip("running as a user who can write any file, so nothing is protected")
+    monkeypatch.setattr(os, "geteuid", lambda: target.stat().st_uid + 1)
     with pytest.raises(PermissionError, match="belongs to another user"):
-        api._validate_write_target(foreign)
+        api._atomic_write_text(target, "second")
+    assert target.read_text(encoding="utf-8") == "first", "the refusal must not write"
+    monkeypatch.undo()
+    # Ours again, and now replaceable: one rule, two answers, same file.
+    api._atomic_write_text(target, "second")
+    assert target.read_text(encoding="utf-8") == "second"
+    assert stat.S_IMODE(target.stat().st_mode) == 0o444, "the protection travels"
+
+
+@pytest.mark.unittest
+@pytest.mark.skipif(os.name != "nt", reason="the read-only attribute is a Windows rule")
+def test_a_read_only_file_on_windows_says_which_attribute_to_clear(tmp_path):
+    # `MoveFileEx` refuses a read-only target whoever owns it, so Windows cannot
+    # grant the exemption POSIX grants for a file of our own. It also cannot be
+    # told the POSIX reason: a single message blamed file ownership, which is not
+    # the question here and sends the reader somewhere they cannot fix it.
+    from pyfcstm.diagram import api
+
+    target = tmp_path / "diagram.html"
+    api._atomic_write_text(target, "first")
+    os.chmod(str(target), stat.S_IREAD)
+    try:
+        with pytest.raises(PermissionError, match="read-only attribute"):
+            api._atomic_write_text(target, "second")
+    finally:
+        os.chmod(str(target), stat.S_IWRITE | stat.S_IREAD)
+    assert target.read_text(encoding="utf-8") == "first"
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX NAME_MAX")
@@ -1377,35 +1411,46 @@ def _next_free_descriptor():
     return handle
 
 
-@pytest.mark.parametrize("writer_name", ["_atomic_write_text", "_atomic_write_bytes"])
-def test_no_line_of_the_write_leaks_on_an_interrupt(writer_name, tmp_path):
-    # Ctrl-C is an ordinary way for a ~29 MB save to end, and the leak it caused
-    # moved rather than closed twice: guarding the point that was measured left
-    # the next line exposed. So every line of the writer gets an interrupt, and
-    # none of them may leave a descriptor or a staging file behind.
-    from pyfcstm.diagram import api
-
-    writer = getattr(api, writer_name)
-    payload = "x" * 64 if writer_name.endswith("text") else b"x" * 64
-    source = Path(api.__file__)
+def _executable_lines(source, function_name):
+    """1-based line numbers of the statements in one top-level function."""
     lines = source.read_text(encoding="utf-8").splitlines()
     start = next(
         index
         for index, line in enumerate(lines)
-        if line.startswith("def %s(" % writer_name)
+        if line.startswith("def %s(" % function_name)
     )
     end = next(
         index
         for index in range(start + 1, len(lines))
         if lines[index].startswith("def ")
     )
-    executable = [
+    found = [
         index + 1
         for index in range(start, end)
         if lines[index].strip()
         and not lines[index].lstrip().startswith(("#", '"""', ":"))
     ]
-    assert len(executable) > 5, "the writer body was not located"
+    assert len(found) > 5, "the body of %s was not located" % function_name
+    return found
+
+
+@pytest.mark.parametrize("writer_name", ["_atomic_write_text", "_atomic_write_bytes"])
+def test_no_line_of_the_write_leaks_on_an_interrupt(writer_name, tmp_path):
+    # Ctrl-C is an ordinary way for a ~29 MB save to end, and the leak it caused
+    # moved rather than closed three times: guarding the point that was measured
+    # left the next line exposed. Enumerating the writer alone is what let that
+    # happen twice over -- the staging file is created in a helper, whose lines
+    # the probe could not see, so a leak that moved in there read as fixed. Both
+    # are covered now, and no line of either may leave a descriptor or a staging
+    # file behind.
+    from pyfcstm.diagram import api
+
+    writer = getattr(api, writer_name)
+    payload = "x" * 64 if writer_name.endswith("text") else b"x" * 64
+    source = Path(api.__file__)
+    executable = _executable_lines(source, writer_name) + _executable_lines(
+        source, "_staging_file"
+    )
 
     leaks = []
     for line_number in executable:

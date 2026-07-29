@@ -127,7 +127,12 @@ def _write(target, write):
 @click.option(
     "-o",
     "output",
-    type=click.Path(dir_okay=False, writable=True),
+    # No `writable=True`: Click implements it as `os.access(W_OK)`, which cannot
+    # tell a file the user protected from one whose write bit a umask cleared, so
+    # it refused to overwrite the library's own output and made a second run
+    # impossible. `_validate_write_target` asks about ownership instead, and
+    # having one judge is what keeps the CLI and the API agreeing on a file.
+    type=click.Path(dir_okay=False),
     help="Output JSON or standalone HTML path.",
 )
 @click.option(

@@ -1020,16 +1020,21 @@ def _staging_file(target: Path, binary: bool) -> Iterator[Tuple[Any, Path, int]]
     have to be owned from the instant they exist.  Handing them back left a
     window between the return and the caller's own ``try`` in which a Ctrl-C
     unwound the stack with nobody holding either -- one leaked descriptor and one
-    leaked file, measured through :meth:`Diagram.save` -- and guarding only the
-    inside of the helper moved that window one line rather than closing it.
+    leaked file, measured through :meth:`Diagram.save`.  Keeping one ``try`` for
+    the set-up and a second one around the body left the same window between
+    them.  So the single ``try`` below is entered before either resource exists:
+    that is what makes every line from the creation to the removal owned, rather
+    than moving the unowned line further along.
 
     The file is opened with 0666 so the operating system applies the umask,
     exactly as it would for any other new file, and the mode that survives is
     read back from the descriptor.  That makes the file being written its own
     answer to "what mode should this end up with", so no second file has to be
-    created and measured.  It is then tightened to 0600 for the duration of the
-    write, because the document carries the model's source and the destination
-    directory may be shared.
+    created and measured.  Where the platform has ``os.fchmod`` it is then
+    tightened to 0600 for the duration of the write, because the document carries
+    the model's source and the destination directory may be shared.  Windows has
+    neither ``os.fchmod`` nor a mode beyond the read-only bit, so there the
+    staging file keeps whatever the directory's own permissions gave it.
 
     On exit the stream is closed and the file removed, unless the body renamed it
     onto the target -- in which case there is nothing left at the staging path
@@ -1060,70 +1065,94 @@ def _staging_file(target: Path, binary: bool) -> Iterator[Tuple[Any, Path, int]]
     flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
     flags |= getattr(os, "O_NOFOLLOW", 0)
     flags |= getattr(os, "O_BINARY", 0)
-    for _ in range(_TEMPORARY_NAME_ATTEMPTS):
-        # Eight characters, matching `NamedTemporaryFile`: a longer suffix eats
-        # into the NAME_MAX headroom the target's own name leaves, and turned
-        # legal 238-to-245-character names into ENAMETOOLONG. `O_EXCL` plus a
-        # retry is what makes a collision harmless, not the width.
-        staging = target.parent / (".%s.%s" % (target.name, uuid.uuid4().hex[:8]))
-        try:
-            handle = os.open(str(staging), flags, 0o666)
-        except FileExistsError:
-            # `O_EXCL` refused a name something else already holds, which is the
-            # point of using it; try another.
-            continue
-        break
-    else:
-        raise OSError(
-            "could not create a staging file beside %s after %d attempts"
-            % (target, _TEMPORARY_NAME_ATTEMPTS)
-        )
+    # One `try` for the whole life of both resources, entered before either of
+    # them exists. Two blocks in sequence -- one to set up, one around the body --
+    # leave every line between them owned by nobody, which is how the same leak
+    # came back three times, a line further along each time.
+    staging = None
+    handle = -1
+    stream = None
     try:
+        for _ in range(_TEMPORARY_NAME_ATTEMPTS):
+            # Named before it is created, so no line boundary can leave a file
+            # behind with nothing that will remove it. Eight characters, matching
+            # `NamedTemporaryFile`: a longer suffix eats into the NAME_MAX
+            # headroom the target's own name leaves, and turned legal
+            # 238-to-245-character names into ENAMETOOLONG. `O_EXCL` plus a retry
+            # is what makes a collision harmless, not the width.
+            staging = target.parent / (".%s.%s" % (target.name, uuid.uuid4().hex[:8]))
+            try:
+                handle = os.open(str(staging), flags, 0o666)
+            except FileExistsError:
+                # `O_EXCL` refused a name something else already holds, which is
+                # the point of using it. That file is not ours to remove, so the
+                # name goes back to being nothing before another is tried.
+                staging = None
+                continue
+            except OSError:
+                # `O_EXCL` means the open either created the file or created
+                # nothing, and this is the second case: ENOSPC, EACCES, EROFS, or
+                # ELOOP where `O_NOFOLLOW` refused a symlink already sitting at
+                # the name. Nothing of ours is there to clean up either way.
+                staging = None
+                raise
+            break
+        else:
+            raise OSError(
+                "could not create a staging file beside %s after %d attempts"
+                % (target, _TEMPORARY_NAME_ATTEMPTS)
+            )
         default = os.fstat(handle).st_mode & 0o7777
         if hasattr(os, "fchmod"):
+            # Restrictive while the document is being written, because it carries
+            # the model's source and the directory may be shared. Windows has no
+            # `fchmod` and no mode beyond the read-only bit.
             os.fchmod(handle, 0o600)
         stream = os.fdopen(
             handle, "wb" if binary else "w", **({} if binary else {"encoding": "utf-8"})
         )
-    except BaseException:
-        # Everything, then re-raised. The named failures are `os.fstat`,
-        # `os.fchmod` or `os.fdopen` on the descriptor just opened -- EIO or
-        # ENOSPC from the filesystem, EPERM where the mount forbids a mode
-        # change -- and the same window covers a Ctrl-C. The descriptor and the
-        # file are both ours and neither is any use now.
-        os.close(handle)
-        _discard(staging)
-        raise
-    try:
-        yield stream, staging, default
-    except OSError as body_error:
-        # The write, the mode change or the replace failed. Closing an
-        # already-closed stream is a no-op; the removal has something to do here
-        # because the replace did not happen. A cleanup that also fails is worth
-        # saying in the same breath -- the caller is left with a file they did
-        # not create, and only these two errors together explain why.
-        _close_quietly(stream, staging)
         try:
-            staging.unlink()
-        except FileNotFoundError:
-            pass
-        except OSError as removal_error:
-            raise OSError(
-                "%s; staging cleanup failed for %s: %s"
-                % (body_error, staging, removal_error)
-            ) from body_error
-        raise
-    except BaseException:
-        # A Ctrl-C, or anything else the body did not name. There is no second
-        # cause to fold in: what is travelling is what the caller needs.
-        _close_quietly(stream, staging)
-        _discard(staging)
-        raise
-    else:
-        # The replace happened, so the staging path is gone and the stream is
-        # already closed. This is only here to leave nothing to chance.
-        _close_quietly(stream, staging)
-        _discard(staging)
+            yield stream, staging, default
+        except OSError as body_error:
+            # The write, the mode change or the replace failed, so the staging
+            # file is still there. A removal that also fails is worth saying in
+            # the same breath: the caller is left with a file they did not create,
+            # and only the two errors together explain why.
+            _close_quietly(stream, staging)
+            leftover = staging
+            # Handed over, so the cleanup below does not retry a removal whose
+            # failure is already part of the exception raised here.
+            staging = None
+            try:
+                leftover.unlink()
+            except FileNotFoundError:
+                # The replace did happen and the failure came after it.
+                pass
+            except OSError as removal_error:
+                raise OSError(
+                    "%s; staging cleanup failed for %s: %s"
+                    % (body_error, leftover, removal_error)
+                ) from body_error
+            raise
+    finally:
+        # However this ends -- an interrupt at any line above included -- exactly
+        # one thing owns the descriptor, and the file exists only if we made it.
+        if stream is not None:
+            _close_quietly(stream, staging)
+        elif handle >= 0:
+            try:
+                os.close(handle)
+            except OSError as close_error:
+                # EBADF, where `os.fdopen` failed part-way and closed the
+                # descriptor it had already wrapped. Nothing is leaking; there is
+                # just nothing left to close.
+                _report_degradation(
+                    "could not close the staging descriptor for %s: %s",
+                    staging,
+                    close_error,
+                )
+        if staging is not None:
+            _discard(staging)
 
 
 def _close_quietly(stream: Any, staging: Path) -> None:
@@ -1200,35 +1229,46 @@ def _final_mode(target: Path, requested: Optional[int], default: int) -> int:
         return default
 
 
-def _is_write_protected(target: Path) -> bool:
+def _write_protection_reason(target: Path) -> Optional[str]:
     """
-    Report whether replacing ``target`` would override someone else's decision.
+    Say why an existing target must not be replaced, or ``None`` if it may be.
 
-    Only a file this user does not own counts.  "Not writable" on its own is the
-    wrong question: under a mask that removes write -- ``umask 0222`` -- this
-    library's own first save produces a 0444 file, so refusing on that basis made
-    :meth:`Diagram.save` a one-shot operation and blamed the user's permissions
-    for it.  An owner can always ``chmod`` their own file back, so replacing it
-    overrides nothing; a file belonging to somebody else is a different matter.
+    The reason rather than a bare ``True``, because the two platforms refuse for
+    different reasons: a single hardcoded message sent Windows users to look at
+    file ownership, which is not the question there.
+
+    On POSIX the question is ownership rather than writability.  ``os.replace``
+    only needs write permission on the *directory*, so a file made read-only by
+    somebody else would be swapped out silently -- and because an existing target
+    keeps its own mode, nothing about the result would show it.  Our own
+    read-only file is a different matter: the owner can put the write bit back at
+    any time, so replacing it overrides nobody, and refusing on that basis made
+    :meth:`Diagram.save` a one-shot operation under a umask that clears the bit.
 
     :param target: Destination the caller asked for.
     :type target: pathlib.Path
-    :return: ``True`` when the file exists, is not writable, and is not ours.
-    :rtype: bool
+    :return: Sentence completing "cannot write <path>: ...", or ``None``.
+    :rtype: str, optional
     """
     try:
         info = target.stat()
     except OSError:
         # FileNotFoundError when there is nothing to protect; any other stat
         # failure is raised by `_validate_write_target`'s own checks.
-        return False
+        return None
     if os.access(str(target), os.W_OK):
-        return False
+        return None
     if not hasattr(os, "geteuid"):
-        # Windows has no ownership question to ask, and `os.replace` refuses a
-        # read-only target outright, so the caller has to clear it either way.
-        return True
-    return info.st_uid != os.geteuid()
+        # Windows. `os.replace` maps to `MoveFileEx(MOVEFILE_REPLACE_EXISTING)`,
+        # which refuses a read-only target however it came to be read-only and
+        # whoever owns it, so there is no ownership question to ask here and no
+        # exemption to grant for a file of our own -- the platform withholds the
+        # permission that POSIX takes from the directory. Saying so here keeps
+        # the `MoveFileEx` failure, which names the staging file, out of the way.
+        return "it is marked read-only; clear the read-only attribute and retry"
+    if info.st_uid != os.geteuid():
+        return "the file belongs to another user and is not writable"
+    return None
 
 
 def _validate_write_target(target: Path) -> None:
@@ -1246,8 +1286,10 @@ def _validate_write_target(target: Path) -> None:
     :raises IsADirectoryError: If the destination is an existing directory.
     :raises FileNotFoundError: If the parent directory does not exist.
     :raises NotADirectoryError: If the parent exists but is not a directory.
-    :raises PermissionError: If the target is an unwritable file owned by
-        another user, or the parent directory will not accept a new file.
+    :raises PermissionError: If the target is an existing file that must not be
+        replaced -- unwritable and owned by another user on POSIX, marked
+        read-only on Windows -- or the parent directory will not accept a new
+        file.
     """
     if target.is_dir():
         raise IsADirectoryError("cannot write %s: it is a directory" % target)
@@ -1260,17 +1302,9 @@ def _validate_write_target(target: Path) -> None:
         raise NotADirectoryError(
             "cannot write %s: %s is not a directory" % (target, parent)
         )
-    if _is_write_protected(target):
-        # `os.replace` only needs write permission on the directory, so a file
-        # someone else made read-only would be swapped out silently -- and
-        # because an existing target keeps its own mode, nothing about the result
-        # would show it. `os.replace` also refuses a read-only target on Windows,
-        # so allowing it would make the same call succeed on one platform and
-        # fail on another.
-        raise PermissionError(
-            "cannot write %s: the file belongs to another user and is not "
-            "writable" % target
-        )
+    protection = _write_protection_reason(target)
+    if protection is not None:
+        raise PermissionError("cannot write %s: %s" % (target, protection))
     if not os.access(str(parent), os.W_OK):
         # Checked here for the same reason as the cases above: the write itself
         # fails on the staging sibling, so the caller is told about a hidden
@@ -1298,8 +1332,9 @@ def _atomic_write_text(
     :raises FileNotFoundError: If the parent directory does not exist.
     :raises IsADirectoryError: If ``path`` is an existing directory.
     :raises NotADirectoryError: If the parent path is not a directory.
-    :raises PermissionError: If the target is an unwritable file owned by
-        another user, or its directory will not accept a new file.
+    :raises PermissionError: If the target is an existing file that must not
+        be replaced -- unwritable and owned by another user on POSIX, marked
+        read-only on Windows -- or its directory will not accept a new file.
     :raises OSError: If the write itself fails, for example on a full or
         read-only filesystem.
     """
@@ -1334,8 +1369,9 @@ def _atomic_write_bytes(
     :raises FileNotFoundError: If the parent directory does not exist.
     :raises IsADirectoryError: If ``path`` is an existing directory.
     :raises NotADirectoryError: If the parent path is not a directory.
-    :raises PermissionError: If the target is an unwritable file owned by
-        another user, or its directory will not accept a new file.
+    :raises PermissionError: If the target is an existing file that must not
+        be replaced -- unwritable and owned by another user on POSIX, marked
+        read-only on Windows -- or its directory will not accept a new file.
     :raises OSError: If the write itself fails, for example on a full or
         read-only filesystem.
     """
@@ -2365,8 +2401,9 @@ class Diagram:
         :raises FileNotFoundError: If the parent directory does not exist.
         :raises IsADirectoryError: If ``path`` is an existing directory.
         :raises NotADirectoryError: If the parent path is not a directory.
-        :raises PermissionError: If the target is an unwritable file owned by
-            another user, or its directory will not accept a new file.
+        :raises PermissionError: If the target is an existing file that must not
+            be replaced -- unwritable and owned by another user on POSIX, marked
+            read-only on Windows -- or its directory will not accept a new file.
         :raises OSError: If the write itself fails, for example on a full or
             read-only filesystem.
         """

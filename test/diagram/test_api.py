@@ -851,10 +851,12 @@ def test_a_window_document_is_per_user_in_the_shared_temporary_directory(monkeyp
     # carries. Reuse is still the point, just per user.
     from pyfcstm.diagram import api
 
-    monkeypatch.setattr(os, "getuid", lambda: 4242)
+    # The effective id, matching what `_write_protection_reason` compares against
+    # and what a file created here is owned by.
+    monkeypatch.setattr(os, "geteuid", lambda: 4242)
     mine = api._temporary_viewer_path("document", for_window=True)
     again = api._temporary_viewer_path("document", for_window=True)
-    monkeypatch.setattr(os, "getuid", lambda: 4243)
+    monkeypatch.setattr(os, "geteuid", lambda: 4243)
     theirs = api._temporary_viewer_path("document", for_window=True)
     assert mine == again, "one user showing one diagram must reuse one file"
     assert mine != theirs, "two users must not be sent to one 0600 file"

@@ -865,8 +865,13 @@ def _temporary_viewer_path(document: str, for_window: bool) -> Path:
         # person's file, which they may neither write nor -- under the sticky bit
         # `/tmp` carries -- replace. Reuse is still the point, just per user.
         # Windows gives each account its own `%TEMP%`, so there is nothing to
-        # separate there and no `os.getuid` to ask.
-        suffix = "-%d" % os.getuid() if hasattr(os, "getuid") else ""
+        # separate there and no `os.geteuid` to ask.
+        #
+        # The effective id, because that is the one a file this process creates
+        # is owned by, and so the one `_write_protection_reason` compares against
+        # -- keying the name on the real id instead would let two processes share
+        # a name while disagreeing about who owns what is at it.
+        suffix = "-%d" % os.geteuid() if hasattr(os, "geteuid") else ""
     else:
         suffix = "-%d" % os.getpid()
     return Path(tempfile.gettempdir()) / (
@@ -1176,14 +1181,16 @@ def _staging_file(target: Path, binary: bool) -> Iterator[Tuple[Any, Path, int]]
             _discard(staging)
 
 
-def _close_quietly(stream: Any, staging: Path) -> None:
+def _close_quietly(stream: Any, staging: Optional[Path]) -> None:
     """
     Close a staging stream, reporting rather than raising if it will not.
 
     :param stream: Stream opened on the staging file.
     :type stream: io.IOBase
-    :param staging: Path the stream was opened on, for the message.
-    :type staging: pathlib.Path
+    :param staging: Path the stream was opened on, for the message, or ``None``
+        once ownership of the path has been handed on and the stream is already
+        closed -- where there is nothing left to report.
+    :type staging: pathlib.Path or None
     :return: ``None``.
     :rtype: None
     """
@@ -1215,7 +1222,9 @@ def _removal_failure(staging: Path) -> Optional[OSError]:
     try:
         staging.unlink()
     except FileNotFoundError:
-        # The replace did happen and the failure came after it.
+        # Nothing at the path. The writers put `os.replace` last, so a failure
+        # they report always leaves the staging file behind and this is defensive
+        # rather than a branch they reach.
         return None
     except OSError as removal_error:
         # PermissionError from an indexer holding the handle, EROFS or ENOSPC

@@ -55,7 +55,11 @@ from .explanation import (
     BmcCoreItem,
     BmcInfeasibilityExplanation,
 )
-from .provenance import BmcTrackedConstraint, SourceDocumentRegistry
+from .provenance import (
+    BmcTrackedConstraint,
+    SourceDocumentRegistry,
+    normalized_fact_for,
+)
 from .solver import _SolveBudget
 
 if TYPE_CHECKING:  # pragma: no cover - import cycle guard for annotations only
@@ -1139,14 +1143,11 @@ def build_core_item(
         source_excerpt=excerpt,
         source_excerpt_truncated=truncated,
         normalized_fact={
-            # Machine consumers dispatch on this tag rather than on human
-            # text.  No semantic recognizer runs at this stage, so every fact
-            # honestly declares itself structural instead of guessing a
-            # domain reading.
-            "kind": "structural_constraint",
-            "stable_id": group.stable_id,
-            "stage": group.stage,
-            "category": group.category,
+            # Machine consumers dispatch on this tag rather than on human text.
+            # The recognizers live in the provenance layer, which owns fact
+            # generation; a shape none of them reads keeps its identity under
+            # "structural_constraint" instead of inviting a guess.
+            **normalized_fact_for(group),
             "frames": list(frames),
             "steps": list(steps),
             # The builder's own metadata is carried through in sorted order so

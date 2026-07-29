@@ -2302,3 +2302,116 @@ def test_the_group_noun_reads_the_category_because_the_aggregate_cannot() -> Non
     # An assumption group's aggregate is a word no reader sees elsewhere.
     assert stages_by_noun["assumption"] == {"assumptions"}
     assert constraint_aggregate("assumptions", "assumption.frame") == "environment"
+
+
+_FACT_MODEL = """def int x = 0;
+def int y = 3;
+state Root {
+    event Go;
+    state A;
+    state B;
+    [*] -> A;
+    A -> B :: Go;
+}"""
+
+
+def _fact_groups(query: str):
+    """Return the tracked groups a real build produces, keyed by category."""
+    from pyfcstm.bmc import BmcEngine, build_bmc_core_formula
+
+    core = build_bmc_core_formula(
+        BmcEngine(load_state_machine_from_text(_FACT_MODEL)).prepare(query)
+    )
+    groups = {}
+    for group in list(core._tracked_groups) + list(core._tracked_case_groups):
+        groups.setdefault(group.category, group)
+    return groups
+
+
+@pytest.mark.unittest
+def test_a_variable_equality_reads_as_a_domain_fact_not_a_structural_one() -> None:
+    """An assumption pinning a variable publishes the variable, frame and value.
+
+    A machine reader dispatching on ``kind`` needs the operator and the operand,
+    not a restatement of the group's identity.  Without this an LLM or IDE can
+    only echo the source line back.
+    """
+    from pyfcstm.bmc.provenance import normalized_fact_for
+
+    groups = _fact_groups(
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") == 1; '
+        'check reach <= 2: active("Root.B");'
+    )
+    fact = normalized_fact_for(groups["assumption.frame"])
+
+    assert fact["kind"] == "equality"
+    assert fact["subject"] == "x"
+    assert fact["frame"] == 0
+    assert fact["operator"] == "=="
+    assert fact["value"] == 1
+
+
+@pytest.mark.unittest
+def test_an_initial_variable_reads_as_an_initializer_fact() -> None:
+    """The declared initial value is published as a value, not as an expression."""
+    from pyfcstm.bmc.provenance import normalized_fact_for
+
+    groups = _fact_groups(
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") == 1; '
+        'check reach <= 2: active("Root.B");'
+    )
+    fact = normalized_fact_for(groups["initial.variable"])
+
+    assert fact["kind"] == "equality"
+    assert fact["subject"] == "x"
+    assert fact["frame"] == 0
+    assert fact["value"] == 0
+
+
+@pytest.mark.unittest
+def test_a_frame_state_domain_reads_as_the_set_of_legal_states() -> None:
+    """A domain rule says which states a frame may hold, as plain integers."""
+    from pyfcstm.bmc.provenance import normalized_fact_for
+
+    groups = _fact_groups(
+        'init state("Root.A") where x == 0; check reach <= 2: active("Root.B");'
+    )
+    fact = normalized_fact_for(groups["domain.frame_state"])
+
+    assert fact["kind"] == "state_domain"
+    assert fact["frame"] == 0
+    assert isinstance(fact["states"], list)
+    assert fact["states"] and all(isinstance(v, int) for v in fact["states"])
+
+
+@pytest.mark.unittest
+def test_a_definedness_rule_reads_as_the_operation_it_guards() -> None:
+    """Definedness says which operation would otherwise be undefined."""
+    from pyfcstm.bmc.provenance import normalized_fact_for
+
+    groups = _fact_groups(
+        'init state("Root.A") where x == 0; '
+        'assume at 1: var("y") / var("x") > 0; '
+        'check reach <= 2: active("Root.B");'
+    )
+    fact = normalized_fact_for(groups["definedness"])
+
+    assert fact["kind"] == "definedness"
+    assert fact["operation"] == "division"
+    assert fact["frame"] == 1
+
+
+@pytest.mark.unittest
+def test_an_unreduced_group_says_so_instead_of_guessing() -> None:
+    """A shape with no recognizer degrades honestly, keeping its identity."""
+    from pyfcstm.bmc.provenance import normalized_fact_for
+
+    groups = _fact_groups(
+        'init state("Root.A") where x == 0; check reach <= 2: active("Root.B");'
+    )
+    fact = normalized_fact_for(groups["transition.step"])
+
+    assert fact["kind"] == "structural_constraint"
+    assert fact["category"] == "transition.step"

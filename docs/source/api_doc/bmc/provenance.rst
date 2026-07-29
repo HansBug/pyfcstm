@@ -81,6 +81,12 @@ exact\_optional\_index
 .. autofunction:: exact_optional_index
 
 
+normalized\_fact\_for
+-----------------------------------------------------
+
+.. autofunction:: normalized_fact_for
+
+
 json\_canonical
 -----------------------------------------------------
 

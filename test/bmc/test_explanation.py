@@ -239,12 +239,19 @@ def test_the_transcription_guard_covers_every_frozen_structure() -> None:
 
     assert sibling_frozen == {
         "provenance._SOURCE_KINDS",
+        "provenance._VALUE_FACT_CATEGORIES",
         "provenance.TRACKED_GROUP_PAIRINGS",
         "infeasibility.AGGREGATE_SELECTORS",
         "infeasibility._INDEX_REF_KEYS",
         "infeasibility._STAGE_FALLBACK_BY_STAGE",
     }
     assert provenance._SOURCE_KINDS == {"fcstm", "fbmcq", "generated"}
+    # Transcribed because it decides which groups get a value-level reading at
+    # all: a category dropped from here silently degrades to structural.
+    assert provenance._VALUE_FACT_CATEGORIES == (
+        "assumption.frame",
+        "initial.variable",
+    )
     # Transcribed, not merely registered: the constructor refuses a pairing that
     # is not listed here, so the contents are the contract.
     assert provenance.TRACKED_GROUP_PAIRINGS == frozenset(
@@ -324,7 +331,14 @@ def test_every_frozen_vocabulary_matches_the_authored_list() -> None:
         "initialization_stage_fallback",
         "assumptions_stage_fallback",
     )
-    assert module._FACT_KINDS == ("structural_constraint",)
+    assert module._FACT_KINDS == (
+        "structural_constraint",
+        "equality",
+        "range",
+        "state_domain",
+        "value_propagation",
+        "definedness",
+    )
     assert module.UNBUILT_SLOTS == ("proof", "narrative")
     assert module.INDEX_REF_KEYS == ("frame", "frames", "step", "steps")
     assert dict(module.SCOPE_AGGREGATES) == {

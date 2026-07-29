@@ -5084,8 +5084,14 @@
           "properties": {
             "kind": {
               "enum": [
-                "structural_constraint"
-              ]
+                "structural_constraint",
+                "equality",
+                "range",
+                "state_domain",
+                "value_propagation",
+                "definedness"
+              ],
+              "$comment": "The dispatch tag a machine consumer reads. structural_constraint is the honest fallback for a shape no recognizer reduced; the other five are the domain readings the formal mode covers."
             }
           },
           "$comment": "Machine consumers dispatch on kind rather than on human text, so the tag is required.  Later stages extend the enum as recognizers land. Draft 2020-12 has no depth keyword, no way to bound an integer's digit count, and no way to see a non-finite number, a value with no JSON counterpart or a non-string object key -- a payload reaching a validator was already parsed from JSON text. The constructor refuses all of those at every nesting depth."

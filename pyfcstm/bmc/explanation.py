@@ -379,7 +379,21 @@ SCOPE_AGGREGATES = MappingProxyType(
 #: Recognized ``normalized_fact`` tags.  An expression this stage cannot
 #: reduce declares itself structural rather than guessing a domain reading;
 #: later stages add their recognizers here.
-_FACT_KINDS = ("structural_constraint",)
+#: Every tag a published normalized fact may carry.
+#:
+#: ``structural_constraint`` is the honest fallback for a shape no recognizer
+#: reads.  The other five are the domain readings §18.7 requires the formal mode
+#: to cover: equalities, numeric ranges, the legal state set of a frame, a value
+#: carried across a step, and an operation kept well defined.  A machine consumer
+#: dispatches on this tag, so adding one is a published-contract change.
+_FACT_KINDS = (
+    "structural_constraint",
+    "equality",
+    "range",
+    "state_domain",
+    "value_propagation",
+    "definedness",
+)
 
 #: Frozen upper bound on a published excerpt, in Unicode code points.  A long
 #: authored line would otherwise put an unbounded slice of the user's source

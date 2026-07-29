@@ -462,6 +462,241 @@ def _require_json_mapping(value: Any, label: str) -> Dict[str, Any]:
     }
 
 
+#: Category prefixes whose groups carry a single variable comparison.
+#:
+#: These are the groups whose expression is one relational atom over one frame
+#: variable, which is what makes an ``equality`` or ``range`` fact readable
+#: without walking an arbitrary formula.
+_VALUE_FACT_CATEGORIES = ("assumption.frame", "initial.variable")
+
+
+def _relational_operators(z3: Any) -> Dict[int, str]:
+    """Return the Z3 declaration kinds this module reduces to an operator.
+
+    Built on demand rather than at import time: this module deliberately keeps
+    ``z3`` out of the import graph so preparation and parser code can preserve
+    provenance without loading the solver stack, and a published gate asserts
+    that ``import pyfcstm.bmc`` does not pull it in.
+
+    :param z3: The already-imported ``z3`` module.
+    :type z3: module
+    :return: Declaration kind to published operator.
+    :rtype: Dict[int, str]
+
+    Example::
+
+        >>> import z3 as z3_module
+        >>> _relational_operators(z3_module)[z3_module.Z3_OP_EQ]
+        '=='
+    """
+    return {
+        z3.Z3_OP_EQ: "==",
+        z3.Z3_OP_DISTINCT: "!=",
+        z3.Z3_OP_LE: "<=",
+        z3.Z3_OP_LT: "<",
+        z3.Z3_OP_GE: ">=",
+        z3.Z3_OP_GT: ">",
+    }
+
+
+def _frame_variable_name(expression: Any) -> Optional[str]:
+    """Return the model variable a frame-scoped Z3 constant stands for.
+
+    Frame variables are named ``F_<frame>_<variable>_<digest>``, so the model
+    name is the middle segment.  Anything else is not a frame variable and gets
+    no name, which is how an unrecognized shape degrades instead of guessing.
+
+    :param expression: Candidate Z3 expression.
+    :type expression: object
+    :return: The model variable name, or ``None``.
+    :rtype: Optional[str]
+
+    Example::
+
+        >>> import z3
+        >>> _frame_variable_name(z3.Int("F_0_x_11f6ad8ec5"))
+        'x'
+        >>> _frame_variable_name(z3.Int("F_0_state")) is None
+        True
+    """
+    text = str(expression)
+    if not text.startswith("F_"):
+        return None
+    parts = text.split("_")
+    if len(parts) < 4:
+        # "F_0_state" and friends name a frame slot, not a model variable.
+        return None
+    return "_".join(parts[2:-1]) or None
+
+
+def _integer_value(expression: Any) -> Optional[int]:
+    """Return the plain integer a Z3 numeral holds, if it is one.
+
+    :param expression: Candidate Z3 expression.
+    :type expression: object
+    :return: The integer value, or ``None`` when the operand is not a numeral.
+    :rtype: Optional[int]
+
+    Example::
+
+        >>> import z3
+        >>> _integer_value(z3.IntVal(7))
+        7
+        >>> _integer_value(z3.Int("x")) is None
+        True
+    """
+    import z3
+
+    if isinstance(expression, z3.IntNumRef):
+        return expression.as_long()
+    return None
+
+
+def _value_comparison_fact(group: Any) -> Optional[Dict[str, Any]]:
+    """Read a one-variable comparison group as an equality or range fact.
+
+    :param group: The tracked group to read.
+    :type group: BmcTrackedConstraint
+    :return: The fact mapping, or ``None`` when the shape is not a single
+        comparison between one frame variable and one numeral.
+    :rtype: Optional[Dict[str, Any]]
+    """
+    import z3
+
+    if len(group.expressions) != 1:
+        return None
+    expression = group.expressions[0]
+    if not z3.is_app(expression):
+        return None
+    operator = _relational_operators(z3).get(expression.decl().kind())
+    if operator is None or expression.num_args() != 2:
+        return None
+    left, right = expression.arg(0), expression.arg(1)
+    name = _frame_variable_name(left)
+    value = _integer_value(right)
+    if name is None or value is None:
+        # Operand order is not fixed, so the mirrored shape is read too.
+        name = _frame_variable_name(right)
+        value = _integer_value(left)
+        operator = {"<": ">", ">": "<", "<=": ">=", ">=": "<="}.get(operator, operator)
+    if name is None or value is None:
+        return None
+    frame = group.refs.get("frame")
+    if not isinstance(frame, int):
+        return None
+    kind = "equality" if operator in ("==", "!=") else "range"
+    return {
+        "kind": kind,
+        "subject": name,
+        "frame": frame,
+        "operator": operator,
+        "value": value,
+    }
+
+
+def _state_domain_fact(group: Any) -> Optional[Dict[str, Any]]:
+    """Read a frame-state domain group as the set of states the frame may hold.
+
+    :param group: The tracked group to read.
+    :type group: BmcTrackedConstraint
+    :return: The fact mapping, or ``None`` when the disjunction is not a plain
+        list of state equalities.
+    :rtype: Optional[Dict[str, Any]]
+    """
+    import z3
+
+    frame = group.refs.get("frame")
+    if not isinstance(frame, int) or len(group.expressions) != 1:
+        return None
+    expression = group.expressions[0]
+    if not z3.is_app(expression) or expression.decl().kind() != z3.Z3_OP_OR:
+        return None
+    states = []
+    for index in range(expression.num_args()):
+        atom = expression.arg(index)
+        if not z3.is_app(atom) or atom.decl().kind() != z3.Z3_OP_EQ:
+            return None
+        value = _integer_value(atom.arg(0))
+        if value is None:
+            value = _integer_value(atom.arg(1))
+        if value is None:
+            return None
+        states.append(value)
+    return {"kind": "state_domain", "frame": frame, "states": sorted(states)}
+
+
+def _definedness_fact(group: Any) -> Optional[Dict[str, Any]]:
+    """Read a definedness group as the operation it keeps well defined.
+
+    :param group: The tracked group to read.
+    :type group: BmcTrackedConstraint
+    :return: The fact mapping, or ``None`` when the frame is unknown.
+    :rtype: Optional[Dict[str, Any]]
+    """
+    import z3
+
+    frame = group.refs.get("frame")
+    if not isinstance(frame, int):
+        return None
+    fact = {"kind": "definedness", "frame": frame, "operation": "division"}
+    if len(group.expressions) == 1:
+        expression = group.expressions[0]
+        if z3.is_app(expression) and expression.decl().kind() == z3.Z3_OP_DISTINCT:
+            name = _frame_variable_name(expression.arg(0)) or _frame_variable_name(
+                expression.arg(1)
+            )
+            if name is not None:
+                fact["subject"] = name
+    return fact
+
+
+def normalized_fact_for(group: Any) -> Dict[str, Any]:
+    """Return the published domain fact for one tracked source group.
+
+    The reading is deterministic and carries no Z3 object: a machine consumer
+    dispatches on ``kind`` and reads plain values.  A group whose shape has no
+    recognizer keeps its identity under ``structural_constraint`` rather than
+    inviting a reader to guess a domain meaning that was never derived.
+
+    :param group: The tracked group whose fact is published.
+    :type group: BmcTrackedConstraint
+    :return: A tagged mapping of plain JSON-compatible values.
+    :rtype: Dict[str, Any]
+
+    Example::
+
+        >>> import z3
+        >>> from pyfcstm.bmc.provenance import BmcSourceRef, BmcTrackedConstraint
+        >>> group = BmcTrackedConstraint(
+        ...     "assumption.0000.frame.0000", "assumptions", "assumption.frame",
+        ...     (z3.Int("F_0_x_deadbeef11") == 1,),
+        ...     BmcSourceRef("generated", None, None),
+        ...     refs={"frame": 0, "assumption": 0},
+        ... )
+        >>> fact = normalized_fact_for(group)
+        >>> fact["kind"], fact["subject"], fact["operator"], fact["value"]
+        ('equality', 'x', '==', 1)
+    """
+    if group.category in _VALUE_FACT_CATEGORIES:
+        fact = _value_comparison_fact(group)
+        if fact is not None:
+            return fact
+    elif group.category == "domain.frame_state":
+        fact = _state_domain_fact(group)
+        if fact is not None:
+            return fact
+    elif group.category == "definedness":
+        fact = _definedness_fact(group)
+        if fact is not None:
+            return fact
+    return {
+        "kind": "structural_constraint",
+        "stable_id": group.stable_id,
+        "stage": group.stage,
+        "category": group.category,
+    }
+
+
 def json_canonical(value: Any) -> Any:
     """Convert a normalized metadata graph back to plain JSON containers.
 
@@ -1002,6 +1237,7 @@ class SourceDocumentRegistry:
 
 __all__ = [
     "MAX_METADATA_DEPTH",
+    "normalized_fact_for",
     "TRACKED_GROUP_PAIRINGS",
     "BmcSourceRef",
     "BmcTrackedConstraint",

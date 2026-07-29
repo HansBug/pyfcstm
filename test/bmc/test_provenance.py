@@ -2284,20 +2284,39 @@ _PAIRING_CORPUS = (
 def _constructed_pairings():
     """Return every stage and category pairing a corpus of real builds constructs.
 
+    Ten of the eleven are read back through :func:`partition_tracked_groups`,
+    which is exported and takes the core the public builder returns.  The
+    eleventh, ``("kernel", "transition.case")``, is not: case groups live in a
+    sibling collection that partitioning does not fold in, so no published
+    function surfaces them.  That collection is therefore read directly, and the
+    assertion below states which pairing this applies to so the exception cannot
+    quietly grow to cover a second one.
+
     :return: The pairings the corpus constructs.
     :rtype: Set[Tuple[str, str]]
     """
-    from pyfcstm.bmc import BmcEngine, build_bmc_core_formula
+    import dataclasses
 
-    observed = set()
+    from pyfcstm.bmc import BmcEngine, build_bmc_core_formula
+    from pyfcstm.bmc.infeasibility import partition_tracked_groups
+
+    published = set()
+    case_only = set()
     for source, query in _PAIRING_CORPUS:
         context = BmcEngine(load_state_machine_from_text(source)).prepare(query)
         core = build_bmc_core_formula(context)
-        # Two disjoint sibling collections: transition.case groups live only in
-        # the case one.  Reading either alone loses a whole family.
-        for group in list(core._tracked_groups) + list(core._tracked_case_groups):
-            observed.add((group.stage, group.category))
-    return observed
+        partition = partition_tracked_groups(core)
+        for field in dataclasses.fields(partition):
+            for group in getattr(partition, field.name):
+                published.add((group.stage, group.category))
+        for group in core._tracked_case_groups:
+            case_only.add((group.stage, group.category))
+
+    # The one pairing partitioning does not reach, named rather than assumed.
+    assert case_only - published == {("kernel", "transition.case")}, (
+        case_only - published
+    )
+    return published | case_only
 
 
 @pytest.mark.unittest

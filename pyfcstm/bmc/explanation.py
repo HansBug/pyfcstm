@@ -599,17 +599,13 @@ def _require_member(value: Any, allowed: Tuple[str, ...], label: str) -> str:
         >>> _require_member("formal", ("none", "formal"), "mode")
         'formal'
     """
+    # ``bool`` is named separately because it is an ``int``, not because it could
+    # pass for a member: no published vocabulary contains one.
     if isinstance(value, bool) or not isinstance(value, str):
         raise ValueError(
             "%s must be one of %s, got %r." % (label, ", ".join(allowed), value)
         )
-    try:
-        plain = exact_str(value, label)
-    except TypeError:
-        # exact_str raises for anything that is not a str.
-        raise ValueError(
-            "%s must be one of %s, got %r." % (label, ", ".join(allowed), value)
-        ) from None
+    plain = exact_str(value, label)
     if plain not in allowed:
         raise ValueError(
             "%s must be one of %s, got %r." % (label, ", ".join(allowed), value)

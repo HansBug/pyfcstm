@@ -1240,6 +1240,12 @@ def _explanation():
             id="aggregate-of-a-non-string-stage",
         ),
         pytest.param(
+            lambda: _explanation().constraint_aggregate("kernel", 123),
+            None,
+            "matches no aggregate",
+            id="aggregate-of-a-non-string-category",
+        ),
+        pytest.param(
             lambda: _explanation().index_value("0", "line"),
             None,
             "must contain non-negative integers",
@@ -1279,6 +1285,27 @@ def test_constraint_rejects_unusable_identity_fields(field, value) -> None:
 
     with pytest.raises(ValueError, match="non-empty string"):
         BmcConstraintRef(**payload)
+
+
+@pytest.mark.parametrize(
+    "stage", ["", 123, "kernels"], ids=["empty", "not-a-string", "near-miss"]
+)
+def test_constraint_stage_must_name_a_published_stage(stage) -> None:
+    """The stage is a closed vocabulary, so anything outside it is refused.
+
+    It is not checked by the identity rule above: an empty stage, a non-string,
+    and a plausible near-miss all fail the same way, because what matters is
+    whether the value is one of the three published stages.  Accepting any of
+    them would publish a ``stage`` the schema does not allow.
+    """
+    with pytest.raises(ValueError, match="stage must be one of"):
+        BmcConstraintRef(
+            stable_id="initial.target",
+            stage=stage,
+            category="initial.target",
+            source=_GENERATED,
+            summary="initial target state",
+        )
 
 
 def test_constraint_requires_a_real_source_reference() -> None:

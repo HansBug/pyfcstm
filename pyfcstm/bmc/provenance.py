@@ -698,16 +698,13 @@ class BmcTrackedConstraint:
     refs: Mapping[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        # The exact text replaces the field before anything reads it: iterating
-        # the value, measuring it or comparing it all go through methods the
-        # value itself provides, so a subclass could pass the check below and
-        # then publish characters the check would have refused.
-        if not isinstance(self.stable_id, str):
-            raise ValueError("tracked constraint stable_id must be non-empty.")
+        # The exact text replaces the field before the emptiness check and every
+        # later reader, so all of them see the same characters.
         try:
             plain_id = exact_str(self.stable_id, "tracked constraint stable_id")
         except TypeError:
-            # exact_str raises for anything that is not a str.
+            # exact_str raises for anything that is not a str, which is how a
+            # wrong type passed to this constructor arrives here.
             raise ValueError(
                 "tracked constraint stable_id must be non-empty."
             ) from None

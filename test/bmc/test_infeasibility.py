@@ -1813,7 +1813,12 @@ def test_a_partial_comparison_does_not_crash_the_forced_value_probe() -> None:
                 built.semantic_role,
                 built.source_excerpt,
                 built.source_excerpt_truncated,
-                {"kind": "variable_comparison", "frame": 0, "operator": "eq", "value": 1},
+                {
+                    "kind": "variable_comparison",
+                    "frame": 0,
+                    "operator": "eq",
+                    "value": 1,
+                },
                 built.human_text,
                 built.editable,
             )
@@ -1823,7 +1828,9 @@ def test_a_partial_comparison_does_not_crash_the_forced_value_probe() -> None:
     # comparison below is between a working probe and a partial input, not between
     # two silences.
     whole, whole_record = derive_forced_values(
-        core, tuple(build_core_item(group) for group in minimized.groups), _SolveBudget(None)
+        core,
+        tuple(build_core_item(group) for group in minimized.groups),
+        _SolveBudget(None),
     )
     assert [(value.variable, value.frame) for value in whole] == [("x", 0)]
     assert whole_record is not None

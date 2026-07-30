@@ -2623,7 +2623,7 @@ def _state_item(frame, state, excluded):
         ((1, (-1, 1, 2)), ((1, 1, True), (1, 2, True)), False),
         ((1, (-1, 1)), ((0, -1, True), (0, 1, True)), False),
         ((1, (1,)), ((1, 7, True),), False),
-        ((1, (1,)), ((1, 1, True), (1, 9, True)), True),
+        ((1, (1,)), ((1, 1, True), (1, 9, True)), False),
         ((1, (1, 2)), ((1, 1, False), (1, 2, False)), False),
     ],
     ids=[
@@ -2631,7 +2631,7 @@ def _state_item(frame, state, excluded):
         "one-legal-state-still-remains",
         "the-exclusions-are-about-another-frame",
         "the-exclusion-names-a-state-outside-the-domain",
-        "a-spare-exclusion-does-not-change-the-answer",
+        "a-spare-exclusion-is-not-part-of-the-answer",
         "requirements-are-not-exclusions",
     ],
 )
@@ -2645,6 +2645,13 @@ def test_exhaustion_is_claimed_only_when_the_domain_is_actually_empty(
     frame, or naming a state the domain never allowed, leave the frame with
     somewhere to go.  Reading a requirement as an exclusion would invert the
     source line and reach the same wrong conclusion from the other direction.
+
+    A spare exclusion is the case worth stating: it does not change whether the
+    domain is empty, and it does change whether this pattern may say so.  The
+    conclusion is quantified over the frame's legal states, so an exclusion naming
+    something outside them is a member the sentence cannot reach -- claiming a
+    closed chain would cite it as a reason it is not.  Emptiness and attribution
+    are separate questions and both have to hold.
     """
     from pyfcstm.bmc.explanation import _conflict_pattern
 
@@ -3264,6 +3271,119 @@ def test_a_partly_complete_fact_is_declined_by_every_consumer() -> None:
 
 
 @pytest.mark.unittest
+@pytest.mark.parametrize(
+    "supporting_ids, members, derives",
+    [
+        (("prefix.x",), ("prefix.x", "assume.x"), True),
+        (("prefix.x", "prefix.x"), ("prefix.x", "assume.x"), True),
+        (("assume.x",), ("assume.x",), False),
+        (("prefix.x", "assume.x"), ("prefix.x", "assume.x"), False),
+    ],
+    ids=[
+        "the-groups-that-force-it",
+        "one-group-named-twice",
+        "the-only-member-both-forces-and-contradicts",
+        "a-contradicting-member-is-also-offered-as-forcing",
+    ],
+)
+def test_a_forced_value_naming_a_group_oddly_does_not_raise(
+    supporting_ids, members, derives
+) -> None:
+    """``supporting_ids`` is a list of names, and a list can repeat or overlap.
+
+    Nothing on the type says otherwise: it copies no invariant onto them, and a
+    caller assembling one from ids it read off a published core has no rule to
+    break.  Both shapes used to reach a reasoning step, which refuses to repeat an
+    id, so a published builder raised where the contract offers a derivation --
+    naming a group twice is merely redundant, and a group that both carries the
+    value and contradicts it makes the derivation unmakeable, not the call invalid.
+
+    What must not happen is the value reaching the page anyway.  Declining the
+    derivation hands the core to the single-shape patterns, which read it from its
+    own members, so the last two cases are checked for the absence of the derived
+    value rather than for silence.
+    """
+    from pyfcstm.bmc.explanation import build_conflict_narrative
+    from pyfcstm.bmc.infeasibility import ForcedValue
+
+    stages = {"prefix.x": "initialization", "assume.x": "assumptions"}
+    values = {"prefix.x": 0, "assume.x": 1}
+    items = tuple(
+        _propagation_item(name, stages[name], "x", values[name]) for name in members
+    )
+    core = BmcConflictCore(
+        "assumptions_prefix", "F", "source_group", "raw", "not_proven", items
+    )
+
+    narrative = build_conflict_narrative(
+        core, (ForcedValue("x", 0, 7, supporting_ids),)
+    )
+
+    derivations = [
+        step for step in narrative.reasoning_steps if step.kind == "derivation"
+    ]
+    assert bool(derivations) is derives
+    if derives:
+        # The redundant naming reaches the same page as the plain one rather than a
+        # page of its own.
+        assert "7" in narrative.reasoning_steps[-1].text
+    else:
+        # Declining the derivation is not the same as refusing the core: two
+        # contradicting equalities are still a conflict the single-shape patterns
+        # describe, and they describe it without the value nobody could derive.
+        assert "7" not in "".join(step.text for step in narrative.reasoning_steps)
+
+
+@pytest.mark.unittest
+def test_a_member_counted_twice_does_not_stand_in_for_one_nobody_cited() -> None:
+    """Adding the two set sizes equals the member count only while they are disjoint.
+
+    ``ForcedValue`` describes the groups that force a value, and the ones that do
+    are never assumptions -- that is what its own summary says.  Nothing checks it,
+    though, and a caller naming an assumption among them puts the same member in
+    both the supporting and the disagreeing set.  Counted by size that member pays
+    for two, so the coverage check passes with a third member left uncited, which is
+    the closed-chain-over-a-subset the check exists to refuse.
+    """
+    from pyfcstm.bmc.explanation import build_conflict_narrative
+    from pyfcstm.bmc.infeasibility import ForcedValue
+
+    assumption = _propagation_item("assume.x", "assumptions", "x", 1)
+    prefix = _propagation_item("prefix.x", "initialization", "x", 0)
+
+    # Anti-vacuity: a forced value supported by the prefix -- the shape the type
+    # documents -- reaches the propagation reading and closes on it.
+    reached = build_conflict_narrative(
+        BmcConflictCore(
+            "assumptions_prefix",
+            "F",
+            "source_group",
+            "raw",
+            "not_proven",
+            (prefix, assumption),
+        ),
+        (ForcedValue("x", 0, 7, ("prefix.x",)),),
+    )
+    assert reached.derivation_status == "complete"
+    assert "7" in reached.reasoning_steps[-1].text
+
+    # The overlap: the assumption supports the value *and* disagrees with it, while
+    # a bystander on another variable is cited by nothing.
+    overlapped = build_conflict_narrative(
+        BmcConflictCore(
+            "assumptions_prefix",
+            "F",
+            "source_group",
+            "raw",
+            "not_proven",
+            (assumption, _comparison_item("y", 0, "eq", 42)),
+        ),
+        (ForcedValue("x", 0, 7, ("assume.x",)),),
+    )
+    assert overlapped.derivation_status != "complete"
+
+
+@pytest.mark.unittest
 def test_an_exclusion_at_another_frame_is_not_counted_as_explained() -> None:
     """A member the proof cannot use must not be counted among the members it used.
 
@@ -3276,7 +3396,11 @@ def test_an_exclusion_at_another_frame_is_not_counted_as_explained() -> None:
     """
     from pyfcstm.bmc.explanation import build_conflict_narrative
 
-    emptied = (_domain_item(1, [1, 2]), _state_item(1, 1, True), _state_item(1, 2, True))
+    emptied = (
+        _domain_item(1, [1, 2]),
+        _state_item(1, 1, True),
+        _state_item(1, 2, True),
+    )
 
     # Anti-vacuity: this core does reach the exhaustion reading, and does so at raw
     # minimality -- the branch offers itself without one, which is why a rider can
@@ -3289,17 +3413,38 @@ def test_an_exclusion_at_another_frame_is_not_counted_as_explained() -> None:
     assert reached.derivation_status == "complete"
     assert "has no state left" in reached.reasoning_steps[-1].text
 
-    with_rider = build_conflict_narrative(
+    # One rider per axis, each of which only its own filter can turn away.
+    #
+    # At another frame, naming a state this frame does list: ruling state 1 out at
+    # frame 0 leaves frame 1 with exactly as many states as before.
+    other_frame = build_conflict_narrative(
         BmcConflictCore(
             "assumptions_domain",
             "F",
             "source_group",
             "raw",
             "not_proven",
-            emptied + (_state_item(0, 5, True),),
+            emptied + (_state_item(0, 1, True),),
         )
     )
-    assert with_rider.derivation_status != "complete"
+    assert other_frame.derivation_status != "complete"
+
+    # At this frame, naming a state it could not hold anyway.  Frame domains differ
+    # by frame -- entry admits states a recurrence step does not -- so ruling out a
+    # composite at a later frame is an ordinary authored line landing outside that
+    # frame's domain, and outside the "its N legal states" the conclusion quantifies
+    # over.
+    outside_domain = build_conflict_narrative(
+        BmcConflictCore(
+            "assumptions_domain",
+            "F",
+            "source_group",
+            "raw",
+            "not_proven",
+            emptied + (_state_item(1, 9, True),),
+        )
+    )
+    assert outside_domain.derivation_status != "complete"
 
 
 def _partial_comparison_item(variable, frame=0, operator=None):
@@ -3362,7 +3507,9 @@ def test_a_partial_comparison_cannot_pair_with_a_domain_guard() -> None:
     guard, complete = _guard_item("x", 0), _comparison_item("x", 0)
 
     # Anti-vacuity: the branch has to be reachable, or the case below proves nothing.
-    reached = build_conflict_narrative(_pattern_core("assumptions_prefix", (guard, complete)))
+    reached = build_conflict_narrative(
+        _pattern_core("assumptions_prefix", (guard, complete))
+    )
     assert reached.derivation_status == "complete"
     assert "cannot stay defined" in reached.reasoning_steps[-1].text
 
@@ -3403,7 +3550,8 @@ def test_a_partial_comparison_is_not_read_as_disagreeing_with_a_forced_value() -
     # Absent ``value`` with the operator present is the shape ``!=`` admits.
     partial = build_conflict_narrative(
         _pattern_core(
-            "assumptions_prefix", (prefix, _partial_comparison_item("x", 0, operator="eq"))
+            "assumptions_prefix",
+            (prefix, _partial_comparison_item("x", 0, operator="eq")),
         ),
         forced,
     )
@@ -3426,12 +3574,16 @@ def test_a_partial_comparison_leaves_an_interval_core_unexplained() -> None:
 
     # Anti-vacuity: two whole bounds do reach the interval reading.
     reached = build_conflict_narrative(
-        _pattern_core("assumptions_component", (lower, _comparison_item("x", 0, "le", 3)))
+        _pattern_core(
+            "assumptions_component", (lower, _comparison_item("x", 0, "le", 3))
+        )
     )
     assert reached.derivation_status == "complete"
     assert "satisfies every bound" in reached.reasoning_steps[-1].text
 
     partial = build_conflict_narrative(
-        _pattern_core("assumptions_component", (lower, _partial_comparison_item("x", 0)))
+        _pattern_core(
+            "assumptions_component", (lower, _partial_comparison_item("x", 0))
+        )
     )
     assert partial.derivation_status != "complete"

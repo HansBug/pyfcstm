@@ -2303,23 +2303,29 @@ def _conflict_pattern(
     domains = [item for item in items if _readable(item, "state_domain")]
     if len(domains) == 1:
         legal = domains[0].normalized_fact
-        # Only exclusions at the frame the domain describes can empty it, so the
-        # coverage count below is taken over these and not over every exclusion in
-        # the core.  An exclusion at another frame says nothing about this one:
-        # counting it as explained would name it in a conflict it plays no part in,
-        # which is the "pattern over a subset" the count exists to refuse.
+        legal_states = set(legal["states"])
+        # The conclusion is quantified over the frame's *legal* states, so only an
+        # exclusion at that frame naming one of them takes part in it.  Both other
+        # kinds can sit in a core: a frame's domain is not the same at every frame
+        # -- entry admits states a recurrence step does not -- so an assumption
+        # ruling out a composite at frame 1 is an ordinary authored line that lands
+        # outside frame 1's domain.  Counting either would name a member in a
+        # conflict it plays no part in, which is the "pattern over a subset" the
+        # count exists to refuse; filtering both keeps the counted set and the set
+        # the proof consumes identical.
         exclusions = [
             item
             for item in items
             if _readable(item, "state_membership")
             and item.normalized_fact.get("excluded")
             and item.normalized_fact["frame"] == legal["frame"]
+            and item.normalized_fact["state"] in legal_states
         ]
         removed = {item.normalized_fact["state"] for item in exclusions}
         if (
             exclusions
             and len(domains) + len(exclusions) == len(items)
-            and set(legal["states"]) <= removed
+            and legal_states <= removed
         ):
             # Every state the frame may hold has been ruled out, so the frame has
             # nothing left to be.  Checked against the published domain rather
@@ -2524,7 +2530,22 @@ def _propagation_steps(core: "BmcConflictCore", forced_values: Tuple):
         ]
         if not disagreeing:
             continue
-        supporting = [by_id[name] for name in forced.supporting_ids if name in by_id]
+        # ``supporting_ids`` is a list of names, and nothing promises they are
+        # distinct or that they name groups outside the assumptions -- the type
+        # copies no invariant onto them.  Both cases have to be settled here,
+        # before a step exists: a step refuses to repeat an id, so a name given
+        # twice, or a member that both carries the value and contradicts it, would
+        # raise out of a published builder instead of leaving the derivation
+        # unmade.  Naming the same group twice is redundant rather than wrong, so
+        # it collapses; a group on both sides contradicts the value it is offered
+        # as forcing, and no honest step can be built from it.
+        seen, supporting = set(), []
+        for name in forced.supporting_ids:
+            if name in by_id and name not in seen:
+                seen.add(name)
+                supporting.append(by_id[name])
+        if seen & {item.constraint.stable_id for item in disagreeing}:
+            continue
         if any(
             _readable(item, "variable_comparison")
             and item.normalized_fact["variable"] == forced.variable
@@ -2566,13 +2587,22 @@ def _propagation_steps(core: "BmcConflictCore", forced_values: Tuple):
             BmcReasoningStep("fact", (item.constraint.stable_id,), (), item.human_text)
             for item in disagreeing
         )
-        if len(supporting) + len(disagreeing) != len(core.items):
+        cited = {item.constraint.stable_id for item in supporting}
+        cited |= {item.constraint.stable_id for item in disagreeing}
+        if cited != {item.constraint.stable_id for item in core.items}:
             # The coverage check the four single-shape patterns all make.  On the
             # orchestration path the shrink already guarantees it -- the
             # supporting set plus one disagreeing assumption is unsatisfiable, so
             # a minimal core holds nothing else -- but this branch is reached
             # through a published function too, and a rule the reader has to
             # reconstruct from elsewhere is not a rule this branch states.
+            #
+            # Compared as sets rather than by adding the two sizes: the sum equals
+            # the member count only while the two are disjoint, which holds for a
+            # ``ForcedValue`` describing what its own docstring describes -- the
+            # non-assumption groups -- and is nowhere checked.  A caller naming an
+            # assumption among them would have the overlap counted twice, and the
+            # count would pass while a member nobody cited rode along.
             continue
         values = sorted(
             {forced.value} | {item.normalized_fact["value"] for item in disagreeing}

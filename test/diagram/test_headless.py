@@ -632,3 +632,120 @@ class TestTheDomAdapterFailsLoudly:
         # with an empty list would leave the halo in place, and this is the only
         # place that difference is visible.
         assert str(context.eval(probe)) == "1,1"
+
+
+@pytest.mark.unittest
+class TestTheCanvasSizeIsReadDefensively:
+    """
+    Cover how the export sizes a document it did not write itself.
+
+    The limits are computed from the canvas the renderer declared, so a document
+    that declares no usable size cannot be checked -- and passing it on unchecked
+    is the one outcome that must not happen quietly.
+    """
+
+    def test_the_declared_width_and_height_are_used_when_present(self):
+        from pyfcstm.diagram.api import _canonical_canvas_size
+
+        assert _canonical_canvas_size('<svg width="120" height="80"></svg>') == (
+            120.0,
+            80.0,
+        )
+
+    def test_the_view_box_is_used_when_there_is_no_width(self):
+        from pyfcstm.diagram.api import _canonical_canvas_size
+
+        # A renderer is free to size a document by its view box alone, and the
+        # limits still have to be computable from it.
+        assert _canonical_canvas_size('<svg viewBox="0 0 200 150"></svg>') == (
+            200.0,
+            150.0,
+        )
+
+    def test_a_document_with_no_usable_size_is_refused(self):
+        from pyfcstm.diagram.api import _canonical_canvas_size
+        from pyfcstm.diagram import DiagramRenderError
+
+        # Passing it on would mean exporting something whose size was never
+        # checked against any limit.
+        with pytest.raises(DiagramRenderError):
+            _canonical_canvas_size("<svg></svg>")
+
+
+@pytest.mark.unittest
+class TestTheCommandLineTranslatesExportFailures:
+    """
+    Cover the three failures a caller meets on the command line.
+
+    Each has a different remedy, so each has to arrive as a message rather than a
+    stack: a scale out of range is a usage error, an oversized diagram names the
+    limit, and a missing optional runtime names the extra to install.
+    """
+
+    def _source(self, tmp_path, text=SIMPLE):
+        path = tmp_path / "machine.fcstm"
+        path.write_text(text, encoding="utf-8")
+        return path
+
+    def test_an_out_of_range_scale_is_a_usage_error(self, tmp_path):
+        from click.testing import CliRunner
+
+        from pyfcstm.entry.cli import pyfcstmcli
+
+        result = CliRunner().invoke(
+            pyfcstmcli,
+            [
+                "diagram",
+                "-i",
+                str(self._source(tmp_path)),
+                "-o",
+                str(tmp_path / "out.png"),
+                "--scale",
+                "9",
+            ],
+        )
+        assert result.exit_code != 0
+        assert "Traceback" not in result.output
+        assert "4" in result.output
+
+    @needs_runtime
+    def test_an_oversized_diagram_names_the_limit(self, tmp_path):
+        from click.testing import CliRunner
+
+        from pyfcstm.entry.cli import pyfcstmcli
+
+        # The command uses the default top-to-bottom layout, where a chain grows
+        # in height: 200 states measure 296x15800 and still fit, 400 measure
+        # 296x31400 and do not. An ordinary large model, not a contrived one.
+        result = CliRunner().invoke(
+            pyfcstmcli,
+            [
+                "diagram",
+                "-i",
+                str(self._source(tmp_path, _wide_source(400))),
+                "-o",
+                str(tmp_path / "out.png"),
+            ],
+        )
+        assert result.exit_code != 0
+        assert "Traceback" not in result.output
+        assert str(MAX_EDGE_PX) in result.output or str(MAX_PIXELS) in result.output
+
+    @needs_no_runtime
+    def test_a_missing_runtime_names_the_extra(self, tmp_path):
+        from click.testing import CliRunner
+
+        from pyfcstm.entry.cli import pyfcstmcli
+
+        result = CliRunner().invoke(
+            pyfcstmcli,
+            [
+                "diagram",
+                "-i",
+                str(self._source(tmp_path)),
+                "-o",
+                str(tmp_path / "out.svg"),
+            ],
+        )
+        assert result.exit_code != 0
+        assert "pyfcstm[viz]" in result.output

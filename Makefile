@@ -316,6 +316,7 @@ diagram_provenance_check:
 	$(PYTHON) tools/check_diagram_provenance.py
 
 diagram_browser_headless_check: build_assets
+	$(PYTHON) tools/check_diagram_browser_headless.py --check
 	$(PYTHON) tools/check_diagram_browser_headless.py --all-cases --formats svg,png,pdf
 
 diagram_notebooks_check: build_assets
@@ -323,6 +324,7 @@ diagram_notebooks_check: build_assets
 	$(PYTHON) tools/check_diagram_notebooks.py
 
 diagram_headless_check: build_assets
+	$(PYTHON) tools/check_diagram_headless.py --check
 	$(PYTHON) tools/check_diagram_headless.py \
 		--all-cases --formats svg,png,pdf --repeat 3 \
 		--png-scales 1,2,4 --pdf-require-zero-images --pdf-page-size-match

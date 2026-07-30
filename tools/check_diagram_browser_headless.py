@@ -330,6 +330,81 @@ def compare(browser: Dict[str, Any], headless: Dict[str, Any], label: str) -> Li
     return problems
 
 
+def _self_check() -> None:
+    """
+    Prove the comparison reports the divergences it exists to catch.
+
+    This function went dead once already: it read the browser's facts from the
+    root of a report that carries them one level down, so every cross-path
+    comparison compared ``None`` against a number and skipped.  The gate stayed
+    green on the strength of the per-side assertions alone.  These cases pin both
+    halves -- a real disagreement, and a report shape that would make a comparison
+    silently not run.
+
+    :return: ``None``.
+    :rtype: None
+    :raises SystemExit: If the comparison accepts a divergence, or rejects a
+        matching pair.
+    """
+    agreeing_browser = {
+        "pdf": {
+            "svgText": 0,
+            "svgMarker": 0,
+            "svgFontFamily": 0,
+            "pngWidth": 880,
+            "pngHeight": 1284,
+            "pages": 1,
+            "images": 0,
+            "pdfWidth": 440,
+            "pdfHeight": 642,
+        }
+    }
+    agreeing_headless = {
+        "svgText": 0,
+        "svgMarker": 0,
+        "svgFontFamily": 0,
+        "pngWidth": 880,
+        "pngHeight": 1284,
+        "pdfPages": 1,
+        "pdfImages": 0,
+        "pdfPage": (440, 642),
+    }
+    if compare(agreeing_browser, agreeing_headless, "agree"):
+        raise SystemExit("the comparison rejected a matching pair")
+
+    def facts(**changes):
+        merged = dict(agreeing_browser["pdf"])
+        merged.update(changes)
+        return {"pdf": merged}
+
+    cases = {
+        "a PNG size that differs": (facts(pngWidth=441), agreeing_headless),
+        "a PDF page size that differs": (facts(pdfWidth=999), agreeing_headless),
+        "a PDF page count that differs": (facts(pages=2), agreeing_headless),
+        "a browser PDF carrying a bitmap": (facts(images=1), agreeing_headless),
+        "a report with no export facts": ({}, agreeing_headless),
+        "a report missing the PNG size": (
+            {
+                key: value
+                for key, value in [("pdf", {})]
+            },
+            agreeing_headless,
+        ),
+        "a synchronous export that is not expanded": (
+            agreeing_browser,
+            dict(agreeing_headless, svgText=3),
+        ),
+        "a synchronous PDF carrying a bitmap": (
+            agreeing_browser,
+            dict(agreeing_headless, pdfImages=1),
+        ),
+    }
+    for label, (browser, headless) in cases.items():
+        if not compare(browser, headless, "case"):
+            raise SystemExit("the comparison accepted %s" % label)
+    print("diagram browser/headless parity: self-check passed")
+
+
 def main(argv=None) -> int:
     """
     Compare the two export paths over the selected cases.
@@ -341,6 +416,9 @@ def main(argv=None) -> int:
     :raises SystemExit: If the two paths disagree on any invariant.
     """
     parser = argparse.ArgumentParser(description=__doc__.strip().splitlines()[0])
+    parser.add_argument(
+        "--check", action="store_true", help="run this command's own self-check"
+    )
     parser.add_argument("--all-cases", action="store_true")
     parser.add_argument(
         "--max-cases",
@@ -350,6 +428,9 @@ def main(argv=None) -> int:
     )
     parser.add_argument("--formats", default="svg,png,pdf")
     arguments = parser.parse_args(argv)
+    if arguments.check:
+        _self_check()
+        return 0
     formats = tuple(
         item.strip() for item in arguments.formats.split(",") if item.strip()
     )

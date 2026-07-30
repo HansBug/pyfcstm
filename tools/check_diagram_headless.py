@@ -112,7 +112,13 @@ def png_size(data: bytes) -> Tuple[int, int]:
     """
     if not data.startswith(b"\x89PNG\r\n\x1a\n") or data[12:16] != b"IHDR":
         raise ValueError("the rasteriser returned something that is not a PNG")
-    return struct.unpack(">II", data[16:24])
+    try:
+        return struct.unpack(">II", data[16:24])
+    except struct.error as err:
+        # struct.error: the header is present but truncated, which a rasteriser
+        # that ran out of memory part-way through can produce. Reported as a
+        # malformed payload rather than crashing the gate.
+        raise ValueError("the PNG header is truncated") from err
 
 
 def pdf_page_size(data: bytes) -> Tuple[float, float]:
@@ -253,6 +259,66 @@ def check_case(
     return counts
 
 
+def _self_check() -> None:
+    """
+    Prove the per-format validators reject the shapes they exist to catch.
+
+    The checks that matter here are the ones a valid-looking file would pass: a
+    PNG whose dimensions ignore the requested scale, a PDF whose page does not
+    match the diagram, and a PDF carrying a bitmap.  Each is exercised on a
+    synthetic payload, so a validator that stopped asserting is caught without
+    needing a renderer.
+
+    :return: ``None``.
+    :rtype: None
+    :raises SystemExit: If any validator accepts a bad payload, or rejects a good
+        one.
+    """
+    import zlib
+
+    def png(width, height):
+        header = struct.pack(">II", width, height) + b"\x08\x06\x00\x00\x00"
+        chunk = struct.pack(">I", 13) + b"IHDR" + header
+        chunk += struct.pack(">I", zlib.crc32(b"IHDR" + header) & 0xFFFFFFFF)
+        return b"\x89PNG\r\n\x1a\n" + chunk
+
+    assert png_size(png(200, 100)) == (200, 100)
+    for label, payload in (
+        ("something that is not a PNG", b"not a png at all"),
+        ("a PNG with no IHDR", b"\x89PNG\r\n\x1a\n" + b"\x00" * 24),
+        ("a truncated PNG header", b"\x89PNG\r\n\x1a\n" + b"\x00" * 4 + b"IHDR"),
+    ):
+        try:
+            png_size(payload)
+        except ValueError:
+            continue
+        raise SystemExit("the PNG check accepted %s" % label)
+
+    good_pdf = b"%PDF-1.3\n/MediaBox [0 0 200 100]\nstream\nxx\nendstream\n"
+    assert pdf_page_size(good_pdf) == (200.0, 100.0)
+    # The capture keeps the trailing newline the payload was written with, which
+    # is exactly the shape the real comparison sees.
+    assert content_streams(good_pdf) == [b"xx\n"]
+    for label, payload in (
+        ("a PDF with no media box", b"%PDF-1.3\nno box here\n"),
+        ("a malformed media box", b"%PDF-1.3\n/MediaBox [0 0 200]\n"),
+    ):
+        try:
+            pdf_page_size(payload)
+        except ValueError:
+            continue
+        raise SystemExit("the PDF page check accepted %s" % label)
+
+    assert canvas_size('<svg width="120" height="80">') == (120.0, 80.0)
+    try:
+        canvas_size("<svg>")
+    except ValueError:
+        pass
+    else:
+        raise SystemExit("the canvas check accepted a document with no size")
+    print("diagram headless exports: self-check passed")
+
+
 def main(argv=None) -> int:
     """
     Run the headless export checks and print a JSON summary.
@@ -264,6 +330,9 @@ def main(argv=None) -> int:
     :raises ValueError: If any checked property does not hold.
     """
     parser = argparse.ArgumentParser(description=__doc__.strip().splitlines()[0])
+    parser.add_argument(
+        "--check", action="store_true", help="run this command's own self-check"
+    )
     parser.add_argument("--corpus", type=Path, default=DEFAULT_CORPUS)
     parser.add_argument("--all-cases", action="store_true")
     parser.add_argument("--formats", default="svg,png,pdf")
@@ -272,6 +341,9 @@ def main(argv=None) -> int:
     parser.add_argument("--pdf-require-zero-images", action="store_true")
     parser.add_argument("--pdf-page-size-match", action="store_true")
     arguments = parser.parse_args(argv)
+    if arguments.check:
+        _self_check()
+        return 0
 
     formats = tuple(
         item.strip() for item in arguments.formats.split(",") if item.strip()

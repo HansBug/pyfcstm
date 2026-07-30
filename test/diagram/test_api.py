@@ -14,6 +14,7 @@ import stat
 from unittest import mock
 import sys
 import tempfile
+import traceback
 import textwrap
 
 import pytest
@@ -1122,7 +1123,7 @@ def test_a_fallback_that_cannot_be_removed_is_reported(tmp_path, monkeypatch, ca
     diagram_api._FALLBACK_DIRECTORIES.clear()
     stuck = tmp_path / "pyfcstm-viewers-stuck"
     stuck.mkdir(mode=0o700)
-    diagram_api._FALLBACK_DIRECTORIES.add(stuck)
+    diagram_api._FALLBACK_DIRECTORIES[stuck] = os.getpid()
     os.chmod(str(tmp_path), 0o500)
     try:
         with caplog.at_level(logging.WARNING):
@@ -1271,9 +1272,70 @@ def test_an_empty_fallback_is_reclaimed_at_exit_and_a_used_one_is_not(
         assert not fallback.exists(), "an empty fallback outlived its use"
 
         # A forked child running the parent's hook must not act on it.
-        diagram_api._FALLBACK_DIRECTORIES.add(untrusted)
+        diagram_api._FALLBACK_DIRECTORIES[untrusted] = os.getpid()
         diagram_api._reclaim_empty_fallbacks(os.getpid() + 1)
         assert untrusted.is_dir(), "a child removed a directory it does not own"
+    finally:
+        diagram_api._PRIVATE_DIRECTORIES.clear()
+        diagram_api._FALLBACK_DIRECTORIES.clear()
+        del diagram_api._RECLAIM_REGISTERED[:]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX fork and modes")
+def test_a_forked_child_reclaims_its_own_fallback_and_leaves_its_parents(
+    tmp_path, monkeypatch
+):
+    # `fork` copies the registration and the mapping. A flag rather than a set of
+    # process ids left the child unable to register a hook of its own -- the
+    # parent's is inherited and its guard correctly skips it -- so a child that made
+    # a fallback and exited normally left the directory behind. And the mapping it
+    # inherits holds the parent's directories, which are not the child's to remove.
+    #
+    # The registration is asserted rather than exercised through `atexit`: the child
+    # has to leave by `os._exit`, which skips the hooks, and `sys.exit` here would
+    # drag pytest through a second session on the shared stdout. An empty directory
+    # of the parent's is planted so that a child reaching past its own would be
+    # visible -- with a document in it, `rmdir` would refuse anyway and the reach
+    # would go unnoticed.
+    from pyfcstm.diagram import api as diagram_api
+
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
+    diagram_api._PRIVATE_DIRECTORIES.clear()
+    diagram_api._FALLBACK_DIRECTORIES.clear()
+    del diagram_api._RECLAIM_REGISTERED[:]
+    (tmp_path / ("pyfcstm-viewers-%d" % os.geteuid())).mkdir(mode=0o755)
+
+    try:
+        parents_empty = tmp_path / "pyfcstm-viewers-parent"
+        parents_empty.mkdir(mode=0o700)
+        diagram_api._FALLBACK_DIRECTORIES[parents_empty] = os.getpid()
+        recorded = tmp_path / "child.txt"
+
+        child = os.fork()
+        if child == 0:
+            code = 1
+            try:
+                diagram_api._PRIVATE_DIRECTORIES.clear()
+                own = diagram_api._private_viewer_directory()
+                recorded.write_text(str(own), encoding="utf-8")
+                assert os.getpid() in diagram_api._RECLAIM_REGISTERED, (
+                    "the child could not register a hook of its own"
+                )
+                diagram_api._reclaim_empty_fallbacks(os.getpid())
+                assert not own.exists(), "the child left its own fallback behind"
+                assert parents_empty.is_dir(), "the child reached past its own"
+                code = 0
+            except BaseException:
+                traceback.print_exc()
+            finally:
+                os._exit(code)
+        _, status = os.waitpid(child, 0)
+
+        own = Path(recorded.read_text(encoding="utf-8").strip())
+        assert own != parents_empty, "the child took the parent's directory"
+        assert status == 0, "the child's own assertions failed"
+        assert not own.exists(), "the child's fallback outlived it"
+        assert parents_empty.is_dir(), "the parent's empty fallback was taken"
     finally:
         diagram_api._PRIVATE_DIRECTORIES.clear()
         diagram_api._FALLBACK_DIRECTORIES.clear()

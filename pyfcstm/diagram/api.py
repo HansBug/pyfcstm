@@ -38,7 +38,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
 from collections.abc import Iterable
-from typing import Iterator, Any, Dict, List, Mapping, Optional, Tuple, Union, Set
+from typing import Iterator, Any, Dict, List, Mapping, Optional, Tuple, Union
 
 from pygments import lex
 from pygments.formatters import HtmlFormatter
@@ -983,10 +983,13 @@ def _open_standalone_window(path: Path, window_size: Tuple[int, int]) -> None:
 # directory are independent; see `_private_viewer_directory`.
 _PRIVATE_DIRECTORIES: Dict[str, Path] = {}
 
-# Those of the above that this process made for itself because the predictable name
-# could not be trusted. They are removed when they empty, and again at exit; see
-# `_discard_empty_fallback` and `_reclaim_empty_fallbacks`.
-_FALLBACK_DIRECTORIES: Set[Path] = set()
+# Those of the above made for a process itself because the predictable name could
+# not be trusted, against the process that made each one. The process id is what a
+# `fork` makes necessary: a child inherits this mapping and its own exit hook, and
+# neither the parent's directories nor the parent's registration are the child's.
+# They are removed when they empty, and again at exit; see `_discard_empty_fallback`
+# and `_reclaim_empty_fallbacks`.
+_FALLBACK_DIRECTORIES: Dict[Path, int] = {}
 _RECLAIM_REGISTERED: List[int] = []
 
 
@@ -1042,7 +1045,7 @@ def _private_viewer_directory() -> Path:
             return remembered
         _report_degradation("no longer using %s: %s", remembered, complaint)
         del _PRIVATE_DIRECTORIES[base]
-        _FALLBACK_DIRECTORIES.discard(remembered)
+        _FALLBACK_DIRECTORIES.pop(remembered, None)
     shared = Path(base) / (
         "pyfcstm-viewers-%d" % os.geteuid()
         if hasattr(os, "geteuid")
@@ -1058,11 +1061,13 @@ def _private_viewer_directory() -> Path:
     _report_degradation("not reusing %s: %s", shared, complaint)
     private = Path(tempfile.mkdtemp(prefix="pyfcstm-viewers-", dir=base))
     _PRIVATE_DIRECTORIES[base] = private
-    _FALLBACK_DIRECTORIES.add(private)
-    if not _RECLAIM_REGISTERED:
-        # Once per process. A caller who keeps a viewer and later removes it leaves
-        # the directory empty, and nothing in the call that made it is still running
-        # to notice: a short process doing that repeatedly left one behind each time.
+    _FALLBACK_DIRECTORIES[private] = os.getpid()
+    if os.getpid() not in _RECLAIM_REGISTERED:
+        # Once per process, and once more in a forked child: it inherits this list
+        # non-empty and the parent's hook, which its own guard then skips, so a flag
+        # rather than a set of process ids left the child with no hook at all. A
+        # caller who keeps a viewer and later removes it leaves the directory empty,
+        # and nothing in the call that made it is still running to notice.
         _RECLAIM_REGISTERED.append(os.getpid())
         atexit.register(_reclaim_empty_fallbacks, os.getpid())
     return private
@@ -1077,18 +1082,24 @@ def _reclaim_empty_fallbacks(owner: int) -> None:
     caller keeps refuses to go, which is the contract, and one already gone is not
     an error worth reporting from an exit hook.
 
-    :param owner: The process that registered this, so a forked child does not act
-        on it.
+    :param owner: The process that registered this.  Both the guard and the
+        selection use it: a forked child must not run the parent's hook, and must
+        not treat the parent's directories -- which it inherited -- as its own.
     :type owner: int
     :return: ``None``.
     :rtype: None
     """
     if os.getpid() != owner:
-        # `fork` copies the exit hooks along with the set, and a child that exits
+        # `fork` copies the exit hooks along with the mapping, and a child that exits
         # normally runs the parent's. Removing the parent's directory between its
         # creation and the first write into it would break that save.
         return
-    for directory in sorted(_FALLBACK_DIRECTORIES):
+    mine = sorted(
+        directory
+        for directory, maker in _FALLBACK_DIRECTORIES.items()
+        if maker == owner
+    )
+    for directory in mine:
         try:
             os.rmdir(str(directory))
         except OSError as error:
@@ -1121,7 +1132,9 @@ def _discard_empty_fallback(directory: Path) -> None:
     :return: ``None``.
     :rtype: None
     """
-    if directory not in _FALLBACK_DIRECTORIES:
+    if _FALLBACK_DIRECTORIES.get(directory) != os.getpid():
+        # Not ours to remove: either not a fallback at all, or one a parent made
+        # before forking, whose lifetime belongs to the parent.
         return
     try:
         os.rmdir(str(directory))
@@ -1136,7 +1149,7 @@ def _discard_empty_fallback(directory: Path) -> None:
                 "could not remove the fallback directory %s: %s", directory, error
             )
         return
-    _FALLBACK_DIRECTORIES.discard(directory)
+    del _FALLBACK_DIRECTORIES[directory]
     for base, path in list(_PRIVATE_DIRECTORIES.items()):
         if path == directory:
             # Forgotten, so the next call looks at the predictable name again --

@@ -148,6 +148,7 @@ def test_a_category_outside_every_family_is_refused() -> None:
 _TRANSCRIBED_FROZEN_NAMES = frozenset(
     {
         "_DERIVATION_STATUSES",
+        "_FACT_REQUIRED_KEYS",
         "_REASONING_STEP_KINDS",
         "_RELATION_PHRASES",
         "_ROLE_VOICES",
@@ -258,6 +259,18 @@ def test_the_transcription_guard_covers_every_frozen_structure() -> None:
     # Transcribed because they are published dispatch vocabularies: a kind or
     # status added without a schema enum entry would pass Python and fail
     # validation, and one removed would silently narrow what can be published.
+    # Transcribed because it decides which members a reader may index directly:
+    # a tag whose keys are dropped from here silently becomes indexable without
+    # them, which is the KeyError this table exists to prevent.
+    assert module._FACT_REQUIRED_KEYS == {
+        "structural_constraint": (),
+        "variable_comparison": ("variable", "frame", "operator", "value"),
+        "state_membership": ("frame", "state"),
+        "state_domain": ("frame", "states"),
+        "definedness_condition": ("frame", "operation"),
+    }
+    # Every published tag needs an entry, or it becomes readable by omission.
+    assert set(module._FACT_REQUIRED_KEYS) == set(module._FACT_KINDS)
     assert module._REASONING_STEP_KINDS == ("fact", "derivation", "conflict")
     assert module._DERIVATION_STATUSES == (
         "complete",
@@ -3123,3 +3136,57 @@ def test_a_skipped_operator_does_not_count_as_explained() -> None:
     with_spare = crossing + (bound("ne", 99),)
     pattern = _conflict_pattern(with_spare, "proven")
     assert pattern is None or pattern[0] != "interval_intersection"
+
+
+@pytest.mark.unittest
+def test_every_tag_survives_every_public_consumer() -> None:
+    """The matrix, not the reasoning: each published tag against each renderer.
+
+    The schema requires only ``kind``, so a bare tag is valid published output and
+    every public consumer has to survive it.  This rule was fixed once on
+    ``human_text_for_fact`` while ``build_conflict_narrative`` thirty lines below
+    kept indexing ``fact["frame"]`` -- two functions disagreeing about the same
+    payload.  Enumerating the vocabulary against the consumers is what finds that;
+    reading the code and asking "where else might this happen" is what missed it
+    three rounds running.
+    """
+    from pyfcstm.bmc.explanation import (
+        _FACT_KINDS,
+        BmcConflictCore,
+        BmcConstraintRef,
+        BmcCoreItem,
+        build_conflict_narrative,
+        human_text_for_fact,
+    )
+
+    def core_of(fact):
+        reference = BmcConstraintRef(
+            "g0",
+            "assumptions",
+            "assumption.frame",
+            BmcSourceRef("generated", None, None),
+            "summary",
+            frames=(0,),
+            refs={"frame": 0},
+        )
+        item = BmcCoreItem(reference, "assumption", None, False, fact, "t", False)
+        return BmcConflictCore(
+            "assumptions_component", "F", "source_group", "raw", "not_proven", (item,)
+        )
+
+    consumers = {
+        "human_text_for_fact": lambda fact: human_text_for_fact("assumption", fact),
+        "build_conflict_narrative": lambda fact: build_conflict_narrative(
+            core_of(fact)
+        ),
+    }
+
+    raised = []
+    for kind in _FACT_KINDS:
+        for name, consume in consumers.items():
+            try:
+                consume({"kind": kind})
+            except (KeyError, TypeError, IndexError, AttributeError) as err:
+                raised.append("%s(%s) -> %s" % (name, kind, type(err).__name__))
+
+    assert raised == []

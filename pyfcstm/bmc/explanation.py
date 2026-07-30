@@ -2175,6 +2175,43 @@ def depth_line_is_needed(requested_mode: str, achieved_mode: str) -> bool:
     return achieved_mode != "none" and requested_mode != achieved_mode
 
 
+#: The keys each fact tag implies, so a consumer can require them before reading.
+#:
+#: The published schema requires only ``kind``, so a tag arriving without its
+#: companions is valid output that every reader has to survive.  Filtering members
+#: on this table at selection time is what lets the code below index directly:
+#: adding a tag here is what makes its keys required, rather than each reader
+#: remembering to guard.
+_FACT_REQUIRED_KEYS = {
+    "structural_constraint": (),
+    "variable_comparison": ("variable", "frame", "operator", "value"),
+    "state_membership": ("frame", "state"),
+    "state_domain": ("frame", "states"),
+    "definedness_condition": ("frame", "operation"),
+}
+
+
+def _readable(item, kind: str) -> bool:
+    """Report whether one member's fact carries every key its tag implies.
+
+    :param item: The published core member.
+    :type item: BmcCoreItem
+    :param kind: The tag the caller intends to read.
+    :type kind: str
+    :return: ``True`` when the fact is that tag and complete enough to index.
+    :rtype: bool
+
+    Example::
+
+        >>> _readable(None, "structural_constraint")
+        False
+    """
+    fact = getattr(item, "normalized_fact", None)
+    if not fact or fact.get("kind") != kind:
+        return False
+    return all(key in fact for key in _FACT_REQUIRED_KEYS.get(kind, ()))
+
+
 def _conflict_pattern(
     items: Tuple["BmcCoreItem", ...],
     minimality: str = "not_proven",
@@ -2205,11 +2242,7 @@ def _conflict_pattern(
         >>> _conflict_pattern(()) is None
         True
     """
-    definedness = [
-        item
-        for item in items
-        if item.normalized_fact.get("kind") == "definedness_condition"
-    ]
+    definedness = [item for item in items if _readable(item, "definedness_condition")]
     if len(definedness) == 1 and len(items) > 1 and minimality == "proven":
         # One domain condition beside facts about the very variable it guards.
         # Every member of a *proven* subset-minimal core is load-bearing, so the
@@ -2252,14 +2285,11 @@ def _conflict_pattern(
             "No execution keeps every operation defined at %s."
             % ", ".join("frame %s" % frame for frame in frames),
         )
-    domains = [
-        item for item in items if item.normalized_fact.get("kind") == "state_domain"
-    ]
+    domains = [item for item in items if _readable(item, "state_domain")]
     exclusions = [
         item
         for item in items
-        if item.normalized_fact.get("kind") == "state_membership"
-        and item.normalized_fact.get("excluded")
+        if _readable(item, "state_membership") and item.normalized_fact.get("excluded")
     ]
     if (
         len(domains) == 1
@@ -2287,7 +2317,7 @@ def _conflict_pattern(
     states = [
         item
         for item in items
-        if item.normalized_fact.get("kind") == "state_membership"
+        if _readable(item, "state_membership")
         and not item.normalized_fact.get("excluded")
     ]
     if states and len(states) == len(items):
@@ -2306,11 +2336,7 @@ def _conflict_pattern(
                     " and ".join(_state_label(code, state_paths) for code in required),
                 ),
             )
-    comparisons = [
-        item
-        for item in items
-        if item.normalized_fact.get("kind") == "variable_comparison"
-    ]
+    comparisons = [item for item in items if _readable(item, "variable_comparison")]
     if len(comparisons) != len(items) or len(comparisons) < 2:
         # A pattern over a subset would leave the remaining members unexplained
         # while the narrative claimed a closed chain.

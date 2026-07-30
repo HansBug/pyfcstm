@@ -41,12 +41,14 @@ class _UnprintableArgument:
 @pytest.fixture(autouse=True)
 def _api_module_state_is_restored():
     """
-    Restore the three module mappings ``pyfcstm.diagram.api`` keeps.
+    Restore the three process-wide containers ``pyfcstm.diagram.api`` keeps.
 
-    They outlive a single test: the directory resolved for each temporary root, the
-    fallbacks this process made, and the processes whose reclaim is registered.  The
+    They outlive a single test: two mappings -- the directory resolved for each
+    temporary root, and the fallbacks this process made against their maker -- and a
+    list of the processes whose reclaim is registered.  The
     exit hooks those processes registered are not undone -- a run leaves a handful
-    behind, and each one finds an empty mapping and does nothing.  A test that plants an entry and then skips -- or fails before its
+    behind, and each one finds an empty mapping and does nothing.  A test that plants
+    an entry and then skips -- or fails before its
     own cleanup -- used to leave it for whatever ran next, and the symptom was
     invisible because the entry pointed at a directory pytest had already removed.
     Restoring around every test makes that independence structural instead of
@@ -1522,9 +1524,11 @@ def test_a_worker_still_holding_the_viewer_does_not_cost_the_directory(
     if method not in multiprocessing.get_all_start_methods():
         pytest.skip("%s is not available here" % method)
     # Every start method, not only this platform's default, because the default is
-    # where this bit users: `fork` on most Linux, `spawn` on macOS, and `forkserver`
-    # on Linux from Python 3.14. A first version of this probe handed the path over a
-    # `Queue`, which works under `fork` and kills a `spawn` child.
+    # what users get: `fork` on most Linux, `spawn` on macOS, and `forkserver` on
+    # Linux from Python 3.14. Measured here, a queue built from the same context as
+    # the worker is fine in this order under all three; it is the other order that
+    # loses `spawn` and `forkserver`, and a queue built from a different context that
+    # loses them silently.
 
     root = tmp_path / "tmp"
     root.mkdir()
@@ -1542,29 +1546,53 @@ def test_a_worker_still_holding_the_viewer_does_not_cost_the_directory(
             from pyfcstm.model import load_state_machine_from_text
 
 
-            def consume(handoff):
-                # A file rather than a `Queue`, because the parent leaves as soon as
-                # it has handed the path over: exiting runs the queue's own finalizer
-                # before the children are joined, and a `spawn` or `forkserver` child
-                # still rebuilding that queue dies on the semaphore that finalizer
-                # took. Whichever start method is the platform default, this reaches
-                # the worker.
+            def consume(handoff, release):
+                # A file rather than a `Queue`, because a queue puts conditions on
+                # how it is made and when: one created from a different context than
+                # the process it is passed to segfaults a `spawn` or `forkserver`
+                # child, and one created here but handed over after the parent has
+                # already shown dies in that child on the semaphore the parent's exit
+                # released -- `FileNotFoundError` from `SemLock._rebuild`. A file has
+                # neither condition, so the gate does not depend on which start
+                # method the platform defaults to or on what order the caller works
+                # in.
                 while not os.path.exists(handoff):
-                    time.sleep(0.02)
+                    time.sleep(0.05)
                 path = Path(open(handoff, encoding="utf-8").read().strip())
-                # Wide enough that the parent -- which has only the handover and a
-                # return left -- reaches its exit first on any machine. If it did
-                # not, the viewer would already be gone by the first reclaim and this
-                # would pass without testing anything.
-                time.sleep(2.0)
+                # Not a wait on the clock. The parent releases this from a finalizer
+                # that runs in the first phase of its own exit -- the phase a reclaim
+                # must no longer be in -- so the viewer is provably still here when
+                # that phase runs, however slow the machine is. A sleep long enough
+                # to be safe was also long enough to be void: delay the parent past
+                # it and the test passed with the defect still in place.
+                while not os.path.exists(release):
+                    time.sleep(0.05)
                 path.unlink()
+                # Written last, so its absence means the worker did not get here:
+                # an exception, a segmentation fault, or a wait that outlived the
+                # timeout all look like the defect this gate is for, and none of
+                # them is it.
+                open(handoff + ".done", "w", encoding="utf-8").close()
+
+
+            def release_the_worker(release):
+                open(release + ".part", "w", encoding="utf-8").close()
+                os.replace(release + ".part", release)
 
 
             if __name__ == "__main__":
-                handoff = os.path.join(os.path.dirname(os.path.abspath(__file__)), "handoff")
+                here = os.path.dirname(os.path.abspath(__file__))
+                handoff = os.path.join(here, "handoff")
+                release = os.path.join(here, "release")
                 context = multiprocessing.get_context(sys.argv[1])
-                worker = context.Process(target=consume, args=(handoff,))
+                worker = context.Process(target=consume, args=(handoff, release))
                 worker.start()
+                # Registered once the worker exists and before the viewer does, so
+                # `_exit_function` runs it in the phase that ends before the children
+                # are joined -- which is the phase a reclaim must not be in.
+                from multiprocessing.util import Finalize
+
+                Finalize(None, release_the_worker, args=(release,), exitpriority=0)
                 kept = load_state_machine_from_text("state Root;").diagram().show(
                     open_window=False
                 )
@@ -1590,9 +1618,13 @@ def test_a_worker_still_holding_the_viewer_does_not_cost_the_directory(
     complaint = finished.stderr.decode("utf-8", "replace")
     assert finished.returncode == 0, complaint
     # A worker that died never removes the viewer, and the directory then rightly
-    # keeps it -- which looks exactly like the defect below and is not it. The
-    # worker's traceback reaches this stderr, so say which one happened.
-    assert "Traceback" not in complaint, complaint
+    # keeps it -- which looks exactly like the defect below and is not it. Its own
+    # marker is what tells them apart, and unlike its traceback the marker is absent
+    # for a segmentation fault too: a queue handed across contexts kills a `spawn`
+    # child with SIGSEGV, which reaches this stderr as nothing at all.
+    assert os.path.exists(str(probe.parent / "handoff.done")), (
+        "the worker did not finish: %s" % (complaint or "it said nothing")
+    )
     fallback = Path(finished.stdout.decode("utf-8").strip())
     assert fallback.name != ("pyfcstm-viewers-%d" % os.geteuid()), (
         "the obstruction was trusted, so no fallback was made"

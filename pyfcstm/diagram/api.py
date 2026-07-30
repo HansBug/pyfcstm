@@ -1094,11 +1094,16 @@ def _register_with_multiprocessing(owner: int) -> None:
     registration first.  So ``util`` joins the worker before this module's hook looks
     at the directory.
 
-    Both this and the :mod:`atexit` hook can run in one exit, in either order: which
-    goes first is the order the two were registered in, and that is the order the
-    caller happened to show and start in.  Whichever succeeds leaves the other with
-    ``ENOENT``, which is why that is graded as the outcome asked for rather than as a
-    failure.
+    Two orders reach here, and neither leaves a directory behind.  Start a worker
+    and then show, and ``util`` is already imported, so both this and the
+    :mod:`atexit` hook exist: the hook was registered later and :mod:`atexit` runs
+    the later one first, so it meets a directory the worker still holds, and this
+    one -- after the join -- finds it empty.  Show and then start, and ``util`` was
+    not imported when this ran, so there is no finalizer at all; ``util``'s own hook
+    is then the later registration, runs first, and joins the worker before the hook
+    beside this one looks at the directory.  Where both do run, whichever succeeds
+    leaves the other with ``ENOENT``, which is why that is graded as the outcome
+    asked for rather than as a failure.
 
     :param owner: The process this registration belongs to.
     :type owner: int

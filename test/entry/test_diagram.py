@@ -97,7 +97,8 @@ def test_diagram_cli_help_is_english_and_does_not_leak_rst():
     result = CliRunner().invoke(cli, ["diagram", "--help"])
     assert result.exit_code == 0, result.output
     assert (
-        "Generate portable JSON or a standalone HTML diagram viewer." in result.output
+        "Generate portable JSON, a standalone HTML viewer, or an SVG/PNG/PDF "
+        "export." in result.output
     )
     assert "Input FCSTM file." in result.output
     assert ":param" not in result.output
@@ -218,3 +219,79 @@ def test_diagram_cli_open_failure_names_only_a_document_that_survives(tmp_path):
                 raise AssertionError(
                     "named a temporary viewer that is removed at exit: %s" % token
                 )
+
+
+@pytest.mark.unittest
+class TestDiagramCommandExports:
+    """
+    Cover the export formats the command gained alongside JSON and HTML.
+
+    The optional rendering runtime may be absent, and both outcomes are part of
+    the contract: a file appears, or the failure names the dependency. Asserting
+    only "exit code 0" would pass in an environment where nothing was rendered.
+    """
+
+    @pytest.mark.parametrize("suffix", ["svg", "png", "pdf"])
+    def test_an_export_lands_on_disk_or_names_its_missing_dependency(
+        self, tmp_path, suffix
+    ):
+        source = tmp_path / "machine.fcstm"
+        source.write_text("state Root { state A; [*] -> A; }", encoding="utf-8")
+        target = tmp_path / ("machine." + suffix)
+        result = CliRunner().invoke(
+            cli, ["diagram", "-i", str(source), "-o", str(target)]
+        )
+        if result.exit_code == 0:
+            assert target.stat().st_size > 0
+            assert str(target) in result.output
+        else:
+            assert "pyfcstm[viz]" in result.output
+
+    def test_a_scale_is_refused_for_a_format_that_has_none(self, tmp_path):
+        source = tmp_path / "machine.fcstm"
+        source.write_text("state Root { state A; [*] -> A; }", encoding="utf-8")
+        result = CliRunner().invoke(
+            cli,
+            [
+                "diagram",
+                "-i",
+                str(source),
+                "-o",
+                str(tmp_path / "machine.svg"),
+                "--scale",
+                "2",
+            ],
+        )
+        assert result.exit_code != 0
+        assert "--scale is only supported for PNG output" in result.output
+
+    def test_a_scale_above_the_ceiling_is_a_usage_error(self, tmp_path):
+        source = tmp_path / "machine.fcstm"
+        source.write_text("state Root { state A; [*] -> A; }", encoding="utf-8")
+        result = CliRunner().invoke(
+            cli,
+            [
+                "diagram",
+                "-i",
+                str(source),
+                "-o",
+                str(tmp_path / "machine.png"),
+                "--scale",
+                "5",
+            ],
+        )
+        # A caller mistake, so it must be reported as one rather than as a
+        # rendering failure or a traceback.
+        assert result.exit_code != 0
+        assert "4" in result.output
+        assert "Traceback" not in result.output
+
+    def test_an_unknown_suffix_lists_every_format_the_command_writes(self, tmp_path):
+        source = tmp_path / "machine.fcstm"
+        source.write_text("state Root { state A; [*] -> A; }", encoding="utf-8")
+        result = CliRunner().invoke(
+            cli, ["diagram", "-i", str(source), "-o", str(tmp_path / "machine.tiff")]
+        )
+        assert result.exit_code != 0
+        for name in (".json", ".html", ".svg", ".png", ".pdf"):
+            assert name in result.output

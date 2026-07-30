@@ -568,7 +568,10 @@ Mandatory completion rule for built-in template work:
   module's own docstring, where `modname + "." + name` is Sphinx's only candidate, and a `:meth:` / `:attr:` in a
   class's docstring, where it tries the enclosing class and then the module. It deliberately does not judge a bare name
   in an information field, which carries `refspecific` and is matched against the whole registry by suffix, nor one
-  inside a method, whose class the scanner does not carry; guessing at either reports live links as dead
+  inside a method, whose class the scanner does not carry; guessing at either reports live links as dead. The
+  bare-member rule assumes this repository configures no intersphinx mapping, so the checker refuses to run when
+  `docs/source/conf.py` sets `intersphinx_mapping` or names the extension in an `extensions` statement; an extension
+  name built from a variable is outside what it can see and is stated as such in the tool
 
 **Entry Points** ([pyfcstm/entry/](pyfcstm/entry/))
 

@@ -188,6 +188,16 @@ def _configures_intersphinx(conf: Path) -> bool:
     footgun CLAUDE.md documents for ``contains()`` in the workflow triggers, and it
     would stop this checker with a message stating something untrue.
 
+    What it sees: an ``intersphinx_mapping`` name, and the extension named anywhere
+    inside a statement that assigns or appends to ``extensions`` -- which covers a
+    literal, ``'sphinx.ext.' + 'intersphinx'``, and ``extensions.append(...)``.  What
+    it does not see is a name built from a variable, as in
+    ``EXT = 'intersphinx'`` followed by ``['sphinx.ext.%s' % EXT]``: following that
+    means evaluating the configuration, and executing ``conf.py`` has side effects of
+    its own -- it copies the language's index into place.  A ``conf.py`` written that
+    way would leave the bare-member rule unguarded, so it is named here rather than
+    quietly missed.
+
     :param conf: Path to ``conf.py``.
     :type conf: pathlib.Path
     :return: ``True`` when a mapping is assigned or the extension is listed.
@@ -200,11 +210,29 @@ def _configures_intersphinx(conf: Path) -> bool:
     except SyntaxError:
         # A configuration this checker cannot read is not one it should judge.
         return False
+    text = conf.read_text(encoding="utf-8")
     for node in ast.walk(tree):
         if isinstance(node, ast.Name) and node.id == "intersphinx_mapping":
             return True
-        if isinstance(node, ast.Constant) and isinstance(node.value, str):
-            if "sphinx.ext.intersphinx" in node.value:
+        # Whatever builds the extension list, read its own source rather than only
+        # its literals: `'sphinx.ext.' + 'intersphinx'` and `'sphinx.ext.%s' % name`
+        # both enable it, and neither is a single constant. Scoping the search to the
+        # statement keeps a comment elsewhere in the file from answering for it.
+        touches_extensions = (
+            isinstance(node, ast.Assign)
+            and any(
+                isinstance(target, ast.Name) and target.id == "extensions"
+                for target in node.targets
+            )
+        ) or (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == "extensions"
+        )
+        if touches_extensions:
+            segment = ast.get_source_segment(text, node) or ""
+            if "intersphinx" in segment:
                 return True
     return False
 

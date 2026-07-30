@@ -63,6 +63,7 @@ package_data.setdefault("pyfcstm.diagram.assets", []).extend(
     [
         "README.md",
         "*.js",
+        "*.css",
         "*.wasm",
         "*.json",
         "*.txt",
@@ -91,6 +92,8 @@ def _require_diagram_assets_for_distribution() -> None:
         "resvg-binding.js",
         "resvg-bridge.js",
         "host-shim.js",
+        "viewer.js",
+        "viewer.css",
         "resvg.wasm",
         "manifest.json",
         os.path.join("fonts", "JetBrainsMono-Regular.ttf"),
@@ -115,6 +118,7 @@ def _require_diagram_assets_for_distribution() -> None:
         "LICENSE-MPL-2.0.txt",
         "LICENSE-EPL-2.0.txt",
         "LICENSE-OFL-1.1.txt",
+        "LICENSE-MIT.txt",
     }
     asset_root = os.path.join(here, _MODULE_NAME, "diagram", "assets")
     for legacy_root in (
@@ -162,6 +166,7 @@ def _require_diagram_assets_for_distribution() -> None:
         "LICENSE-MPL-2.0.txt",
         "LICENSE-EPL-2.0.txt",
         "LICENSE-OFL-1.1.txt",
+        "LICENSE-MIT.txt",
     }
     missing = [
         os.path.join(here, _MODULE_NAME, "diagram", "assets", relative)

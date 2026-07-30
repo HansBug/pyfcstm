@@ -331,6 +331,9 @@ def _clone_ast_node(node):
             for field in fields(node)
         }
         cloned = node.__class__(**values)
+        for attribute in ("_source_path", "_source_text"):
+            if hasattr(node, attribute):
+                setattr(cloned, attribute, getattr(node, attribute))
         if isinstance(node, dsl_nodes.TransitionDefinition):
             metadata = _get_trusted_generated_combo_transition_metadata(node)
             if metadata is not None:
@@ -344,6 +347,23 @@ def _clone_ast_node(node):
         return cloned
     else:
         return node
+
+
+def _annotate_ast_source(node: Any, source_path: Optional[str], source_text: Optional[str] = None) -> None:
+    """Attach source provenance to parsed AST nodes without changing the AST schema."""
+    if isinstance(node, dsl_nodes.ASTNode):
+        if source_path is not None:
+            setattr(node, "_source_path", source_path)
+        if source_text is not None:
+            setattr(node, "_source_text", source_text)
+        for field in fields(node):
+            _annotate_ast_source(getattr(node, field.name), source_path, source_text)
+    elif isinstance(node, (list, tuple)):
+        for item in node:
+            _annotate_ast_source(item, source_path, source_text)
+    elif isinstance(node, dict):
+        for item in node.values():
+            _annotate_ast_source(item, source_path, source_text)
 
 
 def _assemble_program(
@@ -664,6 +684,7 @@ def _load_imported_program(
         )
         return None
 
+    _annotate_ast_source(program, file_path, content)
     return program
 
 

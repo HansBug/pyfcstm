@@ -9,11 +9,13 @@ Python packaging includes the generated directory when it is present.
 The public resource contract is:
 
 * ``renderer.js`` - ES2017 shared ELK/SVG/resvg bridge;
+* ``viewer.js`` / ``viewer.css`` - standalone browser viewer bundle and styles;
 * ``resvg.wasm`` - pinned legacy-compatible raster/vector backend;
 * ``manifest.json`` - source, hash, and size evidence;
 * ``fonts/`` plus the tracked notice and license files - deterministic
   provenance resources.
 
-The package does not expose the future ``StateMachine.diagram`` API. That
-API belongs to the continuation Python surface described by PR #383.
+This package exposes no API of its own. :class:`pyfcstm.diagram.api.Diagram`,
+reached through :meth:`pyfcstm.model.model.StateMachine.diagram`, is what reads these
+resources; import from :mod:`pyfcstm.diagram` rather than from here.
 """

@@ -440,6 +440,32 @@ jobs:
         shell: bash
         run: |
           make DIAGRAM_REFERENCE="$DIAGRAM_REFERENCE" diagram_assets_verify
+      - name: Provision Chromium for the browser export gate
+        if: ${{ matrix.python-version == '3.11' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Only the official Chrome package is accepted here. The runner's
+          # /usr/bin/chromium is the snap wrapper, which cannot open a
+          # DevTools endpoint under Actions confinement.
+          for candidate in google-chrome google-chrome-stable; do
+            if command -v "$candidate" >/dev/null 2>&1; then
+              echo "CHROME_BIN=$(command -v "$candidate")" >> "$GITHUB_ENV"
+              exit 0
+            fi
+          done
+          curl -fsSL -o "$RUNNER_TEMP/google-chrome.deb" \
+            https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+          sudo apt-get install -y "$RUNNER_TEMP/google-chrome.deb"
+          command -v google-chrome >/dev/null
+          echo "CHROME_BIN=$(command -v google-chrome)" >> "$GITHUB_ENV"
+      - name: Run standalone browser export gate
+        if: ${{ matrix.python-version == '3.11' }}
+        env:
+          CI: 'true'
+        shell: bash
+        run: |
+          make diagram_browser_check
 
   template_suite_gate:
     name: template-suite-gate
@@ -1412,3 +1438,51 @@ jobs:
           flags: jsfcstm
           name: codecov-jsfcstm
           fail_ci_if_error: false
+
+  lint:
+    # ``ruff`` and the generated API RST were gates that existed only as lines
+    # in a plan for a human to run, which is how a gate stops being one: the
+    # generated RST turned out to be current only because someone regenerated
+    # it by hand to find out. Both are seconds of work, so they run on every
+    # push and name the commit that introduced the drift.
+    #
+    # The paths are narrow on purpose. ``ruff check`` over the whole package
+    # reports 941 pre-existing findings and ``ruff format`` would rewrite 66
+    # files, so a repository-wide gate could only be added by first paying off
+    # that debt. Widen these lists when a tree is cleaned up, rather than
+    # relaxing the rules to fit one.
+    name: Lint and generated RST
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3.3.0
+        with:
+          fetch-depth: 20
+          submodules: 'recursive'
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: Install lint and runtime dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          # Read the pin out of requirements-dev.txt so the ruff version
+          # contract keeps living in exactly one place. The rest of that file
+          # is LLM/image tooling this job has no use for.
+          python -m pip install "$(grep -E '^ruff' requirements-dev.txt)"
+          python -m pip install -r requirements.txt
+      - name: Lint the diagram surface
+        shell: bash
+        run: |
+          ruff check pyfcstm/diagram pyfcstm/model/model.py \
+            pyfcstm/model/imports.py pyfcstm/bmc/domain.py test/diagram
+          ruff format --check pyfcstm/diagram test/diagram
+      - name: Check the generated API RST is current
+        shell: bash
+        run: |
+          make rst_auto
+          # ``rst_auto`` is generation, so a clean tree afterwards is the whole
+          # assertion: a public signature that moved without its RST being
+          # regenerated shows up here as a diff.
+          git diff --exit-code

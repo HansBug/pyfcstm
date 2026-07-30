@@ -6,6 +6,18 @@ pyfcstm.diagram.engine
 .. automodule:: pyfcstm.diagram.engine
 
 
+DiagramError
+-----------------------------------------------------
+
+.. autoclass:: DiagramError
+
+
+DiagramUnavailableError
+-----------------------------------------------------
+
+.. autoclass:: DiagramUnavailableError
+
+
 DiagramAssetError
 -----------------------------------------------------
 
@@ -28,6 +40,12 @@ DiagramEngineConflictError
 -----------------------------------------------------
 
 .. autoclass:: DiagramEngineConflictError
+
+
+DiagramEngineLoadError
+-----------------------------------------------------
+
+.. autoclass:: DiagramEngineLoadError
 
 
 DiagramAssetEngine

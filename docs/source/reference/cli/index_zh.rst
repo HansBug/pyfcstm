@@ -48,6 +48,12 @@
 .. cli-ref-option: command=plantuml option=-c
 .. cli-ref-option: command=plantuml option=--config
 .. cli-ref-option: command=plantuml option=--help
+.. cli-ref-command: name=diagram
+.. cli-ref-option: command=diagram option=-i
+.. cli-ref-option: command=diagram option=-o
+.. cli-ref-option: command=diagram option=--format choices=json,html
+.. cli-ref-option: command=diagram option=--open
+.. cli-ref-option: command=diagram option=--help
 .. cli-ref-command: name=simulate
 .. cli-ref-option: command=simulate option=-i
 .. cli-ref-option: command=simulate option=--input-code
@@ -84,6 +90,7 @@
 .. cli-ref-boundary: command=generate stdout stderr exit-status side-effects success-signal failure-taxonomy clear
 .. cli-ref-boundary: command=inspect stdout stderr exit-status side-effects success-signal failure-taxonomy output-formats verify-policy
 .. cli-ref-boundary: command=plantuml stdout stderr exit-status side-effects success-signal failure-taxonomy source-only
+.. cli-ref-boundary: command=diagram stdout stderr exit-status side-effects success-signal failure-taxonomy output-formats browser
 .. cli-ref-boundary: command=simulate stdout stderr exit-status side-effects success-signal failure-taxonomy interactive batch
 .. cli-ref-boundary: command=visualize stdout stderr exit-status side-effects success-signal failure-taxonomy cache suffix open headless check-mode
 
@@ -134,6 +141,10 @@
      - FCSTM DSL 文件
      - PlantUML 源码文本
      - 需要稳定、可审阅、可版本管理的图表源码。
+   * - ``diagram``
+     - FCSTM DSL 文件
+     - 可移植 JSON 或自包含 HTML 查看器
+     - 不使用 PlantUML 渲染器而使用共享浏览器图形。
    * - ``visualize``
      - FCSTM DSL 文件或渲染器检查请求
      - ``png``、``svg`` 或 ``pdf`` 图表
@@ -146,6 +157,7 @@
 
 * ``simulate``、``inspect``、``bmc``、``generate`` 和 ``plantuml`` 读取 DSL 并使用 Python 侧 pyfcstm 功能；它们不需要
   Java、PlantUML jar 或网络渲染器。
+* ``diagram`` 读取 DSL 并使用打包的共享渲染资源。生成 JSON 和 HTML 不需要 MiniRacer、Node、PlantUML 或网络渲染器。
 * ``visualize`` 先构造 PlantUML 源码，再调用 ``plantumlcli``；本地渲染可能需要 Java 和 PlantUML jar，远程渲染
   需要可访问的 PlantUML 服务。
 * 大多数成功命令以 ``0`` 退出。有界模型检查还用 ``1``、``3``、``4`` 分别表示有界性质
@@ -229,7 +241,7 @@ SAT 结果都必须经过见证与重放可信门禁。全部选项、颜色行�
      - 必填
      - 取值
      - 含义
-   * - ``-i, --input-code``
+   * - ``-i``
      - 是
      - 路径
      - FCSTM DSL 入口文件。
@@ -280,11 +292,11 @@ SAT 结果都必须经过见证与重放可信门禁。全部选项、颜色行�
      - 默认
      - 取值
      - 含义
-   * - ``-i, --input-code``
+   * - ``-i``
      - 必填
      - 路径
      - FCSTM DSL 入口文件。
-   * - ``-o, --output``
+   * - ``-o``
      - 标准输出
      - 路径
      - 输出文件。后缀不匹配可能产生警告，但不会自动改变格式。
@@ -411,7 +423,7 @@ SAT 结果都必须经过见证与重放可信门禁。全部选项、颜色行�
      - 必填
      - 路径
      - FCSTM DSL 入口文件。
-   * - ``-o, --output``
+   * - ``-o``
      - 标准输出
      - 路径
      - PlantUML 源码输出文件。
@@ -441,6 +453,67 @@ SAT 结果都必须经过见证与重放可信门禁。全部选项、颜色行�
    pyfcstm plantuml -i machine.fcstm -o machine.puml
    pyfcstm plantuml -i machine.fcstm -l full -o machine.full.puml
    pyfcstm plantuml -i machine.fcstm -c show_events=true -c max_depth=2
+
+``diagram``
+-----------
+
+.. code-block:: text
+
+   pyfcstm diagram -i <input-code> [-o <output>] [--format json|html] [--open]
+
+``diagram`` 把 FCSTM 文件转换为可移植 JSON 或自包含 HTML 查看器。不带 ``-o`` 时，
+JSON 写入标准输出；HTML 写到请求路径。使用 ``--open`` 且省略路径时，每次调用写入
+一个全新的临时路径。``--open`` 会阻塞到窗口关闭，随后删除该临时文件，因此不会
+堆积；想保留查看器请用 ``-o`` 指定路径。
+
+命令无法产出的输出后缀属于用法错误：请使用 ``.json`` 或 ``.html``\ ，或用
+``--format`` 显式指定。``--open`` 找不到浏览器时，用 ``-o`` 指定的路径会在报错前
+被打印出来，文件保留供手动打开；不带 ``-o`` 时没有这样的文件——临时文件因为从未被
+打开而被删除，报错信息会提示改用 ``-o PATH``\ 。
+
+.. list-table:: ``diagram`` 选项
+   :header-rows: 1
+
+   * - 选项
+     - 默认
+     - 取值
+     - 含义
+   * - ``-i, --input-code``
+     - 必填
+     - 路径
+     - FCSTM DSL 入口文件。
+   * - ``-o, --output``
+     - JSON 写标准输出
+     - 路径
+     - ``.json`` 或 ``.html`` 目标文件。
+   * - ``--format``
+     - 按后缀推断
+     - ``json``、``html``
+     - 显式指定输出格式。
+   * - ``--open``
+     - 关闭
+     - 标志
+     - 在 Chromium 系应用窗口中打开 HTML 文件。
+   * - ``-h, --help``
+     - 不适用
+     - 标志
+     - 显示命令帮助。
+
+输出和失败事实：
+
+* JSON 是确定性的，并且不包含绝对路径、源码范围或编辑器选择状态。
+* HTML 内嵌查看器、渲染器、resvg WASM 和选定地区字体，不发起网络请求；
+  浏览器内可以下载 SVG、PNG 和矢量 PDF。
+* ``--open`` 需要 Chromium 系浏览器，会阻塞到窗口关闭，随后删除文档——除非该路径
+  由 ``-o`` 指定。没有浏览器、或浏览器启动后未能显示窗口（例如机器上没有显示环境）时，
+  命令报告类型化能力错误，HTML 只在由 ``-o`` 指定时保留；
+  只生成文件时不要使用 ``--open``。
+* 带 ``--open`` 且不带 ``-o`` 时，查看器以 0600 写在一个只有你能进入的目录里，因为它
+  内嵌模型源码；而 ``--format html`` 不带 ``-o`` 会被直接拒绝，因为 HTML 不能写到标准
+  输出。在 Windows 上该目录的私密性依赖 ``%TEMP%`` 按账户隔离（默认如此）：多用户共享的
+  ``TEMP`` 无法检测，且用 python.org 的安装包时目录权限只从 3.12.4 起才被应用。不希望
+  文档落在共享位置时，请用 ``-o`` 指定路径。
+* 无效格式、未知选项、输入不可读、解析/模型错误和打包资源缺失都会以对应错误类别非零退出。
 
 ``visualize``
 -------------

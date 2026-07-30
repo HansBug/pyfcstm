@@ -107,10 +107,11 @@ function requestExport() {
                         quaternary round size="small"
                         :focusable="false"
                         :render-icon="withIcon(DownloadOutline)"
+                        data-fcstm-action="export"
                         @click="requestExport"
                     >Export</n-button>
                 </template>
-                Export diagram (Ctrl/Cmd+S) — choose SVG or PNG in save dialog
+                Export diagram (Ctrl/Cmd+S) — choose SVG, PNG, or PDF
             </n-tooltip>
         </div>
     </div>

@@ -53,12 +53,47 @@ Use ``-l`` for the built-in detail presets:
 
 The option reference explains which facts each preset affects.
 
+Open the offline Python viewer
+------------------------------
+
+The Python ``Diagram`` facade is the browser-based path when you want a
+self-contained HTML file with source/diagram comparison and browser-side SVG,
+PNG, and vector PDF downloads. It does not require PlantUML or Node at runtime.
+
+.. code-block:: python
+
+   from pyfcstm.model import load_state_machine_from_text
+
+   model = load_state_machine_from_text("state Root { state Idle; [*] -> Idle; }")
+   diagram = model.diagram(direction="LR", cjk_locale="sc")
+   data = diagram.to_dict()
+   html = diagram.to_html()
+   output = diagram.show(open_window=False)
+
+The first three values are, respectively, portable data, complete HTML text,
+and a generated ``.html`` path. The HTML file contains the viewer, renderer,
+WASM, and selected fonts, so it remains usable without a network connection.
+Use ``open_window=True`` (the default) only when a Chromium-family browser is
+available. It blocks until you close the window, the way
+``matplotlib.pyplot.show`` does, and then removes the temporary file it wrote —
+pass a path to keep one. Without a browser, or on a machine with no display,
+``show`` raises ``DiagramUnavailableError``; use ``open_window=False`` to create
+the file without opening a window.
+
+The synchronous ``to_svg()``, ``to_png()``, and ``to_pdf()`` methods are typed
+capability probes in this stage and raise ``DiagramUnavailableError``. The
+browser export buttons in the generated HTML are the available three-format
+export path; the optional headless Python runtime is owned by the later delivery
+stage.
+
 Where to go next
 ----------------
 
 * :doc:`/how_to/visualization/index` shows PlantUML source export and direct
-  rendered-file export tasks.
+  rendered-file export tasks, plus the Python Diagram viewer workflow.
 * :doc:`/reference/visualization_options/index` lists ``PlantUMLOptions`` and
-  CLI ``-c`` facts.
+  CLI ``-c`` facts and the Python Diagram option/value contracts.
 * :doc:`/tutorials/quick_start/index` includes visualization in the shortest
   end-to-end path.
+* :doc:`/explanations/visualization/index` explains why the viewer is one
+  self-contained document, why ``--open`` blocks, and who removes what.

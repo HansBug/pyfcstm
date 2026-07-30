@@ -96,7 +96,12 @@ def load_state_machine_from_file(path: Union[str, os.PathLike]) -> StateMachine:
     file_path = os.fspath(path)
     code = auto_decode(pathlib.Path(file_path).read_bytes())
     ast_node = parse_state_machine_dsl(code)
-    return parse_dsl_node_to_state_machine(ast_node, path=file_path)
+    ast_node._source_path = os.path.abspath(file_path)
+    ast_node._source_text = code
+    machine = parse_dsl_node_to_state_machine(ast_node, path=file_path)
+    machine.source_text = code
+    machine.source_path = file_path
+    return machine
 
 
 def load_state_machine_from_text(
@@ -154,4 +159,9 @@ def load_state_machine_from_text(
     """
     effective_path = os.getcwd() if path is None else os.fspath(path)
     ast_node = parse_state_machine_dsl(text)
-    return parse_dsl_node_to_state_machine(ast_node, path=effective_path)
+    ast_node._source_path = "<memory>"
+    ast_node._source_text = text
+    machine = parse_dsl_node_to_state_machine(ast_node, path=effective_path)
+    machine.source_text = text
+    machine.source_path = effective_path
+    return machine

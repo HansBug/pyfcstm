@@ -10,9 +10,12 @@ The module owns the diagram asset boundary:
 * Runtime selection, resource recovery guidance, CJK font registration, and
   timeout/context lifecycle handling are kept in one Python boundary.
 
-This is an internal feasibility surface for the asset closure work. The
-stable ``StateMachine.diagram`` facade and user-facing export commands remain
-follow-up API work.
+This is the internal asset boundary, not the API users reach for. That is
+:class:`pyfcstm.diagram.api.Diagram`, via :meth:`pyfcstm.model.model.StateMachine.diagram`
+and the ``pyfcstm diagram`` command; both are delivered and layered on top of
+this module. Depend on the engine directly only from maintenance tooling, and
+note that it needs the optional MiniRacer runtime that
+``pip install pyfcstm[viz]`` provides.
 
 Example::
 
@@ -36,7 +39,33 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple, Union
 
 
-class DiagramAssetError(RuntimeError):
+class DiagramError(RuntimeError):
+    """
+    Base class for public diagram capability and rendering failures.
+
+    Example::
+
+        >>> raise DiagramError("diagram operation failed")
+        Traceback (most recent call last):
+        ...
+        DiagramError: diagram operation failed
+    """
+
+
+class DiagramUnavailableError(DiagramError):
+    """
+    Report an optional diagram capability that is not installed.
+
+    Example::
+
+        >>> raise DiagramUnavailableError("headless renderer is not installed")
+        Traceback (most recent call last):
+        ...
+        DiagramUnavailableError: headless renderer is not installed
+    """
+
+
+class DiagramAssetError(DiagramError):
     """
     Report a missing, corrupt, or unusable diagram runtime asset.
 
@@ -88,6 +117,19 @@ class DiagramEngineConflictError(DiagramAssetError):
         Traceback (most recent call last):
         ...
         DiagramEngineConflictError: install exactly one runtime
+    """
+
+
+class DiagramEngineLoadError(DiagramAssetError):
+    """
+    Report an installed MiniRacer distribution that cannot be imported.
+
+    Example::
+
+        >>> raise DiagramEngineLoadError("mini-racer ABI failed")
+        Traceback (most recent call last):
+        ...
+        DiagramEngineLoadError: mini-racer ABI failed
     """
 
 
@@ -288,14 +330,73 @@ def _asset_bytes(name: str) -> bytes:
             ) from err
         if not text.strip():
             raise _asset_failure(name, "the JavaScript resource is empty")
-    elif name == "resvg.wasm" and not data.startswith(b"\x00asm"):
-        raise _asset_failure(name, "the resource is not a WebAssembly binary")
+    elif name == "resvg.wasm" and not _valid_wasm_envelope(data):
+        raise _asset_failure(
+            name, "the resource is not a valid WebAssembly binary envelope"
+        )
     elif name.startswith("fonts/") and not _valid_opentype(data):
         raise _asset_failure(
             name,
             "the resource failed OpenType table, bounds, or checksum validation",
         )
     return data
+
+
+def _read_wasm_uleb(data: bytes, offset: int) -> Optional[Tuple[int, int]]:
+    """Read one bounded unsigned LEB128 value from a WASM section stream."""
+    value = 0
+    shift = 0
+    while offset < len(data) and shift <= 63:
+        byte = data[offset]
+        offset += 1
+        value |= (byte & 0x7F) << shift
+        if not byte & 0x80:
+            return value, offset
+        shift += 7
+    return None
+
+
+# Known non-custom section ids in the order the WebAssembly binary format
+# requires them to appear. DataCount (12) is placed between Element (9) and
+# Code (10), so the stream position is not the same as the numeric id.
+_WASM_SECTION_POSITIONS = {
+    section_id: position
+    for position, section_id in enumerate(
+        (1, 2, 3, 4, 5, 6, 7, 8, 9, 12, 10, 11), start=1
+    )
+}
+
+
+def _valid_wasm_envelope(data: bytes) -> bool:
+    """Check the ordered section envelope before a browser compiles WASM."""
+    if len(data) < 8 or data[:4] != b"\x00asm" or data[4:8] != b"\x01\x00\x00\x00":
+        return False
+    offset = 8
+    last_position = 0
+    seen = set()
+    required = {1, 3, 7, 10}
+    while offset < len(data):
+        section_id = data[offset]
+        offset += 1
+        parsed = _read_wasm_uleb(data, offset)
+        if parsed is None:
+            return False
+        section_size, offset = parsed
+        end = offset + section_size
+        if end > len(data):
+            return False
+        if section_id == 0:
+            offset = end
+            continue
+        position = _WASM_SECTION_POSITIONS.get(section_id)
+        if position is None or position <= last_position:
+            return False
+        seen.add(section_id)
+        last_position = position
+        if section_id == 10 and section_size == 0:
+            return False
+        offset = end
+    return offset == len(data) and required.issubset(seen)
 
 
 def _valid_opentype(data: bytes) -> bool:
@@ -408,8 +509,10 @@ class DiagramAssetEngine:
 
     Example::
 
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> model = load_state_machine_from_text('state Root { state A; [*] -> A; }')
         >>> engine = DiagramAssetEngine()
-        >>> svg = engine.render_svg({"diagram": diagram_data})
+        >>> svg = engine.render_svg({"diagram": model.diagram().to_dict()})
         >>> svg.startswith("<svg")
         True
     """
@@ -475,9 +578,9 @@ class DiagramAssetEngine:
 
     def _create_context(self) -> Any:
         """Create the Python-version-appropriate MiniRacer context."""
-        if self._distribution_installed("mini-racer") and self._distribution_installed(
-            "py-mini-racer"
-        ):
+        modern_installed = self._distribution_installed("mini-racer")
+        legacy_installed = self._distribution_installed("py-mini-racer")
+        if modern_installed and legacy_installed:
             modern_version = self._distribution_version("mini-racer") or "unknown"
             legacy_version = self._distribution_version("py-mini-racer") or "unknown"
             raise DiagramEngineConflictError(
@@ -485,16 +588,32 @@ class DiagramAssetEngine:
                 "install exactly one runtime for this Python version"
                 % (modern_version, legacy_version)
             )
+        if not modern_installed and not legacy_installed:
+            raise DiagramUnavailableError(
+                "no supported MiniRacer distribution is installed; run "
+                "`pip install pyfcstm[viz]` to add the headless rendering runtime"
+            )
+        selected = "mini-racer" if modern_installed else "py-mini-racer"
+        selected_version = self._distribution_version(selected) or "unknown"
         try:
             from py_mini_racer import MiniRacer
-        except ImportError as top_level_error:
+        except ImportError:
             # Legacy py-mini-racer exports MiniRacer from this submodule.
             try:
                 from py_mini_racer.py_mini_racer import MiniRacer
-            except ImportError:
-                # Preserve a modern package's native import/ABI failure when
-                # neither supported export shape is available.
-                raise top_level_error
+            except (ImportError, OSError) as legacy_error:
+                # ImportError/OSError: the selected distribution is installed
+                # but its Python export or native ABI cannot be loaded.
+                raise DiagramEngineLoadError(
+                    "%s %s is installed but could not be loaded: %s"
+                    % (selected, selected_version, legacy_error)
+                ) from legacy_error
+        except OSError as top_level_error:
+            # OSError: the selected native MiniRacer extension failed to load.
+            raise DiagramEngineLoadError(
+                "%s %s is installed but could not be loaded: %s"
+                % (selected, selected_version, top_level_error)
+            ) from top_level_error
         try:
             from py_mini_racer import (
                 JSEvalException,
@@ -502,15 +621,24 @@ class DiagramAssetEngine:
                 JSParseException,
                 JSTimeoutException,
             )
-        except ImportError:
-            # py-mini-racer 0.6 keeps these exception classes in its legacy
-            # module; modern mini-racer exports them at package top level.
-            from py_mini_racer.py_mini_racer import (
-                JSEvalException,
-                JSOOMException,
-                JSParseException,
-                JSTimeoutException,
-            )
+        except (ImportError, OSError):
+            # ImportError/OSError: py-mini-racer 0.6 keeps these exception
+            # classes in its legacy module; modern mini-racer exports them at
+            # package top level, but a native import can still fail.
+            try:
+                from py_mini_racer.py_mini_racer import (
+                    JSEvalException,
+                    JSOOMException,
+                    JSParseException,
+                    JSTimeoutException,
+                )
+            except (ImportError, OSError) as legacy_error:
+                # ImportError/OSError: the selected distribution lacks the
+                # expected exception exports or native module dependency.
+                raise DiagramEngineLoadError(
+                    "%s %s exception exports could not be loaded: %s"
+                    % (selected, selected_version, legacy_error)
+                ) from legacy_error
         self._interrupt_errors = (JSTimeoutException, JSOOMException)
         self._asset_eval_errors = (JSEvalException, JSParseException)
         self._timeout_uses_seconds = (
@@ -722,8 +850,11 @@ class DiagramAssetEngine:
 
         Example::
 
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('state Root { state A; [*] -> A; }')
+            >>> request = {"diagram": model.diagram().to_dict()}
             >>> engine = DiagramAssetEngine()
-            >>> svg = engine.render_svg(diagram_data)
+            >>> svg = engine.render_svg(request)
             >>> svg.startswith("<svg")
             True
         """
@@ -897,7 +1028,11 @@ class DiagramAssetEngine:
 
         Example::
 
-            >>> png = engine.render_png(diagram_data, scale=2.0)
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('state Root { state A; [*] -> A; }')
+            >>> request = {"diagram": model.diagram().to_dict()}
+            >>> engine = DiagramAssetEngine()
+            >>> png = engine.render_png(request, scale=2.0)
             >>> png.startswith(b"\\x89PNG")
             True
         """
@@ -954,7 +1089,11 @@ class DiagramAssetEngine:
 
         Example::
 
-            >>> expanded = engine.expand_svg(diagram_data)
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('state Root { state A; [*] -> A; }')
+            >>> request = {"diagram": model.diagram().to_dict()}
+            >>> engine = DiagramAssetEngine()
+            >>> expanded = engine.expand_svg(request)
             >>> "<path" in expanded
             True
         """

@@ -17,6 +17,7 @@ import hashlib
 from http.client import IncompleteRead
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -32,9 +33,12 @@ ROOT = Path(__file__).resolve().parent.parent
 ASSET_DIR = ROOT / "pyfcstm" / "diagram" / "assets"
 LOCK_PATH = ROOT / "tools" / "diagram_assets" / "asset-lock.json"
 ENTRY_PATH = ROOT / "tools" / "diagram_assets" / "python-renderer-entry.ts"
+VIEWER_BUILD_PATH = ROOT / "tools" / "diagram_assets" / "build_viewer.js"
 BRIDGE_PATH = ROOT / "tools" / "diagram_assets" / "resvg-bridge.js"
 HOST_SHIM_PATH = ROOT / "tools" / "diagram_assets" / "host-shim.js"
 JSFCSTM_DIR = ROOT / "editors" / "jsfcstm"
+VSCODE_DIR = ROOT / "editors" / "vscode"
+ANTLR_JAR_PATH = ROOT / "antlr-4.9.3.jar"
 JSFCSTM_LOCK_PATH = JSFCSTM_DIR / "package-lock.json"
 ELK_PACKAGE_DIR = JSFCSTM_DIR / "node_modules" / "elkjs"
 ELK_API_PATH = JSFCSTM_DIR / "node_modules" / "elkjs" / "lib" / "elk-api.js"
@@ -48,6 +52,7 @@ ASSET_MARKERS = {
     "LICENSE-MPL-2.0.txt",
     "LICENSE-EPL-2.0.txt",
     "LICENSE-OFL-1.1.txt",
+    "LICENSE-MIT.txt",
 }
 _DOWNLOAD_ATTEMPTS = 3
 _DOWNLOAD_BACKOFF_SECONDS = 1.0
@@ -59,7 +64,7 @@ def _node_command(name: str) -> str:
     # Windows exposes npm/npx through ``.cmd`` shims. ``shell=False`` (the
     # required safe subprocess mode) does not resolve those shims by their
     # extensionless names on all supported Python versions.
-    return name + ".cmd" if os.name == "nt" else name
+    return name + ".cmd" if os.name == "nt" and name in ("npm", "npx") else name
 
 
 def sha256_bytes(data: bytes) -> str:
@@ -211,6 +216,78 @@ def ensure_js_dependencies() -> None:
         )
 
 
+def ensure_viewer_dependencies() -> None:
+    """Build the local jsfcstm package and install viewer build dependencies.
+
+    The Python diagram asset job starts from a clean checkout and does not run
+    the VSCode extension packaging job first.  The standalone viewer reuses
+    Vue components from that extension, so the asset target owns this small
+    build-time installation.  ``--package-lock=false`` keeps generated local
+    file-package metadata out of the source tree; the tracked lock remains the
+    provenance record for published extension builds.
+
+    :return: ``None``.
+    :rtype: None
+    :raises subprocess.CalledProcessError: If the JS package or dependency install fails.
+    :raises FileNotFoundError: If the expected viewer package files are absent.
+    """
+    local_tarball = JSFCSTM_DIR / "jsfcstm.tgz"
+    if not local_tarball.is_file() or not (JSFCSTM_DIR / "dist").is_dir():
+        if not ANTLR_JAR_PATH.is_file():
+            # The JS parser build only needs the jar. The aggregate ``antlr``
+            # target also rewrites tracked Python requirement files, which
+            # would make release artifacts appear dirty on Windows.
+            subprocess.run(["make", "antlr-4.9.3.jar"], cwd=str(ROOT), check=True)
+        subprocess.run(
+            [_node_command("npm"), "run", "build"], cwd=str(JSFCSTM_DIR), check=True
+        )
+        subprocess.run(
+            [_node_command("npm"), "run", "pack:local"],
+            cwd=str(JSFCSTM_DIR),
+            check=True,
+        )
+    # The exporter packages live in jsfcstm and the Vue build chain lives in
+    # vscode, so each directory has to be repaired in its own tree.
+    required_by_directory = (
+        (
+            JSFCSTM_DIR,
+            (
+                JSFCSTM_DIR / "node_modules" / "jspdf",
+                JSFCSTM_DIR / "node_modules" / "svg2pdf.js",
+            ),
+        ),
+        (
+            VSCODE_DIR,
+            (
+                VSCODE_DIR / "node_modules" / "vue" / "compiler-sfc",
+                VSCODE_DIR / "node_modules" / "unplugin-vue",
+                VSCODE_DIR / "node_modules" / "esbuild",
+            ),
+        ),
+    )
+    for directory, required in required_by_directory:
+        if all(path.exists() for path in required):
+            continue
+        subprocess.run(
+            [
+                _node_command("npm"),
+                "install",
+                "--ignore-scripts",
+                "--package-lock=false",
+                "--no-audit",
+                "--no-fund",
+            ],
+            cwd=str(directory),
+            check=True,
+        )
+        missing = [str(path) for path in required if not path.exists()]
+        if missing:
+            raise FileNotFoundError(
+                "viewer dependency installation omitted: %s; run `npm install` in %s"
+                % (", ".join(missing), directory)
+            )
+
+
 def elk_tree_sha256() -> str:
     """Return a deterministic digest of every installed ELK package file."""
     if not ELK_PACKAGE_DIR.is_dir():
@@ -263,6 +340,96 @@ def validate_esbuild_provenance(lock: Dict[str, object]) -> None:
         raise ValueError("installed esbuild version differs from asset lock")
     if not package.get("resolved") or not package.get("integrity"):
         raise ValueError("jsfcstm esbuild entry lacks resolved/integrity provenance")
+
+
+def validate_viewer_provenance(lock: Dict[str, object]) -> None:
+    """Require the locked viewer PDF exporter and esbuild metadata."""
+    viewer = lock.get("viewer")
+    if not isinstance(viewer, dict):
+        raise ValueError("diagram asset lock lacks viewer provenance")
+    exporter = viewer.get("svg2pdf")
+    if not isinstance(exporter, dict):
+        raise ValueError("viewer lock lacks svg2pdf provenance")
+    expected_version = exporter.get("version")
+    if not isinstance(expected_version, str) or not expected_version:
+        raise ValueError("viewer lock lacks svg2pdf version")
+    try:
+        package_lock = json.loads(JSFCSTM_LOCK_PATH.read_text(encoding="utf-8"))
+        root_package = package_lock["packages"][""]
+        package = package_lock["packages"]["node_modules/svg2pdf.js"]
+    except (KeyError, OSError, TypeError, ValueError) as err:
+        # KeyError/TypeError/ValueError: the tracked viewer lock has no valid
+        # exporter entry; OSError: the lock file cannot be read.
+        raise ValueError("jsfcstm package-lock lacks a valid svg2pdf.js entry") from err
+    dev_dependencies = root_package.get("devDependencies")
+    if (
+        not isinstance(dev_dependencies, dict)
+        or dev_dependencies.get("svg2pdf.js") != expected_version
+    ):
+        raise ValueError("jsfcstm svg2pdf.js devDependency differs from asset lock")
+    if package.get("version") != expected_version:
+        raise ValueError("installed svg2pdf.js version differs from asset lock")
+    if package.get("resolved") != exporter.get("resolved") or package.get(
+        "integrity"
+    ) != exporter.get("integrity"):
+        raise ValueError("svg2pdf.js lock provenance differs from package-lock")
+    if package.get("license") != exporter.get("license"):
+        raise ValueError("svg2pdf.js license differs from asset lock")
+    installed = JSFCSTM_DIR / "node_modules" / "svg2pdf.js" / "package.json"
+    if not installed.is_file():
+        raise FileNotFoundError("installed svg2pdf.js package is missing")
+    installed_package = json.loads(installed.read_text(encoding="utf-8"))
+    if installed_package.get("version") != expected_version:
+        raise ValueError("installed svg2pdf.js package version differs from asset lock")
+    public_entry = JSFCSTM_DIR / "dist" / "diagram" / "index.js"
+    if not public_entry.is_file():
+        raise FileNotFoundError("jsfcstm public diagram entry is missing")
+    leaking = _pdf_dependency_importers(public_entry)
+    if leaking:
+        raise ValueError(
+            "PDF build dependencies leaked into the jsfcstm public diagram entry via %s"
+            % ", ".join(leaking)
+        )
+
+
+def _pdf_dependency_importers(entry: Path) -> List[str]:
+    """List reachable modules that pull a PDF package into a public entry.
+
+    A direct ``require`` in the entry file is only the simplest leak. Adding one
+    re-export line is enough to reach the exporter module indirectly, so the
+    whole local require graph below the entry has to be inspected.
+    """
+    pdf_require = re.compile(r"require\(\s*[\"'](jspdf|svg2pdf\.js)[\"']")
+    local_require = re.compile(r"require\(\s*[\"'](\.[^\"']*)[\"']")
+    pending = [entry.resolve()]
+    visited = set()
+    leaking = []
+    while pending:
+        module = pending.pop()
+        if module in visited or not module.is_file():
+            continue
+        visited.add(module)
+        text = module.read_text(encoding="utf-8")
+        if pdf_require.search(text):
+            try:
+                label = str(module.relative_to(JSFCSTM_DIR))
+            except ValueError:
+                # The require graph left the package; report the absolute path
+                # instead of failing the gate on a path arithmetic error.
+                label = str(module)
+            leaking.append(label)
+        for relative in local_require.findall(text):
+            target = (module.parent / relative).resolve()
+            for candidate in (
+                target if target.suffix == ".js" else target.with_suffix(".js"),
+                # ``./pdf.shim`` resolves to ``pdf.shim.js``, not ``pdf.js``.
+                target.with_name(target.name + ".js"),
+                target / "index.js",
+            ):
+                if candidate.is_file():
+                    pending.append(candidate)
+                    break
+    return sorted(leaking)
 
 
 def validate_elk_provenance(lock: Dict[str, object]) -> None:
@@ -420,6 +587,61 @@ def build_renderer(
     return output.read_bytes(), _canonicalize_metafile(metadata)
 
 
+def build_viewer(output_dir: Path) -> Tuple[bytes, bytes, Dict[str, object]]:
+    """Build the standalone Vue viewer that reuses the VSCode preview components."""
+    try:
+        subprocess.run(
+            [_node_command("node"), str(VIEWER_BUILD_PATH), str(output_dir)],
+            cwd=str(ROOT),
+            check=True,
+        )
+    except OSError as err:
+        # OSError: Node is unavailable, so the browser asset cannot be built.
+        raise RuntimeError(
+            "Node.js is required to build the standalone diagram viewer"
+        ) from err
+    viewer_path = output_dir / "viewer.js"
+    css_path = output_dir / "viewer.css"
+    meta_path = output_dir / "viewer.meta.json"
+    if not viewer_path.is_file() or not css_path.is_file():
+        raise FileNotFoundError(
+            "standalone viewer build did not produce viewer.js/viewer.css"
+        )
+    metadata = (
+        json.loads(meta_path.read_text(encoding="utf-8")) if meta_path.is_file() else {}
+    )
+    inputs = metadata.get("inputs", {})
+    forbidden = ("canvg", "html2canvas", "fast-png", "dompurify")
+    if isinstance(inputs, dict):
+        bundled_forbidden = sorted(
+            path
+            for path in inputs
+            if any(
+                "/node_modules/%s/" % name in str(path).replace("\\", "/")
+                for name in forbidden
+            )
+        )
+        if bundled_forbidden:
+            raise ValueError(
+                "standalone viewer bundles forbidden raster dependencies: %s"
+                % ", ".join(bundled_forbidden)
+            )
+    viewer = viewer_path.read_bytes()
+    forbidden_bytes = tuple(name.encode("ascii") for name in forbidden)
+    bundled_forbidden_bytes = sorted(
+        name for name, marker in zip(forbidden, forbidden_bytes) if marker in viewer
+    )
+    if bundled_forbidden_bytes:
+        raise ValueError(
+            "standalone viewer output contains forbidden raster dependency names: %s"
+            % ", ".join(bundled_forbidden_bytes)
+        )
+    # Vue devtools metadata is not needed in a packaged offline viewer and
+    # may otherwise leak the maintainer's checkout path into every HTML file.
+    viewer = re.sub(rb"__file\",\"[^\"]+\"", b'__file",""', viewer)
+    return viewer, css_path.read_bytes(), _canonicalize_metafile(metadata)
+
+
 def _canonicalize_metafile(metadata: Dict[str, object]) -> Dict[str, object]:
     """Remove random staging paths from esbuild metafile output keys."""
     outputs = metadata.get("outputs")
@@ -484,6 +706,37 @@ def _check_clean_symlink_safety() -> None:
             ASSET_DIR = original
         if victim.read_text(encoding="ascii") != "must survive":
             raise AssertionError("cleanup touched a path outside the asset root")
+
+
+def _check_pdf_leak_scanner() -> None:
+    """Verify the public-entry leak scanner sees indirect PDF imports."""
+    with tempfile.TemporaryDirectory(prefix="pyfcstm-leak-check-") as temp_dir:
+        root = Path(temp_dir)
+        entry = root / "index.js"
+        (root / "nested").mkdir()
+        cases = (
+            ('var a = require("./clean");\n', False),
+            ('var a = require("jspdf");\n', True),
+            ('var a = require("./nested/hop");\n', True),
+            ('var a = require("./pdf.shim");\n', True),
+        )
+        (root / "clean.js").write_text("module.exports = {};\n", encoding="utf-8")
+        (root / "nested" / "hop.js").write_text(
+            'var b = require("../leaky");\n', encoding="utf-8"
+        )
+        (root / "leaky.js").write_text(
+            'var c = require("svg2pdf.js");\n', encoding="utf-8"
+        )
+        (root / "pdf.shim.js").write_text(
+            'var d = require("jspdf");\n', encoding="utf-8"
+        )
+        for source, should_leak in cases:
+            entry.write_text(source, encoding="utf-8")
+            found = bool(_pdf_dependency_importers(entry))
+            if found != should_leak:
+                raise AssertionError(
+                    "PDF leak scanner returned %s for %r" % (found, source.strip())
+                )
 
 
 def font_specs(lock: Dict[str, object]) -> List[Dict[str, object]]:
@@ -627,6 +880,7 @@ def build_manifest(
     manifest = {
         "schema": "pyfcstm-diagram-assets/1",
         "renderer": lock["renderer"],
+        "viewer": lock["viewer"],
         "files": entries,
         "esbuild": {
             "version": esbuild_version,
@@ -803,7 +1057,9 @@ def build_assets() -> None:
     if not esbuild_version:
         raise ValueError("renderer lock must pin esbuildVersion")
     ensure_js_dependencies()
+    ensure_viewer_dependencies()
     validate_esbuild_provenance(lock)
+    validate_viewer_provenance(lock)
     validate_elk_provenance(lock)
     resvg_package = validate_resvg_provenance(lock)
     with tempfile.TemporaryDirectory(
@@ -812,6 +1068,10 @@ def build_assets() -> None:
         temporary_root = Path(temporary)
         renderer_path = temporary_root / "renderer-core.js"
         renderer, metafile = build_renderer(renderer_path, esbuild_version)
+        viewer_dir = temporary_root / "viewer-build"
+        viewer_dir.mkdir()
+        viewer, viewer_css, viewer_metafile = build_viewer(viewer_dir)
+        metafile["viewer"] = viewer_metafile
         bundle = load_local_locked_file(
             RESVG_PACKAGE_DIR / str(resvg_package["bindingPath"]),
             str(resvg_package["bindingSha256"]),
@@ -833,6 +1093,8 @@ def build_assets() -> None:
             ("resvg.wasm", wasm),
             ("resvg-bridge.js", bridge),
             ("host-shim.js", host_shim),
+            ("viewer.js", viewer),
+            ("viewer.css", viewer_css),
             *fonts,
         ]
         manifest = build_manifest(lock, files, metafile, esbuild_version)
@@ -888,6 +1150,7 @@ def main(argv=None) -> int:
         _check_metafile_determinism()
         validate_esbuild_provenance(read_lock())
         _check_clean_symlink_safety()
+        _check_pdf_leak_scanner()
         _check_font_path_safety()
         _check_download_retry()
         print("diagram asset builder: deterministic and safety self-check passed")

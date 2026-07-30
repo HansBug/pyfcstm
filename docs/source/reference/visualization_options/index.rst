@@ -770,6 +770,108 @@ Python API examples:
        custom_colors={'System.Start': '#00AA00'},
    )
 
+Python Diagram API and browser viewer
+--------------------------------------
+
+The browser viewer is a separate public path from the PlantUML options above.
+It consumes the parsed model directly and writes portable JSON or a
+self-contained HTML file.
+
+.. list-table:: Python Diagram public values
+   :header-rows: 1
+
+   * - Value
+     - Accepted values or default
+     - Behavior
+   * - ``DiagramOptions.detail_level``
+     - ``minimal``, ``normal`` (default), ``full``
+     - Selects the renderer's detail preset. ``minimal`` renders transition effects
+       inline and moves events to a legend; ``normal`` uses effect notes and shows
+       events on both. ``full`` currently renders the same diagram as ``normal``:
+       the two differ only in ``showStateActions``, and the browser renderer
+       deliberately keeps leaf-state detail out of the diagram in favour of the
+       details panel, which lists actions regardless of the preset.
+   * - ``DiagramOptions.direction``
+     - ``TB`` (default) or ``LR``
+     - Chooses top-to-bottom or left-to-right layout.
+   * - ``DiagramOptions.palette``
+     - ``default``, ``nord``, ``solarized``, ``darcula``, or ``None``
+     - Selects the viewer palette.
+   * - ``DiagramOptions.mode``
+     - ``light``, ``dark``, ``auto``, or ``None``
+     - Selects the initial color mode.
+   * - ``DiagramOptions.cjk_locale``
+     - ``sc``, ``tc``, ``hk``, ``jp``, or ``kr`` (default ``sc``)
+     - Embeds the matching CJK font pair in the HTML file.
+   * - ``DiagramViewState.mode``
+     - ``compare`` (default), ``fcstm``, or ``diagram``
+     - Selects the source-only, diagram-only, or linked split view.
+   * - ``DiagramViewState.zoom``
+     - Finite positive number or ``None`` (default ``None``)
+     - Sets the initial diagram zoom; boolean, zero, negative, NaN, and infinity values fail.
+       ``None`` leaves the framing to the viewer, which fits the whole diagram to the viewport.
+   * - ``DiagramViewState.pan_x`` / ``pan_y``
+     - Finite numbers or ``None`` (default ``None``)
+     - Sets the initial diagram translation. ``None`` defers to the fitted framing; when any one
+       of ``zoom`` / ``pan_x`` / ``pan_y`` is set, the remaining ``None`` fields fall back to
+       ``1.0`` and ``0.0`` so an explicit request is honoured exactly.
+
+``model.diagram(...)`` returns an immutable ``Diagram`` snapshot. Its
+``to_dict()`` and ``to_json()`` results omit absolute paths, source ranges, and
+editor selection state. ``to_html()`` returns one complete HTML string;
+``save("name.json")`` and ``save("name.html")`` use atomic replacement: an
+interrupted save leaves the file that was already there, with its content and
+permissions intact. A file being replaced keeps the permissions it had, and a new
+one gets what your umask gives any other new file in that directory — so a umask
+that clears the write bit produces a read-only result which ``save()`` can still
+replace, because it is yours. A file belonging to another user that you cannot
+write is refused instead, and on Windows so is one marked read-only. The
+HTML path is also returned by ``Diagram.show()`` and ``StateMachine.show()``.
+With a window and no explicit path, ``show()`` blocks until the window is closed
+and then removes the document it wrote, so the returned path no longer exists —
+pass an explicit path for a viewer you want to keep. Without a window and without
+a path, nothing removes it. Either way the file is written 0600 inside a directory
+of your own that no other local user may look into, because a viewer carries the
+model's source: a name derived from the document, and the exact size of a ~29 MB
+document, each identify which diagram it is to anyone able to list them. Asking
+again for the same diagram returns the same file rather than another copy. That
+reuse follows the directory rather than the process: another process of yours that
+resolves the same one is handed the same path, and a forked child inherits it — so
+the file is shared for removal too, and a peer's cleanup of what it was handed
+removes yours. Where that directory turns out to belong to somebody else or to be
+open to them, each resolution makes its own instead and says so in a warning, which
+two independent processes do separately and a forked child does not. Pass an
+explicit path for a document only you may remove. On Windows this rests on
+``%TEMP%`` being per account, which is the default; a ``TEMP`` shared between
+users is not detectable, and with an installer from python.org the directory's mode
+is applied only from 3.12.4 onwards — pass a path of your own for a document that
+must not be somewhere shared.
+
+The HTML viewer can download SVG, PNG, and vector PDF in a browser. The Python
+methods ``to_svg()``, ``to_png()``, and ``to_pdf()`` intentionally raise
+``DiagramUnavailableError`` until the later headless delivery stage. Calling
+``show()`` without a Chromium-family browser raises the same typed capability
+error after the HTML file has been written; ``show(open_window=False)`` avoids
+the browser requirement.
+
+The HTML viewer needs nothing beyond a browser. ``DiagramAssetEngine``'s
+headless rendering does need the optional MiniRacer runtime, which
+``pip install pyfcstm[viz]`` provides; without it the engine raises
+``DiagramUnavailableError`` naming that command. Installing the extra does not
+enable ``to_svg()`` / ``to_png()`` / ``to_pdf()`` — those wait for the headless
+delivery stage regardless.
+
+Unknown option fields, duplicate snake/camel aliases, invalid enum values, and
+invalid numeric values raise ``ValueError``; a ``collapsed_state_ids`` that is
+not a sequence of ID strings raises ``TypeError``, including the common mistake
+of passing one ID as a bare string.
+
+``with_options`` and ``with_view_state`` treat their keyword form as a partial
+update: fields that are not named keep their current value. Passing a value
+positionally replaces the whole object instead. Missing or unusable packaged
+viewer/WASM/font assets raise ``DiagramAssetError`` with development recovery
+guidance (``make build_assets``) or the project issue URL for installed packages.
+
 Renderer and file options
 -------------------------
 
@@ -861,3 +963,10 @@ Behavior boundaries
      - ``plantuml`` never renders an image and never checks renderer availability.
    * - ``rendered-image-visualize``
      - ``visualize`` always goes through PlantUML source first, then renders the requested artifact type.
+
+Why these boundaries exist
+--------------------------
+
+This page states the facts; :doc:`/explanations/visualization/index` explains the
+reasoning behind the viewer ones -- the self-contained document, the blocking window,
+the directory-level privacy boundary, and the reclaim at exit.

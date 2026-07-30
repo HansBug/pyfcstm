@@ -13,18 +13,26 @@ import {getElk} from '../composables/useElk';
 import {decidePreviewPointerAction, PREVIEW_DRAG_THRESHOLD_PX} from '../interaction';
 import {computePreviewFit} from '../layout';
 import type {PreviewWebviewState, SelectionRef, TextRange, PreviewElkNode, PreviewPayload} from '../types';
-import {jsPDF} from 'jspdf';
+import {
+    expandSvgForExport,
+    RASTER_MAX_SIDE,
+    rasterScaleWithinLimits,
+    renderVectorPdf,
+    type SvgExpander,
+} from '../../../../jsfcstm/src/diagram/export';
 
 const props = defineProps<{
     state: PreviewWebviewState;
     selection: SelectionRef;
+    hover: SelectionRef;
     palette: PaletteId;
     mode: PaletteMode;
 }>();
 const emit = defineEmits<{
     (e: 'select', sel: SelectionRef): void;
+    (e: 'hover', sel: SelectionRef): void;
     (e: 'toggleCollapse', id: string): void;
-    (e: 'revealSource', range: TextRange): void;
+    (e: 'revealSource', range: TextRange, target: SelectionRef): void;
 }>();
 
 const viewportRef = ref<HTMLDivElement | null>(null);
@@ -54,6 +62,30 @@ let dragMovedPx = 0;
 let lastLaidOut: PreviewElkNode | null = null;
 let lastLaidOutOptions: PreviewPayload['options'] | null = null;
 let lastLaidOutSourceRef: unknown = null;
+
+// Classes that only a defect in this code produces. Every standard error type
+// derives from Error, so an `instanceof Error` guard is a bare catch: it turned
+// a renderer bug into "Layout failed: x is not a function", blaming the user's
+// model for a mistake of ours. These are re-raised so the host still sees them.
+// RangeError is deliberately absent: elkjs is GWT-compiled and reports a
+// deeply nested graph as "Maximum call stack size exceeded", which is a
+// property of the user's model rather than a defect here, and that case should
+// stay a recoverable "Layout failed" panel.
+const RENDERER_BUG_TYPES = [TypeError, ReferenceError, SyntaxError, EvalError, URIError];
+
+/**
+ * Message for a failure this component is expected to recover from.
+ *
+ * DOMException covers the documented failure modes of DOMParser, the canvas,
+ * and the Clipboard API; plain Error covers ELK, svg2pdf, and the guards this
+ * component throws itself. Anything else propagates.
+ */
+function expectedErrorMessage(error: unknown): string {
+    if (RENDERER_BUG_TYPES.some(type => error instanceof type)) throw error;
+    if (typeof DOMException !== 'undefined' && error instanceof DOMException) return error.message;
+    if (error instanceof Error) return error.message;
+    throw error;
+}
 
 function setTransform(tx: number, ty: number, scale: number) {
     const next = Math.max(0.1, Math.min(8, scale));
@@ -169,11 +201,28 @@ async function relayout() {
         isEmpty.value = false;
         await nextTick();
         applySelection();
-        fitToView();
+        const initialView = props.state.standaloneViewState;
+        // An all-null transform means the producer expressed no preference, so
+        // the document opens showing the whole diagram; applying 100% / no pan
+        // literally clips every graph taller than the stage on first paint. The
+        // nulls come from the producer rather than being inferred from the
+        // values, so an explicit 100% at the origin stays requestable.
+        const requestedTransform = Boolean(initialView) && (
+            initialView.zoom !== null || initialView.panX !== null || initialView.panY !== null
+        );
+        if (props.state.standalone && requestedTransform) {
+            setTransform(initialView.panX ?? 0, initialView.panY ?? 0, initialView.zoom ?? 1);
+        } else {
+            fitToView();
+        }
     } catch (err) {
+        // ELK and the SVG DOM report layout problems as Error/DOMException;
+        // a TypeError here would be our bug, so the helper re-raises it rather
+        // than presenting it as a problem with the model.
+        const message = expectedErrorMessage(err);
         isEmpty.value = true;
         emptyTitle.value = 'Layout failed';
-        emptyMessage.value = (err as Error)?.message || String(err);
+        emptyMessage.value = message;
     }
 }
 
@@ -238,6 +287,25 @@ function applySelection() {
     }
 }
 
+function applyHover() {
+    if (!innerRef.value) return;
+    for (const el of innerRef.value.querySelectorAll('.fcstm-source-hover')) {
+        el.classList.remove('fcstm-source-hover');
+    }
+    const hover = props.hover;
+    if (!hover) return;
+    for (const el of innerRef.value.querySelectorAll('[data-fcstm-kind][data-fcstm-id]')) {
+        const kind = el.getAttribute('data-fcstm-kind');
+        const id = el.getAttribute('data-fcstm-id');
+        if (id !== hover.id) continue;
+        if (hover.kind === 'transition') {
+            if (kind === 'transition' || kind === 'transition-label') el.classList.add('fcstm-source-hover');
+        } else if (kind !== 'chevron') {
+            el.classList.add('fcstm-source-hover');
+        }
+    }
+}
+
 function relatedElementsForId(targetId: string): Element[] {
     if (!innerRef.value) return [];
     const nodes = innerRef.value.querySelectorAll(
@@ -256,9 +324,18 @@ function onMouseOver(ev: MouseEvent) {
     const el = (ev.target as HTMLElement)?.closest?.('[data-fcstm-kind][data-fcstm-id]');
     if (!el) return;
     const kind = el.getAttribute('data-fcstm-kind');
-    if (kind !== 'transition' && kind !== 'transition-label') return;
+    if (kind !== 'transition' && kind !== 'transition-label') {
+        const stateId = el.getAttribute('data-fcstm-id');
+        if (stateId && (kind === 'state' || kind === 'chevron')) {
+            emit('hover', {kind: 'state', id: stateId});
+        } else {
+            emit('hover', null);
+        }
+        return;
+    }
     const id = el.getAttribute('data-fcstm-id');
     if (!id) return;
+    emit('hover', {kind: 'transition', id});
     clearHover();
     for (const r of relatedElementsForId(id)) r.classList.add('fcstm-related-hover');
 }
@@ -268,6 +345,7 @@ function onMouseOut(ev: MouseEvent) {
         const kind = to.getAttribute('data-fcstm-kind');
         if (kind === 'transition' || kind === 'transition-label') return;
     }
+    emit('hover', null);
     clearHover();
 }
 
@@ -310,7 +388,13 @@ function onClick(ev: MouseEvent) {
         return;
     }
     if (action.type === 'revealSource' && range) {
-        emit('revealSource', range);
+        // The element is known here. Letting the host resolve the range back to
+        // an element picks whichever one in *any* source document has the
+        // smallest range covering that line, which selects the wrong thing in a
+        // model assembled from several files.
+        const id = target?.getAttribute('data-fcstm-id') || '';
+        const isTransition = kind === 'transition' || kind === 'transition-label';
+        emit('revealSource', range, id ? {kind: isTransition ? 'transition' : 'state', id} : null);
         return;
     }
     if (action.type === 'select' && target) {
@@ -354,8 +438,8 @@ function onActualEvt() { actualSize(); }
  * same draw order. Returns a Blob so callers can convert to whatever
  * transport they need.
  */
-async function rasterizeCurrentSvg(scale: number): Promise<{blob: Blob; width: number; height: number}> {
-    const svgBlob = new Blob([svgString], {type: 'image/svg+xml;charset=utf-8'});
+async function rasterizeSvg(svg: string, scale: number): Promise<{blob: Blob; width: number; height: number}> {
+    const svgBlob = new Blob([svg], {type: 'image/svg+xml;charset=utf-8'});
     const url = URL.createObjectURL(svgBlob);
     try {
         const img = new Image();
@@ -364,8 +448,28 @@ async function rasterizeCurrentSvg(scale: number): Promise<{blob: Blob; width: n
             img.onerror = (e) => reject(e);
             img.src = url;
         });
-        const width = Math.max(1, Math.ceil(svgBounds.value.width * scale));
-        const height = Math.max(1, Math.ceil(svgBounds.value.height * scale));
+        // Clamped to what a browser will actually rasterise. Past its side
+        // limit `toBlob` returns null with no error, which used to leave a tall
+        // diagram with no PNG — and, through the all-or-nothing export below,
+        // no SVG or PDF either.
+        const fit = rasterScaleWithinLimits(
+            svgBounds.value.width,
+            svgBounds.value.height,
+            scale,
+        );
+        // Clamped after rounding, not just after scaling. `ceil(h * (CAP / h))`
+        // lands one pixel past CAP for about a tenth of integer heights, and the
+        // two ceils together can push the product past the area cap — which the
+        // browser enforces exactly, so the PNG is lost. The PDF page had the
+        // same hazard and fixes it the same way.
+        const width = Math.min(
+            RASTER_MAX_SIDE,
+            Math.max(1, Math.ceil(svgBounds.value.width * fit)),
+        );
+        const height = Math.min(
+            RASTER_MAX_SIDE,
+            Math.max(1, Math.ceil(svgBounds.value.height * fit)),
+        );
         const canvas = document.createElement('canvas');
         canvas.width = width;
         canvas.height = height;
@@ -386,8 +490,15 @@ async function rasterizeCurrentSvg(scale: number): Promise<{blob: Blob; width: n
     }
 }
 
+function getSvgExpander(): SvgExpander | undefined {
+    return (window as unknown as {
+        __FCSTM_EXPAND_SVG__?: SvgExpander;
+    }).__FCSTM_EXPAND_SVG__;
+}
+
 async function renderCurrentSvgToPng(): Promise<Blob> {
-    const {blob} = await rasterizeCurrentSvg(2);
+    const expanded = await expandSvgForExport(svgString, getSvgExpander());
+    const {blob} = await rasterizeSvg(expanded, 2);
     return blob;
 }
 
@@ -410,73 +521,69 @@ function uint8ToBase64(bytes: Uint8Array): string {
     return (typeof btoa !== 'undefined' ? btoa : (s: string) => Buffer.from(s, 'binary').toString('base64'))(binary);
 }
 
-/**
- * Render the current diagram as a single-page PDF sized exactly to
- * the diagram dimensions. The page content is a high-DPI raster of
- * the SVG (4x the logical size, i.e. ~288 DPI at natural scale),
- * which is the floor for paper-grade figures. We keep the PDF page
- * size matched to the SVG in points so LaTeX / word processors can
- * drop it in with no scaling artefacts.
- *
- * We intentionally skip the vector-SVG-to-PDF path: browser SVG
- * rendering involves CSS cascade, webfonts, filters and
- * ``foreignObject`` fragments that no in-process converter handles
- * accurately — a faithful raster at high DPI is more reliable than
- * a half-broken vector PDF.
- */
 async function renderCurrentSvgToPdf(): Promise<Uint8Array> {
-    const widthPt = Math.max(1, svgBounds.value.width);
-    const heightPt = Math.max(1, svgBounds.value.height);
-    const {blob} = await rasterizeCurrentSvg(4);
-    const dataUrl = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = () => reject(reader.error ?? new Error('FileReader failed'));
-        reader.readAsDataURL(blob);
-    });
-    const pdf = new jsPDF({
-        orientation: widthPt > heightPt ? 'landscape' : 'portrait',
-        unit: 'pt',
-        format: [widthPt, heightPt],
-        compress: true,
-    });
-    pdf.addImage(dataUrl, 'PNG', 0, 0, widthPt, heightPt, undefined, 'FAST');
-    const buffer = pdf.output('arraybuffer') as ArrayBuffer;
-    return new Uint8Array(buffer);
+    return renderVectorPdf(
+        svgString,
+        {width: svgBounds.value.width, height: svgBounds.value.height},
+        getSvgExpander(),
+    );
 }
 
 /**
  * Unified export. Renders SVG, PNG and PDF up front and ships all
  * three to the extension in a single message; the format the user
  * picks in the QuickPick decides which payload gets written. SVG is
- * a cheap string dump; PNG goes through the standard canvas pipeline
- * at 2x; PDF wraps a 4x-rasterised version of the same SVG into a
- * single page sized to the diagram. All three stay in lockstep with
- * the current view.
+ * a string dump, PNG uses the standard canvas pipeline, and PDF is
+ * generated by the vector-only ``svg2pdf.js`` adapter. All three stay
+ * in lockstep with the current view.
  *
- * Rendered in parallel via ``Promise.all`` so the combined latency
- * is dominated by the slowest of the three (the 4x PDF raster)
- * rather than the sum.
+ * Rendered in parallel via ``Promise.all`` so the combined latency is
+ * dominated by the slowest export rather than the sum.
  */
 async function onExportEvt() {
     if (!svgString) return;
     try {
-        const [pngBlob, pdfBytes] = await Promise.all([
-            renderCurrentSvgToPng(),
-            renderCurrentSvgToPdf(),
+        // Two failures hide inside one call. Validating the on-screen SVG is
+        // genuinely fatal -- a malformed diagram puts every format out of reach
+        // -- so it stays outside the settled set. Expanding it is not: the
+        // string has already parsed by then, so a font-inlining failure used to
+        // discard all three formats including the one that needed no expanding.
+        const canonical = await expandSvgForExport(svgString);
+        const failed: string[] = [];
+        let expanded = canonical;
+        try {
+            expanded = await expandSvgForExport(svgString, getSvgExpander());
+        } catch (err) {
+            // The expander inlines fonts and re-parses its own output; both
+            // report failure as Error/DOMException, and the helper re-raises
+            // renderer defects rather than letting them read as export errors.
+            failed.push(`SVG font expansion: ${expectedErrorMessage(err)}`);
+        }
+        // Settled per format rather than all-or-nothing. The SVG is a string
+        // that needs neither a canvas nor a PDF writer, so a raster failure
+        // must not be able to withhold it.
+        const [png, pdf] = await Promise.allSettled([
+            rasterizeSvg(expanded, 2).then(result => blobToBase64(result.blob)),
+            renderCurrentSvgToPdf().then(uint8ToBase64),
         ]);
-        const [pngBase64, pdfBase64] = await Promise.all([
-            blobToBase64(pngBlob),
-            Promise.resolve(uint8ToBase64(pdfBytes)),
-        ]);
+        if (png.status === 'rejected') failed.push(`PNG: ${expectedErrorMessage(png.reason)}`);
+        if (pdf.status === 'rejected') failed.push(`PDF: ${expectedErrorMessage(pdf.reason)}`);
         window.dispatchEvent(new CustomEvent('fcstm-emit', {detail: {
             type: 'exportDiagram',
-            payload: {svg: svgString, pngBase64, pdfBase64},
+            payload: {
+                svg: expanded,
+                pngBase64: png.status === 'fulfilled' ? png.value : '',
+                pdfBase64: pdf.status === 'fulfilled' ? pdf.value : '',
+                failed,
+            },
         }}));
     } catch (err) {
+        // Canvas, DOMParser, svg2pdf.js, and the WebAssembly export path report
+        // their documented failures as Error/DOMException; renderer defects are
+        // re-raised by the helper instead of surfacing as an export error.
         window.dispatchEvent(new CustomEvent('fcstm-emit', {detail: {
             type: 'exportError',
-            payload: (err as Error)?.message || String(err),
+            payload: expectedErrorMessage(err),
         }}));
     }
 }
@@ -527,13 +634,18 @@ async function copySvgToClipboard() {
     if (!svgString) return;
     try {
         if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
-            await navigator.clipboard.writeText(svgString);
+            // Same expanded product as Export → Save SVG, so pasting into an
+            // external tool does not depend on the viewer's own font stack.
+            const expanded = await expandSvgForExport(svgString, getSvgExpander());
+            await navigator.clipboard.writeText(expanded);
             notifyCopy('svg');
             return;
         }
         throw new Error('clipboard API not available');
     } catch (err) {
-        notifyCopy('svg', (err as Error)?.message || String(err));
+        // The clipboard API reports permission and format failures as
+        // DOMException; renderer defects are re-raised by the helper.
+        notifyCopy('svg', expectedErrorMessage(err));
     }
 }
 
@@ -553,7 +665,10 @@ async function copyPngToClipboard() {
         }
         throw new Error('ClipboardItem not available');
     } catch (err) {
-        notifyCopy('png', (err as Error)?.message || String(err));
+        // Canvas and the clipboard API report their documented failures as
+        // Error/DOMException; renderer defects and unknown thrown values are
+        // re-raised by the helper.
+        notifyCopy('png', expectedErrorMessage(err));
     }
 }
 
@@ -615,6 +730,9 @@ watch(() => [props.palette, props.mode], () => {
 });
 watch(() => props.selection, () => {
     applySelection();
+}, {deep: true});
+watch(() => props.hover, () => {
+    applyHover();
 }, {deep: true});
 
 // Expose drag threshold for debugging / tests.
@@ -767,15 +885,39 @@ body.modifier-held .fcstm-stage__inner [data-fcstm-kind][data-fcstm-range-start-
     font-weight: 700;
 }
 .fcstm-stage__inner [data-fcstm-kind="transition"].fcstm-related-hover {
+    stroke: #2d6aa8 !important;
     stroke-width: 3.2 !important;
-    filter: drop-shadow(0 0 3px rgba(45, 106, 168, 0.35));
+    filter: none !important;
+}
+.fcstm-stage__inner [data-fcstm-kind="state"].fcstm-source-hover > rect:not(.fcstm-halo),
+.fcstm-stage__inner [data-fcstm-kind="composite-state"].fcstm-source-hover > .fcstm-halo {
+    stroke: #2d6aa8 !important;
+    stroke-width: 2.4 !important;
+    filter: drop-shadow(0 0 4px rgba(45, 106, 168, 0.45));
+}
+.fcstm-stage__inner [data-fcstm-kind="transition-label"].fcstm-source-hover > text {
+    stroke: #2d6aa8 !important;
+    fill: #2d6aa8 !important;
+}
+.fcstm-stage__inner [data-fcstm-kind="transition"].fcstm-source-hover {
+    fill: none !important;
+    stroke: #2d6aa8 !important;
+    stroke-width: 3.2 !important;
+    filter: none !important;
 }
 .fcstm-stage__inner [data-fcstm-kind="transition-label"].fcstm-related-hover > text {
     font-weight: 700;
     paint-order: stroke;
 }
-.fcstm-stage__inner [data-fcstm-kind="transition-label"].fcstm-related-hover {
-    filter: drop-shadow(0 0 2px rgba(45, 106, 168, 0.3));
+/* Effect/guard notes keep their semantic background shape, but hover only
+   changes the border. Filtering the parent label group would turn that
+   note polygon into the hover shadow instead of highlighting the edge. */
+.fcstm-stage__inner [data-fcstm-kind="transition-label"].fcstm-related-hover > path:first-child,
+.fcstm-stage__inner [data-fcstm-kind="transition-label"].fcstm-related-hover > path:nth-child(2),
+.fcstm-stage__inner [data-fcstm-kind="transition-label"].fcstm-source-hover > path:first-child,
+.fcstm-stage__inner [data-fcstm-kind="transition-label"].fcstm-source-hover > path:nth-child(2) {
+    stroke: #2d6aa8 !important;
+    stroke-width: 1.3 !important;
 }
 /* Same-event labels light up with a softer teal halo when the user
    selects one transition in the event family; clearly distinct from

@@ -14,6 +14,7 @@ from pyfcstm.diagram import (
     DiagramAssetEngine,
     DiagramAssetError,
     DiagramEngineConflictError,
+    DiagramUnavailableError,
     DiagramEngineMetadataError,
     DiagramRenderError,
 )
@@ -1203,6 +1204,16 @@ def test_engine_rejects_dual_miniracer_distributions(monkeypatch):
         DiagramEngineConflictError,
         match=r"mini-racer 0\.14\.1 and py-mini-racer 0\.6\.0.*installed together",
     ):
+        DiagramAssetEngine()
+
+
+def test_engine_reports_missing_optional_runtime(monkeypatch):
+    monkeypatch.setattr(
+        DiagramAssetEngine,
+        "_distribution_installed",
+        staticmethod(lambda _name: False),
+    )
+    with pytest.raises(DiagramUnavailableError, match="no supported MiniRacer"):
         DiagramAssetEngine()
 
 

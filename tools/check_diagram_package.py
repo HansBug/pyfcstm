@@ -22,6 +22,8 @@ GENERATED_REQUIRED = {
     "pyfcstm/diagram/assets/resvg-binding.js",
     "pyfcstm/diagram/assets/resvg-bridge.js",
     "pyfcstm/diagram/assets/host-shim.js",
+    "pyfcstm/diagram/assets/viewer.js",
+    "pyfcstm/diagram/assets/viewer.css",
     "pyfcstm/diagram/assets/resvg.wasm",
     "pyfcstm/diagram/assets/manifest.json",
     "pyfcstm/diagram/assets/fonts/JetBrainsMono-Regular.ttf",
@@ -44,6 +46,7 @@ LEGAL_REQUIRED = {
     "pyfcstm/diagram/assets/LICENSE-MPL-2.0.txt",
     "pyfcstm/diagram/assets/LICENSE-EPL-2.0.txt",
     "pyfcstm/diagram/assets/LICENSE-OFL-1.1.txt",
+    "pyfcstm/diagram/assets/LICENSE-MIT.txt",
 }
 
 DOCUMENTATION_REQUIRED = {

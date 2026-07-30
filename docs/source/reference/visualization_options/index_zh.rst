@@ -763,6 +763,90 @@ Python API（应用程序接口）例子：
        custom_colors={'System.Start': '#00AA00'},
    )
 
+Python Diagram 接口和浏览器查看器
+----------------------------------
+
+浏览器查看器是独立于上文 PlantUML 选项的公开路径，直接消费已解析模型，
+并写出可移植 JSON 或自包含 HTML 文件。
+
+.. list-table:: Python Diagram 公开取值
+   :header-rows: 1
+
+   * - 取值
+     - 可接受取值或默认值
+     - 行为
+   * - ``DiagramOptions.detail_level``
+     - ``minimal``、``normal``\ （默认）、``full``
+     - 选择渲染器的细节预设。``minimal`` 把转换 effect 内联显示、事件移入图例；
+       ``normal`` 使用 effect 注释并同时显示事件。``full`` 目前渲染出与 ``normal``
+       相同的图形：两者只差 ``showStateActions``\ ，而浏览器渲染器有意不把叶子状态
+       的细节画进图中，而是交给详情面板——后者无论哪个预设都会列出动作。
+   * - ``DiagramOptions.direction``
+     - ``TB``\ （默认）或 ``LR``
+     - 选择从上到下或从左到右的布局。
+   * - ``DiagramOptions.palette``
+     - ``default``、``nord``、``solarized``、``darcula`` 或 ``None``
+     - 选择查看器配色。
+   * - ``DiagramOptions.mode``
+     - ``light``、``dark``、``auto`` 或 ``None``
+     - 选择初始颜色模式。
+   * - ``DiagramOptions.cjk_locale``
+     - ``sc``、``tc``、``hk``、``jp`` 或 ``kr``\ （默认 ``sc``）
+     - 在 HTML 中嵌入对应地区的 CJK 字体对。
+   * - ``DiagramViewState.mode``
+     - ``compare``\ （默认）、``fcstm`` 或 ``diagram``
+     - 选择源码、图形或联动对比视图。
+   * - ``DiagramViewState.zoom``
+     - 有限正数或 ``None``\ （默认 ``None``\ ）
+     - 设置初始缩放；布尔值、零、负数、NaN 和无穷值会失败。``None`` 表示不指定，
+       由查看器把整幅图形适配到视口。
+   * - ``DiagramViewState.pan_x`` / ``pan_y``
+     - 有限数或 ``None``\ （默认 ``None``\ ）
+     - 设置初始平移量。``None`` 表示沿用适配后的取景；一旦 ``zoom`` / ``pan_x`` /
+       ``pan_y`` 中任意一项被指定，其余为 ``None`` 的字段回退到 ``1.0`` 与 ``0.0``\ ，
+       使显式请求被精确遵循。
+
+``model.diagram(...)`` 返回不可变的 ``Diagram`` 快照。``to_dict()`` 和
+``to_json()`` 不包含绝对路径、源码范围或编辑器选择状态。``to_html()``
+返回一份完整 HTML 字符串；``save("name.json")`` 和 ``save("name.html")``
+使用原子替换：保存被中断时，原有文件的内容与权限原样保留。被覆盖的文件保持它
+原来的权限，新建的文件则按你的 umask 取值，与该目录下任何新文件一致——因此去掉
+写位的 umask 会产出只读结果，而 ``save()`` 仍能替换它，因为它属于你。属于其他
+用户且你无法写入的文件会被拒绝；在 Windows 上，被标记为只读的文件同样被拒绝。
+``Diagram.show()`` 和 ``StateMachine.show()`` 同样返回 HTML 路径。
+带窗口且未指定路径时，``show()`` 会阻塞到窗口关闭，随后删除它写出的文档，因此
+返回的路径届时已不存在——想保留查看器请显式指定输出路径。不带窗口且未指定路径时
+没有任何代码删除它。两种情况下文件都以 0600 写在一个只有你能进入的目录里，因为
+查看器内嵌模型源码：由文档派生的名字、以及约 29 MB 文档的精确大小，对任何能列出
+它们的人来说都足以识别是哪幅图。再次展示同一幅图会返回同一个文件。这种复用跟随的是
+目录而不是进程：你的另一个进程只要解析到同一个目录，拿到的就是同一个路径，fork 出来的
+子进程则直接继承它——因此这个文件在删除上也是共享的，同伴进程清理自己拿到的返回值时
+删掉的就是你的文件。当那个目录被发现属于他人或对他人开放时，每次解析各建一个自己的
+目录并给出一条警告，此时两个互不相干的进程各用一份，而 fork 出来的子进程仍然共享。
+需要一个只有你能删除的文档时，请显式指定输出路径。在 Windows 上这依赖 ``%TEMP%``
+按账户隔离（默认如此）：多用户共享的 ``TEMP`` 在这里无法检测，且用 python.org 的安装包时
+目录权限只从 3.12.4 起才被应用——这种场景请自己指定输出路径。
+
+HTML 查看器可以在浏览器中下载 SVG、PNG 和矢量 PDF。Python 的
+``to_svg()``、``to_png()`` 和 ``to_pdf()`` 在后续无头交付阶段之前会主动抛出
+``DiagramUnavailableError``。没有 Chromium 系浏览器时，``show()`` 会先写出
+HTML，再抛出同一类型的能力错误；使用 ``show(open_window=False)`` 可避免浏览器依赖。
+
+生成 HTML 查看器只需要浏览器，不需要额外依赖；\ ``DiagramAssetEngine``\ 的无头
+渲染需要可选的 MiniRacer 运行时，由 ``pip install pyfcstm[viz]`` 提供，缺少时
+引擎抛出的 ``DiagramUnavailableError`` 会直接给出该命令。安装这个 extra
+**不会**\ 启用 ``to_svg()`` / ``to_png()`` / ``to_pdf()``\ ——它们无论如何都要
+等无头交付阶段。
+
+未知字段、重复蛇形/驼峰别名、无效枚举值和无效数字会抛出 ``ValueError``\ ；
+``collapsed_state_ids`` 不是 ID 字符串序列时抛出 ``TypeError``\ ，包括把单个 ID
+直接写成字符串这一常见错误。
+
+``with_options`` 与 ``with_view_state`` 的关键字形式是部分更新：未指名的字段保持
+原值；以位置参数传入的值则整体替换。
+缺失或不可用的查看器/WASM/字体资源会抛出 ``DiagramAssetError``，并给出开发
+环境的 ``make build_assets`` 修复指引，或给出已安装包应使用的 issue URL。
+
 渲染器和文件选项
 ----------------
 
@@ -853,3 +937,9 @@ Python API（应用程序接口）例子：
      - ``plantuml`` 永远不渲染图片，也不检查渲染器可用性。
    * - ``rendered-image-visualize``
      - ``visualize`` 总是先生成 PlantUML 源码，再渲染请求的产物类型。
+
+这些边界为什么存在
+------------------
+
+本页给出事实；:doc:`/explanations/visualization/index_zh` 解释查看器那部分边界背后的道理——
+自包含文档、阻塞的窗口、目录级隐私边界，以及退出时的回收。

@@ -14,7 +14,10 @@ testtools>=2
 where>=1.0.2
 natsort
 cmake<4
-ruff
+# ruff 0.16 turned a large set of pyupgrade/refactor rules on by default.
+# Those defaults conflict with the Python 3.7 floor this project supports,
+# so the lint contract stays on the 0.15 rule set until it is retargeted.
+ruff<0.16
 # Diagram asset runtime tests must execute in CI rather than silently
 # skipping when the optional MiniRacer distribution is absent.
 py-mini-racer>=0.6.0,<0.7; python_version < "3.8"

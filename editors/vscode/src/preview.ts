@@ -442,6 +442,9 @@ export class FcstmPreviewController implements vscode.Disposable {
             mode?: PreviewLayoutMode;
             svg?: string;
             base64?: string;
+            pngBase64?: string;
+            pdfBase64?: string;
+            failed?: string[];
             message?: string;
         };
 
@@ -468,7 +471,12 @@ export class FcstmPreviewController implements vscode.Disposable {
                 return;
             case 'exportDiagram':
                 if (typeof payload.svg === 'string' && typeof payload.pngBase64 === 'string' && typeof payload.pdfBase64 === 'string') {
-                    await this.exportDiagram(payload.svg, payload.pngBase64, payload.pdfBase64);
+                    await this.exportDiagram(
+                        payload.svg,
+                        payload.pngBase64,
+                        payload.pdfBase64,
+                        Array.isArray(payload.failed) ? payload.failed : [],
+                    );
                 }
                 return;
             case 'exportError':
@@ -537,17 +545,38 @@ export class FcstmPreviewController implements vscode.Disposable {
      * first avoids that entire class of mismatch.
      *
      * PDF is a single-page, diagram-sized PDF whose content is a
-     * 4× raster of the current SVG — good enough for paper figure
+     * Vector rendering of the current SVG — text stays selectable and scalable
      * insertion without the reliability problems of in-browser
      * SVG→vector-PDF conversion. The payload arrives as base64.
      */
-    private async exportDiagram(svg: string, pngBase64: string, pdfBase64: string): Promise<void> {
+    private async exportDiagram(
+        svg: string,
+        pngBase64: string,
+        pdfBase64: string,
+        failed: string[],
+    ): Promise<void> {
+        // Only offer what this export actually produced. The formats settle
+        // independently, so a very large diagram can exceed the browser's raster
+        // limits while its vector output is perfect — offering PNG then would
+        // write a zero-byte file and report success.
+        const candidates = [
+            {label: 'SVG', description: 'Vector image', format: 'svg' as const, data: svg},
+            {label: 'PNG', description: '2× raster image', format: 'png' as const, data: pngBase64},
+            {label: 'PDF', description: 'Single-page vector PDF (paper-ready)', format: 'pdf' as const, data: pdfBase64},
+        ].filter(item => item.data.length > 0);
+        if (candidates.length === 0) {
+            void vscode.window.showErrorMessage(
+                `FCSTM: the diagram could not be exported in any format${failed.length ? ` — ${failed.join('; ')}` : ''}`,
+            );
+            return;
+        }
+        if (failed.length > 0) {
+            void vscode.window.showWarningMessage(
+                `FCSTM: unavailable for this diagram — ${failed.join('; ')}`,
+            );
+        }
         const choice = await vscode.window.showQuickPick(
-            [
-                {label: 'SVG', description: 'Vector image', format: 'svg' as const},
-                {label: 'PNG', description: '2× raster image', format: 'png' as const},
-                {label: 'PDF', description: 'Single-page PDF, 4× raster (paper-ready)', format: 'pdf' as const},
-            ],
+            candidates,
             {placeHolder: 'Export diagram as…', matchOnDescription: true}
         );
         if (!choice) {
@@ -557,7 +586,7 @@ export class FcstmPreviewController implements vscode.Disposable {
         const defaultUri = this.currentDocumentUri
             ? vscode.Uri.file(this.currentDocumentUri.replace(/^file:\/\//, '').replace(/\.fcstm$/i, '.' + ext))
             : undefined;
-        const filters = ext === 'svg'
+        const filters: {[name: string]: string[]} = ext === 'svg'
             ? {'SVG Image': ['svg']}
             : ext === 'png'
                 ? {'PNG Image': ['png']}

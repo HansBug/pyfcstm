@@ -1783,7 +1783,6 @@ def test_a_closed_derivation_unlocks_the_complete_formal_verdict() -> None:
 
 
 @pytest.mark.unittest
-@pytest.mark.unittest
 def test_a_partial_comparison_does_not_crash_the_forced_value_probe() -> None:
     """The probe picks its targets by tag, then reads keys the tag alone does not carry.
 
@@ -1838,6 +1837,7 @@ def test_a_partial_comparison_does_not_crash_the_forced_value_probe() -> None:
     assert record is None
 
 
+@pytest.mark.unittest
 def test_a_prefix_that_admits_several_values_forces_none_of_them() -> None:
     """One witness is not a requirement, and the probe must not confuse them.
 

@@ -2194,6 +2194,11 @@ _FACT_REQUIRED_KEYS = {
 def _readable(item, kind: str) -> bool:
     """Report whether one member's fact carries every key its tag implies.
 
+    A member always holds a non-empty fact naming a known tag -- :class:`BmcCoreItem`
+    refuses anything else -- so this reads the field directly and asks only the two
+    questions the caller cannot answer for itself: is this the tag I mean, and can I
+    index what that tag promises.
+
     :param item: The published core member.
     :type item: BmcCoreItem
     :param kind: The tag the caller intends to read.
@@ -2203,11 +2208,21 @@ def _readable(item, kind: str) -> bool:
 
     Example::
 
-        >>> _readable(None, "structural_constraint")
+        >>> reference = BmcConstraintRef(
+        ...     "assumption.x.0", "assumptions", "assumption.frame",
+        ...     BmcSourceRef("generated", None, None), "bound",
+        ... )
+        >>> partial = BmcCoreItem(
+        ...     reference, "assumption", None, False,
+        ...     {"kind": "state_membership", "frame": 0, "state": 1}, "bound", False,
+        ... )
+        >>> _readable(partial, "state_membership")
+        True
+        >>> _readable(partial, "variable_comparison")
         False
     """
-    fact = getattr(item, "normalized_fact", None)
-    if not fact or fact.get("kind") != kind:
+    fact = item.normalized_fact
+    if fact.get("kind") != kind:
         return False
     return all(key in fact for key in _FACT_REQUIRED_KEYS.get(kind, ()))
 
@@ -2286,26 +2301,26 @@ def _conflict_pattern(
             % ", ".join("frame %s" % frame for frame in frames),
         )
     domains = [item for item in items if _readable(item, "state_domain")]
-    exclusions = [
-        item
-        for item in items
-        if _readable(item, "state_membership") and item.normalized_fact.get("excluded")
-    ]
-    if (
-        len(domains) == 1
-        and exclusions
-        # The coverage check its sibling patterns all make: a pattern over a
-        # subset leaves the remaining members unexplained while the narrative
-        # calls the chain closed.
-        and len(domains) + len(exclusions) == len(items)
-    ):
+    if len(domains) == 1:
         legal = domains[0].normalized_fact
-        removed = {
-            item.normalized_fact["state"]
-            for item in exclusions
-            if item.normalized_fact["frame"] == legal["frame"]
-        }
-        if set(legal["states"]) <= removed:
+        # Only exclusions at the frame the domain describes can empty it, so the
+        # coverage count below is taken over these and not over every exclusion in
+        # the core.  An exclusion at another frame says nothing about this one:
+        # counting it as explained would name it in a conflict it plays no part in,
+        # which is the "pattern over a subset" the count exists to refuse.
+        exclusions = [
+            item
+            for item in items
+            if _readable(item, "state_membership")
+            and item.normalized_fact.get("excluded")
+            and item.normalized_fact["frame"] == legal["frame"]
+        ]
+        removed = {item.normalized_fact["state"] for item in exclusions}
+        if (
+            exclusions
+            and len(domains) + len(exclusions) == len(items)
+            and set(legal["states"]) <= removed
+        ):
             # Every state the frame may hold has been ruled out, so the frame has
             # nothing left to be.  Checked against the published domain rather
             # than inferred from how many exclusions happen to be present.

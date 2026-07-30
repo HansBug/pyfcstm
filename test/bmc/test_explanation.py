@@ -3263,6 +3263,45 @@ def test_a_partly_complete_fact_is_declined_by_every_consumer() -> None:
     assert failures == []
 
 
+@pytest.mark.unittest
+def test_an_exclusion_at_another_frame_is_not_counted_as_explained() -> None:
+    """A member the proof cannot use must not be counted among the members it used.
+
+    Emptying a frame's domain is an argument about *that* frame: the exclusions at
+    any other frame leave it exactly as many states as before.  The coverage count
+    guards against publishing a closed chain over part of the core, so it has to be
+    taken over the exclusions the argument reaches -- counting the rest satisfies
+    the check while the conflict step names a member that plays no part in it, which
+    reads as though ruling out a state somewhere else were part of the reason.
+    """
+    from pyfcstm.bmc.explanation import build_conflict_narrative
+
+    emptied = (_domain_item(1, [1, 2]), _state_item(1, 1, True), _state_item(1, 2, True))
+
+    # Anti-vacuity: this core does reach the exhaustion reading, and does so at raw
+    # minimality -- the branch offers itself without one, which is why a rider can
+    # arrive here at all.
+    reached = build_conflict_narrative(
+        BmcConflictCore(
+            "assumptions_domain", "F", "source_group", "raw", "not_proven", emptied
+        )
+    )
+    assert reached.derivation_status == "complete"
+    assert "has no state left" in reached.reasoning_steps[-1].text
+
+    with_rider = build_conflict_narrative(
+        BmcConflictCore(
+            "assumptions_domain",
+            "F",
+            "source_group",
+            "raw",
+            "not_proven",
+            emptied + (_state_item(0, 5, True),),
+        )
+    )
+    assert with_rider.derivation_status != "complete"
+
+
 def _partial_comparison_item(variable, frame=0, operator=None):
     """A comparison member carrying part of what its tag implies.
 

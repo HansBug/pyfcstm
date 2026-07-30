@@ -99,7 +99,10 @@ RAISES = re.compile(r":raises\s+~?([A-Za-z_][\w.]*)\s*:")
 # link in the built page and the same line pointed at a module that does not document
 # the class is plain text. Leaving these out meant the one `:rtype:` this gate arrived
 # with could regress in silence.
-FIELD = re.compile(r"^(\s*):(?:rtype|type|vartype)\s*[\w.]*:")
+# The name after `:type` may carry escaped stars -- `:type \*args:` and
+# `:type \*\*kwargs:` are ordinary reST for a variadic signature -- and a name
+# pattern that stopped at `[\w.]` skipped the whole field, continuation lines and all.
+FIELD = re.compile(r"^(\s*):(?:rtype|type|vartype)\s*(?:\\?\*)*[\w.]*:")
 QUALIFIED = re.compile(r"\bpyfcstm\.[A-Za-z_][\w.]*")
 
 CURRENTMODULE = re.compile(r"^\.\.\s+currentmodule::\s*([\w.]+)\s*$", re.M)
@@ -176,6 +179,36 @@ def module_of(path: Path, root: Path) -> str:
     return ".".join(parts)
 
 
+def _configures_intersphinx(conf: Path) -> bool:
+    """
+    Say whether the Sphinx configuration actually loads intersphinx.
+
+    Asked of the parse tree rather than of the text, because a substring match says
+    yes to a comment explaining that intersphinx is *not* configured -- the same
+    footgun CLAUDE.md documents for ``contains()`` in the workflow triggers, and it
+    would stop this checker with a message stating something untrue.
+
+    :param conf: Path to ``conf.py``.
+    :type conf: pathlib.Path
+    :return: ``True`` when a mapping is assigned or the extension is listed.
+    :rtype: bool
+    """
+    if not conf.is_file():
+        return False
+    try:
+        tree = ast.parse(conf.read_text(encoding="utf-8"))
+    except SyntaxError:
+        # A configuration this checker cannot read is not one it should judge.
+        return False
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and node.id == "intersphinx_mapping":
+            return True
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            if "sphinx.ext.intersphinx" in node.value:
+                return True
+    return False
+
+
 def _field_bodies(doc: str) -> List[Tuple[int, str]]:
     """
     Return each type field's whole body, continuation lines included.
@@ -187,7 +220,9 @@ def _field_bodies(doc: str) -> List[Tuple[int, str]]:
 
     :param doc: A docstring.
     :type doc: str
-    :return: Pairs of line offset within the docstring and the joined body text.
+    :return: Pairs of line offset within the docstring and that line's body text, one
+        entry per line of the body, so a target on a continuation line is reported
+        against the line it is on.
     :rtype: list[tuple[int, str]]
     """
     lines = doc.split("\n")
@@ -202,15 +237,30 @@ def _field_bodies(doc: str) -> List[Tuple[int, str]]:
         start = index
         collected = [lines[index][match.end() :]]
         index += 1
+        offsets = [start]
         while index < len(lines):
             following = lines[index]
             if not following.strip():
-                break
+                # A blank line does not end a field body; what ends it is the next
+                # line that is not indented past the marker. `docutils` keeps a
+                # second paragraph inside the same `field_body`.
+                ahead = index + 1
+                while ahead < len(lines) and not lines[ahead].strip():
+                    ahead += 1
+                if ahead >= len(lines):
+                    break
+                deeper = len(lines[ahead]) - len(lines[ahead].lstrip()) > indent
+                if not deeper:
+                    break
+                index = ahead
+                continue
             if len(following) - len(following.lstrip()) <= indent:
                 break
             collected.append(following)
+            offsets.append(index)
             index += 1
-        bodies.append((start, " ".join(collected)))
+        for offset, text in zip(offsets, collected):
+            bodies.append((offset, text))
     return bodies
 
 
@@ -287,8 +337,7 @@ def dead_references(root: Path) -> List[Tuple[Path, int, str]]:
         configuration has gained an intersphinx mapping, which invalidates the
         bare-member rule.
     """
-    conf = root / CONF
-    if conf.is_file() and "intersphinx" in conf.read_text(encoding="utf-8"):
+    if _configures_intersphinx(root / CONF):
         # The bare-member rule reports a name that resolves nowhere, and with an
         # intersphinx mapping a bare `:meth:` can resolve into another project's
         # inventory. Rather than start reporting live links, say so and stop.
@@ -387,6 +436,8 @@ def _self_check() -> None:
             ":type thing: str or pyfcstm.diagram.Diagram\n"
             ":vartype wrapped: pyfcstm.diagram.api.Diagram or\n"
             "    pyfcstm.diagram.Wrapped\n"
+            ":type \\*args: pathlib.Path or\n"
+            "    pyfcstm.diagram.Starred\n"
             '"""\n',
             encoding="utf-8",
         )
@@ -414,11 +465,34 @@ def _self_check() -> None:
         if names != expected:
             raise SystemExit("registered names wrong: %s" % sorted(names))
 
+        # The guard, both ways: a comment mentioning intersphinx must not stop this,
+        # and a real mapping must. Checked here because `--check` would otherwise
+        # never exercise the guard the run itself depends on.
+        conf = fake / CONF
+        conf.write_text(
+            "# An intersphinx mapping is deliberately not configured here.\n"
+            "extensions = ['sphinx.ext.autodoc']\n",
+            encoding="utf-8",
+        )
+        if _configures_intersphinx(conf):
+            raise SystemExit("a comment about intersphinx was read as configuration")
+        conf.write_text(
+            "extensions = ['sphinx.ext.autodoc', 'sphinx.ext.intersphinx']\n",
+            encoding="utf-8",
+        )
+        if not _configures_intersphinx(conf):
+            raise SystemExit("a configured intersphinx extension was not noticed")
+        conf.write_text("intersphinx_mapping = {}\n", encoding="utf-8")
+        if not _configures_intersphinx(conf):
+            raise SystemExit("a configured intersphinx mapping was not noticed")
+        conf.unlink()
+
         found = sorted(target for _, _, target in dead_references(fake))
         wanted = [
             "pyfcstm.diagram.Diagram",  # the dead module-qualified role
             "pyfcstm.diagram.Diagram",  # the dead bare name, resolved to this module
             "pyfcstm.diagram.Diagram",  # and the same in a type field
+            "pyfcstm.diagram.Starred",  # a variadic field name, escaped star
             "pyfcstm.diagram.Wrapped",  # on a field's continuation line
             "pyfcstm.diagram.api.Diagram.shoe",  # the misspelled bare member
             "pyfcstm.diagram.api.Diagram.to_pdf",
@@ -452,6 +526,16 @@ def main(argv: Iterable[str]) -> int:
     dead = dead_references(ROOT)
     if dead:
         for path, line, target in dead:
+            if target.endswith("."):
+                # A dotted path broken across lines. Reporting it as a missing target
+                # would name something no reader can act on, and dropping the dot
+                # would resolve to the module and hide a docstring Sphinx cannot read
+                # either.
+                sys.stderr.write(
+                    "%s:%d: %s ends on a dot -- a dotted path broken across lines, "
+                    "which Sphinx cannot resolve either\n" % (path, line, target)
+                )
+                continue
             sys.stderr.write(
                 "%s:%d: %s is not registered by any api_doc page\n"
                 % (path, line, target)

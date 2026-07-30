@@ -175,7 +175,7 @@ def diagram_command(
                 click.echo(str(Path(output)))
                 raise click.ClickException(str(error))
             # Without -o there is no document to name: no window opened, so
-            # nothing was ever reading the ~30 MB that was written and `show`
+            # nothing was ever reading the ~29 MB that was written and `show`
             # removes it. Point at the flag that keeps one instead.
             raise click.ClickException(
                 "%s; re-run with -o PATH to keep the generated viewer" % error

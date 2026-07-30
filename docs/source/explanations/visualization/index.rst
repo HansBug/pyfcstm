@@ -70,8 +70,9 @@ object with a history.
 Why one self-contained document
 -------------------------------
 
-The viewer is roughly 29 MB -- 29,401,138 bytes for a one-state model as
-measured here -- and that is a deliberate trade:
+The viewer is roughly 29 MB -- 29,397,900 bytes for ``state Root;`` loaded from text,
+measured here; the exact number moves with the model and with the packaged assets -- and
+that is a deliberate trade:
 
 .. list-table:: What the size buys, and what it costs
    :header-rows: 1
@@ -101,11 +102,12 @@ random. It is also where a caller has to be careful, which
 Where the source half does not apply
 ------------------------------------
 
-The comparison needs a model that kept its source, which means one loaded through
-:func:`pyfcstm.model.load.load_state_machine_from_text` or its file counterpart, or one
-given ``source_text`` explicitly. A :class:`pyfcstm.model.model.StateMachine` assembled
-in Python has no source and no ranges to map, so the viewer renders the diagram and says
-why the other half is missing rather than showing an empty pane:
+The comparison needs a model that kept both its source *and* the ranges that say where
+each state was declared, which in practice means one loaded through
+:func:`pyfcstm.model.load.load_state_machine_from_text` or its file counterpart. A
+:class:`pyfcstm.model.model.StateMachine` assembled in Python has neither, so the viewer
+renders the diagram and says why the other half is missing rather than showing an empty
+pane:
 
 .. code-block:: text
 
@@ -113,9 +115,16 @@ why the other half is missing rather than showing an empty pane:
    sourceUnavailableReason: This model did not retain its original FCSTM source;
      load it through load_state_machine_from_file/text, or pass source_text explicitly.
 
-Passing ``source_text`` without ranges is the halfway case: the text is shown, and
-selecting a state cannot highlight the lines that declared it, because nothing recorded
-where they were.
+Passing ``source_text`` without ranges does not get you half of it. The ranges come
+from parsing, so text alone leaves nothing to link a state to, and the viewer treats that
+as unavailable rather than showing a pane where clicking a state does nothing:
+
+.. code-block:: text
+
+   sourceAvailable: False
+   sourceUnavailableReason: This model carries source text but no source ranges, so the
+     diagram cannot be linked to it. Ranges come from parsing; a model built
+     programmatically has none.
 
 Why the viewer refuses the network
 ----------------------------------
@@ -202,7 +211,9 @@ A name derived from the document is a *strong* fingerprint: render candidate mod
 offline, hash each one, and the name matches exactly or not at all.
 
 The size is a *coarse* side channel, and it collides readily. Four one-state models
-whose source text is the same length produce byte-identical documents:
+whose source text is the same length produce documents of identical length -- and, as
+the digests below show, of different content, which is why their names differ while
+their sizes do not:
 
 .. code-block:: text
 
@@ -305,16 +316,18 @@ Where the platform limits the promise
 -------------------------------------
 
 The directory check means what it says on POSIX, where both the mode and the owner can
-be asked about. On Windows it asks about neither: an owner exists there and can be read
-through the platform's security API, but the portable ``os.lstat`` and ``os.geteuid``
-this package uses do not report it, so the check falls back to the name alone.
+be asked about. On Windows it still asks whether the path exists and whether ``os.lstat``
+reports a directory rather than a link or a file -- what it cannot ask is who owns it and
+who else may look: an owner exists there and is readable through the platform's security
+API, but the portable ``os.lstat`` and ``os.geteuid`` this package uses do not report it.
 
 ``os.mkdir`` does apply a restrictive ACL for a mode of 0o700 on Windows, from the
 releases that carried CVE-2024-4030 -- 3.8.20, 3.9.20, 3.10.15, 3.11.10, 3.12.4 and 3.13
--- and ignores the mode entirely before them. python.org stopped shipping Windows
-installers for 3.10 and 3.11 before those releases, so an installer user on either line
-does not have it even though a self-built or redistributed interpreter of the same
-version does. Privacy there rests on ``%TEMP%`` being per
+-- and ignores the mode entirely before them. Every one of those except 3.12.4 and 3.13
+arrived after python.org had stopped shipping Windows installers for its line, so the
+practical rule is shorter than the version list: with an installer from python.org, the
+ACL is there on 3.12.4 or later and on 3.13, and on no other supported line. A
+self-built or redistributed interpreter of 3.8.20, 3.9.20, 3.10.15 or 3.11.10 has it. Privacy there rests on ``%TEMP%`` being per
 account, which is the default; a ``TEMP`` pointing at a directory other users share is
 not detectable from inside the process, and in that case neither the directory nor the
 0600 on the files inside it keeps anything private, because that mode is only Windows'

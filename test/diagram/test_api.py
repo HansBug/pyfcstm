@@ -1041,6 +1041,10 @@ def test_a_viewer_directory_that_cannot_be_trusted_is_not_used(
         (0o700, True, "belongs to another user"),
         (0o704, False, "allows 004"),
         (0o740, False, "allows 040"),
+        # A link to a directory that would pass every other question. `lstat` is
+        # what refuses it; with `stat` in its place the link is followed and the
+        # target's own perfect answers are the ones that get read.
+        ("symlink", False, "not a directory"),
     ],
 )
 def test_each_directory_rule_is_pinned_on_its_own(
@@ -1052,8 +1056,14 @@ def test_each_directory_rule_is_pinned_on_its_own(
     diagram_api._PRIVATE_DIRECTORIES.clear()
     diagram_api._FALLBACK_DIRECTORIES.clear()
     taken = tmp_path / ("pyfcstm-viewers-%d" % os.geteuid())
-    taken.mkdir(mode=mode)
-    os.chmod(str(taken), mode)
+    if mode == "symlink":
+        target = tmp_path / "elsewhere"
+        target.mkdir(mode=0o700)
+        os.chmod(str(target), 0o700)
+        taken.symlink_to(target, target_is_directory=True)
+    else:
+        taken.mkdir(mode=mode)
+        os.chmod(str(taken), mode)
     if fake_owner:
         monkeypatch.setattr(os, "geteuid", lambda: os.stat(str(taken)).st_uid + 1)
         taken = taken.rename(tmp_path / ("pyfcstm-viewers-%d" % (os.geteuid())))
@@ -1062,6 +1072,37 @@ def test_each_directory_rule_is_pinned_on_its_own(
         complaint = diagram_api._unusable_viewer_directory(taken)
         assert complaint is not None, "the rule did not fire at all"
         assert reason in complaint, "expected %r, got %r" % (reason, complaint)
+    finally:
+        diagram_api._PRIVATE_DIRECTORIES.clear()
+        diagram_api._FALLBACK_DIRECTORIES.clear()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX modes")
+def test_a_reclaimed_fallback_lets_the_predictable_name_be_tried_again(
+    tmp_path, monkeypatch
+):
+    # Removing the directory is half of it: the process also has to forget it, or a
+    # long-lived one keeps its own private directory for good and never notices that
+    # whatever was holding the shared name has gone -- which is the reuse this
+    # design exists to give, lost silently.
+    from pyfcstm.diagram import api as diagram_api
+
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
+    diagram_api._PRIVATE_DIRECTORIES.clear()
+    diagram_api._FALLBACK_DIRECTORIES.clear()
+    predictable = tmp_path / ("pyfcstm-viewers-%d" % os.geteuid())
+    predictable.mkdir(mode=0o755)
+
+    try:
+        fallback = diagram_api._private_viewer_directory()
+        assert fallback != predictable
+        # The obstruction goes away, as it would when somebody fixes the mode.
+        os.chmod(str(predictable), 0o700)
+        diagram_api._discard_empty_fallback(fallback)
+        assert not fallback.exists()
+        assert diagram_api._private_viewer_directory() == predictable, (
+            "the process kept its fallback after the shared name became usable"
+        )
     finally:
         diagram_api._PRIVATE_DIRECTORIES.clear()
         diagram_api._FALLBACK_DIRECTORIES.clear()

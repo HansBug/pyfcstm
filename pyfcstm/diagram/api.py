@@ -1011,10 +1011,9 @@ def _private_viewer_directory() -> Path:
     Per user rather than per process, because that is what lets the name inside
     carry reuse: two processes showing one diagram write one file instead of ~30 MB
     each.  The name of a per-user directory is predictable, so it is verified
-    before use -- a directory, not a link, ours, and closed to everyone else -- and
-    a private one of
-    this process's own is used instead when it is not, which keeps working at the
-    cost of that reuse.
+    before use -- a directory, not a link, ours, and closed to everyone else -- and a
+    private one of this process's own is used instead when it is not, which keeps
+    working at the cost of that reuse.
 
     What that verification is worth depends on the platform, and this is the limit
     of it.  On POSIX the mode and the owner are both checked, and both mean what
@@ -1092,10 +1091,17 @@ def _reclaim_empty_fallbacks(owner: int) -> None:
     for directory in sorted(_FALLBACK_DIRECTORIES):
         try:
             os.rmdir(str(directory))
-        except OSError:
-            # ENOTEMPTY where a document the caller keeps is still there, ENOENT
-            # where it has already gone, EACCES where the temporary directory has
-            # been locked down since. None of them is actionable at exit.
+        except OSError as error:
+            if error.errno not in (errno.ENOTEMPTY, errno.EEXIST, errno.ENOENT):
+                # The first two are the contract -- a document the caller keeps is
+                # still in there -- and the third means somebody got here first.
+                # Anything else, EACCES on a temporary directory locked down since,
+                # leaves the directory behind, and saying so here is the same rule
+                # `_discard_empty_fallback` follows rather than a different one for
+                # being at exit.
+                _report_degradation(
+                    "could not remove the fallback directory %s: %s", directory, error
+                )
             continue
 
 

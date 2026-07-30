@@ -2544,3 +2544,98 @@ def test_a_redundant_guard_is_not_reported_as_the_reason() -> None:
     assert narrative.derivation_status in ("complete", "structural_only")
     if narrative.derivation_status == "complete":
         assert "cannot assign" in narrative.headline
+
+
+def _domain_item(frame, states):
+    """A published domain member listing a frame's legal states."""
+    reference = BmcConstraintRef(
+        "domain.frame.%s" % frame,
+        "kernel",
+        "domain.frame_state",
+        BmcSourceRef("generated", None, None),
+        "domain",
+        frames=(frame,),
+        refs={"frame": frame},
+    )
+    return BmcCoreItem(
+        reference,
+        "domain_rule",
+        None,
+        False,
+        {"kind": "state_domain", "frame": frame, "states": list(states)},
+        "domain",
+        False,
+    )
+
+
+def _state_item(frame, state, excluded):
+    """A published state member either requiring or ruling out one state."""
+    reference = BmcConstraintRef(
+        "state.%s.%s.%s" % (frame, state, excluded),
+        "assumptions",
+        "assumption.frame",
+        BmcSourceRef("generated", None, None),
+        "state",
+        frames=(frame,),
+        refs={"frame": frame},
+    )
+    return BmcCoreItem(
+        reference,
+        "assumption",
+        None,
+        False,
+        {
+            "kind": "state_membership",
+            "frame": frame,
+            "state": state,
+            "excluded": excluded,
+        },
+        "state",
+        False,
+    )
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "domain, states, exhausted",
+    [
+        ((1, (-1, 1, 2)), ((1, -1, True), (1, 1, True), (1, 2, True)), True),
+        ((1, (-1, 1, 2)), ((1, 1, True), (1, 2, True)), False),
+        ((1, (-1, 1)), ((0, -1, True), (0, 1, True)), False),
+        ((1, (1,)), ((1, 7, True),), False),
+        ((1, (1,)), ((1, 1, True), (1, 9, True)), True),
+        ((1, (1, 2)), ((1, 1, False), (1, 2, False)), False),
+    ],
+    ids=[
+        "every-legal-state-is-ruled-out",
+        "one-legal-state-still-remains",
+        "the-exclusions-are-about-another-frame",
+        "the-exclusion-names-a-state-outside-the-domain",
+        "a-spare-exclusion-does-not-change-the-answer",
+        "requirements-are-not-exclusions",
+    ],
+)
+def test_exhaustion_is_claimed_only_when_the_domain_is_actually_empty(
+    domain, states, exhausted
+) -> None:
+    """Emptying a frame is checked against the published domain, not counted.
+
+    The sentence claims the frame has nothing left to be, so it has to follow
+    from the legal states the core actually published: exclusions about another
+    frame, or naming a state the domain never allowed, leave the frame with
+    somewhere to go.  Reading a requirement as an exclusion would invert the
+    source line and reach the same wrong conclusion from the other direction.
+    """
+    from pyfcstm.bmc.explanation import _conflict_pattern
+
+    items = (_domain_item(*domain),) + tuple(
+        _state_item(frame, state, excluded) for frame, state, excluded in states
+    )
+
+    pattern = _conflict_pattern(items, "proven")
+
+    if exhausted:
+        assert pattern is not None
+        assert pattern[0] == "state_domain_exhaustion"
+    else:
+        assert pattern is None or pattern[0] != "state_domain_exhaustion"

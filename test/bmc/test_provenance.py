@@ -2642,3 +2642,52 @@ def test_a_long_variable_name_is_published_as_the_name_that_was_declared() -> No
     # reader falls back to the body it can see rather than inventing one.
     fallback = normalized_fact_for(groups["assumption.frame"])
     assert fallback["variable"] == name[:80]
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "name, declared, resolved",
+    [
+        ("x", ("x", "y"), "x"),
+        ("v" * 81, ("v" * 81,), "v" * 81),
+        ("v" * 80 + "a", ("v" * 80 + "a", "v" * 80 + "b"), "v" * 80 + "a"),
+        ("a.b", ("a.b", "a_b"), "a.b"),
+        ("a_b", ("a.b", "a_b"), "a_b"),
+        ("ghost", ("x", "y"), None),
+    ],
+    ids=[
+        "an-ordinary-name",
+        "a-name-longer-than-the-symbol-body",
+        "two-names-sharing-their-first-eighty-characters",
+        "a-name-whose-dot-becomes-an-underscore",
+        "the-underscore-name-it-collides-with",
+        "a-symbol-belonging-to-no-declared-variable",
+    ],
+)
+def test_a_symbol_resolves_to_the_declared_name_it_was_built_from(
+    name, declared, resolved
+) -> None:
+    """Resolution goes through the digest, which the whole name produced.
+
+    The symbol body is the name with unsafe characters replaced and then
+    truncated, so it is lossy twice over: ``a.b`` and ``a_b`` produce the same
+    body, and any name past eighty characters loses its tail.  Reading the body
+    back therefore has to be wrong for at least one of a colliding pair.  The
+    digest does not collide, so matching declared names through it answers
+    exactly, and a symbol that belongs to no declared variable answers nothing
+    rather than a plausible-looking prefix.
+    """
+    import hashlib
+    import re
+
+    import z3
+
+    from pyfcstm.bmc.provenance import _frame_variable_name
+
+    # Built the way the encoder builds it, so the test exercises the real shape
+    # rather than a hand-written string that happens to look like one.
+    body = re.sub(r"[^0-9A-Za-z_]+", "_", name).strip("_") or "item"
+    digest = hashlib.sha1(name.encode("utf-8")).hexdigest()[:10]
+    symbol = z3.Int("F_0_%s_%s" % (body[:80], digest))
+
+    assert _frame_variable_name(symbol, declared) == resolved

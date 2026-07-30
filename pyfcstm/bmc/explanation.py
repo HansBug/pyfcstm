@@ -2227,6 +2227,103 @@ def _readable(item, kind: str) -> bool:
     return all(key in fact for key in _FACT_REQUIRED_KEYS.get(kind, ()))
 
 
+def _members(items, kind: str, **axes) -> List["BmcCoreItem"]:
+    """Return the members carrying ``kind`` whole and agreeing with every axis.
+
+    An axis names a fact key and what it must hold: ``frame=1`` picks one frame, and
+    a set picks any of several, so ``state=legal`` keeps the exclusions a domain
+    reading can consume.  There is deliberately no negated axis.  A key the tag does
+    not require may be absent, and absence equals no expected value, so an
+    incomplete fact can never satisfy an axis by omitting it -- the way a ``!=``
+    comparison would let it.
+
+    :param items: The published core members to select from.
+    :type items: Iterable[BmcCoreItem]
+    :param kind: The tag the caller intends to read.
+    :type kind: str
+    :param axes: Fact keys and the value, or set of values, each must hold.
+    :return: The members that qualify, in the order given.
+    :rtype: List[BmcCoreItem]
+
+    Example::
+
+        >>> _members((), "variable_comparison", frame=0)
+        []
+    """
+    selected = []
+    for item in items:
+        if not _readable(item, kind):
+            continue
+        fact = item.normalized_fact
+        if all(
+            fact.get(name) in value
+            if isinstance(value, (set, frozenset))
+            else fact.get(name) == value
+            for name, value in axes.items()
+        ):
+            selected.append(item)
+    return selected
+
+
+def _state_members(items, excluded: bool, **axes) -> List["BmcCoreItem"]:
+    """Return the state members of one polarity, on the axes given.
+
+    ``excluded`` is optional on the fact -- a member requiring a state simply omits
+    it -- so the two polarities are asked for by name rather than through an axis,
+    where an absent key would match neither value.
+
+    :param items: The published core members to select from.
+    :type items: Iterable[BmcCoreItem]
+    :param excluded: ``True`` for members ruling a state out, ``False`` for members
+        requiring one.
+    :type excluded: bool
+    :param axes: Further fact keys, as in :func:`_members`.
+    :return: The members that qualify, in the order given.
+    :rtype: List[BmcCoreItem]
+
+    Example::
+
+        >>> _state_members((), True, frame=0)
+        []
+    """
+    return [
+        item
+        for item in _members(items, "state_membership", **axes)
+        if bool(item.normalized_fact.get("excluded")) is excluded
+    ]
+
+
+def _explains_every_member(participants, items) -> bool:
+    """Report whether a reading may close, given the members it actually uses.
+
+    This is the only place a pattern decides it has explained the core, and its
+    first argument is the set the conclusion is built from -- not a count taken over
+    a wider selection.  Keeping the two the same object is the point: a count over
+    everything carrying the right tag passes while the proof consumes a subset, and
+    the conflict step then names members that played no part, which is a true
+    sentence resting on a false attribution.
+
+    Comparing ids is how the question is phrased rather than a stronger check than
+    comparing sizes: a core refuses duplicate ids and every caller passes members
+    selected from it, so the two agree on any core that can be built.  The point of
+    the set form is that it stays right without that argument.
+
+    :param participants: The members the conclusion is derived from.
+    :type participants: Iterable[BmcCoreItem]
+    :param items: Every member of the published core.
+    :type items: Iterable[BmcCoreItem]
+    :return: ``True`` when the two name the same members.
+    :rtype: bool
+
+    Example::
+
+        >>> _explains_every_member((), ())
+        True
+    """
+    cited = {item.constraint.stable_id for item in participants}
+    return cited == {item.constraint.stable_id for item in items}
+
+
 def _conflict_pattern(
     items: Tuple["BmcCoreItem", ...],
     minimality: str = "not_proven",
@@ -2257,7 +2354,7 @@ def _conflict_pattern(
         >>> _conflict_pattern(()) is None
         True
     """
-    definedness = [item for item in items if _readable(item, "definedness_condition")]
+    definedness = _members(items, "definedness_condition")
     if len(definedness) == 1 and len(items) > 1 and minimality == "proven":
         # One domain condition beside facts about the very variable it guards.
         # Every member of a *proven* subset-minimal core is load-bearing, so the
@@ -2270,19 +2367,14 @@ def _conflict_pattern(
         # to the structural fallback.
         guard = definedness[0].normalized_fact
         subject, frame = guard.get("variable"), guard["frame"]
-        others = [item for item in items if item is not definedness[0]]
-        if subject is not None and all(
-            _readable(item, "variable_comparison")
-            and item.normalized_fact["variable"] == subject
-            and item.normalized_fact["frame"] == frame
-            for item in others
-        ):
+        paired = _members(items, "variable_comparison", variable=subject, frame=frame)
+        if subject is not None and _explains_every_member(definedness + paired, items):
             return (
                 "definedness_failure",
                 "The %s at frame %s cannot stay defined: %s is required to be a "
                 "value it rules out." % (guard["operation"], frame, subject),
             )
-    if definedness and len(definedness) == len(items):
+    if definedness and _explains_every_member(definedness, items):
         # The core is the domain condition itself, and a published core is
         # unsatisfiable, so the reason no execution exists is that the operation
         # cannot be defined there.  Naming the operation is the whole value of
@@ -2300,31 +2392,23 @@ def _conflict_pattern(
             "No execution keeps every operation defined at %s."
             % ", ".join("frame %s" % frame for frame in frames),
         )
-    domains = [item for item in items if _readable(item, "state_domain")]
+    domains = _members(items, "state_domain")
     if len(domains) == 1:
         legal = domains[0].normalized_fact
         legal_states = set(legal["states"])
-        # The conclusion is quantified over the frame's *legal* states, so only an
-        # exclusion at that frame naming one of them takes part in it.  Both other
-        # kinds can sit in a core: a frame's domain is not the same at every frame
-        # -- entry admits states a recurrence step does not -- so an assumption
-        # ruling out a composite at frame 1 is an ordinary authored line that lands
-        # outside frame 1's domain.  Counting either would name a member in a
-        # conflict it plays no part in, which is the "pattern over a subset" the
-        # count exists to refuse; filtering both keeps the counted set and the set
-        # the proof consumes identical.
-        exclusions = [
-            item
-            for item in items
-            if _readable(item, "state_membership")
-            and item.normalized_fact.get("excluded")
-            and item.normalized_fact["frame"] == legal["frame"]
-            and item.normalized_fact["state"] in legal_states
-        ]
+        # The conclusion is quantified over the frame's *legal* states, so those are
+        # the axes: an exclusion elsewhere, or naming a state this frame does not
+        # list, takes no part in it.  Both can sit in a core -- a frame's domain is
+        # not the same at every frame, since entry admits states a recurrence step
+        # does not, so ruling out a composite at frame 1 is an ordinary authored line
+        # landing outside frame 1's domain.
+        exclusions = _state_members(
+            items, True, frame=legal["frame"], state=legal_states
+        )
         removed = {item.normalized_fact["state"] for item in exclusions}
         if (
             exclusions
-            and len(domains) + len(exclusions) == len(items)
+            and _explains_every_member(domains + exclusions, items)
             and legal_states <= removed
         ):
             # Every state the frame may hold has been ruled out, so the frame has
@@ -2335,13 +2419,8 @@ def _conflict_pattern(
                 "Frame %s has no state left: every one of its %d legal states is "
                 "ruled out." % (legal["frame"], len(legal["states"])),
             )
-    states = [
-        item
-        for item in items
-        if _readable(item, "state_membership")
-        and not item.normalized_fact.get("excluded")
-    ]
-    if states and len(states) == len(items):
+    states = _state_members(items, False)
+    if states and _explains_every_member(states, items):
         frames = {item.normalized_fact["frame"] for item in states}
         required = sorted({item.normalized_fact["state"] for item in states})
         if len(frames) == 1 and len(required) > 1:
@@ -2357,8 +2436,8 @@ def _conflict_pattern(
                     " and ".join(_state_label(code, state_paths) for code in required),
                 ),
             )
-    comparisons = [item for item in items if _readable(item, "variable_comparison")]
-    if len(comparisons) != len(items) or len(comparisons) < 2:
+    comparisons = _members(items, "variable_comparison")
+    if len(comparisons) < 2 or not _explains_every_member(comparisons, items):
         # A pattern over a subset would leave the remaining members unexplained
         # while the narrative claimed a closed chain.
         return None
@@ -2381,9 +2460,9 @@ def _conflict_pattern(
         )
     # Only the members the reading uses count as explained; a skipped ``ne`` would
     # otherwise be listed in the conflict step without bearing on it.
-    if len(_bounds_participants(comparisons)) == len(items) and _interval_is_empty(
-        comparisons
-    ):
+    if _explains_every_member(
+        _bounds_participants(comparisons), items
+    ) and _interval_is_empty(comparisons):
         return (
             "interval_intersection",
             "No value of %s satisfies every bound required at frame %s."
@@ -2518,14 +2597,20 @@ def _propagation_steps(core: "BmcConflictCore", forced_values: Tuple):
         # disagreeing and then published as one.  In the supporting selection every
         # comparison is ``==``, which an absent key can never satisfy, so the check
         # only licenses the direct indexing and never changes who is selected.
+        # The one comparison that cannot become an axis: ``!=`` is satisfied by an
+        # absent key, so asking for it through :func:`_members` would select a fact
+        # with no value and publish the value it does not have.  The equalities go
+        # through the shared selection; the inequality stays here, after it.
         disagreeing = [
             item
-            for item in core.items
+            for item in _members(
+                core.items,
+                "variable_comparison",
+                variable=forced.variable,
+                frame=forced.frame,
+                operator="eq",
+            )
             if item.constraint.stage == "assumptions"
-            and _readable(item, "variable_comparison")
-            and item.normalized_fact["variable"] == forced.variable
-            and item.normalized_fact["frame"] == forced.frame
-            and item.normalized_fact["operator"] == "eq"
             and item.normalized_fact["value"] != forced.value
         ]
         if not disagreeing:
@@ -2546,13 +2631,13 @@ def _propagation_steps(core: "BmcConflictCore", forced_values: Tuple):
                 supporting.append(by_id[name])
         if seen & {item.constraint.stable_id for item in disagreeing}:
             continue
-        if any(
-            _readable(item, "variable_comparison")
-            and item.normalized_fact["variable"] == forced.variable
-            and item.normalized_fact["frame"] == forced.frame
-            and item.normalized_fact["operator"] == "eq"
-            and item.normalized_fact["value"] == forced.value
-            for item in supporting
+        if _members(
+            supporting,
+            "variable_comparison",
+            variable=forced.variable,
+            frame=forced.frame,
+            operator="eq",
+            value=forced.value,
         ):
             # A supporting fact already states this value at this frame, so "the
             # prefix therefore requires it" restates the line above it -- and
@@ -2587,22 +2672,13 @@ def _propagation_steps(core: "BmcConflictCore", forced_values: Tuple):
             BmcReasoningStep("fact", (item.constraint.stable_id,), (), item.human_text)
             for item in disagreeing
         )
-        cited = {item.constraint.stable_id for item in supporting}
-        cited |= {item.constraint.stable_id for item in disagreeing}
-        if cited != {item.constraint.stable_id for item in core.items}:
+        if not _explains_every_member(supporting + disagreeing, core.items):
             # The coverage check the four single-shape patterns all make.  On the
             # orchestration path the shrink already guarantees it -- the
             # supporting set plus one disagreeing assumption is unsatisfiable, so
             # a minimal core holds nothing else -- but this branch is reached
             # through a published function too, and a rule the reader has to
             # reconstruct from elsewhere is not a rule this branch states.
-            #
-            # Compared as sets rather than by adding the two sizes: the sum equals
-            # the member count only while the two are disjoint, which holds for a
-            # ``ForcedValue`` describing what its own docstring describes -- the
-            # non-assumption groups -- and is nowhere checked.  A caller naming an
-            # assumption among them would have the overlap counted twice, and the
-            # count would pass while a member nobody cited rode along.
             continue
         values = sorted(
             {forced.value} | {item.normalized_fact["value"] for item in disagreeing}

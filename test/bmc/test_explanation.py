@@ -3447,6 +3447,132 @@ def test_an_exclusion_at_another_frame_is_not_counted_as_explained() -> None:
     assert outside_domain.derivation_status != "complete"
 
 
+def _rider(kind, stable_id="rider"):
+    """A whole, honest member of one tag that no pattern below is reading."""
+    facts = {
+        "variable_comparison": {
+            "kind": "variable_comparison",
+            "variable": "z",
+            "frame": 4,
+            "operator": "eq",
+            "value": 99,
+        },
+        "state_membership": {
+            "kind": "state_membership",
+            "frame": 4,
+            "state": 99,
+            "excluded": True,
+        },
+        "state_domain": {"kind": "state_domain", "frame": 4, "states": [98, 99]},
+        "definedness_condition": {
+            "kind": "definedness_condition",
+            "frame": 4,
+            "operation": "division",
+        },
+        "structural_constraint": {
+            "kind": "structural_constraint",
+            "stable_id": stable_id,
+        },
+    }
+    reference = BmcConstraintRef(
+        stable_id,
+        "assumptions",
+        "assumption.frame",
+        BmcSourceRef("generated", None, None),
+        "rider",
+        frames=(4,),
+        refs={"frame": 4},
+    )
+    return BmcCoreItem(
+        reference, "assumption", None, False, facts[kind], "rider", False
+    )
+
+
+def _pattern_positives():
+    """One core per reading, each of which does reach it."""
+    return {
+        "incompatible-equalities-over-a-variable": (
+            "assumptions_component",
+            (_comparison_item("x", 0, "eq", 1), _comparison_item("x", 0, "eq", 2)),
+            "cannot assign",
+        ),
+        "an-empty-interval": (
+            "assumptions_component",
+            (_comparison_item("x", 0, "ge", 5), _comparison_item("x", 0, "le", 3)),
+            "satisfies every bound",
+        ),
+        "incompatible-equalities-over-the-state-slot": (
+            "assumptions_component",
+            (_state_item(0, 1, False), _state_item(0, 2, False)),
+            "cannot be in two states",
+        ),
+        "an-exhausted-state-domain": (
+            "assumptions_domain",
+            (_domain_item(1, [1, 2]), _state_item(1, 1, True), _state_item(1, 2, True)),
+            "has no state left",
+        ),
+        "a-domain-condition-and-its-variable": (
+            "assumptions_prefix",
+            (_guard_item("x", 0), _comparison_item("x", 0)),
+            "cannot stay defined",
+        ),
+    }
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "pattern", sorted(_pattern_positives()), ids=sorted(_pattern_positives())
+)
+@pytest.mark.parametrize(
+    "rider_kind",
+    [
+        "variable_comparison",
+        "state_membership",
+        "state_domain",
+        "definedness_condition",
+        "structural_constraint",
+    ],
+)
+def test_no_pattern_closes_over_a_member_it_does_not_read(pattern, rider_kind) -> None:
+    """One rule, checked on every reading: what is counted is what is used.
+
+    Each of these has been repaired at least once for counting members it did not
+    consume -- over every frame instead of one, over every exclusion instead of the
+    legal ones, by adding two list sizes instead of comparing ids.  Each repair fixed
+    the instance it was shown, which is why there was always a next one.  The
+    property is the same for all of them and does not depend on which axis a reading
+    quantifies over: a member the conclusion is not built from cannot be listed among
+    the members it rests on, so a core carrying one degrades instead of closing.
+
+    The rider is a whole, honest fact -- every key its tag implies, about a frame and
+    a variable nothing else in the core mentions.  Nothing rejects it for being
+    malformed; it is simply not part of any answer.
+    """
+    from pyfcstm.bmc.explanation import build_conflict_narrative
+
+    scope, members, closing = _pattern_positives()[pattern]
+
+    # Anti-vacuity: without the rider this core does reach its reading, so a
+    # degradation below is the rider's doing and not the fixture's.
+    reached = build_conflict_narrative(
+        BmcConflictCore(scope, "F", "source_group", "subset_minimal", "proven", members)
+    )
+    assert reached.derivation_status == "complete"
+    assert closing in reached.reasoning_steps[-1].text
+
+    with_rider = build_conflict_narrative(
+        BmcConflictCore(
+            scope,
+            "F",
+            "source_group",
+            "subset_minimal",
+            "proven",
+            members + (_rider(rider_kind),),
+        )
+    )
+    assert with_rider.derivation_status != "complete"
+
+
 def _partial_comparison_item(variable, frame=0, operator=None):
     """A comparison member carrying part of what its tag implies.
 

@@ -2640,7 +2640,7 @@ class Diagram:
         }
 
     @staticmethod
-    def _export_engine() -> "DiagramAssetEngine":
+    def _export_engine(include_pdf: bool = False) -> "DiagramAssetEngine":
         """
         Create the rendering engine, naming the optional dependency if absent.
 
@@ -2648,12 +2648,15 @@ class Diagram:
         installation without the optional runtime behaves exactly as it did
         before this capability existed.
 
+        :param include_pdf: Whether the engine must also carry the vector-PDF
+            writer, defaults to ``False``.
+        :type include_pdf: bool, optional
         :return: A ready rendering engine.
         :rtype: pyfcstm.diagram.engine.DiagramAssetEngine
         :raises pyfcstm.diagram.engine.DiagramUnavailableError: If no supported
             rendering runtime is installed.
         """
-        return DiagramAssetEngine()
+        return DiagramAssetEngine(include_pdf=include_pdf)
 
     def to_svg(self) -> str:
         """
@@ -2760,27 +2763,38 @@ class Diagram:
 
     def to_pdf(self) -> bytes:
         """
-        Request a synchronous headless vector PDF export.
+        Export the diagram as a single-page vector PDF.
+
+        The writer is the one the standalone viewer uses, driven here through a
+        DOM adapter rather than a browser, so the two paths cannot drift.  Text
+        is drawn as outlines: the document is therefore not searchable, which is
+        the cost of it rendering identically without this project's fonts.
 
         :return: Nothing; this method always raises.
         :rtype: bytes
-        :raises DiagramUnavailableError: Always.  PDF is produced by the
-            embedded viewer's own export, which needs a browser.
+        :raises pyfcstm.diagram.engine.DiagramUnavailableError: If the optional
+            rendering runtime is not installed.
+        :raises pyfcstm.diagram.engine.DiagramRenderLimitError: If the diagram or
+            the encoded document exceeds a documented size limit.
 
         Example::
 
             >>> from pyfcstm.model import load_state_machine_from_text
             >>> view = load_state_machine_from_text('state Root;').diagram()
-            >>> view.to_pdf()
-            Traceback (most recent call last):
-            ...
-            pyfcstm.diagram.engine.DiagramUnavailableError: headless PDF export ...
+            >>> view.to_pdf()[:5]                              # doctest: +SKIP
+            b'%PDF-'
         """
-        raise DiagramUnavailableError(
-            "headless PDF export is unavailable; use Diagram.to_html() browser export "
-            "instead; `pip install pyfcstm[viz]` adds the rendering runtime but not "
-            "a synchronous Python export"
-        )
+        engine = self._export_engine(include_pdf=True)
+        request = self._export_request()
+        canonical = engine.render_svg(request)
+        width, height = _canonical_canvas_size(canonical)
+        # PDF is a vector format, so there is no scale: the page is the diagram.
+        # The encoded-output cap still applies, and it applies before the bytes
+        # reach a cache or a file.
+        check_export_size(width, height, 1.0)
+        expanded = engine.expand_svg(canonical)
+        data = engine.render_pdf(expanded, width, height)
+        return check_export_bytes(data, "PDF", MAX_EXPORT_TEXT_BYTES)
 
     def to_html(self, output: Optional[Union[str, os.PathLike]] = None) -> str:
         """

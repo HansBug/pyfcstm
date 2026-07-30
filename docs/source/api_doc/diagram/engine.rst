@@ -95,7 +95,7 @@ DiagramAssetEngine
 -----------------------------------------------------
 
 .. autoclass:: DiagramAssetEngine
-    :members: __init__,render_svg,render_png,expand_svg
+    :members: __init__,render_svg,render_png,render_pdf,expand_svg
 
 
 check\_export\_scale

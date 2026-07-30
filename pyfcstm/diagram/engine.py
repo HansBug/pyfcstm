@@ -700,6 +700,10 @@ class DiagramAssetEngine:
         operation. ``None`` leaves the operation uncapped, defaults to
         ``None``.
     :type timeout: float, optional
+    :param include_pdf: Whether to also evaluate the vector-PDF writer, defaults
+        to ``False``.  It is only needed for PDF export and costs about a
+        megabyte of JavaScript to parse.
+    :type include_pdf: bool, optional
     :param max_memory: Optional V8 heap limit in bytes applied to each
         JavaScript evaluation, defaults to ``None``.
     :type max_memory: int, optional
@@ -715,7 +719,10 @@ class DiagramAssetEngine:
     """
 
     def __init__(
-        self, timeout: Optional[float] = None, max_memory: Optional[int] = None
+        self,
+        timeout: Optional[float] = None,
+        max_memory: Optional[int] = None,
+        include_pdf: bool = False,
     ) -> None:
         numeric_timeout = None if timeout is None else float(timeout)
         if numeric_timeout is not None and (
@@ -729,6 +736,11 @@ class DiagramAssetEngine:
                 raise ValueError("max_memory must be a finite positive integer or None")
         self.timeout = numeric_timeout
         self.max_memory = max_memory
+        # The PDF writer is close to a megabyte of JavaScript that only the PDF
+        # export needs, and it can only be evaluated in one narrow window during
+        # context setup, so whether to carry it is decided here rather than on
+        # first use.
+        self._include_pdf = bool(include_pdf)
         self._context = None
         self._active_context_count = 0
         self._context_token = None
@@ -928,6 +940,20 @@ class DiagramAssetEngine:
             "globalThis.__pyfcstm_embedded_host = true;",
         )
         self._load_javascript_asset("renderer.js", renderer)
+        if self._include_pdf:
+            # This is the only window in which the writer can be evaluated:
+            # ``host-shim.js`` has already made ``eval`` unavailable, and the
+            # loader that works around that is deleted immediately below. Loading
+            # it later fails with ``evaluate is not a function``, which is the
+            # security boundary doing its job rather than a bug to route around.
+            writer = _asset_bytes("pdf-writer.js").decode("utf-8")
+            if "__pyfcstm_pdf_start" not in writer:
+                self._discard_context()
+                raise _asset_failure(
+                    "pdf-writer.js",
+                    "the bundle does not expose the required PDF entrypoint",
+                )
+            self._load_javascript_asset("pdf-writer.js", writer)
         self._eval_asset(
             "asset-loader",
             "delete globalThis.__pyfcstm_load_asset;",
@@ -1271,6 +1297,128 @@ class DiagramAssetEngine:
                 "resvg.wasm", "the renderer returned invalid PNG data", err
             ) from err
         return result
+
+    def render_pdf(self, svg: str, width: float, height: float) -> bytes:
+        """
+        Render one single-page vector PDF from expanded SVG.
+
+        The writer is the same ``renderVectorPdf`` the standalone viewer calls;
+        this method supplies the DOM contract that code assumes and nothing else.
+
+        :param svg: Expanded SVG text, as returned by :meth:`expand_svg`.
+        :type svg: str
+        :param width: Page width in SVG user units.
+        :type width: float
+        :param height: Page height in SVG user units.
+        :type height: float
+        :return: PDF bytes.
+        :rtype: bytes
+        :raises ValueError: If ``svg`` is not text.
+        :raises DiagramAssetError: If the packaged writer is unusable, the job
+            reports an error, or the deadline passes.
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('state Root { state A; [*] -> A; }')
+            >>> view = model.diagram()
+            >>> engine = DiagramAssetEngine()                       # doctest: +SKIP
+            >>> expanded = engine.expand_svg({"diagram": view.to_dict()})   # doctest: +SKIP
+            >>> engine.render_pdf(expanded, 100, 100)[:5]           # doctest: +SKIP
+            b'%PDF-'
+        """
+        if not isinstance(svg, str):
+            raise ValueError("svg must be text")
+        request_id = "pyfcstm-pdf-%d" % time.monotonic_ns()
+        deadline = None if self.timeout is None else time.monotonic() + self.timeout
+        payload = json.dumps(
+            {"svg": svg, "width": float(width), "height": float(height)},
+            ensure_ascii=False,
+            allow_nan=False,
+        )
+        self._eval_asset(
+            "pdf-writer.js",
+            "__pyfcstm_pdf_start(%s, %s)"
+            % (json.dumps(payload), json.dumps(request_id)),
+            timeout=self.timeout,
+            request=True,
+        )
+        while deadline is None or time.monotonic() < deadline:
+            remaining = (
+                None if deadline is None else max(0.001, deadline - time.monotonic())
+            )
+            raw = self._eval_asset(
+                "pdf-writer.js",
+                "__pyfcstm_pdf_poll(%s)" % json.dumps(request_id),
+                timeout=remaining,
+                request=True,
+            )
+            try:
+                status = json.loads(str(raw))
+            except (TypeError, ValueError) as err:
+                # TypeError/ValueError: a corrupted writer returned non-JSON
+                # polling data instead of its documented status envelope.
+                self._discard_context()
+                raise _render_failure(
+                    "pdf-writer.js",
+                    "the PDF writer returned invalid job status data",
+                    err,
+                    request_error=True,
+                ) from err
+            if not isinstance(status, dict):
+                self._discard_context()
+                raise _render_failure(
+                    "pdf-writer.js",
+                    "the PDF writer returned a non-object job status",
+                    request_error=True,
+                )
+            if status.get("status") == "done":
+                self._eval_asset(
+                    "pdf-writer.js",
+                    "__pyfcstm_pdf_drop(%s)" % json.dumps(request_id),
+                    timeout=remaining,
+                    request=True,
+                )
+                try:
+                    data = base64.b64decode(str(status["pdf"]), validate=True)
+                except (KeyError, binascii.Error, ValueError) as err:
+                    # KeyError: the completed job omitted its payload.
+                    # binascii.Error/ValueError: the payload is not valid base64.
+                    self._discard_context()
+                    raise _render_failure(
+                        "pdf-writer.js",
+                        "the completed job returned no usable PDF payload",
+                        err,
+                        request_error=True,
+                    ) from err
+                if not data.startswith(b"%PDF-"):
+                    self._discard_context()
+                    raise _render_failure(
+                        "pdf-writer.js", "the PDF writer returned malformed output"
+                    )
+                return data
+            if status.get("status") == "error":
+                self._eval_asset(
+                    "pdf-writer.js",
+                    "__pyfcstm_pdf_drop(%s)" % json.dumps(request_id),
+                    timeout=remaining,
+                    request=True,
+                )
+                error = str(status.get("error", "unknown PDF writer error"))
+                self._discard_context()
+                raise _render_failure(
+                    "pdf-writer.js",
+                    "the PDF writer job failed",
+                    ValueError(error),
+                    request_error=True,
+                )
+            time.sleep(0.001)
+        self._discard_context()
+        raise _render_failure(
+            "pdf-writer.js",
+            "the PDF writer job exceeded its deadline",
+            request_error=True,
+        )
 
     def expand_svg(self, request: Union[str, Dict[str, Any]]) -> str:
         """

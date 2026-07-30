@@ -12,6 +12,7 @@ cannot tell those two apart -- so the ones here assert the refusal happens
 before the renderer is reached.
 """
 
+import json
 import re
 import struct
 import subprocess
@@ -401,20 +402,7 @@ class TestBaseInstallationStaysUnchanged:
 @pytest.mark.unittest
 @needs_runtime
 class TestSaveRoutesEveryFormat:
-    @pytest.mark.parametrize(
-        "suffix",
-        [
-            "svg",
-            "png",
-            pytest.param(
-                "pdf",
-                marks=pytest.mark.xfail(
-                    strict=True,
-                    reason="vector PDF export arrives with the headless DOM adapter",
-                ),
-            ),
-        ],
-    )
+    @pytest.mark.parametrize("suffix", ["svg", "png", "pdf"])
     def test_a_capability_format_lands_on_disk(self, tmp_path, suffix):
         target = tmp_path / ("machine." + suffix)
         assert _diagram().save(target) == target
@@ -506,3 +494,115 @@ class TestEveryCapHasAThreshold:
         for width, height in ((float("nan"), 10), (10, float("inf")), (0, 10)):
             with pytest.raises(ValueError):
                 check_export_size(width, height, 1)
+
+
+@pytest.mark.unittest
+@needs_runtime
+class TestVectorPdf:
+    def test_the_document_is_a_single_page_pdf(self):
+        data = _diagram().to_pdf()
+        assert data[:5] == b"%PDF-"
+        # One page per diagram: a writer that silently paginated would still
+        # produce a valid file, and the caller would only find out on print.
+        assert data.count(b"/Type /Page\n") + data.count(b"/Type /Page ") <= 2
+
+    def test_the_page_matches_the_diagram_and_carries_no_raster(self):
+        # These two properties are what "vector" means here, and both are
+        # checkable without a PDF library: the page box comes from the diagram's
+        # own size, and an image XObject would mean something was rasterised.
+        view = _diagram()
+        data = view.to_pdf()
+        assert b"/Subtype /Image" not in data
+        assert b"/Subtype/Image" not in data
+        canonical = DiagramAssetEngine().render_svg(
+            {"diagram": view.to_dict(), "options": view.options.to_dict()}
+        )
+        width = float(re.search(r'width="([\d.]+)', canonical).group(1))
+        box = re.search(rb"/MediaBox\s*\[([\d.\s-]+)\]", data)
+        assert box is not None
+        numbers = [float(part) for part in box.group(1).split()]
+        assert abs((numbers[2] - numbers[0]) - width) < 2.0
+
+    def test_rendering_the_same_diagram_twice_gives_the_same_drawing(self):
+        # The PDF carries a creation timestamp, so the bytes differ run to run.
+        # What has to be stable is the drawing, which is the content stream.
+        first = _diagram().to_pdf()
+        second = _diagram().to_pdf()
+        pattern = re.compile(rb"stream\r?\n(.*?)endstream", re.S)
+        assert pattern.findall(first) == pattern.findall(second)
+
+    def test_a_palette_choice_reaches_the_pdf(self):
+        assert (
+            _diagram(palette="default", mode="light").to_pdf()
+            != _diagram(palette="nord", mode="light").to_pdf()
+        )
+
+    def test_an_oversized_diagram_is_refused_before_the_writer_runs(self):
+        view = _diagram(_wide_source(200), direction="LR")
+        with mock.patch.object(
+            DiagramAssetEngine, "render_pdf", autospec=True
+        ) as writer:
+            with pytest.raises(DiagramRenderLimitError):
+                view.to_pdf()
+        assert writer.call_args_list == []
+
+
+@pytest.mark.unittest
+@needs_runtime
+class TestTheDomAdapterFailsLoudly:
+    """
+    Guard the one failure mode the adapter cannot show through an export.
+
+    ``xmldom`` has no CSS selector engine, so the adapter answers the two
+    selectors the export core actually uses.  If an unknown selector returned an
+    empty list instead of raising, the halo removal in ``prepareSvgForPdf`` would
+    quietly do nothing: a PDF would still be produced, with a stroke halo baked
+    into every transition label, and every other assertion here would pass.
+    """
+
+    def test_an_unknown_selector_is_refused_rather_than_answered_emptily(self):
+        from py_mini_racer import MiniRacer
+
+        from pyfcstm.diagram.engine import _asset_bytes
+
+        context = MiniRacer()
+        context.eval(_asset_bytes("host-shim.js").decode("utf-8"))
+        context.eval(_asset_bytes("pdf-writer.js").decode("utf-8"))
+        probe = (
+            "(function () {"
+            "  var element = new DOMParser()"
+            "    .parseFromString('<svg><g/></svg>', 'image/svg+xml').documentElement;"
+            "  try { element.querySelectorAll('g.unknown-thing'); return 'answered'; }"
+            "  catch (error) { return 'refused:' + error.message; }"
+            "})()"
+        )
+        outcome = str(context.eval(probe))
+        assert outcome.startswith("refused:"), outcome
+        assert "selector" in outcome
+
+    def test_the_selectors_the_export_core_uses_are_all_answered(self):
+        from py_mini_racer import MiniRacer
+
+        from pyfcstm.diagram.engine import _asset_bytes
+
+        context = MiniRacer()
+        context.eval(_asset_bytes("host-shim.js").decode("utf-8"))
+        context.eval(_asset_bytes("pdf-writer.js").decode("utf-8"))
+        document = (
+            '<svg><g data-fcstm-kind="transition-label">'
+            '<text paint-order="stroke">x</text></g><style/></svg>'
+        )
+        probe = (
+            "(function () {"
+            "  var element = new DOMParser()"
+            "    .parseFromString(%s, 'image/svg+xml').documentElement;"
+            "  var halos = element.querySelectorAll("
+            '    \'[data-fcstm-kind="transition-label"] text[paint-order="stroke"]\');'
+            "  var sheets = element.querySelectorAll('style,link');"
+            "  return halos.length + ',' + sheets.length;"
+            "})()" % json.dumps(document)
+        )
+        # Both selectors must find their target: an adapter that answered them
+        # with an empty list would leave the halo in place, and this is the only
+        # place that difference is visible.
+        assert str(context.eval(probe)) == "1,1"

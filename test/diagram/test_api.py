@@ -759,17 +759,16 @@ def test_the_scale_argument_is_validated_before_any_capability_is_needed():
             diagram.to_png(scale=bad)
 
 
-def test_vector_pdf_still_names_the_capability_it_is_waiting_on():
-    # SVG and PNG now export synchronously; PDF arrives with the headless DOM
-    # adapter, and until then the failure has to say so rather than look like a
-    # missing attribute. The behaviour of the two working formats is pinned in
-    # ``test_headless.py``, which can tell the runtime-present and runtime-absent
-    # cases apart.
+def test_save_routes_every_documented_format_to_a_writer():
+    # ``save`` is a router, and the property under test here is that it has a
+    # branch for each documented suffix rather than what any branch produces.
+    # The export behaviour itself, and the difference between the optional
+    # runtime being present and absent, are pinned in ``test_headless.py``.
     diagram = _model("state Root;").diagram()
-    with pytest.raises(DiagramUnavailableError, match="headless PDF"):
-        diagram.to_pdf()
-    with pytest.raises(DiagramUnavailableError, match="headless PDF"):
-        diagram.save("diagram.pdf")
+    with pytest.raises(ValueError, match="unsupported diagram format"):
+        diagram.save("diagram.tiff")
+    with pytest.raises(ValueError, match="scale is only supported"):
+        diagram.save("diagram.pdf", scale=2)
 
 
 def test_diagram_data_rejects_non_mapping_snapshots():

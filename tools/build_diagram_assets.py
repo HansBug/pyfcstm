@@ -36,6 +36,8 @@ ENTRY_PATH = ROOT / "tools" / "diagram_assets" / "python-renderer-entry.ts"
 VIEWER_BUILD_PATH = ROOT / "tools" / "diagram_assets" / "build_viewer.js"
 BRIDGE_PATH = ROOT / "tools" / "diagram_assets" / "resvg-bridge.js"
 HOST_SHIM_PATH = ROOT / "tools" / "diagram_assets" / "host-shim.js"
+PDF_ENTRY_PATH = ROOT / "tools" / "diagram_assets" / "python-pdf-entry.ts"
+PDF_HOST_SHIM_PATH = ROOT / "tools" / "diagram_assets" / "pdf-host-shim.js"
 JSFCSTM_DIR = ROOT / "editors" / "jsfcstm"
 VSCODE_DIR = ROOT / "editors" / "vscode"
 ANTLR_JAR_PATH = ROOT / "antlr-4.9.3.jar"
@@ -587,6 +589,70 @@ def build_renderer(
     return output.read_bytes(), _canonicalize_metafile(metadata)
 
 
+def build_pdf_writer(output: Path, esbuild_version: str) -> Tuple[bytes, Dict[str, object]]:
+    """
+    Build the embedded vector-PDF writer as a minified ES2017 IIFE.
+
+    The bundle carries the shared export core and the ``xmldom`` DOM adapter it
+    needs in a host with no browser.  It does not carry a second PDF writer:
+    ``renderVectorPdf`` is the same function the standalone viewer calls.
+
+    The two aliases are the same ones the viewer build uses.  ``fast-png`` is
+    reached only from jsPDF's optional raster route, which this path never
+    enters, and the stub keeps that import from becoming a hidden dependency.
+    ``@xmldom/xmldom`` is aliased because the entry file sits outside the jsfcstm
+    package, so bare resolution from its own directory would not find it.
+
+    :param output: Temporary output path for the JS bundle.
+    :type output: pathlib.Path
+    :param esbuild_version: Exact esbuild package version to invoke.
+    :type esbuild_version: str
+    :return: Bundle bytes and esbuild metafile data.
+    :rtype: tuple[bytes, dict]
+    :raises subprocess.CalledProcessError: If esbuild fails.
+    """
+    metafile = output.with_suffix(".meta.json")
+    xmldom_dir = JSFCSTM_DIR / "node_modules" / "@xmldom" / "xmldom"
+    command = [
+        _node_command("npx"),
+        "--no-install",
+        "esbuild",
+        str(PDF_ENTRY_PATH),
+        "--bundle",
+        "--format=iife",
+        "--platform=neutral",
+        "--target=es2017",
+        "--keep-names",
+        "--main-fields=main,module",
+        "--minify",
+        "--alias:@xmldom/xmldom=%s" % xmldom_dir,
+        "--alias:fast-png=%s" % (ROOT / "tools" / "diagram_assets" / "fast-png-stub.js"),
+        "--metafile=%s" % metafile,
+        "--outfile=%s" % output,
+    ]
+    subprocess.run(command, cwd=str(JSFCSTM_DIR), check=True)
+    metadata = json.loads(metafile.read_text(encoding="utf-8"))
+    inputs = metadata.get("inputs", {})
+    if isinstance(inputs, dict):
+        # The zero-image PDF gate cannot see a raster fallback that was bundled
+        # but never called, so the bundle inventory is checked directly.
+        forbidden = ("canvg", "html2canvas", "fast-png", "dompurify")
+        bundled = sorted(
+            path
+            for path in inputs
+            if any(
+                "/node_modules/%s/" % name in str(path).replace("\\", "/")
+                for name in forbidden
+            )
+        )
+        if bundled:
+            raise ValueError(
+                "embedded PDF writer bundled forbidden raster packages: %s"
+                % ", ".join(bundled)
+            )
+    return output.read_bytes(), _canonicalize_metafile(metadata)
+
+
 def build_viewer(output_dir: Path) -> Tuple[bytes, bytes, Dict[str, object]]:
     """Build the standalone Vue viewer that reuses the VSCode preview components."""
     try:
@@ -1087,8 +1153,16 @@ def build_assets() -> None:
         bridge = BRIDGE_PATH.read_bytes()
         host_shim = HOST_SHIM_PATH.read_bytes()
         combined = renderer + b"\n" + bundle + b"\n" + bridge
+        pdf_bundle, _ = build_pdf_writer(
+            temporary_root / "pdf-writer.js", esbuild_version
+        )
+        # The shim goes first and in the same file: jsPDF reads ``navigator``
+        # while its module body runs, which a bundler hoists above anything the
+        # entry assigns, so installing it from inside the bundle is too late.
+        pdf_writer = PDF_HOST_SHIM_PATH.read_bytes() + b"\n" + pdf_bundle
         files = [
             ("renderer.js", combined),
+            ("pdf-writer.js", pdf_writer),
             ("resvg-binding.js", bundle),
             ("resvg.wasm", wasm),
             ("resvg-bridge.js", bridge),

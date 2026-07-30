@@ -473,6 +473,11 @@ jobs:
         shell: bash
         run: |
           make diagram_headless_check
+      - name: Run notebook representation gate
+        if: ${{ matrix.python-version == '3.11' }}
+        shell: bash
+        run: |
+          make diagram_notebooks_check
 
   template_suite_gate:
     name: template-suite-gate

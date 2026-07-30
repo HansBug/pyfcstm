@@ -466,6 +466,13 @@ jobs:
         shell: bash
         run: |
           make diagram_browser_check
+      - name: Run synchronous export gate over the canonical corpus
+        # Separate from ``diagram_assets_verify`` because it exports every corpus
+        # case three times at three scales, which is minutes rather than seconds.
+        if: ${{ matrix.python-version == '3.11' }}
+        shell: bash
+        run: |
+          make diagram_headless_check
 
   template_suite_gate:
     name: template-suite-gate

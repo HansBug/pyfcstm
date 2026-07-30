@@ -164,7 +164,8 @@ def run(
         raise ValueError(
             "TextEncoder/TextDecoder host shim is unavailable: %s" % encoders
         )
-    counts = {"svg": 0, "png": 0, "expanded-svg": 0}
+    counts = {"svg": 0, "png": 0, "expanded-svg": 0, "pdf": 0}
+    pdf_engine = DiagramAssetEngine(include_pdf=True) if "pdf" in formats else None
     for request in requests:
         if "svg" in formats:
             svg = engine.render_svg(request)
@@ -181,6 +182,21 @@ def run(
             if not expanded.lstrip().startswith("<svg") or "<path" not in expanded:
                 raise ValueError("runtime floor returned an invalid expanded SVG")
             counts["expanded-svg"] += 1
+        if "pdf" in formats:
+            # The PDF writer takes the expanded form, so the floor exercises the
+            # same chain the public export uses rather than a shortcut.
+            expanded = pdf_engine.expand_svg(request)
+            size = re.search(
+                r'width="([\d.]+)"[^>]*height="([\d.]+)"', expanded[:2048]
+            )
+            if size is None:
+                raise ValueError("runtime floor produced an unsizeable expanded SVG")
+            pdf = pdf_engine.render_pdf(
+                expanded, float(size.group(1)), float(size.group(2))
+            )
+            if not pdf.startswith(b"%PDF-"):
+                raise ValueError("runtime floor returned an invalid PDF")
+            counts["pdf"] += 1
     if check_timeout_reset:
         timeout_engine = DiagramAssetEngine()
         timeout_engine.timeout = 0.05
@@ -221,7 +237,7 @@ def main(argv=None) -> int:
     parser.add_argument(
         "--formats",
         default="svg,png,expanded-svg",
-        help="comma-separated subset of svg,png,expanded-svg",
+        help="comma-separated subset of svg,png,expanded-svg,pdf",
     )
     parser.add_argument("--all-cases", action="store_true")
     parser.add_argument("--check-timeout-reset", action="store_true")
@@ -238,9 +254,9 @@ def main(argv=None) -> int:
         _requirement_ok(args.requirement)
     formats = tuple(item.strip() for item in args.formats.split(",") if item.strip())
     if not formats or any(
-        item not in {"svg", "png", "expanded-svg"} for item in formats
+        item not in {"svg", "png", "expanded-svg", "pdf"} for item in formats
     ):
-        raise ValueError("--formats must contain only svg,png,expanded-svg")
+        raise ValueError("--formats must contain only svg,png,expanded-svg,pdf")
     minimum = (0, 6, 0) if sys.version_info < (3, 8) else (0, 7, 0)
     if args.minimum:
         minimum = _version_tuple(args.minimum)

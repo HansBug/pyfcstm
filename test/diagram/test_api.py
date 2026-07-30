@@ -1586,7 +1586,12 @@ def test_a_worker_still_holding_the_viewer_does_not_cost_the_directory(
         stderr=subprocess.PIPE,
         timeout=300,
     )
-    assert finished.returncode == 0, finished.stderr.decode("utf-8", "replace")
+    complaint = finished.stderr.decode("utf-8", "replace")
+    assert finished.returncode == 0, complaint
+    # A worker that died never removes the viewer, and the directory then rightly
+    # keeps it -- which looks exactly like the defect below and is not it. The
+    # worker's traceback reaches this stderr, so say which one happened.
+    assert "Traceback" not in complaint, complaint
     fallback = Path(finished.stdout.decode("utf-8").strip())
     assert fallback.name != ("pyfcstm-viewers-%d" % os.geteuid()), (
         "the obstruction was trusted, so no fallback was made"

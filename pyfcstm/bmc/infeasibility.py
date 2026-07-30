@@ -1129,8 +1129,11 @@ def derive_forced_values(
     for item in items:
         fact = item.normalized_fact
         if item.constraint.stage == "assumptions":
+            # Both persistent variable types reach here.  Gating on ``int``
+            # excluded every float model from the propagation pattern, which the
+            # contract lists without a type qualifier.
             if fact.get("kind") == "variable_comparison" and isinstance(
-                fact.get("value"), int
+                fact.get("value"), (int, float)
             ):
                 targets.append((fact["variable"], fact["frame"]))
         else:
@@ -1188,11 +1191,18 @@ def derive_forced_values(
         # solver it just checked -- still the same assertion set, so the model is
         # the one that verdict belongs to.
         candidate = solver.model().eval(symbol, model_completion=True)
-        if not isinstance(candidate, z3.IntNumRef):
-            # A non-integer witness has no published value shape here; the
-            # narrative degrades rather than rendering a rational as an integer.
+        if isinstance(candidate, z3.IntNumRef):
+            value = candidate.as_long()
+        elif isinstance(candidate, z3.RatNumRef):
+            # A real witness is published as a float, the same shape the fact
+            # recognizer uses for a real variable, so the two agree when the
+            # narrative compares them.
+            value = float(candidate.as_fraction())
+        else:
+            # An algebraic or otherwise unrepresentable witness has no published
+            # shape; the narrative degrades rather than rendering an
+            # approximation as if it were the value.
             continue
-        value = candidate.as_long()
         solver.add(symbol != candidate)
         verdict, record = _run_probe(solver, budget, "value_propagation", ())
         if not record.started:
@@ -1219,6 +1229,7 @@ def build_core_item(
     group: BmcTrackedConstraint,
     registry: Optional[SourceDocumentRegistry] = None,
     declared: Optional[Sequence[str]] = None,
+    state_paths: Optional[Mapping[int, str]] = None,
 ) -> BmcCoreItem:
     """Turn one tracked source group into a publishable core member.
 
@@ -1240,6 +1251,9 @@ def build_core_item(
         every name short enough to survive truncation intact.  Defaults to
         ``None``.
     :type declared: Optional[Sequence[str]], optional
+    :param state_paths: State code to authored path, so a sentence names the state
+        the reader wrote rather than the encoding's number.  Defaults to ``None``.
+    :type state_paths: Optional[Mapping[int, str]], optional
     :return: Core member carrying identity, provenance and its reading.
     :rtype: pyfcstm.bmc.explanation.BmcCoreItem
     :raises pyfcstm.bmc.errors.BmcBuildError: If the category has no frozen
@@ -1293,7 +1307,7 @@ def build_core_item(
         source_excerpt=excerpt,
         source_excerpt_truncated=truncated,
         normalized_fact=fact,
-        human_text=human_text_for_fact(role, fact),
+        human_text=human_text_for_fact(role, fact, state_paths),
         editable=group.source_ref.kind in ("fcstm", "fbmcq"),
     )
 
@@ -1358,6 +1372,12 @@ def explain_infeasibility(
     # The declared names let a published fact name the variable the author wrote
     # rather than the encoder's truncation of it.
     declared = tuple(core.context.model.defines)
+    # The domain's own table, so a sentence can name ``Root.A`` instead of the
+    # number the encoding gave it.
+    state_paths = {
+        entry["id"]: entry["path"]
+        for entry in core.context.domain.to_canonical()["states"]
+    }
     outcome = classify_infeasibility(core, stage, budget)
     # An unclassified stage still has a target the mandatory solve already
     # proved unsatisfiable, so the remaining budget goes into a fallback core
@@ -1443,7 +1463,8 @@ def explain_infeasibility(
             reduction=minimized.reduction,
             subset_minimality=minimized.subset_minimality,
             items=tuple(
-                build_core_item(group, registry, declared) for group in minimized.groups
+                build_core_item(group, registry, declared, state_paths)
+                for group in minimized.groups
             ),
         )
     except (BmcBuildError, ValueError, TypeError) as err:

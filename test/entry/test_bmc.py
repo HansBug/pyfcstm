@@ -3047,3 +3047,139 @@ def test_a_frame_with_every_state_ruled_out_says_so(tmp_path) -> None:
     # A negated assertion rules a state out; it does not require it.
     assert "rules out state" in result.output
     assert "the query requires state" not in result.output
+
+
+@pytest.mark.unittest
+def test_a_derivation_credits_only_machinery_the_model_contains(tmp_path) -> None:
+    """With no transition, the chain must not say a transition prefix did it.
+
+    The value can be forced by an initializer and a predicate alone.  Naming a
+    transition prefix there sends the reader looking through transitions the
+    model does not have.  The earlier guard only recognised one shape of
+    redundancy, so a supporting fact with no domain reading slipped past it.
+    """
+    model = tmp_path / "machine.fcstm"
+    query = tmp_path / "scenario.fbmcq"
+    model.write_text(
+        "def int x = 0;\nstate Root { state A; [*] -> A; }\n", encoding="utf-8"
+    )
+    query.write_text(
+        'init state("Root.A") havoc * where 2 * x == 10;\n'
+        'assume at 0: var("x") == 7;\n'
+        'check reach <= 1: active("Root.A");\n',
+        encoding="utf-8",
+    )
+
+    result = _run(
+        "-i", str(model), "-q", str(query), "--explain-infeasibility", "formal"
+    )
+
+    assert result.exit_code == 3, result.output
+    assert "therefore requires x to equal 5" in result.output
+    assert "transition prefix" not in result.output
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "declaration, low, high",
+    [
+        ("def int x = 0;", "3", "4"),
+        ("def int x = 0;", "3.0", "4.0"),
+        ("def float x = 0.0;", "3.5", "3.25"),
+    ],
+    ids=[
+        "integer-domain-integer-literals",
+        "integer-domain-decimal-literals",
+        "real-domain",
+    ],
+)
+def test_a_decimal_point_does_not_decide_the_verdict(
+    tmp_path, declaration, low, high
+) -> None:
+    """The same conflict must read the same however its literals were typed.
+
+    An integer variable bounded by ``3.0`` and ``4.0`` is the same empty range as
+    one bounded by ``3`` and ``4``.  The domain marker follows the variable, so
+    it has to narrow a whole real literal as well as widen an integer one --
+    doing only the second left the first degrading.
+    """
+    model = tmp_path / "machine.fcstm"
+    query = tmp_path / "scenario.fbmcq"
+    model.write_text(
+        "%s\nstate Root { state A; [*] -> A; }\n" % declaration, encoding="utf-8"
+    )
+    query.write_text(
+        'init state("Root.A") havoc *;\n'
+        'assume at 0: var("x") > %s;\nassume at 0: var("x") < %s;\n'
+        'check reach <= 1: active("Root.A");\n' % (low, high),
+        encoding="utf-8",
+    )
+
+    result = _run(
+        "-i", str(model), "-q", str(query), "--explain-infeasibility", "formal"
+    )
+
+    assert result.exit_code == 3, result.output
+    assert "No value of x satisfies every bound" in result.output
+
+
+@pytest.mark.unittest
+def test_value_propagation_reaches_a_float_model(tmp_path) -> None:
+    """Both persistent variable types get the propagation pattern.
+
+    §7.5 lists the pattern without a type qualifier, and the probe gated its
+    targets on integers, so no float model could ever produce the chain.
+    """
+    model = tmp_path / "machine.fcstm"
+    query = tmp_path / "scenario.fbmcq"
+    model.write_text(
+        "def float f = 0.0;\n"
+        "state Root { state A; [*] -> A; A -> A effect { f = f + 1.0; }; }\n",
+        encoding="utf-8",
+    )
+    query.write_text(
+        'init state("Root.A");\nassume at 1: var("f") == 0.0;\n'
+        'check reach <= 1: active("Root.A");\n',
+        encoding="utf-8",
+    )
+
+    result = _run(
+        "-i", str(model), "-q", str(query), "--explain-infeasibility", "formal"
+    )
+
+    assert result.exit_code == 3, result.output
+    assert "COMPLETE FORMAL DOMAIN EXPLANATION" in result.output
+    assert "therefore requires f to equal 1.0 at frame 1" in result.output
+
+
+@pytest.mark.unittest
+def test_a_state_is_named_the_way_the_reader_wrote_it(tmp_path) -> None:
+    """Human sentences name states by path, not by their encoded number.
+
+    The reader wrote ``Root.A``; ``state 1`` is the encoding's number for it, and
+    nothing in the sentence lets them map one to the other.  The code stays in
+    ``normalized_fact``, where a machine consumer wants it.
+    """
+    model = tmp_path / "machine.fcstm"
+    query = tmp_path / "scenario.fbmcq"
+    model.write_text(
+        "state Root {\n    state A;\n    state B;\n"
+        "    [*] -> A;\n    A -> B;\n    B -> A;\n}\n",
+        encoding="utf-8",
+    )
+    query.write_text(
+        'init state("Root.A");\n'
+        'assume at 1: !active("Root.A");\n'
+        'assume at 1: !active("Root.B");\n'
+        "assume at 1: !terminated();\n"
+        'check reach <= 1: active("Root.A");\n',
+        encoding="utf-8",
+    )
+
+    result = _run(
+        "-i", str(model), "-q", str(query), "--explain-infeasibility", "formal"
+    )
+
+    assert "rules out state Root.A" in result.output
+    assert "rules out state Root.B" in result.output
+    assert "rules out state 1" not in result.output

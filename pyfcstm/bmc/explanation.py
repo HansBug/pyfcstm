@@ -318,7 +318,38 @@ _ROLE_VOICES = {
 }
 
 
-def human_text_for_fact(role: str, fact: Mapping) -> str:
+def _state_label(code: Any, state_paths: Optional[Mapping]) -> str:
+    """Render one state for a human sentence.
+
+    The encoding numbers states, and a reader who wrote ``Root.A`` cannot map
+    ``state 1`` back to it: the item's excerpt lives in another block and quotes
+    a whole line.  Given the model's own table the sentence names the path; with
+    no table it falls back to the code rather than inventing a name.
+
+    :param code: The published state code.
+    :type code: object
+    :param state_paths: State code to authored path, or ``None``.
+    :type state_paths: Optional[Mapping[int, str]]
+    :return: The phrase naming that state.
+    :rtype: str
+
+    Example::
+
+        >>> _state_label(1, {1: "Root.A"})
+        'state Root.A'
+        >>> _state_label(1, None)
+        'state 1'
+    """
+    if state_paths:
+        path = state_paths.get(code)
+        if path is not None:
+            return "state %s" % path
+    return "state %s" % code
+
+
+def human_text_for_fact(
+    role: str, fact: Mapping, state_paths: Optional[Mapping] = None
+) -> str:
     """Render one published fact as a deterministic domain sentence.
 
     The sentence is derived from the fact alone, so it never states more than a
@@ -329,6 +360,10 @@ def human_text_for_fact(role: str, fact: Mapping) -> str:
     :type role: str
     :param fact: The published normalized fact.
     :type fact: Mapping
+    :param state_paths: State code to authored path, so a sentence can name the
+        state the reader wrote rather than the encoding's number for it; defaults
+        to ``None``.
+    :type state_paths: Optional[Mapping[int, str]], optional
     :return: One sentence describing what the group requires.
     :rtype: str
 
@@ -362,11 +397,11 @@ def human_text_for_fact(role: str, fact: Mapping) -> str:
         # quotes the line that names the state.  A negated assertion rules the
         # state out instead of requiring it, and saying "requires" there would
         # invert the source line.
-        return "At frame %s, %s %s state %s." % (
+        return "At frame %s, %s %s %s." % (
             fact["frame"],
             voice,
             "rules out" if fact.get("excluded") else "requires",
-            fact["state"],
+            _state_label(fact["state"], state_paths),
         )
     if kind == "state_domain":
         # The domain is published as encoded integers, so the sentence reports
@@ -2335,13 +2370,24 @@ def _propagation_steps(core: "BmcConflictCore", forced_values: Tuple):
             BmcReasoningStep("fact", (item.constraint.stable_id,), (), item.human_text)
             for item in supporting
         )
+        # Name what actually carried the value.  "The transition prefix" is true
+        # only when a transition rule took part; with an initializer and a
+        # predicate alone it credits machinery the model does not contain, and
+        # the reader looks for a transition that is not there.
+        carriers = {item.semantic_role for item in supporting}
+        if "transition_rule" in carriers:
+            source_phrase = "The transition prefix"
+        elif carriers == {"initial_fact"}:
+            source_phrase = "The initial state"
+        else:
+            source_phrase = "The constraints above"
         steps += (
             BmcReasoningStep(
                 "derivation",
                 tuple(item.constraint.stable_id for item in supporting),
                 (),
-                "The transition prefix therefore requires %s to equal %s at "
-                "frame %s." % (forced.variable, forced.value, forced.frame),
+                "%s therefore requires %s to equal %s at frame %s."
+                % (source_phrase, forced.variable, forced.value, forced.frame),
             ),
         )
         steps += tuple(

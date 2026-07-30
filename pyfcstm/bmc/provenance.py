@@ -692,7 +692,16 @@ def _value_comparison_fact(
     # the reals.  Publishing whole real values as floats is what keeps the two
     # domains distinguishable without a separate key.
     slot = left if _frame_variable_name(left, None) == name else right
-    if not z3.is_int(_without_coercion(slot)):
+    if z3.is_int(_without_coercion(slot)):
+        # An integer variable compared with ``3.0``: the literal is a real, but
+        # the domain is not.  Narrowing is only sound when the value is whole --
+        # a fractional bound on an integer variable is not an integer bound, and
+        # rounding it would move it.
+        if isinstance(value, float) and value.is_integer():
+            value = int(value)
+        elif isinstance(value, float):
+            return None
+    else:
         value = float(value)
     # One tag with an operator field, not one tag per relation: a consumer that
     # wants only equalities filters on the operator, while one that wants any

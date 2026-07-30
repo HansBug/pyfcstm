@@ -2797,3 +2797,87 @@ def test_a_colliding_scenario_keeps_its_satisfiable_verdict() -> None:
     result = solve_bmc_property(compile_bmc_property(build_bmc_core_formula(context)))
 
     assert result.feasibility.infeasible_stage is None
+
+
+@pytest.mark.unittest
+def test_a_sum_is_not_read_as_one_of_its_operands() -> None:
+    """Only a leaf symbol names a variable; a compound term names none.
+
+    ``x + y`` renders as ``F_0_x_... + F_0_y_...``, which starts like a frame
+    symbol and ends with y's digest, so a reader working on the text alone calls
+    it ``y``.  The narrative then states that y equals a value the query never
+    required of it -- a fabricated equality, which is the one thing the contract
+    says a controlled narrative must never produce.
+    """
+    from pyfcstm.bmc.provenance import normalized_fact_for
+
+    groups = _fact_groups(
+        'init state("Root") havoc *; '
+        'assume at 0: var("x") + var("y") == 1.0; '
+        'check reach <= 1: active("Root");',
+        machine="def int x = 0;\ndef int y = 0;\nstate Root;",
+    )
+    fact = normalized_fact_for(groups["assumption.frame"], ("x", "y"))
+
+    assert fact["kind"] == "structural_constraint"
+
+
+@pytest.mark.unittest
+def test_a_definedness_guard_over_a_sum_names_no_single_variable() -> None:
+    """A divisor that is a sum is not a variable, and must not be named as one.
+
+    ``10 / (x + y)`` requires ``x + y`` to be non-zero; ``y`` alone may be zero.
+    Publishing ``variable: y`` states a requirement the query never made, which
+    is the operand-level form of naming the wrong operation.
+    """
+    from pyfcstm.bmc.provenance import normalized_fact_for
+
+    groups = _fact_groups(
+        'init state("Root.A") havoc *; '
+        'assume at 0: (10 / (var("x") + var("y"))) == 1; '
+        'check reach <= 1: active("Root.A");',
+        machine=("def int x = 0;\ndef int y = 0;\nstate Root { state A; [*] -> A; }"),
+    )
+    fact = normalized_fact_for(groups["definedness"], ("x", "y"))
+
+    assert fact["kind"] == "definedness_condition"
+    assert "variable" not in fact
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "declaration, literal, integral",
+    [
+        ("def int x = 0;", "1", True),
+        ("def float x = 0.0;", "1", False),
+        ("def float x = 0.0;", "1.0", False),
+    ],
+    ids=[
+        "integer-variable",
+        "real-variable-integer-literal",
+        "real-variable-decimal-literal",
+    ],
+)
+def test_the_domain_marker_follows_the_variable_not_the_literal(
+    declaration, literal, integral
+) -> None:
+    """Which domain a bound lives in is decided by the variable, not the value.
+
+    Downstream interval reasoning tightens a strict bound by one over the
+    integers and must not over the reals, and it reads the domain off the
+    published fact.  Unwrapping the sort coercion made ``x > 1`` on a real
+    variable publish an integer, so the marker said "integer domain" for a
+    variable that admits every value between consecutive ones.
+    """
+    from pyfcstm.bmc.provenance import normalized_fact_for
+
+    groups = _fact_groups(
+        'init state("Root.A") havoc *; '
+        'assume at 0: var("x") > %s; '
+        'check reach <= 1: active("Root.A");' % literal,
+        machine="%s\nstate Root { state A; [*] -> A; }" % declaration,
+    )
+    fact = normalized_fact_for(groups["assumption.frame"], ("x",))
+
+    assert fact["kind"] == "variable_comparison"
+    assert isinstance(fact["value"], int) is integral

@@ -566,7 +566,18 @@ def _frame_variable_name(
         >>> _frame_variable_name(z3.Int("F_0_state")) is None
         True
     """
-    text = str(_without_coercion(expression))
+    import z3
+
+    expression = _without_coercion(expression)
+    if not z3.is_const(expression):
+        # Only a leaf symbol names a variable.  ``x + y`` renders as
+        # ``F_0_x_... + F_0_y_...``, which begins like a frame symbol and ends
+        # with the second operand's digest, so a reader working on the text alone
+        # calls the sum ``y`` and the narrative then states an equality the query
+        # never required.  The state-slot reader has always checked this; the
+        # omission here was the asymmetry.
+        return None
+    text = str(expression)
     if not text.startswith("F_"):
         return None
     parts = text.split("_")
@@ -674,6 +685,15 @@ def _value_comparison_fact(
     frame = group.refs.get("frame")
     if not isinstance(frame, int):
         return None
+    # The domain marker follows the *variable*, not the literal.  Unwrapping the
+    # sort coercion means a real variable compared with ``1`` yields a Python
+    # int, and downstream interval reasoning reads the published type to decide
+    # whether it may tighten a strict bound by one -- which it must not do over
+    # the reals.  Publishing whole real values as floats is what keeps the two
+    # domains distinguishable without a separate key.
+    slot = left if _frame_variable_name(left, None) == name else right
+    if not z3.is_int(_without_coercion(slot)):
+        value = float(value)
     # One tag with an operator field, not one tag per relation: a consumer that
     # wants only equalities filters on the operator, while one that wants any
     # bound on a variable does not have to enumerate tags to find them.

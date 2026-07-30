@@ -6131,9 +6131,13 @@
                   "unknown",
                   "timeout"
                 ]
+              },
+              "narrative": {
+                "type": "null"
               }
             }
-          }
+          },
+          "$comment": "achieved_mode none means nothing publishable came back, so there is no core and therefore nothing for a narrative to describe -- its ids would reference a core that is not there. The constructor refuses the pairing and so does this branch."
         },
         {
           "if": {

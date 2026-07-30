@@ -1295,11 +1295,15 @@ class BmcReasoningStep:
             ("proof_node_ids", self.proof_node_ids),
         ):
             for value in ids:
-                # The schema types these arrays as strings, so anything else
-                # reaches canonical JSON that a conforming validator refuses --
-                # the constructor accepting what the schema rejects, which is the
-                # opposite direction from every named exception.
-                exact_str(value, "reasoning step %s entry" % name)
+                # The schema types these arrays as non-empty strings, so anything
+                # else reaches canonical JSON that a conforming validator refuses
+                # -- the constructor accepting what the schema rejects, which is
+                # the opposite direction from every named exception.
+                text = exact_str(value, "reasoning step %s entry" % name)
+                if not text:
+                    raise ValueError(
+                        "reasoning step %s entries must not be blank." % name
+                    )
             if len(set(ids)) != len(ids):
                 raise ValueError("reasoning step %s must not repeat an id." % name)
         if not self.text.strip():
@@ -1626,6 +1630,18 @@ class BmcInfeasibilityExplanation:
                 raise ValueError(
                     "a complete explanation requires a complete narrative, got "
                     "derivation_status %r." % self.narrative.derivation_status
+                )
+        if self.narrative is not None and self.proof is None:
+            # Steps bind to proof nodes only in proof mode; with no proof there
+            # are no nodes, so a citation points at something no artifact
+            # contains.  The step class documents the field as empty outside
+            # proof mode and this is what holds it to that.
+            cited = [
+                step for step in self.narrative.reasoning_steps if step.proof_node_ids
+            ]
+            if cited:
+                raise ValueError(
+                    "a reasoning step cites proof nodes, but no proof was published."
                 )
         if self.narrative is not None and self.core is None:
             # A narrative describes a core, and with none published its ids point
@@ -2332,6 +2348,14 @@ def _propagation_steps(core: "BmcConflictCore", forced_values: Tuple):
             BmcReasoningStep("fact", (item.constraint.stable_id,), (), item.human_text)
             for item in disagreeing
         )
+        if len(supporting) + len(disagreeing) != len(core.items):
+            # The coverage check the four single-shape patterns all make.  On the
+            # orchestration path the shrink already guarantees it -- the
+            # supporting set plus one disagreeing assumption is unsatisfiable, so
+            # a minimal core holds nothing else -- but this branch is reached
+            # through a published function too, and a rule the reader has to
+            # reconstruct from elsewhere is not a rule this branch states.
+            continue
         values = sorted(
             {forced.value} | {item.normalized_fact["value"] for item in disagreeing}
         )

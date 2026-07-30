@@ -2692,3 +2692,54 @@ def test_a_reasoning_step_publishes_only_string_ids(ids) -> None:
 
     with pytest.raises((TypeError, ValueError)):
         BmcReasoningStep("fact", ids, (), "text")
+
+
+@pytest.mark.unittest
+def test_a_published_id_is_never_blank() -> None:
+    """The schema gives these ids ``minLength: 1``, so the constructor must too.
+
+    An empty id names nothing and reaches canonical JSON a conforming validator
+    refuses -- the constructor accepting what the schema rejects, in the opposite
+    direction from every named exception.
+    """
+    from pyfcstm.bmc.explanation import BmcReasoningStep
+
+    with pytest.raises(ValueError, match="must not be blank"):
+        BmcReasoningStep("fact", ("",), (), "text")
+
+
+@pytest.mark.unittest
+def test_proof_node_references_need_a_proof_to_reference() -> None:
+    """Outside proof mode there are no nodes, so a step cannot cite one.
+
+    ``BmcReasoningStep`` documents ``proof_node_ids`` as empty outside proof mode
+    and the PR states the same, but nothing enforced it: a formal explanation
+    could publish steps pointing at nodes no artifact contains.
+    """
+    from pyfcstm.bmc.explanation import (
+        BmcConflictNarrative,
+        BmcInfeasibilityExplanation,
+        BmcReasoningStep,
+    )
+
+    core, good = _published_core_and_narrative()
+    ghosted = BmcConflictNarrative(
+        good.derivation_status,
+        good.headline,
+        good.summary,
+        tuple(
+            BmcReasoningStep(step.kind, step.item_ids, ("ghost.proof.node",), step.text)
+            for step in good.reasoning_steps
+        ),
+        good.review_surfaces,
+    )
+
+    with pytest.raises(ValueError, match="proof"):
+        BmcInfeasibilityExplanation(
+            "formal",
+            "formal",
+            "complete",
+            "assumptions_self_conflict",
+            core=core,
+            narrative=ghosted,
+        )

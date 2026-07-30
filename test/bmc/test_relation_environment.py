@@ -182,8 +182,14 @@ def test_frame_assumption_expression_matrix_lowers_supported_terms() -> None:
     # push the operators being looked for past the cut-off and fail the test for a
     # reason unrelated to lowering.  A solver's SMT-LIB dump renders all of it.
     dump = _solver(core.environment_formula).to_smt2()
-    # ``sqrt`` lowers to exponentiation, and ``!=`` to ``distinct``.
-    assert "(^ " in dump
+    # ``sqrt`` lowers to a half power, and it takes the whole term to identify:
+    # bare ``(^ `` also matches the ``x ** y`` in this query, and ``(/ 1.0 2.0)``
+    # alone also matches the constant inside ``round``.  Either on its own stays
+    # green when the sqrt lowering is broken -- checked by breaking it.
+    assert re.search(r"\(\^ [^)]*\)?\s*\(/ 1\.0 2\.0\)", dump)
+    # The integer power is a separate term and is still lowered.
+    assert re.search(r"\(\^ F_\d+_x_", dump)
+    # ``!=`` lowers to ``distinct``.
     assert "distinct" in dump
 
 

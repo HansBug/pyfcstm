@@ -1058,13 +1058,18 @@ def test_a_kept_viewer_is_shared_by_directory_and_not_by_process(tmp_path, monke
     # either half forces the sentence in `Diagram.show` to change with it.
     monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
 
-    parents = _model("state Root;").show(open_window=False)
+    # The name is derived from the document, so a short one exercises it and spares
+    # both processes ~29 MB. The child inherits this very object across the fork,
+    # which is what a worker handed a `Diagram` has.
+    view = _model("state Root;").diagram()
+    object.__setattr__(view, "_html_document", "<html>tiny</html>")
+    parents = view.show(open_window=False)
     recorded = tmp_path / "child.txt"
     child = os.fork()
     if child == 0:
         code = 1
         try:
-            own = _model("state Root;").show(open_window=False)
+            own = view.show(open_window=False)
             recorded.write_text(str(own), encoding="utf-8")
             own.unlink()
             code = 0
@@ -1526,7 +1531,11 @@ def test_a_worker_still_holding_the_viewer_does_not_cost_the_directory(tmp_path)
 
             def consume(queue):
                 path = Path(queue.get())
-                time.sleep(1.0)
+                # Wide enough that the parent -- which only has a `put` and a return
+                # left -- reaches its exit first on any machine. If it did not, the
+                # viewer would already be gone by the first reclaim and this would
+                # pass without testing anything.
+                time.sleep(2.0)
                 path.unlink()
 
 

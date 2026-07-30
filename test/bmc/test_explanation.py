@@ -2743,3 +2743,83 @@ def test_proof_node_references_need_a_proof_to_reference() -> None:
             core=core,
             narrative=ghosted,
         )
+
+
+def _propagation_item(stable_id, stage, variable, value):
+    """A comparison member on one variable, in the stage its category implies."""
+    category = "initial.variable" if stage == "initialization" else "assumption.frame"
+    role = "initial_fact" if stage == "initialization" else "assumption"
+    reference = BmcConstraintRef(
+        stable_id,
+        stage,
+        category,
+        BmcSourceRef("generated", None, None),
+        "member",
+        frames=(0,),
+        refs={"frame": 0},
+    )
+    return BmcCoreItem(
+        reference,
+        role,
+        None,
+        False,
+        {
+            "kind": "variable_comparison",
+            "variable": variable,
+            "frame": 0,
+            "operator": "eq",
+            "value": value,
+        },
+        "member",
+        False,
+    )
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "spare_member, forced_values, speaks",
+    [
+        (False, ((0,),), False),
+        (False, ((7,),), True),
+        (True, ((0,), (5,)), False),
+    ],
+    ids=[
+        "the-derivation-would-restate-a-supporting-fact",
+        "the-derivation-adds-something-the-facts-do-not-state",
+        "a-later-candidate-cannot-speak-past-an-unexplained-member",
+    ],
+)
+def test_stepping_aside_never_turns_into_speaking_up(
+    spare_member, forced_values, speaks
+) -> None:
+    """The two skips must end in silence, not in a later candidate speaking.
+
+    Both guards ``continue`` rather than return, so they move on to the next
+    forced value.  A candidate skipped for restating a fact must not be followed
+    by one that speaks while a member stays unexplained -- the loop has to run out
+    and hand the core to the single-shape patterns.
+    """
+    from pyfcstm.bmc.explanation import _propagation_steps
+    from pyfcstm.bmc.infeasibility import ForcedValue
+
+    items = [
+        _propagation_item("prefix.x", "initialization", "x", 0),
+        _propagation_item("assume.x", "assumptions", "x", 1),
+    ]
+    if spare_member:
+        items.append(_propagation_item("assume.y", "assumptions", "y", 9))
+    core = BmcConflictCore(
+        "assumptions_prefix",
+        "target",
+        "source_group",
+        "raw",
+        "not_proven",
+        tuple(items),
+    )
+    forced = tuple(
+        ForcedValue("x", 0, value, ("prefix.x",)) for (value,) in forced_values
+    )
+
+    result = _propagation_steps(core, forced)
+
+    assert (result is not None) is speaks

@@ -7,6 +7,8 @@ from pathlib import Path
 from textwrap import dedent
 from typing import Tuple
 
+import hashlib
+
 import pytest
 import z3
 
@@ -1443,10 +1445,10 @@ def test_basic_core_formulas_match_pre_tracking_sexpression_golden() -> None:
         "I_0": "-3 == F_0_state",
         "T_N": dedent(
             """\
-            And(And(C_0_init___initial_Root_0_bda95de0da ==
+            And(And(C_0_init___initial_Root_0_bda95de0da12e219a664812b5d8e9bf3e8c93d79 ==
                     And(-3 == F_0_state, True),
                     Implies(And(-3 == F_0_state, True), 0 == F_1_state)),
-                And(C_0_init___delta___init___0_f7d616c3c1 ==
+                And(C_0_init___delta___init___0_f7d616c3c15719463a33d4f46a98beedacea5870 ==
                     And(-3 == F_0_state,
                         Not(And(-3 == F_0_state, True))),
                     Implies(And(-3 == F_0_state,
@@ -1463,11 +1465,11 @@ def test_basic_core_formulas_match_pre_tracking_sexpression_golden() -> None:
             And(And(Or(-3 == F_0_state, -1 == F_0_state, 0 == F_0_state),
                     Or(-3 == F_1_state, -1 == F_1_state, 0 == F_1_state)),
                 -3 == F_0_state,
-                And(And(C_0_init___initial_Root_0_bda95de0da ==
+                And(And(C_0_init___initial_Root_0_bda95de0da12e219a664812b5d8e9bf3e8c93d79 ==
                         And(-3 == F_0_state, True),
                         Implies(And(-3 == F_0_state, True),
                                 0 == F_1_state)),
-                    And(C_0_init___delta___init___0_f7d616c3c1 ==
+                    And(C_0_init___delta___init___0_f7d616c3c15719463a33d4f46a98beedacea5870 ==
                         And(-3 == F_0_state,
                             Not(And(-3 == F_0_state, True))),
                         Implies(And(-3 == F_0_state,
@@ -1498,7 +1500,7 @@ def test_event_assumption_environment_formula_matches_golden() -> None:
     )
 
     assert core.to_canonical()["formulas"]["ENV_N"] == (
-        "Not(E_0_event_0_Root_go_06775bfa10)"
+        "Not(E_0_event_0_Root_go_06775bfa102402247e16c156f692744c724aacbb)"
     )
 
 
@@ -2302,3 +2304,638 @@ def test_the_group_noun_reads_the_category_because_the_aggregate_cannot() -> Non
     # An assumption group's aggregate is a word no reader sees elsewhere.
     assert stages_by_noun["assumption"] == {"assumptions"}
     assert constraint_aggregate("assumptions", "assumption.frame") == "environment"
+
+
+_FACT_MODEL = """def int x = 0;
+def int y = 3;
+state Root {
+    event Go;
+    state A;
+    state B;
+    [*] -> A;
+    A -> B :: Go;
+}"""
+
+
+def _fact_groups(query: str, machine: str = None):
+    """Return the tracked groups a real build produces, keyed by category.
+
+    ``machine`` overrides the default integer model so a test can exercise the
+    other persistent variable type without duplicating the whole helper.
+    """
+    from pyfcstm.bmc import BmcEngine, build_bmc_core_formula
+
+    core = build_bmc_core_formula(
+        BmcEngine(
+            load_state_machine_from_text(_FACT_MODEL if machine is None else machine)
+        ).prepare(query)
+    )
+    groups = {}
+    for group in list(core._tracked_groups) + list(core._tracked_case_groups):
+        groups.setdefault(group.category, group)
+    return groups
+
+
+@pytest.mark.unittest
+def test_a_variable_comparison_reads_as_a_domain_fact_not_a_structural_one() -> None:
+    """An assumption pinning a variable publishes the variable, frame and value.
+
+    A machine reader dispatching on ``kind`` needs the operator and the operand,
+    not a restatement of the group's identity.  Without this an LLM or IDE can
+    only echo the source line back.
+    """
+    from pyfcstm.bmc.provenance import normalized_fact_for
+
+    groups = _fact_groups(
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") == 1; '
+        'check reach <= 2: active("Root.B");'
+    )
+    fact = normalized_fact_for(groups["assumption.frame"])
+
+    assert fact["kind"] == "variable_comparison"
+    assert fact["variable"] == "x"
+    assert fact["frame"] == 0
+    assert fact["operator"] == "eq"
+    assert fact["value"] == 1
+
+
+@pytest.mark.unittest
+def test_an_initial_variable_reads_as_an_initializer_fact() -> None:
+    """The declared initial value is published as a value, not as an expression."""
+    from pyfcstm.bmc.provenance import normalized_fact_for
+
+    groups = _fact_groups(
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") == 1; '
+        'check reach <= 2: active("Root.B");'
+    )
+    fact = normalized_fact_for(groups["initial.variable"])
+
+    assert fact["kind"] == "variable_comparison"
+    assert fact["variable"] == "x"
+    assert fact["frame"] == 0
+    assert fact["operator"] == "eq"
+    assert fact["value"] == 0
+
+
+@pytest.mark.unittest
+def test_a_frame_state_domain_reads_as_the_set_of_legal_states() -> None:
+    """A domain rule says which states a frame may hold, as plain integers."""
+    from pyfcstm.bmc.provenance import normalized_fact_for
+
+    groups = _fact_groups(
+        'init state("Root.A") where x == 0; check reach <= 2: active("Root.B");'
+    )
+    fact = normalized_fact_for(groups["domain.frame_state"])
+
+    assert fact["kind"] == "state_domain"
+    assert fact["frame"] == 0
+    assert isinstance(fact["states"], list)
+    assert fact["states"] and all(isinstance(v, int) for v in fact["states"])
+
+
+@pytest.mark.unittest
+def test_a_definedness_rule_reads_as_the_operation_it_guards() -> None:
+    """Definedness says which operation would otherwise be undefined."""
+    from pyfcstm.bmc.provenance import normalized_fact_for
+
+    groups = _fact_groups(
+        'init state("Root.A") where x == 0; '
+        'assume at 1: var("y") / var("x") > 0; '
+        'check reach <= 2: active("Root.B");'
+    )
+    fact = normalized_fact_for(groups["definedness"])
+
+    assert fact["kind"] == "definedness_condition"
+    assert fact["operation"] == "division"
+    assert fact["frame"] == 1
+
+
+@pytest.mark.unittest
+def test_an_unreduced_group_says_so_instead_of_guessing() -> None:
+    """A shape with no recognizer degrades honestly, keeping its identity."""
+    from pyfcstm.bmc.provenance import normalized_fact_for
+
+    groups = _fact_groups(
+        'init state("Root.A") where x == 0; check reach <= 2: active("Root.B");'
+    )
+    fact = normalized_fact_for(groups["transition.step"])
+
+    assert fact["kind"] == "structural_constraint"
+    assert fact["category"] == "transition.step"
+
+
+@pytest.mark.unittest
+def test_a_recognized_fact_is_not_echoed_back_as_its_own_identifier() -> None:
+    """``normalized_fact`` publishes the fact, and ``constraint`` the metadata.
+
+    The frozen result prototype puts ``frames``, ``steps`` and ``refs`` inside
+    ``constraint``; repeating them inside the fact makes a reader carry two
+    copies of the same values and obscures which keys are the fact itself.
+    """
+    from pyfcstm.bmc.infeasibility import build_core_item
+
+    groups = _fact_groups(
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") == 1; '
+        'check reach <= 2: active("Root.B");'
+    )
+    item = build_core_item(groups["assumption.frame"])
+
+    assert set(item.normalized_fact) == {
+        "kind",
+        "variable",
+        "frame",
+        "operator",
+        "value",
+    }
+    # The metadata is still published, one level up.
+    assert item.constraint.frames == (0,)
+    assert item.constraint.refs["frame"] == 0
+
+
+@pytest.mark.unittest
+def test_a_float_variable_gets_the_same_domain_reading_as_an_integer_one() -> None:
+    """``float`` is one of the two persistent variable types, not a special case.
+
+    A reader who declares ``def float x`` and writes contradictory bounds
+    deserves the same account as one who wrote ``def int x``.  Reading only
+    integer numerals would leave every float model stuck at the structural
+    fallback, so the recognizer reads the rational literals z3 builds for the
+    real sort too.
+    """
+    from pyfcstm.bmc.provenance import normalized_fact_for
+
+    groups = _fact_groups(
+        'init state("Root.A") where x == 0.0; '
+        'assume at 0: var("x") > 0.5; '
+        'check reach <= 2: active("Root.B");',
+        machine=(
+            "def float x = 0.0;\n"
+            "state Root { event Go; state A; state B; [*] -> A; A -> B :: Go; }"
+        ),
+    )
+    fact = normalized_fact_for(groups["assumption.frame"])
+
+    assert fact["kind"] == "variable_comparison"
+    assert fact["variable"] == "x"
+    assert fact["frame"] == 0
+    # z3 normalizes ``x > 0.5`` to ``0.5 < x``, so the mirrored operand order is
+    # the one that actually occurs for the real sort.
+    assert fact["operator"] == "gt"
+    assert fact["value"] == 0.5
+    # A real bound is published as a float even when its value is whole, which is
+    # what keeps integer-only reasoning off the real domain downstream.
+    assert isinstance(fact["value"], float)
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "declarations, assumption",
+    [
+        ("def int x = 0;\ndef int y = 0;", 'var("x") > var("y")'),
+        ("def int x = 0;", 'var("x") > 0 && var("x") < 5'),
+    ],
+    ids=["comparison-between-two-variables", "two-bounds-in-one-assumption"],
+)
+def test_a_shape_outside_the_reading_keeps_its_identity(
+    declarations, assumption
+) -> None:
+    """Two ordinary assumptions the value reading does not cover.
+
+    A comparison between two variables has no single value to publish, and a
+    conjunction of two bounds is not one comparison, so neither fits the
+    single-relation fact shape.  Both are things a reader writes without thinking
+    twice, so the fallback they take is a normal path, not an edge case -- and
+    taking it means saying so, rather than publishing half a fact.
+    """
+    from pyfcstm.bmc.provenance import normalized_fact_for
+
+    groups = _fact_groups(
+        'init state("Root.A") where x == 0; '
+        "assume at 0: %s; "
+        'check reach <= 2: active("Root.B");' % assumption,
+        machine=(
+            "%s\nstate Root { event Go; state A; state B; [*] -> A; A -> B :: Go; }"
+            % declarations
+        ),
+    )
+    fact = normalized_fact_for(groups["assumption.frame"])
+
+    assert fact["kind"] == "structural_constraint"
+    assert fact["category"] == "assumption.frame"
+    # The identity is preserved so a reader can still find the line.
+    assert fact["stable_id"] == groups["assumption.frame"].stable_id
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "declaration, assumption, operation",
+    [
+        ("def int x = 0;", 'var("x") / 0 > 0', "division"),
+        ("def float x = 0.0;", "sqrt(-1.0) >= 0.0", "sqrt"),
+    ],
+    ids=["division-by-zero", "square-root-of-a-negative"],
+)
+def test_a_definedness_fact_names_the_operation_it_actually_guards(
+    declaration, assumption, operation
+) -> None:
+    """The published operation must be the one the source line performs.
+
+    A definedness group carries only its domain condition, and two different
+    operations can produce conditions of the same shape, so the operation cannot
+    be inferred from the expression.  Naming it anyway produced a fact and a
+    sentence that contradicted the source: ``sqrt(-1.0)`` was reported as a
+    division that must stay defined.
+    """
+    from pyfcstm.bmc.provenance import normalized_fact_for
+
+    groups = _fact_groups(
+        'assume at 0: %s; check reach <= 1: active("Root");' % assumption,
+        machine="%s state Root;" % declaration,
+    )
+    fact = normalized_fact_for(groups["definedness"])
+
+    assert fact["kind"] == "definedness_condition"
+    assert fact["operation"] == operation
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "symbol, frame, is_slot",
+    [
+        ("F_0_state", 0, True),
+        ("F_0_state", 1, False),
+        ("F_10_state", 1, False),
+        ("F_1_state", 10, False),
+        ("F_0_state_%s" % ("9" * 40), 0, False),
+    ],
+    ids=[
+        "the-slot-of-its-own-frame",
+        "the-slot-of-another-frame",
+        "a-longer-frame-index-is-not-a-prefix-match",
+        "a-shorter-frame-index-is-not-a-prefix-match",
+        "a-model-variable-that-happens-to-be-called-state",
+    ],
+)
+def test_the_state_slot_is_told_apart_from_everything_that_looks_like_it(
+    symbol, frame, is_slot
+) -> None:
+    """The state reader must not claim a symbol that merely resembles the slot.
+
+    Frame indices are decimal, so ``F_1_state`` and ``F_10_state`` share a prefix,
+    and a model variable may legitimately be named ``state``.  Reading either as
+    the frame's state slot would publish a state fact about something that is not
+    a state, which the narrative would then build a conflict on.
+    """
+    import z3
+
+    from pyfcstm.bmc.provenance import _frame_state_slot
+
+    assert _frame_state_slot(z3.Int(symbol), frame) is is_slot
+
+
+@pytest.mark.unittest
+def test_the_two_operand_readers_never_claim_the_same_symbol() -> None:
+    """A slot is not a variable and a variable is not a slot.
+
+    The two readers run against the same operands, so an overlap would let one
+    group publish two contradictory facts depending on dispatch order.  The case
+    that makes this concrete is a model variable actually named ``state``.
+    """
+    import z3
+
+    from pyfcstm.bmc.provenance import _frame_state_slot, _frame_variable_name
+
+    for name in (
+        "F_0_state",
+        "F_0_x_%s" % ("a" * 40),
+        "F_0_state_%s" % ("b" * 40),
+    ):
+        symbol = z3.Int(name)
+        slot = _frame_state_slot(symbol, 0)
+        variable = _frame_variable_name(symbol)
+        assert not (slot and variable is not None), name
+
+    # And each reader does claim the operand it is for.
+    assert _frame_state_slot(z3.Int("F_0_state"), 0) is True
+    assert _frame_variable_name(z3.Int("F_0_state_%s" % ("b" * 40))) == "state"
+
+
+@pytest.mark.unittest
+def test_a_long_variable_name_is_published_as_the_name_that_was_declared() -> None:
+    """The published variable must be one the reader can find in their source.
+
+    The encoding truncates a long name when it builds its symbol, so recovering
+    the name from the symbol recovers the truncation, not the declaration.  A
+    fact naming a variable that does not exist is the same defect as naming the
+    wrong operation: the key is right and the value is a guess.
+    """
+    from pyfcstm.bmc.provenance import normalized_fact_for
+
+    name = "v" * 81
+    groups = _fact_groups(
+        'assume at 0: var("%s") == 1; check reach <= 1: active("Root.A");' % name,
+        machine=("def int %s = 0;\nstate Root { state A; state B; [*] -> A; }" % name),
+    )
+    fact = normalized_fact_for(groups["assumption.frame"], (name,))
+
+    assert fact["kind"] == "variable_comparison"
+    assert fact["variable"] == name
+
+    # Without the declared names there is nothing to resolve against, so the
+    # reader falls back to the body it can see rather than inventing one.
+    fallback = normalized_fact_for(groups["assumption.frame"])
+    assert fallback["variable"] == name[:80]
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "name, declared, resolved",
+    [
+        ("x", ("x", "y"), "x"),
+        ("v" * 81, ("v" * 81,), "v" * 81),
+        ("v" * 80 + "a", ("v" * 80 + "a", "v" * 80 + "b"), "v" * 80 + "a"),
+        ("a.b", ("a.b", "a_b"), "a.b"),
+        ("a_b", ("a.b", "a_b"), "a_b"),
+        ("ghost", ("x", "y"), None),
+    ],
+    ids=[
+        "an-ordinary-name",
+        "a-name-longer-than-the-symbol-body",
+        "two-names-sharing-their-first-eighty-characters",
+        "a-name-whose-dot-becomes-an-underscore",
+        "the-underscore-name-it-collides-with",
+        "a-symbol-belonging-to-no-declared-variable",
+    ],
+)
+def test_a_symbol_resolves_to_the_declared_name_it_was_built_from(
+    name, declared, resolved
+) -> None:
+    """Resolution goes through the digest, which the whole name produced.
+
+    The symbol body is the name with unsafe characters replaced and then
+    truncated, so it is lossy twice over: ``a.b`` and ``a_b`` produce the same
+    body, and any name past eighty characters loses its tail.  Reading the body
+    back therefore has to be wrong for at least one of a colliding pair.  The
+    digest does not collide, so matching declared names through it answers
+    exactly, and a symbol that belongs to no declared variable answers nothing
+    rather than a plausible-looking prefix.
+    """
+    import hashlib
+    import re
+
+    import z3
+
+    from pyfcstm.bmc.provenance import _frame_variable_name
+
+    # Built the way the encoder builds it, so the test exercises the real shape
+    # rather than a hand-written string that happens to look like one.
+    body = re.sub(r"[^0-9A-Za-z_]+", "_", name).strip("_") or "item"
+    digest = hashlib.sha1(name.encode("utf-8")).hexdigest()
+    symbol = z3.Int("F_0_%s_%s" % (body[:80], digest))
+
+    assert _frame_variable_name(symbol, declared) == resolved
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "declaration, initial, literal",
+    [
+        ("def float x = 0.0;", "x == 0.0", "1"),
+        ("def float x = 0.0;", "x == 0.0", "1.0"),
+        ("def int x = 0;", "x == 0", "1"),
+    ],
+    ids=[
+        "float-variable-integer-literal",
+        "float-variable-decimal-literal",
+        "integer-variable-integer-literal",
+    ],
+)
+def test_a_comparison_is_read_whichever_way_the_sorts_were_written(
+    declaration, initial, literal
+) -> None:
+    """Writing ``1`` where the variable is real must read the same as ``1.0``.
+
+    Mixing sorts makes z3 insert a ``to_real`` coercion, around the literal when
+    the variable is real and around the variable when the literal is.  Neither
+    changes what the author wrote, so neither may change whether the fact is
+    readable -- otherwise the same query degrades or not depending on a decimal
+    point.
+    """
+    from pyfcstm.bmc.provenance import normalized_fact_for
+
+    groups = _fact_groups(
+        'init state("Root.A") where %s; '
+        'assume at 1: var("x") == %s; '
+        'check reach <= 2: active("Root.B");' % (initial, literal),
+        machine=(
+            "%s\nstate Root { event Go; state A; state B; [*] -> A; A -> B :: Go; }"
+            % declaration
+        ),
+    )
+    fact = normalized_fact_for(groups["assumption.frame"], ("x",))
+
+    assert fact["kind"] == "variable_comparison"
+    assert fact["variable"] == "x"
+    assert fact["operator"] == "eq"
+    assert fact["value"] == 1
+
+
+@pytest.mark.unittest
+def test_two_variables_never_share_one_symbol() -> None:
+    """Distinct declarations must encode to distinct symbols.
+
+    The symbol is the variable's identity inside the relation, so two variables
+    collapsing onto one makes the encoder state something the model does not:
+    here each assumption constrains its own havoc'd variable, which is plainly
+    satisfiable, yet the scenario is reported infeasible.  A truncated digest is
+    what allows the collapse -- these two names share their first eighty
+    characters and, at forty bits, their digest too.
+    """
+    from pyfcstm.bmc.relation import _safe_symbol_fragment
+
+    prefix = "v" * 80
+    first, second = prefix + "498982", prefix + "626752"
+    # The pair is only interesting because a short digest does collide on it.
+    assert (
+        hashlib.sha1(first.encode("utf-8")).hexdigest()[:10]
+        == hashlib.sha1(second.encode("utf-8")).hexdigest()[:10]
+    )
+
+    assert _safe_symbol_fragment(first) != _safe_symbol_fragment(second)
+
+
+@pytest.mark.unittest
+def test_a_colliding_scenario_keeps_its_satisfiable_verdict() -> None:
+    """The verdict must not depend on how long the author's names are.
+
+    Two independent havoc'd variables required to hold different values is
+    satisfiable, and stays satisfiable when the names get long.
+    """
+    from pyfcstm.bmc import (
+        BmcEngine,
+        build_bmc_core_formula,
+        compile_bmc_property,
+        solve_bmc_property,
+    )
+    from pyfcstm.model import load_state_machine_from_text
+
+    prefix = "v" * 80
+    first, second = prefix + "498982", prefix + "626752"
+    machine = load_state_machine_from_text(
+        "def int %s = 0;\ndef int %s = 0;\nstate Root;\n" % (first, second)
+    )
+    context = BmcEngine(machine).prepare(
+        'init state("Root") havoc *; '
+        'assume at 0: var("%s") == 1; '
+        'assume at 0: var("%s") == 2; '
+        'check reach <= 1: active("Root");' % (first, second)
+    )
+
+    result = solve_bmc_property(compile_bmc_property(build_bmc_core_formula(context)))
+
+    assert result.feasibility.infeasible_stage is None
+
+
+@pytest.mark.unittest
+def test_a_sum_is_not_read_as_one_of_its_operands() -> None:
+    """Only a leaf symbol names a variable; a compound term names none.
+
+    ``x + y`` renders as ``F_0_x_... + F_0_y_...``, which starts like a frame
+    symbol and ends with y's digest, so a reader working on the text alone calls
+    it ``y``.  The narrative then states that y equals a value the query never
+    required of it -- a fabricated equality, which is the one thing the contract
+    says a controlled narrative must never produce.
+    """
+    from pyfcstm.bmc.provenance import normalized_fact_for
+
+    groups = _fact_groups(
+        'init state("Root") havoc *; '
+        'assume at 0: var("x") + var("y") == 1.0; '
+        'check reach <= 1: active("Root");',
+        machine="def int x = 0;\ndef int y = 0;\nstate Root;",
+    )
+    fact = normalized_fact_for(groups["assumption.frame"], ("x", "y"))
+
+    assert fact["kind"] == "structural_constraint"
+
+
+@pytest.mark.unittest
+def test_a_definedness_guard_over_a_sum_names_no_single_variable() -> None:
+    """A divisor that is a sum is not a variable, and must not be named as one.
+
+    ``10 / (x + y)`` requires ``x + y`` to be non-zero; ``y`` alone may be zero.
+    Publishing ``variable: y`` states a requirement the query never made, which
+    is the operand-level form of naming the wrong operation.
+    """
+    from pyfcstm.bmc.provenance import normalized_fact_for
+
+    groups = _fact_groups(
+        'init state("Root.A") havoc *; '
+        'assume at 0: (10 / (var("x") + var("y"))) == 1; '
+        'check reach <= 1: active("Root.A");',
+        machine=("def int x = 0;\ndef int y = 0;\nstate Root { state A; [*] -> A; }"),
+    )
+    fact = normalized_fact_for(groups["definedness"], ("x", "y"))
+
+    assert fact["kind"] == "definedness_condition"
+    assert "variable" not in fact
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "declaration, literal, integral",
+    [
+        ("def int x = 0;", "1", True),
+        ("def float x = 0.0;", "1", False),
+        ("def float x = 0.0;", "1.0", False),
+    ],
+    ids=[
+        "integer-variable",
+        "real-variable-integer-literal",
+        "real-variable-decimal-literal",
+    ],
+)
+def test_the_domain_marker_follows_the_variable_not_the_literal(
+    declaration, literal, integral
+) -> None:
+    """Which domain a bound lives in is decided by the variable, not the value.
+
+    Downstream interval reasoning tightens a strict bound by one over the
+    integers and must not over the reals, and it reads the domain off the
+    published fact.  Unwrapping the sort coercion made ``x > 1`` on a real
+    variable publish an integer, so the marker said "integer domain" for a
+    variable that admits every value between consecutive ones.
+    """
+    from pyfcstm.bmc.provenance import normalized_fact_for
+
+    groups = _fact_groups(
+        'init state("Root.A") havoc *; '
+        'assume at 0: var("x") > %s; '
+        'check reach <= 1: active("Root.A");' % literal,
+        machine="%s\nstate Root { state A; [*] -> A; }" % declaration,
+    )
+    fact = normalized_fact_for(groups["assumption.frame"], ("x",))
+
+    assert fact["kind"] == "variable_comparison"
+    assert isinstance(fact["value"], int) is integral
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "kind, machine, query",
+    [
+        (
+            "variable_comparison",
+            "def int x = 0;\n"
+            "state Root { event Go; state A; state B; [*] -> A; A -> B :: Go; }",
+            'init state("Root.A") where x == 0; assume at 0: var("x") == 1; '
+            'check reach <= 2: active("Root.B");',
+        ),
+        (
+            "state_membership",
+            "state Root { state A; state B; [*] -> A; A -> B; }",
+            'init state("Root.A"); assume at 0: active("Root.B"); '
+            'check reach <= 1: active("Root.A");',
+        ),
+        (
+            "state_domain",
+            "state Root { state A; state B; [*] -> A; A -> B; }",
+            'init state("Root.A"); check reach <= 1: active("Root.B");',
+        ),
+        (
+            "definedness_condition",
+            "def int x = 0; state Root;",
+            'assume at 0: var("x") / 0 > 0; check reach <= 1: active("Root");',
+        ),
+    ],
+)
+def test_a_recognizer_publishes_every_key_its_tag_requires(
+    kind, machine, query
+) -> None:
+    """The required-key table gates reading, so it must match what is produced.
+
+    Members are filtered on that table before anything indexes them, which makes a
+    table demanding one key too many degrade silently: the fact is complete, the
+    narrative declines it, and nothing says why.  Comparing the table against what
+    each recognizer really emits is the only way that stays true as either side
+    changes.
+    """
+    from pyfcstm.bmc.explanation import _FACT_REQUIRED_KEYS
+    from pyfcstm.bmc.provenance import normalized_fact_for
+
+    groups = _fact_groups(query, machine=machine)
+    declared = tuple(
+        name
+        for name in ("x", "y")
+        if "def int %s" % name in machine or "def float %s" % name in machine
+    )
+    published = [normalized_fact_for(group, declared) for group in groups.values()]
+    facts = [fact for fact in published if fact.get("kind") == kind]
+
+    assert facts, "this corpus no longer produces a %s fact" % kind
+    for fact in facts:
+        missing = set(_FACT_REQUIRED_KEYS[kind]) - set(fact)
+        assert missing == set(), "%s omits %s" % (kind, sorted(missing))

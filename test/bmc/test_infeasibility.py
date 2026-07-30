@@ -16,6 +16,7 @@ from pyfcstm.bmc import build_bmc_core_formula, compile_bmc_property
 from pyfcstm.bmc.engine import BmcEngine
 from pyfcstm.bmc.errors import BmcBuildError
 from pyfcstm.bmc.explanation import (
+    _FACT_KINDS,
     CLASSIFICATION_SCOPES,
     SCOPE_AGGREGATES,
     STAGE_FALLBACK_SCOPES,
@@ -29,8 +30,10 @@ from pyfcstm.bmc.infeasibility import (
     _semantic_role,
     build_core_item,
     classify_infeasibility,
+    derive_forced_values,
     explain_infeasibility,
     extract_source_core,
+    minimize_source_core,
     partition_tracked_groups,
 )
 from pyfcstm.bmc.provenance import (
@@ -526,13 +529,13 @@ def test_index_keys_are_published_the_same_way_in_both_fields() -> None:
     assert canonical["refs"]["kind"] == "state"
 
 
-def test_both_published_copies_of_the_metadata_are_byte_identical() -> None:
-    """One item publishes ``refs`` twice, so the two copies must match as JSON.
+def test_a_published_index_is_an_integer_in_the_json_a_consumer_reads() -> None:
+    """An index arriving as a float must be published as a JSON integer.
 
     Equality is blind to this: ``1 == 1.0`` in Python, so an ``==`` assertion
-    over the two mappings passes even when one holds an int and the other a
-    float.  Comparing the serialized text is what makes the difference visible,
-    and JSON type is exactly what a machine consumer reads.
+    passes on a mapping that serializes as ``1.0``.  Comparing the serialized
+    text is what makes the difference visible, and JSON type is exactly what a
+    machine consumer dispatches on.
     """
     import json
 
@@ -546,15 +549,11 @@ def test_both_published_copies_of_the_metadata_are_byte_identical() -> None:
     )
 
     canonical = build_core_item(group).to_canonical()
-    constraint_refs = canonical["constraint"]["refs"]
-    fact_refs = canonical["normalized_fact"]["refs"]
 
-    assert json.dumps(constraint_refs, sort_keys=True) == json.dumps(
-        fact_refs, sort_keys=True
+    assert canonical["constraint"]["frames"] == [1]
+    assert json.dumps(canonical["constraint"]["refs"], sort_keys=True) == (
+        '{"assumption": 0, "frame": 1, "step": [2]}'
     )
-    # And the fact's own two views of one index agree as well.
-    assert canonical["normalized_fact"]["frames"] == [1]
-    assert json.dumps(fact_refs["frame"]) == "1"
 
 
 def test_plural_index_keys_are_canonicalized_element_by_element() -> None:
@@ -671,8 +670,10 @@ def test_core_items_quote_authored_source_when_a_registry_is_given() -> None:
     assert item.constraint.stable_id == group.stable_id
     assert item.semantic_role == _semantic_role(group.category)
     assert item.editable is True
-    assert item.normalized_fact["kind"] == "structural_constraint"
-    assert item.normalized_fact["stage"] == group.stage
+    # Whatever reading the group gets, the fact carries a published tag.  Pinning
+    # one tag here made this test fail every time a recognizer learned a new
+    # shape, which says nothing about the excerpt it exists to check.
+    assert item.normalized_fact["kind"] in _FACT_KINDS
     assert item.human_text
 
 
@@ -714,10 +715,13 @@ def test_explain_publishes_a_classification_and_a_mapped_core() -> None:
 
     assert explanation.classification == "assumptions_self_conflict"
     assert explanation.achieved_mode == "formal"
-    assert explanation.status == "partial"
+    # Two mutually exclusive equalities are a pattern the recognizers close, so
+    # the formal artifact is complete and carries no reason.
+    assert explanation.status == "complete"
+    assert explanation.reason is None
     assert explanation.core.scope == "assumptions_component"
-    assert explanation.core.reduction == "raw"
-    assert explanation.core.subset_minimality == "not_proven"
+    assert explanation.core.reduction == "subset_minimal"
+    assert explanation.core.subset_minimality == "proven"
     assert [item.constraint.stable_id for item in explanation.core.items] == sorted(
         item.constraint.stable_id for item in explanation.core.items
     )
@@ -1351,9 +1355,9 @@ def test_a_generated_member_says_it_has_no_authored_line() -> None:
     """A generated constraint explains its missing excerpt instead of hiding it.
 
     A published core mixes authored entries that quote real lines with
-    generated ones that cannot.  Reading "from generated" beside three quoted
-    entries looks like the tool failed to find this one's source, so the
-    sentence states outright that there is none.
+    generated ones that cannot.  The missing excerpt is not silence: the item
+    still says which source kind it has and that it carries no editable entry,
+    and its sentence describes the requirement rather than claiming a line.
     """
     core = _core_formula(
         'init state("Root.A") where x == 0; '
@@ -1368,12 +1372,20 @@ def test_a_generated_member_says_it_has_no_authored_line() -> None:
 
     assert item.source_excerpt is None
     assert item.editable is False
-    assert "no single authored line" in item.human_text
-    assert "generated from the model" in item.human_text
+    assert item.constraint.source.kind == "generated"
+    assert item.constraint.source.path is None
+    # The sentence describes the constraint, and names no file it does not have.
+    assert item.human_text.endswith(".")
+    assert "generated" not in item.human_text
 
 
-def test_an_authored_member_names_its_file() -> None:
-    """An authored constraint keeps pointing at the document it came from."""
+def test_an_authored_member_keeps_pointing_at_its_document() -> None:
+    """An authored constraint keeps a resolvable pointer to its own source.
+
+    The pointer lives in ``constraint.source`` and ``source_excerpt``, which is
+    what the human transcript prints beside the quoted line.  ``human_text``
+    describes the requirement instead of repeating the path.
+    """
     machine = load_state_machine_from_text(_MODEL)
     context = BmcEngine(machine).prepare(
         'init state("Root.A") where x == 0;\n'
@@ -1388,8 +1400,13 @@ def test_an_authored_member_names_its_file() -> None:
 
     item = build_core_item(authored, context._source_registry)
 
-    assert "q.fbmcq" in item.human_text
-    assert "no single authored line" not in item.human_text
+    assert item.constraint.source.path == "q.fbmcq"
+    assert item.source_excerpt == 'init state("Root.A") where x == 0;'
+    assert item.editable is True
+    # The sentence states the requirement in domain terms; the document it came
+    # from is carried by constraint.source, asserted just above.
+    assert item.human_text.endswith(".")
+    assert "q.fbmcq" not in item.human_text
 
 
 def test_a_core_that_does_not_recheck_as_unsat_is_not_published() -> None:
@@ -1427,3 +1444,482 @@ def test_a_core_that_does_not_recheck_as_unsat_is_not_published() -> None:
     assert extraction.status == "unknown"
     assert "did not re-check as unsat" in extraction.reason
     assert len(extraction.checks) == 1
+
+
+@pytest.mark.unittest
+def test_a_minimal_core_drops_the_member_that_is_not_needed() -> None:
+    """Shrink removes a member whose absence still leaves the target unsat.
+
+    A raw core is sound but may carry more than the conflict needs.  A caller
+    reading three lines when two suffice looks at one line for no reason, so the
+    published core is shrunk until every member is load-bearing.
+    """
+    core = _core_formula(
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
+        'assume at 0: var("x") >= 0; '
+        'check reach <= 2: active("Root.B");'
+    )
+    outcome = classify_infeasibility(core, "assumptions", _SolveBudget(None))
+    extraction = extract_source_core(core, outcome.scope, _SolveBudget(None))
+
+    minimized = minimize_source_core(core, extraction, _SolveBudget(None))
+
+    assert minimized.status == "complete"
+    assert minimized.reduction == "subset_minimal"
+    assert minimized.subset_minimality == "proven"
+
+    # The result is a subset of the raw core -- shrink only ever deletes -- and it
+    # is still unsatisfiable, so it remains a sound explanation.  Whether it is
+    # strictly smaller depends on how minimal the solver's own unsat core already
+    # was, which is not a property of this contract, so it is not asserted.
+    raw_ids = {group.stable_id for group in extraction.groups}
+    assert {group.stable_id for group in minimized.groups}.issubset(raw_ids)
+    assert len(minimized.groups) <= len(extraction.groups)
+    solver = z3.Solver()
+    for group in minimized.groups:
+        for expression in group.expressions:
+            solver.add(expression)
+    assert solver.check() == z3.unsat
+
+
+@pytest.mark.unittest
+def test_every_member_of_a_proven_core_is_load_bearing() -> None:
+    """Proven minimality means each member's removal makes the rest satisfiable.
+
+    This is the property the published field claims, so it is checked directly
+    on the members rather than inferred from the shrink loop having finished.
+    """
+    core = _core_formula(
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
+        'check reach <= 2: active("Root.B");'
+    )
+    outcome = classify_infeasibility(core, "assumptions", _SolveBudget(None))
+    extraction = extract_source_core(core, outcome.scope, _SolveBudget(None))
+    minimized = minimize_source_core(core, extraction, _SolveBudget(None))
+
+    assert minimized.subset_minimality == "proven"
+    for dropped in minimized.groups:
+        remaining = [g for g in minimized.groups if g is not dropped]
+        solver = z3.Solver()
+        for group in remaining:
+            for expression in group.expressions:
+                solver.add(expression)
+        assert solver.check() == z3.sat, dropped.stable_id
+
+
+@pytest.mark.unittest
+def test_a_budget_spent_during_shrink_returns_a_sound_partial_core() -> None:
+    """A deadline during shrink keeps the candidate and says it is not proven.
+
+    Shrink only ever deletes, so whatever it has reached is still sound.  The
+    honest report is that candidate plus an explicit statement that minimality
+    was not established -- never a smaller core that was never verified.
+    """
+    core = _core_formula(
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
+        'check reach <= 2: active("Root.B");'
+    )
+    outcome = classify_infeasibility(core, "assumptions", _SolveBudget(None))
+    extraction = extract_source_core(core, outcome.scope, _SolveBudget(None))
+
+    spent = _SolveBudget(1)
+    spent.deadline = spent.deadline - 10.0
+    minimized = minimize_source_core(core, extraction, spent)
+
+    assert minimized.status == "timeout"
+    assert minimized.subset_minimality == "not_proven"
+    assert minimized.reduction == "raw"
+    assert [g.stable_id for g in minimized.groups] == [
+        g.stable_id for g in extraction.groups
+    ]
+
+
+@pytest.mark.unittest
+def test_an_undetermined_deletion_keeps_the_member_and_reports_partial() -> None:
+    """An ``unknown`` deletion cannot prove the member unnecessary, so it stays.
+
+    Only Z3's verdict on the trial check is scripted -- which is what a solver
+    giving up on a harder query really does -- and the shrink orchestration under
+    test is production code.
+    """
+    core = _core_formula(
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
+        'check reach <= 2: active("Root.B");'
+    )
+    outcome = classify_infeasibility(core, "assumptions", _SolveBudget(None))
+    extraction = extract_source_core(core, outcome.scope, _SolveBudget(None))
+
+    counter = [0]
+    real = z3.Solver
+    script = ["unknown"] * (len(extraction.groups) + 2)
+
+    def factory(*args, **kwargs):
+        return _ScriptedSolver(real(*args, **kwargs), script, counter)
+
+    z3.Solver = factory
+    try:
+        minimized = minimize_source_core(core, extraction, _SolveBudget(None))
+    finally:
+        z3.Solver = real
+
+    assert minimized.status == "unknown"
+    assert minimized.subset_minimality == "not_proven"
+    assert [g.stable_id for g in minimized.groups] == [
+        g.stable_id for g in extraction.groups
+    ]
+
+
+@pytest.mark.unittest
+def test_a_published_core_carries_the_minimality_the_shrink_proved() -> None:
+    """The orchestrator publishes shrink's verdict instead of a fixed ``raw``.
+
+    Minimality is what makes the core worth reading: it tells the caller every
+    listed line is load-bearing.  Computing it and then publishing ``raw``
+    anyway would hide the answer behind a field that always says the same thing.
+    """
+    core = _core_formula(
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
+        'assume at 0: var("x") >= 0; '
+        'check reach <= 2: active("Root.B");'
+    )
+    raw = extract_source_core(
+        core,
+        classify_infeasibility(core, "assumptions", _SolveBudget(None)).scope,
+        _SolveBudget(None),
+    )
+
+    outcome = explain_infeasibility(core, "assumptions", _SolveBudget(None))
+
+    published = outcome.explanation.core
+    assert published.reduction == "subset_minimal"
+    assert published.subset_minimality == "proven"
+
+    # Shrink only deletes, so the published members stay a subset of the sound
+    # raw core.  A published id absent from the raw extraction would mean the
+    # orchestrator invented a member rather than selecting one.
+    raw_ids = {group.stable_id for group in raw.groups}
+    published_ids = {item.constraint.stable_id for item in published.items}
+    assert published_ids <= raw_ids
+    assert published_ids
+
+    assert outcome.explanation.status == "complete"
+    assert outcome.explanation.achieved_mode == "formal"
+
+
+@pytest.mark.unittest
+def test_the_ledger_records_the_minimization_as_one_phase() -> None:
+    """Deletion trials publish a single aggregate record, not one per trial.
+
+    The frozen ledger rule counts phases a reader can act on.  Emitting one
+    record per deleted candidate would make the ledger's length an artifact of
+    the core's size and drown the stages that actually name a decision.
+    """
+    core = _core_formula(
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
+        'assume at 0: var("x") >= 0; '
+        'check reach <= 2: active("Root.B");'
+    )
+
+    outcome = explain_infeasibility(core, "assumptions", _SolveBudget(None))
+
+    minimization = [
+        check for check in outcome.checks if check.name == "unsat_core_minimization"
+    ]
+    assert len(minimization) == 1
+    assert minimization[0].started is True
+    assert minimization[0].status == "complete"
+    assert minimization[0].reason is None
+
+
+@pytest.mark.unittest
+def test_a_single_member_core_earns_its_minimality_proof() -> None:
+    """One conflicting group is still a core whose minimality can be proven.
+
+    Deleting the only member leaves the empty set, which is satisfiable, so the
+    member is load-bearing and the core is subset-minimal.  Claiming that
+    without running the check would assert the property for free, and the
+    published artifact would carry no evidence of the phase at all.
+    """
+    core = _core_formula(
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") > 5 && var("x") < 3; '
+        'check reach <= 2: active("Root.B");'
+    )
+    outcome = classify_infeasibility(core, "assumptions", _SolveBudget(None))
+    extraction = extract_source_core(core, outcome.scope, _SolveBudget(None))
+    assert len(extraction.groups) == 1
+
+    minimized = minimize_source_core(core, extraction, _SolveBudget(None))
+
+    assert minimized.reduction == "subset_minimal"
+    assert minimized.subset_minimality == "proven"
+    assert len(minimized.groups) == 1
+    # The proof needs a record: a proven claim with an empty ledger cannot be
+    # published at all, so the phase has to appear even when the core has one
+    # member and the trial is trivial.
+    assert minimized.record is not None
+    assert minimized.record.status == "complete"
+    assert minimized.record.started is True
+
+
+@pytest.mark.unittest
+def test_a_recognized_conflict_gets_a_causal_chain_ending_in_the_clash() -> None:
+    """The narrative walks facts first, then names the contradiction.
+
+    A reader asking "why is there no run" needs the chain, not the member list
+    again.  The frozen prototype orders it causally: each fact step states one
+    requirement, and a closing conflict step says why they cannot hold together.
+    """
+    core = _core_formula(
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
+        'check reach <= 2: active("Root.B");'
+    )
+
+    outcome = explain_infeasibility(core, "assumptions", _SolveBudget(None))
+    narrative = outcome.explanation.narrative
+
+    assert narrative is not None
+    assert narrative.derivation_status == "complete"
+    kinds = [step.kind for step in narrative.reasoning_steps]
+    assert kinds[-1] == "conflict"
+    assert kinds.count("conflict") == 1
+    assert set(kinds[:-1]) == {"fact"}
+
+    # Every referenced id belongs to the published core, and the conflict step
+    # references the members that actually clash.
+    published = {item.constraint.stable_id for item in outcome.explanation.core.items}
+    for step in narrative.reasoning_steps:
+        assert step.item_ids
+        assert set(step.item_ids) <= published
+        # Proof node ids belong to proof mode, which is not built here.
+        assert step.proof_node_ids == ()
+    assert set(narrative.reasoning_steps[-1].item_ids) == published
+
+
+@pytest.mark.unittest
+def test_review_surfaces_offer_only_places_the_reader_can_actually_edit() -> None:
+    """A review surface is an authored entry point, not a repair suggestion."""
+    core = _core_formula(
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
+        'check reach <= 2: active("Root.B");'
+    )
+
+    outcome = explain_infeasibility(core, "assumptions", _SolveBudget(None))
+    explanation = outcome.explanation
+    editable = {
+        item.constraint.stable_id for item in explanation.core.items if item.editable
+    }
+
+    assert set(explanation.narrative.review_surfaces) == editable
+    assert explanation.narrative.review_surfaces == tuple(
+        sorted(explanation.narrative.review_surfaces)
+    )
+
+
+@pytest.mark.unittest
+def test_an_unreadable_shape_says_structural_only_instead_of_inventing_a_chain() -> (
+    None
+):
+    """With no domain reading, the narrative states the joint fact and stops.
+
+    The frozen degradation transcript is explicit: say the listed groups are
+    jointly unsatisfiable, say a more specific derivation is unavailable, and do
+    not dress that up as an identified root cause.
+    """
+    # Two bounds inside one assumption: the group holds a conjunction rather than
+    # a single comparison, so no recognizer reads it and no pattern applies.  The
+    # value-propagation probe needs an assumption it can read, so it stays silent
+    # here too.
+    core = _core_formula(
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") > 5 && var("x") < 3; '
+        'check reach <= 2: active("Root.B");'
+    )
+
+    outcome = explain_infeasibility(core, "assumptions", _SolveBudget(None))
+    narrative = outcome.explanation.narrative
+
+    assert narrative is not None
+    assert narrative.derivation_status == "structural_only"
+    # No fabricated equality chain: a structural narrative carries no conflict
+    # step, because none was derived.
+    assert [step.kind for step in narrative.reasoning_steps] == ["fact"]
+    assert "jointly unsatisfiable" in narrative.reasoning_steps[0].text
+    # And the explanation stays partial, since the derivation never closed.
+    assert outcome.explanation.status == "partial"
+
+
+@pytest.mark.unittest
+def test_a_closed_derivation_unlocks_the_complete_formal_verdict() -> None:
+    """``complete`` is reachable once the narrative closes the chain.
+
+    Every other condition -- a diagnostic classification and a subset-minimal
+    core -- was already met, and the frozen delivery table withheld ``complete``
+    on the missing narrative alone.  A complete explanation also carries no
+    reason, because nothing about it was degraded.
+    """
+    core = _core_formula(
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
+        'check reach <= 2: active("Root.B");'
+    )
+
+    outcome = explain_infeasibility(core, "assumptions", _SolveBudget(None))
+    explanation = outcome.explanation
+
+    assert explanation.achieved_mode == "formal"
+    assert explanation.status == "complete"
+    assert explanation.reason is None
+    assert explanation.classification == "assumptions_self_conflict"
+    assert explanation.core.reduction == "subset_minimal"
+
+
+@pytest.mark.unittest
+def test_a_partial_comparison_does_not_crash_the_forced_value_probe() -> None:
+    """The probe picks its targets by tag, then reads keys the tag alone does not carry.
+
+    ``derive_forced_values`` is published, and the items it consumes are published
+    too: the schema requires ``kind`` of a normalized fact and nothing else, so a
+    caller holding a core item from a JSON result can hand this function a
+    comparison that names no variable.  Selecting it on the tag and then indexing
+    the name raises where the contract promised a derivation, which is the failure
+    this asserts against -- the same shape the narrative side already refuses.
+    """
+    from pyfcstm.bmc import BmcCoreItem
+
+    core = _core_formula(
+        'assume at 0: var("x") == 1; check reach <= 1: active("Root.A");'
+    )
+    outcome = classify_infeasibility(core, "assumptions", _SolveBudget(None))
+    extraction = extract_source_core(core, outcome.scope, _SolveBudget(None))
+    minimized = minimize_source_core(core, extraction, _SolveBudget(None))
+
+    items = []
+    for group in minimized.groups:
+        built = build_core_item(group)
+        if built.constraint.stage == "assumptions":
+            # Rebuilt through the public constructor, so this is a value a caller
+            # can hold -- not a field written past the type's own validation.
+            built = BmcCoreItem(
+                built.constraint,
+                built.semantic_role,
+                built.source_excerpt,
+                built.source_excerpt_truncated,
+                {
+                    "kind": "variable_comparison",
+                    "frame": 0,
+                    "operator": "eq",
+                    "value": 1,
+                },
+                built.human_text,
+                built.editable,
+            )
+        items.append(built)
+
+    # Anti-vacuity: with the fact whole this core does derive a value, so the
+    # comparison below is between a working probe and a partial input, not between
+    # two silences.
+    whole, whole_record = derive_forced_values(
+        core,
+        tuple(build_core_item(group) for group in minimized.groups),
+        _SolveBudget(None),
+    )
+    assert [(value.variable, value.frame) for value in whole] == [("x", 0)]
+    assert whole_record is not None
+
+    forced, record = derive_forced_values(core, tuple(items), _SolveBudget(None))
+
+    # A comparison naming no variable identifies no target, so the probe has
+    # nothing to solve for and says so by not running -- the outcome a caller can
+    # act on, rather than an exception from a documented derivation.
+    assert forced == ()
+    assert record is None
+
+
+@pytest.mark.unittest
+def test_a_prefix_that_admits_several_values_forces_none_of_them() -> None:
+    """One witness is not a requirement, and the probe must not confuse them.
+
+    Solving the core's non-assumption members yields *a* value for the frame
+    variable; claiming the prefix *requires* it needs the alternative excluded as
+    well.  Here a range predicate leaves ten values open, so the model's value is
+    one of ten and the derivation may not be made.  Without the second check the
+    narrative would report that single witness as the value the prefix demands --
+    a sentence that reads exactly like a proof and is not one.
+    """
+    core = _core_formula(
+        'init state("Root.A") where x >= 0 && x <= 9; '
+        'assume at 0: var("x") == 100; '
+        'check reach <= 2: active("Root.B");'
+    )
+    outcome = classify_infeasibility(core, "assumptions", _SolveBudget(None))
+    extraction = extract_source_core(core, outcome.scope, _SolveBudget(None))
+    minimized = minimize_source_core(core, extraction, _SolveBudget(None))
+    items = tuple(build_core_item(group) for group in minimized.groups)
+
+    forced, record = derive_forced_values(core, items, _SolveBudget(None))
+
+    assert forced == ()
+    # The phase still ran and still reports itself, so a reader can tell the
+    # difference between "checked and found nothing" and "never checked".
+    assert record is not None
+    assert record.name == "value_propagation"
+    assert record.started is True
+
+    # The prefix really does admit more than one value, checked independently.
+    prefix = [item for item in items if item.constraint.stage != "assumptions"]
+    assert prefix
+    groups = {group.stable_id: group for group in core._tracked_groups}
+    solver = z3.Solver()
+    for item in prefix:
+        for expression in groups[item.constraint.stable_id].expressions:
+            solver.add(expression)
+    symbol = core.symbols.frame_var(0, "x")
+    assert solver.check() == z3.sat
+    witness = solver.model().eval(symbol, model_completion=True)
+    solver.add(symbol != witness)
+    assert solver.check() == z3.sat
+
+
+@pytest.mark.unittest
+def test_every_forced_value_survives_an_independent_uniqueness_check() -> None:
+    """What the probe publishes must hold under a solver it did not run.
+
+    The claim is strong -- the prefix admits no other value -- so it is rechecked
+    from the published supporting ids with a fresh solver rather than trusted from
+    the probe's own bookkeeping.
+    """
+    core = _core_formula(
+        'init state("Root.A"); '
+        'assume at 1: var("x") == 0; '
+        'check reach <= 1: active("Root.A");',
+        model_text=(
+            "def int x = 0;\n"
+            "state Root { state A; [*] -> A; A -> A effect { x = x + 1; }; }"
+        ),
+    )
+    outcome = classify_infeasibility(core, "assumptions", _SolveBudget(None))
+    extraction = extract_source_core(core, outcome.scope, _SolveBudget(None))
+    minimized = minimize_source_core(core, extraction, _SolveBudget(None))
+    items = tuple(build_core_item(group) for group in minimized.groups)
+
+    forced, _ = derive_forced_values(core, items, _SolveBudget(None))
+
+    assert forced
+    groups = {group.stable_id: group for group in core._tracked_groups}
+    for entry in forced:
+        solver = z3.Solver()
+        for stable_id in entry.supporting_ids:
+            for expression in groups[stable_id].expressions:
+                solver.add(expression)
+        symbol = core.symbols.frame_var(entry.frame, entry.variable)
+        solver.add(symbol != entry.value)
+        assert solver.check() == z3.unsat, entry

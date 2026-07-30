@@ -138,6 +138,7 @@ def test_bmc_public_api_exports_exact_names():
         "BmcReplayMismatch",
         "BmcReplayResult",
         "BmcConflictCore",
+        "BmcConflictNarrative",
         "BmcSourceRef",
         "BmcConflictCoreScope",
         "BmcConstraintRef",
@@ -145,10 +146,13 @@ def test_bmc_public_api_exports_exact_names():
         "BmcCoreGranularity",
         "BmcCoreItem",
         "BmcCoreReduction",
+        "BmcDerivationStatus",
         "BmcInfeasibilityClassification",
         "BmcInfeasibilityExplanation",
         "BmcInfeasibilityExplanationMode",
         "BmcInfeasibilityExplanationStatus",
+        "BmcReasoningStep",
+        "BmcReasoningStepKind",
         "BmcSemanticRole",
         "BmcSubsetMinimality",
     }
@@ -218,6 +222,7 @@ def test_bmc_public_api_exports_exact_names():
         "BmcReplayMismatch",
         "BmcReplayResult",
         "BmcConflictCore",
+        "BmcConflictNarrative",
         "BmcSourceRef",
         "BmcConflictCoreScope",
         "BmcConstraintRef",
@@ -225,10 +230,13 @@ def test_bmc_public_api_exports_exact_names():
         "BmcCoreGranularity",
         "BmcCoreItem",
         "BmcCoreReduction",
+        "BmcDerivationStatus",
         "BmcInfeasibilityClassification",
         "BmcInfeasibilityExplanation",
         "BmcInfeasibilityExplanationMode",
         "BmcInfeasibilityExplanationStatus",
+        "BmcReasoningStep",
+        "BmcReasoningStepKind",
         "BmcSemanticRole",
         "BmcSubsetMinimality",
         "solve_bmc_property",
@@ -586,3 +594,41 @@ def test_every_lazy_export_is_reachable_named_and_discoverable() -> None:
     # the resolver does not know.
     for name in sorted(listed):
         assert hasattr(bmc, name), name
+
+
+@pytest.mark.unittest
+def test_the_frozen_narrative_literals_are_public_types() -> None:
+    """The narrative's two vocabularies are published types, not private tuples.
+
+    Every other frozen vocabulary in this contract is exported as a ``Literal``
+    a caller can annotate against -- reductions, minimality, roles, stages.  The
+    two the narrative introduced were implemented as module-private tuples only,
+    so a consumer typing a ``derivation_status`` had nothing to import and the
+    exact-name test could not notice the omission.
+    """
+    from pyfcstm.bmc import BmcDerivationStatus, BmcReasoningStepKind
+
+    assert BmcDerivationStatus is not None
+    assert BmcReasoningStepKind is not None
+
+
+@pytest.mark.unittest
+def test_the_narrative_parameter_documents_that_it_is_published() -> None:
+    """The class pydoc must not still say a narrative is refused.
+
+    A caller reads ``:param narrative:`` to find out whether they may pass one.
+    Publishing the slot while the docstring says it is rejected tells them the
+    opposite of what the constructor does.
+    """
+    import inspect
+
+    from pyfcstm.bmc import BmcInfeasibilityExplanation
+
+    line = next(
+        line
+        for line in inspect.getdoc(BmcInfeasibilityExplanation).splitlines()
+        if line.startswith(":param narrative:")
+    )
+
+    assert "rejected" not in line
+    assert "Reserved for a later stage" not in line

@@ -16,7 +16,7 @@ DomainSource
 -----------------------------------------------------
 
 .. autoclass:: DomainSource
-    :members: label,step,snapshot,prefix_id
+    :members: label,step,snapshot,prefix_id,operation
 
 
 DomainConstraint

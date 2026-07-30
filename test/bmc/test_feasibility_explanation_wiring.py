@@ -82,8 +82,12 @@ def _subset_minimal_core() -> BmcConflictCore:
 def _probe(
     name: str = "component_assumptions", status: str = "unsat"
 ) -> BmcFeasibilityRefinementCheck:
+    # A degraded check must say why, which is its own published invariant, so
+    # the helper supplies a reason for exactly those statuses rather than making
+    # every caller repeat one.
+    reason = "probe did not finish" if status in ("unknown", "timeout") else None
     return BmcFeasibilityRefinementCheck(
-        name=name, status=status, reason=None, elapsed_ms=0.1
+        name=name, status=status, reason=reason, elapsed_ms=0.1
     )
 
 
@@ -356,8 +360,8 @@ def test_a_published_core_needs_a_recorded_core_check() -> None:
     assert accepted.explanation is explanation
 
 
-def test_a_minimal_core_needs_recorded_deletion_checks() -> None:
-    """Minimality is only proven by deletion checks, never asserted for free."""
+def test_a_minimal_core_needs_a_recorded_minimization_phase() -> None:
+    """Minimality is only proven by a closed phase, never asserted for free."""
     explanation = _explanation(
         "partial",
         achieved_mode="formal",
@@ -365,7 +369,7 @@ def test_a_minimal_core_needs_recorded_deletion_checks() -> None:
         core=_core_with("subset_minimal", "proven"),
     )
 
-    with pytest.raises(BmcBuildError, match="deletion check per member"):
+    with pytest.raises(BmcBuildError, match="completed minimization record"):
         _localized(
             refinement_status="partial",
             refinement_reason="probe returned unknown",
@@ -397,13 +401,13 @@ def test_a_core_check_that_did_not_prove_anything_cannot_back_a_core() -> None:
         )
 
 
-def test_deletion_checks_must_have_shown_each_member_necessary() -> None:
-    """Minimality follows from satisfiable deletions, not from any deletion.
+def test_a_degraded_minimization_phase_cannot_back_a_proof() -> None:
+    """A phase that stopped early left at least one member unchecked.
 
-    A deletion check that comes back unsat shows the removed member was
-    redundant, which is the opposite of what a minimal core claims.  The core
-    carries several members so "some deletion" and "every deletion" are
-    distinguishable.
+    Per-member necessity is a condition on the minimization algorithm, which
+    runs the shrink and then a per-member acceptance pass.  The ledger cannot
+    show those internal verdicts, but it does show whether the phase closed --
+    and a phase that timed out or came back undetermined did not.
     """
     explanation = _explanation(
         "partial",
@@ -412,38 +416,27 @@ def test_deletion_checks_must_have_shown_each_member_necessary() -> None:
         core=_core_with("subset_minimal", "proven", members=3),
     )
 
-    with pytest.raises(BmcBuildError, match="every deletion check to"):
-        _localized(
-            refinement_status="partial",
-            refinement_reason="probe returned unknown",
-            refinement_checks=(
-                _probe("unsat_core", "complete"),
-                _probe("unsat_core_minimization", "unsat"),
-            ),
-            explanation=explanation,
-        )
+    for status in ("timeout", "unknown"):
+        with pytest.raises(BmcBuildError, match="completed minimization record"):
+            _localized(
+                refinement_status="partial",
+                refinement_reason="probe returned unknown",
+                refinement_checks=(
+                    _probe("unsat_core", "complete"),
+                    _probe("unsat_core_minimization", status),
+                ),
+                explanation=explanation,
+            )
 
-    # One satisfiable deletion is not enough for a three-member core: it shows
-    # that *some* member is needed, not that every one of them is.
-    with pytest.raises(BmcBuildError, match="deletion check per member"):
-        _localized(
-            refinement_status="partial",
-            refinement_reason="probe returned unknown",
-            refinement_checks=(
-                _probe("unsat_core", "complete"),
-                _probe("unsat_core_minimization", "sat"),
-            ),
-            explanation=explanation,
-        )
-
+    # One completed phase record backs a core of any size: the deletion trials
+    # it aggregates are steps inside the algorithm, so the ledger's length does
+    # not scale with the core's.
     accepted = _localized(
         refinement_status="partial",
         refinement_reason="probe returned unknown",
         refinement_checks=(
             _probe("unsat_core", "complete"),
-            _probe("unsat_core_minimization", "sat"),
-            _probe("unsat_core_minimization", "sat"),
-            _probe("unsat_core_minimization", "sat"),
+            _probe("unsat_core_minimization", "complete"),
         ),
         explanation=explanation,
     )
@@ -479,9 +472,9 @@ def test_asking_for_no_explanation_still_reports_not_requested() -> None:
 def test_a_partially_minimized_core_needs_a_finished_deletion_check() -> None:
     """The middle reduction level also has to be backed by evidence.
 
-    ``partial_minimized`` states that at least one deletion check finished.
-    With none in the ledger the core is simply raw, and claiming otherwise
-    reports progress that never happened.
+    ``partial_minimized`` states the phase started and then stopped early.
+    With no record the core is simply raw; with a completed one its minimality
+    would be proven.  Either way this level claims what the ledger denies.
     """
     explanation = _explanation(
         "partial",
@@ -490,20 +483,27 @@ def test_a_partially_minimized_core_needs_a_finished_deletion_check() -> None:
         core=_core_with("partial_minimized", "not_proven"),
     )
 
-    with pytest.raises(BmcBuildError, match="at least one recorded"):
-        _localized(
-            refinement_status="partial",
-            refinement_reason="probe returned unknown",
-            refinement_checks=(_probe("unsat_core", "complete"),),
-            explanation=explanation,
-        )
+    for checks in (
+        (_probe("unsat_core", "complete"),),
+        (
+            _probe("unsat_core", "complete"),
+            _probe("unsat_core_minimization", "complete"),
+        ),
+    ):
+        with pytest.raises(BmcBuildError, match="degraded minimization record"):
+            _localized(
+                refinement_status="partial",
+                refinement_reason="probe returned unknown",
+                refinement_checks=checks,
+                explanation=explanation,
+            )
 
     accepted = _localized(
         refinement_status="partial",
         refinement_reason="probe returned unknown",
         refinement_checks=(
             _probe("unsat_core", "complete"),
-            _probe("unsat_core_minimization", "unsat"),
+            _probe("unsat_core_minimization", "timeout"),
         ),
         explanation=explanation,
     )

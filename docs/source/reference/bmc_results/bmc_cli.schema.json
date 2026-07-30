@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$comment": "Passing this schema is a structural result, not a semantic one. Draft 2020-12 cannot express nine published rules, so a validated payload may still be refused by the Python constructors: uniqueness over items[*].constraint.stable_id, the equality of refinement_reason and explanation.reason, the metadata nesting bound, the digit limit on published integers, a duration inside the float range, non-finite numbers, values with no JSON counterpart, one recorded deletion per member for proven minimality, and non-string object keys. A consumer that needs those guarantees must check them separately.",
+  "$comment": "Passing this schema is a structural result, not a semantic one. Draft 2020-12 cannot express ten published rules, so a validated payload may still be refused by the Python constructors: uniqueness over items[*].constraint.stable_id, the equality of refinement_reason and explanation.reason, the metadata nesting bound, the digit limit on published integers, a duration inside the float range, non-finite numbers, values with no JSON counterpart, non-string object keys, a narrative step citing a member outside the core, and a review surface naming a member that cannot be edited. A consumer that needs those guarantees must check them separately.",
   "$id": "https://github.com/HansBug/pyfcstm/blob/main/docs/source/reference/bmc_results/bmc_cli.schema.json",
   "title": "PyFCSTM BMC CLI result",
   "description": "Structured BMC JSON envelope emitted by pyfcstm bmc --json.",
@@ -2628,58 +2628,175 @@
           }
         },
         {
-          "$comment": "Proven minimality means removing any single member leaves the target satisfiable, so no recorded deletion check may have come back unsat. The per-member count is the cross-array rule Draft 2020-12 cannot express and stays a named exception.",
-          "if": {
-            "properties": {
-              "explanation": {
-                "type": "object",
+          "$comment": "Minimization publishes one aggregate phase record, so each reduction level maps to a ledger shape: raw has no record, partial_minimized has a degraded one, and proven has a completed one. Per-trial verdicts are steps inside the algorithm and never become rows -- a rule reading them as rows would reject a normal shrink, whose successful deletions come back unsat.",
+          "allOf": [
+            {
+              "if": {
                 "properties": {
-                  "core": {
+                  "explanation": {
                     "type": "object",
                     "properties": {
-                      "subset_minimality": {
-                        "const": "proven"
+                      "core": {
+                        "type": "object",
+                        "properties": {
+                          "reduction": {
+                            "const": "raw"
+                          }
+                        },
+                        "required": [
+                          "reduction"
+                        ]
                       }
                     },
                     "required": [
-                      "subset_minimality"
+                      "core"
                     ]
                   }
                 },
                 "required": [
-                  "core"
+                  "explanation"
                 ]
-              }
-            },
-            "required": [
-              "explanation"
-            ]
-          },
-          "then": {
-            "properties": {
-              "refinement_checks": {
-                "items": {
-                  "if": {
-                    "properties": {
-                      "name": {
-                        "const": "unsat_core_minimization"
-                      }
-                    },
-                    "required": [
-                      "name"
-                    ]
-                  },
-                  "then": {
-                    "properties": {
-                      "status": {
-                        "const": "sat"
+              },
+              "then": {
+                "properties": {
+                  "refinement_checks": {
+                    "not": {
+                      "contains": {
+                        "properties": {
+                          "name": {
+                            "const": "unsat_core_minimization"
+                          },
+                          "status": {
+                            "enum": [
+                              "sat",
+                              "unsat",
+                              "complete",
+                              "unknown",
+                              "timeout"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "status"
+                        ]
                       }
                     }
                   }
-                }
+                },
+                "required": [
+                  "refinement_checks"
+                ]
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "explanation": {
+                    "type": "object",
+                    "properties": {
+                      "core": {
+                        "type": "object",
+                        "properties": {
+                          "reduction": {
+                            "const": "partial_minimized"
+                          }
+                        },
+                        "required": [
+                          "reduction"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "core"
+                    ]
+                  }
+                },
+                "required": [
+                  "explanation"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "refinement_checks": {
+                    "contains": {
+                      "properties": {
+                        "name": {
+                          "const": "unsat_core_minimization"
+                        },
+                        "status": {
+                          "enum": [
+                            "unknown",
+                            "timeout"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "status"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "refinement_checks"
+                ]
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "explanation": {
+                    "type": "object",
+                    "properties": {
+                      "core": {
+                        "type": "object",
+                        "properties": {
+                          "subset_minimality": {
+                            "const": "proven"
+                          }
+                        },
+                        "required": [
+                          "subset_minimality"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "core"
+                    ]
+                  }
+                },
+                "required": [
+                  "explanation"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "refinement_checks": {
+                    "contains": {
+                      "properties": {
+                        "name": {
+                          "const": "unsat_core_minimization"
+                        },
+                        "status": {
+                          "enum": [
+                            "complete"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "status"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "refinement_checks"
+                ]
               }
             }
-          }
+          ]
         }
       ]
     },
@@ -2700,7 +2817,8 @@
             "component_assumptions",
             "domain_assumptions",
             "unsat_core",
-            "unsat_core_minimization"
+            "unsat_core_minimization",
+            "value_propagation"
           ]
         },
         "status": {
@@ -2745,7 +2863,8 @@
                 ]
               }
             }
-          }
+          },
+          "$comment": "status=complete reports a whole phase rather than one solver verdict, so only phase-level checks may use it: unsat_core, unsat_core_minimization and value_propagation. The others report a single check."
         },
         {
           "if": {
@@ -2760,14 +2879,16 @@
               "name": {
                 "enum": [
                   "unsat_core",
-                  "unsat_core_minimization"
+                  "unsat_core_minimization",
+                  "value_propagation"
                 ]
               },
               "reason": {
                 "const": null
               }
             }
-          }
+          },
+          "$comment": "status=complete reports a finished phase rather than one solver verdict, so it is reserved for phase-level checks. value_propagation aggregates a prefix solve and a uniqueness check, so it belongs here; it deliberately does not join the core-proof family, which the published-core rule reads."
         },
         {
           "if": {
@@ -4993,10 +5114,17 @@
       ],
       "properties": {
         "stable_id": {
-          "type": "string",
-          "minLength": 1,
-          "pattern": "^[\\x20-\\x7e]+$",
-          "$comment": "Stable ids are generated from fixed category/index/path encodings and are kept ASCII by the frozen contract, because they become solver literal names and JSON keys downstream."
+          "allOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^[\\x20-\\x7e]+$"
+            },
+            {
+              "pattern": "\\S"
+            }
+          ],
+          "$comment": "The constructor refuses whitespace-only text through one shared predicate, so the structural gate says the same with an added pattern; minLength alone lets a single space through.  Added rather than replacing whatever pattern the field already carried -- those encode separate rules about the field's alphabet or prefix."
         },
         "stage": {
           "enum": [
@@ -5006,17 +5134,26 @@
           ]
         },
         "category": {
-          "type": "string",
-          "minLength": 1,
-          "pattern": "^(?:domain\\.|initial\\.|transition\\.|assumption\\.|definedness)",
-          "$comment": "category_role() resolves the semantic role by family prefix and refuses anything else, so an unknown family has no role to agree with."
+          "allOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^(?:domain\\.|initial\\.|transition\\.|assumption\\.|definedness)"
+            },
+            {
+              "pattern": "\\S"
+            }
+          ],
+          "$comment": "The constructor refuses whitespace-only text through one shared predicate, so the structural gate says the same with an added pattern; minLength alone lets a single space through.  Added rather than replacing whatever pattern the field already carried -- those encode separate rules about the field's alphabet or prefix."
         },
         "source": {
           "$ref": "#/$defs/constraintSourceRef"
         },
         "summary": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "pattern": "\\S",
+          "$comment": "The constructor refuses whitespace-only text through one shared predicate, so the structural gate says the same with an added pattern; minLength alone lets a single space through.  Added rather than replacing whatever pattern the field already carried -- those encode separate rules about the field's alphabet or prefix."
         },
         "frames": {
           "type": "array",
@@ -5084,15 +5221,22 @@
           "properties": {
             "kind": {
               "enum": [
-                "structural_constraint"
-              ]
+                "structural_constraint",
+                "variable_comparison",
+                "state_membership",
+                "state_domain",
+                "definedness_condition"
+              ],
+              "$comment": "A fact describes one source group. variable_comparison carries the relation in its operator field instead of splitting into a tag per relation. Cross-group patterns -- incompatible equalities, an empty interval, an exhausted state domain, a value carried across a step, a definedness failure -- are derivations over several facts and are named by the narrative's rule vocabulary, never here. structural_constraint is the honest fallback for a shape no recognizer reads."
             }
           },
           "$comment": "Machine consumers dispatch on kind rather than on human text, so the tag is required.  Later stages extend the enum as recognizers land. Draft 2020-12 has no depth keyword, no way to bound an integer's digit count, and no way to see a non-finite number, a value with no JSON counterpart or a non-string object key -- a payload reaching a validator was already parsed from JSON text. The constructor refuses all of those at every nesting depth."
         },
         "human_text": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "pattern": "\\S",
+          "$comment": "The constructor refuses whitespace-only text through one shared predicate, so the structural gate says the same with an added pattern; minLength alone lets a single space through.  Added rather than replacing whatever pattern the field already carried -- those encode separate rules about the field's alphabet or prefix."
         },
         "editable": {
           "type": "boolean"
@@ -5291,7 +5435,9 @@
         },
         "formula_summary": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "pattern": "\\S",
+          "$comment": "The constructor refuses whitespace-only text through one shared predicate, so the structural gate says the same with an added pattern; minLength alone lets a single space through.  Added rather than replacing whatever pattern the field already carried -- those encode separate rules about the field's alphabet or prefix."
         },
         "granularity": {
           "enum": [
@@ -5924,10 +6070,26 @@
           "type": "null"
         },
         "narrative": {
-          "type": "null"
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/conflictNarrative"
+            }
+          ]
         },
         "reason": {
-          "$ref": "#/$defs/nullableString"
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "pattern": "\\S"
+            }
+          ],
+          "$comment": "The constructor refuses whitespace-only text through one shared predicate, so the structural gate says the same with an added pattern; minLength alone lets a single space through.  Added rather than replacing whatever pattern the field already carried -- those encode separate rules about the field's alphabet or prefix."
         },
         "elapsed_ms": {
           "$ref": "#/$defs/nullableNumber",
@@ -5998,9 +6160,13 @@
                   "unknown",
                   "timeout"
                 ]
+              },
+              "narrative": {
+                "type": "null"
               }
             }
-          }
+          },
+          "$comment": "achieved_mode none means nothing publishable came back, so there is no core and therefore nothing for a narrative to describe -- its ids would reference a core that is not there. The constructor refuses the pairing and so does this branch."
         },
         {
           "if": {
@@ -6054,7 +6220,16 @@
                 }
               },
               "narrative": {
-                "type": "object"
+                "type": "object",
+                "properties": {
+                  "derivation_status": {
+                    "const": "complete"
+                  }
+                },
+                "required": [
+                  "derivation_status"
+                ],
+                "$comment": "A complete verdict needs a derivation that closed, not merely a narrative object. structural_only says outright that the conflict was not derived."
               }
             },
             "required": [
@@ -6567,6 +6742,43 @@
               ]
             }
           ]
+        },
+        {
+          "$comment": "Steps bind to proof nodes only in proof mode.  With no proof there are no nodes, so a citation points at something no artifact contains; the constructor refuses it and so does this branch.",
+          "if": {
+            "properties": {
+              "proof": {
+                "type": "null"
+              }
+            },
+            "required": [
+              "proof"
+            ]
+          },
+          "then": {
+            "properties": {
+              "narrative": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "properties": {
+                      "reasoning_steps": {
+                        "items": {
+                          "properties": {
+                            "proof_node_ids": {
+                              "maxItems": 0
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
         }
       ]
     },
@@ -6649,6 +6861,131 @@
                 "type": "null"
               }
             }
+          }
+        }
+      ]
+    },
+    "reasoningStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "item_ids",
+        "proof_node_ids",
+        "text"
+      ],
+      "$comment": "A step names the core members it reads so a consumer can jump from a sentence to the source lines behind it. Draft 2020-12 cannot require those ids to exist in core.items -- that is a relation between two sibling arrays, not a property of either -- so BmcInfeasibilityExplanation enforces it, together with the rule that a review surface names an editable member. Both are named semantic-gate exceptions.",
+      "properties": {
+        "kind": {
+          "enum": [
+            "fact",
+            "derivation",
+            "conflict"
+          ]
+        },
+        "item_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "\\S"
+          },
+          "$comment": "Ids go through the same predicate as the prose, so whitespace is refused here too; minLength alone lets a single space through."
+        },
+        "proof_node_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "\\S"
+          },
+          "$comment": "Ids go through the same predicate as the prose, so whitespace is refused here too; minLength alone lets a single space through."
+        },
+        "text": {
+          "type": "string",
+          "pattern": "\\S",
+          "$comment": "The constructor rejects whitespace-only text, and Draft 2020-12 can say the same with a pattern; minLength alone lets a single space through."
+        }
+      }
+    },
+    "conflictNarrative": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "derivation_status",
+        "headline",
+        "summary",
+        "reasoning_steps",
+        "review_surfaces"
+      ],
+      "$comment": "Rendered from the published core and its normalized facts alone: no file read, no solver. A shape with no domain reading yields structural_only and no conflict step rather than an invented chain. review_surfaces are authored entry points for review, not repair suggestions, and editing one is not a promise that the full target becomes satisfiable.",
+      "properties": {
+        "derivation_status": {
+          "enum": [
+            "complete",
+            "partial",
+            "structural_only",
+            "not_available"
+          ]
+        },
+        "headline": {
+          "type": "string",
+          "pattern": "\\S",
+          "$comment": "Whitespace-only is refused by the constructor; a pattern says so here too."
+        },
+        "summary": {
+          "type": "string",
+          "pattern": "\\S",
+          "$comment": "Whitespace-only is refused by the constructor; a pattern says so here too."
+        },
+        "reasoning_steps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/reasoningStep"
+          }
+        },
+        "review_surfaces": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "\\S"
+          },
+          "$comment": "Ids go through the same predicate as the prose, so whitespace is refused here too; minLength alone lets a single space through."
+        }
+      },
+      "allOf": [
+        {
+          "$comment": "A complete derivation claims the chain reached the contradiction, so its closing step has to be present.",
+          "if": {
+            "properties": {
+              "derivation_status": {
+                "const": "complete"
+              }
+            },
+            "required": [
+              "derivation_status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "reasoning_steps": {
+                "contains": {
+                  "properties": {
+                    "kind": {
+                      "const": "conflict"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "reasoning_steps"
+            ]
           }
         }
       ]

@@ -29,7 +29,9 @@ from pyfcstm.bmc.explanation import (
     BmcConflictCore,
     BmcConstraintRef,
     BmcCoreItem,
+    BmcConflictNarrative,
     BmcInfeasibilityExplanation,
+    BmcReasoningStep,
 )
 from pyfcstm.bmc.provenance import (
     MAX_METADATA_DEPTH as _MAX_METADATA_DEPTH,
@@ -78,6 +80,17 @@ _ALL_SCOPES = tuple(CLASSIFICATION_SCOPES.values()) + STAGE_FALLBACK_SCOPES
 #: instead of passing silently, and so no summary can quietly report the corpus
 #: as fully equivalent.
 _INEXPRESSIBLE = {
+    "narrative step citing a member outside the core": (
+        "Draft 2020-12 can constrain reasoning_steps[*].item_ids and core.items "
+        "each on their own, but membership of one array's strings in a key of the "
+        "other is a relation between siblings rather than a property of either; "
+        "the constructor enforces it"
+    ),
+    "review surface naming a member that cannot be edited": (
+        "the same cross-array relation, plus a condition on the referenced "
+        "member's own editable flag; Draft 2020-12 cannot follow a string to the "
+        "member it names, so the constructor checks both"
+    ),
     "duplicate stable_id with differing content": (
         "uniqueness over a nested key (items[*].constraint.stable_id) has no "
         "Draft 2020-12 keyword; uniqueItems only catches identical members"
@@ -113,11 +126,6 @@ _INEXPRESSIBLE = {
         "object, has no representation for a validator to reject -- by the time "
         "a payload reaches one it has already been parsed from JSON text; the "
         "constructor rejects them at every nesting depth"
-    ),
-    "proven minimality without one deletion per member": (
-        "Draft 2020-12 can constrain each array on its own, but it cannot "
-        "compare len(refinement_checks deletions) against len(core.items); the "
-        "constructor requires one recorded deletion per member"
     ),
     "non-string object key in any published mapping": (
         "JSON object keys are always strings, so a Python mapping keyed by 1 "
@@ -239,6 +247,27 @@ def _constructor_accepts(payload) -> bool:
     """Report whether the public constructors accept a canonical payload."""
     try:
         core = None
+        narrative = payload["narrative"]
+        if isinstance(narrative, dict):
+            # The corpus carries payloads, and this side has to build the objects
+            # they describe -- passing the mapping through reached the constructor
+            # as a mapping and raised AttributeError, which is outside the caught
+            # set, so a narrative payload could not be judged at all.
+            narrative = BmcConflictNarrative(
+                narrative["derivation_status"],
+                narrative["headline"],
+                narrative["summary"],
+                tuple(
+                    BmcReasoningStep(
+                        step["kind"],
+                        tuple(step["item_ids"]),
+                        tuple(step["proof_node_ids"]),
+                        step["text"],
+                    )
+                    for step in narrative["reasoning_steps"]
+                ),
+                tuple(narrative["review_surfaces"]),
+            )
         if payload["core"] is not None:
             raw = payload["core"]
             items = tuple(
@@ -281,7 +310,7 @@ def _constructor_accepts(payload) -> bool:
             payload["classification"],
             core,
             payload["proof"],
-            payload["narrative"],
+            narrative,
             payload["reason"],
             payload["elapsed_ms"],
         )
@@ -321,6 +350,95 @@ def _scalar_corpus():
                                     reason=reason,
                                 ),
                             )
+
+
+def _narrative_payload(**overrides):
+    """Return a payload carrying a narrative, so the subobject enters the matrix.
+
+    Every corpus entry hardcoded ``"narrative": None``, so the whole subobject
+    this PR added -- five fields plus a step array -- had no bidirectional
+    coverage at all: nothing proved the two gates agree about any narrative.
+    """
+    narrative = {
+        "derivation_status": "structural_only",
+        "headline": "The assumptions cannot hold together.",
+        "summary": "The listed groups are jointly unsatisfiable.",
+        "reasoning_steps": [
+            {
+                "kind": "fact",
+                "item_ids": ["initial.target"],
+                "proof_node_ids": [],
+                "text": "At frame 0, the query requires state Root.A.",
+            }
+        ],
+        "review_surfaces": ["initial.target"],
+    }
+    narrative.update(overrides)
+    # An editable member, because review surfaces may only name members the
+    # reader can open -- the default member is generated and not editable, and
+    # naming it would exercise that rule rather than the narrative's own shape.
+    member = _member("initial.target", "initialization")
+    member["editable"] = True
+    member["source_excerpt"] = 'init state("Root.A");'
+    member["constraint"]["source"] = {
+        "kind": "fbmcq",
+        "path": "q.fbmcq",
+        "span": {"line": 1, "column": 1, "end_line": 1, "end_column": 22},
+    }
+    payload = _payload(members=[member])
+    payload["narrative"] = narrative
+    return payload
+
+
+def _narrative_corpus():
+    """Yield payloads that differ only inside the narrative subobject."""
+    yield ("narrative: structural only", _narrative_payload())
+    yield (
+        "narrative: complete without a conflict step",
+        _narrative_payload(derivation_status="complete"),
+    )
+    yield (
+        "narrative: blank headline",
+        _narrative_payload(headline="   "),
+    )
+    yield (
+        "narrative: blank summary",
+        _narrative_payload(summary="   "),
+    )
+    yield (
+        "narrative: step with a blank id",
+        _narrative_payload(
+            reasoning_steps=[
+                {
+                    "kind": "fact",
+                    "item_ids": ["   "],
+                    "proof_node_ids": [],
+                    "text": "t",
+                }
+            ]
+        ),
+    )
+    yield (
+        "narrative: step kind outside the vocabulary",
+        _narrative_payload(
+            reasoning_steps=[
+                {
+                    "kind": "guidance",
+                    "item_ids": ["initial.target"],
+                    "proof_node_ids": [],
+                    "text": "t",
+                }
+            ]
+        ),
+    )
+    yield (
+        "narrative: step with no ids at all",
+        _narrative_payload(
+            reasoning_steps=[
+                {"kind": "fact", "item_ids": [], "proof_node_ids": [], "text": "t"}
+            ]
+        ),
+    )
 
 
 def _structural_corpus():
@@ -635,7 +753,9 @@ def test_scalar_corpus_agrees(validator) -> None:
     )
 
 
-@pytest.mark.parametrize("name, payload", list(_structural_corpus()))
+@pytest.mark.parametrize(
+    "name, payload", list(_structural_corpus()) + list(_narrative_corpus())
+)
 def test_structural_corpus_agrees(validator, name, payload) -> None:
     """Relational rules about core members bind both sides equally.
 
@@ -733,6 +853,14 @@ def _drift_cases():
         payload["infeasible_stage"] = "initialization"
 
     def reason_drift(payload):
+        # A complete explanation carries no reason at all, and a completed
+        # refinement's own reason must be null, so the drift is staged on the
+        # degraded delivery where both fields legitimately hold text.  Otherwise
+        # the mutation trips the "completed refinement has no reason" rule and
+        # never reaches the equality this case exists to pin.
+        payload["explanation"]["status"] = "partial"
+        payload["explanation"]["reason"] = "the derivation did not close"
+        payload["refinement_status"] = "partial"
         payload["refinement_reason"] = "a different reason for the same stage"
 
     def member_outside_scope(payload):
@@ -751,31 +879,57 @@ def _drift_cases():
             "span": None,
         }
 
+    def step_outside_core(payload):
+        # A step citing an id no member carries.  Both arrays stay individually
+        # well formed, so only a relation between them can see the gap.
+        payload["explanation"]["narrative"]["reasoning_steps"].append(
+            {
+                "kind": "fact",
+                "item_ids": ["absent.member"],
+                "proof_node_ids": [],
+                "text": "a step pointing nowhere",
+            }
+        )
+
+    def surface_not_editable(payload):
+        # A surface naming a member that exists but carries editable=false.
+        member = payload["explanation"]["core"]["items"][0]
+        member["editable"] = False
+        payload["explanation"]["narrative"]["review_surfaces"] = [
+            member["constraint"]["stable_id"]
+        ]
+
     def duplicate_member(payload):
         items = payload["explanation"]["core"]["items"]
         items.append(json.loads(json.dumps(items[0])))
 
-    def proven_without_one_deletion_per_member(payload):
-        # Two distinct members, but only one recorded deletion check.  Each
-        # array is individually well formed, so only a cross-array cardinality
-        # comparison can see the gap.
+    def proven_without_a_completed_minimization_record(payload):
+        # A proven core whose minimization phase timed out.  Each array is
+        # individually well formed -- the status is in the published vocabulary
+        # and the reduction level is legal -- so only a conditional relation
+        # between the two arrays can see that the proof was never closed.
         core = payload["explanation"]["core"]
-        second = json.loads(json.dumps(core["items"][0]))
-        second["constraint"]["stable_id"] += ".second"
-        second["normalized_fact"]["stable_id"] = second["constraint"]["stable_id"]
-        core["items"].append(second)
         core["reduction"] = "subset_minimal"
         core["subset_minimality"] = "proven"
-        payload["refinement_checks"].append(
+        # Replace the phase record rather than adding to it: a run that really
+        # proved minimality already published a completed one, and leaving it in
+        # place would make the payload consistent again.
+        payload["refinement_checks"] = [
+            check
+            for check in payload["refinement_checks"]
+            if check["name"] != "unsat_core_minimization"
+        ] + [
             {
                 "name": "unsat_core_minimization",
-                "status": "sat",
-                "reason": None,
+                "status": "timeout",
+                "reason": "deletion trial timed out",
                 "elapsed_ms": 1.0,
             }
-        )
+        ]
 
     return [
+        ("narrative step citing a member outside the core", step_outside_core),
+        ("review surface naming a member that cannot be edited", surface_not_editable),
         ("aggregate status drift", status_drift),
         ("explanation without a ledger", empty_ledger),
         ("localized stage drift", stage_drift),
@@ -784,8 +938,8 @@ def _drift_cases():
         ("unsupported source kind", untyped_source),
         ("duplicate core member", duplicate_member),
         (
-            "proven minimality without one deletion per member",
-            proven_without_one_deletion_per_member,
+            "proven minimality without a completed minimization record",
+            proven_without_a_completed_minimization_record,
         ),
     ]
 
@@ -848,8 +1002,51 @@ def test_the_constructor_still_enforces_every_named_asymmetry() -> None:
         compile_bmc_property(build_bmc_core_formula(context)),
         infeasibility_explanation="formal",
     ).feasibility
+    # Staged on the degraded delivery: a complete explanation carries no reason
+    # and a completed refinement's own reason must be null, so on the real
+    # complete payload a forged aggregate reason trips that rule first and never
+    # reaches the equality this case exists to pin.
+    degraded = replace(
+        feasibility,
+        refinement_status="partial",
+        refinement_reason="the derivation did not close",
+        explanation=replace(
+            feasibility.explanation,
+            status="partial",
+            reason="the derivation did not close",
+        ),
+    )
     with pytest.raises(BmcBuildError, match="must match the explanation reason"):
-        replace(feasibility, refinement_reason="a forged aggregate reason")
+        replace(degraded, refinement_reason="a forged aggregate reason")
+
+    # narrative step citing a member outside the core, and a review surface that
+    # names a member the reader cannot edit.  Both go through the public
+    # constructor with a real published core beside them.
+    narrative = feasibility.explanation.narrative
+    with pytest.raises(ValueError, match="reasoning step cites"):
+        replace(
+            feasibility.explanation,
+            narrative=replace(
+                narrative,
+                reasoning_steps=narrative.reasoning_steps
+                + (BmcReasoningStep("fact", ("absent.member",), (), "text"),),
+            ),
+        )
+    with pytest.raises(ValueError, match="not editable"):
+        replace(
+            feasibility.explanation,
+            core=replace(
+                feasibility.explanation.core,
+                items=(replace(feasibility.explanation.core.items[0], editable=False),)
+                + feasibility.explanation.core.items[1:],
+            ),
+            narrative=replace(
+                narrative,
+                review_surfaces=(
+                    feasibility.explanation.core.items[0].constraint.stable_id,
+                ),
+            ),
+        )
 
     # duplicate stable_id with differing content
     def member(text):
@@ -878,38 +1075,6 @@ def test_the_constructor_still_enforces_every_named_asymmetry() -> None:
             "raw",
             "not_proven",
             (member("first reading"), member("second reading")),
-        )
-
-    # proven minimality without one deletion per member
-    proven_core = replace(
-        feasibility.explanation.core,
-        items=feasibility.explanation.core.items
-        + (
-            replace(
-                feasibility.explanation.core.items[0],
-                constraint=replace(
-                    feasibility.explanation.core.items[0].constraint,
-                    stable_id="second.member",
-                ),
-            ),
-        ),
-        reduction="subset_minimal",
-        subset_minimality="proven",
-    )
-    with pytest.raises(BmcBuildError, match="deletion"):
-        replace(
-            feasibility,
-            explanation=replace(
-                feasibility.explanation, achieved_mode="formal", core=proven_core
-            ),
-            refinement_checks=feasibility.refinement_checks
-            + (
-                replace(
-                    feasibility.refinement_checks[0],
-                    name="unsat_core_minimization",
-                    status="sat",
-                ),
-            ),
         )
 
     # published metadata nested deeper than the published limit
@@ -1012,6 +1177,8 @@ def test_the_constructor_still_enforces_every_named_asymmetry() -> None:
             )
 
     assert set(_INEXPRESSIBLE) == {
+        "narrative step citing a member outside the core",
+        "review surface naming a member that cannot be edited",
         "aggregate reason drift",
         "duplicate stable_id with differing content",
         "non-string object key in any published mapping",
@@ -1020,5 +1187,4 @@ def test_the_constructor_still_enforces_every_named_asymmetry() -> None:
         "duration past the float range",
         "non-finite number anywhere in a published mapping",
         "non-JSON value anywhere in a published mapping",
-        "proven minimality without one deletion per member",
     }

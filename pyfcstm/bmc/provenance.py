@@ -32,6 +32,7 @@ Example::
 
 from __future__ import annotations
 
+import hashlib
 import math
 import os
 import sys
@@ -459,6 +460,491 @@ def _require_json_mapping(value: Any, label: str) -> Dict[str, Any]:
     return {
         key: value_
         for key, value_ in dict(_normalize(value, label, 0)).items()  # type: ignore[arg-type]
+    }
+
+
+#: Category prefixes whose groups carry a single variable comparison.
+#:
+#: These are the groups whose expression is one relational atom over one frame
+#: variable, which is what makes an ``equality`` or ``range`` fact readable
+#: without walking an arbitrary formula.
+#: Every category whose group can hold one comparison between a frame
+#: variable and a value.  The relation builder produces this shape from three
+#: places -- a frame assumption, a declared initializer and an ``init ... where``
+#: predicate -- and leaving one out publishes the same mathematical conflict a
+#: grade lower depending on where the author wrote it.
+_VALUE_FACT_CATEGORIES = (
+    "assumption.frame",
+    "initial.variable",
+    "initial.where",
+)
+
+
+def _relational_operators(z3: Any) -> Dict[int, str]:
+    """Return the Z3 declaration kinds this module reduces to an operator.
+
+    Built on demand rather than at import time: this module deliberately keeps
+    ``z3`` out of the import graph so preparation and parser code can preserve
+    provenance without loading the solver stack, and a published gate asserts
+    that ``import pyfcstm.bmc`` does not pull it in.
+
+    :param z3: The already-imported ``z3`` module.
+    :type z3: module
+    :return: Declaration kind to published operator.
+    :rtype: Dict[int, str]
+
+    Example::
+
+        >>> import z3 as z3_module
+        >>> _relational_operators(z3_module)[z3_module.Z3_OP_EQ]
+        'eq'
+    """
+    return {
+        z3.Z3_OP_EQ: "eq",
+        z3.Z3_OP_DISTINCT: "ne",
+        z3.Z3_OP_LE: "le",
+        z3.Z3_OP_LT: "lt",
+        z3.Z3_OP_GE: "ge",
+        z3.Z3_OP_GT: "gt",
+    }
+
+
+def _without_coercion(expression: Any) -> Any:
+    """Strip the sort coercion z3 inserts around a mixed-sort operand.
+
+    Comparing a real variable with an integer literal -- or the reverse -- makes
+    z3 wrap one side in ``to_real``.  The wrapper records nothing the author
+    wrote, so a reader that stops at it would make the same query readable or not
+    depending on whether a decimal point was typed.
+
+    :param expression: The operand as it appears in the constraint.
+    :type expression: object
+    :return: The operand with any coercion removed.
+    :rtype: object
+
+    Example::
+
+        >>> import z3
+        >>> str(_without_coercion(z3.ToReal(z3.Int("x"))))
+        'x'
+        >>> str(_without_coercion(z3.Int("x")))
+        'x'
+    """
+    import z3
+
+    while (
+        z3.is_app(expression)
+        and expression.decl().kind() == z3.Z3_OP_TO_REAL
+        and expression.num_args() == 1
+    ):
+        expression = expression.arg(0)
+    return expression
+
+
+def _frame_variable_name(
+    expression: Any, declared: Optional[Any] = None
+) -> Optional[str]:
+    """Return the model variable a frame symbol stands for.
+
+    The encoding builds a symbol as ``F_<frame>_<body>_<digest>``, where the body
+    is the variable name with unsafe characters replaced and then **truncated**,
+    and the digest is a hash of the whole name.  Reading the body back therefore
+    recovers the truncation rather than the declaration, and publishing it names a
+    variable the reader cannot find in their source.
+
+    Passing ``declared`` -- the model's variable names -- resolves that: each name
+    is hashed the same way the encoder hashes it and compared against the symbol,
+    so the answer is the declared name or nothing.  Without it the reader falls
+    back to the body, which is correct for every name short enough to survive
+    truncation intact.
+
+    :param expression: The candidate operand.
+    :type expression: object
+    :param declared: Model variable names to resolve against, defaults to
+        ``None``.
+    :type declared: Optional[Iterable[str]], optional
+    :return: The declared variable name, or ``None`` when the operand is not a
+        frame variable.
+    :rtype: Optional[str]
+
+    Example::
+
+        >>> import z3
+        >>> _frame_variable_name(z3.Int("F_0_x_11f6ad8ec5"))
+        'x'
+        >>> _frame_variable_name(z3.Int("F_0_state")) is None
+        True
+    """
+    import z3
+
+    expression = _without_coercion(expression)
+    if not z3.is_const(expression):
+        # Only a leaf symbol names a variable.  ``x + y`` renders as
+        # ``F_0_x_... + F_0_y_...``, which begins like a frame symbol and ends
+        # with the second operand's digest, so a reader working on the text alone
+        # calls the sum ``y`` and the narrative then states an equality the query
+        # never required.  The state-slot reader has always checked this; the
+        # omission here was the asymmetry.
+        return None
+    text = str(expression)
+    if not text.startswith("F_"):
+        return None
+    parts = text.split("_")
+    if len(parts) < 4:
+        # "F_0_state" and friends name a frame slot, not a model variable.
+        return None
+    if declared:
+        digest = parts[-1]
+        matches = [
+            name
+            for name in declared
+            if hashlib.sha1(name.encode("utf-8")).hexdigest() == digest
+        ]
+        if len(matches) == 1:
+            return matches[0]
+        # No match means the symbol is not this model's variable; more than one
+        # would mean the digest failed to distinguish them, and picking either
+        # would name the wrong declaration.  Saying nothing beats a guess.
+        return None
+    return "_".join(parts[2:-1]) or None
+
+
+def _numeric_value(expression: Any) -> Optional[Any]:
+    """Read a z3 numeral as the plain Python number a consumer can use.
+
+    An integer numeral becomes ``int`` and a rational one becomes ``float``,
+    including when its value is whole.  That distinction is load-bearing: a real
+    variable admits values between consecutive integers, so a reader of the
+    published fact must be able to tell the two domains apart without a separate
+    key, and downstream interval reasoning must not tighten a real bound the way
+    it may tighten an integer one.
+
+    :param expression: The candidate operand.
+    :type expression: object
+    :return: The numeral's value, or ``None`` when it is not a numeral.
+    :rtype: Optional[Any]
+
+    Example::
+
+        >>> import z3
+        >>> _numeric_value(z3.IntVal(7))
+        7
+        >>> _numeric_value(z3.RealVal("1/2"))
+        0.5
+        >>> _numeric_value(z3.Int("x")) is None
+        True
+    """
+    import z3
+
+    expression = _without_coercion(expression)
+    if isinstance(expression, z3.IntNumRef):
+        return expression.as_long()
+    if isinstance(expression, z3.RatNumRef):
+        # as_fraction keeps the exact value z3 holds; float() is the published
+        # form.  A rational past the float range is a legal thing to write, and
+        # converting it raises rather than losing precision, so the fact declines
+        # instead -- an explanation that cannot represent a value degrades, it
+        # does not take the mandatory verdict down with it.
+        try:
+            return float(expression.as_fraction())
+        except OverflowError:
+            # OverflowError: the exact rational does not fit a Python float.
+            return None
+    return None
+
+
+# Each recognizer below opens with shape preconditions -- one expression, an
+# integer frame, an Or of equalities -- that today's encoder always satisfies for
+# the categories they are called on.  They are kept anyway, and deliberately left
+# without tests: their job is to make a recognizer degrade to
+# "structural_constraint" if the encoder's shape ever changes, and deleting them
+# would turn that degradation into an AttributeError, which is the opposite of
+# what a component whose contract is "read this shape or say you cannot" should
+# do.  Reaching them from a test would mean hand-building a tracked group the
+# builder cannot produce, which the repository's test boundary forbids.  The
+# preconditions that authored queries *do* reach -- a comparison between two
+# variables, an assertion about the active state -- are covered as normal paths.
+def _value_comparison_fact(
+    group: Any, declared: Optional[Any] = None
+) -> Optional[Dict[str, Any]]:
+    """Read a one-variable comparison group as a variable-comparison fact.
+
+    :param group: The tracked group to read.
+    :type group: BmcTrackedConstraint
+    :return: The fact mapping, or ``None`` when the shape is not a single
+        comparison between one frame variable and one numeral.
+    :rtype: Optional[Dict[str, Any]]
+    """
+    import z3
+
+    if len(group.expressions) != 1:
+        return None
+    expression = group.expressions[0]
+    if not z3.is_app(expression):
+        return None
+    operator = _relational_operators(z3).get(expression.decl().kind())
+    if operator is None or expression.num_args() != 2:
+        return None
+    left, right = expression.arg(0), expression.arg(1)
+    name = _frame_variable_name(left, declared)
+    value = _numeric_value(right)
+    if name is None or value is None:
+        # Operand order is not fixed, so the mirrored shape is read too.
+        name = _frame_variable_name(right, declared)
+        value = _numeric_value(left)
+        operator = {"lt": "gt", "gt": "lt", "le": "ge", "ge": "le"}.get(
+            operator, operator
+        )
+    if name is None or value is None:
+        return None
+    frame = group.refs.get("frame")
+    if not isinstance(frame, int):
+        return None
+    # The domain marker follows the *variable*, not the literal.  Unwrapping the
+    # sort coercion means a real variable compared with ``1`` yields a Python
+    # int, and downstream interval reasoning reads the published type to decide
+    # whether it may tighten a strict bound by one -- which it must not do over
+    # the reals.  Publishing whole real values as floats is what keeps the two
+    # domains distinguishable without a separate key.
+    slot = left if _frame_variable_name(left, None) == name else right
+    if z3.is_int(_without_coercion(slot)):
+        # An integer variable compared with ``3.0``: the literal is a real, but
+        # the domain is not.  Narrowing is only sound when the value is whole --
+        # a fractional bound on an integer variable is not an integer bound, and
+        # rounding it would move it.
+        if isinstance(value, float) and value.is_integer():
+            value = int(value)
+        elif isinstance(value, float):
+            return None
+    else:
+        try:
+            value = float(value)
+        except OverflowError:
+            # OverflowError: an integer literal too large for a float, compared
+            # against a real variable.  Same choice as above: decline the fact.
+            return None
+    # One tag with an operator field, not one tag per relation: a consumer that
+    # wants only equalities filters on the operator, while one that wants any
+    # bound on a variable does not have to enumerate tags to find them.
+    return {
+        "kind": "variable_comparison",
+        "variable": name,
+        "frame": frame,
+        "operator": operator,
+        "value": value,
+    }
+
+
+def _state_domain_fact(group: Any) -> Optional[Dict[str, Any]]:
+    """Read a frame-state domain group as the set of states the frame may hold.
+
+    :param group: The tracked group to read.
+    :type group: BmcTrackedConstraint
+    :return: The fact mapping, or ``None`` when the disjunction is not a plain
+        list of state equalities.
+    :rtype: Optional[Dict[str, Any]]
+    """
+    import z3
+
+    frame = group.refs.get("frame")
+    if not isinstance(frame, int) or len(group.expressions) != 1:
+        return None
+    expression = group.expressions[0]
+    if not z3.is_app(expression) or expression.decl().kind() != z3.Z3_OP_OR:
+        return None
+    states = []
+    for index in range(expression.num_args()):
+        atom = expression.arg(index)
+        if not z3.is_app(atom) or atom.decl().kind() != z3.Z3_OP_EQ:
+            return None
+        value = _numeric_value(atom.arg(0))
+        if value is None:
+            value = _numeric_value(atom.arg(1))
+        if value is None:
+            return None
+        states.append(value)
+    return {"kind": "state_domain", "frame": frame, "states": sorted(states)}
+
+
+def _definedness_fact(
+    group: Any, declared: Optional[Any] = None
+) -> Optional[Dict[str, Any]]:
+    """Read a definedness group as the operation it keeps well defined.
+
+    The operation is taken from the builder's own metadata, never inferred from
+    the condition: a divisor check and a non-negativity check both compare one
+    operand against zero, so the shape cannot distinguish ``x / 0`` from
+    ``sqrt(-1.0)``.  A group whose builder recorded no operation returns ``None``
+    so the caller degrades honestly instead of publishing a guess -- an earlier
+    version named every definedness group a division, which reported
+    ``sqrt(-1.0) >= 0.0`` as a division that must stay defined.
+
+    :param group: The tracked group to read.
+    :type group: BmcTrackedConstraint
+    :return: The fact mapping, or ``None`` when the frame or the operation is
+        unknown.
+    :rtype: Optional[Dict[str, Any]]
+    """
+    import z3
+
+    frame = group.refs.get("frame")
+    operation = group.refs.get("operation")
+    if not isinstance(frame, int) or not isinstance(operation, str):
+        return None
+    fact = {
+        "kind": "definedness_condition",
+        "frame": frame,
+        "operation": operation,
+    }
+    if len(group.expressions) == 1:
+        expression = group.expressions[0]
+        if z3.is_app(expression) and expression.decl().kind() == z3.Z3_OP_DISTINCT:
+            name = _frame_variable_name(
+                expression.arg(0), declared
+            ) or _frame_variable_name(expression.arg(1), declared)
+            if name is not None:
+                fact["variable"] = name
+    return fact
+
+
+def _state_membership_fact(group: Any) -> Optional[Dict[str, Any]]:
+    """Read a group that pins one frame's state as a state-membership fact.
+
+    Both an initial target and an ``active(...)`` assumption lower to a single
+    equality between a state code and the frame's state slot, so one reader
+    covers both.  The code is published as the plain integer the encoding uses --
+    the model's own name for it is not carried on the group, and the item's source
+    excerpt quotes the line that names it.
+
+    :param group: The tracked group to read.
+    :type group: BmcTrackedConstraint
+    :return: The fact mapping, or ``None`` when the shape is not one state
+        equality on a known frame.
+    :rtype: Optional[Dict[str, Any]]
+    """
+    import z3
+
+    frame = group.refs.get("frame")
+    if not isinstance(frame, int) or len(group.expressions) != 1:
+        return None
+    expression = group.expressions[0]
+    if not z3.is_app(expression):
+        return None
+    # "not active(S)" lowers to Not(code == slot), which excludes one state
+    # rather than requiring it.  Both readings publish the same tag with an
+    # ``excluded`` flag, so a consumer sees one shape for one concept.
+    excluded = expression.decl().kind() == z3.Z3_OP_NOT
+    if excluded:
+        if expression.num_args() != 1:
+            return None
+        expression = expression.arg(0)
+        if not z3.is_app(expression):
+            return None
+    if expression.decl().kind() != z3.Z3_OP_EQ:
+        return None
+    left, right = expression.arg(0), expression.arg(1)
+    for slot, code in ((left, right), (right, left)):
+        if _frame_state_slot(slot, frame):
+            value = _numeric_value(code)
+            if value is not None:
+                return {
+                    "kind": "state_membership",
+                    "frame": frame,
+                    "state": value,
+                    "excluded": excluded,
+                }
+    return None
+
+
+def _frame_state_slot(expression: Any, frame: int) -> bool:
+    """Report whether an expression is the state slot of one frame.
+
+    The slot is named ``F_<frame>_state`` by the encoding, which is exactly the
+    shape :func:`_frame_variable_name` rejects for model variables, so the two
+    readers stay disjoint rather than competing for the same operand.
+
+    :param expression: The candidate operand.
+    :type expression: object
+    :param frame: The frame the slot must belong to.
+    :type frame: int
+    :return: ``True`` when the operand is that frame's state slot.
+    :rtype: bool
+
+    Example::
+
+        >>> import z3
+        >>> _frame_state_slot(z3.Int("F_0_state"), 0)
+        True
+        >>> _frame_state_slot(z3.Int("F_0_state"), 1)
+        False
+    """
+    import z3
+
+    if not z3.is_const(expression):
+        return False
+    return str(expression) == "F_%d_state" % frame
+
+
+def normalized_fact_for(group: Any, declared: Optional[Any] = None) -> Dict[str, Any]:
+    """Return the published domain fact for one tracked source group.
+
+    The reading is deterministic and carries no Z3 object: a machine consumer
+    dispatches on ``kind`` and reads plain values.  A group whose shape has no
+    recognizer keeps its identity under ``structural_constraint`` rather than
+    inviting a reader to guess a domain meaning that was never derived.
+
+    :param group: The tracked group whose fact is published.
+    :type group: BmcTrackedConstraint
+    :param declared: The model's variable names.  A published fact names the
+        variable that was declared rather than the encoder's rendering of it;
+        without this the reader falls back to the symbol body, which is correct
+        for every name short enough to survive truncation intact.  Defaults to
+        ``None``.
+    :type declared: Optional[Iterable[str]], optional
+    :return: A tagged mapping of plain JSON-compatible values.
+    :rtype: Dict[str, Any]
+
+    Example::
+
+        >>> import z3
+        >>> from pyfcstm.bmc.provenance import BmcSourceRef, BmcTrackedConstraint
+        >>> group = BmcTrackedConstraint(
+        ...     "assumption.0000.frame.0000", "assumptions", "assumption.frame",
+        ...     (z3.Int("F_0_x_deadbeef11") == 1,),
+        ...     BmcSourceRef("generated", None, None),
+        ...     refs={"frame": 0, "assumption": 0},
+        ... )
+        >>> fact = normalized_fact_for(group)
+        >>> fact["kind"], fact["variable"], fact["operator"], fact["value"]
+        ('variable_comparison', 'x', 'eq', 1)
+    """
+    if group.category in _VALUE_FACT_CATEGORIES:
+        fact = _value_comparison_fact(group, declared)
+        if fact is not None:
+            return fact
+        # An assumption may pin the active state rather than a variable, and both
+        # arrive in the same category, so the state reader gets its turn before
+        # the group falls back.
+        fact = _state_membership_fact(group)
+        if fact is not None:
+            return fact
+    elif group.category == "initial.target":
+        fact = _state_membership_fact(group)
+        if fact is not None:
+            return fact
+    elif group.category == "domain.frame_state":
+        fact = _state_domain_fact(group)
+        if fact is not None:
+            return fact
+    elif group.category == "definedness":
+        fact = _definedness_fact(group, declared)
+        if fact is not None:
+            return fact
+    return {
+        "kind": "structural_constraint",
+        "stable_id": group.stable_id,
+        "stage": group.stage,
+        "category": group.category,
     }
 
 
@@ -1002,6 +1488,7 @@ class SourceDocumentRegistry:
 
 __all__ = [
     "MAX_METADATA_DEPTH",
+    "normalized_fact_for",
     "TRACKED_GROUP_PAIRINGS",
     "BmcSourceRef",
     "BmcTrackedConstraint",

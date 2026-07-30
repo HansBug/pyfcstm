@@ -38,12 +38,25 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Callable, Dict, Mapping, Optional, Sequence, Tuple
+from typing import (
+    TYPE_CHECKING,
+    Callable,
+    Dict,
+    Mapping,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+)
 
 import z3
 
 from .errors import BmcBuildError
 from .explanation import (
+    # Private because the frozen public surface must not grow to expose it, and
+    # cross-module because the fact vocabulary is owned in one place: a second
+    # copy of "which keys does this tag imply" is how the two sides drift apart.
+    _readable,
     index_value,
     CLASSIFICATION_SCOPES,
     SCOPE_AGGREGATES,
@@ -54,8 +67,14 @@ from .explanation import (
     BmcConstraintRef,
     BmcCoreItem,
     BmcInfeasibilityExplanation,
+    build_conflict_narrative,
+    human_text_for_fact,
 )
-from .provenance import BmcTrackedConstraint, SourceDocumentRegistry
+from .provenance import (
+    BmcTrackedConstraint,
+    SourceDocumentRegistry,
+    normalized_fact_for,
+)
 from .solver import _SolveBudget
 
 if TYPE_CHECKING:  # pragma: no cover - import cycle guard for annotations only
@@ -753,6 +772,187 @@ def extract_source_core(
     )
 
 
+@dataclass(frozen=True)
+class MinimizedCore:
+    """A source core after deterministic deletion shrink and its acceptance run.
+
+    Shrink only ever deletes members, so ``groups`` stays sound no matter where
+    the budget ran out.  ``reduction`` and ``subset_minimality`` therefore say how
+    far minimization got rather than how the core was built.
+
+    :param groups: Surviving core member groups, ordered by ``stable_id``.
+    :type groups: Tuple[pyfcstm.bmc.provenance.BmcTrackedConstraint, ...]
+    :param reduction: ``raw``, ``partial_minimized`` or ``subset_minimal``.
+    :type reduction: str
+    :param subset_minimality: ``proven`` or ``not_proven``.
+    :type subset_minimality: str
+    :param status: ``complete``, ``unknown`` or ``timeout`` for the whole phase.
+    :type status: str
+    :param reason: Why minimization degraded, defaults to ``None``.
+    :type reason: Optional[str], optional
+    :param record: The single aggregate ledger entry for this phase, defaults to
+        ``None`` when no trial ran at all.
+    :type record: Optional[ProbeRecord], optional
+
+    Example::
+
+        >>> minimized = MinimizedCore((), "raw", "not_proven", "timeout", "no budget")
+        >>> minimized.reduction, minimized.subset_minimality
+        ('raw', 'not_proven')
+    """
+
+    groups: Tuple["BmcTrackedConstraint", ...]
+    reduction: str
+    subset_minimality: str
+    status: str = "complete"
+    reason: Optional[str] = None
+    record: Optional[ProbeRecord] = None
+
+
+def _trial_solver(groups: Sequence["BmcTrackedConstraint"]) -> z3.Solver:
+    """Return a solver asserting every expression of the given groups.
+
+    :param groups: Groups whose conjunction is being tested.
+    :type groups: Sequence[pyfcstm.bmc.provenance.BmcTrackedConstraint]
+    :return: A solver holding exactly those expressions.
+    :rtype: z3.Solver
+
+    Example::
+
+        >>> _trial_solver(()).check() == z3.sat
+        True
+    """
+    solver = z3.Solver()
+    for group in groups:
+        for expression in group.expressions:
+            solver.add(expression)
+    return solver
+
+
+def minimize_source_core(
+    core: "BmcCoreFormula", extraction: CoreExtraction, budget: _SolveBudget
+) -> MinimizedCore:
+    """Shrink a sound source core to a subset-minimal one and verify it.
+
+    The loop follows the frozen algorithm: walk the members in ``stable_id``
+    order, drop one, and keep the smaller set only when it is still unsat.  A
+    satisfiable trial proves the member is load-bearing; an undetermined one
+    proves nothing, so the member stays and the phase can only end partial; an
+    exhausted budget stops immediately and returns what has been reached.
+
+    Because every step only deletes, the returned groups are unsat whenever the
+    input was.  ``subset_minimality`` is upgraded to ``proven`` only after a
+    second pass re-checks every surviving member on its own, so the published
+    claim rests on the final core rather than on the shrink history.
+
+    :param core: The compiled core formula the groups came from.
+    :type core: pyfcstm.bmc.relation.BmcCoreFormula
+    :param extraction: The sound raw core to shrink.
+    :type extraction: CoreExtraction
+    :param budget: Shared solver budget; never exceeded.
+    :type budget: pyfcstm.bmc.solver._SolveBudget
+    :return: The minimized core and the aggregate record for the phase.
+    :rtype: MinimizedCore
+
+    Example::
+
+        >>> from pyfcstm.bmc.solver import _SolveBudget
+        >>> empty = CoreExtraction(())
+        >>> minimize_source_core(None, empty, _SolveBudget(None)).reduction
+        'raw'
+    """
+    candidate = list(extraction.groups)
+    if not candidate:
+        # Nothing to shrink, and nothing to claim about a core that has no
+        # members: the caller decides whether an empty extraction is publishable.
+        return MinimizedCore((), "raw", "not_proven", extraction.status)
+
+    started = 0
+    degraded = None
+    started_at = time.perf_counter()
+    # Every member gets its trial, including the last one.  The empty set is
+    # satisfiable, so a trial that would empty the candidate always comes back
+    # sat and the member is kept -- that is what makes deleting unconditionally
+    # safe here, and it is also why the trial has to run: skipping it would leave
+    # a one-member core claiming minimality no check ever established, and the
+    # phase record that carries the claim would be missing entirely.
+    for group in tuple(candidate):
+        trial = [item for item in candidate if item.stable_id != group.stable_id]
+        verdict, record = _run_probe(
+            _trial_solver(trial), budget, "unsat_core_minimization", ()
+        )
+        if not record.started:
+            degraded = "budget exhausted before a deletion trial started"
+            break
+        started += 1
+        if verdict == "unsat":
+            candidate = trial
+        elif verdict == "sat":
+            continue
+        elif verdict == "timeout":
+            degraded = "deletion trial timed out"
+            break
+        else:
+            degraded = "deletion trial returned unknown"
+
+    if degraded is None:
+        status = "complete"
+    elif "timed out" in degraded or "budget exhausted" in degraded:
+        # §9.3 groups an exhausted budget with a timed-out trial: both mean the
+        # deadline stopped minimization, which is a different report from a
+        # solver that ran and gave up.
+        status = "timeout"
+    else:
+        status = "unknown"
+
+    proven = False
+    if status == "complete":
+        proven = True
+        for group in tuple(candidate):
+            remaining = [
+                item for item in candidate if item.stable_id != group.stable_id
+            ]
+            verdict, record = _run_probe(
+                _trial_solver(remaining), budget, "unsat_core_minimization", ()
+            )
+            if not record.started or verdict != "sat":
+                proven = False
+                status = "timeout" if verdict == "timeout" else "unknown"
+                degraded = (
+                    "acceptance check for %s did not return sat" % group.stable_id
+                )
+                break
+            started += 1
+
+    if proven:
+        reduction = "subset_minimal"
+    elif started:
+        reduction = "partial_minimized"
+    else:
+        reduction = "raw"
+
+    elapsed_ms = (time.perf_counter() - started_at) * 1000.0
+    aggregate = (
+        ProbeRecord(
+            "unsat_core_minimization",
+            status,
+            True,
+            elapsed_ms,
+            degraded,
+        )
+        if started
+        else None
+    )
+    return MinimizedCore(
+        tuple(candidate),
+        reduction,
+        "proven" if proven else "not_proven",
+        status,
+        degraded,
+        aggregate,
+    )
+
+
 def _semantic_role(category: str) -> str:
     """Map a tracked group category onto its frozen semantic role.
 
@@ -877,9 +1077,180 @@ def _canonical_refs_value(key: str, value: object) -> object:
     return index_value(value, key)
 
 
+@dataclass(frozen=True)
+class ForcedValue:
+    """A variable value the core's non-assumption groups leave no choice about.
+
+    The narrative needs this to explain a value carried across a step.  It cannot
+    derive it itself: the transition relation holds one case per outgoing
+    transition, and which case fires is a solver question, not a syntactic one.
+
+    :param variable: Model variable name.
+    :type variable: str
+    :param frame: Frame index the value belongs to.
+    :type frame: int
+    :param value: The forced value, an ``int`` for an integer variable and a
+        ``float`` for a real one, matching the shape the fact recognizer
+        publishes so the narrative can compare the two directly.
+    :type value: Union[int, float]
+    :param supporting_ids: Stable ids of the groups that force it.
+    :type supporting_ids: Tuple[str, ...]
+
+    Example::
+
+        >>> ForcedValue("x", 1, 1, ("transition.step.0000",)).value
+        1
+    """
+
+    variable: str
+    frame: int
+    value: Union[int, float]
+    supporting_ids: Tuple[str, ...]
+
+
+def derive_forced_values(
+    core: "BmcCoreFormula",
+    items: Sequence["BmcCoreItem"],
+    budget: _SolveBudget,
+) -> Tuple[Tuple[ForcedValue, ...], Optional[ProbeRecord]]:
+    """Establish which variable values the core's prefix admits no alternative to.
+
+    For each variable an assumption pins, the groups that are *not* assumptions
+    are solved on their own.  If they are satisfiable and additionally exclude
+    every other value for that frame variable, the prefix forces the one they
+    give, and the narrative may say so.  Both facts are checked -- a model value
+    alone would only be one witness among possibly many.
+
+    A probe that cannot start, times out or comes back undetermined yields no
+    forced value for that variable, so the narrative degrades instead of claiming
+    a derivation the solver did not support.
+
+    :param core: The compiled core formula, used for its trace symbols.
+    :type core: pyfcstm.bmc.relation.BmcCoreFormula
+    :param items: The published core members, in stable-id order.
+    :type items: Sequence[pyfcstm.bmc.explanation.BmcCoreItem]
+    :param budget: Remaining solver budget shared with every other probe.
+    :type budget: pyfcstm.bmc.solver._SolveBudget
+    :return: The forced values, and one aggregate probe record when any probe ran.
+    :rtype: Tuple[Tuple[ForcedValue, ...], Optional[ProbeRecord]]
+
+    Example::
+
+        >>> derive_forced_values(None, (), _SolveBudget(None))
+        ((), None)
+    """
+    targets = []
+    prefix = []
+    for item in items:
+        fact = item.normalized_fact
+        if item.constraint.stage == "assumptions":
+            # Both persistent variable types reach here.  Gating on ``int``
+            # excluded every float model from the propagation pattern, which the
+            # contract lists without a type qualifier.
+            if _readable(item, "variable_comparison") and isinstance(
+                fact["value"], (int, float)
+            ):
+                targets.append((fact["variable"], fact["frame"]))
+        else:
+            prefix.append(item.constraint.stable_id)
+    if not targets or not prefix:
+        return (), None
+    groups = {group.stable_id: group for group in core._tracked_groups}
+    expressions = [
+        expression
+        for stable_id in prefix
+        if stable_id in groups
+        for expression in groups[stable_id].expressions
+    ]
+    if not expressions:
+        return (), None
+    started = 0
+    status = "complete"
+    reason = None
+    started_at = time.perf_counter()
+    derived = []
+    # The degradation branches below are deliberately untested.  Which tier a run
+    # lands in -- budget spent before the first solve, a solve that timed out, a
+    # solver that came back undetermined -- is decided by the host clock and the
+    # solver's own search, not by anything a fixture controls; a test pinning one
+    # of them fails on a slower machine, which this project has already paid for
+    # twice.  The two stable ends are covered: a full budget derives the value,
+    # and a prefix that admits several values derives nothing.
+    #
+    # The unsatisfiable-prefix branch is a different case: it cannot be reached
+    # through a proven-minimal core at all, because every member of such a core is
+    # load-bearing, so dropping the assumptions has to leave the rest satisfiable.
+    # It stays as stated defensive code for the degraded cores that skip that
+    # proof.
+    for variable, frame in targets:
+        symbol = core.symbols.frame_var(frame, variable)
+        solver = z3.Solver()
+        for expression in expressions:
+            solver.add(expression)
+        verdict, record = _run_probe(solver, budget, "value_propagation", ())
+        if not record.started:
+            status, reason = "timeout", "budget exhausted before a prefix solve started"
+            break
+        started += 1
+        if verdict != "sat":
+            # An unsatisfiable prefix means the conflict does not need the
+            # assumption at all, and an undetermined one supports nothing.
+            if verdict != "unsat":
+                status, reason = (
+                    ("timeout", "prefix solve timed out")
+                    if verdict == "timeout"
+                    else ("unknown", "prefix solve returned unknown")
+                )
+            continue
+        # The probe reports only a verdict, so the witness is read from the
+        # solver it just checked -- still the same assertion set, so the model is
+        # the one that verdict belongs to.
+        candidate = solver.model().eval(symbol, model_completion=True)
+        if isinstance(candidate, z3.IntNumRef):
+            value = candidate.as_long()
+        elif isinstance(candidate, z3.RatNumRef):
+            # A real witness is published as a float, the same shape the fact
+            # recognizer uses for a real variable, so the two agree when the
+            # narrative compares them.
+            try:
+                value = float(candidate.as_fraction())
+            except OverflowError:
+                # OverflowError: the witness does not fit a Python float.  No
+                # forced value is derived, so the narrative degrades rather than
+                # the explanation failing and taking the verdict with it.
+                continue
+        else:
+            # An algebraic or otherwise unrepresentable witness has no published
+            # shape; the narrative degrades rather than rendering an
+            # approximation as if it were the value.
+            continue
+        solver.add(symbol != candidate)
+        verdict, record = _run_probe(solver, budget, "value_propagation", ())
+        if not record.started:
+            status, reason = "timeout", "budget exhausted before the uniqueness check"
+            break
+        started += 1
+        if verdict == "unsat":
+            derived.append(ForcedValue(variable, frame, value, tuple(prefix)))
+        elif verdict != "sat":
+            status, reason = (
+                ("timeout", "uniqueness check timed out")
+                if verdict == "timeout"
+                else ("unknown", "uniqueness check returned unknown")
+            )
+    if not started:
+        return tuple(derived), None
+    elapsed_ms = (time.perf_counter() - started_at) * 1000.0
+    return tuple(derived), ProbeRecord(
+        "value_propagation", status, True, elapsed_ms, reason
+    )
+
+
 def build_core_item(
     group: BmcTrackedConstraint,
     registry: Optional[SourceDocumentRegistry] = None,
+    declared: Optional[Sequence[str]] = None,
+    state_paths: Optional[Mapping[int, str]] = None,
 ) -> BmcCoreItem:
     """Turn one tracked source group into a publishable core member.
 
@@ -895,6 +1266,15 @@ def build_core_item(
         defaults to ``None``.
     :type registry: Optional[pyfcstm.bmc.provenance.SourceDocumentRegistry],
         optional
+    :param declared: The model's variable names, so a published fact names the
+        variable that was declared rather than the encoder's rendering of it.
+        Without them the fact falls back to the symbol body, which is correct for
+        every name short enough to survive truncation intact.  Defaults to
+        ``None``.
+    :type declared: Optional[Sequence[str]], optional
+    :param state_paths: State code to authored path, so a sentence names the state
+        the reader wrote rather than the encoding's number.  Defaults to ``None``.
+    :type state_paths: Optional[Mapping[int, str]], optional
     :return: Core member carrying identity, provenance and its reading.
     :rtype: pyfcstm.bmc.explanation.BmcCoreItem
     :raises pyfcstm.bmc.errors.BmcBuildError: If the category has no frozen
@@ -935,47 +1315,20 @@ def build_core_item(
     if truncated:
         excerpt = excerpt[:MAX_SOURCE_EXCERPT_CHARS]
     role = _semantic_role(group.category)
-    if group.source_ref.kind == "generated":
-        # Saying "from generated" beside three entries that quote real lines
-        # reads like the tool failed to find this one's source.  It has none:
-        # the encoding produced it from the model rather than from a line the
-        # author wrote.
-        human_text = (
-            "%s constraint %s, generated from the model with no single "
-            "authored line" % (role.replace("_", " "), group.stable_id)
-        )
-    else:
-        human_text = "%s constraint %s from %s" % (
-            role.replace("_", " "),
-            group.stable_id,
-            group.source_ref.path or group.source_ref.kind,
-        )
+    # Machine consumers dispatch on this tag rather than on human text.  The
+    # recognizers live in the provenance layer, which owns fact generation; a
+    # shape none of them reads keeps its identity under "structural_constraint"
+    # instead of inviting a guess.  Frames, steps and refs stay in the constraint
+    # reference above: publishing them here as well would give a reader two
+    # copies of the same values and blur which keys are the fact itself.
+    fact = normalized_fact_for(group, declared)
     return BmcCoreItem(
         constraint=reference,
-        semantic_role=_semantic_role(group.category),
+        semantic_role=role,
         source_excerpt=excerpt,
         source_excerpt_truncated=truncated,
-        normalized_fact={
-            # Machine consumers dispatch on this tag rather than on human
-            # text.  No semantic recognizer runs at this stage, so every fact
-            # honestly declares itself structural instead of guessing a
-            # domain reading.
-            "kind": "structural_constraint",
-            "stable_id": group.stable_id,
-            "stage": group.stage,
-            "category": group.category,
-            "frames": list(frames),
-            "steps": list(steps),
-            # The builder's own metadata is carried through in sorted order so
-            # a machine reader sees which assumption, transition or variable
-            # the conflict came from, not only its frame index.  It is the same
-            # mapping the constraint publishes: echoing the raw values here would
-            # put two JSON types for one index in a single published item, and
-            # the two copies compare equal in Python because 1 == 1.0, so an
-            # equality assertion could not see the difference.
-            "refs": dict(published_refs),
-        },
-        human_text=human_text,
+        normalized_fact=fact,
+        human_text=human_text_for_fact(role, fact, state_paths),
         editable=group.source_ref.kind in ("fcstm", "fbmcq"),
     )
 
@@ -1037,6 +1390,15 @@ def explain_infeasibility(
         # context always builds a registry, so a rename must surface as an
         # AttributeError instead of silently blanking every excerpt.
         registry = core.context._source_registry
+    # The declared names let a published fact name the variable the author wrote
+    # rather than the encoder's truncation of it.
+    declared = tuple(core.context.model.defines)
+    # The domain's own table, so a sentence can name ``Root.A`` instead of the
+    # number the encoding gave it.
+    state_paths = {
+        entry["id"]: entry["path"]
+        for entry in core.context.domain.to_canonical()["states"]
+    }
     outcome = classify_infeasibility(core, stage, budget)
     # An unclassified stage still has a target the mandatory solve already
     # proved unsatisfiable, so the remaining budget goes into a fallback core
@@ -1105,18 +1467,25 @@ def explain_infeasibility(
             checks,
         )
 
+    minimized = minimize_source_core(core, extraction, budget)
+    if minimized.record is not None:
+        # One aggregate phase record, not one per deletion trial: the ledger
+        # names decisions a reader can act on, and trial count is an artifact of
+        # the core's size.
+        checks = checks + (minimized.record,)
+    elapsed_ms = (time.monotonic() - started) * 1000.0
     try:
         published = BmcConflictCore(
             scope=outcome.scope,
             formula_summary="target formula of scope %s" % outcome.scope,
             granularity="source_group",
-            # No deletion check has run yet, so the core is sound but not
-            # claimed minimal; a later minimization stage upgrades both fields
-            # together.
-            reduction="raw",
-            subset_minimality="not_proven",
+            # Shrink only ever deletes, so whatever it returns is still sound;
+            # these two fields say how far the deletion pass actually got.
+            reduction=minimized.reduction,
+            subset_minimality=minimized.subset_minimality,
             items=tuple(
-                build_core_item(group, registry) for group in extraction.groups
+                build_core_item(group, registry, declared, state_paths)
+                for group in minimized.groups
             ),
         )
     except (BmcBuildError, ValueError, TypeError) as err:
@@ -1145,13 +1514,78 @@ def explain_infeasibility(
             ),
             checks,
         )
+    # The probe runs on the published members, so it can only ever support a
+    # derivation about groups the reader was shown.
+    forced_values, propagation_record = derive_forced_values(
+        core, published.items, budget
+    )
+    if propagation_record is not None:
+        checks = checks + (propagation_record,)
+    narrative = build_conflict_narrative(published, forced_values, state_paths)
+    formal_is_complete = (
+        outcome.classification is not None
+        and minimized.subset_minimality == "proven"
+        and narrative.derivation_status == "complete"
+    )
+    if formal_is_complete and requested_mode == "formal":
+        # Every condition the frozen table names for a complete formal artifact
+        # holds: a diagnostic classification, a proven-minimal core and a closed
+        # derivation.  Such an explanation carries no reason, because nothing
+        # about it was degraded.
+        return ExplanationOutcome(
+            BmcInfeasibilityExplanation(
+                requested_mode=requested_mode,
+                achieved_mode="formal",
+                status="complete",
+                classification=outcome.classification,
+                core=published,
+                narrative=narrative,
+                elapsed_ms=elapsed_ms,
+            ),
+            checks,
+        )
+    if formal_is_complete:
+        # A complete formal artifact still falls short of a requested proof, and
+        # the frozen table reserves 'complete' for the depth that was asked for.
+        # The reason has to name why the proof did not close rather than describe
+        # the formal artifact, which is not what fell short.
+        return ExplanationOutcome(
+            BmcInfeasibilityExplanation(
+                requested_mode=requested_mode,
+                achieved_mode="formal",
+                status="partial",
+                classification=outcome.classification,
+                core=published,
+                narrative=narrative,
+                reason=(
+                    "the formal explanation is complete, but no verifiable proof "
+                    "DAG is produced at this stage"
+                ),
+                elapsed_ms=elapsed_ms,
+            ),
+            checks,
+        )
     if outcome.classification is None:
         reason = (
             "classification degraded to the %s scope (%s); the published core "
             "is sound but not proven minimal" % (outcome.scope, outcome.reason)
         )
+    elif minimized.subset_minimality != "proven":
+        # Name the deletion pass that stopped early rather than the missing
+        # narrative: an unproven core is the weaker of the two shortfalls, and
+        # reporting the stronger one first would send the reader to the wrong
+        # remedy.
+        reason = "sound source core published without a minimality proof (%s)" % (
+            minimized.reason or minimized.status
+        )
     else:
-        reason = "sound source core published without a minimality proof"
+        # The core is proven minimal and the classification finished, so the
+        # shortfall is the derivation: the recognizers read no pattern that closes
+        # the chain, which the narrative already reports as structural_only.
+        reason = (
+            "subset-minimal source core published with a %s derivation"
+            % narrative.derivation_status
+        )
     return ExplanationOutcome(
         BmcInfeasibilityExplanation(
             requested_mode=requested_mode,
@@ -1159,6 +1593,7 @@ def explain_infeasibility(
             status="partial",
             classification=outcome.classification,
             core=published,
+            narrative=narrative,
             reason=reason,
             elapsed_ms=elapsed_ms,
         ),
@@ -1174,7 +1609,9 @@ __all__ = [
     "ExplanationOutcome",
     "ProbeRecord",
     "TrackedGroupPartition",
+    "ForcedValue",
     "build_core_item",
+    "derive_forced_values",
     "classify_infeasibility",
     "explain_infeasibility",
     "extract_source_core",

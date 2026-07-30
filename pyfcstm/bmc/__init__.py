@@ -126,6 +126,17 @@ Public module structure:
        a result without loading the solver, while
        :mod:`pyfcstm.bmc.infeasibility` owns every probe and shares the
        mandatory solve budget.
+   * - Conflict narrative
+     - :class:`BmcConflictNarrative`, :class:`BmcReasoningStep`
+     - Answer *why* no execution exists, as a causal chain over the published
+       core: each ``fact`` step states one requirement and a closing ``conflict``
+       step names the contradiction, every step citing the core members it reads.
+       The chain is rendered from the published normalized facts alone, so a shape
+       no recognizer reduced yields ``derivation_status="structural_only"`` and no
+       conflict step instead of an invented derivation.  ``review_surfaces`` lists
+       the authored entry points worth inspecting together; it is not a repair
+       suggestion, and editing one is no promise that the full target becomes
+       satisfiable.
    * - BMC relation builder
      - :class:`BmcAbstractCallRecord`, :class:`BmcTraceSymbols`,
        :class:`BmcCaseRelation`, :class:`BmcStepRelation`, :class:`BmcCoreFormula`,
@@ -234,6 +245,7 @@ from .query import (
 if TYPE_CHECKING:
     from .explanation import (
         BmcConflictCore,
+        BmcConflictNarrative,
         BmcSourceRef,
         BmcConflictCoreScope,
         BmcConstraintRef,
@@ -241,10 +253,13 @@ if TYPE_CHECKING:
         BmcCoreGranularity,
         BmcCoreItem,
         BmcCoreReduction,
+        BmcDerivationStatus,
         BmcInfeasibilityClassification,
         BmcInfeasibilityExplanation,
         BmcInfeasibilityExplanationMode,
         BmcInfeasibilityExplanationStatus,
+        BmcReasoningStep,
+        BmcReasoningStepKind,
         BmcSemanticRole,
         BmcSubsetMinimality,
     )
@@ -362,6 +377,7 @@ _WITNESS_EXPORTS = {
 
 _EXPLANATION_EXPORTS = {
     "BmcConflictCore",
+    "BmcConflictNarrative",
     "BmcSourceRef",
     "BmcConflictCoreScope",
     "BmcConstraintRef",
@@ -369,10 +385,13 @@ _EXPLANATION_EXPORTS = {
     "BmcCoreGranularity",
     "BmcCoreItem",
     "BmcCoreReduction",
+    "BmcDerivationStatus",
     "BmcInfeasibilityClassification",
     "BmcInfeasibilityExplanation",
     "BmcInfeasibilityExplanationMode",
     "BmcInfeasibilityExplanationStatus",
+    "BmcReasoningStep",
+    "BmcReasoningStepKind",
     "BmcSemanticRole",
     "BmcSubsetMinimality",
 }
@@ -577,6 +596,7 @@ __all__ = [
     "decode_bmc_witness",
     "replay_bmc_witness",
     "BmcConflictCore",
+    "BmcConflictNarrative",
     "BmcSourceRef",
     "BmcConflictCoreScope",
     "BmcConstraintRef",
@@ -584,10 +604,13 @@ __all__ = [
     "BmcCoreGranularity",
     "BmcCoreItem",
     "BmcCoreReduction",
+    "BmcDerivationStatus",
     "BmcInfeasibilityClassification",
     "BmcInfeasibilityExplanation",
     "BmcInfeasibilityExplanationMode",
     "BmcInfeasibilityExplanationStatus",
+    "BmcReasoningStep",
+    "BmcReasoningStepKind",
     "BmcSemanticRole",
     "BmcSubsetMinimality",
 ]

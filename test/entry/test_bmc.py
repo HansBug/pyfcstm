@@ -1796,6 +1796,35 @@ def explain_files(tmp_path):
 
 
 @pytest.mark.unittest
+def test_a_one_group_conflict_still_reports_instead_of_crashing(tmp_path) -> None:
+    """A conflict inside a single assumption must produce a report, not an error.
+
+    ``var("x") > 5 && var("x") < 3`` is one authored assumption, so the core it
+    yields has one member.  Nothing about that shape is exotic -- a reader who
+    writes an impossible range hits it on the first try -- and it must reach the
+    same formal explanation any larger conflict does.
+    """
+    model = tmp_path / "machine.fcstm"
+    query = tmp_path / "scenario.fbmcq"
+    model.write_text(_EXPLAIN_MODEL, encoding="utf-8")
+    query.write_text(
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") > 5 && var("x") < 3; '
+        'check reach <= 2: active("Root.B");\n',
+        encoding="utf-8",
+    )
+
+    result = _run(
+        "-i", str(model), "-q", str(query), "--explain-infeasibility", "formal"
+    )
+
+    assert result.exit_code == 3, result.output
+    assert "Unexpected error" not in result.output
+    assert "Explanation:" in result.output
+    assert "Reduction: subset_minimal" in result.output
+
+
+@pytest.mark.unittest
 def test_build_bmc_output_default_publishes_no_explanation(explain_files):
     """The file helper keeps its previous behaviour unless asked otherwise."""
     from pyfcstm.entry.bmc import build_bmc_output
@@ -1949,7 +1978,18 @@ def test_bmc_human_output_shows_the_explanation_it_paid_for(explain_files) -> No
 
     assert default.exit_code == formal.exit_code == 3
     assert "Explanation:" not in default.output
-    assert "Explanation: PARTIAL FORMAL DOMAIN EXPLANATION" in formal.output
+    assert "Explanation: COMPLETE FORMAL DOMAIN EXPLANATION" in formal.output
+    # The transcript now answers "why" as well as "where": a numbered causal
+    # chain whose closing step is the contradiction itself.
+    assert "Why no execution exists:" in formal.output
+    assert "  1. At frame 0, the query requires x to equal 1." in formal.output
+    assert "  3. Frame 0 cannot assign 1 and 2 to x at the same time." in formal.output
+    # And "where do I look": authored entry points, with no repair implied.
+    assert "Review surfaces:" in formal.output
+    assert "No automatic repair has been selected." in formal.output
+    assert "Core granularity: source_group" in formal.output
+    assert "Core size: 2" in formal.output
+    assert "Subset minimality: proven" in formal.output
     assert (
         "Classification: the assumptions are internally inconsistent" in formal.output
     )
@@ -1957,10 +1997,10 @@ def test_bmc_human_output_shows_the_explanation_it_paid_for(explain_files) -> No
     # The authored source location and text, not a paraphrase.
     assert 'assume at 0: var("x") == 1;' in formal.output
     assert "Core scope: assumptions_component" in formal.output
-    assert "Reduction: raw" in formal.output
+    assert "Reduction: subset_minimal" in formal.output
     assert (
-        "The displayed core is sufficient for UNSAT but is not proven "
-        "subset-minimal." in formal.output
+        "The displayed core is sufficient for UNSAT and proven subset-minimal."
+        in formal.output
     )
     # The mandatory verdict is untouched.
     for line in default.output.splitlines():
@@ -2600,3 +2640,677 @@ def test_bmc_json_reason_does_not_claim_a_probe_that_never_ran(explain_files) ->
     for check in feasibility["refinement_checks"]:
         # And every ledger entry names a probe that has a verdict to report.
         assert check["name"] and check["status"]
+
+
+@pytest.mark.unittest
+def test_the_complete_transcript_answers_the_five_reader_questions(
+    explain_files,
+) -> None:
+    """A reader who does not know Z3 must answer all five from the output alone.
+
+    The frozen acceptance question is exactly that: where did it fail, why,
+    which constraints, where do I review, and how strong is the conclusion.
+    Each block below is the one that answers one of them, so a block dropped in
+    a later refactor fails here with the question it took away.
+    """
+    model, query = explain_files
+
+    output = _run(
+        "-i", str(model), "-q", str(query), "--explain-infeasibility", "formal"
+    ).output
+
+    # Where did it fail.
+    assert "Scenario: INFEASIBLE" in output
+    assert "Classification: the assumptions are internally inconsistent" in output
+    # Why -- a chain, not a restatement of the member list.
+    chain = output.split("Why no execution exists:")[1].split("\n\n")[0]
+    assert chain.count("\n  ") >= 3
+    assert "cannot assign" in chain
+    # Which constraints -- authored text at a resolvable location.
+    assert 'assume at 0: var("x") == 1;' in output
+    assert ".fbmcq:" in output
+    # Where to review, and that nothing was repaired for them.
+    assert "Review surfaces:" in output
+    assert "No automatic repair has been selected." in output
+    # How strong the conclusion is: complete, proven minimal, and still bounded.
+    assert "COMPLETE FORMAL DOMAIN EXPLANATION" in output
+    assert "Subset minimality: proven" in output
+    assert "This is a bounded result over at most" in output
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "declaration, initial, bounds",
+    [
+        ("def int x = 0;", "x == 0", ('var("x") > 5', 'var("x") < 3')),
+        ("def float x = 0.0;", "x == 0.0", ('var("x") > 0.5', 'var("x") < 0.25')),
+    ],
+    ids=["integer-bounds", "float-bounds"],
+)
+def test_bounds_that_cross_are_reported_as_an_empty_range(
+    tmp_path, declaration, initial, bounds
+) -> None:
+    """Two crossing bounds read as a range with nothing in it.
+
+    This is the second pattern the narrative recognizes, and it has to work for
+    both persistent variable types: a reader who declares ``float`` and writes an
+    impossible range deserves the same account as one who declares ``int``.
+    Before the float reading landed, the second case here degraded to the
+    structural fallback no matter how plainly the query contradicted itself.
+    """
+    model = tmp_path / "machine.fcstm"
+    query = tmp_path / "scenario.fbmcq"
+    model.write_text(
+        "%s\nstate Root { event Go; state A; state B; [*] -> A; A -> B :: Go; }\n"
+        % declaration,
+        encoding="utf-8",
+    )
+    query.write_text(
+        'init state("Root.A") where %s; assume at 0: %s; assume at 0: %s; '
+        'check reach <= 2: active("Root.B");\n' % (initial, bounds[0], bounds[1]),
+        encoding="utf-8",
+    )
+
+    result = _run(
+        "-i", str(model), "-q", str(query), "--explain-infeasibility", "formal"
+    )
+
+    assert result.exit_code == 3, result.output
+    assert "COMPLETE FORMAL DOMAIN EXPLANATION" in result.output
+    assert "No value of x satisfies every bound required at frame 0." in result.output
+    # The chain states each bound before concluding, rather than only concluding.
+    assert "requires x to be greater than" in result.output
+    assert "requires x to be less than" in result.output
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "declaration, assumption, sentence",
+    [
+        (
+            "def int x = 0;",
+            'var("x") / 0 > 0',
+            "The division at frame 0 cannot stay defined.",
+        ),
+        (
+            "def float x = 0.0;",
+            "sqrt(-1.0) >= 0.0",
+            "The sqrt at frame 0 cannot stay defined.",
+        ),
+    ],
+    ids=["division-by-zero", "square-root-of-a-negative"],
+)
+def test_an_operation_that_cannot_stay_defined_is_named_as_the_conflict(
+    tmp_path, declaration, assumption, sentence
+) -> None:
+    """A definedness conflict is one of the five patterns the contract lists.
+
+    The core here is the domain condition itself, and it cannot hold, so the
+    reason no execution exists is that the operation is undefined -- not merely
+    that some groups are jointly unsatisfiable.  Reporting the weaker sentence
+    left the reader to work out which operation was at fault.
+    """
+    model = tmp_path / "machine.fcstm"
+    query = tmp_path / "scenario.fbmcq"
+    model.write_text("%s state Root;\n" % declaration, encoding="utf-8")
+    query.write_text(
+        'assume at 0: %s;\ncheck reach <= 1: active("Root");\n' % assumption,
+        encoding="utf-8",
+    )
+
+    result = _run(
+        "-i", str(model), "-q", str(query), "--explain-infeasibility", "formal"
+    )
+
+    assert result.exit_code == 3, result.output
+    assert "COMPLETE FORMAL DOMAIN EXPLANATION" in result.output
+    assert sentence in result.output
+    assert "STRUCTURAL ONLY" not in result.output
+
+
+@pytest.mark.unittest
+def test_two_states_required_at_one_frame_are_named_as_the_conflict(tmp_path) -> None:
+    """Requiring two states of one frame is a conflict the reader should see named.
+
+    ``init state("Root.A")`` and ``assume at 0: active("Root.B")`` each pin frame
+    0 to a different state.  Reporting only that the groups are jointly
+    unsatisfiable makes the reader compare two source lines to find what is a
+    one-sentence fact.
+    """
+    model = tmp_path / "machine.fcstm"
+    query = tmp_path / "scenario.fbmcq"
+    model.write_text(
+        "def int x = 0;\n"
+        "state Root { event Go; state A; state B; [*] -> A; A -> B :: Go; }\n",
+        encoding="utf-8",
+    )
+    query.write_text(
+        'init state("Root.A");\n'
+        'assume at 0: active("Root.B");\n'
+        'check reach <= 2: active("Root.B");\n',
+        encoding="utf-8",
+    )
+
+    result = _run(
+        "-i", str(model), "-q", str(query), "--explain-infeasibility", "formal"
+    )
+
+    assert result.exit_code == 3, result.output
+    assert "COMPLETE FORMAL DOMAIN EXPLANATION" in result.output
+    assert "cannot be in two states at once" in result.output
+    assert "STRUCTURAL ONLY" not in result.output
+    # Both authored lines stay quoted so the reader can open them.
+    assert 'init state("Root.A");' in result.output
+    assert 'assume at 0: active("Root.B");' in result.output
+
+
+@pytest.mark.unittest
+def test_a_value_carried_across_a_step_is_derived_not_left_structural(
+    tmp_path,
+) -> None:
+    """The frozen transcript's own example is a value carried across a step.
+
+    An initializer sets ``x`` to 0, a step increments it, and an assumption then
+    requires 0 at frame 1.  Naming that chain is the point of the formal mode:
+    the reader has to see *why* the prefix and the assumption disagree, not just
+    that four groups are jointly unsatisfiable.  Reading the increment out of the
+    step relation is not syntactic -- the relation holds one case per transition
+    and only the solver knows which fires -- so the value the prefix forces is
+    established by a probe and reported as a derivation.
+    """
+    model = tmp_path / "machine.fcstm"
+    query = tmp_path / "scenario.fbmcq"
+    model.write_text(
+        "def int x = 0;\n"
+        "state Root {\n"
+        "    state A;\n"
+        "    [*] -> A;\n"
+        "    A -> A effect { x = x + 1; };\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    query.write_text(
+        'init state("Root.A");\n'
+        'assume at 1: var("x") == 0;\n'
+        'check reach <= 1: active("Root.A");\n',
+        encoding="utf-8",
+    )
+
+    result = _run(
+        "-i", str(model), "-q", str(query), "--explain-infeasibility", "formal"
+    )
+
+    assert result.exit_code == 3, result.output
+    assert "COMPLETE FORMAL DOMAIN EXPLANATION" in result.output
+    assert "STRUCTURAL ONLY" not in result.output
+    # The derivation states the value the prefix forces, and the conflict names
+    # the frame that cannot hold both.
+    assert "requires x to equal 1 at frame 1" in result.output
+    assert "Frame 1 cannot assign" in result.output
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "query, machine",
+    [
+        (
+            'init state("Root.A"); assume at 1: var("x") == 0; '
+            'check reach <= 1: active("Root.A");',
+            "def int x = 0;\n"
+            "state Root { state A; [*] -> A; A -> A effect { x = x + 1; }; }",
+        ),
+        (
+            'init state("Root.A") where x == 0; assume at 0: var("x") == 1; '
+            'assume at 0: var("x") == 2; check reach <= 2: active("Root.B");',
+            "def int x = 0;\n"
+            "state Root { event Go; state A; state B; [*] -> A; A -> B :: Go; }",
+        ),
+        (
+            'assume at 0: var("x") / 0 > 0; check reach <= 1: active("Root");',
+            "def int x = 0; state Root;",
+        ),
+    ],
+    ids=["value-propagation", "incompatible-equalities", "definedness-failure"],
+)
+@pytest.mark.parametrize(
+    "budget",
+    [(), ("--timeout-ms", "12"), ("--timeout-ms", "8")],
+    ids=["full-budget", "a-tight-budget", "a-tighter-budget"],
+)
+def test_real_json_output_validates_under_a_conforming_validator(
+    tmp_path, query, machine, budget
+) -> None:
+    """The published schema must accept what the CLI actually prints.
+
+    The harness this module uses elsewhere understands only the keyword subset a
+    Python 3.7 cell can be held to, so it silently passes any rule written with
+    ``allOf``, ``if``/``then``, ``contains`` or ``not`` -- which is every ledger
+    and narrative rule the formal mode added.  A missing enum entry therefore made
+    the CLI emit JSON that a standard validator rejects while every gate stayed
+    green.  This test closes that hole for the scenarios that exercise those
+    rules: an external consumer runs a conforming validator, so the contract is
+    only real if a conforming validator agrees.
+    """
+    jsonschema = pytest.importorskip("jsonschema")
+
+    model = tmp_path / "machine.fcstm"
+    query_file = tmp_path / "scenario.fbmcq"
+    model.write_text(machine + "\n", encoding="utf-8")
+    query_file.write_text(query + "\n", encoding="utf-8")
+
+    # A budget steers the run through the degraded ledger shapes -- a raw core
+    # with no minimization record, or a partially minimized one with a degraded
+    # record -- whose schema rules use the same keyword family as the rest and
+    # were equally unverified.  Which tier a given budget reaches depends on the
+    # host, and that is fine: this asserts the payload is valid whichever tier it
+    # lands in, never that it lands in a particular one.
+    _, payload = _json_result(
+        model, query_file, "--explain-infeasibility", "formal", *budget
+    )
+    schema = json.loads(
+        (
+            Path(__file__).resolve().parents[2]
+            / "docs"
+            / "source"
+            / "reference"
+            / "bmc_results"
+            / "bmc_cli.schema.json"
+        ).read_text(encoding="utf-8")
+    )
+
+    errors = [
+        "%s at %s"
+        % (error.message, "/".join(str(part) for part in error.absolute_path))
+        for error in jsonschema.Draft202012Validator(schema).iter_errors(payload)
+    ]
+
+    assert errors == []
+
+
+@pytest.mark.unittest
+def test_a_divisor_pinned_to_zero_names_the_division_not_just_the_groups(
+    tmp_path,
+) -> None:
+    """The most natural way to write this must reach the same account.
+
+    ``var("x") / var("x")`` with an initializer pinning ``x`` to 0 is how a reader
+    writes a division that cannot be defined -- more natural than the literal
+    ``/ 0`` the first goldens used.  Its core carries the initializer alongside
+    the domain condition, and requiring the core to be *only* domain conditions
+    sent this shape to the structural fallback.  Every member of a subset-minimal
+    core is load-bearing, so a domain condition in one is part of the
+    contradiction, and naming it is sound.
+    """
+    model = tmp_path / "machine.fcstm"
+    query = tmp_path / "scenario.fbmcq"
+    model.write_text(
+        "def int x = 0;\n"
+        "state Root { event Go; state A; state B; [*] -> A; A -> B :: Go; }\n",
+        encoding="utf-8",
+    )
+    query.write_text(
+        'init state("Root.A") where x == 0;\n'
+        'assume at 0: var("x") / var("x") > 0;\n'
+        'check reach <= 1: active("Root.B");\n',
+        encoding="utf-8",
+    )
+
+    result = _run(
+        "-i", str(model), "-q", str(query), "--explain-infeasibility", "formal"
+    )
+
+    assert result.exit_code == 3, result.output
+    assert "COMPLETE FORMAL DOMAIN EXPLANATION" in result.output
+    assert "STRUCTURAL ONLY" not in result.output
+    assert "The division at frame 0 cannot stay defined" in result.output
+    # And the sentence says which requirement makes it undefined.
+    assert "x" in result.output
+
+
+@pytest.mark.unittest
+def test_two_long_variable_names_still_reach_a_complete_explanation(
+    tmp_path,
+) -> None:
+    """A name the encoder truncates must not break the explanation stage.
+
+    The forced-value probe asks the symbol table for a variable by name, and the
+    table is keyed by the declared name.  While facts published the encoder's
+    truncation, the probe handed that truncation back and the stage failed with
+    an internal mismatch -- visible to the reader as "FORMAL EXPLANATION NOT
+    ACHIEVED".  Two names sharing their first eighty characters make the
+    truncation ambiguous as well as wrong.
+    """
+    long_a = "v" * 80 + "a"
+    long_b = "v" * 80 + "b"
+    model = tmp_path / "machine.fcstm"
+    query = tmp_path / "scenario.fbmcq"
+    model.write_text(
+        "def int %s = 0;\ndef int %s = 0;\n"
+        "state Root { state A; state B; [*] -> A; }\n" % (long_a, long_b),
+        encoding="utf-8",
+    )
+    query.write_text(
+        'assume at 0: var("%s") == 1;\nassume at 0: var("%s") == 2;\n'
+        'check reach <= 1: active("Root.A");\n' % (long_a, long_b),
+        encoding="utf-8",
+    )
+
+    result = _run(
+        "-i", str(model), "-q", str(query), "--explain-infeasibility", "formal"
+    )
+
+    assert result.exit_code == 3, result.output
+    assert "NOT ACHIEVED" not in result.output
+    assert "internal mismatch" not in result.output
+    # Whatever the narrative concludes, a name it prints is the declared one --
+    # never the eighty-character prefix the two share, which names neither.
+    printed = [name for name in (long_a, long_b) if name in result.output]
+    assert printed
+    assert ("v" * 80 + " ") not in result.output
+    assert ("v" * 80 + ".") not in result.output
+
+
+@pytest.mark.unittest
+def test_a_frame_with_every_state_ruled_out_says_so(tmp_path) -> None:
+    """Exhausting a frame's legal states is its own pattern in the contract.
+
+    §7.5 lists "two different states required at one frame" and "every legal
+    state excluded" separately, and they read differently: the first is a clash
+    between two requirements, the second leaves the frame with nothing to be.
+    Reaching it needs the negated assertions read as exclusions rather than
+    requirements -- calling them requirements would invert every source line.
+    """
+    model = tmp_path / "machine.fcstm"
+    query = tmp_path / "scenario.fbmcq"
+    model.write_text(
+        "state Root {\n    state A;\n    state B;\n"
+        "    [*] -> A;\n    A -> B;\n    B -> A;\n}\n",
+        encoding="utf-8",
+    )
+    query.write_text(
+        'init state("Root.A");\n'
+        'assume at 1: !active("Root.A");\n'
+        'assume at 1: !active("Root.B");\n'
+        "assume at 1: !terminated();\n"
+        'check reach <= 1: active("Root.A");\n',
+        encoding="utf-8",
+    )
+
+    result = _run(
+        "-i", str(model), "-q", str(query), "--explain-infeasibility", "formal"
+    )
+
+    assert result.exit_code == 3, result.output
+    assert "COMPLETE FORMAL DOMAIN EXPLANATION" in result.output
+    assert "STRUCTURAL ONLY" not in result.output
+    assert "Frame 1 has no state left" in result.output
+    # A negated assertion rules a state out; it does not require it.
+    assert "rules out state" in result.output
+    assert "the query requires state" not in result.output
+
+
+@pytest.mark.unittest
+def test_a_derivation_credits_only_machinery_the_model_contains(tmp_path) -> None:
+    """With no transition, the chain must not say a transition prefix did it.
+
+    The value can be forced by an initializer and a predicate alone.  Naming a
+    transition prefix there sends the reader looking through transitions the
+    model does not have.  The earlier guard only recognised one shape of
+    redundancy, so a supporting fact with no domain reading slipped past it.
+    """
+    model = tmp_path / "machine.fcstm"
+    query = tmp_path / "scenario.fbmcq"
+    model.write_text(
+        "def int x = 0;\nstate Root { state A; [*] -> A; }\n", encoding="utf-8"
+    )
+    query.write_text(
+        'init state("Root.A") havoc * where 2 * x == 10;\n'
+        'assume at 0: var("x") == 7;\n'
+        'check reach <= 1: active("Root.A");\n',
+        encoding="utf-8",
+    )
+
+    result = _run(
+        "-i", str(model), "-q", str(query), "--explain-infeasibility", "formal"
+    )
+
+    assert result.exit_code == 3, result.output
+    assert "therefore requires x to equal 5" in result.output
+    assert "transition prefix" not in result.output
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "declaration, low, high",
+    [
+        ("def int x = 0;", "3", "4"),
+        ("def int x = 0;", "3.0", "4.0"),
+        ("def float x = 0.0;", "3.5", "3.25"),
+    ],
+    ids=[
+        "integer-domain-integer-literals",
+        "integer-domain-decimal-literals",
+        "real-domain",
+    ],
+)
+def test_a_decimal_point_does_not_decide_the_verdict(
+    tmp_path, declaration, low, high
+) -> None:
+    """The same conflict must read the same however its literals were typed.
+
+    An integer variable bounded by ``3.0`` and ``4.0`` is the same empty range as
+    one bounded by ``3`` and ``4``.  The domain marker follows the variable, so
+    it has to narrow a whole real literal as well as widen an integer one --
+    doing only the second left the first degrading.
+    """
+    model = tmp_path / "machine.fcstm"
+    query = tmp_path / "scenario.fbmcq"
+    model.write_text(
+        "%s\nstate Root { state A; [*] -> A; }\n" % declaration, encoding="utf-8"
+    )
+    query.write_text(
+        'init state("Root.A") havoc *;\n'
+        'assume at 0: var("x") > %s;\nassume at 0: var("x") < %s;\n'
+        'check reach <= 1: active("Root.A");\n' % (low, high),
+        encoding="utf-8",
+    )
+
+    result = _run(
+        "-i", str(model), "-q", str(query), "--explain-infeasibility", "formal"
+    )
+
+    assert result.exit_code == 3, result.output
+    assert "No value of x satisfies every bound" in result.output
+
+
+@pytest.mark.unittest
+def test_value_propagation_reaches_a_float_model(tmp_path) -> None:
+    """Both persistent variable types get the propagation pattern.
+
+    §7.5 lists the pattern without a type qualifier, and the probe gated its
+    targets on integers, so no float model could ever produce the chain.
+    """
+    model = tmp_path / "machine.fcstm"
+    query = tmp_path / "scenario.fbmcq"
+    model.write_text(
+        "def float f = 0.0;\n"
+        "state Root { state A; [*] -> A; A -> A effect { f = f + 1.0; }; }\n",
+        encoding="utf-8",
+    )
+    query.write_text(
+        'init state("Root.A");\nassume at 1: var("f") == 0.0;\n'
+        'check reach <= 1: active("Root.A");\n',
+        encoding="utf-8",
+    )
+
+    result = _run(
+        "-i", str(model), "-q", str(query), "--explain-infeasibility", "formal"
+    )
+
+    assert result.exit_code == 3, result.output
+    assert "COMPLETE FORMAL DOMAIN EXPLANATION" in result.output
+    assert "therefore requires f to equal 1.0 at frame 1" in result.output
+
+
+@pytest.mark.unittest
+def test_a_state_is_named_the_way_the_reader_wrote_it(tmp_path) -> None:
+    """Human sentences name states by path, not by their encoded number.
+
+    The reader wrote ``Root.A``; ``state 1`` is the encoding's number for it, and
+    nothing in the sentence lets them map one to the other.  The code stays in
+    ``normalized_fact``, where a machine consumer wants it.
+    """
+    model = tmp_path / "machine.fcstm"
+    query = tmp_path / "scenario.fbmcq"
+    model.write_text(
+        "state Root {\n    state A;\n    state B;\n"
+        "    [*] -> A;\n    A -> B;\n    B -> A;\n}\n",
+        encoding="utf-8",
+    )
+    query.write_text(
+        'init state("Root.A");\n'
+        'assume at 1: !active("Root.A");\n'
+        'assume at 1: !active("Root.B");\n'
+        "assume at 1: !terminated();\n"
+        'check reach <= 1: active("Root.A");\n',
+        encoding="utf-8",
+    )
+
+    result = _run(
+        "-i", str(model), "-q", str(query), "--explain-infeasibility", "formal"
+    )
+
+    assert "rules out state Root.A" in result.output
+    assert "rules out state Root.B" in result.output
+    assert "rules out state 1" not in result.output
+
+
+@pytest.mark.unittest
+def test_every_sentence_names_states_the_way_the_reader_wrote_them(
+    tmp_path,
+) -> None:
+    """The conclusion has to use the same names as the steps above it.
+
+    Naming states by path was applied to the facts and missed the conflict
+    sentence, so a chain could read ``Root.A`` twice and then conclude about
+    ``states 1 and 2``.  A reader cannot tell those are the same two states.
+    """
+    model = tmp_path / "machine.fcstm"
+    query = tmp_path / "scenario.fbmcq"
+    model.write_text("state Root { state A; state B; [*] -> A; }\n", encoding="utf-8")
+    query.write_text(
+        'init state("Root.A");\nassume at 0: active("Root.B");\n'
+        'check reach <= 1: active("Root.A");\n',
+        encoding="utf-8",
+    )
+
+    result = _run(
+        "-i", str(model), "-q", str(query), "--explain-infeasibility", "formal"
+    )
+
+    assert "cannot be in two states at once" in result.output
+    assert "state Root.A and state Root.B" in result.output
+    assert "states 1 and 2" not in result.output
+
+
+@pytest.mark.unittest
+def test_the_summary_and_the_step_agree_on_what_carried_the_value(
+    tmp_path,
+) -> None:
+    """One derivation, one attribution.
+
+    The step and the summary describe the same inference, so a fix to one that
+    misses the other leaves the report contradicting itself -- the chain saying
+    an initializer forced the value while the summary credits a transition
+    prefix the model does not contain.
+    """
+    model = tmp_path / "machine.fcstm"
+    query = tmp_path / "scenario.fbmcq"
+    model.write_text(
+        "def int x = 0;\nstate Root { state A; [*] -> A; }\n", encoding="utf-8"
+    )
+    query.write_text(
+        'init state("Root.A") havoc * where 2 * x == 10;\n'
+        'assume at 0: var("x") == 7;\n'
+        'check reach <= 1: active("Root.A");\n',
+        encoding="utf-8",
+    )
+
+    _, payload = _json_result(model, query, "--explain-infeasibility", "formal")
+    narrative = payload["result"]["feasibility"]["explanation"]["narrative"]
+
+    assert "transition prefix" not in narrative["summary"]
+    assert "the initial state" in narrative["summary"]
+    derivation = next(
+        step for step in narrative["reasoning_steps"] if step["kind"] == "derivation"
+    )
+    assert "The initial state therefore requires" in derivation["text"]
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "explain",
+    [(), ("--explain-infeasibility", "formal")],
+    ids=["no-explanation", "formal-explanation"],
+)
+def test_a_value_too_large_for_a_float_does_not_change_the_exit_code(
+    tmp_path, explain
+) -> None:
+    """Asking for an explanation may not disturb the mandatory verdict.
+
+    A legal integer past the float range, compared with a real variable, used to
+    raise inside the fact recognizer, so requesting ``formal`` turned exit 3 into
+    exit 1 -- the explanation stage overruling a verdict it is not allowed to
+    touch.  Both modes must agree, and the explanation degrades instead.
+    """
+    model = tmp_path / "machine.fcstm"
+    query = tmp_path / "scenario.fbmcq"
+    model.write_text(
+        "def float x = 0.0;\nstate Root { state A; [*] -> A; }\n", encoding="utf-8"
+    )
+    query.write_text(
+        'init state("Root.A") havoc *;\n'
+        'assume at 0: var("x") > %d;\nassume at 0: var("x") < 1;\n'
+        'check reach <= 1: active("Root.A");\n' % (10**400),
+        encoding="utf-8",
+    )
+
+    result = _run("-i", str(model), "-q", str(query), *explain)
+
+    assert result.exit_code == 3, result.output
+    assert "Unexpected error" not in result.output
+
+
+@pytest.mark.unittest
+def test_an_unrepresentable_forced_value_degrades_instead_of_failing(
+    tmp_path,
+) -> None:
+    """The probe's witness has the same limit, and the same obligation.
+
+    ``float(candidate.as_fraction())`` is the second place the assumption "every
+    rational fits a float" lived.  A prefix forcing such a value must leave the
+    narrative without a derivation rather than take the explanation down.
+    """
+    model = tmp_path / "machine.fcstm"
+    query = tmp_path / "scenario.fbmcq"
+    model.write_text(
+        "def float f = 0.0;\nstate Root { state A; [*] -> A; }\n", encoding="utf-8"
+    )
+    # An integer literal, not a decimal one: a decimal past the float range is
+    # rejected by the query parser as a non-finite literal, which is a different
+    # and correct refusal.  An integer of that size is legal FBMCQ and reaches the
+    # real variable through a sort coercion.
+    query.write_text(
+        'init state("Root.A") havoc * where f == %d;\n'
+        'assume at 0: var("f") == 1.0;\n'
+        'check reach <= 1: active("Root.A");\n' % (10**400),
+        encoding="utf-8",
+    )
+
+    result = _run(
+        "-i", str(model), "-q", str(query), "--explain-infeasibility", "formal"
+    )
+
+    assert result.exit_code == 3, result.output
+    assert "Unexpected error" not in result.output
+    assert "internal mismatch" not in result.output

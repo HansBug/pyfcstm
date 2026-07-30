@@ -54,6 +54,18 @@ BmcSubsetMinimality
 .. autodata:: BmcSubsetMinimality
 
 
+BmcDerivationStatus
+-----------------------------------------------------
+
+.. autodata:: BmcDerivationStatus
+
+
+BmcReasoningStepKind
+-----------------------------------------------------
+
+.. autodata:: BmcReasoningStepKind
+
+
 BmcSemanticRole
 -----------------------------------------------------
 
@@ -141,11 +153,18 @@ BmcConflictCore
     :members: __post_init__,to_canonical,scope,formula_summary,granularity,reduction,subset_minimality,items
 
 
+BmcReasoningStep
+-----------------------------------------------------
+
+.. autoclass:: BmcReasoningStep
+    :members: __post_init__,to_canonical,kind,item_ids,proof_node_ids,text
+
+
 BmcConflictNarrative
 -----------------------------------------------------
 
 .. autoclass:: BmcConflictNarrative
-    :members: derivation_status,headline,summary
+    :members: __post_init__,to_canonical,derivation_status,headline,summary,reasoning_steps,review_surfaces
 
 
 BmcConflictProof
@@ -166,6 +185,18 @@ is\_printable\_ascii
 -----------------------------------------------------
 
 .. autofunction:: is_printable_ascii
+
+
+require\_published\_text
+-----------------------------------------------------
+
+.. autofunction:: require_published_text
+
+
+human\_text\_for\_fact
+-----------------------------------------------------
+
+.. autofunction:: human_text_for_fact
 
 
 category\_role
@@ -190,6 +221,12 @@ depth\_line\_is\_needed
 -----------------------------------------------------
 
 .. autofunction:: depth_line_is_needed
+
+
+build\_conflict\_narrative
+-----------------------------------------------------
+
+.. autofunction:: build_conflict_narrative
 
 
 explanation\_text\_lines

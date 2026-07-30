@@ -2072,6 +2072,7 @@ _FEASIBILITY_REFINEMENT_NAMES = {
     "domain_assumptions",
     "unsat_core",
     "unsat_core_minimization",
+    "value_propagation",
 }
 _FEASIBILITY_REFINEMENT_STATUSES = {
     "sat",
@@ -2089,6 +2090,15 @@ _FEASIBILITY_COMPONENT_REFINEMENT_NAMES = {
 _FEASIBILITY_CORE_REFINEMENT_NAMES = {
     "unsat_core",
     "unsat_core_minimization",
+}
+# Checks that report a whole phase rather than one solver verdict, and so may use
+# status="complete".  This is a superset of the core family on purpose: every
+# core check is a phase, but not every phase proves the core.  Value propagation
+# aggregates a prefix solve and a uniqueness check, and it supports the narrative
+# rather than the core, so admitting it to the core family would let it satisfy
+# the "a published core requires a completed unsat-core check" guard below.
+_FEASIBILITY_PHASE_REFINEMENT_NAMES = _FEASIBILITY_CORE_REFINEMENT_NAMES | {
+    "value_propagation",
 }
 _FEASIBILITY_TIMEOUT_BEFORE_ASSUMPTIONS = (
     "feasibility_timeout:deadline_exhausted_before_assumptions_check"
@@ -2264,10 +2274,10 @@ class BmcFeasibilityRefinementCheck(_PrettyPrintableMixin):
             raise BmcBuildError("Feasibility refinement requires elapsed_ms.")
         if (
             self.status == "complete"
-            and self.name not in _FEASIBILITY_CORE_REFINEMENT_NAMES
+            and self.name not in _FEASIBILITY_PHASE_REFINEMENT_NAMES
         ):
             raise BmcBuildError(
-                "Only unsat-core feasibility refinement can use status=complete."
+                "Only phase-level feasibility refinement can use status=complete."
             )
 
     def to_canonical(self) -> _CanonicalDict:
@@ -2388,29 +2398,40 @@ def _validate_explanation_agreement(
             for check in refinement_checks
             if check.name == "unsat_core_minimization"
         ]
-        if core.reduction == "partial_minimized" and not deletions:
-            # This level means at least one deletion check finished.  Without
-            # one the core is simply raw, and saying otherwise claims progress
-            # that never happened.
+        # Minimization publishes one aggregate phase record, so each reduction
+        # level maps to an observable ledger shape: 'raw' has no record at all,
+        # 'partial_minimized' has a degraded one, 'subset_minimal' has a
+        # completed one.  Per-trial verdicts are steps inside the algorithm and
+        # never become rows -- a rule reading them as rows would reject a normal
+        # shrink, where the deletions that succeed come back unsat.
+        statuses = sorted({check.status for check in deletions})
+        if core.reduction == "raw" and deletions:
             raise BmcBuildError(
-                "a partially minimized core requires at least one recorded "
-                "deletion check."
+                "a raw core requires no minimization record, got %s."
+                % ", ".join(statuses)
             )
-        if core.subset_minimality == "proven":
-            # Minimality is proven per member: removing any one of them has to
-            # leave the target satisfiable.  So every recorded deletion check
-            # must be sat, and there must be at least one per member -- a
-            # single sat check would only show that *some* member is needed.
-            unsatisfied = [check for check in deletions if check.status != "sat"]
-            if unsatisfied:
+        if core.reduction == "partial_minimized":
+            degraded = [
+                check for check in deletions if check.status in ("timeout", "unknown")
+            ]
+            if not degraded:
+                # Without a record the core is simply raw; with a completed one
+                # its minimality would be proven.  Either way this level claims
+                # something the ledger does not show.
                 raise BmcBuildError(
-                    "a proven-minimal core requires every deletion check to "
-                    "return sat, got %r." % unsatisfied[0].status
+                    "a partially minimized core requires a degraded minimization "
+                    "record, got %s." % (", ".join(statuses) or "no record")
                 )
-            if len(deletions) < len(core.items):
+        if core.subset_minimality == "proven":
+            # Every member of the final core did get its deletion check -- that
+            # is a condition on the minimization algorithm, which runs both the
+            # shrink and the per-member acceptance pass.  What the ledger can
+            # show is whether that phase closed: one that timed out or came back
+            # undetermined left at least one member unchecked.
+            if not [check for check in deletions if check.status == "complete"]:
                 raise BmcBuildError(
-                    "a proven-minimal core with %d members requires a deletion "
-                    "check per member, got %d." % (len(core.items), len(deletions))
+                    "a proven-minimal core requires a completed minimization "
+                    "record, got %s." % (", ".join(statuses) or "no record")
                 )
 
 

@@ -147,6 +147,11 @@ def test_a_category_outside_every_family_is_refused() -> None:
 #: Frozen structures the transcription test above pins by value.
 _TRANSCRIBED_FROZEN_NAMES = frozenset(
     {
+        "_DERIVATION_STATUSES",
+        "_FACT_REQUIRED_KEYS",
+        "_REASONING_STEP_KINDS",
+        "_RELATION_PHRASES",
+        "_ROLE_VOICES",
         "CATEGORY_ROLES",
         "CLASSIFICATION_SCOPES",
         "INDEX_REF_KEYS",
@@ -239,12 +244,54 @@ def test_the_transcription_guard_covers_every_frozen_structure() -> None:
 
     assert sibling_frozen == {
         "provenance._SOURCE_KINDS",
+        "provenance._VALUE_FACT_CATEGORIES",
         "provenance.TRACKED_GROUP_PAIRINGS",
         "infeasibility.AGGREGATE_SELECTORS",
         "infeasibility._INDEX_REF_KEYS",
         "infeasibility._STAGE_FALLBACK_BY_STAGE",
     }
     assert provenance._SOURCE_KINDS == {"fcstm", "fbmcq", "generated"}
+    # Transcribed because it decides which groups get a value-level reading at
+    # all: a category dropped from here silently degrades to structural.
+    # Transcribed because they are the whole published sentence vocabulary: a
+    # relation or role dropped from either mapping renders as a bare tag inside
+    # otherwise fluent prose, or silently borrows another role's voice.
+    # Transcribed because they are published dispatch vocabularies: a kind or
+    # status added without a schema enum entry would pass Python and fail
+    # validation, and one removed would silently narrow what can be published.
+    # Transcribed because it decides which members a reader may index directly:
+    # a tag whose keys are dropped from here silently becomes indexable without
+    # them, which is the KeyError this table exists to prevent.
+    assert module._FACT_REQUIRED_KEYS == {
+        "structural_constraint": (),
+        "variable_comparison": ("variable", "frame", "operator", "value"),
+        "state_membership": ("frame", "state"),
+        "state_domain": ("frame", "states"),
+        "definedness_condition": ("frame", "operation"),
+    }
+    # Every published tag needs an entry, or it becomes readable by omission.
+    assert set(module._FACT_REQUIRED_KEYS) == set(module._FACT_KINDS)
+    assert module._REASONING_STEP_KINDS == ("fact", "derivation", "conflict")
+    assert module._DERIVATION_STATUSES == (
+        "complete",
+        "partial",
+        "structural_only",
+        "not_available",
+    )
+    assert set(module._RELATION_PHRASES) == {"eq", "ne", "le", "lt", "ge", "gt"}
+    assert module._RELATION_PHRASES["eq"] == "to equal %s"
+    assert module._ROLE_VOICES == {
+        "assumption": "the query",
+        "initial_fact": "the initializer",
+        "domain_rule": "the model",
+        "transition_rule": "the transition",
+        "definedness": "the expression",
+    }
+    assert provenance._VALUE_FACT_CATEGORIES == (
+        "assumption.frame",
+        "initial.variable",
+        "initial.where",
+    )
     # Transcribed, not merely registered: the constructor refuses a pairing that
     # is not listed here, so the contents are the contract.
     assert provenance.TRACKED_GROUP_PAIRINGS == frozenset(
@@ -324,8 +371,14 @@ def test_every_frozen_vocabulary_matches_the_authored_list() -> None:
         "initialization_stage_fallback",
         "assumptions_stage_fallback",
     )
-    assert module._FACT_KINDS == ("structural_constraint",)
-    assert module.UNBUILT_SLOTS == ("proof", "narrative")
+    assert module._FACT_KINDS == (
+        "structural_constraint",
+        "variable_comparison",
+        "state_membership",
+        "state_domain",
+        "definedness_condition",
+    )
+    assert module.UNBUILT_SLOTS == ("proof",)
     assert module.INDEX_REF_KEYS == ("frame", "frames", "step", "steps")
     assert dict(module.SCOPE_AGGREGATES) == {
         "kernel": ("domain", "transition"),
@@ -1269,9 +1322,12 @@ def test_the_published_helpers_handle_a_wrong_type(call, expected, message) -> N
 
 
 @pytest.mark.parametrize("field", ["stable_id", "category", "summary"])
-# An empty value names nothing; a non-string is the other way a caller gets this
-# wrong, and it reaches the same field through a different check.
-@pytest.mark.parametrize("value", ["", 123], ids=["empty", "not-a-string"])
+# An empty value names nothing, whitespace names nothing while looking like it
+# does, and a non-string is the other way a caller gets this wrong -- each
+# reaches the same field through a different check.
+@pytest.mark.parametrize(
+    "value", ["", "   ", 123], ids=["empty", "whitespace", "not-a-string"]
+)
 def test_constraint_rejects_unusable_identity_fields(field, value) -> None:
     """An unnamed constraint could never be traced back to its source."""
     payload = dict(
@@ -1283,7 +1339,10 @@ def test_constraint_rejects_unusable_identity_fields(field, value) -> None:
     )
     payload[field] = value
 
-    with pytest.raises(ValueError, match="non-empty string"):
+    # The two refusals word themselves differently -- one names the type, the
+    # other the emptiness -- so the assertion pins the field rather than either
+    # phrasing.
+    with pytest.raises(ValueError, match="constraint %s" % field):
         BmcConstraintRef(**payload)
 
 
@@ -1502,18 +1561,14 @@ def test_a_proof_is_only_published_when_proof_was_requested() -> None:
         )
 
 
-@pytest.mark.parametrize("slot", ["proof", "narrative"])
-def test_reserved_slots_are_rejected_rather_than_silently_dropped(slot) -> None:
-    """A filled slot fails loudly instead of vanishing from the payload.
+def test_a_reserved_slot_is_rejected_rather_than_silently_dropped() -> None:
+    """A filled ``proof`` fails loudly instead of vanishing from the payload.
 
-    Both slots belong to a later delivery stage.  Serializing them to ``null``
-    would let a caller believe a proof or narrative had been published.
+    The slot belongs to a later delivery stage, and serializing it to ``null``
+    would let a caller believe a proof had been published.  ``narrative`` was
+    reserved the same way until it gained a builder and a schema; it is now
+    accepted, which the delivery tests cover directly.
     """
-    filled = {
-        "proof": BmcConflictProof("initialization_component", "root"),
-        "narrative": BmcConflictNarrative("structural_only", "head", "body"),
-    }[slot]
-
     with pytest.raises(ValueError, match="not produced at this stage"):
         BmcInfeasibilityExplanation(
             "proof",
@@ -1522,7 +1577,7 @@ def test_reserved_slots_are_rejected_rather_than_silently_dropped(slot) -> None:
             "initialization_self_conflict",
             _core(),
             reason="r",
-            **{slot: filled},
+            proof=BmcConflictProof("initialization_component", "root"),
         )
 
 
@@ -1997,11 +2052,13 @@ def test_human_vocabularies_are_transcribed_from_the_frozen_transcripts() -> Non
 
 @pytest.mark.unittest
 def test_reserved_placeholder_fields_are_pinned() -> None:
-    """Pin the field lists of the two reserved containers.
+    """Pin the field lists of the published narrative and the reserved proof.
 
-    Neither can be carried by a published explanation yet, but both are exported,
-    documented, and constructible, so a field added to either would reach the
-    published surface with nothing describing it.
+    ``proof`` cannot be carried by a published explanation yet, but it is
+    exported, documented and constructible, so a field added to it would reach
+    the published surface with nothing describing it.  The narrative is published
+    now, which makes its field list part of the contract rather than a
+    placeholder.
     """
     import dataclasses
 
@@ -2009,13 +2066,22 @@ def test_reserved_placeholder_fields_are_pinned() -> None:
         UNBUILT_SLOTS,
         BmcConflictNarrative,
         BmcConflictProof,
+        BmcReasoningStep,
     )
 
-    assert set(UNBUILT_SLOTS) == {"proof", "narrative"}
+    assert set(UNBUILT_SLOTS) == {"proof"}
     assert [f.name for f in dataclasses.fields(BmcConflictNarrative)] == [
         "derivation_status",
         "headline",
         "summary",
+        "reasoning_steps",
+        "review_surfaces",
+    ]
+    assert [f.name for f in dataclasses.fields(BmcReasoningStep)] == [
+        "kind",
+        "item_ids",
+        "proof_node_ids",
+        "text",
     ]
     assert [f.name for f in dataclasses.fields(BmcConflictProof)] == [
         "scope",
@@ -2061,16 +2127,18 @@ def test_reserved_placeholder_fields_are_pinned() -> None:
             reason="sound source core published without a minimality proof",
             proof=BmcConflictProof("initialization_component", "root"),
         )
-    with pytest.raises(ValueError, match="narrative is not produced at this stage"):
-        BmcInfeasibilityExplanation(
-            "formal",
-            "formal",
-            "partial",
-            "initialization_self_conflict",
-            core=core,
-            reason="sound source core published without a minimality proof",
-            narrative=BmcConflictNarrative("proven", "headline", "summary"),
-        )
+    # The narrative slot is published now, so a degraded artifact may carry the
+    # honest structural reading beside its unproven core.
+    accepted = BmcInfeasibilityExplanation(
+        "formal",
+        "formal",
+        "partial",
+        "initialization_self_conflict",
+        core=core,
+        reason="sound source core published without a minimality proof",
+        narrative=BmcConflictNarrative("structural_only", "headline", "summary"),
+    )
+    assert accepted.narrative.derivation_status == "structural_only"
 
 
 @pytest.mark.parametrize(
@@ -2094,3 +2162,1581 @@ def test_an_elapsed_duration_must_be_a_real_finite_number(elapsed_ms) -> None:
             reason="raw core unknown",
             elapsed_ms=elapsed_ms,
         )
+
+
+@pytest.mark.unittest
+def test_a_published_item_reads_as_a_sentence_about_the_model() -> None:
+    """``human_text`` states the domain fact, not the group's identifier.
+
+    A reader who does not know the encoding gets nothing from
+    "assumption constraint assumption.0000.frame.0000 from q.fbmcq".  The frozen
+    prototype renders the same item as a sentence naming the frame, the variable
+    and the value, and that is what the recognized facts now make possible.
+    """
+    from pyfcstm.bmc.explanation import human_text_for_fact
+
+    assumption = human_text_for_fact(
+        "assumption",
+        {
+            "kind": "variable_comparison",
+            "variable": "x",
+            "frame": 0,
+            "operator": "eq",
+            "value": 1,
+        },
+    )
+    assert assumption == "At frame 0, the query requires x to equal 1."
+
+    initial = human_text_for_fact(
+        "initial_fact",
+        {
+            "kind": "variable_comparison",
+            "variable": "x",
+            "frame": 0,
+            "operator": "eq",
+            "value": 0,
+        },
+    )
+    assert initial == "At frame 0, the initializer requires x to equal 0."
+
+    bounded = human_text_for_fact(
+        "assumption",
+        {
+            "kind": "variable_comparison",
+            "variable": "x",
+            "frame": 2,
+            "operator": "lt",
+            "value": 3,
+        },
+    )
+    assert bounded == "At frame 2, the query requires x to be less than 3."
+
+    # A shape no recognizer read must not be dressed up as a domain sentence.
+    structural = human_text_for_fact(
+        "transition_rule",
+        {
+            "kind": "structural_constraint",
+            "stable_id": "transition.0000.step.0000",
+            "stage": "kernel",
+            "category": "transition.step",
+        },
+    )
+    # It describes the group rather than claiming a requirement it never derived.
+    assert "transition rule" in structural
+    assert "requires" not in structural
+    assert structural.endswith(".")
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "values, empty",
+    [
+        ((("gt", 0), ("lt", 1)), True),
+        ((("gt", 0.0), ("lt", 1.0)), False),
+        ((("gt", 1.0), ("le", 1.0)), True),
+        ((("ge", 1.0), ("le", 1.0)), False),
+        ((("ne", 1), ("ge", 0)), False),
+    ],
+    ids=[
+        "integers-admit-nothing-between-0-and-1",
+        "reals-admit-plenty-between-0-and-1",
+        "reals-meeting-at-an-excluded-point",
+        "reals-meeting-at-an-included-point",
+        "excluding-one-value-empties-nothing",
+    ],
+)
+def test_an_interval_is_read_over_the_variable_domain_it_belongs_to(
+    values, empty
+) -> None:
+    """The same two bounds mean different things over integers and reals.
+
+    ``x > 0`` with ``x < 1`` admits nothing over the integers and every value
+    between them over the reals, and the recognizer marks which domain it is in
+    by publishing whole real values as floats.
+
+    What this protects is the helper's own stated contract, not a currently
+    reachable verdict.  A published core is always unsatisfiable, and on a core
+    whose members are all bounds on one variable "no value satisfies them"
+    already follows from that -- integer tightening only ever shrinks an
+    interval, so on such a core it can reach a wrong conclusion by a wrong route
+    but not a wrong answer.  The compatible cases below therefore cannot arrive
+    through the orchestrator today.  They are pinned because the function says it
+    reports whether bounds admit a value, and the next caller -- proof mode, or a
+    conjunction group -- will be entitled to believe that sentence.
+    """
+    from pyfcstm.bmc.explanation import _interval_is_empty
+
+    def member(operator, value):
+        reference = BmcConstraintRef(
+            "assumption.%s.%s" % (operator, value),
+            "assumptions",
+            "assumption.frame",
+            BmcSourceRef("generated", None, None),
+            "bound",
+            frames=(0,),
+            refs={"frame": 0},
+        )
+        return BmcCoreItem(
+            reference,
+            "assumption",
+            None,
+            False,
+            {
+                "kind": "variable_comparison",
+                "variable": "x",
+                "frame": 0,
+                "operator": operator,
+                "value": value,
+            },
+            "bound",
+            False,
+        )
+
+    items = tuple(member(operator, value) for operator, value in values)
+
+    assert _interval_is_empty(items) is empty
+
+
+def _published_core_and_narrative():
+    """Return a real published core plus a narrative that matches it."""
+    from pyfcstm.bmc import (
+        BmcEngine,
+        build_bmc_core_formula,
+        compile_bmc_property,
+        solve_bmc_property,
+    )
+    from pyfcstm.model import load_state_machine_from_text
+
+    context = BmcEngine(
+        load_state_machine_from_text("def int x = 0; state Root;")
+    ).prepare(
+        'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
+        'check reach <= 1: active("Root");'
+    )
+    explanation = solve_bmc_property(
+        compile_bmc_property(build_bmc_core_formula(context)),
+        infeasibility_explanation="formal",
+    ).feasibility.explanation
+    return explanation.core, explanation.narrative
+
+
+@pytest.mark.unittest
+def test_a_complete_verdict_requires_a_derivation_that_closed() -> None:
+    """``status="complete"`` may not sit on a narrative that gave up.
+
+    The frozen delivery row asks for a *complete* narrative, not merely a present
+    one.  Accepting ``structural_only`` there publishes full confidence over an
+    account that says outright it could not derive the conflict.
+    """
+    from pyfcstm.bmc.explanation import (
+        BmcConflictNarrative,
+        BmcInfeasibilityExplanation,
+    )
+
+    core, _ = _published_core_and_narrative()
+
+    with pytest.raises(ValueError, match="complete narrative"):
+        BmcInfeasibilityExplanation(
+            "formal",
+            "formal",
+            "complete",
+            "assumptions_self_conflict",
+            core=core,
+            narrative=BmcConflictNarrative("structural_only", "headline", "summary"),
+        )
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "field, message",
+    [
+        ("reasoning_steps", "reasoning step"),
+        ("review_surfaces", "review surface"),
+    ],
+    ids=["step-cites-a-member-that-is-not-there", "surface-offers-a-missing-member"],
+)
+def test_a_narrative_may_only_reference_the_core_beside_it(field, message) -> None:
+    """Every id a narrative publishes has to exist in the core it describes.
+
+    A step citing an absent member sends a reader to a line the report never
+    listed, and a review surface offering one points at nothing to edit.  Neither
+    can be checked inside the narrative, which cannot see the core, so the class
+    that holds both is where the check belongs.
+    """
+    from pyfcstm.bmc.explanation import (
+        BmcConflictNarrative,
+        BmcInfeasibilityExplanation,
+        BmcReasoningStep,
+    )
+
+    core, good = _published_core_and_narrative()
+    if field == "reasoning_steps":
+        broken = BmcConflictNarrative(
+            good.derivation_status,
+            good.headline,
+            good.summary,
+            good.reasoning_steps
+            + (BmcReasoningStep("fact", ("absent.member",), (), "text"),),
+            good.review_surfaces,
+        )
+    else:
+        broken = BmcConflictNarrative(
+            good.derivation_status,
+            good.headline,
+            good.summary,
+            good.reasoning_steps,
+            good.review_surfaces + ("absent.member",),
+        )
+
+    with pytest.raises(ValueError, match=message):
+        BmcInfeasibilityExplanation(
+            "formal",
+            "formal",
+            "complete",
+            "assumptions_self_conflict",
+            core=core,
+            narrative=broken,
+        )
+
+
+@pytest.mark.unittest
+def test_a_review_surface_must_be_a_member_the_reader_can_edit() -> None:
+    """Offering a generated rule for review points at no authored line.
+
+    ``editable=False`` means the encoding produced the member, so there is no
+    file and no span for the reader to open.  Listing it as a review surface
+    would send them looking for something that does not exist.
+    """
+    from pyfcstm.bmc.explanation import (
+        BmcConflictNarrative,
+        BmcInfeasibilityExplanation,
+    )
+
+    core, good = _published_core_and_narrative()
+    # Publish an existing member that the core marks as not editable.
+    non_editable = [item for item in core.items if not item.editable]
+    if not non_editable:
+        pytest.skip("this corpus publishes only authored members")
+
+    broken = BmcConflictNarrative(
+        good.derivation_status,
+        good.headline,
+        good.summary,
+        good.reasoning_steps,
+        (non_editable[0].constraint.stable_id,),
+    )
+
+    with pytest.raises(ValueError, match="editable"):
+        BmcInfeasibilityExplanation(
+            "formal",
+            "formal",
+            "complete",
+            "assumptions_self_conflict",
+            core=core,
+            narrative=broken,
+        )
+
+
+def _guard_item(variable, frame=0, operation="division"):
+    """A definedness member guarding one variable at one frame."""
+    fact = {"kind": "definedness_condition", "frame": frame, "operation": operation}
+    if variable is not None:
+        fact["variable"] = variable
+    reference = BmcConstraintRef(
+        "definedness.%s.%s" % (variable, frame),
+        "assumptions",
+        "definedness",
+        BmcSourceRef("generated", None, None),
+        "guard",
+        frames=(frame,),
+        refs={"frame": frame},
+    )
+    return BmcCoreItem(reference, "definedness", None, False, fact, "guard", False)
+
+
+def _comparison_item(variable, frame=0, operator="eq", value=0):
+    """A comparison member on one variable at one frame."""
+    reference = BmcConstraintRef(
+        "assumption.%s.%s.%s" % (variable, frame, value),
+        "assumptions",
+        "assumption.frame",
+        BmcSourceRef("generated", None, None),
+        "bound",
+        frames=(frame,),
+        refs={"frame": frame},
+    )
+    return BmcCoreItem(
+        reference,
+        "assumption",
+        None,
+        False,
+        {
+            "kind": "variable_comparison",
+            "variable": variable,
+            "frame": frame,
+            "operator": operator,
+            "value": value,
+        },
+        "bound",
+        False,
+    )
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "members, named",
+    [
+        ((("guard", "x", 0), ("cmp", "x", 0)), True),
+        ((("guard", "x", 0), ("cmp", "y", 0)), False),
+        ((("guard", "x", 0), ("cmp", "x", 1)), False),
+        ((("guard", None, 0), ("cmp", "x", 0)), False),
+        ((("guard", "x", 0), ("guard", "y", 0), ("cmp", "x", 0)), False),
+    ],
+    ids=[
+        "the-facts-are-about-the-guarded-variable",
+        "the-facts-are-about-another-variable",
+        "the-facts-are-about-another-frame",
+        "the-guard-does-not-name-its-variable",
+        "two-guards-leave-it-ambiguous",
+    ],
+)
+def test_a_definedness_failure_is_claimed_only_when_the_facts_explain_it(
+    members, named
+) -> None:
+    """Relaxing the pattern must not let it explain a conflict it did not cause.
+
+    A domain condition in a subset-minimal core is load-bearing, but that alone
+    does not make it *the* story: if the facts beside it constrain a different
+    variable or a different frame, the contradiction is somewhere else and naming
+    the operation would misattribute it.  The pattern therefore claims the
+    failure only when every other member speaks about the variable the guard
+    protects, at the frame it protects.
+    """
+    from pyfcstm.bmc.explanation import _conflict_pattern
+
+    items = tuple(
+        _guard_item(name, frame) if kind == "guard" else _comparison_item(name, frame)
+        for kind, name, frame in members
+    )
+
+    # The branch reasons from every member being load-bearing, so it is only
+    # offered for a proven-minimal core; the raw case has its own test.
+    pattern = _conflict_pattern(items, "proven")
+
+    if named:
+        assert pattern is not None
+        assert pattern[0] == "definedness_failure"
+    else:
+        assert pattern is None or pattern[0] != "definedness_failure"
+
+
+@pytest.mark.unittest
+def test_a_redundant_guard_is_not_reported_as_the_reason() -> None:
+    """The load-bearing argument needs the minimality it argues from.
+
+    The relaxed branch reasons that a domain condition inside a subset-minimal
+    core must be part of the contradiction.  That is true of a *proven* core and
+    false of a raw one, where a redundant member can ride along: here ``x != 0``
+    is compatible with either equality and dropping it leaves the rest
+    unsatisfiable, so the division is not why anything failed.  Publishing it as
+    the cause is the exact failure this mode exists to avoid -- a sentence that
+    reads like an explanation and points at the wrong line.
+    """
+    from pyfcstm.bmc.explanation import build_conflict_narrative
+
+    core = BmcConflictCore(
+        "assumptions_component",
+        "target",
+        "source_group",
+        "raw",
+        "not_proven",
+        (
+            _guard_item("x"),
+            _comparison_item("x", value=1),
+            _comparison_item("x", value=2),
+        ),
+    )
+
+    narrative = build_conflict_narrative(core)
+
+    assert "division" not in narrative.headline
+    # The equalities are still readable, so the honest reading is available.
+    assert narrative.derivation_status in ("complete", "structural_only")
+    if narrative.derivation_status == "complete":
+        assert "cannot assign" in narrative.headline
+
+
+def _domain_item(frame, states):
+    """A published domain member listing a frame's legal states."""
+    reference = BmcConstraintRef(
+        "domain.frame.%s" % frame,
+        "kernel",
+        "domain.frame_state",
+        BmcSourceRef("generated", None, None),
+        "domain",
+        frames=(frame,),
+        refs={"frame": frame},
+    )
+    return BmcCoreItem(
+        reference,
+        "domain_rule",
+        None,
+        False,
+        {"kind": "state_domain", "frame": frame, "states": list(states)},
+        "domain",
+        False,
+    )
+
+
+def _state_item(frame, state, excluded):
+    """A published state member either requiring or ruling out one state."""
+    reference = BmcConstraintRef(
+        "state.%s.%s.%s" % (frame, state, excluded),
+        "assumptions",
+        "assumption.frame",
+        BmcSourceRef("generated", None, None),
+        "state",
+        frames=(frame,),
+        refs={"frame": frame},
+    )
+    return BmcCoreItem(
+        reference,
+        "assumption",
+        None,
+        False,
+        {
+            "kind": "state_membership",
+            "frame": frame,
+            "state": state,
+            "excluded": excluded,
+        },
+        "state",
+        False,
+    )
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "domain, states, exhausted",
+    [
+        ((1, (-1, 1, 2)), ((1, -1, True), (1, 1, True), (1, 2, True)), True),
+        ((1, (-1, 1, 2)), ((1, 1, True), (1, 2, True)), False),
+        ((1, (-1, 1)), ((0, -1, True), (0, 1, True)), False),
+        ((1, (1,)), ((1, 7, True),), False),
+        ((1, (1,)), ((1, 1, True), (1, 9, True)), False),
+        ((1, (1, 2)), ((1, 1, False), (1, 2, False)), False),
+    ],
+    ids=[
+        "every-legal-state-is-ruled-out",
+        "one-legal-state-still-remains",
+        "the-exclusions-are-about-another-frame",
+        "the-exclusion-names-a-state-outside-the-domain",
+        "a-spare-exclusion-is-not-part-of-the-answer",
+        "requirements-are-not-exclusions",
+    ],
+)
+def test_exhaustion_is_claimed_only_when_the_domain_is_actually_empty(
+    domain, states, exhausted
+) -> None:
+    """Emptying a frame is checked against the published domain, not counted.
+
+    The sentence claims the frame has nothing left to be, so it has to follow
+    from the legal states the core actually published: exclusions about another
+    frame, or naming a state the domain never allowed, leave the frame with
+    somewhere to go.  Reading a requirement as an exclusion would invert the
+    source line and reach the same wrong conclusion from the other direction.
+
+    A spare exclusion is the case worth stating: it does not change whether the
+    domain is empty, and it does change whether this pattern may say so.  The
+    conclusion is quantified over the frame's legal states, so an exclusion naming
+    something outside them is a member the sentence cannot reach -- claiming a
+    closed chain would cite it as a reason it is not.  Emptiness and attribution
+    are separate questions and both have to hold.
+    """
+    from pyfcstm.bmc.explanation import _conflict_pattern
+
+    items = (_domain_item(*domain),) + tuple(
+        _state_item(frame, state, excluded) for frame, state, excluded in states
+    )
+
+    pattern = _conflict_pattern(items, "proven")
+
+    if exhausted:
+        assert pattern is not None
+        assert pattern[0] == "state_domain_exhaustion"
+    else:
+        assert pattern is None or pattern[0] != "state_domain_exhaustion"
+
+
+@pytest.mark.unittest
+def test_a_narrative_needs_the_core_it_talks_about() -> None:
+    """No sound core means no causal chain to tell.
+
+    ``achieved_mode="none"`` says nothing publishable came back, and the frozen
+    not-achieved transcript spells out that no conflict core or causal chain was
+    published.  A narrative beside a missing core also escapes the reference
+    check, which can only run when there is a core to check against, so its ids
+    point at nothing by construction.
+    """
+    from pyfcstm.bmc.explanation import (
+        BmcConflictNarrative,
+        BmcInfeasibilityExplanation,
+        BmcReasoningStep,
+    )
+
+    narrative = BmcConflictNarrative(
+        "structural_only",
+        "headline",
+        "summary",
+        (BmcReasoningStep("fact", ("g0",), (), "text"),),
+        (),
+    )
+
+    with pytest.raises(ValueError, match="narrative"):
+        BmcInfeasibilityExplanation(
+            "formal",
+            "none",
+            "unknown",
+            None,
+            narrative=narrative,
+            reason="probe unknown",
+        )
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "ids", [(1,), (None,), (b"g0",)], ids=["integer", "none", "bytes"]
+)
+def test_a_reasoning_step_publishes_only_string_ids(ids) -> None:
+    """A published id is a string, and the constructor is where that is decided.
+
+    The schema types these arrays as strings, so a non-string element reaches
+    canonical JSON that a conforming validator refuses -- the constructor
+    accepting what the schema rejects, which is the opposite direction from every
+    named exception and belongs to none of them.
+    """
+    from pyfcstm.bmc.explanation import BmcReasoningStep
+
+    with pytest.raises((TypeError, ValueError)):
+        BmcReasoningStep("fact", ids, (), "text")
+
+
+@pytest.mark.unittest
+def test_a_published_id_is_never_blank() -> None:
+    """The schema gives these ids ``minLength: 1``, so the constructor must too.
+
+    An empty id names nothing and reaches canonical JSON a conforming validator
+    refuses -- the constructor accepting what the schema rejects, in the opposite
+    direction from every named exception.
+    """
+    from pyfcstm.bmc.explanation import BmcReasoningStep
+
+    with pytest.raises(ValueError, match="must not be blank"):
+        BmcReasoningStep("fact", ("",), (), "text")
+
+
+@pytest.mark.unittest
+def test_proof_node_references_need_a_proof_to_reference() -> None:
+    """Outside proof mode there are no nodes, so a step cannot cite one.
+
+    ``BmcReasoningStep`` documents ``proof_node_ids`` as empty outside proof mode
+    and the PR states the same, but nothing enforced it: a formal explanation
+    could publish steps pointing at nodes no artifact contains.
+    """
+    from pyfcstm.bmc.explanation import (
+        BmcConflictNarrative,
+        BmcInfeasibilityExplanation,
+        BmcReasoningStep,
+    )
+
+    core, good = _published_core_and_narrative()
+    ghosted = BmcConflictNarrative(
+        good.derivation_status,
+        good.headline,
+        good.summary,
+        tuple(
+            BmcReasoningStep(step.kind, step.item_ids, ("ghost.proof.node",), step.text)
+            for step in good.reasoning_steps
+        ),
+        good.review_surfaces,
+    )
+
+    with pytest.raises(ValueError, match="proof"):
+        BmcInfeasibilityExplanation(
+            "formal",
+            "formal",
+            "complete",
+            "assumptions_self_conflict",
+            core=core,
+            narrative=ghosted,
+        )
+
+
+def _propagation_item(stable_id, stage, variable, value):
+    """A comparison member on one variable, in the stage its category implies."""
+    category = "initial.variable" if stage == "initialization" else "assumption.frame"
+    role = "initial_fact" if stage == "initialization" else "assumption"
+    reference = BmcConstraintRef(
+        stable_id,
+        stage,
+        category,
+        BmcSourceRef("generated", None, None),
+        "member",
+        frames=(0,),
+        refs={"frame": 0},
+    )
+    return BmcCoreItem(
+        reference,
+        role,
+        None,
+        False,
+        {
+            "kind": "variable_comparison",
+            "variable": variable,
+            "frame": 0,
+            "operator": "eq",
+            "value": value,
+        },
+        "member",
+        False,
+    )
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "spare_member, forced_values, speaks",
+    [
+        (False, ((0,),), False),
+        (False, ((7,),), True),
+        (True, ((0,), (5,)), False),
+    ],
+    ids=[
+        "the-derivation-would-restate-a-supporting-fact",
+        "the-derivation-adds-something-the-facts-do-not-state",
+        "a-later-candidate-cannot-speak-past-an-unexplained-member",
+    ],
+)
+def test_stepping_aside_never_turns_into_speaking_up(
+    spare_member, forced_values, speaks
+) -> None:
+    """The two skips must end in silence, not in a later candidate speaking.
+
+    Both guards ``continue`` rather than return, so they move on to the next
+    forced value.  A candidate skipped for restating a fact must not be followed
+    by one that speaks while a member stays unexplained -- the loop has to run out
+    and hand the core to the single-shape patterns.
+    """
+    from pyfcstm.bmc.explanation import _propagation_steps
+    from pyfcstm.bmc.infeasibility import ForcedValue
+
+    items = [
+        _propagation_item("prefix.x", "initialization", "x", 0),
+        _propagation_item("assume.x", "assumptions", "x", 1),
+    ]
+    if spare_member:
+        items.append(_propagation_item("assume.y", "assumptions", "y", 9))
+    core = BmcConflictCore(
+        "assumptions_prefix",
+        "target",
+        "source_group",
+        "raw",
+        "not_proven",
+        tuple(items),
+    )
+    forced = tuple(
+        ForcedValue("x", 0, value, ("prefix.x",)) for (value,) in forced_values
+    )
+
+    result = _propagation_steps(core, forced)
+
+    assert (result is not None) is speaks
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "code, paths, rendered",
+    [
+        (1, {1: "Root.A"}, "state Root.A"),
+        (5, {5: "Root.Outer.Inner"}, "state Root.Outer.Inner"),
+        (-1, {-1: "$STATE_TERMINATE"}, "state $STATE_TERMINATE"),
+        (9, {1: "Root.A"}, "state 9"),
+        (1, None, "state 1"),
+        (1, {}, "state 1"),
+    ],
+    ids=[
+        "a-state-the-table-knows",
+        "a-nested-path",
+        "a-sentinel",
+        "a-code-the-table-does-not-know",
+        "no-table-at-all",
+        "an-empty-table",
+    ],
+)
+def test_a_state_falls_back_to_its_code_rather_than_inventing_a_name(
+    code, paths, rendered
+) -> None:
+    """Naming a state is a lookup, and a miss must not become a guess.
+
+    The path is what the reader wrote and is worth printing, but a code the
+    table does not carry has no name to print.  Falling back to the code keeps
+    the sentence true and still traceable through ``normalized_fact``; inventing
+    one would put a state in the report that the model does not contain.
+    """
+    from pyfcstm.bmc.explanation import _state_label
+
+    assert _state_label(code, paths) == rendered
+
+
+@pytest.mark.unittest
+def test_every_published_field_documents_the_type_it_is_annotated_with() -> None:
+    """A field's annotation and its ``:type:`` line are two exits for one fact.
+
+    Five fields were annotated with their frozen ``Literal`` while the docstring
+    beside them still said ``str``, so a caller reading the rendered API page saw
+    a weaker type than the one the code declares -- and had no way to discover the
+    vocabulary.  Enumerating the dataclasses keeps that from drifting again
+    silently, which is how it arose: the annotations were tightened one at a time
+    and the prose was not.
+    """
+    import inspect
+    import re
+
+    from pyfcstm.bmc import explanation as explanation_module
+    from pyfcstm.bmc import infeasibility as infeasibility_module
+
+    published = [
+        explanation_module.BmcReasoningStep,
+        explanation_module.BmcConflictNarrative,
+        explanation_module.BmcCoreItem,
+        explanation_module.BmcConflictCore,
+        explanation_module.BmcConstraintRef,
+        explanation_module.BmcInfeasibilityExplanation,
+        infeasibility_module.ForcedValue,
+        infeasibility_module.MinimizedCore,
+        infeasibility_module.ProbeRecord,
+    ]
+
+    mismatched = []
+    for cls in published:
+        doc = inspect.getdoc(cls) or ""
+        for field in cls.__dataclass_fields__.values():
+            documented = re.search(r":type %s:\s*(.+)" % re.escape(field.name), doc)
+            if documented is None:
+                mismatched.append("%s.%s has no :type:" % (cls.__name__, field.name))
+                continue
+            annotation = str(field.type).replace("typing.", "")
+            # The head of the annotation is the name that matters: ``Tuple[X, ...]``
+            # documents as ``Tuple[X, ...]``, and ``Optional[X]`` as ``X, optional``.
+            names = re.findall(r"[A-Za-z_][A-Za-z_0-9]*", annotation)[:2]
+            if names and not any(name in documented.group(1) for name in names):
+                mismatched.append(
+                    "%s.%s annotated %s, documented %s"
+                    % (cls.__name__, field.name, annotation, documented.group(1))
+                )
+
+    assert mismatched == []
+
+
+@pytest.mark.unittest
+def test_no_published_text_field_accepts_whitespace() -> None:
+    """One rule about blank text, one predicate, every exit.
+
+    These six fields had grown three different emptiness tests -- ``.strip()``,
+    ``if not text`` and plain truthiness -- so ``"   "`` was refused in three
+    places and published in the other three, and the schema's ``minLength``
+    agreed with neither.  Whitespace is the input that separates the readings, so
+    it is the one worth enumerating: a field added later that invents a fourth
+    test fails here rather than quietly becoming the seventh exit.
+    """
+    from pyfcstm.bmc.explanation import (
+        BmcConflictCore,
+        BmcConflictNarrative,
+        BmcConstraintRef,
+        BmcCoreItem,
+        BmcInfeasibilityExplanation,
+        BmcReasoningStep,
+    )
+
+    blank = "   "
+    reference = BmcConstraintRef(
+        "g0",
+        "assumptions",
+        "assumption.frame",
+        BmcSourceRef("generated", None, None),
+        "summary",
+    )
+    item = BmcCoreItem(
+        reference,
+        "assumption",
+        None,
+        False,
+        {"kind": "structural_constraint"},
+        "t",
+        False,
+    )
+
+    builders = {
+        "reasoning step text": lambda: BmcReasoningStep("fact", ("g0",), (), blank),
+        "reasoning step item_ids entry": lambda: BmcReasoningStep(
+            "fact", (blank,), (), "t"
+        ),
+        "reasoning step proof_node_ids entry": lambda: BmcReasoningStep(
+            "fact", ("g0",), (blank,), "t"
+        ),
+        "narrative headline": lambda: BmcConflictNarrative(
+            "structural_only", blank, "summary"
+        ),
+        "narrative summary": lambda: BmcConflictNarrative(
+            "structural_only", "headline", blank
+        ),
+        "core formula_summary": lambda: BmcConflictCore(
+            "assumptions_component",
+            blank,
+            "source_group",
+            "raw",
+            "not_proven",
+            (item,),
+        ),
+        "core item human_text": lambda: BmcCoreItem(
+            reference,
+            "assumption",
+            None,
+            False,
+            {"kind": "structural_constraint"},
+            blank,
+            False,
+        ),
+        "constraint summary": lambda: BmcConstraintRef(
+            "g0",
+            "assumptions",
+            "assumption.frame",
+            BmcSourceRef("generated", None, None),
+            blank,
+        ),
+        # The ninth field, and the one an earlier count of "all eight" excluded.
+        # A degraded artifact's reason is printed on the report's ``Reason:`` line.
+        "explanation reason": lambda: BmcInfeasibilityExplanation(
+            "formal",
+            "formal",
+            "partial",
+            "assumptions_self_conflict",
+            core=BmcConflictCore(
+                "assumptions_component",
+                "F",
+                "source_group",
+                "raw",
+                "not_proven",
+                (item,),
+            ),
+            reason=blank,
+        ),
+    }
+
+    accepted = []
+    for where, build in builders.items():
+        try:
+            build()
+        except ValueError:
+            continue
+        accepted.append(where)
+
+    assert accepted == []
+
+
+@pytest.mark.unittest
+def test_the_shared_text_predicate_documents_both_refusals() -> None:
+    """A caller distinguishing the two failures needs both named.
+
+    The predicate refuses a non-``str`` through ``exact_str`` before emptiness is
+    considered, so the two inputs raise different classes.  Documenting only one
+    is the mirror of a comment claiming more than the code does: here the prose
+    claimed less, and a caller catching ``ValueError`` alone would miss half of
+    it.
+    """
+    import inspect
+
+    from pyfcstm.bmc.explanation import require_published_text
+
+    doc = inspect.getdoc(require_published_text) or ""
+    assert ":raises TypeError:" in doc
+    assert ":raises ValueError:" in doc
+
+    with pytest.raises(TypeError):
+        require_published_text(123, "field")
+    with pytest.raises(ValueError):
+        require_published_text("   ", "field")
+
+
+@pytest.mark.unittest
+def test_a_frozen_narrative_keeps_the_members_it_was_validated_with() -> None:
+    """``frozen=True`` stops rebinding, not emptying the list behind the field.
+
+    Every invariant here reads a sequence the caller supplied, so a caller that
+    keeps its own reference can satisfy each check and then remove exactly what
+    the checks were about -- leaving a ``complete`` narrative with no conflict
+    step and a step citing nothing.  ``BmcConflictCore.items`` has always copied
+    on the way in; these four fields had not.
+    """
+    from pyfcstm.bmc.explanation import BmcConflictNarrative, BmcReasoningStep
+
+    item_ids = ["g0"]
+    node_ids = ["n0"]
+    step = BmcReasoningStep("conflict", item_ids, node_ids, "closing")
+    steps = [step]
+    surfaces = ["g0"]
+    narrative = BmcConflictNarrative("complete", "headline", "summary", steps, surfaces)
+
+    item_ids.clear()
+    node_ids.clear()
+    steps.clear()
+    surfaces.clear()
+
+    assert step.item_ids == ("g0",)
+    assert step.proof_node_ids == ("n0",)
+    assert narrative.reasoning_steps == (step,)
+    assert narrative.review_surfaces == ("g0",)
+    # And the invariant the copies protect still holds afterwards.
+    assert [s for s in narrative.reasoning_steps if s.kind == "conflict"]
+
+
+@pytest.mark.unittest
+def test_a_skipped_operator_does_not_count_as_explained() -> None:
+    """Coverage means the members bear on the conclusion, not that they were counted.
+
+    ``ne`` is deliberately left out of the interval arithmetic, because excluding
+    one value never empties a range.  A core carrying one therefore satisfied the
+    sibling coverage count while contributing nothing, so the conflict step listed
+    a member the sentence does not rest on.
+    """
+    from pyfcstm.bmc.explanation import _conflict_pattern
+
+    def bound(operator, value):
+        reference = BmcConstraintRef(
+            "assumption.%s.%s" % (operator, value),
+            "assumptions",
+            "assumption.frame",
+            BmcSourceRef("generated", None, None),
+            "bound",
+            frames=(0,),
+            refs={"frame": 0},
+        )
+        return BmcCoreItem(
+            reference,
+            "assumption",
+            None,
+            False,
+            {
+                "kind": "variable_comparison",
+                "variable": "x",
+                "frame": 0,
+                "operator": operator,
+                "value": value,
+            },
+            "bound",
+            False,
+        )
+
+    crossing = (bound("ge", 5), bound("le", 3))
+    assert _conflict_pattern(crossing, "proven")[0] == "interval_intersection"
+
+    # The same crossing bounds beside an inequality the reading skips.
+    with_spare = crossing + (bound("ne", 99),)
+    pattern = _conflict_pattern(with_spare, "proven")
+    assert pattern is None or pattern[0] != "interval_intersection"
+
+
+@pytest.mark.unittest
+def test_every_tag_survives_every_public_consumer() -> None:
+    """The matrix, not the reasoning: each published tag against each renderer.
+
+    The schema requires only ``kind``, so a bare tag is valid published output and
+    every public consumer has to survive it.  This rule was fixed once on
+    ``human_text_for_fact`` while ``build_conflict_narrative`` thirty lines below
+    kept indexing ``fact["frame"]`` -- two functions disagreeing about the same
+    payload.  Enumerating the vocabulary against the consumers is what finds that;
+    reading the code and asking "where else might this happen" is what missed it
+    three rounds running.
+    """
+    from pyfcstm.bmc.explanation import (
+        _FACT_KINDS,
+        BmcConflictCore,
+        BmcConstraintRef,
+        BmcCoreItem,
+        build_conflict_narrative,
+        human_text_for_fact,
+    )
+
+    def core_of(fact):
+        reference = BmcConstraintRef(
+            "g0",
+            "assumptions",
+            "assumption.frame",
+            BmcSourceRef("generated", None, None),
+            "summary",
+            frames=(0,),
+            refs={"frame": 0},
+        )
+        item = BmcCoreItem(reference, "assumption", None, False, fact, "t", False)
+        return BmcConflictCore(
+            "assumptions_component", "F", "source_group", "raw", "not_proven", (item,)
+        )
+
+    consumers = {
+        "human_text_for_fact": lambda fact: human_text_for_fact("assumption", fact),
+        "build_conflict_narrative": lambda fact: build_conflict_narrative(
+            core_of(fact)
+        ),
+    }
+
+    raised = []
+    for kind in _FACT_KINDS:
+        for name, consume in consumers.items():
+            try:
+                consume({"kind": kind})
+            except (KeyError, TypeError, IndexError, AttributeError) as err:
+                raised.append("%s(%s) -> %s" % (name, kind, type(err).__name__))
+
+    assert raised == []
+
+
+@pytest.mark.unittest
+def test_a_partly_complete_fact_is_declined_by_every_consumer() -> None:
+    """A tag with some of its keys is the shape that slipped through five times.
+
+    A bare tag was handled; a tag carrying *part* of what it implies was not, and
+    that is what the published gates actually allow -- the schema requires ``kind``
+    and nothing more.  Each such fact must degrade the same way through both public
+    consumers: no exception, and no ``complete`` derivation resting on a reading
+    nobody could make.
+
+    The cases are generated from the required-key table, so a tag or a key added
+    later is covered without anyone remembering to add it here.
+    """
+    from itertools import combinations
+
+    from pyfcstm.bmc.explanation import (
+        _FACT_REQUIRED_KEYS,
+        BmcConflictCore,
+        BmcConstraintRef,
+        BmcCoreItem,
+        build_conflict_narrative,
+        human_text_for_fact,
+    )
+
+    sample = {
+        "variable": "x",
+        "frame": 0,
+        "operator": "eq",
+        "value": 1,
+        "state": 1,
+        "states": [1, 2],
+        "operation": "division",
+    }
+
+    def core_of(fact):
+        reference = BmcConstraintRef(
+            "g0",
+            "assumptions",
+            "assumption.frame",
+            BmcSourceRef("generated", None, None),
+            "summary",
+            frames=(0,),
+            refs={"frame": 0},
+        )
+        item = BmcCoreItem(reference, "assumption", None, False, fact, "t", False)
+        return BmcConflictCore(
+            "assumptions_component", "F", "source_group", "raw", "not_proven", (item,)
+        )
+
+    failures = []
+    for kind, keys in _FACT_REQUIRED_KEYS.items():
+        # Every strict subset of the keys the tag implies, including the empty one.
+        for size in range(len(keys)):
+            for subset in combinations(keys, size):
+                fact = {"kind": kind}
+                fact.update({key: sample[key] for key in subset})
+                try:
+                    human_text_for_fact("assumption", fact)
+                except Exception as err:  # noqa: BLE001 - the failure is the finding
+                    failures.append("human_text %s%s: %r" % (kind, subset, err))
+                try:
+                    narrative = build_conflict_narrative(core_of(fact))
+                except Exception as err:  # noqa: BLE001 - same
+                    failures.append("narrative %s%s: %r" % (kind, subset, err))
+                    continue
+                if narrative.derivation_status == "complete":
+                    failures.append("narrative %s%s claimed complete" % (kind, subset))
+
+    assert failures == []
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "supporting_ids, members, derives",
+    [
+        (("prefix.x",), ("prefix.x", "assume.x"), True),
+        (("prefix.x", "prefix.x"), ("prefix.x", "assume.x"), True),
+        (("assume.x",), ("assume.x",), False),
+        (("prefix.x", "assume.x"), ("prefix.x", "assume.x"), False),
+    ],
+    ids=[
+        "the-groups-that-force-it",
+        "one-group-named-twice",
+        "the-only-member-both-forces-and-contradicts",
+        "a-contradicting-member-is-also-offered-as-forcing",
+    ],
+)
+def test_a_forced_value_naming_a_group_oddly_does_not_raise(
+    supporting_ids, members, derives
+) -> None:
+    """``supporting_ids`` is a list of names, and a list can repeat or overlap.
+
+    Nothing on the type says otherwise: it copies no invariant onto them, and a
+    caller assembling one from ids it read off a published core has no rule to
+    break.  Both shapes used to reach a reasoning step, which refuses to repeat an
+    id, so a published builder raised where the contract offers a derivation --
+    naming a group twice is merely redundant, and a group that both carries the
+    value and contradicts it makes the derivation unmakeable, not the call invalid.
+
+    What must not happen is the value reaching the page anyway.  Declining the
+    derivation hands the core to the single-shape patterns, which read it from its
+    own members, so the last two cases are checked for the absence of the derived
+    value rather than for silence.
+    """
+    from pyfcstm.bmc.explanation import build_conflict_narrative
+    from pyfcstm.bmc.infeasibility import ForcedValue
+
+    stages = {"prefix.x": "initialization", "assume.x": "assumptions"}
+    values = {"prefix.x": 0, "assume.x": 1}
+    items = tuple(
+        _propagation_item(name, stages[name], "x", values[name]) for name in members
+    )
+    core = BmcConflictCore(
+        "assumptions_prefix", "F", "source_group", "raw", "not_proven", items
+    )
+
+    narrative = build_conflict_narrative(
+        core, (ForcedValue("x", 0, 7, supporting_ids),)
+    )
+
+    derivations = [
+        step for step in narrative.reasoning_steps if step.kind == "derivation"
+    ]
+    assert bool(derivations) is derives
+    if derives:
+        # The redundant naming reaches the same page as the plain one rather than a
+        # page of its own.
+        assert "7" in narrative.reasoning_steps[-1].text
+    else:
+        # Declining the derivation is not the same as refusing the core: two
+        # contradicting equalities are still a conflict the single-shape patterns
+        # describe, and they describe it without the value nobody could derive.
+        assert "7" not in "".join(step.text for step in narrative.reasoning_steps)
+
+
+@pytest.mark.unittest
+def test_a_member_counted_twice_does_not_stand_in_for_one_nobody_cited() -> None:
+    """Adding the two set sizes equals the member count only while they are disjoint.
+
+    ``ForcedValue`` describes the groups that force a value, and the ones that do
+    are never assumptions -- that is what its own summary says.  Nothing checks it,
+    though, and a caller naming an assumption among them puts the same member in
+    both the supporting and the disagreeing set.  Counted by size that member pays
+    for two, so the coverage check passes with a third member left uncited, which is
+    the closed-chain-over-a-subset the check exists to refuse.
+    """
+    from pyfcstm.bmc.explanation import build_conflict_narrative
+    from pyfcstm.bmc.infeasibility import ForcedValue
+
+    assumption = _propagation_item("assume.x", "assumptions", "x", 1)
+    prefix = _propagation_item("prefix.x", "initialization", "x", 0)
+
+    # Anti-vacuity: a forced value supported by the prefix -- the shape the type
+    # documents -- reaches the propagation reading and closes on it.
+    reached = build_conflict_narrative(
+        BmcConflictCore(
+            "assumptions_prefix",
+            "F",
+            "source_group",
+            "raw",
+            "not_proven",
+            (prefix, assumption),
+        ),
+        (ForcedValue("x", 0, 7, ("prefix.x",)),),
+    )
+    assert reached.derivation_status == "complete"
+    assert "7" in reached.reasoning_steps[-1].text
+
+    # The overlap: the assumption supports the value *and* disagrees with it, while
+    # a bystander on another variable is cited by nothing.
+    overlapped = build_conflict_narrative(
+        BmcConflictCore(
+            "assumptions_prefix",
+            "F",
+            "source_group",
+            "raw",
+            "not_proven",
+            (assumption, _comparison_item("y", 0, "eq", 42)),
+        ),
+        (ForcedValue("x", 0, 7, ("assume.x",)),),
+    )
+    assert overlapped.derivation_status != "complete"
+
+
+@pytest.mark.unittest
+def test_an_exclusion_at_another_frame_is_not_counted_as_explained() -> None:
+    """A member the proof cannot use must not be counted among the members it used.
+
+    Emptying a frame's domain is an argument about *that* frame: the exclusions at
+    any other frame leave it exactly as many states as before.  The coverage count
+    guards against publishing a closed chain over part of the core, so it has to be
+    taken over the exclusions the argument reaches -- counting the rest satisfies
+    the check while the conflict step names a member that plays no part in it, which
+    reads as though ruling out a state somewhere else were part of the reason.
+    """
+    from pyfcstm.bmc.explanation import build_conflict_narrative
+
+    emptied = (
+        _domain_item(1, [1, 2]),
+        _state_item(1, 1, True),
+        _state_item(1, 2, True),
+    )
+
+    # Anti-vacuity: this core does reach the exhaustion reading, and does so at raw
+    # minimality -- the branch offers itself without one, which is why a rider can
+    # arrive here at all.
+    reached = build_conflict_narrative(
+        BmcConflictCore(
+            "assumptions_domain", "F", "source_group", "raw", "not_proven", emptied
+        )
+    )
+    assert reached.derivation_status == "complete"
+    assert "has no state left" in reached.reasoning_steps[-1].text
+
+    # One rider per axis, each of which only its own filter can turn away.
+    #
+    # At another frame, naming a state this frame does list: ruling state 1 out at
+    # frame 0 leaves frame 1 with exactly as many states as before.
+    other_frame = build_conflict_narrative(
+        BmcConflictCore(
+            "assumptions_domain",
+            "F",
+            "source_group",
+            "raw",
+            "not_proven",
+            emptied + (_state_item(0, 1, True),),
+        )
+    )
+    assert other_frame.derivation_status != "complete"
+
+    # At this frame, naming a state it could not hold anyway.  Frame domains differ
+    # by frame -- entry admits states a recurrence step does not -- so ruling out a
+    # composite at a later frame is an ordinary authored line landing outside that
+    # frame's domain, and outside the "its N legal states" the conclusion quantifies
+    # over.
+    outside_domain = build_conflict_narrative(
+        BmcConflictCore(
+            "assumptions_domain",
+            "F",
+            "source_group",
+            "raw",
+            "not_proven",
+            emptied + (_state_item(1, 9, True),),
+        )
+    )
+    assert outside_domain.derivation_status != "complete"
+
+
+def _rider(kind, stable_id="rider"):
+    """A whole, honest member of one tag that no pattern below is reading."""
+    facts = {
+        "variable_comparison": {
+            "kind": "variable_comparison",
+            "variable": "z",
+            "frame": 4,
+            "operator": "eq",
+            "value": 99,
+        },
+        "state_membership": {
+            "kind": "state_membership",
+            "frame": 4,
+            "state": 99,
+            "excluded": True,
+        },
+        "state_domain": {"kind": "state_domain", "frame": 4, "states": [98, 99]},
+        "definedness_condition": {
+            "kind": "definedness_condition",
+            "frame": 4,
+            "operation": "division",
+        },
+        "structural_constraint": {
+            "kind": "structural_constraint",
+            "stable_id": stable_id,
+        },
+    }
+    reference = BmcConstraintRef(
+        stable_id,
+        "assumptions",
+        "assumption.frame",
+        BmcSourceRef("generated", None, None),
+        "rider",
+        frames=(4,),
+        refs={"frame": 4},
+    )
+    return BmcCoreItem(
+        reference, "assumption", None, False, facts[kind], "rider", False
+    )
+
+
+def _pattern_positives():
+    """One core per reading, each of which does reach it."""
+    return {
+        "incompatible-equalities-over-a-variable": (
+            "assumptions_component",
+            (_comparison_item("x", 0, "eq", 1), _comparison_item("x", 0, "eq", 2)),
+            "cannot assign",
+        ),
+        "an-empty-interval": (
+            "assumptions_component",
+            (_comparison_item("x", 0, "ge", 5), _comparison_item("x", 0, "le", 3)),
+            "satisfies every bound",
+        ),
+        "incompatible-equalities-over-the-state-slot": (
+            "assumptions_component",
+            (_state_item(0, 1, False), _state_item(0, 2, False)),
+            "cannot be in two states",
+        ),
+        "an-exhausted-state-domain": (
+            "assumptions_domain",
+            (_domain_item(1, [1, 2]), _state_item(1, 1, True), _state_item(1, 2, True)),
+            "has no state left",
+        ),
+        "a-domain-condition-and-its-variable": (
+            "assumptions_prefix",
+            (_guard_item("x", 0), _comparison_item("x", 0)),
+            "cannot stay defined",
+        ),
+        "a-value-carried-into-a-contradiction": (
+            "assumptions_prefix",
+            (
+                _propagation_item("prefix.x", "initialization", "x", 0),
+                _propagation_item("assume.x", "assumptions", "x", 1),
+            ),
+            "cannot assign",
+        ),
+    }
+
+
+def _forced_for(pattern):
+    """The probe result a reading needs, for the one reading whose input is not the core.
+
+    Value propagation is the sixth reading and the only one taking a second argument,
+    which is why it sat outside the matrix below until now.  Its coverage rule is the
+    same as the other five, so it belongs inside rather than beside.
+    """
+    from pyfcstm.bmc.infeasibility import ForcedValue
+
+    if pattern == "a-value-carried-into-a-contradiction":
+        return (ForcedValue("x", 0, 7, ("prefix.x",)),)
+    return ()
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "pattern", sorted(_pattern_positives()), ids=sorted(_pattern_positives())
+)
+@pytest.mark.parametrize(
+    "rider_kind",
+    [
+        "variable_comparison",
+        "state_membership",
+        "state_domain",
+        "definedness_condition",
+        "structural_constraint",
+    ],
+)
+def test_no_pattern_closes_over_a_member_it_does_not_read(pattern, rider_kind) -> None:
+    """One rule, checked on every reading: what is counted is what is used.
+
+    Each of these has been repaired at least once for counting members it did not
+    consume -- over every frame instead of one, over every exclusion instead of the
+    legal ones, by adding two list sizes instead of comparing ids.  Each repair fixed
+    the instance it was shown, which is why there was always a next one.  The
+    property is the same for all of them and does not depend on which axis a reading
+    quantifies over: a member the conclusion is not built from cannot be listed among
+    the members it rests on, so a core carrying one degrades instead of closing.
+
+    The rider is a whole, honest fact -- every key its tag implies, about a frame and
+    a variable nothing else in the core mentions.  Nothing rejects it for being
+    malformed; it is simply not part of any answer.
+    """
+    from pyfcstm.bmc.explanation import build_conflict_narrative
+
+    scope, members, closing = _pattern_positives()[pattern]
+
+    # Anti-vacuity: without the rider this core does reach its reading, so a
+    # degradation below is the rider's doing and not the fixture's.
+    forced = _forced_for(pattern)
+    reached = build_conflict_narrative(
+        BmcConflictCore(
+            scope, "F", "source_group", "subset_minimal", "proven", members
+        ),
+        forced,
+    )
+    assert reached.derivation_status == "complete"
+    assert closing in reached.reasoning_steps[-1].text
+
+    with_rider = build_conflict_narrative(
+        BmcConflictCore(
+            scope,
+            "F",
+            "source_group",
+            "subset_minimal",
+            "proven",
+            members + (_rider(rider_kind),),
+        ),
+        forced,
+    )
+    assert with_rider.derivation_status != "complete"
+
+
+def _partial_comparison_item(variable, frame=0, operator=None):
+    """A comparison member carrying part of what its tag implies.
+
+    The published schema requires ``kind`` of a normalized fact and no more, so
+    this is a fact a caller can hold after a round trip through the JSON result.
+    It is the shape the single-member corpus above cannot place: the patterns that
+    read a comparison need a *sibling* to compare it against.
+
+    Which part is missing decides which reader it reaches.  Absent ``operator`` is
+    refused by every equality in the chain, so it probes the branches that ask what
+    a member says; passing ``operator`` and leaving ``value`` absent reaches the one
+    comparison written as ``!=``, which absence satisfies.
+    """
+    fact = {"kind": "variable_comparison", "variable": variable, "frame": frame}
+    if operator is not None:
+        fact["operator"] = operator
+    reference = BmcConstraintRef(
+        "assumption.%s.%s.partial" % (variable, frame),
+        "assumptions",
+        "assumption.frame",
+        BmcSourceRef("generated", None, None),
+        "bound",
+        frames=(frame,),
+        refs={"frame": frame},
+    )
+    return BmcCoreItem(
+        reference,
+        "assumption",
+        None,
+        False,
+        fact,
+        "bound",
+        False,
+    )
+
+
+def _pattern_core(scope, members, minimality="proven"):
+    """A published core in the shape the multi-member patterns require."""
+    return BmcConflictCore(
+        scope, "F", "source_group", "subset_minimal", minimality, tuple(members)
+    )
+
+
+@pytest.mark.unittest
+def test_a_partial_comparison_cannot_pair_with_a_domain_guard() -> None:
+    """The pairing check reads keys it never tests for, so it has to test for them.
+
+    The pattern asks whether every other member speaks about the guarded variable
+    at the guarded frame -- a question about ``variable`` and ``frame`` only.  A
+    comparison carrying exactly those two keys answers it, and the sentence that
+    follows then reports *which value* the guard rules out, reading an operator and
+    a value that were never there.  Naming a domain failure from a fact that cannot
+    state one is the §7.5 violation this branch exists to avoid, so the pair below
+    must stay unexplained even though the pairing question itself is satisfied.
+    """
+    from pyfcstm.bmc.explanation import build_conflict_narrative
+
+    guard, complete = _guard_item("x", 0), _comparison_item("x", 0)
+
+    # Anti-vacuity: the branch has to be reachable, or the case below proves nothing.
+    reached = build_conflict_narrative(
+        _pattern_core("assumptions_prefix", (guard, complete))
+    )
+    assert reached.derivation_status == "complete"
+    assert "cannot stay defined" in reached.reasoning_steps[-1].text
+
+    partial = build_conflict_narrative(
+        _pattern_core("assumptions_prefix", (guard, _partial_comparison_item("x", 0)))
+    )
+    assert partial.derivation_status != "complete"
+
+
+@pytest.mark.unittest
+def test_a_partial_comparison_is_not_read_as_disagreeing_with_a_forced_value() -> None:
+    """An absent value satisfies ``!=``, which is how a missing key gets published.
+
+    The disagreeing selection ends in ``value != forced.value``.  Every other
+    comparison in that chain is an equality, which a missing key can never pass, so
+    this is the one place where *absence* looks like disagreement: a fact with no
+    value at all is selected as contradicting the forced one, and the step that
+    renders it then states the value it does not have.
+    """
+    from pyfcstm.bmc.explanation import build_conflict_narrative
+    from pyfcstm.bmc.infeasibility import ForcedValue
+
+    prefix = _propagation_item("prefix.x", "initialization", "x", 0)
+    forced = (ForcedValue("x", 0, 7, ("prefix.x",)),)
+
+    # Anti-vacuity: with both facts whole the derivation speaks, and the value it
+    # contributes -- 7, from the probe rather than from any member -- reaches the page.
+    reached = build_conflict_narrative(
+        _pattern_core(
+            "assumptions_prefix",
+            (prefix, _propagation_item("assume.x", "assumptions", "x", 1)),
+        ),
+        forced,
+    )
+    assert reached.derivation_status == "complete"
+    assert "7" in reached.reasoning_steps[-1].text
+
+    # Absent ``value`` with the operator present is the shape ``!=`` admits.
+    partial = build_conflict_narrative(
+        _pattern_core(
+            "assumptions_prefix",
+            (prefix, _partial_comparison_item("x", 0, operator="eq")),
+        ),
+        forced,
+    )
+    assert partial.derivation_status != "complete"
+
+
+@pytest.mark.unittest
+def test_a_partial_comparison_leaves_an_interval_core_unexplained() -> None:
+    """The interval reading indexes an operator, so its members are filtered first.
+
+    ``_bounds_participants`` reads ``operator`` directly rather than guarding it
+    again, which is only sound because the caller admits the pattern exclusively
+    when *every* member survived the readability filter.  That precondition is the
+    thing worth testing: weakening the filter would hand an unreducible fact to a
+    direct index, so a core mixing a whole bound with a partial one must degrade.
+    """
+    from pyfcstm.bmc.explanation import build_conflict_narrative
+
+    lower = _comparison_item("x", 0, "ge", 5)
+
+    # Anti-vacuity: two whole bounds do reach the interval reading.
+    reached = build_conflict_narrative(
+        _pattern_core(
+            "assumptions_component", (lower, _comparison_item("x", 0, "le", 3))
+        )
+    )
+    assert reached.derivation_status == "complete"
+    assert "satisfies every bound" in reached.reasoning_steps[-1].text
+
+    partial = build_conflict_narrative(
+        _pattern_core(
+            "assumptions_component", (lower, _partial_comparison_item("x", 0))
+        )
+    )
+    assert partial.derivation_status != "complete"

@@ -59,6 +59,20 @@ ExplanationOutcome
     :members: explanation,checks
 
 
+MinimizedCore
+-----------------------------------------------------
+
+.. autoclass:: MinimizedCore
+    :members: groups,reduction,subset_minimality,status,reason,record
+
+
+ForcedValue
+-----------------------------------------------------
+
+.. autoclass:: ForcedValue
+    :members: variable,frame,value,supporting_ids
+
+
 partition\_tracked\_groups
 -----------------------------------------------------
 
@@ -75,6 +89,18 @@ extract\_source\_core
 -----------------------------------------------------
 
 .. autofunction:: extract_source_core
+
+
+minimize\_source\_core
+-----------------------------------------------------
+
+.. autofunction:: minimize_source_core
+
+
+derive\_forced\_values
+-----------------------------------------------------
+
+.. autofunction:: derive_forced_values
 
 
 build\_core\_item

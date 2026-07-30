@@ -29,6 +29,7 @@ from pyfcstm.bmc.explanation import (
     BmcConflictCore,
     BmcConstraintRef,
     BmcCoreItem,
+    BmcConflictNarrative,
     BmcInfeasibilityExplanation,
     BmcReasoningStep,
 )
@@ -246,6 +247,27 @@ def _constructor_accepts(payload) -> bool:
     """Report whether the public constructors accept a canonical payload."""
     try:
         core = None
+        narrative = payload["narrative"]
+        if isinstance(narrative, dict):
+            # The corpus carries payloads, and this side has to build the objects
+            # they describe -- passing the mapping through reached the constructor
+            # as a mapping and raised AttributeError, which is outside the caught
+            # set, so a narrative payload could not be judged at all.
+            narrative = BmcConflictNarrative(
+                narrative["derivation_status"],
+                narrative["headline"],
+                narrative["summary"],
+                tuple(
+                    BmcReasoningStep(
+                        step["kind"],
+                        tuple(step["item_ids"]),
+                        tuple(step["proof_node_ids"]),
+                        step["text"],
+                    )
+                    for step in narrative["reasoning_steps"]
+                ),
+                tuple(narrative["review_surfaces"]),
+            )
         if payload["core"] is not None:
             raw = payload["core"]
             items = tuple(
@@ -288,7 +310,7 @@ def _constructor_accepts(payload) -> bool:
             payload["classification"],
             core,
             payload["proof"],
-            payload["narrative"],
+            narrative,
             payload["reason"],
             payload["elapsed_ms"],
         )
@@ -328,6 +350,95 @@ def _scalar_corpus():
                                     reason=reason,
                                 ),
                             )
+
+
+def _narrative_payload(**overrides):
+    """Return a payload carrying a narrative, so the subobject enters the matrix.
+
+    Every corpus entry hardcoded ``"narrative": None``, so the whole subobject
+    this PR added -- five fields plus a step array -- had no bidirectional
+    coverage at all: nothing proved the two gates agree about any narrative.
+    """
+    narrative = {
+        "derivation_status": "structural_only",
+        "headline": "The assumptions cannot hold together.",
+        "summary": "The listed groups are jointly unsatisfiable.",
+        "reasoning_steps": [
+            {
+                "kind": "fact",
+                "item_ids": ["initial.target"],
+                "proof_node_ids": [],
+                "text": "At frame 0, the query requires state Root.A.",
+            }
+        ],
+        "review_surfaces": ["initial.target"],
+    }
+    narrative.update(overrides)
+    # An editable member, because review surfaces may only name members the
+    # reader can open -- the default member is generated and not editable, and
+    # naming it would exercise that rule rather than the narrative's own shape.
+    member = _member("initial.target", "initialization")
+    member["editable"] = True
+    member["source_excerpt"] = 'init state("Root.A");'
+    member["constraint"]["source"] = {
+        "kind": "fbmcq",
+        "path": "q.fbmcq",
+        "span": {"line": 1, "column": 1, "end_line": 1, "end_column": 22},
+    }
+    payload = _payload(members=[member])
+    payload["narrative"] = narrative
+    return payload
+
+
+def _narrative_corpus():
+    """Yield payloads that differ only inside the narrative subobject."""
+    yield ("narrative: structural only", _narrative_payload())
+    yield (
+        "narrative: complete without a conflict step",
+        _narrative_payload(derivation_status="complete"),
+    )
+    yield (
+        "narrative: blank headline",
+        _narrative_payload(headline="   "),
+    )
+    yield (
+        "narrative: blank summary",
+        _narrative_payload(summary="   "),
+    )
+    yield (
+        "narrative: step with a blank id",
+        _narrative_payload(
+            reasoning_steps=[
+                {
+                    "kind": "fact",
+                    "item_ids": ["   "],
+                    "proof_node_ids": [],
+                    "text": "t",
+                }
+            ]
+        ),
+    )
+    yield (
+        "narrative: step kind outside the vocabulary",
+        _narrative_payload(
+            reasoning_steps=[
+                {
+                    "kind": "guidance",
+                    "item_ids": ["initial.target"],
+                    "proof_node_ids": [],
+                    "text": "t",
+                }
+            ]
+        ),
+    )
+    yield (
+        "narrative: step with no ids at all",
+        _narrative_payload(
+            reasoning_steps=[
+                {"kind": "fact", "item_ids": [], "proof_node_ids": [], "text": "t"}
+            ]
+        ),
+    )
 
 
 def _structural_corpus():
@@ -642,7 +753,9 @@ def test_scalar_corpus_agrees(validator) -> None:
     )
 
 
-@pytest.mark.parametrize("name, payload", list(_structural_corpus()))
+@pytest.mark.parametrize(
+    "name, payload", list(_structural_corpus()) + list(_narrative_corpus())
+)
 def test_structural_corpus_agrees(validator, name, payload) -> None:
     """Relational rules about core members bind both sides equally.
 

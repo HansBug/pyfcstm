@@ -334,8 +334,12 @@ def require_published_text(value: Any, where: str) -> str:
     :type where: str
     :return: The validated text as an exact ``str``.
     :rtype: str
-    :raises ValueError: If the value is not a plain ``str`` or holds no
-        non-whitespace character.
+    :raises TypeError: If the value is not a plain ``str``.  It comes from
+        :func:`pyfcstm.bmc.provenance.exact_str`, which refuses a lookalike before
+        emptiness is even considered, so a caller distinguishing the two failures
+        gets the type error first.
+    :raises ValueError: If the value is a ``str`` holding no non-whitespace
+        character.
 
     Example::
 
@@ -1578,10 +1582,16 @@ class BmcInfeasibilityExplanation:
         if self.status == "complete":
             if self.reason is not None:
                 raise ValueError("complete explanations must not carry a reason.")
-        elif not self.reason:
-            raise ValueError(
-                "%s explanations require a non-empty reason." % self.status
-            )
+        else:
+            # The ninth published text field, and the one my own wording excluded
+            # by counting eight.  A degraded artifact's reason is what the human
+            # report prints on its ``Reason:`` line, so whitespace here is the same
+            # defect as anywhere else and goes through the same predicate.
+            if self.reason is None:
+                raise ValueError(
+                    "%s explanations require a non-empty reason." % self.status
+                )
+            require_published_text(self.reason, "%s explanation reason" % self.status)
         if self.elapsed_ms is not None:
             if isinstance(self.elapsed_ms, bool) or not isinstance(
                 self.elapsed_ms, (int, float)

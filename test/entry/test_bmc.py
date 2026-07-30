@@ -3245,3 +3245,72 @@ def test_the_summary_and_the_step_agree_on_what_carried_the_value(
         step for step in narrative["reasoning_steps"] if step["kind"] == "derivation"
     )
     assert "The initial state therefore requires" in derivation["text"]
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "explain",
+    [(), ("--explain-infeasibility", "formal")],
+    ids=["no-explanation", "formal-explanation"],
+)
+def test_a_value_too_large_for_a_float_does_not_change_the_exit_code(
+    tmp_path, explain
+) -> None:
+    """Asking for an explanation may not disturb the mandatory verdict.
+
+    A legal integer past the float range, compared with a real variable, used to
+    raise inside the fact recognizer, so requesting ``formal`` turned exit 3 into
+    exit 1 -- the explanation stage overruling a verdict it is not allowed to
+    touch.  Both modes must agree, and the explanation degrades instead.
+    """
+    model = tmp_path / "machine.fcstm"
+    query = tmp_path / "scenario.fbmcq"
+    model.write_text(
+        "def float x = 0.0;\nstate Root { state A; [*] -> A; }\n", encoding="utf-8"
+    )
+    query.write_text(
+        'init state("Root.A") havoc *;\n'
+        'assume at 0: var("x") > %d;\nassume at 0: var("x") < 1;\n'
+        'check reach <= 1: active("Root.A");\n' % (10**400),
+        encoding="utf-8",
+    )
+
+    result = _run("-i", str(model), "-q", str(query), *explain)
+
+    assert result.exit_code == 3, result.output
+    assert "Unexpected error" not in result.output
+
+
+@pytest.mark.unittest
+def test_an_unrepresentable_forced_value_degrades_instead_of_failing(
+    tmp_path,
+) -> None:
+    """The probe's witness has the same limit, and the same obligation.
+
+    ``float(candidate.as_fraction())`` is the second place the assumption "every
+    rational fits a float" lived.  A prefix forcing such a value must leave the
+    narrative without a derivation rather than take the explanation down.
+    """
+    model = tmp_path / "machine.fcstm"
+    query = tmp_path / "scenario.fbmcq"
+    model.write_text(
+        "def float f = 0.0;\nstate Root { state A; [*] -> A; }\n", encoding="utf-8"
+    )
+    # An integer literal, not a decimal one: a decimal past the float range is
+    # rejected by the query parser as a non-finite literal, which is a different
+    # and correct refusal.  An integer of that size is legal FBMCQ and reaches the
+    # real variable through a sort coercion.
+    query.write_text(
+        'init state("Root.A") havoc * where f == %d;\n'
+        'assume at 0: var("f") == 1.0;\n'
+        'check reach <= 1: active("Root.A");\n' % (10**400),
+        encoding="utf-8",
+    )
+
+    result = _run(
+        "-i", str(model), "-q", str(query), "--explain-infeasibility", "formal"
+    )
+
+    assert result.exit_code == 3, result.output
+    assert "Unexpected error" not in result.output
+    assert "internal mismatch" not in result.output

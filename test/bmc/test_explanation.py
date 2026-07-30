@@ -2933,6 +2933,7 @@ def test_no_published_text_field_accepts_whitespace() -> None:
         BmcConflictNarrative,
         BmcConstraintRef,
         BmcCoreItem,
+        BmcInfeasibilityExplanation,
         BmcReasoningStep,
     )
 
@@ -2992,6 +2993,23 @@ def test_no_published_text_field_accepts_whitespace() -> None:
             BmcSourceRef("generated", None, None),
             blank,
         ),
+        # The ninth field, and the one an earlier count of "all eight" excluded.
+        # A degraded artifact's reason is printed on the report's ``Reason:`` line.
+        "explanation reason": lambda: BmcInfeasibilityExplanation(
+            "formal",
+            "formal",
+            "partial",
+            "assumptions_self_conflict",
+            core=BmcConflictCore(
+                "assumptions_component",
+                "F",
+                "source_group",
+                "raw",
+                "not_proven",
+                (item,),
+            ),
+            reason=blank,
+        ),
     }
 
     accepted = []
@@ -3003,3 +3021,27 @@ def test_no_published_text_field_accepts_whitespace() -> None:
         accepted.append(where)
 
     assert accepted == []
+
+
+@pytest.mark.unittest
+def test_the_shared_text_predicate_documents_both_refusals() -> None:
+    """A caller distinguishing the two failures needs both named.
+
+    The predicate refuses a non-``str`` through ``exact_str`` before emptiness is
+    considered, so the two inputs raise different classes.  Documenting only one
+    is the mirror of a comment claiming more than the code does: here the prose
+    claimed less, and a caller catching ``ValueError`` alone would miss half of
+    it.
+    """
+    import inspect
+
+    from pyfcstm.bmc.explanation import require_published_text
+
+    doc = inspect.getdoc(require_published_text) or ""
+    assert ":raises TypeError:" in doc
+    assert ":raises ValueError:" in doc
+
+    with pytest.raises(TypeError):
+        require_published_text(123, "field")
+    with pytest.raises(ValueError):
+        require_published_text("   ", "field")

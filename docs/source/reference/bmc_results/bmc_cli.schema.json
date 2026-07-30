@@ -5114,10 +5114,17 @@
       ],
       "properties": {
         "stable_id": {
-          "type": "string",
-          "minLength": 1,
-          "pattern": "^[\\x20-\\x7e]+$",
-          "$comment": "Stable ids are generated from fixed category/index/path encodings and are kept ASCII by the frozen contract, because they become solver literal names and JSON keys downstream."
+          "allOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^[\\x20-\\x7e]+$"
+            },
+            {
+              "pattern": "\\S"
+            }
+          ],
+          "$comment": "The constructor refuses whitespace-only text through one shared predicate, so the structural gate says the same with an added pattern; minLength alone lets a single space through.  Added rather than replacing whatever pattern the field already carried -- those encode separate rules about the field's alphabet or prefix."
         },
         "stage": {
           "enum": [
@@ -5127,17 +5134,26 @@
           ]
         },
         "category": {
-          "type": "string",
-          "minLength": 1,
-          "pattern": "^(?:domain\\.|initial\\.|transition\\.|assumption\\.|definedness)",
-          "$comment": "category_role() resolves the semantic role by family prefix and refuses anything else, so an unknown family has no role to agree with."
+          "allOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^(?:domain\\.|initial\\.|transition\\.|assumption\\.|definedness)"
+            },
+            {
+              "pattern": "\\S"
+            }
+          ],
+          "$comment": "The constructor refuses whitespace-only text through one shared predicate, so the structural gate says the same with an added pattern; minLength alone lets a single space through.  Added rather than replacing whatever pattern the field already carried -- those encode separate rules about the field's alphabet or prefix."
         },
         "source": {
           "$ref": "#/$defs/constraintSourceRef"
         },
         "summary": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "pattern": "\\S",
+          "$comment": "The constructor refuses whitespace-only text through one shared predicate, so the structural gate says the same with an added pattern; minLength alone lets a single space through.  Added rather than replacing whatever pattern the field already carried -- those encode separate rules about the field's alphabet or prefix."
         },
         "frames": {
           "type": "array",
@@ -5218,7 +5234,9 @@
         },
         "human_text": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "pattern": "\\S",
+          "$comment": "The constructor refuses whitespace-only text through one shared predicate, so the structural gate says the same with an added pattern; minLength alone lets a single space through.  Added rather than replacing whatever pattern the field already carried -- those encode separate rules about the field's alphabet or prefix."
         },
         "editable": {
           "type": "boolean"
@@ -5417,7 +5435,9 @@
         },
         "formula_summary": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "pattern": "\\S",
+          "$comment": "The constructor refuses whitespace-only text through one shared predicate, so the structural gate says the same with an added pattern; minLength alone lets a single space through.  Added rather than replacing whatever pattern the field already carried -- those encode separate rules about the field's alphabet or prefix."
         },
         "granularity": {
           "enum": [
@@ -6060,7 +6080,16 @@
           ]
         },
         "reason": {
-          "$ref": "#/$defs/nullableString"
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "pattern": "\\S"
+            }
+          ],
+          "$comment": "The constructor refuses whitespace-only text through one shared predicate, so the structural gate says the same with an added pattern; minLength alone lets a single space through.  Added rather than replacing whatever pattern the field already carried -- those encode separate rules about the field's alphabet or prefix."
         },
         "elapsed_ms": {
           "$ref": "#/$defs/nullableNumber",
@@ -6860,16 +6889,18 @@
           "uniqueItems": true,
           "items": {
             "type": "string",
-            "minLength": 1
-          }
+            "pattern": "\\S"
+          },
+          "$comment": "Ids go through the same predicate as the prose, so whitespace is refused here too; minLength alone lets a single space through."
         },
         "proof_node_ids": {
           "type": "array",
           "uniqueItems": true,
           "items": {
             "type": "string",
-            "minLength": 1
-          }
+            "pattern": "\\S"
+          },
+          "$comment": "Ids go through the same predicate as the prose, so whitespace is refused here too; minLength alone lets a single space through."
         },
         "text": {
           "type": "string",
@@ -6919,8 +6950,9 @@
           "uniqueItems": true,
           "items": {
             "type": "string",
-            "minLength": 1
-          }
+            "pattern": "\\S"
+          },
+          "$comment": "Ids go through the same predicate as the prose, so whitespace is refused here too; minLength alone lets a single space through."
         }
       },
       "allOf": [

@@ -56,14 +56,71 @@ VIEWER_CHECK = ROOT / "tools" / "diagram_assets" / "check_viewer_browser.js"
 #: compare like with like.
 BROWSER_PNG_SCALE = 2
 
-#: Locale and direction combinations to compare.  The first is the default; the
-#: rest exist because a locale reaching one path and not the other is exactly the
-#: divergence this command was written for.
-ALL_CASES = (
-    ("default", "sc", "TB"),
-    ("cjk-jp", "jp", "LR"),
-    ("cjk-kr", "kr", "TB"),
+#: Locale and direction combinations compared on top of the corpus.  A locale
+#: reaching one path and not the other is the divergence this command was written
+#: for, and the corpus fixtures do not vary the locale.
+LOCALE_CASES = (
+    ("locale-sc", "sc", "TB"),
+    ("locale-jp", "jp", "LR"),
+    ("locale-kr", "kr", "TB"),
 )
+
+#: The canonical corpus, which is what the frozen acceptance names.  The two files
+#: carry 35 layouts and 306 arrows between them, derived from the visual fixtures
+#: the geometry work was built on.
+CORPUS_FILES = (
+    ROOT / "tools" / "diagram_assets" / "corpus" / "shared-layouts.json",
+    ROOT / "tools" / "diagram_assets" / "corpus" / "canonical-arrows.json",
+)
+
+#: Where each corpus case's source lives.  The corpus records the directory in its
+#: own ``provenance.source``; this constant follows it rather than guessing.
+FIXTURE_DIR = ROOT / "editors" / "jsfcstm" / "test" / "fixtures" / "visual"
+
+
+def load_corpus() -> List[Dict[str, Any]]:
+    """
+    Read every corpus case together with the source it was built from.
+
+    Both export paths are driven from the same public entry point --
+    ``load_state_machine_from_file(...).diagram(...)`` -- rather than from two
+    fixtures meant to be alike, so a divergence cannot be an artefact of the
+    inputs differing.
+
+    :return: One record per case, carrying its id, arrow count, source path and
+        the renderer options the corpus recorded.
+    :rtype: list[dict]
+    :raises SystemExit: If a corpus file or a case's source cannot be found.
+    """
+    records = []
+    for path in CORPUS_FILES:
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            cases = payload["cases"]
+        except (KeyError, OSError, TypeError, ValueError) as err:
+            # KeyError/TypeError: no ``cases`` array. OSError/ValueError: the file
+            # cannot be read or is not JSON.
+            raise SystemExit("cannot read the canonical corpus: %s" % path) from err
+        for case in cases:
+            fixture = FIXTURE_DIR / ("%s.fcstm" % case["sourceFixture"])
+            if not fixture.is_file():
+                raise SystemExit(
+                    "corpus case %s names a source that is not there: %s"
+                    % (case.get("id"), fixture)
+                )
+            request = case.get("request") or {}
+            records.append(
+                {
+                    "id": case["id"],
+                    "arrows": int(case.get("arrows") or 0),
+                    "fixture": fixture,
+                    "direction": (request.get("options") or {}).get("direction", "TB"),
+                    "palette": request.get("palette", "default"),
+                    "mode": request.get("mode", "light"),
+                    "cjkLocale": request.get("cjkLocale", "sc"),
+                }
+            )
+    return records
 
 
 def run_browser(html: Path, formats: Tuple[str, ...]) -> Dict[str, Any]:
@@ -84,6 +141,11 @@ def run_browser(html: Path, formats: Tuple[str, ...]) -> Dict[str, Any]:
         raise SystemExit("Node.js is required to drive the browser export")
     environment = dict(os.environ)
     environment["VIEWER_FORMATS"] = ",".join(sorted(formats))
+    # The interaction and panel assertions in that check describe its own fixture,
+    # and an arbitrary corpus layout fails them for reasons unrelated to the
+    # export: a leaf-only machine has no transition to hover. Those assertions are
+    # covered by `make diagram_browser_check`; what matters here is the export.
+    environment["VIEWER_EXPORT_ONLY"] = "1"
     environment["VIEWER_REQUIRE_PDF_ZERO_IMAGES"] = "1"
     environment["VIEWER_REQUIRE_PDF_PAGE_SIZE"] = "1"
     completed = subprocess.run(
@@ -110,22 +172,17 @@ def run_browser(html: Path, formats: Tuple[str, ...]) -> Dict[str, Any]:
     return report
 
 
-def headless_facts(
-    cjk_locale: str, direction: str, formats: Tuple[str, ...]
-) -> Dict[str, Any]:
+def headless_facts(view, formats: Tuple[str, ...]) -> Dict[str, Any]:
     """
-    Export the same diagram synchronously and describe the result.
+    Export one diagram synchronously and describe the result.
 
-    :param cjk_locale: CJK locale for the shared fixture.
-    :type cjk_locale: str
-    :param direction: Layout direction for the shared fixture.
-    :type direction: str
+    :param view: The same snapshot the browser side is given.
+    :type view: pyfcstm.diagram.api.Diagram
     :param formats: Formats to export.
     :type formats: tuple[str, ...]
     :return: The same facts the browser report carries, measured here.
     :rtype: dict
     """
-    view = sample_diagram(cjk_locale=cjk_locale, direction=direction)
     facts: Dict[str, Any] = {}
     if "svg" in formats:
         svg = view.to_svg()
@@ -229,18 +286,36 @@ def compare(browser: Dict[str, Any], headless: Dict[str, Any], label: str) -> Li
     if "pdfPage" in headless:
         # The browser reports the page it produced as two numbers; the page has to
         # be the same size on both paths or the drawings are not the same drawing.
+        # A missing number is a failure rather than a skip: silently passing when
+        # the report shape changes is how the whole comparison went dead once.
         width, height = browser.get("pdfWidth"), browser.get("pdfHeight")
-        if width and height:
+        if not width or not height:
+            problems.append(
+                "%s: the browser report gives no PDF page size, so that comparison "
+                "did not run" % label
+            )
+        else:
             theirs = (round(float(width)), round(float(height)))
             if theirs != tuple(headless["pdfPage"]):
                 note("the PDF page size", theirs, headless["pdfPage"])
     if "pngWidth" in headless:
-        for key, mine in (("pngWidth", "pngWidth"), ("pngHeight", "pngHeight")):
+        for key in ("pngWidth", "pngHeight"):
             theirs = browser.get(key)
-            if theirs and int(theirs) != int(headless[mine]):
-                note(key, theirs, headless[mine])
+            if not theirs:
+                problems.append(
+                    "%s: the browser report has no %s, so that comparison did not "
+                    "run" % (label, key)
+                )
+                continue
+            if int(theirs) != int(headless[key]):
+                note(key, theirs, headless[key])
     if "pdfPages" in headless:
-        if browser.get("pages") and int(browser["pages"]) != int(headless["pdfPages"]):
+        if browser.get("pages") is None:
+            problems.append(
+                "%s: the browser report has no PDF page count, so that comparison "
+                "did not run" % label
+            )
+        elif int(browser["pages"]) != int(headless["pdfPages"]):
             note("the PDF page count", browser["pages"], headless["pdfPages"])
         if headless["pdfImages"]:
             problems.append(
@@ -267,6 +342,12 @@ def main(argv=None) -> int:
     """
     parser = argparse.ArgumentParser(description=__doc__.strip().splitlines()[0])
     parser.add_argument("--all-cases", action="store_true")
+    parser.add_argument(
+        "--max-cases",
+        type=int,
+        default=2,
+        help="corpus cases to compare when --all-cases is absent",
+    )
     parser.add_argument("--formats", default="svg,png,pdf")
     arguments = parser.parse_args(argv)
     formats = tuple(
@@ -275,24 +356,72 @@ def main(argv=None) -> int:
     if not formats or any(item not in {"svg", "png", "pdf"} for item in formats):
         raise SystemExit("--formats must contain only svg,png,pdf")
 
-    cases = ALL_CASES if arguments.all_cases else ALL_CASES[:1]
+    from pyfcstm.dsl.error import GrammarParseError
+    from pyfcstm.model import load_state_machine_from_file
+    from pyfcstm.utils.validate import ModelValidationError
+
+    corpus = load_corpus()
+    # Seven of the corpus fixtures are deliberately invalid machines -- three do
+    # not parse and four carry dangling transitions -- because they exist to
+    # exercise the renderer and the diagnostics. A user cannot reach them through
+    # ``StateMachine.diagram()`` at all, so they are not part of the export surface
+    # this command compares. They are reported rather than dropped quietly, and a
+    # fixture that stops loading for any other reason is a failure.
+    usable, unusable = [], []
+    for record in corpus:
+        try:
+            record["model"] = load_state_machine_from_file(str(record["fixture"]))
+        except (GrammarParseError, ModelValidationError) as err:
+            unusable.append((record["id"], type(err).__name__))
+            continue
+        usable.append(record)
+    corpus = usable
+    if not arguments.all_cases:
+        corpus = corpus[: arguments.max_cases]
     problems: List[str] = []
+    arrows = 0
     compared = 0
     with tempfile.TemporaryDirectory(prefix="pyfcstm-parity-") as directory:
-        for label, locale, direction in cases:
-            html = Path(directory) / (label + ".html")
-            write_sample_html(html, cjk_locale=locale, direction=direction)
+        for record in corpus:
+            model = record["model"]
+            view = model.diagram(
+                direction=record["direction"],
+                palette=record["palette"],
+                mode=record["mode"],
+                cjk_locale=record["cjkLocale"],
+            )
+            html = Path(directory) / ("%s.html" % record["id"])
+            html.write_text(view.to_html(), encoding="utf-8")
             browser = run_browser(html, formats)
-            headless = headless_facts(locale, direction, formats)
-            problems.extend(compare(browser, headless, label))
+            problems.extend(
+                compare(browser, headless_facts(view, formats), record["id"])
+            )
+            arrows += record["arrows"]
             compared += 1
+        if arguments.all_cases:
+            # The corpus fixtures never vary the locale, and a locale reaching one
+            # path and not the other is exactly what this command exists to catch.
+            for label, locale, direction in LOCALE_CASES:
+                html = Path(directory) / (label + ".html")
+                write_sample_html(html, cjk_locale=locale, direction=direction)
+                view = sample_diagram(cjk_locale=locale, direction=direction)
+                browser = run_browser(html, formats)
+                problems.extend(compare(browser, headless_facts(view, formats), label))
+                compared += 1
     if problems:
         raise SystemExit(
             "the two export paths disagree:\n  " + "\n  ".join(problems)
         )
     print(
         json.dumps(
-            {"cases": compared, "formats": list(formats), "agree": True},
+            {
+                "cases": compared,
+                "layouts": len(corpus),
+                "arrows": arrows,
+                "notAMachine": sorted(item[0] for item in unusable),
+                "formats": list(formats),
+                "agree": True,
+            },
             sort_keys=True,
         )
     )

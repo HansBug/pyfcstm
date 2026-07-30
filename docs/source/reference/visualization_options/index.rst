@@ -936,14 +936,25 @@ discovered by exhausting memory.
      - ``<= 16777216``
      - ``DiagramRenderLimitError``
    * - Raw RGBA buffer
-     - ``<= 67108864`` bytes
-     - ``DiagramRenderLimitError``
+     - ``<= 67108864`` bytes, which is the pixel cap times four
+     - Reported as the pixel limit
    * - Encoded PNG
      - ``<= 33554432`` bytes
      - ``DiagramRenderLimitError``
    * - Encoded SVG or PDF
      - ``<= 67108864`` bytes
      - ``DiagramRenderLimitError``
+
+``DiagramRenderLimitError`` carries a ``limit_name``, and the only values it takes
+are ``edge``, ``pixels``, ``png`` and ``pdf``.  There is no ``raw_rgba``: the raw
+buffer is four bytes per pixel and its bound is the pixel bound times four, so any
+request large enough to reach it has already been refused as a pixel-count
+breach.  The figure is listed above because the documented limit set names a
+buffer size, not because it is a separate boundary.
+
+The encoded-size limits are enforced on the Python export path, where the bytes
+are produced.  The browser download enforces the scale, edge and pixel limits; it
+does not weigh its own output.
 
 ``DiagramRenderLimitError`` is a sibling of ``DiagramRenderError``, not a
 subclass. The two describe different situations with different remedies: a render

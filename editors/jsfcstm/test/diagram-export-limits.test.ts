@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {join} from 'node:path';
 
 import {
     DiagramExportLimitError,
@@ -192,5 +194,43 @@ describe('diagram export product limits', () => {
         assert.doesNotThrow(assertExportLimitsAreStricterThanHostLimits);
         assert.ok(EXPORT_MAX_EDGE_PX < RASTER_MAX_SIDE);
         assert.ok(EXPORT_MAX_PIXELS < RASTER_MAX_AREA);
+    });
+});
+
+describe('diagram export product limits are actually called', () => {
+    it('is reachable from the viewer export path', () => {
+        // The refusal existed for one commit with no call site at all: the
+        // function, its tests and its documentation were in place while the
+        // browser still clamped silently. A test that only calls the function
+        // proves nothing about that, so this one reads the export component.
+        // Resolved from the package root rather than the module URL, because the
+        // suite is compiled to CommonJS and `import.meta` is unavailable there.
+        const stage = readFileSync(
+            join(
+                process.cwd(),
+                '..',
+                'vscode',
+                'src',
+                'preview-webview',
+                'components',
+                'Stage.vue',
+            ),
+            'utf8',
+        );
+        assert.ok(
+            /assertWithinExportLimits\(/.test(stage),
+            'the viewer export path must call the refusal, not only import it',
+        );
+        // Both formats, because wiring one and forgetting the other is the same
+        // defect one step smaller.
+        const calls = stage.match(/assertWithinExportLimits\(/g) || [];
+        assert.ok(
+            calls.length >= 2,
+            `expected the PNG and PDF paths to check limits, found ${calls.length} call(s)`,
+        );
+        assert.ok(
+            /EXPORT_PNG_SCALE/.test(stage),
+            'the download scale must come from the shared constant',
+        );
     });
 });

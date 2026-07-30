@@ -72,6 +72,15 @@ export async function expandSvgForExport(
  */
 export const EXPORT_MAX_SCALE = 4;
 
+/**
+ * Scale the viewer's PNG download uses.
+ *
+ * It lives here rather than at the call site so the parity checks and the
+ * documentation can name one value instead of restating a literal that the export
+ * path is free to change underneath them.
+ */
+export const EXPORT_PNG_SCALE = 2;
+
 /** Largest accepted scaled edge, in device pixels. */
 export const EXPORT_MAX_EDGE_PX = 16384;
 

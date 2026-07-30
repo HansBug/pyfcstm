@@ -902,14 +902,22 @@ HTML，再抛出同一类型的能力错误；使用 ``show(open_window=False)``
      - ``<= 16777216``
      - ``DiagramRenderLimitError``
    * - 原始 RGBA 缓冲区
-     - ``<= 67108864`` 字节
-     - ``DiagramRenderLimitError``
+     - ``<= 67108864`` 字节，即像素上限的四倍
+     - 按像素上限报告
    * - 编码后 PNG
      - ``<= 33554432`` 字节
      - ``DiagramRenderLimitError``
    * - 编码后 SVG 或 PDF
      - ``<= 67108864`` 字节
      - ``DiagramRenderLimitError``
+
+``DiagramRenderLimitError`` 带有 ``limit_name``\ ，它的取值只有 ``edge``\ 、
+``pixels``\ 、\ ``png`` 和 ``pdf``\ 。**没有** ``raw_rgba``\ ：原始缓冲区是每像素四字节，
+其上界就是像素上界的四倍，所以任何大到能触及它的请求都已经先以"像素超限"被拒。
+上表列出该数字，是因为文档化的限额集合里包含一个缓冲区尺寸，而不是因为它是一条独立边界。
+
+编码后尺寸的限额在 Python 导出路径上执行，因为字节是在那里产生的。浏览器下载路径执行
+scale、边长与像素三条限额，不衡量自身输出。
 
 ``DiagramRenderLimitError`` 是 ``DiagramRenderError`` 的\ **同级类**\ 而非子类。
 两者描述不同情形、对应不同处置：渲染失败意味着渲染器被要求做某事却做不到，

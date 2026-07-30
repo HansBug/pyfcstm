@@ -2250,12 +2250,15 @@ class Diagram:
     policy and no network access -- and :meth:`show` opens it in a
     Chromium-family app window.
 
-    :meth:`to_svg` and :meth:`to_png` export synchronously when the optional
-    rendering runtime is installed, and raise
+    :meth:`to_svg`, :meth:`to_png` and :meth:`to_pdf` export synchronously when the
+    optional rendering runtime is installed, and raise
     :class:`pyfcstm.diagram.engine.DiagramUnavailableError` naming that dependency
     when it is not.  :meth:`to_svg` returns the expanded form -- glyphs and arrow
     heads already paths -- so the document needs none of this project's fonts.
-    :meth:`to_pdf` still raises: vector PDF arrives with the headless DOM adapter.
+    :meth:`to_pdf` returns a single-page vector PDF, drawn through the same writer
+    the viewer's own download uses.  Its text is outlines rather than glyphs, so the
+    document is not searchable -- that is the cost of it rendering without this
+    project's fonts.
     Every export is bounded by the documented size limits and refuses an
     oversized request with
     :class:`pyfcstm.diagram.engine.DiagramRenderLimitError` before the rasteriser
@@ -2726,9 +2729,8 @@ class Diagram:
         :param scale: Positive finite output scale, validated before the
             unavailability is reported so a bad value is named first.
         :type scale: float
-        :return: Nothing; this method always raises once ``scale`` is valid.
+        :return: PNG bytes, opaque, at ``ceil(size * scale)`` pixels.
         :rtype: bytes
-        :raises ValueError: If ``scale`` is not finite and positive.
         :raises ValueError: If ``scale`` is not finite and positive, or exceeds
             the documented ceiling.
         :raises pyfcstm.diagram.engine.DiagramUnavailableError: If the optional
@@ -2770,7 +2772,7 @@ class Diagram:
         is drawn as outlines: the document is therefore not searchable, which is
         the cost of it rendering identically without this project's fonts.
 
-        :return: Nothing; this method always raises.
+        :return: PDF bytes: one page sized to the diagram, drawn as vectors.
         :rtype: bytes
         :raises pyfcstm.diagram.engine.DiagramUnavailableError: If the optional
             rendering runtime is not installed.

@@ -900,7 +900,16 @@ async function evaluate(cdp, expression) {
       && fcstmOnly.buttonFound === true && backToCompare.buttonFound === true;
     const report = {initial, sourceLayout, sourceLayoutChecks, selectMenu, selectMenuChecks, sourceUnavailableChecks, sourceChecks, fontChecks, revealTarget, transitionChecks, pdfChecks, pngChecks, svgChecks, diagramOnly: states, fcstmOnly, compare, backToCompare, importedSource, selection, revealSource, hover, sourceHover, transitionHover, sourceSelection, sourceCycle, zoom, pdf, collapse, layout, minimumPanelHeight, comparisonTooShort, drawerChecks, modeButtonsFound, exportError, expectedPdfPage, oversizedUiIcons, externalRequests: network, cspViolations, consoleErrors: consoleErrors.length, consoleDetails};
     console.log(JSON.stringify(report, null, 2));
-    if (!initial.stage || initial.error || !modeButtonsFound ||
+    // The interaction and panel assertions below describe this file's own
+    // fixture: a machine with labelled transitions, composite children and more
+    // than one source document. Driving an arbitrary corpus layout through them
+    // fails for reasons that have nothing to do with the export -- a leaf-only
+    // machine has no transition to hover and no child to collapse. Export-only
+    // mode keeps the format, security and console assertions, which are the ones
+    // that mean anything for a layout the fixture never covered.
+    const exportOnly = process.env.VIEWER_EXPORT_ONLY === '1';
+    if ((!exportOnly && (
+        !initial.stage || initial.error || !modeButtonsFound ||
         states.diagramOnlySource || !states.diagramOnlyStage ||
         !compare.source || !compare.stage ||
         fcstmOnly.source !== true || fcstmOnly.stage !== false || backToCompare.source !== true || backToCompare.stage !== true ||
@@ -908,17 +917,24 @@ async function evaluate(cdp, expression) {
         !(sourceLayout.nativeSelectAlpha >= 0.99) ||
         !sourceChecks || !fontChecks ||
         !transitionChecks || !selectMenuChecks ||
-        zoom.before === zoom.after || !pdfChecks || !pngChecks ||
+        zoom.before === zoom.after)) ||
+        (exportOnly && (!initial.stage || initial.error)) ||
+        !pdfChecks || !pngChecks ||
         (process.env.VIEWER_REQUIRE_EXPANDED_SVG === '1' && !svgChecks) ||
-        (sourceCycle.candidateCount > 1 && sourceCycle.uniqueSelectedIds < sourceCycle.candidateCount) ||
-        (collapse.before > 1 && collapse.after >= collapse.before) || verticalOverflow || horizontalOverflow || comparisonTooShort || !drawerChecks || oversizedUiIcons || network.length || cspViolations.length || consoleErrors.length ||
-        (expectDocuments > 0 && importedSource.published.length !== expectDocuments) ||
-        (Math.max(importedSource.published.length, expectDocuments) > 1 && (
-          !importedSource.pickerFound
-          || importedSource.documents.length !== importedSource.published.length
-          || !importedSource.childText
-          || importedSource.selected < 1
-        ))) process.exitCode = 1;
+        (!exportOnly && (
+          (sourceCycle.candidateCount > 1 && sourceCycle.uniqueSelectedIds < sourceCycle.candidateCount) ||
+          (collapse.before > 1 && collapse.after >= collapse.before) ||
+          verticalOverflow || horizontalOverflow || comparisonTooShort ||
+          !drawerChecks || oversizedUiIcons ||
+          (expectDocuments > 0 && importedSource.published.length !== expectDocuments) ||
+          (Math.max(importedSource.published.length, expectDocuments) > 1 && (
+            !importedSource.pickerFound
+            || importedSource.documents.length !== importedSource.published.length
+            || !importedSource.childText
+            || importedSource.selected < 1
+          ))
+        )) ||
+        network.length || cspViolations.length || consoleErrors.length) process.exitCode = 1;
   } catch (error) {
     // Most probes throw rather than recording an outcome, and a throw leaves
     // the report unbuildable. Emit what the session did observe so a red run

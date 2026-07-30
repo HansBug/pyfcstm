@@ -508,8 +508,14 @@ MAX_EXPORT_EDGE_PX = 16384
 #: Largest accepted scaled pixel count, which bounds the rasteriser's working
 #: set independently of how the pixels are distributed between the two edges.
 MAX_EXPORT_PIXELS = 16777216
-#: Largest accepted uncompressed RGBA buffer, four bytes per pixel.
-MAX_EXPORT_RAW_RGBA_BYTES = 67108864
+#: Largest uncompressed RGBA buffer the pixel cap implies, at four bytes per
+#: pixel.  This is a derived figure rather than a separate limit: it is exactly
+#: :data:`MAX_EXPORT_PIXELS` times four, so a request that would exceed it has
+#: already exceeded the pixel cap and been refused there.  It is recorded because
+#: the documented limit set names a buffer size, and because deriving it keeps the
+#: two numbers from drifting into a state where one is reachable and the other is
+#: not.
+MAX_EXPORT_RAW_RGBA_BYTES = MAX_EXPORT_PIXELS * 4
 #: Largest accepted encoded PNG.
 MAX_EXPORT_PNG_BYTES = 33554432
 #: Largest accepted encoded text or PDF export.
@@ -616,13 +622,11 @@ def check_export_size(width: float, height: float, scale: float) -> Tuple[int, i
             % (origin, pixels, MAX_EXPORT_PIXELS, advice),
             limit_name="pixels",
         )
-    raw_bytes = pixels * 4
-    if raw_bytes > MAX_EXPORT_RAW_RGBA_BYTES:
-        raise DiagramRenderLimitError(
-            "%s, whose raw RGBA buffer is %d bytes and exceeds the %d limit; %s"
-            % (origin, raw_bytes, MAX_EXPORT_RAW_RGBA_BYTES, advice),
-            limit_name="raw_rgba",
-        )
+    # No separate raw-buffer branch: the buffer is four bytes per pixel and the
+    # cap is the pixel cap times four, so the condition is the same one the check
+    # above already made. A second branch here could never run, and a reader who
+    # saw it -- or a caller who wrote ``except`` for a ``raw_rgba`` limit name --
+    # would be relying on something that cannot happen.
     return scaled_width, scaled_height
 
 

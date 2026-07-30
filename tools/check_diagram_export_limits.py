@@ -19,6 +19,7 @@ Run it directly, or through ``make diagram_assets_verify``::
 """
 
 import argparse
+import ast
 import re
 import sys
 from pathlib import Path
@@ -37,6 +38,15 @@ SHARED_LIMITS = (
     ("MAX_EXPORT_PIXELS", "EXPORT_MAX_PIXELS"),
 )
 
+#: Limits enforced only on the Python export path, because only it weighs the
+#: encoded bytes it produced.  Listed here so their absence from the browser side
+#: is a recorded decision rather than something a reader has to infer from the
+#: comparison table being short.
+PYTHON_ONLY_LIMITS = (
+    "MAX_EXPORT_PNG_BYTES",
+    "MAX_EXPORT_TEXT_BYTES",
+)
+
 #: Host capability limits, which exist only in the browser path because only a
 #: browser has them.  Each must stay above the product limit that shadows it, so
 #: the refusal fires before the clamp and the clamp never changes an outcome the
@@ -51,6 +61,11 @@ def read_python_constants(text: str, names: Iterable[str]) -> Dict[str, int]:
     """
     Read module-level integer constants from Python source.
 
+    The module is parsed rather than searched, and the *last* assignment wins,
+    because that is the one that takes effect.  A regular expression taking the
+    first match would report the documented value while a later line quietly
+    doubled it.
+
     :param text: Python source text.
     :type text: str
     :param names: Constant names to find.
@@ -62,13 +77,64 @@ def read_python_constants(text: str, names: Iterable[str]) -> Dict[str, int]:
 
         >>> read_python_constants("MAX_EXPORT_SCALE = 4\\n", ["MAX_EXPORT_SCALE"])
         {'MAX_EXPORT_SCALE': 4}
+        >>> read_python_constants(
+        ...     "A = 1\\nA = 2\\n", ["A"]
+        ... )
+        {'A': 2}
     """
+    wanted = set(names)
     found = {}
-    for name in names:
-        match = re.search(r"^%s\s*=\s*(\d+)\s*$" % re.escape(name), text, re.M)
-        if match is not None:
-            found[name] = int(match.group(1))
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        # SyntaxError: the file under comparison is not valid Python, which is a
+        # different problem and one every other gate will also report.
+        return found
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        for target in node.targets:
+            if not isinstance(target, ast.Name) or target.id not in wanted:
+                continue
+            value = _literal_int(node.value, found)
+            if value is not None:
+                found[target.id] = value
     return found
+
+
+def _literal_int(node, resolved: Dict[str, int]):
+    """
+    Evaluate an integer constant expression, including simple derivations.
+
+    A limit may be written as another limit times a factor, which is how a derived
+    figure is kept from drifting away from the number it derives from.
+
+    :param node: Expression node from the assignment.
+    :type node: ast.AST
+    :param resolved: Constants already read, for name references.
+    :type resolved: dict[str, int]
+    :return: The integer value, or ``None`` if it is not an integer expression.
+    :rtype: int or None
+
+    Example::
+
+        >>> import ast
+        >>> _literal_int(ast.parse("4", mode="eval").body, {})
+        4
+    """
+    if isinstance(node, ast.Num) and isinstance(node.n, int):
+        return node.n
+    if isinstance(node, ast.Constant) and isinstance(node.value, int):
+        return node.value
+    if isinstance(node, ast.Name):
+        return resolved.get(node.id)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Mult, ast.Add)):
+        left = _literal_int(node.left, resolved)
+        right = _literal_int(node.right, resolved)
+        if left is None or right is None:
+            return None
+        return left * right if isinstance(node.op, ast.Mult) else left + right
+    return None
 
 
 def read_typescript_constants(text: str, names: Iterable[str]) -> Dict[str, int]:
@@ -113,7 +179,7 @@ def compare(python_text: str, typescript_text: str) -> None:
         disagree, or a product limit is not stricter than the host limit it
         shadows.
     """
-    python_names = [pair[0] for pair in SHARED_LIMITS]
+    python_names = [pair[0] for pair in SHARED_LIMITS] + list(PYTHON_ONLY_LIMITS)
     typescript_names = [pair[1] for pair in SHARED_LIMITS] + [
         pair[1] for pair in CAPABILITY_ORDERING
     ]
@@ -158,13 +224,18 @@ def compare(python_text: str, typescript_text: str) -> None:
                     typescript_values[host_name],
                 )
             )
+    for name in PYTHON_ONLY_LIMITS:
+        if name not in python_values:
+            problems.append(
+                "%s is documented as a Python-only limit but is not there" % name
+            )
     if problems:
         raise SystemExit(
             "diagram export limits disagree:\n  " + "\n  ".join(problems)
         )
     print(
-        "diagram export limits: %d constants agree across both export paths"
-        % len(SHARED_LIMITS)
+        "diagram export limits: %d shared constants agree, %d Python-only limits "
+        "present" % (len(SHARED_LIMITS), len(PYTHON_ONLY_LIMITS))
     )
 
 
@@ -180,6 +251,8 @@ def _self_check() -> None:
         ("MAX_EXPORT_SCALE", 4),
         ("MAX_EXPORT_EDGE_PX", 16384),
         ("MAX_EXPORT_PIXELS", 16777216),
+        ("MAX_EXPORT_PNG_BYTES", 33554432),
+        ("MAX_EXPORT_TEXT_BYTES", 67108864),
     ))
     good_ts = "\n".join("export const %s = %d;" % (name, value) for name, value in (
         ("EXPORT_MAX_SCALE", 4),
@@ -207,6 +280,19 @@ def _self_check() -> None:
             good_ts.replace("EXPORT_MAX_EDGE_PX = 16384", "EXPORT_MAX_EDGE_PX = 40000"),
         ),
         ("a deleted Python limit", good_python.replace("MAX_EXPORT_SCALE = 4", ""), good_ts),
+        (
+            # A later assignment is the one that takes effect, and a reader that
+            # took the first match reported the documented value while the runtime
+            # used a doubled one.
+            "a limit redefined further down the module",
+            good_python + "\nMAX_EXPORT_EDGE_PX = 32768\n",
+            good_ts,
+        ),
+        (
+            "a Python-only limit that went missing",
+            good_python.replace("MAX_EXPORT_PNG_BYTES = 33554432", ""),
+            good_ts,
+        ),
         (
             "a deleted browser limit",
             good_python,

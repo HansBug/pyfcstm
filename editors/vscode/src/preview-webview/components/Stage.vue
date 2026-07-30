@@ -14,7 +14,9 @@ import {decidePreviewPointerAction, PREVIEW_DRAG_THRESHOLD_PX} from '../interact
 import {computePreviewFit} from '../layout';
 import type {PreviewWebviewState, SelectionRef, TextRange, PreviewElkNode, PreviewPayload} from '../types';
 import {
+    assertWithinExportLimits,
     expandSvgForExport,
+    EXPORT_PNG_SCALE,
     RASTER_MAX_SIDE,
     rasterScaleWithinLimits,
     renderVectorPdf,
@@ -497,8 +499,18 @@ function getSvgExpander(): SvgExpander | undefined {
 }
 
 async function renderCurrentSvgToPng(): Promise<Blob> {
+    // Refused before anything is rasterised, and with the same limits the
+    // synchronous Python export uses. Without this call the product limits exist
+    // only in their own unit tests: the clamp inside `rasterizeSvg` would quietly
+    // reduce an oversized request instead, and a caller who asked for a scale
+    // would never learn it was not honoured.
+    assertWithinExportLimits(
+        svgBounds.value.width,
+        svgBounds.value.height,
+        EXPORT_PNG_SCALE,
+    );
     const expanded = await expandSvgForExport(svgString, getSvgExpander());
-    const {blob} = await rasterizeSvg(expanded, 2);
+    const {blob} = await rasterizeSvg(expanded, EXPORT_PNG_SCALE);
     return blob;
 }
 
@@ -522,6 +534,9 @@ function uint8ToBase64(bytes: Uint8Array): string {
 }
 
 async function renderCurrentSvgToPdf(): Promise<Uint8Array> {
+    // A vector PDF has no scale, so only the unscaled geometry is checked; the
+    // encoded-size limit is enforced where the bytes are, on the Python side.
+    assertWithinExportLimits(svgBounds.value.width, svgBounds.value.height, 1);
     return renderVectorPdf(
         svgString,
         {width: svgBounds.value.width, height: svgBounds.value.height},

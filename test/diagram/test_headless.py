@@ -446,12 +446,38 @@ class TestEveryCapHasAThreshold:
             check_export_size(side + 1, side, 1)
         assert info.value.limit_name == "pixels"
 
-    def test_the_raw_buffer_cap_is_consistent_with_the_pixel_cap(self):
-        # Four bytes per pixel: the raw cap and the pixel cap describe the same
-        # boundary, so a diagram can never trip the raw one first.  Recording
-        # that here means a future change to either number cannot quietly make
-        # one of them unreachable.
+    def test_the_raw_buffer_figure_is_derived_from_the_pixel_cap(self):
+        # Four bytes per pixel, so the raw buffer bound is the pixel bound and not
+        # a second boundary. It used to have its own branch, which could never
+        # run: any request large enough to reach it had already been refused by the
+        # pixel check. The number is kept as a derived figure because the
+        # documented limit set names a buffer size.
+        from pyfcstm.diagram.engine import (
+            MAX_EXPORT_PIXELS,
+            MAX_EXPORT_RAW_RGBA_BYTES,
+        )
+
+        assert MAX_EXPORT_RAW_RGBA_BYTES == MAX_EXPORT_PIXELS * 4
         assert MAX_PIXELS * 4 == MAX_RAW_RGBA_BYTES
+
+    def test_no_limit_reports_a_name_the_documentation_does_not_list(self):
+        # A caller may branch on ``limit_name``, so the set of names it can take
+        # has to be the set the reference documents. A name that can never appear
+        # is as much of a defect as one that is missing.
+        from pyfcstm.diagram.engine import check_export_size
+
+        seen = set()
+        for width, height, scale in (
+            (5000, 100, 4),
+            (4097, 4096, 1),
+            (100, 5000, 4),
+            (20000, 20000, 1),
+        ):
+            try:
+                check_export_size(width, height, scale)
+            except DiagramRenderLimitError as error:
+                seen.add(error.limit_name)
+        assert seen == {"edge", "pixels"}, seen
 
     def test_the_scale_is_applied_before_the_caps_are_compared(self):
         from pyfcstm.diagram.engine import check_export_size

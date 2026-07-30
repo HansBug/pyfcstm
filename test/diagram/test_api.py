@@ -1027,6 +1027,73 @@ def test_a_viewer_directory_that_cannot_be_trusted_is_not_used(
         diagram_api._PRIVATE_DIRECTORIES.clear()
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX modes and ownership")
+@pytest.mark.parametrize(
+    ("mode", "fake_owner", "reason"),
+    [
+        # One case per rule, each tripping only its own: the earlier fixture was a
+        # 0755 directory of ours, which the mode check caught even with the owner
+        # check deleted, and whose execute bit caught it even with the mode check
+        # weakened to that bit alone. A directory another user owns is refused on
+        # ownership though its mode is perfect; one that grants only read is refused
+        # on mode though it grants no way in -- reading a directory is listing it,
+        # and the names are what carried the fingerprint.
+        (0o700, True, "belongs to another user"),
+        (0o704, False, "allows 004"),
+        (0o740, False, "allows 040"),
+    ],
+)
+def test_each_directory_rule_is_pinned_on_its_own(
+    mode, fake_owner, reason, tmp_path, monkeypatch
+):
+    from pyfcstm.diagram import api as diagram_api
+
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
+    diagram_api._PRIVATE_DIRECTORIES.clear()
+    diagram_api._FALLBACK_DIRECTORIES.clear()
+    taken = tmp_path / ("pyfcstm-viewers-%d" % os.geteuid())
+    taken.mkdir(mode=mode)
+    os.chmod(str(taken), mode)
+    if fake_owner:
+        monkeypatch.setattr(os, "geteuid", lambda: os.stat(str(taken)).st_uid + 1)
+        taken = taken.rename(tmp_path / ("pyfcstm-viewers-%d" % (os.geteuid())))
+
+    try:
+        complaint = diagram_api._unusable_viewer_directory(taken)
+        assert complaint is not None, "the rule did not fire at all"
+        assert reason in complaint, "expected %r, got %r" % (reason, complaint)
+    finally:
+        diagram_api._PRIVATE_DIRECTORIES.clear()
+        diagram_api._FALLBACK_DIRECTORIES.clear()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX modes")
+def test_a_fallback_that_cannot_be_removed_is_reported(tmp_path, monkeypatch, caplog):
+    # Treating every `OSError` as "still in use" hid the case this function exists
+    # to prevent: a temporary directory that has become read-only leaves the
+    # directory behind, and nobody hears about it.
+    import logging
+
+    from pyfcstm.diagram import api as diagram_api
+
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
+    diagram_api._PRIVATE_DIRECTORIES.clear()
+    diagram_api._FALLBACK_DIRECTORIES.clear()
+    stuck = tmp_path / "pyfcstm-viewers-stuck"
+    stuck.mkdir(mode=0o700)
+    diagram_api._FALLBACK_DIRECTORIES.add(stuck)
+    os.chmod(str(tmp_path), 0o500)
+    try:
+        with caplog.at_level(logging.WARNING):
+            diagram_api._discard_empty_fallback(stuck)
+        assert stuck.is_dir(), "the fixture did not make removal fail"
+        assert "could not remove the fallback directory" in caplog.text
+    finally:
+        os.chmod(str(tmp_path), 0o700)
+        diagram_api._PRIVATE_DIRECTORIES.clear()
+        diagram_api._FALLBACK_DIRECTORIES.clear()
+
+
 @pytest.mark.skipif(os.name == "nt", reason="POSIX modes")
 def test_a_setgid_parent_does_not_make_a_private_directory_untrusted(
     tmp_path, monkeypatch

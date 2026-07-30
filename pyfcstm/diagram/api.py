@@ -18,6 +18,7 @@ Example::
 import atexit
 import base64
 import contextlib
+import errno
 import hashlib
 import html as html_module
 import json
@@ -1118,9 +1119,16 @@ def _discard_empty_fallback(directory: Path) -> None:
         return
     try:
         os.rmdir(str(directory))
-    except OSError:
-        # ENOTEMPTY when a kept document is still in it, which is the ordinary
-        # reason and not worth a word; anything else leaves it for the next run.
+    except OSError as error:
+        if error.errno not in (errno.ENOTEMPTY, errno.EEXIST):
+            # A directory still holding a document the caller keeps is the contract,
+            # and POSIX allows either errno for it. Anything else -- a temporary
+            # directory that has become read-only, a mount gone away -- is a
+            # directory we are leaving behind, which is the thing this function
+            # exists to prevent, so it does not pass in silence.
+            _report_degradation(
+                "could not remove the fallback directory %s: %s", directory, error
+            )
         return
     _FALLBACK_DIRECTORIES.discard(directory)
     for base, path in list(_PRIVATE_DIRECTORIES.items()):

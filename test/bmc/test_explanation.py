@@ -2823,3 +2823,38 @@ def test_stepping_aside_never_turns_into_speaking_up(
     result = _propagation_steps(core, forced)
 
     assert (result is not None) is speaks
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "code, paths, rendered",
+    [
+        (1, {1: "Root.A"}, "state Root.A"),
+        (5, {5: "Root.Outer.Inner"}, "state Root.Outer.Inner"),
+        (-1, {-1: "$STATE_TERMINATE"}, "state $STATE_TERMINATE"),
+        (9, {1: "Root.A"}, "state 9"),
+        (1, None, "state 1"),
+        (1, {}, "state 1"),
+    ],
+    ids=[
+        "a-state-the-table-knows",
+        "a-nested-path",
+        "a-sentinel",
+        "a-code-the-table-does-not-know",
+        "no-table-at-all",
+        "an-empty-table",
+    ],
+)
+def test_a_state_falls_back_to_its_code_rather_than_inventing_a_name(
+    code, paths, rendered
+) -> None:
+    """Naming a state is a lookup, and a miss must not become a guess.
+
+    The path is what the reader wrote and is worth printing, but a code the
+    table does not carry has no name to print.  Falling back to the code keeps
+    the sentence true and still traceable through ``normalized_fact``; inventing
+    one would put a state in the report that the model does not contain.
+    """
+    from pyfcstm.bmc.explanation import _state_label
+
+    assert _state_label(code, paths) == rendered

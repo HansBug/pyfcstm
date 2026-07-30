@@ -12,13 +12,13 @@ jsfcstm and the VSCode preview rather than reimplemented here.
 
    * - Surface
      - Responsibility
-   * - :class:`Diagram`
+   * - :class:`~pyfcstm.diagram.api.Diagram`
      - Immutable snapshot: portable data, and a three-mode browser viewer.
-   * - :class:`DiagramData`
+   * - :class:`~pyfcstm.diagram.api.DiagramData`
      - Frozen, hashable portable diagram description.
-   * - :class:`DiagramOptions`
+   * - :class:`~pyfcstm.diagram.api.DiagramOptions`
      - Renderer choices: detail preset, direction, palette, mode, CJK locale.
-   * - :class:`DiagramViewState`
+   * - :class:`~pyfcstm.diagram.api.DiagramViewState`
      - Initial browser state: view mode, collapse set, zoom and pan.
 
 .. list-table:: Failure surfaces
@@ -26,19 +26,19 @@ jsfcstm and the VSCode preview rather than reimplemented here.
 
    * - Surface
      - Raised when
-   * - :class:`DiagramError`
+   * - :class:`~pyfcstm.diagram.engine.DiagramError`
      - Base class for every failure below.
-   * - :class:`DiagramUnavailableError`
+   * - :class:`~pyfcstm.diagram.engine.DiagramUnavailableError`
      - An optional capability is absent: no browser, or no headless runtime.
-   * - :class:`DiagramAssetError`
+   * - :class:`~pyfcstm.diagram.engine.DiagramAssetError`
      - A packaged viewer, font or WASM asset is missing or unreadable.
-   * - :class:`DiagramRenderError`
+   * - :class:`~pyfcstm.diagram.engine.DiagramRenderError`
      - The renderer rejected the supplied data or returned nothing usable.
-   * - :class:`DiagramEngineMetadataError`
+   * - :class:`~pyfcstm.diagram.engine.DiagramEngineMetadataError`
      - The installed MiniRacer distribution reports no usable metadata.
-   * - :class:`DiagramEngineConflictError`
+   * - :class:`~pyfcstm.diagram.engine.DiagramEngineConflictError`
      - Both the legacy and the modern MiniRacer distribution are installed.
-   * - :class:`DiagramEngineLoadError`
+   * - :class:`~pyfcstm.diagram.engine.DiagramEngineLoadError`
      - An installed MiniRacer distribution cannot be imported.
 
 .. list-table:: Maintenance surface
@@ -46,12 +46,12 @@ jsfcstm and the VSCode preview rather than reimplemented here.
 
    * - Surface
      - Responsibility
-   * - :class:`DiagramAssetEngine`
+   * - :class:`~pyfcstm.diagram.engine.DiagramAssetEngine`
      - Load the bundled renderer and drive headless SVG/PNG rendering.
 
 .. note::
    The public surfaces and the error classes are stable entry points.
-   :class:`DiagramAssetEngine` is the internal asset-runtime bridge; its shape
+   :class:`~pyfcstm.diagram.engine.DiagramAssetEngine` is the internal asset-runtime bridge; its shape
    is settled together with the synchronous headless capability, so depend on
    it only from maintenance tooling. Headless rendering additionally needs the
    optional MiniRacer runtime, which ``pip install pyfcstm[viz]`` provides.

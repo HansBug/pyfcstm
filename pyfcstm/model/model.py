@@ -2546,7 +2546,12 @@ class StateMachine(AstExportable, PlantUMLExportable):
         """
         Open this state machine in the standalone browser viewer.
 
-        :param output: Optional HTML output path.
+        :param output: Optional HTML output path.  When omitted the viewer goes to a
+            temporary path chosen by :meth:`pyfcstm.diagram.Diagram.show`, whose
+            documentation describes what that path is, when it is removed, and the
+            one platform where its privacy rests on ``%TEMP%`` rather than on a mode
+            this can check.  Pass a path for a document that must not be somewhere
+            shared.
         :type output: str or os.PathLike, optional
         :param open_window: Whether to launch a standalone diagram app window.
         :type open_window: bool

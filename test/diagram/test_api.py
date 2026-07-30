@@ -1413,6 +1413,45 @@ def test_a_forked_child_reclaims_its_own_fallback_and_leaves_its_parents(
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX modes")
+def test_a_multiprocessing_worker_reclaims_its_own_fallback(tmp_path):
+    # A worker that finishes normally runs its own finalizers and then `os._exit`,
+    # so `atexit` hooks do not fire: three short workers each left an empty
+    # directory. This is the standard library used as documented, not a kill.
+    import multiprocessing
+
+    untrusted = tmp_path / ("pyfcstm-viewers-%d" % os.geteuid())
+    untrusted.mkdir(mode=0o755)
+    os.chmod(str(untrusted), 0o755)
+
+    context = multiprocessing.get_context("fork")
+    for _ in range(3):
+        worker = context.Process(
+            target=_write_and_remove_a_viewer, args=(str(tmp_path),)
+        )
+        worker.start()
+        worker.join(60)
+        assert worker.exitcode == 0, "the worker failed: %r" % (worker.exitcode,)
+    left = sorted(item.name for item in tmp_path.iterdir() if item.is_dir())
+    assert left == [untrusted.name], "workers left fallback directories behind: %r" % (
+        left,
+    )
+
+
+def _write_and_remove_a_viewer(tempdir):
+    """A `multiprocessing` worker body: keep a viewer, then remove it as a caller would."""
+    import tempfile as tempfile_module
+
+    from pyfcstm.diagram import api as diagram_api
+
+    tempfile_module.tempdir = tempdir
+    diagram_api._PRIVATE_DIRECTORIES.clear()
+    diagram_api._FALLBACK_DIRECTORIES.clear()
+    del diagram_api._RECLAIM_REGISTERED[:]
+    kept = _model("state Root;").show(open_window=False)
+    kept.unlink()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX modes")
 def test_a_fallback_directory_holding_a_kept_document_stays(tmp_path, monkeypatch):
     # Only when empty: the same directory holds documents the caller keeps, and
     # removing it under them would take the path they were handed.

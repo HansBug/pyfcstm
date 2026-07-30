@@ -1070,7 +1070,36 @@ def _private_viewer_directory() -> Path:
         # and nothing in the call that made it is still running to notice.
         _RECLAIM_REGISTERED.append(os.getpid())
         atexit.register(_reclaim_empty_fallbacks, os.getpid())
+        _register_with_multiprocessing(os.getpid())
     return private
+
+
+def _register_with_multiprocessing(owner: int) -> None:
+    """
+    Register the reclaim where a :mod:`multiprocessing` worker will run it.
+
+    A worker that finishes normally does not run :mod:`atexit` hooks: it runs its
+    own finalizers and then ``os._exit``.  So the hook registered beside this one
+    covers an ordinary interpreter and this one covers an ordinary worker, which is
+    a path a caller reaches by using the standard library as documented rather than
+    by killing anything.
+
+    Only when the process is already using :mod:`multiprocessing` -- its ``util``
+    module is imported by the machinery that starts a worker, so a plain
+    interpreter neither pays for the import nor needs it.
+
+    :param owner: The process this registration belongs to.
+    :type owner: int
+    :return: ``None``.
+    :rtype: None
+    """
+    machinery = sys.modules.get("multiprocessing.util")
+    finalize = getattr(machinery, "Finalize", None)
+    if finalize is None:
+        return
+    # `exitpriority` is what puts it in the list that runs; without one the object
+    # is only called if something still refers to it.
+    finalize(None, _reclaim_empty_fallbacks, args=(owner,), exitpriority=0)
 
 
 def _reclaim_empty_fallbacks(owner: int) -> None:
@@ -1082,15 +1111,16 @@ def _reclaim_empty_fallbacks(owner: int) -> None:
     caller keeps refuses to go, which is the contract, and one already gone is not
     an error worth reporting from an exit hook.
 
-    What this does not reach is a process that leaves without running its exit
-    hooks -- ``os._exit``, a signal, or a :mod:`multiprocessing` worker, which runs
-    its own finalizers rather than these.  Such a process leaves an empty directory
-    behind, and nothing here can reclaim it: this mapping holds only what the
-    running process made, so another process's leftovers are invisible to it, and
-    sweeping the temporary directory by name would race a process sitting between
-    creating its own and writing into it.  That leftover is one empty directory per
-    such process, and only where the predictable name could not be trusted in the
-    first place.
+    A :mod:`multiprocessing` worker that finishes normally runs its own finalizers
+    instead of these hooks, so :func:`_register_with_multiprocessing` puts the same
+    call there as well.  What neither reaches is a process that leaves without
+    running anything -- ``os._exit`` by hand, or a signal.  Such a process leaves an
+    empty directory behind, and nothing here can reclaim it: this mapping holds only
+    what the running process made, so another process's leftovers are invisible to
+    it, and sweeping the temporary directory by name would race a process sitting
+    between creating its own and writing into it.  That leftover is one empty
+    directory per such process, and only where the predictable name could not be
+    trusted in the first place.
 
     :param owner: The process that registered this.  Both the guard and the
         selection use it: a forked child must not run the parent's hook, and must

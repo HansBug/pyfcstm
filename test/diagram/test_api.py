@@ -38,6 +38,65 @@ class _UnprintableArgument:
         raise ValueError("str() refused")
 
 
+@pytest.fixture(autouse=True)
+def _api_module_state_is_restored():
+    """
+    Leave ``pyfcstm.diagram.api``'s process-wide bookkeeping as it was found.
+
+    Three mappings outlive a single test: the directory resolved for each temporary
+    root, the fallbacks this process made, and the processes whose reclaim is
+    registered.  A test that plants an entry and then skips -- or fails before its
+    own cleanup -- used to leave it for whatever ran next, and the symptom was
+    invisible because the entry pointed at a directory pytest had already removed.
+    Restoring around every test makes that independence structural instead of
+    something each test has to remember.
+
+    :return: Nothing; the restore happens after the test.
+    :rtype: None
+    """
+    from pyfcstm.diagram import api as diagram_api
+
+    private = dict(diagram_api._PRIVATE_DIRECTORIES)
+    fallbacks = dict(diagram_api._FALLBACK_DIRECTORIES)
+    registered = list(diagram_api._RECLAIM_REGISTERED)
+    yield
+    diagram_api._PRIVATE_DIRECTORIES.clear()
+    diagram_api._PRIVATE_DIRECTORIES.update(private)
+    diagram_api._FALLBACK_DIRECTORIES.clear()
+    diagram_api._FALLBACK_DIRECTORIES.update(fallbacks)
+    del diagram_api._RECLAIM_REGISTERED[:]
+    diagram_api._RECLAIM_REGISTERED.extend(registered)
+
+
+def _planted_directory(path, mode):
+    """
+    Create a directory whose mode is the premise of a test, and prove it landed.
+
+    ``mkdir(mode=...)`` does not settle a mode: the request is masked by the
+    process umask, so a 0755 premise lands as 0700 under ``umask 077`` -- which is
+    the trusted shape, the opposite of what such a test is built on, and it turns
+    green for the wrong reason with a failure message pointing anywhere but here.
+    The ``chmod`` is what makes the premise the premise; the assertion is what
+    speaks up if a filesystem refuses the mode instead of leaving the test to
+    misreport it later.
+
+    :param path: Where to create it.
+    :type path: pathlib.Path
+    :param mode: The permission bits the test depends on.
+    :type mode: int
+    :return: The directory.
+    :rtype: pathlib.Path
+    """
+    os.mkdir(str(path), mode)
+    os.chmod(str(path), mode)
+    landed = stat.S_IMODE(os.lstat(str(path)).st_mode)
+    assert landed == mode, "asked for %03o and the filesystem kept %03o" % (
+        mode,
+        landed,
+    )
+    return path
+
+
 def _model(source):
     return load_state_machine_from_text(source)
 
@@ -989,6 +1048,39 @@ def test_a_kept_viewer_shows_another_user_nothing_about_the_diagram(
         kept.unlink()
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX fork")
+def test_a_kept_viewer_is_shared_by_directory_and_not_by_process(tmp_path, monkeypatch):
+    # The reuse the documentation promises, and the half of it a caller has to plan
+    # around. A forked child inherits the directory its parent resolved, so it is
+    # handed the same path -- which is exactly what makes the child's cleanup of what
+    # it was handed remove the parent's file. Saying "each process keeps its own" was
+    # wrong about the unit: the unit is the directory. Pinned here so that changing
+    # either half forces the sentence in `Diagram.show` to change with it.
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
+
+    parents = _model("state Root;").show(open_window=False)
+    recorded = tmp_path / "child.txt"
+    child = os.fork()
+    if child == 0:
+        code = 1
+        try:
+            own = _model("state Root;").show(open_window=False)
+            recorded.write_text(str(own), encoding="utf-8")
+            own.unlink()
+            code = 0
+        finally:
+            # The parent's exit hooks are not the child's to run.
+            os._exit(code)
+    _, status = os.waitpid(child, 0)
+    assert status == 0, "the child could not show the diagram"
+    assert Path(recorded.read_text(encoding="utf-8")) == parents, (
+        "a forked child was handed a different path than its parent"
+    )
+    assert not parents.exists(), (
+        "the child removed what it was handed and the parent's file survived"
+    )
+
+
 @pytest.mark.skipif(os.name == "nt", reason="POSIX modes and ownership")
 @pytest.mark.parametrize(
     ("kind", "reason"),
@@ -1011,21 +1103,16 @@ def test_a_viewer_directory_that_cannot_be_trusted_is_not_used(
     if kind == "file":
         taken.write_text("not a directory", encoding="utf-8")
     else:
-        taken.mkdir(mode=0o755)
+        _planted_directory(taken, 0o755)
 
     with caplog.at_level(logging.WARNING):
         chosen = diagram_api._private_viewer_directory()
-    try:
-        assert chosen != taken, "the name was taken and must not have been used"
-        assert stat.S_IMODE(chosen.stat().st_mode) == 0o700, "the fallback is private"
-        assert reason in caplog.text, (
-            "the lost reuse must be recorded: %r" % caplog.text
-        )
-        # Still usable: a caller gets a viewer rather than an error.
-        kept = _model("state Root;").show(open_window=False)
-        assert kept.parent == chosen
-    finally:
-        diagram_api._PRIVATE_DIRECTORIES.clear()
+    assert chosen != taken, "the name was taken and must not have been used"
+    assert stat.S_IMODE(chosen.stat().st_mode) == 0o700, "the fallback is private"
+    assert reason in caplog.text, "the lost reuse must be recorded: %r" % caplog.text
+    # Still usable: a caller gets a viewer rather than an error.
+    kept = _model("state Root;").show(open_window=False)
+    assert kept.parent == chosen
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX modes and ownership")
@@ -1059,12 +1146,11 @@ def test_each_directory_rule_is_pinned_on_its_own(
     taken = tmp_path / ("pyfcstm-viewers-%d" % os.geteuid())
     if mode == "symlink":
         target = tmp_path / "elsewhere"
-        target.mkdir(mode=0o700)
+        _planted_directory(target, 0o700)
         os.chmod(str(target), 0o700)
         taken.symlink_to(target, target_is_directory=True)
     else:
-        taken.mkdir(mode=mode)
-        os.chmod(str(taken), mode)
+        _planted_directory(taken, mode)
     if fake_owner:
         # `Path.rename` returns the new path from 3.8 and `None` before it, so the
         # name is computed rather than taken from the call. On 3.7 the old shape left
@@ -1077,13 +1163,9 @@ def test_each_directory_rule_is_pinned_on_its_own(
         taken.rename(renamed)
         taken = renamed
 
-    try:
-        complaint = diagram_api._unusable_viewer_directory(taken)
-        assert complaint is not None, "the rule did not fire at all"
-        assert reason in complaint, "expected %r, got %r" % (reason, complaint)
-    finally:
-        diagram_api._PRIVATE_DIRECTORIES.clear()
-        diagram_api._FALLBACK_DIRECTORIES.clear()
+    complaint = diagram_api._unusable_viewer_directory(taken)
+    assert complaint is not None, "the rule did not fire at all"
+    assert reason in complaint, "expected %r, got %r" % (reason, complaint)
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX modes")
@@ -1100,21 +1182,17 @@ def test_a_reclaimed_fallback_lets_the_predictable_name_be_tried_again(
     diagram_api._PRIVATE_DIRECTORIES.clear()
     diagram_api._FALLBACK_DIRECTORIES.clear()
     predictable = tmp_path / ("pyfcstm-viewers-%d" % os.geteuid())
-    predictable.mkdir(mode=0o755)
+    _planted_directory(predictable, 0o755)
 
-    try:
-        fallback = diagram_api._private_viewer_directory()
-        assert fallback != predictable
-        # The obstruction goes away, as it would when somebody fixes the mode.
-        os.chmod(str(predictable), 0o700)
-        diagram_api._discard_empty_fallback(fallback)
-        assert not fallback.exists()
-        assert diagram_api._private_viewer_directory() == predictable, (
-            "the process kept its fallback after the shared name became usable"
-        )
-    finally:
-        diagram_api._PRIVATE_DIRECTORIES.clear()
-        diagram_api._FALLBACK_DIRECTORIES.clear()
+    fallback = diagram_api._private_viewer_directory()
+    assert fallback != predictable
+    # The obstruction goes away, as it would when somebody fixes the mode.
+    os.chmod(str(predictable), 0o700)
+    diagram_api._discard_empty_fallback(fallback)
+    assert not fallback.exists()
+    assert diagram_api._private_viewer_directory() == predictable, (
+        "the process kept its fallback after the shared name became usable"
+    )
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX modes")
@@ -1130,7 +1208,7 @@ def test_a_fallback_that_cannot_be_removed_is_reported(tmp_path, monkeypatch, ca
     diagram_api._PRIVATE_DIRECTORIES.clear()
     diagram_api._FALLBACK_DIRECTORIES.clear()
     stuck = tmp_path / "pyfcstm-viewers-stuck"
-    stuck.mkdir(mode=0o700)
+    _planted_directory(stuck, 0o700)
     diagram_api._FALLBACK_DIRECTORIES[stuck] = os.getpid()
     os.chmod(str(tmp_path), 0o500)
     if os.access(str(tmp_path), os.W_OK):
@@ -1165,10 +1243,10 @@ def test_the_exit_hook_reports_a_fallback_it_cannot_remove(
     diagram_api._PRIVATE_DIRECTORIES.clear()
     diagram_api._FALLBACK_DIRECTORIES.clear()
     stuck = tmp_path / "pyfcstm-viewers-stuck"
-    stuck.mkdir(mode=0o700)
+    _planted_directory(stuck, 0o700)
     diagram_api._FALLBACK_DIRECTORIES[stuck] = os.getpid()
     kept = tmp_path / "pyfcstm-viewers-kept"
-    kept.mkdir(mode=0o700)
+    _planted_directory(kept, 0o700)
     (kept / "kept-something.html").write_text("x", encoding="utf-8")
     diagram_api._FALLBACK_DIRECTORIES[kept] = os.getpid()
 
@@ -1183,12 +1261,11 @@ def test_the_exit_hook_reports_a_fallback_it_cannot_remove(
     assert not stuck.exists(), "an empty fallback survived a writable parent"
     caplog.clear()
 
-    stuck.mkdir(mode=0o700)
+    _planted_directory(stuck, 0o700)
     diagram_api._FALLBACK_DIRECTORIES[stuck] = os.getpid()
     os.chmod(str(tmp_path), 0o500)
     if os.access(str(tmp_path), os.W_OK):
         os.chmod(str(tmp_path), 0o700)
-        diagram_api._FALLBACK_DIRECTORIES.clear()
         pytest.skip("running as a user who can write a read-only directory")
 
     try:
@@ -1222,19 +1299,15 @@ def test_a_setgid_parent_does_not_make_a_private_directory_untrusted(
     # a fixture built on inheritance tests nothing there. What the rule has to
     # accept is the mode itself, whichever way a system arrives at it.
     existing = tmp_path / ("pyfcstm-viewers-%d" % os.geteuid())
-    existing.mkdir(mode=0o700)
+    _planted_directory(existing, 0o700)
     os.chmod(str(existing), 0o2700)
-    try:
-        assert stat.S_IMODE(existing.stat().st_mode) == 0o2700, "the fixture is wrong"
-        first = diagram_api._private_viewer_directory()
-        assert first == existing, "a 2700 directory is as private as 0700"
-        assert first not in diagram_api._FALLBACK_DIRECTORIES
-        # And again for a second process, which takes the already-there path.
-        diagram_api._PRIVATE_DIRECTORIES.clear()
-        assert diagram_api._private_viewer_directory() == existing
-    finally:
-        diagram_api._PRIVATE_DIRECTORIES.clear()
-        diagram_api._FALLBACK_DIRECTORIES.clear()
+    assert stat.S_IMODE(existing.stat().st_mode) == 0o2700, "the fixture is wrong"
+    first = diagram_api._private_viewer_directory()
+    assert first == existing, "a 2700 directory is as private as 0700"
+    assert first not in diagram_api._FALLBACK_DIRECTORIES
+    # And again for a second process, which takes the already-there path.
+    diagram_api._PRIVATE_DIRECTORIES.clear()
+    assert diagram_api._private_viewer_directory() == existing
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX modes")
@@ -1254,20 +1327,15 @@ def test_a_remembered_viewer_directory_is_checked_again_before_each_use(
     monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
     diagram_api._PRIVATE_DIRECTORIES.clear()
     diagram_api._FALLBACK_DIRECTORIES.clear()
-    try:
-        first = diagram_api._private_viewer_directory()
-        shutil.rmtree(str(first))
-        first.mkdir(mode=0o777)
-        os.chmod(str(first), 0o777)
+    first = diagram_api._private_viewer_directory()
+    shutil.rmtree(str(first))
+    _planted_directory(first, 0o777)
 
-        with caplog.at_level(logging.WARNING):
-            second = diagram_api._private_viewer_directory()
-        assert second != first, "the directory was taken and must not be reused"
-        assert stat.S_IMODE(second.stat().st_mode) & 0o077 == 0, "the new one is closed"
-        assert "no longer using" in caplog.text, "the change must be recorded"
-    finally:
-        diagram_api._PRIVATE_DIRECTORIES.clear()
-        diagram_api._FALLBACK_DIRECTORIES.clear()
+    with caplog.at_level(logging.WARNING):
+        second = diagram_api._private_viewer_directory()
+    assert second != first, "the directory was taken and must not be reused"
+    assert stat.S_IMODE(second.stat().st_mode) & 0o077 == 0, "the new one is closed"
+    assert "no longer using" in caplog.text, "the change must be recorded"
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX modes")
@@ -1281,22 +1349,18 @@ def test_a_fallback_viewer_directory_does_not_outlive_its_use(tmp_path, monkeypa
     monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
     monkeypatch.setattr(diagram_api, "_open_standalone_window", lambda *_: None)
     untrusted = tmp_path / ("pyfcstm-viewers-%d" % os.geteuid())
-    untrusted.mkdir(mode=0o755)
+    _planted_directory(untrusted, 0o755)
     view = _model("state Root;").diagram()
     object.__setattr__(view, "_html_document", "<html>tiny</html>")
 
-    try:
-        for _ in range(4):
-            diagram_api._PRIVATE_DIRECTORIES.clear()
-            diagram_api._FALLBACK_DIRECTORIES.clear()
-            view.show(open_window=True)
-        left = sorted(item.name for item in tmp_path.iterdir() if item.is_dir())
-        assert left == [untrusted.name], (
-            "fallback directories outlived their use: %r" % (left,)
-        )
-    finally:
+    for _ in range(4):
         diagram_api._PRIVATE_DIRECTORIES.clear()
         diagram_api._FALLBACK_DIRECTORIES.clear()
+        view.show(open_window=True)
+    left = sorted(item.name for item in tmp_path.iterdir() if item.is_dir())
+    assert left == [untrusted.name], "fallback directories outlived their use: %r" % (
+        left,
+    )
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX modes")
@@ -1322,30 +1386,25 @@ def test_an_empty_fallback_is_reclaimed_at_exit_and_a_used_one_is_not(
         diagram_api.atexit, "register", lambda func, *args: registered.append(func)
     )
     untrusted = tmp_path / ("pyfcstm-viewers-%d" % os.geteuid())
-    untrusted.mkdir(mode=0o755)
+    _planted_directory(untrusted, 0o755)
 
-    try:
-        kept = _model("state Root;").show(open_window=False)
-        fallback = kept.parent
-        assert fallback != untrusted
-        assert diagram_api._reclaim_empty_fallbacks in registered, "no exit hook"
+    kept = _model("state Root;").show(open_window=False)
+    fallback = kept.parent
+    assert fallback != untrusted
+    assert diagram_api._reclaim_empty_fallbacks in registered, "no exit hook"
 
-        # While the caller still has it, the directory must stay.
-        diagram_api._reclaim_empty_fallbacks(os.getpid())
-        assert fallback.is_dir() and kept.is_file(), "a kept document was taken"
+    # While the caller still has it, the directory must stay.
+    diagram_api._reclaim_empty_fallbacks(os.getpid())
+    assert fallback.is_dir() and kept.is_file(), "a kept document was taken"
 
-        kept.unlink()
-        diagram_api._reclaim_empty_fallbacks(os.getpid())
-        assert not fallback.exists(), "an empty fallback outlived its use"
+    kept.unlink()
+    diagram_api._reclaim_empty_fallbacks(os.getpid())
+    assert not fallback.exists(), "an empty fallback outlived its use"
 
-        # A forked child running the parent's hook must not act on it.
-        diagram_api._FALLBACK_DIRECTORIES[untrusted] = os.getpid()
-        diagram_api._reclaim_empty_fallbacks(os.getpid() + 1)
-        assert untrusted.is_dir(), "a child removed a directory it does not own"
-    finally:
-        diagram_api._PRIVATE_DIRECTORIES.clear()
-        diagram_api._FALLBACK_DIRECTORIES.clear()
-        del diagram_api._RECLAIM_REGISTERED[:]
+    # A forked child running the parent's hook must not act on it.
+    diagram_api._FALLBACK_DIRECTORIES[untrusted] = os.getpid()
+    diagram_api._reclaim_empty_fallbacks(os.getpid() + 1)
+    assert untrusted.is_dir(), "a child removed a directory it does not own"
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX fork and modes")
@@ -1370,46 +1429,37 @@ def test_a_forked_child_reclaims_its_own_fallback_and_leaves_its_parents(
     diagram_api._PRIVATE_DIRECTORIES.clear()
     diagram_api._FALLBACK_DIRECTORIES.clear()
     del diagram_api._RECLAIM_REGISTERED[:]
-    (tmp_path / ("pyfcstm-viewers-%d" % os.geteuid())).mkdir(mode=0o755)
+    _planted_directory(tmp_path / ("pyfcstm-viewers-%d" % os.geteuid()), 0o755)
 
-    try:
-        # Through the real path, so the registration the child inherits is non-empty
-        # -- which is the precondition of the defect. Planting the directory in the
-        # mapping by hand left the list empty at fork time, and then a child
-        # registered whether or not the fix was there.
-        parents_empty = diagram_api._private_viewer_directory()
-        assert diagram_api._RECLAIM_REGISTERED == [os.getpid()]
-        recorded = tmp_path / "child.txt"
+    parents_empty = diagram_api._private_viewer_directory()
+    assert diagram_api._RECLAIM_REGISTERED == [os.getpid()]
+    recorded = tmp_path / "child.txt"
 
-        child = os.fork()
-        if child == 0:
-            code = 1
-            try:
-                diagram_api._PRIVATE_DIRECTORIES.clear()
-                own = diagram_api._private_viewer_directory()
-                recorded.write_text(str(own), encoding="utf-8")
-                assert os.getpid() in diagram_api._RECLAIM_REGISTERED, (
-                    "the child could not register a hook of its own"
-                )
-                diagram_api._reclaim_empty_fallbacks(os.getpid())
-                assert not own.exists(), "the child left its own fallback behind"
-                assert parents_empty.is_dir(), "the child reached past its own"
-                code = 0
-            except BaseException:
-                traceback.print_exc()
-            finally:
-                os._exit(code)
-        _, status = os.waitpid(child, 0)
+    child = os.fork()
+    if child == 0:
+        code = 1
+        try:
+            diagram_api._PRIVATE_DIRECTORIES.clear()
+            own = diagram_api._private_viewer_directory()
+            recorded.write_text(str(own), encoding="utf-8")
+            assert os.getpid() in diagram_api._RECLAIM_REGISTERED, (
+                "the child could not register a hook of its own"
+            )
+            diagram_api._reclaim_empty_fallbacks(os.getpid())
+            assert not own.exists(), "the child left its own fallback behind"
+            assert parents_empty.is_dir(), "the child reached past its own"
+            code = 0
+        except BaseException:
+            traceback.print_exc()
+        finally:
+            os._exit(code)
+    _, status = os.waitpid(child, 0)
 
-        own = Path(recorded.read_text(encoding="utf-8").strip())
-        assert own != parents_empty, "the child took the parent's directory"
-        assert status == 0, "the child's own assertions failed"
-        assert not own.exists(), "the child's fallback outlived it"
-        assert parents_empty.is_dir(), "the parent's empty fallback was taken"
-    finally:
-        diagram_api._PRIVATE_DIRECTORIES.clear()
-        diagram_api._FALLBACK_DIRECTORIES.clear()
-        del diagram_api._RECLAIM_REGISTERED[:]
+    own = Path(recorded.read_text(encoding="utf-8").strip())
+    assert own != parents_empty, "the child took the parent's directory"
+    assert status == 0, "the child's own assertions failed"
+    assert not own.exists(), "the child's fallback outlived it"
+    assert parents_empty.is_dir(), "the parent's empty fallback was taken"
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX modes")
@@ -1429,8 +1479,7 @@ def test_a_multiprocessing_worker_reclaims_its_own_fallback(method, tmp_path):
     import multiprocessing
 
     untrusted = tmp_path / ("pyfcstm-viewers-%d" % os.geteuid())
-    untrusted.mkdir(mode=0o755)
-    os.chmod(str(untrusted), 0o755)
+    _planted_directory(untrusted, 0o755)
 
     context = multiprocessing.get_context(method)
     for _ in range(2):
@@ -1443,6 +1492,98 @@ def test_a_multiprocessing_worker_reclaims_its_own_fallback(method, tmp_path):
     left = sorted(item.name for item in tmp_path.iterdir() if item.is_dir())
     assert left == [untrusted.name], "workers left fallback directories behind: %r" % (
         left,
+    )
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX modes")
+def test_a_worker_still_holding_the_viewer_does_not_cost_the_directory(tmp_path):
+    # Not joining the worker by hand is supported -- the standard exit cleanup joins
+    # what is left -- and it is what puts the worker's removal after the parent's
+    # first chance to reclaim. `multiprocessing.util._exit_function` runs the
+    # finalizers at priority zero and above, then joins the children, then runs what
+    # is left; a reclaim in that first phase finds the viewer still there and spends
+    # its one chance on a directory that is about to empty. Starting the worker before
+    # showing is what decides it, because that is the order the two exit registrations
+    # end up in. A subprocess, because only a real interpreter exit runs any of this.
+    import subprocess
+
+    import pyfcstm
+
+    root = tmp_path / "tmp"
+    root.mkdir()
+    _planted_directory(root / ("pyfcstm-viewers-%d" % os.geteuid()), 0o755)
+    probe = tmp_path / "probe.py"
+    probe.write_text(
+        textwrap.dedent(
+            """
+            import multiprocessing
+            import sys
+            import time
+            from pathlib import Path
+
+            from pyfcstm.model import load_state_machine_from_text
+
+
+            def consume(queue):
+                path = Path(queue.get())
+                time.sleep(1.0)
+                path.unlink()
+
+
+            if __name__ == "__main__":
+                queue = multiprocessing.Queue()
+                worker = multiprocessing.Process(target=consume, args=(queue,))
+                worker.start()
+                kept = load_state_machine_from_text("state Root;").diagram().show(
+                    open_window=False
+                )
+                queue.put(str(kept))
+                sys.stdout.write(str(kept.parent))
+            """
+        ),
+        encoding="utf-8",
+    )
+    environment = dict(os.environ)
+    environment["TMPDIR"] = str(root)
+    environment["PYTHONPATH"] = str(Path(pyfcstm.__file__).resolve().parents[1])
+    finished = subprocess.run(
+        [sys.executable, str(probe)],
+        env=environment,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=300,
+    )
+    assert finished.returncode == 0, finished.stderr.decode("utf-8", "replace")
+    fallback = Path(finished.stdout.decode("utf-8").strip())
+    assert fallback.name != ("pyfcstm-viewers-%d" % os.geteuid()), (
+        "the obstruction was trusted, so no fallback was made"
+    )
+    assert not fallback.exists(), "the worker's viewer cost the directory its reclaim"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX modes")
+def test_two_reclaims_in_one_exit_leave_the_second_nothing_to_report(
+    tmp_path, monkeypatch, caplog
+):
+    # Both registrations fire in one exit -- the `atexit` hook and the worker
+    # finalizer -- and which goes first is the order the caller happened to show and
+    # start in. Whichever succeeds leaves the other looking at a directory that has
+    # gone, so grading `ENOENT` as the outcome asked for is what keeps a clean exit
+    # quiet. Removing it from either list left every test in this file green.
+    from pyfcstm.diagram import api as diagram_api
+
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
+    diagram_api._PRIVATE_DIRECTORIES.clear()
+    diagram_api._FALLBACK_DIRECTORIES.clear()
+    _planted_directory(tmp_path / ("pyfcstm-viewers-%d" % os.geteuid()), 0o755)
+
+    fallback = diagram_api._private_viewer_directory()
+    diagram_api._reclaim_empty_fallbacks(os.getpid())
+    assert not fallback.exists(), "the first one did not remove it"
+    with caplog.at_level(logging.WARNING):
+        diagram_api._reclaim_empty_fallbacks(os.getpid())
+    assert "could not remove" not in caplog.text, (
+        "the second reclaim reported a directory that had already gone"
     )
 
 
@@ -1469,18 +1610,14 @@ def test_a_fallback_directory_holding_a_kept_document_stays(tmp_path, monkeypatc
     monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
     monkeypatch.setattr(diagram_api, "_open_standalone_window", lambda *_: None)
     untrusted = tmp_path / ("pyfcstm-viewers-%d" % os.geteuid())
-    untrusted.mkdir(mode=0o755)
+    _planted_directory(untrusted, 0o755)
     view = _model("state Root;").diagram()
     object.__setattr__(view, "_html_document", "<html>tiny</html>")
 
-    try:
-        kept = view.show(open_window=False)
-        view.show(open_window=True)
-        assert kept.is_file(), "the kept document went with the directory"
-        assert kept.parent.is_dir()
-    finally:
-        diagram_api._PRIVATE_DIRECTORIES.clear()
-        diagram_api._FALLBACK_DIRECTORIES.clear()
+    kept = view.show(open_window=False)
+    view.show(open_window=True)
+    assert kept.is_file(), "the kept document went with the directory"
+    assert kept.parent.is_dir()
 
 
 @pytest.mark.unittest

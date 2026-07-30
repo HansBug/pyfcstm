@@ -2503,7 +2503,7 @@ class StateMachine(AstExportable, PlantUMLExportable):
         """
         Create the public Python diagram facade for this state machine.
 
-        :param options: Optional :class:`pyfcstm.diagram.DiagramOptions` value.
+        :param options: Optional :class:`pyfcstm.diagram.api.DiagramOptions` value.
         :type options: object, optional
         :param view_state: Optional browser view state.
         :type view_state: object, optional
@@ -2515,7 +2515,7 @@ class StateMachine(AstExportable, PlantUMLExportable):
         :param option_fields: Renderer option fields such as ``direction`` or
             ``cjk_locale``. These are equivalent to passing ``options``.
         :return: Diagram facade.
-        :rtype: pyfcstm.diagram.Diagram
+        :rtype: pyfcstm.diagram.api.Diagram
 
         Example::
 
@@ -2547,7 +2547,7 @@ class StateMachine(AstExportable, PlantUMLExportable):
         Open this state machine in the standalone browser viewer.
 
         :param output: Optional HTML output path.  When omitted the viewer goes to a
-            temporary path chosen by :meth:`pyfcstm.diagram.Diagram.show`, whose
+            temporary path chosen by :meth:`pyfcstm.diagram.api.Diagram.show`, whose
             documentation describes what that path is, when it is removed, and the
             one platform where its privacy rests on ``%TEMP%`` rather than on a mode
             this can check.  Pass a path for a document that must not be somewhere

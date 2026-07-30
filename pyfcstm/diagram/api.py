@@ -1088,6 +1088,12 @@ def _register_with_multiprocessing(owner: int) -> None:
     module is imported by the machinery that starts a worker, so a plain
     interpreter neither pays for the import nor needs it.
 
+    Both this and the :mod:`atexit` hook can run in one exit, in either order: which
+    goes first is the order the two were registered in, and that is the order the
+    caller happened to show and start in.  Whichever succeeds leaves the other with
+    ``ENOENT``, which is why that is graded as the outcome asked for rather than as a
+    failure.
+
     :param owner: The process this registration belongs to.
     :type owner: int
     :return: ``None``.
@@ -1097,9 +1103,14 @@ def _register_with_multiprocessing(owner: int) -> None:
     finalize = getattr(machinery, "Finalize", None)
     if finalize is None:
         return
-    # `exitpriority` is what puts it in the list that runs; without one the object
-    # is only called if something still refers to it.
-    finalize(None, _reclaim_empty_fallbacks, args=(owner,), exitpriority=0)
+    # `exitpriority` is what puts it in the list that runs; without one the object is
+    # only called if something still refers to it. Negative is what puts it after the
+    # workers: `multiprocessing.util._exit_function` runs the finalizers at priority
+    # zero and above, then joins the children, then runs what is left. A worker still
+    # holding the viewer it was given has not removed it yet during the first of
+    # those, so a reclaim there finds the directory occupied and the one chance to
+    # empty it is spent.
+    finalize(None, _reclaim_empty_fallbacks, args=(owner,), exitpriority=-1)
 
 
 def _reclaim_empty_fallbacks(owner: int) -> None:
@@ -2152,7 +2163,7 @@ class Diagram:
     Chromium-family app window.
 
     :meth:`to_svg`, :meth:`to_png` and :meth:`to_pdf` are typed probes that
-    always raise :class:`pyfcstm.diagram.DiagramUnavailableError`: SVG, PNG and
+    always raise :class:`pyfcstm.diagram.api.DiagramUnavailableError`: SVG, PNG and
     PDF are produced by the embedded viewer's own export, which needs a browser.
     They exist so the failure names the reason instead of the attribute being
     absent.
@@ -2160,12 +2171,12 @@ class Diagram:
     :param model: State machine to snapshot.
     :type model: pyfcstm.model.StateMachine
     :param options: Renderer options, or a mapping of them, defaults to
-        :class:`pyfcstm.diagram.DiagramOptions` with its own defaults.
-    :type options: pyfcstm.diagram.DiagramOptions or collections.abc.Mapping,
+        :class:`pyfcstm.diagram.api.DiagramOptions` with its own defaults.
+    :type options: pyfcstm.diagram.api.DiagramOptions or collections.abc.Mapping,
         optional
     :param view_state: Initial browser view state, or a mapping of it, defaults
-        to :class:`pyfcstm.diagram.DiagramViewState` with its own defaults.
-    :type view_state: pyfcstm.diagram.DiagramViewState or
+        to :class:`pyfcstm.diagram.api.DiagramViewState` with its own defaults.
+    :type view_state: pyfcstm.diagram.api.DiagramViewState or
         collections.abc.Mapping, optional
     :param source_text: FCSTM source for the viewer's source pane, defaults to
         the text the model was parsed from.
@@ -2243,10 +2254,10 @@ class Diagram:
         :type model: pyfcstm.model.StateMachine
         :param options: Optional immutable renderer options or a compatible
             mapping.
-        :type options: pyfcstm.diagram.DiagramOptions or collections.abc.Mapping, optional
+        :type options: pyfcstm.diagram.api.DiagramOptions or collections.abc.Mapping, optional
         :param view_state: Optional immutable browser state or compatible
             mapping.
-        :type view_state: pyfcstm.diagram.DiagramViewState or collections.abc.Mapping, optional
+        :type view_state: pyfcstm.diagram.api.DiagramViewState or collections.abc.Mapping, optional
         :param source_text: Optional FCSTM source for the source pane. It must
             match the text the model was parsed from; programmatic models
             without source ranges accept any value.
@@ -2371,7 +2382,7 @@ class Diagram:
         not repeat.
 
         :param current: Options the snapshot is being derived from.
-        :type current: pyfcstm.diagram.DiagramOptions
+        :type current: pyfcstm.diagram.api.DiagramOptions
         :param updates: Snake-case or camel-case fields to change.
         :type updates: collections.abc.Mapping
         :return: A complete option mapping ready for normalization.
@@ -2407,7 +2418,7 @@ class Diagram:
         Overlay caller-supplied view-state fields onto the current view state.
 
         :param current: View state the snapshot is being derived from.
-        :type current: pyfcstm.diagram.DiagramViewState
+        :type current: pyfcstm.diagram.api.DiagramViewState
         :param updates: Snake-case or camel-case fields to change.
         :type updates: collections.abc.Mapping
         :return: A complete view-state mapping ready for normalization.
@@ -2443,11 +2454,11 @@ class Diagram:
         :param options: An immutable options value or mapping that replaces the
             current options wholesale. If omitted, the keyword fields below are
             applied as a partial update instead.
-        :type options: pyfcstm.diagram.DiagramOptions or collections.abc.Mapping, optional
+        :type options: pyfcstm.diagram.api.DiagramOptions or collections.abc.Mapping, optional
         :param kwargs: Snake-case or camel-case option fields to change. Fields
             that are not named keep their current value.
         :return: A new independent diagram snapshot.
-        :rtype: pyfcstm.diagram.Diagram
+        :rtype: pyfcstm.diagram.api.Diagram
         :raises TypeError: If both ``options`` and keyword fields are supplied.
 
         Example::
@@ -2482,11 +2493,11 @@ class Diagram:
         :param view_state: An immutable view state value or mapping that
             replaces the current view state wholesale. If omitted, the keyword
             fields below are applied as a partial update instead.
-        :type view_state: pyfcstm.diagram.DiagramViewState or collections.abc.Mapping, optional
+        :type view_state: pyfcstm.diagram.api.DiagramViewState or collections.abc.Mapping, optional
         :param kwargs: Snake-case or camel-case view-state fields to change.
             Fields that are not named keep their current value.
         :return: A new independent diagram snapshot.
-        :rtype: pyfcstm.diagram.Diagram
+        :rtype: pyfcstm.diagram.api.Diagram
         :raises TypeError: If both ``view_state`` and keyword fields are supplied.
 
         Example::
@@ -2602,7 +2613,7 @@ class Diagram:
         :type output: str or os.PathLike, optional
         :return: Complete self-contained HTML text.
         :rtype: str
-        :raises pyfcstm.diagram.DiagramAssetError: If a bundled viewer, font or
+        :raises pyfcstm.diagram.api.DiagramAssetError: If a bundled viewer, font or
             resvg asset is missing or unreadable.
         :raises OSError: If ``output`` is given and cannot be written, for
             example a missing parent directory or a read-only destination.
@@ -2827,12 +2838,16 @@ class Diagram:
             before CPython 3.12.4 the directory's mode is not applied there either.
             With a
             window that path is this call's, and this call removes it when the
-            window closes. Without one nothing removes it, and asking again for the
-            same diagram returns the same file rather than another ~30 MB -- in
-            another process of yours as well, unless that directory cannot be
-            trusted, in which case each process keeps its own. Pass a path of your
-            own for a document you want to name, or that must not be somewhere
-            shared.
+            window closes. Without one nothing here removes it, and asking again
+            for the same diagram returns the same file rather than another ~30 MB.
+            That reuse follows the directory rather than the process: another
+            process of yours resolving the same one is handed the same path, and a
+            forked child inherits it -- so a peer removing what it was handed
+            removes yours with it. Where the predictable name cannot be trusted
+            each resolution makes its own directory and says so, which two
+            independent processes do separately and a forked child does not. Pass a
+            path of your own for a document you want to name, that only you may
+            remove, or that must not be somewhere shared.
         :type output: str or os.PathLike, optional
         :param open_window: Whether to launch a Chromium-family app window,
             defaults to ``True``.
@@ -2843,11 +2858,11 @@ class Diagram:
         :return: The generated HTML path.
         :rtype: pathlib.Path
         :raises ValueError: If ``window_size`` is not two positive integers.
-        :raises pyfcstm.diagram.DiagramAssetError: If a bundled viewer, font or
+        :raises pyfcstm.diagram.api.DiagramAssetError: If a bundled viewer, font or
             resvg asset is missing or unreadable.
         :raises OSError: If the document cannot be written, for example a
             missing parent directory or a read-only destination.
-        :raises pyfcstm.diagram.DiagramUnavailableError: If ``open_window`` is
+        :raises pyfcstm.diagram.api.DiagramUnavailableError: If ``open_window`` is
             set and no Chromium-family browser can be launched, or one is launched
             and exits without showing a window -- an SSH session or a container
             with no display, where the browser is found and then reports that it

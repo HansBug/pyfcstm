@@ -15,7 +15,7 @@ The public resource contract is:
 * ``fonts/`` plus the tracked notice and license files - deterministic
   provenance resources.
 
-This package exposes no API of its own. :class:`pyfcstm.diagram.Diagram`,
+This package exposes no API of its own. :class:`pyfcstm.diagram.api.Diagram`,
 reached through :meth:`pyfcstm.model.StateMachine.diagram`, is what reads these
 resources; import from :mod:`pyfcstm.diagram` rather than from here.
 """

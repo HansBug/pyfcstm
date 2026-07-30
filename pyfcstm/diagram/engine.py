@@ -11,7 +11,7 @@ The module owns the diagram asset boundary:
   timeout/context lifecycle handling are kept in one Python boundary.
 
 This is the internal asset boundary, not the API users reach for. That is
-:class:`pyfcstm.diagram.Diagram`, via :meth:`pyfcstm.model.StateMachine.diagram`
+:class:`pyfcstm.diagram.api.Diagram`, via :meth:`pyfcstm.model.StateMachine.diagram`
 and the ``pyfcstm diagram`` command; both are delivered and layered on top of
 this module. Depend on the engine directly only from maintenance tooling, and
 note that it needs the optional MiniRacer runtime that

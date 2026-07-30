@@ -834,10 +834,14 @@ a path, nothing removes it. Either way the file is written 0600 inside a directo
 of your own that no other local user may look into, because a viewer carries the
 model's source: a name derived from the document, and the exact size of a ~29 MB
 document, each identify which diagram it is to anyone able to list them. Asking
-again for the same diagram returns the same file rather than another copy, in
-another process of yours as well — unless that directory turns out to belong to
-somebody else or to be open to them, in which case each process keeps its own and
-says so in a warning. On Windows this rests on ``%TEMP%`` being per account, which
+again for the same diagram returns the same file rather than another copy. That
+reuse follows the directory rather than the process: another process of yours that
+resolves the same one is handed the same path, and a forked child inherits it — so
+the file is shared for removal too, and a peer's cleanup of what it was handed
+removes yours. Where that directory turns out to belong to somebody else or to be
+open to them, each resolution makes its own instead and says so in a warning, which
+two independent processes do separately and a forked child does not. Pass an
+explicit path for a document only you may remove. On Windows this rests on ``%TEMP%`` being per account, which
 is the default; a ``TEMP`` shared between users is not detectable, and before
 CPython 3.12.4 the directory's mode is not applied there — pass a path of your own
 for a document that must not be somewhere shared.

@@ -1501,7 +1501,10 @@ def test_a_multiprocessing_worker_reclaims_its_own_fallback(method, tmp_path):
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX modes")
-def test_a_worker_still_holding_the_viewer_does_not_cost_the_directory(tmp_path):
+@pytest.mark.parametrize("method", ["fork", "spawn", "forkserver"])
+def test_a_worker_still_holding_the_viewer_does_not_cost_the_directory(
+    method, tmp_path
+):
     # Not joining the worker by hand is supported -- the standard exit cleanup joins
     # what is left -- and it is what puts the worker's removal after the parent's
     # first chance to reclaim. `multiprocessing.util._exit_function` runs the
@@ -1510,9 +1513,17 @@ def test_a_worker_still_holding_the_viewer_does_not_cost_the_directory(tmp_path)
     # its one chance on a directory that is about to empty. Starting the worker before
     # showing is what decides it, because that is the order the two exit registrations
     # end up in. A subprocess, because only a real interpreter exit runs any of this.
+    import multiprocessing
     import subprocess
 
     import pyfcstm
+
+    if method not in multiprocessing.get_all_start_methods():
+        pytest.skip("%s is not available here" % method)
+    # Every start method, not only this platform's default, because the default is
+    # where this bit users: `fork` on most Linux, `spawn` on macOS, and `forkserver`
+    # on Linux from Python 3.14. A first version of this probe handed the path over a
+    # `Queue`, which works under `fork` and kills a `spawn` child.
 
     root = tmp_path / "tmp"
     root.mkdir()
@@ -1522,6 +1533,7 @@ def test_a_worker_still_holding_the_viewer_does_not_cost_the_directory(tmp_path)
         textwrap.dedent(
             """
             import multiprocessing
+            import os
             import sys
             import time
             from pathlib import Path
@@ -1529,24 +1541,36 @@ def test_a_worker_still_holding_the_viewer_does_not_cost_the_directory(tmp_path)
             from pyfcstm.model import load_state_machine_from_text
 
 
-            def consume(queue):
-                path = Path(queue.get())
-                # Wide enough that the parent -- which only has a `put` and a return
-                # left -- reaches its exit first on any machine. If it did not, the
-                # viewer would already be gone by the first reclaim and this would
-                # pass without testing anything.
+            def consume(handoff):
+                # A file rather than a `Queue`, because the parent leaves as soon as
+                # it has handed the path over: exiting runs the queue's own finalizer
+                # before the children are joined, and a `spawn` or `forkserver` child
+                # still rebuilding that queue dies on the semaphore that finalizer
+                # took. Whichever start method is the platform default, this reaches
+                # the worker.
+                while not os.path.exists(handoff):
+                    time.sleep(0.02)
+                path = Path(open(handoff, encoding="utf-8").read().strip())
+                # Wide enough that the parent -- which has only the handover and a
+                # return left -- reaches its exit first on any machine. If it did
+                # not, the viewer would already be gone by the first reclaim and this
+                # would pass without testing anything.
                 time.sleep(2.0)
                 path.unlink()
 
 
             if __name__ == "__main__":
-                queue = multiprocessing.Queue()
-                worker = multiprocessing.Process(target=consume, args=(queue,))
+                handoff = os.path.join(os.path.dirname(os.path.abspath(__file__)), "handoff")
+                context = multiprocessing.get_context(sys.argv[1])
+                worker = context.Process(target=consume, args=(handoff,))
                 worker.start()
                 kept = load_state_machine_from_text("state Root;").diagram().show(
                     open_window=False
                 )
-                queue.put(str(kept))
+                staging = handoff + ".part"
+                with open(staging, "w", encoding="utf-8") as stream:
+                    stream.write(str(kept))
+                os.replace(staging, handoff)
                 sys.stdout.write(str(kept.parent))
             """
         ),
@@ -1556,7 +1580,7 @@ def test_a_worker_still_holding_the_viewer_does_not_cost_the_directory(tmp_path)
     environment["TMPDIR"] = str(root)
     environment["PYTHONPATH"] = str(Path(pyfcstm.__file__).resolve().parents[1])
     finished = subprocess.run(
-        [sys.executable, str(probe)],
+        [sys.executable, str(probe), method],
         env=environment,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,

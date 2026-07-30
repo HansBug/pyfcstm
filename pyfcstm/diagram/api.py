@@ -1012,7 +1012,7 @@ def _private_viewer_directory() -> Path:
     which is what the fingerprint was.
 
     Per user rather than per process, because that is what lets the name inside
-    carry reuse: two processes showing one diagram write one file instead of ~30 MB
+    carry reuse: two processes showing one diagram write one file instead of ~29 MB
     each.  The name of a per-user directory is predictable, so it is verified
     before use -- a directory, not a link, ours, and closed to everyone else -- and a
     private one of this process's own is used instead when it is not, which keeps
@@ -1270,7 +1270,7 @@ def _kept_viewer_path(document: str) -> Path:
     Return the path a viewer the caller keeps is written to.
 
     Nothing removes these, so showing the same diagram twice must not write it
-    twice: that left a fresh ~30 MB on every call, and three processes showing one
+    twice: that left a fresh ~29 MB on every call, and three processes showing one
     diagram left 85 MB.  The name is the document's digest, which makes the reuse
     work between processes as well as within one -- safe here only because
     :func:`_private_viewer_directory` is not listable by anyone else, since the
@@ -2838,7 +2838,7 @@ class Diagram:
         wrote — so the returned path no longer exists unless you passed
         ``output``.  Waiting is what makes that removal safe: a detached browser
         reads the file after this process is gone, so the document would have to
-        be left behind, and each one is roughly 30 MB.
+        be left behind, and each one is roughly 29 MB.
 
         :param output: Optional destination path. When omitted the viewer is
             written 0600 inside a directory of your own that no other local user
@@ -2850,7 +2850,7 @@ class Diagram:
             With a
             window that path is this call's, and this call removes it when the
             window closes. Without one nothing here removes it, and asking again
-            for the same diagram returns the same file rather than another ~30 MB.
+            for the same diagram returns the same file rather than another ~29 MB.
             That reuse follows the directory rather than the process: another
             process of yours resolving the same one is handed the same path, and a
             forked child inherits it -- so a peer removing what it was handed

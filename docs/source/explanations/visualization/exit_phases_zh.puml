@@ -1,0 +1,43 @@
+@startuml
+skinparam defaultFontName "Noto Sans CJK SC"
+title 查看器目录在哪里被回收，以及为什么不能更早
+
+participant "调用者" as C
+participant "atexit" as A
+participant "multiprocessing.util\n_exit_function" as U
+participant "工作进程" as W
+
+C -> C: show(open_window=False)
+note right of C
+  回收被注册了两次：
+  一个 atexit 钩子，以及
+  在可能有工作进程时注册的
+  优先级 -1 的终结器。
+end note
+
+C -> A: 解释器退出
+A -> A: 运行钩子，后注册的先跑
+A -> A: 回收：rmdir 被拒，\n工作进程仍持有查看器
+A -> U: _exit_function
+
+group 第一阶段 —— 优先级 >= 0 的终结器
+  U -> U: 这里没有我们的东西\n（这正是要点）
+end
+
+group 第二阶段 —— 终止 daemon 子进程，join 所有仍活跃的子进程
+  U -> W: join
+  W -> W: 删除自己拿到的查看器
+  W --> U: 已退出
+end
+
+group 第三阶段 —— 剩余的终结器
+  U -> U: 优先级 -1 的回收：\n目录已空，rmdir 成功
+end
+
+note over U
+  在第一阶段做回收，会把仅有的
+  一次机会花在一个即将变空的
+  目录上。负优先级才把它放到
+  join 之后。
+end note
+@enduml

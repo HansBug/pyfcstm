@@ -87,3 +87,5 @@ Chromium 系浏览器时才使用默认的 ``open_window=True``：它会像
 * :doc:`/reference/visualization_options/index_zh` 列出 ``PlantUMLOptions``、CLI ``-c``
   以及 Python Diagram 选项/取值合同。
 * :doc:`/tutorials/quick_start/index_zh` 在最短端到端路径中包含可视化。
+* :doc:`/explanations/visualization/index_zh` 解释查看器为何是一个自包含文档、
+  ``--open`` 为何阻塞、以及谁负责删除什么。

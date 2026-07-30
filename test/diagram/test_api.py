@@ -1534,8 +1534,18 @@ def test_a_worker_still_holding_the_viewer_does_not_cost_the_directory(
     # socket under `TMPDIR`, and macOS refuses one whose path runs past about a
     # hundred characters -- which pytest's own directory does unaided: the CI
     # failure read `OSError: AF_UNIX path too long` with a 120-character prefix.
-    # `/tmp` keeps the whole socket path near fifty on every platform this runs on.
-    root = Path(tempfile.mkdtemp(prefix="p-", dir="/tmp"))
+    # `/tmp` keeps the whole socket path near fifty, and where it is not writable --
+    # some containers, a Nix build sandbox -- the platform's own temporary directory
+    # is used and the one start method that needs a short path is skipped if it is
+    # not short enough.
+    try:
+        root = Path(tempfile.mkdtemp(prefix="p-", dir="/tmp"))
+    except OSError:
+        # PermissionError, or ENOENT where there is no `/tmp` at all.
+        root = Path(tempfile.mkdtemp(prefix="p-"))
+        if method == "forkserver" and len(str(root)) > 60:
+            shutil.rmtree(str(root), ignore_errors=True)
+            pytest.skip("no short temporary root for a forkserver socket")
     _planted_directory(root / ("pyfcstm-viewers-%d" % os.geteuid()), 0o755)
     probe = root / "probe.py"
     probe.write_text(

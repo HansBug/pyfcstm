@@ -447,3 +447,11 @@ Troubleshoot visualization
    * - Diagram is too dense
      - Detail level and visibility options
      - Start with ``minimal`` or ``normal``, then add only the facts needed for the current audience.
+
+Why the viewer behaves this way
+-------------------------------
+
+:doc:`/explanations/visualization/index` covers the reasoning behind the tasks above:
+what the snapshot is detached from, why one document carries everything, why ``--open``
+blocks until its window closes, why the privacy boundary is a directory rather than a
+file, and when a temporary directory is reclaimed.

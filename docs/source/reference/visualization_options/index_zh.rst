@@ -937,3 +937,9 @@ HTML，再抛出同一类型的能力错误；使用 ``show(open_window=False)``
      - ``plantuml`` 永远不渲染图片，也不检查渲染器可用性。
    * - ``rendered-image-visualize``
      - ``visualize`` 总是先生成 PlantUML 源码，再渲染请求的产物类型。
+
+这些边界为什么存在
+------------------
+
+本页给出事实；:doc:`/explanations/visualization/index_zh` 解释查看器那部分边界背后的道理——
+自包含文档、阻塞的窗口、目录级隐私边界，以及退出时的回收。

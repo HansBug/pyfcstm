@@ -23,7 +23,7 @@ group phase 1 -- finalizers at priority >= 0
   U -> U: nothing of ours here\n(that is the point)
 end
 
-group phase 2 -- join non-daemon children
+group phase 2 -- terminate daemons, join every active child
   U -> W: join
   W -> W: unlink the viewer it was handed
   W --> U: exited

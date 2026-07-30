@@ -95,3 +95,5 @@ Where to go next
   CLI ``-c`` facts and the Python Diagram option/value contracts.
 * :doc:`/tutorials/quick_start/index` includes visualization in the shortest
   end-to-end path.
+* :doc:`/explanations/visualization/index` explains why the viewer is one
+  self-contained document, why ``--open`` blocks, and who removes what.

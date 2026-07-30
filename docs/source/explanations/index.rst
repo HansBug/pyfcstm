@@ -184,7 +184,7 @@ Next step: use :doc:`/reference/inspect_report/index` for schema details,
 :doc:`/how_to/inspect/index` for triage recipes.
 
 Visualization: :doc:`visualization/index`
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Prerequisites: you have produced a diagram viewer or portable diagram data and need
 to know why the snapshot is detached from the model, why the document carries

@@ -963,3 +963,10 @@ Behavior boundaries
      - ``plantuml`` never renders an image and never checks renderer availability.
    * - ``rendered-image-visualize``
      - ``visualize`` always goes through PlantUML source first, then renders the requested artifact type.
+
+Why these boundaries exist
+--------------------------
+
+This page states the facts; :doc:`/explanations/visualization/index` explains the
+reasoning behind the viewer ones -- the self-contained document, the blocking window,
+the directory-level privacy boundary, and the reclaim at exit.

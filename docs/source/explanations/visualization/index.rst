@@ -6,7 +6,7 @@ Diagram viewer explanation
 ``StateMachine.diagram()`` answers a different question from ``pyfcstm plantuml``.
 PlantUML gives text you can put under version control; the diagram viewer gives one
 file you can open on a machine with no network, no PlantUML, and no pyfcstm — and
-which shows the model's own source beside the picture.
+which shows the model's own source beside the picture, when the model kept one.
 
 This page explains why that shape, and the consequences a caller has to plan around:
 what a snapshot is detached from, why the document is one large file, why ``--open``
@@ -70,7 +70,8 @@ object with a history.
 Why one self-contained document
 -------------------------------
 
-The viewer is roughly 29 MB, and that is a deliberate trade:
+The viewer is roughly 29 MB -- 29,401,138 bytes for a one-state model as
+measured here -- and that is a deliberate trade:
 
 .. list-table:: What the size buys, and what it costs
    :header-rows: 1
@@ -84,17 +85,37 @@ The viewer is roughly 29 MB, and that is a deliberate trade:
    * - Renderer, layout engine, rasteriser and CJK fonts embedded
      - The picture is identical wherever it is opened, including the fonts, which is
        what makes a CJK model readable off the original machine.
-   * - The model's source travels with it
+   * - The model's source travels with it, when the model kept one
      - The source-to-diagram comparison works offline. It also means the document is
-       as sensitive as the model.
+       as sensitive as the model. A model that never had source text is the boundary
+       below.
    * - One file per document, not per call
      - A kept viewer is named from the document, so asking twice for the same
        diagram returns the same file. Three runs of one script leave one 29 MB file
        rather than three.
 
 That last row is the reason the name is derived from the document rather than being
-random. It is also where a caller has to be careful, which the next-but-one section
-covers.
+random. It is also where a caller has to be careful, which
+`What sharing a name costs`_ covers.
+
+Where the source half does not apply
+------------------------------------
+
+The comparison needs a model that kept its source, which means one loaded through
+:func:`pyfcstm.model.load.load_state_machine_from_text` or its file counterpart, or one
+given ``source_text`` explicitly. A :class:`pyfcstm.model.model.StateMachine` assembled
+in Python has no source and no ranges to map, so the viewer renders the diagram and says
+why the other half is missing rather than showing an empty pane:
+
+.. code-block:: text
+
+   sourceAvailable: False
+   sourceUnavailableReason: This model did not retain its original FCSTM source;
+     load it through load_state_machine_from_file/text, or pass source_text explicitly.
+
+Passing ``source_text`` without ranges is the halfway case: the text is shown, and
+selecting a state cannot highlight the lines that declared it, because nothing recorded
+where they were.
 
 Why the viewer refuses the network
 ----------------------------------
@@ -142,10 +163,10 @@ it after the call returns — and at roughly 29 MB each, "survive the process" m
 "accumulate".
 
 The window also gets a private browser profile, for a reason worth stating: a
-Chromium-family browser hands the document to an already-running instance and exits
-immediately, in about a twentieth of a second. Blocking on that process would
-therefore return at once, and the document would be removed while the window was
-still open. A profile of its own is what makes the process the caller waits on the
+Chromium-family browser hands the document to an already-running instance and exits at
+once rather than staying to own the window. Blocking on that process would therefore
+return immediately, and the document would be removed while the window was still
+open. A profile of its own is what makes the process the caller waits on the
 process that owns the window.
 
 Why the privacy boundary is a directory
@@ -174,13 +195,28 @@ permission on the file it is asked about:
      - ``x`` on the parent
      - Not even by 0700
 
-Both of the middle two identify the model. A name derived from the document does so
-directly. The size does so indirectly but just as well: render a few candidate models
-offline, compare byte counts, and the match names the diagram on display. A ~29 MB
-document has enough entropy in its length for that to be decisive.
+The two middle rows are not the same kind of leak, and it is worth being precise
+because the design rests on it.
 
-Neither leak is closed by renaming the file, because neither is in the name — so the
-boundary has to be the directory. Viewers go in a per-user directory whose mode is
+A name derived from the document is a *strong* fingerprint: render candidate models
+offline, hash each one, and the name matches exactly or not at all.
+
+The size is a *coarse* side channel, and it collides readily. Four one-state models
+whose source text is the same length produce byte-identical documents:
+
+.. code-block:: text
+
+   29397900  sha 5ab7ea2b6fb891d8  state Root;
+   29397900  sha 5c0d65bb553a9654  state Boot;
+   29397900  sha 32873dcdfc7523e9  state Test;
+   29397900  sha 73773c2d5eb47a00  state AAAA;
+
+The embedded assets dominate the length, so a size match narrows the field rather than
+naming a model. It is still information a caller did not choose to publish.
+
+Renaming the file would close the first leak and leave the second. Neither is closed by
+*any* mode on the file, because ``stat`` does not need one — so the boundary has to be
+the directory, which closes both. Viewers go in a per-user directory whose mode is
 0700, verified before each use rather than remembered as verified: a directory, not a
 symlink, owned by this user, closed to everyone else. When the predictable name cannot
 be trusted, the process makes a private one of its own and says so in a warning.
@@ -214,17 +250,23 @@ need a document only you may remove.
 When the temporary directory is reclaimed
 -----------------------------------------
 
-A caller who keeps a viewer and later removes it leaves the directory empty, and
-nothing in the call that made it is still running to notice. So the reclaim happens at
-exit — and *where* at exit is the whole difference between working and not:
+This section is about the directory a process makes for itself, which happens only
+when the predictable per-user name cannot be trusted. The trusted directory is *not*
+reclaimed and is not meant to be: it is the one whose name carries reuse, so a viewer
+left in it is found again by the next process, and an empty one costs nothing and is
+used again. What follows applies to the other kind.
+
+A caller who keeps a viewer in such a directory and later removes it leaves it empty,
+and nothing in the call that made it is still running to notice. So the reclaim happens
+at exit — and *where* at exit is the whole difference between working and not:
 
 .. image:: exit_phases.puml.svg
    :alt: The three phases of multiprocessing's exit function, with the reclaim in the
          last one, after the children are joined.
 
 The claim the diagram makes is that priority is not a detail. ``_exit_function`` runs
-finalizers at priority zero and above, *then* joins non-daemon children, *then* runs
-what is left. A worker still holding the viewer it was handed has not removed it during
+finalizers at priority zero and above, *then* terminates daemon children and joins
+every child still active, *then* runs what is left. A worker still holding the viewer it was handed has not removed it during
 the first of those, so a reclaim there finds the directory occupied and spends its one
 chance. Negative priority puts it in the third phase, after the join. Measured on
 CPython 3.7 through 3.14, on ``fork``, ``spawn`` and ``forkserver``: at priority zero
@@ -263,9 +305,16 @@ Where the platform limits the promise
 -------------------------------------
 
 The directory check means what it says on POSIX, where both the mode and the owner can
-be asked about. On Windows there is no owner to ask about, and ``os.mkdir`` applies a
-restrictive ACL for a mode of 0o700 only from CPython 3.12.4 — earlier versions in this
-package's supported range ignore it. Privacy there rests on ``%TEMP%`` being per
+be asked about. On Windows it asks about neither: an owner exists there and can be read
+through the platform's security API, but the portable ``os.lstat`` and ``os.geteuid``
+this package uses do not report it, so the check falls back to the name alone.
+
+``os.mkdir`` does apply a restrictive ACL for a mode of 0o700 on Windows, from the
+releases that carried CVE-2024-4030 -- 3.8.20, 3.9.20, 3.10.15, 3.11.10, 3.12.4 and 3.13
+-- and ignores the mode entirely before them. python.org stopped shipping Windows
+installers for 3.10 and 3.11 before those releases, so an installer user on either line
+does not have it even though a self-built or redistributed interpreter of the same
+version does. Privacy there rests on ``%TEMP%`` being per
 account, which is the default; a ``TEMP`` pointing at a directory other users share is
 not detectable from inside the process, and in that case neither the directory nor the
 0600 on the files inside it keeps anything private, because that mode is only Windows'

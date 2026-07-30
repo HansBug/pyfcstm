@@ -44,6 +44,11 @@ because a bare member of a documented class means that class's member and a miss
 is exactly what should be reported. Every other role is judged only when the registry
 knows the name under some module, or ``:class:`ValueError``` would be read as ours.
 
+That unconditional judgement leans on a repository fact: ``docs/source/conf.py`` loads
+no intersphinx mapping, so a bare ``:meth:`endswith``` does not resolve here either and
+reporting it is correct. Configure intersphinx and the same rule starts reporting live
+links, so this checker refuses to run in that case rather than turning into noise.
+
 What is still not judged is an information field: ``:raises DiagramUnavailableError:``
 carries ``refspecific``, so Sphinx matches the whole registry by suffix and can resolve
 it under a different module entirely -- that one lands in ``pyfcstm.diagram.engine``.
@@ -57,9 +62,9 @@ stated boundary.
 The registry over-approximates in one way worth knowing: every name listed in a
 ``:members:`` option counts as registered, while autodoc emits no anchor for a member
 that has no docstring -- a bare dataclass field, for instance. Checked against a built
-``objects.inv``, 1876 of the names collected here do not exist as anchors, 93 of them
-in this package's own modules; the reverse, a real object the registry does not know
-about, is zero. So the error only ever costs a report, never invents one, and no live
+``objects.inv``, 1876 of the names collected here do not exist as anchors, 14 of them
+in this package's own modules -- all dataclass fields and ``__post_init__`` -- and the
+reverse, a real object the registry does not know about, is zero. So the error only ever costs a report, never invents one, and no live
 reference is masked by it today.
 
 Run ``make diagram_reference_targets_check``. Pass ``--check`` for the
@@ -80,6 +85,7 @@ ROOT = Path(__file__).resolve().parents[1]
 # nineteen `pyfcstm.model.StateMachine` references elsewhere in it first.
 SOURCES = ("pyfcstm/diagram", "pyfcstm/entry/diagram.py")
 API_DOC = "docs/source/api_doc"
+CONF = "docs/source/conf.py"
 
 ROLE = re.compile(r":(class|exc|meth|func|data|mod|attr|obj):`~?([A-Za-z_][\w.]*)`")
 # A name written without its module after one of these means a member of whatever it
@@ -93,7 +99,7 @@ RAISES = re.compile(r":raises\s+~?([A-Za-z_][\w.]*)\s*:")
 # link in the built page and the same line pointed at a module that does not document
 # the class is plain text. Leaving these out meant the one `:rtype:` this gate arrived
 # with could regress in silence.
-FIELD = re.compile(r":(?:rtype|type|vartype)\s*[\w.]*:\s*([^\n]*)")
+FIELD = re.compile(r"^(\s*):(?:rtype|type|vartype)\s*[\w.]*:")
 QUALIFIED = re.compile(r"\bpyfcstm\.[A-Za-z_][\w.]*")
 
 CURRENTMODULE = re.compile(r"^\.\.\s+currentmodule::\s*([\w.]+)\s*$", re.M)
@@ -170,6 +176,44 @@ def module_of(path: Path, root: Path) -> str:
     return ".".join(parts)
 
 
+def _field_bodies(doc: str) -> List[Tuple[int, str]]:
+    """
+    Return each type field's whole body, continuation lines included.
+
+    A reST field body runs on for as long as the following lines are indented past
+    the field marker, so ``:rtype: A or\n    B`` names two things.  Reading only the
+    marker's own line judged ``A`` and let ``B`` through, which is the same
+    line-anchored mistake that has bitten this branch twice before.
+
+    :param doc: A docstring.
+    :type doc: str
+    :return: Pairs of line offset within the docstring and the joined body text.
+    :rtype: list[tuple[int, str]]
+    """
+    lines = doc.split("\n")
+    bodies = []
+    index = 0
+    while index < len(lines):
+        match = FIELD.match(lines[index])
+        if match is None:
+            index += 1
+            continue
+        indent = len(match.group(1))
+        start = index
+        collected = [lines[index][match.end() :]]
+        index += 1
+        while index < len(lines):
+            following = lines[index]
+            if not following.strip():
+                break
+            if len(following) - len(following.lstrip()) <= indent:
+                break
+            collected.append(following)
+            index += 1
+        bodies.append((start, " ".join(collected)))
+    return bodies
+
+
 def referenced_targets(path: Path) -> List[Tuple[int, str, Optional[str], str]]:
     """
     Find every target the docstrings of one module refer to.
@@ -219,11 +263,13 @@ def referenced_targets(path: Path) -> List[Tuple[int, str, Optional[str], str]]:
             # Sphinx matches the whole registry by suffix and can resolve it under
             # a module other than this one.
             found.append((line, match.group(1), None, "exc"))
-        for match in FIELD.finditer(doc):
-            line = base + doc[: match.start()].count("\n")
-            for target in QUALIFIED.findall(match.group(1)):
+        for offset, body in _field_bodies(doc):
+            line = base + offset
+            for target in QUALIFIED.findall(body):
                 # A type field can name several -- `str or pyfcstm.model.model.State`
-                # -- and only ours are judged.
+                # -- and only ours are judged. The body includes its continuation
+                # lines: a field wrapped after `or` is ordinary reST, and reading only
+                # the first line let the second regress in silence.
                 found.append((line, target, None, "class"))
     return found
 
@@ -237,8 +283,20 @@ def dead_references(root: Path) -> List[Tuple[Path, int, str]]:
     :return: File, line and target for each dead reference.
     :rtype: list[tuple[pathlib.Path, int, str]]
     :raises SystemExit: If the documentation tree registers no names at all, which
-        means the tree moved rather than that every reference is live.
+        means the tree moved rather than that every reference is live, or if the Sphinx
+        configuration has gained an intersphinx mapping, which invalidates the
+        bare-member rule.
     """
+    conf = root / CONF
+    if conf.is_file() and "intersphinx" in conf.read_text(encoding="utf-8"):
+        # The bare-member rule reports a name that resolves nowhere, and with an
+        # intersphinx mapping a bare `:meth:` can resolve into another project's
+        # inventory. Rather than start reporting live links, say so and stop.
+        raise SystemExit(
+            "%s now configures intersphinx; the bare-member rule in this checker "
+            "assumes it does not, and must be reconsidered before this runs again"
+            % CONF
+        )
     names = documented_names(root / API_DOC)
     if not names:
         raise SystemExit("no documented names found under %s" % API_DOC)
@@ -326,7 +384,10 @@ def _self_check() -> None:
             "\n:raises DiagramAssetError: bare in a field, never judged.\n"
             ":raises pyfcstm.diagram.api.DiagramAssetError: dead, and judged.\n"
             ":rtype: pyfcstm.diagram.api.Diagram\n"
-            ':type thing: str or pyfcstm.diagram.Diagram\n"""\n',
+            ":type thing: str or pyfcstm.diagram.Diagram\n"
+            ":vartype wrapped: pyfcstm.diagram.api.Diagram or\n"
+            "    pyfcstm.diagram.Wrapped\n"
+            '"""\n',
             encoding="utf-8",
         )
         (package / "api.py").write_text(
@@ -358,6 +419,7 @@ def _self_check() -> None:
             "pyfcstm.diagram.Diagram",  # the dead module-qualified role
             "pyfcstm.diagram.Diagram",  # the dead bare name, resolved to this module
             "pyfcstm.diagram.Diagram",  # and the same in a type field
+            "pyfcstm.diagram.Wrapped",  # on a field's continuation line
             "pyfcstm.diagram.api.Diagram.shoe",  # the misspelled bare member
             "pyfcstm.diagram.api.Diagram.to_pdf",
             "pyfcstm.diagram.api.DiagramAssetError",
@@ -395,8 +457,11 @@ def main(argv: Iterable[str]) -> int:
                 % (path, line, target)
             )
         sys.stderr.write(
-            "%d reference(s) render as plain text. Point them at the module whose "
-            "api_doc page documents the object.\n" % len(dead)
+            "%d reference(s) render as plain text. If the object is ours, point the "
+            "reference at the module whose api_doc page documents it; if it is not "
+            "ours -- a standard-library name reached through a bare member role -- "
+            "nothing here can resolve it, so say what it is in prose instead.\n"
+            % len(dead)
         )
         return 1
     judged = sum(

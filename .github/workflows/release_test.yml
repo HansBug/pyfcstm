@@ -265,6 +265,28 @@ jobs:
               if host not in (result.get("observed") or ""):
                   raise SystemExit("{} did not record configured host: {}".format(check_id, result))
           PY
+      - name: Export every format from the installed wheel
+        # Every other export check runs from a source checkout, where the packaged
+        # assets sit next to the code. An installed wheel resolves them
+        # differently, and an asset left out of the package data is invisible from
+        # a checkout. The optional runtime goes in as an extra here rather than in
+        # the step above, so that one keeps proving what a base install does.
+        shell: bash
+        env:
+          PYTHONPATH: ''
+          PYTHONNOUSERSITE: '1'
+        run: |
+          set -euo pipefail
+          wheel=$(find "$RUNNER_TEMP/pyfcstm-package-artifact" -maxdepth 1 -type f -name '*.whl' -print -quit)
+          test -n "$wheel"
+          venv="$RUNNER_TEMP/pyfcstm-export-venv"
+          rm -rf "$venv"
+          python -m venv "$venv"
+          if [ -x "$venv/bin/python" ]; then binary="$venv/bin"; else binary="$venv/Scripts"; fi
+          "$binary/python" -m pip install --upgrade pip
+          "$binary/python" -m pip install "${wheel}[viz]"
+          python tools/check_diagram_installed_export.py \
+            --command "$binary/pyfcstm" --repeat 2
       - name: Upload fresh Linux wheel evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
@@ -474,6 +496,28 @@ jobs:
               if host not in (result.get("observed") or ""):
                   raise SystemExit("{} did not record configured host: {}".format(check_id, result))
           PY
+      - name: Export every format from the installed wheel
+        # Every other export check runs from a source checkout, where the packaged
+        # assets sit next to the code. An installed wheel resolves them
+        # differently, and an asset left out of the package data is invisible from
+        # a checkout. The optional runtime goes in as an extra here rather than in
+        # the step above, so that one keeps proving what a base install does.
+        shell: bash
+        env:
+          PYTHONPATH: ''
+          PYTHONNOUSERSITE: '1'
+        run: |
+          set -euo pipefail
+          wheel=$(find "$RUNNER_TEMP/pyfcstm-package-artifact" -maxdepth 1 -type f -name '*.whl' -print -quit)
+          test -n "$wheel"
+          venv="$RUNNER_TEMP/pyfcstm-export-venv"
+          rm -rf "$venv"
+          python -m venv "$venv"
+          if [ -x "$venv/bin/python" ]; then binary="$venv/bin"; else binary="$venv/Scripts"; fi
+          "$binary/python" -m pip install --upgrade pip
+          "$binary/python" -m pip install "${wheel}[viz]"
+          python tools/check_diagram_installed_export.py \
+            --command "$binary/pyfcstm" --repeat 2
       - name: Upload fresh wheel evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v4

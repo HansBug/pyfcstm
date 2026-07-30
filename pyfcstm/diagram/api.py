@@ -1959,10 +1959,21 @@ def _source_unavailable_reason(source: str, source_map: Mapping[str, Any]) -> st
     :rtype: str
     """
     if not source:
+        if source_map:
+            # Ranges without text: what the AST-level pipeline produces, since
+            # `parse_dsl_node_to_state_machine` records where each state was declared
+            # but carries no text. Handing the text over is all this needs, and the
+            # earlier wording told the caller the opposite.
+            return (
+                "This model has source ranges but no source text; pass source_text to "
+                "diagram(), or load the model through "
+                "load_state_machine_from_file/text."
+            )
         return (
-            "This model did not retain its original FCSTM source; load it through "
-            "load_state_machine_from_file/text. Passing source_text is not enough "
-            "on its own: linking needs the ranges that parsing records."
+            "This model retained neither its original FCSTM source nor the ranges that "
+            "link a state to it; load it through load_state_machine_from_file/text. "
+            "Source text on its own is not enough, because the ranges come from "
+            "parsing."
         )
     if not source_map:
         return (

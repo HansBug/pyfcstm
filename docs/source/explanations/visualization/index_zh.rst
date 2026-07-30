@@ -95,9 +95,10 @@
 .. code-block:: text
 
    sourceAvailable: False
-   sourceUnavailableReason: This model did not retain its original FCSTM source;
-     load it through load_state_machine_from_file/text. Passing source_text is not
-     enough on its own: linking needs the ranges that parsing records.
+   sourceUnavailableReason: This model retained neither its original FCSTM source nor
+     the ranges that link a state to it; load it through
+     load_state_machine_from_file/text. Source text on its own is not enough, because
+     the ranges come from parsing.
 
 只传 ``source_text`` 而没有位置区间并不能换来一半的效果。位置区间来自解析，所以只有文本时没有
 任何东西可以把状态连过去，查看器会把这种情况判为不可用，而不是给出一个"点了状态却毫无反应"的面板：
@@ -271,8 +272,9 @@ fork 出来的子进程继承已解析的目录，因此拿到的就是父进程
 属主、也能通过平台的安全接口读到，但本包使用的可移植 ``os.lstat`` 与 ``os.geteuid`` 不报告它。
 
 ``os.mkdir`` 在 Windows 上确实会为 0o700 应用限制性 ACL，自携带 CVE-2024-4030 的那批发布起——
-3.8.20、3.9.20、3.10.15、3.11.10 与 3.12.4——以及 3.13 起无条件如此（含 3.14）；在这些之前则完全
-忽略该权限位。那四个回移版本都发布在 python.org 停止为各自线提供 Windows 安装包之后，所以实用
+3.8.20、3.9.20、3.10.15、3.11.10 与 3.12.4——以及 3.13 与其后每一条线（含 3.14），在那些线上它是
+该线自身的发布行为而不是回移。0o700 之外的其它权限值在那里同样被忽略，而 0o700 在上述发布之前
+也被忽略。那四个回移版本都发布在 python.org 停止为各自线提供 Windows 安装包之后，所以实用
 结论比版本清单短得多：用 python.org 的安装包时，这道 ACL 自 3.12.4 起存在、更低则没有。
 3.8.20、3.9.20、3.10.15、3.11.10 的自建或再分发解释器则有。那里的私密性依赖 ``%TEMP%`` 按账户隔离（默认如此）：若 ``TEMP`` 指向一个多用户共享的
 目录，进程内部无法检测，此时无论目录还是文件上的 0600 都保护不了任何东西，因为那个权限位在

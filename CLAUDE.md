@@ -561,15 +561,17 @@ Mandatory completion rule for built-in template work:
   `make build_assets` produces them and `make unittest` depends on it, in the same way `make tpl` produces the packaged
   template assets
 - The gates are `make diagram_assets_check`, `diagram_csp_check`, `diagram_contract_check`, `diagram_browser_check`,
-  `diagram_docstring_check` and `diagram_reference_targets_check`; each one must be able to fail, so mutation-test a
+  `diagram_docstring_check`, `diagram_reference_targets_check` and `diagram_nitpick_check`; each one must be able to fail, so mutation-test a
   gate before trusting it. `diagram_reference_targets_check` judges fully-qualified `pyfcstm.*` cross-references in the
   diagram package -- inline roles, `:raises:`, and `:rtype:` / `:type:` / `:vartype:` bodies -- against what
   `docs/source/api_doc` registers, including the bodies of `:rtype:` / `:type:` / `:vartype:` and their continuation
   lines. It deliberately does not judge a name written without its module: which candidates Sphinx tries there depends
   on the enclosing class, on the `refspecific` flag information fields carry, and on whether an intersphinx inventory
-  could resolve it elsewhere, and attempts at reproducing that reported live links as dead. A `-n` Sphinx build is the
-  backstop for bare names; this checker exists for the fully-qualified target pointed at the wrong module, which
-  renders as plain text without a word of complaint while `-n` is off
+  could resolve it elsewhere, and attempts at reproducing that reported live links as dead. `diagram_nitpick_check` is
+  the gate for those: it builds with `-n`, narrows the unresolved references to the diagram package's own files, allows
+  the external names that never resolve here, and fails on the rest -- a `-n` build over the whole tree prints some
+  1700 warnings and exits zero, so it is not a backstop by itself. `diagram_reference_targets_check` stays because it
+  needs no build, and because the class it judges renders as plain text without a word of complaint while `-n` is off
 
 **Entry Points** ([pyfcstm/entry/](pyfcstm/entry/))
 

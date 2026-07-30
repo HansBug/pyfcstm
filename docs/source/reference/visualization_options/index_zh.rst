@@ -776,13 +776,13 @@ Python Diagram 接口和浏览器查看器
      - 可接受取值或默认值
      - 行为
    * - ``DiagramOptions.detail_level``
-     - ``minimal``、``normal``（默认）、``full``
+     - ``minimal``、``normal``\ （默认）、``full``
      - 选择渲染器的细节预设。``minimal`` 把转换 effect 内联显示、事件移入图例；
        ``normal`` 使用 effect 注释并同时显示事件。``full`` 目前渲染出与 ``normal``
        相同的图形：两者只差 ``showStateActions``\ ，而浏览器渲染器有意不把叶子状态
        的细节画进图中，而是交给详情面板——后者无论哪个预设都会列出动作。
    * - ``DiagramOptions.direction``
-     - ``TB``（默认）或 ``LR``
+     - ``TB``\ （默认）或 ``LR``
      - 选择从上到下或从左到右的布局。
    * - ``DiagramOptions.palette``
      - ``default``、``nord``、``solarized``、``darcula`` 或 ``None``
@@ -791,10 +791,10 @@ Python Diagram 接口和浏览器查看器
      - ``light``、``dark``、``auto`` 或 ``None``
      - 选择初始颜色模式。
    * - ``DiagramOptions.cjk_locale``
-     - ``sc``、``tc``、``hk``、``jp`` 或 ``kr``（默认 ``sc``）
+     - ``sc``、``tc``、``hk``、``jp`` 或 ``kr``\ （默认 ``sc``）
      - 在 HTML 中嵌入对应地区的 CJK 字体对。
    * - ``DiagramViewState.mode``
-     - ``compare``（默认）、``fcstm`` 或 ``diagram``
+     - ``compare``\ （默认）、``fcstm`` 或 ``diagram``
      - 选择源码、图形或联动对比视图。
    * - ``DiagramViewState.zoom``
      - 有限正数或 ``None``\ （默认 ``None``\ ）

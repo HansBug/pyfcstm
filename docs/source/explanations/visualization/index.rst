@@ -112,9 +112,10 @@ pane:
 .. code-block:: text
 
    sourceAvailable: False
-   sourceUnavailableReason: This model did not retain its original FCSTM source;
-     load it through load_state_machine_from_file/text. Passing source_text is not
-     enough on its own: linking needs the ranges that parsing records.
+   sourceUnavailableReason: This model retained neither its original FCSTM source nor
+     the ranges that link a state to it; load it through
+     load_state_machine_from_file/text. Source text on its own is not enough, because
+     the ranges come from parsing.
 
 Passing ``source_text`` without ranges does not get you half of it. The ranges come
 from parsing, so text alone leaves nothing to link a state to, and the viewer treats that
@@ -324,8 +325,9 @@ API, but the portable ``os.lstat`` and ``os.geteuid`` this package uses do not r
 
 ``os.mkdir`` does apply a restrictive ACL for a mode of 0o700 on Windows, from the
 releases that carried CVE-2024-4030 -- 3.8.20, 3.9.20, 3.10.15, 3.11.10 and 3.12.4 --
-and from 3.13 onwards unconditionally, 3.14 included. It ignores the mode entirely
-before them. Each of those four backports arrived after python.org had stopped
+and on 3.13 and every line after it, 3.14 included, where it is the line's own released
+behaviour rather than a backport. Any other mode is ignored there, and so is 0o700
+before those releases. Each of those four backports arrived after python.org had stopped
 shipping Windows installers for its line, so the practical rule is shorter than the
 list: with an installer from python.org the ACL is there from 3.12.4 onwards and not
 below it. A self-built or redistributed interpreter of 3.8.20, 3.9.20, 3.10.15 or

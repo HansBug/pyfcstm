@@ -35,11 +35,14 @@ not the one a string literal produces. Each iteration was a new way to be wrong 
 something this checker does not need to know, so the bare rules are gone and the
 assumption and the guard went with them.
 
-What catches a misspelled bare member instead is Sphinx itself: a build with ``-n``
-reports every unresolved reference, bare ones included. This checker exists for the
-class that build does *not* make obvious while ``-n`` is off -- a fully-qualified
-target pointed at the wrong module, which renders as plain text without a word of
-complaint, and which is what thirty references in this package were doing.
+What catches a misspelled bare member instead is ``make diagram_nitpick_check``, which
+asks Sphinx: it builds with ``-n``, narrows the unresolved references to this package's
+own files, and fails on them. Saying "a ``-n`` build is the backstop" was not true of
+anything before that gate existed -- run over the whole tree, ``-n`` prints some 1700
+warnings and exits zero. This checker stays because it needs no build, and because the
+class it judges -- a fully-qualified target pointed at the wrong module -- renders as
+plain text without a word of complaint whenever ``-n`` is off, which is what thirty
+references in this package were doing.
 
 The registry over-approximates in one way worth knowing: every name listed in a
 ``:members:`` option counts as registered, while autodoc emits no anchor for a member
@@ -183,19 +186,13 @@ def _field_bodies(doc: str) -> List[Tuple[int, str]]:
         while index < len(lines):
             following = lines[index]
             if not following.strip():
-                # A blank line does not end a field body; what ends it is the next
-                # line that is not indented past the marker. `docutils` keeps a
-                # second paragraph inside the same `field_body`.
-                ahead = index + 1
-                while ahead < len(lines) and not lines[ahead].strip():
-                    ahead += 1
-                if ahead >= len(lines):
-                    break
-                deeper = len(lines[ahead]) - len(lines[ahead].lstrip()) > indent
-                if not deeper:
-                    break
-                index = ahead
-                continue
+                # A blank line ends what this reads, even though `docutils` keeps a
+                # second paragraph in the same `field_body`: Sphinx's
+                # `Field.make_field` creates cross-references only when the body is a
+                # single text node, so a name in a second paragraph is not a
+                # reference at all. Reporting it was a false positive, and one this
+                # checker's own self-check had started to require.
+                break
             if len(following) - len(following.lstrip()) <= indent:
                 break
             collected.append(following)
@@ -343,6 +340,7 @@ def _self_check() -> None:
             "Live: :class:`pyfcstm.diagram.api.Diagram`.\n"
             "Live member: :meth:`pyfcstm.diagram.api.Diagram.show`.\n"
             "Live short form: :class:`~pyfcstm.diagram.api.Diagram`.\n"
+            "Dead short form: :class:`~pyfcstm.diagram.TildeDead`.\n"
             "Dead module: :class:`pyfcstm.diagram.Diagram`.\n"
             "Dead member: :meth:`pyfcstm.diagram.api.Diagram.to_pdf`.\n"
             "Outside: :class:`os.PathLike`.\n"
@@ -356,6 +354,8 @@ def _self_check() -> None:
             "\n"
             "    pyfcstm.diagram.Starred\n"
             ":vartype spaced: pyfcstm.diagram.api.Diagram\n"
+            # A second paragraph, which Sphinx does not turn into a reference:
+            # it must stay unreported, and used to be required as a finding.
             "\n"
             "    pyfcstm.diagram.PastBlank\n"
             ":rtype: a value described in pyfcstm.diagram.\n"
@@ -390,13 +390,13 @@ def _self_check() -> None:
         found = sorted((target, line) for _, line, target in dead_references(fake))
         wanted = [
             # (target, line within `__init__.py`)
-            ("pyfcstm.diagram.Diagram", 5),  # the dead module-qualified role
-            ("pyfcstm.diagram.Diagram", 12),  # and the same in a type field
-            ("pyfcstm.diagram.PastBlank", 19),  # a body continuing past a blank line
-            ("pyfcstm.diagram.Starred", 16),  # a variadic field name, escaped star
-            ("pyfcstm.diagram.Wrapped", 14),  # on a field's continuation line
-            ("pyfcstm.diagram.api.Diagram.to_pdf", 6),
-            ("pyfcstm.diagram.api.DiagramAssetError", 10),
+            ("pyfcstm.diagram.Diagram", 6),  # the dead module-qualified role
+            ("pyfcstm.diagram.Diagram", 13),  # and the same in a type field
+            ("pyfcstm.diagram.Starred", 17),  # a variadic field name, escaped star
+            ("pyfcstm.diagram.TildeDead", 5),  # the `~` short form, dead
+            ("pyfcstm.diagram.Wrapped", 15),  # on a field's continuation line
+            ("pyfcstm.diagram.api.Diagram.to_pdf", 7),
+            ("pyfcstm.diagram.api.DiagramAssetError", 11),
         ]
         if found != wanted:
             raise SystemExit("dead references wrong: %s" % found)

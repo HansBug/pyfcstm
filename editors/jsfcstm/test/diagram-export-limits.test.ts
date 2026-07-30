@@ -1,9 +1,15 @@
 import assert from 'node:assert/strict';
 
 import {
+    DiagramExportLimitError,
+    EXPORT_MAX_EDGE_PX,
+    EXPORT_MAX_PIXELS,
+    EXPORT_MAX_SCALE,
     PDF_MAX_UNITS,
     RASTER_MAX_AREA,
     RASTER_MAX_SIDE,
+    assertExportLimitsAreStricterThanHostLimits,
+    assertWithinExportLimits,
     rasterScaleWithinLimits,
 } from '../src/diagram/export';
 
@@ -132,5 +138,59 @@ describe('diagram export size limits', () => {
         for (let w = 1; w <= 60000; w += 1) check(w, 662, 2);
         for (let side = 1; side <= 40000; side += 1) check(side, side, 2);
         assert.deepEqual(offenders, [], 'rounded canvas must stay inside both caps');
+    });
+});
+
+describe('diagram export product limits', () => {
+    it('leaves an ordinary diagram alone', () => {
+        assert.deepEqual(assertWithinExportLimits(440, 642, 2), {
+            width: 880,
+            height: 1284,
+        });
+    });
+
+    it('accepts the documented scale ceiling and refuses anything above it', () => {
+        assert.doesNotThrow(() => assertWithinExportLimits(100, 100, EXPORT_MAX_SCALE));
+        assert.throws(
+            () => assertWithinExportLimits(100, 100, EXPORT_MAX_SCALE + 0.0001),
+            RangeError,
+        );
+    });
+
+    it('refuses an oversized edge rather than quietly scaling it down', () => {
+        // This is the behaviour that used to differ between the two export paths:
+        // the browser clamped and said nothing, while Python refused. A caller who
+        // picked a scale is told when it was not honoured.
+        try {
+            assertWithinExportLimits(5000, 100, 4);
+            assert.fail('an export past the edge limit has to be refused');
+        } catch (error) {
+            assert.equal((error as DiagramExportLimitError).limitName, 'edge');
+            const message = (error as Error).message;
+            assert.ok(message.includes(String(EXPORT_MAX_EDGE_PX)));
+            // The original size, the scaled size and the remedy.
+            assert.ok(message.includes('5000x100'));
+            assert.ok(message.includes('lower scale'));
+        }
+    });
+
+    it('refuses a shape no single edge would catch', () => {
+        // 4096 x 4096 is exactly the pixel limit and neither edge is near its own,
+        // so an edge-only check would wave one pixel more straight through.
+        assert.doesNotThrow(() => assertWithinExportLimits(4096, 4096, 1));
+        try {
+            assertWithinExportLimits(4097, 4096, 1);
+            assert.fail('an export past the pixel limit has to be refused');
+        } catch (error) {
+            assert.equal((error as DiagramExportLimitError).limitName, 'pixels');
+        }
+    });
+
+    it('keeps every product limit stricter than the host limit it shadows', () => {
+        // The refusal must always fire before the clamp, or the two paths start
+        // disagreeing again -- silently, because a clamped export still succeeds.
+        assert.doesNotThrow(assertExportLimitsAreStricterThanHostLimits);
+        assert.ok(EXPORT_MAX_EDGE_PX < RASTER_MAX_SIDE);
+        assert.ok(EXPORT_MAX_PIXELS < RASTER_MAX_AREA);
     });
 });

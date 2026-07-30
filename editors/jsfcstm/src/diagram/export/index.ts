@@ -53,6 +53,93 @@ export async function expandSvgForExport(
 }
 
 /**
+ * Largest accepted export scale.
+ *
+ * These three are product limits rather than host capabilities, and they behave
+ * differently from `RASTER_MAX_SIDE` and `RASTER_MAX_AREA` below: an export past
+ * a product limit is *refused*, while one past a host capability is *clamped*.
+ * The distinction matters because a clamp is silent -- asking for 4x and getting
+ * 2.7x looks like success -- and a caller who chose a scale deserves to be told
+ * their choice was not honoured.
+ *
+ * Every value here is deliberately stricter than its host-capability
+ * counterpart, so the refusal always fires first and the clamp is a defensive
+ * second layer that ordinary input never reaches.
+ * `assertExportLimitsAreStricterThanHostLimits` pins that ordering.
+ *
+ * The same numbers are enforced on the Python export path, and
+ * `tools/check_diagram_export_limits.py` fails if the two sides drift apart.
+ */
+export const EXPORT_MAX_SCALE = 4;
+
+/** Largest accepted scaled edge, in device pixels. */
+export const EXPORT_MAX_EDGE_PX = 16384;
+
+/** Largest accepted scaled pixel count. */
+export const EXPORT_MAX_PIXELS = 16777216;
+
+/** Reported when an export exceeds a product limit rather than a host one. */
+export class DiagramExportLimitError extends Error {
+    readonly limitName: string;
+
+    constructor(message: string, limitName: string) {
+        super(message);
+        this.name = 'DiagramExportLimitError';
+        this.limitName = limitName;
+    }
+}
+
+/**
+ * Refuse an export whose scaled size exceeds a product limit.
+ *
+ * The multiplication happens here, before any canvas is allocated, so an
+ * impossible request is named instead of being discovered by the rasteriser
+ * failing. The message carries the original size, the scaled size, the limit that
+ * fired and what to change, because "too large" on its own does not tell a caller
+ * which scale would have fitted.
+ *
+ * @param width  Diagram width in CSS pixels.
+ * @param height Diagram height in CSS pixels.
+ * @param scale  Requested scale factor.
+ */
+export function assertWithinExportLimits(
+    width: number,
+    height: number,
+    scale: number,
+): {width: number; height: number} {
+    if (!Number.isFinite(scale) || scale <= 0) {
+        throw new RangeError(`scale must be a finite positive number; got ${scale}`);
+    }
+    if (scale > EXPORT_MAX_SCALE) {
+        throw new RangeError(`scale must be at most ${EXPORT_MAX_SCALE}; got ${scale}`);
+    }
+    const scaledWidth = Math.ceil(Math.max(1, width) * scale);
+    const scaledHeight = Math.ceil(Math.max(1, height) * scale);
+    const origin =
+        `${width}x${height} at scale ${scale} gives ${scaledWidth}x${scaledHeight}`;
+    const advice = 'lower scale and retry';
+    for (const [name, value] of [
+        ['width', scaledWidth],
+        ['height', scaledHeight],
+    ] as Array<[string, number]>) {
+        if (value > EXPORT_MAX_EDGE_PX) {
+            throw new DiagramExportLimitError(
+                `${origin}, whose ${name} exceeds the ${EXPORT_MAX_EDGE_PX}px limit; ${advice}`,
+                'edge',
+            );
+        }
+    }
+    const pixels = scaledWidth * scaledHeight;
+    if (pixels > EXPORT_MAX_PIXELS) {
+        throw new DiagramExportLimitError(
+            `${origin}, which is ${pixels} pixels and exceeds the ${EXPORT_MAX_PIXELS} limit; ${advice}`,
+            'pixels',
+        );
+    }
+    return {width: scaledWidth, height: scaledHeight};
+}
+
+/**
  * Largest canvas side a browser will rasterise, in device pixels.
  *
  * Chrome refuses anything past 65535 and `toBlob` then yields null with no
@@ -104,6 +191,30 @@ export function rasterScaleWithinLimits(
         fit *= Math.sqrt(RASTER_MAX_AREA / rounded);
     }
     return fit;
+}
+
+/**
+ * Assert every product limit is stricter than the host capability it shadows.
+ *
+ * If a product limit were ever raised past its host counterpart, the clamp below
+ * would start firing for input the refusal had already let through, and the two
+ * export paths would disagree again -- silently, because a clamped export still
+ * succeeds. Calling this from a test keeps that ordering a checked property
+ * rather than a comment.
+ */
+export function assertExportLimitsAreStricterThanHostLimits(): void {
+    if (EXPORT_MAX_EDGE_PX >= RASTER_MAX_SIDE) {
+        throw new Error(
+            `the export edge limit (${EXPORT_MAX_EDGE_PX}) must stay below the ` +
+                `host limit (${RASTER_MAX_SIDE})`,
+        );
+    }
+    if (EXPORT_MAX_PIXELS >= RASTER_MAX_AREA) {
+        throw new Error(
+            `the export pixel limit (${EXPORT_MAX_PIXELS}) must stay below the ` +
+                `host limit (${RASTER_MAX_AREA})`,
+        );
+    }
 }
 
 /**

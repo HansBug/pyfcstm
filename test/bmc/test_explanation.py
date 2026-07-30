@@ -2858,3 +2858,52 @@ def test_a_state_falls_back_to_its_code_rather_than_inventing_a_name(
     from pyfcstm.bmc.explanation import _state_label
 
     assert _state_label(code, paths) == rendered
+
+
+@pytest.mark.unittest
+def test_every_published_field_documents_the_type_it_is_annotated_with() -> None:
+    """A field's annotation and its ``:type:`` line are two exits for one fact.
+
+    Five fields were annotated with their frozen ``Literal`` while the docstring
+    beside them still said ``str``, so a caller reading the rendered API page saw
+    a weaker type than the one the code declares -- and had no way to discover the
+    vocabulary.  Enumerating the dataclasses keeps that from drifting again
+    silently, which is how it arose: the annotations were tightened one at a time
+    and the prose was not.
+    """
+    import inspect
+    import re
+
+    from pyfcstm.bmc import explanation as explanation_module
+    from pyfcstm.bmc import infeasibility as infeasibility_module
+
+    published = [
+        explanation_module.BmcReasoningStep,
+        explanation_module.BmcConflictNarrative,
+        explanation_module.BmcCoreItem,
+        explanation_module.BmcConflictCore,
+        explanation_module.BmcConstraintRef,
+        infeasibility_module.ForcedValue,
+        infeasibility_module.MinimizedCore,
+        infeasibility_module.ProbeRecord,
+    ]
+
+    mismatched = []
+    for cls in published:
+        doc = inspect.getdoc(cls) or ""
+        for field in cls.__dataclass_fields__.values():
+            documented = re.search(r":type %s:\s*(.+)" % re.escape(field.name), doc)
+            if documented is None:
+                mismatched.append("%s.%s has no :type:" % (cls.__name__, field.name))
+                continue
+            annotation = str(field.type).replace("typing.", "")
+            # The head of the annotation is the name that matters: ``Tuple[X, ...]``
+            # documents as ``Tuple[X, ...]``, and ``Optional[X]`` as ``X, optional``.
+            names = re.findall(r"[A-Za-z_][A-Za-z_0-9]*", annotation)[:2]
+            if names and not any(name in documented.group(1) for name in names):
+                mismatched.append(
+                    "%s.%s annotated %s, documented %s"
+                    % (cls.__name__, field.name, annotation, documented.group(1))
+                )
+
+    assert mismatched == []

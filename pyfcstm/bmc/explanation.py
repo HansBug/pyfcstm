@@ -847,7 +847,7 @@ class BmcConstraintRef:
     :param stable_id: Deterministic identifier of the tracked group.
     :type stable_id: str
     :param stage: Formula stage the group belongs to.
-    :type stage: str
+    :type stage: BmcConstraintStage
     :param category: Domain-specific group category.
     :type category: str
     :param source: FCSTM, FBMCQ or generated source reference.
@@ -971,7 +971,7 @@ class BmcCoreItem:
     :param constraint: Identity and provenance of the tracked group.
     :type constraint: BmcConstraintRef
     :param semantic_role: Recognized role of the constraint.
-    :type semantic_role: str
+    :type semantic_role: BmcSemanticRole
     :param source_excerpt: Authored text the span points at, or ``None``.
     :type source_excerpt: Optional[str]
     :param source_excerpt_truncated: Whether the excerpt was shortened.
@@ -1115,20 +1115,20 @@ class BmcConflictCore:
     the solver's own core ordering.
 
     :param scope: Diagnostic or stage-fallback scope the core proves.
-    :type scope: str
+    :type scope: BmcConflictCoreScope
     :param formula_summary: Short description of the proven target formula.
     :type formula_summary: str
     :param granularity: Core granularity, currently always ``source_group``.
-    :type granularity: str
+    :type granularity: BmcCoreGranularity
     :param reduction: How far deletion checking got: ``raw`` when no deletion
         check finished, ``partial_minimized`` when some did but the sweep is
         open, ``subset_minimal`` when every member proved necessary.
-    :type reduction: str
+    :type reduction: BmcCoreReduction
     :param subset_minimality: Whether subset minimality has been proven.  It
         is determined by ``reduction``: only ``subset_minimal`` may claim
         ``proven``, which keeps "not proven minimal" distinct from "proven
         non-minimal".
-    :type subset_minimality: str
+    :type subset_minimality: BmcSubsetMinimality
     :param items: Core members; reordered by ``stable_id`` on construction.
     :type items: Tuple[BmcCoreItem, ...]
     :raises ValueError: If the scope, granularity, reduction or minimality is

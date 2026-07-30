@@ -2439,7 +2439,13 @@ def _bounds_participants(items: Tuple["BmcCoreItem", ...]) -> Tuple:
     while contributing nothing to the conclusion.  Counting participants instead
     of members keeps "every member is explained" true rather than merely counted.
 
-    :param items: Published comparison members on one variable and frame.
+    The operator is read directly because the only caller has already reduced its
+    members to readable comparison facts and refuses the pattern unless *every*
+    member survived that filter.  Repeating the check here would be dead code: an
+    unreducible fact cannot reach this function.
+
+    :param items: Published comparison members on one variable and frame, each
+        already carrying every key its tag implies.
     :type items: Tuple[BmcCoreItem, ...]
     :return: The subset the limits are derived from.
     :rtype: Tuple[BmcCoreItem, ...]
@@ -2452,8 +2458,7 @@ def _bounds_participants(items: Tuple["BmcCoreItem", ...]) -> Tuple:
     return tuple(
         item
         for item in items
-        if _readable(item, "variable_comparison")
-        and item.normalized_fact["operator"] in ("eq", "ge", "gt", "le", "lt")
+        if item.normalized_fact["operator"] in ("eq", "ge", "gt", "le", "lt")
     )
 
 
@@ -2486,6 +2491,12 @@ def _propagation_steps(core: "BmcConflictCore", forced_values: Tuple):
         return None
     by_id = {item.constraint.stable_id: item for item in core.items}
     for forced in forced_values:
+        # The readability check carries different weight in the two selections
+        # below.  Here it decides membership: the last comparison is ``!=``, which
+        # an *absent* value satisfies, so a fact missing that key would be read as
+        # disagreeing and then published as one.  In the supporting selection every
+        # comparison is ``==``, which an absent key can never satisfy, so the check
+        # only licenses the direct indexing and never changes who is selected.
         disagreeing = [
             item
             for item in core.items

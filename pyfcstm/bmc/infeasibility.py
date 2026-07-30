@@ -53,6 +53,10 @@ import z3
 
 from .errors import BmcBuildError
 from .explanation import (
+    # Private because the frozen public surface must not grow to expose it, and
+    # cross-module because the fact vocabulary is owned in one place: a second
+    # copy of "which keys does this tag imply" is how the two sides drift apart.
+    _readable,
     index_value,
     CLASSIFICATION_SCOPES,
     SCOPE_AGGREGATES,
@@ -1143,8 +1147,8 @@ def derive_forced_values(
             # Both persistent variable types reach here.  Gating on ``int``
             # excluded every float model from the propagation pattern, which the
             # contract lists without a type qualifier.
-            if fact.get("kind") == "variable_comparison" and isinstance(
-                fact.get("value"), (int, float)
+            if _readable(item, "variable_comparison") and isinstance(
+                fact["value"], (int, float)
             ):
                 targets.append((fact["variable"], fact["frame"]))
         else:

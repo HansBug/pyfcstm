@@ -1783,6 +1783,61 @@ def test_a_closed_derivation_unlocks_the_complete_formal_verdict() -> None:
 
 
 @pytest.mark.unittest
+@pytest.mark.unittest
+def test_a_partial_comparison_does_not_crash_the_forced_value_probe() -> None:
+    """The probe picks its targets by tag, then reads keys the tag alone does not carry.
+
+    ``derive_forced_values`` is published, and the items it consumes are published
+    too: the schema requires ``kind`` of a normalized fact and nothing else, so a
+    caller holding a core item from a JSON result can hand this function a
+    comparison that names no variable.  Selecting it on the tag and then indexing
+    the name raises where the contract promised a derivation, which is the failure
+    this asserts against -- the same shape the narrative side already refuses.
+    """
+    from pyfcstm.bmc import BmcCoreItem
+
+    core = _core_formula(
+        'assume at 0: var("x") == 1; check reach <= 1: active("Root.A");'
+    )
+    outcome = classify_infeasibility(core, "assumptions", _SolveBudget(None))
+    extraction = extract_source_core(core, outcome.scope, _SolveBudget(None))
+    minimized = minimize_source_core(core, extraction, _SolveBudget(None))
+
+    items = []
+    for group in minimized.groups:
+        built = build_core_item(group)
+        if built.constraint.stage == "assumptions":
+            # Rebuilt through the public constructor, so this is a value a caller
+            # can hold -- not a field written past the type's own validation.
+            built = BmcCoreItem(
+                built.constraint,
+                built.semantic_role,
+                built.source_excerpt,
+                built.source_excerpt_truncated,
+                {"kind": "variable_comparison", "frame": 0, "operator": "eq", "value": 1},
+                built.human_text,
+                built.editable,
+            )
+        items.append(built)
+
+    # Anti-vacuity: with the fact whole this core does derive a value, so the
+    # comparison below is between a working probe and a partial input, not between
+    # two silences.
+    whole, whole_record = derive_forced_values(
+        core, tuple(build_core_item(group) for group in minimized.groups), _SolveBudget(None)
+    )
+    assert [(value.variable, value.frame) for value in whole] == [("x", 0)]
+    assert whole_record is not None
+
+    forced, record = derive_forced_values(core, tuple(items), _SolveBudget(None))
+
+    # A comparison naming no variable identifies no target, so the probe has
+    # nothing to solve for and says so by not running -- the outcome a caller can
+    # act on, rather than an exception from a documented derivation.
+    assert forced == ()
+    assert record is None
+
+
 def test_a_prefix_that_admits_several_values_forces_none_of_them() -> None:
     """One witness is not a requirement, and the probe must not confuse them.
 

@@ -3261,3 +3261,138 @@ def test_a_partly_complete_fact_is_declined_by_every_consumer() -> None:
                     failures.append("narrative %s%s claimed complete" % (kind, subset))
 
     assert failures == []
+
+
+def _partial_comparison_item(variable, frame=0, operator=None):
+    """A comparison member carrying part of what its tag implies.
+
+    The published schema requires ``kind`` of a normalized fact and no more, so
+    this is a fact a caller can hold after a round trip through the JSON result.
+    It is the shape the single-member corpus above cannot place: the patterns that
+    read a comparison need a *sibling* to compare it against.
+
+    Which part is missing decides which reader it reaches.  Absent ``operator`` is
+    refused by every equality in the chain, so it probes the branches that ask what
+    a member says; passing ``operator`` and leaving ``value`` absent reaches the one
+    comparison written as ``!=``, which absence satisfies.
+    """
+    fact = {"kind": "variable_comparison", "variable": variable, "frame": frame}
+    if operator is not None:
+        fact["operator"] = operator
+    reference = BmcConstraintRef(
+        "assumption.%s.%s.partial" % (variable, frame),
+        "assumptions",
+        "assumption.frame",
+        BmcSourceRef("generated", None, None),
+        "bound",
+        frames=(frame,),
+        refs={"frame": frame},
+    )
+    return BmcCoreItem(
+        reference,
+        "assumption",
+        None,
+        False,
+        fact,
+        "bound",
+        False,
+    )
+
+
+def _pattern_core(scope, members, minimality="proven"):
+    """A published core in the shape the multi-member patterns require."""
+    return BmcConflictCore(
+        scope, "F", "source_group", "subset_minimal", minimality, tuple(members)
+    )
+
+
+@pytest.mark.unittest
+def test_a_partial_comparison_cannot_pair_with_a_domain_guard() -> None:
+    """The pairing check reads keys it never tests for, so it has to test for them.
+
+    The pattern asks whether every other member speaks about the guarded variable
+    at the guarded frame -- a question about ``variable`` and ``frame`` only.  A
+    comparison carrying exactly those two keys answers it, and the sentence that
+    follows then reports *which value* the guard rules out, reading an operator and
+    a value that were never there.  Naming a domain failure from a fact that cannot
+    state one is the §7.5 violation this branch exists to avoid, so the pair below
+    must stay unexplained even though the pairing question itself is satisfied.
+    """
+    from pyfcstm.bmc.explanation import build_conflict_narrative
+
+    guard, complete = _guard_item("x", 0), _comparison_item("x", 0)
+
+    # Anti-vacuity: the branch has to be reachable, or the case below proves nothing.
+    reached = build_conflict_narrative(_pattern_core("assumptions_prefix", (guard, complete)))
+    assert reached.derivation_status == "complete"
+    assert "cannot stay defined" in reached.reasoning_steps[-1].text
+
+    partial = build_conflict_narrative(
+        _pattern_core("assumptions_prefix", (guard, _partial_comparison_item("x", 0)))
+    )
+    assert partial.derivation_status != "complete"
+
+
+@pytest.mark.unittest
+def test_a_partial_comparison_is_not_read_as_disagreeing_with_a_forced_value() -> None:
+    """An absent value satisfies ``!=``, which is how a missing key gets published.
+
+    The disagreeing selection ends in ``value != forced.value``.  Every other
+    comparison in that chain is an equality, which a missing key can never pass, so
+    this is the one place where *absence* looks like disagreement: a fact with no
+    value at all is selected as contradicting the forced one, and the step that
+    renders it then states the value it does not have.
+    """
+    from pyfcstm.bmc.explanation import build_conflict_narrative
+    from pyfcstm.bmc.infeasibility import ForcedValue
+
+    prefix = _propagation_item("prefix.x", "initialization", "x", 0)
+    forced = (ForcedValue("x", 0, 7, ("prefix.x",)),)
+
+    # Anti-vacuity: with both facts whole the derivation speaks, and the value it
+    # contributes -- 7, from the probe rather than from any member -- reaches the page.
+    reached = build_conflict_narrative(
+        _pattern_core(
+            "assumptions_prefix",
+            (prefix, _propagation_item("assume.x", "assumptions", "x", 1)),
+        ),
+        forced,
+    )
+    assert reached.derivation_status == "complete"
+    assert "7" in reached.reasoning_steps[-1].text
+
+    # Absent ``value`` with the operator present is the shape ``!=`` admits.
+    partial = build_conflict_narrative(
+        _pattern_core(
+            "assumptions_prefix", (prefix, _partial_comparison_item("x", 0, operator="eq"))
+        ),
+        forced,
+    )
+    assert partial.derivation_status != "complete"
+
+
+@pytest.mark.unittest
+def test_a_partial_comparison_leaves_an_interval_core_unexplained() -> None:
+    """The interval reading indexes an operator, so its members are filtered first.
+
+    ``_bounds_participants`` reads ``operator`` directly rather than guarding it
+    again, which is only sound because the caller admits the pattern exclusively
+    when *every* member survived the readability filter.  That precondition is the
+    thing worth testing: weakening the filter would hand an unreducible fact to a
+    direct index, so a core mixing a whole bound with a partial one must degrade.
+    """
+    from pyfcstm.bmc.explanation import build_conflict_narrative
+
+    lower = _comparison_item("x", 0, "ge", 5)
+
+    # Anti-vacuity: two whole bounds do reach the interval reading.
+    reached = build_conflict_narrative(
+        _pattern_core("assumptions_component", (lower, _comparison_item("x", 0, "le", 3)))
+    )
+    assert reached.derivation_status == "complete"
+    assert "satisfies every bound" in reached.reasoning_steps[-1].text
+
+    partial = build_conflict_narrative(
+        _pattern_core("assumptions_component", (lower, _partial_comparison_item("x", 0)))
+    )
+    assert partial.derivation_status != "complete"

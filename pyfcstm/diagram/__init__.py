@@ -1,7 +1,7 @@
 """
 Render an FCSTM state machine as portable data or a self-contained viewer.
 
-This package turns a :class:`pyfcstm.model.StateMachine` into two things: a
+This package turns a :class:`pyfcstm.model.model.StateMachine` into two things: a
 JSON-compatible description of the diagram that carries no local paths, and a
 single HTML file that displays it offline with the source, the diagram, and a
 linked comparison of the two. The geometry and SVG rendering are shared with

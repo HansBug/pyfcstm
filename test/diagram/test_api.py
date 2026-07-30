@@ -41,11 +41,12 @@ class _UnprintableArgument:
 @pytest.fixture(autouse=True)
 def _api_module_state_is_restored():
     """
-    Leave ``pyfcstm.diagram.api``'s process-wide bookkeeping as it was found.
+    Restore the three module mappings ``pyfcstm.diagram.api`` keeps.
 
-    Three mappings outlive a single test: the directory resolved for each temporary
-    root, the fallbacks this process made, and the processes whose reclaim is
-    registered.  A test that plants an entry and then skips -- or fails before its
+    They outlive a single test: the directory resolved for each temporary root, the
+    fallbacks this process made, and the processes whose reclaim is registered.  The
+    exit hooks those processes registered are not undone -- a run leaves a handful
+    behind, and each one finds an empty mapping and does nothing.  A test that plants an entry and then skips -- or fails before its
     own cleanup -- used to leave it for whatever ran next, and the symptom was
     invisible because the entry pointed at a directory pytest had already removed.
     Restoring around every test makes that independence structural instead of
@@ -1607,7 +1608,11 @@ def test_two_reclaims_in_one_exit_leave_the_second_nothing_to_report(
     # finalizer -- and which goes first is the order the caller happened to show and
     # start in. Whichever succeeds leaves the other looking at a directory that has
     # gone, so grading `ENOENT` as the outcome asked for is what keeps a clean exit
-    # quiet. Removing it from either list left every test in this file green.
+    # quiet. This pins that one grading, in `_reclaim_empty_fallbacks`, and removing
+    # `ENOENT` from it fails here. The same grading in `_discard_empty_fallback` is
+    # not pinned: reaching it needs something outside the process to remove the
+    # directory between the file going and the `rmdir`, which is not a path a caller
+    # takes.
     from pyfcstm.diagram import api as diagram_api
 
     monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))

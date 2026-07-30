@@ -1086,7 +1086,13 @@ def _register_with_multiprocessing(owner: int) -> None:
 
     Only when the process is already using :mod:`multiprocessing` -- its ``util``
     module is imported by the machinery that starts a worker, so a plain
-    interpreter neither pays for the import nor needs it.
+    interpreter neither pays for the import nor needs it.  Importing
+    :mod:`multiprocessing` alone does not bring ``util`` with it, so the common shape
+    -- show, then start a worker and hand it the path -- registers nothing here at
+    all, and is covered anyway: ``util``'s own hook is registered when that worker
+    starts, which is after this module's, and :mod:`atexit` runs the later
+    registration first.  So ``util`` joins the worker before this module's hook looks
+    at the directory.
 
     Both this and the :mod:`atexit` hook can run in one exit, in either order: which
     goes first is the order the two were registered in, and that is the order the
@@ -2150,7 +2156,7 @@ class Diagram:
     """
     Immutable snapshot of a state machine, as portable data or a viewer.
 
-    Built by :meth:`pyfcstm.model.StateMachine.diagram`.  The snapshot is taken
+    Built by :meth:`pyfcstm.model.model.StateMachine.diagram`.  The snapshot is taken
     once and detached from the model, so editing the model afterwards cannot
     change what an already-saved view shows.  Attribute assignment is refused
     for the same reason; :meth:`with_options` and :meth:`with_view_state` return
@@ -2163,13 +2169,13 @@ class Diagram:
     Chromium-family app window.
 
     :meth:`to_svg`, :meth:`to_png` and :meth:`to_pdf` are typed probes that
-    always raise :class:`pyfcstm.diagram.api.DiagramUnavailableError`: SVG, PNG and
+    always raise :class:`pyfcstm.diagram.engine.DiagramUnavailableError`: SVG, PNG and
     PDF are produced by the embedded viewer's own export, which needs a browser.
     They exist so the failure names the reason instead of the attribute being
     absent.
 
     :param model: State machine to snapshot.
-    :type model: pyfcstm.model.StateMachine
+    :type model: pyfcstm.model.model.StateMachine
     :param options: Renderer options, or a mapping of them, defaults to
         :class:`pyfcstm.diagram.api.DiagramOptions` with its own defaults.
     :type options: pyfcstm.diagram.api.DiagramOptions or collections.abc.Mapping,
@@ -2251,7 +2257,7 @@ class Diagram:
 
         :param model: State machine whose semantics and source sidecar are
             displayed.
-        :type model: pyfcstm.model.StateMachine
+        :type model: pyfcstm.model.model.StateMachine
         :param options: Optional immutable renderer options or a compatible
             mapping.
         :type options: pyfcstm.diagram.api.DiagramOptions or collections.abc.Mapping, optional
@@ -2613,7 +2619,7 @@ class Diagram:
         :type output: str or os.PathLike, optional
         :return: Complete self-contained HTML text.
         :rtype: str
-        :raises pyfcstm.diagram.api.DiagramAssetError: If a bundled viewer, font or
+        :raises pyfcstm.diagram.engine.DiagramAssetError: If a bundled viewer, font or
             resvg asset is missing or unreadable.
         :raises OSError: If ``output`` is given and cannot be written, for
             example a missing parent directory or a read-only destination.
@@ -2858,11 +2864,11 @@ class Diagram:
         :return: The generated HTML path.
         :rtype: pathlib.Path
         :raises ValueError: If ``window_size`` is not two positive integers.
-        :raises pyfcstm.diagram.api.DiagramAssetError: If a bundled viewer, font or
+        :raises pyfcstm.diagram.engine.DiagramAssetError: If a bundled viewer, font or
             resvg asset is missing or unreadable.
         :raises OSError: If the document cannot be written, for example a
             missing parent directory or a read-only destination.
-        :raises pyfcstm.diagram.api.DiagramUnavailableError: If ``open_window`` is
+        :raises pyfcstm.diagram.engine.DiagramUnavailableError: If ``open_window`` is
             set and no Chromium-family browser can be launched, or one is launched
             and exits without showing a window -- an SSH session or a container
             with no display, where the browser is found and then reports that it

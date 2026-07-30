@@ -16,6 +16,6 @@ The public resource contract is:
   provenance resources.
 
 This package exposes no API of its own. :class:`pyfcstm.diagram.api.Diagram`,
-reached through :meth:`pyfcstm.model.StateMachine.diagram`, is what reads these
+reached through :meth:`pyfcstm.model.model.StateMachine.diagram`, is what reads these
 resources; import from :mod:`pyfcstm.diagram` rather than from here.
 """

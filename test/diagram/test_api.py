@@ -1530,10 +1530,14 @@ def test_a_worker_still_holding_the_viewer_does_not_cost_the_directory(
     # loses `spawn` and `forkserver`, and a queue built from a different context that
     # loses them silently.
 
-    root = tmp_path / "tmp"
-    root.mkdir()
+    # A short root of its own rather than `tmp_path`. `forkserver` binds a Unix
+    # socket under `TMPDIR`, and macOS refuses one whose path runs past about a
+    # hundred characters -- which pytest's own directory does unaided: the CI
+    # failure read `OSError: AF_UNIX path too long` with a 120-character prefix.
+    # `/tmp` keeps the whole socket path near fifty on every platform this runs on.
+    root = Path(tempfile.mkdtemp(prefix="p-", dir="/tmp"))
     _planted_directory(root / ("pyfcstm-viewers-%d" % os.geteuid()), 0o755)
-    probe = tmp_path / "probe.py"
+    probe = root / "probe.py"
     probe.write_text(
         textwrap.dedent(
             """
@@ -1608,13 +1612,22 @@ def test_a_worker_still_holding_the_viewer_does_not_cost_the_directory(
     environment = dict(os.environ)
     environment["TMPDIR"] = str(root)
     environment["PYTHONPATH"] = str(Path(pyfcstm.__file__).resolve().parents[1])
-    finished = subprocess.run(
-        [sys.executable, str(probe), method],
-        env=environment,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        timeout=300,
-    )
+    try:
+        finished = subprocess.run(
+            [sys.executable, str(probe), method],
+            env=environment,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=300,
+        )
+        # Read before the tree goes: the assertions below are about what the run
+        # left behind, and the tree is ours to remove, being outside the directory
+        # pytest cleans up.
+        finished_the_removal = (root / "handoff.done").exists()
+        fallback = Path(finished.stdout.decode("utf-8").strip() or str(root))
+        fallback_survived = fallback.exists()
+    finally:
+        shutil.rmtree(str(root), ignore_errors=True)
     complaint = finished.stderr.decode("utf-8", "replace")
     assert finished.returncode == 0, complaint
     # A worker that died never removes the viewer, and the directory then rightly
@@ -1622,14 +1635,13 @@ def test_a_worker_still_holding_the_viewer_does_not_cost_the_directory(
     # marker is what tells them apart, and unlike its traceback the marker is absent
     # for a segmentation fault too: a queue handed across contexts kills a `spawn`
     # child with SIGSEGV, which reaches this stderr as nothing at all.
-    assert os.path.exists(str(probe.parent / "handoff.done")), (
-        "the worker did not finish: %s" % (complaint or "it said nothing")
+    assert finished_the_removal, "the worker did not finish: %s" % (
+        complaint or "it said nothing"
     )
-    fallback = Path(finished.stdout.decode("utf-8").strip())
     assert fallback.name != ("pyfcstm-viewers-%d" % os.geteuid()), (
         "the obstruction was trusted, so no fallback was made"
     )
-    assert not fallback.exists(), "the worker's viewer cost the directory its reclaim"
+    assert not fallback_survived, "the worker's viewer cost the directory its reclaim"
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX modes")

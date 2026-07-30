@@ -2881,3 +2881,61 @@ def test_the_domain_marker_follows_the_variable_not_the_literal(
 
     assert fact["kind"] == "variable_comparison"
     assert isinstance(fact["value"], int) is integral
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "kind, machine, query",
+    [
+        (
+            "variable_comparison",
+            "def int x = 0;\n"
+            "state Root { event Go; state A; state B; [*] -> A; A -> B :: Go; }",
+            'init state("Root.A") where x == 0; assume at 0: var("x") == 1; '
+            'check reach <= 2: active("Root.B");',
+        ),
+        (
+            "state_membership",
+            "state Root { state A; state B; [*] -> A; A -> B; }",
+            'init state("Root.A"); assume at 0: active("Root.B"); '
+            'check reach <= 1: active("Root.A");',
+        ),
+        (
+            "state_domain",
+            "state Root { state A; state B; [*] -> A; A -> B; }",
+            'init state("Root.A"); check reach <= 1: active("Root.B");',
+        ),
+        (
+            "definedness_condition",
+            "def int x = 0; state Root;",
+            'assume at 0: var("x") / 0 > 0; check reach <= 1: active("Root");',
+        ),
+    ],
+)
+def test_a_recognizer_publishes_every_key_its_tag_requires(
+    kind, machine, query
+) -> None:
+    """The required-key table gates reading, so it must match what is produced.
+
+    Members are filtered on that table before anything indexes them, which makes a
+    table demanding one key too many degrade silently: the fact is complete, the
+    narrative declines it, and nothing says why.  Comparing the table against what
+    each recognizer really emits is the only way that stays true as either side
+    changes.
+    """
+    from pyfcstm.bmc.explanation import _FACT_REQUIRED_KEYS
+    from pyfcstm.bmc.provenance import normalized_fact_for
+
+    groups = _fact_groups(query, machine=machine)
+    declared = tuple(
+        name
+        for name in ("x", "y")
+        if "def int %s" % name in machine or "def float %s" % name in machine
+    )
+    published = [normalized_fact_for(group, declared) for group in groups.values()]
+    facts = [fact for fact in published if fact.get("kind") == kind]
+
+    assert facts, "this corpus no longer produces a %s fact" % kind
+    for fact in facts:
+        missing = set(_FACT_REQUIRED_KEYS[kind]) - set(fact)
+        assert missing == set(), "%s omits %s" % (kind, sorted(missing))

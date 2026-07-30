@@ -3190,3 +3190,74 @@ def test_every_tag_survives_every_public_consumer() -> None:
                 raised.append("%s(%s) -> %s" % (name, kind, type(err).__name__))
 
     assert raised == []
+
+
+@pytest.mark.unittest
+def test_a_partly_complete_fact_is_declined_by_every_consumer() -> None:
+    """A tag with some of its keys is the shape that slipped through five times.
+
+    A bare tag was handled; a tag carrying *part* of what it implies was not, and
+    that is what the published gates actually allow -- the schema requires ``kind``
+    and nothing more.  Each such fact must degrade the same way through both public
+    consumers: no exception, and no ``complete`` derivation resting on a reading
+    nobody could make.
+
+    The cases are generated from the required-key table, so a tag or a key added
+    later is covered without anyone remembering to add it here.
+    """
+    from itertools import combinations
+
+    from pyfcstm.bmc.explanation import (
+        _FACT_REQUIRED_KEYS,
+        BmcConflictCore,
+        BmcConstraintRef,
+        BmcCoreItem,
+        build_conflict_narrative,
+        human_text_for_fact,
+    )
+
+    sample = {
+        "variable": "x",
+        "frame": 0,
+        "operator": "eq",
+        "value": 1,
+        "state": 1,
+        "states": [1, 2],
+        "operation": "division",
+    }
+
+    def core_of(fact):
+        reference = BmcConstraintRef(
+            "g0",
+            "assumptions",
+            "assumption.frame",
+            BmcSourceRef("generated", None, None),
+            "summary",
+            frames=(0,),
+            refs={"frame": 0},
+        )
+        item = BmcCoreItem(reference, "assumption", None, False, fact, "t", False)
+        return BmcConflictCore(
+            "assumptions_component", "F", "source_group", "raw", "not_proven", (item,)
+        )
+
+    failures = []
+    for kind, keys in _FACT_REQUIRED_KEYS.items():
+        # Every strict subset of the keys the tag implies, including the empty one.
+        for size in range(len(keys)):
+            for subset in combinations(keys, size):
+                fact = {"kind": kind}
+                fact.update({key: sample[key] for key in subset})
+                try:
+                    human_text_for_fact("assumption", fact)
+                except Exception as err:  # noqa: BLE001 - the failure is the finding
+                    failures.append("human_text %s%s: %r" % (kind, subset, err))
+                try:
+                    narrative = build_conflict_narrative(core_of(fact))
+                except Exception as err:  # noqa: BLE001 - same
+                    failures.append("narrative %s%s: %r" % (kind, subset, err))
+                    continue
+                if narrative.derivation_status == "complete":
+                    failures.append("narrative %s%s claimed complete" % (kind, subset))
+
+    assert failures == []

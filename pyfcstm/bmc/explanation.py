@@ -2257,9 +2257,9 @@ def _conflict_pattern(
         subject, frame = guard.get("variable"), guard["frame"]
         others = [item for item in items if item is not definedness[0]]
         if subject is not None and all(
-            item.normalized_fact.get("kind") == "variable_comparison"
-            and item.normalized_fact.get("variable") == subject
-            and item.normalized_fact.get("frame") == frame
+            _readable(item, "variable_comparison")
+            and item.normalized_fact["variable"] == subject
+            and item.normalized_fact["frame"] == frame
             for item in others
         ):
             return (
@@ -2452,7 +2452,8 @@ def _bounds_participants(items: Tuple["BmcCoreItem", ...]) -> Tuple:
     return tuple(
         item
         for item in items
-        if item.normalized_fact.get("operator") in ("eq", "ge", "gt", "le", "lt")
+        if _readable(item, "variable_comparison")
+        and item.normalized_fact["operator"] in ("eq", "ge", "gt", "le", "lt")
     )
 
 
@@ -2489,21 +2490,21 @@ def _propagation_steps(core: "BmcConflictCore", forced_values: Tuple):
             item
             for item in core.items
             if item.constraint.stage == "assumptions"
-            and item.normalized_fact.get("kind") == "variable_comparison"
-            and item.normalized_fact.get("variable") == forced.variable
-            and item.normalized_fact.get("frame") == forced.frame
-            and item.normalized_fact.get("operator") == "eq"
-            and item.normalized_fact.get("value") != forced.value
+            and _readable(item, "variable_comparison")
+            and item.normalized_fact["variable"] == forced.variable
+            and item.normalized_fact["frame"] == forced.frame
+            and item.normalized_fact["operator"] == "eq"
+            and item.normalized_fact["value"] != forced.value
         ]
         if not disagreeing:
             continue
         supporting = [by_id[name] for name in forced.supporting_ids if name in by_id]
         if any(
-            item.normalized_fact.get("kind") == "variable_comparison"
-            and item.normalized_fact.get("variable") == forced.variable
-            and item.normalized_fact.get("frame") == forced.frame
-            and item.normalized_fact.get("operator") == "eq"
-            and item.normalized_fact.get("value") == forced.value
+            _readable(item, "variable_comparison")
+            and item.normalized_fact["variable"] == forced.variable
+            and item.normalized_fact["frame"] == forced.frame
+            and item.normalized_fact["operator"] == "eq"
+            and item.normalized_fact["value"] == forced.value
             for item in supporting
         ):
             # A supporting fact already states this value at this frame, so "the

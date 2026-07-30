@@ -1306,9 +1306,12 @@ def test_a_forked_child_reclaims_its_own_fallback_and_leaves_its_parents(
     (tmp_path / ("pyfcstm-viewers-%d" % os.geteuid())).mkdir(mode=0o755)
 
     try:
-        parents_empty = tmp_path / "pyfcstm-viewers-parent"
-        parents_empty.mkdir(mode=0o700)
-        diagram_api._FALLBACK_DIRECTORIES[parents_empty] = os.getpid()
+        # Through the real path, so the registration the child inherits is non-empty
+        # -- which is the precondition of the defect. Planting the directory in the
+        # mapping by hand left the list empty at fork time, and then a child
+        # registered whether or not the fix was there.
+        parents_empty = diagram_api._private_viewer_directory()
+        assert diagram_api._RECLAIM_REGISTERED == [os.getpid()]
         recorded = tmp_path / "child.txt"
 
         child = os.fork()

@@ -3045,3 +3045,81 @@ def test_the_shared_text_predicate_documents_both_refusals() -> None:
         require_published_text(123, "field")
     with pytest.raises(ValueError):
         require_published_text("   ", "field")
+
+
+@pytest.mark.unittest
+def test_a_frozen_narrative_keeps_the_members_it_was_validated_with() -> None:
+    """``frozen=True`` stops rebinding, not emptying the list behind the field.
+
+    Every invariant here reads a sequence the caller supplied, so a caller that
+    keeps its own reference can satisfy each check and then remove exactly what
+    the checks were about -- leaving a ``complete`` narrative with no conflict
+    step and a step citing nothing.  ``BmcConflictCore.items`` has always copied
+    on the way in; these four fields had not.
+    """
+    from pyfcstm.bmc.explanation import BmcConflictNarrative, BmcReasoningStep
+
+    item_ids = ["g0"]
+    node_ids = ["n0"]
+    step = BmcReasoningStep("conflict", item_ids, node_ids, "closing")
+    steps = [step]
+    surfaces = ["g0"]
+    narrative = BmcConflictNarrative("complete", "headline", "summary", steps, surfaces)
+
+    item_ids.clear()
+    node_ids.clear()
+    steps.clear()
+    surfaces.clear()
+
+    assert step.item_ids == ("g0",)
+    assert step.proof_node_ids == ("n0",)
+    assert narrative.reasoning_steps == (step,)
+    assert narrative.review_surfaces == ("g0",)
+    # And the invariant the copies protect still holds afterwards.
+    assert [s for s in narrative.reasoning_steps if s.kind == "conflict"]
+
+
+@pytest.mark.unittest
+def test_a_skipped_operator_does_not_count_as_explained() -> None:
+    """Coverage means the members bear on the conclusion, not that they were counted.
+
+    ``ne`` is deliberately left out of the interval arithmetic, because excluding
+    one value never empties a range.  A core carrying one therefore satisfied the
+    sibling coverage count while contributing nothing, so the conflict step listed
+    a member the sentence does not rest on.
+    """
+    from pyfcstm.bmc.explanation import _conflict_pattern
+
+    def bound(operator, value):
+        reference = BmcConstraintRef(
+            "assumption.%s.%s" % (operator, value),
+            "assumptions",
+            "assumption.frame",
+            BmcSourceRef("generated", None, None),
+            "bound",
+            frames=(0,),
+            refs={"frame": 0},
+        )
+        return BmcCoreItem(
+            reference,
+            "assumption",
+            None,
+            False,
+            {
+                "kind": "variable_comparison",
+                "variable": "x",
+                "frame": 0,
+                "operator": operator,
+                "value": value,
+            },
+            "bound",
+            False,
+        )
+
+    crossing = (bound("ge", 5), bound("le", 3))
+    assert _conflict_pattern(crossing, "proven")[0] == "interval_intersection"
+
+    # The same crossing bounds beside an inequality the reading skips.
+    with_spare = crossing + (bound("ne", 99),)
+    pattern = _conflict_pattern(with_spare, "proven")
+    assert pattern is None or pattern[0] != "interval_intersection"

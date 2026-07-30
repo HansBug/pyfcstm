@@ -401,7 +401,9 @@ def human_text_for_fact(
         state the reader wrote rather than the encoding's number for it; defaults
         to ``None``.
     :type state_paths: Optional[Mapping[int, str]], optional
-    :return: One sentence describing what the group requires.
+    :return: One sentence describing what the group requires.  A fact whose tag
+        arrives without the keys that tag implies renders as an unreduced group
+        rather than raising, since the published gates require only the tag.
     :rtype: str
 
     Example::
@@ -420,15 +422,28 @@ def human_text_for_fact(
     """
     kind = fact.get("kind")
     voice = _ROLE_VOICES.get(role, "the model")
-    if kind == "variable_comparison":
-        phrase = _RELATION_PHRASES[fact["operator"]] % fact["value"]
+    # A tag with its companion keys missing passes both published gates -- the
+    # schema requires ``kind`` and nothing else -- so reading them directly turned
+    # a payload both gates accept into a bare KeyError out of a public function.
+    # Rendering the fallback keeps the contract: a sentence never claims more than
+    # the fact carries.
+    if kind == "variable_comparison" and {
+        "operator",
+        "value",
+        "variable",
+        "frame",
+    } <= set(fact):
+        phrase = _RELATION_PHRASES.get(fact["operator"])
+        if phrase is None:
+            return _unreduced_sentence(role, fact)
+        phrase = phrase % fact["value"]
         return "At frame %s, %s requires %s %s." % (
             fact["frame"],
             voice,
             fact["variable"],
             phrase,
         )
-    if kind == "state_membership":
+    if kind == "state_membership" and {"frame", "state"} <= set(fact):
         # The state code is published rather than a name: the encoding's map is
         # not carried on the item, and the source excerpt beside this sentence
         # quotes the line that names the state.  A negated assertion rules the
@@ -440,7 +455,7 @@ def human_text_for_fact(
             "rules out" if fact.get("excluded") else "requires",
             _state_label(fact["state"], state_paths),
         )
-    if kind == "state_domain":
+    if kind == "state_domain" and {"frame", "states"} <= set(fact):
         # The domain is published as encoded integers, so the sentence reports
         # how many states remain legal rather than inventing names the fact does
         # not carry.
@@ -451,7 +466,7 @@ def human_text_for_fact(
             count,
             "" if count == 1 else "s",
         )
-    if kind == "definedness_condition":
+    if kind == "definedness_condition" and {"frame", "operation"} <= set(fact):
         variable = fact.get("variable")
         if variable is None:
             return "At frame %s, a %s must stay defined." % (
@@ -463,6 +478,24 @@ def human_text_for_fact(
             fact["operation"],
             variable,
         )
+    return _unreduced_sentence(role, fact)
+
+
+def _unreduced_sentence(role: str, fact: Mapping) -> str:
+    """Describe a group whose fact carries no usable reading.
+
+    :param role: The item's semantic role.
+    :type role: str
+    :param fact: The published normalized fact.
+    :type fact: Mapping
+    :return: One sentence naming the group without claiming a derivation.
+    :rtype: str
+
+    Example::
+
+        >>> _unreduced_sentence("transition_rule", {"kind": "structural_constraint"})
+        'A transition rule constrains this scenario without a reduced domain fact.'
+    """
     # No recognizer read this group, so the sentence says what the group *is*
     # rather than what it requires.  Naming the role reads as a description a
     # reader can place -- "the transition rule for this step" -- instead of an
@@ -1358,6 +1391,13 @@ class BmcReasoningStep:
 
     def __post_init__(self) -> None:
         _require_member(self.kind, _REASONING_STEP_KINDS, "reasoning step kind")
+        # Freeze before validating.  ``frozen=True`` stops the field being
+        # rebound, not the list behind it being emptied, so a caller keeping its
+        # own reference could pass every check here and then remove the members
+        # those checks were about.  ``BmcConflictCore.items`` has always copied
+        # for this reason; these fields had not.
+        object.__setattr__(self, "item_ids", tuple(self.item_ids))
+        object.__setattr__(self, "proof_node_ids", tuple(self.proof_node_ids))
         if not self.item_ids:
             # A step that reads nothing cannot be traced back to a source line,
             # which is the one thing a narrative step is for.
@@ -1435,6 +1475,9 @@ class BmcConflictNarrative:
         _require_member(
             self.derivation_status, _DERIVATION_STATUSES, "narrative derivation_status"
         )
+        # Same reason as the step above: copy before the invariants read them.
+        object.__setattr__(self, "reasoning_steps", tuple(self.reasoning_steps))
+        object.__setattr__(self, "review_surfaces", tuple(self.review_surfaces))
         for name, text in (("headline", self.headline), ("summary", self.summary)):
             require_published_text(text, "narrative %s" % name)
         if len(set(self.review_surfaces)) != len(self.review_surfaces):
@@ -2289,7 +2332,11 @@ def _conflict_pattern(
             "Frame %s cannot assign %s to %s at the same time."
             % (frame, " and ".join(str(value) for value in equalities), variable),
         )
-    if _interval_is_empty(comparisons):
+    # Only the members the reading uses count as explained; a skipped ``ne`` would
+    # otherwise be listed in the conflict step without bearing on it.
+    if len(_bounds_participants(comparisons)) == len(items) and _interval_is_empty(
+        comparisons
+    ):
         return (
             "interval_intersection",
             "No value of %s satisfies every bound required at frame %s."
@@ -2356,6 +2403,31 @@ def _interval_is_empty(items: Tuple["BmcCoreItem", ...]) -> bool:
         return True
     # The limits meet.  A single point survives only when both sides include it.
     return lower == upper and (lower_open or upper_open)
+
+
+def _bounds_participants(items: Tuple["BmcCoreItem", ...]) -> Tuple:
+    """Return the members whose operator the interval reading actually uses.
+
+    ``ne`` is skipped when the limits are computed -- excluding one value never
+    empties a range -- so a core carrying one passes the sibling coverage count
+    while contributing nothing to the conclusion.  Counting participants instead
+    of members keeps "every member is explained" true rather than merely counted.
+
+    :param items: Published comparison members on one variable and frame.
+    :type items: Tuple[BmcCoreItem, ...]
+    :return: The subset the limits are derived from.
+    :rtype: Tuple[BmcCoreItem, ...]
+
+    Example::
+
+        >>> _bounds_participants(())
+        ()
+    """
+    return tuple(
+        item
+        for item in items
+        if item.normalized_fact.get("operator") in ("eq", "ge", "gt", "le", "lt")
+    )
 
 
 def _propagation_steps(core: "BmcConflictCore", forced_values: Tuple):

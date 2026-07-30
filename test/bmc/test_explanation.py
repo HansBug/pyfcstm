@@ -3516,7 +3516,29 @@ def _pattern_positives():
             (_guard_item("x", 0), _comparison_item("x", 0)),
             "cannot stay defined",
         ),
+        "a-value-carried-into-a-contradiction": (
+            "assumptions_prefix",
+            (
+                _propagation_item("prefix.x", "initialization", "x", 0),
+                _propagation_item("assume.x", "assumptions", "x", 1),
+            ),
+            "cannot assign",
+        ),
     }
+
+
+def _forced_for(pattern):
+    """The probe result a reading needs, for the one reading whose input is not the core.
+
+    Value propagation is the sixth reading and the only one taking a second argument,
+    which is why it sat outside the matrix below until now.  Its coverage rule is the
+    same as the other five, so it belongs inside rather than beside.
+    """
+    from pyfcstm.bmc.infeasibility import ForcedValue
+
+    if pattern == "a-value-carried-into-a-contradiction":
+        return (ForcedValue("x", 0, 7, ("prefix.x",)),)
+    return ()
 
 
 @pytest.mark.unittest
@@ -3554,8 +3576,12 @@ def test_no_pattern_closes_over_a_member_it_does_not_read(pattern, rider_kind) -
 
     # Anti-vacuity: without the rider this core does reach its reading, so a
     # degradation below is the rider's doing and not the fixture's.
+    forced = _forced_for(pattern)
     reached = build_conflict_narrative(
-        BmcConflictCore(scope, "F", "source_group", "subset_minimal", "proven", members)
+        BmcConflictCore(
+            scope, "F", "source_group", "subset_minimal", "proven", members
+        ),
+        forced,
     )
     assert reached.derivation_status == "complete"
     assert closing in reached.reasoning_steps[-1].text
@@ -3568,7 +3594,8 @@ def test_no_pattern_closes_over_a_member_it_does_not_read(pattern, rider_kind) -
             "subset_minimal",
             "proven",
             members + (_rider(rider_kind),),
-        )
+        ),
+        forced,
     )
     assert with_rider.derivation_status != "complete"
 

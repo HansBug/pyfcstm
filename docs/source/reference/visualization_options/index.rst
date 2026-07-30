@@ -909,6 +909,13 @@ accepts the same three suffixes plus ``--scale``.
        optional runtime is absent, because an exception raised from a repr hook
        replaces the whole cell output with a traceback.
 
+.. note::
+   The viewer's own PNG download rasterises at a fixed 2x, while
+   ``to_png()`` defaults to 1x.  Comparing a downloaded file with an
+   API-produced one therefore shows a factor-of-two difference in pixels that is
+   two different requests rather than a disagreement; pass ``scale=2`` to compare
+   like with like.
+
 Every export is bounded. The limits are checked in Python before the rasteriser
 or the PDF writer is reached, so an impossible request is named rather than
 discovered by exhausting memory.

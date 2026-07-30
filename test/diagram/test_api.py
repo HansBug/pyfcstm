@@ -991,7 +991,7 @@ def test_a_kept_viewer_shows_another_user_nothing_about_the_diagram(
 @pytest.mark.skipif(os.name == "nt", reason="POSIX modes and ownership")
 @pytest.mark.parametrize(
     ("kind", "reason"),
-    [("file", "not a directory"), ("open", "mode is")],
+    [("file", "not a directory"), ("open", "allows")],
 )
 def test_a_viewer_directory_that_cannot_be_trusted_is_not_used(
     kind, reason, tmp_path, monkeypatch, caplog
@@ -1025,6 +1025,119 @@ def test_a_viewer_directory_that_cannot_be_trusted_is_not_used(
         assert kept.parent == chosen
     finally:
         diagram_api._PRIVATE_DIRECTORIES.clear()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX modes")
+def test_a_setgid_parent_does_not_make_a_private_directory_untrusted(
+    tmp_path, monkeypatch
+):
+    # A shared scratch directory run with setgid is an ordinary POSIX arrangement,
+    # and it makes the private directory 2700: owner everything, group and other
+    # nothing, which is as closed as 0700. Comparing the whole mode against 0700
+    # refused it, so every process fell back and wrote the same document again --
+    # the cross-process reuse this design exists to give.
+    from pyfcstm.diagram import api as diagram_api
+
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
+    os.chmod(str(tmp_path), 0o2777)
+    diagram_api._PRIVATE_DIRECTORIES.clear()
+    diagram_api._FALLBACK_DIRECTORIES.clear()
+    try:
+        first = diagram_api._private_viewer_directory()
+        assert stat.S_IMODE(first.stat().st_mode) & 0o2000, "the parent was not setgid"
+        # What a second process sees: the directory already there.
+        diagram_api._PRIVATE_DIRECTORIES.clear()
+        second = diagram_api._private_viewer_directory()
+        assert second == first, "a 2700 directory is as private as 0700"
+        assert second not in diagram_api._FALLBACK_DIRECTORIES
+    finally:
+        diagram_api._PRIVATE_DIRECTORIES.clear()
+        diagram_api._FALLBACK_DIRECTORIES.clear()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX modes")
+def test_a_remembered_viewer_directory_is_checked_again_before_each_use(
+    tmp_path, monkeypatch, caplog
+):
+    # Remembered, not remembered as checked. A long-lived process resolves the
+    # directory once and may write days later: a tmp cleaner removes it, somebody
+    # else creates the predictable name as 0777, and a cache that only asked
+    # `is_dir()` would have written the next document -- name and size -- straight
+    # into a directory they can list.
+    import logging
+    import shutil
+
+    from pyfcstm.diagram import api as diagram_api
+
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
+    diagram_api._PRIVATE_DIRECTORIES.clear()
+    diagram_api._FALLBACK_DIRECTORIES.clear()
+    try:
+        first = diagram_api._private_viewer_directory()
+        shutil.rmtree(str(first))
+        first.mkdir(mode=0o777)
+        os.chmod(str(first), 0o777)
+
+        with caplog.at_level(logging.WARNING):
+            second = diagram_api._private_viewer_directory()
+        assert second != first, "the directory was taken and must not be reused"
+        assert stat.S_IMODE(second.stat().st_mode) & 0o077 == 0, "the new one is closed"
+        assert "no longer using" in caplog.text, "the change must be recorded"
+    finally:
+        diagram_api._PRIVATE_DIRECTORIES.clear()
+        diagram_api._FALLBACK_DIRECTORIES.clear()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX modes")
+def test_a_fallback_viewer_directory_does_not_outlive_its_use(tmp_path, monkeypatch):
+    # The per-user directory is meant to stay -- one per user, empty between calls.
+    # A fallback is this process's alone, so leaving it behind gave every run of
+    # `pyfcstm diagram --open` an inode of its own for as long as the predictable
+    # name stayed untrustworthy. Measured at four directories for four runs.
+    from pyfcstm.diagram import api as diagram_api
+
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
+    monkeypatch.setattr(diagram_api, "_open_standalone_window", lambda *_: None)
+    untrusted = tmp_path / ("pyfcstm-viewers-%d" % os.geteuid())
+    untrusted.mkdir(mode=0o755)
+    view = _model("state Root;").diagram()
+    object.__setattr__(view, "_html_document", "<html>tiny</html>")
+
+    try:
+        for _ in range(4):
+            diagram_api._PRIVATE_DIRECTORIES.clear()
+            diagram_api._FALLBACK_DIRECTORIES.clear()
+            view.show(open_window=True)
+        left = sorted(item.name for item in tmp_path.iterdir() if item.is_dir())
+        assert left == [untrusted.name], (
+            "fallback directories outlived their use: %r" % (left,)
+        )
+    finally:
+        diagram_api._PRIVATE_DIRECTORIES.clear()
+        diagram_api._FALLBACK_DIRECTORIES.clear()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX modes")
+def test_a_fallback_directory_holding_a_kept_document_stays(tmp_path, monkeypatch):
+    # Only when empty: the same directory holds documents the caller keeps, and
+    # removing it under them would take the path they were handed.
+    from pyfcstm.diagram import api as diagram_api
+
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
+    monkeypatch.setattr(diagram_api, "_open_standalone_window", lambda *_: None)
+    untrusted = tmp_path / ("pyfcstm-viewers-%d" % os.geteuid())
+    untrusted.mkdir(mode=0o755)
+    view = _model("state Root;").diagram()
+    object.__setattr__(view, "_html_document", "<html>tiny</html>")
+
+    try:
+        kept = view.show(open_window=False)
+        view.show(open_window=True)
+        assert kept.is_file(), "the kept document went with the directory"
+        assert kept.parent.is_dir()
+    finally:
+        diagram_api._PRIVATE_DIRECTORIES.clear()
+        diagram_api._FALLBACK_DIRECTORIES.clear()
 
 
 @pytest.mark.unittest

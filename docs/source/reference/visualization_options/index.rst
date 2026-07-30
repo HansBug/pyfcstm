@@ -834,8 +834,10 @@ a path, nothing removes it. Either way the file is written 0600 inside a directo
 of your own that no other local user may look into, because a viewer carries the
 model's source: a name derived from the document, and the exact size of a ~29 MB
 document, each identify which diagram it is to anyone able to list them. Asking
-again for the same diagram returns the same file rather than another copy, in this
-process or another of yours.
+again for the same diagram returns the same file rather than another copy, in
+another process of yours as well — unless that directory turns out to belong to
+somebody else or to be open to them, in which case each process keeps its own and
+says so in a warning.
 
 The HTML viewer can download SVG, PNG, and vector PDF in a browser. The Python
 methods ``to_svg()``, ``to_png()``, and ``to_pdf()`` intentionally raise

@@ -36,7 +36,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
 from collections.abc import Iterable
-from typing import Iterator, Any, Dict, List, Mapping, Optional, Tuple, Union
+from typing import Iterator, Any, Dict, List, Mapping, Optional, Tuple, Union, Set
 
 from pygments import lex
 from pygments.formatters import HtmlFormatter
@@ -981,6 +981,11 @@ def _open_standalone_window(path: Path, window_size: Tuple[int, int]) -> None:
 # directory are independent; see `_private_viewer_directory`.
 _PRIVATE_DIRECTORIES: Dict[str, Path] = {}
 
+# Those of the above that this process made for itself because the predictable name
+# could not be trusted. They are removed when they empty; see
+# `_discard_empty_fallback`.
+_FALLBACK_DIRECTORIES: Set[Path] = set()
+
 
 def _private_viewer_directory() -> Path:
     """
@@ -993,23 +998,49 @@ def _private_viewer_directory() -> Path:
     counts, and the match says which one is on display.  A name derived from the
     document gave the same thing away more directly.  Neither is closed by changing
     what the file is called, because the leak is not in the name -- so the boundary
-    is the directory, where number, sizes and times are as invisible as contents.
+    is the directory, where the names and the individual sizes are as invisible as
+    the contents.  Not everything is: ``stat`` on a *directory* needs only the
+    parent's execute bit, so another user can still see that this one exists, when
+    it last changed, and -- on a tmpfs, where a directory's size grows with its
+    entries -- roughly how many things are in it.  None of that identifies a model,
+    which is what the fingerprint was.
 
     Per user rather than per process, because that is what lets the name inside
     carry reuse: two processes showing one diagram write one file instead of ~30 MB
     each.  The name of a per-user directory is predictable, so it is verified
-    before use -- a directory, not a link, ours, and 0700 -- and a private one of
+    before use -- a directory, not a link, ours, and closed to everyone else -- and
+    a private one of
     this process's own is used instead when it is not, which keeps working at the
     cost of that reuse.
+
+    What that verification is worth depends on the platform, and this is the limit
+    of it.  On POSIX the mode and the owner are both checked, and both mean what
+    they say.  On Windows there is no owner to ask about, and ``os.mkdir`` applies
+    a restrictive ACL for a mode of 0o700 only from CPython 3.12.4 -- earlier
+    versions in this package's range ignore it.  Privacy there rests on ``%TEMP%``
+    being per account, which it is by default; a ``TEMP`` pointing at a directory
+    other users share is not something this can detect, and in that case neither
+    the directory nor the 0600 on the files inside it keeps anything private,
+    because that mode is only Windows' read-only bit.  Pass an explicit ``output``
+    path for a document that must not be somewhere shared.
 
     :return: A directory under the system temporary directory, readable only by
         this user.
     :rtype: pathlib.Path
     """
     base = tempfile.gettempdir()
-    existing = _PRIVATE_DIRECTORIES.get(base)
-    if existing is not None and existing.is_dir():
-        return existing
+    remembered = _PRIVATE_DIRECTORIES.get(base)
+    if remembered is not None:
+        # Checked again, not remembered as checked. A long-lived process resolves
+        # this once and may write days later, by which time a tmp cleaner can have
+        # removed the directory and somebody else created the predictable name as
+        # 0777 -- and `is_dir()` alone would have followed a link into it.
+        complaint = _unusable_viewer_directory(remembered)
+        if complaint is None:
+            return remembered
+        _report_degradation("no longer using %s: %s", remembered, complaint)
+        del _PRIVATE_DIRECTORIES[base]
+        _FALLBACK_DIRECTORIES.discard(remembered)
     shared = Path(base) / (
         "pyfcstm-viewers-%d" % os.geteuid()
         if hasattr(os, "geteuid")
@@ -1025,7 +1056,40 @@ def _private_viewer_directory() -> Path:
     _report_degradation("not reusing %s: %s", shared, complaint)
     private = Path(tempfile.mkdtemp(prefix="pyfcstm-viewers-", dir=base))
     _PRIVATE_DIRECTORIES[base] = private
+    _FALLBACK_DIRECTORIES.add(private)
     return private
+
+
+def _discard_empty_fallback(directory: Path) -> None:
+    """
+    Remove a fallback viewer directory once it holds nothing.
+
+    The per-user directory is meant to stay: one per user, empty between calls, and
+    the place a second process looks.  A fallback is not -- it belongs to this
+    process alone, so leaving it behind gave every run of ``pyfcstm diagram --open``
+    an inode of its own for as long as the predictable name stayed untrustworthy.
+
+    Only when empty, because the same directory holds documents a caller keeps.
+
+    :param directory: Directory a viewer was just removed from.
+    :type directory: pathlib.Path
+    :return: ``None``.
+    :rtype: None
+    """
+    if directory not in _FALLBACK_DIRECTORIES:
+        return
+    try:
+        os.rmdir(str(directory))
+    except OSError:
+        # ENOTEMPTY when a kept document is still in it, which is the ordinary
+        # reason and not worth a word; anything else leaves it for the next run.
+        return
+    _FALLBACK_DIRECTORIES.discard(directory)
+    for base, path in list(_PRIVATE_DIRECTORIES.items()):
+        if path == directory:
+            # Forgotten, so the next call looks at the predictable name again --
+            # whatever was holding it may be gone.
+            del _PRIVATE_DIRECTORIES[base]
 
 
 def _unusable_viewer_directory(path: Path) -> Optional[str]:
@@ -1034,7 +1098,9 @@ def _unusable_viewer_directory(path: Path) -> Optional[str]:
 
     The name is predictable and its parent is world-writable, so this asks the four
     questions that make the answer safe: it is there, it is a directory rather than
-    a link to one, it belongs to us, and nobody else may look inside.
+    a link to one, it belongs to us, and nobody else may look inside.  The last one
+    asks about the group and other bits rather than the whole mode, because a
+    setgid parent makes an otherwise identical directory 2700.
 
     :param path: Directory the viewers would go in.
     :type path: pathlib.Path
@@ -1060,8 +1126,13 @@ def _unusable_viewer_directory(path: Path) -> Optional[str]:
         return "it is not a directory"
     if hasattr(os, "geteuid") and info.st_uid != os.geteuid():
         return "it belongs to another user"
-    if os.name != "nt" and stat.S_IMODE(info.st_mode) != 0o700:
-        return "its mode is %04o rather than 0700" % stat.S_IMODE(info.st_mode)
+    shared = stat.S_IMODE(info.st_mode) & 0o077
+    if os.name != "nt" and shared:
+        # The bits that decide who else may look, not the whole mode. A setgid
+        # parent -- an ordinary way to run a shared scratch directory -- makes the
+        # new directory 2700, which is as private as 0700 and was being refused,
+        # sending every process to a fallback and writing the same document again.
+        return "it allows %03o to others" % shared
     return None
 
 
@@ -2646,9 +2717,10 @@ class Diagram:
             diagram it holds, and both would to anyone who could list them. With a
             window that path is this call's, and this call removes it when the
             window closes. Without one nothing removes it, and asking again for the
-            same diagram returns the same file rather than another ~30 MB, here or
-            in another process of yours. Pass an explicit path for a document you
-            want to name yourself.
+            same diagram returns the same file rather than another ~30 MB -- in
+            another process of yours as well, unless that directory cannot be
+            trusted, in which case each process keeps its own. Pass an explicit
+            path for a document you want to name yourself.
         :type output: str or os.PathLike, optional
         :param open_window: Whether to launch a Chromium-family app window,
             defaults to ``True``.
@@ -2721,4 +2793,5 @@ class Diagram:
                 # whole reason for waiting rather than detaching. Only a path the
                 # caller named survives, which is what `-o` is for.
                 _discard(path)
+                _discard_empty_fallback(path.parent)
         return path

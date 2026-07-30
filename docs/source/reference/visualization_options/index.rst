@@ -837,7 +837,10 @@ document, each identify which diagram it is to anyone able to list them. Asking
 again for the same diagram returns the same file rather than another copy, in
 another process of yours as well — unless that directory turns out to belong to
 somebody else or to be open to them, in which case each process keeps its own and
-says so in a warning.
+says so in a warning. On Windows this rests on ``%TEMP%`` being per account, which
+is the default; a ``TEMP`` shared between users is not detectable, and before
+CPython 3.12.4 the directory's mode is not applied there — pass a path of your own
+for a document that must not be somewhere shared.
 
 The HTML viewer can download SVG, PNG, and vector PDF in a browser. The Python
 methods ``to_svg()``, ``to_png()``, and ``to_pdf()`` intentionally raise

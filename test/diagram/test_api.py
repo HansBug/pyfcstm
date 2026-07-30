@@ -1118,6 +1118,55 @@ def test_a_fallback_viewer_directory_does_not_outlive_its_use(tmp_path, monkeypa
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX modes")
+def test_an_empty_fallback_is_reclaimed_at_exit_and_a_used_one_is_not(
+    tmp_path, monkeypatch
+):
+    # `show(open_window=False)` hands the file over and returns, so nothing in that
+    # call is still running when the caller later removes it -- a short process
+    # doing that repeatedly left one empty directory behind each time. The hook is
+    # `rmdir`, which is what makes running it over every fallback safe: one still
+    # holding a document the caller keeps refuses to go.
+    import atexit
+
+    from pyfcstm.diagram import api as diagram_api
+
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
+    diagram_api._PRIVATE_DIRECTORIES.clear()
+    diagram_api._FALLBACK_DIRECTORIES.clear()
+    del diagram_api._RECLAIM_REGISTERED[:]
+    registered = []
+    monkeypatch.setattr(atexit, "register", lambda func, *args: registered.append(func))
+    monkeypatch.setattr(
+        diagram_api.atexit, "register", lambda func, *args: registered.append(func)
+    )
+    untrusted = tmp_path / ("pyfcstm-viewers-%d" % os.geteuid())
+    untrusted.mkdir(mode=0o755)
+
+    try:
+        kept = _model("state Root;").show(open_window=False)
+        fallback = kept.parent
+        assert fallback != untrusted
+        assert diagram_api._reclaim_empty_fallbacks in registered, "no exit hook"
+
+        # While the caller still has it, the directory must stay.
+        diagram_api._reclaim_empty_fallbacks(os.getpid())
+        assert fallback.is_dir() and kept.is_file(), "a kept document was taken"
+
+        kept.unlink()
+        diagram_api._reclaim_empty_fallbacks(os.getpid())
+        assert not fallback.exists(), "an empty fallback outlived its use"
+
+        # A forked child running the parent's hook must not act on it.
+        diagram_api._FALLBACK_DIRECTORIES.add(untrusted)
+        diagram_api._reclaim_empty_fallbacks(os.getpid() + 1)
+        assert untrusted.is_dir(), "a child removed a directory it does not own"
+    finally:
+        diagram_api._PRIVATE_DIRECTORIES.clear()
+        diagram_api._FALLBACK_DIRECTORIES.clear()
+        del diagram_api._RECLAIM_REGISTERED[:]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX modes")
 def test_a_fallback_directory_holding_a_kept_document_stays(tmp_path, monkeypatch):
     # Only when empty: the same directory holds documents the caller keeps, and
     # removing it under them would take the path they were handed.

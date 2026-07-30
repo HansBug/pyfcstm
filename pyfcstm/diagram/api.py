@@ -15,6 +15,7 @@ Example::
     'Root'
 """
 
+import atexit
 import base64
 import contextlib
 import hashlib
@@ -982,9 +983,10 @@ def _open_standalone_window(path: Path, window_size: Tuple[int, int]) -> None:
 _PRIVATE_DIRECTORIES: Dict[str, Path] = {}
 
 # Those of the above that this process made for itself because the predictable name
-# could not be trusted. They are removed when they empty; see
-# `_discard_empty_fallback`.
+# could not be trusted. They are removed when they empty, and again at exit; see
+# `_discard_empty_fallback` and `_reclaim_empty_fallbacks`.
 _FALLBACK_DIRECTORIES: Set[Path] = set()
+_RECLAIM_REGISTERED: List[int] = []
 
 
 def _private_viewer_directory() -> Path:
@@ -1057,7 +1059,43 @@ def _private_viewer_directory() -> Path:
     private = Path(tempfile.mkdtemp(prefix="pyfcstm-viewers-", dir=base))
     _PRIVATE_DIRECTORIES[base] = private
     _FALLBACK_DIRECTORIES.add(private)
+    if not _RECLAIM_REGISTERED:
+        # Once per process. A caller who keeps a viewer and later removes it leaves
+        # the directory empty, and nothing in the call that made it is still running
+        # to notice: a short process doing that repeatedly left one behind each time.
+        _RECLAIM_REGISTERED.append(os.getpid())
+        atexit.register(_reclaim_empty_fallbacks, os.getpid())
     return private
+
+
+def _reclaim_empty_fallbacks(owner: int) -> None:
+    """
+    Remove this process's fallback viewer directories, if they are empty.
+
+    Registered with :mod:`atexit` when the first one is made.  ``rmdir`` is what
+    makes it safe to run over all of them: a directory still holding a document the
+    caller keeps refuses to go, which is the contract, and one already gone is not
+    an error worth reporting from an exit hook.
+
+    :param owner: The process that registered this, so a forked child does not act
+        on it.
+    :type owner: int
+    :return: ``None``.
+    :rtype: None
+    """
+    if os.getpid() != owner:
+        # `fork` copies the exit hooks along with the set, and a child that exits
+        # normally runs the parent's. Removing the parent's directory between its
+        # creation and the first write into it would break that save.
+        return
+    for directory in sorted(_FALLBACK_DIRECTORIES):
+        try:
+            os.rmdir(str(directory))
+        except OSError:
+            # ENOTEMPTY where a document the caller keeps is still there, ENOENT
+            # where it has already gone, EACCES where the temporary directory has
+            # been locked down since. None of them is actionable at exit.
+            continue
 
 
 def _discard_empty_fallback(directory: Path) -> None:
@@ -2714,7 +2752,12 @@ class Diagram:
         :param output: Optional destination path. When omitted the viewer is
             written 0600 inside a directory of your own that no other local user
             may look into -- neither the name of a viewer nor its size says which
-            diagram it holds, and both would to anyone who could list them. With a
+            diagram it holds, and both would to anyone who could list them. On
+            Windows that rests on ``%TEMP%`` being per account, which is the
+            default: a ``TEMP`` shared between users cannot be detected here, and
+            before CPython 3.12.4 the directory's mode is not applied there either.
+            Pass a path of your own for a document that must not be somewhere
+            shared. With a
             window that path is this call's, and this call removes it when the
             window closes. Without one nothing removes it, and asking again for the
             same diagram returns the same file rather than another ~30 MB -- in

@@ -277,6 +277,7 @@ def test_the_transcription_guard_covers_every_frozen_structure() -> None:
     assert provenance._VALUE_FACT_CATEGORIES == (
         "assumption.frame",
         "initial.variable",
+        "initial.where",
     )
     # Transcribed, not merely registered: the constructor refuses a pairing that
     # is not listed here, so the contents are the contract.
@@ -1308,9 +1309,12 @@ def test_the_published_helpers_handle_a_wrong_type(call, expected, message) -> N
 
 
 @pytest.mark.parametrize("field", ["stable_id", "category", "summary"])
-# An empty value names nothing; a non-string is the other way a caller gets this
-# wrong, and it reaches the same field through a different check.
-@pytest.mark.parametrize("value", ["", 123], ids=["empty", "not-a-string"])
+# An empty value names nothing, whitespace names nothing while looking like it
+# does, and a non-string is the other way a caller gets this wrong -- each
+# reaches the same field through a different check.
+@pytest.mark.parametrize(
+    "value", ["", "   ", 123], ids=["empty", "whitespace", "not-a-string"]
+)
 def test_constraint_rejects_unusable_identity_fields(field, value) -> None:
     """An unnamed constraint could never be traced back to its source."""
     payload = dict(
@@ -1322,7 +1326,10 @@ def test_constraint_rejects_unusable_identity_fields(field, value) -> None:
     )
     payload[field] = value
 
-    with pytest.raises(ValueError, match="non-empty string"):
+    # The two refusals word themselves differently -- one names the type, the
+    # other the emptiness -- so the assertion pins the field rather than either
+    # phrasing.
+    with pytest.raises(ValueError, match="constraint %s" % field):
         BmcConstraintRef(**payload)
 
 
@@ -2883,6 +2890,7 @@ def test_every_published_field_documents_the_type_it_is_annotated_with() -> None
         explanation_module.BmcCoreItem,
         explanation_module.BmcConflictCore,
         explanation_module.BmcConstraintRef,
+        explanation_module.BmcInfeasibilityExplanation,
         infeasibility_module.ForcedValue,
         infeasibility_module.MinimizedCore,
         infeasibility_module.ProbeRecord,
@@ -2907,3 +2915,91 @@ def test_every_published_field_documents_the_type_it_is_annotated_with() -> None
                 )
 
     assert mismatched == []
+
+
+@pytest.mark.unittest
+def test_no_published_text_field_accepts_whitespace() -> None:
+    """One rule about blank text, one predicate, every exit.
+
+    These six fields had grown three different emptiness tests -- ``.strip()``,
+    ``if not text`` and plain truthiness -- so ``"   "`` was refused in three
+    places and published in the other three, and the schema's ``minLength``
+    agreed with neither.  Whitespace is the input that separates the readings, so
+    it is the one worth enumerating: a field added later that invents a fourth
+    test fails here rather than quietly becoming the seventh exit.
+    """
+    from pyfcstm.bmc.explanation import (
+        BmcConflictCore,
+        BmcConflictNarrative,
+        BmcConstraintRef,
+        BmcCoreItem,
+        BmcReasoningStep,
+    )
+
+    blank = "   "
+    reference = BmcConstraintRef(
+        "g0",
+        "assumptions",
+        "assumption.frame",
+        BmcSourceRef("generated", None, None),
+        "summary",
+    )
+    item = BmcCoreItem(
+        reference,
+        "assumption",
+        None,
+        False,
+        {"kind": "structural_constraint"},
+        "t",
+        False,
+    )
+
+    builders = {
+        "reasoning step text": lambda: BmcReasoningStep("fact", ("g0",), (), blank),
+        "reasoning step item_ids entry": lambda: BmcReasoningStep(
+            "fact", (blank,), (), "t"
+        ),
+        "reasoning step proof_node_ids entry": lambda: BmcReasoningStep(
+            "fact", ("g0",), (blank,), "t"
+        ),
+        "narrative headline": lambda: BmcConflictNarrative(
+            "structural_only", blank, "summary"
+        ),
+        "narrative summary": lambda: BmcConflictNarrative(
+            "structural_only", "headline", blank
+        ),
+        "core formula_summary": lambda: BmcConflictCore(
+            "assumptions_component",
+            blank,
+            "source_group",
+            "raw",
+            "not_proven",
+            (item,),
+        ),
+        "core item human_text": lambda: BmcCoreItem(
+            reference,
+            "assumption",
+            None,
+            False,
+            {"kind": "structural_constraint"},
+            blank,
+            False,
+        ),
+        "constraint summary": lambda: BmcConstraintRef(
+            "g0",
+            "assumptions",
+            "assumption.frame",
+            BmcSourceRef("generated", None, None),
+            blank,
+        ),
+    }
+
+    accepted = []
+    for where, build in builders.items():
+        try:
+            build()
+        except ValueError:
+            continue
+        accepted.append(where)
+
+    assert accepted == []

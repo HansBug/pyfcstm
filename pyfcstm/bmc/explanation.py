@@ -318,6 +318,39 @@ _ROLE_VOICES = {
 }
 
 
+def require_published_text(value: Any, where: str) -> str:
+    """Return published text, refusing anything a reader would see as empty.
+
+    One rule with six exits is one rule only if they share a predicate.  These
+    fields had grown three different emptiness tests -- ``.strip()``, ``if not
+    text`` and plain truthiness -- so ``"   "`` was refused in three places and
+    published in the other three, and the schema's ``minLength`` agreed with
+    neither.  Whitespace is the case that separates them, and it is exactly what a
+    reader gets nothing from.
+
+    :param value: The candidate text.
+    :type value: object
+    :param where: Field name used in the error message.
+    :type where: str
+    :return: The validated text as an exact ``str``.
+    :rtype: str
+    :raises ValueError: If the value is not a plain ``str`` or holds no
+        non-whitespace character.
+
+    Example::
+
+        >>> require_published_text("At frame 0, x equals 1.", "human_text")
+        'At frame 0, x equals 1.'
+        >>> require_published_text("   ", "human_text")
+        Traceback (most recent call last):
+        ValueError: human_text must not be blank.
+    """
+    text = exact_str(value, where)
+    if not text.strip():
+        raise ValueError("%s must not be blank." % where)
+    return text
+
+
 def _state_label(code: Any, state_paths: Optional[Mapping]) -> str:
     """Render one state for a human sentence.
 
@@ -898,8 +931,10 @@ class BmcConstraintRef:
                 raise ValueError(
                     "constraint %s must be a non-empty string." % name
                 ) from None
-            if not plain:
-                raise ValueError("constraint %s must be a non-empty string." % name)
+            # ``summary`` is prose a reader sees; the other two are identifiers a
+            # consumer matches on.  All three go through the one predicate so the
+            # rule cannot grow a second reading of "empty".
+            require_published_text(plain, "constraint %s" % name)
             object.__setattr__(self, name, plain)
         # The published schema constrains this to the five known families, so a
         # category outside them makes to_canonical() emit output that fails the
@@ -1065,8 +1100,7 @@ class BmcCoreItem:
                 "a truncated excerpt must be present and exactly %d code "
                 "points long." % MAX_SOURCE_EXCERPT_CHARS
             )
-        if not isinstance(self.human_text, str) or not self.human_text:
-            raise ValueError("core item human_text must be a non-empty string.")
+        require_published_text(self.human_text, "core item human_text")
         fact = _require_json_mapping(self.normalized_fact, "normalized_fact")
         kind = fact.get("kind")
         if not isinstance(kind, str) or kind not in _FACT_KINDS:
@@ -1195,8 +1229,7 @@ class BmcConflictCore:
             raise ValueError(
                 "core formula_summary must be a non-empty string."
             ) from None
-        if not plain_summary:
-            raise ValueError("core formula_summary must be a non-empty string.")
+        require_published_text(plain_summary, "core formula_summary")
         object.__setattr__(self, "formula_summary", plain_summary)
         items = tuple(self.items)
         if not items:
@@ -1334,15 +1367,10 @@ class BmcReasoningStep:
                 # else reaches canonical JSON that a conforming validator refuses
                 # -- the constructor accepting what the schema rejects, which is
                 # the opposite direction from every named exception.
-                text = exact_str(value, "reasoning step %s entry" % name)
-                if not text:
-                    raise ValueError(
-                        "reasoning step %s entries must not be blank." % name
-                    )
+                require_published_text(value, "reasoning step %s entry" % name)
             if len(set(ids)) != len(ids):
                 raise ValueError("reasoning step %s must not repeat an id." % name)
-        if not self.text.strip():
-            raise ValueError("a reasoning step must carry text.")
+        require_published_text(self.text, "reasoning step text")
 
     def to_canonical(self) -> Dict[str, Any]:
         """Return the published mapping for this step.
@@ -1404,8 +1432,7 @@ class BmcConflictNarrative:
             self.derivation_status, _DERIVATION_STATUSES, "narrative derivation_status"
         )
         for name, text in (("headline", self.headline), ("summary", self.summary)):
-            if not text.strip():
-                raise ValueError("narrative %s must not be blank." % name)
+            require_published_text(text, "narrative %s" % name)
         if len(set(self.review_surfaces)) != len(self.review_surfaces):
             raise ValueError("narrative review_surfaces must not repeat an id.")
         if self.derivation_status == "complete" and not [
@@ -1472,14 +1499,14 @@ class BmcInfeasibilityExplanation:
     ``requested_mode`` whenever a probe or extraction step degrades.
 
     :param requested_mode: Explanation depth the caller asked for.
-    :type requested_mode: str
+    :type requested_mode: BmcInfeasibilityExplanationMode
     :param achieved_mode: Explanation depth actually delivered.
-    :type achieved_mode: str
+    :type achieved_mode: BmcInfeasibilityExplanationMode
     :param status: Completeness of the delivered artifact.
-    :type status: str
+    :type status: BmcInfeasibilityExplanationStatus
     :param classification: Structured infeasibility classification, or ``None``
         when only a stage fallback is honest.
-    :type classification: Optional[str]
+    :type classification: Optional[BmcInfeasibilityClassification]
     :param core: Sound source core, defaults to ``None``.
     :type core: Optional[BmcConflictCore], optional
     :param proof: Reserved for a later stage; rejected while non-``None``.
@@ -1825,6 +1852,7 @@ __all__ = [
     "depth_line_is_needed",
     "build_conflict_narrative",
     "explanation_text_lines",
+    "require_published_text",
     "human_text_for_fact",
     "index_value",
     "is_printable_ascii",

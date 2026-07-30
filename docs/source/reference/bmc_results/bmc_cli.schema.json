@@ -6873,7 +6873,8 @@
         },
         "text": {
           "type": "string",
-          "minLength": 1
+          "pattern": "\\S",
+          "$comment": "The constructor rejects whitespace-only text, and Draft 2020-12 can say the same with a pattern; minLength alone lets a single space through."
         }
       }
     },
@@ -6899,11 +6900,13 @@
         },
         "headline": {
           "type": "string",
-          "minLength": 1
+          "pattern": "\\S",
+          "$comment": "Whitespace-only is refused by the constructor; a pattern says so here too."
         },
         "summary": {
           "type": "string",
-          "minLength": 1
+          "pattern": "\\S",
+          "$comment": "Whitespace-only is refused by the constructor; a pattern says so here too."
         },
         "reasoning_steps": {
           "type": "array",

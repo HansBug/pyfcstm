@@ -187,6 +187,12 @@ is\_printable\_ascii
 .. autofunction:: is_printable_ascii
 
 
+require\_published\_text
+-----------------------------------------------------
+
+.. autofunction:: require_published_text
+
+
 human\_text\_for\_fact
 -----------------------------------------------------
 

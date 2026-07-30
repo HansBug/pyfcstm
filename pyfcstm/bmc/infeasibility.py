@@ -1208,7 +1208,13 @@ def derive_forced_values(
             # A real witness is published as a float, the same shape the fact
             # recognizer uses for a real variable, so the two agree when the
             # narrative compares them.
-            value = float(candidate.as_fraction())
+            try:
+                value = float(candidate.as_fraction())
+            except OverflowError:
+                # OverflowError: the witness does not fit a Python float.  No
+                # forced value is derived, so the narrative degrades rather than
+                # the explanation failing and taking the verdict with it.
+                continue
         else:
             # An algebraic or otherwise unrepresentable witness has no published
             # shape; the narrative degrades rather than rendering an

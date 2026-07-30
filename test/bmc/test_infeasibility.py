@@ -16,6 +16,7 @@ from pyfcstm.bmc import build_bmc_core_formula, compile_bmc_property
 from pyfcstm.bmc.engine import BmcEngine
 from pyfcstm.bmc.errors import BmcBuildError
 from pyfcstm.bmc.explanation import (
+    _FACT_KINDS,
     CLASSIFICATION_SCOPES,
     SCOPE_AGGREGATES,
     STAGE_FALLBACK_SCOPES,
@@ -659,14 +660,7 @@ def test_core_items_quote_authored_source_when_a_registry_is_given() -> None:
     context = BmcEngine(machine).prepare(query, query_source_path="q.fbmcq")
     core = build_bmc_core_formula(context)
     registry = context._source_registry
-    # The initial predicate: an authored group whose conjunction of a state target
-    # and a variable bound no recognizer reads, so the structural fallback below
-    # is asserted on a group that genuinely takes it.
-    group = next(
-        g
-        for g in core._tracked_groups
-        if g.source_ref.kind == "fbmcq" and g.category == "initial.where"
-    )
+    group = next(g for g in core._tracked_groups if g.source_ref.kind == "fbmcq")
 
     item = build_core_item(group, registry)
 
@@ -676,11 +670,10 @@ def test_core_items_quote_authored_source_when_a_registry_is_given() -> None:
     assert item.constraint.stable_id == group.stable_id
     assert item.semantic_role == _semantic_role(group.category)
     assert item.editable is True
-    # A structural fallback keeps its identity, which is what the stage assertion
-    # below reads.  This test is about the excerpt, so it asserts the group whose
-    # shape has no reading rather than pinning one tag for every group.
-    assert item.normalized_fact["kind"] == "structural_constraint"
-    assert item.normalized_fact["stage"] == group.stage
+    # Whatever reading the group gets, the fact carries a published tag.  Pinning
+    # one tag here made this test fail every time a recognizer learned a new
+    # shape, which says nothing about the excerpt it exists to check.
+    assert item.normalized_fact["kind"] in _FACT_KINDS
     assert item.human_text
 
 

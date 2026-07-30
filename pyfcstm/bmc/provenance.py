@@ -468,7 +468,16 @@ def _require_json_mapping(value: Any, label: str) -> Dict[str, Any]:
 #: These are the groups whose expression is one relational atom over one frame
 #: variable, which is what makes an ``equality`` or ``range`` fact readable
 #: without walking an arbitrary formula.
-_VALUE_FACT_CATEGORIES = ("assumption.frame", "initial.variable")
+#: Every category whose group can hold one comparison between a frame
+#: variable and a value.  The relation builder produces this shape from three
+#: places -- a frame assumption, a declared initializer and an ``init ... where``
+#: predicate -- and leaving one out publishes the same mathematical conflict a
+#: grade lower depending on where the author wrote it.
+_VALUE_FACT_CATEGORIES = (
+    "assumption.frame",
+    "initial.variable",
+    "initial.where",
+)
 
 
 def _relational_operators(z3: Any) -> Dict[int, str]:
@@ -632,9 +641,15 @@ def _numeric_value(expression: Any) -> Optional[Any]:
         return expression.as_long()
     if isinstance(expression, z3.RatNumRef):
         # as_fraction keeps the exact value z3 holds; float() is the published
-        # form, and a rational z3 cannot represent exactly never reaches here
-        # because the query language only accepts decimal literals.
-        return float(expression.as_fraction())
+        # form.  A rational past the float range is a legal thing to write, and
+        # converting it raises rather than losing precision, so the fact declines
+        # instead -- an explanation that cannot represent a value degrades, it
+        # does not take the mandatory verdict down with it.
+        try:
+            return float(expression.as_fraction())
+        except OverflowError:
+            # OverflowError: the exact rational does not fit a Python float.
+            return None
     return None
 
 
@@ -702,7 +717,12 @@ def _value_comparison_fact(
         elif isinstance(value, float):
             return None
     else:
-        value = float(value)
+        try:
+            value = float(value)
+        except OverflowError:
+            # OverflowError: an integer literal too large for a float, compared
+            # against a real variable.  Same choice as above: decline the fact.
+            return None
     # One tag with an operator field, not one tag per relation: a consumer that
     # wants only equalities filters on the operator, while one that wants any
     # bound on a variable does not have to enumerate tags to find them.

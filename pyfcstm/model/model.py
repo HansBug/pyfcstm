@@ -2510,7 +2510,9 @@ class StateMachine(AstExportable, PlantUMLExportable):
         :param source_text: Optional FCSTM source for the browser pane. Models
             parsed from text or a file already carry it; supplying a different
             text is rejected because the model's source ranges would no longer
-            match. Programmatic models accept any source.
+            match. A model built through the AST pipeline carries ranges but no
+            text, so an override is accepted only when the ranges still address
+            lines it has. A model with no ranges accepts any source.
         :type source_text: str, optional
         :param option_fields: Renderer option fields such as ``direction`` or
             ``cjk_locale``. These are equivalent to passing ``options``.
@@ -2564,7 +2566,9 @@ class StateMachine(AstExportable, PlantUMLExportable):
         :param source_text: Optional FCSTM source for the source pane. Models
             parsed from text or a file already carry it; supplying a different
             text is rejected because the model's source ranges would no longer
-            match. Programmatic models accept any source.
+            match. A model built through the AST pipeline carries ranges but no
+            text, so an override is accepted only when the ranges still address
+            lines it has. A model with no ranges accepts any source.
         :type source_text: str, optional
         :param option_fields: Renderer option fields equivalent to ``options``.
         :return: Path to the generated HTML file.

@@ -591,6 +591,26 @@ def _source_sidecar(
             # Keep the original numeric keys for consumers that predate the
             # multi-document sidecar; document-qualified keys are canonical.
             line_to_id[str(line)] = value
+    if explicit_override and mapping:
+        # An override on a model that carries ranges has to address the same lines
+        # they do. `_validate_source_override` cannot see this case: it returns early
+        # when the model has no `source_text`, which is exactly the shape the AST-level
+        # pipeline produces -- ranges and no text -- and exactly the shape the viewer's
+        # own message now tells the caller to pass `source_text` for. Without this, a
+        # mismatched override was accepted in silence and the pane linked states to
+        # whichever line happened to be there.
+        available = len(_text(source).split("\n"))
+        beyond = sorted(
+            key
+            for key, value in mapping.items()
+            if int(value["range"]["end"]["line"]) >= available
+        )
+        if beyond:
+            raise ValueError(
+                "source_text override does not cover the model's source ranges: %s "
+                "point past its %d line(s); reparse the model from the replacement "
+                "FCSTM text" % (", ".join(beyond[:3]), available)
+            )
     return source, mapping, line_to_id, documents
 
 

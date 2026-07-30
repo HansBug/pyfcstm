@@ -1089,6 +1089,32 @@ def test_a_kept_viewer_is_shared_by_directory_and_not_by_process(tmp_path, monke
     )
 
 
+@pytest.mark.unittest
+def test_a_source_override_must_address_the_lines_the_model_recorded():
+    # The viewer tells a caller whose model has ranges but no text to pass
+    # `source_text`, and until now that path had no validation at all: the guard
+    # returned early on a model without `source_text`, which is exactly this shape.
+    # A mismatched override was accepted in silence, and the pane linked states to
+    # whichever line happened to be at that number.
+    from pyfcstm.dsl import parse_state_machine_dsl
+    from pyfcstm.model import parse_dsl_node_to_state_machine
+
+    source = "state Root {\n  [*] -> A;\n  state A;\n  state B;\n  A -> B;\n}\n"
+    machine = parse_dsl_node_to_state_machine(parse_state_machine_dsl(source))
+    assert machine.source_text is None, "the AST pipeline carries no text"
+
+    # The recommended path still works, and says so.
+    assert machine.diagram(source_text=source).to_dict()
+
+    with pytest.raises(ValueError) as caught:
+        machine.diagram(
+            source_text="state Different {\n  [*] -> Zzz;\n  state Zzz;\n}\n"
+        )
+    message = str(caught.value)
+    assert "does not cover the model's source ranges" in message
+    assert "line(s)" in message, message
+
+
 @pytest.mark.skipif(os.name == "nt", reason="POSIX modes and ownership")
 @pytest.mark.parametrize(
     ("kind", "reason"),

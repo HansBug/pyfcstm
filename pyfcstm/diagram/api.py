@@ -1082,6 +1082,16 @@ def _reclaim_empty_fallbacks(owner: int) -> None:
     caller keeps refuses to go, which is the contract, and one already gone is not
     an error worth reporting from an exit hook.
 
+    What this does not reach is a process that leaves without running its exit
+    hooks -- ``os._exit``, a signal, or a :mod:`multiprocessing` worker, which runs
+    its own finalizers rather than these.  Such a process leaves an empty directory
+    behind, and nothing here can reclaim it: this mapping holds only what the
+    running process made, so another process's leftovers are invisible to it, and
+    sweeping the temporary directory by name would race a process sitting between
+    creating its own and writing into it.  That leftover is one empty directory per
+    such process, and only where the predictable name could not be trusted in the
+    first place.
+
     :param owner: The process that registered this.  Both the guard and the
         selection use it: a forked child must not run the parent's hook, and must
         not treat the parent's directories -- which it inherited -- as its own.
@@ -1104,12 +1114,12 @@ def _reclaim_empty_fallbacks(owner: int) -> None:
             os.rmdir(str(directory))
         except OSError as error:
             if error.errno not in (errno.ENOTEMPTY, errno.EEXIST, errno.ENOENT):
-                # The first two are the contract -- a document the caller keeps is
-                # still in there -- and the third means somebody got here first.
-                # Anything else, EACCES on a temporary directory locked down since,
-                # leaves the directory behind, and saying so here is the same rule
-                # `_discard_empty_fallback` follows rather than a different one for
-                # being at exit.
+                # The same three, graded the same way as in
+                # `_discard_empty_fallback`: the first two are the contract, the
+                # third is the outcome already reached. Anything else, EACCES on a
+                # temporary directory locked down since, leaves the directory
+                # behind, and being an exit hook is a reason not to raise rather
+                # than a reason to say nothing.
                 _report_degradation(
                     "could not remove the fallback directory %s: %s", directory, error
                 )
@@ -1139,12 +1149,14 @@ def _discard_empty_fallback(directory: Path) -> None:
     try:
         os.rmdir(str(directory))
     except OSError as error:
-        if error.errno not in (errno.ENOTEMPTY, errno.EEXIST):
-            # A directory still holding a document the caller keeps is the contract,
-            # and POSIX allows either errno for it. Anything else -- a temporary
-            # directory that has become read-only, a mount gone away -- is a
-            # directory we are leaving behind, which is the thing this function
-            # exists to prevent, so it does not pass in silence.
+        if error.errno not in (errno.ENOTEMPTY, errno.EEXIST, errno.ENOENT):
+            # The first two are the contract -- a directory still holding a document
+            # the caller keeps -- and POSIX allows either for it. `ENOENT` means it
+            # has already gone, which is the outcome asked for. Anything else -- a
+            # temporary directory that has become read-only, a mount gone away -- is
+            # a directory left behind, which is the thing this function exists to
+            # prevent, so it does not pass in silence. `_reclaim_empty_fallbacks`
+            # grades the same three the same way.
             _report_degradation(
                 "could not remove the fallback directory %s: %s", directory, error
             )
@@ -2783,14 +2795,14 @@ class Diagram:
             Windows that rests on ``%TEMP%`` being per account, which is the
             default: a ``TEMP`` shared between users cannot be detected here, and
             before CPython 3.12.4 the directory's mode is not applied there either.
-            Pass a path of your own for a document that must not be somewhere
-            shared. With a
+            With a
             window that path is this call's, and this call removes it when the
             window closes. Without one nothing removes it, and asking again for the
             same diagram returns the same file rather than another ~30 MB -- in
             another process of yours as well, unless that directory cannot be
-            trusted, in which case each process keeps its own. Pass an explicit
-            path for a document you want to name yourself.
+            trusted, in which case each process keeps its own. Pass a path of your
+            own for a document you want to name, or that must not be somewhere
+            shared.
         :type output: str or os.PathLike, optional
         :param open_window: Whether to launch a Chromium-family app window,
             defaults to ``True``.

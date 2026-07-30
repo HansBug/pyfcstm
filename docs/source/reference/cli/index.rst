@@ -553,7 +553,13 @@ Output and failure facts:
   closed, and then removes the document unless ``-o`` named it. Without a browser
   -- or with one that exits without showing a window, as on a machine with no
   display -- the command reports a typed capability error; the HTML survives only
-  when ``-o`` named it. Use ``--format html`` without ``--open`` for file-only workflows.
+  when ``-o`` named it.
+* Without ``-o`` the viewer is written 0600 inside a directory of your own that no
+  other local user may look into, because it carries the model's source. On Windows
+  that rests on ``%TEMP%`` being per account, which is the default: a ``TEMP``
+  shared between users cannot be detected, and before CPython 3.12.4 the
+  directory's mode is not applied there. Use ``-o`` for a document that must not be
+  somewhere shared. Use ``--format html`` without ``--open`` for file-only workflows.
 * Invalid formats, unknown options, unreadable input, parse/model failures, and
   missing packaged assets exit non-zero with the corresponding error category.
 

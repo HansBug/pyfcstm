@@ -1066,8 +1066,16 @@ def test_each_directory_rule_is_pinned_on_its_own(
         taken.mkdir(mode=mode)
         os.chmod(str(taken), mode)
     if fake_owner:
-        monkeypatch.setattr(os, "geteuid", lambda: os.stat(str(taken)).st_uid + 1)
-        taken = taken.rename(tmp_path / ("pyfcstm-viewers-%d" % (os.geteuid())))
+        # `Path.rename` returns the new path from 3.8 and `None` before it, so the
+        # name is computed rather than taken from the call. On 3.7 the old shape left
+        # `taken` as `None`, `os.mkdir("None")` succeeded, and the rule under test
+        # was reported as not firing -- from a directory called `None` in the
+        # working tree.
+        real = os.stat(str(taken)).st_uid
+        monkeypatch.setattr(os, "geteuid", lambda: real + 1)
+        renamed = taken.parent / ("pyfcstm-viewers-%d" % (real + 1))
+        taken.rename(renamed)
+        taken = renamed
 
     try:
         complaint = diagram_api._unusable_viewer_directory(taken)
@@ -1125,11 +1133,70 @@ def test_a_fallback_that_cannot_be_removed_is_reported(tmp_path, monkeypatch, ca
     stuck.mkdir(mode=0o700)
     diagram_api._FALLBACK_DIRECTORIES[stuck] = os.getpid()
     os.chmod(str(tmp_path), 0o500)
+    if os.access(str(tmp_path), os.W_OK):
+        # A read-only parent is what makes the removal fail, and it does not for a
+        # user who may write anywhere. Skipped rather than asserted away, so the
+        # premise stays visible.
+        os.chmod(str(tmp_path), 0o700)
+        pytest.skip("running as a user who can write a read-only directory")
     try:
         with caplog.at_level(logging.WARNING):
             diagram_api._discard_empty_fallback(stuck)
         assert stuck.is_dir(), "the fixture did not make removal fail"
         assert "could not remove the fallback directory" in caplog.text
+    finally:
+        os.chmod(str(tmp_path), 0o700)
+        diagram_api._PRIVATE_DIRECTORIES.clear()
+        diagram_api._FALLBACK_DIRECTORIES.clear()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX modes")
+def test_the_exit_hook_reports_a_fallback_it_cannot_remove(
+    tmp_path, monkeypatch, caplog
+):
+    # The same grading `_discard_empty_fallback` has, and until now the only branch
+    # in this file that no test reached: being an exit hook is a reason not to raise,
+    # not a reason to leave a directory behind without a word.
+    import logging
+
+    from pyfcstm.diagram import api as diagram_api
+
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
+    diagram_api._PRIVATE_DIRECTORIES.clear()
+    diagram_api._FALLBACK_DIRECTORIES.clear()
+    stuck = tmp_path / "pyfcstm-viewers-stuck"
+    stuck.mkdir(mode=0o700)
+    diagram_api._FALLBACK_DIRECTORIES[stuck] = os.getpid()
+    kept = tmp_path / "pyfcstm-viewers-kept"
+    kept.mkdir(mode=0o700)
+    (kept / "kept-something.html").write_text("x", encoding="utf-8")
+    diagram_api._FALLBACK_DIRECTORIES[kept] = os.getpid()
+
+    # First with a writable parent, where the two outcomes are distinguishable: a
+    # directory holding a document fails with ENOTEMPTY, which is the contract and
+    # must not be reported. Under a read-only parent both fail with EACCES, so the
+    # phases have to be separate for either assertion to mean anything.
+    with caplog.at_level(logging.WARNING):
+        diagram_api._reclaim_empty_fallbacks(os.getpid())
+    assert kept.is_dir(), "a document the caller keeps was taken"
+    assert str(kept) not in caplog.text, "the contract was reported as a failure"
+    assert not stuck.exists(), "an empty fallback survived a writable parent"
+    caplog.clear()
+
+    stuck.mkdir(mode=0o700)
+    diagram_api._FALLBACK_DIRECTORIES[stuck] = os.getpid()
+    os.chmod(str(tmp_path), 0o500)
+    if os.access(str(tmp_path), os.W_OK):
+        os.chmod(str(tmp_path), 0o700)
+        diagram_api._FALLBACK_DIRECTORIES.clear()
+        pytest.skip("running as a user who can write a read-only directory")
+
+    try:
+        with caplog.at_level(logging.WARNING):
+            diagram_api._reclaim_empty_fallbacks(os.getpid())
+        assert stuck.is_dir(), "the fixture did not make removal fail"
+        assert "could not remove the fallback directory" in caplog.text
+        assert str(stuck) in caplog.text
     finally:
         os.chmod(str(tmp_path), 0o700)
         diagram_api._PRIVATE_DIRECTORIES.clear()

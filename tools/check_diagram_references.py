@@ -25,26 +25,34 @@ repository because intersphinx is not configured, and ``optional`` in a type fie
 is the convention CLAUDE.md sets out -- both are repository-wide and not this
 package's to answer for.
 
-A name written without its module is judged in exactly one place: an inline role in
-a *module's own* docstring. There Sphinx has no class to search and no
-``refspecific`` flag, so ``modname + "." + name`` is its only candidate, which is
-reproducible from the outside. Both directions are measured against built pages: the
-bare ``:class:`DiagramAssetEngine``` in ``pyfcstm/diagram/engine.py`` is a live link,
-because that module documents it, and the same spelling in the package's own summary
-tables was not, because ``pyfcstm.diagram`` documents nothing.
+A name written without its module is judged where the candidates Sphinx tries are
+reproducible from the outside, which is two places:
 
-Two bare shapes are deliberately *not* judged, because reproducing them means
-reimplementing Sphinx:
+* An inline role in a *module's own* docstring: there is no class to search and no
+  ``refspecific`` flag, so ``modname + "." + name`` is the only candidate. Both
+  directions are measured against built pages -- the bare ``:class:`DiagramAssetEngine```
+  in ``pyfcstm/diagram/engine.py`` is a live link because that module documents it, and
+  the same spelling in the package's own summary tables was not, because
+  ``pyfcstm.diagram`` documents nothing.
+* A ``:meth:`` or ``:attr:`` in a *class's* docstring, which the AST names: Sphinx tries
+  the enclosing class and then the module, so it is dead only when neither has the
+  name. Misspelling a member is the case this catches -- ``:meth:`to_dictt``` in the
+  ``Diagram`` docstring renders as plain text and nothing else here would notice.
 
-* Inside a class or function docstring, resolution tries the enclosing class first --
-  ``:meth:`to_dict``` in the ``Diagram`` docstring becomes
-  ``pyfcstm.diagram.api.Diagram.to_dict``.
-* An information field such as ``:raises DiagramUnavailableError:`` carries
-  ``refspecific``, so Sphinx matches the whole registry by suffix and can resolve it
-  under a different module entirely -- that one lands in ``pyfcstm.diagram.engine``.
+Those two roles are judged without asking whether the registry already knows the name,
+because a bare member of a documented class means that class's member and a misspelling
+is exactly what should be reported. Every other role is judged only when the registry
+knows the name under some module, or ``:class:`ValueError``` would be read as ours.
 
-A first version guessed at the first of those and reported sixteen references that
-are in fact links. A gate that cries wolf is worse than one with a stated boundary.
+What is still not judged is an information field: ``:raises DiagramUnavailableError:``
+carries ``refspecific``, so Sphinx matches the whole registry by suffix and can resolve
+it under a different module entirely -- that one lands in ``pyfcstm.diagram.engine``.
+Nor is a bare name inside a *method*, where the enclosing class is tried first and the
+AST here does not carry which class a method belongs to.
+
+A first version guessed at the class case with the module's name and reported sixteen
+references that are in fact links. A gate that cries wolf is worse than one with a
+stated boundary.
 
 The registry over-approximates in one way worth knowing: every name listed in a
 ``:members:`` option counts as registered, while autodoc emits no anchor for a member
@@ -63,7 +71,7 @@ import ast
 import re
 import sys
 from pathlib import Path
-from typing import Iterable, List, Set, Tuple
+from typing import Iterable, List, Optional, Set, Tuple
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -73,7 +81,12 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCES = ("pyfcstm/diagram", "pyfcstm/entry/diagram.py")
 API_DOC = "docs/source/api_doc"
 
-ROLE = re.compile(r":(?:class|exc|meth|func|data|mod|attr|obj):`~?([A-Za-z_][\w.]*)`")
+ROLE = re.compile(r":(class|exc|meth|func|data|mod|attr|obj):`~?([A-Za-z_][\w.]*)`")
+# A name written without its module after one of these means a member of whatever it
+# sits in, so a misspelling is a dead reference rather than a foreign name. The others
+# routinely name things outside this package -- `ValueError`, `Path` -- which is why
+# they are only judged when the registry knows the name under some module.
+MEMBER_ROLES = frozenset(("meth", "attr"))
 RAISES = re.compile(r":raises\s+~?([A-Za-z_][\w.]*)\s*:")
 # `:rtype:`, `:type:` and `:vartype:` bodies are cross-references too: Sphinx renders
 # them through `bodyrolename='class'`, so `:rtype: pyfcstm.diagram.api.Diagram` is a
@@ -90,6 +103,10 @@ AUTOOBJECT = re.compile(
     re.M,
 )
 MEMBERS = re.compile(r"^\s+:members:\s*(.*)$", re.M)
+
+# Stands for "the module this file is", so `referenced_targets` can say which prefix
+# applies without being told the repository root.
+MODULE = object()
 
 
 def documented_names(api_doc: Path) -> Set[str]:
@@ -153,19 +170,25 @@ def module_of(path: Path, root: Path) -> str:
     return ".".join(parts)
 
 
-def referenced_targets(path: Path) -> List[Tuple[int, str, bool]]:
+def referenced_targets(path: Path) -> List[Tuple[int, str, Optional[str], str]]:
     """
     Find every target the docstrings of one module refer to.
 
     :param path: A Python file.
     :type path: pathlib.Path
-    :return: Line, target, and whether it is an inline role in the module's own
-        docstring -- the one place a name written without its module can be judged.
-    :rtype: list[tuple[int, str, bool]]
+    :return: Line, target, the prefix a name written without its module would resolve
+        against -- the module for the module's own docstring, the class for a class's,
+        and ``None`` where Sphinx uses context this cannot reproduce -- and the role
+        it was written with.
+    :rtype: list[tuple[int, str, str or None, str]]
     """
     text = path.read_text(encoding="utf-8")
     tree = ast.parse(text)
     found = []
+    classes = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ClassDef):
+            classes[node] = node.name
     holders = [tree] + [
         node
         for node in ast.walk(tree)
@@ -178,22 +201,30 @@ def referenced_targets(path: Path) -> List[Tuple[int, str, bool]]:
         # The docstring's own first line, so a report points near the reference
         # rather than at the top of the file.
         base = holder.body[0].lineno
-        at_module_level = holder is tree
+        # What a bare name resolves against here, or nothing when Sphinx has more
+        # context than this can reproduce -- inside a method, the enclosing class is
+        # tried first and this does not know which class the method belongs to.
+        if holder is tree:
+            prefix = MODULE
+        elif holder in classes:
+            prefix = classes[holder]
+        else:
+            prefix = None
         for match in ROLE.finditer(doc):
             line = base + doc[: match.start()].count("\n")
-            found.append((line, match.group(1), at_module_level))
+            found.append((line, match.group(2), prefix, match.group(1)))
         for match in RAISES.finditer(doc):
             line = base + doc[: match.start()].count("\n")
             # Never judged bare: an information field carries `refspecific`, so
             # Sphinx matches the whole registry by suffix and can resolve it under
             # a module other than this one.
-            found.append((line, match.group(1), False))
+            found.append((line, match.group(1), None, "exc"))
         for match in FIELD.finditer(doc):
             line = base + doc[: match.start()].count("\n")
             for target in QUALIFIED.findall(match.group(1)):
                 # A type field can name several -- `str or pyfcstm.model.model.State`
                 # -- and only ours are judged.
-                found.append((line, target, False))
+                found.append((line, target, None, "class"))
     return found
 
 
@@ -221,14 +252,32 @@ def dead_references(root: Path) -> List[Tuple[Path, int, str]]:
         files = sorted(location.rglob("*.py")) if location.is_dir() else [location]
         for path in files:
             module = module_of(path, root)
-            for line, target, judgeable_bare in referenced_targets(path):
+            for line, target, prefix, role in referenced_targets(path):
                 if "." not in target:
-                    if not judgeable_bare or target not in ours:
+                    if prefix is None:
                         continue
-                    # An inline role in a module's own docstring has no class to
-                    # search and no `refspecific` flag, so `modname + "." + name` is
-                    # the only candidate Sphinx has.
-                    target = "%s.%s" % (module, target)
+                    if role not in MEMBER_ROLES and target not in ours:
+                        continue
+                    if role in MEMBER_ROLES and prefix is not MODULE:
+                        # A member of the class it sits in, or a function of the
+                        # module -- Sphinx tries the class first and the module next,
+                        # so it is dead only when neither has it.
+                        candidates = (
+                            "%s.%s.%s" % (module, prefix, target),
+                            "%s.%s" % (module, target),
+                        )
+                        if not any(name in names for name in candidates):
+                            dead.append((path.relative_to(root), line, candidates[0]))
+                        continue
+                    if prefix is MODULE:
+                        # An inline role in a module's own docstring has no class to
+                        # search and no `refspecific` flag, so `modname + "." + name`
+                        # is the only candidate Sphinx has.
+                        target = "%s.%s" % (module, target)
+                    else:
+                        # In a class's docstring the enclosing class is tried first,
+                        # and the AST says which class that is.
+                        target = "%s.%s.%s" % (module, prefix, target)
                 elif not target.startswith("pyfcstm."):
                     continue
                 if target not in names:
@@ -272,6 +321,7 @@ def _self_check() -> None:
             "Dead member: :meth:`pyfcstm.diagram.api.Diagram.to_pdf`.\n"
             "Dead bare, this module documenting nothing: :class:`Diagram`.\n"
             "Not ours and bare, so not judged: :exc:`ValueError`.\n"
+            "Bare member of no class here, and no module function: :meth:`nowhere`.\n"
             "Outside: :class:`os.PathLike`.\n"
             "\n:raises DiagramAssetError: bare in a field, never judged.\n"
             ":raises pyfcstm.diagram.api.DiagramAssetError: dead, and judged.\n"
@@ -280,7 +330,14 @@ def _self_check() -> None:
             encoding="utf-8",
         )
         (package / "api.py").write_text(
-            '"""Bare in a module that documents it: :class:`Diagram`."""\n',
+            '"""Bare in a module that documents it: :class:`Diagram`."""\n'
+            "\n\n"
+            "class Diagram:\n"
+            '    """\n'
+            "    Live member of the class it sits in: :meth:`show`.\n"
+            "    Dead member, misspelled: :meth:`shoe`.\n"
+            "    Not a member role, and not ours, so not judged: :class:`Mapping`.\n"
+            '    """\n',
             encoding="utf-8",
         )
         (fake / "pyfcstm" / "entry").mkdir(parents=True)
@@ -301,8 +358,10 @@ def _self_check() -> None:
             "pyfcstm.diagram.Diagram",  # the dead module-qualified role
             "pyfcstm.diagram.Diagram",  # the dead bare name, resolved to this module
             "pyfcstm.diagram.Diagram",  # and the same in a type field
+            "pyfcstm.diagram.api.Diagram.shoe",  # the misspelled bare member
             "pyfcstm.diagram.api.Diagram.to_pdf",
             "pyfcstm.diagram.api.DiagramAssetError",
+            "pyfcstm.diagram.nowhere",  # a bare member with neither class nor module
         ]
         if found != wanted:
             raise SystemExit("dead references wrong: %s" % found)
@@ -348,8 +407,8 @@ def main(argv: Iterable[str]) -> int:
             if (ROOT / entry).is_dir()
             else [ROOT / entry]
         )
-        for _, target, judgeable_bare in referenced_targets(path)
-        if target.startswith("pyfcstm.") or (judgeable_bare and "." not in target)
+        for _, target, prefix, _role in referenced_targets(path)
+        if target.startswith("pyfcstm.") or (prefix is not None and "." not in target)
     )
     print("diagram reference targets: %d judged reference(s) all registered" % judged)
     return 0

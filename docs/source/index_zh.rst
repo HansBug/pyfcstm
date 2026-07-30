@@ -160,6 +160,7 @@ pyfcstm 遵循三阶段流水线：
     explanations/bmc_properties/index_zh
     explanations/bmc_solving/index_zh
     explanations/diagnostics/index_zh
+    explanations/visualization/index_zh
     explanations/template_rendering/index_zh
     explanations/grammar_tooling/index_zh
 
@@ -171,6 +172,7 @@ pyfcstm 遵循三阶段流水线：
 * :doc:`explanations/bmc_properties/index_zh`
 * :doc:`explanations/bmc_solving/index_zh`
 * :doc:`explanations/diagnostics/index_zh`
+* :doc:`explanations/visualization/index_zh`
 * :doc:`explanations/template_rendering/index_zh`
 * :doc:`explanations/grammar_tooling/index_zh`
 

@@ -7,9 +7,9 @@ the sibling page that owns the mechanism, ordering rule, architectural boundary,
 or trade-off behind the behavior you are seeing.
 
 Role: this page is the Explanation router. It connects conceptual questions to
-architecture, DSL semantics, execution semantics, diagnostics, template
-rendering, and grammar tooling without turning those explanations into tutorials
-or lookup tables.
+architecture, DSL semantics, execution semantics, diagnostics, visualization,
+template rendering, and grammar tooling without turning those explanations into
+tutorials or lookup tables.
 
 Non-goals: this page does not provide first-success commands, task recipes,
 closed option lists, JSON schemas, diagnostic code tables, or API signatures.
@@ -38,9 +38,11 @@ order.
 3. Read :doc:`execution_semantics/index` when a cycle, lifecycle action, or
    transition trace surprises you.
 4. Read :doc:`diagnostics/index` when inspect output needs interpretation.
-5. Read :doc:`template_rendering/index` when generated code behavior depends on
+5. Read :doc:`visualization/index` when a diagram viewer's lifetime, privacy, or
+   self-contained shape needs a reason rather than a setting.
+6. Read :doc:`template_rendering/index` when generated code behavior depends on
    renderer configuration or packaged template boundaries.
-6. Read :doc:`grammar_tooling/index` only when you are maintaining syntax,
+7. Read :doc:`grammar_tooling/index` only when you are maintaining syntax,
    highlighting, editor assets, or LLM-facing grammar material.
 
 Experienced-user path
@@ -56,6 +58,8 @@ If you already know the subsystem, choose the question.
   :doc:`execution_semantics/index`.
 * What can inspect prove, warn about, or merely report? Use
   :doc:`diagnostics/index`.
+* Why does a diagram viewer weigh ~29 MB, block until its window closes, and live in
+  a directory of its own? Use :doc:`visualization/index`.
 * Why does generation go through templates, expression styles, and statement
   styles? Use :doc:`template_rendering/index`.
 * Why does one grammar change affect parser, highlighting, docs, and editor
@@ -178,6 +182,23 @@ Non-goal: it does not enumerate every JSON report field or diagnostic code.
 Next step: use :doc:`/reference/inspect_report/index` for schema details,
 :doc:`/reference/diagnostics_codes/index` for code lookup, and
 :doc:`/how_to/inspect/index` for triage recipes.
+
+Visualization: :doc:`visualization/index`
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Prerequisites: you have produced a diagram viewer or portable diagram data and need
+to know why the snapshot is detached from the model, why the document carries
+everything, or who removes it.
+
+Outcome: you can predict a viewer's lifetime and its privacy boundary, explain why
+``--open`` blocks, and reason about when a temporary directory is reclaimed across
+``atexit`` and :mod:`multiprocessing` exit phases.
+
+Non-goal: it does not list option fields, environment variables, or CLI forms, and it
+is not the PlantUML option catalogue.
+
+Next step: use :doc:`/how_to/visualization/index` for the tasks and
+:doc:`/reference/visualization_options/index` for exact fields and boundaries.
 
 Template rendering: :doc:`template_rendering/index`
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

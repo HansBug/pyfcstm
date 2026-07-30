@@ -5,7 +5,7 @@
 本地图帮助你选择负责机制、顺序、架构边界或设计取舍的同级页面。
 
 页面角色：本页是解释（explanation）入口，负责把概念问题分流到架构、语言语义、执行语义、诊断、
-模板渲染和语法工具链页面，而不是把解释写成教程或查表页。
+可视化、模板渲染和语法工具链页面，而不是把解释写成教程或查表页。
 
 不负责内容：本页不提供首次成功命令、任务步骤、闭合集合选项表、JSON 模式、诊断码表或应用程序接口签名。
 学习路径看 :doc:`/tutorials/index_zh`，
@@ -28,8 +28,10 @@
 2. 当语法例子不够时，读 :doc:`dsl_semantics/index_zh`，理解模型含义。
 3. 当周期、生命周期动作或转换轨迹让你意外时，读 :doc:`execution_semantics/index_zh`。
 4. 当检查输出需要解释时，读 :doc:`diagnostics/index_zh`。
-5. 当生成代码行为依赖渲染配置或打包模板边界时，读 :doc:`template_rendering/index_zh`。
-6. 只有在维护语法、高亮、编辑器资产或面向大语言模型的语法材料时，
+5. 当图查看器的生命周期、私密性或自包含形态需要理由而不是设置项时，
+   读 :doc:`visualization/index_zh`。
+6. 当生成代码行为依赖渲染配置或打包模板边界时，读 :doc:`template_rendering/index_zh`。
+7. 只有在维护语法、高亮、编辑器资产或面向大语言模型的语法材料时，
    才读 :doc:`grammar_tooling/index_zh`。
 
 有经验用户路径
@@ -41,6 +43,8 @@
 * 这个语言构造在解析和导入之后是什么意思？看 :doc:`dsl_semantics/index_zh`。
 * 为什么某次周期产生这个活跃状态和变量轨迹？看 :doc:`execution_semantics/index_zh`。
 * 检查能证明什么、警告什么、只能描述什么？看 :doc:`diagnostics/index_zh`。
+* 为什么一个图查看器有约 29 MB、会阻塞到窗口关闭、并且住在一个自己的目录里？
+  看 :doc:`visualization/index_zh`。
 * 为什么生成流程要经过模板、表达式样式和语句样式？看 :doc:`template_rendering/index_zh`。
 * 为什么一次语法修改会影响解析器、高亮、文档和编辑器？看 :doc:`grammar_tooling/index_zh`。
 
@@ -143,6 +147,20 @@
 下一步：模式细节查 :doc:`/reference/inspect_report/index_zh`；
 诊断码查 :doc:`/reference/diagnostics_codes/index_zh`；
 排查步骤看 :doc:`/how_to/inspect/index_zh`。
+
+可视化：:doc:`visualization/index_zh`
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+读前条件：你已经产出图查看器或可移植图数据，并想知道为什么快照与模型脱钩、为什么文档把一切
+都带在身上、以及谁负责删除它。
+
+读后能力：你能预测一个查看器的生命周期与它的隐私边界，能解释 ``--open`` 为什么阻塞，并能就
+临时目录在 ``atexit`` 与 :mod:`multiprocessing` 退出阶段之间何时被回收作出推理。
+
+不负责内容：它不列举选项字段、环境变量或命令行形态，也不是 PlantUML 选项清单。
+
+下一步：任务看 :doc:`/how_to/visualization/index_zh`；
+精确字段与边界查 :doc:`/reference/visualization_options/index_zh`。
 
 模板渲染：:doc:`template_rendering/index_zh`
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

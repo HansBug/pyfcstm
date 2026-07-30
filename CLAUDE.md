@@ -564,10 +564,11 @@ Mandatory completion rule for built-in template work:
   `diagram_docstring_check` and `diagram_reference_targets_check`; each one must be able to fail, so mutation-test a
   gate before trusting it. `diagram_reference_targets_check` judges fully-qualified `pyfcstm.*` cross-references in the
   diagram package -- inline roles, `:raises:`, and `:rtype:` / `:type:` / `:vartype:` bodies -- against what
-  `docs/source/api_doc` registers, plus bare names in a module's own docstring, where `modname + "." + name` is the
-  only candidate Sphinx has. It deliberately does not judge a bare name inside a class or function docstring, where
-  resolution tries the enclosing class first, nor a bare name in an information field, which carries `refspecific` and
-  is matched against the whole registry by suffix; guessing at either reports live links as dead
+  `docs/source/api_doc` registers, plus two bare shapes whose candidates are reproducible: an inline role in a
+  module's own docstring, where `modname + "." + name` is Sphinx's only candidate, and a `:meth:` / `:attr:` in a
+  class's docstring, where it tries the enclosing class and then the module. It deliberately does not judge a bare name
+  in an information field, which carries `refspecific` and is matched against the whole registry by suffix, nor one
+  inside a method, whose class the scanner does not carry; guessing at either reports live links as dead
 
 **Entry Points** ([pyfcstm/entry/](pyfcstm/entry/))
 

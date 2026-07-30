@@ -17,23 +17,42 @@ target has an anchor. This one reads the ``api_doc`` tree for what autodoc
 registers and compares the diagram package's references against it, without a
 Sphinx build.
 
-Only fully-qualified ``pyfcstm.*`` targets are checked, which is the shape that
-went wrong here. Standard-library names are left alone: they never resolve in
-this repository because intersphinx is not configured, and ``optional`` in a type
-field is the convention CLAUDE.md sets out -- both are repository-wide and not
-this package's to answer for.
+Fully-qualified ``pyfcstm.*`` targets are checked wherever they appear -- inline
+roles, ``:raises:`` and the body of ``:rtype:`` / ``:type:`` / ``:vartype:``, which
+Sphinx renders through ``bodyrolename='class'`` and are therefore references like
+any other. Standard-library names are left alone: they never resolve in this
+repository because intersphinx is not configured, and ``optional`` in a type field
+is the convention CLAUDE.md sets out -- both are repository-wide and not this
+package's to answer for.
 
-A name written without its module is left alone too, and that is a real limit
-rather than an oversight. Sphinx resolves those with more context than this can
-reproduce: measured against a built page, ``:meth:`to_dict``` inside the
-``Diagram`` docstring resolves through the class it sits in, and
-``:raises DiagramUnavailableError:`` resolves to ``pyfcstm.diagram.engine`` --
-a different module from the one being documented. But the same bare spelling in
-a *module* docstring, which is what the package's two summary tables used, does
-not resolve at all. Guessing at that from the outside would report references
-that are in fact links, and a gate that cries wolf is worse than one with a
-stated boundary. Those tables now name their modules, so they are covered by the
-rule above.
+A name written without its module is judged in exactly one place: an inline role in
+a *module's own* docstring. There Sphinx has no class to search and no
+``refspecific`` flag, so ``modname + "." + name`` is its only candidate, which is
+reproducible from the outside. Both directions are measured against built pages: the
+bare ``:class:`DiagramAssetEngine``` in ``pyfcstm/diagram/engine.py`` is a live link,
+because that module documents it, and the same spelling in the package's own summary
+tables was not, because ``pyfcstm.diagram`` documents nothing.
+
+Two bare shapes are deliberately *not* judged, because reproducing them means
+reimplementing Sphinx:
+
+* Inside a class or function docstring, resolution tries the enclosing class first --
+  ``:meth:`to_dict``` in the ``Diagram`` docstring becomes
+  ``pyfcstm.diagram.api.Diagram.to_dict``.
+* An information field such as ``:raises DiagramUnavailableError:`` carries
+  ``refspecific``, so Sphinx matches the whole registry by suffix and can resolve it
+  under a different module entirely -- that one lands in ``pyfcstm.diagram.engine``.
+
+A first version guessed at the first of those and reported sixteen references that
+are in fact links. A gate that cries wolf is worse than one with a stated boundary.
+
+The registry over-approximates in one way worth knowing: every name listed in a
+``:members:`` option counts as registered, while autodoc emits no anchor for a member
+that has no docstring -- a bare dataclass field, for instance. Checked against a built
+``objects.inv``, 1876 of the names collected here do not exist as anchors, 93 of them
+in this package's own modules; the reverse, a real object the registry does not know
+about, is zero. So the error only ever costs a report, never invents one, and no live
+reference is masked by it today.
 
 Run ``make diagram_reference_targets_check``. Pass ``--check`` for the
 self-check, which proves the scanner reports a reference it should.
@@ -56,6 +75,13 @@ API_DOC = "docs/source/api_doc"
 
 ROLE = re.compile(r":(?:class|exc|meth|func|data|mod|attr|obj):`~?([A-Za-z_][\w.]*)`")
 RAISES = re.compile(r":raises\s+~?([A-Za-z_][\w.]*)\s*:")
+# `:rtype:`, `:type:` and `:vartype:` bodies are cross-references too: Sphinx renders
+# them through `bodyrolename='class'`, so `:rtype: pyfcstm.diagram.api.Diagram` is a
+# link in the built page and the same line pointed at a module that does not document
+# the class is plain text. Leaving these out meant the one `:rtype:` this gate arrived
+# with could regress in silence.
+FIELD = re.compile(r":(?:rtype|type|vartype)\s*[\w.]*:\s*([^\n]*)")
+QUALIFIED = re.compile(r"\bpyfcstm\.[A-Za-z_][\w.]*")
 
 CURRENTMODULE = re.compile(r"^\.\.\s+currentmodule::\s*([\w.]+)\s*$", re.M)
 AUTOMODULE = re.compile(r"^\.\.\s+automodule::\s*([\w.]+)\s*$", re.M)
@@ -110,17 +136,32 @@ def documented_names(api_doc: Path) -> Set[str]:
     return names
 
 
-def referenced_targets(path: Path) -> List[Tuple[int, str]]:
+def module_of(path: Path, root: Path) -> str:
+    """
+    Return the dotted module a source file is imported as.
+
+    :param path: A Python file inside the repository.
+    :type path: pathlib.Path
+    :param root: The repository root.
+    :type root: pathlib.Path
+    :return: The dotted module path.
+    :rtype: str
+    """
+    parts = list(path.relative_to(root).with_suffix("").parts)
+    if parts[-1] == "__init__":
+        parts.pop()
+    return ".".join(parts)
+
+
+def referenced_targets(path: Path) -> List[Tuple[int, str, bool]]:
     """
     Find every target the docstrings of one module refer to.
 
-    Bare names are returned as written; :func:`dead_references` is what decides
-    whether one of them is ours, because that needs the registry.
-
     :param path: A Python file.
     :type path: pathlib.Path
-    :return: Pairs of line number and dotted target.
-    :rtype: list[tuple[int, str]]
+    :return: Line, target, and whether it is an inline role in the module's own
+        docstring -- the one place a name written without its module can be judged.
+    :rtype: list[tuple[int, str, bool]]
     """
     text = path.read_text(encoding="utf-8")
     tree = ast.parse(text)
@@ -137,10 +178,22 @@ def referenced_targets(path: Path) -> List[Tuple[int, str]]:
         # The docstring's own first line, so a report points near the reference
         # rather than at the top of the file.
         base = holder.body[0].lineno
-        for pattern in (ROLE, RAISES):
-            for match in pattern.finditer(doc):
-                line = base + doc[: match.start()].count("\n")
-                found.append((line, match.group(1)))
+        at_module_level = holder is tree
+        for match in ROLE.finditer(doc):
+            line = base + doc[: match.start()].count("\n")
+            found.append((line, match.group(1), at_module_level))
+        for match in RAISES.finditer(doc):
+            line = base + doc[: match.start()].count("\n")
+            # Never judged bare: an information field carries `refspecific`, so
+            # Sphinx matches the whole registry by suffix and can resolve it under
+            # a module other than this one.
+            found.append((line, match.group(1), False))
+        for match in FIELD.finditer(doc):
+            line = base + doc[: match.start()].count("\n")
+            for target in QUALIFIED.findall(match.group(1)):
+                # A type field can name several -- `str or pyfcstm.model.model.State`
+                # -- and only ours are judged.
+                found.append((line, target, False))
     return found
 
 
@@ -152,17 +205,31 @@ def dead_references(root: Path) -> List[Tuple[Path, int, str]]:
     :type root: pathlib.Path
     :return: File, line and target for each dead reference.
     :rtype: list[tuple[pathlib.Path, int, str]]
+    :raises SystemExit: If the documentation tree registers no names at all, which
+        means the tree moved rather than that every reference is live.
     """
     names = documented_names(root / API_DOC)
     if not names:
         raise SystemExit("no documented names found under %s" % API_DOC)
+    # Which last components are ours at all, so a name written without its module
+    # can be told from `ValueError`: ours appears in the registry under some module,
+    # a builtin appears nowhere in it.
+    ours = {name.rsplit(".", 1)[-1] for name in names if "." in name}
     dead = []
     for entry in SOURCES:
         location = root / entry
         files = sorted(location.rglob("*.py")) if location.is_dir() else [location]
         for path in files:
-            for line, target in referenced_targets(path):
-                if not target.startswith("pyfcstm."):
+            module = module_of(path, root)
+            for line, target, judgeable_bare in referenced_targets(path):
+                if "." not in target:
+                    if not judgeable_bare or target not in ours:
+                        continue
+                    # An inline role in a module's own docstring has no class to
+                    # search and no `refspecific` flag, so `modname + "." + name` is
+                    # the only candidate Sphinx has.
+                    target = "%s.%s" % (module, target)
+                elif not target.startswith("pyfcstm."):
                     continue
                 if target not in names:
                     dead.append((path.relative_to(root), line, target))
@@ -171,7 +238,13 @@ def dead_references(root: Path) -> List[Tuple[Path, int, str]]:
 
 def _self_check() -> None:
     """
-    Prove the scanner reports what it is for, on inputs written for it.
+    Prove the scanner reports what it is for, and only that, on inputs written for it.
+
+    Every rule gets a live case and a dead one: a qualified target, a member, the
+    ``~`` short form, a field body, and a name written without its module in a module
+    docstring -- which is judged, and is the shape the package's own summary tables
+    had.  The bare name in a module that *does* document it must stay unreported, or
+    the gate would report links as dead.
 
     :return: ``None``.
     :rtype: None
@@ -197,9 +270,17 @@ def _self_check() -> None:
             "Live short form: :class:`~pyfcstm.diagram.api.Diagram`.\n"
             "Dead module: :class:`pyfcstm.diagram.Diagram`.\n"
             "Dead member: :meth:`pyfcstm.diagram.api.Diagram.to_pdf`.\n"
-            "Not judged: :class:`Diagram` and :exc:`ValueError`, both bare.\n"
+            "Dead bare, this module documenting nothing: :class:`Diagram`.\n"
+            "Not ours and bare, so not judged: :exc:`ValueError`.\n"
             "Outside: :class:`os.PathLike`.\n"
-            '\n:raises pyfcstm.diagram.api.DiagramAssetError: dead in a field.\n"""\n',
+            "\n:raises DiagramAssetError: bare in a field, never judged.\n"
+            ":raises pyfcstm.diagram.api.DiagramAssetError: dead, and judged.\n"
+            ":rtype: pyfcstm.diagram.api.Diagram\n"
+            ':type thing: str or pyfcstm.diagram.Diagram\n"""\n',
+            encoding="utf-8",
+        )
+        (package / "api.py").write_text(
+            '"""Bare in a module that documents it: :class:`Diagram`."""\n',
             encoding="utf-8",
         )
         (fake / "pyfcstm" / "entry").mkdir(parents=True)
@@ -217,14 +298,14 @@ def _self_check() -> None:
 
         found = sorted(target for _, _, target in dead_references(fake))
         wanted = [
-            "pyfcstm.diagram.Diagram",
+            "pyfcstm.diagram.Diagram",  # the dead module-qualified role
+            "pyfcstm.diagram.Diagram",  # the dead bare name, resolved to this module
+            "pyfcstm.diagram.Diagram",  # and the same in a type field
             "pyfcstm.diagram.api.Diagram.to_pdf",
             "pyfcstm.diagram.api.DiagramAssetError",
         ]
         if found != wanted:
             raise SystemExit("dead references wrong: %s" % found)
-        # The three live spellings, `~` included, are not reported, or the gate
-        # would be noise; neither are the two bare names, which it does not judge.
     print("diagram reference targets: self-check passed")
 
 
@@ -267,13 +348,10 @@ def main(argv: Iterable[str]) -> int:
             if (ROOT / entry).is_dir()
             else [ROOT / entry]
         )
-        for _, target in referenced_targets(path)
-        if target.startswith("pyfcstm.")
+        for _, target, judgeable_bare in referenced_targets(path)
+        if target.startswith("pyfcstm.") or (judgeable_bare and "." not in target)
     )
-    print(
-        "diagram reference targets: %d qualified pyfcstm reference(s) all registered"
-        % judged
-    )
+    print("diagram reference targets: %d judged reference(s) all registered" % judged)
     return 0
 
 

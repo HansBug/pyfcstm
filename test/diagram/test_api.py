@@ -1624,8 +1624,11 @@ def test_a_worker_still_holding_the_viewer_does_not_cost_the_directory(
         # left behind, and the tree is ours to remove, being outside the directory
         # pytest cleans up.
         finished_the_removal = (root / "handoff.done").exists()
-        fallback = Path(finished.stdout.decode("utf-8").strip() or str(root))
-        fallback_survived = fallback.exists()
+        # Not a default: falling back to `root` when the probe printed nothing made
+        # the last assertion vacuously true, `root` being what the line below removes.
+        reported = finished.stdout.decode("utf-8").strip()
+        fallback = Path(reported) if reported else None
+        fallback_survived = fallback is not None and fallback.exists()
     finally:
         shutil.rmtree(str(root), ignore_errors=True)
     complaint = finished.stderr.decode("utf-8", "replace")
@@ -1635,6 +1638,7 @@ def test_a_worker_still_holding_the_viewer_does_not_cost_the_directory(
     # marker is what tells them apart, and unlike its traceback the marker is absent
     # for a segmentation fault too: a queue handed across contexts kills a `spawn`
     # child with SIGSEGV, which reaches this stderr as nothing at all.
+    assert reported, "the probe printed no directory: %s" % (complaint or "nothing")
     assert finished_the_removal, "the worker did not finish: %s" % (
         complaint or "it said nothing"
     )

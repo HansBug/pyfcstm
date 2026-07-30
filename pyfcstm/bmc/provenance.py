@@ -500,6 +500,38 @@ def _relational_operators(z3: Any) -> Dict[int, str]:
     }
 
 
+def _without_coercion(expression: Any) -> Any:
+    """Strip the sort coercion z3 inserts around a mixed-sort operand.
+
+    Comparing a real variable with an integer literal -- or the reverse -- makes
+    z3 wrap one side in ``to_real``.  The wrapper records nothing the author
+    wrote, so a reader that stops at it would make the same query readable or not
+    depending on whether a decimal point was typed.
+
+    :param expression: The operand as it appears in the constraint.
+    :type expression: object
+    :return: The operand with any coercion removed.
+    :rtype: object
+
+    Example::
+
+        >>> import z3
+        >>> str(_without_coercion(z3.ToReal(z3.Int("x"))))
+        'x'
+        >>> str(_without_coercion(z3.Int("x")))
+        'x'
+    """
+    import z3
+
+    while (
+        z3.is_app(expression)
+        and expression.decl().kind() == z3.Z3_OP_TO_REAL
+        and expression.num_args() == 1
+    ):
+        expression = expression.arg(0)
+    return expression
+
+
 def _frame_variable_name(
     expression: Any, declared: Optional[Any] = None
 ) -> Optional[str]:
@@ -534,7 +566,7 @@ def _frame_variable_name(
         >>> _frame_variable_name(z3.Int("F_0_state")) is None
         True
     """
-    text = str(expression)
+    text = str(_without_coercion(expression))
     if not text.startswith("F_"):
         return None
     parts = text.split("_")
@@ -543,11 +575,16 @@ def _frame_variable_name(
         return None
     if declared:
         digest = parts[-1]
-        for name in declared:
-            if hashlib.sha1(name.encode("utf-8")).hexdigest()[:10] == digest:
-                return name
-        # A symbol whose digest matches no declared name is not this model's
-        # variable, so saying nothing beats publishing a truncated guess.
+        matches = [
+            name
+            for name in declared
+            if hashlib.sha1(name.encode("utf-8")).hexdigest() == digest
+        ]
+        if len(matches) == 1:
+            return matches[0]
+        # No match means the symbol is not this model's variable; more than one
+        # would mean the digest failed to distinguish them, and picking either
+        # would name the wrong declaration.  Saying nothing beats a guess.
         return None
     return "_".join(parts[2:-1]) or None
 
@@ -579,6 +616,7 @@ def _numeric_value(expression: Any) -> Optional[Any]:
     """
     import z3
 
+    expression = _without_coercion(expression)
     if isinstance(expression, z3.IntNumRef):
         return expression.as_long()
     if isinstance(expression, z3.RatNumRef):
@@ -808,6 +846,12 @@ def normalized_fact_for(group: Any, declared: Optional[Any] = None) -> Dict[str,
 
     :param group: The tracked group whose fact is published.
     :type group: BmcTrackedConstraint
+    :param declared: The model's variable names.  A published fact names the
+        variable that was declared rather than the encoder's rendering of it;
+        without this the reader falls back to the symbol body, which is correct
+        for every name short enough to survive truncation intact.  Defaults to
+        ``None``.
+    :type declared: Optional[Iterable[str]], optional
     :return: A tagged mapping of plain JSON-compatible values.
     :rtype: Dict[str, Any]
 

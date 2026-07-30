@@ -1294,6 +1294,12 @@ class BmcReasoningStep:
             ("item_ids", self.item_ids),
             ("proof_node_ids", self.proof_node_ids),
         ):
+            for value in ids:
+                # The schema types these arrays as strings, so anything else
+                # reaches canonical JSON that a conforming validator refuses --
+                # the constructor accepting what the schema rejects, which is the
+                # opposite direction from every named exception.
+                exact_str(value, "reasoning step %s entry" % name)
             if len(set(ids)) != len(ids):
                 raise ValueError("reasoning step %s must not repeat an id." % name)
         if not self.text.strip():
@@ -1621,6 +1627,14 @@ class BmcInfeasibilityExplanation:
                     "a complete explanation requires a complete narrative, got "
                     "derivation_status %r." % self.narrative.derivation_status
                 )
+        if self.narrative is not None and self.core is None:
+            # A narrative describes a core, and with none published its ids point
+            # at nothing by construction -- the reference check below cannot even
+            # run.  The frozen not-achieved transcript says the same: no conflict
+            # core, no causal chain.
+            raise ValueError(
+                "a narrative requires the core it describes; none was published."
+            )
         if self.narrative is not None and self.core is not None:
             # These two are separate published arrays, so neither class can check
             # the relation alone: the narrative cannot see the core it describes.
@@ -2109,7 +2123,14 @@ def _conflict_pattern(
         if item.normalized_fact.get("kind") == "state_membership"
         and item.normalized_fact.get("excluded")
     ]
-    if len(domains) == 1 and exclusions:
+    if (
+        len(domains) == 1
+        and exclusions
+        # The coverage check its sibling patterns all make: a pattern over a
+        # subset leaves the remaining members unexplained while the narrative
+        # calls the chain closed.
+        and len(domains) + len(exclusions) == len(items)
+    ):
         legal = domains[0].normalized_fact
         removed = {
             item.normalized_fact["state"]
@@ -2281,6 +2302,19 @@ def _propagation_steps(core: "BmcConflictCore", forced_values: Tuple):
         if not disagreeing:
             continue
         supporting = [by_id[name] for name in forced.supporting_ids if name in by_id]
+        if any(
+            item.normalized_fact.get("kind") == "variable_comparison"
+            and item.normalized_fact.get("variable") == forced.variable
+            and item.normalized_fact.get("frame") == forced.frame
+            and item.normalized_fact.get("operator") == "eq"
+            and item.normalized_fact.get("value") == forced.value
+            for item in supporting
+        ):
+            # A supporting fact already states this value at this frame, so "the
+            # prefix therefore requires it" restates the line above it -- and
+            # credits a transition prefix even where no transition took part.
+            # The single-shape patterns describe such a core better.
+            continue
         steps = tuple(
             BmcReasoningStep("fact", (item.constraint.stable_id,), (), item.human_text)
             for item in supporting

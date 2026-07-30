@@ -1234,6 +1234,12 @@ def build_core_item(
         defaults to ``None``.
     :type registry: Optional[pyfcstm.bmc.provenance.SourceDocumentRegistry],
         optional
+    :param declared: The model's variable names, so a published fact names the
+        variable that was declared rather than the encoder's rendering of it.
+        Without them the fact falls back to the symbol body, which is correct for
+        every name short enough to survive truncation intact.  Defaults to
+        ``None``.
+    :type declared: Optional[Sequence[str]], optional
     :return: Core member carrying identity, provenance and its reading.
     :rtype: pyfcstm.bmc.explanation.BmcCoreItem
     :raises pyfcstm.bmc.errors.BmcBuildError: If the category has no frozen

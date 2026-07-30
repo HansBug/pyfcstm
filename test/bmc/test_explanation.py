@@ -2639,3 +2639,56 @@ def test_exhaustion_is_claimed_only_when_the_domain_is_actually_empty(
         assert pattern[0] == "state_domain_exhaustion"
     else:
         assert pattern is None or pattern[0] != "state_domain_exhaustion"
+
+
+@pytest.mark.unittest
+def test_a_narrative_needs_the_core_it_talks_about() -> None:
+    """No sound core means no causal chain to tell.
+
+    ``achieved_mode="none"`` says nothing publishable came back, and the frozen
+    not-achieved transcript spells out that no conflict core or causal chain was
+    published.  A narrative beside a missing core also escapes the reference
+    check, which can only run when there is a core to check against, so its ids
+    point at nothing by construction.
+    """
+    from pyfcstm.bmc.explanation import (
+        BmcConflictNarrative,
+        BmcInfeasibilityExplanation,
+        BmcReasoningStep,
+    )
+
+    narrative = BmcConflictNarrative(
+        "structural_only",
+        "headline",
+        "summary",
+        (BmcReasoningStep("fact", ("g0",), (), "text"),),
+        (),
+    )
+
+    with pytest.raises(ValueError, match="narrative"):
+        BmcInfeasibilityExplanation(
+            "formal",
+            "none",
+            "unknown",
+            None,
+            narrative=narrative,
+            reason="probe unknown",
+        )
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "ids", [(1,), (None,), (b"g0",)], ids=["integer", "none", "bytes"]
+)
+def test_a_reasoning_step_publishes_only_string_ids(ids) -> None:
+    """A published id is a string, and the constructor is where that is decided.
+
+    The schema types these arrays as strings, so a non-string element reaches
+    canonical JSON that a conforming validator refuses -- the constructor
+    accepting what the schema rejects, which is the opposite direction from every
+    named exception and belongs to none of them.
+    """
+    from pyfcstm.bmc.explanation import BmcReasoningStep
+
+    with pytest.raises((TypeError, ValueError)):
+        BmcReasoningStep("fact", ids, (), "text")

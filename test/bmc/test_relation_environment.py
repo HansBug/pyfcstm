@@ -178,10 +178,13 @@ def test_frame_assumption_expression_matrix_lowers_supported_terms() -> None:
     core = build_bmc_core_formula(context)
 
     assert _solver(core.core).check() == z3.sat
-    assert "Sqrt" in str(core.environment_formula) or "**(1/2)" in str(
-        core.environment_formula
-    )
-    assert "!=" in str(core.environment_formula)
+    # Both ``str()`` and ``sexpr()`` elide a long term, so a name that grew could
+    # push the operators being looked for past the cut-off and fail the test for a
+    # reason unrelated to lowering.  A solver's SMT-LIB dump renders all of it.
+    dump = _solver(core.environment_formula).to_smt2()
+    # ``sqrt`` lowers to exponentiation, and ``!=`` to ``distinct``.
+    assert "(^ " in dump
+    assert "distinct" in dump
 
 
 @pytest.mark.unittest

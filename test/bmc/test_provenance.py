@@ -7,6 +7,8 @@ from pathlib import Path
 from textwrap import dedent
 from typing import Tuple
 
+import hashlib
+
 import pytest
 import z3
 
@@ -1443,10 +1445,10 @@ def test_basic_core_formulas_match_pre_tracking_sexpression_golden() -> None:
         "I_0": "-3 == F_0_state",
         "T_N": dedent(
             """\
-            And(And(C_0_init___initial_Root_0_bda95de0da ==
+            And(And(C_0_init___initial_Root_0_bda95de0da12e219a664812b5d8e9bf3e8c93d79 ==
                     And(-3 == F_0_state, True),
                     Implies(And(-3 == F_0_state, True), 0 == F_1_state)),
-                And(C_0_init___delta___init___0_f7d616c3c1 ==
+                And(C_0_init___delta___init___0_f7d616c3c15719463a33d4f46a98beedacea5870 ==
                     And(-3 == F_0_state,
                         Not(And(-3 == F_0_state, True))),
                     Implies(And(-3 == F_0_state,
@@ -1463,11 +1465,11 @@ def test_basic_core_formulas_match_pre_tracking_sexpression_golden() -> None:
             And(And(Or(-3 == F_0_state, -1 == F_0_state, 0 == F_0_state),
                     Or(-3 == F_1_state, -1 == F_1_state, 0 == F_1_state)),
                 -3 == F_0_state,
-                And(And(C_0_init___initial_Root_0_bda95de0da ==
+                And(And(C_0_init___initial_Root_0_bda95de0da12e219a664812b5d8e9bf3e8c93d79 ==
                         And(-3 == F_0_state, True),
                         Implies(And(-3 == F_0_state, True),
                                 0 == F_1_state)),
-                    And(C_0_init___delta___init___0_f7d616c3c1 ==
+                    And(C_0_init___delta___init___0_f7d616c3c15719463a33d4f46a98beedacea5870 ==
                         And(-3 == F_0_state,
                             Not(And(-3 == F_0_state, True))),
                         Implies(And(-3 == F_0_state,
@@ -1498,7 +1500,7 @@ def test_event_assumption_environment_formula_matches_golden() -> None:
     )
 
     assert core.to_canonical()["formulas"]["ENV_N"] == (
-        "Not(E_0_event_0_Root_go_06775bfa10)"
+        "Not(E_0_event_0_Root_go_06775bfa102402247e16c156f692744c724aacbb)"
     )
 
 
@@ -2567,7 +2569,7 @@ def test_a_definedness_fact_names_the_operation_it_actually_guards(
         ("F_0_state", 1, False),
         ("F_10_state", 1, False),
         ("F_1_state", 10, False),
-        ("F_0_state_9f8e7d6c5b", 0, False),
+        ("F_0_state_%s" % ("9" * 40), 0, False),
     ],
     ids=[
         "the-slot-of-its-own-frame",
@@ -2606,7 +2608,11 @@ def test_the_two_operand_readers_never_claim_the_same_symbol() -> None:
 
     from pyfcstm.bmc.provenance import _frame_state_slot, _frame_variable_name
 
-    for name in ("F_0_state", "F_0_x_11f6ad8ec5", "F_0_state_9f8e7d6c5b"):
+    for name in (
+        "F_0_state",
+        "F_0_x_%s" % ("a" * 40),
+        "F_0_state_%s" % ("b" * 40),
+    ):
         symbol = z3.Int(name)
         slot = _frame_state_slot(symbol, 0)
         variable = _frame_variable_name(symbol)
@@ -2614,7 +2620,7 @@ def test_the_two_operand_readers_never_claim_the_same_symbol() -> None:
 
     # And each reader does claim the operand it is for.
     assert _frame_state_slot(z3.Int("F_0_state"), 0) is True
-    assert _frame_variable_name(z3.Int("F_0_state_9f8e7d6c5b")) == "state"
+    assert _frame_variable_name(z3.Int("F_0_state_%s" % ("b" * 40))) == "state"
 
 
 @pytest.mark.unittest
@@ -2687,7 +2693,107 @@ def test_a_symbol_resolves_to_the_declared_name_it_was_built_from(
     # Built the way the encoder builds it, so the test exercises the real shape
     # rather than a hand-written string that happens to look like one.
     body = re.sub(r"[^0-9A-Za-z_]+", "_", name).strip("_") or "item"
-    digest = hashlib.sha1(name.encode("utf-8")).hexdigest()[:10]
+    digest = hashlib.sha1(name.encode("utf-8")).hexdigest()
     symbol = z3.Int("F_0_%s_%s" % (body[:80], digest))
 
     assert _frame_variable_name(symbol, declared) == resolved
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "declaration, initial, literal",
+    [
+        ("def float x = 0.0;", "x == 0.0", "1"),
+        ("def float x = 0.0;", "x == 0.0", "1.0"),
+        ("def int x = 0;", "x == 0", "1"),
+    ],
+    ids=[
+        "float-variable-integer-literal",
+        "float-variable-decimal-literal",
+        "integer-variable-integer-literal",
+    ],
+)
+def test_a_comparison_is_read_whichever_way_the_sorts_were_written(
+    declaration, initial, literal
+) -> None:
+    """Writing ``1`` where the variable is real must read the same as ``1.0``.
+
+    Mixing sorts makes z3 insert a ``to_real`` coercion, around the literal when
+    the variable is real and around the variable when the literal is.  Neither
+    changes what the author wrote, so neither may change whether the fact is
+    readable -- otherwise the same query degrades or not depending on a decimal
+    point.
+    """
+    from pyfcstm.bmc.provenance import normalized_fact_for
+
+    groups = _fact_groups(
+        'init state("Root.A") where %s; '
+        'assume at 1: var("x") == %s; '
+        'check reach <= 2: active("Root.B");' % (initial, literal),
+        machine=(
+            "%s\nstate Root { event Go; state A; state B; [*] -> A; A -> B :: Go; }"
+            % declaration
+        ),
+    )
+    fact = normalized_fact_for(groups["assumption.frame"], ("x",))
+
+    assert fact["kind"] == "variable_comparison"
+    assert fact["variable"] == "x"
+    assert fact["operator"] == "eq"
+    assert fact["value"] == 1
+
+
+@pytest.mark.unittest
+def test_two_variables_never_share_one_symbol() -> None:
+    """Distinct declarations must encode to distinct symbols.
+
+    The symbol is the variable's identity inside the relation, so two variables
+    collapsing onto one makes the encoder state something the model does not:
+    here each assumption constrains its own havoc'd variable, which is plainly
+    satisfiable, yet the scenario is reported infeasible.  A truncated digest is
+    what allows the collapse -- these two names share their first eighty
+    characters and, at forty bits, their digest too.
+    """
+    from pyfcstm.bmc.relation import _safe_symbol_fragment
+
+    prefix = "v" * 80
+    first, second = prefix + "498982", prefix + "626752"
+    # The pair is only interesting because a short digest does collide on it.
+    assert (
+        hashlib.sha1(first.encode("utf-8")).hexdigest()[:10]
+        == hashlib.sha1(second.encode("utf-8")).hexdigest()[:10]
+    )
+
+    assert _safe_symbol_fragment(first) != _safe_symbol_fragment(second)
+
+
+@pytest.mark.unittest
+def test_a_colliding_scenario_keeps_its_satisfiable_verdict() -> None:
+    """The verdict must not depend on how long the author's names are.
+
+    Two independent havoc'd variables required to hold different values is
+    satisfiable, and stays satisfiable when the names get long.
+    """
+    from pyfcstm.bmc import (
+        BmcEngine,
+        build_bmc_core_formula,
+        compile_bmc_property,
+        solve_bmc_property,
+    )
+    from pyfcstm.model import load_state_machine_from_text
+
+    prefix = "v" * 80
+    first, second = prefix + "498982", prefix + "626752"
+    machine = load_state_machine_from_text(
+        "def int %s = 0;\ndef int %s = 0;\nstate Root;\n" % (first, second)
+    )
+    context = BmcEngine(machine).prepare(
+        'init state("Root") havoc *; '
+        'assume at 0: var("%s") == 1; '
+        'assume at 0: var("%s") == 2; '
+        'check reach <= 1: active("Root");' % (first, second)
+    )
+
+    result = solve_bmc_property(compile_bmc_property(build_bmc_core_formula(context)))
+
+    assert result.feasibility.infeasible_stage is None

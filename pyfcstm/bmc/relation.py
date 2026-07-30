@@ -288,7 +288,14 @@ def _state_in(symbol: z3.ArithRef, state_ids: Sequence[int]) -> z3.BoolRef:
 
 def _safe_symbol_fragment(value: str) -> str:
     body = re.sub(r"[^0-9A-Za-z_]+", "_", value).strip("_") or "item"
-    digest = hashlib.sha1(value.encode("utf-8")).hexdigest()[:10]
+    # The whole digest, not a prefix of it.  The body is truncated and has its
+    # unsafe characters replaced, so the digest is the only thing distinguishing
+    # two names that survive into the same body -- and at forty bits a colliding
+    # pair is easy to write down.  Two variables sharing one symbol makes the
+    # relation state something the model does not: independent assumptions on
+    # each are reported as a conflict, so a satisfiable scenario comes back
+    # infeasible.
+    digest = hashlib.sha1(value.encode("utf-8")).hexdigest()
     return "%s_%s" % (body[:80], digest)
 
 

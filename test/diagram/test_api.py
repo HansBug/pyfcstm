@@ -1413,23 +1413,32 @@ def test_a_forked_child_reclaims_its_own_fallback_and_leaves_its_parents(
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX modes")
-def test_a_multiprocessing_worker_reclaims_its_own_fallback(tmp_path):
+@pytest.mark.parametrize("method", ["fork", "spawn", "forkserver"])
+def test_a_multiprocessing_worker_reclaims_its_own_fallback(method, tmp_path):
     # A worker that finishes normally runs its own finalizers and then `os._exit`,
-    # so `atexit` hooks do not fire: three short workers each left an empty
-    # directory. This is the standard library used as documented, not a kill.
+    # so `atexit` hooks do not fire: short workers each left an empty directory.
+    # This is the standard library used as documented, not a kill.
+    #
+    # All three start methods, because they leave by different doors. A fork and a
+    # forkserver child end in `_bootstrap` with `util._exit_function()` and then
+    # `os._exit`, which skips `atexit` -- those two are what the worker registration
+    # is for. A spawn child is a plain interpreter whose `spawn_main` ends in
+    # `sys.exit`, so the ordinary hook already covers it: removing the worker
+    # registration fails fork and forkserver and leaves spawn green, which is the
+    # honest result and not a hole in this test.
     import multiprocessing
 
     untrusted = tmp_path / ("pyfcstm-viewers-%d" % os.geteuid())
     untrusted.mkdir(mode=0o755)
     os.chmod(str(untrusted), 0o755)
 
-    context = multiprocessing.get_context("fork")
-    for _ in range(3):
+    context = multiprocessing.get_context(method)
+    for _ in range(2):
         worker = context.Process(
             target=_write_and_remove_a_viewer, args=(str(tmp_path),)
         )
         worker.start()
-        worker.join(60)
+        worker.join(180)
         assert worker.exitcode == 0, "the worker failed: %r" % (worker.exitcode,)
     left = sorted(item.name for item in tmp_path.iterdir() if item.is_dir())
     assert left == [untrusted.name], "workers left fallback directories behind: %r" % (

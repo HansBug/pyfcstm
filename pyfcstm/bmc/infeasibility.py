@@ -38,7 +38,16 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Callable, Dict, Mapping, Optional, Sequence, Tuple
+from typing import (
+    TYPE_CHECKING,
+    Callable,
+    Dict,
+    Mapping,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+)
 
 import z3
 
@@ -1076,8 +1085,10 @@ class ForcedValue:
     :type variable: str
     :param frame: Frame index the value belongs to.
     :type frame: int
-    :param value: The forced value.
-    :type value: int
+    :param value: The forced value, an ``int`` for an integer variable and a
+        ``float`` for a real one, matching the shape the fact recognizer
+        publishes so the narrative can compare the two directly.
+    :type value: Union[int, float]
     :param supporting_ids: Stable ids of the groups that force it.
     :type supporting_ids: Tuple[str, ...]
 
@@ -1089,7 +1100,7 @@ class ForcedValue:
 
     variable: str
     frame: int
-    value: int
+    value: Union[int, float]
     supporting_ids: Tuple[str, ...]
 
 
@@ -1500,7 +1511,7 @@ def explain_infeasibility(
     )
     if propagation_record is not None:
         checks = checks + (propagation_record,)
-    narrative = build_conflict_narrative(published, forced_values)
+    narrative = build_conflict_narrative(published, forced_values, state_paths)
     formal_is_complete = (
         outcome.classification is not None
         and minimized.subset_minimality == "proven"

@@ -2095,7 +2095,9 @@ def depth_line_is_needed(requested_mode: str, achieved_mode: str) -> bool:
 
 
 def _conflict_pattern(
-    items: Tuple["BmcCoreItem", ...], minimality: str = "not_proven"
+    items: Tuple["BmcCoreItem", ...],
+    minimality: str = "not_proven",
+    state_paths: Optional[Mapping] = None,
 ) -> Optional[Tuple[str, str]]:
     """Name the cross-group pattern the published facts support, if any.
 
@@ -2110,6 +2112,10 @@ def _conflict_pattern(
         soundness argument needs every member to be load-bearing is only offered
         when it is ``proven``, defaults to ``"not_proven"``.
     :type minimality: str, optional
+    :param state_paths: State code to authored path, so a conclusion names the
+        state the reader wrote rather than the encoding's number; defaults to
+        ``None``.
+    :type state_paths: Optional[Mapping[int, str]], optional
     :return: The rule name and its sentence, or ``None``.
     :rtype: Optional[Tuple[str, str]]
 
@@ -2212,11 +2218,11 @@ def _conflict_pattern(
             # equalities, over the state slot instead of a variable.
             return (
                 "incompatible_equalities",
-                "Frame %s cannot be in two states at once; states %s are each "
+                "Frame %s cannot be in two states at once; %s are each "
                 "required."
                 % (
                     sorted(frames)[0],
-                    " and ".join(str(code) for code in required),
+                    " and ".join(_state_label(code, state_paths) for code in required),
                 ),
             )
     comparisons = [
@@ -2328,8 +2334,11 @@ def _propagation_steps(core: "BmcConflictCore", forced_values: Tuple):
     :type core: BmcConflictCore
     :param forced_values: Values the prefix admits no alternative to.
     :type forced_values: Tuple[pyfcstm.bmc.infeasibility.ForcedValue, ...]
-    :return: The ordered steps and the closing sentence, or ``None``.
-    :rtype: Optional[Tuple[Tuple[BmcReasoningStep, ...], str]]
+    :return: The ordered steps, the closing sentence and the phrase naming what
+        carried the value, or ``None``.  The phrase travels with the steps so the
+        summary cannot describe the same derivation differently from the step
+        that made it.
+    :rtype: Optional[Tuple[Tuple[BmcReasoningStep, ...], str, str]]
 
     Example::
 
@@ -2419,12 +2428,14 @@ def _propagation_steps(core: "BmcConflictCore", forced_values: Tuple):
                 closing,
             ),
         )
-        return steps, closing
+        return steps, closing, source_phrase
     return None
 
 
 def build_conflict_narrative(
-    core: "BmcConflictCore", forced_values: Tuple = ()
+    core: "BmcConflictCore",
+    forced_values: Tuple = (),
+    state_paths: Optional[Mapping] = None,
 ) -> BmcConflictNarrative:
     """Render the deterministic account of why the published core is unsatisfiable.
 
@@ -2440,6 +2451,9 @@ def build_conflict_narrative(
         alternative to, each established by a solver probe rather than read from
         the formula, defaults to ``()``.
     :type forced_values: Tuple[pyfcstm.bmc.infeasibility.ForcedValue, ...], optional
+    :param state_paths: State code to authored path, so every sentence names the
+        state the reader wrote; defaults to ``None``.
+    :type state_paths: Optional[Mapping[int, str]], optional
     :return: The narrative for this core.
     :rtype: BmcConflictNarrative
 
@@ -2469,19 +2483,19 @@ def build_conflict_narrative(
     )
     propagation = _propagation_steps(core, forced_values)
     if propagation is not None:
-        steps, closing = propagation
+        steps, closing, carrier = propagation
         return BmcConflictNarrative(
             derivation_status="complete",
             headline=closing,
             summary=(
                 "The scenario is empty before the property objective is "
-                "considered: a value carried across the transition prefix "
-                "contradicts an assumption in %s." % core.scope
+                "considered: a value carried by %s contradicts an assumption "
+                "in %s." % (carrier[0].lower() + carrier[1:], core.scope)
             ),
             reasoning_steps=steps,
             review_surfaces=surfaces,
         )
-    pattern = _conflict_pattern(core.items, core.subset_minimality)
+    pattern = _conflict_pattern(core.items, core.subset_minimality, state_paths)
     if pattern is None:
         # The frozen degradation wording: state the joint fact, say the specific
         # derivation is unavailable, and do not present that as a root cause.

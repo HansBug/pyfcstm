@@ -3183,3 +3183,65 @@ def test_a_state_is_named_the_way_the_reader_wrote_it(tmp_path) -> None:
     assert "rules out state Root.A" in result.output
     assert "rules out state Root.B" in result.output
     assert "rules out state 1" not in result.output
+
+
+@pytest.mark.unittest
+def test_every_sentence_names_states_the_way_the_reader_wrote_them(
+    tmp_path,
+) -> None:
+    """The conclusion has to use the same names as the steps above it.
+
+    Naming states by path was applied to the facts and missed the conflict
+    sentence, so a chain could read ``Root.A`` twice and then conclude about
+    ``states 1 and 2``.  A reader cannot tell those are the same two states.
+    """
+    model = tmp_path / "machine.fcstm"
+    query = tmp_path / "scenario.fbmcq"
+    model.write_text("state Root { state A; state B; [*] -> A; }\n", encoding="utf-8")
+    query.write_text(
+        'init state("Root.A");\nassume at 0: active("Root.B");\n'
+        'check reach <= 1: active("Root.A");\n',
+        encoding="utf-8",
+    )
+
+    result = _run(
+        "-i", str(model), "-q", str(query), "--explain-infeasibility", "formal"
+    )
+
+    assert "cannot be in two states at once" in result.output
+    assert "state Root.A and state Root.B" in result.output
+    assert "states 1 and 2" not in result.output
+
+
+@pytest.mark.unittest
+def test_the_summary_and_the_step_agree_on_what_carried_the_value(
+    tmp_path,
+) -> None:
+    """One derivation, one attribution.
+
+    The step and the summary describe the same inference, so a fix to one that
+    misses the other leaves the report contradicting itself -- the chain saying
+    an initializer forced the value while the summary credits a transition
+    prefix the model does not contain.
+    """
+    model = tmp_path / "machine.fcstm"
+    query = tmp_path / "scenario.fbmcq"
+    model.write_text(
+        "def int x = 0;\nstate Root { state A; [*] -> A; }\n", encoding="utf-8"
+    )
+    query.write_text(
+        'init state("Root.A") havoc * where 2 * x == 10;\n'
+        'assume at 0: var("x") == 7;\n'
+        'check reach <= 1: active("Root.A");\n',
+        encoding="utf-8",
+    )
+
+    _, payload = _json_result(model, query, "--explain-infeasibility", "formal")
+    narrative = payload["result"]["feasibility"]["explanation"]["narrative"]
+
+    assert "transition prefix" not in narrative["summary"]
+    assert "the initial state" in narrative["summary"]
+    derivation = next(
+        step for step in narrative["reasoning_steps"] if step["kind"] == "derivation"
+    )
+    assert "The initial state therefore requires" in derivation["text"]

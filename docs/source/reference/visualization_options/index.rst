@@ -843,9 +843,9 @@ open to them, each resolution makes its own instead and says so in a warning, wh
 two independent processes do separately and a forked child does not. Pass an
 explicit path for a document only you may remove. On Windows this rests on
 ``%TEMP%`` being per account, which is the default; a ``TEMP`` shared between
-users is not detectable, and before CPython 3.12.4 the directory's mode is not
-applied there — pass a path of your own for a document that must not be
-somewhere shared.
+users is not detectable, and with an installer from python.org the directory's mode
+is applied only from 3.12.4 onwards — pass a path of your own for a document that
+must not be somewhere shared.
 
 The HTML viewer can download SVG, PNG, and vector PDF in a browser. The Python
 methods ``to_svg()``, ``to_png()``, and ``to_pdf()`` intentionally raise

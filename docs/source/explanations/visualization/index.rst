@@ -113,7 +113,8 @@ pane:
 
    sourceAvailable: False
    sourceUnavailableReason: This model did not retain its original FCSTM source;
-     load it through load_state_machine_from_file/text, or pass source_text explicitly.
+     load it through load_state_machine_from_file/text. Passing source_text is not
+     enough on its own: linking needs the ranges that parsing records.
 
 Passing ``source_text`` without ranges does not get you half of it. The ranges come
 from parsing, so text alone leaves nothing to link a state to, and the viewer treats that
@@ -322,12 +323,13 @@ who else may look: an owner exists there and is readable through the platform's 
 API, but the portable ``os.lstat`` and ``os.geteuid`` this package uses do not report it.
 
 ``os.mkdir`` does apply a restrictive ACL for a mode of 0o700 on Windows, from the
-releases that carried CVE-2024-4030 -- 3.8.20, 3.9.20, 3.10.15, 3.11.10, 3.12.4 and 3.13
--- and ignores the mode entirely before them. Every one of those except 3.12.4 and 3.13
-arrived after python.org had stopped shipping Windows installers for its line, so the
-practical rule is shorter than the version list: with an installer from python.org, the
-ACL is there on 3.12.4 or later and on 3.13, and on no other supported line. A
-self-built or redistributed interpreter of 3.8.20, 3.9.20, 3.10.15 or 3.11.10 has it. Privacy there rests on ``%TEMP%`` being per
+releases that carried CVE-2024-4030 -- 3.8.20, 3.9.20, 3.10.15, 3.11.10 and 3.12.4 --
+and from 3.13 onwards unconditionally, 3.14 included. It ignores the mode entirely
+before them. Each of those four backports arrived after python.org had stopped
+shipping Windows installers for its line, so the practical rule is shorter than the
+list: with an installer from python.org the ACL is there from 3.12.4 onwards and not
+below it. A self-built or redistributed interpreter of 3.8.20, 3.9.20, 3.10.15 or
+3.11.10 has it. Privacy there rests on ``%TEMP%`` being per
 account, which is the default; a ``TEMP`` pointing at a directory other users share is
 not detectable from inside the process, and in that case neither the directory nor the
 0600 on the files inside it keeps anything private, because that mode is only Windows'

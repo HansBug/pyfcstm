@@ -564,14 +564,12 @@ Mandatory completion rule for built-in template work:
   `diagram_docstring_check` and `diagram_reference_targets_check`; each one must be able to fail, so mutation-test a
   gate before trusting it. `diagram_reference_targets_check` judges fully-qualified `pyfcstm.*` cross-references in the
   diagram package -- inline roles, `:raises:`, and `:rtype:` / `:type:` / `:vartype:` bodies -- against what
-  `docs/source/api_doc` registers, plus two bare shapes whose candidates are reproducible: an inline role in a
-  module's own docstring, where `modname + "." + name` is Sphinx's only candidate, and a `:meth:` / `:attr:` in a
-  class's docstring, where it tries the enclosing class and then the module. It deliberately does not judge a bare name
-  in an information field, which carries `refspecific` and is matched against the whole registry by suffix, nor one
-  inside a method, whose class the scanner does not carry; guessing at either reports live links as dead. The
-  bare-member rule assumes this repository configures no intersphinx mapping, so the checker refuses to run when
-  `docs/source/conf.py` sets `intersphinx_mapping` or names the extension in an `extensions` statement; an extension
-  name built from a variable is outside what it can see and is stated as such in the tool
+  `docs/source/api_doc` registers, including the bodies of `:rtype:` / `:type:` / `:vartype:` and their continuation
+  lines. It deliberately does not judge a name written without its module: which candidates Sphinx tries there depends
+  on the enclosing class, on the `refspecific` flag information fields carry, and on whether an intersphinx inventory
+  could resolve it elsewhere, and attempts at reproducing that reported live links as dead. A `-n` Sphinx build is the
+  backstop for bare names; this checker exists for the fully-qualified target pointed at the wrong module, which
+  renders as plain text without a word of complaint while `-n` is off
 
 **Entry Points** ([pyfcstm/entry/](pyfcstm/entry/))
 

@@ -19,45 +19,27 @@ Sphinx build.
 
 Fully-qualified ``pyfcstm.*`` targets are checked wherever they appear -- inline
 roles, ``:raises:`` and the body of ``:rtype:`` / ``:type:`` / ``:vartype:``, which
-Sphinx renders through ``bodyrolename='class'`` and are therefore references like
-any other. Standard-library names are left alone: they never resolve in this
-repository because intersphinx is not configured, and ``optional`` in a type field
-is the convention CLAUDE.md sets out -- both are repository-wide and not this
-package's to answer for.
+Sphinx renders through ``bodyrolename='class'`` and are therefore references like any
+other. Field bodies include their continuation lines, because a type wrapped after
+``or`` is ordinary reST and reading one line let the second target through.
 
-A name written without its module is judged where the candidates Sphinx tries are
-reproducible from the outside, which is two places:
+Names written *without* their module are not judged, and that boundary is the result
+of trying. Judging them needs to know which candidates Sphinx will try, which depends
+on the enclosing class, on the ``refspecific`` flag that information fields carry,
+and -- for a bare member -- on whether an intersphinx inventory could resolve it
+elsewhere. Attempts at that reported live links as dead, and the guard meant to
+protect the last of them leaked four times: a whole-file substring matched a comment
+saying intersphinx was *not* configured, then any string constant did, then a
+statement's own inline comment did, and on Python 3.7 the node class it looked for is
+not the one a string literal produces. Each iteration was a new way to be wrong about
+something this checker does not need to know, so the bare rules are gone and the
+assumption and the guard went with them.
 
-* An inline role in a *module's own* docstring: there is no class to search and no
-  ``refspecific`` flag, so ``modname + "." + name`` is the only candidate. Both
-  directions are measured against built pages -- the bare ``:class:`DiagramAssetEngine```
-  in ``pyfcstm/diagram/engine.py`` is a live link because that module documents it, and
-  the same spelling in the package's own summary tables was not, because
-  ``pyfcstm.diagram`` documents nothing.
-* A ``:meth:`` or ``:attr:`` in a *class's* docstring, which the AST names: Sphinx tries
-  the enclosing class and then the module, so it is dead only when neither has the
-  name. Misspelling a member is the case this catches -- ``:meth:`to_dictt``` in the
-  ``Diagram`` docstring renders as plain text and nothing else here would notice.
-
-Those two roles are judged without asking whether the registry already knows the name,
-because a bare member of a documented class means that class's member and a misspelling
-is exactly what should be reported. Every other role is judged only when the registry
-knows the name under some module, or ``:class:`ValueError``` would be read as ours.
-
-That unconditional judgement leans on a repository fact: ``docs/source/conf.py`` loads
-no intersphinx mapping, so a bare ``:meth:`endswith``` does not resolve here either and
-reporting it is correct. Configure intersphinx and the same rule starts reporting live
-links, so this checker refuses to run in that case rather than turning into noise.
-
-What is still not judged is an information field: ``:raises DiagramUnavailableError:``
-carries ``refspecific``, so Sphinx matches the whole registry by suffix and can resolve
-it under a different module entirely -- that one lands in ``pyfcstm.diagram.engine``.
-Nor is a bare name inside a *method*, where the enclosing class is tried first and the
-AST here does not carry which class a method belongs to.
-
-A first version guessed at the class case with the module's name and reported sixteen
-references that are in fact links. A gate that cries wolf is worse than one with a
-stated boundary.
+What catches a misspelled bare member instead is Sphinx itself: a build with ``-n``
+reports every unresolved reference, bare ones included. This checker exists for the
+class that build does *not* make obvious while ``-n`` is off -- a fully-qualified
+target pointed at the wrong module, which renders as plain text without a word of
+complaint, and which is what thirty references in this package were doing.
 
 The registry over-approximates in one way worth knowing: every name listed in a
 ``:members:`` option counts as registered, while autodoc emits no anchor for a member
@@ -76,7 +58,7 @@ import ast
 import re
 import sys
 from pathlib import Path
-from typing import Iterable, List, Optional, Set, Tuple
+from typing import Iterable, List, Set, Tuple
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -85,14 +67,8 @@ ROOT = Path(__file__).resolve().parents[1]
 # nineteen `pyfcstm.model.StateMachine` references elsewhere in it first.
 SOURCES = ("pyfcstm/diagram", "pyfcstm/entry/diagram.py")
 API_DOC = "docs/source/api_doc"
-CONF = "docs/source/conf.py"
 
-ROLE = re.compile(r":(class|exc|meth|func|data|mod|attr|obj):`~?([A-Za-z_][\w.]*)`")
-# A name written without its module after one of these means a member of whatever it
-# sits in, so a misspelling is a dead reference rather than a foreign name. The others
-# routinely name things outside this package -- `ValueError`, `Path` -- which is why
-# they are only judged when the registry knows the name under some module.
-MEMBER_ROLES = frozenset(("meth", "attr"))
+ROLE = re.compile(r":(?:class|exc|meth|func|data|mod|attr|obj):`~?([A-Za-z_][\w.]*)`")
 RAISES = re.compile(r":raises\s+~?([A-Za-z_][\w.]*)\s*:")
 # `:rtype:`, `:type:` and `:vartype:` bodies are cross-references too: Sphinx renders
 # them through `bodyrolename='class'`, so `:rtype: pyfcstm.diagram.api.Diagram` is a
@@ -112,10 +88,6 @@ AUTOOBJECT = re.compile(
     re.M,
 )
 MEMBERS = re.compile(r"^\s+:members:\s*(.*)$", re.M)
-
-# Stands for "the module this file is", so `referenced_targets` can say which prefix
-# applies without being told the repository root.
-MODULE = object()
 
 
 def documented_names(api_doc: Path) -> Set[str]:
@@ -179,67 +151,9 @@ def module_of(path: Path, root: Path) -> str:
     return ".".join(parts)
 
 
-def _configures_intersphinx(conf: Path) -> bool:
-    """
-    Say whether the Sphinx configuration actually loads intersphinx.
-
-    Asked of the parse tree rather than of the text, because a substring match says
-    yes to a comment explaining that intersphinx is *not* configured -- the same
-    footgun CLAUDE.md documents for ``contains()`` in the workflow triggers, and it
-    would stop this checker with a message stating something untrue.
-
-    What it sees: an ``intersphinx_mapping`` name, and the extension named anywhere
-    inside a statement that assigns or appends to ``extensions`` -- which covers a
-    literal, ``'sphinx.ext.' + 'intersphinx'``, and ``extensions.append(...)``.  What
-    it does not see is a name built from a variable, as in
-    ``EXT = 'intersphinx'`` followed by ``['sphinx.ext.%s' % EXT]``: following that
-    means evaluating the configuration, and executing ``conf.py`` has side effects of
-    its own -- it copies the language's index into place.  A ``conf.py`` written that
-    way would leave the bare-member rule unguarded, so it is named here rather than
-    quietly missed.
-
-    :param conf: Path to ``conf.py``.
-    :type conf: pathlib.Path
-    :return: ``True`` when a mapping is assigned or the extension is listed.
-    :rtype: bool
-    """
-    if not conf.is_file():
-        return False
-    try:
-        tree = ast.parse(conf.read_text(encoding="utf-8"))
-    except SyntaxError:
-        # A configuration this checker cannot read is not one it should judge.
-        return False
-    text = conf.read_text(encoding="utf-8")
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Name) and node.id == "intersphinx_mapping":
-            return True
-        # Whatever builds the extension list, read its own source rather than only
-        # its literals: `'sphinx.ext.' + 'intersphinx'` and `'sphinx.ext.%s' % name`
-        # both enable it, and neither is a single constant. Scoping the search to the
-        # statement keeps a comment elsewhere in the file from answering for it.
-        touches_extensions = (
-            isinstance(node, ast.Assign)
-            and any(
-                isinstance(target, ast.Name) and target.id == "extensions"
-                for target in node.targets
-            )
-        ) or (
-            isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Attribute)
-            and isinstance(node.func.value, ast.Name)
-            and node.func.value.id == "extensions"
-        )
-        if touches_extensions:
-            segment = ast.get_source_segment(text, node) or ""
-            if "intersphinx" in segment:
-                return True
-    return False
-
-
 def _field_bodies(doc: str) -> List[Tuple[int, str]]:
     """
-    Return each type field's whole body, continuation lines included.
+    Return one entry per line of each type field's body.
 
     A reST field body runs on for as long as the following lines are indented past
     the field marker, so ``:rtype: A or\n    B`` names two things.  Reading only the
@@ -292,25 +206,42 @@ def _field_bodies(doc: str) -> List[Tuple[int, str]]:
     return bodies
 
 
-def referenced_targets(path: Path) -> List[Tuple[int, str, Optional[str], str]]:
+def _docstring_first_line(lines: List[str], holder: ast.AST) -> int:
+    """
+    Return the 1-based line the docstring of one holder opens on.
+
+    :param lines: The file's lines.
+    :type lines: list[str]
+    :param holder: A module, class or function whose first statement is a string.
+    :type holder: ast.AST
+    :return: The line the opening quotes are on.
+    :rtype: int
+    """
+    if isinstance(holder, ast.Module):
+        start = 0
+    else:
+        start = holder.lineno - 1
+    for index in range(start, len(lines)):
+        stripped = lines[index].lstrip().lstrip("rRbBuU")
+        if stripped.startswith(('"""', "'''")):
+            return index + 1
+    # No quotes found means the caller had no docstring to ask about.
+    return start + 1
+
+
+def referenced_targets(path: Path) -> List[Tuple[int, str]]:
     """
     Find every target the docstrings of one module refer to.
 
     :param path: A Python file.
     :type path: pathlib.Path
-    :return: Line, target, the prefix a name written without its module would resolve
-        against -- the module for the module's own docstring, the class for a class's,
-        and ``None`` where Sphinx uses context this cannot reproduce -- and the role
-        it was written with.
-    :rtype: list[tuple[int, str, str or None, str]]
+    :return: Pairs of line number and target, as written.
+    :rtype: list[tuple[int, str]]
     """
     text = path.read_text(encoding="utf-8")
+    lines = text.split("\n")
     tree = ast.parse(text)
     found = []
-    classes = {}
-    for node in ast.walk(tree):
-        if isinstance(node, ast.ClassDef):
-            classes[node] = node.name
     holders = [tree] + [
         node
         for node in ast.walk(tree)
@@ -320,35 +251,20 @@ def referenced_targets(path: Path) -> List[Tuple[int, str, Optional[str], str]]:
         doc = ast.get_docstring(holder, clean=False)
         if not doc:
             continue
-        # The docstring's own first line, so a report points near the reference
-        # rather than at the top of the file.
-        base = holder.body[0].lineno
-        # What a bare name resolves against here, or nothing when Sphinx has more
-        # context than this can reproduce -- inside a method, the enclosing class is
-        # tried first and this does not know which class the method belongs to.
-        if holder is tree:
-            prefix = MODULE
-        elif holder in classes:
-            prefix = classes[holder]
-        else:
-            prefix = None
-        for match in ROLE.finditer(doc):
-            line = base + doc[: match.start()].count("\n")
-            found.append((line, match.group(2), prefix, match.group(1)))
-        for match in RAISES.finditer(doc):
-            line = base + doc[: match.start()].count("\n")
-            # Never judged bare: an information field carries `refspecific`, so
-            # Sphinx matches the whole registry by suffix and can resolve it under
-            # a module other than this one.
-            found.append((line, match.group(1), None, "exc"))
+        # The docstring's own first line, found by looking for the quotes rather than
+        # by asking the node: before Python 3.8 a multi-line string's `lineno` is its
+        # *last* line, which put every report twenty lines off on 3.7. Searching the
+        # value in the source would break on an escaped docstring instead.
+        base = _docstring_first_line(lines, holder)
+        for pattern in (ROLE, RAISES):
+            for match in pattern.finditer(doc):
+                line = base + doc[: match.start()].count("\n")
+                found.append((line, match.group(1)))
         for offset, body in _field_bodies(doc):
-            line = base + offset
             for target in QUALIFIED.findall(body):
                 # A type field can name several -- `str or pyfcstm.model.model.State`
-                # -- and only ours are judged. The body includes its continuation
-                # lines: a field wrapped after `or` is ordinary reST, and reading only
-                # the first line let the second regress in silence.
-                found.append((line, target, None, "class"))
+                # -- and only ours are judged.
+                found.append((base + offset, target))
     return found
 
 
@@ -361,61 +277,26 @@ def dead_references(root: Path) -> List[Tuple[Path, int, str]]:
     :return: File, line and target for each dead reference.
     :rtype: list[tuple[pathlib.Path, int, str]]
     :raises SystemExit: If the documentation tree registers no names at all, which
-        means the tree moved rather than that every reference is live, or if the Sphinx
-        configuration has gained an intersphinx mapping, which invalidates the
-        bare-member rule.
+        means the tree moved rather than that every reference is live.
     """
-    if _configures_intersphinx(root / CONF):
-        # The bare-member rule reports a name that resolves nowhere, and with an
-        # intersphinx mapping a bare `:meth:` can resolve into another project's
-        # inventory. Rather than start reporting live links, say so and stop.
-        raise SystemExit(
-            "%s now configures intersphinx; the bare-member rule in this checker "
-            "assumes it does not, and must be reconsidered before this runs again"
-            % CONF
-        )
     names = documented_names(root / API_DOC)
     if not names:
         raise SystemExit("no documented names found under %s" % API_DOC)
-    # Which last components are ours at all, so a name written without its module
-    # can be told from `ValueError`: ours appears in the registry under some module,
-    # a builtin appears nowhere in it.
-    ours = {name.rsplit(".", 1)[-1] for name in names if "." in name}
     dead = []
     for entry in SOURCES:
         location = root / entry
         files = sorted(location.rglob("*.py")) if location.is_dir() else [location]
         for path in files:
-            module = module_of(path, root)
-            for line, target, prefix, role in referenced_targets(path):
-                if "." not in target:
-                    if prefix is None:
-                        continue
-                    if role not in MEMBER_ROLES and target not in ours:
-                        continue
-                    if role in MEMBER_ROLES and prefix is not MODULE:
-                        # A member of the class it sits in, or a function of the
-                        # module -- Sphinx tries the class first and the module next,
-                        # so it is dead only when neither has it.
-                        candidates = (
-                            "%s.%s.%s" % (module, prefix, target),
-                            "%s.%s" % (module, target),
-                        )
-                        if not any(name in names for name in candidates):
-                            dead.append((path.relative_to(root), line, candidates[0]))
-                        continue
-                    if prefix is MODULE:
-                        # An inline role in a module's own docstring has no class to
-                        # search and no `refspecific` flag, so `modname + "." + name`
-                        # is the only candidate Sphinx has.
-                        target = "%s.%s" % (module, target)
-                    else:
-                        # In a class's docstring the enclosing class is tried first,
-                        # and the AST says which class that is.
-                        target = "%s.%s.%s" % (module, prefix, target)
-                elif not target.startswith("pyfcstm."):
+            for line, target in referenced_targets(path):
+                if not target.startswith("pyfcstm."):
                     continue
-                if target not in names:
+                # A trailing dot comes from a dotted path broken across lines, or from
+                # a sentence that ends on one. Judging the name without it keeps a
+                # full stop in prose from being reported; a genuinely broken path then
+                # resolves to the module and is left to a `-n` build, which sees the
+                # whole field body rather than one line of it.
+                target = target.rstrip(".")
+                if target and target not in names:
                     dead.append((path.relative_to(root), line, target))
     return dead
 
@@ -424,11 +305,14 @@ def _self_check() -> None:
     """
     Prove the scanner reports what it is for, and only that, on inputs written for it.
 
-    Every rule gets a live case and a dead one: a qualified target, a member, the
-    ``~`` short form, a field body, and a name written without its module in a module
-    docstring -- which is judged, and is the shape the package's own summary tables
-    had.  The bare name in a module that *does* document it must stay unreported, or
-    the gate would report links as dead.
+    Every rule gets a live case and a dead one, and the expectation carries the line
+    each target sits on: a qualified target, a member, the ``~`` short form, a field
+    body and its continuation, a body that continues past a blank line, a variadic
+    field name, and a name ending on a full stop, which must not be read as a broken
+    path.  Names written without their module appear too, and must stay unreported.
+
+    Line numbers are compared because three of these rules are about *where* a target
+    is, and comparing only the names left them invisible to this check.
 
     :return: ``None``.
     :rtype: None
@@ -445,18 +329,22 @@ def _self_check() -> None:
             ".. autoclass:: Diagram\n    :members: show,save\n",
             encoding="utf-8",
         )
+        # So that a full stop after `pyfcstm.diagram` resolves once the dot is
+        # stripped, which is what keeps prose from being reported.
+        (doc / "index.rst").write_text(
+            ".. automodule:: pyfcstm.diagram\n", encoding="utf-8"
+        )
         package = fake / "pyfcstm" / "diagram"
         package.mkdir(parents=True)
         (package / "__init__.py").write_text(
-            '"""\n'
+            # A raw docstring, because the fixture carries `\\*args`: a plain one makes
+            # the generated file raise a SyntaxWarning when this parses it back.
+            'r"""\n'
             "Live: :class:`pyfcstm.diagram.api.Diagram`.\n"
             "Live member: :meth:`pyfcstm.diagram.api.Diagram.show`.\n"
             "Live short form: :class:`~pyfcstm.diagram.api.Diagram`.\n"
             "Dead module: :class:`pyfcstm.diagram.Diagram`.\n"
             "Dead member: :meth:`pyfcstm.diagram.api.Diagram.to_pdf`.\n"
-            "Dead bare, this module documenting nothing: :class:`Diagram`.\n"
-            "Not ours and bare, so not judged: :exc:`ValueError`.\n"
-            "Bare member of no class here, and no module function: :meth:`nowhere`.\n"
             "Outside: :class:`os.PathLike`.\n"
             "\n:raises DiagramAssetError: bare in a field, never judged.\n"
             ":raises pyfcstm.diagram.api.DiagramAssetError: dead, and judged.\n"
@@ -464,8 +352,13 @@ def _self_check() -> None:
             ":type thing: str or pyfcstm.diagram.Diagram\n"
             ":vartype wrapped: pyfcstm.diagram.api.Diagram or\n"
             "    pyfcstm.diagram.Wrapped\n"
-            ":type \\*args: pathlib.Path or\n"
+            r":type \*args: pathlib.Path or"
+            "\n"
             "    pyfcstm.diagram.Starred\n"
+            ":vartype spaced: pyfcstm.diagram.api.Diagram\n"
+            "\n"
+            "    pyfcstm.diagram.PastBlank\n"
+            ":rtype: a value described in pyfcstm.diagram.\n"
             '"""\n',
             encoding="utf-8",
         )
@@ -485,6 +378,7 @@ def _self_check() -> None:
 
         names = documented_names(doc)
         expected = {
+            "pyfcstm.diagram",
             "pyfcstm.diagram.api",
             "pyfcstm.diagram.api.Diagram",
             "pyfcstm.diagram.api.Diagram.show",
@@ -493,39 +387,16 @@ def _self_check() -> None:
         if names != expected:
             raise SystemExit("registered names wrong: %s" % sorted(names))
 
-        # The guard, both ways: a comment mentioning intersphinx must not stop this,
-        # and a real mapping must. Checked here because `--check` would otherwise
-        # never exercise the guard the run itself depends on.
-        conf = fake / CONF
-        conf.write_text(
-            "# An intersphinx mapping is deliberately not configured here.\n"
-            "extensions = ['sphinx.ext.autodoc']\n",
-            encoding="utf-8",
-        )
-        if _configures_intersphinx(conf):
-            raise SystemExit("a comment about intersphinx was read as configuration")
-        conf.write_text(
-            "extensions = ['sphinx.ext.autodoc', 'sphinx.ext.intersphinx']\n",
-            encoding="utf-8",
-        )
-        if not _configures_intersphinx(conf):
-            raise SystemExit("a configured intersphinx extension was not noticed")
-        conf.write_text("intersphinx_mapping = {}\n", encoding="utf-8")
-        if not _configures_intersphinx(conf):
-            raise SystemExit("a configured intersphinx mapping was not noticed")
-        conf.unlink()
-
-        found = sorted(target for _, _, target in dead_references(fake))
+        found = sorted((target, line) for _, line, target in dead_references(fake))
         wanted = [
-            "pyfcstm.diagram.Diagram",  # the dead module-qualified role
-            "pyfcstm.diagram.Diagram",  # the dead bare name, resolved to this module
-            "pyfcstm.diagram.Diagram",  # and the same in a type field
-            "pyfcstm.diagram.Starred",  # a variadic field name, escaped star
-            "pyfcstm.diagram.Wrapped",  # on a field's continuation line
-            "pyfcstm.diagram.api.Diagram.shoe",  # the misspelled bare member
-            "pyfcstm.diagram.api.Diagram.to_pdf",
-            "pyfcstm.diagram.api.DiagramAssetError",
-            "pyfcstm.diagram.nowhere",  # a bare member with neither class nor module
+            # (target, line within `__init__.py`)
+            ("pyfcstm.diagram.Diagram", 5),  # the dead module-qualified role
+            ("pyfcstm.diagram.Diagram", 12),  # and the same in a type field
+            ("pyfcstm.diagram.PastBlank", 19),  # a body continuing past a blank line
+            ("pyfcstm.diagram.Starred", 16),  # a variadic field name, escaped star
+            ("pyfcstm.diagram.Wrapped", 14),  # on a field's continuation line
+            ("pyfcstm.diagram.api.Diagram.to_pdf", 6),
+            ("pyfcstm.diagram.api.DiagramAssetError", 10),
         ]
         if found != wanted:
             raise SystemExit("dead references wrong: %s" % found)
@@ -584,8 +455,8 @@ def main(argv: Iterable[str]) -> int:
             if (ROOT / entry).is_dir()
             else [ROOT / entry]
         )
-        for _, target, prefix, _role in referenced_targets(path)
-        if target.startswith("pyfcstm.") or (prefix is not None and "." not in target)
+        for _, target in referenced_targets(path)
+        if target.startswith("pyfcstm.")
     )
     print("diagram reference targets: %d judged reference(s) all registered" % judged)
     return 0

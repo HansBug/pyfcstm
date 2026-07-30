@@ -560,7 +560,8 @@ Output and failure facts:
   source; ``--format html`` without ``-o`` is refused instead, because HTML cannot
   go to stdout. On Windows the privacy of that directory rests on ``%TEMP%`` being
   per account, which is the default: a ``TEMP`` shared between users cannot be
-  detected, and before CPython 3.12.4 the directory's mode is not applied there.
+  detected, and with an installer from python.org the directory's mode is applied
+  only from 3.12.4 onwards.
   Use ``-o`` for a document that must not be somewhere shared.
 * Invalid formats, unknown options, unreadable input, parse/model failures, and
   missing packaged assets exit non-zero with the corresponding error category.

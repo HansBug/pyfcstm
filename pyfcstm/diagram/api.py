@@ -1020,9 +1020,12 @@ def _private_viewer_directory() -> Path:
 
     What that verification is worth depends on the platform, and this is the limit
     of it.  On POSIX the mode and the owner are both checked, and both mean what
-    they say.  On Windows there is no owner to ask about, and ``os.mkdir`` applies
-    a restrictive ACL for a mode of 0o700 only from CPython 3.12.4 -- earlier
-    versions in this package's range ignore it.  Privacy there rests on ``%TEMP%``
+    they say.  On Windows the owner is not one this can ask about -- it exists, but
+    ``os.lstat`` and ``os.geteuid`` do not report it -- so only existence and the
+    directory type are checked there.  ``os.mkdir`` applies a restrictive ACL for a
+    mode of 0o700 from 3.12.4 onwards, and on 3.11.10, 3.10.15, 3.9.20 and 3.8.20;
+    python.org shipped no Windows installer for those four, so an installer user
+    below 3.12.4 does not have it.  Privacy there rests on ``%TEMP%``
     being per account, which it is by default; a ``TEMP`` pointing at a directory
     other users share is not something this can detect, and in that case neither
     the directory nor the 0600 on the files inside it keeps anything private,
@@ -1958,7 +1961,8 @@ def _source_unavailable_reason(source: str, source_map: Mapping[str, Any]) -> st
     if not source:
         return (
             "This model did not retain its original FCSTM source; load it through "
-            "load_state_machine_from_file/text, or pass source_text explicitly."
+            "load_state_machine_from_file/text. Passing source_text is not enough "
+            "on its own: linking needs the ranges that parsing records."
         )
     if not source_map:
         return (
@@ -2846,7 +2850,8 @@ class Diagram:
             diagram it holds, and both would to anyone who could list them. On
             Windows that rests on ``%TEMP%`` being per account, which is the
             default: a ``TEMP`` shared between users cannot be detected here, and
-            before CPython 3.12.4 the directory's mode is not applied there either.
+            with an installer from python.org the directory's mode is applied only
+            from 3.12.4 onwards.
             With a
             window that path is this call's, and this call removes it when the
             window closes. Without one nothing here removes it, and asking again

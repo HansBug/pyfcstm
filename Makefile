@@ -314,7 +314,11 @@ diagram_provenance_check:
 diagram_reference_check:
 	$(PYTHON) tools/fetch_diagram_reference.py --check
 
-diagram_assets_verify: diagram_assets_check diagram_docstring_check diagram_rendering_check diagram_contract_check diagram_data_check diagram_options_check diagram_csp_check diagram_parity_check diagram_engine_floor diagram_provenance_check diagram_reference_check
+diagram_reference_targets_check:
+	$(PYTHON) tools/check_diagram_references.py --check
+	$(PYTHON) tools/check_diagram_references.py
+
+diagram_assets_verify: diagram_assets_check diagram_docstring_check diagram_rendering_check diagram_contract_check diagram_data_check diagram_options_check diagram_csp_check diagram_parity_check diagram_engine_floor diagram_provenance_check diagram_reference_check diagram_reference_targets_check
 
 diagram_package_check: package
 

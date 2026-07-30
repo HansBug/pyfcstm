@@ -57,7 +57,7 @@ def _load_model(input_code_file: str):
     :param input_code_file: Path to the input FCSTM file.
     :type input_code_file: str
     :return: The loaded state machine.
-    :rtype: pyfcstm.model.StateMachine
+    :rtype: pyfcstm.model.model.StateMachine
     :raises pyfcstm.entry.base.ClickErrorException: If the file cannot be read,
         decoded, parsed, or assembled into a valid model.
     """

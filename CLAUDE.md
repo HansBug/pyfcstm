@@ -560,8 +560,12 @@ Mandatory completion rule for built-in template work:
 - Runtime assets under [pyfcstm/diagram/assets/](pyfcstm/diagram/assets/) are build products, not tracked sources.
   `make build_assets` produces them and `make unittest` depends on it, in the same way `make tpl` produces the packaged
   template assets
-- The gates are `make diagram_assets_check`, `diagram_csp_check`, `diagram_contract_check`, `diagram_browser_check`
-  and `diagram_docstring_check`; each one must be able to fail, so mutation-test a gate before trusting it
+- The gates are `make diagram_assets_check`, `diagram_csp_check`, `diagram_contract_check`, `diagram_browser_check`,
+  `diagram_docstring_check` and `diagram_reference_targets_check`; each one must be able to fail, so mutation-test a
+  gate before trusting it. `diagram_reference_targets_check` judges fully-qualified `pyfcstm.*` cross-references in the
+  diagram package against what `docs/source/api_doc` registers; it deliberately does not judge bare names, because
+  Sphinx resolves those with class and cross-module context that a static reader cannot reproduce without reporting
+  live links as dead
 
 **Entry Points** ([pyfcstm/entry/](pyfcstm/entry/))
 

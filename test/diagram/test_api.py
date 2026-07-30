@@ -1147,17 +1147,23 @@ def test_a_setgid_parent_does_not_make_a_private_directory_untrusted(
     from pyfcstm.diagram import api as diagram_api
 
     monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
-    os.chmod(str(tmp_path), 0o2777)
     diagram_api._PRIVATE_DIRECTORIES.clear()
     diagram_api._FALLBACK_DIRECTORIES.clear()
+    # The bit is set on the directory rather than inherited from a setgid parent:
+    # Linux propagates it to new subdirectories, macOS inherits only the group, so
+    # a fixture built on inheritance tests nothing there. What the rule has to
+    # accept is the mode itself, whichever way a system arrives at it.
+    existing = tmp_path / ("pyfcstm-viewers-%d" % os.geteuid())
+    existing.mkdir(mode=0o700)
+    os.chmod(str(existing), 0o2700)
     try:
+        assert stat.S_IMODE(existing.stat().st_mode) == 0o2700, "the fixture is wrong"
         first = diagram_api._private_viewer_directory()
-        assert stat.S_IMODE(first.stat().st_mode) & 0o2000, "the parent was not setgid"
-        # What a second process sees: the directory already there.
+        assert first == existing, "a 2700 directory is as private as 0700"
+        assert first not in diagram_api._FALLBACK_DIRECTORIES
+        # And again for a second process, which takes the already-there path.
         diagram_api._PRIVATE_DIRECTORIES.clear()
-        second = diagram_api._private_viewer_directory()
-        assert second == first, "a 2700 directory is as private as 0700"
-        assert second not in diagram_api._FALLBACK_DIRECTORIES
+        assert diagram_api._private_viewer_directory() == existing
     finally:
         diagram_api._PRIVATE_DIRECTORIES.clear()
         diagram_api._FALLBACK_DIRECTORIES.clear()

@@ -91,6 +91,44 @@ class DiagramRenderError(DiagramAssetError):
     """
 
 
+class DiagramRenderLimitError(DiagramError):
+    """
+    Report an export whose size exceeds a documented output limit.
+
+    This is deliberately a sibling of :class:`DiagramRenderError` rather than a
+    subclass of it.  The two describe different situations and have different
+    remedies: a render failure means the renderer was asked to do something and
+    could not, while a limit failure means it was never asked, because the
+    requested size was refused by a checked multiplication first.  A caller
+    writing ``except DiagramRenderError`` is handling the former, and should not
+    silently absorb the latter -- lowering ``scale`` fixes a limit failure and
+    fixes nothing else.
+
+    :ivar limit_name: Identifier of the limit that fired.
+    :vartype limit_name: str
+
+    Example::
+
+        >>> raise DiagramRenderLimitError("scaled width 32768px exceeds 16384px")
+        Traceback (most recent call last):
+        ...
+        DiagramRenderLimitError: scaled width 32768px exceeds 16384px
+    """
+
+    def __init__(self, message, limit_name=None):
+        """
+        Record the message and, when known, which limit fired.
+
+        :param message: Human-readable explanation naming the sizes involved.
+        :type message: str
+        :param limit_name: Identifier of the limit that fired, defaults to
+            ``None``.
+        :type limit_name: str, optional
+        """
+        super().__init__(message)
+        self.limit_name = limit_name
+
+
 class DiagramEngineMetadataError(DiagramAssetError):
     """
     Report that installed MiniRacer distribution metadata is unavailable.
@@ -458,6 +496,165 @@ def _valid_opentype(data: bytes) -> bool:
         sum(word[0] for word in struct.iter_unpack(">I", data)) & 0xFFFFFFFF
     )
     return total_checksum == 0xB1B0AFBA
+
+
+#: Largest accepted raster scale.  Above this the caller has almost certainly
+#: mistaken a scale for a pixel width, so it is an argument error rather than a
+#: size outcome.
+MAX_EXPORT_SCALE = 4
+#: Largest accepted scaled edge, matching the widest dimension mainstream image
+#: decoders and PDF viewers handle without special configuration.
+MAX_EXPORT_EDGE_PX = 16384
+#: Largest accepted scaled pixel count, which bounds the rasteriser's working
+#: set independently of how the pixels are distributed between the two edges.
+MAX_EXPORT_PIXELS = 16777216
+#: Largest accepted uncompressed RGBA buffer, four bytes per pixel.
+MAX_EXPORT_RAW_RGBA_BYTES = 67108864
+#: Largest accepted encoded PNG.
+MAX_EXPORT_PNG_BYTES = 33554432
+#: Largest accepted encoded text or PDF export.
+MAX_EXPORT_TEXT_BYTES = 67108864
+
+
+def check_export_scale(scale: Any) -> float:
+    """
+    Validate a raster scale against the documented accepted range.
+
+    :param scale: Requested output scale.
+    :type scale: float
+    :return: The scale as a float.
+    :rtype: float
+    :raises ValueError: If ``scale`` is not finite and positive, or exceeds
+        :data:`MAX_EXPORT_SCALE`.
+
+    Example::
+
+        >>> check_export_scale(2)
+        2.0
+        >>> check_export_scale(5)
+        Traceback (most recent call last):
+        ...
+        ValueError: scale must be at most 4; got 5
+    """
+    if isinstance(scale, bool):
+        # ``float(True)`` is 1.0, so a bool would otherwise be accepted as a
+        # scale of one. A caller passing a flag here has made a mistake that
+        # silently producing unscaled output would hide.
+        raise ValueError("scale must be a finite positive number; got %r" % (scale,))
+    try:
+        numeric = float(scale)
+    except (TypeError, ValueError) as err:
+        # TypeError: a non-numeric object such as a string or None.
+        # ValueError: a string that does not parse as a number.
+        raise ValueError("scale must be a finite positive number") from err
+    if numeric != numeric or numeric in (float("inf"), float("-inf")):
+        raise ValueError("scale must be a finite positive number; got %r" % (scale,))
+    if numeric <= 0:
+        raise ValueError("scale must be positive; got %r" % (scale,))
+    if numeric > MAX_EXPORT_SCALE:
+        raise ValueError("scale must be at most %d; got %s" % (MAX_EXPORT_SCALE, scale))
+    return numeric
+
+
+def check_export_size(width: float, height: float, scale: float) -> Tuple[int, int]:
+    """
+    Refuse an oversized export before any pixels are allocated.
+
+    The multiplications happen here, in Python, so an impossible request is
+    named and rejected rather than being handed to the rasteriser to fail on --
+    running out of memory is not input validation, and it cannot tell the caller
+    which scale would have fitted.
+
+    :param width: Unscaled canvas width in user units.
+    :type width: float
+    :param height: Unscaled canvas height in user units.
+    :type height: float
+    :param scale: Validated output scale.
+    :type scale: float
+    :return: The scaled integer width and height.
+    :rtype: tuple[int, int]
+    :raises ValueError: If either unscaled dimension is not finite and positive.
+    :raises DiagramRenderLimitError: If the scaled edges, pixel count, or raw
+        RGBA buffer would exceed their documented limits.
+
+    Example::
+
+        >>> check_export_size(100, 50, 2)
+        (200, 100)
+        >>> check_export_size(10000, 10000, 4)
+        Traceback (most recent call last):
+        ...
+        pyfcstm.diagram.engine.DiagramRenderLimitError: ...
+    """
+    for name, value in (("width", width), ("height", height)):
+        numeric = float(value)
+        if numeric != numeric or numeric in (float("inf"), float("-inf")):
+            raise ValueError("canvas %s must be finite; got %r" % (name, value))
+        if numeric <= 0:
+            raise ValueError("canvas %s must be positive; got %r" % (name, value))
+    scaled_width = int(math.ceil(float(width) * scale))
+    scaled_height = int(math.ceil(float(height) * scale))
+    origin = "%gx%g at scale %g gives %dx%d" % (
+        width,
+        height,
+        scale,
+        scaled_width,
+        scaled_height,
+    )
+    advice = "lower scale and retry"
+    for name, value in (("width", scaled_width), ("height", scaled_height)):
+        if value > MAX_EXPORT_EDGE_PX:
+            raise DiagramRenderLimitError(
+                "%s, whose %s exceeds the %dpx limit; %s"
+                % (origin, name, MAX_EXPORT_EDGE_PX, advice),
+                limit_name="edge",
+            )
+    pixels = scaled_width * scaled_height
+    if pixels > MAX_EXPORT_PIXELS:
+        raise DiagramRenderLimitError(
+            "%s, which is %d pixels and exceeds the %d limit; %s"
+            % (origin, pixels, MAX_EXPORT_PIXELS, advice),
+            limit_name="pixels",
+        )
+    raw_bytes = pixels * 4
+    if raw_bytes > MAX_EXPORT_RAW_RGBA_BYTES:
+        raise DiagramRenderLimitError(
+            "%s, whose raw RGBA buffer is %d bytes and exceeds the %d limit; %s"
+            % (origin, raw_bytes, MAX_EXPORT_RAW_RGBA_BYTES, advice),
+            limit_name="raw_rgba",
+        )
+    return scaled_width, scaled_height
+
+
+def check_export_bytes(data: bytes, kind: str, limit: int) -> bytes:
+    """
+    Refuse an encoded export that exceeds its documented size limit.
+
+    The check happens before the bytes reach a cache, a decoder, or a file, so an
+    oversized export cannot be written out and then rejected.
+
+    :param data: Encoded export payload.
+    :type data: bytes
+    :param kind: Short name of the payload, used in the message.
+    :type kind: str
+    :param limit: Maximum accepted length in bytes.
+    :type limit: int
+    :return: The payload unchanged.
+    :rtype: bytes
+    :raises DiagramRenderLimitError: If ``data`` is longer than ``limit``.
+
+    Example::
+
+        >>> check_export_bytes(b"ab", "PNG", 4)
+        b'ab'
+    """
+    if len(data) > limit:
+        raise DiagramRenderLimitError(
+            "encoded %s output is %d bytes and exceeds the %d limit; "
+            "lower scale or reduce the diagram and retry" % (kind, len(data), limit),
+            limit_name=kind.lower(),
+        )
+    return data
 
 
 def _png_dimensions(data: bytes) -> Tuple[int, int]:

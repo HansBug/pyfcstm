@@ -747,22 +747,29 @@ def test_diagram_mapping_inputs_fail_closed_on_unknown_or_ambiguous_fields():
         model.diagram(view_state={"mode": "compare", "typo": True})
 
 
-def test_headless_exports_are_typed_unavailable_until_delivery_stage():
+def test_the_scale_argument_is_validated_before_any_capability_is_needed():
+    # These are argument errors, so they are raised whether or not the optional
+    # rendering runtime is installed -- a caller mistake should be named for what
+    # it is rather than reported as a missing dependency.
     diagram = _model("state Root;").diagram()
-    with pytest.raises(DiagramUnavailableError, match="headless SVG"):
-        diagram.to_svg()
-    with pytest.raises(DiagramUnavailableError, match="headless PNG"):
-        diagram.to_png()
+    # A numeric string is accepted here, consistently with every other numeric
+    # option in this module, so it is deliberately not in this list.
+    for bad in (0, None, True, -1, float("nan")):
+        with pytest.raises(ValueError):
+            diagram.to_png(scale=bad)
+
+
+def test_vector_pdf_still_names_the_capability_it_is_waiting_on():
+    # SVG and PNG now export synchronously; PDF arrives with the headless DOM
+    # adapter, and until then the failure has to say so rather than look like a
+    # missing attribute. The behaviour of the two working formats is pinned in
+    # ``test_headless.py``, which can tell the runtime-present and runtime-absent
+    # cases apart.
+    diagram = _model("state Root;").diagram()
     with pytest.raises(DiagramUnavailableError, match="headless PDF"):
         diagram.to_pdf()
-    with pytest.raises(ValueError, match="finite positive"):
-        diagram.to_png(scale=0)
-    with pytest.raises(ValueError, match="finite positive"):
-        diagram.to_png(scale=None)
-    with pytest.raises(ValueError, match="finite positive"):
-        diagram.to_png(scale=True)
-    with pytest.raises(DiagramUnavailableError, match="headless PNG"):
-        diagram.save("diagram.png", scale=2)
+    with pytest.raises(DiagramUnavailableError, match="headless PDF"):
+        diagram.save("diagram.pdf")
 
 
 def test_diagram_data_rejects_non_mapping_snapshots():

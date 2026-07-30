@@ -56,9 +56,16 @@ from ..model.model import (
 )
 from ..utils.validate import Span
 from .engine import (
+    MAX_EXPORT_PNG_BYTES,
+    MAX_EXPORT_TEXT_BYTES,
+    DiagramAssetEngine,
+    DiagramRenderError,
     DiagramUnavailableError,
     _asset_bytes,
     _asset_failure,
+    check_export_bytes,
+    check_export_scale,
+    check_export_size,
 )
 
 _logger = get_logger(__name__)
@@ -1967,6 +1974,41 @@ class DiagramOptions:
         }
 
 
+def _canonical_canvas_size(svg: str) -> Tuple[float, float]:
+    """
+    Read the unscaled canvas size out of the renderer's canonical SVG.
+
+    :param svg: Canonical SVG text emitted by the renderer.
+    :type svg: str
+    :return: The declared width and height in user units.
+    :rtype: tuple[float, float]
+    :raises pyfcstm.diagram.engine.DiagramRenderError: If the document declares
+        no usable width and height, which means the renderer returned something
+        this code cannot size and must not silently pass on.
+
+    Example::
+
+        >>> _canonical_canvas_size('<svg width="120" height="80"></svg>')
+        (120.0, 80.0)
+    """
+    header = svg[:2048]
+    found = {}
+    for name in ("width", "height"):
+        match = re.search(r'\b%s="([\d.]+)' % name, header)
+        if match is not None:
+            found[name] = float(match.group(1))
+    if len(found) != 2:
+        box = re.search(r'viewBox="\s*[\d.-]+\s+[\d.-]+\s+([\d.]+)\s+([\d.]+)', header)
+        if box is not None:
+            found = {"width": float(box.group(1)), "height": float(box.group(2))}
+    if len(found) != 2:
+        raise DiagramRenderError(
+            "the renderer returned an SVG document with no usable width and "
+            "height, so its output size cannot be checked against the limits"
+        )
+    return found["width"], found["height"]
+
+
 def _source_unavailable_reason(source: str, source_map: Mapping[str, Any]) -> str:
     """
     Explain why the viewer cannot link the diagram to its source.
@@ -2208,11 +2250,16 @@ class Diagram:
     policy and no network access -- and :meth:`show` opens it in a
     Chromium-family app window.
 
-    :meth:`to_svg`, :meth:`to_png` and :meth:`to_pdf` are typed probes that
-    always raise :class:`pyfcstm.diagram.engine.DiagramUnavailableError`: SVG, PNG and
-    PDF are produced by the embedded viewer's own export, which needs a browser.
-    They exist so the failure names the reason instead of the attribute being
-    absent.
+    :meth:`to_svg` and :meth:`to_png` export synchronously when the optional
+    rendering runtime is installed, and raise
+    :class:`pyfcstm.diagram.engine.DiagramUnavailableError` naming that dependency
+    when it is not.  :meth:`to_svg` returns the expanded form -- glyphs and arrow
+    heads already paths -- so the document needs none of this project's fonts.
+    :meth:`to_pdf` still raises: vector PDF arrives with the headless DOM adapter.
+    Every export is bounded by the documented size limits and refuses an
+    oversized request with
+    :class:`pyfcstm.diagram.engine.DiagramRenderLimitError` before the rasteriser
+    runs.
 
     :param model: State machine to snapshot.
     :type model: pyfcstm.model.model.StateMachine
@@ -2570,29 +2617,104 @@ class Diagram:
         )
         return self._clone_snapshot(self.options, replacement)
 
+    def _export_request(self) -> Dict[str, Any]:
+        """
+        Build the renderer request for a synchronous export.
+
+        The renderer takes ``palette``, ``mode`` and ``cjkLocale`` from the root
+        of the request, not from the option vocabulary nested under ``options``.
+        Placing them anywhere else is silently accepted and silently ignored, so
+        an export that omits them returns the default light palette while looking
+        like it honoured what the caller asked for.
+
+        :return: A JSON-compatible renderer request.
+        :rtype: dict
+        """
+        options = self.options
+        return {
+            "diagram": self.to_dict(),
+            "options": options.to_dict(),
+            "palette": options.palette or "default",
+            "mode": "light" if options.mode in (None, "auto") else options.mode,
+            "cjkLocale": options.cjk_locale,
+        }
+
+    @staticmethod
+    def _export_engine() -> "DiagramAssetEngine":
+        """
+        Create the rendering engine, naming the optional dependency if absent.
+
+        Construction is deferred to the call that needs it so that a base
+        installation without the optional runtime behaves exactly as it did
+        before this capability existed.
+
+        :return: A ready rendering engine.
+        :rtype: pyfcstm.diagram.engine.DiagramAssetEngine
+        :raises pyfcstm.diagram.engine.DiagramUnavailableError: If no supported
+            rendering runtime is installed.
+        """
+        return DiagramAssetEngine()
+
     def to_svg(self) -> str:
         """
-        Request a synchronous headless SVG export.
+        Export the diagram as a self-contained SVG document.
 
-        :return: Nothing; this method always raises.
+        The exported form is the expanded one: glyphs and arrow heads are already
+        paths, so the document carries no ``<text>``, ``<marker>`` or font
+        dependency and renders the same on a machine with none of this project's
+        fonts installed.  The renderer's raw canonical SVG is an internal
+        intermediate and is deliberately not what this returns.
+
+        :return: UTF-8 SVG text.
         :rtype: str
-        :raises DiagramUnavailableError: Always.  SVG is produced by the
-            embedded viewer's own export, which needs a browser.
+        :raises pyfcstm.diagram.engine.DiagramUnavailableError: If the optional
+            rendering runtime is not installed.
+        :raises pyfcstm.diagram.engine.DiagramAssetError: If a packaged renderer
+            asset is missing or unusable.
+        :raises pyfcstm.diagram.engine.DiagramRenderLimitError: If the encoded
+            document exceeds its documented size limit.
 
         Example::
 
             >>> from pyfcstm.model import load_state_machine_from_text
             >>> view = load_state_machine_from_text('state Root;').diagram()
-            >>> view.to_svg()
-            Traceback (most recent call last):
-            ...
-            pyfcstm.diagram.engine.DiagramUnavailableError: headless SVG export ...
+            >>> svg = view.to_svg()                       # doctest: +SKIP
+            >>> svg.startswith('<svg')                    # doctest: +SKIP
+            True
         """
-        raise DiagramUnavailableError(
-            "headless SVG export is unavailable; use Diagram.to_html() browser export "
-            "instead; `pip install pyfcstm[viz]` adds the rendering runtime but not "
-            "a synchronous Python export"
-        )
+        svg = self._export_engine().expand_svg(self._export_request())
+        check_export_bytes(svg.encode("utf-8"), "SVG", MAX_EXPORT_TEXT_BYTES)
+        return svg
+
+    def _repr_svg_(self) -> Optional[str]:
+        """
+        Return the notebook representation, or ``None`` when unavailable.
+
+        Notebook front ends call this hook while rendering a cell, and an
+        exception raised here replaces the whole cell output with a traceback.
+        An absent optional runtime is therefore reported as "no representation",
+        which lets the front end fall back to :meth:`__repr__`.  Every other
+        failure still propagates, because a corrupt asset or an oversized export
+        is a real problem the author needs to see.
+
+        :return: Expanded SVG text, or ``None`` if the optional rendering runtime
+            is not installed.
+        :rtype: str or None
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> view = load_state_machine_from_text('state Root;').diagram()
+            >>> isinstance(view._repr_svg_(), (str, type(None)))
+            True
+        """
+        try:
+            return self.to_svg()
+        except DiagramUnavailableError:
+            # The optional rendering runtime is not installed. Every other
+            # failure is a real defect and must not be hidden behind a blank
+            # cell, so only this one degrades.
+            return None
 
     def to_png(self, scale: float = 1.0) -> bytes:
         """
@@ -2604,8 +2726,13 @@ class Diagram:
         :return: Nothing; this method always raises once ``scale`` is valid.
         :rtype: bytes
         :raises ValueError: If ``scale`` is not finite and positive.
-        :raises DiagramUnavailableError: Always.  PNG is produced by the
-            embedded viewer's own export, which needs a browser.
+        :raises ValueError: If ``scale`` is not finite and positive, or exceeds
+            the documented ceiling.
+        :raises pyfcstm.diagram.engine.DiagramUnavailableError: If the optional
+            rendering runtime is not installed.
+        :raises pyfcstm.diagram.engine.DiagramRenderLimitError: If the scaled
+            size or the encoded output exceeds a documented limit.  Raised before
+            the rasteriser runs, so an impossible request costs nothing.
 
         Example::
 
@@ -2615,17 +2742,21 @@ class Diagram:
             Traceback (most recent call last):
             ...
             ValueError: scale must be positive ...
-            >>> view.to_png()
-            Traceback (most recent call last):
-            ...
-            pyfcstm.diagram.engine.DiagramUnavailableError: headless PNG export ...
+            >>> data = view.to_png(scale=2)                # doctest: +SKIP
+            >>> data[:8]                                   # doctest: +SKIP
+            b'\\x89PNG\\r\\n\\x1a\\n'
         """
-        _coerce_finite_number(scale, "scale", positive=True)
-        raise DiagramUnavailableError(
-            "headless PNG export is unavailable; use Diagram.to_html() browser export "
-            "instead; `pip install pyfcstm[viz]` adds the rendering runtime but not "
-            "a synchronous Python export"
-        )
+        numeric_scale = check_export_scale(scale)
+        engine = self._export_engine()
+        request = self._export_request()
+        canonical = engine.render_svg(request)
+        width, height = _canonical_canvas_size(canonical)
+        # The multiplication and its limits happen here, before the rasteriser is
+        # handed anything: an oversized request is a caller error with a specific
+        # remedy, not something to discover by exhausting memory.
+        check_export_size(width, height, numeric_scale)
+        data = engine.render_png(canonical, scale=numeric_scale)
+        return check_export_bytes(data, "PNG", MAX_EXPORT_PNG_BYTES)
 
     def to_pdf(self) -> bytes:
         """
@@ -2813,8 +2944,7 @@ class Diagram:
         scale: float = 1.0,
     ) -> Path:
         """
-        Save JSON/HTML directly and route SVG/PNG/PDF to their typed
-        headless capability methods.
+        Save JSON/HTML directly and route SVG/PNG/PDF to their export methods.
 
         :param path: Destination file path.
         :type path: str or os.PathLike
@@ -2827,9 +2957,10 @@ class Diagram:
         :rtype: pathlib.Path
         :raises ValueError: If the selected format is unsupported or a
             non-default scale is supplied for a non-PNG format.
-        :raises DiagramUnavailableError: If the suffix selects SVG, PNG or
-            PDF.  Those are produced by the embedded viewer's own export, which
-            needs a browser; save the HTML and export from there.
+        :raises pyfcstm.diagram.engine.DiagramUnavailableError: If the suffix
+            selects an export whose optional rendering runtime is not installed.
+        :raises pyfcstm.diagram.engine.DiagramRenderLimitError: If the selected
+            export would exceed a documented size limit.
         :raises FileNotFoundError: If the parent directory does not exist.
         :raises IsADirectoryError: If ``path`` is an existing directory.
         :raises NotADirectoryError: If the parent path is not a directory.

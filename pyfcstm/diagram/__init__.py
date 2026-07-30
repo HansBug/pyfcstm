@@ -34,6 +34,10 @@ jsfcstm and the VSCode preview rather than reimplemented here.
      - A packaged viewer, font or WASM asset is missing or unreadable.
    * - :class:`~pyfcstm.diagram.engine.DiagramRenderError`
      - The renderer rejected the supplied data or returned nothing usable.
+   * - :class:`~pyfcstm.diagram.engine.DiagramRenderLimitError`
+     - The requested export exceeds a documented size limit, and was refused
+       before the renderer ran.  Not a :class:`DiagramRenderError`: lowering
+       ``scale`` fixes this and nothing else.
    * - :class:`~pyfcstm.diagram.engine.DiagramEngineMetadataError`
      - The installed MiniRacer distribution reports no usable metadata.
    * - :class:`~pyfcstm.diagram.engine.DiagramEngineConflictError`
@@ -75,6 +79,7 @@ from .engine import (
     DiagramEngineLoadError,
     DiagramEngineMetadataError,
     DiagramRenderError,
+    DiagramRenderLimitError,
     DiagramUnavailableError,
 )
 from .api import Diagram, DiagramData, DiagramOptions, DiagramViewState
@@ -88,6 +93,7 @@ __all__ = [
     "DiagramEngineLoadError",
     "DiagramEngineMetadataError",
     "DiagramRenderError",
+    "DiagramRenderLimitError",
     "Diagram",
     "DiagramData",
     "DiagramOptions",

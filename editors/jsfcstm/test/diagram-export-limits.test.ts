@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {join} from 'node:path';
+import {DOMParser as XmlDomParser} from '@xmldom/xmldom';
 
 import {
     DiagramExportLimitError,
@@ -12,6 +13,7 @@ import {
     RASTER_MAX_SIDE,
     assertExportLimitsAreStricterThanHostLimits,
     assertWithinExportLimits,
+    expandSvgForExport,
     rasterScaleWithinLimits,
 } from '../src/diagram/export';
 
@@ -231,6 +233,53 @@ describe('diagram export product limits are actually called', () => {
         assert.ok(
             /EXPORT_PNG_SCALE/.test(stage),
             'the download scale must come from the shared constant',
+        );
+    });
+});
+
+describe('unexpanded exports are not presented as self-contained', () => {
+    it('returns the canonical form unchanged when no expander is given', async () => {
+        // The contract the docstring states: an absent expander is not an error,
+        // so the caller gets the canonical document back and has to say so.
+        //
+        // The helper parses what it is given, and Node has no `DOMParser`. The
+        // build dependency that supplies one to the embedded PDF host supplies it
+        // here too, rather than the assertion being skipped for want of a DOM.
+        const host = globalThis as unknown as {DOMParser?: unknown};
+        const installed = host.DOMParser === undefined;
+        if (installed) host.DOMParser = XmlDomParser;
+        try {
+            const canonical =
+                '<svg xmlns="http://www.w3.org/2000/svg"><text>a</text></svg>';
+            assert.equal(await expandSvgForExport(canonical), canonical);
+        } finally {
+            if (installed) delete host.DOMParser;
+        }
+    });
+
+    it('is reported by the export path rather than passed off silently', () => {
+        // With no expander the helper does not throw, which left the export handler
+        // shipping a font-dependent document under a variable named `expanded`.
+        // The host has to be told, because the file itself looks fine.
+        const stage = readFileSync(
+            join(
+                process.cwd(),
+                '..',
+                'vscode',
+                'src',
+                'preview-webview',
+                'components',
+                'Stage.vue',
+            ),
+            'utf8',
+        );
+        assert.ok(
+            /if \(!expander\) \{/.test(stage),
+            'the export handler must detect an absent expander',
+        );
+        assert.ok(
+            /not self-contained/.test(stage),
+            'and must say why the document cannot be treated as an export',
         );
     });
 });

@@ -566,13 +566,27 @@ async function onExportEvt() {
         const canonical = await expandSvgForExport(svgString);
         const failed: string[] = [];
         let expanded = canonical;
-        try {
-            expanded = await expandSvgForExport(svgString, getSvgExpander());
-        } catch (err) {
-            // The expander inlines fonts and re-parses its own output; both
-            // report failure as Error/DOMException, and the helper re-raises
-            // renderer defects rather than letting them read as export errors.
-            failed.push(`SVG font expansion: ${expectedErrorMessage(err)}`);
+        const expander = getSvgExpander();
+        if (!expander) {
+            // An absent expander is not an error, so `expandSvgForExport` returns
+            // the canonical form without throwing. That left this variable named
+            // `expanded` while holding a document that still carries `<text>` and a
+            // `font-family`, and the host handed it to the user as an export --
+            // which renders differently anywhere the fonts differ. The capability
+            // being absent has to be said out loud, because the file looks fine.
+            failed.push(
+                'SVG font expansion: this host provides no expander, so the SVG '
+                + 'still depends on fonts and is not self-contained',
+            );
+        } else {
+            try {
+                expanded = await expandSvgForExport(svgString, expander);
+            } catch (err) {
+                // The expander inlines fonts and re-parses its own output; both
+                // report failure as Error/DOMException, and the helper re-raises
+                // renderer defects rather than letting them read as export errors.
+                failed.push(`SVG font expansion: ${expectedErrorMessage(err)}`);
+            }
         }
         // Settled per format rather than all-or-nothing. The SVG is a string
         // that needs neither a canvas nor a PDF writer, so a raster failure

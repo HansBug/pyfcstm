@@ -736,3 +736,48 @@ def test_the_published_proof_names_states_the_way_the_query_did() -> None:
     text = " ".join(step.text for step in explanation.narrative.reasoning_steps)
     assert "Root.A" in text and "Root.B" in text, text
     assert "must equal 1" not in text and "must equal 2" not in text, text
+
+
+@pytest.mark.unittest
+def test_a_variable_whose_name_starts_like_the_state_slot_stays_its_own_slot() -> None:
+    """The frame's state slot is one symbol, not a family of them.
+
+    Variable symbols are spelled ``F_<frame>_<name>_<digest>`` and the state slot is
+    spelled ``F_<frame>_state``, so a model variable named ``state_x`` produces a
+    symbol the state slot's name is a prefix of.  A model may not declare ``state``
+    itself -- the grammar reserves it -- so a name that merely begins that way is the
+    closest a real model can come to the slot, and this pins that it still proves.
+
+    What keeps the two apart is not only the identity comparison in the resolver: the
+    candidate symbols are sorted first, and the exact name is the shortest of its
+    prefix family, so it is found before any sibling regardless of how the comparison
+    is spelled.  Replacing the comparison with a prefix test leaves this green, which
+    is why the docstring does not claim to pin the comparison.
+    """
+    machine = load_state_machine_from_text(
+        "def int state_x = 0;\n"
+        "state Root {\n"
+        "    state A;\n"
+        "    state B;\n"
+        "    [*] -> A;\n"
+        "    A -> B;\n"
+        "}\n",
+        "machine.fcstm",
+    )
+    context = BmcEngine(machine).prepare(
+        'assume at 1: active("Root.A");\n'
+        'assume at 1: active("Root.B");\n'
+        'check reach <= 1: var("state_x") == 0;\n',
+        query_source_path="query.fbmcq",
+    )
+
+    result = solve_bmc_property(
+        compile_bmc_property(build_bmc_core_formula(context)),
+        infeasibility_explanation="proof",
+    )
+
+    explanation = result.feasibility.explanation
+    assert explanation.achieved_mode == "proof", explanation.reason
+    text = " ".join(step.text for step in explanation.narrative.reasoning_steps)
+    assert "Root.A" in text and "Root.B" in text, text
+    assert "state_x" not in text, text

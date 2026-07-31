@@ -416,6 +416,15 @@ def _equality_substitution(application: RuleApplication) -> bool:
     )
 
 
+#: The domain rules a proof step may cite, keyed by published rule id.
+#:
+#: A builder dispatches on this mapping: it matches ``premise_kinds`` to find
+#: candidate steps cheaply, then pays for ``side_condition`` only on the ones that
+#: fit.  The catalog is closed -- a step naming a rule absent here has no published
+#: premise shape, conclusion shape or side condition, so nothing could check it and
+#: :func:`check_rule` refuses rather than reporting it unverified.
+#:
+#: :meta hide-value:
 PROOF_RULES = {
     rule.rule_id: rule
     for rule in (

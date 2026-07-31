@@ -16,6 +16,7 @@ PROOF\_RULES
 -----------------------------------------------------
 
 .. autodata:: PROOF_RULES
+   :no-value:
 
 
 RuleApplication

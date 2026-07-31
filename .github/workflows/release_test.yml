@@ -265,28 +265,6 @@ jobs:
               if host not in (result.get("observed") or ""):
                   raise SystemExit("{} did not record configured host: {}".format(check_id, result))
           PY
-      - name: Export every format from the installed wheel
-        # Every other export check runs from a source checkout, where the packaged
-        # assets sit next to the code. An installed wheel resolves them
-        # differently, and an asset left out of the package data is invisible from
-        # a checkout. The optional runtime goes in as an extra here rather than in
-        # the step above, so that one keeps proving what a base install does.
-        shell: bash
-        env:
-          PYTHONPATH: ''
-          PYTHONNOUSERSITE: '1'
-        run: |
-          set -euo pipefail
-          wheel=$(find "$RUNNER_TEMP/pyfcstm-package-artifact" -maxdepth 1 -type f -name '*.whl' -print -quit)
-          test -n "$wheel"
-          venv="$RUNNER_TEMP/pyfcstm-export-venv"
-          rm -rf "$venv"
-          python -m venv "$venv"
-          if [ -x "$venv/bin/python" ]; then binary="$venv/bin"; else binary="$venv/Scripts"; fi
-          "$binary/python" -m pip install --upgrade pip
-          "$binary/python" -m pip install "${wheel}[viz]"
-          python tools/check_diagram_installed_export.py \
-            --command "$binary/pyfcstm" --repeat 2
       - name: Upload fresh Linux wheel evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
@@ -496,28 +474,6 @@ jobs:
               if host not in (result.get("observed") or ""):
                   raise SystemExit("{} did not record configured host: {}".format(check_id, result))
           PY
-      - name: Export every format from the installed wheel
-        # Every other export check runs from a source checkout, where the packaged
-        # assets sit next to the code. An installed wheel resolves them
-        # differently, and an asset left out of the package data is invisible from
-        # a checkout. The optional runtime goes in as an extra here rather than in
-        # the step above, so that one keeps proving what a base install does.
-        shell: bash
-        env:
-          PYTHONPATH: ''
-          PYTHONNOUSERSITE: '1'
-        run: |
-          set -euo pipefail
-          wheel=$(find "$RUNNER_TEMP/pyfcstm-package-artifact" -maxdepth 1 -type f -name '*.whl' -print -quit)
-          test -n "$wheel"
-          venv="$RUNNER_TEMP/pyfcstm-export-venv"
-          rm -rf "$venv"
-          python -m venv "$venv"
-          if [ -x "$venv/bin/python" ]; then binary="$venv/bin"; else binary="$venv/Scripts"; fi
-          "$binary/python" -m pip install --upgrade pip
-          "$binary/python" -m pip install "${wheel}[viz]"
-          python tools/check_diagram_installed_export.py \
-            --command "$binary/pyfcstm" --repeat 2
       - name: Upload fresh wheel evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
@@ -712,6 +668,52 @@ jobs:
             ${{ runner.temp }}/pyfcstm-sdist-reports
             ${{ runner.temp }}/java-version.txt
             ${{ runner.temp }}/plantuml-version.txt
+
+  fresh_wheel_export:
+    # Separate from the two self-check jobs above because those deliberately have
+    # no checkout: they exist to prove the artifact works with nothing else
+    # present. This one needs the harness from the tree, so it keeps the isolation
+    # that matters a different way -- the harness never imports ``pyfcstm``, it only
+    # runs the installed command line, and it runs from outside the repository so
+    # the source tree cannot shadow the installed package.
+    name: Export every format from the installed wheel
+    runs-on: ubuntu-22.04
+    needs: source_release
+    steps:
+      - name: Checkout the export harness
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Download only the built wheel artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts-source-pack
+          path: ${{ runner.temp }}/pyfcstm-package-artifact
+      - name: Install the wheel with its optional runtime and export
+        shell: bash
+        env:
+          PYTHONPATH: ''
+          PYTHONNOUSERSITE: '1'
+        run: |
+          set -euo pipefail
+          wheel=$(find "$RUNNER_TEMP/pyfcstm-package-artifact" -maxdepth 1 -type f -name '*.whl' -print -quit)
+          test -n "$wheel"
+          harness="$PWD/tools/check_diagram_installed_export.py"
+          test -f "$harness"
+          venv="$RUNNER_TEMP/pyfcstm-export-venv"
+          rm -rf "$venv"
+          python -m venv "$venv"
+          "$venv/bin/python" -m pip install --upgrade pip
+          "$venv/bin/python" -m pip install "${wheel}[viz]"
+          # Run from outside the checkout: an installed console script does not put
+          # the working directory on ``sys.path``, but keeping the tree out of the
+          # way removes the question entirely.
+          cd "$RUNNER_TEMP"
+          python "$harness" --command "$venv/bin/pyfcstm" --repeat 2
 
   release_docs_pdf:
     name: Bilingual Docs PDF

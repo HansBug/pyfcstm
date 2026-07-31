@@ -736,6 +736,9 @@ def build_pdf_writer(output: Path, esbuild_version: str) -> Tuple[bytes, Dict[st
     :return: Bundle bytes and esbuild metafile data.
     :rtype: tuple[bytes, dict]
     :raises subprocess.CalledProcessError: If esbuild fails.
+    :raises ValueError: If the bundle carries a forbidden raster package, a
+        module whose origin cannot be established, or a third-party inventory
+        that does not match :data:`PDF_DEPENDENCIES` in either direction.
     """
     metafile = output.with_suffix(".meta.json")
     xmldom_dir = JSFCSTM_DIR / "node_modules" / "@xmldom" / "xmldom"

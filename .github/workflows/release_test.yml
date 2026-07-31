@@ -1263,6 +1263,7 @@ jobs:
       - source_release
       - fresh_wheel_selfcheck_linux
       - fresh_wheel_selfcheck
+      - fresh_wheel_export
       - fresh_sdist_selfcheck
       - release_cli
       - fresh_release_cli_selfcheck
@@ -1273,6 +1274,7 @@ jobs:
           SOURCE_RESULT: ${{ needs.source_release.result }}
           WHEEL_LINUX_RESULT: ${{ needs.fresh_wheel_selfcheck_linux.result }}
           WHEEL_NONLINUX_RESULT: ${{ needs.fresh_wheel_selfcheck.result }}
+          WHEEL_EXPORT_RESULT: ${{ needs.fresh_wheel_export.result }}
           SDIST_RESULT: ${{ needs.fresh_sdist_selfcheck.result }}
           CLI_BUILD_RESULT: ${{ needs.release_cli.result }}
           CLI_FRESH_RESULT: ${{ needs.fresh_release_cli_selfcheck.result }}
@@ -1288,6 +1290,7 @@ jobs:
             "source=$SOURCE_RESULT" \
             "wheel_linux=$WHEEL_LINUX_RESULT" \
             "wheel_nonlinux=$WHEEL_NONLINUX_RESULT" \
+            "wheel_export=$WHEEL_EXPORT_RESULT" \
             "sdist=$SDIST_RESULT"; do
             echo "$pair"
             test "${pair#*=}" = success

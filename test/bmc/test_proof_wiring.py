@@ -168,7 +168,10 @@ def test_the_published_payload_passes_the_published_schema() -> None:
     """A consumer validates against the schema, so a real proof run has to pass it."""
     import json
 
-    from jsonschema import Draft202012Validator
+    # ``jsonschema`` is a development convenience rather than a declared test
+    # dependency -- it needs Python 3.8 while this package supports 3.7 -- so the
+    # repository's convention is to skip the schema checks where it is absent.
+    jsonschema = pytest.importorskip("jsonschema")
 
     explanation = _explain(
         'assume at 0: var("x") == 1;\n'
@@ -178,7 +181,7 @@ def test_the_published_payload_passes_the_published_schema() -> None:
     schema = json.load(
         open("docs/source/reference/bmc_results/bmc_cli.schema.json", encoding="utf-8")
     )
-    validator = Draft202012Validator(
+    validator = jsonschema.Draft202012Validator(
         {"$ref": "#/$defs/infeasibilityExplanation", "$defs": schema["$defs"]}
     )
 
@@ -582,7 +585,10 @@ def test_the_whole_published_envelope_validates_at_proof_depth() -> None:
     """
     import json
 
-    from jsonschema import Draft202012Validator
+    # ``jsonschema`` is a development convenience rather than a declared test
+    # dependency -- it needs Python 3.8 while this package supports 3.7 -- so the
+    # repository's convention is to skip the schema checks where it is absent.
+    jsonschema = pytest.importorskip("jsonschema")
 
     machine = load_state_machine_from_text(_MODEL, "machine.fcstm")
     context = BmcEngine(machine).prepare(
@@ -600,7 +606,7 @@ def test_the_whole_published_envelope_validates_at_proof_depth() -> None:
     schema = json.load(
         open("docs/source/reference/bmc_results/bmc_cli.schema.json", encoding="utf-8")
     )
-    validator = Draft202012Validator(
+    validator = jsonschema.Draft202012Validator(
         {"$ref": "#/$defs/currentResult", "$defs": schema["$defs"]}
     )
 

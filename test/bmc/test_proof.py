@@ -405,12 +405,15 @@ def test_the_schema_accepts_graph_shapes_only_the_constructor_can_refuse(
     """
     import json
 
-    from jsonschema import Draft202012Validator
+    # ``jsonschema`` is a development convenience rather than a declared test
+    # dependency -- it needs Python 3.8 while this package supports 3.7 -- so the
+    # repository's convention is to skip the schema checks where it is absent.
+    jsonschema = pytest.importorskip("jsonschema")
 
     schema = json.load(
         open("docs/source/reference/bmc_results/bmc_cli.schema.json", encoding="utf-8")
     )
-    validator = Draft202012Validator(
+    validator = jsonschema.Draft202012Validator(
         {"$ref": "#/$defs/conflictProof", "$defs": schema["$defs"]}
     )
 

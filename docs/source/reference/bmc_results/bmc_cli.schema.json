@@ -2866,7 +2866,7 @@
               }
             }
           },
-          "$comment": "status=complete reports a whole phase rather than one solver verdict, so only phase-level checks may use it: unsat_core, unsat_core_minimization and value_propagation. The others report a single check."
+          "$comment": "status=complete reports a whole phase rather than one solver verdict, so only phase-level checks may use it.  The branch below carries the list; naming them here as well would be a second place to keep in step, which is how this comment came to disagree with it."
         },
         {
           "if": {

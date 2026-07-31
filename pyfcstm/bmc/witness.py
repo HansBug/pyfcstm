@@ -2073,6 +2073,7 @@ _FEASIBILITY_REFINEMENT_NAMES = {
     "unsat_core",
     "unsat_core_minimization",
     "value_propagation",
+    "core_binding",
     "proof_construction",
 }
 _FEASIBILITY_REFINEMENT_STATUSES = {
@@ -2104,7 +2105,10 @@ _FEASIBILITY_PHASE_REFINEMENT_NAMES = _FEASIBILITY_CORE_REFINEMENT_NAMES | {
     # checks it ran, pruning and the integrity pass.  Like value propagation it is a
     # phase rather than one solver verdict, and like it, it supports the deeper tier
     # rather than proving the core -- so it stays out of the core family for the
-    # same reason.
+    # same reason.  Core binding is the same kind of phase: it reports one
+    # equivalence check per input rather than a single verdict, and the contract
+    # asks for it in the ledger in its own right.
+    "core_binding",
     "proof_construction",
 }
 _FEASIBILITY_TIMEOUT_BEFORE_ASSUMPTIONS = (

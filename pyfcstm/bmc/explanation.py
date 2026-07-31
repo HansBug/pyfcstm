@@ -22,18 +22,18 @@ The module contains:
 * :class:`BmcReasoningStep` - one step of the deterministic conflict narrative
 * :class:`BmcConflictNarrative` - the deterministic account of why no execution
   exists, rendered from the published core and its normalized facts alone
-* :class:`BmcConflictProof` - reserved container for the verifiable proof DAG
-  introduced by a later stage
+* :class:`BmcProofNode` - one checked step of the verifiable proof
+* :class:`BmcConflictProof` - the checked proof graph, published at proof depth
 * :class:`BmcInfeasibilityExplanation` - the frozen top-level container
 * :func:`explanation_text_lines` - the single renderer that both the CLI and
   ``BmcSolveResult.to_text()`` use, so neither can drift from the other
 
 .. note::
-   :class:`BmcConflictProof` is still a reserved container: it exists so that
-   :class:`BmcInfeasibilityExplanation` can freeze its full field list once, and
-   that slot stays ``None`` until the proof stage lands.
-   :class:`BmcConflictNarrative` was reserved the same way and is published now;
-   a complete formal explanation requires one whose derivation closed.
+   Both optional slots are published now.  A complete formal explanation requires
+   a narrative whose derivation closed, and a proof-depth one additionally
+   requires a proof whose nodes that narrative cites -- the delivery table refuses
+   a proof beside a shallower achieved depth, and refuses a narrative citing proof
+   nodes when no proof was published.
 
 .. note::
    Nothing in this module imports ``z3``, reads a file or runs a solver.  A
@@ -1877,7 +1877,7 @@ class BmcInfeasibilityExplanation:
     :type classification: Optional[BmcInfeasibilityClassification]
     :param core: Sound source core, defaults to ``None``.
     :type core: Optional[BmcConflictCore], optional
-    :param proof: Reserved for a later stage; rejected while non-``None``.
+    :param proof: The verified proof, present exactly when ``achieved_mode`` is ``"proof"``.
     :type proof: Optional[BmcConflictProof], optional
     :param narrative: Deterministic account of why no execution exists, or
         ``None`` when no core was published; defaults to ``None``.

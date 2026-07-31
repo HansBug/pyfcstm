@@ -172,9 +172,15 @@ def test_a_case_no_rule_closes_reports_unsupported_rather_than_a_partial_graph()
 ):
     """Running out of candidates is an answer, and it is not a proof.
 
-    The contract makes the fixed point the source of ``unsupported``: a graph that
+    The contract makes the fixed point the source of the degradation: a graph that
     saturated without reaching ``false`` proves nothing, so nothing is published and
     the tier degrades.
+
+    The ledger status is ``unknown`` rather than a word of its own.  That vocabulary
+    is frozen at five values, and "the search ran and reached no conclusion" is what
+    ``unknown`` already means; inventing a sixth would have widened a published
+    contract to describe a phase the contract did not add.  The reason string is
+    where this particular shape is named.
     """
     proof, record = _build(
         _inputs(
@@ -184,7 +190,7 @@ def test_a_case_no_rule_closes_reports_unsupported_rather_than_a_partial_graph()
     )
 
     assert proof is None
-    assert record.status == "unsupported"
+    assert record.status == "unknown"
     assert "no rule" in (record.reason or "")
 
 
@@ -282,7 +288,7 @@ def test_a_second_route_to_a_value_leaves_its_member_unused() -> None:
     )
 
     assert proof is None
-    assert record.status == "unsupported"
+    assert record.status == "unknown"
     assert "every core member" in (record.reason or "")
 
 

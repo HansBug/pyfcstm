@@ -72,11 +72,15 @@ from .explanation import (
     human_text_for_fact,
 )
 from .provenance import (
+    # Private: the binding check has to name a frame symbol the same way the
+    # published facts were named from it, and a second reading of the encoding
+    # would be a second place to keep in step.
+    _frame_variable_name,
     BmcTrackedConstraint,
     SourceDocumentRegistry,
     normalized_fact_for,
 )
-from .solver import _SolveBudget
+from .solver import _SolveBudget, _check_with_budget
 
 if TYPE_CHECKING:  # pragma: no cover - import cycle guard for annotations only
     from .relation import BmcCoreFormula
@@ -1334,6 +1338,145 @@ def build_core_item(
     )
 
 
+#: How a proof fact re-encodes as a z3 constraint, per fact tag.
+#:
+#: Only the tags a rule can read appear here.  A tag with no encoding cannot be
+#: proved equivalent to anything, so its member fails the binding check and the
+#: proof is not published -- which is the contract's answer for a source group that
+#: does not normalize losslessly.
+_BINDING_ENCODERS = {
+    "variable_equality": lambda fact, symbol: symbol == fact["value"],
+    "variable_bound": lambda fact, symbol: {
+        "ge": symbol >= fact["value"],
+        "gt": symbol > fact["value"],
+        "le": symbol <= fact["value"],
+        "lt": symbol < fact["value"],
+    }[fact["operator"]],
+    "definedness_guard": lambda fact, symbol: symbol != fact["forbidden"],
+}
+
+
+def check_core_bindings(
+    core: "BmcCoreFormula",
+    facts: Sequence[Tuple[str, Mapping[str, object]]],
+    budget: _SolveBudget,
+) -> Tuple[bool, ProbeRecord]:
+    """Prove each proof fact equivalent to the source group it restates.
+
+    ``core_binding`` is a claim that an input node says exactly what its member
+    says, and the contract is explicit that it is not a trust label: the fact is
+    re-encoded and both directions are refuted separately, because one direction
+    alone permits a fact that is weaker or stronger than the group it stands for.
+    A fact implied by its group but not implying it would let a proof rest on less
+    than the model requires; the reverse would let it rest on more.
+
+    Anything short of both directions failing to be refuted -- an unknown, a
+    timeout, a tag with no encoding, a group whose symbol cannot be located --
+    means the binding is not established and the proof is not published.
+
+    :param core: The core formula whose tracked groups the facts came from.
+    :type core: BmcCoreFormula
+    :param facts: Member ids paired with the fact each restates.
+    :type facts: Sequence[Tuple[str, Mapping[str, object]]]
+    :param budget: The shared solve budget.
+    :type budget: pyfcstm.bmc.solver._SolveBudget
+    :return: Whether every binding held, and the ledger entry for the phase.
+    :rtype: Tuple[bool, ProbeRecord]
+
+    Example::
+
+        >>> from pyfcstm.bmc.solver import _SolveBudget
+        >>> held, record = check_core_bindings(None, (), _SolveBudget(None))
+        >>> held, record.status
+        (True, 'complete')
+    """
+    started_at = time.perf_counter()
+
+    def elapsed() -> float:
+        return (time.perf_counter() - started_at) * 1000.0
+
+    if not facts:
+        return True, ProbeRecord("core_binding", "complete", True, elapsed(), None)
+
+    groups = {group.stable_id: group for group in core._tracked_groups}
+    for stable_id, fact in facts:
+        group = groups.get(stable_id)
+        encoder = _BINDING_ENCODERS.get(fact.get("kind"))
+        if group is None or encoder is None:
+            return False, ProbeRecord(
+                "core_binding",
+                "unknown",
+                True,
+                elapsed(),
+                "no equivalence check exists for %s" % stable_id,
+            )
+        conjunction = (
+            z3.And(*group.expressions) if group.expressions else z3.BoolVal(True)
+        )
+        symbol = _binding_symbol(conjunction, fact)
+        if symbol is None:
+            return False, ProbeRecord(
+                "core_binding",
+                "unknown",
+                True,
+                elapsed(),
+                "the group behind %s names no symbol this fact could restate"
+                % stable_id,
+            )
+        encoded = encoder(fact, symbol)
+        for direction, claim in (
+            ("group implies fact", z3.And(conjunction, z3.Not(encoded))),
+            ("fact implies group", z3.And(encoded, z3.Not(conjunction))),
+        ):
+            solver = z3.Solver()
+            solver.add(claim)
+            status, _, reason, _, _ = _check_with_budget(solver, budget)
+            if status != "unsat":
+                return False, ProbeRecord(
+                    "core_binding",
+                    "timeout" if status == "unknown" else "unknown",
+                    True,
+                    elapsed(),
+                    "%s could not be established for %s%s"
+                    % (direction, stable_id, ": %s" % reason if reason else ""),
+                )
+    return True, ProbeRecord("core_binding", "complete", True, elapsed(), None)
+
+
+def _binding_symbol(expression, fact: Mapping[str, object]):
+    """Return the frame symbol a fact is about, taken from its own group.
+
+    Matching by name would depend on how symbols are spelled; taking the symbol out
+    of the very expressions being compared means the two sides of the equivalence
+    talk about the same object by construction.
+    """
+    variable, frame = fact.get("variable"), fact.get("frame")
+    if variable is None or frame is None:
+        return None
+    for symbol in sorted(z3.z3util.get_vars(expression), key=lambda item: str(item)):
+        name = _frame_variable_name(symbol)
+        if name == variable and _symbol_frame(symbol) == frame:
+            return symbol
+    return None
+
+
+def _symbol_frame(symbol) -> Optional[int]:
+    """Return the frame a ``F_<frame>_...`` symbol belongs to.
+
+    The frame is the only part of the name that survives the encoding intact -- the
+    body is truncated and the digest is a hash -- so it is read positionally rather
+    than by parsing the whole name.
+    """
+    parts = str(symbol).split("_")
+    if len(parts) < 2 or parts[0] != "F":
+        return None
+    try:
+        return int(parts[1])
+    except ValueError:
+        # A symbol whose second segment is not a frame index is not a frame symbol.
+        return None
+
+
 def explain_infeasibility(
     core: "BmcCoreFormula",
     stage: str,
@@ -1553,10 +1696,22 @@ def explain_infeasibility(
         from .proof import build_domain_proof, proof_facts_for_core
         from .proof_text import linearize_proof
 
-        proof, proof_record = build_domain_proof(
-            published.scope, proof_facts_for_core(published.items), budget
-        )
-        checks = checks + (proof_record,)
+        proof_facts = proof_facts_for_core(published.items)
+        # The binding check comes first: a graph built on facts that were never
+        # shown equivalent to their members would carry ``core_binding`` as a trust
+        # label, which the contract forbids outright.
+        bound, binding_record = check_core_bindings(core, proof_facts, budget)
+        checks = checks + (binding_record,)
+        if bound:
+            proof, proof_record = build_domain_proof(
+                published.scope,
+                proof_facts,
+                budget,
+                member_ids=[item.constraint.stable_id for item in published.items],
+            )
+            checks = checks + (proof_record,)
+        else:
+            proof, proof_record = None, binding_record
         if proof is not None:
             # The narrative is rebuilt from the graph rather than kept from the
             # formal tier: at proof depth every sentence has to cite the node behind

@@ -280,6 +280,7 @@ def test_the_transcription_guard_covers_every_frozen_structure() -> None:
         "provenance._VALUE_FACT_CATEGORIES",
         "provenance.TRACKED_GROUP_PAIRINGS",
         "infeasibility.AGGREGATE_SELECTORS",
+        "infeasibility._BINDING_ENCODERS",
         "infeasibility._INDEX_REF_KEYS",
         "infeasibility._STAGE_FALLBACK_BY_STAGE",
     }
@@ -342,6 +343,15 @@ def test_the_transcription_guard_covers_every_frozen_structure() -> None:
             ("kernel", "transition.step"),
         }
     )
+    # Which fact tags can be shown equivalent to their source group.  A tag absent
+    # here has no encoding, so its member fails the binding check and no proof is
+    # published over it -- which is the contract's answer for a group that does not
+    # normalize losslessly, and therefore a published boundary rather than a detail.
+    assert set(infeasibility._BINDING_ENCODERS) == {
+        "variable_equality",
+        "variable_bound",
+        "definedness_guard",
+    }
     assert infeasibility._INDEX_REF_KEYS == ("frame", "frames", "step", "steps")
     assert dict(infeasibility._STAGE_FALLBACK_BY_STAGE) == {
         "initialization": "initialization_stage_fallback",

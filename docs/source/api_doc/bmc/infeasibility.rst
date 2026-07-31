@@ -109,6 +109,12 @@ build\_core\_item
 .. autofunction:: build_core_item
 
 
+check\_core\_bindings
+-----------------------------------------------------
+
+.. autofunction:: check_core_bindings
+
+
 explain\_infeasibility
 -----------------------------------------------------
 

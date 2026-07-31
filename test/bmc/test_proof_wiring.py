@@ -187,3 +187,169 @@ def test_the_published_payload_passes_the_published_schema() -> None:
     ]
 
     assert errors == []
+
+
+@pytest.mark.unittest
+def test_an_input_fact_is_proved_equivalent_to_the_member_it_restates() -> None:
+    """``core_binding`` names a check, so the check has to happen.
+
+    Before this the label was written onto every input unconditionally, which is
+    the trust marker the contract forbids: the node claimed an equivalence nobody
+    established.  Both directions are refuted separately -- a fact implied by its
+    group but not implying it would let the proof rest on less than the model
+    requires, and the reverse on more.
+    """
+    machine = load_state_machine_from_text(_MODEL, "machine.fcstm")
+    context = BmcEngine(machine).prepare(
+        'assume at 0: var("x") == 1;\n'
+        'assume at 0: var("x") == 2;\n'
+        'check reach <= 1: active("Root.B");\n',
+        query_source_path="query.fbmcq",
+    )
+    result = solve_bmc_property(
+        compile_bmc_property(build_bmc_core_formula(context)),
+        infeasibility_explanation="proof",
+    )
+
+    binding = [
+        check
+        for check in result.feasibility.refinement_checks
+        if check.name == "core_binding"
+    ]
+    assert len(binding) == 1, [c.name for c in result.feasibility.refinement_checks]
+    assert binding[0].status == "complete"
+    assert binding[0].reason is None, "a completed binding has nothing to explain"
+
+
+@pytest.mark.unittest
+def test_a_definedness_conflict_reaches_the_proof_tier() -> None:
+    """The published vocabulary and the rule vocabulary have to meet, per shape.
+
+    A core states ``definedness_condition``; the rule reads ``definedness_guard``.
+    Both names are right for their side, and the missing piece was the translation
+    between them -- without it the rule was unreachable from any real query while
+    its own tests passed on hand-written premises.
+    """
+    explanation = _explain(
+        'init state("Root.A") where x == 0;\n'
+        'assume at 0: var("x") / var("x") > 0;\n'
+        'check reach <= 1: active("Root.A");\n'
+    )
+
+    assert explanation.achieved_mode == "proof"
+    assert explanation.proof.nodes[-1].rule_id == "definedness_failure"
+
+
+@pytest.mark.unittest
+def test_a_member_no_fact_was_read_from_blocks_publication() -> None:
+    """Coverage is judged against the core, not against what could be translated.
+
+    A member whose fact has no reading is absent from the builder's inputs
+    entirely.  Judging coverage on those inputs would let a proof close over a core
+    it never saw all of, and publish ``subset_minimal`` while a member took no part.
+    """
+    from pyfcstm.bmc.explanation import BmcConstraintRef, BmcCoreItem
+    from pyfcstm.bmc.proof import build_domain_proof, proof_facts_for_core
+    from pyfcstm.bmc.provenance import BmcSourceRef
+    from pyfcstm.bmc.solver import _SolveBudget
+
+    def member(stable_id, category, fact, role, text):
+        reference = BmcConstraintRef(
+            stable_id,
+            "assumptions",
+            category,
+            BmcSourceRef("generated", None, None),
+            text,
+        )
+        return BmcCoreItem(reference, role, None, False, fact, text, False)
+
+    items = (
+        member(
+            "assumption.0000",
+            "assumption.frame",
+            {
+                "kind": "variable_comparison",
+                "variable": "x",
+                "frame": 0,
+                "operator": "eq",
+                "value": 1,
+            },
+            "assumption",
+            "x == 1",
+        ),
+        member(
+            "assumption.0001",
+            "assumption.frame",
+            {
+                "kind": "variable_comparison",
+                "variable": "x",
+                "frame": 0,
+                "operator": "eq",
+                "value": 2,
+            },
+            "assumption",
+            "x == 2",
+        ),
+        # ``ne`` restricts nothing any rule can intersect, so no fact is read from
+        # it and it is invisible to the builder's own inputs.
+        member(
+            "assumption.0002",
+            "assumption.frame",
+            {
+                "kind": "variable_comparison",
+                "variable": "y",
+                "frame": 0,
+                "operator": "ne",
+                "value": 3,
+            },
+            "assumption",
+            "y != 3",
+        ),
+    )
+
+    proof, record = build_domain_proof(
+        "assumptions_component",
+        proof_facts_for_core(items),
+        _SolveBudget(None),
+        member_ids=[item.constraint.stable_id for item in items],
+    )
+
+    assert proof is None
+    assert "every core member" in (record.reason or "")
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "states", [8, 33, 129], ids=["small", "past-the-old-limit", "large"]
+)
+def test_a_wide_state_domain_still_reaches_a_proof(states) -> None:
+    """The application limit is a backstop, and it has to stay one.
+
+    Candidates were offered to the checker without matching the tags a rule reads,
+    so four rules concluding ``false`` each spent n(n-1) checks on premises they
+    could never take.  A frame with 32 legal states exhausted the limit before the
+    one rule that could close it was proposed even once -- a completely ordinary
+    model size, failing in a place no reader could predict.
+    """
+    from pyfcstm.bmc.proof import build_domain_proof
+    from pyfcstm.bmc.solver import _SolveBudget
+
+    inputs = (
+        (
+            "domain.0000",
+            {"kind": "state_domain", "frame": 0, "states": list(range(states))},
+        ),
+    ) + tuple(
+        (
+            "assumption.%04d" % index,
+            {"kind": "state_exclusion", "frame": 0, "state": index},
+        )
+        for index in range(states)
+    )
+
+    proof, record = build_domain_proof(
+        "assumptions_component", inputs, _SolveBudget(None)
+    )
+
+    assert proof is not None, record.reason
+    assert proof.nodes[-1].rule_id == "state_domain_exhaustion"

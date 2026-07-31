@@ -179,10 +179,19 @@ def _candidates(nodes: Sequence[_Node]) -> List[Tuple[str, Tuple[int, ...]]]:
             for combination in _frame_groups(nodes):
                 proposals.append((rule_id, combination))
             continue
-        arity = len(PROOF_RULES[rule_id].premise_kinds)
-        if arity == 0:
+        wanted = sorted(PROOF_RULES[rule_id].premise_kinds)
+        if not wanted:
             continue
-        for combination in itertools.permutations(range(len(nodes)), arity):
+        for combination in itertools.permutations(range(len(nodes)), len(wanted)):
+            # Match the tags before proposing.  ``premise_kinds`` exists for this --
+            # a rule that reads two bounds cannot be applied to a domain and an
+            # exclusion, and offering it anyway spends a check to learn that.  With
+            # the tags ignored, four rules concluding ``false`` each burned n(n-1)
+            # checks on pairs they could never read, and a frame with 32 legal
+            # states exhausted the application limit before the one rule that could
+            # close it was proposed even once.
+            if sorted(nodes[index].fact.get("kind") for index in combination) != wanted:
+                continue
             proposals.append((rule_id, combination))
     proposals.sort()
     return proposals
@@ -215,6 +224,7 @@ def build_domain_proof(
     scope: str,
     inputs: Sequence[Tuple[str, Mapping[str, Any]]],
     budget,
+    member_ids: Optional[Sequence[str]] = None,
 ) -> Tuple[Optional[BmcConflictProof], Any]:
     """Search for a checked proof that these facts admit no execution.
 
@@ -234,6 +244,12 @@ def build_domain_proof(
     :type inputs: Sequence[Tuple[str, Mapping[str, object]]]
     :param budget: The shared solve budget; the search stops when it runs out.
     :type budget: pyfcstm.bmc.solver._SolveBudget
+    :param member_ids: Every core member, including ones no fact was read from.
+        Coverage is judged against these rather than against ``inputs``: a member
+        whose fact could not be translated is absent from ``inputs`` entirely, and
+        judging coverage there would let the proof close over a core it never saw
+        all of.  Defaults to the ids present in ``inputs``.
+    :type member_ids: Optional[Sequence[str]], optional
     :return: The proof and the ledger entry, or ``None`` and the entry.
     :rtype: Tuple[Optional[BmcConflictProof], pyfcstm.bmc.infeasibility.ProbeRecord]
 
@@ -242,7 +258,7 @@ def build_domain_proof(
         >>> from pyfcstm.bmc.solver import _SolveBudget
         >>> proof, record = build_domain_proof("assumptions_component", (), _SolveBudget(None))
         >>> proof is None and record.status
-        'unsupported'
+        'unknown'
     """
     started_at = time.monotonic()
 
@@ -272,7 +288,7 @@ def build_domain_proof(
 
     if not nodes:
         return None, _record(
-            "unsupported", True, elapsed(), "no core member states a domain fact."
+            "unknown", True, elapsed(), "no core member states a domain fact."
         )
 
     contradiction: Optional[int] = None
@@ -286,7 +302,7 @@ def build_domain_proof(
         for rule_id, premise_indices in _candidates(nodes):
             if checked >= _MAX_APPLICATIONS:
                 return None, _record(
-                    "unsupported",
+                    "unknown",
                     True,
                     elapsed(),
                     "proof search reached its application limit.",
@@ -324,7 +340,7 @@ def build_domain_proof(
             # A fixed point with no contradiction: every application the catalog
             # allows has been checked and none closed the case.
             return None, _record(
-                "unsupported",
+                "unknown",
                 True,
                 elapsed(),
                 "no rule in the catalog closes this core.",
@@ -340,12 +356,16 @@ def build_domain_proof(
         pending.extend(nodes[current].premises)
 
     covered = {item for index in used for item in nodes[index].item_ids}
-    stated = {stable_id for stable_id, _ in ordered}
+    stated = (
+        set(member_ids)
+        if member_ids is not None
+        else {stable_id for stable_id, _ in ordered}
+    )
     if covered != stated:
         # The contradiction rests on part of the core.  A proof over a subset would
         # cite the rest among its reasons without using them.
         return None, _record(
-            "unsupported",
+            "unknown",
             True,
             elapsed(),
             "the contradiction does not rest on every core member.",
@@ -556,6 +576,29 @@ def proof_facts_for_core(items) -> Tuple[Tuple[str, Mapping[str, Any]], ...]:
                         "kind": "state_domain",
                         "frame": fact.get("frame"),
                         "states": list(fact.get("states") or ()),
+                    },
+                )
+            )
+        elif kind == "definedness_condition":
+            variable = fact.get("variable")
+            if variable is None:
+                # A guard over an expression rather than a single subject has no
+                # slot for the rule to compare against, so it stays untranslated
+                # and the core it belongs to is not fully covered.
+                continue
+            translated.append(
+                (
+                    stable_id,
+                    {
+                        "kind": "definedness_guard",
+                        "variable": variable,
+                        "frame": fact.get("frame"),
+                        "operation": fact.get("operation"),
+                        # Every operation the published vocabulary names is
+                        # undefined at zero -- division by it, and the square root
+                        # and logarithm of a negative argument all exclude it as
+                        # the boundary case the guard is about.
+                        "forbidden": 0,
                     },
                 )
             )

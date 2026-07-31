@@ -351,6 +351,8 @@ def test_the_transcription_guard_covers_every_frozen_structure() -> None:
         "variable_equality",
         "variable_bound",
         "definedness_guard",
+        "state_domain",
+        "state_exclusion",
     }
     assert infeasibility._INDEX_REF_KEYS == ("frame", "frames", "step", "steps")
     assert dict(infeasibility._STAGE_FALLBACK_BY_STAGE) == {

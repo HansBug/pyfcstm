@@ -422,3 +422,109 @@ def test_a_fact_weaker_than_its_group_is_refused_in_both_directions() -> None:
         solver = z3.Solver()
         solver.add(claim)
         assert str(solver.check()) == "sat", "neither direction may hold"
+
+
+@pytest.mark.unittest
+def test_an_exhausted_state_domain_reaches_the_proof_tier_from_a_query() -> None:
+    """The rule was reachable from the builder and not from a query.
+
+    Its facts are about a frame's state slot, and the binding check had encoders
+    only for the value-carrying tags -- so a real query produced a complete formal
+    artifact and then degraded at the gate, one step before the search that would
+    have closed it.  A 129-state builder case says nothing about that: it hands the
+    builder its inputs directly and never passes the gate at all.
+    """
+    machine = load_state_machine_from_text(
+        "state Root { state A; state B; [*] -> A; }", "machine.fcstm"
+    )
+    context = BmcEngine(machine).prepare(
+        'init state("Root.A");\n'
+        'assume at 1: !active("Root.A");\n'
+        'assume at 1: !active("Root.B");\n'
+        "assume at 1: !terminated();\n"
+        'check reach <= 1: active("Root.A");\n',
+        query_source_path="query.fbmcq",
+    )
+    result = solve_bmc_property(
+        compile_bmc_property(build_bmc_core_formula(context)),
+        infeasibility_explanation="proof",
+    )
+    explanation = result.feasibility.explanation
+
+    assert explanation.achieved_mode == "proof", explanation.reason
+    assert explanation.proof.nodes[-1].rule_id == "state_domain_exhaustion"
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "name",
+    ["x", "v" * 100],
+    ids=["a-short-name", "a-name-past-the-encoder-truncation"],
+)
+def test_a_long_variable_name_still_reaches_the_proof_tier(name) -> None:
+    """A symbol's body is truncated, so its name cannot be read back from it.
+
+    The binding resolved names off the symbol alone while the published facts were
+    resolved against the declarations, and past the truncation width the two stopped
+    agreeing -- an ordinary long identifier lost proof depth for a reason nothing in
+    the query could suggest.
+    """
+    machine = load_state_machine_from_text(
+        "def int %s = 0; state Root;" % name, "machine.fcstm"
+    )
+    context = BmcEngine(machine).prepare(
+        'init state("Root") havoc *;\n'
+        'assume at 0: var("%s") == 1;\n'
+        'assume at 0: var("%s") == 2;\n'
+        'check reach <= 1: active("Root");\n' % (name, name),
+        query_source_path="query.fbmcq",
+    )
+    result = solve_bmc_property(
+        compile_bmc_property(build_bmc_core_formula(context)),
+        infeasibility_explanation="proof",
+    )
+    explanation = result.feasibility.explanation
+
+    assert explanation.achieved_mode == "proof", explanation.reason
+    assert explanation.proof.verification_status == "verified"
+
+
+@pytest.mark.unittest
+def test_a_binding_that_runs_out_of_time_is_reported_as_a_timeout() -> None:
+    """A timeout and an undecidable shape call for opposite responses.
+
+    One says raise the budget and try again; the other says the shape is not one the
+    solver can decide, so retrying wastes it.  The two were swapped -- a run that
+    ran out of time advised against retrying.  Both words are legal in the published
+    ledger, so nothing structural caught it.
+
+    An exhausted budget is produced the way a real one is exhausted, by a deadline
+    that has passed, rather than by standing in for the check.
+    """
+    import time
+
+    from pyfcstm.bmc.infeasibility import check_core_bindings
+    from pyfcstm.bmc.solver import _SolveBudget
+
+    machine = load_state_machine_from_text(_MODEL, "machine.fcstm")
+    context = BmcEngine(machine).prepare(
+        'assume at 0: var("x") == 1;\n'
+        'assume at 0: var("x") == 2;\n'
+        'check reach <= 1: active("Root.B");\n',
+        query_source_path="query.fbmcq",
+    )
+    core = build_bmc_core_formula(context)
+    facts = (
+        (
+            "assumption.0000.frame.0000",
+            {"kind": "variable_equality", "variable": "x", "frame": 0, "value": 1},
+        ),
+    )
+
+    spent = _SolveBudget(1)
+    spent.deadline = time.monotonic() - 1.0
+
+    held, record = check_core_bindings(core, facts, spent)
+
+    assert held is False
+    assert record.status == "timeout", record.reason

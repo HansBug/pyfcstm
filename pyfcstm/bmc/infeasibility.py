@@ -1353,6 +1353,10 @@ _BINDING_ENCODERS = {
         "lt": symbol < fact["value"],
     }[fact["operator"]],
     "definedness_guard": lambda fact, symbol: symbol != fact["forbidden"],
+    "state_domain": lambda fact, symbol: z3.Or(
+        *[symbol == state for state in fact["states"]]
+    ),
+    "state_exclusion": lambda fact, symbol: symbol != fact["state"],
 }
 
 
@@ -1396,9 +1400,23 @@ def check_core_bindings(
         return (time.perf_counter() - started_at) * 1000.0
 
     if not facts:
-        return True, ProbeRecord("core_binding", "complete", True, elapsed(), None)
+        # Vacuously true, and a consumer must be able to tell that apart from a run
+        # that established something: the phase reports one equivalence per input,
+        # and there were none.
+        return True, ProbeRecord(
+            "core_binding",
+            "complete",
+            True,
+            elapsed(),
+            "no core member states a fact this check can encode",
+        )
 
     groups = {group.stable_id: group for group in core._tracked_groups}
+    # The encoder truncates a symbol's body at a fixed width and appends a digest,
+    # so reading a name back from the symbol alone recovers the truncation.  The
+    # declared names are what the published facts were resolved against, and the
+    # binding has to resolve the same way or a long name stops matching itself.
+    declared = _declared_variable_names(core)
     for stable_id, fact in facts:
         group = groups.get(stable_id)
         encoder = _BINDING_ENCODERS.get(fact.get("kind"))
@@ -1413,7 +1431,7 @@ def check_core_bindings(
         conjunction = (
             z3.And(*group.expressions) if group.expressions else z3.BoolVal(True)
         )
-        symbol = _binding_symbol(conjunction, fact)
+        symbol = _binding_symbol(conjunction, fact, declared)
         if symbol is None:
             return False, ProbeRecord(
                 "core_binding",
@@ -1434,7 +1452,11 @@ def check_core_bindings(
             if status != "unsat":
                 return False, ProbeRecord(
                     "core_binding",
-                    "timeout" if status == "unknown" else "unknown",
+                    # The solver's own word, not its negation.  A real timeout tells
+                    # a consumer to raise the budget and retry; an ``unknown`` tells
+                    # it the shape is one z3 cannot decide and retrying is pointless.
+                    # These were swapped, so each payload advised the opposite.
+                    "timeout" if status == "timeout" else "unknown",
                     True,
                     elapsed(),
                     "%s could not be established for %s%s"
@@ -1443,19 +1465,42 @@ def check_core_bindings(
     return True, ProbeRecord("core_binding", "complete", True, elapsed(), None)
 
 
-def _binding_symbol(expression, fact: Mapping[str, object]):
+def _declared_variable_names(core: "BmcCoreFormula"):
+    """Return the variable names the model declares, for symbol resolution.
+
+    Recovering a name from a symbol alone reads back the encoder's truncation; the
+    declarations are the full names the published facts were resolved against, so
+    the binding resolves the same way.
+    """
+    domain = getattr(getattr(core, "context", None), "domain", None)
+    entries = getattr(domain, "variables", None) or ()
+    return tuple(sorted(entry.name for entry in entries))
+
+
+def _binding_symbol(expression, fact: Mapping[str, object], declared=None):
     """Return the frame symbol a fact is about, taken from its own group.
 
     Matching by name would depend on how symbols are spelled; taking the symbol out
     of the very expressions being compared means the two sides of the equivalence
     talk about the same object by construction.
     """
-    variable, frame = fact.get("variable"), fact.get("frame")
-    if variable is None or frame is None:
+    frame = fact.get("frame")
+    if frame is None:
         return None
-    for symbol in sorted(z3.z3util.get_vars(expression), key=lambda item: str(item)):
-        name = _frame_variable_name(symbol)
-        if name == variable and _symbol_frame(symbol) == frame:
+    symbols = sorted(z3.z3util.get_vars(expression), key=lambda item: str(item))
+    variable = fact.get("variable")
+    if variable is None:
+        # A state fact speaks about the frame's own state slot rather than about a
+        # declared variable, so it is matched by position in the encoding rather
+        # than by a name the query wrote.
+        for symbol in symbols:
+            if str(symbol) == "F_%d_state" % frame:
+                return symbol
+        return None
+    for symbol in symbols:
+        if _symbol_frame(symbol) != frame:
+            continue
+        if _frame_variable_name(symbol, declared) == variable:
             return symbol
     return None
 
@@ -1794,16 +1839,17 @@ def explain_infeasibility(
 
 __all__ = [
     "AGGREGATE_SELECTORS",
-    "SCOPE_TARGETS",
     "ClassificationOutcome",
     "CoreExtraction",
     "ExplanationOutcome",
-    "ProbeRecord",
-    "TrackedGroupPartition",
     "ForcedValue",
+    "ProbeRecord",
+    "SCOPE_TARGETS",
+    "TrackedGroupPartition",
     "build_core_item",
-    "derive_forced_values",
+    "check_core_bindings",
     "classify_infeasibility",
+    "derive_forced_values",
     "explain_infeasibility",
     "extract_source_core",
     "partition_tracked_groups",

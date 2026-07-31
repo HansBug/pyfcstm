@@ -45,7 +45,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 from .explanation import BmcConflictProof, BmcProofNode
 from .proof_rules import PROOF_RULES, RuleApplication, check_rule
 
-__all__ = ["build_domain_proof", "proof_facts_for_core"]
+__all__ = ["STATE_SLOT_SUBJECT", "build_domain_proof", "proof_facts_for_core"]
 
 #: What the ledger calls this phase.
 _PHASE_NAME = "proof_construction"
@@ -496,6 +496,15 @@ def _conclusion_for(
     return None
 
 
+#: The subject name a frame's state slot carries in proof facts.
+#:
+#: A frame's state is not a declared variable, but every rule compares subjects
+#: before values, so the slot needs a name to be compared by.  ``state`` is a
+#: grammar keyword and cannot be declared, so this cannot collide with a model
+#: variable.
+STATE_SLOT_SUBJECT = "state"
+
+
 #: How a published comparison operator reads as a proof fact.
 #:
 #: The core states one tag for every comparison and carries the operator beside it;
@@ -602,15 +611,39 @@ def proof_facts_for_core(items) -> Tuple[Tuple[str, Mapping[str, Any]], ...]:
                     },
                 )
             )
-        elif kind == "state_membership" and fact.get("excluded"):
-            translated.append(
-                (
-                    stable_id,
-                    {
-                        "kind": "state_exclusion",
-                        "frame": fact.get("frame"),
-                        "state": fact.get("state"),
-                    },
+        elif kind == "state_membership":
+            if fact.get("excluded"):
+                translated.append(
+                    (
+                        stable_id,
+                        {
+                            "kind": "state_exclusion",
+                            "frame": fact.get("frame"),
+                            "state": fact.get("state"),
+                        },
+                    )
                 )
-            )
+            else:
+                # A frame holds one state, so a requirement on its slot is an
+                # equality like any other -- read as one, the rule that refuses two
+                # values for a slot refuses two states for a frame, with no second
+                # rule for the state case.
+                #
+                # The subject is named rather than left absent.  Every rule compares
+                # the slot before it compares values, and a fact with no subject
+                # would have to be tolerated there -- which is the fail-open shape
+                # this tier spent three rounds removing.  ``STATE_SLOT_SUBJECT`` is
+                # not a declared variable name, so it cannot collide with one: the
+                # grammar reserves ``state`` as a keyword.
+                translated.append(
+                    (
+                        stable_id,
+                        {
+                            "kind": "variable_equality",
+                            "variable": STATE_SLOT_SUBJECT,
+                            "frame": fact.get("frame"),
+                            "value": fact.get("state"),
+                        },
+                    )
+                )
     return tuple(translated)

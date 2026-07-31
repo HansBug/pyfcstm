@@ -36,9 +36,10 @@ Example::
     'conflict'
 """
 
-from typing import Any, List, Mapping, Tuple
+from typing import Any, List, Mapping, Optional, Tuple
 
 from .explanation import BmcConflictProof, BmcReasoningStep
+from .proof import STATE_SLOT_SUBJECT
 
 __all__ = ["linearize_proof"]
 
@@ -65,16 +66,47 @@ _CLOSING_PHRASES = {
 }
 
 
-def _state_phrase(states) -> str:
-    """Return a reader-facing list of state codes."""
-    return ", ".join(str(state) for state in states)
+def _state_name(state, names: Optional[Mapping[int, str]]) -> str:
+    """Return what the model calls one state, falling back to its encoded index.
+
+    A state index is the encoding's name for a state and means nothing to the author
+    who wrote the model.  It stays as the fallback rather than being suppressed: a
+    map built from a model can be missing an entry, and a poor name for a premise is
+    still better for the reader than a premise that silently vanished.
+
+    :param state: The state as the fact carries it.
+    :type state: object
+    :param names: What the model calls each state, if the caller knows.
+    :type names: Mapping[int, str], optional
+    :return: The state's name, or its index.
+    :rtype: str
+
+    Example::
+
+        >>> _state_name(1, {1: "Root.Heating"})
+        'Root.Heating'
+        >>> _state_name(1, None)
+        '1'
+    """
+    if names is None:
+        return str(state)
+    return str(names.get(state, state))
 
 
-def _fact_sentence(fact: Mapping[str, Any]) -> str:
+def _state_phrase(states, names: Optional[Mapping[int, str]] = None) -> str:
+    """Return a reader-facing list of states."""
+    return ", ".join(_state_name(state, names) for state in states)
+
+
+def _fact_sentence(
+    fact: Mapping[str, Any], names: Optional[Mapping[int, str]] = None
+) -> str:
     """Return the sentence stating one fact in the model's vocabulary.
 
     :param fact: The fact a node concludes.
     :type fact: Mapping[str, object]
+    :param names: What the model calls each state, if the caller knows.
+    :type names: Mapping[int, str], optional
     :return: One sentence.
     :rtype: str
 
@@ -82,9 +114,22 @@ def _fact_sentence(fact: Mapping[str, Any]) -> str:
 
         >>> _fact_sentence({"kind": "state_domain", "frame": 1, "states": [1, 2]})
         'At frame 1, the model allows the states 1, 2.'
+        >>> _fact_sentence(
+        ...     {"kind": "state_domain", "frame": 1, "states": [1]}, {1: "Root.Idle"}
+        ... )
+        'At frame 1, the model allows the states Root.Idle.'
     """
     kind = fact.get("kind")
     if kind == "variable_equality":
+        if fact.get("variable") == STATE_SLOT_SUBJECT:
+            # A frame's state slot is compared like a variable so the rules can
+            # reach it, but it is read like a state: rendering the equality verbatim
+            # would tell the author their state "must equal 2", which names neither
+            # the slot nor the state they asked for.
+            return "At frame %s, the state must be %s." % (
+                fact.get("frame"),
+                _state_name(fact.get("value"), names),
+            )
         return "At frame %s, %s must equal %s." % (
             fact.get("frame"),
             fact.get("variable"),
@@ -106,12 +151,12 @@ def _fact_sentence(fact: Mapping[str, Any]) -> str:
     if kind == "state_domain":
         return "At frame %s, the model allows the states %s." % (
             fact.get("frame"),
-            _state_phrase(fact.get("states") or ()),
+            _state_phrase(fact.get("states") or (), names),
         )
     if kind == "state_exclusion":
         return "At frame %s, state %s is ruled out." % (
             fact.get("frame"),
-            fact.get("state"),
+            _state_name(fact.get("state"), names),
         )
     if kind == "definedness_guard":
         return "At frame %s, the %s requires %s to differ from %s." % (
@@ -142,7 +187,7 @@ def _fact_sentence(fact: Mapping[str, Any]) -> str:
     return "A model or query requirement constrains this scenario."
 
 
-def _clause(fact: Mapping[str, Any]) -> str:
+def _clause(fact: Mapping[str, Any], names: Optional[Mapping[int, str]] = None) -> str:
     """Return the fact as a clause that can follow "therefore".
 
     The same content as :func:`_fact_sentence` without the leading frame phrase, so
@@ -150,6 +195,11 @@ def _clause(fact: Mapping[str, Any]) -> str:
     """
     kind = fact.get("kind")
     if kind == "variable_equality":
+        if fact.get("variable") == STATE_SLOT_SUBJECT:
+            return "the state at frame %s to be %s" % (
+                fact.get("frame"),
+                _state_name(fact.get("value"), names),
+            )
         return "%s equal to %s at frame %s" % (
             fact.get("variable"),
             fact.get("value"),
@@ -162,11 +212,13 @@ def _clause(fact: Mapping[str, Any]) -> str:
             fact.get("frame"),
             fact.get("target_frame"),
         )
-    sentence = _fact_sentence(fact)
+    sentence = _fact_sentence(fact, names)
     return sentence[0].lower() + sentence[1:].rstrip(".")
 
 
-def _derived_sentence(rule_id: str, fact: Mapping[str, Any]) -> str:
+def _derived_sentence(
+    rule_id: str, fact: Mapping[str, Any], names: Optional[Mapping[int, str]] = None
+) -> str:
     """Return the sentence for a step that produced a new fact.
 
     The contract's three-part shape puts the rule in the middle: the facts above, the
@@ -174,7 +226,7 @@ def _derived_sentence(rule_id: str, fact: Mapping[str, Any]) -> str:
     and the fact arrives as a clause so the whole reads as one sentence.
     """
     opening = _RULE_OPENINGS.get(rule_id, "The model therefore requires")
-    return "%s %s." % (opening, _clause(fact))
+    return "%s %s." % (opening, _clause(fact, names))
 
 
 def _closing_sentence(rule_id: str) -> str:
@@ -200,15 +252,25 @@ def _frame_of(node) -> Any:
     return frame if isinstance(frame, int) else -1
 
 
-def linearize_proof(proof: BmcConflictProof) -> Tuple[BmcReasoningStep, ...]:
+def linearize_proof(
+    proof: BmcConflictProof, state_names: Optional[Mapping[int, str]] = None
+) -> Tuple[BmcReasoningStep, ...]:
     """Read a proof graph as an ordered chain of reasoning steps.
 
     One step per node, in the graph's own canonical order, each naming the node it
     reads.  The result is what a narrative publishes at proof depth, so a consumer
     can move between a sentence and the checked step behind it in either direction.
 
+    Facts carry states as the encoding numbers them, because that is what the rules
+    compare.  Passing ``state_names`` makes the prose say what the author wrote
+    instead; a state the map does not cover keeps its index rather than dropping out
+    of the reading.
+
     :param proof: The verified proof to read.
     :type proof: BmcConflictProof
+    :param state_names: What the model calls each state, keyed by encoded index,
+        defaults to ``None``
+    :type state_names: Mapping[int, str], optional
     :return: The steps, ending on the contradiction.
     :rtype: Tuple[BmcReasoningStep, ...]
 
@@ -246,9 +308,12 @@ def linearize_proof(proof: BmcConflictProof) -> Tuple[BmcReasoningStep, ...]:
     steps: List[BmcReasoningStep] = []
     for _, node in ordered:
         if node.kind == "input":
-            kind, text = "fact", _fact_sentence(node.conclusion)
+            kind, text = "fact", _fact_sentence(node.conclusion, state_names)
         elif node.kind == "derived":
-            kind, text = "derivation", _derived_sentence(node.rule_id, node.conclusion)
+            kind, text = (
+                "derivation",
+                _derived_sentence(node.rule_id, node.conclusion, state_names),
+            )
         else:
             kind, text = "conflict", _closing_sentence(node.rule_id)
         steps.append(BmcReasoningStep(kind, node.item_ids, (node.stable_id,), text))

@@ -553,43 +553,36 @@ def test_a_binding_that_runs_out_of_time_is_reported_as_a_timeout() -> None:
 
 
 @pytest.mark.unittest
-def test_a_query_with_no_bindable_fact_degrades_instead_of_raising() -> None:
+def test_nothing_to_bind_is_reported_as_unestablished_rather_than_complete() -> None:
     """Nothing bound means nothing may rest on a binding, and that is not an error.
 
-    Two positive state assumptions at one frame make a complete formal artifact and
-    no proof premise at all, so the binding phase has nothing to establish.
-    Reporting that as a completed phase was wrong twice: a consumer reading
+    Reporting a completed phase for zero checks was wrong twice: a consumer reading
     ``complete`` would believe equivalences were established, and the published
-    ledger refuses a completed check carrying a reason -- so this query raised out
-    of the solve chain rather than degrading.
+    ledger refuses a completed check that carries a reason -- so the query that
+    reached this raised out of the solve chain instead of degrading.
+
+    The query that reached it no longer does: two positive state requirements
+    translate now, which is the point of the change beside this one.  What the branch
+    protects is unchanged, so it is asserted where the branch lives, over a real core
+    whose facts were all filtered out.
     """
-    machine = load_state_machine_from_text(
-        "state Root { state A; state B; [*] -> A; }", "machine.fcstm"
-    )
+    from pyfcstm.bmc.infeasibility import check_core_bindings
+    from pyfcstm.bmc.solver import _SolveBudget
+
+    machine = load_state_machine_from_text(_MODEL, "machine.fcstm")
     context = BmcEngine(machine).prepare(
-        'init state("Root.A");\n'
-        'assume at 1: active("Root.A");\n'
-        'assume at 1: active("Root.B");\n'
-        'check reach <= 1: active("Root.A");\n',
+        'assume at 0: var("x") == 1;\n'
+        'assume at 0: var("x") == 2;\n'
+        'check reach <= 1: active("Root.B");\n',
         query_source_path="query.fbmcq",
     )
+    core = build_bmc_core_formula(context)
 
-    result = solve_bmc_property(
-        compile_bmc_property(build_bmc_core_formula(context)),
-        infeasibility_explanation="proof",
-    )
+    held, record = check_core_bindings(core, (), _SolveBudget(None))
 
-    explanation = result.feasibility.explanation
-    assert explanation.achieved_mode == "formal"
-    assert explanation.proof is None
-    assert explanation.core is not None, "the formal evidence survives"
-    binding = next(
-        check
-        for check in result.feasibility.refinement_checks
-        if check.name == "core_binding"
-    )
-    assert binding.status == "unknown"
-    assert binding.reason
+    assert held is False, "an empty binding establishes nothing"
+    assert record.status == "unknown"
+    assert record.reason, "the published ledger requires a reason for this status"
 
 
 @pytest.mark.unittest
@@ -632,3 +625,114 @@ def test_the_whole_published_envelope_validates_at_proof_depth() -> None:
     errors = [error.message for error in validator.iter_errors(result.to_canonical())]
 
     assert errors == []
+
+
+@pytest.mark.unittest
+def test_two_states_required_at_one_frame_reach_the_proof_tier() -> None:
+    """A frame holds one state, so two requirements on it cannot both hold.
+
+    This is the mutual-exclusion question a reviewer of a controller actually asks --
+    can it be purging and heating at once -- and the answer was reaching ``formal``
+    only.  A positive state requirement normalizes losslessly (``3 == F_1_state``),
+    so there was nothing standing between it and a checked proof except a missing
+    translation.
+    """
+    machine = load_state_machine_from_text(
+        "state Root { state A; state B; state C; [*] -> A; A -> B; A -> C; }",
+        "machine.fcstm",
+    )
+    context = BmcEngine(machine).prepare(
+        'init state("Root.A");\n'
+        'assume at 1: active("Root.B");\n'
+        'assume at 1: active("Root.C");\n'
+        'check reach <= 1: active("Root.A");\n',
+        query_source_path="query.fbmcq",
+    )
+
+    result = solve_bmc_property(
+        compile_bmc_property(build_bmc_core_formula(context)),
+        infeasibility_explanation="proof",
+    )
+    explanation = result.feasibility.explanation
+
+    assert explanation.achieved_mode == "proof", explanation.reason
+    assert explanation.proof.nodes[-1].rule_id == "incompatible_equalities"
+    assert explanation.proof.verification_status == "verified"
+
+
+@pytest.mark.unittest
+def test_a_core_holding_a_structural_member_cannot_reach_the_proof_tier() -> None:
+    """Some cores are unreachable at proof depth by contract, not by omission.
+
+    A ``structural_constraint`` fact carries an identity and a category and no
+    content -- that is what the tag is for.  An input node's conclusion must *be* its
+    member's fact, and ``core_binding`` must prove that fact equivalent to the source
+    group in both directions.  A contentless fact cannot be equivalent to a macro-step
+    relation, so a core holding one degrades however many recognizers are added.
+
+    The transition chain below is the shape this matters for, and it is worth pinning
+    rather than leaving as an apparent gap: the ``formal`` tier answers the question
+    the query asks -- the prefix forces the counter to one -- and the proof tier says
+    honestly that it cannot certify each step of it.
+    """
+    machine = load_state_machine_from_text(
+        "def int retries = 0;\n"
+        "state Root { state Igniting; state Purge; [*] -> Igniting;\n"
+        "    Igniting -> Purge effect { retries = retries + 1; }; }",
+        "machine.fcstm",
+    )
+    context = BmcEngine(machine).prepare(
+        'init state("Root.Igniting") where retries == 0;\n'
+        'assume at 1: var("retries") == 0;\n'
+        'check reach <= 1: active("Root.Purge");\n',
+        query_source_path="query.fbmcq",
+    )
+
+    result = solve_bmc_property(
+        compile_bmc_property(build_bmc_core_formula(context)),
+        infeasibility_explanation="proof",
+    )
+    explanation = result.feasibility.explanation
+
+    assert explanation.achieved_mode == "formal"
+    assert explanation.proof is None
+    assert explanation.reason
+    # The formal answer is the one the engineer asked for, so it must survive.
+    assert explanation.narrative.derivation_status == "complete"
+    assert any(
+        "retries to equal 1" in step.text
+        for step in explanation.narrative.reasoning_steps
+    ), [step.text for step in explanation.narrative.reasoning_steps]
+    assert any(
+        item.normalized_fact.get("kind") == "structural_constraint"
+        for item in explanation.core.items
+    ), "the shape this pins needs a structural member"
+
+
+@pytest.mark.unittest
+def test_the_published_proof_names_states_the_way_the_query_did() -> None:
+    """The author wrote a path; the reading they get back has to use it.
+
+    Nothing in the model says ``1``, so a proof that concludes about state 1 is
+    asking the reader to learn the encoding in order to read their own result.  The
+    names are on the domain the core already carries, so this is about handing them
+    to the reading rather than about discovering them.
+    """
+    machine = load_state_machine_from_text(_MODEL, "machine.fcstm")
+    context = BmcEngine(machine).prepare(
+        'assume at 1: active("Root.A");\n'
+        'assume at 1: active("Root.B");\n'
+        'check reach <= 1: active("Root.B");\n',
+        query_source_path="query.fbmcq",
+    )
+
+    result = solve_bmc_property(
+        compile_bmc_property(build_bmc_core_formula(context)),
+        infeasibility_explanation="proof",
+    )
+
+    explanation = result.feasibility.explanation
+    assert explanation.achieved_mode == "proof", explanation.reason
+    text = " ".join(step.text for step in explanation.narrative.reasoning_steps)
+    assert "Root.A" in text and "Root.B" in text, text
+    assert "must equal 1" not in text and "must equal 2" not in text, text

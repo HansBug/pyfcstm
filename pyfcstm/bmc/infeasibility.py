@@ -1494,6 +1494,19 @@ def _declared_variable_names(core: "BmcCoreFormula"):
     return tuple(sorted(entry.name for entry in entries))
 
 
+def _state_names(core: "BmcCoreFormula"):
+    """Return what the model calls each state, for the reader-facing prose.
+
+    Facts carry states as the encoding numbers them, which is what the rules compare
+    but not what the author wrote.  The path is the name every other public surface
+    uses for a state, so the proof reading uses it too rather than inventing a
+    second spelling.
+    """
+    domain = getattr(getattr(core, "context", None), "domain", None)
+    entries = getattr(domain, "states", None) or ()
+    return {entry.id: entry.path for entry in entries}
+
+
 def _binding_symbol(expression, fact: Mapping[str, object], declared=None):
     """Return the frame symbol a fact is about, taken from its own group.
 
@@ -1501,15 +1514,20 @@ def _binding_symbol(expression, fact: Mapping[str, object], declared=None):
     of the very expressions being compared means the two sides of the equivalence
     talk about the same object by construction.
     """
+    from .proof import STATE_SLOT_SUBJECT
+
     frame = fact.get("frame")
     if frame is None:
         return None
     symbols = sorted(z3.z3util.get_vars(expression), key=lambda item: str(item))
     variable = fact.get("variable")
-    if variable is None:
+    if variable is None or variable == STATE_SLOT_SUBJECT:
         # A state fact speaks about the frame's own state slot rather than about a
         # declared variable, so it is matched by position in the encoding rather
-        # than by a name the query wrote.
+        # than by a name the query wrote.  A positive requirement carries the slot's
+        # subject name so the rules can compare it; an exclusion carries none.  Both
+        # mean the same symbol, and ``state`` cannot be a declared variable because
+        # the grammar reserves it.
         for symbol in symbols:
             if str(symbol) == "F_%d_state" % frame:
                 return symbol
@@ -1778,7 +1796,7 @@ def explain_infeasibility(
             # The narrative is rebuilt from the graph rather than kept from the
             # formal tier: at proof depth every sentence has to cite the node behind
             # it, which a narrative written without a graph cannot do.
-            steps = linearize_proof(proof)
+            steps = linearize_proof(proof, state_names=_state_names(core))
             proof_narrative = BmcConflictNarrative(
                 "complete",
                 steps[-1].text,

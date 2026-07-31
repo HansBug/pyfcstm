@@ -12,6 +12,12 @@ pyfcstm.bmc.proof
 .. autodata:: __all__
 
 
+STATE\_SLOT\_SUBJECT
+-----------------------------------------------------
+
+.. autodata:: STATE_SLOT_SUBJECT
+
+
 build\_domain\_proof
 -----------------------------------------------------
 

@@ -217,3 +217,106 @@ def test_the_facts_are_read_in_the_order_the_execution_would_reach_them() -> Non
         )
         frames.append(node.conclusion.get("frame"))
     assert frames == sorted(frames), frames
+
+
+@pytest.mark.unittest
+def test_a_state_is_read_by_the_name_the_model_gives_it() -> None:
+    """A state index is the encoding's name for a state, not the model's.
+
+    The reader wrote ``Root.A``; nothing in the model they wrote says ``1``.  This
+    module promises the terms the model is written in, so the promise has to reach
+    the state family too -- for a while it reached only variables and frames, and
+    the state sentences read like the encoding they came from.
+    """
+    proof = _proof_of(
+        (
+            ("domain.frame.0001", _fact("state_domain", frame=1, states=[1, 2])),
+            ("assumption.0000", _fact("state_exclusion", frame=1, state=1)),
+            ("assumption.0001", _fact("state_exclusion", frame=1, state=2)),
+        )
+    )
+
+    text = " ".join(
+        step.text
+        for step in linearize_proof(proof, state_names={1: "Root.A", 2: "Root.B"})
+    )
+
+    assert "Root.A" in text and "Root.B" in text, text
+    assert "state 1" not in text and "states 1, 2" not in text, text
+
+
+@pytest.mark.unittest
+def test_a_required_state_is_read_as_a_state_and_not_as_a_number() -> None:
+    """A frame's state slot is compared like a variable but read like a state.
+
+    Normalizing a positive requirement into an equality is what lets the rules
+    compare it; rendering that equality verbatim would tell the reader their state
+    "must equal 2", which names neither the slot nor the state.
+    """
+    from pyfcstm.bmc.proof import STATE_SLOT_SUBJECT
+
+    proof = _proof_of(
+        (
+            (
+                "assumption.0000",
+                _equality(variable=STATE_SLOT_SUBJECT, frame=1, value=1),
+            ),
+            (
+                "assumption.0001",
+                _equality(variable=STATE_SLOT_SUBJECT, frame=1, value=2),
+            ),
+        )
+    )
+
+    text = " ".join(
+        step.text
+        for step in linearize_proof(proof, state_names={1: "Root.A", 2: "Root.B"})
+    )
+
+    assert "Root.A" in text and "Root.B" in text, text
+    assert "must equal 1" not in text and "must equal 2" not in text, text
+
+
+@pytest.mark.unittest
+def test_without_names_the_reading_still_works() -> None:
+    """The names are an improvement on the prose, not a precondition for having any.
+
+    The parameter is optional because a caller holding a graph but no model still
+    deserves a readable chain, and because every existing caller passed none.
+    """
+    proof = _proof_of(
+        (
+            ("domain.frame.0001", _fact("state_domain", frame=1, states=[1, 2])),
+            ("assumption.0000", _fact("state_exclusion", frame=1, state=1)),
+            ("assumption.0001", _fact("state_exclusion", frame=1, state=2)),
+        )
+    )
+
+    text = " ".join(step.text for step in linearize_proof(proof))
+
+    assert "state 1 is ruled out" in text, text
+
+
+@pytest.mark.unittest
+def test_a_state_with_no_name_keeps_its_index() -> None:
+    """A partial map may not silently drop the states it does not cover.
+
+    Sentinel and generated states exist in the encoding without being anything the
+    author wrote, so a map built from the model can be missing entries.  The index
+    is a poor name but it is a true one; omitting the state entirely would lose a
+    premise from the reader's view of the chain.
+    """
+    proof = _proof_of(
+        (
+            ("domain.frame.0001", _fact("state_domain", frame=1, states=[1, 2])),
+            ("assumption.0000", _fact("state_exclusion", frame=1, state=1)),
+            ("assumption.0001", _fact("state_exclusion", frame=1, state=2)),
+        )
+    )
+
+    text = " ".join(
+        step.text for step in linearize_proof(proof, state_names={1: "Root.A"})
+    )
+
+    assert "Root.A" in text, text
+    assert "2" in text, text

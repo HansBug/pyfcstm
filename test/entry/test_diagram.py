@@ -330,9 +330,11 @@ def test_diagram_cli_writes_json_to_standard_output(tmp_path):
 def test_diagram_cli_refuses_a_non_json_format_with_nowhere_to_write_it(tmp_path):
     """Only JSON can go to standard output, and asking otherwise is a usage error.
 
-    A PNG on a terminal is not what the flag combination asks for, and the
-    refusal has to come before the export runs: doing the work first would spend
-    it on a request that was never satisfiable.
+    A PNG on a terminal is not what the flag combination asks for. What this
+    pins is the outcome, not the order: exit 2 rather than merely non-zero,
+    because Click gives a usage error 2 and a failed operation 1, and a shell
+    branches on which one it got. Whether the export ran first is not observable
+    from here without reaching into the command, so it is not claimed.
     """
     runner = CliRunner()
     source = tmp_path / "machine.fcstm"
@@ -358,6 +360,11 @@ def test_diagram_cli_reports_a_binary_input_without_a_traceback(tmp_path):
     """
     runner = CliRunner()
     source = tmp_path / "not-a-machine.fcstm"
+    # These bytes reach the decode failure because `chardet` declines to commit
+    # to an encoding for them. `chardet` is not pinned, and an encoding that
+    # accepts every byte would instead make this a parse failure -- so if this
+    # test starts failing after a dependency bump, the message will say "Failed
+    # to parse" and the premise, not the command, is what moved.
     source.write_bytes(bytes(range(256)) * 8)
 
     result = runner.invoke(

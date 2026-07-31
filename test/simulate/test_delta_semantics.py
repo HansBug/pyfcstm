@@ -13,6 +13,9 @@ from pyfcstm.simulate import (
 )
 
 
+pytestmark = pytest.mark.unittest
+
+
 def _runtime(dsl, **kwargs):
     ast = parse_with_grammar_entry(dsl, "state_machine_dsl")
     model = parse_dsl_node_to_state_machine(ast)

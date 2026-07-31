@@ -232,7 +232,14 @@ def headless_facts(view, formats: Tuple[str, ...]) -> Dict[str, Any]:
         box = re.search(r'\bviewBox="\s*0\s+0\s+([\d.]+)\s+([\d.]+)', svg)
         if box is not None:
             facts["viewBox"] = (round(float(box.group(1))), round(float(box.group(2))))
-        facts["fills"] = sorted(set(re.findall(r'fill="(#[0-9a-fA-F]{3,6})"', svg)))
+        # Every fill value, not only the hex ones. Matching hex alone worked while
+        # the renderer emitted hex, and would have turned both sides into empty
+        # sets the day it emitted `rgb()` or moved the colour into a style
+        # attribute -- two empty sets compare equal, so the check would have gone
+        # quiet rather than red.
+        facts["fills"] = sorted(
+            set(value.lower() for value in re.findall(r'fill="([^"]+)"', svg))
+        )
     if "png" in formats:
         # The viewer's download button rasterises at a fixed 2x, while
         # ``to_png()`` defaults to 1x. Comparing the two defaults would report a
@@ -335,7 +342,15 @@ def compare(browser: Dict[str, Any], headless: Dict[str, Any], label: str) -> Li
             )
         else:
             mine = [value.lower() for value in headless["fills"]]
-            if sorted(theirs) != sorted(mine):
+            if not mine or not theirs:
+                # A document with no fill at all means the extraction broke on one
+                # side, and an empty set matches another empty set.
+                problems.append(
+                    "%s: one side reported no fills at all (browser %d, "
+                    "synchronous %d), so the colour comparison proves nothing"
+                    % (label, len(theirs), len(mine))
+                )
+            elif sorted(theirs) != sorted(mine):
                 note(
                     "the exported palette",
                     sorted(theirs)[:6],

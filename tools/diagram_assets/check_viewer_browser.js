@@ -658,7 +658,7 @@ async function evaluate(cdp, expression) {
           // path and not the other produces a perfectly valid file of the
           // wrong colour, which every structural assertion waves through.
           svgFills: Array.from(new Set(
-            (exportedSvg.match(/fill="#[0-9a-fA-F]{3,6}"/g) || [])
+            (exportedSvg.match(/fill="[^"]+"/g) || [])
               .map(item => item.slice(6, -1).toLowerCase()),
           )).sort(),
           svgText: (exportedSvg.match(/<text\\b/g) || []).length,

@@ -63,6 +63,72 @@ def _is_skip_slow_path(nodeid: str) -> bool:
     return _matches_path_prefix(nodeid, _SKIP_SLOW_TEST_PATH_PREFIXES)
 
 
+#: Marker that puts a test into the suite ``make unittest`` runs via ``-m unittest``.
+_SUITE_MARKER = "unittest"
+
+#: Markers that declare a test to be deliberately outside that suite. ``native_toolchain``
+#: tests need an explicit opt-in, and ``benchmark`` / ``ignore`` are reserved in
+#: ``pytest.ini`` for the same purpose. Carrying one of these is a statement of intent, so
+#: it satisfies the gate below in place of :data:`_SUITE_MARKER`.
+_OUT_OF_SUITE_MARKERS = frozenset({"native_toolchain", "benchmark", "ignore"})
+
+
+def _items_no_selector_reaches(items):
+    """Return node ids that neither ``-m unittest`` nor an opt-in selector would run.
+
+    A test carrying none of the known selection markers is collected by a bare
+    ``pytest`` run and silently dropped by ``make unittest``, so deleting the code it
+    covers leaves the suite green. Reporting the node ids rather than a count is what
+    lets the failure name the modules that have to be fixed.
+
+    Markers are read through ``iter_markers`` rather than ``keywords``, because
+    ``keywords`` also holds names and parametrisation ids: a test whose param id happened
+    to be ``unittest`` would satisfy a keyword check while carrying no marker at all, and
+    the gate would wave through exactly the module it exists to catch. ``iter_markers``
+    reports real markers only, and still sees a module-level ``pytestmark`` because it
+    walks the node chain.
+
+    :param items: Collected pytest items.
+    :type items: collections.abc.Iterable[pytest.Item]
+    :return: Node ids of items no selector reaches, in collection order.
+    :rtype: list[str]
+    """
+    unreached = []
+    for item in items:
+        names = {marker.name for marker in item.iter_markers()}
+        if _SUITE_MARKER in names:
+            continue
+        if names & _OUT_OF_SUITE_MARKERS:
+            continue
+        unreached.append(item.nodeid)
+    return unreached
+
+
+def _unreached_items_message(nodeids) -> str:
+    """Build the collection-failure text for items no selector reaches.
+
+    :param nodeids: Node ids no selector reaches.
+    :type nodeids: collections.abc.Sequence[str]
+    :return: A message naming each offending module and its test count.
+    :rtype: str
+    """
+    per_module = {}
+    for nodeid in nodeids:
+        per_module.setdefault(nodeid.split("::", 1)[0], []).append(nodeid)
+    lines = [
+        "%d test(s) carry no selection marker, so `make unittest` would silently "
+        "skip them:" % len(nodeids)
+    ]
+    for module in sorted(per_module):
+        lines.append("  %s (%d test(s))" % (module, len(per_module[module])))
+    lines.append(
+        "Add a module-level `pytestmark = pytest.mark.%s`, or one of %s when the "
+        "test is deliberately outside that suite."
+        % (_SUITE_MARKER, ", ".join(sorted(_OUT_OF_SUITE_MARKERS)))
+    )
+    return "\n".join(lines)
+
+
 def pytest_addoption(parser):
     """Register repository-wide pytest switches.
 
@@ -120,7 +186,13 @@ def pytest_generate_tests(metafunc):
 
 
 def pytest_collection_modifyitems(config, items):
-    """Auto-mark native C-family template tests and apply skip gates.
+    """Reject unselectable tests, then auto-mark native C-family tests and apply skip gates.
+
+    The selection-marker check runs first and aborts collection, because a test no
+    selector reaches is invisible to ``make unittest`` rather than merely slow: the
+    suite stays green after the code it covers is deleted. This hook sees every
+    collected item before ``-m`` deselection removes any, which is what lets it name
+    the modules instead of reporting a count that has already been filtered.
 
     ``SKIP_SLOW_TESTS=1`` skips ordinary C-family native-template tests by
     path, but explicitly enabled ``native_toolchain`` items take priority so
@@ -132,6 +204,10 @@ def pytest_collection_modifyitems(config, items):
     from test.testings.native_toolchain_alignment.profiles import (
         native_toolchain_enabled,
     )
+
+    unreached = _items_no_selector_reaches(items)
+    if unreached:
+        raise pytest.UsageError(_unreached_items_message(unreached))
 
     native_enabled = native_toolchain_enabled(config)
     slow_marker = pytest.mark.slow

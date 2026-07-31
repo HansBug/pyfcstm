@@ -1809,6 +1809,14 @@ class BmcProofNode:
             # A conclusion without a tag cannot be dispatched on, and the root is
             # recognized by its tag being ``false``.
             raise ValueError("proof node conclusion must carry a kind.")
+        if "state_slot" in conclusion and conclusion["state_slot"] is not True:
+            # The published schema pins this to ``true``, and ``1 == True`` in
+            # Python, so a node built directly could carry a value the schema
+            # refuses.  A field this small decides whether a conclusion is read as a
+            # state or as a variable, so the two gates answer it the same way.
+            raise ValueError(
+                "proof node conclusion state_slot must be true when present."
+            )
         object.__setattr__(self, "conclusion", MappingProxyType(conclusion))
 
     def to_canonical(self) -> Dict[str, Any]:

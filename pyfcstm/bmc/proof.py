@@ -424,17 +424,11 @@ def _conclusion_for(
         if len(cases) != 1:
             return None
         case = cases[0]
-        return _inherit_subject(
-            {
-                "kind": "arithmetic_expression",
-                "variable": case.get("variable"),
-                "frame": case.get("frame"),
-                "operator": case.get("operator"),
-                "operand": case.get("operand"),
-                "target_frame": case.get("target_frame"),
-            },
-            case,
-        )
+        # Carried forward whole.  Listing the fields to copy is what let three
+        # rounds of the same defect through: a field the list forgot vanished from
+        # the proposal and from the checker's expectation alike, so the two agreed
+        # and the fact quietly lost part of itself.
+        return dict(case, kind="arithmetic_expression")
     if rule_id == "equality_substitution":
         if len(facts) != 2:
             return None
@@ -445,17 +439,11 @@ def _conclusion_for(
             return None
         if not expression.get("operand_variable"):
             return None
-        return _inherit_subject(
-            {
-                "kind": "arithmetic_expression",
-                "variable": expression.get("variable"),
-                "frame": expression.get("frame"),
-                "operator": expression.get("operator"),
-                "operand": value_fact.get("value"),
-                "target_frame": expression.get("target_frame"),
-            },
-            expression,
-        )
+        # The operand's name goes because this step has just replaced it; whatever
+        # else the expression says is unchanged.
+        substituted = dict(expression, operand=value_fact.get("value"))
+        substituted.pop("operand_variable", None)
+        return substituted
     if rule_id == "arithmetic_evaluation":
         if len(facts) != 2:
             return None

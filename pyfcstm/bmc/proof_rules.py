@@ -174,6 +174,66 @@ def _carry_subject(
     return conclusion
 
 
+def _transformed(source: Mapping[str, Any], **changes: Any) -> Dict[str, Any]:
+    """Return the source fact with only the named fields changed.
+
+    Building an expected conclusion by listing the fields to carry is what let three
+    rounds of the same defect through: a field the list forgot was a field both the
+    proposer and the checker dropped, so comparing them agreed and the fact quietly
+    lost part of itself.  A rule that carries its premise forward says what it
+    *changes* instead, and everything it does not mention comes along.
+
+    A field is removed by passing ``None`` for it, which a rule does deliberately --
+    substitution drops the operand's name because it has just replaced it.
+
+    :param source: The fact being carried forward.
+    :type source: Mapping[str, object]
+    :param changes: Fields to set, or to drop when the value is ``None``.
+    :type changes: object
+    :return: The transformed fact.
+    :rtype: Dict[str, object]
+
+    Example::
+
+        >>> _transformed({"kind": "a", "x": 1}, kind="b")
+        {'kind': 'b', 'x': 1}
+        >>> _transformed({"kind": "a", "x": 1}, x=None)
+        {'kind': 'a'}
+    """
+    result = dict(source)
+    for key, value in changes.items():
+        if value is None:
+            result.pop(key, None)
+        else:
+            result[key] = value
+    return result
+
+
+def _only(fact: Mapping[str, Any], allowed) -> bool:
+    """Report whether a fact carries nothing outside the fields a rule understands.
+
+    A rule that consumes a fact into a different shape cannot carry unknown fields
+    forward, so it has to refuse them rather than drop them silently.  Otherwise a
+    field added to the vocabulary later would disappear at exactly the step that
+    changes what the fact is about.
+
+    :param fact: The fact to inspect.
+    :type fact: Mapping[str, object]
+    :param allowed: The fields this rule knows how to consume.
+    :type allowed: Iterable[str]
+    :return: ``True`` when the fact carries no others.
+    :rtype: bool
+
+    Example::
+
+        >>> _only({"kind": "a", "x": 1}, ("kind", "x"))
+        True
+        >>> _only({"kind": "a", "surprise": 1}, ("kind", "x"))
+        False
+    """
+    return set(fact) <= set(allowed)
+
+
 def _exactly(conclusion: Mapping[str, Any], expected: Mapping[str, Any]) -> bool:
     """Report whether a conclusion is exactly what its premises determine.
 
@@ -304,6 +364,12 @@ def _arithmetic_evaluation(application: RuleApplication) -> bool:
     )
     if result is None:
         return False
+    if not _only(expression, _EVALUABLE_EXPRESSION_FIELDS):
+        # This rule consumes the expression into a different shape, so it cannot
+        # carry a field forward the way the two rules above do.  A field it does not
+        # recognize is refused rather than dropped: dropping one silently is what
+        # this catalog spent three rounds doing.
+        return False
     expected = _carry_subject(
         {
             "kind": "variable_equality",
@@ -315,6 +381,15 @@ def _arithmetic_evaluation(application: RuleApplication) -> bool:
     )
     return _exactly(application.conclusion, expected)
 
+
+#: What an expression may say when its value is read off.
+#:
+#: Everything here is consumed into the resulting equality.  A field outside the set
+#: means the expression says something this rule does not know how to carry, so it
+#: declines rather than quietly leaving it behind.
+_EVALUABLE_EXPRESSION_FIELDS = frozenset(
+    {"kind", "variable", "frame", "target_frame", "operator", "operand", "state_slot"}
+)
 
 #: Bounds that admit values at or beyond their limit.
 _CLOSED_OPERATORS = frozenset({"ge", "le"})
@@ -456,17 +531,9 @@ def _transition_assignment(application: RuleApplication) -> bool:
         return False
     if _slot(value) != _slot(case):
         return False
-    expected = _carry_subject(
-        {
-            "kind": "arithmetic_expression",
-            "variable": case.get("variable"),
-            "frame": case.get("frame"),
-            "target_frame": case.get("target_frame"),
-            "operator": case.get("operator"),
-            "operand": case.get("operand"),
-        },
-        case,
-    )
+    # The case is carried forward as an expression; everything it says about the
+    # step -- including an operand still standing as a symbol -- comes along.
+    expected = _transformed(case, kind="arithmetic_expression")
     return _exactly(application.conclusion, expected)
 
 
@@ -495,16 +562,10 @@ def _equality_substitution(application: RuleApplication) -> bool:
         # value an expression can be written over, so a slot standing in for one is
         # a substitution into a statement the model never made.
         return False
-    expected = _carry_subject(
-        {
-            "kind": "arithmetic_expression",
-            "variable": expression.get("variable"),
-            "frame": expression.get("frame"),
-            "target_frame": expression.get("target_frame"),
-            "operator": expression.get("operator"),
-            "operand": value.get("value"),
-        },
-        expression,
+    # The operand's name is dropped because this step has just replaced it; every
+    # other thing the expression says is unchanged.
+    expected = _transformed(
+        expression, operand=value.get("value"), operand_variable=None
     )
     return _exactly(application.conclusion, expected)
 

@@ -934,3 +934,111 @@ def test_a_half_named_slot_closes_nothing(guard, value) -> None:
         )
         is False
     )
+
+
+@pytest.mark.unittest
+def test_a_carried_fact_keeps_what_nobody_listed() -> None:
+    """Carrying a premise forward means carrying all of it, not a chosen part.
+
+    Three rounds of the same defect came from building the expected conclusion as a
+    list of fields to copy.  Fixing the *comparison* did not help, because the
+    proposer and the checker were writing the same list: a field both forgot dropped
+    out of both, they agreed, and the fact silently lost part of itself.  Here that
+    field is ``operand_variable`` -- lose it and an operand still standing as a
+    symbol looks like a number the next step is free to evaluate.
+
+    A rule that carries a premise forward now says only what it *changes*.
+    """
+    case = {
+        "kind": "transition_case",
+        "variable": "x",
+        "frame": 0,
+        "target_frame": 1,
+        "operator": "add",
+        "operand": 7,
+        "operand_variable": "n",
+    }
+    value = {"kind": "variable_equality", "variable": "x", "frame": 0, "value": 0}
+    washed = {
+        "kind": "arithmetic_expression",
+        "variable": "x",
+        "frame": 0,
+        "target_frame": 1,
+        "operator": "add",
+        "operand": 7,
+    }
+
+    assert (
+        check_rule(RuleApplication("transition_assignment", (case, value), washed))
+        is False
+    )
+    assert check_rule(
+        RuleApplication(
+            "transition_assignment", (case, value), dict(washed, operand_variable="n")
+        )
+    )
+
+
+@pytest.mark.unittest
+def test_substitution_drops_the_name_it_just_replaced_and_nothing_else() -> None:
+    """The one field this step removes is the one it has answered."""
+    expression = {
+        "kind": "arithmetic_expression",
+        "variable": "x",
+        "frame": 0,
+        "target_frame": 1,
+        "operator": "add",
+        "operand_variable": "n",
+    }
+    value = {"kind": "variable_equality", "variable": "n", "frame": 0, "value": 3}
+    substituted = {
+        "kind": "arithmetic_expression",
+        "variable": "x",
+        "frame": 0,
+        "target_frame": 1,
+        "operator": "add",
+        "operand": 3,
+    }
+
+    assert check_rule(
+        RuleApplication("equality_substitution", (value, expression), substituted)
+    )
+    assert (
+        check_rule(
+            RuleApplication(
+                "equality_substitution",
+                (value, expression),
+                dict(substituted, operand_variable="n"),
+            )
+        )
+        is False
+    )
+
+
+@pytest.mark.unittest
+def test_evaluation_refuses_an_expression_it_does_not_fully_understand() -> None:
+    """Consuming a fact into another shape cannot carry an unknown field forward.
+
+    The two rules above hand their premise on, so anything new rides along.  This
+    one turns an expression into a value and keeps none of it, which means a field
+    added to the vocabulary later would disappear exactly where the fact changes
+    what it is about.  Refusing is the honest answer.
+    """
+    application = RuleApplication(
+        "arithmetic_evaluation",
+        (
+            {"kind": "variable_equality", "variable": "x", "frame": 0, "value": 0},
+            {
+                "kind": "arithmetic_expression",
+                "variable": "x",
+                "frame": 0,
+                "target_frame": 1,
+                "operator": "add",
+                "operand": 1,
+                "surprise": 9,
+            },
+        ),
+        {"kind": "variable_equality", "variable": "x", "frame": 1, "value": 1},
+    )
+
+    assert check_rule(application) is False

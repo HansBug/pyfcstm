@@ -467,13 +467,19 @@ def test_no_line_of_the_launch_leaks_a_browser_profile(monkeypatch, tmp_path):
                 raise KeyboardInterrupt
             return tracer
 
+        # Restore whatever was tracing before rather than clearing the slot:
+        # ``sys.settrace(None)`` removes coverage's own tracer too, and
+        # everything that runs after this test in the same process then goes
+        # unmeasured. The symptom is a coverage report that shrinks when this
+        # file happens to run first.
+        previous_tracer = sys.gettrace()
         sys.settrace(tracer)
         try:
             diagram_api._open_standalone_window(document, (800, 600))
         except BaseException:  # noqa: BLE001 - the directory's state is what matters
             pass
         finally:
-            sys.settrace(None)
+            sys.settrace(previous_tracer)
         left = sorted(
             item.name for item in tmp_path.iterdir() if item.name.startswith("pyfcstm-")
         )
@@ -2668,13 +2674,19 @@ def test_an_interrupted_overwrite_leaves_the_earlier_file_whole(writer_name, tmp
                 raise KeyboardInterrupt
             return tracer
 
+        # Restore whatever was tracing before rather than clearing the slot:
+        # ``sys.settrace(None)`` removes coverage's own tracer too, and
+        # everything that runs after this test in the same process then goes
+        # unmeasured. The symptom is a coverage report that shrinks when this
+        # file happens to run first.
+        previous_tracer = sys.gettrace()
         sys.settrace(tracer)
         try:
             writer(target, payload)
         except BaseException:  # noqa: BLE001 - the file's state is what matters
             pass
         finally:
-            sys.settrace(None)
+            sys.settrace(previous_tracer)
         if not fired:
             continue
         found = target.read_bytes() if target.exists() else None
@@ -2745,13 +2757,19 @@ def test_no_line_of_the_write_leaks_on_an_interrupt(writer_name, tmp_path, monke
                 raise KeyboardInterrupt
             return tracer
 
+        # Restore whatever was tracing before rather than clearing the slot:
+        # ``sys.settrace(None)`` removes coverage's own tracer too, and
+        # everything that runs after this test in the same process then goes
+        # unmeasured. The symptom is a coverage report that shrinks when this
+        # file happens to run first.
+        previous_tracer = sys.gettrace()
         sys.settrace(tracer)
         try:
             writer(directory / "diagram.out", payload)
         except BaseException:  # noqa: BLE001 - any outcome is fine, the state is what matters
             pass
         finally:
-            sys.settrace(None)
+            sys.settrace(previous_tracer)
         left = [item.name for item in directory.iterdir() if item.name.startswith(".")]
         unclosed = [stream for stream in opened if not stream.closed]
         if fired and (_next_free_descriptor() != before or left or unclosed):

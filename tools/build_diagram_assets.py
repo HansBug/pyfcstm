@@ -798,19 +798,14 @@ def build_pdf_writer(output: Path, esbuild_version: str) -> Tuple[bytes, Dict[st
         # upgrade would otherwise be compiled in and redistributed with no
         # provenance at all, which is precisely how two of the current five went
         # unchecked.
-        observed = set()
-        for path in inputs:
-            match = re.search(
-                # A lookbehind rather than a consuming boundary: a nested install
-                # writes ``node_modules/a/node_modules/b/``, and consuming the
-                # separator after the first package left the second invisible --
-                # a package vendored under another one would have shipped with no
-                # provenance at all.
-                r"(?<![^/])node_modules/((?:@[^/]+/)?[^/]+)/",
-                str(path).replace("\\", "/"),
+        unrecognized = _unrecognized_bundle_inputs(inputs)
+        if unrecognized:
+            raise ValueError(
+                "embedded PDF writer bundles modules with no establishable "
+                "origin, so the closure check cannot account for them: %s"
+                % ", ".join(unrecognized)
             )
-            if match is not None:
-                observed.add(match.group(1))
+        observed = _bundled_packages(inputs)
         declared = {package for _key, package in PDF_DEPENDENCIES}
         undeclared = sorted(observed - declared)
         if undeclared:
@@ -958,6 +953,144 @@ def _check_clean_symlink_safety() -> None:
             ASSET_DIR = original
         if victim.read_text(encoding="ascii") != "must survive":
             raise AssertionError("cleanup touched a path outside the asset root")
+
+
+def _bundled_packages(paths: Iterable[str]) -> Set[str]:
+    """
+    Name every third-party package a bundle drew a module from.
+
+    A path carries one segment per level of installation, so a package vendored
+    under another one appears as ``node_modules/a/node_modules/b/``.  Every
+    segment is collected, not the first: reading a single match per path named
+    only the outer package, and the inner one would have been redistributed with
+    no recorded provenance while the closure check reported agreement.
+
+    :param paths: Module paths from an esbuild metafile's ``inputs``.
+    :type paths: collections.abc.Iterable[str]
+    :return: The package names those paths came from.
+    :rtype: set[str]
+
+    Example::
+
+        >>> sorted(_bundled_packages(["node_modules/jspdf/dist/a.js"]))
+        ['jspdf']
+        >>> sorted(_bundled_packages(["node_modules/a/node_modules/b/i.js"]))
+        ['a', 'b']
+    """
+    found = set()
+    for path in paths:
+        for match in re.finditer(
+            r"(?<![^/])node_modules/((?:@[^/]+/)?[^/]+)/",
+            str(path).replace("\\", "/"),
+        ):
+            found.add(match.group(1))
+    return found
+
+
+#: Directories the PDF writer is allowed to draw first-party modules from.  An
+#: input under neither these nor an install directory has no provenance at all,
+#: which is the state a symlinked or linked package resolves to.
+FIRST_PARTY_BUNDLE_ROOTS = (
+    Path("tools") / "diagram_assets",
+    Path("editors") / "jsfcstm" / "src",
+)
+
+
+def _unrecognized_bundle_inputs(paths: Iterable[str]) -> List[str]:
+    """
+    Name every bundled module whose origin cannot be established.
+
+    The closure check can only compare packages it managed to name.  A module
+    that is neither first-party nor under an install directory yields no package
+    at all, so it passes both directions of that comparison silently -- which is
+    what a linked or symlinked dependency resolves to, since esbuild records the
+    real path rather than the one under ``node_modules``.
+
+    Paths are resolved against the build's working directory before being
+    classified, so the answer does not depend on where the build was started
+    from.  Relying on the recorded prefix is what previously left a scan here
+    unable to fire at all.
+
+    :param paths: Module paths from an esbuild metafile's ``inputs``.
+    :type paths: collections.abc.Iterable[str]
+    :return: The paths that belong to no recognised origin, sorted.
+    :rtype: list[str]
+    """
+    allowed = [(ROOT / root).resolve() for root in FIRST_PARTY_BUNDLE_ROOTS]
+    unrecognized = []
+    for path in paths:
+        text = str(path).replace("\\", "/")
+        if _bundled_packages([text]):
+            continue
+        resolved = (JSFCSTM_DIR / text).resolve()
+        if any(resolved == root or root in resolved.parents for root in allowed):
+            continue
+        unrecognized.append(str(path))
+    return sorted(unrecognized)
+
+
+def _check_bundle_input_origins() -> None:
+    """
+    Verify an input with no package identity is refused rather than ignored.
+
+    :return: ``None``.
+    :rtype: None
+    :raises AssertionError: If a path with no establishable origin is accepted,
+        or a legitimate one is refused.
+    """
+    cases = (
+        ("src/diagram/export/index.ts", False),
+        ("../../tools/diagram_assets/python-pdf-entry.ts", False),
+        ("node_modules/jspdf/dist/a.js", False),
+        ("node_modules/jspdf/node_modules/evil/i.js", False),
+        # A linked package: esbuild records the real path, which names no
+        # package, so the closure comparison never sees it.
+        ("linked/evil-pkg/index.js", True),
+        ("../../../outside-the-repository/evil/index.js", True),
+        ("src/../../../elsewhere/evil.js", True),
+    )
+    for path, should_refuse in cases:
+        refused = bool(_unrecognized_bundle_inputs([path]))
+        if refused != should_refuse:
+            raise AssertionError(
+                "input origin check %s %r"
+                % ("refused" if refused else "accepted", path)
+            )
+
+
+def _check_bundle_package_scan() -> None:
+    """
+    Verify the closure scan names inner packages, not just outer ones.
+
+    This is the third time the same mistake has been made here: a pattern is
+    checked in isolation with something that returns every match, then used in
+    code that asks for one.  The pattern looks right in both places, so only a
+    case with two packages in one path tells them apart.
+
+    :return: ``None``.
+    :rtype: None
+    :raises AssertionError: If the scan misses a package a path names.
+    """
+    cases = (
+        ("node_modules/jspdf/dist/a.js", {"jspdf"}),
+        ("node_modules/@babel/runtime/helpers/b.js", {"@babel/runtime"}),
+        # The bypass: an inner package is invisible to a single-match read.
+        ("node_modules/jspdf/node_modules/evil/index.js", {"jspdf", "evil"}),
+        (
+            "node_modules/@babel/runtime/node_modules/@evil/x/i.js",
+            {"@babel/runtime", "@evil/x"},
+        ),
+        ("node_modules/a/node_modules/b/node_modules/c/i.js", {"a", "b", "c"}),
+        # Not an install directory, so not a package.
+        ("src/my_node_modules/thing/i.js", set()),
+    )
+    for path, expected in cases:
+        found = _bundled_packages([path])
+        if found != expected:
+            raise AssertionError(
+                "closure scan read %r as %s, expected %s"
+                % (path, sorted(found), sorted(expected))
+            )
 
 
 def _check_pdf_leak_scanner() -> None:
@@ -1425,6 +1558,8 @@ def main(argv=None) -> int:
         validate_esbuild_provenance(read_lock())
         _check_clean_symlink_safety()
         _check_pdf_leak_scanner()
+        _check_bundle_package_scan()
+        _check_bundle_input_origins()
         _check_font_path_safety()
         _check_download_retry()
         print("diagram asset builder: deterministic and safety self-check passed")

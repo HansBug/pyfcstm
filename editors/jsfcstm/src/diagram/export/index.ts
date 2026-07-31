@@ -235,7 +235,19 @@ export function assertExportLimitsAreStricterThanHostLimits(): void {
 export const PDF_MAX_UNITS = 14400;
 
 /**
- * Render one diagram-sized vector PDF from the shared expanded SVG path.
+ * Render one diagram-sized vector PDF from a canonical SVG.
+ *
+ * `source` is the renderer's canonical output, not an expanded document. The
+ * order matters and is not interchangeable: halo removal matches the `<text>`
+ * elements that carry a stroke paint order, and expansion replaces those with
+ * paths. A caller that expands first hands over a document in which the halos
+ * can no longer be found, and each one is then drawn into the PDF as a white
+ * shape over its own glyphs.
+ *
+ * @param source Canonical SVG from the renderer.
+ * @param bounds Diagram size, which becomes the page size.
+ * @param expand Optional expander; without one the canonical document is used
+ *     as-is, and text depends on fonts the reader may not have.
  */
 export async function renderVectorPdf(
     source: string,

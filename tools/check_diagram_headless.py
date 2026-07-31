@@ -25,6 +25,7 @@ Run it directly, or through ``make diagram_headless_check``::
 """
 
 import argparse
+import base64
 import json
 import re
 import struct
@@ -167,19 +168,19 @@ def inflated_streams(data: bytes) -> bytes:
     :type data: bytes
     :return: The concatenated decoded streams.
     :rtype: bytes
-    :raises ValueError: If a stream declares a filter this cannot decode.
+    :raises ValueError: If a stream declares a filter this cannot decode, names
+        its filter indirectly, or if any stream in the file went unread.
     """
     import zlib
 
     text = b""
-    position = 0
+    decoded = 0
     for match in STREAM_RECORDS.finditer(data):
         info = match.group("info")
         end = data.find(b"endstream", match.end())
         if end < 0:
             continue
         payload = data[match.end() : end]
-        position = end
         filters = re.findall(rb"/Filter\s*(?:\[([^\]]*)\]|/(\w+))", info)
         names = set()
         for bracketed, single in filters:
@@ -187,7 +188,20 @@ def inflated_streams(data: bytes) -> bytes:
             if single:
                 names.add(single)
         if not names:
+            if b"/Filter" in info:
+                # The stream is filtered, but the filter is written as an
+                # indirect reference, so its name is in another object.  Adding
+                # the payload raw would scan encoded bytes as operators: a
+                # non-empty result that reports zero halos for a stream never
+                # read, which is the exact shape of failure this decoding exists
+                # to prevent.
+                raise ValueError(
+                    "a PDF content stream declares its filter indirectly, so this "
+                    "check cannot tell how the payload is encoded; the halo scan "
+                    "would otherwise report zero for bytes it never read"
+                )
             text += payload
+            decoded += 1
             continue
         unsupported = sorted(name for name in names if name != b"FlateDecode")
         if unsupported:
@@ -203,8 +217,18 @@ def inflated_streams(data: bytes) -> bytes:
             # which means the document is malformed rather than differently
             # encoded.
             raise ValueError("a FlateDecode content stream could not be read") from err
-    if position == 0 and not text:
-        return b""
+        decoded += 1
+    # Reading only the streams whose declarations happened to parse is the same
+    # failure in a quieter form: with one readable stream present the result is
+    # non-empty, so an emptiness guard stays quiet while the stream that carried
+    # the halo was skipped.  Every stream in the file has to be accounted for.
+    total = len(content_streams(data))
+    if decoded != total:
+        raise ValueError(
+            "this check read %d of the %d content stream(s) in the PDF; the "
+            "unread ones could carry halos it would report as zero"
+            % (decoded, total)
+        )
     return text
 
 
@@ -401,6 +425,56 @@ def _self_check() -> None:
         pass
     else:
         raise SystemExit("the canvas check accepted a document with no size")
+    # Stream decoding, which is what the halo count rests on.  Each refusal here
+    # exists because the alternative is a zero that means "not read" while
+    # looking exactly like a zero that means "no halos".
+    halo = b"1.0 1.0 1.0 rg\n3. w\n1. G\n0 0 m 10 10 l f\n"
+
+    def obj(dictionary, payload):
+        return b"1 0 obj\n" + dictionary + b"\nstream\n" + payload + b"\nendstream\n"
+
+    assert inflated_streams(b"%PDF-1.3\n" + obj(b"<< /Length 5 >>", b"BT ET")) == b"BT ET\n"
+    assert HALO_OPERATORS.findall(
+        inflated_streams(b"%PDF-1.3\n" + obj(b"<< /Filter /FlateDecode >>", zlib.compress(halo)))
+    )
+    for label, payload in (
+        (
+            "a filter it cannot decode",
+            b"%PDF-1.3\n" + obj(b"<< /Filter /LZWDecode >>", b"\x80junk"),
+        ),
+        (
+            "a filter list it cannot decode",
+            b"%PDF-1.3\n"
+            + obj(b"<< /Filter [/ASCII85Decode /FlateDecode] >>", b"junk"),
+        ),
+        (
+            "a FlateDecode stream that does not decode",
+            b"%PDF-1.3\n" + obj(b"<< /Filter /FlateDecode >>", b"not-deflate"),
+        ),
+        (
+            # The filter name lives in another object, so the payload's encoding
+            # is unknown and scanning it raw reports zero for bytes never read.
+            "a filter named by indirect reference",
+            b"%PDF-1.7\n"
+            + obj(b"<< /Length 5 0 R /Filter 6 0 R >>", base64.a85encode(halo))
+            + b"6 0 obj\n/LZWDecode\nendobj\n",
+        ),
+        (
+            # One readable stream keeps the result non-empty, so an emptiness
+            # guard stays quiet while the stream carrying the halo is skipped.
+            "a document whose second stream it could not read",
+            b"%PDF-1.3\n"
+            + obj(b"<< /Filter /FlateDecode >>", zlib.compress(b"BT ET\n"))
+            + b"2 0 obj\n<< /Filter /FlateDecode /DecodeParms << /A << /B 1 >> >> >>"
+            b"\nstream\n" + zlib.compress(halo) + b"\nendstream\n",
+        ),
+    ):
+        try:
+            inflated_streams(payload)
+        except ValueError:
+            continue
+        raise SystemExit("the stream decoding accepted %s" % label)
+
     print("diagram headless exports: self-check passed")
 
 

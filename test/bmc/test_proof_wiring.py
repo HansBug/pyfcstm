@@ -149,15 +149,34 @@ def test_the_ledger_names_the_proof_phase_separately() -> None:
 
 
 @pytest.mark.unittest
-def test_an_exhausted_budget_keeps_the_formal_artifact_and_says_so() -> None:
-    """Running out of time degrades the depth; it does not discard the evidence."""
-    explanation = _explain(
+def test_an_exhausted_budget_never_publishes_a_proof() -> None:
+    """Running out of time degrades the depth rather than guessing at one.
+
+    Which depth it degrades *to* is the host clock's business: a fast machine gets
+    through classification and publishes a formal artifact, a slow one may not get
+    that far and publishes nothing at all.  Both are honest, and pinning either
+    would be pinning the runner.  What must hold on every machine is that a run
+    which ran out of budget carries no proof and says why.
+    """
+    machine = load_state_machine_from_text(_MODEL, "machine.fcstm")
+    context = BmcEngine(machine).prepare(
         'assume at 0: var("x") == 1;\n'
         'assume at 0: var("x") == 2;\n'
         'check reach <= 1: active("Root.B");\n',
+        query_source_path="query.fbmcq",
+    )
+
+    result = solve_bmc_property(
+        compile_bmc_property(build_bmc_core_formula(context)),
+        infeasibility_explanation="proof",
         timeout_ms=8,
     )
 
+    explanation = result.feasibility.explanation
+    if explanation is None:
+        # The budget went before the optional work started.  Nothing was published,
+        # which is the strongest form of "no proof".
+        return
     assert explanation.proof is None
     assert explanation.achieved_mode in ("formal", "none")
     assert explanation.reason

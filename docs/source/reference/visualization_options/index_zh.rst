@@ -912,7 +912,7 @@ HTML，再抛出同一类型的能力错误；使用 ``show(open_window=False)``
      - ``DiagramRenderLimitError``
 
 ``DiagramRenderLimitError`` 带有 ``limit_name``\ ，它的取值只有 ``edge``\ 、
-``pixels``\ 、\ ``png`` 和 ``pdf``\ 。**没有** ``raw_rgba``\ ：原始缓冲区是每像素四字节，
+``pixels``\ 、\ ``png``\ 、\ ``pdf`` 和 ``svg``\ 。**没有** ``raw_rgba``\ ：原始缓冲区是每像素四字节，
 其上界就是像素上界的四倍，所以任何大到能触及它的请求都已经先以"像素超限"被拒。
 上表列出该数字，是因为文档化的限额集合里包含一个缓冲区尺寸，而不是因为它是一条独立边界。
 

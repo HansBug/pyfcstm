@@ -283,6 +283,37 @@ def compare(browser: Dict[str, Any], headless: Dict[str, Any], label: str) -> Li
                     "%s: the %s export carries %d %s, so it is not the expanded form"
                     % (label, side, facts[key], key)
                 )
+    if "fills" in headless:
+        # Colour is the one thing a presentation option changes and no structural
+        # assertion notices. These facts were computed on the synchronous side and
+        # never read, which made the whole colour comparison dead data.
+        theirs = browser.get("svgFills")
+        if theirs is None:
+            problems.append(
+                "%s: the browser report carries no exported fills, so the colour "
+                "comparison did not run" % label
+            )
+        else:
+            mine = [value.lower() for value in headless["fills"]]
+            if sorted(theirs) != sorted(mine):
+                note(
+                    "the exported palette",
+                    sorted(theirs)[:6],
+                    sorted(mine)[:6],
+                )
+    if "viewBox" in headless:
+        width, height = browser.get("svgWidth"), browser.get("svgHeight")
+        if not width or not height:
+            problems.append(
+                "%s: the browser report gives no exported SVG size, so that "
+                "comparison did not run" % label
+            )
+        elif (round(float(width)), round(float(height))) != tuple(headless["viewBox"]):
+            note(
+                "the exported SVG size",
+                (round(float(width)), round(float(height))),
+                headless["viewBox"],
+            )
     if "pdfPage" in headless:
         # The browser reports the page it produced as two numbers; the page has to
         # be the same size on both paths or the drawings are not the same drawing.

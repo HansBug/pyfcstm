@@ -653,6 +653,14 @@ async function evaluate(cdp, expression) {
           header: raw.slice(0, 5),
           images: (raw.match(/\\/Subtype\\s*\\/Image\\b|\\/ImageMask\\b/g) || []).length,
           pages: (raw.match(/\\/Type \\/Page\\b/g) || []).length,
+          // The exported palette, so the parity checker can compare colour and
+          // not only geometry. A presentation option that reaches one export
+          // path and not the other produces a perfectly valid file of the
+          // wrong colour, which every structural assertion waves through.
+          svgFills: Array.from(new Set(
+            (exportedSvg.match(/fill="#[0-9a-fA-F]{3,6}"/g) || [])
+              .map(item => item.slice(6, -1).toLowerCase()),
+          )).sort(),
           svgText: (exportedSvg.match(/<text\\b/g) || []).length,
           svgMarker: (exportedSvg.match(/<marker\\b/g) || []).length,
           svgFontFamily: (exportedSvg.match(/font-family[=:]/g) || []).length,

@@ -223,12 +223,25 @@ describe('diagram export product limits are actually called', () => {
             /assertWithinExportLimits\(/.test(stage),
             'the viewer export path must call the refusal, not only import it',
         );
-        // Both formats, because wiring one and forgetting the other is the same
-        // defect one step smaller.
-        const calls = stage.match(/assertWithinExportLimits\(/g) || [];
+        // Counting guards was the wrong anchor: it passed while the export
+        // command called `rasterizeSvg` directly and skipped every guard. What has
+        // to hold is that no raster call escapes one -- so count the call sites
+        // instead, and require the only one outside the helper's own definition to
+        // be the guarded one.
+        const rasterCalls = (stage.match(/rasterizeSvg\(/g) || []).length;
+        assert.equal(
+            rasterCalls,
+            2,
+            `expected one definition and one guarded call of rasterizeSvg, found ${rasterCalls}`,
+        );
         assert.ok(
-            calls.length >= 2,
-            `expected the PNG and PDF paths to check limits, found ${calls.length} call(s)`,
+            /assertWithinExportLimits\([^)]*\n?[^)]*EXPORT_PNG_SCALE/.test(stage)
+            || /assertWithinExportLimits\(\s*\n\s*svgBounds[\s\S]{0,120}EXPORT_PNG_SCALE/.test(stage),
+            'the raster guard must use the shared download scale',
+        );
+        assert.ok(
+            !/rasterizeSvg\(expanded, 2\)/.test(stage),
+            'no raster call may hard-code the download scale',
         );
         assert.ok(
             /EXPORT_PNG_SCALE/.test(stage),

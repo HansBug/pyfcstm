@@ -592,7 +592,11 @@ async function onExportEvt() {
         // that needs neither a canvas nor a PDF writer, so a raster failure
         // must not be able to withhold it.
         const [png, pdf] = await Promise.allSettled([
-            rasterizeSvg(expanded, 2).then(result => blobToBase64(result.blob)),
+            // Through the same helper the other two entry points use, so the
+            // export command cannot skip the size guard. Calling `rasterizeSvg`
+            // directly here left the one path a user actually reaches unguarded
+            // while both guarded paths were only reachable from context menus.
+            renderCurrentSvgToPng().then(blobToBase64),
             renderCurrentSvgToPdf().then(uint8ToBase64),
         ]);
         if (png.status === 'rejected') failed.push(`PNG: ${expectedErrorMessage(png.reason)}`);
@@ -652,10 +656,17 @@ function onContextMenuSelect(key: string) {
     else if (key === 'copy-svg') void copySvgToClipboard();
 }
 
-function notifyCopy(kind: 'png' | 'svg', err?: string) {
+function notifyCopy(kind: 'png' | 'svg', err?: string, caveat?: string) {
+    // A caveat is not a failure: the copy happened, but the caller needs to know
+    // something about what landed on the clipboard. Reporting it through the error
+    // channel would say the copy failed, and dropping it would say nothing at all.
     const detail = err
         ? {type: 'copyError', payload: `Copy ${kind.toUpperCase()} failed: ${err}`}
-        : {type: 'copyDone', payload: `Copied ${kind.toUpperCase()} to clipboard`};
+        : {
+            type: 'copyDone',
+            payload: `Copied ${kind.toUpperCase()} to clipboard`
+                + (caveat ? ` — ${caveat}` : ''),
+        };
     window.dispatchEvent(new CustomEvent('fcstm-emit', {detail}));
 }
 
@@ -663,11 +674,21 @@ async function copySvgToClipboard() {
     if (!svgString) return;
     try {
         if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
-            // Same expanded product as Export → Save SVG, so pasting into an
-            // external tool does not depend on the viewer's own font stack.
-            const expanded = await expandSvgForExport(svgString, getSvgExpander());
+            // The same product as Export → Save SVG. Where the host provides an
+            // expander that means glyphs are already paths and pasting into an
+            // external tool does not depend on the viewer's font stack; where it
+            // does not, the copy still happens and says so, because a document
+            // that renders differently elsewhere looks identical here.
+            const expander = getSvgExpander();
+            const expanded = await expandSvgForExport(svgString, expander);
             await navigator.clipboard.writeText(expanded);
-            notifyCopy('svg');
+            notifyCopy(
+                'svg',
+                undefined,
+                expander
+                    ? undefined
+                    : 'this host cannot expand fonts, so the SVG is not self-contained',
+            );
             return;
         }
         throw new Error('clipboard API not available');

@@ -946,7 +946,7 @@ discovered by exhausting memory.
      - ``DiagramRenderLimitError``
 
 ``DiagramRenderLimitError`` carries a ``limit_name``, and the only values it takes
-are ``edge``, ``pixels``, ``png`` and ``pdf``.  There is no ``raw_rgba``: the raw
+are ``edge``, ``pixels``, ``png``, ``pdf`` and ``svg``.  There is no ``raw_rgba``: the raw
 buffer is four bytes per pixel and its bound is the pixel bound times four, so any
 request large enough to reach it has already been refused as a pixel-count
 breach.  The figure is listed above because the documented limit set names a

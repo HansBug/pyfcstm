@@ -479,6 +479,20 @@ class TestEveryCapHasAThreshold:
                 seen.add(error.limit_name)
         assert seen == {"edge", "pixels"}, seen
 
+    def test_the_encoded_output_limits_name_their_own_format(self):
+        # ``check_export_bytes`` derives the name from the format, so the full set
+        # a caller can observe is larger than the one ``check_export_size``
+        # produces. Pinning only the latter left three names undocumented.
+        from pyfcstm.diagram.engine import check_export_bytes
+
+        seen = set()
+        for kind in ("PNG", "PDF", "SVG"):
+            try:
+                check_export_bytes(b"x" * 4, kind, 2)
+            except DiagramRenderLimitError as error:
+                seen.add(error.limit_name)
+        assert seen == {"png", "pdf", "svg"}, seen
+
     def test_the_scale_is_applied_before_the_caps_are_compared(self):
         from pyfcstm.diagram.engine import check_export_size
 

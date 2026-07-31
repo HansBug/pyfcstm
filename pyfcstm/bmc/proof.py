@@ -1,0 +1,405 @@
+"""
+The deterministic builder that turns a minimal core into a checked proof graph.
+
+The search is a bounded closure: it starts from the facts the core members state,
+proposes every rule application those facts allow, keeps the ones the checker
+agrees with, and stops at the first verified contradiction.  What makes the result
+publishable is not that it found something but that the search is pinned down --
+the candidate universe is finite, the orderings are total, equal conclusions share
+a node, and whatever the contradiction does not rest on is removed before anything
+is published.
+
+The module contains:
+* :func:`build_domain_proof` - the closure, pruning and integrity pass
+
+Nothing here decides *whether* a step is sound; that is
+:mod:`pyfcstm.bmc.proof_rules`.  Keeping proposal and checking apart is what lets
+the checker be used as an independent oracle over a graph this module produced.
+
+.. note::
+   Determinism is a published property, not an implementation detail: two users on
+   the same input must read the same proof.  Every iteration order below is over a
+   sorted sequence for that reason, never over a set or a dict.
+
+Example::
+
+    >>> from pyfcstm.bmc.solver import _SolveBudget
+    >>> inputs = (
+    ...     ("assumption.0000",
+    ...      {"kind": "variable_equality", "variable": "x", "frame": 0, "value": 0}),
+    ...     ("assumption.0001",
+    ...      {"kind": "variable_equality", "variable": "x", "frame": 0, "value": 1}),
+    ... )
+    >>> proof, record = build_domain_proof(
+    ...     "assumptions_component", inputs, _SolveBudget(None)
+    ... )
+    >>> proof.verification_status
+    'verified'
+"""
+
+import itertools
+import json
+import time
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+
+from .explanation import BmcConflictProof, BmcProofNode
+from .proof_rules import PROOF_RULES, RuleApplication, check_rule
+
+__all__ = ["build_domain_proof"]
+
+#: What the ledger calls this phase.
+_PHASE_NAME = "proof_construction"
+
+#: How many rule applications one search may check.
+#:
+#: The candidate universe is already finite -- rules only read facts derived from
+#: the core, and the one rule that produces values is bounded by the expressions the
+#: core mentions -- so this is a backstop against a rule added later that is not,
+#: rather than a semantic limit.  Reaching it is reported as ``unsupported``, never
+#: as a proof.
+_MAX_APPLICATIONS = 4096
+
+
+def _canonical(fact: Mapping[str, Any]) -> str:
+    """Return the structural key two equal facts share.
+
+    Sorting the keys is what makes the key structural rather than a record of the
+    order a mapping happened to be built in.
+
+    :param fact: A domain fact.
+    :type fact: Mapping[str, object]
+    :return: A stable string identifying this fact's content.
+    :rtype: str
+
+    Example::
+
+        >>> _canonical({"b": 2, "a": 1}) == _canonical({"a": 1, "b": 2})
+        True
+    """
+    return json.dumps(fact, sort_keys=True, default=str)
+
+
+def _human_text(fact: Mapping[str, Any]) -> str:
+    """Return the domain sentence for one fact.
+
+    The wording stays in the vocabulary a reader of the model already has: frames,
+    variables and values, with no reference to how any of it is encoded.
+
+    :param fact: The fact to describe.
+    :type fact: Mapping[str, object]
+    :return: One sentence.
+    :rtype: str
+
+    Example::
+
+        >>> _human_text({"kind": "false"})
+        'These requirements cannot all hold.'
+    """
+    kind = fact.get("kind")
+    if kind == "variable_equality":
+        return "At frame %s, %s must equal %s." % (
+            fact.get("frame"),
+            fact.get("variable"),
+            fact.get("value"),
+        )
+    if kind == "variable_bound":
+        phrase = {
+            "ge": "at least",
+            "gt": "greater than",
+            "le": "at most",
+            "lt": "less than",
+        }.get(fact.get("operator"), "related to")
+        return "At frame %s, %s must be %s %s." % (
+            fact.get("frame"),
+            fact.get("variable"),
+            phrase,
+            fact.get("value"),
+        )
+    if kind == "arithmetic_expression":
+        return "Between frame %s and frame %s, %s changes by %s." % (
+            fact.get("frame"),
+            fact.get("target_frame"),
+            fact.get("variable"),
+            fact.get("operand"),
+        )
+    if kind == "false":
+        return "These requirements cannot all hold."
+    return "A model or query requirement constrains this scenario."
+
+
+class _Node:
+    """One entry of the closure, before it becomes a published node."""
+
+    def __init__(self, index, kind, rule_id, premises, fact, item_ids):
+        self.index = index
+        self.kind = kind
+        self.rule_id = rule_id
+        self.premises = tuple(premises)
+        self.fact = fact
+        self.item_ids = tuple(item_ids)
+
+    @property
+    def stable_id(self) -> str:
+        """The published id, which encodes position rather than content."""
+        return "proof.%s.%04d" % (
+            "input" if self.kind == "input" else "step",
+            self.index,
+        )
+
+
+def _record(status: str, started: bool, elapsed: float, reason: Optional[str]):
+    """Build the ledger entry for this phase."""
+    from .infeasibility import ProbeRecord
+
+    return ProbeRecord(_PHASE_NAME, status, started, elapsed, reason)
+
+
+def _candidates(nodes: Sequence[_Node]) -> List[Tuple[str, Tuple[int, ...]]]:
+    """Enumerate every rule application the current facts allow, in a total order.
+
+    Ordering by rule id first and then by premise indices makes the search itself
+    deterministic: whichever contradiction is reached first is the same one on every
+    run, so "the first verified false" names one graph rather than any of several.
+
+    :param nodes: The closure so far, in insertion order.
+    :type nodes: Sequence[_Node]
+    :return: Rule id and premise indices for each candidate.
+    :rtype: List[Tuple[str, Tuple[int, ...]]]
+    """
+    proposals = []
+    for rule_id in sorted(PROOF_RULES):
+        rule = PROOF_RULES[rule_id]
+        arity = len(rule.premise_kinds)
+        if rule_id == "source_fact" or arity == 0:
+            # Inputs are seeded rather than derived; nothing proposes them.
+            continue
+        for combination in itertools.permutations(range(len(nodes)), arity):
+            proposals.append((rule_id, combination))
+    proposals.sort()
+    return proposals
+
+
+def build_domain_proof(
+    scope: str,
+    inputs: Sequence[Tuple[str, Mapping[str, Any]]],
+    budget,
+) -> Tuple[Optional[BmcConflictProof], Any]:
+    """Search for a checked proof that these facts admit no execution.
+
+    The search saturates: it proposes applications over the facts it has, keeps the
+    checked ones, and repeats until a contradiction is verified or nothing new can
+    be derived.  A fixed point without a contradiction is an answer -- the rule
+    catalog does not cover this shape -- and it publishes nothing, because a partial
+    graph would claim a verification that did not happen.
+
+    A proof is published only when every core member takes part in it.  A member the
+    contradiction does not rest on would be named among the reasons while playing no
+    part, so its presence means this core has no proof rather than a smaller one.
+
+    :param scope: Diagnostic scope the proof will discharge.
+    :type scope: str
+    :param inputs: Core member ids paired with the fact each states.
+    :type inputs: Sequence[Tuple[str, Mapping[str, object]]]
+    :param budget: The shared solve budget; the search stops when it runs out.
+    :type budget: pyfcstm.bmc.solver._SolveBudget
+    :return: The proof and the ledger entry, or ``None`` and the entry.
+    :rtype: Tuple[Optional[BmcConflictProof], pyfcstm.bmc.infeasibility.ProbeRecord]
+
+    Example::
+
+        >>> from pyfcstm.bmc.solver import _SolveBudget
+        >>> proof, record = build_domain_proof("assumptions_component", (), _SolveBudget(None))
+        >>> proof is None and record.status
+        'unsupported'
+    """
+    started_at = time.monotonic()
+
+    def elapsed() -> float:
+        return (time.monotonic() - started_at) * 1000.0
+
+    def exhausted() -> bool:
+        # An unbounded budget has no deadline; a finite one is spent once its
+        # deadline has passed.  The two are different answers and stay apart.
+        return budget.deadline is not None and time.monotonic() >= budget.deadline
+
+    # Sorted by core stable id, so the graph does not inherit the order a caller
+    # happened to collect the members in.
+    ordered = sorted(inputs, key=lambda pair: pair[0])
+    nodes: List[_Node] = []
+    seen: Dict[str, int] = {}
+    for stable_id, fact in ordered:
+        key = _canonical(fact)
+        if key in seen:
+            # Two members stating the same fact share one node; the attribution
+            # keeps both ids so neither is dropped from the reasons.
+            existing = nodes[seen[key]]
+            existing.item_ids = tuple(sorted(set(existing.item_ids) | {stable_id}))
+            continue
+        seen[key] = len(nodes)
+        nodes.append(_Node(len(nodes), "input", "source_fact", (), fact, (stable_id,)))
+
+    if not nodes:
+        return None, _record(
+            "unsupported", True, elapsed(), "no core member states a domain fact."
+        )
+
+    contradiction: Optional[int] = None
+    checked = 0
+    while contradiction is None:
+        if exhausted():
+            return None, _record(
+                "timeout", True, elapsed(), "budget exhausted during proof search."
+            )
+        grew = False
+        for rule_id, premise_indices in _candidates(nodes):
+            if checked >= _MAX_APPLICATIONS:
+                return None, _record(
+                    "unsupported",
+                    True,
+                    elapsed(),
+                    "proof search reached its application limit.",
+                )
+            if exhausted():
+                return None, _record(
+                    "timeout", True, elapsed(), "budget exhausted during proof search."
+                )
+            premises = [nodes[index] for index in premise_indices]
+            conclusion = _conclusion_for(rule_id, premises)
+            if conclusion is None:
+                continue
+            key = _canonical(conclusion)
+            if key in seen:
+                continue
+            checked += 1
+            if not check_rule(
+                RuleApplication(
+                    rule_id, tuple(node.fact for node in premises), conclusion
+                )
+            ):
+                continue
+            item_ids = sorted({item for node in premises for item in node.item_ids})
+            index = len(nodes)
+            seen[key] = index
+            kind = "contradiction" if conclusion.get("kind") == "false" else "derived"
+            nodes.append(
+                _Node(index, kind, rule_id, premise_indices, conclusion, item_ids)
+            )
+            grew = True
+            if kind == "contradiction":
+                contradiction = index
+                break
+        if not grew:
+            # A fixed point with no contradiction: every application the catalog
+            # allows has been checked and none closed the case.
+            return None, _record(
+                "unsupported",
+                True,
+                elapsed(),
+                "no rule in the catalog closes this core.",
+            )
+
+    # Walk backwards from the contradiction; whatever is not reached took no part.
+    used, pending = set(), [contradiction]
+    while pending:
+        current = pending.pop()
+        if current in used:
+            continue
+        used.add(current)
+        pending.extend(nodes[current].premises)
+
+    covered = {item for index in used for item in nodes[index].item_ids}
+    stated = {stable_id for stable_id, _ in ordered}
+    if covered != stated:
+        # The contradiction rests on part of the core.  A proof over a subset would
+        # cite the rest among its reasons without using them.
+        return None, _record(
+            "unsupported",
+            True,
+            elapsed(),
+            "the contradiction does not rest on every core member.",
+        )
+
+    kept = sorted(used)
+    renumbered = {old: new for new, old in enumerate(kept)}
+    published = []
+    for old in kept:
+        node = nodes[old]
+        published.append(
+            BmcProofNode(
+                _published_id(node, renumbered[old]),
+                node.kind,
+                node.rule_id,
+                tuple(
+                    _published_id(nodes[index], renumbered[index])
+                    for index in sorted(node.premises, key=lambda i: renumbered[i])
+                ),
+                node.fact,
+                node.item_ids,
+                _human_text(node.fact),
+                "core_binding" if node.kind == "input" else "rule_checker",
+            )
+        )
+    proof = BmcConflictProof(
+        scope,
+        published[-1].stable_id,
+        tuple(published),
+        "subset_minimal",
+        "dependency_pruned",
+        "verified",
+    )
+    return proof, _record("complete", True, elapsed(), None)
+
+
+def _published_id(node: _Node, position: int) -> str:
+    """Return the id a node carries once the graph is pruned and renumbered.
+
+    Ids encode position in the published order rather than position in the search,
+    so pruning a step does not leave a gap for a reader to wonder about.
+    """
+    return "proof.%s.%04d" % ("input" if node.kind == "input" else "step", position)
+
+
+def _conclusion_for(
+    rule_id: str, premises: Sequence[_Node]
+) -> Optional[Mapping[str, Any]]:
+    """Propose what a rule would conclude from these premises, or ``None``.
+
+    This is the proposal half of the search: it is allowed to be optimistic, since
+    the checker decides.  What it may not do is invent a term the core does not
+    mention -- every value it proposes is computed from facts already present, which
+    is what keeps the candidate universe finite.
+
+    :param rule_id: The rule being proposed.
+    :type rule_id: str
+    :param premises: The nodes it would read.
+    :type premises: Sequence[_Node]
+    :return: The proposed conclusion, or ``None`` when the shapes do not fit.
+    :rtype: Optional[Mapping[str, object]]
+    """
+    facts = [node.fact for node in premises]
+    if rule_id in ("incompatible_equalities", "interval_intersection"):
+        return {"kind": "false"}
+    if rule_id == "arithmetic_evaluation":
+        if len(facts) != 2:
+            return None
+        value_fact, expression = facts
+        if value_fact.get("kind") != "variable_equality":
+            return None
+        if expression.get("kind") != "arithmetic_expression":
+            return None
+        from .proof_rules import _evaluate
+
+        result = _evaluate(
+            expression.get("operator"),
+            value_fact.get("value"),
+            expression.get("operand"),
+        )
+        if result is None:
+            return None
+        return {
+            "kind": "variable_equality",
+            "variable": expression.get("variable"),
+            "frame": expression.get("target_frame"),
+            "value": result,
+        }
+    return None

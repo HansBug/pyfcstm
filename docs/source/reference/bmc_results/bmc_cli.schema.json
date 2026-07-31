@@ -6067,7 +6067,15 @@
           ]
         },
         "proof": {
-          "type": "null"
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/conflictProof"
+            }
+          ],
+          "$comment": "Null until the proof tier produces one.  The depth conditionals below decide which of the two applies."
         },
         "narrative": {
           "oneOf": [
@@ -6989,6 +6997,136 @@
           }
         }
       ]
+    },
+    "proofNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stable_id",
+        "kind",
+        "rule_id",
+        "premise_ids",
+        "conclusion",
+        "item_ids",
+        "human_text",
+        "verification_method"
+      ],
+      "properties": {
+        "stable_id": {
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "kind": {
+          "enum": [
+            "input",
+            "derived",
+            "contradiction"
+          ]
+        },
+        "rule_id": {
+          "enum": [
+            "source_fact",
+            "transition_assignment",
+            "equality_substitution",
+            "arithmetic_evaluation",
+            "interval_intersection",
+            "state_domain_exhaustion",
+            "definedness_failure",
+            "incompatible_equalities",
+            "boolean_complement"
+          ]
+        },
+        "premise_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "\\S"
+          },
+          "$comment": "Whether an id here names a node, and whether that node comes earlier, are relations between array members.  Draft 2020-12 cannot follow a string to the member it names, so the constructor enforces both."
+        },
+        "conclusion": {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "pattern": "\\S"
+            }
+          }
+        },
+        "item_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "\\S"
+          }
+        },
+        "human_text": {
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "verification_method": {
+          "enum": [
+            "core_binding",
+            "rule_checker",
+            "solver_entailment"
+          ],
+          "$comment": "No value for an unchecked step: a published proof carries no hole, trust or opaque solver step, so the absence is the contract rather than an omission."
+        }
+      }
+    },
+    "conflictProof": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scope",
+        "root_id",
+        "nodes",
+        "input_minimality",
+        "graph_minimality",
+        "verification_status"
+      ],
+      "$comment": "Graph shape is a semantic-gate exception: node id uniqueness across a nested key, premises naming earlier nodes, a single false root that root_id names, every node reaching that root, input nodes binding one-to-one to core items, and proof.scope equalling core.scope are all relations this schema language cannot express.  The constructor refuses them; validation passing here does not mean the graph is sound.",
+      "properties": {
+        "scope": {
+          "enum": [
+            "kernel",
+            "initialization_component",
+            "initialization_domain",
+            "initialization_prefix",
+            "assumptions_component",
+            "assumptions_domain",
+            "assumptions_prefix",
+            "initialization_stage_fallback",
+            "assumptions_stage_fallback"
+          ]
+        },
+        "root_id": {
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "nodes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/proofNode"
+          },
+          "$comment": "Canonical topological order.  There is no second ordering array; position in this list is the order."
+        },
+        "input_minimality": {
+          "const": "subset_minimal"
+        },
+        "graph_minimality": {
+          "const": "dependency_pruned"
+        },
+        "verification_status": {
+          "const": "verified"
+        }
+      }
     }
   }
 }

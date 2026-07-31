@@ -17,6 +17,7 @@ import sys
 import pytest
 
 from pyfcstm.bmc.explanation import (
+    BmcProofNode,
     MAX_SOURCE_EXCERPT_CHARS,
     BmcConflictCore,
     BmcConflictNarrative,
@@ -94,6 +95,29 @@ def _core(
         reduction=reduction,
         subset_minimality=subset_minimality,
         items=(_item(stage=stage),),
+    )
+
+
+def _proof(scope: str = "initialization_component") -> "BmcConflictProof":
+    """A published proof in the shape the contract freezes.
+
+    The two-field placeholder this replaced could be built with a scope and a root
+    id alone; the real shape carries its graph, so the tests that only need *a*
+    proof build the smallest verifiable one -- a single false node resting on one
+    core member.
+    """
+    node = BmcProofNode(
+        "proof.false",
+        "contradiction",
+        "incompatible_equalities",
+        (),
+        {"kind": "false"},
+        ("initial.target",),
+        "The initial state cannot hold two values at once.",
+        "rule_checker",
+    )
+    return BmcConflictProof(
+        scope, "proof.false", (node,), "subset_minimal", "dependency_pruned", "verified"
     )
 
 
@@ -178,6 +202,15 @@ _DERIVED_FROZEN_NAMES = {
     "_DELIVERY_SIGNATURES": "expanded from _DELIVERY_MATRIX_ROWS",
     "_MODE_ORDER": "an ordering over _MODES, pinned by the delivery matrix",
     "_REDUCTION_MINIMALITY": "pinned by the reduction/minimality coupling tests",
+    # The proof vocabularies live beside the proof types they gate, so they are
+    # transcribed in test_proof.py rather than twice.  Listed here so this guard
+    # still fails when a *seventh* one appears with no home.
+    "_PROOF_NODE_KINDS": "transcribed by test_proof.py",
+    "_PROOF_RULE_IDS": "transcribed by test_proof.py",
+    "_PROOF_VERIFICATION_METHODS": "transcribed by test_proof.py",
+    "_PROOF_INPUT_MINIMALITIES": "transcribed by test_proof.py",
+    "_PROOF_GRAPH_MINIMALITIES": "transcribed by test_proof.py",
+    "_PROOF_VERIFICATION_STATUSES": "transcribed by test_proof.py",
 }
 
 
@@ -378,7 +411,7 @@ def test_every_frozen_vocabulary_matches_the_authored_list() -> None:
         "state_domain",
         "definedness_condition",
     )
-    assert module.UNBUILT_SLOTS == ("proof",)
+    assert module.UNBUILT_SLOTS == ()
     assert module.INDEX_REF_KEYS == ("frame", "frames", "step", "steps")
     assert dict(module.SCOPE_AGGREGATES) == {
         "kernel": ("domain", "transition"),
@@ -548,6 +581,10 @@ _AUTHORED_DELIVERY_ROWS = frozenset(
         ("formal", "formal", "complete", True, True, False),
         # Row 8: a verified proof DAG over a diagnostic artifact.
         ("proof", "proof", "complete", True, True, False),
+        # The row the formal stage recorded as missing: the classification did
+        # finish and the proof is verified, but a fact with no dedicated
+        # recognizer degraded the narrative, so the artifact is partial.
+        ("proof", "proof", "partial", True, True, True),
         # Row 9: a verified proof DAG over a stage-fallback artifact.  A
         # stage-fallback scope means the classification did not finish, which
         # the frozen boundary states as "proof 完整，但 classification 未完成",
@@ -1556,20 +1593,26 @@ def test_a_proof_is_only_published_when_proof_was_requested() -> None:
             "partial",
             "initialization_self_conflict",
             _core(),
-            proof=BmcConflictProof("initialization_component", "root"),
+            proof=_proof(),
             reason="r",
         )
 
 
-def test_a_reserved_slot_is_rejected_rather_than_silently_dropped() -> None:
-    """A filled ``proof`` fails loudly instead of vanishing from the payload.
+def test_a_proof_below_the_depth_that_produced_it_is_still_refused() -> None:
+    """The refusal moved gates when proof was built; it did not go away.
 
-    The slot belongs to a later delivery stage, and serializing it to ``null``
-    would let a caller believe a proof had been published.  ``narrative`` was
-    reserved the same way until it gained a builder and a schema; it is now
-    accepted, which the delivery tests cover directly.
+    While the slot was reserved, an ``UNBUILT_SLOTS`` guard rejected any proof at
+    all, and this asserted that a filled one failed loudly rather than serializing
+    to ``null`` -- a caller reading ``null`` cannot tell "not produced" from
+    "produced and empty".  The tier is built now, so that guard no longer applies
+    and the same payload has to be refused by the delivery table instead: a proof
+    beside ``achieved_mode='formal'`` claims a depth the run did not reach.
+
+    Asserting on the message is the point rather than incidental.  Both gates raise
+    ``ValueError``, so matching only the type would have kept passing while nothing
+    checked the combination at all.
     """
-    with pytest.raises(ValueError, match="not produced at this stage"):
+    with pytest.raises(ValueError, match="outside the frozen truth table"):
         BmcInfeasibilityExplanation(
             "proof",
             "formal",
@@ -1577,7 +1620,7 @@ def test_a_reserved_slot_is_rejected_rather_than_silently_dropped() -> None:
             "initialization_self_conflict",
             _core(),
             reason="r",
-            proof=BmcConflictProof("initialization_component", "root"),
+            proof=_proof(),
         )
 
 
@@ -2065,11 +2108,15 @@ def test_reserved_placeholder_fields_are_pinned() -> None:
     from pyfcstm.bmc.explanation import (
         UNBUILT_SLOTS,
         BmcConflictNarrative,
-        BmcConflictProof,
         BmcReasoningStep,
     )
 
-    assert set(UNBUILT_SLOTS) == {"proof"}
+    # Empty now that the proof tier is built.  The guard stays wired: a slot added
+    # later must fail loudly rather than serialize as null.
+    assert set(UNBUILT_SLOTS) == set()
+    # ``BmcConflictProof`` is no longer a placeholder: its field list is the frozen
+    # contract shape and is transcribed beside the proof types in test_proof.py, so
+    # it is not restated here.
     assert [f.name for f in dataclasses.fields(BmcConflictNarrative)] == [
         "derivation_status",
         "headline",
@@ -2082,10 +2129,6 @@ def test_reserved_placeholder_fields_are_pinned() -> None:
         "item_ids",
         "proof_node_ids",
         "text",
-    ]
-    assert [f.name for f in dataclasses.fields(BmcConflictProof)] == [
-        "scope",
-        "root_id",
     ]
     # Both remain refused on a published explanation, which is what makes the
     # sweep's skip correct rather than merely convenient.  The two are refused for
@@ -2125,7 +2168,7 @@ def test_reserved_placeholder_fields_are_pinned() -> None:
             "initialization_self_conflict",
             core=core,
             reason="sound source core published without a minimality proof",
-            proof=BmcConflictProof("initialization_component", "root"),
+            proof=_proof(),
         )
     # The narrative slot is published now, so a degraded artifact may carry the
     # honest structural reading beside its unproven core.

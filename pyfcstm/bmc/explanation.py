@@ -108,6 +108,24 @@ BmcCoreReduction = Literal["raw", "partial_minimized", "subset_minimal"]
 BmcSubsetMinimality = Literal["proven", "not_proven"]
 BmcDerivationStatus = Literal["complete", "partial", "structural_only", "not_available"]
 BmcReasoningStepKind = Literal["fact", "derivation", "conflict"]
+BmcProofNodeKind = Literal["input", "derived", "contradiction"]
+BmcProofRuleId = Literal[
+    "source_fact",
+    "transition_assignment",
+    "equality_substitution",
+    "arithmetic_evaluation",
+    "interval_intersection",
+    "state_domain_exhaustion",
+    "definedness_failure",
+    "incompatible_equalities",
+    "boolean_complement",
+]
+BmcProofVerificationMethod = Literal[
+    "core_binding", "rule_checker", "solver_entailment"
+]
+BmcProofInputMinimality = Literal["subset_minimal"]
+BmcProofGraphMinimality = Literal["dependency_pruned"]
+BmcProofVerificationStatus = Literal["verified"]
 BmcSemanticRole = Literal[
     "domain_rule",
     "initial_fact",
@@ -170,6 +188,13 @@ _DELIVERY_MATRIX_ROWS = (
     (("proof",), "proof", "partial", False, True, True, True),
     # Row 8: a verified proof over a diagnostic artifact.
     (("proof",), "proof", "complete", True, True, True, False),
+    # The row the previous stage recorded as missing.  A diagnostic classification
+    # did finish and a proof was verified, but the narrative degraded: a semantic
+    # fact with no dedicated recognizer forces structural_only, and the artifact is
+    # then partial rather than complete.  Row 9 is the same status over a
+    # stage-fallback artifact, where no classification exists at all; this is its
+    # counterpart with one.
+    (("proof",), "proof", "partial", True, True, True, True),
 )
 
 
@@ -640,13 +665,13 @@ _FACT_KINDS = (
 #: into canonical JSON.
 MAX_SOURCE_EXCERPT_CHARS = 4096
 
-#: Frozen slots whose content a later delivery stage produces.  Populating one
-#: now would break the frozen rule that the published JSON schema and this
-#: constructor accept the same payload set, because the slot has no schema yet.
-#: ``narrative`` has left this tuple: it now has both a schema and a builder, and
-#: a ``complete`` explanation depended on it alone, so complete formal artifacts
-#: became reachable while ``proof`` stayed reserved.
-UNBUILT_SLOTS = ("proof",)
+#: Published slots that no delivery stage fills yet.
+#:
+#: Empty now that the proof tier is built.  The tuple stays because the guard it
+#: drives is the difference between a reserved slot failing loudly and it being
+#: serialized as ``null`` -- a caller reading ``null`` cannot tell "not produced"
+#: from "produced and empty".
+UNBUILT_SLOTS = ()
 
 #: The two scopes that stay honest when classification never completed.
 #:
@@ -1513,27 +1538,323 @@ class BmcConflictNarrative:
         }
 
 
+#: What a proof node contributes.
+#:
+#: ``input`` restates one core member as a domain fact, ``derived`` carries a new
+#: fact obtained by a rule, and ``contradiction`` is the single node concluding
+#: that no execution exists.
+#:
+#: Derived from the published :data:`BmcProofNodeKind` so the runtime check and the
+#: annotated type cannot drift apart.
+_PROOF_NODE_KINDS = get_args(BmcProofNodeKind)
+
+#: The domain rules a step may cite.
+#:
+#: Closed on purpose: a step naming a rule outside this list has no published
+#: premise shape, conclusion shape or side condition, so nothing could check it.
+_PROOF_RULE_IDS = get_args(BmcProofRuleId)
+
+#: How a step was checked.
+#:
+#: ``core_binding`` proves an input fact equivalent to its source group in both
+#: directions, ``rule_checker`` verifies a rule application directly, and
+#: ``solver_entailment`` re-encodes premises and conclusion and refutes their
+#: conjunction.  There is deliberately no value for an unchecked step: the contract
+#: forbids holes, trust and opaque solver steps in a published proof.
+_PROOF_VERIFICATION_METHODS = get_args(BmcProofVerificationMethod)
+
+#: The one input-minimality a published proof may claim.
+#:
+#: Single-valued because a proof whose leaves are not exactly a proven
+#: subset-minimal core is not published at all.
+_PROOF_INPUT_MINIMALITIES = get_args(BmcProofInputMinimality)
+
+#: The one graph-minimality a published proof may claim, for the same reason.
+_PROOF_GRAPH_MINIMALITIES = get_args(BmcProofGraphMinimality)
+
+#: The one verification status a published proof may claim, for the same reason.
+_PROOF_VERIFICATION_STATUSES = get_args(BmcProofVerificationStatus)
+
+#: The conclusion the single root node carries.
+_PROOF_FALSE_CONCLUSION_KIND = "false"
+
+
 @dataclass(frozen=True)
-class BmcConflictProof:
-    """Reserved container for the verifiable domain proof DAG.
+class BmcProofNode:
+    """One checked step of the verifiable domain proof.
 
-    The proof DAG belongs to a later delivery stage.  It is declared here only
-    so that :class:`BmcInfeasibilityExplanation` can freeze its field list
-    once; this stage always leaves the slot empty.
+    A node states a domain fact and records how that fact was established: an input
+    restates a core member, a derived node applies one rule to earlier nodes, and
+    the contradiction closes the chain.  The premises are ids of earlier nodes
+    rather than nested objects, so a shared fact is one node however many steps use
+    it.
 
-    :param scope: Diagnostic scope the proof discharges.
-    :type scope: str
-    :param root_id: Identifier of the single false root node.
-    :type root_id: str
+    :param stable_id: Identifier unique within the proof.
+    :type stable_id: str
+    :param kind: What this node contributes.
+    :type kind: BmcProofNodeKind
+    :param rule_id: The domain rule this step applies.
+    :type rule_id: BmcProofRuleId
+    :param premise_ids: Ids of the earlier nodes this step reads.
+    :type premise_ids: Tuple[str, ...]
+    :param conclusion: The structured fact this step establishes.
+    :type conclusion: Mapping[str, object]
+    :param item_ids: Core members this step ultimately rests on.
+    :type item_ids: Tuple[str, ...]
+    :param human_text: The domain sentence for this step.
+    :type human_text: str
+    :param verification_method: How the step was checked.
+    :type verification_method: BmcProofVerificationMethod
+    :raises ValueError: If a vocabulary value is unknown, a published text is
+        blank, or a sequence repeats an id.
 
     Example::
 
-        >>> BmcConflictProof("assumptions_component", "root").root_id
-        'root'
+        >>> node = BmcProofNode(
+        ...     "proof.input.0000", "input", "source_fact", (),
+        ...     {"kind": "variable_equality", "variable": "x", "frame": 0, "value": 0},
+        ...     ("assumption.0000.frame.0000",),
+        ...     "The query requires x to equal 0 initially.", "core_binding",
+        ... )
+        >>> node.to_canonical()["rule_id"]
+        'source_fact'
     """
 
-    scope: str
+    stable_id: str
+    kind: BmcProofNodeKind
+    rule_id: BmcProofRuleId
+    premise_ids: Tuple[str, ...]
+    conclusion: Mapping[str, Any]
+    item_ids: Tuple[str, ...]
+    human_text: str
+    verification_method: BmcProofVerificationMethod
+
+    def __post_init__(self) -> None:
+        # Copied before the invariants read them, so a caller's list cannot be
+        # mutated afterwards into a shape the checks already passed.
+        object.__setattr__(self, "premise_ids", tuple(self.premise_ids))
+        object.__setattr__(self, "item_ids", tuple(self.item_ids))
+        require_published_text(self.stable_id, "proof node stable_id")
+        require_published_text(self.human_text, "proof node human_text")
+        _require_member(self.kind, _PROOF_NODE_KINDS, "proof node kind")
+        _require_member(self.rule_id, _PROOF_RULE_IDS, "proof node rule_id")
+        _require_member(
+            self.verification_method,
+            _PROOF_VERIFICATION_METHODS,
+            "proof node verification_method",
+        )
+        for name, ids in (
+            ("premise_ids", self.premise_ids),
+            ("item_ids", self.item_ids),
+        ):
+            for value in ids:
+                require_published_text(value, "proof node %s entry" % name)
+            if len(set(ids)) != len(ids):
+                raise ValueError("proof node %s must not repeat an id." % name)
+        conclusion = _require_json_mapping(self.conclusion, "proof node conclusion")
+        if (
+            not isinstance(conclusion.get("kind"), str)
+            or not conclusion["kind"].strip()
+        ):
+            # A conclusion without a tag cannot be dispatched on, and the root is
+            # recognized by its tag being ``false``.
+            raise ValueError("proof node conclusion must carry a kind.")
+        object.__setattr__(self, "conclusion", MappingProxyType(conclusion))
+
+    def to_canonical(self) -> Dict[str, Any]:
+        """Return the published mapping for this node.
+
+        :return: Canonical node dictionary in field order.
+        :rtype: Dict[str, object]
+
+        Example::
+
+            >>> node = BmcProofNode(
+            ...     "proof.false", "contradiction", "incompatible_equalities",
+            ...     ("proof.input.0000",), {"kind": "false"},
+            ...     ("assumption.0000.frame.0000",),
+            ...     "The initial value of x cannot be both 0 and 1.", "rule_checker",
+            ... )
+            >>> node.to_canonical()["conclusion"]
+            {'kind': 'false'}
+        """
+        return {
+            "stable_id": self.stable_id,
+            "kind": self.kind,
+            "rule_id": self.rule_id,
+            "premise_ids": list(self.premise_ids),
+            "conclusion": json_canonical(self.conclusion),
+            "item_ids": list(self.item_ids),
+            "human_text": self.human_text,
+            "verification_method": self.verification_method,
+        }
+
+
+@dataclass(frozen=True)
+class BmcConflictProof:
+    """The verifiable domain proof that a scope admits no execution.
+
+    Every node is checked, and the graph is held to the shape a reader can follow:
+    ``nodes`` is itself the canonical topological order, premises look backwards
+    only, exactly one node concludes ``false``, and every node reaches that root.
+    The last of those is why a step cannot ride along unused -- publishing it would
+    claim it took part in the conclusion.
+
+    None of these are expressible in the published Draft 2020-12 schema: they are
+    relations between array members and reachability over a graph, so the schema
+    accepts a payload whose ``premise_ids`` name nothing and this constructor
+    refuses it.  The contract names that split as a semantic-gate exception.
+
+    :param scope: Diagnostic scope the proof discharges.
+    :type scope: BmcConflictCoreScope
+    :param root_id: Id of the single node concluding ``false``.
+    :type root_id: str
+    :param nodes: Every node, in canonical topological order.
+    :type nodes: Tuple[BmcProofNode, ...]
+    :param input_minimality: How minimal the input leaves are.
+    :type input_minimality: BmcProofInputMinimality
+    :param graph_minimality: How pruned the graph is.
+    :type graph_minimality: BmcProofGraphMinimality
+    :param verification_status: How far verification got.
+    :type verification_status: BmcProofVerificationStatus
+    :raises ValueError: If a vocabulary value is unknown, the graph is empty, an id
+        repeats, a premise names no earlier node, the root is not the single
+        ``false`` node, or a node cannot reach the root.
+
+    Example::
+
+        >>> fact = BmcProofNode(
+        ...     "proof.input.0000", "input", "source_fact", (),
+        ...     {"kind": "variable_equality", "variable": "x", "frame": 0, "value": 0},
+        ...     ("assumption.0000.frame.0000",), "x starts at 0.", "core_binding",
+        ... )
+        >>> closing = BmcProofNode(
+        ...     "proof.false", "contradiction", "incompatible_equalities",
+        ...     ("proof.input.0000",), {"kind": "false"},
+        ...     ("assumption.0000.frame.0000",), "x cannot be 0 and 1.", "rule_checker",
+        ... )
+        >>> proof = BmcConflictProof(
+        ...     "assumptions_component", "proof.false", (fact, closing),
+        ...     "subset_minimal", "dependency_pruned", "verified",
+        ... )
+        >>> proof.to_canonical()["verification_status"]
+        'verified'
+    """
+
+    scope: BmcConflictCoreScope
     root_id: str
+    nodes: Tuple[BmcProofNode, ...]
+    input_minimality: BmcProofInputMinimality
+    graph_minimality: BmcProofGraphMinimality
+    verification_status: BmcProofVerificationStatus
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "nodes", tuple(self.nodes))
+        require_published_text(self.root_id, "proof root_id")
+        # The core's scope vocabulary, not the classification's: the contract types
+        # this field as ``BmcConflictCoreScope`` and requires the proof's scope to
+        # equal the core's, and the two vocabularies are different -- a fallback
+        # scope exists for cores and has no classification.
+        _require_member(self.scope, _SCOPES, "proof scope")
+        _require_member(
+            self.input_minimality,
+            _PROOF_INPUT_MINIMALITIES,
+            "proof input_minimality",
+        )
+        _require_member(
+            self.graph_minimality,
+            _PROOF_GRAPH_MINIMALITIES,
+            "proof graph_minimality",
+        )
+        _require_member(
+            self.verification_status,
+            _PROOF_VERIFICATION_STATUSES,
+            "proof verification_status",
+        )
+        if not self.nodes:
+            # An empty graph establishes nothing, and its root names a node that is
+            # not there -- the two failures are the same one.
+            raise ValueError("a published proof must carry at least one node.")
+        seen = set()
+        for node in self.nodes:
+            if node.stable_id in seen:
+                raise ValueError(
+                    "proof nodes contain duplicate stable id %r." % node.stable_id
+                )
+            for premise in node.premise_ids:
+                if premise not in seen:
+                    # Covers both directions at once: an id defined later, and an id
+                    # that names no node at all.  ``nodes`` being the canonical
+                    # order is what lets one check settle both.
+                    raise ValueError(
+                        "proof node %r cites premise %r, which is not an earlier "
+                        "node." % (node.stable_id, premise)
+                    )
+            seen.add(node.stable_id)
+        roots = [
+            node
+            for node in self.nodes
+            if node.conclusion.get("kind") == _PROOF_FALSE_CONCLUSION_KIND
+        ]
+        if len(roots) != 1:
+            raise ValueError(
+                "a published proof must conclude on exactly one false node, got %d."
+                % len(roots)
+            )
+        if roots[0].stable_id != self.root_id:
+            raise ValueError(
+                "proof root_id %r does not name the false node %r."
+                % (self.root_id, roots[0].stable_id)
+            )
+        # Walk the premise edges backwards from the root: whatever the conclusion
+        # rests on is reachable, and anything left over is a step the proof does not
+        # use.  Publishing one would name it among the reasons.
+        by_id = {node.stable_id: node for node in self.nodes}
+        used, pending = set(), [self.root_id]
+        while pending:
+            current = pending.pop()
+            if current in used:
+                continue
+            used.add(current)
+            pending.extend(by_id[current].premise_ids)
+        unused = sorted(set(by_id) - used)
+        if unused:
+            raise ValueError(
+                "proof nodes %s do not reach the root; a pruned graph carries no "
+                "unused step." % ", ".join(repr(name) for name in unused)
+            )
+
+    def to_canonical(self) -> Dict[str, Any]:
+        """Return the published mapping for this proof.
+
+        The nodes are nested rather than referenced, so one payload carries the
+        whole graph in the order a reader follows it.
+
+        :return: Canonical proof dictionary in field order.
+        :rtype: Dict[str, object]
+
+        Example::
+
+            >>> node = BmcProofNode(
+            ...     "proof.false", "contradiction", "definedness_failure", (),
+            ...     {"kind": "false"}, ("assumption.0000.frame.0000",),
+            ...     "The division cannot stay defined.", "rule_checker",
+            ... )
+            >>> proof = BmcConflictProof(
+            ...     "assumptions_component", "proof.false", (node,),
+            ...     "subset_minimal", "dependency_pruned", "verified",
+            ... )
+            >>> proof.to_canonical()["input_minimality"]
+            'subset_minimal'
+        """
+        return {
+            "scope": self.scope,
+            "root_id": self.root_id,
+            "nodes": [node.to_canonical() for node in self.nodes],
+            "input_minimality": self.input_minimality,
+            "graph_minimality": self.graph_minimality,
+            "verification_status": self.verification_status,
+        }
 
 
 @dataclass(frozen=True)
@@ -1885,11 +2206,9 @@ class BmcInfeasibilityExplanation:
             "status": self.status,
             "classification": self.classification,
             "core": None if self.core is None else self.core.to_canonical(),
-            # ``proof`` is still kept None by the delivery matrix, so emitting the
-            # field directly can never silently drop a caller's value.  The
-            # narrative is published now and has to be serialized, or a populated
-            # one would reach the payload as a repr.
-            "proof": self.proof,
+            # Both are published now, so both are serialized; emitting either
+            # directly would put a repr in the payload.
+            "proof": (None if self.proof is None else self.proof.to_canonical()),
             "narrative": (
                 None if self.narrative is None else self.narrative.to_canonical()
             ),
@@ -1914,6 +2233,13 @@ __all__ = [
     "BmcConflictNarrative",
     "BmcReasoningStep",
     "BmcConflictProof",
+    "BmcProofNode",
+    "BmcProofNodeKind",
+    "BmcProofRuleId",
+    "BmcProofVerificationMethod",
+    "BmcProofInputMinimality",
+    "BmcProofGraphMinimality",
+    "BmcProofVerificationStatus",
     "BmcConstraintRef",
     "BmcConstraintStage",
     "BmcCoreGranularity",

@@ -1,0 +1,370 @@
+"""
+Tests for the domain rule catalog and its deterministic checker.
+
+A proof step is only publishable when a checker has agreed with it, so each rule
+is tested from both sides: the application it accepts, and the four ways a caller
+can get it wrong.  The four negatives are the same for every rule -- a premise the
+rule does not take, a conclusion that does not follow, a premise about another
+frame, and one about another subject -- because those are the mistakes a builder
+actually makes when it widens a match.
+
+The module contains:
+* A transcription of the frozen rule table's premise and conclusion shapes
+* Positive and four-way negative cases for every rule the catalog carries
+* Tests that the checker refuses to answer for a rule it does not know
+
+.. note::
+   The catalog is deliberately incomplete at this stage.  Tests here enumerate the
+   rules the catalog reports, so a rule added later joins the matrix without anyone
+   editing a list.
+"""
+
+import pytest
+
+from pyfcstm.bmc.proof_rules import (
+    PROOF_RULES,
+    RuleApplication,
+    check_rule,
+)
+
+
+def _fact(kind: str, **fields) -> dict:
+    """A domain fact of one tag with the fields that tag implies."""
+    fact = {"kind": kind}
+    fact.update(fields)
+    return fact
+
+
+def _equality(variable: str = "x", frame: int = 0, value: int = 0) -> dict:
+    """The fact shape every rule below reads or produces."""
+    return _fact("variable_equality", variable=variable, frame=frame, value=value)
+
+
+@pytest.mark.unittest
+def test_the_catalog_reports_every_rule_it_carries() -> None:
+    """The catalog is the single list a builder dispatches on.
+
+    Rules are added over several stages, so this asserts the shape of the mapping
+    rather than a fixed set: every entry names a rule the published vocabulary
+    knows, and every entry can answer for itself.
+    """
+    from pyfcstm.bmc.explanation import _PROOF_RULE_IDS
+
+    assert PROOF_RULES, "the catalog cannot be empty once a rule exists"
+    for rule_id, rule in PROOF_RULES.items():
+        assert rule_id in _PROOF_RULE_IDS, "%r is not a published rule id" % rule_id
+        assert rule.rule_id == rule_id
+        assert rule.premise_kinds, "%r must declare what it reads" % rule_id
+        assert rule.conclusion_kind, "%r must declare what it produces" % rule_id
+
+
+@pytest.mark.unittest
+def test_an_unknown_rule_is_refused_rather_than_assumed_sound() -> None:
+    """A step naming a rule nobody implements cannot be checked, so it is refused.
+
+    Returning "unchecked" here would put an unverifiable step in a proof the
+    contract says carries no holes.
+    """
+    with pytest.raises(KeyError):
+        check_rule(RuleApplication("modus_ponens", (_equality(),), _fact("false")))
+
+
+@pytest.mark.unittest
+def test_incompatible_equalities_closes_on_two_values_for_one_slot() -> None:
+    """Two different values for one variable at one frame cannot both hold."""
+    application = RuleApplication(
+        "incompatible_equalities",
+        (_equality(value=0), _equality(value=1)),
+        _fact("false"),
+    )
+
+    assert check_rule(application) is True
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "premises, conclusion, why",
+    [
+        (
+            (_equality(value=0),),
+            _fact("false"),
+            "one value contradicts nothing",
+        ),
+        (
+            (_equality(value=0), _equality(value=1)),
+            _equality(value=0),
+            "the rule concludes false and nothing else",
+        ),
+        (
+            (_equality(value=0), _equality(frame=1, value=1)),
+            _fact("false"),
+            "values at different frames may differ freely",
+        ),
+        (
+            (_equality(value=0), _equality(variable="y", value=1)),
+            _fact("false"),
+            "values of different variables may differ freely",
+        ),
+    ],
+    ids=[
+        "a-premise-the-rule-does-not-take",
+        "a-conclusion-that-does-not-follow",
+        "premises-about-another-frame",
+        "premises-about-another-subject",
+    ],
+)
+def test_incompatible_equalities_refuses_the_four_ways_it_can_be_misapplied(
+    premises, conclusion, why
+) -> None:
+    """The four negatives every rule needs, spelled out once.
+
+    Two of them are the reason this rule cannot be widened: equal values at
+    *different* frames or on *different* variables are the ordinary case, and a
+    checker that let them through would publish a contradiction where none exists.
+    """
+    assert (
+        check_rule(RuleApplication("incompatible_equalities", premises, conclusion))
+        is False
+    ), why
+
+
+@pytest.mark.unittest
+def test_arithmetic_evaluation_produces_the_value_the_operands_determine() -> None:
+    """The one rule here that yields a new fact rather than a contradiction.
+
+    Everything downstream -- multi-hop graphs, transitive item ids, a derived node
+    a later step consumes -- needs a rule that concludes something other than
+    ``false``, which is why this one is in the first batch.
+    """
+    application = RuleApplication(
+        "arithmetic_evaluation",
+        (
+            _equality(value=0),
+            _fact(
+                "arithmetic_expression",
+                variable="x",
+                frame=0,
+                operator="add",
+                operand=1,
+                target_frame=1,
+            ),
+        ),
+        _equality(frame=1, value=1),
+    )
+
+    assert check_rule(application) is True
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "premises, conclusion",
+    [
+        (
+            (
+                _fact(
+                    "arithmetic_expression",
+                    variable="x",
+                    frame=0,
+                    operator="add",
+                    operand=1,
+                    target_frame=1,
+                ),
+            ),
+            _equality(frame=1, value=1),
+        ),
+        (
+            (
+                _equality(value=0),
+                _fact(
+                    "arithmetic_expression",
+                    variable="x",
+                    frame=0,
+                    operator="add",
+                    operand=1,
+                    target_frame=1,
+                ),
+            ),
+            _equality(frame=1, value=2),
+        ),
+        (
+            (
+                _equality(frame=5, value=0),
+                _fact(
+                    "arithmetic_expression",
+                    variable="x",
+                    frame=0,
+                    operator="add",
+                    operand=1,
+                    target_frame=1,
+                ),
+            ),
+            _equality(frame=1, value=1),
+        ),
+        (
+            (
+                _equality(variable="y", value=0),
+                _fact(
+                    "arithmetic_expression",
+                    variable="x",
+                    frame=0,
+                    operator="add",
+                    operand=1,
+                    target_frame=1,
+                ),
+            ),
+            _equality(frame=1, value=1),
+        ),
+    ],
+    ids=[
+        "a-premise-the-rule-does-not-take",
+        "a-conclusion-that-does-not-follow",
+        "premises-about-another-frame",
+        "premises-about-another-subject",
+    ],
+)
+def test_arithmetic_evaluation_refuses_the_four_ways_it_can_be_misapplied(
+    premises, conclusion
+) -> None:
+    """Without the operand's value the target is unknown, and 0 + 1 is not 2."""
+    assert (
+        check_rule(RuleApplication("arithmetic_evaluation", premises, conclusion))
+        is False
+    )
+
+
+@pytest.mark.unittest
+def test_arithmetic_evaluation_uses_the_model_semantics_for_integer_division() -> None:
+    """Integer division is the case where guessing in Python gets it wrong.
+
+    The contract requires the current model semantics rather than a Python
+    evaluation, and the two disagree on negative operands: Python floors toward
+    negative infinity while the encoded semantics truncate toward zero.  Pinning
+    the disagreement is what keeps the checker honest about which one it uses.
+    """
+    truncating = RuleApplication(
+        "arithmetic_evaluation",
+        (
+            _equality(value=-7),
+            _fact(
+                "arithmetic_expression",
+                variable="x",
+                frame=0,
+                operator="div",
+                operand=2,
+                target_frame=1,
+            ),
+        ),
+        _equality(frame=1, value=-3),
+    )
+    flooring = RuleApplication(
+        "arithmetic_evaluation",
+        (
+            _equality(value=-7),
+            _fact(
+                "arithmetic_expression",
+                variable="x",
+                frame=0,
+                operator="div",
+                operand=2,
+                target_frame=1,
+            ),
+        ),
+        _equality(frame=1, value=-4),
+    )
+
+    assert check_rule(truncating) is True
+    assert check_rule(flooring) is False, "-7 // 2 is Python's answer, not the model's"
+
+
+@pytest.mark.unittest
+def test_interval_intersection_closes_on_bounds_that_cross() -> None:
+    """A lower bound above an upper bound leaves no value."""
+    application = RuleApplication(
+        "interval_intersection",
+        (
+            _fact("variable_bound", variable="x", frame=0, operator="ge", value=5),
+            _fact("variable_bound", variable="x", frame=0, operator="le", value=3),
+        ),
+        _fact("false"),
+    )
+
+    assert check_rule(application) is True
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "lower, upper, empty",
+    [
+        (("ge", 5), ("le", 3), True),
+        (("ge", 5), ("le", 5), False),
+        (("gt", 5), ("le", 5), True),
+        (("ge", 5), ("lt", 5), True),
+        (("gt", 5), ("lt", 6), True),
+    ],
+    ids=[
+        "the-bounds-cross",
+        "a-single-point-survives",
+        "an-open-lower-bound-excludes-it",
+        "an-open-upper-bound-excludes-it",
+        "no-integer-lies-strictly-between",
+    ],
+)
+def test_interval_intersection_decides_emptiness_on_the_endpoints(
+    lower, upper, empty
+) -> None:
+    """Whether the endpoints are included is the whole question for this rule.
+
+    The last case is the one a real-number reading gets wrong: 5 < x < 6 has
+    solutions over the reals and none over the integers, and these facts are about
+    an integer variable.
+    """
+    application = RuleApplication(
+        "interval_intersection",
+        (
+            _fact(
+                "variable_bound",
+                variable="x",
+                frame=0,
+                operator=lower[0],
+                value=lower[1],
+            ),
+            _fact(
+                "variable_bound",
+                variable="x",
+                frame=0,
+                operator=upper[0],
+                value=upper[1],
+            ),
+        ),
+        _fact("false"),
+    )
+
+    assert check_rule(application) is empty
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "premises",
+    [
+        (_fact("variable_bound", variable="x", frame=0, operator="ge", value=5),),
+        (
+            _fact("variable_bound", variable="x", frame=0, operator="ge", value=5),
+            _fact("variable_bound", variable="x", frame=1, operator="le", value=3),
+        ),
+        (
+            _fact("variable_bound", variable="x", frame=0, operator="ge", value=5),
+            _fact("variable_bound", variable="y", frame=0, operator="le", value=3),
+        ),
+    ],
+    ids=[
+        "a-premise-the-rule-does-not-take",
+        "premises-about-another-frame",
+        "premises-about-another-subject",
+    ],
+)
+def test_interval_intersection_refuses_bounds_it_cannot_intersect(premises) -> None:
+    """Bounds on different slots constrain different things and never cross."""
+    assert (
+        check_rule(RuleApplication("interval_intersection", premises, _fact("false")))
+        is False
+    )

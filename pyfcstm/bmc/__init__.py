@@ -137,6 +137,17 @@ Public module structure:
        the authored entry points worth inspecting together; it is not a repair
        suggestion, and editing one is no promise that the full target becomes
        satisfiable.
+   * - Verifiable domain proof
+     - :class:`BmcConflictProof`, :class:`BmcProofNode`
+     - Answer *why* the narrative's chain holds, as a checked graph: every node
+       states one domain fact and records how it was established -- an input
+       restates a core member, a derived node applies one named rule to earlier
+       nodes, and a single ``contradiction`` closes on ``false``.  ``nodes`` is
+       itself the canonical topological order, premises look backwards only, and
+       every node reaches the root, so a step that took no part cannot ride along.
+       A published proof is verified throughout: there is no value for an
+       unchecked step, and a shape no rule covers degrades the whole tier to
+       ``formal`` rather than publishing a partial graph.
    * - BMC relation builder
      - :class:`BmcAbstractCallRecord`, :class:`BmcTraceSymbols`,
        :class:`BmcCaseRelation`, :class:`BmcStepRelation`, :class:`BmcCoreFormula`,
@@ -246,6 +257,14 @@ if TYPE_CHECKING:
     from .explanation import (
         BmcConflictCore,
         BmcConflictNarrative,
+        BmcConflictProof,
+        BmcProofNode,
+        BmcProofNodeKind,
+        BmcProofRuleId,
+        BmcProofVerificationMethod,
+        BmcProofInputMinimality,
+        BmcProofGraphMinimality,
+        BmcProofVerificationStatus,
         BmcSourceRef,
         BmcConflictCoreScope,
         BmcConstraintRef,
@@ -378,6 +397,14 @@ _WITNESS_EXPORTS = {
 _EXPLANATION_EXPORTS = {
     "BmcConflictCore",
     "BmcConflictNarrative",
+    "BmcConflictProof",
+    "BmcProofNode",
+    "BmcProofNodeKind",
+    "BmcProofRuleId",
+    "BmcProofVerificationMethod",
+    "BmcProofInputMinimality",
+    "BmcProofGraphMinimality",
+    "BmcProofVerificationStatus",
     "BmcSourceRef",
     "BmcConflictCoreScope",
     "BmcConstraintRef",
@@ -597,6 +624,14 @@ __all__ = [
     "replay_bmc_witness",
     "BmcConflictCore",
     "BmcConflictNarrative",
+    "BmcConflictProof",
+    "BmcProofNode",
+    "BmcProofNodeKind",
+    "BmcProofRuleId",
+    "BmcProofVerificationMethod",
+    "BmcProofInputMinimality",
+    "BmcProofGraphMinimality",
+    "BmcProofVerificationStatus",
     "BmcSourceRef",
     "BmcConflictCoreScope",
     "BmcConstraintRef",

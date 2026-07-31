@@ -320,16 +320,24 @@ def test_the_graph_is_byte_stable_across_processes() -> None:
         " _SolveBudget(None));"
         "print(json.dumps(proof.to_canonical(), sort_keys=False))"
     )
-    runs = [
-        subprocess.run(
-            [sys.executable, "-c", script],
-            capture_output=True,
-            text=True,
-            check=True,
-            env={"PYTHONHASHSEED": seed, "PATH": "/usr/bin:/bin"},
-        ).stdout
-        for seed in ("0", "12345")
-    ]
+    # Inherit the environment and override only the seed.  Replacing it wholesale
+    # meant naming a PATH, and the one named was POSIX -- so every Windows runner
+    # failed on a test about hash ordering.  What matters here is that the two runs
+    # differ in their seed and in nothing else.
+    import os
+
+    runs = []
+    for seed in ("0", "12345"):
+        environment = dict(os.environ, PYTHONHASHSEED=seed)
+        runs.append(
+            subprocess.run(
+                [sys.executable, "-c", script],
+                capture_output=True,
+                text=True,
+                check=True,
+                env=environment,
+            ).stdout
+        )
 
     assert runs[0] == runs[1]
     assert json.loads(runs[0])["nodes"], "the run must have produced a graph"

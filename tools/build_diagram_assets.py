@@ -47,6 +47,7 @@ PDF_DEPENDENCIES = (
 
 PDF_ENTRY_PATH = ROOT / "tools" / "diagram_assets" / "python-pdf-entry.ts"
 PDF_HOST_SHIM_PATH = ROOT / "tools" / "diagram_assets" / "pdf-host-shim.js"
+RASTER_STUB_PATH = ROOT / "tools" / "diagram_assets" / "optional-raster-stub.js"
 JSFCSTM_DIR = ROOT / "editors" / "jsfcstm"
 VSCODE_DIR = ROOT / "editors" / "vscode"
 ANTLR_JAR_PATH = ROOT / "antlr-4.9.3.jar"
@@ -734,6 +735,14 @@ def build_pdf_writer(output: Path, esbuild_version: str) -> Tuple[bytes, Dict[st
         "--minify",
         "--alias:@xmldom/xmldom=%s" % xmldom_dir,
         "--alias:fast-png=%s" % (ROOT / "tools" / "diagram_assets" / "fast-png-stub.js"),
+        # jsPDF imports these on its optional ``html()`` route, which the vector
+        # path never enters -- but esbuild follows the import and compiles them in,
+        # and the umbrella contract forbids a raster fallback inside a published
+        # asset. Aliasing to a stub that throws keeps the import resolvable and the
+        # packages out.
+        "--alias:canvg=%s" % RASTER_STUB_PATH,
+        "--alias:html2canvas=%s" % RASTER_STUB_PATH,
+        "--alias:dompurify=%s" % RASTER_STUB_PATH,
         "--metafile=%s" % metafile,
         "--outfile=%s" % output,
     ]
@@ -744,11 +753,19 @@ def build_pdf_writer(output: Path, esbuild_version: str) -> Tuple[bytes, Dict[st
         # The zero-image PDF gate cannot see a raster fallback that was bundled
         # but never called, so the bundle inventory is checked directly.
         forbidden = ("canvg", "html2canvas", "fast-png", "dompurify")
+        # esbuild writes these paths relative to its working directory, so they
+        # begin ``node_modules/...`` with no leading separator. Requiring one --
+        # which is what the viewer build's own scan does, because it runs from the
+        # repository root -- made this scan unable to fire at all, and it was
+        # hiding three of these packages actually being bundled.
         bundled = sorted(
             path
             for path in inputs
             if any(
-                "/node_modules/%s/" % name in str(path).replace("\\", "/")
+                re.search(
+                    r"(?:^|/)node_modules/%s/" % re.escape(name),
+                    str(path).replace("\\", "/"),
+                )
                 for name in forbidden
             )
         )

@@ -43,6 +43,12 @@ PDF_DEPENDENCIES = (
     ("svg2pdf", "svg2pdf.js"),
     ("jspdf", "jspdf"),
     ("xmldom", "@xmldom/xmldom"),
+    # Reached transitively rather than declared at the root, but compiled into the
+    # published bundle exactly the same, so held to the same provenance. Listing
+    # only the direct three left these two unchecked while this tuple's own
+    # docstring claimed the opposite.
+    ("babelRuntime", "@babel/runtime"),
+    ("fflate", "fflate"),
 )
 
 PDF_ENTRY_PATH = ROOT / "tools" / "diagram_assets" / "python-pdf-entry.ts"
@@ -452,12 +458,24 @@ def _validate_pdf_dependency_provenance(
         # KeyError/TypeError: the lockfile has no entry for this package.
         # OSError/ValueError: the lockfile cannot be read.
         raise ValueError("jsfcstm package-lock lacks a valid %s entry" % package) from err
-    dev_dependencies = root_package.get("devDependencies")
-    if (
-        not isinstance(dev_dependencies, dict)
-        or dev_dependencies.get(package) != expected_version
-    ):
-        raise ValueError("jsfcstm %s devDependency differs from asset lock" % package)
+    if recorded.get("transitive"):
+        # A transitive dependency has no root entry to compare against; the
+        # lockfile entry and the installed tree are the whole trail, and both are
+        # checked below. Promoting it to a root devDependency would misrepresent
+        # why it is installed.
+        if package in (root_package.get("devDependencies") or {}):
+            raise ValueError(
+                "%s is recorded as transitive but is a root devDependency" % package
+            )
+    else:
+        dev_dependencies = root_package.get("devDependencies")
+        if (
+            not isinstance(dev_dependencies, dict)
+            or dev_dependencies.get(package) != expected_version
+        ):
+            raise ValueError(
+                "jsfcstm %s devDependency differs from asset lock" % package
+            )
     for field in ("version", "resolved", "integrity", "license"):
         if entry.get(field) != recorded.get(field):
             raise ValueError(
@@ -773,6 +791,38 @@ def build_pdf_writer(output: Path, esbuild_version: str) -> Tuple[bytes, Dict[st
             raise ValueError(
                 "embedded PDF writer bundled forbidden raster packages: %s"
                 % ", ".join(bundled)
+            )
+        # A deny-list only catches what it was told to look for. The published
+        # bundle's third-party inventory is therefore also required to *equal* the
+        # declared closure: a new transitive dependency arriving through an
+        # upgrade would otherwise be compiled in and redistributed with no
+        # provenance at all, which is precisely how two of the current five went
+        # unchecked.
+        observed = set()
+        for path in inputs:
+            match = re.search(
+                r"(?:^|/)node_modules/((?:@[^/]+/)?[^/]+)/",
+                str(path).replace("\\", "/"),
+            )
+            if match is not None:
+                observed.add(match.group(1))
+        declared = {package for _key, package in PDF_DEPENDENCIES}
+        undeclared = sorted(observed - declared)
+        if undeclared:
+            raise ValueError(
+                "embedded PDF writer bundles packages with no recorded "
+                "provenance: %s; add them to PDF_DEPENDENCIES and the asset lock"
+                % ", ".join(undeclared)
+            )
+        missing = sorted(declared - observed)
+        if missing:
+            # A declared package that is no longer bundled means the closure has
+            # drifted the other way: the lock still promises provenance for
+            # something that is not being redistributed, which makes the record
+            # misleading rather than merely stale.
+            raise ValueError(
+                "PDF_DEPENDENCIES declares packages the bundle does not contain: "
+                "%s" % ", ".join(missing)
             )
     return output.read_bytes(), _canonicalize_metafile(metadata)
 

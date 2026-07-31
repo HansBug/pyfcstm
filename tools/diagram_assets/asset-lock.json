@@ -153,7 +153,23 @@
   },
   "schema": "pyfcstm-diagram-assets/1",
   "viewer": {
+    "babelRuntime": {
+      "integrity": "sha512-Nq8OhGWiZIZGV6hLHoyAKLLcJihP/xFeBMGJoUrxTX2psI8dCifzLhZISFb+VWS3wFMRDmCGw5R+dOySCqPLhw==",
+      "license": "MIT",
+      "name": "@babel/runtime",
+      "resolved": "https://registry.npmmirror.com/@babel/runtime/-/runtime-7.29.7.tgz",
+      "transitive": true,
+      "version": "7.29.7"
+    },
     "esbuildVersion": "0.28.1",
+    "fflate": {
+      "integrity": "sha512-tbZNuJrLwGUp3zshBtdy4W+ORxZuIh8a5ilyIEQDC5rY1f3U20JMry0Ll3WBzU58EZKsEuJFXhb5gwv8CsPvgA==",
+      "license": "MIT",
+      "name": "fflate",
+      "resolved": "https://registry.npmmirror.com/fflate/-/fflate-0.8.3.tgz",
+      "transitive": true,
+      "version": "0.8.3"
+    },
     "format": "iife",
     "jspdf": {
       "integrity": "sha512-YyAXyvnmjTbR4bHQRLzex3CuINCDlQnBqoSYyjJwTP2x9jDLuKDzy7aKUl0hgx3uhcl7xzg32agn5vlie6HIlQ==",

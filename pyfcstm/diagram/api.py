@@ -2794,8 +2794,11 @@ class Diagram:
         # The encoded-output cap still applies, and it applies before the bytes
         # reach a cache or a file.
         check_export_size(width, height, 1.0)
-        expanded = engine.expand_svg(canonical)
-        data = engine.render_pdf(expanded, width, height)
+        # The canonical document, not the expanded one. The writer strips the
+        # browser-only text halo before it expands, and that strip matches on
+        # ``<text>`` elements -- handing it pre-expanded input left the halo baked
+        # into a path, which svg2pdf then drew on top of every transition label.
+        data = engine.render_pdf(canonical, width, height)
         return check_export_bytes(data, "PDF", MAX_EXPORT_TEXT_BYTES)
 
     def to_html(self, output: Optional[Union[str, os.PathLike]] = None) -> str:

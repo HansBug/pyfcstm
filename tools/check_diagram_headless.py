@@ -140,6 +140,36 @@ def pdf_page_size(data: bytes) -> Tuple[float, float]:
     return numbers[2] - numbers[0], numbers[3] - numbers[1]
 
 
+#: The operator sequence a browser-only text halo leaves in a PDF content stream:
+#: a colour, a 3-unit line width, and a white stroke colour.  The browser export
+#: gate has looked for this since the halo was found baked into its own output; the
+#: synchronous path needs the same check, because it was shipping exactly that
+#: defect while every structural assertion passed.
+HALO_OPERATORS = re.compile(rb"[0-9.]+ [0-9.]+ [0-9.]+ rg\n3\. w\n1\. G")
+
+
+def inflated_streams(data: bytes) -> bytes:
+    """
+    Decompress a PDF's content streams so their operators can be read.
+
+    :param data: PDF bytes.
+    :type data: bytes
+    :return: The concatenated decompressed streams.
+    :rtype: bytes
+    """
+    import zlib
+
+    text = b""
+    for stream in content_streams(data):
+        try:
+            text += zlib.decompress(stream)
+        except zlib.error:
+            # zlib.error: the stream is not deflate-compressed, which is legal --
+            # an uncompressed stream is readable as it stands.
+            text += stream
+    return text
+
+
 def content_streams(data: bytes) -> List[bytes]:
     """
     Extract a PDF's content streams, which carry the drawing.
@@ -227,8 +257,12 @@ def check_case(
             counts["png"] += 1
 
     if "pdf" in formats:
-        expanded = engine.expand_svg(request)
-        first = engine.render_pdf(expanded, width, height)
+        # The canonical document, the same thing the public export hands over. The
+        # writer strips the browser-only text halo and only then expands, and the
+        # strip matches on `<text>`; pre-expanding here reproduced the very defect
+        # the halo assertion below exists to catch, which is how this line was
+        # found.
+        first = engine.render_pdf(canonical, width, height)
         if not first.startswith(b"%PDF-"):
             raise ValueError("the PDF writer returned something that is not a PDF")
         if require_zero_images and (
@@ -248,8 +282,21 @@ def check_case(
         baseline = content_streams(first)
         if not baseline:
             raise ValueError("the PDF carries no content stream")
+        operators = inflated_streams(first)
+        if not operators:
+            # A zero count against nothing scanned is not evidence, and a filter
+            # change would otherwise retire the halo check without a word.
+            raise ValueError("no PDF content stream could be read for inspection")
+        halos = len(HALO_OPERATORS.findall(operators))
+        if halos:
+            raise ValueError(
+                "the PDF carries %d browser-only text halo(s): the writer was given "
+                "an already-expanded document, so its halo removal -- which matches "
+                "on <text> elements -- found nothing to remove and the halo was "
+                "baked into a path drawn over the glyphs" % halos
+            )
         for _ in range(repeat):
-            again = engine.render_pdf(expanded, width, height)
+            again = engine.render_pdf(canonical, width, height)
             if content_streams(again) != baseline:
                 raise ValueError(
                     "two PDF exports of the same diagram produced different drawings"

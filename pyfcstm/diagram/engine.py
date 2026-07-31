@@ -1333,6 +1333,12 @@ class DiagramAssetEngine:
         """
         if not isinstance(svg, str):
             raise ValueError("svg must be text")
+        # The writer expands the document itself, through the callback the entry
+        # hands it, and it must do so *after* removing the browser-only text halo:
+        # that removal matches on ``<text>`` elements, which expansion has already
+        # turned into paths. So resvg has to be ready before the job starts, rather
+        # than being initialised as a side effect of expanding in Python first.
+        self._ensure_resvg(self._locale_from_svg(svg))
         request_id = "pyfcstm-pdf-%d" % time.monotonic_ns()
         deadline = None if self.timeout is None else time.monotonic() + self.timeout
         payload = json.dumps(

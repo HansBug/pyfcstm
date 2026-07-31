@@ -803,11 +803,18 @@ def build_viewer(output_dir: Path) -> Tuple[bytes, bytes, Dict[str, object]]:
     inputs = metadata.get("inputs", {})
     forbidden = ("canvg", "html2canvas", "fast-png", "dompurify")
     if isinstance(inputs, dict):
+        # Anchored the same way the PDF writer's scan is. This build runs from
+        # the repository root, so its paths carry a leading separator today --
+        # but that is a property of the working directory, not of the check,
+        # and relying on it is how the PDF writer's copy became unable to fire.
         bundled_forbidden = sorted(
             path
             for path in inputs
             if any(
-                "/node_modules/%s/" % name in str(path).replace("\\", "/")
+                re.search(
+                    r"(?:^|/)node_modules/%s/" % re.escape(name),
+                    str(path).replace("\\", "/"),
+                )
                 for name in forbidden
             )
         )

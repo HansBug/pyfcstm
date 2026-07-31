@@ -148,25 +148,63 @@ def pdf_page_size(data: bytes) -> Tuple[float, float]:
 HALO_OPERATORS = re.compile(rb"[0-9.]+ [0-9.]+ [0-9.]+ rg\n3\. w\n1\. G")
 
 
+#: Stream declarations, so each payload can be read together with the filter that
+#: produced it.  Scanning a payload without knowing its encoding is how a halo
+#: check becomes a zero that means nothing.
+STREAM_RECORDS = re.compile(rb"<<(?P<info>[^<>]*(?:<<[^>]*>>[^<>]*)*)>>\s*stream\r?\n", re.S)
+
+
 def inflated_streams(data: bytes) -> bytes:
     """
-    Decompress a PDF's content streams so their operators can be read.
+    Decode a PDF's content streams so their operators can be read.
+
+    Each stream is decoded according to the filter it declares.  A filter this
+    cannot decode is an error rather than a fallback: scanning encoded bytes as if
+    they were operators finds nothing, the result is non-empty so an emptiness
+    guard stays quiet, and the check reports zero for a document it never read.
 
     :param data: PDF bytes.
     :type data: bytes
-    :return: The concatenated decompressed streams.
+    :return: The concatenated decoded streams.
     :rtype: bytes
+    :raises ValueError: If a stream declares a filter this cannot decode.
     """
     import zlib
 
     text = b""
-    for stream in content_streams(data):
+    position = 0
+    for match in STREAM_RECORDS.finditer(data):
+        info = match.group("info")
+        end = data.find(b"endstream", match.end())
+        if end < 0:
+            continue
+        payload = data[match.end() : end]
+        position = end
+        filters = re.findall(rb"/Filter\s*(?:\[([^\]]*)\]|/(\w+))", info)
+        names = set()
+        for bracketed, single in filters:
+            names.update(re.findall(rb"/(\w+)", bracketed))
+            if single:
+                names.add(single)
+        if not names:
+            text += payload
+            continue
+        unsupported = sorted(name for name in names if name != b"FlateDecode")
+        if unsupported:
+            raise ValueError(
+                "a PDF content stream declares filter(s) this check cannot decode: "
+                "%s; the halo scan would otherwise report zero for bytes it never "
+                "read" % b", ".join(unsupported).decode("ascii", "replace")
+            )
         try:
-            text += zlib.decompress(stream)
-        except zlib.error:
-            # zlib.error: the stream is not deflate-compressed, which is legal --
-            # an uncompressed stream is readable as it stands.
-            text += stream
+            text += zlib.decompress(payload)
+        except zlib.error as err:
+            # zlib.error: the stream declares FlateDecode but does not decode,
+            # which means the document is malformed rather than differently
+            # encoded.
+            raise ValueError("a FlateDecode content stream could not be read") from err
+    if position == 0 and not text:
+        return b""
     return text
 
 

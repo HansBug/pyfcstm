@@ -781,7 +781,7 @@ def build_pdf_writer(output: Path, esbuild_version: str) -> Tuple[bytes, Dict[st
             for path in inputs
             if any(
                 re.search(
-                    r"(?:^|/)node_modules/%s/" % re.escape(name),
+                    r"(?<![^/])node_modules/%s/" % re.escape(name),
                     str(path).replace("\\", "/"),
                 )
                 for name in forbidden
@@ -801,7 +801,12 @@ def build_pdf_writer(output: Path, esbuild_version: str) -> Tuple[bytes, Dict[st
         observed = set()
         for path in inputs:
             match = re.search(
-                r"(?:^|/)node_modules/((?:@[^/]+/)?[^/]+)/",
+                # A lookbehind rather than a consuming boundary: a nested install
+                # writes ``node_modules/a/node_modules/b/``, and consuming the
+                # separator after the first package left the second invisible --
+                # a package vendored under another one would have shipped with no
+                # provenance at all.
+                r"(?<![^/])node_modules/((?:@[^/]+/)?[^/]+)/",
                 str(path).replace("\\", "/"),
             )
             if match is not None:
@@ -862,7 +867,7 @@ def build_viewer(output_dir: Path) -> Tuple[bytes, bytes, Dict[str, object]]:
             for path in inputs
             if any(
                 re.search(
-                    r"(?:^|/)node_modules/%s/" % re.escape(name),
+                    r"(?<![^/])node_modules/%s/" % re.escape(name),
                     str(path).replace("\\", "/"),
                 )
                 for name in forbidden

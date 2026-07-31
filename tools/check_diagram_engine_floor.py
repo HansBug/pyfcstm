@@ -20,6 +20,10 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from check_diagram_headless import (  # noqa: E402
+    HALO_OPERATORS,
+    inflated_streams,
+)
 from pyfcstm.diagram import (  # noqa: E402
     DiagramAssetEngine,
     DiagramAssetError,
@@ -183,19 +187,33 @@ def run(
                 raise ValueError("runtime floor returned an invalid expanded SVG")
             counts["expanded-svg"] += 1
         if "pdf" in formats:
-            # The PDF writer takes the expanded form, so the floor exercises the
-            # same chain the public export uses rather than a shortcut.
-            expanded = pdf_engine.expand_svg(request)
+            # The canonical form, which is what the public export hands over: the
+            # writer strips the browser-only text halo and only then expands, and
+            # that strip matches on `<text>`. This line used to pre-expand, which
+            # is the same defect the public path had -- the floor was exercising a
+            # chain the export no longer uses.
+            canonical = pdf_engine.render_svg(request)
             size = re.search(
-                r'width="([\d.]+)"[^>]*height="([\d.]+)"', expanded[:2048]
+                r'width="([\d.]+)"[^>]*height="([\d.]+)"', canonical[:2048]
             )
             if size is None:
-                raise ValueError("runtime floor produced an unsizeable expanded SVG")
+                raise ValueError("runtime floor produced an unsizeable canonical SVG")
             pdf = pdf_engine.render_pdf(
-                expanded, float(size.group(1)), float(size.group(2))
+                canonical, float(size.group(1)), float(size.group(2))
             )
             if not pdf.startswith(b"%PDF-"):
                 raise ValueError("runtime floor returned an invalid PDF")
+            # The same assertion the headless gate makes. A pinned runtime floor
+            # that produced haloed labels would otherwise report fifteen green
+            # PDFs, which is exactly what it did while this call pre-expanded.
+            operators = inflated_streams(pdf)
+            if not operators:
+                raise ValueError("runtime floor PDF had no readable content stream")
+            halos = len(HALO_OPERATORS.findall(operators))
+            if halos:
+                raise ValueError(
+                    "runtime floor PDF carries %d browser-only text halo(s)" % halos
+                )
             counts["pdf"] += 1
     if check_timeout_reset:
         timeout_engine = DiagramAssetEngine()

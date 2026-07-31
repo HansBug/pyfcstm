@@ -1304,12 +1304,16 @@ class DiagramAssetEngine:
 
     def render_pdf(self, svg: str, width: float, height: float) -> bytes:
         """
-        Render one single-page vector PDF from expanded SVG.
+        Render one single-page vector PDF from canonical SVG.
 
         The writer is the same ``renderVectorPdf`` the standalone viewer calls;
         this method supplies the DOM contract that code assumes and nothing else.
 
-        :param svg: Expanded SVG text, as returned by :meth:`expand_svg`.
+        :param svg: Canonical SVG text, as returned by :meth:`render_svg`.  Not
+            the expanded form: the writer removes the browser-only text halo and
+            only then expands, and that removal matches on ``<text>`` elements --
+            handing it pre-expanded input leaves the halo baked into a path drawn
+            over the glyphs.
         :type svg: str
         :param width: Page width in SVG user units.
         :type width: float
@@ -1327,8 +1331,8 @@ class DiagramAssetEngine:
             >>> model = load_state_machine_from_text('state Root { state A; [*] -> A; }')
             >>> view = model.diagram()
             >>> engine = DiagramAssetEngine()                       # doctest: +SKIP
-            >>> expanded = engine.expand_svg({"diagram": view.to_dict()})   # doctest: +SKIP
-            >>> engine.render_pdf(expanded, 100, 100)[:5]           # doctest: +SKIP
+            >>> canonical = engine.render_svg({"diagram": view.to_dict()})  # doctest: +SKIP
+            >>> engine.render_pdf(canonical, 100, 100)[:5]          # doctest: +SKIP
             b'%PDF-'
         """
         if not isinstance(svg, str):

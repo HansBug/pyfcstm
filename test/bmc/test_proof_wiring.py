@@ -24,7 +24,7 @@ from pyfcstm.bmc import (
     compile_bmc_property,
     solve_bmc_property,
 )
-from pyfcstm.model import load_state_machine_from_text
+from pyfcstm.model import load_state_machine_from_file, load_state_machine_from_text
 
 _MODEL = """
 def int x = 0;
@@ -781,3 +781,63 @@ def test_a_variable_whose_name_starts_like_the_state_slot_stays_its_own_slot() -
     text = " ".join(step.text for step in explanation.narrative.reasoning_steps)
     assert "Root.A" in text and "Root.B" in text, text
     assert "state_x" not in text, text
+
+
+@pytest.mark.unittest
+def test_a_model_variable_named_like_the_state_slot_keeps_its_own_reading(
+    tmp_path,
+) -> None:
+    """A variable a model calls ``state`` is a variable, not the frame's state slot.
+
+    The slot needed a subject so the rules could compare it, and the first spelling
+    chosen was ``state`` on the reasoning that the grammar reserves the word.  It
+    does not reserve it everywhere: ``STATE`` is a keyword in the lexer's default
+    mode only, and an import mapping renames through a mode whose identifier rule
+    admits any name.  So a model can declare ``state``, and its requirement was then
+    routed to the slot's symbol, failed to bind, and lost a proof this query used to
+    get.
+
+    The subject is now spelled with a character no identifier rule admits, which is
+    what makes the two readings separable at all.
+    """
+    imported = tmp_path / "worker.fcstm"
+    imported.write_text(
+        "def int w = 0;\n"
+        "state WorkerRoot {\n"
+        "    state Idle;\n"
+        "    state Done;\n"
+        "    [*] -> Idle;\n"
+        "    Idle -> Done;\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    main = tmp_path / "main.fcstm"
+    main.write_text(
+        "state Root {\n"
+        "    state Host {\n"
+        '        import "./worker.fcstm" as Worker { def w -> state; };\n'
+        "        [*] -> Worker;\n"
+        "    }\n"
+        "    [*] -> Host;\n"
+        "}\n",
+        encoding="utf-8",
+    )
+
+    model = load_state_machine_from_file(main)
+    context = BmcEngine(model).prepare(
+        'assume at 0: var("state") == 1;\n'
+        'assume at 0: var("state") == 2;\n'
+        'check reach <= 1: active("Root.Host.Worker.Done");\n',
+        query_source_path="query.fbmcq",
+    )
+
+    result = solve_bmc_property(
+        compile_bmc_property(build_bmc_core_formula(context)),
+        infeasibility_explanation="proof",
+    )
+
+    explanation = result.feasibility.explanation
+    assert explanation.achieved_mode == "proof", explanation.reason
+    text = " ".join(step.text for step in explanation.narrative.reasoning_steps)
+    assert "state must equal 1" in text, text
+    assert "the state must be" not in text, text

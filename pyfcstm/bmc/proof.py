@@ -42,10 +42,15 @@ import json
 import time
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
-from .explanation import BmcConflictProof, BmcProofNode
+from .explanation import (
+    BmcConflictProof,
+    BmcProofNode,
+    _STATE_SLOT_SUBJECT,
+    _fact_sentence,
+)
 from .proof_rules import PROOF_RULES, RuleApplication, check_rule
 
-__all__ = ["STATE_SLOT_SUBJECT", "build_domain_proof", "proof_facts_for_core"]
+__all__ = ["build_domain_proof", "proof_facts_for_core"]
 
 #: What the ledger calls this phase.
 _PHASE_NAME = "proof_construction"
@@ -77,54 +82,6 @@ def _canonical(fact: Mapping[str, Any]) -> str:
         True
     """
     return json.dumps(fact, sort_keys=True, default=str)
-
-
-def _human_text(fact: Mapping[str, Any]) -> str:
-    """Return the domain sentence for one fact.
-
-    The wording stays in the vocabulary a reader of the model already has: frames,
-    variables and values, with no reference to how any of it is encoded.
-
-    :param fact: The fact to describe.
-    :type fact: Mapping[str, object]
-    :return: One sentence.
-    :rtype: str
-
-    Example::
-
-        >>> _human_text({"kind": "false"})
-        'These requirements cannot all hold.'
-    """
-    kind = fact.get("kind")
-    if kind == "variable_equality":
-        return "At frame %s, %s must equal %s." % (
-            fact.get("frame"),
-            fact.get("variable"),
-            fact.get("value"),
-        )
-    if kind == "variable_bound":
-        phrase = {
-            "ge": "at least",
-            "gt": "greater than",
-            "le": "at most",
-            "lt": "less than",
-        }.get(fact.get("operator"), "related to")
-        return "At frame %s, %s must be %s %s." % (
-            fact.get("frame"),
-            fact.get("variable"),
-            phrase,
-            fact.get("value"),
-        )
-    if kind == "arithmetic_expression":
-        return "Between frame %s and frame %s, %s changes by %s." % (
-            fact.get("frame"),
-            fact.get("target_frame"),
-            fact.get("variable"),
-            fact.get("operand"),
-        )
-    if kind == "false":
-        return "These requirements cannot all hold."
-    return "A model or query requirement constrains this scenario."
 
 
 class _Node:
@@ -225,6 +182,7 @@ def build_domain_proof(
     inputs: Sequence[Tuple[str, Mapping[str, Any]]],
     budget,
     member_ids: Optional[Sequence[str]] = None,
+    state_names: Optional[Mapping[int, str]] = None,
 ) -> Tuple[Optional[BmcConflictProof], Any]:
     """Search for a checked proof that these facts admit no execution.
 
@@ -250,6 +208,12 @@ def build_domain_proof(
         judging coverage there would let the proof close over a core it never saw
         all of.  Defaults to the ids present in ``inputs``.
     :type member_ids: Optional[Sequence[str]], optional
+    :param state_names: What the model calls each state, keyed by encoded index, so
+        each node's own sentence names the state the author wrote.  A node's sentence
+        and the reading built from it are shown to the same reader, so both resolve
+        states through the same table; without one, both fall back to the index.
+        Defaults to ``None``.
+    :type state_names: Optional[Mapping[int, str]], optional
     :return: The proof and the ledger entry, or ``None`` and the entry.
     :rtype: Tuple[Optional[BmcConflictProof], pyfcstm.bmc.infeasibility.ProbeRecord]
 
@@ -387,7 +351,7 @@ def build_domain_proof(
                 ),
                 node.fact,
                 node.item_ids,
-                _human_text(node.fact),
+                _fact_sentence(node.fact, state_names),
                 "core_binding" if node.kind == "input" else "rule_checker",
             )
         )
@@ -494,15 +458,6 @@ def _conclusion_for(
             "value": result,
         }
     return None
-
-
-#: The subject name a frame's state slot carries in proof facts.
-#:
-#: A frame's state is not a declared variable, but every rule compares subjects
-#: before values, so the slot needs a name to be compared by.  ``state`` is a
-#: grammar keyword and cannot be declared, so this cannot collide with a model
-#: variable.
-STATE_SLOT_SUBJECT = "state"
 
 
 #: How a published comparison operator reads as a proof fact.
@@ -632,15 +587,15 @@ def proof_facts_for_core(items) -> Tuple[Tuple[str, Mapping[str, Any]], ...]:
                 # The subject is named rather than left absent.  Every rule compares
                 # the slot before it compares values, and a fact with no subject
                 # would have to be tolerated there -- which is the fail-open shape
-                # this tier spent three rounds removing.  ``STATE_SLOT_SUBJECT`` is
-                # not a declared variable name, so it cannot collide with one: the
-                # grammar reserves ``state`` as a keyword.
+                # this tier spent three rounds removing.  ``_STATE_SLOT_SUBJECT``
+                # cannot be a declared variable name; see its own comment for what
+                # makes that true.
                 translated.append(
                     (
                         stable_id,
                         {
                             "kind": "variable_equality",
-                            "variable": STATE_SLOT_SUBJECT,
+                            "variable": _STATE_SLOT_SUBJECT,
                             "frame": fact.get("frame"),
                             "value": fact.get("state"),
                         },

@@ -38,8 +38,13 @@ Example::
 
 from typing import Any, List, Mapping, Optional, Tuple
 
-from .explanation import BmcConflictProof, BmcReasoningStep
-from .proof import STATE_SLOT_SUBJECT
+from .explanation import (
+    BmcConflictProof,
+    BmcReasoningStep,
+    _STATE_SLOT_SUBJECT,
+    _fact_sentence,
+    _state_display,
+)
 
 __all__ = ["linearize_proof"]
 
@@ -66,127 +71,6 @@ _CLOSING_PHRASES = {
 }
 
 
-def _state_name(state, names: Optional[Mapping[int, str]]) -> str:
-    """Return what the model calls one state, falling back to its encoded index.
-
-    A state index is the encoding's name for a state and means nothing to the author
-    who wrote the model.  It stays as the fallback rather than being suppressed: a
-    map built from a model can be missing an entry, and a poor name for a premise is
-    still better for the reader than a premise that silently vanished.
-
-    :param state: The state as the fact carries it.
-    :type state: object
-    :param names: What the model calls each state, if the caller knows.
-    :type names: Mapping[int, str], optional
-    :return: The state's name, or its index.
-    :rtype: str
-
-    Example::
-
-        >>> _state_name(1, {1: "Root.Heating"})
-        'Root.Heating'
-        >>> _state_name(1, None)
-        '1'
-    """
-    if names is None:
-        return str(state)
-    return str(names.get(state, state))
-
-
-def _state_phrase(states, names: Optional[Mapping[int, str]] = None) -> str:
-    """Return a reader-facing list of states."""
-    return ", ".join(_state_name(state, names) for state in states)
-
-
-def _fact_sentence(
-    fact: Mapping[str, Any], names: Optional[Mapping[int, str]] = None
-) -> str:
-    """Return the sentence stating one fact in the model's vocabulary.
-
-    :param fact: The fact a node concludes.
-    :type fact: Mapping[str, object]
-    :param names: What the model calls each state, if the caller knows.
-    :type names: Mapping[int, str], optional
-    :return: One sentence.
-    :rtype: str
-
-    Example::
-
-        >>> _fact_sentence({"kind": "state_domain", "frame": 1, "states": [1, 2]})
-        'At frame 1, the model allows the states 1, 2.'
-        >>> _fact_sentence(
-        ...     {"kind": "state_domain", "frame": 1, "states": [1]}, {1: "Root.Idle"}
-        ... )
-        'At frame 1, the model allows the states Root.Idle.'
-    """
-    kind = fact.get("kind")
-    if kind == "variable_equality":
-        if fact.get("variable") == STATE_SLOT_SUBJECT:
-            # A frame's state slot is compared like a variable so the rules can
-            # reach it, but it is read like a state: rendering the equality verbatim
-            # would tell the author their state "must equal 2", which names neither
-            # the slot nor the state they asked for.
-            return "At frame %s, the state must be %s." % (
-                fact.get("frame"),
-                _state_name(fact.get("value"), names),
-            )
-        return "At frame %s, %s must equal %s." % (
-            fact.get("frame"),
-            fact.get("variable"),
-            fact.get("value"),
-        )
-    if kind == "variable_bound":
-        phrase = {
-            "ge": "at least",
-            "gt": "greater than",
-            "le": "at most",
-            "lt": "less than",
-        }.get(fact.get("operator"), "related to")
-        return "At frame %s, %s must be %s %s." % (
-            fact.get("frame"),
-            fact.get("variable"),
-            phrase,
-            fact.get("value"),
-        )
-    if kind == "state_domain":
-        return "At frame %s, the model allows the states %s." % (
-            fact.get("frame"),
-            _state_phrase(fact.get("states") or (), names),
-        )
-    if kind == "state_exclusion":
-        return "At frame %s, state %s is ruled out." % (
-            fact.get("frame"),
-            _state_name(fact.get("state"), names),
-        )
-    if kind == "definedness_guard":
-        return "At frame %s, the %s requires %s to differ from %s." % (
-            fact.get("frame"),
-            fact.get("operation"),
-            fact.get("variable"),
-            fact.get("forbidden"),
-        )
-    if kind == "proposition":
-        return "At the frame it names, %s is required to %s." % (
-            fact.get("identity"),
-            "hold" if fact.get("holds") else "not hold",
-        )
-    if kind == "transition_case":
-        return "Between frame %s and frame %s, the transition changes %s by %s." % (
-            fact.get("frame"),
-            fact.get("target_frame"),
-            fact.get("variable"),
-            fact.get("operand"),
-        )
-    if kind == "arithmetic_expression":
-        return "Between frame %s and frame %s, %s changes by %s." % (
-            fact.get("frame"),
-            fact.get("target_frame"),
-            fact.get("variable"),
-            fact.get("operand"),
-        )
-    return "A model or query requirement constrains this scenario."
-
-
 def _clause(fact: Mapping[str, Any], names: Optional[Mapping[int, str]] = None) -> str:
     """Return the fact as a clause that can follow "therefore".
 
@@ -195,10 +79,10 @@ def _clause(fact: Mapping[str, Any], names: Optional[Mapping[int, str]] = None) 
     """
     kind = fact.get("kind")
     if kind == "variable_equality":
-        if fact.get("variable") == STATE_SLOT_SUBJECT:
+        if fact.get("variable") == _STATE_SLOT_SUBJECT:
             return "the state at frame %s to be %s" % (
                 fact.get("frame"),
-                _state_name(fact.get("value"), names),
+                _state_display(fact.get("value"), names),
             )
         return "%s equal to %s at frame %s" % (
             fact.get("variable"),

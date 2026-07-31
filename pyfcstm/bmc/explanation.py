@@ -380,13 +380,64 @@ def require_published_text(value: Any, where: str) -> str:
     return text
 
 
-def _state_label(code: Any, state_paths: Optional[Mapping]) -> str:
-    """Render one state for a human sentence.
+#: The subject name a frame's state slot carries in proof facts.
+#:
+#: A frame's state is not a declared variable, but every rule compares subjects
+#: before values, so the slot needs a name to be compared by.  It may not be a name
+#: a model can declare, or a requirement on a variable of that name would be read as
+#: a requirement on the slot.
+#:
+#: ``$`` is what makes that hold, and it is the character class rather than a keyword
+#: that decides it.  Every identifier rule in the lexer -- ``ID`` and the four
+#: ``IMPORT_*_ID`` rules its import modes substitute for it -- matches
+#: ``[a-zA-Z_][a-zA-Z0-9_]*``, so no declared name can contain ``$``.  Relying on
+#: ``state`` being a keyword instead would not hold: ``STATE`` is a keyword in the
+#: default mode only, and an import mapping such as ``def counter -> state;`` renames
+#: through ``IMPORT_DEF_TARGET_MODE``, where no keyword applies.  The sentinel state
+#: paths spell themselves the same way.
+_STATE_SLOT_SUBJECT = "$state"
+
+
+def _state_display(code: Any, state_paths: Optional[Mapping]) -> str:
+    """Spell one state for a reader, from the model's table when there is one.
 
     The encoding numbers states, and a reader who wrote ``Root.A`` cannot map
     ``state 1`` back to it: the item's excerpt lives in another block and quotes
-    a whole line.  Given the model's own table the sentence names the path; with
-    no table it falls back to the code rather than inventing a name.
+    a whole line.  Given the model's own table the reader gets the path; with no
+    table, or with no entry for this state, the code stands in rather than a name
+    being invented.
+
+    Every reader-facing surface resolves a state through this one function.  The
+    proof reading and the core items' human text are two spellings of the same
+    state to the same reader, so a table that resolves differently between them --
+    a missing entry against a present-but-empty one, say -- would put two names on
+    one thing.
+
+    :param code: The published state code.
+    :type code: object
+    :param state_paths: State code to authored path, or ``None``.
+    :type state_paths: Optional[Mapping[int, str]]
+    :return: The state's authored path, or its code.
+    :rtype: str
+
+    Example::
+
+        >>> _state_display(1, {1: "Root.A"})
+        'Root.A'
+        >>> _state_display(1, None)
+        '1'
+        >>> _state_display(1, {2: "Root.B"})
+        '1'
+    """
+    if state_paths:
+        path = state_paths.get(code)
+        if path is not None:
+            return "%s" % path
+    return "%s" % code
+
+
+def _state_label(code: Any, state_paths: Optional[Mapping]) -> str:
+    """Render one state for a human sentence.
 
     :param code: The published state code.
     :type code: object
@@ -402,11 +453,107 @@ def _state_label(code: Any, state_paths: Optional[Mapping]) -> str:
         >>> _state_label(1, None)
         'state 1'
     """
-    if state_paths:
-        path = state_paths.get(code)
-        if path is not None:
-            return "state %s" % path
-    return "state %s" % code
+    return "state %s" % _state_display(code, state_paths)
+
+
+def _state_phrase(states, names: Optional[Mapping[int, str]] = None) -> str:
+    """Return a reader-facing list of states."""
+    return ", ".join(_state_display(state, names) for state in states)
+
+
+def _fact_sentence(
+    fact: Mapping[str, Any], names: Optional[Mapping[int, str]] = None
+) -> str:
+    """Return the sentence stating one fact in the model's vocabulary.
+
+    :param fact: The fact a node concludes.
+    :type fact: Mapping[str, object]
+    :param names: What the model calls each state, if the caller knows.
+    :type names: Mapping[int, str], optional
+    :return: One sentence.
+    :rtype: str
+
+    Example::
+
+        >>> _fact_sentence({"kind": "state_domain", "frame": 1, "states": [1, 2]})
+        'At frame 1, the model allows the states 1, 2.'
+        >>> _fact_sentence(
+        ...     {"kind": "state_domain", "frame": 1, "states": [1]}, {1: "Root.Idle"}
+        ... )
+        'At frame 1, the model allows the states Root.Idle.'
+    """
+    kind = fact.get("kind")
+    if kind == "variable_equality":
+        if fact.get("variable") == _STATE_SLOT_SUBJECT:
+            # A frame's state slot is compared like a variable so the rules can
+            # reach it, but it is read like a state: rendering the equality verbatim
+            # would tell the author their state "must equal 2", which names neither
+            # the slot nor the state they asked for.
+            return "At frame %s, the state must be %s." % (
+                fact.get("frame"),
+                _state_display(fact.get("value"), names),
+            )
+        return "At frame %s, %s must equal %s." % (
+            fact.get("frame"),
+            fact.get("variable"),
+            fact.get("value"),
+        )
+    if kind == "variable_bound":
+        phrase = {
+            "ge": "at least",
+            "gt": "greater than",
+            "le": "at most",
+            "lt": "less than",
+        }.get(fact.get("operator"), "related to")
+        return "At frame %s, %s must be %s %s." % (
+            fact.get("frame"),
+            fact.get("variable"),
+            phrase,
+            fact.get("value"),
+        )
+    if kind == "state_domain":
+        return "At frame %s, the model allows the states %s." % (
+            fact.get("frame"),
+            _state_phrase(fact.get("states") or (), names),
+        )
+    if kind == "state_exclusion":
+        return "At frame %s, state %s is ruled out." % (
+            fact.get("frame"),
+            _state_display(fact.get("state"), names),
+        )
+    if kind == "definedness_guard":
+        return "At frame %s, the %s requires %s to differ from %s." % (
+            fact.get("frame"),
+            fact.get("operation"),
+            fact.get("variable"),
+            fact.get("forbidden"),
+        )
+    if kind == "proposition":
+        return "At the frame it names, %s is required to %s." % (
+            fact.get("identity"),
+            "hold" if fact.get("holds") else "not hold",
+        )
+    if kind == "transition_case":
+        return "Between frame %s and frame %s, the transition changes %s by %s." % (
+            fact.get("frame"),
+            fact.get("target_frame"),
+            fact.get("variable"),
+            fact.get("operand"),
+        )
+    if kind == "arithmetic_expression":
+        return "Between frame %s and frame %s, %s changes by %s." % (
+            fact.get("frame"),
+            fact.get("target_frame"),
+            fact.get("variable"),
+            fact.get("operand"),
+        )
+    if kind == "false":
+        # The contradiction node's own sentence.  A reading built from the graph says
+        # more -- which rule closed it, and that the property went unevaluated -- but
+        # the node still has to state something when read on its own, and the generic
+        # fallback below would say the opposite of what a contradiction is.
+        return "These requirements cannot all hold."
+    return "A model or query requirement constrains this scenario."
 
 
 def human_text_for_fact(

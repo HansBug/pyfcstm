@@ -70,6 +70,7 @@ from .explanation import (
     BmcInfeasibilityExplanation,
     build_conflict_narrative,
     human_text_for_fact,
+    _STATE_SLOT_SUBJECT,
 )
 from .provenance import (
     # Private: the binding check has to name a frame symbol the same way the
@@ -1498,9 +1499,11 @@ def _state_names(core: "BmcCoreFormula"):
     """Return what the model calls each state, for the reader-facing prose.
 
     Facts carry states as the encoding numbers them, which is what the rules compare
-    but not what the author wrote.  The path is the name every other public surface
-    uses for a state, so the proof reading uses it too rather than inventing a
-    second spelling.
+    but not what the author wrote.  The path is what the reader-facing surfaces
+    already spell a state as -- the core items' human text says ``state Root.A`` --
+    so the proof reading uses the same spelling rather than inventing a second one.
+    The published facts keep the index: ``normalized_fact`` is the machine's half of
+    the contract and is compared, not read.
     """
     domain = getattr(getattr(core, "context", None), "domain", None)
     entries = getattr(domain, "states", None) or ()
@@ -1514,20 +1517,20 @@ def _binding_symbol(expression, fact: Mapping[str, object], declared=None):
     of the very expressions being compared means the two sides of the equivalence
     talk about the same object by construction.
     """
-    from .proof import STATE_SLOT_SUBJECT
-
     frame = fact.get("frame")
     if frame is None:
         return None
     symbols = sorted(z3.z3util.get_vars(expression), key=lambda item: str(item))
     variable = fact.get("variable")
-    if variable is None or variable == STATE_SLOT_SUBJECT:
+    if variable is None or variable == _STATE_SLOT_SUBJECT:
         # A state fact speaks about the frame's own state slot rather than about a
         # declared variable, so it is matched by position in the encoding rather
         # than by a name the query wrote.  A positive requirement carries the slot's
         # subject name so the rules can compare it; an exclusion carries none.  Both
-        # mean the same symbol, and ``state`` cannot be a declared variable because
-        # the grammar reserves it.
+        # mean the same symbol.  A model *can* declare a variable named ``state``,
+        # through an import mapping's target name, and its own requirement must keep
+        # reaching the declared branch below -- which is why the slot's subject is
+        # spelled with a character no declared name can contain.
         for symbol in symbols:
             if str(symbol) == "F_%d_state" % frame:
                 return symbol
@@ -1783,11 +1786,15 @@ def explain_infeasibility(
         bound, binding_record = check_core_bindings(core, proof_facts, budget)
         checks = checks + (binding_record,)
         if bound:
+            # One table for both artifacts: a node's own sentence and the reading
+            # built from it are two spellings of the same state to the same reader.
+            state_names = _state_names(core)
             proof, proof_record = build_domain_proof(
                 published.scope,
                 proof_facts,
                 budget,
                 member_ids=[item.constraint.stable_id for item in published.items],
+                state_names=state_names,
             )
             checks = checks + (proof_record,)
         else:
@@ -1796,7 +1803,7 @@ def explain_infeasibility(
             # The narrative is rebuilt from the graph rather than kept from the
             # formal tier: at proof depth every sentence has to cite the node behind
             # it, which a narrative written without a graph cannot do.
-            steps = linearize_proof(proof, state_names=_state_names(core))
+            steps = linearize_proof(proof, state_names=state_names)
             proof_narrative = BmcConflictNarrative(
                 "complete",
                 steps[-1].text,

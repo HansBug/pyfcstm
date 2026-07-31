@@ -253,17 +253,17 @@ def test_a_required_state_is_read_as_a_state_and_not_as_a_number() -> None:
     compare it; rendering that equality verbatim would tell the reader their state
     "must equal 2", which names neither the slot nor the state.
     """
-    from pyfcstm.bmc.proof import STATE_SLOT_SUBJECT
+    from pyfcstm.bmc.explanation import _STATE_SLOT_SUBJECT
 
     proof = _proof_of(
         (
             (
                 "assumption.0000",
-                _equality(variable=STATE_SLOT_SUBJECT, frame=1, value=1),
+                _equality(variable=_STATE_SLOT_SUBJECT, frame=1, value=1),
             ),
             (
                 "assumption.0001",
-                _equality(variable=STATE_SLOT_SUBJECT, frame=1, value=2),
+                _equality(variable=_STATE_SLOT_SUBJECT, frame=1, value=2),
             ),
         )
     )
@@ -320,3 +320,39 @@ def test_a_state_with_no_name_keeps_its_index() -> None:
 
     assert "Root.A" in text, text
     assert "2" in text, text
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "names",
+    [None, {}, {2: "Root.B"}, {1: None}],
+    ids=["no-table", "empty-table", "other-state-only", "entry-present-but-null"],
+)
+def test_the_two_readings_of_one_state_agree(names) -> None:
+    """The proof reading and the core items' human text spell one state one way.
+
+    Both are prose about the same state shown to the same reader, so a table that
+    resolves differently between them would put two names on one thing.  Four ways
+    of not having a usable name are checked together because they are exactly where
+    two separately-written resolvers drift: a null entry is present to ``in`` and
+    absent to a ``get`` default, so one resolver read it as a name and rendered
+    ``None`` while the other fell back to the index.
+    """
+    from pyfcstm.bmc.explanation import human_text_for_fact
+
+    proof = _proof_of(
+        (
+            ("assumption.0000", _fact("state_exclusion", frame=1, state=1)),
+            ("domain.frame.0001", _fact("state_domain", frame=1, states=[1])),
+        )
+    )
+
+    reading = " ".join(step.text for step in linearize_proof(proof, state_names=names))
+    formal = human_text_for_fact(
+        "assumption",
+        {"kind": "state_membership", "frame": 1, "state": 1, "excluded": True},
+        state_paths=names,
+    )
+
+    spelling = formal.split("state ", 1)[1].rstrip(".")
+    assert "state %s is ruled out" % spelling in reading, (reading, formal)

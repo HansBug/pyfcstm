@@ -452,3 +452,68 @@ def test_the_schema_accepts_graph_shapes_only_the_constructor_can_refuse(
             payload["graph_minimality"],
             payload["verification_status"],
         )
+
+
+@pytest.mark.unittest
+def test_every_published_node_states_its_own_fact() -> None:
+    """A node read on its own may not fall through to the generic sentence.
+
+    Each node carries a sentence for a reader who has only that node, and the
+    fallback -- "a requirement constrains this scenario" -- says nothing and, on the
+    contradiction, says the opposite of what the node means.  One renderer serves
+    both the nodes and the reading built from them, so it has to cover the union of
+    what they produce rather than the part they share: merging them once dropped the
+    contradiction's own sentence, because only the node side had ever needed it.
+    """
+    from pyfcstm.bmc.proof import build_domain_proof
+    from pyfcstm.bmc.solver import _SolveBudget
+
+    generic = "A model or query requirement constrains this scenario."
+    scenarios = (
+        (
+            "assumptions_component",
+            (
+                (
+                    "assumption.0000",
+                    {
+                        "kind": "variable_equality",
+                        "variable": "x",
+                        "frame": 0,
+                        "value": 1,
+                    },
+                ),
+                (
+                    "assumption.0001",
+                    {
+                        "kind": "variable_equality",
+                        "variable": "x",
+                        "frame": 0,
+                        "value": 2,
+                    },
+                ),
+            ),
+        ),
+        (
+            "assumptions_prefix",
+            (
+                (
+                    "domain.frame.0001",
+                    {"kind": "state_domain", "frame": 1, "states": [1, 2]},
+                ),
+                (
+                    "assumption.0000",
+                    {"kind": "state_exclusion", "frame": 1, "state": 1},
+                ),
+                (
+                    "assumption.0001",
+                    {"kind": "state_exclusion", "frame": 1, "state": 2},
+                ),
+            ),
+        ),
+    )
+
+    for scope, inputs in scenarios:
+        proof, record = build_domain_proof(scope, inputs, _SolveBudget(None))
+        assert proof is not None, record.reason
+        for node in proof.nodes:
+            assert node.human_text != generic, (scope, node.stable_id, node.conclusion)

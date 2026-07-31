@@ -147,6 +147,33 @@ def _same_slot(facts) -> bool:
     return variable is not None and frame is not None
 
 
+def _same_subject(left: Mapping[str, Any], right: Mapping[str, Any]) -> bool:
+    """Report whether two facts speak about the same kind of subject.
+
+    A frame's state and a variable can wear the same name -- a model may declare one
+    spelled like the slot -- so the subject's kind is carried by a flag rather than
+    read off the spelling.  A derivation that keeps the name but drops the flag has
+    changed what it is talking about halfway through, and the rule that refuses two
+    values for one slot would then close a contradiction between a state and a
+    variable that never disagreed.
+
+    :param left: One fact.
+    :type left: Mapping[str, object]
+    :param right: The other.
+    :type right: Mapping[str, object]
+    :return: ``True`` when both are about a state slot or both are not.
+    :rtype: bool
+
+    Example::
+
+        >>> _same_subject({"state_slot": True}, {"state_slot": True})
+        True
+        >>> _same_subject({"state_slot": True}, {})
+        False
+    """
+    return bool(left.get("state_slot")) == bool(right.get("state_slot"))
+
+
 def _kinds(facts) -> Tuple[str, ...]:
     """Return the tags of the given facts, in order."""
     return tuple(fact.get("kind") for fact in facts)
@@ -228,6 +255,8 @@ def _arithmetic_evaluation(application: RuleApplication) -> bool:
     if conclusion.get("variable") != expression.get("variable"):
         return False
     if conclusion.get("frame") != expression.get("target_frame"):
+        return False
+    if not _same_subject(conclusion, expression):
         return False
     result = _evaluate(
         expression.get("operator"), value_fact.get("value"), expression.get("operand")
@@ -377,6 +406,8 @@ def _transition_assignment(application: RuleApplication) -> bool:
     conclusion = application.conclusion
     if conclusion.get("kind") != "arithmetic_expression":
         return False
+    if not _same_subject(conclusion, case):
+        return False
     return all(
         conclusion.get(key) == case.get(key)
         for key in ("variable", "frame", "target_frame", "operator", "operand")
@@ -403,8 +434,15 @@ def _equality_substitution(application: RuleApplication) -> bool:
         return False
     if value.get("frame") != expression.get("frame"):
         return False
+    if value.get("state_slot"):
+        # An operand is a variable the expression reads.  A frame's state is not a
+        # value an expression can be written over, so a slot standing in for one is
+        # a substitution into a statement the model never made.
+        return False
     conclusion = application.conclusion
     if conclusion.get("kind") != "arithmetic_expression":
+        return False
+    if not _same_subject(conclusion, expression):
         return False
     if conclusion.get("operand") != value.get("value"):
         return False

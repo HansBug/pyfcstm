@@ -375,6 +375,22 @@ def _published_id(node: _Node, position: int) -> str:
     return "proof.%s.%04d" % ("input" if node.kind == "input" else "step", position)
 
 
+def _inherit_subject(
+    conclusion: Dict[str, Any], source: Mapping[str, Any]
+) -> Dict[str, Any]:
+    """Carry the subject's kind from the fact a conclusion is derived from.
+
+    The proposal has to offer what the checker will accept, and the checker requires
+    a derivation to keep talking about the same kind of subject.  A variable simply
+    omits the field, so the flag is only written when it is true -- an explicit
+    ``False`` would be a second spelling of "not a state slot" for every consumer to
+    handle.
+    """
+    if source.get("state_slot"):
+        conclusion["state_slot"] = True
+    return conclusion
+
+
 def _conclusion_for(
     rule_id: str, premises: Sequence[_Node]
 ) -> Optional[Mapping[str, Any]]:
@@ -408,14 +424,17 @@ def _conclusion_for(
         if len(cases) != 1:
             return None
         case = cases[0]
-        return {
-            "kind": "arithmetic_expression",
-            "variable": case.get("variable"),
-            "frame": case.get("frame"),
-            "operator": case.get("operator"),
-            "operand": case.get("operand"),
-            "target_frame": case.get("target_frame"),
-        }
+        return _inherit_subject(
+            {
+                "kind": "arithmetic_expression",
+                "variable": case.get("variable"),
+                "frame": case.get("frame"),
+                "operator": case.get("operator"),
+                "operand": case.get("operand"),
+                "target_frame": case.get("target_frame"),
+            },
+            case,
+        )
     if rule_id == "equality_substitution":
         if len(facts) != 2:
             return None
@@ -426,14 +445,17 @@ def _conclusion_for(
             return None
         if not expression.get("operand_variable"):
             return None
-        return {
-            "kind": "arithmetic_expression",
-            "variable": expression.get("variable"),
-            "frame": expression.get("frame"),
-            "operator": expression.get("operator"),
-            "operand": value_fact.get("value"),
-            "target_frame": expression.get("target_frame"),
-        }
+        return _inherit_subject(
+            {
+                "kind": "arithmetic_expression",
+                "variable": expression.get("variable"),
+                "frame": expression.get("frame"),
+                "operator": expression.get("operator"),
+                "operand": value_fact.get("value"),
+                "target_frame": expression.get("target_frame"),
+            },
+            expression,
+        )
     if rule_id == "arithmetic_evaluation":
         if len(facts) != 2:
             return None
@@ -451,12 +473,15 @@ def _conclusion_for(
         )
         if result is None:
             return None
-        return {
-            "kind": "variable_equality",
-            "variable": expression.get("variable"),
-            "frame": expression.get("target_frame"),
-            "value": result,
-        }
+        return _inherit_subject(
+            {
+                "kind": "variable_equality",
+                "variable": expression.get("variable"),
+                "frame": expression.get("target_frame"),
+                "value": result,
+            },
+            expression,
+        )
     return None
 
 
@@ -475,9 +500,7 @@ _COMPARISON_FACTS = {
 }
 
 
-def proof_facts_for_core(
-    items, declared_names=()
-) -> Tuple[Tuple[str, Mapping[str, Any]], ...]:
+def proof_facts_for_core(items) -> Tuple[Tuple[str, Mapping[str, Any]], ...]:
     """Translate published core members into the facts the rules read.
 
     The published vocabulary describes a core for a reader; the rule vocabulary
@@ -489,16 +512,6 @@ def proof_facts_for_core(
 
     :param items: Published core members.
     :type items: Iterable[BmcCoreItem]
-    :param declared_names: The variable names this model declares.  A state
-        requirement is normalized onto a named slot subject, and the rules tell two
-        subjects apart by name alone, so a model that declares that same name would
-        make one slot out of two different things -- and the rule that refuses two
-        values for a slot would then refuse a variable and a state that have nothing
-        to do with each other.  Rather than argue the name is undeclarable, which
-        has been wrong twice, the collision is looked for: when it is there, state
-        requirements go untranslated and the core simply does not reach the proof
-        tier.  Defaults to ``()``, which asserts no collision.
-    :type declared_names: Iterable[str], optional
     :return: Member ids paired with the fact each states, for readable members.
     :rtype: Tuple[Tuple[str, Mapping[str, object]], ...]
 
@@ -599,9 +612,10 @@ def proof_facts_for_core(
                 # The subject is named rather than left absent.  Every rule compares
                 # the slot before it compares values, and a fact with no subject
                 # would have to be tolerated there -- which is the fail-open shape
-                # this tier spent three rounds removing.  ``_STATE_SLOT_SUBJECT``
-                # cannot be a declared variable name; see its own comment for what
-                # makes that true.
+                # this tier spent three rounds removing.  The name does not have to
+                # be one a model cannot declare: ``state_slot`` is what the slot
+                # comparison, the binding and the reading go by, so a model with a
+                # variable of the same name is just a model with that variable.
                 translated.append(
                     (
                         stable_id,

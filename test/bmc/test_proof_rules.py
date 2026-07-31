@@ -698,3 +698,129 @@ def test_equality_substitution_refuses_a_value_that_is_not_the_operand(
     )
 
     assert check_rule(application) is False
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "rule_id, premises, conclusion",
+    [
+        (
+            "arithmetic_evaluation",
+            (
+                {
+                    "kind": "variable_equality",
+                    "variable": "$state",
+                    "state_slot": True,
+                    "frame": 0,
+                    "value": 0,
+                },
+                {
+                    "kind": "arithmetic_expression",
+                    "variable": "$state",
+                    "state_slot": True,
+                    "frame": 0,
+                    "target_frame": 1,
+                    "operator": "add",
+                    "operand": 1,
+                },
+            ),
+            {
+                "kind": "variable_equality",
+                "variable": "$state",
+                "frame": 1,
+                "value": 1,
+            },
+        ),
+        (
+            "transition_assignment",
+            (
+                {
+                    "kind": "transition_case",
+                    "variable": "$state",
+                    "state_slot": True,
+                    "frame": 0,
+                    "target_frame": 1,
+                    "operator": "add",
+                    "operand": 1,
+                },
+                {
+                    "kind": "variable_equality",
+                    "variable": "$state",
+                    "state_slot": True,
+                    "frame": 0,
+                    "value": 0,
+                },
+            ),
+            {
+                "kind": "arithmetic_expression",
+                "variable": "$state",
+                "frame": 0,
+                "target_frame": 1,
+                "operator": "add",
+                "operand": 1,
+            },
+        ),
+    ],
+    ids=["arithmetic-evaluation", "transition-assignment"],
+)
+def test_a_derivation_may_not_change_what_its_subject_is(
+    rule_id, premises, conclusion
+) -> None:
+    """Keeping the name while dropping the flag is changing the subject.
+
+    A frame's state and a variable can be spelled alike -- a model may declare one
+    named like the slot -- so the flag is what says which a fact is about.  A
+    derivation that inherits the name but not the flag hands the next round a fact
+    that reads as a variable and came from a state; the rule that refuses two values
+    for one slot would then close a contradiction between a state and a variable
+    that never disagreed, and the whole graph would still be reported ``verified``.
+
+    The checker recomputes each conclusion field from the premises, so the subject's
+    kind is one of the fields it has to recompute.
+    """
+    assert check_rule(RuleApplication(rule_id, premises, conclusion)) is False
+
+    kept = dict(conclusion)
+    kept["state_slot"] = True
+    assert check_rule(RuleApplication(rule_id, premises, kept)) is True
+
+
+@pytest.mark.unittest
+def test_a_state_may_not_stand_in_for_an_expression_operand() -> None:
+    """An operand is a value the expression reads, and a state is not one.
+
+    Substitution replaces a named operand with the value that operand holds.  A
+    frame's state is not something an expression can be written over, so letting a
+    slot supply the value would rewrite the expression into a statement the model
+    never made.
+    """
+    application = RuleApplication(
+        "equality_substitution",
+        (
+            {
+                "kind": "variable_equality",
+                "variable": "n",
+                "state_slot": True,
+                "frame": 0,
+                "value": 2,
+            },
+            {
+                "kind": "arithmetic_expression",
+                "variable": "x",
+                "frame": 0,
+                "target_frame": 1,
+                "operator": "add",
+                "operand_variable": "n",
+            },
+        ),
+        {
+            "kind": "arithmetic_expression",
+            "variable": "x",
+            "frame": 0,
+            "target_frame": 1,
+            "operator": "add",
+            "operand": 2,
+        },
+    )
+
+    assert check_rule(application) is False

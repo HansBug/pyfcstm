@@ -7051,6 +7051,7 @@
         },
         "conclusion": {
           "type": "object",
+          "$comment": "Fields beyond \"kind\" depend on the tag and are left open.  One is worth naming: a conclusion about the state a frame holds carries \"state_slot\": true beside its subject.  A model may declare a variable spelled like that subject -- an import mapping renames past the keyword, and the target-template rule admits \"$\" -- so the flag, not the spelling, is what tells a consumer whether the conclusion is about a state or about a variable.",
           "required": [
             "kind"
           ],
@@ -7058,6 +7059,9 @@
             "kind": {
               "type": "string",
               "pattern": "\\S"
+            },
+            "state_slot": {
+              "const": true
             }
           }
         },

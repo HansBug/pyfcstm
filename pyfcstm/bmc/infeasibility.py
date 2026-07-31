@@ -1528,14 +1528,12 @@ def _binding_symbol(expression, fact: Mapping[str, object], declared=None):
         # subject name so the rules can compare it; an exclusion carries none.  Both
         # mean the same symbol.
         #
-        # The subject is checked against the names this model actually declares
-        # rather than argued to be undeclarable.  Two arguments for why it could not
-        # collide have already turned out to be wrong -- ``state`` is a keyword only
-        # in the lexer's default mode, and the target-template rule admits ``$`` --
-        # and the declarations are right here, so the question is answered by
-        # looking rather than by reading the grammar again.  A model that does
-        # declare this name keeps its own variable's reading; what it loses is the
-        # proof tier, which the translation side declines to enter for that core.
+        # Which branch a fact takes is decided by its ``state_slot`` flag, never by
+        # its subject's spelling.  Two arguments for why that spelling could not
+        # also be a declared name were both wrong -- ``state`` is a keyword only in
+        # the lexer's default mode, and the target-template rule admits ``$`` -- so
+        # a model may well declare a variable named the same.  Its requirements
+        # carry no flag and reach the declared branch below, as they should.
         for symbol in symbols:
             if str(symbol) == "F_%d_state" % frame:
                 return symbol
@@ -1784,9 +1782,7 @@ def explain_infeasibility(
         from .proof import build_domain_proof, proof_facts_for_core
         from .proof_text import linearize_proof
 
-        proof_facts = proof_facts_for_core(
-            published.items, declared_names=_declared_variable_names(core)
-        )
+        proof_facts = proof_facts_for_core(published.items)
         # The binding check comes first: a graph built on facts that were never
         # shown equivalent to their members would carry ``core_binding`` as a trust
         # label, which the contract forbids outright.

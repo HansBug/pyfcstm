@@ -353,3 +353,72 @@ def test_a_wide_state_domain_still_reaches_a_proof(states) -> None:
 
     assert proof is not None, record.reason
     assert proof.nodes[-1].rule_id == "state_domain_exhaustion"
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "operation, translated",
+    [("division", True), ("sqrt", False)],
+    ids=["a-divisor-excludes-one-value", "a-square-root-excludes-a-half-line"],
+)
+def test_only_the_definedness_shape_the_rule_reads_is_translated(
+    operation, translated
+) -> None:
+    """A rule's premise shape decides what may be handed to it.
+
+    ``definedness_failure`` reads a guard as one forbidden value, which is what a
+    divisor's domain is.  A square root's is ``operand >= 0`` -- a half-line, not a
+    point -- and writing it as "forbidden: 0" produces a fact that is neither
+    implied by its group nor implies it.  The binding check refuses that in both
+    directions, so nothing unsound could be published either way; not translating
+    it reaches the same refusal before a solver is asked and records the reason.
+    """
+    from pyfcstm.bmc.explanation import BmcConstraintRef, BmcCoreItem
+    from pyfcstm.bmc.proof import proof_facts_for_core
+    from pyfcstm.bmc.provenance import BmcSourceRef
+
+    reference = BmcConstraintRef(
+        "definedness.0000",
+        "assumptions",
+        "definedness",
+        BmcSourceRef("generated", None, None),
+        "guard",
+    )
+    item = BmcCoreItem(
+        reference,
+        "definedness",
+        None,
+        False,
+        {
+            "kind": "definedness_condition",
+            "frame": 0,
+            "operation": operation,
+            "variable": "x",
+        },
+        "guard",
+        False,
+    )
+
+    facts = proof_facts_for_core((item,))
+
+    assert bool(facts) is translated
+
+
+@pytest.mark.unittest
+def test_a_fact_weaker_than_its_group_is_refused_in_both_directions() -> None:
+    """The binding check is what makes a translation safe to add, so it is pinned.
+
+    ``x >= 0`` and ``x != 0`` imply each other in neither direction, which is what
+    a wrong translation of a square root's domain would look like.  Asserting the
+    refusal here means a translation added later cannot quietly rely on the check
+    being lenient.
+    """
+    import z3
+
+    symbol = z3.Int("F_0_x_abcdef")
+    group, weaker = symbol >= 0, symbol != 0
+
+    for claim in (z3.And(group, z3.Not(weaker)), z3.And(weaker, z3.Not(group))):
+        solver = z3.Solver()
+        solver.add(claim)
+        assert str(solver.check()) == "sat", "neither direction may hold"

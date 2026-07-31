@@ -581,10 +581,14 @@ def proof_facts_for_core(items) -> Tuple[Tuple[str, Mapping[str, Any]], ...]:
             )
         elif kind == "definedness_condition":
             variable = fact.get("variable")
-            if variable is None:
-                # A guard over an expression rather than a single subject has no
-                # slot for the rule to compare against, so it stays untranslated
-                # and the core it belongs to is not fully covered.
+            # Only division translates.  The rule reads a guard as one forbidden
+            # value, and that is what a divisor's domain is: every value but zero.
+            # A square root excludes a half-line rather than a point, so the rule's
+            # shape does not fit it -- writing one anyway would produce a fact
+            # weaker than the group it stands for, which the binding check refuses
+            # in both directions.  Leaving it untranslated reaches the same refusal
+            # sooner and says why.
+            if variable is None or fact.get("operation") != "division":
                 continue
             translated.append(
                 (
@@ -593,11 +597,7 @@ def proof_facts_for_core(items) -> Tuple[Tuple[str, Mapping[str, Any]], ...]:
                         "kind": "definedness_guard",
                         "variable": variable,
                         "frame": fact.get("frame"),
-                        "operation": fact.get("operation"),
-                        # Every operation the published vocabulary names is
-                        # undefined at zero -- division by it, and the square root
-                        # and logarithm of a negative argument all exclude it as
-                        # the boundary case the guard is about.
+                        "operation": "division",
                         "forbidden": 0,
                     },
                 )

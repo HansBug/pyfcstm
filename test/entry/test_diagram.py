@@ -1,5 +1,6 @@
 """CLI tests for the standalone diagram command."""
 
+import json
 import os
 import stat
 from pathlib import Path
@@ -295,3 +296,75 @@ class TestDiagramCommandExports:
         assert result.exit_code != 0
         for name in (".json", ".html", ".svg", ".png", ".pdf"):
             assert name in result.output
+
+
+def test_diagram_cli_writes_json_to_standard_output(tmp_path):
+    """Without ``-o`` the document goes to standard output.
+
+    This is the first form the command's help documents and the one a caller
+    pipes into something else, and it had no test: a change that started writing
+    a file instead, or printing a summary line alongside the document, would have
+    broken every such pipeline without failing anything here.
+    """
+    runner = CliRunner()
+    source = tmp_path / "machine.fcstm"
+    source.write_text(
+        "state Root { state A; state B; [*] -> A; A -> B; }", encoding="utf-8"
+    )
+
+    result = runner.invoke(cli, ["diagram", "-i", str(source)])
+
+    assert result.exit_code == 0, result.output
+    # The whole of standard output has to be the document, with nothing around
+    # it, or `pyfcstm diagram -i x.fcstm | jq` stops working.
+    document = json.loads(result.output)
+    assert document["kind"] == "diagram"
+    assert document["machineName"] == "Root"
+    assert document["summary"]["states"] == 3
+    assert [child["id"] for child in document["rootState"]["children"]] == [
+        "Root.A",
+        "Root.B",
+    ]
+
+
+def test_diagram_cli_refuses_a_non_json_format_with_nowhere_to_write_it(tmp_path):
+    """Only JSON can go to standard output, and asking otherwise is a usage error.
+
+    A PNG on a terminal is not what the flag combination asks for, and the
+    refusal has to come before the export runs: doing the work first would spend
+    it on a request that was never satisfiable.
+    """
+    runner = CliRunner()
+    source = tmp_path / "machine.fcstm"
+    source.write_text("state Root { state A; [*] -> A; }", encoding="utf-8")
+
+    for format_name in ("svg", "png", "pdf", "html"):
+        result = runner.invoke(
+            cli, ["diagram", "-i", str(source), "--format", format_name]
+        )
+        # Exit 2, not merely non-zero: a usage error and a failed export are
+        # different outcomes, and a shell branches on which one it got.
+        assert result.exit_code == 2, (format_name, result.output)
+        assert "Traceback" not in result.output
+        assert "JSON is the only format" in result.output
+
+
+def test_diagram_cli_reports_a_binary_input_without_a_traceback(tmp_path):
+    """Pointing ``-i`` at the wrong file is an ordinary mistake.
+
+    The bytes of a compiled artefact fit no text encoding, and ``auto_decode``
+    raising through the command buried a message about encodings under a Python
+    stack about the DSL.
+    """
+    runner = CliRunner()
+    source = tmp_path / "not-a-machine.fcstm"
+    source.write_bytes(bytes(range(256)) * 8)
+
+    result = runner.invoke(
+        cli, ["diagram", "-i", str(source), "-o", str(tmp_path / "out.json")]
+    )
+
+    assert result.exit_code == 1
+    assert "Traceback" not in result.output
+    assert "Failed to decode input DSL file" in result.output
+    assert "not-a-machine.fcstm" in result.output
